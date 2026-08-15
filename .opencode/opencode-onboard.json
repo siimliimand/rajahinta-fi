@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "generatedAt": "2026-08-15T08:35:58.917Z",
+  "onboardVersion": "1.6.3",
+  "opencodeVersion": null,
+  "platform": {
+    "backlog": "github",
+    "repo": "github"
+  },
+  "models": {
+    "plan": "openrouter/deepseek/deepseek-v4-pro",
+    "build": "openrouter/deepseek/deepseek-v4-flash",
+    "fast": "openrouter/xiaomi/mimo-v2.5"
+  },
+  "agents": {
+    "maxConcurrent": 5
+  },
+  "source": {
+    "mode": "current",
+    "roots": [
+      "/home/sim/www/rajahinta"
+    ]
+  },
+  "tools": {
+    "rtk": true,
+    "quota": true,
+    "caveman": true,
+    "codegraph": false,
+    "memory": false
+  },
+  "preexisting": {
+    "design": false,
+    "architecture": false,
+    "openspec": false
+  }
+}

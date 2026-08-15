@@ -1,0 +1,59 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "build": {
+      "disable": true
+    },
+    "plan": {
+      "disable": true
+    }
+  },
+  "permission": {
+    "skill": {
+      "ob-*": "allow",
+      "openspec-*": "allow"
+    },
+    "question": "allow",
+    "todowrite": "allow"
+  },
+  "skills": {
+    "paths": [
+      ".agents/skills"
+    ]
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 10000
+  },
+  "model": "openrouter/deepseek/deepseek-v4-flash",
+  "plugin": [
+    "@slkiser/opencode-quota@4.2.0"
+  ],
+  "mcp": {
+    "codegraph": {
+      "type": "local",
+      "command": [
+        "npx",
+        "@colbymchenry/codegraph",
+        "serve",
+        "--mcp"
+      ],
+      "enabled": true,
+      "timeout": 120000
+    },
+    "agentmemory": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@agentmemory/mcp"
+      ],
+      "env": {
+        "AGENTMEMORY_URL": "http://localhost:3111"
+      },
+      "enabled": true,
+      "timeout": 120000
+    }
+  }
+}

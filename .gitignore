@@ -1,0 +1,46 @@
+# ==== Secrets / credentials ====
+# .env files are write-only: never committed.
+.env
+.env.*
+!.env.example
+
+# ==== OS / editor ====
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+
+# ==== OpenCode tooling ====
+# Local runtime state and generated artifacts for the agentic infrastructure.
+# Tracked config (opencode.jsonc, .opencode/agents, commands, plugins, tui,
+# opencode-onboard.json) stays committed; local/generated state is ignored.
+.opencode/opencode-quota/
+.opencode/tmp/
+.opencode/.ob-run.json
+.opencode/opencode-onboard.user.json
+.opencode/opencode-onboard-managed.json
+.opencode/source-roots.json
+.opencode/*-engineer.*.md
+.opencode/node_modules/
+
+# ==== CodeGraph index ====
+# Generated code-intelligence index, regenerated on demand.
+.codegraph/
+
+# ==== Application (planned/future) ====
+# No app stack is selected yet; these cover the common defaults so nothing
+# generated later leaks. Revisit once framework/tooling is decided.
+node_modules/
+dist/
+build/
+out/
+coverage/
+*.log
+
+# ==== AgentMemory ====
+# Local agent-memory state, if persisted to disk.
+.agentmemory/
