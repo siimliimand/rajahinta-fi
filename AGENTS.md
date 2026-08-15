@@ -49,6 +49,12 @@ Trigger patterns, I recognize ALL of these, exact wording does not matter:
 
 Inspect `.opencode/agents/*.md` before spawning. Prefer the most specialized custom engineer. `fullstack-engineer` is `mode: primary`, the planning agent, and is not a spawned worker. If no specialist matches, tell the user to create one with `/make-engineer`. Spawn only engineers present in that directory.
 
+| Agent | File | Role |
+|---|---|---|
+| `fullstack-engineer` | `.opencode/agents/fullstack-engineer.md` | Default planning agent (mode: primary, not spawnable) |
+| `devops-engineer` | `.opencode/agents/devops-engineer.md` | Docker, CI/CD, K8s, IaC, observability |
+| `platform-engineer` | `.opencode/agents/platform-engineer.md` | TypeScript, Node.js, React, SQLite, feature flags, background jobs |
+
 The `ob-plan-apply` skill is authoritative for subagent waves, dependency ordering, retries, and concurrency. Read `agents.maxConcurrent` from `.opencode/opencode-onboard.json` before spawning workers.
 
 ## Tool and repository safety

@@ -7,11 +7,29 @@
       "skillPath": "plugin/skills/agentmemory-agents/SKILL.md",
       "computedHash": "ce6856f1e06301be12f8d568650b8d0f6776dde04933a2694ecf0fd87af4806d"
     },
+    "app-observability": {
+      "source": "grafana/skills",
+      "sourceType": "github",
+      "skillPath": "skills/grafana-cloud/app-observability/SKILL.md",
+      "computedHash": "356716ed60984468d73e975893f2202ef4231c0551d497e31375005bf5332756"
+    },
+    "background-job-processing": {
+      "source": "aj-geddes/useful-ai-prompts",
+      "sourceType": "github",
+      "skillPath": "skills/background-job-processing/SKILL.md",
+      "computedHash": "ea3e79b5b5467dd649318086c8d62ff61478b3a67a67aa4cdbed0369ce2b2ef9"
+    },
     "caveman": {
       "source": "juliusbrussee/caveman",
       "sourceType": "github",
       "skillPath": "skills/caveman/SKILL.md",
       "computedHash": "59e1fe0d3eeb4189ee5c467efde567672e5cacb41f157c477a6152ca907d44ea"
+    },
+    "feature-flags": {
+      "source": "react/react",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/feature-flags/SKILL.md",
+      "computedHash": "c5335a86f91e81ce4e7035ab48209a4dbb09ef32822796d4778388472f0b0b39"
     },
     "find-skills": {
       "source": "vercel-labs/skills",
@@ -19,17 +37,65 @@
       "skillPath": "skills/find-skills/SKILL.md",
       "computedHash": "b146008599c31057cef1c145774cea5d5afb30e8f43fa802e47a4b461419aaaf"
     },
+    "github-actions": {
+      "source": "bobmatnyc/claude-mpm-skills",
+      "sourceType": "github",
+      "skillPath": "toolchains/universal/infrastructure/github-actions/SKILL.md",
+      "computedHash": "26815ec672bc9d6465d2916f55292c735879dbc7a5104b8c51144bc945994c53"
+    },
     "humanizer": {
       "source": "blader/humanizer",
       "sourceType": "github",
       "skillPath": "SKILL.md",
       "computedHash": "7f032c368d4355fb237e1980d73d7febe5bc1a03bad3de74a3d4a918e8940cd1"
     },
+    "kubernetes-specialist": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/kubernetes-specialist/SKILL.md",
+      "computedHash": "9c5eb68fc9d553ee29e745258bc6198563158c4b2c57436d63647e61010b5f0a"
+    },
+    "multi-stage-dockerfile": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/multi-stage-dockerfile/SKILL.md",
+      "computedHash": "698bf93a84dae18fd7bd0b1d35c21427307fde78fbdf4624be9726f5f98189ca"
+    },
+    "nodejs-backend-patterns": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/javascript-typescript/skills/nodejs-backend-patterns/SKILL.md",
+      "computedHash": "b63b54d09c77cec0e84cdd42424c12909785f14bdb286c835c45420b885ff1f3"
+    },
+    "sqlite-expert": {
+      "source": "rightnow-ai/openfang",
+      "sourceType": "github",
+      "skillPath": "crates/openfang-skills/bundled/sqlite-expert/SKILL.md",
+      "computedHash": "f63004999d019b0a150309ea1a20661ab3aa33267e48e26f0dfafa6f800cc122"
+    },
+    "terraform-infrastructure": {
+      "source": "aj-geddes/useful-ai-prompts",
+      "sourceType": "github",
+      "skillPath": "skills/terraform-infrastructure/SKILL.md",
+      "computedHash": "a93c75d1ffe86c3bdce839e66a02940330e3ed1fd3864e49840eef3827e6612f"
+    },
+    "typescript-advanced-types": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/javascript-typescript/skills/typescript-advanced-types/SKILL.md",
+      "computedHash": "8cbf2bf600f392d7260e476e3202932a876e2281cda3b15a8b6a5a43f383252d"
+    },
     "user-story": {
       "source": "deanpeters/product-manager-skills",
       "sourceType": "github",
       "skillPath": "skills/user-story/SKILL.md",
       "computedHash": "ca8f8869c1597af5f979130b9b2805c32e6e985e04cdeefe4c99a9a537360b79"
+    },
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/react-best-practices/SKILL.md",
+      "computedHash": "ca7b0c0c6e5f2750043f7f0cd72d16ac4e2abc48f9b5500d047a4b77a2506212"
     }
   }
 }

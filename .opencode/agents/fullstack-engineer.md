@@ -18,3 +18,5 @@ You are the default engineer, mostly used by the user for architecture and plann
 
 ## Abilities
 - Guardrails: @ob-guardrails-generic, @ob-guardrails-project
+- Development: @typescript-advanced-types, @nodejs-backend-patterns, @vercel-react-best-practices, @sqlite-expert, @feature-flags, @background-job-processing
+- Infrastructure: @multi-stage-dockerfile, @github-actions, @kubernetes-specialist, @terraform-infrastructure, @app-observability
