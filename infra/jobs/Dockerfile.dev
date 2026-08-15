@@ -1,0 +1,23 @@
+# Rajahinta.fi — worker development image
+# Mounts local source for hot-reload; no build step needed.
+FROM node:22-alpine AS dev
+
+WORKDIR /app
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy monorepo config
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+
+# Copy source stubs (full source mounted at runtime)
+COPY packages/ packages/
+
+# Install dependencies (node_modules are overridden by volume mount in dev)
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --prefer-offline
+
+EXPOSE 3000
+
+# Start the backend (which hosts workers via ApplicationApiModule)
+CMD ["pnpm", "--filter", "@rajahinta/backend", "dev"]
