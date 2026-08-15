@@ -1,0 +1,322 @@
+# =============================================================================
+# CI — Continuous integration (every push/PR to main)
+#
+# Fast-feedback gating pipeline: lint → typecheck → build → unit → golden →
+# data-quality → compliance.  Runs in parallel with the deploy.yml build job
+# but provides a richer suite of regression checks visible as required PR
+# status checks.
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# =============================================================================
+# Defaults
+# =============================================================================
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '9'
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# =============================================================================
+# Jobs — organized as a DAG so failures gate downstream checks
+# =============================================================================
+jobs:
+
+  # --------------------------------------------------------------------------
+  # Gate: fast static checks — lint + typecheck run in parallel
+  # --------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run lint
+        continue-on-error: true   # lint rules may not exist in all packages yet
+
+  typecheck:
+    name: Type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run typecheck
+
+  # --------------------------------------------------------------------------
+  # Build — depends on typecheck having passed
+  # --------------------------------------------------------------------------
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [typecheck]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run build
+
+      # Cache built artifacts for downstream test jobs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-dist
+          path: |
+            apps/*/dist/
+            packages/*/dist/
+          retention-days: 1
+          if-no-files-found: warn
+
+  # --------------------------------------------------------------------------
+  # Unit tests — depends on successful build
+  # --------------------------------------------------------------------------
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-dist
+          path: .
+
+      - run: pnpm run test
+        env:
+          CI: true
+
+  # --------------------------------------------------------------------------
+  # Golden-dataset tests — loads seed data, validates pre-calculated scenarios
+  # --------------------------------------------------------------------------
+  golden-dataset:
+    name: Golden-dataset
+    runs-on: ubuntu-latest
+    needs: [build]
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rajahinta
+          POSTGRES_PASSWORD: rajahinta
+          POSTGRES_DB: rajahinta_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-dist
+          path: .
+
+      - name: Run golden-dataset tests
+        run: bash scripts/test-golden-dataset.sh
+        env:
+          CI: true
+          DATABASE_URL: postgresql://rajahinta:rajahinta@localhost:5432/rajahinta_test
+          GOLDEN_DATASET_PATH: ./infra/staging-data/seed.sql
+
+  # --------------------------------------------------------------------------
+  # Data-quality checks — schema conformance, null violations
+  # --------------------------------------------------------------------------
+  data-quality:
+    name: Data-quality
+    runs-on: ubuntu-latest
+    needs: [build]
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rajahinta
+          POSTGRES_PASSWORD: rajahinta
+          POSTGRES_DB: rajahinta_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-dist
+          path: .
+
+      - name: Run data-quality checks
+        run: bash scripts/test-data-quality.sh
+        env:
+          CI: true
+          DATABASE_URL: postgresql://rajahinta:rajahinta@localhost:5432/rajahinta_test
+
+  # --------------------------------------------------------------------------
+  # Compliance checks — audit log structure, calculation traceability
+  # --------------------------------------------------------------------------
+  compliance:
+    name: Compliance
+    runs-on: ubuntu-latest
+    needs: [build]
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rajahinta
+          POSTGRES_PASSWORD: rajahinta
+          POSTGRES_DB: rajahinta_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-dist
+          path: .
+
+      - name: Run compliance checks
+        run: bash scripts/test-compliance.sh
+        env:
+          CI: true
+          DATABASE_URL: postgresql://rajahinta:rajahinta@localhost:5432/rajahinta_test
+          COMPLIANCE_ENFORCED: true
+
+  # --------------------------------------------------------------------------
+  # Summary — aggregates all results into a single required check
+  # --------------------------------------------------------------------------
+  ci-pass:
+    name: CI passed
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+      - typecheck
+      - build
+      - unit-tests
+      - golden-dataset
+      - data-quality
+      - compliance
+    if: always()   # report pass/fail regardless of upstream failures
+
+    steps:
+      - name: Aggregate results
+        run: |
+          FAILURES=false
+          for job in lint typecheck build unit-tests golden-dataset data-quality compliance; do
+            status="${{ needs.$job.result }}"
+            echo "$job: $status"
+            [ "$status" != "success" ] && [ "$status" != "skipped" ] && FAILURES=true
+          done
+          if [ "$FAILURES" = "true" ]; then
+            echo "One or more CI checks failed."
+            exit 1
+          fi
+          echo "All CI checks passed."
