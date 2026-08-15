@@ -13,9 +13,23 @@ import {
   TaxCalculationEngine,
   LandedCostResult,
 } from '@rajahinta/core-domain';
+import { ObservabilityModule } from './observability';
+import { FeatureFlagsModule } from './feature-flags';
+import { JobsModule } from './jobs';
 
 // ---------------------------------------------------------------------------
-// DTOs for request/response
+// Module boundary — pure DTO interfaces for cross-layer contracts
+// ---------------------------------------------------------------------------
+
+export type {
+  CalculateExciseRequest,
+  CalculateLandedCostRequest,
+  ApiErrorResponse,
+  IUseCaseOrchestrator,
+} from './interfaces';
+
+// ---------------------------------------------------------------------------
+// NestJS DTOs (legacy — replace with interfaces above over time)
 // ---------------------------------------------------------------------------
 
 export class CalculateExciseDto {
@@ -127,7 +141,31 @@ export abstract class UseCaseOrchestrator {
 // ---------------------------------------------------------------------------
 
 @Module({
+  imports: [FeatureFlagsModule, ObservabilityModule, JobsModule],
   controllers: [CalculationController, HealthController],
-  exports: [UseCaseOrchestrator],
+  exports: [UseCaseOrchestrator, FeatureFlagsModule, ObservabilityModule, JobsModule],
 })
 export class ApplicationApiModule {}
+
+// ---------------------------------------------------------------------------
+// Feature-flag re-exports for consumers outside the layer
+// ---------------------------------------------------------------------------
+
+export { FeatureFlag, FeatureFlagService, FeatureFlagGuard, FeatureFlagDec as FeatureFlagDecorator } from './feature-flags';
+export type { FeatureFlagConfig } from './feature-flags';
+export { FeatureFlagsModule } from './feature-flags';
+
+// ---------------------------------------------------------------------------
+// Observability re-exports for consumers outside the layer
+// ---------------------------------------------------------------------------
+
+export { KpiCategory, MetricType } from './observability';
+export type { KpiMetric, MetricTags } from './observability';
+export { KpiService, InstrumentationService, OpsDashboardService, OpsDashboardController, CostAttributionService, ObservabilityModule } from './observability';
+export type { StaleDataResult, StaleDataSource, VerifiedCalculationResult, ComplianceIncident, DashboardSnapshot, CostSummary, CostBreakdown } from './observability';
+
+// ---------------------------------------------------------------------------
+// Jobs re-exports for consumers outside the layer
+// ---------------------------------------------------------------------------
+
+export { JobsModule } from './jobs';

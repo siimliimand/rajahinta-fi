@@ -91,6 +91,14 @@ export class KpiService {
   }
 
   /**
+   * Return a snapshot of all currently buffered metrics.
+   * Used by OpsDashboardService to compute health signals from live KPI data.
+   */
+  getMetrics(): readonly KpiMetric[] {
+    return this.buffer;
+  }
+
+  /**
    * Dispose the service — flush remaining metrics and stop the timer.
    * Call during graceful shutdown (e.g. NestJS onApplicationShutdown).
    */
