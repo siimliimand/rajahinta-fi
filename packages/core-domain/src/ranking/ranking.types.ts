@@ -22,6 +22,14 @@
  * No code path within this module — or any module that calls into it —
  * can influence sort position via a merchant payment or manual boost.
  *
+ * ## Billing isolation
+ *
+ * This module is structurally separate from `BillingModule`
+ * (`@rajahinta/application-api`). No ranking type references a billing
+ * type, and no billing type can be used as ranking input. This is enforced
+ * at both compile time (type system) and runtime (import analysis in
+ * `billing-ranking-isolation.test.ts`).
+ *
  * @module RankingTypes
  */
 
