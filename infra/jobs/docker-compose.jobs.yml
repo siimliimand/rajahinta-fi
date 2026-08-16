@@ -1,0 +1,46 @@
+version: "3.9"
+
+# ---------------------------------------------------------------------------
+# Rajahinta.fi — local job development environment
+#
+# Starts a Redis 7.2 instance and runs the BullMQ worker in dev mode.
+# ---------------------------------------------------------------------------
+
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: rajahinta-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis-data:/data
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/jobs/Dockerfile.dev
+    container_name: rajahinta-worker
+    environment:
+      - NODE_ENV=development
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - LOG_LEVEL=debug
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../../packages:/app/packages
+      - ../../apps:/app/apps
+      - ../../node_modules:/app/node_modules
+      - ../../pnpm-workspace.yaml:/app/pnpm-workspace.yaml
+      - ../../package.json:/app/package.json
+      - ../../tsconfig.base.json:/app/tsconfig.base.json
+      - ../../pnpm-lock.yaml:/app/pnpm-lock.yaml
+
+volumes:
+  redis-data:

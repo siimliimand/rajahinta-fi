@@ -1,0 +1,79 @@
+# =============================================================================
+# Production environment — hardened, audited
+# =============================================================================
+# Secrets come from GitHub Environments secrets with manual approval gate.
+# Compliance logging, rate versioning enforcement, and full audit trail.
+# =============================================================================
+
+environment: production
+
+app:
+  host: "0.0.0.0"
+  port: 3000
+  cors:
+    origin: ["https://rajahinta.fi", "https://www.rajahinta.fi"]
+  external_url: "https://rajahinta.fi"
+
+database:
+  host: db.rajahinta.fi
+  port: 5432
+  name: rajahinta_prod
+  user: rajahinta_app
+  # Password via RAJAHINTA_DB_PASSWORD (GitHub env secret)
+  ssl: verify-full
+  pool:
+    min: 10
+    max: 50
+  migrate_on_start: false       # migrations run separately, reviewed
+  connection_timeout: 10000     # ms
+  statement_timeout: 30000      # ms
+
+redis:
+  host: redis.rajahinta.fi
+  port: 6379
+  # Password via RAJAHINTA_REDIS_PASSWORD (GitHub env secret)
+  db: 1
+  tls: true
+  bullmq:
+    prefix: "bull:prod"
+    default_job_options:
+      attempts: 5
+      backoff:
+        type: exponential
+        delay: 2000
+      remove_on_complete: 100   # keep last 100 completed for audit
+      remove_on_fail: 50        # keep last 50 failed for debugging
+
+log:
+  level: warn
+  format: json
+  otel_enabled: true
+  # Structured audit log for compliance
+  audit:
+    enabled: true
+    log_table: audit_log
+    retention_days: 365
+
+feature_flags:
+  new_merchant_sources: false
+  experimental_rulesets: false
+  compliance_monitoring: true
+  deposit_system_mock: false
+  rate_auto_publish: false      # NEVER auto-publish — manual/legal confirm
+
+background_jobs:
+  price_refresh_interval: 300    # 5 min
+  transport_rate_refresh: 600   # 10 min
+  tax_dataset_review: 21600     # 6 hours
+  rate_change_check: 3600       # 1 hour — check for new official rates
+
+# Compliance and audit
+compliance:
+  rate_versioning: enforce
+  calculation_explainability: enforce
+  data_freshness_alerts: true
+  golden_dataset_path: "./test/golden-datasets/prod/"
+  audit:
+    every_calculation: true
+    rate_change_approval_required: true
+    merchant_source_onboarding_audit: true

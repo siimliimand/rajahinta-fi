@@ -1,0 +1,69 @@
+# =============================================================================
+# Staging environment — pre-production validation
+# =============================================================================
+# Staging carries its own copy of tax-rule and merchant data for realistic
+# review before promotion. Feature flags enable compliance-sensitive paths
+# for manual QA. Secrets come from GitHub Environments secrets.
+# =============================================================================
+
+environment: staging
+
+app:
+  host: "0.0.0.0"
+  port: 3000
+  cors:
+    origin: ["https://staging.rajahinta.fi"]
+  external_url: "https://staging.rajahinta.fi"
+
+database:
+  host: db.staging.rajahinta.fi
+  port: 5432
+  name: rajahinta_staging
+  user: rajahinta_app
+  # Password via RAJAHINTA_DB_PASSWORD (GitHub env secret)
+  ssl: require
+  pool:
+    min: 5
+    max: 20
+  migrate_on_start: true
+  # Staging carries independent data copy for realistic validation
+  seed:
+    enabled: false  # restored from production snapshot
+    snapshot_source: prod_weekly
+
+redis:
+  host: redis.staging.rajahinta.fi
+  port: 6379
+  # Password via RAJAHINTA_REDIS_PASSWORD (GitHub env secret)
+  db: 1
+  bullmq:
+    prefix: "bull:staging"
+    default_job_options:
+      attempts: 3
+      backoff:
+        type: exponential
+        delay: 1000
+
+log:
+  level: info
+  format: json
+  otel_enabled: true
+
+feature_flags:
+  new_merchant_sources: true
+  experimental_rulesets: false
+  compliance_monitoring: true
+  deposit_system_mock: false    # real deposit system integration
+  rate_auto_publish: false      # staging confirms before publishing
+
+background_jobs:
+  price_refresh_interval: 1800   # 30 min
+  transport_rate_refresh: 3600   # 1 hour
+  tax_dataset_review: 43200      # 12 hours
+
+# Compliance checks run in staging before prod promotion
+compliance:
+  rate_versioning: enforce
+  calculation_explainability: enforce
+  data_freshness_alerts: true
+  golden_dataset_path: "./test/golden-datasets/staging/"

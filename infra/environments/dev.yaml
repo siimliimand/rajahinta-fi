@@ -1,0 +1,62 @@
+# =============================================================================
+# Development environment — localhost
+# =============================================================================
+# Loaded by Docker Compose and local dev servers. Secrets come from .env file.
+# =============================================================================
+
+environment: development
+
+app:
+  host: "0.0.0.0"
+  port: 3000
+  cors:
+    origin: ["http://localhost:5173", "http://localhost:3000"]
+
+database:
+  host: localhost
+  port: 5432
+  name: rajahinta_dev
+  user: rajahinta
+  # Password via RAJAHINTA_DB_PASSWORD env
+  ssl: disable
+  pool:
+    min: 2
+    max: 10
+  migrate_on_start: true
+
+redis:
+  host: localhost
+  port: 6379
+  # Password via RAJAHINTA_REDIS_PASSWORD env
+  db: 0
+  bullmq:
+    prefix: "bull:dev"
+    default_job_options:
+      attempts: 3
+      backoff:
+        type: exponential
+        delay: 1000
+
+log:
+  level: debug
+  format: pretty  # pretty | json
+  otel_enabled: false
+
+feature_flags:
+  new_merchant_sources: true
+  experimental_rulesets: true
+  compliance_monitoring: false
+  deposit_system_mock: true
+  rate_auto_publish: false  # rates never auto-publish even in dev
+
+# Dev seed data: small sample set for manual testing
+seed:
+  enabled: true
+  merchants: 5
+  products_per_merchant: 20
+  rate_snapshots: 3
+
+background_jobs:
+  price_refresh_interval: 3600   # 1 hour in dev
+  transport_rate_refresh: 7200   # 2 hours
+  tax_dataset_review: 86400      # 24 hours

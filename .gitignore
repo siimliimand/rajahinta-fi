@@ -41,6 +41,10 @@ out/
 coverage/
 *.log
 
+# ==== Claude Code tooling ====
+# Symlinked/cached skills from .agents/skills/ — derived state.
+.claude/
+
 # ==== AgentMemory ====
 # Local agent-memory state, if persisted to disk.
 .agentmemory/

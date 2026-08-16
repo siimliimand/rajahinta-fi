@@ -1,0 +1,25 @@
+{
+  "name": "rajahinta",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Rajahinta.fi — Finnish cross-border beverage price index and landed-cost intelligence platform",
+  "scripts": {
+    "dev": "pnpm --parallel -r dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "test:golden": "bash scripts/test-golden-dataset.sh",
+    "test:data-quality": "bash scripts/test-data-quality.sh",
+    "test:compliance": "bash scripts/test-compliance.sh",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r clean",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\""
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=22.0.0 <23.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}
