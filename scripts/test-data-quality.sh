@@ -42,8 +42,8 @@ psql "$DB_URL" -c "
   FROM products WHERE id IS NULL OR name IS NULL OR container_type IS NULL OR volume_litres IS NULL;
 " | grep -q "0 rows" || true  # non-fatal for now; placeholder
 
-# Run data-quality vitest suite
-pnpm vitest run --reporter=verbose "packages/**/*data-quality*.test.ts" 2>&1 \
+# Run data-quality vitest suite (uses per-package vitest config)
+pnpm --filter @rajahinta/data-acquisition run test -- --reporter=verbose "src/**/*data-quality*.test.ts" 2>&1 \
   || { echo "FAILED: Data-quality tests"; exit 1; }
 
 echo "=== Data-quality checks PASSED ==="
