@@ -12,10 +12,17 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
   TaxCalculationEngine,
   LandedCostResult,
+  CalculatorModule,
+  RankingModule,
+  DeclarationModule,
 } from '@rajahinta/core-domain';
+import { DataPlatformModule } from '@rajahinta/data-platform';
 import { ObservabilityModule } from './observability';
 import { FeatureFlagsModule } from './feature-flags';
 import { JobsModule } from './jobs';
+import { CalculatorController } from './calculator';
+import { SearchController } from './search';
+import { DeclarationController } from './declaration';
 
 // ---------------------------------------------------------------------------
 // Module boundary — pure DTO interfaces for cross-layer contracts
@@ -141,8 +148,22 @@ export abstract class UseCaseOrchestrator {
 // ---------------------------------------------------------------------------
 
 @Module({
-  imports: [FeatureFlagsModule, ObservabilityModule, JobsModule],
-  controllers: [CalculationController, HealthController],
+  imports: [
+    FeatureFlagsModule,
+    ObservabilityModule,
+    JobsModule,
+    CalculatorModule,
+    RankingModule,
+    DeclarationModule,
+    DataPlatformModule,
+  ],
+  controllers: [
+    CalculationController,
+    HealthController,
+    CalculatorController,
+    SearchController,
+    DeclarationController,
+  ],
   exports: [UseCaseOrchestrator, FeatureFlagsModule, ObservabilityModule, JobsModule],
 })
 export class ApplicationApiModule {}
@@ -169,3 +190,24 @@ export type { StaleDataResult, StaleDataSource, VerifiedCalculationResult, Compl
 // ---------------------------------------------------------------------------
 
 export { JobsModule } from './jobs';
+
+// ---------------------------------------------------------------------------
+// Calculator — landed-cost calculation API
+// ---------------------------------------------------------------------------
+
+export { CalculatorController } from './calculator';
+export type { CalculateRequest, CalculationRecordResponse } from './calculator';
+
+// ---------------------------------------------------------------------------
+// Search — product search and discovery API
+// ---------------------------------------------------------------------------
+
+export { SearchController } from './search';
+export type { SearchProductsQuery, ProductSearchResult, ProductSearchItem, ProductDetailResponse, OfferItem } from './search';
+
+// ---------------------------------------------------------------------------
+// Declaration — excise declaration assistant API
+// ---------------------------------------------------------------------------
+
+export { DeclarationController } from './declaration';
+export type { DeclarationSummaryResponse } from './declaration';
