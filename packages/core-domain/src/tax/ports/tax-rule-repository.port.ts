@@ -45,4 +45,21 @@ export interface ITaxRuleRepositoryPort {
     productCategory: string,
     asOf: Date,
   ): Promise<TaxRuleRecordPort | null>;
+
+  /**
+   * Return all tax rules for the given type and category whose effective
+   * window overlaps {@code [fromDate, toDate)}.
+   *
+   * Overlap logic: a rule applies on a given date D when
+   *   effectiveFrom <= D AND (effectiveTo IS NULL OR effectiveTo > D).
+   * This method returns every row whose window intersects the query range.
+   *
+   * Results are ordered by effectiveFrom ascending.
+   */
+  findHistoryRates(
+    taxType: string,
+    productCategory: string,
+    fromDate: Date,
+    toDate: Date,
+  ): Promise<TaxRuleRecordPort[]>;
 }

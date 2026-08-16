@@ -18,6 +18,9 @@ export type { ExciseResult } from './services/alcohol-excise.service';
 export { ContainerDutyService } from './services/container-duty.service';
 export type { ContainerDutyResult } from './services/container-duty.service';
 
+export { TaxRuleQueryService } from './services/tax-rule-query.service';
+export type { RateHistoryEntry } from './services/tax-rule-query.service';
+
 // Pure math (exported for testing / direct use)
 export {
   calculateAlcoholExcise,

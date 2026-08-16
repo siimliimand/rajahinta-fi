@@ -220,6 +220,17 @@ export abstract class TaxRateRepository {
   abstract findVersionById(
     id: number,
   ): Promise<typeof taxRules.$inferSelect | null>;
+
+  /**
+   * Return all tax rules for the given type and category whose effectiveness
+   * window overlaps {@code [fromDate, toDate)}.
+   */
+  abstract findHistoryRates(
+    taxType: string,
+    productCategory: string,
+    fromDate: Date,
+    toDate: Date,
+  ): Promise<typeof taxRules.$inferSelect[]>;
 }
 
 @Injectable()

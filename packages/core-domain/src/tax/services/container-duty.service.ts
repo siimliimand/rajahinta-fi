@@ -60,11 +60,15 @@ export class ContainerDutyService {
      *                              the Finnish deposit-return system, `false` if not,
      *                              `null` (or omitted) if unknown.  When omitted,
      *                              defaults to `null`, which triggers ESTIMATED status.
+     * @param asOf                  Optional effective-date lookup (defaults to now).
+     *                              Historical dates resolve against the rate version
+     *                              effective on that date.
      */
     async calculate(
       volumeLitres: number,
       packaging: string,
       depositSystemStatus: boolean | null = null,
+      asOf?: Date,
     ): Promise<ContainerDutyResult> {
       // Evaluate deposit-return exemption first (pure function)
       const depositCheck = checkDepositExemption(depositSystemStatus);
@@ -82,12 +86,13 @@ export class ContainerDutyService {
       }
 
       const normalised = normalisePackaging(packaging);
+      const lookupDate = asOf ?? new Date();
 
       // Try repository lookup
       const rule = await this.taxRepo.findApplicable(
         'container_duty',
         normalised,
-        new Date(),
+        lookupDate,
       );
 
       if (rule) {

@@ -177,6 +177,17 @@ export interface IProductRepository {
 export interface ITaxRateRepository {
   findEffectiveVersion(asOf: Date): Promise<TaxRuleRecord | null>;
   findVersionById(id: number): Promise<TaxRuleRecord | null>;
+
+  /**
+   * Return all tax rules for the given type and category whose effectiveness
+   * window overlaps [fromDate, toDate).
+   */
+  findHistoryRates(
+    taxType: string,
+    productCategory: string,
+    fromDate: Date,
+    toDate: Date,
+  ): Promise<TaxRuleRecord[]>;
 }
 
 export interface ITransportOfferRepository {

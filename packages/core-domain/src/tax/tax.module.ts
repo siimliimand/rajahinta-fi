@@ -9,9 +9,10 @@
 import { Module } from '@nestjs/common';
 import { AlcoholExciseService } from './services/alcohol-excise.service';
 import { ContainerDutyService } from './services/container-duty.service';
+import { TaxRuleQueryService } from './services/tax-rule-query.service';
 
 @Module({
-  providers: [AlcoholExciseService, ContainerDutyService],
-  exports: [AlcoholExciseService, ContainerDutyService],
+  providers: [AlcoholExciseService, ContainerDutyService, TaxRuleQueryService],
+  exports: [AlcoholExciseService, ContainerDutyService, TaxRuleQueryService],
 })
 export class TaxModule {}

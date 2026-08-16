@@ -18,6 +18,7 @@ function createMockRepo(
 ): ITaxRuleRepositoryPort {
   return {
     findApplicable: async () => null,
+    findHistoryRates: async () => [],
     ...overrides,
   };
 }
