@@ -211,18 +211,21 @@ export class LandedCostCalculatorService {
     const exciseTotal = exciseResult.taxCents * input.quantity;
     const containerDutyTotal = containerDutyResult.dutyCents * input.quantity;
     const transportTotal = transportCostCents; // transport is per-shipment
+    const otherChargesTotal = 0; // no other charges in Phase 1
 
     const totalCents =
-      retailTotal + exciseTotal + containerDutyTotal + transportTotal;
+      retailTotal + exciseTotal + containerDutyTotal + transportTotal + otherChargesTotal;
 
     const itemizedCosts: ItemizedCost[] = [
       {
         label: 'Retail price',
+        category: 'foreignRetailPrice',
         cents: retailTotal,
         reliability: productPriceStatus,
         breakdown: [
           {
             label: `Unit price (x${input.quantity})`,
+            category: 'foreignRetailPrice' as const,
             cents: retailTotal,
             reliability: productPriceStatus,
           },
@@ -230,20 +233,34 @@ export class LandedCostCalculatorService {
       },
       {
         label: 'Transport',
+        category: 'transportCost',
         cents: transportTotal,
         reliability: transportStatus,
       },
       {
         label: 'Alcohol excise',
+        category: 'alcoholExciseEstimate',
         cents: exciseTotal,
         reliability: exciseStatus,
       },
       {
         label: 'Container duty',
+        category: 'containerDutyEstimate',
         cents: containerDutyTotal,
         reliability: containerDutyStatus,
       },
+      {
+        label: 'Other charges',
+        category: 'otherCharges',
+        cents: otherChargesTotal,
+        reliability: 'VERIFIED' as const,
+      },
     ];
+
+    // Collect dataset versions from tax engines
+    const datasetVersions: string[] = [];
+    if (exciseResult.taxDatasetVersion) datasetVersions.push(exciseResult.taxDatasetVersion);
+    if (containerDutyResult.taxDatasetVersion) datasetVersions.push(containerDutyResult.taxDatasetVersion);
 
     // -----------------------------------------------------------------------
     // 8. Persist calculation record
@@ -270,6 +287,11 @@ export class LandedCostCalculatorService {
 
     return {
       itemizedCosts,
+      foreignRetailPrice: retailTotal,
+      transportCost: transportTotal,
+      alcoholExciseEstimate: exciseTotal,
+      containerDutyEstimate: containerDutyTotal,
+      otherCharges: otherChargesTotal,
       totalCents,
       currency: 'EUR',
       confidence: confidenceReport.overall,
@@ -278,9 +300,14 @@ export class LandedCostCalculatorService {
       classification: classificationResult,
       metadata: {
         input,
-        calculatedAt: new Date().toISOString(),
+        calculationTimestamp: new Date().toISOString(),
         productMasterId: product.id,
         retailOfferIds: [bestOffer.id],
+        quantity: input.quantity,
+        destination: input.destination,
+        productName: product.normalizedName,
+        datasetVersions,
+        transportOfferId,
       },
       calculationRecordId: persisted.id,
     };

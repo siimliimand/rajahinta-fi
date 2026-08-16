@@ -535,16 +535,93 @@ describe('LandedCostCalculatorService', () => {
       expect(result.calculationRecordId).toBe(42);
     });
 
-    it('includes four itemized cost lines', async () => {
+    it('includes five itemized cost lines with categories', async () => {
       const { service } = createService();
 
       const result = await service.calculate(DEFAULT_INPUT);
 
-      const labels = result.itemizedCosts.map((c) => c.label);
-      expect(labels).toContain('Retail price');
-      expect(labels).toContain('Transport');
-      expect(labels).toContain('Alcohol excise');
-      expect(labels).toContain('Container duty');
+      const byLabel = new Map(result.itemizedCosts.map((c) => [c.label, c]));
+
+      expect(byLabel.get('Retail price')!.category).toBe('foreignRetailPrice');
+      expect(byLabel.get('Transport')!.category).toBe('transportCost');
+      expect(byLabel.get('Alcohol excise')!.category).toBe(
+        'alcoholExciseEstimate',
+      );
+      expect(byLabel.get('Container duty')!.category).toBe(
+        'containerDutyEstimate',
+      );
+      expect(byLabel.get('Other charges')!.category).toBe('otherCharges');
+
+      // Every top-level line item carries one of the canonical categories
+      const canonical = new Set([
+        'foreignRetailPrice',
+        'transportCost',
+        'alcoholExciseEstimate',
+        'containerDutyEstimate',
+        'otherCharges',
+      ]);
+      for (const cost of result.itemizedCosts) {
+        expect(canonical.has(cost.category)).toBe(true);
+      }
+    });
+
+    it('exposes flat breakdown fields that sum to the total', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.foreignRetailPrice).toBe(200); // 200 * 1
+      expect(result.transportCost).toBe(150);
+      expect(result.alcoholExciseEstimate).toBe(30);
+      expect(result.containerDutyEstimate).toBe(26);
+      expect(result.otherCharges).toBe(0);
+      expect(result.totalCents).toBe(
+        result.foreignRetailPrice +
+          result.transportCost +
+          result.alcoholExciseEstimate +
+          result.containerDutyEstimate +
+          result.otherCharges,
+      );
+    });
+
+    it('includes calculation-status metadata', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.metadata.calculationTimestamp).toBeDefined();
+      expect(
+        new Date(result.metadata.calculationTimestamp).getTime(),
+      ).not.toBeNaN();
+      expect(result.metadata.datasetVersions).toContain('v1'); // excise + container duty mocks
+      expect(result.metadata.transportOfferId).toBe(200);
+    });
+
+    it('includes input snapshot metadata', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate({
+        ...DEFAULT_INPUT,
+        quantity: 2,
+        destination: 'SE',
+      });
+
+      expect(result.metadata.quantity).toBe(2);
+      expect(result.metadata.destination).toBe('SE');
+      expect(result.metadata.productName).toBe('Test Beer 5%');
+    });
+
+    it('sets transportOfferId to null when transport is unavailable', async () => {
+      const transportStub = createTransportEstimateStub(null);
+
+      const { service } = createService({
+        transportEstimate: transportStub,
+      });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.metadata.transportOfferId).toBeNull();
+      expect(result.transportCost).toBe(0);
     });
 
     it('every itemized cost has a reliability status', async () => {

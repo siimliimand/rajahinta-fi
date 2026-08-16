@@ -253,6 +253,7 @@ export type {
   CalculatorResult,
   CalculatorProductData,
   CalculatorRetailOfferData,
+  CostCategory,
   ItemizedCost,
   CreateCalculationRecordInput,
   IProductDataPort,

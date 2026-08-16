@@ -87,11 +87,23 @@ export interface CalculatorRetailOfferData {
 // ---------------------------------------------------------------------------
 
 /**
+ * Machine-readable category for each itemized cost line.
+ */
+export type CostCategory =
+  | 'foreignRetailPrice'
+  | 'transportCost'
+  | 'alcoholExciseEstimate'
+  | 'containerDutyEstimate'
+  | 'otherCharges';
+
+/**
  * A single itemized cost line in the calculation result.
  */
 export interface ItemizedCost {
   /** Human-readable label (e.g. "Retail price", "Transport", "Excise duty"). */
   readonly label: string;
+  /** Machine-readable category identifying the cost component. */
+  readonly category: CostCategory;
   /** Amount in euro-cents. */
   readonly cents: number;
   /** Reliability status of this cost component. */
@@ -110,6 +122,23 @@ export interface ItemizedCost {
 export interface CalculatorResult {
   /** Itemized list of all cost components. */
   readonly itemizedCosts: readonly ItemizedCost[];
+
+  // ---------------------------------------------------------------------------
+  // Convenience breakdown — each component from the itemized list as a flat
+  // field for quick access. The authoritative source is `itemizedCosts`.
+  // ---------------------------------------------------------------------------
+
+  /** Total price of items from the merchant, in euro-cents. */
+  readonly foreignRetailPrice: number;
+  /** Shipping/transport cost, in euro-cents. */
+  readonly transportCost: number;
+  /** Estimated excise duty, in euro-cents. */
+  readonly alcoholExciseEstimate: number;
+  /** Estimated container duty, in euro-cents. */
+  readonly containerDutyEstimate: number;
+  /** Any other applicable charges, in euro-cents (zero when none). */
+  readonly otherCharges: number;
+
   /** Sum of all costs in euro-cents at the top level. */
   readonly totalCents: number;
   readonly currency: 'EUR';
@@ -128,9 +157,23 @@ export interface CalculatorResult {
   /** Calculation metadata. */
   readonly metadata: {
     readonly input: CalculatorInput;
-    readonly calculatedAt: string; // ISO 8601
+    readonly calculationTimestamp: string; // ISO 8601
     readonly productMasterId: number;
     readonly retailOfferIds: readonly number[];
+
+    // -- Input snapshot --
+    /** Quantity used in the calculation. */
+    readonly quantity: number;
+    /** Destination country used in the calculation. */
+    readonly destination: string;
+    /** Normalized product name from the product master. */
+    readonly productName: string;
+
+    // -- Dataset provenance --
+    /** Tax rule versions that were applied (e.g. excise version, container duty version). */
+    readonly datasetVersions: readonly string[];
+    /** Transport offer ID that was used, or null when unavailable. */
+    readonly transportOfferId: number | null;
   };
 
   /** ID of the persisted calculation record. */
