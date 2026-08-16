@@ -529,6 +529,7 @@ describe('LandedCostCalculatorService', () => {
       expect(result.currency).toBe('EUR');
       expect(result.disclaimer.text).toBeTruthy();
       expect(result.disclaimer.language).toBe('fi');
+      expect(result.disclaimer.version).toBe('1.0');
       expect(result.totalCents).toBeGreaterThan(0);
       expect(result.metadata.productMasterId).toBe(1);
       expect(typeof result.calculationRecordId).toBe('number');

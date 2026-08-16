@@ -277,7 +277,7 @@ export class LandedCostCalculatorService {
       confidence: confidenceReport.overall,
       quantity: input.quantity,
       destination: input.destination,
-      disclaimer: DISCLAIMER_FI.text,
+      disclaimer: DISCLAIMER_FI,
       sessionId: input.sessionId ?? null,
     });
 
@@ -306,6 +306,9 @@ export class LandedCostCalculatorService {
         quantity: input.quantity,
         destination: input.destination,
         productName: product.normalizedName,
+        volumeLitres: product.volumeLitres,
+        alcoholByVolume: product.alcoholByVolume,
+        category: product.category,
         datasetVersions,
         transportOfferId,
       },

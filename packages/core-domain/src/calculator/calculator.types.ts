@@ -16,10 +16,14 @@ import type { ClassificationResult } from '../classification/classification.type
 
 /**
  * Disclaimer associated with every calculation result.
+ *
+ * `version` follows semver — bump when the legal text changes materially
+ * (e.g. a new regulation or updated boilerplate).
  */
 export interface Disclaimer {
   readonly text: string;
   readonly language: 'fi' | 'en';
+  readonly version: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +173,14 @@ export interface CalculatorResult {
     /** Normalized product name from the product master. */
     readonly productName: string;
 
+    // -- Product attributes (for ranking/sorting) --
+    /** Product volume in litres from the product master. */
+    readonly volumeLitres: number;
+    /** Alcohol by volume percentage (0–100). */
+    readonly alcoholByVolume: number;
+    /** Canonical product category. */
+    readonly category: string;
+
     // -- Dataset provenance --
     /** Tax rule versions that were applied (e.g. excise version, container duty version). */
     readonly datasetVersions: readonly string[];
@@ -198,7 +210,7 @@ export interface CreateCalculationRecordInput {
   readonly confidence: string;
   readonly quantity: number;
   readonly destination: string;
-  readonly disclaimer: string;
+  readonly disclaimer: Disclaimer;
   readonly sessionId: string | null;
 }
 
