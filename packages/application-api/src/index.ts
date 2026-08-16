@@ -24,6 +24,7 @@ import { IdempotencyModule } from './idempotency';
 import { RateLimitingModule } from './rate-limiting';
 import { BillingModule } from './billing';
 import { AuditModule } from './audit';
+import { AgeGateModule } from './age-gate';
 import { CalculatorController } from './calculator';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
@@ -160,6 +161,7 @@ export abstract class UseCaseOrchestrator {
     RateLimitingModule,
     BillingModule,
     AuditModule,
+    AgeGateModule,
     CalculatorModule,
     RankingModule,
     DeclarationModule,
@@ -246,3 +248,9 @@ export type { DeclarationSummaryResponse } from './declaration';
 // ---------------------------------------------------------------------------
 
 export { AuditModule, InMemoryAuditRepository } from './audit';
+
+// ---------------------------------------------------------------------------
+// Age Gate — lightweight access-control verification (Phase 1: confirmation only)
+// ---------------------------------------------------------------------------
+
+export { AgeGateModule, AgeGateService } from './age-gate';
