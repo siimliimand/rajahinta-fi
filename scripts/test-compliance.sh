@@ -26,8 +26,12 @@ psql "$DB_URL" -c "
   ORDER BY ordinal_position;
 " 2>/dev/null || echo "  (table not yet created — placeholder)"
 
-# 3. Run compliance vitest suite
-pnpm vitest run --reporter=verbose --include "**/__tests__/*.compliance*.test.ts" 2>&1 \
-  || { echo "FAILED: Compliance tests"; exit 1; }
+# 3a. Run compliance vitest suite (per-package compliance tests)
+pnpm vitest run --reporter=verbose "**/__tests__/*.compliance*.test.ts" 2>&1 \
+  || { echo "FAILED: Package compliance tests"; exit 1; }
+
+# 3b. Run cross-package neutrality compliance tests
+pnpm vitest run --reporter=verbose --config tests/compliance/vitest.config.ts 2>&1 \
+  || { echo "FAILED: Cross-package compliance tests"; exit 1; }
 
 echo "=== Compliance checks PASSED ==="
