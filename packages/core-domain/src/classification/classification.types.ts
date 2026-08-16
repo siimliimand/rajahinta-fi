@@ -81,13 +81,50 @@ export interface ClassificationInput {
 // ---------------------------------------------------------------------------
 
 /**
+ * A single piece of evidence supporting a classification decision.
+ *
+ * Every classification result must include at least one evidence detail.
+ * Evidence is always phrased as an observed pattern with supporting data —
+ * never as a bare legal conclusion.
+ */
+export interface EvidenceDetail {
+  /**
+   * Human-readable description of what was observed.
+   *
+   * Phrased as a factual observation, e.g.
+   * "Buyer arranged transport via independent carrier" or
+   * "Buyer indicated they are travelling".
+   */
+  readonly observation: string;
+
+  /**
+   * Specific data values supporting the observation.
+   *
+   * e.g. "carrier: dhl", "destination: DE", "duration: 3 days"
+   */
+  readonly supportingData: string;
+
+  /**
+   * Origin of this evidence — a rule name, field name, or service label.
+   *
+   * e.g. "TravellerImport", "buyerIsTravelling", "TransportClassification"
+   */
+  readonly source: string;
+}
+
+/**
  * The result of a classification decision.
  *
- * Every result includes a human-readable `evidenceSummary` that can be shown
- * directly to end users or auditors.
+ * Every result includes:
+ * - A structured `evidence` array with one or more observed patterns
+ * - An auto-generated `evidenceSummary` paragraph derived from the evidence array
+ *
+ * The evidenceSummary can be shown directly to end users or auditors.
+ * Never display a bare legal conclusion without its supporting evidence.
  */
 export interface ClassificationResult {
   readonly classification: ClassificationLabel;
   readonly confidence: ConfidenceLevel;
+  readonly evidence: EvidenceDetail[];
   readonly evidenceSummary: string;
 }

@@ -22,6 +22,7 @@ export type { ClassificationEngineResult } from './services/classification-rule-
 export type {
   ClassificationInput,
   ClassificationResult,
+  EvidenceDetail,
   ClassificationLabel,
   ConfidenceLevel,
 } from './classification.types';

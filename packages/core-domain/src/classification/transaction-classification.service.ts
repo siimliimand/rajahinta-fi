@@ -35,7 +35,9 @@ import type {
   ClassificationInput,
   ClassificationResult,
   ConfidenceLevel,
+  EvidenceDetail,
 } from './classification.types';
+import { buildEvidenceSummary } from './evidence.utils';
 
 @Injectable()
 export class TransactionClassificationService {
@@ -100,26 +102,38 @@ export class TransactionClassificationService {
 
     // --- Rule 1: Traveller Import ---
     if (params.buyerIsTravelling) {
+      const evidence: EvidenceDetail[] = [
+        {
+          observation: 'Buyer indicated they are physically carrying goods across the border',
+          supportingData: `destination: ${params.sellerCountry}, buyer country: ${params.buyerCountry}`,
+          source: 'buyerIsTravelling',
+        },
+      ];
       return {
         classification: 'TravellerImport',
         confidence: 'HIGH',
-        evidenceSummary:
-          `Buyer from ${params.buyerCountry} indicated they are physically carrying ` +
-          `goods across the border from ${params.sellerCountry}. ` +
-          'Classified as traveller import per Alcohol Act 1102/2017 chapter 5. ' +
-          'This transaction is excluded from landed-cost calculation.',
+        evidence,
+        evidenceSummary: buildEvidenceSummary(evidence),
       };
     }
 
     // --- Rule 2: Distance Selling (retailer-arranged transport) ---
     if (transportType === 'RETAILER_ARRANGED') {
+      const carrierLabel = params.carrierId && params.carrierId.trim().length > 0
+        ? `carrier: ${params.carrierId}`
+        : 'carrier information not available';
+      const evidence: EvidenceDetail[] = [
+        {
+          observation: 'Retailer offers direct delivery to buyer\'s country',
+          supportingData: `seller country: ${params.sellerCountry}, buyer country: ${params.buyerCountry}, ${carrierLabel}`,
+          source: 'sellerInvolvementIndicator',
+        },
+      ];
       return {
         classification: 'DistanceSelling',
         confidence: 'HIGH',
-        evidenceSummary:
-          `Seller (${params.sellerCountry}) arranged transport to buyer in ` +
-          `${params.buyerCountry}. Seller is liable for Finnish excise duties ` +
-          'per Alcohol Act 1102/2017 section 43 (distance selling).',
+        evidence,
+        evidenceSummary: buildEvidenceSummary(evidence),
       };
     }
 
@@ -131,34 +145,54 @@ export class TransactionClassificationService {
           ? 'HIGH'
           : 'MEDIUM';
 
-      const summary =
-        confidence === 'HIGH'
-          ? `Buyer arranged transport via independent carrier (${params.carrierId}) from ` +
-            `${params.sellerCountry} to ${params.buyerCountry}. Known seller ` +
-            `(${params.sellerId}) confirmed. Buyer is liable for Finnish excise ` +
-            'duties upon import (Tax Administration guidance VH/5088/00.01.00/2021).'
-          : `Buyer arranged transport via independent carrier (${params.carrierId}) from ` +
-            `${params.sellerCountry} to ${params.buyerCountry}. Seller identity is ` +
-            'unverified, reducing confidence to MEDIUM. Buyer is liable for Finnish ' +
-            'excise duties upon import (Tax Administration guidance VH/5088/00.01.00/2021).';
+      const evidence: EvidenceDetail[] = [
+        {
+          observation: 'Buyer arranged transport via independent carrier',
+          supportingData: `carrier: ${params.carrierId}`,
+          source: 'carrierId',
+        },
+        {
+          observation: 'Seller did not arrange transport',
+          supportingData: `seller country: ${params.sellerCountry}, buyer country: ${params.buyerCountry}`,
+          source: 'sellerInvolvementIndicator',
+        },
+      ];
+
+      if (confidence === 'HIGH') {
+        evidence.push({
+          observation: 'Seller identity confirmed',
+          supportingData: `seller: ${params.sellerId}`,
+          source: 'sellerId',
+        });
+      } else {
+        evidence.push({
+          observation: 'Seller identity is unverified, reducing confidence',
+          supportingData: 'no seller identifier provided',
+          source: 'sellerId',
+        });
+      }
 
       return {
         classification: 'DistanceBuying',
         confidence,
-        evidenceSummary: summary,
+        evidence,
+        evidenceSummary: buildEvidenceSummary(evidence),
       };
     }
 
     // --- Rule 4: Distance Buying (unknown transport arrangement) ---
+    const evidence: EvidenceDetail[] = [
+      {
+        observation: 'Transport arrangement could not be determined',
+        supportingData: `seller country: ${params.sellerCountry}, buyer country: ${params.buyerCountry}, no carrier identified, seller not involved in shipping`,
+        source: 'TransportClassification',
+      },
+    ];
     return {
       classification: 'DistanceBuying',
       confidence: 'LOW',
-      evidenceSummary:
-        `Transport arrangement from ${params.sellerCountry} to ` +
-        `${params.buyerCountry} could not be determined (no carrier identified, ` +
-        'seller not involved in shipping). Defaulting to distance buying — ' +
-        'buyer should verify their duty liability with Finnish Customs. ' +
-        'Reduce uncertainty by providing carrier information.',
+      evidence,
+      evidenceSummary: buildEvidenceSummary(evidence),
     };
   }
 }
