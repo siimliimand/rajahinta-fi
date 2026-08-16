@@ -286,10 +286,13 @@ export type {
   DeclarationAdvanceNoticeInfo,
   CalculationRecordData,
   ICalculationRecordQueryPort,
+  ReadonlyInterface,
+  DeclarationSafetyConstraint,
 } from './declaration/declaration.types';
 export {
   CALCULATION_RECORD_QUERY_PORT,
   CalculationRecordNotFoundError,
+  NO_SUBMISSION_GUARANTEE,
 } from './declaration/declaration.types';
 
 // ---------------------------------------------------------------------------
@@ -313,7 +316,7 @@ export {
 
 export { RankingModule } from './ranking/ranking.module';
 export { RankingService } from './ranking/ranking.service';
-export type { SortOrder } from './ranking/ranking.types';
+export type { NeutralSortInput, SortOrder } from './ranking/ranking.types';
 
 // ---------------------------------------------------------------------------
 // Correction — flagging calculations and data points for human review
@@ -321,7 +324,14 @@ export type { SortOrder } from './ranking/ranking.types';
 
 export { CorrectionModule } from './correction/correction.module';
 export { CorrectionService } from './correction/correction.service';
-export type { FlaggedItem, FlagStatus, FlagTargetType } from './correction/correction.types';
+export type {
+  FlaggedItem,
+  FlagStatus,
+  FlagTargetType,
+  ResolutionAction,
+  ResolutionActionType,
+  FlagResolutionDetail,
+} from './correction/correction.types';
 export type {
   ICorrectionRepository,
   ICorrectionCalculationRecordQuery,

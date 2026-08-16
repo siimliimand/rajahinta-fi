@@ -8,33 +8,23 @@
  *   - Tiebreaker (always alphabetical by product name)
  *   - Edge cases (zero volume, zero quantity, equal values)
  *
+ * ## Neutrality enforcement tests
+ *
+ * The test file also verifies:
+ *   - The runtime guard rejects objects with unknown properties
+ *   - A type with extra `paidBoost` is NOT assignable to
+ *     {@link NeutralSortInput} (compile-time check)
+ *
  * @module RankingServiceTests
  */
 
 import { describe, it, expect } from 'vitest';
 import { RankingService } from '../ranking.service';
-import type { CalculatorResult } from '../../calculator/calculator.types';
-import type { Disclaimer } from '../../index';
-import type { ConfidenceLevel } from '../../reliability/confidence-framework.types';
-import type { ConfidenceDetail } from '../../reliability/confidence-framework.types';
-import type { ClassificationResult } from '../../classification/classification.types';
+import type { NeutralSortInput } from '../ranking.types';
 
 // ---------------------------------------------------------------------------
 // Test fixture factory
 // ---------------------------------------------------------------------------
-
-const DEFAULT_DISCLAIMER: Disclaimer = {
-  text: 'Test disclaimer.',
-  language: 'en',
-  version: '1.0',
-};
-
-const DEFAULT_CLASSIFICATION: ClassificationResult = {
-  classification: 'DistanceBuying',
-  confidence: 'HIGH',
-  evidence: [{ observation: 'Test', supportingData: 'test', source: 'test' }],
-  evidenceSummary: 'Test classification.',
-};
 
 function createResult(overrides: {
   totalCents?: number;
@@ -43,39 +33,14 @@ function createResult(overrides: {
   alcoholByVolume?: number;
   category?: string;
   quantity?: number;
-}): CalculatorResult {
+}): NeutralSortInput {
   return {
-    itemizedCosts: [],
-    foreignRetailPrice: 0,
-    transportCost: 0,
-    alcoholExciseEstimate: 0,
-    containerDutyEstimate: 0,
-    otherCharges: 0,
     totalCents: overrides.totalCents ?? 1000,
-    currency: 'EUR',
-    confidence: 'HIGH' as ConfidenceLevel,
-    confidenceBreakdown: [] as readonly ConfidenceDetail[],
-    disclaimer: DEFAULT_DISCLAIMER,
-    classification: DEFAULT_CLASSIFICATION,
-    metadata: {
-      input: {
-        productId: 1,
-        quantity: overrides.quantity ?? 1,
-        destination: 'FI',
-      },
-      calculationTimestamp: '2025-01-01T00:00:00Z',
-      productMasterId: 1,
-      retailOfferIds: [1],
-      quantity: overrides.quantity ?? 1,
-      destination: 'FI',
-      productName: overrides.productName ?? 'Test Product',
-      volumeLitres: overrides.volumeLitres ?? 0.75,
-      alcoholByVolume: overrides.alcoholByVolume ?? 5.0,
-      category: overrides.category ?? 'wine',
-      datasetVersions: ['v1'],
-      transportOfferId: null,
-    },
-    calculationRecordId: 1,
+    volumeLitres: overrides.volumeLitres ?? 0.75,
+    quantity: overrides.quantity ?? 1,
+    productName: overrides.productName ?? 'Test Product',
+    alcoholByVolume: overrides.alcoholByVolume ?? 5.0,
+    category: overrides.category ?? 'wine',
   };
 }
 
@@ -107,7 +72,7 @@ describe('LOWEST_LANDED_COST', () => {
       createResult({ totalCents: 1000, productName: 'Bravo' }),
     ];
     const sorted = service.rank(items, 'LOWEST_LANDED_COST');
-    expect(sorted.map((r) => r.metadata.productName)).toEqual([
+    expect(sorted.map((r) => r.productName)).toEqual([
       'Alpha',
       'Bravo',
       'Zebra',
@@ -140,7 +105,7 @@ describe('LOWEST_PER_LITRE', () => {
       createResult({ totalCents: 3000, volumeLitres: 1.0, productName: 'B' }),
     ];
     const sorted = service.rank(items, 'LOWEST_PER_LITRE');
-    expect(sorted.map((r) => r.metadata.productName)).toEqual(['A', 'B', 'C']);
+    expect(sorted.map((r) => r.productName)).toEqual(['A', 'B', 'C']);
   });
 
   it('handles zero volumeLitres gracefully (Infinity)', () => {
@@ -150,8 +115,8 @@ describe('LOWEST_PER_LITRE', () => {
     ];
     const sorted = service.rank(items, 'LOWEST_PER_LITRE');
     // Normal should come first (finite cost per litre), Zero last (Infinity)
-    expect(sorted[0].metadata.productName).toBe('Normal');
-    expect(sorted[1].metadata.productName).toBe('Zero');
+    expect(sorted[0].productName).toBe('Normal');
+    expect(sorted[1].productName).toBe('Zero');
   });
 
   it('uses alphabetical tiebreaker when cost per litre equal', () => {
@@ -160,7 +125,7 @@ describe('LOWEST_PER_LITRE', () => {
       createResult({ totalCents: 1000, volumeLitres: 0.5, productName: 'A' }),
     ];
     const sorted = service.rank(items, 'LOWEST_PER_LITRE');
-    expect(sorted.map((r) => r.metadata.productName)).toEqual(['A', 'Z']);
+    expect(sorted.map((r) => r.productName)).toEqual(['A', 'Z']);
   });
 });
 
@@ -179,7 +144,7 @@ describe('LOWEST_PER_UNIT', () => {
       createResult({ totalCents: 1000, quantity: 1, productName: 'C' }),
     ];
     const sorted = service.rank(items, 'LOWEST_PER_UNIT');
-    expect(sorted.map((r) => r.metadata.productName)).toEqual(['A', 'C', 'B']);
+    expect(sorted.map((r) => r.productName)).toEqual(['A', 'C', 'B']);
   });
 
   it('handles zero quantity gracefully (defaults to 1)', () => {
@@ -191,7 +156,7 @@ describe('LOWEST_PER_UNIT', () => {
     // Zero qty → defaults to 1 → 500/1 = 500
     // Normal → 1000/2 = 500
     // Equal → alphabetical
-    expect(sorted.map((r) => r.metadata.productName)).toEqual(['Normal', 'Zero']);
+    expect(sorted.map((r) => r.productName)).toEqual(['Normal', 'Zero']);
   });
 });
 
@@ -207,7 +172,7 @@ describe('ALPHABETICAL', () => {
       createResult({ productName: 'Lager' }),
     ];
     const sorted = service.rank(items, 'ALPHABETICAL');
-    expect(sorted.map((r) => r.metadata.productName)).toEqual([
+    expect(sorted.map((r) => r.productName)).toEqual([
       'Ale',
       'Lager',
       'Öl',
@@ -237,7 +202,7 @@ describe('ALCOHOL_PERCENTAGE', () => {
       createResult({ alcoholByVolume: 2.5, productName: 'Weak' }),
     ];
     const sorted = service.rank(items, 'ALCOHOL_PERCENTAGE');
-    expect(sorted.map((r) => r.metadata.productName)).toEqual([
+    expect(sorted.map((r) => r.productName)).toEqual([
       'Strong',
       'Mid',
       'Weak',
@@ -250,7 +215,7 @@ describe('ALCOHOL_PERCENTAGE', () => {
       createResult({ alcoholByVolume: 5.0, productName: 'A' }),
     ];
     const sorted = service.rank(items, 'ALCOHOL_PERCENTAGE');
-    expect(sorted.map((r) => r.metadata.productName)).toEqual(['A', 'B']);
+    expect(sorted.map((r) => r.productName)).toEqual(['A', 'B']);
   });
 });
 
@@ -266,7 +231,7 @@ describe('PRODUCT_CATEGORY', () => {
       createResult({ category: 'wine', productName: 'Merlot' }),
     ];
     const sorted = service.rank(items, 'PRODUCT_CATEGORY');
-    expect(sorted.map((r) => r.metadata.category)).toEqual([
+    expect(sorted.map((r) => r.category)).toEqual([
       'beer',
       'spirits',
       'wine',
@@ -279,7 +244,7 @@ describe('PRODUCT_CATEGORY', () => {
       createResult({ category: 'beer', productName: 'Ale' }),
     ];
     const sorted = service.rank(items, 'PRODUCT_CATEGORY');
-    expect(sorted.map((r) => r.metadata.productName)).toEqual(['Ale', 'Stout']);
+    expect(sorted.map((r) => r.productName)).toEqual(['Ale', 'Stout']);
   });
 });
 
@@ -297,5 +262,72 @@ describe('edge cases', () => {
     const item = createResult({ productName: 'Solo' });
     const sorted = service.rank([item], 'ALPHABETICAL');
     expect(sorted).toEqual([item]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Runtime guard — neutrality enforcement
+// ---------------------------------------------------------------------------
+
+describe('neutrality runtime guard', () => {
+  it('accepts valid NeutralSortInput', () => {
+    const items = [createResult({ productName: 'A' })];
+    expect(() => service.rank(items, 'ALPHABETICAL')).not.toThrow();
+  });
+
+  it('rejects input with unknown property "paidBoost"', () => {
+    // Use `as any` to bypass the type system and test the runtime guard
+    const items = [
+      {
+        totalCents: 1000,
+        volumeLitres: 0.75,
+        quantity: 1,
+        productName: 'Boosted',
+        alcoholByVolume: 5.0,
+        category: 'wine',
+        paidBoost: 2,
+      } as any,
+    ];
+    expect(() => service.rank(items, 'ALPHABETICAL')).toThrow(TypeError);
+    expect(() => service.rank(items, 'ALPHABETICAL')).toThrow(
+      'NeutralSortInput guard: unknown property "paidBoost"',
+    );
+  });
+
+  it('rejects input with unknown property "sponsored"', () => {
+    const items = [
+      {
+        totalCents: 1000,
+        volumeLitres: 0.75,
+        quantity: 1,
+        productName: 'Sponsored',
+        alcoholByVolume: 5.0,
+        category: 'wine',
+        sponsored: true,
+      } as any,
+    ];
+    expect(() => service.rank(items, 'ALPHABETICAL')).toThrow(TypeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Compile-time check — type system enforcement
+// ---------------------------------------------------------------------------
+
+describe('type system enforcement', () => {
+  it('rejects object literal with extra "paidBoost" property at compile time', () => {
+    // Excess property checking on a direct assignment to NeutralSortInput
+    // should catch this at compile time. If this line compiles without
+    // error, the type-level enforcement has been weakened.
+    // @ts-expect-error - paidBoost is not a valid NeutralSortInput field
+    const _check: NeutralSortInput = { totalCents: 1000, volumeLitres: 0.75, quantity: 1, productName: 'Test', alcoholByVolume: 5.0, category: 'wine', paidBoost: 2 };
+    // If we reach here, the assertion is that the type system caught it
+    expect(true).toBe(true);
+  });
+
+  it('rejects object literal with extra "sponsored" property at compile time', () => {
+    // @ts-expect-error - sponsored is not a valid NeutralSortInput field
+    const _check: NeutralSortInput = { totalCents: 1000, volumeLitres: 0.75, quantity: 1, productName: 'Test', alcoholByVolume: 5.0, category: 'wine', sponsored: true };
+    expect(true).toBe(true);
   });
 });
