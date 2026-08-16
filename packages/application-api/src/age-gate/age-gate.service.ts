@@ -1,36 +1,75 @@
-import { Injectable, Logger } from '@nestjs/common';
-
 /**
  * Phase 1 age-verification service — acknowledges frontend confirmation.
  *
- * No identity documents, no DOB storage. The frontend handles the simple
- * "Are you 18+" confirmation via localStorage; this service provides the
- * API contract for future stronger verification (15.2).
+ * Delegates to the injected {@link IVerificationProvider}. By default
+ * the module provides {@link SimpleConfirmationProvider} (no identity
+ * docs, no DOB storage). Swap the provider at DI configuration time
+ * for stronger verification.
  *
- * Upgrade path: when 15.2 lands, this service will accept verification
- * tokens or document hashes and persist confirmation server-side. The
- * `verifyAge` signature is designed to accommodate that without breaking
- * callers.
+ * @module AgeGateService
  */
+
+import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
+import {
+  IVerificationProvider,
+  VerificationResult,
+  VERIFICATION_PROVIDER,
+} from './verification-provider.interface';
+
 @Injectable()
 export class AgeGateService {
   private readonly logger = new Logger(AgeGateService.name);
 
+  constructor(
+    @Optional() @Inject(VERIFICATION_PROVIDER)
+    private readonly provider?: IVerificationProvider,
+  ) {
+    if (!this.provider) {
+      this.logger.warn(
+        'No VerificationProvider injected — falling back to inline simple confirmation. ' +
+        'Register a provider via the VERIFICATION_PROVIDER token for production use.',
+      );
+    }
+  }
+
   /**
-   * Acknowledge age confirmation.
+   * Verify the user meets the age requirement.
    *
-   * Phase 1: always returns verified=true for any userId. The actual gate
-   * lives in the frontend localStorage flag. This endpoint exists so the
-   * application layer has a contract to call, and so 15.2 can swap in
-   * real verification without touching callers.
+   * Delegates to the configured provider, or falls back to a simple
+   * inline confirmation when no provider is injected (e.g. in tests).
    *
-   * @param userId — anonymous session identifier or future authenticated user ID
-   * @returns { verified: boolean }
+   * @param userId — session or authenticated-user identifier
    */
-  async verifyAge(userId: string): Promise<{ verified: boolean }> {
-    this.logger.debug(`Age verification acknowledged for ${userId}`);
-    // Phase 1: trust the frontend confirmation.
-    // 15.2: replace with server-side verification logic.
-    return { verified: true };
+  async verifyAge(userId: string): Promise<VerificationResult> {
+    if (this.provider) {
+      return this.provider.verifyAge(userId);
+    }
+
+    // Fallback: simple inline confirmation (used when no provider injected)
+    this.logger.debug(`Inline age verification for userId="${userId}"`);
+    return {
+      verified: true,
+      method: 'simple-confirmation',
+      timestamp: new Date(),
+    };
+  }
+
+  /**
+   * Upgrade an existing verification to a stronger method.
+   *
+   * @param userId — session or authenticated-user identifier
+   * @param method — the stronger method identifier
+   */
+  async upgradeVerification(userId: string, method: string): Promise<VerificationResult> {
+    if (this.provider) {
+      return this.provider.upgradeVerification(userId, method);
+    }
+
+    this.logger.debug(`Inline upgrade for userId="${userId}" — no-op in Phase 1`);
+    return {
+      verified: true,
+      method: 'simple-confirmation',
+      timestamp: new Date(),
+    };
   }
 }

@@ -25,6 +25,7 @@ import { RateLimitingModule } from './rate-limiting';
 import { BillingModule } from './billing';
 import { AuditModule } from './audit';
 import { AgeGateModule } from './age-gate';
+import { AccountModule } from './accounts';
 import { CalculatorController } from './calculator';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
@@ -162,6 +163,7 @@ export abstract class UseCaseOrchestrator {
     BillingModule,
     AuditModule,
     AgeGateModule,
+    AccountModule,
     CalculatorModule,
     RankingModule,
     DeclarationModule,
@@ -253,4 +255,12 @@ export { AuditModule, InMemoryAuditRepository } from './audit';
 // Age Gate — lightweight access-control verification (Phase 1: confirmation only)
 // ---------------------------------------------------------------------------
 
-export { AgeGateModule, AgeGateService } from './age-gate';
+export { AgeGateModule, AgeGateService, SimpleConfirmationProvider, VERIFICATION_PROVIDER } from './age-gate';
+export type { IVerificationProvider, VerificationResult } from './age-gate';
+
+// ---------------------------------------------------------------------------
+// Accounts — minimal account system (saved baskets, history, subscription)
+// ---------------------------------------------------------------------------
+
+export { AccountModule, AccountService } from './accounts';
+export type { Account, Basket, BasketItem } from './accounts';

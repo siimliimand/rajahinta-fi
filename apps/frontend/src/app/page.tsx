@@ -26,6 +26,12 @@ export default function HomePage() {
         >
           How ranking works
         </Link>
+        <Link
+          href="/account"
+          className="inline-flex items-center rounded-md border border-gray-300 bg-white px-6 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+        >
+          My account
+        </Link>
       </nav>
     </main>
   );
