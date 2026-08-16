@@ -88,3 +88,42 @@ export interface FlaggedItem {
    */
   readonly inputSnapshot: unknown | null;
 }
+
+// ---------------------------------------------------------------------------
+// Resolution action — what happens when a flag is resolved
+// ---------------------------------------------------------------------------
+
+/**
+ * Describes the action taken when a flagged item is resolved.
+ *
+ * - `dataset_fix` — the flag was accepted and the source data needs correction
+ *   (product, retailOffer, transportOffer, taxRule). The fix is described but
+ *   not automated.
+ * - `note_only` — the flag was rejected; no action required beyond the note.
+ * - `recalculation` — the flag was accepted for a calculation; linked records
+ *   should be recalculated.
+ */
+export type ResolutionActionType = 'dataset_fix' | 'note_only' | 'recalculation';
+
+/**
+ * Resolution action attached to a resolved flag.
+ *
+ * `description` explains what was decided. `linksToCalculationRecords` enables
+ * traceability from a resolution back to affected historical Calculation Records;
+ * for data-point or rejected flags this is typically empty.
+ */
+export interface ResolutionAction {
+  readonly type: ResolutionActionType;
+  readonly description: string;
+  readonly linksToCalculationRecords: readonly number[];
+}
+
+/**
+ * Full resolution detail returned after resolving a flagged item.
+ *
+ * Contains the updated flag and the action that was taken as a result.
+ */
+export interface FlagResolutionDetail {
+  readonly flag: FlaggedItem;
+  readonly action: ResolutionAction;
+}

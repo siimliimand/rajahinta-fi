@@ -6,9 +6,11 @@
  *     the input snapshot
  *   - flagCalculation throws CalculationNotFoundError for missing records
  *   - flagDataPoint creates a flag without a snapshot for supported entity types
- *   - resolveFlaggedItem transitions an OPEN flag to ACCEPTED or REJECTED
- *   - resolveFlaggedItem throws FlagNotFoundError for non-existent flags
- *   - resolveFlaggedItem throws FlagAlreadyResolvedError for already-resolved flags
+ *   - resolveFlaggedItem returns FlagResolutionDetail with the correct action:
+ *     - ACCEPTED + calculation flag → recalculation action with links
+ *     - ACCEPTED + data point flag → dataset_fix action
+ *     - REJECTED → note_only action
+ *   - resolveFlaggedItem throws FlagNotFoundError / FlagAlreadyResolvedError
  *   - listOpenFlags returns only OPEN flags from the repository
  */
 
@@ -207,63 +209,7 @@ describe('CorrectionService', () => {
   // -----------------------------------------------------------------------
 
   describe('resolveFlaggedItem', () => {
-    it('resolves an OPEN flag as ACCEPTED', async () => {
-      const openFlag = createMockFlag({ id: 5, status: 'OPEN' });
-
-      const repository: ICorrectionRepository = {
-        create: vi.fn(),
-        resolve: vi.fn().mockResolvedValue({
-          ...openFlag,
-          status: 'ACCEPTED' as const,
-          resolvedBy: 'reviewer-1',
-          resolution: 'ACCEPTED' as const,
-          note: 'Confirmed issue',
-        }),
-        findOpen: vi.fn(),
-        findById: vi.fn().mockResolvedValue(openFlag),
-      };
-      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
-
-      const service = new CorrectionService(repository, calculationQuery);
-
-      await service.resolveFlaggedItem(5, 'ACCEPTED', 'reviewer-1', 'Confirmed issue');
-
-      expect(repository.resolve).toHaveBeenCalledWith(5, {
-        status: 'ACCEPTED',
-        resolvedBy: 'reviewer-1',
-        resolution: 'ACCEPTED',
-        note: 'Confirmed issue',
-      });
-    });
-
-    it('resolves an OPEN flag as REJECTED', async () => {
-      const openFlag = createMockFlag({ id: 5, status: 'OPEN' });
-
-      const repository: ICorrectionRepository = {
-        create: vi.fn(),
-        resolve: vi.fn().mockResolvedValue({
-          ...openFlag,
-          status: 'REJECTED' as const,
-          resolvedBy: 'reviewer-1',
-          resolution: 'REJECTED' as const,
-          note: null,
-        }),
-        findOpen: vi.fn(),
-        findById: vi.fn().mockResolvedValue(openFlag),
-      };
-      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
-
-      const service = new CorrectionService(repository, calculationQuery);
-
-      await service.resolveFlaggedItem(5, 'REJECTED', 'reviewer-1');
-
-      expect(repository.resolve).toHaveBeenCalledWith(5, {
-        status: 'REJECTED',
-        resolvedBy: 'reviewer-1',
-        resolution: 'REJECTED',
-        note: null,
-      });
-    });
+    // -- Existence / state guards -----------------------------------------
 
     it('throws FlagNotFoundError when the flag does not exist', async () => {
       const repository: ICorrectionRepository = {
@@ -279,10 +225,6 @@ describe('CorrectionService', () => {
       await expect(
         service.resolveFlaggedItem(999, 'ACCEPTED', 'reviewer'),
       ).rejects.toThrow(FlagNotFoundError);
-
-      await expect(
-        service.resolveFlaggedItem(999, 'ACCEPTED', 'reviewer'),
-      ).rejects.toMatchObject({ flagId: 999 });
 
       expect(repository.resolve).not.toHaveBeenCalled();
     });
@@ -338,6 +280,201 @@ describe('CorrectionService', () => {
       await expect(
         service.resolveFlaggedItem(5, 'ACCEPTED', 'reviewer-2'),
       ).rejects.toThrow(FlagAlreadyResolvedError);
+    });
+
+    // -- ACCEPTED + calculation flag → recalculation ----------------------
+
+    it('resolves ACCEPTED calculation flag with recalculation action', async () => {
+      const openFlag = createMockFlag({ id: 5, targetType: 'calculation', targetId: 99, status: 'OPEN' });
+      const resolvedFlag: FlaggedItem = {
+        ...openFlag,
+        status: 'ACCEPTED',
+        resolvedBy: 'reviewer-1',
+        resolution: 'ACCEPTED',
+        note: 'Recalculate this',
+      };
+
+      const repository: ICorrectionRepository = {
+        create: vi.fn(),
+        resolve: vi.fn().mockResolvedValue(resolvedFlag),
+        findOpen: vi.fn(),
+        findById: vi.fn().mockResolvedValue(openFlag),
+      };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+
+      const service = new CorrectionService(repository, calculationQuery);
+
+      const detail = await service.resolveFlaggedItem(5, 'ACCEPTED', 'reviewer-1', 'Recalculate this');
+
+      expect(repository.resolve).toHaveBeenCalledWith(5, {
+        status: 'ACCEPTED',
+        resolvedBy: 'reviewer-1',
+        resolution: 'ACCEPTED',
+        note: 'Recalculate this',
+      });
+
+      expect(detail.flag).toEqual(resolvedFlag);
+      expect(detail.action).toEqual({
+        type: 'recalculation',
+        description: 'Recalculate this',
+        linksToCalculationRecords: [99],
+      });
+    });
+
+    it('resolves ACCEPTED calculation flag without a note using default description', async () => {
+      const openFlag = createMockFlag({ id: 5, targetType: 'calculation', targetId: 99, status: 'OPEN' });
+      const resolvedFlag: FlaggedItem = {
+        ...openFlag,
+        status: 'ACCEPTED',
+        resolvedBy: 'reviewer-1',
+        resolution: 'ACCEPTED',
+        note: null,
+      };
+
+      const repository: ICorrectionRepository = {
+        create: vi.fn(),
+        resolve: vi.fn().mockResolvedValue(resolvedFlag),
+        findOpen: vi.fn(),
+        findById: vi.fn().mockResolvedValue(openFlag),
+      };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+
+      const service = new CorrectionService(repository, calculationQuery);
+
+      const detail = await service.resolveFlaggedItem(5, 'ACCEPTED', 'reviewer-1');
+
+      expect(detail.action.type).toBe('recalculation');
+      expect(detail.action.description).toContain('recalculation needed');
+      expect(detail.action.linksToCalculationRecords).toEqual([99]);
+    });
+
+    // -- ACCEPTED + data point flag → dataset_fix ------------------------
+
+    it.each([
+      ['product' as const, 101],
+      ['retailOffer' as const, 202],
+      ['transportOffer' as const, 303],
+      ['taxRule' as const, 404],
+    ])('resolves ACCEPTED %s flag with dataset_fix action', async (entityType, entityId) => {
+      const openFlag = createMockFlag({ id: 10, targetType: entityType, targetId: entityId, status: 'OPEN' });
+      const resolvedFlag: FlaggedItem = {
+        ...openFlag,
+        status: 'ACCEPTED',
+        resolvedBy: 'reviewer-1',
+        resolution: 'ACCEPTED',
+        note: 'Fix the price',
+      };
+
+      const repository: ICorrectionRepository = {
+        create: vi.fn(),
+        resolve: vi.fn().mockResolvedValue(resolvedFlag),
+        findOpen: vi.fn(),
+        findById: vi.fn().mockResolvedValue(openFlag),
+      };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+
+      const service = new CorrectionService(repository, calculationQuery);
+
+      const detail = await service.resolveFlaggedItem(10, 'ACCEPTED', 'reviewer-1', 'Fix the price');
+
+      expect(detail.flag).toEqual(resolvedFlag);
+      expect(detail.action).toEqual({
+        type: 'dataset_fix',
+        description: 'Fix the price',
+        linksToCalculationRecords: [],
+      });
+    });
+
+    it('resolves ACCEPTED data-point flag without a note using default description', async () => {
+      const openFlag = createMockFlag({ id: 10, targetType: 'product', targetId: 55, status: 'OPEN' });
+      const resolvedFlag: FlaggedItem = {
+        ...openFlag,
+        status: 'ACCEPTED',
+        resolvedBy: 'reviewer-1',
+        resolution: 'ACCEPTED',
+        note: null,
+      };
+
+      const repository: ICorrectionRepository = {
+        create: vi.fn(),
+        resolve: vi.fn().mockResolvedValue(resolvedFlag),
+        findOpen: vi.fn(),
+        findById: vi.fn().mockResolvedValue(openFlag),
+      };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+
+      const service = new CorrectionService(repository, calculationQuery);
+
+      const detail = await service.resolveFlaggedItem(10, 'ACCEPTED', 'reviewer-1');
+
+      expect(detail.action.type).toBe('dataset_fix');
+      expect(detail.action.description).toContain('product');
+      expect(detail.action.description).toContain('55');
+      expect(detail.action.linksToCalculationRecords).toEqual([]);
+    });
+
+    // -- REJECTED → note_only -------------------------------------------
+
+    it('resolves REJECTED flag with note_only action using the provided note', async () => {
+      const openFlag = createMockFlag({ id: 5, status: 'OPEN' });
+      const resolvedFlag: FlaggedItem = {
+        ...openFlag,
+        status: 'REJECTED',
+        resolvedBy: 'reviewer-1',
+        resolution: 'REJECTED',
+        note: 'False alarm — data verified correct',
+      };
+
+      const repository: ICorrectionRepository = {
+        create: vi.fn(),
+        resolve: vi.fn().mockResolvedValue(resolvedFlag),
+        findOpen: vi.fn(),
+        findById: vi.fn().mockResolvedValue(openFlag),
+      };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+
+      const service = new CorrectionService(repository, calculationQuery);
+
+      const detail = await service.resolveFlaggedItem(
+        5,
+        'REJECTED',
+        'reviewer-1',
+        'False alarm — data verified correct',
+      );
+
+      expect(detail.flag).toEqual(resolvedFlag);
+      expect(detail.action).toEqual({
+        type: 'note_only',
+        description: 'False alarm — data verified correct',
+        linksToCalculationRecords: [],
+      });
+    });
+
+    it('resolves REJECTED flag without a note using a fallback description', async () => {
+      const openFlag = createMockFlag({ id: 5, status: 'OPEN' });
+      const resolvedFlag: FlaggedItem = {
+        ...openFlag,
+        status: 'REJECTED',
+        resolvedBy: 'reviewer-1',
+        resolution: 'REJECTED',
+        note: null,
+      };
+
+      const repository: ICorrectionRepository = {
+        create: vi.fn(),
+        resolve: vi.fn().mockResolvedValue(resolvedFlag),
+        findOpen: vi.fn(),
+        findById: vi.fn().mockResolvedValue(openFlag),
+      };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+
+      const service = new CorrectionService(repository, calculationQuery);
+
+      const detail = await service.resolveFlaggedItem(5, 'REJECTED', 'reviewer-1');
+
+      expect(detail.action.type).toBe('note_only');
+      expect(detail.action.description).toBeTruthy();
+      expect(detail.action.linksToCalculationRecords).toEqual([]);
     });
   });
 

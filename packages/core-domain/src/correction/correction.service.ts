@@ -21,7 +21,12 @@ import {
   type ICorrectionRepository,
   type ICorrectionCalculationRecordQuery,
 } from './correction-repository.port';
-import type { FlaggedItem, FlagTargetType } from './correction.types';
+import type {
+  FlaggedItem,
+  FlagTargetType,
+  ResolutionAction,
+  FlagResolutionDetail,
+} from './correction.types';
 
 // ---------------------------------------------------------------------------
 // Domain errors
@@ -156,15 +161,23 @@ export class CorrectionService {
   }
 
   /**
-   * Resolve a flagged item with a decision.
+   * Resolve a flagged item with a decision and produce a resolution action.
    *
    * Only flags with status `OPEN` can be resolved. Attempting to resolve
    * an already-resolved flag throws {@link FlagAlreadyResolvedError}.
+   *
+   * The returned {@link FlagResolutionDetail} contains the updated flag and
+   * a {@link ResolutionAction} that describes what follow-up is needed:
+   *
+   * - ACCEPTED + calculation flag → `recalculation` with links to affected records.
+   * - ACCEPTED + data point flag → `dataset_fix` describing the needed fix.
+   * - REJECTED → `note_only` with the rejection note.
    *
    * @param flagId     — ID of the flag to resolve.
    * @param resolution — `'ACCEPTED'` or `'REJECTED'`.
    * @param resolvedBy — Who resolved this flag.
    * @param note       — Optional note attached at resolution time.
+   * @returns          — The full resolution detail including the action taken.
    * @throws {FlagNotFoundError}        — If the flag does not exist.
    * @throws {FlagAlreadyResolvedError} — If the flag is already resolved.
    */
@@ -173,7 +186,7 @@ export class CorrectionService {
     resolution: 'ACCEPTED' | 'REJECTED',
     resolvedBy: string,
     note?: string,
-  ): Promise<void> {
+  ): Promise<FlagResolutionDetail> {
     const existing = await this.repository.findById(flagId);
 
     if (existing === null) {
@@ -184,16 +197,67 @@ export class CorrectionService {
       throw new FlagAlreadyResolvedError(flagId, existing.status);
     }
 
-    await this.repository.resolve(flagId, {
+    const updated = await this.repository.resolve(flagId, {
       status: resolution,
       resolvedBy,
       resolution,
       note: note ?? null,
     });
 
+    // Repository.resolve() always returns the updated record when the flag
+    // exists and was updated. We assert non-null because we already verified
+    // the flag exists above.
+    const flag = updated!;
+
+    const action = this.buildResolutionAction(flag, resolution, note);
+
     this.logger.log(
-      `Flag ${flagId} resolved as ${resolution} by ${resolvedBy}`,
+      `Flag ${flagId} resolved as ${resolution} by ${resolvedBy} ` +
+        `[action: ${action.type}]`,
     );
+
+    return { flag, action };
+  }
+
+  /**
+   * Build the appropriate {@link ResolutionAction} for a resolved flag.
+   *
+   * - ACCEPTED calculation flags produce a `recalculation` action linked to
+   *   the calculation record.
+   * - ACCEPTED data-point flags (product, retailOffer, transportOffer, taxRule)
+   *   produce a `dataset_fix` action describing what needs correction.
+   * - REJECTED flags produce a `note_only` action with the rejection note.
+   */
+  private buildResolutionAction(
+    flag: FlaggedItem,
+    resolution: 'ACCEPTED' | 'REJECTED',
+    note?: string,
+  ): ResolutionAction {
+    if (resolution === 'REJECTED') {
+      return {
+        type: 'note_only',
+        description: note ?? 'Flag was rejected.',
+        linksToCalculationRecords: [],
+      };
+    }
+
+    // resolution === 'ACCEPTED'
+    if (flag.targetType === 'calculation') {
+      return {
+        type: 'recalculation',
+        description: note ?? `Flag accepted — recalculation needed for record ${flag.targetId}.`,
+        linksToCalculationRecords: [flag.targetId],
+      };
+    }
+
+    // Data-point flag (product, retailOffer, transportOffer, taxRule)
+    return {
+      type: 'dataset_fix',
+      description:
+        note ??
+        `Flag accepted — ${flag.targetType} ${flag.targetId} requires data correction.`,
+      linksToCalculationRecords: [],
+    };
   }
 
   /**
