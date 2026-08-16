@@ -16,9 +16,11 @@ export {
   DAY,
   WEEK,
 } from './reliability.types';
+export type { ConfidenceLevel, ConfidenceDetail, ConfidenceReport } from './confidence-framework.types';
 
 // Service
 export { ReliabilityService } from './reliability.service';
+export { ConfidenceFrameworkService } from './confidence-framework.service';
 
 // Module
 export { ReliabilityModule } from './reliability.module';

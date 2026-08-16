@@ -11,9 +11,10 @@
  */
 import { Module } from '@nestjs/common';
 import { ReliabilityService } from './reliability.service';
+import { ConfidenceFrameworkService } from './confidence-framework.service';
 
 @Module({
-  providers: [ReliabilityService],
-  exports: [ReliabilityService],
+  providers: [ReliabilityService, ConfidenceFrameworkService],
+  exports: [ReliabilityService, ConfidenceFrameworkService],
 })
 export class ReliabilityModule {}
