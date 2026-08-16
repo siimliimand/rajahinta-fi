@@ -41,6 +41,10 @@ export {
   DEFAULT_CONTAINER_DUTY_RATE,
 } from './services/container-duty.math';
 
+// Deposit-return system exemption
+export { checkDepositExemption } from './services/deposit-checker';
+export type { DepositCheckResult } from './services/deposit-checker';
+
 // Module
 export { TaxModule } from './tax.module';
 export type { AlcoholExciseCategory } from './services/alcohol-excise.math';

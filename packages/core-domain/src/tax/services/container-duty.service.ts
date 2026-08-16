@@ -8,6 +8,10 @@ import {
   normalisePackaging,
   DEFAULT_CONTAINER_DUTY_RATE,
 } from './container-duty.math';
+import {
+  checkDepositExemption,
+  type DepositCheckResult,
+} from './deposit-checker';
 
 // ---------------------------------------------------------------------------
 // Result type
@@ -19,6 +23,8 @@ export interface ContainerDutyResult {
   readonly dutyCents: number;
   readonly taxDatasetVersion: string;
   readonly reliability: 'VERIFIED' | 'ESTIMATED';
+  /** Details on the deposit-return system exemption decision. */
+  readonly depositExemption?: DepositCheckResult;
 }
 
 // ---------------------------------------------------------------------------
@@ -26,15 +32,18 @@ export interface ContainerDutyResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Beverage-Container Duty sub-engine.
- *
- * Calculates Finnish container duty (pantillinen vero) based on volume and
- * packaging type.  The general rate is €0.51 per litre for standard containers
- * (glass, plastic, metal, carton).  Non-standard packaging (keg, bulk) is
- * flagged as ESTIMATED.
- *
- * @module ContainerDutyService
- */
+   * Beverage-Container Duty sub-engine.
+   *
+   * Calculates Finnish container duty (pantillinen vero) based on volume and
+   * packaging type.  The general rate is €0.51 per litre for standard containers
+   * (glass, plastic, metal, carton).  Non-standard packaging (keg, bulk) is
+   * flagged as ESTIMATED.
+   *
+   * Packaging that participates in the Finnish deposit-return system
+   * (depositSystemStatus === true) is **exempted** from container duty.
+   *
+   * @module ContainerDutyService
+   */
 @Injectable()
 export class ContainerDutyService {
   constructor(
@@ -43,31 +52,51 @@ export class ContainerDutyService {
   ) {}
 
   /**
-   * Calculate container duty for a beverage.
-   *
-   * @param volumeLitres  Container volume in litres.
-   * @param packaging     Packaging type string (e.g. "glass", "plastic", "keg").
-   */
-  async calculate(
-    volumeLitres: number,
-    packaging: string,
-  ): Promise<ContainerDutyResult> {
-    const normalised = normalisePackaging(packaging);
+     * Calculate container duty for a beverage.
+     *
+     * @param volumeLitres          Container volume in litres.
+     * @param packaging             Packaging type string (e.g. "glass", "plastic", "keg").
+     * @param depositSystemStatus   Optional. `true` if packaging participates in
+     *                              the Finnish deposit-return system, `false` if not,
+     *                              `null` (or omitted) if unknown.  When omitted,
+     *                              defaults to `null`, which triggers ESTIMATED status.
+     */
+    async calculate(
+      volumeLitres: number,
+      packaging: string,
+      depositSystemStatus: boolean | null = null,
+    ): Promise<ContainerDutyResult> {
+      // Evaluate deposit-return exemption first (pure function)
+      const depositCheck = checkDepositExemption(depositSystemStatus);
 
-    // Try repository lookup
-    const rule = await this.taxRepo.findApplicable(
-      'container_duty',
-      normalised,
-      new Date(),
-    );
+      // If exempted, short-circuit with zero duty
+      if (depositCheck.exempted) {
+        return {
+          volumeLitres,
+          ratePerLitre: 0,
+          dutyCents: 0,
+          taxDatasetVersion: 'EXEMPTED',
+          reliability: depositCheck.reliability,
+          depositExemption: depositCheck,
+        };
+      }
 
-    if (rule) {
-      return this.computeFromRule(rule, volumeLitres, normalised);
+      const normalised = normalisePackaging(packaging);
+
+      // Try repository lookup
+      const rule = await this.taxRepo.findApplicable(
+        'container_duty',
+        normalised,
+        new Date(),
+      );
+
+      if (rule) {
+        return this.computeFromRule(rule, volumeLitres, normalised, depositCheck);
+      }
+
+      // Fallback
+      return this.computeFallback(volumeLitres, normalised, depositCheck);
     }
-
-    // Fallback
-    return this.computeFallback(volumeLitres, normalised);
-  }
 
   // -----------------------------------------------------------------------
   // Private helpers
@@ -77,6 +106,7 @@ export class ContainerDutyService {
     rule: TaxRuleRecordPort,
     volumeLitres: number,
     _packaging: string,
+    depositCheck: DepositCheckResult,
   ): ContainerDutyResult {
     const rateNumeric = parseDecimal(rule.rate);
     const { dutyCents, rateApplied } = calculateContainerDuty(
@@ -84,8 +114,11 @@ export class ContainerDutyService {
       volumeLitres,
     );
 
+    // Overall reliability is the stricter of rule reliability and deposit reliability
     const reliability: 'VERIFIED' | 'ESTIMATED' =
-      rule.verificationDate !== null ? 'VERIFIED' : 'ESTIMATED';
+      rule.verificationDate !== null && depositCheck.reliability === 'VERIFIED'
+        ? 'VERIFIED'
+        : 'ESTIMATED';
 
     return {
       volumeLitres,
@@ -93,12 +126,14 @@ export class ContainerDutyService {
       dutyCents,
       taxDatasetVersion: rule.versionLabel,
       reliability,
+      depositExemption: depositCheck,
     };
   }
 
   private computeFallback(
     volumeLitres: number,
     _packaging: string,
+    depositCheck: DepositCheckResult,
   ): ContainerDutyResult {
     const { dutyCents, rateApplied } = calculateContainerDuty(
       DEFAULT_CONTAINER_DUTY_RATE,
@@ -111,6 +146,7 @@ export class ContainerDutyService {
       dutyCents,
       taxDatasetVersion: 'FALLBACK',
       reliability: 'ESTIMATED', // no verified rule → always ESTIMATED
+      depositExemption: depositCheck,
     };
   }
 }

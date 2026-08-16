@@ -55,8 +55,8 @@ describe('ContainerDutyService', () => {
       repo.findApplicable = async () => makeRule();
     });
 
-    it('returns VERIFIED reliability when verificationDate is set', async () => {
-      const result = await service.calculate(1.0, 'glass');
+    it('returns VERIFIED reliability when verificationDate is set and deposit status is known', async () => {
+      const result = await service.calculate(1.0, 'glass', false);
       expect(result.reliability).toBe('VERIFIED');
     });
 
@@ -80,6 +80,13 @@ describe('ContainerDutyService', () => {
     it('calculates duty for 0.33L can: 0.51 × 0.33 = 0.1683 → 17 cents', async () => {
       const result = await service.calculate(0.33, 'can');
       expect(result.dutyCents).toBe(17);
+    });
+
+    it('includes depositExemption in result with default (null)', async () => {
+      const result = await service.calculate(0.75, 'glass');
+      expect(result.depositExemption).toBeDefined();
+      expect(result.depositExemption!.exempted).toBe(false);
+      expect(result.depositExemption!.reliability).toBe('ESTIMATED');
     });
   });
 
@@ -111,6 +118,89 @@ describe('ContainerDutyService', () => {
     it('uses default rate for bulk (no rule → ESTIMATED)', async () => {
       const result = await service.calculate(100, 'bulk');
       expect(result.reliability).toBe('ESTIMATED');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Deposit-return system exemption tests
+  // ---------------------------------------------------------------------------
+
+  describe('deposit-return exemption', () => {
+    describe('depositSystemStatus === true (exempted)', () => {
+      it('returns zero duty', async () => {
+        const result = await service.calculate(1.0, 'glass', true);
+        expect(result.dutyCents).toBe(0);
+        expect(result.ratePerLitre).toBe(0);
+      });
+
+      it('returns EXEMPTED dataset version', async () => {
+        const result = await service.calculate(1.0, 'glass', true);
+        expect(result.taxDatasetVersion).toBe('EXEMPTED');
+      });
+
+      it('returns VERIFIED reliability (deposit status is known)', async () => {
+        const result = await service.calculate(1.0, 'glass', true);
+        expect(result.reliability).toBe('VERIFIED');
+      });
+
+      it('includes depositExemption with exempted = true and clear reason', async () => {
+        const result = await service.calculate(1.0, 'glass', true);
+        expect(result.depositExemption).toBeDefined();
+        expect(result.depositExemption!.exempted).toBe(true);
+        expect(result.depositExemption!.reason).toContain('exempted');
+        expect(result.depositExemption!.reason).toContain('deposit-return');
+      });
+
+      it('short-circuits regardless of volume', async () => {
+        const result = await service.calculate(999, 'glass', true);
+        expect(result.dutyCents).toBe(0);
+      });
+    });
+
+    describe('depositSystemStatus === false (applied)', () => {
+      it('applies standard rate', async () => {
+        const result = await service.calculate(1.0, 'glass', false);
+        expect(result.dutyCents).toBe(51);
+        expect(result.ratePerLitre).toBe(0.51);
+      });
+
+      it('includes depositExemption with exempted = false and applied reason', async () => {
+        const result = await service.calculate(1.0, 'glass', false);
+        expect(result.depositExemption).toBeDefined();
+        expect(result.depositExemption!.exempted).toBe(false);
+        expect(result.depositExemption!.reason).toContain('applied');
+      });
+
+      it('returns VERIFIED deposit reliability', async () => {
+        const result = await service.calculate(1.0, 'glass', false);
+        expect(result.depositExemption!.reliability).toBe('VERIFIED');
+      });
+    });
+
+    describe('depositSystemStatus === null / default (estimated)', () => {
+      it('applies standard rate when status is unknown', async () => {
+        const result = await service.calculate(1.0, 'glass', null);
+        expect(result.dutyCents).toBe(51);
+      });
+
+      it('applies standard rate when param is omitted (default null)', async () => {
+        const result = await service.calculate(1.0, 'glass');
+        expect(result.dutyCents).toBe(51);
+      });
+
+      it('marks depositExemption reliability as ESTIMATED', async () => {
+        const result = await service.calculate(1.0, 'glass');
+        expect(result.depositExemption!.reliability).toBe('ESTIMATED');
+        expect(result.depositExemption!.reason).toContain('estimated');
+      });
+
+      it('marks overall reliability as ESTIMATED when deposit is unknown (even with verified rule)', async () => {
+        repo.findApplicable = async () => makeRule();
+        const result = await service.calculate(1.0, 'glass');
+        // Verified rule + unknown deposit → overall ESTIMATED
+        expect(result.reliability).toBe('ESTIMATED');
+        expect(result.depositExemption!.reliability).toBe('ESTIMATED');
+      });
     });
   });
 
