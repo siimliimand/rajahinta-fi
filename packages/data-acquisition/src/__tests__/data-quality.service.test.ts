@@ -150,6 +150,55 @@ describe('DataQualityService', () => {
     it('returns true when stored is UNAVAILABLE and actual is UNAVAILABLE', () => {
       expect(service.verifyNoSilentVerified('UNAVAILABLE', 'UNAVAILABLE')).toBe(true);
     });
+
+    it('returns false when stored is VERIFIED but actual is ESTIMATED', () => {
+      expect(service.verifyNoSilentVerified('VERIFIED', 'ESTIMATED')).toBe(false);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // checkOfferFreshness — classification domain (30-day threshold)
+  // -------------------------------------------------------------------------
+
+  describe('checkOfferFreshness — classification domain', () => {
+    it('returns VERIFIED for classification offer within 30-day threshold', () => {
+      const now = fixedNow();
+      const offer = makeOffer({ observedAt: new Date(now.getTime() - 15 * DAY.milliseconds) });
+
+      vi.useFakeTimers();
+      vi.setSystemTime(now);
+      try {
+        expect(service.checkOfferFreshness(offer, 'classification')).toBe('VERIFIED');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('returns STALE for classification offer older than 30 days', () => {
+      const now = fixedNow();
+      const offer = makeOffer({ observedAt: new Date(now.getTime() - 31 * DAY.milliseconds) });
+
+      vi.useFakeTimers();
+      vi.setSystemTime(now);
+      try {
+        expect(service.checkOfferFreshness(offer, 'classification')).toBe('STALE');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('returns VERIFIED at exact 30-day boundary', () => {
+      const now = fixedNow();
+      const offer = makeOffer({ observedAt: new Date(now.getTime() - 30 * DAY.milliseconds) });
+
+      vi.useFakeTimers();
+      vi.setSystemTime(now);
+      try {
+        expect(service.checkOfferFreshness(offer, 'classification')).toBe('VERIFIED');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   // -------------------------------------------------------------------------

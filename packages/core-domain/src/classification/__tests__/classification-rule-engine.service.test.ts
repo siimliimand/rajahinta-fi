@@ -280,4 +280,174 @@ describe('ClassificationRuleEngine', () => {
       }
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Evidence generation content — verifies every rule produces correct evidence
+  // ---------------------------------------------------------------------------
+
+  describe('evidence generation', () => {
+    const engine = new ClassificationRuleEngine();
+
+    it('TravellerImport evidence mentions physical carrying', () => {
+      const { result } = engine.classifySync({
+        sellerInvolvementIndicator: false,
+        carrierId: '',
+        sellerCountry: 'EE',
+        buyerCountry: 'FI',
+        buyerIsTravelling: true,
+        sellerId: '',
+      });
+      expect(result.evidence[0].observation).toContain('physically carrying');
+      expect(result.evidence[0].supportingData).toContain('EE');
+      expect(result.evidence[0].source).toBe('buyerIsTravelling');
+      expect(result.evidence).toHaveLength(1);
+    });
+
+    it('DistanceSelling evidence mentions direct delivery and carrier', () => {
+      const { result } = engine.classifySync({
+        sellerInvolvementIndicator: true,
+        carrierId: 'posti',
+        sellerCountry: 'DE',
+        buyerCountry: 'FI',
+        buyerIsTravelling: false,
+        sellerId: 'merchant',
+      });
+      expect(result.evidence[0].observation).toContain('direct delivery');
+      expect(result.evidence[0].supportingData).toContain('posti');
+      expect(result.evidence[0].source).toBe('sellerInvolvementIndicator');
+      expect(result.evidence).toHaveLength(1);
+    });
+
+    it('DistanceSelling evidence handles missing carrier gracefully', () => {
+      const { result } = engine.classifySync({
+        sellerInvolvementIndicator: true,
+        carrierId: '',
+        sellerCountry: 'EE',
+        buyerCountry: 'FI',
+        buyerIsTravelling: false,
+        sellerId: '',
+      });
+      expect(result.evidence[0].supportingData).toContain('carrier information not available');
+    });
+
+    it('DistanceBuyingKnownCarrier HIGH has 3 evidence items with confirmed seller', () => {
+      const { result } = engine.classifySync({
+        sellerInvolvementIndicator: false,
+        carrierId: 'dhl',
+        sellerCountry: 'DE',
+        buyerCountry: 'FI',
+        buyerIsTravelling: false,
+        sellerId: 'known-merchant',
+      });
+      expect(result.evidence).toHaveLength(3);
+      expect(result.evidence[0].observation).toContain('independent carrier');
+      expect(result.evidence[1].observation).toContain('did not arrange transport');
+      expect(result.evidence[2].observation).toContain('Seller identity confirmed');
+      expect(result.confidence).toBe('HIGH');
+    });
+
+    it('DistanceBuyingKnownCarrier MEDIUM has 3 evidence items with unverified seller', () => {
+      const { result } = engine.classifySync({
+        sellerInvolvementIndicator: false,
+        carrierId: 'dhl',
+        sellerCountry: 'DE',
+        buyerCountry: 'FI',
+        buyerIsTravelling: false,
+        sellerId: '',
+      });
+      expect(result.evidence).toHaveLength(3);
+      expect(result.evidence[2].observation).toContain('unverified');
+      expect(result.confidence).toBe('MEDIUM');
+    });
+
+    it('DistanceBuyingUnknownTransport has 1 evidence item about undetermined transport', () => {
+      const { result } = engine.classifySync({
+        sellerInvolvementIndicator: false,
+        carrierId: '',
+        sellerCountry: 'DE',
+        buyerCountry: 'FI',
+        buyerIsTravelling: false,
+        sellerId: '',
+      });
+      expect(result.evidence).toHaveLength(1);
+      expect(result.evidence[0].observation).toContain('could not be determined');
+      expect(result.evidence[0].source).toBe('TransportClassification');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // mapToRuleSet — unknown rule name (logger warning path)
+  // ---------------------------------------------------------------------------
+
+  describe('repository-backed mode — unknown rule name', () => {
+    it('skips unknown rules with a log warning and does not throw', async () => {
+      const recordWithUnknown: ClassificationRuleSetRecord = {
+        versionLabel: 'v2.0-test',
+        label: 'Test rule set',
+        effectiveFrom: new Date('2024-06-01'),
+        effectiveTo: null,
+        rules: [
+          { name: 'TravellerImport', version: '1.0', description: undefined },
+          { name: 'NonExistentRule', version: '1.0', description: undefined },
+          { name: 'DistanceSelling', version: '1.0', description: undefined },
+        ],
+        createdAt: new Date('2024-05-01'),
+      };
+
+      const unknownRepo: IClassificationRuleRepositoryPort = {
+        findEffective: vi.fn().mockResolvedValue(recordWithUnknown),
+        listVersions: vi.fn().mockResolvedValue([]),
+      };
+
+      const unknownEngine = new ClassificationRuleEngine(unknownRepo);
+      const input: ClassificationInput = {
+        sellerInvolvementIndicator: true,
+        carrierId: 'posti',
+        sellerCountry: 'DE',
+        buyerCountry: 'FI',
+        buyerIsTravelling: false,
+        sellerId: '',
+      };
+
+      // Should not throw — unknown rule should be skipped
+      const { result, ruleName } = await unknownEngine.classify(input, new Date('2024-07-01'));
+      expect(result.classification).toBe('DistanceSelling');
+      expect(ruleName).toBe('DistanceSelling');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // asOf date edge cases
+  // ---------------------------------------------------------------------------
+
+  describe('asOf date handling', () => {
+    it('classifySync always uses default rules (no date lookup)', () => {
+      const engine = new ClassificationRuleEngine();
+      const input: ClassificationInput = {
+        sellerInvolvementIndicator: true,
+        carrierId: 'posti',
+        sellerCountry: 'DE',
+        buyerCountry: 'FI',
+        buyerIsTravelling: false,
+        sellerId: '',
+      };
+      const { ruleSet } = engine.classifySync(input);
+      expect(ruleSet.version).toBe('1.0');
+    });
+
+    it('classify does not require asOf and defaults to now', async () => {
+      const engine = new ClassificationRuleEngine();
+      const input: ClassificationInput = {
+        sellerInvolvementIndicator: false,
+        carrierId: 'dhl',
+        sellerCountry: 'DE',
+        buyerCountry: 'FI',
+        buyerIsTravelling: false,
+        sellerId: 'merchant',
+      };
+      const { result } = await engine.classify(input);
+      expect(result.classification).toBe('DistanceBuying');
+      expect(result.confidence).toBe('HIGH');
+    });
+  });
 });

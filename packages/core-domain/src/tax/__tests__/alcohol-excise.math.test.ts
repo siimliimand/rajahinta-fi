@@ -67,6 +67,18 @@ describe('calcPerLitreOfAlcohol', () => {
   it('throws on negative ABV', () => {
     expect(() => calcPerLitreOfAlcohol(0.565, -0.1, 0.75)).toThrow(RangeError);
   });
+
+  it('handles 0 volume (returns 0 cents)', () => {
+    expect(calcPerLitreOfAlcohol(0.565, 0.40, 0)).toBe(0);
+  });
+
+  it('handles 100% ABV (abv = 1.0): 0.75L × 1.0 × €0.565 = 0.42375 → 42 cents', () => {
+    expect(calcPerLitreOfAlcohol(0.565, 1.0, 0.75)).toBe(42);
+  });
+
+  it('handles ABV of exactly 0 (non-alcoholic): returns 0 cents even with volume', () => {
+    expect(calcPerLitreOfAlcohol(0.565, 0, 0.75)).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -97,6 +109,26 @@ describe('calcProgressiveAbv', () => {
   it('handles partial litres correctly: 0.33L × €0.295 = 0.09735 → 10 cents', () => {
     const result = calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.04, 0.33);
     expect(result).toBe(10); // 0.295 * 0.33 = 0.09735 → round → 10
+  });
+
+  it('applies lowest tier just below boundary: 2.7% ABV → €0', () => {
+    expect(calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.027, 1.0)).toBe(0);
+  });
+
+  it('applies mid tier just below 4.7% boundary: 4.6% ABV → €0.295/L', () => {
+    expect(calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.046, 1.0)).toBe(30);
+  });
+
+  it('applies high tier just below 8.0% boundary: 7.9% ABV → €0.435/L', () => {
+    expect(calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.079, 1.0)).toBe(44);
+  });
+
+  it('applies top tier for ABV above 8.0% (last tier fallback): 12% → €0.580/L', () => {
+    expect(calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.12, 1.0)).toBe(58); // 0.580 * 1.0 = 0.580 → 58
+  });
+
+  it('handles 0 volume at a mid tier', () => {
+    expect(calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.04, 0)).toBe(0);
   });
 });
 
@@ -140,6 +172,62 @@ describe('calculateAlcoholExcise', () => {
     expect(result.taxCents).toBe(30);
     expect(result.rateApplied).toBeCloseTo(0.295);
   });
+
+  it('intermediate: 0.75L at €0.710/L → 53 cents', () => {
+    const result = calculateAlcoholExcise(
+      FORMULA_PER_LITRE_OF_PRODUCT,
+      0.710,
+      0.18,
+      0.75,
+      'intermediate',
+    );
+    expect(result.taxCents).toBe(53); // 0.710 * 0.75 = 0.5325 → 53
+    expect(result.rateApplied).toBeCloseTo(0.710);
+  });
+
+  it('RTD (ready-to-drink): 0.33L at 5.5% ABV, €0.565/L alcohol → 1 cent', () => {
+    const result = calculateAlcoholExcise(
+      FORMULA_PER_LITRE_OF_ALCOHOL,
+      0.565,
+      0.055,
+      0.33,
+      'rtd',
+    );
+    // 0.565 * 0.055 * 0.33 = 0.01025475 → round → 1
+    expect(result.taxCents).toBe(1);
+    expect(result.rateApplied).toBeCloseTo(0.565 * 0.055);
+  });
+
+  it('"other" category defaults to per-litre-of-product wine rate', () => {
+    const result = calculateAlcoholExcise(
+      FORMULA_PER_LITRE_OF_PRODUCT,
+      0.355,
+      0.12,
+      0.75,
+      'other',
+    );
+    expect(result.taxCents).toBe(27); // 0.355 * 0.75 = 0.26625 → 27
+    expect(result.rateApplied).toBeCloseTo(0.355);
+  });
+
+  it('unknown formula reference falls back to PER_LITRE_OF_PRODUCT', () => {
+    const result = calculateAlcoholExcise(
+      'UNKNOWN_FORMULA',
+      0.500,
+      0.40,
+      1.0,
+      'spirits',
+    );
+    // Default branch treats unknown as PER_LITRE_OF_PRODUCT
+    expect(result.taxCents).toBe(50); // 0.500 * 1.0 = 0.50 → 50
+    expect(result.rateApplied).toBeCloseTo(0.500);
+  });
+
+  it('handles 0 volume: returns 0 cents regardless of category', () => {
+    expect(calculateAlcoholExcise(FORMULA_PER_LITRE_OF_PRODUCT, 0.355, 0.12, 0, 'wine').taxCents).toBe(0);
+    expect(calculateAlcoholExcise(FORMULA_PER_LITRE_OF_ALCOHOL, 0.565, 0.40, 0, 'spirits').taxCents).toBe(0);
+    expect(calculateAlcoholExcise(FORMULA_PROGRESSIVE_ABV, 0.295, 0.04, 0, 'beer').taxCents).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -148,10 +236,21 @@ describe('calculateAlcoholExcise', () => {
 
 describe('normaliseCategory', () => {
   it('maps "beer" → "beer"', () => expect(normaliseCategory('beer')).toBe('beer'));
-  it('maps "olut" (fi) → "beer"', () => expect(normaliseCategory('olut')).toBe('beer'));
-  it('maps "lonkero" → "rtd"', () => expect(normaliseCategory('lonkero')).toBe('rtd'));
   it('maps "cider" → "cider"', () => expect(normaliseCategory('cider')).toBe('cider'));
   it('maps "whisky" → "spirits"', () => expect(normaliseCategory('whisky')).toBe('spirits'));
   it('maps unknown → "other"', () => expect(normaliseCategory('unknown')).toBe('other'));
   it('trims and lowercases', () => expect(normaliseCategory('  BEER ')).toBe('beer'));
+
+  // Finnish and common aliases
+  it('maps "olut" (fi) → "beer"', () => expect(normaliseCategory('olut')).toBe('beer'));
+  it('maps "viini" (fi) → "wine"', () => expect(normaliseCategory('viini')).toBe('wine'));
+  it('maps "viina" (fi) → "spirits"', () => expect(normaliseCategory('viina')).toBe('spirits'));
+  it('maps "vodka" → "spirits"', () => expect(normaliseCategory('vodka')).toBe('spirits'));
+  it('maps "whiskey" (irish) → "spirits"', () => expect(normaliseCategory('whiskey')).toBe('spirits'));
+  it('maps "siideri" (fi) → "cider"', () => expect(normaliseCategory('siideri')).toBe('cider'));
+  it('maps "lonkero" (fi) → "rtd"', () => expect(normaliseCategory('lonkero')).toBe('rtd'));
+  it('maps "ready-to-drink" → "rtd"', () => expect(normaliseCategory('ready-to-drink')).toBe('rtd'));
+  it('maps "väli" (fi) → "intermediate"', () => expect(normaliseCategory('väli')).toBe('intermediate'));
+  it('maps "portviini" (fi) → "intermediate"', () => expect(normaliseCategory('portviini')).toBe('intermediate'));
+  it('maps "sherry" → "intermediate"', () => expect(normaliseCategory('sherry')).toBe('intermediate'));
 });

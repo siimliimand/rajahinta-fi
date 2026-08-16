@@ -551,5 +551,66 @@ describe('ConfidenceFrameworkService', () => {
         service.computeLandingCostConfidence(inputs),
       );
     });
+
+    it('explains LOW when stale + estimated mixed: "X are stale or unavailable and Y are estimated"', () => {
+      const inputs: LandingCostInputStatuses = {
+        productPrice: 'STALE',
+        transport: 'ESTIMATED',
+        excise: 'VERIFIED',
+        containerDuty: 'STALE',
+        classification: 'ESTIMATED',
+      };
+
+      const snapshot = service.getConfidenceForUI(inputs);
+      expect(snapshot.overall).toBe('LOW');
+      expect(snapshot.explanation).toContain('2 of 5 inputs are stale or unavailable');
+      expect(snapshot.explanation).toContain('and 2 are estimated');
+      expect(snapshot.explanation).toContain('caution');
+    });
+
+    it('explains LOW when stale + verified mixed: counts current inputs as remaining reliable', () => {
+      const inputs: LandingCostInputStatuses = {
+        productPrice: 'VERIFIED',
+        transport: 'VERIFIED',
+        excise: 'STALE',
+        containerDuty: 'STALE',
+        classification: 'STALE',
+      };
+
+      const snapshot = service.getConfidenceForUI(inputs);
+      expect(snapshot.overall).toBe('LOW');
+      expect(snapshot.explanation).toContain('3 of 5 inputs are stale or unavailable');
+      expect(snapshot.explanation).toContain('2 of 5 inputs are still current');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // formatConfidenceDetail — name-specific branches
+  // -------------------------------------------------------------------------
+
+  describe('formatConfidenceDetail — name-specific branches', () => {
+    it('describes ESTIMATED Transport as weight/destination rule estimation', () => {
+      expect(service.formatConfidenceDetail('Transport', 'ESTIMATED')).toBe(
+        'Transport rates are estimated from weight and destination rules',
+      );
+    });
+
+    it('describes ESTIMATED Container duty as estimated with deposit unknown', () => {
+      expect(service.formatConfidenceDetail('Container duty', 'ESTIMATED')).toBe(
+        'Container duty rules include estimated rates (deposit status unknown)',
+      );
+    });
+
+    it('describes STALE Classification as over 30 days stale', () => {
+      expect(service.formatConfidenceDetail('Classification', 'STALE')).toBe(
+        'Classification rules are stale (last reviewed over 30 days ago)',
+      );
+    });
+
+    it('describes STALE for a generic name as exceeded freshness threshold', () => {
+      expect(service.formatConfidenceDetail('Exchange rate', 'STALE')).toBe(
+        'Exchange rate data is stale (exceeded freshness threshold)',
+      );
+    });
   });
 });

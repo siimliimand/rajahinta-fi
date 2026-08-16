@@ -156,5 +156,53 @@ describe('AlcoholExciseService', () => {
       const result = await service.calculate('wine', 0, 0.75);
       expect(result.taxCents).toBe(27); // still taxed at product rate
     });
+
+    it('handles 100% ABV (spirits at abv = 1.0)', async () => {
+      const result = await service.calculate('spirits', 1.0, 0.75);
+      expect(result.taxCents).toBeGreaterThanOrEqual(0);
+      expect(result.category).toBe('spirits');
+    });
+
+    it('handles all 7 categories gracefully', async () => {
+      const categories = ['beer', 'wine', 'spirits', 'cider', 'rtd', 'intermediate', 'other'];
+      for (const cat of categories) {
+        const result = await service.calculate(cat, 0.05, 0.33);
+        expect(result.taxCents).toBeGreaterThanOrEqual(0);
+        expect(result.category).toBe(cat);
+        expect(result.taxDatasetVersion).toBe('FALLBACK');
+      }
+    });
+
+    describe('asOf historical date parameter', () => {
+      const pastRule = makeRule({
+        id: 99,
+        rate: '0.300',
+        versionLabel: 'v0.9-2023',
+        effectiveFrom: new Date('2023-01-01'),
+        effectiveTo: new Date('2024-01-01'),
+        verificationDate: new Date('2023-06-01'),
+      });
+
+      it('resolves rule effective on the asOf date', async () => {
+        repo.findApplicable = async (_taxType, _category, asOf) => {
+          return asOf < new Date('2024-01-01') ? pastRule : makeRule();
+        };
+        const result = await service.calculate('wine', 0.12, 0.75, new Date('2023-06-15'));
+        expect(result.rateApplied).toBe(0.300);
+        expect(result.taxDatasetVersion).toBe('v0.9-2023');
+      });
+
+      it('uses current rule when asOf is today', async () => {
+        repo.findApplicable = async () => makeRule();
+        const result = await service.calculate('wine', 0.12, 0.75, new Date());
+        expect(result.taxDatasetVersion).toBe('2025.1');
+      });
+
+      it('uses current rule when asOf is omitted (defaults to now)', async () => {
+        repo.findApplicable = async () => makeRule();
+        const result = await service.calculate('wine', 0.12, 0.75);
+        expect(result.taxDatasetVersion).toBe('2025.1');
+      });
+    });
   });
 });

@@ -211,6 +211,16 @@ describe('ContainerDutyService', () => {
       expect(result.dutyCents).toBe(0);
     });
 
+    it('throws RangeError on negative volume', async () => {
+      await expect(service.calculate(-1, 'glass')).rejects.toThrow(RangeError);
+    });
+
+    it('deposit exemption short-circuits before volume validation (negative volume exempted returns 0)', async () => {
+      const result = await service.calculate(-999, 'glass', true);
+      expect(result.dutyCents).toBe(0);
+      expect(result.taxDatasetVersion).toBe('EXEMPTED');
+    });
+
     describe('asOf historical date parameter', () => {
       const pastRule = makeRule({
         id: 11,
