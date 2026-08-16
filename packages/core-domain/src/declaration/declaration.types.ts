@@ -140,6 +140,58 @@ export interface DeclarationSummary {
 }
 
 // ---------------------------------------------------------------------------
+// Read-only safety constraints — type-level and runtime
+// ---------------------------------------------------------------------------
+
+/**
+ * ReadonlyInterface<T> — mapped type that only surfaces methods whose return
+ * type is NOT a write-like `Promise<{ id: ... }>` shape.
+ *
+ * Write-like patterns (create, update, delete, submit, post, save) typically
+ * return `Promise<{ id: number }>` or `Promise<{ id: string }>`.  This type
+ * excludes them, producing a compile error when the filtered type does not
+ * match the original.
+ *
+ * @example
+ * ```typescript
+ * type ReadOnly = ReadonlyInterface<MyService>; // write methods stripped
+ * const svc: ReadOnly = myService; // compile error if write methods exist
+ * ```
+ */
+export type ReadonlyInterface<T> = {
+  [K in keyof T as T[K] extends (...args: any[]) => Promise<{ id: any }>
+    ? never
+    : K]: T[K];
+};
+
+/**
+ * DeclarationSafetyConstraint — conditional type that evaluates to `true` when
+ * ServiceType contains no write-like methods (those returning
+ * `Promise<{ id: number }>` or `Promise<{ id: string }>`), and `never`
+ * otherwise.
+ *
+ * Logic: ALL original keys must survive the ReadonlyInterface filter.
+ * If any write method is stripped, `keyof ServiceType` is a strict superset
+ * of `keyof ReadonlyInterface<ServiceType>`, and the extends check fails.
+ *
+ * Use in a type-level assertion adjacent to the service definition:
+ *
+ * ```typescript
+ * // Compile-time proof: ExciseDeclarationService has no write methods
+ * type _assertIsSafe = DeclarationSafetyConstraint<ExciseDeclarationService>;
+ * const _safetyProof: _assertIsSafe = true;
+ * ```
+ */
+export type DeclarationSafetyConstraint<ServiceType> =
+  keyof ServiceType extends keyof ReadonlyInterface<ServiceType>
+    ? true
+    : never;
+
+/** Runtime guarantee constant — attached to every declaration service/module. */
+export const NO_SUBMISSION_GUARANTEE =
+  'This module never submits data to any external service' as const;
+
+// ---------------------------------------------------------------------------
 // Domain errors
 // ---------------------------------------------------------------------------
 

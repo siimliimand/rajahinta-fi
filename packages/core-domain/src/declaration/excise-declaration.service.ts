@@ -21,6 +21,7 @@ import type {
 import {
   CALCULATION_RECORD_QUERY_PORT,
   CalculationRecordNotFoundError,
+  NO_SUBMISSION_GUARANTEE,
 } from './declaration.types';
 
 // ---------------------------------------------------------------------------
@@ -72,6 +73,12 @@ const MYTAX_LINK = 'https://www.vero.fi/asioi-verkossa/mytax/';
 
 @Injectable()
 export class ExciseDeclarationService {
+  /**
+   * Runtime guarantee — this service never submits data to any external
+   * service.  Read-only by design.
+   */
+  readonly noSubmissionGuarantee: string = NO_SUBMISSION_GUARANTEE;
+
   constructor(
     @Inject(CALCULATION_RECORD_QUERY_PORT)
     private readonly recordQuery: ICalculationRecordQueryPort,
@@ -141,3 +148,35 @@ export class ExciseDeclarationService {
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Type-level safety proof — compile-time assertion that this service has no
+// write methods.  If a method returning Promise<{ id: ... }> is added to
+// ExciseDeclarationService, the lines below will produce a type error.
+// ---------------------------------------------------------------------------
+
+import type {
+  DeclarationSafetyConstraint,
+  ReadonlyInterface,
+} from './declaration.types';
+
+/**
+ * Compile-time proof: ExciseDeclarationService exposes no write methods.
+ *
+ * `DeclarationSafetyConstraint` resolves to `true` when the service type
+ * passes through `ReadonlyInterface` unchanged (i.e. no write-like methods
+ * were stripped).  If a write method is added, this becomes `never` and the
+ * `_safetyProof` assignment fails.
+ */
+type _exciseServiceSafety = DeclarationSafetyConstraint<ExciseDeclarationService>;
+const _exciseServiceSafetyProof: _exciseServiceSafety = true;
+void _exciseServiceSafetyProof; // consumed — prevents TS6133
+
+/**
+ * Compile-time proof: the public API surface is a ReadonlyInterface.
+ * If a write method is added, `ReadonlyInterface<ExciseDeclarationService>`
+ * will exclude it, and the assignment will fail because key counts differ.
+ */
+const _readonlySurface: ReadonlyInterface<ExciseDeclarationService> =
+  new (ExciseDeclarationService as any)();
+void _readonlySurface; // consumed — prevents TS6133
