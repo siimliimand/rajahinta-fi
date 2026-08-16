@@ -80,6 +80,21 @@ export type { IUpsertRepository, UpsertProductInput, UpsertOfferInput, UpsertRes
 export { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
 
 // ---------------------------------------------------------------------------
+// Rate review — scheduled checks, manual confirmation entries
+// ---------------------------------------------------------------------------
+
+export type { RateReviewResult, RateReviewEntry, RateReviewStatus, RateReviewResolution } from './interfaces/rate-review.types';
+
+export type { IRateReviewRepository } from './interfaces/rate-review-repository.port';
+export { RATE_REVIEW_REPOSITORY_PORT } from './interfaces/rate-review-repository.port';
+
+export { RateReviewSchedulerService } from './services/rate-review-scheduler.service';
+export type { RateReviewConfig } from './services/rate-review-scheduler.service';
+export { RATE_REVIEW_CONFIG_TOKEN, DEFAULT_RATE_REVIEW_CONFIG } from './services/rate-review-scheduler.service';
+
+export { RateReviewModule } from './services/rate-review.module';
+
+// ---------------------------------------------------------------------------
 // Imports for module registration
 // ---------------------------------------------------------------------------
 
@@ -90,6 +105,7 @@ import { DataQualityService } from './services/data-quality.service';
 import { PriceIngestionService } from './abstract/price-ingestion.service';
 import { TransportRateService } from './abstract/transport-rate.service';
 import { TaxDatasetReviewService } from './abstract/tax-dataset-review.service';
+import { RateReviewSchedulerService, RATE_REVIEW_CONFIG_TOKEN, DEFAULT_RATE_REVIEW_CONFIG } from './services/rate-review-scheduler.service';
 import { MERCHANT_CONFIG_TOKEN, DEFAULT_MERCHANTS } from './config/merchants.config';
 import { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
 
@@ -118,6 +134,10 @@ import { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
 
     // Feed adapters multi-provider (empty by default; populated by merchant features)
     { provide: FEED_ADAPTERS_TOKEN, useValue: new Map<string, import('./interfaces/feed-adapter.interface').IFeedAdapter>() },
+
+    // Rate-review scheduler with default 24h interval
+    RateReviewSchedulerService,
+    { provide: RATE_REVIEW_CONFIG_TOKEN, useValue: DEFAULT_RATE_REVIEW_CONFIG },
   ],
   exports: [
     BullModule,
@@ -128,6 +148,8 @@ import { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
     PriceIngestionService,
     TransportRateService,
     TaxDatasetReviewService,
+    RateReviewSchedulerService,
+    RATE_REVIEW_CONFIG_TOKEN,
     MERCHANT_CONFIG_TOKEN,
     FEED_ADAPTERS_TOKEN,
   ],
