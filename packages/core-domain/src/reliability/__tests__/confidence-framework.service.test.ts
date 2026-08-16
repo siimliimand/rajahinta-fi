@@ -367,4 +367,189 @@ describe('ConfidenceFrameworkService', () => {
       expect(report.breakdown).toHaveLength(0);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // formatConfidenceDetail — human-readable detail per named input
+  // -------------------------------------------------------------------------
+
+  describe('formatConfidenceDetail', () => {
+    it('describes VERIFIED price data as verified and current', () => {
+      expect(service.formatConfidenceDetail('Price', 'VERIFIED')).toBe(
+        'Price data is verified and current',
+      );
+    });
+
+    it('describes STALE transport as stale with 7-day threshold', () => {
+      expect(service.formatConfidenceDetail('Transport', 'STALE')).toBe(
+        'Transport estimate is stale (last refreshed over 7 days ago)',
+      );
+    });
+
+    it('describes ESTIMATED tax rates with deposit status caveat', () => {
+      expect(service.formatConfidenceDetail('Tax rates', 'ESTIMATED')).toBe(
+        'Tax rules include estimated rates (deposit status unknown)',
+      );
+    });
+
+    it('covers every status for the Price input', () => {
+      expect(service.formatConfidenceDetail('Price', 'ESTIMATED')).toContain(
+        'category averages',
+      );
+      expect(service.formatConfidenceDetail('Price', 'STALE')).toContain('24 hours');
+      expect(service.formatConfidenceDetail('Price', 'UNAVAILABLE')).toBe(
+        'Price data is not available for this product',
+      );
+    });
+
+    it('covers every status exhaustively with generic names', () => {
+      const statuses: ReliabilityStatus[] = ['VERIFIED', 'ESTIMATED', 'STALE', 'UNAVAILABLE'];
+      for (const status of statuses) {
+        const detail = service.formatConfidenceDetail('Generic input', status);
+        expect(detail).toBeTruthy();
+        expect(detail).toContain('Generic input');
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // computeLandingCostDetail — full named report
+  // -------------------------------------------------------------------------
+
+  describe('computeLandingCostDetail', () => {
+    function allVerified(): LandingCostInputStatuses {
+      return {
+        productPrice: 'VERIFIED',
+        transport: 'VERIFIED',
+        excise: 'VERIFIED',
+        containerDuty: 'VERIFIED',
+        classification: 'VERIFIED',
+      };
+    }
+
+    it('produces overall HIGH with all five inputs named in the breakdown', () => {
+      const report = service.computeLandingCostDetail(allVerified());
+
+      expect(report.overall).toBe('HIGH');
+      expect(report.breakdown).toHaveLength(5);
+      expect(report.breakdown.map((d) => d.inputName)).toEqual([
+        'Price',
+        'Transport',
+        'Excise duty',
+        'Container duty',
+        'Classification',
+      ]);
+    });
+
+    it('overall matches computeLandingCostConfidence for the same inputs', () => {
+      const inputs: LandingCostInputStatuses = {
+        ...allVerified(),
+        transport: 'ESTIMATED',
+        classification: 'STALE',
+      };
+
+      const report = service.computeLandingCostDetail(inputs);
+      expect(report.overall).toBe(
+        service.computeLandingCostConfidence(inputs),
+      );
+    });
+
+    it('each breakdown item carries the matching status and detail', () => {
+      const inputs: LandingCostInputStatuses = {
+        productPrice: 'VERIFIED',
+        transport: 'STALE',
+        excise: 'ESTIMATED',
+        containerDuty: 'VERIFIED',
+        classification: 'UNAVAILABLE',
+      };
+
+      const report = service.computeLandingCostDetail(inputs);
+      const transport = report.breakdown[1];
+      expect(transport.inputName).toBe('Transport');
+      expect(transport.status).toBe('STALE');
+      expect(transport.detail).toBe(
+        'Transport estimate is stale (last refreshed over 7 days ago)',
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // getConfidenceForUI — UI-queryable snapshot
+  // -------------------------------------------------------------------------
+
+  describe('getConfidenceForUI', () => {
+    function allVerified(): LandingCostInputStatuses {
+      return {
+        productPrice: 'VERIFIED',
+        transport: 'VERIFIED',
+        excise: 'VERIFIED',
+        containerDuty: 'VERIFIED',
+        classification: 'VERIFIED',
+      };
+    }
+
+    it('returns overall HIGH with a positive explanation', () => {
+      const snapshot = service.getConfidenceForUI(allVerified());
+
+      expect(snapshot.overall).toBe('HIGH');
+      expect(snapshot.explanation).toContain('verified');
+      expect(snapshot.inputs).toHaveLength(5);
+    });
+
+    it('explains MEDIUM by naming the estimated inputs', () => {
+      const inputs: LandingCostInputStatuses = {
+        ...allVerified(),
+        transport: 'ESTIMATED',
+        excise: 'ESTIMATED',
+      };
+
+      const snapshot = service.getConfidenceForUI(inputs);
+      expect(snapshot.overall).toBe('MEDIUM');
+      expect(snapshot.explanation).toContain('2 of 5 inputs are estimated');
+      expect(snapshot.explanation).toContain('Transport');
+      expect(snapshot.explanation).toContain('Excise duty');
+    });
+
+    it('explains LOW by counting stale or unavailable inputs', () => {
+      const inputs: LandingCostInputStatuses = {
+        ...allVerified(),
+        transport: 'STALE',
+        containerDuty: 'UNAVAILABLE',
+      };
+
+      const snapshot = service.getConfidenceForUI(inputs);
+      expect(snapshot.overall).toBe('LOW');
+      expect(snapshot.explanation).toContain('2 of 5 inputs are stale or unavailable');
+      expect(snapshot.explanation).toContain('caution');
+    });
+
+    it('exposes per-input name, status, and detail for direct rendering', () => {
+      const inputs: LandingCostInputStatuses = {
+        productPrice: 'VERIFIED',
+        transport: 'STALE',
+        excise: 'VERIFIED',
+        containerDuty: 'VERIFIED',
+        classification: 'VERIFIED',
+      };
+
+      const snapshot = service.getConfidenceForUI(inputs);
+      const transport = snapshot.inputs[1];
+      expect(transport).toEqual({
+        name: 'Transport',
+        status: 'STALE',
+        detail: 'Transport estimate is stale (last refreshed over 7 days ago)',
+      });
+    });
+
+    it('keeps overall consistent with computeLandingCostConfidence', () => {
+      const inputs: LandingCostInputStatuses = {
+        ...allVerified(),
+        classification: 'ESTIMATED',
+      };
+
+      const snapshot = service.getConfidenceForUI(inputs);
+      expect(snapshot.overall).toBe(
+        service.computeLandingCostConfidence(inputs),
+      );
+    });
+  });
 });

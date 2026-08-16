@@ -63,6 +63,14 @@ export interface ConfidenceDetail {
   readonly status: ReliabilityStatus;
   /** Human-readable explanation of the status reason. */
   readonly detail: string;
+  /**
+   * Optional name of the input this detail refers to.
+   *
+   * Populated by {@link computeLandingCostDetail} and
+   * {@link getConfidenceForUI} so the UI can display each data
+   * point's name alongside its status and explanation.
+   */
+  readonly inputName?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,4 +88,30 @@ export interface ConfidenceReport {
   readonly overall: ConfidenceLevel;
   /** Per-data-point breakdown with explanations. */
   readonly breakdown: ConfidenceDetail[];
+}
+
+// ---------------------------------------------------------------------------
+// Confidence UI snapshot — directly renderable
+// ---------------------------------------------------------------------------
+
+/**
+ * A UI-queryable confidence snapshot for the landed-cost calculator.
+ *
+ * Produced by {@link getConfidenceForUI} for direct rendering in the
+ * frontend — no client-side transformation required.
+ */
+export interface ConfidenceUISnapshot {
+  /** Aggregate confidence level as an uppercase string. */
+  readonly overall: ConfidenceLevel;
+  /** Human-readable paragraph summarising why the confidence is what it is. */
+  readonly explanation: string;
+  /** Per-input statuses with names, status strings, and detail. */
+  readonly inputs: Array<{
+    /** Human-readable input name (e.g. "Price", "Transport"). */
+    readonly name: string;
+    /** Reliability status as an uppercase string. */
+    readonly status: ReliabilityStatus;
+    /** Human-readable explanation for this input. */
+    readonly detail: string;
+  }>;
 }

@@ -18,6 +18,7 @@ import type {
   ConfidenceLevel,
   ConfidenceDetail,
   ConfidenceReport,
+  ConfidenceUISnapshot,
   LandingCostInputStatuses,
 } from './confidence-framework.types';
 
@@ -207,5 +208,178 @@ export class ConfidenceFrameworkService {
     }));
 
     return { overall, breakdown };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Named input detail
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Human-readable detail line for a named input and its reliability status.
+   *
+   * Produces context-aware messages that go beyond the generic
+   * {@link STATUS_DETAIL} by incorporating the input name and status-specific
+   * nuance (e.g. staleness thresholds).
+   *
+   * Pure function — no I/O, no side effects.
+   *
+   * @example
+   * ```ts
+   * formatConfidenceDetail("Price", "VERIFIED")
+   * // => "Price data is verified and current"
+   *
+   * formatConfidenceDetail("Transport", "STALE")
+   * // => "Transport estimate is stale (last refreshed over 7 days ago)"
+   *
+   * formatConfidenceDetail("Tax rates", "ESTIMATED")
+   * // => "Tax rules include estimated rates (deposit status unknown)"
+   * ```
+   *
+   * @param name    Human-readable input name (e.g. "Price", "Transport").
+   * @param status  Reliability status of the input.
+   * @returns       Human-readable detail string.
+   */
+  formatConfidenceDetail(name: string, status: ReliabilityStatus): string {
+    switch (status) {
+      case 'VERIFIED':
+        return `${name} data is verified and current`;
+      case 'ESTIMATED': {
+        if (name === 'Price') {
+          return `${name} data is estimated from category averages or similar products`;
+        }
+        if (name === 'Transport') {
+          return `${name} rates are estimated from weight and destination rules`;
+        }
+        if (name === 'Tax rates' || name === 'Excise duty') {
+          return 'Tax rules include estimated rates (deposit status unknown)';
+        }
+        return `${name} rules include estimated rates (deposit status unknown)`;
+      }
+      case 'STALE': {
+        if (name === 'Price') {
+          return `${name} data is stale (last refreshed over 24 hours ago)`;
+        }
+        if (name === 'Transport') {
+          return `${name} estimate is stale (last refreshed over 7 days ago)`;
+        }
+        if (name === 'Classification') {
+          return `${name} rules are stale (last reviewed over 30 days ago)`;
+        }
+        return `${name} data is stale (exceeded freshness threshold)`;
+      }
+      case 'UNAVAILABLE':
+        return `${name} data is not available for this product`;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Full landed-cost detail report
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Generate a complete named-detail {@link ConfidenceReport} for the
+   * landed-cost calculator inputs.
+   *
+   * Unlike {@link computeLandingCostConfidence} (which only returns the
+   * aggregate level), this method populates the full breakdown with
+   * per-input names and context-aware detail strings via
+   * {@link formatConfidenceDetail}.
+   *
+   * Pure function — no I/O, no side effects.
+   *
+   * @param inputs  Reliability status for each landed-cost input.
+   * @returns       A {@link ConfidenceReport} with aggregate level and
+   *                per-input breakdown including `inputName`.
+   */
+  computeLandingCostDetail(inputs: LandingCostInputStatuses): ConfidenceReport {
+    const entries: Array<{ status: ReliabilityStatus; name: string }> = [
+      { status: inputs.productPrice, name: 'Price' },
+      { status: inputs.transport, name: 'Transport' },
+      { status: inputs.excise, name: 'Excise duty' },
+      { status: inputs.containerDuty, name: 'Container duty' },
+      { status: inputs.classification, name: 'Classification' },
+    ];
+
+    const breakdown: ConfidenceDetail[] = entries.map(({ status, name }) => ({
+      inputName: name,
+      status,
+      detail: this.formatConfidenceDetail(name, status),
+    }));
+
+    return {
+      overall: this.computeResultConfidence(entries.map((e) => e.status)),
+      breakdown,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI-friendly confidence snapshot
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Produce a UI-queryable confidence snapshot from the landed-cost inputs.
+   *
+   * The returned shape is designed for direct rendering — no further
+   * transformation needed on the client side.
+   *
+   * - `overall` — the aggregate confidence level as an uppercase string.
+   * - `explanation` — a human-readable paragraph summarising why the
+   *   confidence is what it is.
+   * - `inputs` — per-input statuses with names, status strings, and
+   *   human-readable detail.
+   *
+   * Pure function — no I/O, no side effects.
+   *
+   * @param inputs  Reliability status for each landed-cost input.
+   * @returns       A UI-ready confidence snapshot.
+   */
+  getConfidenceForUI(inputs: LandingCostInputStatuses): ConfidenceUISnapshot {
+    const report = this.computeLandingCostDetail(inputs);
+    const lowCount = report.breakdown.filter(
+      (d) => d.status === 'STALE' || d.status === 'UNAVAILABLE',
+    ).length;
+    const estimatedCount = report.breakdown.filter(
+      (d) => d.status === 'ESTIMATED',
+    ).length;
+    const verifiedCount = report.breakdown.filter(
+      (d) => d.status === 'VERIFIED',
+    ).length;
+
+    let explanation: string;
+
+    switch (report.overall) {
+      case 'HIGH':
+        explanation = `All data points are verified against authoritative sources. The landed-cost calculation reflects current, reliable data.`;
+        break;
+      case 'MEDIUM':
+        explanation = `${estimatedCount} of 5 inputs are estimated from incomplete data: `;
+        explanation += report.breakdown
+          .filter((d) => d.status === 'ESTIMATED')
+          .map((d) => (d as ConfidenceDetail & { inputName: string }).inputName ?? 'an input')
+          .join(', ');
+        explanation += `. The result is reliable but may have minor inaccuracies.`;
+        break;
+      case 'LOW':
+        explanation = `${lowCount} of 5 inputs are stale or unavailable`;
+        if (estimatedCount > 0) {
+          explanation += ` and ${estimatedCount} are estimated`;
+        }
+        explanation += `. The result should be treated with caution`;
+        if (verifiedCount > 0) {
+          explanation += ` — ${verifiedCount} of 5 inputs are still current`;
+        }
+        explanation += `.`;
+        break;
+    }
+
+    return {
+      overall: report.overall,
+      explanation,
+      inputs: report.breakdown.map((d) => ({
+        name: (d as ConfidenceDetail & { inputName: string }).inputName ?? d.status,
+        status: d.status,
+        detail: d.detail,
+      })),
+    };
   }
 }

@@ -16,7 +16,7 @@ export {
   DAY,
   WEEK,
 } from './reliability.types';
-export type { ConfidenceLevel, ConfidenceDetail, ConfidenceReport } from './confidence-framework.types';
+export type { ConfidenceLevel, ConfidenceDetail, ConfidenceReport, ConfidenceUISnapshot } from './confidence-framework.types';
 export type { LandingCostInputStatuses } from './confidence-framework.types';
 
 // Service
