@@ -31,18 +31,24 @@ export const productMaster = pgTable('product_master', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-/** Merchant offers — scraped price points from external retailers. */
-export const merchantOffers = pgTable('merchant_offers', {
+/** Retail offers — scraped price points from external retailers. */
+export const retailOffers = pgTable('retail_offers', {
   id: serial('id').primaryKey(),
+  merchant: varchar('merchant', { length: 128 }).notNull(),
+  country: varchar('country', { length: 4 }).notNull(),
   productId: integer('product_id')
     .references(() => productMaster.id)
     .notNull(),
-  merchantId: varchar('merchant_id', { length: 128 }).notNull(),
   priceCents: integer('price_cents').notNull(),
   currency: varchar('currency', { length: 3 }).default('EUR').notNull(),
+  availability: varchar('availability', { length: 16 })
+    .default('unknown')
+    .notNull(),
   sourceUrl: varchar('source_url', { length: 1024 }),
-  reliability: varchar('reliability', { length: 16 }).default('EXACT').notNull(),
   observedAt: timestamp('observed_at').defaultNow().notNull(),
+  reliabilityStatus: varchar('reliability_status', { length: 16 })
+    .default('ESTIMATED')
+    .notNull(),
 });
 
 /** Versioned tax rules — never overwritten, always appended. */
@@ -100,7 +106,7 @@ export const calculationAudit = pgTable('calculation_audit', {
 @Injectable()
 export abstract class ProductRepository {
   abstract findById(id: number): Promise<typeof productMaster.$inferSelect | null>;
-  abstract findOffers(productId: number): Promise<typeof merchantOffers.$inferSelect[]>;
+  abstract findOffers(productId: number): Promise<typeof retailOffers.$inferSelect[]>;
 }
 
 @Injectable()
@@ -137,7 +143,7 @@ export type {
   ITransportOfferRepository,
   IAuditRepository,
   ProductMasterRecord,
-  MerchantOfferRecord,
+  RetailOfferRecord,
   TaxRuleRecord,
   TransportOfferRecord,
   CalculationAuditEntry,

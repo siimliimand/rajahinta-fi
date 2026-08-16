@@ -31,16 +31,18 @@ export interface ProductMasterRecord {
   readonly updatedAt: Date;
 }
 
-/** Merchant offer (scraped price point). */
-export interface MerchantOfferRecord {
+/** Retail offer — scraped price point from an external retailer. */
+export interface RetailOfferRecord {
   readonly id: number;
+  readonly merchant: string;
+  readonly country: string;
   readonly productId: number;
-  readonly merchantId: string;
   readonly priceCents: number;
   readonly currency: string;
+  readonly availability: string;
   readonly sourceUrl: string | null;
-  readonly reliability: string;
   readonly observedAt: Date;
+  readonly reliabilityStatus: string;
 }
 
 /** Versioned tax rule — never mutated in place. */
@@ -92,7 +94,7 @@ export interface CalculationAuditEntry {
 
 export interface IProductRepository {
   findById(id: number): Promise<ProductMasterRecord | null>;
-  findOffers(productId: number): Promise<MerchantOfferRecord[]>;
+  findOffers(productId: number): Promise<RetailOfferRecord[]>;
 }
 
 export interface ITaxRateRepository {
