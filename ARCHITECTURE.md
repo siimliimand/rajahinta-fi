@@ -231,4 +231,4 @@ Recommendation: after the initial application scaffold is in place, rerun `/make
 | MyTax | Finnish Tax Administration's online tax service |
 | ABV | Alcohol by volume |
 
-<!-- Last updated: 2026-08-15 -->
+<!-- Last updated: 2026-08-16 -->
