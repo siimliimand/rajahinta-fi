@@ -4,11 +4,12 @@
  * Defines the shape of merchant configuration and exports the initial
  * merchant set.  Each merchant has a feed URL, format, and polling
  * interval.  Adapters for the actual HTTP/API calls live in merchant-
- * specific features — this module provides only the configuration that
- * the pipeline orchestrator and feed ingestion service consume.
+ * specific feature packages.
  *
- * Merchants with `enabled: false` are registered but not polled until
- * their adapter is implemented and the flag is flipped.
+ * Ingestion of a merchant's data is gated by {@link SourceGovernanceService}
+ * — a merchant must have a GRANTED permission status before the pipeline
+ * will fetch or persist its data.  New merchants default to PENDING (off)
+ * until a compliance review transitions them to GRANTED.
  *
  * @module MerchantConfig
  */
@@ -27,16 +28,17 @@ export interface MerchantConfig {
   readonly feedFormat: 'json' | 'xml' | 'csv';
   /** How often to poll for new data (milliseconds). */
   readonly pollingIntervalMs: number;
-  /** When false the orchestrator skips this merchant. */
-  readonly enabled: boolean;
 }
 
 /**
  * Initial merchant set.
  *
- * Real feed URLs are empty strings until the corresponding merchant
- * adapter is built.  The pipeline will skip merchants with `enabled:
- * false` or empty `feedUrl`.
+ * Merchants are registered here but NOT auto-queried — permission defaults
+ * to PENDING.  A compliance review and a `SourceGovernanceService.registerSource`
+ * call with GRANTED status is required to activate ingestion.
+ *
+ * Real feed URLs are empty strings until the corresponding merchant adapter
+ * is built.  The pipeline skips merchants with an empty `feedUrl`.
  */
 export const DEFAULT_MERCHANTS: MerchantConfig[] = [
   {
@@ -46,7 +48,6 @@ export const DEFAULT_MERCHANTS: MerchantConfig[] = [
     feedUrl: '',
     feedFormat: 'json',
     pollingIntervalMs: 3_600_000, // 1 hour
-    enabled: false,
   },
   {
     merchantId: 'systembolaget',
@@ -55,7 +56,6 @@ export const DEFAULT_MERCHANTS: MerchantConfig[] = [
     feedUrl: '',
     feedFormat: 'json',
     pollingIntervalMs: 3_600_000,
-    enabled: false,
   },
 ] as const;
 
