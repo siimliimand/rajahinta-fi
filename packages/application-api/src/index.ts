@@ -262,5 +262,5 @@ export type { IVerificationProvider, VerificationResult } from './age-gate';
 // Accounts — minimal account system (saved baskets, history, subscription)
 // ---------------------------------------------------------------------------
 
-export { AccountModule, AccountService } from './accounts';
-export type { Account, Basket, BasketItem } from './accounts';
+export { AccountModule, AccountService, AccountRetentionService, DataExportService } from './accounts';
+export type { Account, Basket, BasketItem, PurgeResult, AnonymizeResult, DataExport, CalculationExportRecord } from './accounts';

@@ -74,6 +74,7 @@ export class AccountService {
    * Create a default FREE-tier account.
    */
   private createDefaultAccount(userId: string): Account {
+    const now = new Date();
     return {
       userId,
       email: `${userId}@placeholder.local`,
@@ -85,6 +86,54 @@ export class AccountService {
         plan: 'FREE',
         active: true,
       },
+      createdAt: now,
+      lastActiveAt: now,
     };
+  }
+
+  /**
+   * Return all account user IDs known to this service.
+   *
+   * Used by {@link AccountRetentionService} for retention-policy scans.
+   * Phase 1: returns keys from the in-memory map.
+   */
+  async getAllUserIds(): Promise<string[]> {
+    return Array.from(this.accounts.keys());
+  }
+
+  /**
+   * Record user activity, updating the `lastActiveAt` timestamp.
+   *
+   * Called for every authenticated request to keep the retention clock
+   * accurate.  Phase 1: in-memory update.
+   */
+  async recordActivity(userId: string): Promise<void> {
+    const account = await this.getAccount(userId);
+    (account as Account & { lastActiveAt: Date }).lastActiveAt = new Date();
+  }
+
+  /**
+   * Remove an account from the in-memory store.
+   *
+   * Phase 1: direct map deletion.
+   */
+  async deleteAccount(userId: string): Promise<void> {
+    this.accounts.delete(userId);
+    this.logger.debug(`Account "${userId}" deleted`);
+  }
+
+  /**
+   * Anonymize an account — replace identifying fields while retaining
+   * non-personal data (saved baskets, calculation history).
+   */
+  async anonymizeAccount(userId: string): Promise<void> {
+    const account = await this.getAccount(userId);
+    const mutable = account as Account & { email: string; userId: string };
+    const anonId = `anon-${userId}`;
+    mutable.email = `anonymized-${userId}@deleted.local`;
+    mutable.userId = anonId;
+    this.accounts.delete(userId);
+    this.accounts.set(anonId, account);
+    this.logger.debug(`Account "${userId}" anonymized -> "${anonId}"`);
   }
 }

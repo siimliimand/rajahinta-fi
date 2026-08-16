@@ -101,13 +101,51 @@ export default function AccountPage() {
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 opacity-60">
             <h3 className="font-medium text-gray-900">Data export</h3>
             <p className="mt-1 text-xs text-gray-500">
-              Export your data in CSV or PDF format.
+              Export your data in JSON format.
             </p>
             <span className="mt-2 inline-block text-xs font-medium text-gray-400">
               Coming soon
             </span>
           </div>
         </div>
+      </section>
+
+      {/* ── Data retention ── */}
+      <section className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900">Data retention</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Your data is retained only as long as necessary for the service to
+          function. The following policies apply automatically:
+        </p>
+        <dl className="mt-4 space-y-3">
+          <div className="flex justify-between border-b border-gray-100 pb-2">
+            <dt className="text-sm font-medium text-gray-700">Inactive accounts</dt>
+            <dd className="text-sm text-gray-500">
+              Deleted after <strong>12 months</strong> of inactivity
+            </dd>
+          </div>
+          <div className="flex justify-between border-b border-gray-100 pb-2">
+            <dt className="text-sm font-medium text-gray-700">Inactive account anonymization</dt>
+            <dd className="text-sm text-gray-500">
+              Anonymized after <strong>6 months</strong> of inactivity
+            </dd>
+          </div>
+          <div className="flex justify-between border-b border-gray-100 pb-2">
+            <dt className="text-sm font-medium text-gray-700">Calculation history</dt>
+            <dd className="text-sm text-gray-500">
+              Deleted after <strong>24 months</strong>
+            </dd>
+          </div>
+          <div className="flex justify-between pb-2">
+            <dt className="text-sm font-medium text-gray-700">Analytics &amp; telemetry</dt>
+            <dd className="text-sm text-gray-500">
+              Anonymized after <strong>12 months</strong>
+            </dd>
+          </div>
+        </dl>
+        <p className="mt-4 text-xs text-gray-400">
+          Retention is enforced automatically. No action is needed on your part.
+        </p>
       </section>
     </main>
   );

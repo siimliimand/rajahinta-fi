@@ -51,6 +51,17 @@ export interface SubscriptionStatus {
 /**
  * Phase 1 minimal account.
  *
+ * ## Privacy assertion
+ *
+ * This interface intentionally contains NO date-of-birth, identity document,
+ * national ID number, or any other personally-identifying field beyond
+ * `email`. The age gate uses a simple frontend confirmation (no DOB, no
+ * documents) — see AgeGate component and SimpleConfirmationProvider.
+ *
+ * If a future legal review mandates stronger identity verification, that
+ * must be added as a separate isolated subsystem (see ARCHITECTURE.md
+ * "Minimal personal data" constraint), NOT merged into this interface.
+ *
  * Fields:
  * - `userId` — unique identifier
  * - `email` — user's email address
@@ -58,6 +69,8 @@ export interface SubscriptionStatus {
  * - `savedBaskets` — user's saved product selections
  * - `calculationHistory` — IDs of past calculations
  * - `subscription` — current subscription status
+ * - `createdAt` — when the account was created (for retention policies)
+ * - `lastActiveAt` — when the user last interacted (for inactivity-based retention)
  */
 export interface Account {
   readonly userId: string;
@@ -66,4 +79,6 @@ export interface Account {
   readonly savedBaskets: Basket[];
   readonly calculationHistory: number[];
   readonly subscription: SubscriptionStatus;
+  readonly createdAt: Date;
+  readonly lastActiveAt: Date;
 }
