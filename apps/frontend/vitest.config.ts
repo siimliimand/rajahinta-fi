@@ -6,5 +6,7 @@ export default defineConfig({
   test: {
     ...baseConfig.test,
     root: import.meta.dirname,
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    setupFiles: ['./src/setupTests.ts'],
   },
 });
