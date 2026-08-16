@@ -51,10 +51,18 @@ export interface ClassificationRule {
 // ---------------------------------------------------------------------------
 
 /**
- * An ordered set of rules evaluated in sequence.
+ * A versioned rule set with effective-date window.
+ *
+ * Each rule set is immutable once published.  A new rule set supersedes the
+ * previous one when legislation changes.  The engine loads the rule set whose
+ * window contains the transaction date.
  */
 export interface ClassificationRuleSet {
   readonly rules: readonly ClassificationRule[];
   readonly version: string;
   readonly label: string;
+  /** Date from which this rule set is effective (inclusive). */
+  readonly effectiveFrom: Date;
+  /** Date when this rule set expires (inclusive, null = still current). */
+  readonly effectiveTo: Date | null;
 }

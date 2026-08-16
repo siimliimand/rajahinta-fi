@@ -10,8 +10,13 @@
 // Module
 export { ClassificationModule } from './classification.module';
 
-// Service
+// Services
 export { TransactionClassificationService } from './transaction-classification.service';
+export {
+  ClassificationRuleEngine,
+  createDefaultRuleSet,
+} from './services/classification-rule-engine.service';
+export type { ClassificationEngineResult } from './services/classification-rule-engine.service';
 
 // Types
 export type {
@@ -21,8 +26,17 @@ export type {
   ConfidenceLevel,
 } from './classification.types';
 
-// Rule types (prep for 6.3)
+// Rule types
 export type {
   ClassificationRule,
   ClassificationRuleSet,
 } from './classification-rule.types';
+
+// Repository port
+export {
+  CLASSIFICATION_RULE_REPOSITORY_PORT,
+} from './ports/classification-rule-repository.port';
+export type {
+  IClassificationRuleRepositoryPort,
+  ClassificationRuleSetRecord,
+} from './ports/classification-rule-repository.port';

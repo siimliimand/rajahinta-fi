@@ -2,10 +2,11 @@
  * Tests for TransactionClassificationService.
  *
  * Covers all four classification paths plus edge cases:
- * - Traveller Import
- * - Distance Selling (retailer-arranged transport)
- * - Distance Buying (independent carrier)
- * - Distance Buying (unknown transport)
+ * - Traveller Import (HIGH)
+ * - Distance Selling (HIGH)
+ * - Distance Buying — known seller (HIGH)
+ * - Distance Buying — unknown seller (MEDIUM)
+ * - Distance Buying — unknown transport (LOW)
  * - Boundary: seller involvement + travelling (travelling takes precedence)
  * - Boundary: empty carrierId with seller involvement
  * - Idempotence: same input → same output
@@ -24,7 +25,7 @@ describe('TransactionClassificationService', () => {
     // Traveller Import
     // -----------------------------------------------------------------------
 
-    it('classifies as TravellerImport when buyerIsTravelling is true', () => {
+    it('classifies as TravellerImport when buyerIsTravelling is true', async () => {
       const input: ClassificationInput = {
         sellerInvolvementIndicator: false,
         carrierId: '',
@@ -34,12 +35,12 @@ describe('TransactionClassificationService', () => {
         sellerId: '',
       };
 
-      const result = service.classify(input);
+      const result = await service.classify(input);
       expect(result.classification).toBe('TravellerImport');
       expect(result.confidence).toBe('HIGH');
     });
 
-    it('classifies as TravellerImport even when seller is involved', () => {
+    it('classifies as TravellerImport even when seller is involved', async () => {
       const input: ClassificationInput = {
         sellerInvolvementIndicator: true,
         carrierId: 'posti',
@@ -49,7 +50,7 @@ describe('TransactionClassificationService', () => {
         sellerId: 'some-seller',
       };
 
-      const result = service.classify(input);
+      const result = await service.classify(input);
       expect(result.classification).toBe('TravellerImport');
       expect(result.confidence).toBe('HIGH');
     });
@@ -58,7 +59,7 @@ describe('TransactionClassificationService', () => {
     // Distance Selling
     // -----------------------------------------------------------------------
 
-    it('classifies as DistanceSelling when seller arranges transport', () => {
+    it('classifies as DistanceSelling when seller arranges transport', async () => {
       const input: ClassificationInput = {
         sellerInvolvementIndicator: true,
         carrierId: 'posti',
@@ -68,12 +69,12 @@ describe('TransactionClassificationService', () => {
         sellerId: 'known-seller-123',
       };
 
-      const result = service.classify(input);
+      const result = await service.classify(input);
       expect(result.classification).toBe('DistanceSelling');
       expect(result.confidence).toBe('HIGH');
     });
 
-    it('classifies as DistanceSelling regardless of carrier when seller involved', () => {
+    it('classifies as DistanceSelling regardless of carrier when seller involved', async () => {
       const input: ClassificationInput = {
         sellerInvolvementIndicator: true,
         carrierId: '',
@@ -83,16 +84,35 @@ describe('TransactionClassificationService', () => {
         sellerId: '',
       };
 
-      const result = service.classify(input);
+      const result = await service.classify(input);
       expect(result.classification).toBe('DistanceSelling');
       expect(result.confidence).toBe('HIGH');
     });
 
     // -----------------------------------------------------------------------
-    // Distance Buying — independent carrier
+    // Distance Buying — independent carrier, known seller (HIGH)
     // -----------------------------------------------------------------------
 
-    it('classifies as DistanceBuying with HIGH confidence when independent carrier', () => {
+    it('classifies as DistanceBuying with HIGH confidence when independent carrier and known seller', async () => {
+      const input: ClassificationInput = {
+        sellerInvolvementIndicator: false,
+        carrierId: 'dhl',
+        sellerCountry: 'DE',
+        buyerCountry: 'FI',
+        buyerIsTravelling: false,
+        sellerId: 'known-merchant',
+      };
+
+      const result = await service.classify(input);
+      expect(result.classification).toBe('DistanceBuying');
+      expect(result.confidence).toBe('HIGH');
+    });
+
+    // -----------------------------------------------------------------------
+    // Distance Buying — independent carrier, unknown seller (MEDIUM)
+    // -----------------------------------------------------------------------
+
+    it('classifies as DistanceBuying with MEDIUM confidence when independent carrier but seller unknown', async () => {
       const input: ClassificationInput = {
         sellerInvolvementIndicator: false,
         carrierId: 'dhl',
@@ -102,16 +122,32 @@ describe('TransactionClassificationService', () => {
         sellerId: '',
       };
 
-      const result = service.classify(input);
+      const result = await service.classify(input);
       expect(result.classification).toBe('DistanceBuying');
-      expect(result.confidence).toBe('HIGH');
+      expect(result.confidence).toBe('MEDIUM');
+      expect(result.evidenceSummary).toContain('unverified');
+    });
+
+    it('classifies as DistanceBuying with MEDIUM confidence when sellerId is whitespace', async () => {
+      const input: ClassificationInput = {
+        sellerInvolvementIndicator: false,
+        carrierId: 'posti',
+        sellerCountry: 'DE',
+        buyerCountry: 'FI',
+        buyerIsTravelling: false,
+        sellerId: '   ',
+      };
+
+      const result = await service.classify(input);
+      expect(result.classification).toBe('DistanceBuying');
+      expect(result.confidence).toBe('MEDIUM');
     });
 
     // -----------------------------------------------------------------------
     // Distance Buying — unknown transport
     // -----------------------------------------------------------------------
 
-    it('classifies as DistanceBuying with LOW confidence when transport unknown', () => {
+    it('classifies as DistanceBuying with LOW confidence when transport unknown', async () => {
       const input: ClassificationInput = {
         sellerInvolvementIndicator: false,
         carrierId: '',
@@ -121,12 +157,12 @@ describe('TransactionClassificationService', () => {
         sellerId: '',
       };
 
-      const result = service.classify(input);
+      const result = await service.classify(input);
       expect(result.classification).toBe('DistanceBuying');
       expect(result.confidence).toBe('LOW');
     });
 
-    it('classifies as DistanceBuying with LOW confidence when carrier is blank', () => {
+    it('classifies as DistanceBuying with LOW confidence when carrier is blank', async () => {
       const input: ClassificationInput = {
         sellerInvolvementIndicator: false,
         carrierId: '   ',
@@ -136,7 +172,7 @@ describe('TransactionClassificationService', () => {
         sellerId: '',
       };
 
-      const result = service.classify(input);
+      const result = await service.classify(input);
       expect(result.classification).toBe('DistanceBuying');
       expect(result.confidence).toBe('LOW');
     });
@@ -145,16 +181,16 @@ describe('TransactionClassificationService', () => {
     // Evidence summary
     // -----------------------------------------------------------------------
 
-    it('produces a non-empty evidence summary for every classification', () => {
+    it('produces a non-empty evidence summary for every classification', async () => {
       const inputs: ClassificationInput[] = [
         { sellerInvolvementIndicator: true, carrierId: 'posti', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: '' },
-        { sellerInvolvementIndicator: false, carrierId: 'dhl', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: '' },
+        { sellerInvolvementIndicator: false, carrierId: 'dhl', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: 'merchant' },
         { sellerInvolvementIndicator: false, carrierId: '', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: '' },
         { sellerInvolvementIndicator: false, carrierId: '', sellerCountry: 'EE', buyerCountry: 'FI', buyerIsTravelling: true, sellerId: '' },
       ];
 
       for (const input of inputs) {
-        const result: ClassificationResult = service.classify(input);
+        const result: ClassificationResult = await service.classify(input);
         expect(result.evidenceSummary.length).toBeGreaterThan(10);
         expect(result.evidenceSummary).toContain(input.sellerCountry);
         expect(result.evidenceSummary).toContain(input.buyerCountry);
@@ -165,7 +201,7 @@ describe('TransactionClassificationService', () => {
     // Idempotence — pure function contract
     // -----------------------------------------------------------------------
 
-    it('returns identical results for identical inputs (idempotent)', () => {
+    it('returns identical results for identical inputs (idempotent)', async () => {
       const input: ClassificationInput = {
         sellerInvolvementIndicator: true,
         carrierId: 'posti',
@@ -175,9 +211,28 @@ describe('TransactionClassificationService', () => {
         sellerId: 'known-seller-123',
       };
 
-      const a = service.classify(input);
-      const b = service.classify(input);
+      const a = await service.classify(input);
+      const b = await service.classify(input);
       expect(a).toEqual(b);
+    });
+
+    // -----------------------------------------------------------------------
+    // Sync mode - classifySync
+    // -----------------------------------------------------------------------
+
+    it('classifySync returns identical results to classify', async () => {
+      const input: ClassificationInput = {
+        sellerInvolvementIndicator: false,
+        carrierId: 'dhl',
+        sellerCountry: 'DE',
+        buyerCountry: 'FI',
+        buyerIsTravelling: false,
+        sellerId: '',
+      };
+
+      const asyncResult = await service.classify(input);
+      const syncResult = service.classifySync(input);
+      expect(syncResult).toEqual(asyncResult);
     });
   });
 });

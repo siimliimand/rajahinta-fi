@@ -4,45 +4,95 @@
  * This is the platform's most important proprietary logic — it determines
  * the legal framework under which a cross-border beverage purchase falls.
  *
- * The service is designed as an isolated, independently testable module.
- * It depends on {@link TransportClassificationService} purely for transport
- * arrangement classification; all other inputs arrive via
- * {@link ClassificationInput}.
+ * The service supports two modes:
+ * 1. **Standalone** (default) — uses built-in hardcoded rules reflecting
+ *    current Finnish legislation (pre-September 2024).
+ * 2. **Engine-backed** — when a {@link ClassificationRuleEngine} is injected,
+ *    the service delegates classification to the engine, which loads
+ *    versioned rule sets from the repository by effective date.
  *
- * ## Rule-based logic (Phase 1)
+ * ## Three-way classification
  *
- * Current rules evaluated in priority order:
+ * - **Distance Selling** — retailer arranges/ships to Finland → seller liable
+ * - **Distance Buying** — buyer arranges independent transport → buyer liable
+ * - **Traveller Import** — buyer physically transports goods → excluded
  *
- * 1. **Traveller Import** — buyerIsTravelling is true
- * 2. **Distance Selling** — transport is RETAILER_ARRANGED
- * 3. **Distance Buying (known carrier)** — transport is INDEPENDENT_CARRIER
- * 4. **Distance Buying (unknown)** — transport is UNKNOWN
+ * ## Confidence levels
  *
- * Rules will be externalised to a versioned database-backed rule engine in
- * task 6.3.
+ * - **HIGH** — all material inputs verified
+ * - **MEDIUM** — one or more inputs estimated (e.g., seller identity unknown)
+ * - **LOW** — shipping or classification unverifiable
  *
  * @module TransactionClassificationService
  */
-import { Injectable } from '@nestjs/common';
+
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { TransportClassificationService } from '../transport/transport-classification.service';
+import {
+  ClassificationRuleEngine,
+} from './services/classification-rule-engine.service';
 import type {
   ClassificationInput,
   ClassificationResult,
+  ConfidenceLevel,
 } from './classification.types';
 
 @Injectable()
 export class TransactionClassificationService {
   constructor(
     private readonly transportClassification: TransportClassificationService,
+    @Optional()
+    @Inject(ClassificationRuleEngine)
+    private readonly ruleEngine?: ClassificationRuleEngine,
   ) {}
 
   /**
    * Classify a transaction under Finnish excise law.
    *
-   * @param params - All inputs required for classification.
-   * @returns A definitive {@link ClassificationResult} with evidence.
+   * Delegates to the rule engine when available; otherwise uses built-in
+   * hardcoded rules.
+   *
+   * @param params — All inputs required for classification.
+   * @param asOf   — Effective date for rule selection (defaults to now).
+   * @returns      A definitive {@link ClassificationResult} with evidence.
    */
-  classify(params: ClassificationInput): ClassificationResult {
+  async classify(
+    params: ClassificationInput,
+    asOf?: Date,
+  ): Promise<ClassificationResult> {
+    if (this.ruleEngine) {
+      const engineResult = await this.ruleEngine.classify(params, asOf);
+      return engineResult.result;
+    }
+
+    // --- Standalone mode: built-in hardcoded rules ---
+    return this.classifyInternal(params);
+  }
+
+  /**
+   * Synchronous classification using built-in rules only.
+   *
+   * Useful when the caller cannot await (e.g., in tests or sync contexts).
+   * Throws when no rule matches (should never happen with built-in rules).
+   */
+  classifySync(params: ClassificationInput): ClassificationResult {
+    if (this.ruleEngine) {
+      const engineResult = this.ruleEngine.classifySync(params);
+      return engineResult.result;
+    }
+    return this.classifyInternal(params);
+  }
+
+  /**
+   * Internal classification logic — the 4-rule pipeline.
+   *
+   * Rules evaluated in priority order:
+   * 1. Traveller Import — buyerIsTravelling is true
+   * 2. Distance Selling — transport is RETAILER_ARRANGED
+   * 3. Distance Buying (known carrier) — transport is INDEPENDENT_CARRIER
+   * 4. Distance Buying (unknown) — transport is UNKNOWN
+   */
+  private classifyInternal(params: ClassificationInput): ClassificationResult {
     const transportType = this.transportClassification.classifyTransport(
       params.sellerInvolvementIndicator,
       params.carrierId,
@@ -56,7 +106,8 @@ export class TransactionClassificationService {
         evidenceSummary:
           `Buyer from ${params.buyerCountry} indicated they are physically carrying ` +
           `goods across the border from ${params.sellerCountry}. ` +
-          'Classified as traveller import per Alcohol Act 1102/2017 chapter 5.',
+          'Classified as traveller import per Alcohol Act 1102/2017 chapter 5. ' +
+          'This transaction is excluded from landed-cost calculation.',
       };
     }
 
@@ -74,14 +125,27 @@ export class TransactionClassificationService {
 
     // --- Rule 3: Distance Buying (independent carrier) ---
     if (transportType === 'INDEPENDENT_CARRIER') {
+      // Confidence depends on whether the seller is known
+      const confidence: ConfidenceLevel =
+        params.sellerId && params.sellerId.trim().length > 0
+          ? 'HIGH'
+          : 'MEDIUM';
+
+      const summary =
+        confidence === 'HIGH'
+          ? `Buyer arranged transport via independent carrier (${params.carrierId}) from ` +
+            `${params.sellerCountry} to ${params.buyerCountry}. Known seller ` +
+            `(${params.sellerId}) confirmed. Buyer is liable for Finnish excise ` +
+            'duties upon import (Tax Administration guidance VH/5088/00.01.00/2021).'
+          : `Buyer arranged transport via independent carrier (${params.carrierId}) from ` +
+            `${params.sellerCountry} to ${params.buyerCountry}. Seller identity is ` +
+            'unverified, reducing confidence to MEDIUM. Buyer is liable for Finnish ' +
+            'excise duties upon import (Tax Administration guidance VH/5088/00.01.00/2021).';
+
       return {
         classification: 'DistanceBuying',
-        confidence: 'HIGH',
-        evidenceSummary:
-          `Buyer arranged transport via independent carrier (${params.carrierId}) from ` +
-          `${params.sellerCountry} to ${params.buyerCountry}. Buyer is liable for ` +
-          'Finnish excise duties upon import (Tax Administration guidance ' +
-          'VH/5088/00.01.00/2021).',
+        confidence,
+        evidenceSummary: summary,
       };
     }
 
