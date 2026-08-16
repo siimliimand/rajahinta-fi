@@ -189,7 +189,7 @@ export class PipelineOrchestratorService {
           merchant: config.merchantId,
           productId: upsertResult.productId,
           observedAt: pair.offerInput.observedAt,
-          reliabilityStatus: pair.offerInput.reliability,
+          reliabilityStatus: pair.offerInput.reliabilityStatus,
         });
       } catch (err) {
         const message =

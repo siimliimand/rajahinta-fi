@@ -13,8 +13,8 @@
  */
 
 import type {
-  ProductRecord,
-  MerchantOfferRecord,
+  ProductMasterRecord,
+  RetailOfferRecord,
 } from '@rajahinta/data-platform';
 
 // --------------------------------------------------------------------------
@@ -25,12 +25,12 @@ import type {
  * Input shape for creating or updating a product.
  * The pipeline knows everything except the auto-generated fields.
  */
-export type UpsertProductInput = Omit<ProductRecord, 'createdAt' | 'updatedAt'>;
+export type UpsertProductInput = Omit<ProductMasterRecord, 'createdAt' | 'updatedAt'>;
 
 /**
  * Input shape for recording a retail price observation.
  */
-export type UpsertOfferInput = Omit<MerchantOfferRecord, 'id'>;
+export type UpsertOfferInput = Omit<RetailOfferRecord, 'id'>;
 
 /** Result of an upsert operation. */
 export interface UpsertResult {

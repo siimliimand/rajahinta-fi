@@ -36,23 +36,29 @@ export class DataMappingService {
     const product: UpsertProductInput = {
       id: 0, // placeholder; the upsert adapter resolves the canonical ID
       name: record.productName,
+      manufacturer: record.brand, // placeholder — feed adapter may provide actual manufacturer
       brand: record.brand,
+      category: 'other', // placeholder — will be refined by normalization
       containerType: record.containerType,
-      volumeLitres: String(record.volumeMl),
+      unitVolume: String(record.volumeMl),
       alcoholByVolume:
         record.alcoholByVolume !== null
           ? String(record.alcoholByVolume)
           : null,
       ean: record.ean,
+      regulatoryClassification: 'unknown',
+      depositSystemStatus: false,
     };
 
     const offerInput: Omit<UpsertOfferInput, 'productId'> = {
-      merchantId,
+      merchant: merchantId,
+      country: 'DE', // placeholder — derived from merchant config
       priceCents: record.priceCents,
       currency: record.currency,
+      availability: 'in_stock',
       sourceUrl: record.sourceUrl,
-      reliability: 'ESTIMATED',
       observedAt: new Date(),
+      reliabilityStatus: 'ESTIMATED',
     };
 
     return { product, offerInput };

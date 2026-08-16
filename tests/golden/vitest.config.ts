@@ -10,13 +10,14 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['**/*.test.ts'],
+    include: ['tests/golden/**/*.test.ts'],
     root: REPO_ROOT,
     passWithNoTests: false,
   },
   resolve: {
     alias: {
       '@rajahinta/core-domain': path.resolve(REPO_ROOT, 'packages/core-domain/src'),
+      '@rajahinta/frontend': path.resolve(REPO_ROOT, 'apps/frontend/src'),
     },
   },
 });
