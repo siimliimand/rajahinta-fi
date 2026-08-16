@@ -88,6 +88,29 @@ export interface CalculationAuditEntry {
   readonly calculatedAt?: Date;
 }
 
+/**
+ * Calculation record — a persisted landed-cost result.
+ *
+ * Immutable once written. Enables auditability, correction, and
+ * confidence-based ranking.
+ */
+export interface CalculationRecord {
+  readonly id: number;
+  readonly productMasterId: number;
+  readonly retailOfferIds: unknown | null;
+  readonly transportOfferId: number | null;
+  readonly exciseRuleVersionId: number | null;
+  readonly containerDutyRuleVersionId: number | null;
+  readonly totalCents: number;
+  readonly breakdown: unknown;
+  readonly confidence: string;
+  readonly quantity: number;
+  readonly destination: string;
+  readonly disclaimer: string;
+  readonly sessionId: string | null;
+  readonly calculatedAt: Date;
+}
+
 // --------------------------------------------------------------------------
 // Individual repository contracts
 // --------------------------------------------------------------------------
@@ -111,6 +134,20 @@ export interface IAuditRepository {
   recordCalculation(entry: CalculationAuditEntry): Promise<void>;
 }
 
+/**
+ * Repository for calculation records.
+ *
+ * Write-once, read-many. Supports lookup by ID and session for
+ * audit-trail display and correction workflows.
+ */
+export interface ICalculationRecordRepository {
+  create(
+    record: Omit<CalculationRecord, 'id' | 'calculatedAt'>,
+  ): Promise<CalculationRecord>;
+  findById(id: number): Promise<CalculationRecord | null>;
+  findBySession(sessionId: string): Promise<CalculationRecord[]>;
+}
+
 // --------------------------------------------------------------------------
 // Unified registry – one dependency for consuming layers
 // --------------------------------------------------------------------------
@@ -126,5 +163,7 @@ export interface IRepositoryRegistry {
   readonly products: IProductRepository;
   readonly taxRates: ITaxRateRepository;
   readonly transportOffers: ITransportOfferRepository;
+  /** @deprecated Use `calculationRecords` instead. */
   readonly audit: IAuditRepository;
+  readonly calculationRecords: ICalculationRecordRepository;
 }

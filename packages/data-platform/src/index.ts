@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   boolean,
+  text,
 } from 'drizzle-orm/pg-core';
 
 // ---------------------------------------------------------------------------
@@ -88,14 +89,35 @@ export const transportOffers = pgTable('transport_offers', {
     .notNull(),
 });
 
-/** Calculation audit trail — every figure traceable. */
-export const calculationAudit = pgTable('calculation_audit', {
+/**
+ * Calculation records — every landed-cost result shown to a user.
+ *
+ * Enables auditability and the correction mechanism.
+ *
+ * Migration note: replaces the former `calculation_audit` table
+ * (removed in this version). The old table had a flat input/output
+ * snapshot pattern. The new schema normalises FK references and
+ * stores a structured breakdown.
+ */
+export const calculationRecords = pgTable('calculation_records', {
   id: serial('id').primaryKey(),
-  sessionId: varchar('session_id', { length: 64 }).notNull(),
-  inputSnapshot: jsonb('input_snapshot').notNull(),
-  resultSnapshot: jsonb('result_snapshot').notNull(),
-  rateVersionId: integer('rate_version_id').references(() => taxRules.id),
-  disclaimerLanguage: varchar('disclaimer_language', { length: 2 }).notNull(),
+  productMasterId: integer('product_master_id')
+    .references(() => productMaster.id)
+    .notNull(),
+  retailOfferIds: jsonb('retail_offer_ids'),
+  transportOfferId: integer('transport_offer_id')
+    .references(() => transportOffers.id),
+  exciseRuleVersionId: integer('excise_rule_version_id')
+    .references(() => taxRules.id),
+  containerDutyRuleVersionId: integer('container_duty_rule_version_id')
+    .references(() => taxRules.id),
+  totalCents: integer('total_cents').notNull(),
+  breakdown: jsonb('breakdown').notNull(),
+  confidence: varchar('confidence', { length: 6 }).notNull(),
+  quantity: integer('quantity').notNull(),
+  destination: varchar('destination', { length: 4 }).notNull(),
+  disclaimer: text('disclaimer').notNull(),
+  sessionId: varchar('session_id', { length: 64 }),
   calculatedAt: timestamp('calculated_at').defaultNow().notNull(),
 });
 
@@ -126,9 +148,22 @@ export abstract class TransportOfferRepository {
 }
 
 @Injectable()
+export abstract class CalculationRecordRepository {
+  abstract create(
+    record: typeof calculationRecords.$inferInsert,
+  ): Promise<typeof calculationRecords.$inferSelect>;
+  abstract findById(
+    id: number,
+  ): Promise<typeof calculationRecords.$inferSelect | null>;
+  abstract findBySession(
+    sessionId: string,
+  ): Promise<typeof calculationRecords.$inferSelect[]>;
+}
+
+@Injectable()
 export abstract class AuditRepository {
   abstract recordCalculation(
-    entry: typeof calculationAudit.$inferInsert,
+    entry: typeof calculationRecords.$inferInsert,
   ): Promise<void>;
 }
 
@@ -142,11 +177,13 @@ export type {
   ITaxRateRepository,
   ITransportOfferRepository,
   IAuditRepository,
+  ICalculationRecordRepository,
   ProductMasterRecord,
   RetailOfferRecord,
   TaxRuleRecord,
   TransportOfferRecord,
   CalculationAuditEntry,
+  CalculationRecord,
 } from './interfaces/repository-registry.interface';
 
 // ---------------------------------------------------------------------------
@@ -154,6 +191,12 @@ export type {
 // ---------------------------------------------------------------------------
 
 @Module({
-  exports: [ProductRepository, TaxRateRepository, TransportOfferRepository, AuditRepository],
+  exports: [
+    ProductRepository,
+    TaxRateRepository,
+    TransportOfferRepository,
+    AuditRepository,
+    CalculationRecordRepository,
+  ],
 })
 export class DataPlatformModule {}
