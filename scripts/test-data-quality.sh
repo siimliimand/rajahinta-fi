@@ -8,6 +8,15 @@ echo "=== Data-quality checks ==="
 
 DB_URL="${DATABASE_URL:-postgresql://rajahinta:rajahinta@localhost:5432/rajahinta_test}"
 
+# Seed the database first so tables exist
+SEED_PATH="${GOLDEN_DATASET_PATH:-./infra/staging-data/seed.sql}"
+if [ -f "$SEED_PATH" ]; then
+  echo "Loading seed data from $SEED_PATH..."
+  psql "$DB_URL" -f "$SEED_PATH" > /dev/null 2>&1 || echo "WARN: Seed load failed (tables may already exist or schema differs)"
+else
+  echo "WARN: No seed file found at $SEED_PATH — skipping seed"
+fi
+
 # Schema conformance: verify all expected tables exist
 EXPECTED_TABLES=("products" "merchant_offers" "tax_rate_versions" "transport_rates" "calculation_audit")
 
@@ -28,8 +37,8 @@ psql "$DB_URL" -c "
   FROM products WHERE id IS NULL OR name IS NULL OR container_type IS NULL OR volume_litres IS NULL;
 " | grep -q "0 rows" || true  # non-fatal for now; placeholder
 
-# Run data-quality vitest suite
-pnpm vitest run --reporter=verbose --include "**/__tests__/*.data-quality*.test.ts" 2>&1 \
+# Run data-quality vitest suite (match any test file with data-quality in its path)
+pnpm vitest run --reporter=verbose --include "**/*data-quality*.test.ts" 2>&1 \
   || { echo "FAILED: Data-quality tests"; exit 1; }
 
 echo "=== Data-quality checks PASSED ==="
