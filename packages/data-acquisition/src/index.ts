@@ -1,4 +1,4 @@
-import { Module, Injectable } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
 
 // ---------------------------------------------------------------------------
@@ -21,44 +21,44 @@ export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 /**
  * Ingests product/price data from external merchant sources.
  * Runs as a queued BullMQ job to stay off the request path.
+ * @deprecated Use {@link PipelineOrchestratorService} instead.
  */
-@Injectable()
-export abstract class PriceIngestionService {
-  abstract ingestMerchantPrices(
-    merchantId: string,
-    sourceUrl: string,
-  ): Promise<{ productsIngested: number; errors: string[] }>;
-
-  abstract scheduleRefresh(merchantId: string, cronExpression: string): void;
-}
+export { PriceIngestionService } from './abstract/price-ingestion.service';
 
 /**
  * Refreshes carrier transport rates periodically.
+ * @deprecated Use {@link PipelineOrchestratorService} instead.
  */
-@Injectable()
-export abstract class TransportRateService {
-  abstract refreshCarrierRates(
-    carrierId: string,
-  ): Promise<{ ratesUpdated: number }>;
-
-  abstract schedulePeriodicRefresh(intervalMs: number): void;
-}
+export { TransportRateService } from './abstract/transport-rate.service';
 
 /**
  * Checks for newly published official tax rate changes.
  * Rates are never auto-published — discoveries create a task for
  * manual/legal confirmation before any new dataset version goes live.
  */
-@Injectable()
-export abstract class TaxDatasetReviewService {
-  abstract checkForNewPublishedRates(): Promise<{
-    datasetsFound: number;
-    requiresConfirmation: boolean;
-  }>;
-}
+export { TaxDatasetReviewService } from './abstract/tax-dataset-review.service';
 
 // ---------------------------------------------------------------------------
-// Module boundary — pure interfaces for cross-layer contracts
+// Pipeline services
+// ---------------------------------------------------------------------------
+
+export { PipelineOrchestratorService } from './services/pipeline-orchestrator.service';
+export type { PipelineRunReport } from './services/pipeline-orchestrator.service';
+
+export { FeedIngestionService } from './services/feed-ingestion.service';
+
+export { DataMappingService } from './services/data-mapping.service';
+export type { MappedPair } from './services/data-mapping.service';
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+export type { MerchantConfig } from './config/merchants.config';
+export { DEFAULT_MERCHANTS, MERCHANT_CONFIG_TOKEN } from './config/merchants.config';
+
+// ---------------------------------------------------------------------------
+// Interfaces — cross-layer contracts
 // ---------------------------------------------------------------------------
 
 export type {
@@ -66,13 +66,30 @@ export type {
   IPriceDataSource,
   ITransportRateDataSource,
   ITaxRateDataSource,
-  IngestionResult,
-  RateRefreshResult,
-  PublishedRatesCheckResult,
 } from './interfaces/data-source.interface';
+export type { IngestionResult, RateRefreshResult, PublishedRatesCheckResult } from './interfaces/data-source.interface';
+
+export type { IFeedAdapter, RawFeedRecord } from './interfaces/feed-adapter.interface';
+export { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
+
+export type { IUpsertRepository, UpsertProductInput, UpsertOfferInput, UpsertResult } from './interfaces/upsert-port.interface';
+export { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
 
 // ---------------------------------------------------------------------------
-// NestJS module — registers Bull queues, exports service tokens
+// Imports for module registration
+// ---------------------------------------------------------------------------
+
+import { PipelineOrchestratorService } from './services/pipeline-orchestrator.service';
+import { FeedIngestionService } from './services/feed-ingestion.service';
+import { DataMappingService } from './services/data-mapping.service';
+import { PriceIngestionService } from './abstract/price-ingestion.service';
+import { TransportRateService } from './abstract/transport-rate.service';
+import { TaxDatasetReviewService } from './abstract/tax-dataset-review.service';
+import { MERCHANT_CONFIG_TOKEN, DEFAULT_MERCHANTS } from './config/merchants.config';
+import { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
+
+// ---------------------------------------------------------------------------
+// NestJS module — registers Bull queues, exposes pipeline services
 // ---------------------------------------------------------------------------
 
 @Module({
@@ -84,11 +101,28 @@ export type {
       { name: QUEUES.TIME_SERIES_AGGREGATION },
     ),
   ],
+  providers: [
+    // Concrete pipeline services
+    PipelineOrchestratorService,
+    FeedIngestionService,
+    DataMappingService,
+
+    // Default merchant config — override at app level to provide real URLs
+    { provide: MERCHANT_CONFIG_TOKEN, useValue: DEFAULT_MERCHANTS },
+
+    // Feed adapters multi-provider (empty by default; populated by merchant features)
+    { provide: FEED_ADAPTERS_TOKEN, useValue: new Map<string, import('./interfaces/feed-adapter.interface').IFeedAdapter>() },
+  ],
   exports: [
     BullModule,
+    PipelineOrchestratorService,
+    FeedIngestionService,
+    DataMappingService,
     PriceIngestionService,
     TransportRateService,
     TaxDatasetReviewService,
+    MERCHANT_CONFIG_TOKEN,
+    FEED_ADAPTERS_TOKEN,
   ],
 })
 export class DataAcquisitionModule {}
