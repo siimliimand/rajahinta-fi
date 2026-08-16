@@ -1,0 +1,8 @@
+# Next.js build output
+.next/
+
+# Auto-generated TypeScript declarations
+next-env.d.ts
+
+# TypeScript incremental build info
+*.tsbuildinfo

@@ -125,6 +125,12 @@ export abstract class TaxCalculationEngine {
 }
 
 // ---------------------------------------------------------------------------
+// Module boundary — pure interfaces for cross-layer contracts
+// ---------------------------------------------------------------------------
+
+export type { ICalculationEngine, LandedCostParams } from './interfaces/calculation-engine.interface';
+
+// ---------------------------------------------------------------------------
 // NestJS module — registration shell; domain logic is injected via providers
 // ---------------------------------------------------------------------------
 

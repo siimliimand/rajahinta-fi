@@ -58,6 +58,20 @@ export abstract class TaxDatasetReviewService {
 }
 
 // ---------------------------------------------------------------------------
+// Module boundary — pure interfaces for cross-layer contracts
+// ---------------------------------------------------------------------------
+
+export type {
+  IDataSourceRegistry,
+  IPriceDataSource,
+  ITransportRateDataSource,
+  ITaxRateDataSource,
+  IngestionResult,
+  RateRefreshResult,
+  PublishedRatesCheckResult,
+} from './interfaces/data-source.interface';
+
+// ---------------------------------------------------------------------------
 // NestJS module — registers Bull queues, exports service tokens
 // ---------------------------------------------------------------------------
 

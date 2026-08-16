@@ -108,6 +108,22 @@ export abstract class AuditRepository {
 }
 
 // ---------------------------------------------------------------------------
+// Module boundary — pure interfaces for cross-layer contracts
+// ---------------------------------------------------------------------------
+
+export type {
+  IRepositoryRegistry,
+  IProductRepository,
+  ITaxRateRepository,
+  IAuditRepository,
+  ProductRecord,
+  MerchantOfferRecord,
+  TaxRateVersionRecord,
+  TransportRateRecord,
+  CalculationAuditEntry,
+} from './interfaces/repository-registry.interface';
+
+// ---------------------------------------------------------------------------
 // NestJS module
 // ---------------------------------------------------------------------------
 
