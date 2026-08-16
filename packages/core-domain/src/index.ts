@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TaxModule } from './tax/tax.module';
+import { NormalizationModule } from './normalization/normalization.module';
+import { SourceGovernanceModule } from './governance/governance.module';
+import { ClassificationModule } from './classification/classification.module';
 
 // ---------------------------------------------------------------------------
 // Domain entities — pure TypeScript, zero framework logic
@@ -145,11 +148,67 @@ export type { BasketItem, BasketShippingResult, BasketShippingThresholdCheck, Ba
 export type { TransactionTransportType } from './transport/transport-classification.types';
 
 // ---------------------------------------------------------------------------
+// Source Governance — merchant data-source provenance, permission tracking
+// ---------------------------------------------------------------------------
+
+export type {
+  AcquisitionMethod,
+  PermissionStatus,
+  SourceGovernanceRecord,
+  RegisterSourceInput,
+  PermissionCheckResult,
+} from './governance/source-governance.types';
+
+export type { ISourceGovernanceRepository } from './governance/ports/source-governance-repository.port';
+export { SOURCE_GOVERNANCE_REPOSITORY_PORT } from './governance/ports/source-governance-repository.port';
+
+export { SourceGovernanceService } from './governance/services/source-governance.service';
+export { SourceGovernanceModule } from './governance/governance.module';
+
+// ---------------------------------------------------------------------------
+// Transaction Classification — highest-liability proprietary logic
+// ---------------------------------------------------------------------------
+
+export { ClassificationModule } from './classification/classification.module';
+export { TransactionClassificationService } from './classification/transaction-classification.service';
+export type {
+  ClassificationInput,
+  ClassificationResult,
+  ClassificationLabel,
+  ConfidenceLevel,
+} from './classification/classification.types';
+export type {
+  ClassificationRule,
+  ClassificationRuleSet,
+} from './classification/classification-rule.types';
+
+// ---------------------------------------------------------------------------
+// Normalization — raw product cleansing, category mapping, volume/ABV validation
+// ---------------------------------------------------------------------------
+
+export { NormalizationModule } from './normalization/normalization.module';
+export { NormalizationService } from './normalization/normalization.service';
+export {
+  normalizeBrandName,
+  normalizeCategory,
+  standardizeVolume,
+  standardizeContainerType,
+  validateAbv,
+} from './normalization/normalization.service';
+export type {
+  CanonicalCategory,
+  CanonicalContainerType,
+  NormalizedProduct,
+  RawProductInput,
+  VolumeUnit,
+} from './normalization/normalization.types';
+
+// ---------------------------------------------------------------------------
 // NestJS module — registration shell; domain logic is injected via providers
 // ---------------------------------------------------------------------------
 
 @Module({
-  imports: [TaxModule],
-  exports: [TaxModule, TaxCalculationEngine],
+  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule],
+  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, TaxCalculationEngine],
 })
 export class CoreDomainModule {}
