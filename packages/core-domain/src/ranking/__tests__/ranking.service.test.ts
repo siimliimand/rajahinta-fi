@@ -331,3 +331,112 @@ describe('type system enforcement', () => {
     expect(true).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// describeSortOrder — plain-language descriptions
+// ---------------------------------------------------------------------------
+
+describe('describeSortOrder', () => {
+  it('describes LOWEST_LANDED_COST accurately', () => {
+    const desc = service.describeSortOrder('LOWEST_LANDED_COST');
+    expect(desc).toContain('lowest to highest');
+    expect(desc).toContain('foreign retail price');
+    expect(desc).toContain('transport costs');
+    expect(desc).toContain('alcohol excise duty');
+    expect(desc).toContain('container duty');
+  });
+
+  it('describes LOWEST_PER_LITRE accurately', () => {
+    const desc = service.describeSortOrder('LOWEST_PER_LITRE');
+    expect(desc).toContain('cost per litre');
+    expect(desc).toContain('total landed cost');
+    expect(desc).toContain('product volume');
+  });
+
+  it('describes LOWEST_PER_UNIT accurately', () => {
+    const desc = service.describeSortOrder('LOWEST_PER_UNIT');
+    expect(desc).toContain('cost per unit');
+    expect(desc).toContain('total landed cost');
+    expect(desc).toContain('quantity');
+  });
+
+  it('describes ALPHABETICAL accurately', () => {
+    const desc = service.describeSortOrder('ALPHABETICAL');
+    expect(desc).toContain('alphabetically');
+    expect(desc).toContain('Finnish locale');
+  });
+
+  it('describes ALCOHOL_PERCENTAGE accurately', () => {
+    const desc = service.describeSortOrder('ALCOHOL_PERCENTAGE');
+    expect(desc).toContain('alcohol by volume');
+    expect(desc).toContain('highest to lowest');
+  });
+
+  it('describes PRODUCT_CATEGORY accurately', () => {
+    const desc = service.describeSortOrder('PRODUCT_CATEGORY');
+    expect(desc).toContain('category');
+    expect(desc).toContain('alphabetically');
+    expect(desc).toContain('Finnish locale');
+  });
+
+  it('returns a non-empty string for every valid SortOrder', () => {
+    const orders: Array<Parameters<typeof service.describeSortOrder>[0]> = [
+      'LOWEST_LANDED_COST',
+      'LOWEST_PER_LITRE',
+      'LOWEST_PER_UNIT',
+      'ALPHABETICAL',
+      'ALCOHOL_PERCENTAGE',
+      'PRODUCT_CATEGORY',
+    ];
+    for (const order of orders) {
+      expect(service.describeSortOrder(order)).toBeTruthy();
+      expect(service.describeSortOrder(order).length).toBeGreaterThan(20);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getRankingMethodology — public methodology description
+// ---------------------------------------------------------------------------
+
+describe('getRankingMethodology', () => {
+  it('states that only objective factors are used', () => {
+    const text = service.getRankingMethodology();
+    expect(text).toContain('objective');
+    expect(text).toContain('non-commercial');
+  });
+
+  it('explicitly denies paid placement', () => {
+    const text = service.getRankingMethodology();
+    expect(text).toContain('No merchant payment');
+    expect(text).toContain('promotional flag');
+    expect(text).toContain('manual boost');
+  });
+
+  it('names every sort order', () => {
+    const text = service.getRankingMethodology();
+    const orders = [
+      'LOWEST_LANDED_COST',
+      'LOWEST_PER_LITRE',
+      'LOWEST_PER_UNIT',
+      'ALPHABETICAL',
+      'ALCOHOL_PERCENTAGE',
+      'PRODUCT_CATEGORY',
+    ];
+    for (const order of orders) {
+      expect(text).toContain(order);
+    }
+  });
+
+  it('mentions tiebreaker behaviour', () => {
+    const text = service.getRankingMethodology();
+    expect(text).toContain('tiebreaker');
+    expect(text).toContain('deterministic');
+  });
+
+  it('returns a non-empty multi-sentence string', () => {
+    const text = service.getRankingMethodology();
+    expect(text.length).toBeGreaterThan(200);
+    expect(text.split('\n').length).toBeGreaterThanOrEqual(5);
+  });
+});

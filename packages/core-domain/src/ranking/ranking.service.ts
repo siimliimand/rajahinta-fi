@@ -215,4 +215,91 @@ export class RankingService {
     const comparator = COMPARATOR_REGISTRY[sortBy];
     return [...items].sort(comparator);
   }
+
+  /**
+   * Return a plain-language description of a single sort order.
+   *
+   * The description is accurate and complete — it states exactly what the
+   * sort does and, for cost-based sorts, which factors are included.
+   *
+   * @param order - The sort order to describe.
+   * @returns A human-readable description of the sort order.
+   */
+  describeSortOrder(order: SortOrder): string {
+    const descriptions: Record<SortOrder, string> = {
+      LOWEST_LANDED_COST:
+        'Products are sorted by total estimated landed cost from lowest to ' +
+        'highest. The total includes foreign retail price, transport costs, ' +
+        'alcohol excise duty, and container duty.',
+      LOWEST_PER_LITRE:
+        'Products are sorted by cost per litre from lowest to highest. ' +
+        'The cost per litre is calculated as total landed cost divided by ' +
+        'product volume.',
+      LOWEST_PER_UNIT:
+        'Products are sorted by cost per unit from lowest to highest. ' +
+        'The cost per unit is calculated as total landed cost divided by ' +
+        'quantity.',
+      ALPHABETICAL:
+        'Products are sorted alphabetically by name from A to Z using ' +
+        'Finnish locale rules.',
+      ALCOHOL_PERCENTAGE:
+        'Products are sorted by alcohol by volume (ABV) from highest to ' +
+        'lowest.',
+      PRODUCT_CATEGORY:
+        'Products are grouped by category and sorted alphabetically ' +
+        'within each category. Categories are ordered alphabetically ' +
+        'using Finnish locale rules.',
+    };
+    return descriptions[order];
+  }
+
+  /**
+   * Return a complete plain-language description of the ranking methodology.
+   *
+   * This description is suitable for a public 'how ranking works' page.
+   * It explains that all sort orders are objective, names each order with
+   * its description, and explicitly states that no commercial factor can
+   * affect any product's position.
+   *
+   * @returns A multi-sentence methodology description.
+   */
+  getRankingMethodology(): string {
+    const intro =
+      'Rajahinta uses only objective, non-commercial factors to sort ' +
+      'products. No merchant payment, promotional flag, or manual boost ' +
+      'can affect any product\'s position.';
+    const orders = Object.values(this.describeSortOrderInternal());
+    return (
+      intro +
+      '\n\n' +
+      'The following sort orders are available:\n\n' +
+      orders.map((o) => `- ${o.name}: ${o.description}`).join('\n') +
+      '\n\n' +
+      'All sort orders use the product name as a tiebreaker when the ' +
+      'primary sort values are equal. Rankings are deterministic: the ' +
+      'same data always produces the same order.'
+    );
+  }
+
+  /**
+   * Internal helper to iterate sort orders without exposing the record
+   * shape through the public API.
+   */
+  private describeSortOrderInternal(): Array<{
+    name: string;
+    description: string;
+  }> {
+    const orders: SortOrder[] = [
+      'LOWEST_LANDED_COST',
+      'LOWEST_PER_LITRE',
+      'LOWEST_PER_UNIT',
+      'ALPHABETICAL',
+      'ALCOHOL_PERCENTAGE',
+      'PRODUCT_CATEGORY',
+    ];
+    return orders.map((order) => ({
+      name: order,
+      description: this.describeSortOrder(order),
+    }));
+  }
 }
