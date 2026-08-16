@@ -84,6 +84,9 @@ export interface RawProductInput {
   /** Free-text packaging description (e.g. 'glass bottle', 'aluminum can'). */
   readonly packaging?: string;
 
+  /** GTIN-13 / EAN barcode (optional, from product master feed). */
+  readonly ean?: string;
+
   /** Product image URLs (optional, pass-through). */
   readonly images?: readonly string[];
 
@@ -124,6 +127,9 @@ export interface NormalizedProduct {
 
   /** Standardised container type. */
   readonly containerType: CanonicalContainerType;
+
+  /** GTIN-13 / EAN barcode (null when not available in source feed). */
+  readonly ean: string | null;
 
   /** Product image URLs (pass-through). */
   readonly images: readonly string[];

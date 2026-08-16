@@ -393,6 +393,7 @@ export class NormalizationService {
     // --- Pass-through fields ---
     const name = cleanText(raw.name);
     const description = raw.description ? cleanText(raw.description) : '';
+    const ean = raw.ean?.trim() ?? null;
     const images = raw.images ?? [];
 
     return {
@@ -402,6 +403,7 @@ export class NormalizationService {
       volumeLitres,
       alcoholByVolume,
       containerType,
+      ean,
       images,
       description,
       originalInput: raw,
