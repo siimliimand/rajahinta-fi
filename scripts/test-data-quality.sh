@@ -9,7 +9,12 @@ echo "=== Data-quality checks ==="
 DB_URL="${DATABASE_URL:-postgresql://rajahinta:rajahinta@localhost:5432/rajahinta_test}"
 
 # Seed the database first so tables exist
-SEED_PATH="${GOLDEN_DATASET_PATH:-./infra/staging-data/seed.sql}"
+SCHEMA_PATH="${GOLDEN_DATASET_PATH:-./infra/staging-data}/schema.sql"
+SEED_PATH="${GOLDEN_DATASET_PATH:-./infra/staging-data}/seed.sql"
+if [ -f "$SCHEMA_PATH" ]; then
+  echo "Loading schema from $SCHEMA_PATH..."
+  psql "$DB_URL" -f "$SCHEMA_PATH" > /dev/null 2>&1
+fi
 if [ -f "$SEED_PATH" ]; then
   echo "Loading seed data from $SEED_PATH..."
   psql "$DB_URL" -f "$SEED_PATH" > /dev/null 2>&1 || echo "WARN: Seed load failed (tables may already exist or schema differs)"
