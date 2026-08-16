@@ -23,6 +23,7 @@ import { JobsModule } from './jobs';
 import { IdempotencyModule } from './idempotency';
 import { RateLimitingModule } from './rate-limiting';
 import { BillingModule } from './billing';
+import { AuditModule } from './audit';
 import { CalculatorController } from './calculator';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
@@ -158,6 +159,7 @@ export abstract class UseCaseOrchestrator {
     IdempotencyModule,
     RateLimitingModule,
     BillingModule,
+    AuditModule,
     CalculatorModule,
     RankingModule,
     DeclarationModule,
@@ -170,7 +172,7 @@ export abstract class UseCaseOrchestrator {
     SearchController,
     DeclarationController,
   ],
-  exports: [UseCaseOrchestrator, FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule],
+  exports: [UseCaseOrchestrator, FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule],
 })
 export class ApplicationApiModule {}
 
@@ -238,3 +240,9 @@ export type { SearchProductsQuery, ProductSearchResult, ProductSearchItem, Produ
 
 export { DeclarationController } from './declaration';
 export type { DeclarationSummaryResponse } from './declaration';
+
+// ---------------------------------------------------------------------------
+// Audit — immutable audit log (in-memory Phase 1 implementation)
+// ---------------------------------------------------------------------------
+
+export { AuditModule, InMemoryAuditRepository } from './audit';

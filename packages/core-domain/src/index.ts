@@ -357,6 +357,16 @@ export type { Entitlement, EntitlementTier, FeatureId } from './entitlement/enti
 export { FEATURE_TIER_MAP, isTierSufficient } from './entitlement/entitlement.types';
 
 // ---------------------------------------------------------------------------
+// Audit — immutable audit log for high-liability domain changes
+// ---------------------------------------------------------------------------
+
+export { AuditModule } from './audit/audit.module';
+export { AuditService } from './audit/audit.service';
+export { AUDIT_REPOSITORY_PORT } from './audit/audit-repository.port';
+export type { IAuditRepository } from './audit/audit-repository.port';
+export type { AuditEntry, AuditAction, AuditQuery } from './audit/audit.types';
+
+// ---------------------------------------------------------------------------
 // NestJS module — registration shell; domain logic is injected via providers
 // ---------------------------------------------------------------------------
 
