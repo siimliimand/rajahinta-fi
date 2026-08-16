@@ -22,6 +22,7 @@ import { FeatureFlagsModule } from './feature-flags';
 import { JobsModule } from './jobs';
 import { IdempotencyModule } from './idempotency';
 import { RateLimitingModule } from './rate-limiting';
+import { BillingModule } from './billing';
 import { CalculatorController } from './calculator';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
@@ -156,6 +157,7 @@ export abstract class UseCaseOrchestrator {
     JobsModule,
     IdempotencyModule,
     RateLimitingModule,
+    BillingModule,
     CalculatorModule,
     RankingModule,
     DeclarationModule,
@@ -208,6 +210,13 @@ export type { CacheKeyInput, IdempotencyOptions, IIdempotencyCache } from './ide
 
 export { RateLimitingModule, RateLimitingService, InMemoryRateLimiter, RATE_LIMITER, RateLimitGuard, RateLimit, RATE_LIMIT_PROFILES } from './rate-limiting';
 export type { RateLimitProfileName, IRateLimiter } from './rate-limiting';
+
+// ---------------------------------------------------------------------------
+// Billing — subscription billing integration (Phase 1: simulated)
+// ---------------------------------------------------------------------------
+
+export { BillingModule, BillingService } from './billing';
+export type { SubscriptionStatus } from './billing';
 
 // ---------------------------------------------------------------------------
 // Calculator — landed-cost calculation API
