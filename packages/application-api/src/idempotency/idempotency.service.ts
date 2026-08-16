@@ -1,0 +1,287 @@
+/**
+ * IdempotencyService — version-keyed cached calculator results.
+ *
+ * Generates a deterministic cache key from input parameters and stores
+ * results alongside the dataset versions that produced them.  Cache
+ * invalidation is driven by dataset version changes, not TTL.
+ *
+ * In-memory for Phase 1; implements {@link IIdempotencyCache} so the
+ * backing store can be swapped for Redis in production.
+ *
+ * @module IdempotencyService
+ */
+
+import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+import type { CalculatorResult } from '@rajahinta/core-domain';
+
+// ---------------------------------------------------------------------------
+// Injection token
+// ---------------------------------------------------------------------------
+
+/** Injection token for the idempotency cache backend. */
+export const IDEMPOTENCY_CACHE = 'IDEMPOTENCY_CACHE';
+
+// ---------------------------------------------------------------------------
+// Cache entry
+// ---------------------------------------------------------------------------
+
+/** A single cache entry keyed by input hash. */
+interface CacheEntry {
+  /** The cached calculation result. */
+  readonly result: CalculatorResult;
+  /** Dataset versions that produced this result. */
+  readonly datasetVersions: readonly string[];
+  /** When the entry was created (ISO 8601). */
+  readonly createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Cache options
+// ---------------------------------------------------------------------------
+
+/** Options for configuring the idempotency cache. */
+export interface IdempotencyOptions {
+  /** Maximum number of entries before eviction (LRU). Default: 5000. */
+  readonly maxEntries?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Cache interface — replaceable for production
+// ---------------------------------------------------------------------------
+
+/**
+ * Pluggable cache backend for idempotency storage.
+ *
+ * Phase 1 provides an in-memory implementation; swap to Redis or
+ * another distributed store by providing an alternative binding.
+ */
+export interface IIdempotencyCache {
+  /** Retrieve a cached entry, or null on miss. */
+  get(key: string): CacheEntry | null;
+  /** Store an entry. */
+  set(key: string, entry: CacheEntry): void;
+  /** Delete entries whose datasetVersions contain any of the given versions. */
+  invalidateVersions(versions: string[]): void;
+  /** Clear all entries. */
+  clear(): void;
+  /** Current entry count. */
+  readonly size: number;
+}
+
+// ---------------------------------------------------------------------------
+// Cache key helpers
+// ---------------------------------------------------------------------------
+
+/** Input parameters that uniquely identify a calculation request. */
+export interface CacheKeyInput {
+  readonly productId: number;
+  readonly quantity: number;
+  readonly destination: string;
+  readonly transportMethod?: string;
+}
+
+/**
+ * Deterministic SHA-256 hash of the input parameters.
+ *
+ * The hash is stable across process restarts — cache invalidation is
+ * driven by dataset version changes, not TTL or redeployment.
+ */
+export function hashInput(input: CacheKeyInput): string {
+  const h = createHash('sha256');
+  h.update(String(input.productId));
+  h.update('|');
+  h.update(String(input.quantity));
+  h.update('|');
+  h.update(input.destination.toUpperCase());
+  h.update('|');
+  h.update(input.transportMethod ?? '__NONE__');
+  return h.digest('hex');
+}
+
+// ---------------------------------------------------------------------------
+// In-memory cache
+// ---------------------------------------------------------------------------
+
+/**
+ * LRU-ish in-memory cache backed by a Map.
+ *
+ * Evicts the oldest entries when `maxEntries` is exceeded.  The Map
+ * iteration order is insertion-order, so Map.keys().next() yields the
+ * oldest entry.
+ */
+@Injectable()
+export class InMemoryIdempotencyCache implements IIdempotencyCache {
+  private readonly store = new Map<string, CacheEntry>();
+  private readonly maxEntries: number;
+  private readonly logger = new Logger(InMemoryIdempotencyCache.name);
+
+  constructor(@Optional() options?: IdempotencyOptions) {
+    this.maxEntries = options?.maxEntries ?? 5000;
+  }
+
+  get(key: string): CacheEntry | null {
+    const entry = this.store.get(key);
+    if (entry === undefined) return null;
+    // Refresh — delete & re-insert to move to end (LRU-friendly)
+    this.store.delete(key);
+    this.store.set(key, entry);
+    return entry;
+  }
+
+  set(key: string, entry: CacheEntry): void {
+    // Evict oldest entries when at capacity
+    if (this.store.size >= this.maxEntries) {
+      const oldestKey = this.store.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.store.delete(oldestKey);
+        this.logger.debug(`Evicted oldest cache entry: ${oldestKey}`);
+      }
+    }
+    this.store.set(key, entry);
+  }
+
+  invalidateVersions(versions: string[]): void {
+    if (versions.length === 0) return;
+    const versionSet = new Set(versions);
+    let evicted = 0;
+
+    for (const [key, entry] of this.store) {
+      if (entry.datasetVersions.some((v) => versionSet.has(v))) {
+        this.store.delete(key);
+        evicted++;
+      }
+    }
+
+    if (evicted > 0) {
+      this.logger.log(
+        `Invalidated ${evicted} cache entries referencing dataset versions: ${versions.join(', ')}`,
+      );
+    }
+  }
+
+  clear(): void {
+    this.store.clear();
+  }
+
+  get size(): number {
+    return this.store.size;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
+
+/**
+ * Facade over the idempotency cache.
+ *
+ * Generates cache keys, stores/retrieves results, and exposes
+ * version-aware invalidation.
+ */
+@Injectable()
+export class IdempotencyService {
+  private readonly logger = new Logger(IdempotencyService.name);
+
+  constructor(
+    @Inject(IDEMPOTENCY_CACHE) private readonly cache: IIdempotencyCache,
+  ) {}
+
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Generate a deterministic cache key from calculation inputs.
+   */
+  getCacheKey(input: CacheKeyInput): string {
+    return hashInput(input);
+  }
+
+  /**
+   * Look up a cached result by key.
+   *
+   * Returns the result only when the cached dataset versions match the
+   * currently expected versions (passed via `currentVersions`).  If the
+   * caller does not supply current versions, any cached result is returned.
+   *
+   * @param key — cache key from {@link getCacheKey}
+   * @param currentVersions — dataset versions the caller expects; when
+   *        provided, the result is only returned if versions match.
+   *        Pass an empty array to skip version checking.
+   */
+  lookup(
+    key: string,
+    currentVersions?: readonly string[],
+  ): CalculatorResult | null {
+    const entry = this.cache.get(key);
+    if (entry === null) return null;
+
+    // Version check: if caller provides expected versions and they differ
+    // from the cached versions, treat as miss.
+    if (
+      currentVersions !== undefined &&
+      currentVersions.length > 0 &&
+      !this.versionsMatch(entry.datasetVersions, currentVersions)
+    ) {
+      this.logger.debug(
+        `Cache miss for ${key}: dataset versions changed (cached=${entry.datasetVersions.join(',')}, current=${currentVersions.join(',')})`,
+      );
+      return null;
+    }
+
+    return entry.result;
+  }
+
+  /**
+   * Store a calculation result in the cache.
+   *
+   * @param key — cache key from {@link getCacheKey}
+   * @param result — the calculator result
+   */
+  store(key: string, result: CalculatorResult): void {
+    const entry: CacheEntry = {
+      result,
+      datasetVersions: result.metadata.datasetVersions,
+      createdAt: new Date().toISOString(),
+    };
+    this.cache.set(key, entry);
+    this.logger.debug(
+      `Cached result for ${key} (versions: ${entry.datasetVersions.join(',')})`,
+    );
+  }
+
+  /**
+   * Invalidate all cache entries that reference any of the given dataset
+   * versions.  Called when a new dataset version is detected.
+   */
+  invalidateOnVersionChange(versions: string[]): void {
+    this.cache.invalidateVersions(versions);
+  }
+
+  /**
+   * Get the content hash for a calculation result — stable across
+   * identical results, changes when any field changes.
+   */
+  getContentHash(result: CalculatorResult): string {
+    const h = createHash('sha256');
+    h.update(JSON.stringify(result));
+    return h.digest('hex');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Compare two version arrays for equality (order-independent).
+   */
+  private versionsMatch(
+    a: readonly string[],
+    b: readonly string[],
+  ): boolean {
+    if (a.length !== b.length) return false;
+    const setB = new Set(b);
+    return a.every((v) => setB.has(v));
+  }
+}

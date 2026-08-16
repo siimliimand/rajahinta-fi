@@ -56,7 +56,7 @@ export type { ICalculationEngine, LandedCostParams } from './calculation-engine.
  *   ITaxRateRepository       — findEffectiveVersion, findVersionById
  *   IAuditRepository         — recordCalculation
  *   ProductRecord            — read-model shape (no ORM types exposed)
- *   MerchantOfferRecord
+ *   RetailOfferRecord
  *   TaxRateVersionRecord
  *   TransportRateRecord
  *   CalculationAuditEntry

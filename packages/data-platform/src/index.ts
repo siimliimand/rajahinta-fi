@@ -7,76 +7,198 @@ import {
   timestamp,
   integer,
   jsonb,
+  boolean,
+  text,
 } from 'drizzle-orm/pg-core';
 
 // ---------------------------------------------------------------------------
 // Drizzle schema definitions (PostgreSQL 16 + TimescaleDB 2.16)
 // ---------------------------------------------------------------------------
 
-/** Product master — canonical product records. */
-export const products = pgTable('products', {
+/**
+ * Product Master — canonical product records.
+ *
+ * One row per unique beverage product. Fields are driven by the
+ * ingestion pipeline (RawFeedRecord → UpsertProductInput) and the
+ * calculation engines that need product attributes for tax/duty lookup.
+ */
+export const productMaster = pgTable('product_master', {
   id: serial('id').primaryKey(),
+  /** Display name from merchant feed (RawFeedRecord.productName). */
   name: varchar('name', { length: 512 }).notNull(),
-  brand: varchar('brand', { length: 256 }),
-  containerType: varchar('container_type', { length: 32 }).notNull(),
-  volumeLitres: numeric('volume_litres', { precision: 10, scale: 4 }).notNull(),
+  /** Manufacturer from feed adapter — used for product disambiguation. */
+  manufacturer: varchar('manufacturer', { length: 256 }).notNull(),
+  /** Brand from feed adapter — mapped by DataMappingService for upsert matching. */
+  brand: varchar('brand', { length: 256 }).notNull(),
+  /** Product category — maps to taxRules.productCategory for excise/duty rule lookup. */
+  category: varchar('category', { length: 32 }).notNull(),
+  /** Alcohol by volume (decimal, e.g. 0.047 for 4.7%) — required by excise engine. */
   alcoholByVolume: numeric('alcohol_by_volume', { precision: 5, scale: 3 }),
+  /** Unit volume in litres — required for per-volume tax formulas (€/litre). */
+  unitVolume: numeric('unit_volume', { precision: 10, scale: 4 }).notNull(),
+  /** Container type (glass/plastic/metal/carton) — determines container duty rate. */
+  containerType: varchar('container_type', { length: 32 }).notNull(),
+  /** Regulatory classification from feed — used for tax classification matching. */
+  regulatoryClassification: varchar('regulatory_classification', { length: 64 }).notNull(),
+  /** True if packaging participates in Finnish deposit-return system — checked by container-duty service for exemption. */
+  depositSystemStatus: boolean('deposit_system_status').default(false).notNull(),
+  /** EAN-13 barcode — primary product identification key for upsert matching. */
   ean: varchar('ean', { length: 13 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-/** Merchant offers — scraped price points from external retailers. */
-export const merchantOffers = pgTable('merchant_offers', {
+/**
+ * Retail offers — scraped price points from external retailers.
+ *
+ * One row per (merchant, product, observedAt) observation. Price history
+ * enables trend analysis and freshness-based filtering.
+ */
+export const retailOffers = pgTable('retail_offers', {
   id: serial('id').primaryKey(),
+  /** Merchant identifier — distinguishes sources (e.g. "alko", "systembolaget"). */
+  merchant: varchar('merchant', { length: 128 }).notNull(),
+  /** Market/origin country (ISO 3166-1 alpha-2). */
+  country: varchar('country', { length: 4 }).notNull(),
+  /** FK to product_master — links offer to canonical product. */
   productId: integer('product_id')
-    .references(() => products.id)
+    .references(() => productMaster.id)
     .notNull(),
-  merchantId: varchar('merchant_id', { length: 128 }).notNull(),
+  /** Retail price in smallest currency unit (cents). */
   priceCents: integer('price_cents').notNull(),
+  /** Price currency — default EUR for Finnish market. */
   currency: varchar('currency', { length: 3 }).default('EUR').notNull(),
+  /** Stock status — filters out-of-stock offers from price comparisons. */
+  availability: varchar('availability', { length: 16 })
+    .default('unknown')
+    .notNull(),
+  /** Provenance link to source product page. */
   sourceUrl: varchar('source_url', { length: 1024 }),
-  reliability: varchar('reliability', { length: 16 }).default('EXACT').notNull(),
+  /** When price was observed — used for freshness calculations. */
   observedAt: timestamp('observed_at').defaultNow().notNull(),
+  /** Data freshness indicator (VERIFIED/ESTIMATED/STALE/UNAVAILABLE) — surfaced to user per architecture rule. */
+  reliabilityStatus: varchar('reliability_status', { length: 16 })
+    .default('ESTIMATED')
+    .notNull(),
 });
 
-/** Versioned tax rate datasets — never overwritten, always appended. */
-export const taxRateVersions = pgTable('tax_rate_versions', {
+/**
+ * Versioned tax rules — never overwritten, always appended.
+ *
+ * Each row represents a rate effective for a time window. Historical rates
+ * remain queryable after changes. The calculation engines resolve the
+ * correct version by effectiveFrom/effectiveTo date range.
+ */
+export const taxRules = pgTable('tax_rules', {
   id: serial('id').primaryKey(),
-  versionLabel: varchar('version_label', { length: 64 }).notNull(),
+  /** Tax type discriminator: "excise_duty" or "container_duty". */
+  taxType: varchar('tax_type', { length: 32 }).notNull(),
+  /** Matches productMaster.category — selects applicable rule for a product. */
+  productCategory: varchar('product_category', { length: 32 }).notNull(),
+  /** Rate value (meaning depends on taxType: €/hl/°Plato for excise, €/litre for container). */
+  rate: numeric('rate', { precision: 12, scale: 6 }).notNull(),
+  /** Start of rate validity window (inclusive). */
   effectiveFrom: timestamp('effective_from').notNull(),
+  /** End of rate validity window (exclusive, null = current/active rate). */
   effectiveTo: timestamp('effective_to'),
-  confirmedAt: timestamp('confirmed_at'),
-  rates: jsonb('rates').notNull(),
+  /** JSON exemption rules (e.g. {maxAlcoholByVolume: 0.5}) — evaluated by deposit-checker. */
+  exemptionConditions: jsonb('exemption_conditions'),
+  /** Math function key — selects the calculation formula in the tax engine. */
+  calculationFormulaReference: varchar('calculation_formula_reference', { length: 128 }).notNull(),
+  /** Authoritative publication URL — auditability: "every number is explainable". */
+  officialSource: varchar('official_source', { length: 512 }).notNull(),
+  /** When rate was verified against official source — null = unverified/ESTIMATED. */
+  verificationDate: timestamp('verification_date'),
+  /** Human-readable version label (e.g. "v1.0-2024") — used for audit trail. */
+  versionLabel: varchar('version_label', { length: 64 }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-/** Carrier transport rate offers. */
-export const transportRates = pgTable('transport_rates', {
+/**
+ * Carrier transport offers.
+ *
+ * One row per (carrier, route, weight-bracket, package-tier) pricing entry.
+ * Used by transport-estimation and basket-shipping services to estimate
+ * shipping cost for a landed-cost calculation.
+ */
+export const transportOffers = pgTable('transport_offers', {
   id: serial('id').primaryKey(),
-  carrierId: varchar('carrier_id', { length: 128 }).notNull(),
+  /** Carrier identifier (e.g. "matkahuolto", "posti"). */
+  carrier: varchar('carrier', { length: 64 }).notNull(),
+  /** Shipping origin country (ISO 3166-1 alpha-2). */
   originCountry: varchar('origin_country', { length: 4 }).notNull(),
+  /** Shipping destination — default "FI" (Finland). */
   destinationCountry: varchar('destination_country', { length: 4 })
     .default('FI')
     .notNull(),
-  basePriceCents: integer('base_price_cents').notNull(),
-  pricePerKgCents: numeric('price_per_kg_cents', { precision: 10, scale: 4 }),
-  minWeightKg: numeric('min_weight_kg', { precision: 8, scale: 2 }),
-  maxWeightKg: numeric('max_weight_kg', { precision: 8, scale: 2 }),
-  effectiveFrom: timestamp('effective_from').notNull(),
-  effectiveTo: timestamp('effective_to'),
-  reliability: varchar('reliability', { length: 16 }).default('EXACT').notNull(),
+  /** Weight bracket lower bound in kg — null = no lower limit. */
+  weightMinKg: numeric('weight_min_kg', { precision: 10, scale: 4 }),
+  /** Weight bracket upper bound in kg — null = no upper limit. */
+  weightMaxKg: numeric('weight_max_kg', { precision: 10, scale: 4 }),
+  /** Package tier (parcel/box/pallet) — matches basket dominant type. */
+  packageTier: varchar('package_tier', { length: 32 }).notNull(),
+  /** Shipping cost in smallest currency unit (cents). */
+  priceCents: integer('price_cents').notNull(),
+  /** Price currency — default EUR for Finnish market. */
+  currency: varchar('currency', { length: 3 }).default('EUR').notNull(),
+  /** True if seller pays shipping (affects landed-cost attribution). */
+  sellerInvolvementIndicator: boolean('seller_involvement_indicator').default(false).notNull(),
+  /** When rate was observed from carrier. */
+  observedAt: timestamp('observed_at').defaultNow().notNull(),
+  /** When carrier rates were last refreshed — separate from observedAt for batch refresh tracking. */
   refreshedAt: timestamp('refreshed_at').defaultNow().notNull(),
+  /** Data freshness indicator (VERIFIED/ESTIMATED/STALE/UNAVAILABLE) — surfaced to user per architecture rule.
+   *  Staleness thresholds per domain: price=24h, transport=7d, classification=30d
+   *  (configured in packages/core-domain/src/reliability/reliability.types.ts). */
+  reliabilityStatus: varchar('reliability_status', { length: 16 })
+    .default('ESTIMATED')
+    .notNull(),
 });
 
-/** Calculation audit trail — every figure traceable. */
-export const calculationAudit = pgTable('calculation_audit', {
+/**
+ * Calculation records — every landed-cost result shown to a user.
+ *
+ * Immutable once written. Enables auditability, correction, and
+ * confidence-based ranking. FK references normalised to separate tables
+ * (not flat JSON snapshots) for query flexibility.
+ *
+ * Migration note: replaces the former `calculation_audit` table
+ * (removed in this version). The old table had a flat input/output
+ * snapshot pattern. The new schema normalises FK references and
+ * stores a structured breakdown.
+ */
+export const calculationRecords = pgTable('calculation_records', {
   id: serial('id').primaryKey(),
-  sessionId: varchar('session_id', { length: 64 }).notNull(),
-  inputSnapshot: jsonb('input_snapshot').notNull(),
-  resultSnapshot: jsonb('result_snapshot').notNull(),
-  rateVersionId: integer('rate_version_id').references(() => taxRateVersions.id),
-  disclaimerLanguage: varchar('disclaimer_language', { length: 2 }).notNull(),
+  /** FK to product_master — the product this calculation is for. */
+  productMasterId: integer('product_master_id')
+    .references(() => productMaster.id)
+    .notNull(),
+  /** JSON array of retail_offer_ids — basket may reference multiple offers. */
+  retailOfferIds: jsonb('retail_offer_ids'),
+  /** FK to transport_offers — the shipping option used. */
+  transportOfferId: integer('transport_offer_id')
+    .references(() => transportOffers.id),
+  /** FK to tax_rules — excise rule version applied (traceability). */
+  exciseRuleVersionId: integer('excise_rule_version_id')
+    .references(() => taxRules.id),
+  /** FK to tax_rules — container duty rule version applied (traceability). */
+  containerDutyRuleVersionId: integer('container_duty_rule_version_id')
+    .references(() => taxRules.id),
+  /** Final landed cost in cents. */
+  totalCents: integer('total_cents').notNull(),
+  /** Structured cost breakdown (excise, duty, transport components) — "every number is explainable". */
+  breakdown: jsonb('breakdown').notNull(),
+  /** Confidence level (HIGH/MEDIUM/LOW) — used by ranking/sorting system. */
+  confidence: varchar('confidence', { length: 6 }).notNull(),
+  /** Number of units in the calculation. */
+  quantity: integer('quantity').notNull(),
+  /** Destination country code (ISO 3166-1 alpha-2). */
+  destination: varchar('destination', { length: 4 }).notNull(),
+  /** Structural disclaimer text — required by architecture rule: not a UI-only string. */
+  disclaimer: text('disclaimer').notNull(),
+  /** Session identifier — groups calculations by user session for audit trail. */
+  sessionId: varchar('session_id', { length: 64 }),
+  /** When calculation was performed. */
   calculatedAt: timestamp('calculated_at').defaultNow().notNull(),
 });
 
@@ -86,24 +208,54 @@ export const calculationAudit = pgTable('calculation_audit', {
 
 @Injectable()
 export abstract class ProductRepository {
-  abstract findById(id: number): Promise<typeof products.$inferSelect | null>;
-  abstract findOffers(productId: number): Promise<typeof merchantOffers.$inferSelect[]>;
+  abstract findById(id: number): Promise<typeof productMaster.$inferSelect | null>;
+  abstract findOffers(productId: number): Promise<typeof retailOffers.$inferSelect[]>;
 }
 
 @Injectable()
 export abstract class TaxRateRepository {
   abstract findEffectiveVersion(
     asOf: Date,
-  ): Promise<typeof taxRateVersions.$inferSelect | null>;
+  ): Promise<typeof taxRules.$inferSelect | null>;
   abstract findVersionById(
     id: number,
-  ): Promise<typeof taxRateVersions.$inferSelect | null>;
+  ): Promise<typeof taxRules.$inferSelect | null>;
+
+  /**
+   * Return all tax rules for the given type and category whose effectiveness
+   * window overlaps {@code [fromDate, toDate)}.
+   */
+  abstract findHistoryRates(
+    taxType: string,
+    productCategory: string,
+    fromDate: Date,
+    toDate: Date,
+  ): Promise<typeof taxRules.$inferSelect[]>;
+}
+
+@Injectable()
+export abstract class TransportOfferRepository {
+  abstract findByCarrier(carrierId: string): Promise<typeof transportOffers.$inferSelect[]>;
+  abstract findActive(): Promise<typeof transportOffers.$inferSelect[]>;
+}
+
+@Injectable()
+export abstract class CalculationRecordRepository {
+  abstract create(
+    record: typeof calculationRecords.$inferInsert,
+  ): Promise<typeof calculationRecords.$inferSelect>;
+  abstract findById(
+    id: number,
+  ): Promise<typeof calculationRecords.$inferSelect | null>;
+  abstract findBySession(
+    sessionId: string,
+  ): Promise<typeof calculationRecords.$inferSelect[]>;
 }
 
 @Injectable()
 export abstract class AuditRepository {
   abstract recordCalculation(
-    entry: typeof calculationAudit.$inferInsert,
+    entry: typeof calculationRecords.$inferInsert,
   ): Promise<void>;
 }
 
@@ -115,12 +267,15 @@ export type {
   IRepositoryRegistry,
   IProductRepository,
   ITaxRateRepository,
+  ITransportOfferRepository,
   IAuditRepository,
-  ProductRecord,
-  MerchantOfferRecord,
-  TaxRateVersionRecord,
-  TransportRateRecord,
+  ICalculationRecordRepository,
+  ProductMasterRecord,
+  RetailOfferRecord,
+  TaxRuleRecord,
+  TransportOfferRecord,
   CalculationAuditEntry,
+  CalculationRecord,
 } from './interfaces/repository-registry.interface';
 
 // ---------------------------------------------------------------------------
@@ -128,6 +283,19 @@ export type {
 // ---------------------------------------------------------------------------
 
 @Module({
-  exports: [ProductRepository, TaxRateRepository, AuditRepository],
+  providers: [
+    { provide: ProductRepository, useValue: null },
+    { provide: TaxRateRepository, useValue: null },
+    { provide: TransportOfferRepository, useValue: null },
+    { provide: AuditRepository, useValue: null },
+    { provide: CalculationRecordRepository, useValue: null },
+  ],
+  exports: [
+    ProductRepository,
+    TaxRateRepository,
+    TransportOfferRepository,
+    AuditRepository,
+    CalculationRecordRepository,
+  ],
 })
 export class DataPlatformModule {}

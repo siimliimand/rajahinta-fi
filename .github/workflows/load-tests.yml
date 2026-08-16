@@ -1,0 +1,64 @@
+# ---------------------------------------------------------------------------
+# Load Tests — Landed-Cost Calculator Performance
+# ---------------------------------------------------------------------------
+# Runs the calculator load/performance test suite on every PR to `main`.
+# The test simulates 50 concurrent requests, measures p50/p95/p99 latency,
+# and asserts p95 < 500 ms (adjustable threshold in the test file).
+# ---------------------------------------------------------------------------
+
+name: Load Tests
+
+on:
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '9'
+
+jobs:
+  load-test:
+    name: Load test (calculator)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm -r build
+
+      - name: Run load tests
+        run: pnpm test:load
+
+      - name: Annotate PR with load test results
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const conclusion = '${{ job.status }}';
+            const emoji = conclusion === 'success' ? '✅' : '❌';
+            const summary = conclusion === 'success'
+              ? 'Load test passed — p95 stayed under 500 ms threshold.'
+              : 'Load test failed — p95 exceeded the 500 ms threshold.';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ${emoji} Calculator Load Test\n\n**Status:** ${conclusion}\n\n${summary}\n\n[View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+            });

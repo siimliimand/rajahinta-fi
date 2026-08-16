@@ -1,0 +1,1 @@
+export { EntitlementGuard, RequireFeature, REQUIRE_FEATURE_KEY } from './entitlement.guard';

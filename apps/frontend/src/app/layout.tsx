@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { AgeGate } from './components/AgeGate';
+import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Rajahinta.fi',
@@ -8,7 +10,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fi">
-      <body>{children}</body>
+      <body>
+        <AgeGate>{children}</AgeGate>
+      </body>
     </html>
   );
 }
