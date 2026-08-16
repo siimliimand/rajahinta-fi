@@ -24,6 +24,8 @@ import { SourceGovernanceService } from '@rajahinta/core-domain';
 import type { PermissionCheckResult, PermissionStatus } from '@rajahinta/core-domain';
 import { FeedIngestionService } from './feed-ingestion.service';
 import { DataMappingService } from './data-mapping.service';
+import { DataQualityService } from './data-quality.service';
+import type { DataQualityReport } from './data-quality.service';
 import {
   UPSERT_REPOSITORY_TOKEN,
   type IUpsertRepository,
@@ -59,6 +61,12 @@ export interface PipelineRunReport {
    * the pipeline to run) or when no governance check was performed.
    */
   readonly gateResult?: PermissionGateResult;
+  /**
+   * Automated data-quality report run after upserting every offer in
+   * this batch.  Undefined when no offers were upserted (gate rejected,
+   * no records fetched, or all upserts failed).
+   */
+  readonly qualityReport?: DataQualityReport;
 }
 
 @Injectable()
@@ -68,6 +76,7 @@ export class PipelineOrchestratorService {
   constructor(
     private readonly feedIngestion: FeedIngestionService,
     private readonly dataMapping: DataMappingService,
+    private readonly dataQuality: DataQualityService,
     @Inject(UPSERT_REPOSITORY_TOKEN)
     private readonly upsertRepository: IUpsertRepository,
     private readonly governanceService: SourceGovernanceService,
@@ -151,6 +160,15 @@ export class PipelineOrchestratorService {
     let recordsUpdated = 0;
     const upsertErrors: string[] = [];
 
+    // Track upserted offers for the quality check — we build lightweight
+    // RetailOfferRecord-compatible objects from the mapped data.
+    const upsertedOffers: Array<{
+      merchant: string;
+      productId: number;
+      observedAt: Date;
+      reliabilityStatus: string;
+    }> = [];
+
     for (const pair of mapped) {
       try {
         const upsertResult = await this.upsertRepository.upsertProduct(
@@ -166,6 +184,13 @@ export class PipelineOrchestratorService {
           ...pair.offerInput,
           productId: upsertResult.productId,
         });
+
+        upsertedOffers.push({
+          merchant: config.merchantId,
+          productId: upsertResult.productId,
+          observedAt: pair.offerInput.observedAt,
+          reliabilityStatus: pair.offerInput.reliability,
+        });
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Unknown upsert error';
@@ -175,7 +200,13 @@ export class PipelineOrchestratorService {
       }
     }
 
-    // -- Step 4: Log ----------------------------------------------------------
+    // -- Step 4: Quality check ------------------------------------------------
+    let qualityReport: DataQualityReport | undefined;
+    if (upsertedOffers.length > 0) {
+      qualityReport = this.dataQuality.runQualityCheck(upsertedOffers);
+    }
+
+    // -- Step 5: Log ----------------------------------------------------------
     const durationMs = Date.now() - start;
     const allErrors = [...fetchResult.errors, ...upsertErrors];
 
@@ -183,7 +214,10 @@ export class PipelineOrchestratorService {
       `Pipeline run for "${config.merchantId}": ` +
         `${fetchResult.records.length} fetched, ` +
         `${recordsAdded} added, ${recordsUpdated} updated, ` +
-        `${allErrors.length} errors, ${durationMs} ms`,
+        `${allErrors.length} errors, ${durationMs} ms` +
+        (qualityReport && qualityReport.flaggedIssues.length > 0
+          ? `, ${qualityReport.flaggedIssues.length} quality issues`
+          : ''),
     );
 
     return {
@@ -193,6 +227,7 @@ export class PipelineOrchestratorService {
       recordsUpdated,
       errors: allErrors,
       durationMs,
+      qualityReport,
     };
   }
 

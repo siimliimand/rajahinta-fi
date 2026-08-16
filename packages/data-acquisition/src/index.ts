@@ -50,6 +50,10 @@ export { FeedIngestionService } from './services/feed-ingestion.service';
 export { DataMappingService } from './services/data-mapping.service';
 export type { MappedPair } from './services/data-mapping.service';
 
+export { DataQualityService } from './services/data-quality.service';
+export { DataQualityModule } from './services/data-quality.module';
+export type { DataQualityReport, QualityCheckOffer, OfferFreshnessResult } from './services/data-quality.service';
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -82,6 +86,7 @@ export { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
 import { PipelineOrchestratorService } from './services/pipeline-orchestrator.service';
 import { FeedIngestionService } from './services/feed-ingestion.service';
 import { DataMappingService } from './services/data-mapping.service';
+import { DataQualityService } from './services/data-quality.service';
 import { PriceIngestionService } from './abstract/price-ingestion.service';
 import { TransportRateService } from './abstract/transport-rate.service';
 import { TaxDatasetReviewService } from './abstract/tax-dataset-review.service';
@@ -106,6 +111,7 @@ import { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
     PipelineOrchestratorService,
     FeedIngestionService,
     DataMappingService,
+    DataQualityService,
 
     // Default merchant config — override at app level to provide real URLs
     { provide: MERCHANT_CONFIG_TOKEN, useValue: DEFAULT_MERCHANTS },
@@ -118,6 +124,7 @@ import { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
     PipelineOrchestratorService,
     FeedIngestionService,
     DataMappingService,
+    DataQualityService,
     PriceIngestionService,
     TransportRateService,
     TaxDatasetReviewService,

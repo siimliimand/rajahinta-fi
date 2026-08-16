@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { PipelineOrchestratorService } from '../services/pipeline-orchestrator.service';
 import type { MerchantConfig } from '../config/merchants.config';
 import type { SourceGovernanceService, PermissionCheckResult } from '@rajahinta/core-domain';
+import { DataQualityService } from '../services/data-quality.service';
+import { ReliabilityService } from '@rajahinta/core-domain';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -59,7 +61,12 @@ function createService(
     mapBatch: vi.fn().mockReturnValue([
       {
         product: { name: 'Test Product', id: 'p1' },
-        offerInput: { productId: 'p1', priceCents: 100 },
+        offerInput: {
+          productId: 'p1',
+          priceCents: 100,
+          reliability: 'ESTIMATED',
+          observedAt: new Date(),
+        },
       },
     ]),
   } as any;
@@ -69,9 +76,12 @@ function createService(
     upsertOffer: vi.fn().mockResolvedValue(undefined),
   } as any;
 
+  const qualityMock = new DataQualityService(new ReliabilityService());
+
   return new PipelineOrchestratorService(
     feedMock,
     mappingMock,
+    qualityMock,
     upsertMock,
     governanceMock,
   );
@@ -206,6 +216,8 @@ describe('PipelineOrchestratorService', () => {
       expect(report.recordsAdded).toBe(1);
       expect(report.errors).toEqual([]);
       expect(report.durationMs).toBeGreaterThanOrEqual(0);
+      expect(report.qualityReport).toBeDefined();
+      expect(report.qualityReport!.totalOffers).toBe(1);
     });
 
     it('passes through fetch errors when records are empty', async () => {
