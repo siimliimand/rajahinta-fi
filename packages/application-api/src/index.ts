@@ -20,6 +20,8 @@ import { DataPlatformModule } from '@rajahinta/data-platform';
 import { ObservabilityModule } from './observability';
 import { FeatureFlagsModule } from './feature-flags';
 import { JobsModule } from './jobs';
+import { IdempotencyModule } from './idempotency';
+import { RateLimitingModule } from './rate-limiting';
 import { CalculatorController } from './calculator';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
@@ -152,6 +154,8 @@ export abstract class UseCaseOrchestrator {
     FeatureFlagsModule,
     ObservabilityModule,
     JobsModule,
+    IdempotencyModule,
+    RateLimitingModule,
     CalculatorModule,
     RankingModule,
     DeclarationModule,
@@ -164,7 +168,7 @@ export abstract class UseCaseOrchestrator {
     SearchController,
     DeclarationController,
   ],
-  exports: [UseCaseOrchestrator, FeatureFlagsModule, ObservabilityModule, JobsModule],
+  exports: [UseCaseOrchestrator, FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule],
 })
 export class ApplicationApiModule {}
 
@@ -190,6 +194,20 @@ export type { StaleDataResult, StaleDataSource, VerifiedCalculationResult, Compl
 // ---------------------------------------------------------------------------
 
 export { JobsModule } from './jobs';
+
+// ---------------------------------------------------------------------------
+// Idempotency re-exports for consumers outside the layer
+// ---------------------------------------------------------------------------
+
+export { IdempotencyModule, IdempotencyService, InMemoryIdempotencyCache, IDEMPOTENCY_CACHE, hashInput } from './idempotency';
+export type { CacheKeyInput, IdempotencyOptions, IIdempotencyCache } from './idempotency';
+
+// ---------------------------------------------------------------------------
+// Rate Limiting re-exports for consumers outside the layer
+// ---------------------------------------------------------------------------
+
+export { RateLimitingModule, RateLimitingService, InMemoryRateLimiter, RATE_LIMITER, RateLimitGuard, RateLimit, RATE_LIMIT_PROFILES } from './rate-limiting';
+export type { RateLimitProfileName, IRateLimiter } from './rate-limiting';
 
 // ---------------------------------------------------------------------------
 // Calculator — landed-cost calculation API

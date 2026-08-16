@@ -17,6 +17,9 @@ import {
   HttpStatus,
   NotFoundException,
   InternalServerErrorException,
+  UseGuards,
+  Headers,
+  Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
@@ -32,6 +35,8 @@ import {
   CalculationRecord,
 } from '@rajahinta/data-platform';
 import type { CalculateRequest } from './calculator.dto';
+import { IdempotencyService } from '../idempotency';
+import { RateLimitGuard, RateLimit } from '../rate-limiting';
 
 @ApiTags('calculator')
 @Controller('api/v1/calculator')
@@ -39,6 +44,7 @@ export class CalculatorController {
   constructor(
     private readonly calculator: LandedCostCalculatorService,
     private readonly recordRepo: CalculationRecordRepository,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -46,22 +52,40 @@ export class CalculatorController {
   // ---------------------------------------------------------------------------
 
   @Post()
+  @UseGuards(RateLimitGuard)
+  @RateLimit('CALCULATOR')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Calculate landed cost for a cross-border beverage product',
     description:
       'Runs the full orchestrator: classification gate, product master + retail offer lookup, ' +
       'transport estimation, alcohol excise + container duty, transaction classification, ' +
-      'confidence computation, and itemized-result assembly.',
+      'confidence computation, and itemized-result assembly.  Idempotent: repeated identical ' +
+      'requests return the cached result when dataset versions have not changed.',
   })
   @ApiResponse({
     status: 200,
     description: 'Itemized landed-cost result with confidence and provenance evidence',
+    headers: {
+      'X-Content-Hash': {
+        description: 'SHA-256 hash of the response body — stable across cache hits',
+        schema: { type: 'string' },
+      },
+      'X-Cache': {
+        description: 'Indicates whether the result was served from cache (HIT) or computed (MISS)',
+        schema: { type: 'string', enum: ['HIT', 'MISS'] },
+      },
+    },
   })
   @ApiResponse({ status: 404, description: 'Product not found or no retail offers available' })
   @ApiResponse({ status: 422, description: 'Product rejected by classification gate' })
   @ApiResponse({ status: 400, description: 'Invalid input parameters' })
-  async calculate(@Body() dto: CalculateRequest): Promise<CalculatorResult> {
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded' })
+  async calculate(
+    @Body() dto: CalculateRequest,
+    @Headers('x-idempotency-key') idempotencyKey?: string,
+    @Res({ passthrough: true }) res?: any,
+  ): Promise<CalculatorResult> {
     this.validateCalculateRequest(dto);
 
     const input: CalculatorInput = {
@@ -72,8 +96,27 @@ export class CalculatorController {
       sessionId: dto.sessionId,
     };
 
+    // ---- Idempotency check ----
+    const cacheKey = idempotencyKey ?? this.idempotency.getCacheKey(input);
+    const cached = this.idempotency.lookup(cacheKey);
+    if (cached !== null) {
+      const contentHash = this.idempotency.getContentHash(cached);
+      res?.header('X-Cache', 'HIT');
+      res?.header('X-Content-Hash', contentHash);
+      return cached;
+    }
+
     try {
-      return await this.calculator.calculate(input);
+      const result = await this.calculator.calculate(input);
+
+      // ---- Cache the result ----
+      this.idempotency.store(cacheKey, result);
+
+      const contentHash = this.idempotency.getContentHash(result);
+      res?.header('X-Cache', 'MISS');
+      res?.header('X-Content-Hash', contentHash);
+
+      return result;
     } catch (err) {
       if (err instanceof ProductNotFoundError || err instanceof NoRetailOffersError) {
         throw new NotFoundException(err.message);

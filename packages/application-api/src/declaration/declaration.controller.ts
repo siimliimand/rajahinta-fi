@@ -13,6 +13,7 @@ import {
   ParseIntPipe,
   NotFoundException,
   InternalServerErrorException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
@@ -20,6 +21,7 @@ import {
   DeclarationSummary,
   CalculationRecordNotFoundError,
 } from '@rajahinta/core-domain';
+import { EntitlementGuard, RequireFeature } from '../entitlement';
 
 @ApiTags('declaration')
 @Controller('api/v1/declaration')
@@ -33,12 +35,14 @@ export class DeclarationController {
   // ---------------------------------------------------------------------------
 
   @Get(':recordId')
+  @UseGuards(EntitlementGuard)
+  @RequireFeature('declaration:summary')
   @ApiOperation({
     summary: 'Prepare a structured excise declaration summary',
     description:
       'Packages a completed landed-cost calculation into a declaration-friendly ' +
       'format for Finnish customs / MyTax reference. Read-only — does NOT submit ' +
-      'to any external system.',
+      'to any external system.  Requires PREMIUM entitlement.',
   })
   @ApiResponse({
     status: 200,

@@ -10,6 +10,7 @@ import { DeclarationModule } from './declaration/declaration.module';
 import { RankingModule } from './ranking/ranking.module';
 import { CorrectionModule } from './correction/correction.module';
 import { CorrectionService } from './correction/correction.service';
+import { EntitlementModule } from './entitlement/entitlement.module';
 
 // ---------------------------------------------------------------------------
 // Domain entities — pure TypeScript, zero framework logic
@@ -347,11 +348,20 @@ export {
 } from './correction/correction.service';
 
 // ---------------------------------------------------------------------------
+// Entitlement — feature-access tier management
+// ---------------------------------------------------------------------------
+
+export { EntitlementModule } from './entitlement/entitlement.module';
+export { EntitlementService } from './entitlement/entitlement.service';
+export type { Entitlement, EntitlementTier, FeatureId } from './entitlement/entitlement.types';
+export { FEATURE_TIER_MAP, isTierSufficient } from './entitlement/entitlement.types';
+
+// ---------------------------------------------------------------------------
 // NestJS module — registration shell; domain logic is injected via providers
 // ---------------------------------------------------------------------------
 
 @Module({
-  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule],
-  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, TaxCalculationEngine, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, CorrectionService],
+  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule],
+  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, TaxCalculationEngine, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, CorrectionService, EntitlementModule],
 })
 export class CoreDomainModule {}
