@@ -5,6 +5,7 @@ import type {
   ConfidenceLevel,
   CostCategory,
   ReliabilityStatus,
+  DataFreshnessEntry,
 } from '@/lib/types';
 import DisclaimerBanner from './DisclaimerBanner';
 
@@ -38,8 +39,24 @@ const RELIABILITY_BADGE: Record<
 > = {
   VERIFIED: { bg: 'bg-green-50', text: 'text-green-700' },
   ESTIMATED: { bg: 'bg-amber-50', text: 'text-amber-700' },
-  STALE: { bg: 'bg-red-50', text: 'text-red-700' },
-  UNAVAILABLE: { bg: 'bg-gray-100', text: 'text-gray-500' },
+  STALE: { bg: 'bg-orange-50', text: 'text-orange-700' },
+  UNAVAILABLE: { bg: 'bg-red-50', text: 'text-red-700' },
+};
+
+/** Dot colour for each reliability status. */
+const RELIABILITY_DOT: Record<ReliabilityStatus, string> = {
+  VERIFIED: 'bg-green-400',
+  ESTIMATED: 'bg-amber-400',
+  STALE: 'bg-orange-400',
+  UNAVAILABLE: 'bg-red-400',
+};
+
+/** Human-readable label for each reliability status. */
+const RELIABILITY_LABEL: Record<ReliabilityStatus, string> = {
+  VERIFIED: 'Verified',
+  ESTIMATED: 'Estimated',
+  STALE: 'Stale',
+  UNAVAILABLE: 'Unavailable',
 };
 
 /** Human-readable label for each cost category. */
@@ -104,6 +121,66 @@ function ConfidenceBadge({ level }: { level: ConfidenceLevel }) {
       {meta.label}
     </span>
   );
+}
+
+/** A single data-freshness line with color-coded badge. */
+function FreshnessLine({
+  label,
+  status,
+  timestamp,
+  detail,
+}: DataFreshnessEntry) {
+  const badge = RELIABILITY_BADGE[status];
+  const dot = RELIABILITY_DOT[status];
+  return (
+    <div className="flex items-center justify-between py-1.5">
+      <div className="flex items-center gap-2">
+        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dot}`} />
+        <span className="text-sm text-gray-700">{label}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        {timestamp && (
+          <span className="text-xs text-gray-400">
+            {new Date(timestamp).toLocaleString('fi-FI')}
+          </span>
+        )}
+        <span
+          className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase leading-tight ${badge.bg} ${badge.text}`}
+        >
+          {RELIABILITY_LABEL[status]}
+        </span>
+        {detail && (
+          <span className="hidden text-xs text-gray-400 sm:inline">{detail}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Build data-freshness entries from a calculation result.
+ *
+ * Derives freshness information from the itemized costs and metadata.
+ * Each externally sourced fact (price, transport, tax rates) gets a
+ * reliability status and a display label.
+ */
+function buildFreshnessEntries(
+  result: CalculatorResultType,
+): DataFreshnessEntry[] {
+  const entries: DataFreshnessEntry[] = [];
+  const meta = result.metadata;
+
+  for (const cost of result.itemizedCosts) {
+    const label = CATEGORY_LABEL[cost.category];
+    entries.push({
+      label,
+      status: cost.reliability,
+      timestamp: meta.calculationTimestamp,
+      detail: '',
+    });
+  }
+
+  return entries;
 }
 
 // ---------------------------------------------------------------------------
@@ -174,26 +251,46 @@ export default function CalculatorResult({ result }: CalculatorResultProps) {
             Data reliability
           </h3>
           <ul className="space-y-1">
-            {result.confidenceBreakdown.map((detail, i) => {
-              const badge = RELIABILITY_BADGE[detail.status];
-              return (
-                <li key={i} className="flex items-start gap-2 text-xs">
-                  <span
-                    className={`mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
-                      detail.status === 'VERIFIED'
-                        ? 'bg-green-400'
-                        : detail.status === 'ESTIMATED'
-                          ? 'bg-amber-400'
-                          : 'bg-red-400'
-                    }`}
-                  />
-                  <span className="text-gray-600">{detail.detail}</span>
-                </li>
-              );
-            })}
+            {result.confidenceBreakdown.map((detail, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs">
+                <span
+                  className={`mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${RELIABILITY_DOT[detail.status]}`}
+                />
+                <span className="text-gray-600">{detail.detail}</span>
+              </li>
+            ))}
           </ul>
         </div>
       )}
+
+      {/* ── Data freshness ── */}
+      <div>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+          Data freshness
+        </h3>
+        <div className="divide-y divide-gray-100 rounded-md border border-gray-100 px-3 py-1">
+          {buildFreshnessEntries(result).length > 0 ? (
+            buildFreshnessEntries(result).map((entry, i) => (
+              <FreshnessLine
+                key={`${entry.label}-${i}`}
+                label={entry.label}
+                status={entry.status}
+                timestamp={entry.timestamp}
+                detail={entry.detail}
+              />
+            ))
+          ) : (
+            <p className="py-2 text-xs text-gray-400">
+              No freshness data available.
+            </p>
+          )}
+        </div>
+        {meta.datasetVersions.length > 0 && (
+          <p className="mt-1 text-xs text-gray-400">
+            Tax rate dataset: {meta.datasetVersions.join(', ')}
+          </p>
+        )}
+      </div>
 
       {/* ── Classification ── */}
       <div>

@@ -13,6 +13,8 @@ import type {
   ProductDetailResponse,
   CalculateRequest,
   CalculatorResult,
+  SortOrder,
+  RankingMethodology,
   ApiError,
 } from './types';
 
@@ -99,6 +101,25 @@ export async function searchProducts(
 }
 
 /**
+ * Fetch products by comma-separated IDs.
+ *
+ * @param ids   Array of product IDs
+ * @param sort  Sort order (default: ALPHABETICAL)
+ */
+export async function fetchProductsByIds(
+  ids: number[],
+  sort: SortOrder = 'ALPHABETICAL',
+): Promise<ProductSearchResult> {
+  const params = new URLSearchParams({
+    ids: ids.join(','),
+    sort,
+    page: '1',
+    limit: String(ids.length),
+  });
+  return request<ProductSearchResult>(`/api/v1/products?${params}`);
+}
+
+/**
  * Fetch a single product with its retail offers.
  */
 export async function getProductDetail(
@@ -130,4 +151,22 @@ export async function getCalculationResult(
   recordId: number,
 ): Promise<CalculatorResult> {
   return request<CalculatorResult>(`/api/v1/calculator/result/${recordId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Ranking methodology
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the ranking methodology description from the API.
+ *
+ * Falls back to null when the endpoint is not available (Phase 1).
+ * The ranking page uses embedded methodology text as a fallback.
+ */
+export async function getRankingMethodology(): Promise<RankingMethodology | null> {
+  try {
+    return await request<RankingMethodology>('/api/v1/ranking/methodology');
+  } catch {
+    return null;
+  }
 }

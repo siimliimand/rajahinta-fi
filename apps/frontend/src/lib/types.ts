@@ -160,6 +160,63 @@ export interface CalculatorResult {
 // API error response
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Sort order for product ranking (mirrors SortOrder from core-domain)
+// ---------------------------------------------------------------------------
+
+export type SortOrder =
+  | 'LOWEST_LANDED_COST'
+  | 'LOWEST_PER_LITRE'
+  | 'LOWEST_PER_UNIT'
+  | 'ALPHABETICAL'
+  | 'ALCOHOL_PERCENTAGE'
+  | 'PRODUCT_CATEGORY';
+
+// ---------------------------------------------------------------------------
+// Ranking methodology (GET /api/v1/ranking/methodology)
+// ---------------------------------------------------------------------------
+
+export interface RankingMethodology {
+  readonly introduction: string;
+  readonly sortOrders: readonly SortOrderDescription[];
+  readonly tiebreaker: string;
+  readonly deterministic: boolean;
+}
+
+export interface SortOrderDescription {
+  readonly name: SortOrder;
+  readonly label: string;
+  readonly description: string;
+}
+
+// ---------------------------------------------------------------------------
+// Comparison item for side-by-side product views
+// ---------------------------------------------------------------------------
+
+export interface ComparisonProduct {
+  readonly id: number;
+  readonly name: string;
+  readonly brand: string;
+  readonly category: string;
+  readonly unitVolume: string;
+  readonly alcoholByVolume: number | null;
+  readonly totalCents: number;
+  readonly itemizedCosts: readonly ItemizedCost[];
+  readonly confidence: ConfidenceLevel;
+  readonly reliability: ReliabilityStatus;
+}
+
+// ---------------------------------------------------------------------------
+// Data freshness entry
+// ---------------------------------------------------------------------------
+
+export interface DataFreshnessEntry {
+  readonly label: string;
+  readonly status: ReliabilityStatus;
+  readonly timestamp: string | null;
+  readonly detail: string;
+}
+
 export interface ApiError {
   readonly statusCode: number;
   readonly message: string;
