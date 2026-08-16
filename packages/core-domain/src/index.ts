@@ -3,6 +3,7 @@ import { TaxModule } from './tax/tax.module';
 import { NormalizationModule } from './normalization/normalization.module';
 import { SourceGovernanceModule } from './governance/governance.module';
 import { ClassificationModule } from './classification/classification.module';
+import { ReliabilityModule } from './reliability/reliability.module';
 
 // ---------------------------------------------------------------------------
 // Domain entities — pure TypeScript, zero framework logic
@@ -171,6 +172,11 @@ export { SourceGovernanceModule } from './governance/governance.module';
 
 export { ClassificationModule } from './classification/classification.module';
 export { TransactionClassificationService } from './classification/transaction-classification.service';
+export {
+  ClassificationRuleEngine,
+  createDefaultRuleSet,
+} from './classification/services/classification-rule-engine.service';
+export type { ClassificationEngineResult } from './classification/services/classification-rule-engine.service';
 export type {
   ClassificationInput,
   ClassificationResult,
@@ -181,6 +187,13 @@ export type {
   ClassificationRule,
   ClassificationRuleSet,
 } from './classification/classification-rule.types';
+export {
+  CLASSIFICATION_RULE_REPOSITORY_PORT,
+} from './classification/ports/classification-rule-repository.port';
+export type {
+  IClassificationRuleRepositoryPort,
+  ClassificationRuleSetRecord,
+} from './classification/ports/classification-rule-repository.port';
 
 // ---------------------------------------------------------------------------
 // Normalization — raw product cleansing, category mapping, volume/ABV validation
@@ -203,12 +216,52 @@ export type {
   VolumeUnit,
 } from './normalization/normalization.types';
 
+// -- Product matching / deduplication --
+
+export { ProductMatcherModule } from './normalization/product-matcher.module';
+export { ProductMatcherService } from './normalization/product-matcher.service';
+export {
+  tokenize,
+  jaccardSimilarity,
+  levenshteinDistance,
+  scoreNameSimilarity,
+  scoreBrandSimilarity,
+  scoreVolumeMatch,
+  scoreAbvMatch,
+  scoreCategoryMatch,
+  scoreProduct,
+  scoreToConfidence,
+} from './normalization/product-matcher.service';
+export type {
+  MatchConfidence,
+  MatchMethod,
+  ProductMatchCandidate,
+  ProductMatchResult,
+} from './normalization/product-matcher.types';
+export type { IProductMasterQuery, ProductMasterRecord } from './normalization/ports/product-master-query.port';
+export { PRODUCT_MASTER_QUERY_PORT } from './normalization/ports/product-master-query.port';
+
+// ---------------------------------------------------------------------------
+// Reliability — data-point freshness, availability, and composition
+// ---------------------------------------------------------------------------
+
+export { ReliabilityModule } from './reliability/reliability.module';
+export { ReliabilityService } from './reliability/reliability.service';
+export type { ReliabilityStatus, ReliabilityDomain, Duration } from './reliability/reliability.types';
+export {
+  RELIABILITY_ORDER,
+  DEFAULT_STALENESS_THRESHOLDS,
+  HOUR,
+  DAY,
+  WEEK,
+} from './reliability/reliability.types';
+
 // ---------------------------------------------------------------------------
 // NestJS module — registration shell; domain logic is injected via providers
 // ---------------------------------------------------------------------------
 
 @Module({
-  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule],
-  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, TaxCalculationEngine],
+  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule],
+  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, TaxCalculationEngine, ReliabilityModule],
 })
 export class CoreDomainModule {}

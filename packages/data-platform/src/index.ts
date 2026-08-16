@@ -76,7 +76,7 @@ export const retailOffers = pgTable('retail_offers', {
   sourceUrl: varchar('source_url', { length: 1024 }),
   /** When price was observed — used for freshness calculations. */
   observedAt: timestamp('observed_at').defaultNow().notNull(),
-  /** Data freshness indicator (EXACT/ESTIMATED/STALE) — surfaced to user per architecture rule. */
+  /** Data freshness indicator (VERIFIED/ESTIMATED/STALE/UNAVAILABLE) — surfaced to user per architecture rule. */
   reliabilityStatus: varchar('reliability_status', { length: 16 })
     .default('ESTIMATED')
     .notNull(),
@@ -147,7 +147,9 @@ export const transportOffers = pgTable('transport_offers', {
   observedAt: timestamp('observed_at').defaultNow().notNull(),
   /** When carrier rates were last refreshed — separate from observedAt for batch refresh tracking. */
   refreshedAt: timestamp('refreshed_at').defaultNow().notNull(),
-  /** Data freshness indicator (EXACT/ESTIMATED/STALE) — surfaced to user per architecture rule. */
+  /** Data freshness indicator (VERIFIED/ESTIMATED/STALE/UNAVAILABLE) — surfaced to user per architecture rule.
+   *  Staleness thresholds per domain: price=24h, transport=7d, classification=30d
+   *  (configured in packages/core-domain/src/reliability/reliability.types.ts). */
   reliabilityStatus: varchar('reliability_status', { length: 16 })
     .default('ESTIMATED')
     .notNull(),
