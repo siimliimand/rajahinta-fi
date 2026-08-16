@@ -14,14 +14,18 @@
 // Read-model shapes – defined here so consumers do NOT import Drizzle ORM
 // --------------------------------------------------------------------------
 
-/** Canonical product record. */
-export interface ProductRecord {
+/** Product Master — canonical product record. */
+export interface ProductMasterRecord {
   readonly id: number;
   readonly name: string;
-  readonly brand: string | null;
-  readonly containerType: string;
-  readonly volumeLitres: string;
+  readonly manufacturer: string;
+  readonly brand: string;
+  readonly category: string;
   readonly alcoholByVolume: string | null;
+  readonly unitVolume: string;
+  readonly containerType: string;
+  readonly regulatoryClassification: string;
+  readonly depositSystemStatus: boolean;
   readonly ean: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -39,31 +43,37 @@ export interface MerchantOfferRecord {
   readonly observedAt: Date;
 }
 
-/** Versioned tax rate dataset. */
-export interface TaxRateVersionRecord {
+/** Versioned tax rule — never mutated in place. */
+export interface TaxRuleRecord {
   readonly id: number;
-  readonly versionLabel: string;
+  readonly taxType: string;
+  readonly productCategory: string;
+  readonly rate: string;
   readonly effectiveFrom: Date;
   readonly effectiveTo: Date | null;
-  readonly confirmedAt: Date | null;
-  readonly rates: unknown;
+  readonly exemptionConditions: unknown;
+  readonly calculationFormulaReference: string;
+  readonly officialSource: string;
+  readonly verificationDate: Date | null;
+  readonly versionLabel: string;
   readonly createdAt: Date;
 }
 
-/** Transport rate offer from a carrier. */
-export interface TransportRateRecord {
+/** Transport offer from a carrier. */
+export interface TransportOfferRecord {
   readonly id: number;
-  readonly carrierId: string;
+  readonly carrier: string;
   readonly originCountry: string;
   readonly destinationCountry: string;
-  readonly basePriceCents: number;
-  readonly pricePerKgCents: string | null;
-  readonly minWeightKg: string | null;
-  readonly maxWeightKg: string | null;
-  readonly effectiveFrom: Date;
-  readonly effectiveTo: Date | null;
-  readonly reliability: string;
+  readonly weightMinKg: string | null;
+  readonly weightMaxKg: string | null;
+  readonly packageTier: string;
+  readonly priceCents: number;
+  readonly currency: string;
+  readonly sellerInvolvementIndicator: boolean;
+  readonly observedAt: Date;
   readonly refreshedAt: Date;
+  readonly reliabilityStatus: string;
 }
 
 /** Input for recording a calculation in the audit trail. */
@@ -81,13 +91,18 @@ export interface CalculationAuditEntry {
 // --------------------------------------------------------------------------
 
 export interface IProductRepository {
-  findById(id: number): Promise<ProductRecord | null>;
+  findById(id: number): Promise<ProductMasterRecord | null>;
   findOffers(productId: number): Promise<MerchantOfferRecord[]>;
 }
 
 export interface ITaxRateRepository {
-  findEffectiveVersion(asOf: Date): Promise<TaxRateVersionRecord | null>;
-  findVersionById(id: number): Promise<TaxRateVersionRecord | null>;
+  findEffectiveVersion(asOf: Date): Promise<TaxRuleRecord | null>;
+  findVersionById(id: number): Promise<TaxRuleRecord | null>;
+}
+
+export interface ITransportOfferRepository {
+  findByCarrier(carrierId: string): Promise<TransportOfferRecord[]>;
+  findActive(): Promise<TransportOfferRecord[]>;
 }
 
 export interface IAuditRepository {
@@ -108,5 +123,6 @@ export interface IAuditRepository {
 export interface IRepositoryRegistry {
   readonly products: IProductRepository;
   readonly taxRates: ITaxRateRepository;
+  readonly transportOffers: ITransportOfferRepository;
   readonly audit: IAuditRepository;
 }
