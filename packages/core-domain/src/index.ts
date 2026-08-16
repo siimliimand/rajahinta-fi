@@ -4,6 +4,7 @@ import { NormalizationModule } from './normalization/normalization.module';
 import { SourceGovernanceModule } from './governance/governance.module';
 import { ClassificationModule } from './classification/classification.module';
 import { ReliabilityModule } from './reliability/reliability.module';
+import { CalculatorModule } from './calculator/calculator.module';
 
 // ---------------------------------------------------------------------------
 // Domain entities — pure TypeScript, zero framework logic
@@ -242,6 +243,30 @@ export type { IProductMasterQuery, ProductMasterRecord } from './normalization/p
 export { PRODUCT_MASTER_QUERY_PORT } from './normalization/ports/product-master-query.port';
 
 // ---------------------------------------------------------------------------
+// Calculator — landed-cost orchestrator
+// ---------------------------------------------------------------------------
+
+export { CalculatorModule } from './calculator/calculator.module';
+export { LandedCostCalculatorService } from './calculator/landed-cost-calculator.service';
+export type {
+  CalculatorInput,
+  CalculatorResult,
+  CalculatorProductData,
+  CalculatorRetailOfferData,
+  ItemizedCost,
+  CreateCalculationRecordInput,
+  IProductDataPort,
+  ICalculationRecordPort,
+} from './calculator/calculator.types';
+export {
+  PRODUCT_DATA_PORT,
+  CALCULATION_RECORD_PORT,
+  ClassificationGateRejectionError,
+  ProductNotFoundError,
+  NoRetailOffersError,
+} from './calculator/calculator.types';
+
+// ---------------------------------------------------------------------------
 // Reliability — data-point freshness, availability, and composition
 // ---------------------------------------------------------------------------
 
@@ -261,7 +286,7 @@ export {
 // ---------------------------------------------------------------------------
 
 @Module({
-  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule],
-  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, TaxCalculationEngine, ReliabilityModule],
+  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule],
+  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, TaxCalculationEngine, ReliabilityModule, CalculatorModule],
 })
 export class CoreDomainModule {}
