@@ -60,3 +60,22 @@ export { NormalizationModule } from './normalization.module';
 
 // Matcher module
 export { ProductMatcherModule } from './product-matcher.module';
+
+// Manual review types
+export type {
+  PendingReview,
+  ReviewResolution,
+  ReviewStatus,
+} from './manual-review.types';
+
+// Manual review port
+export type { IManualReviewRepository } from './ports/manual-review-repository.port';
+export { MANUAL_REVIEW_REPOSITORY_PORT } from './ports/manual-review-repository.port';
+
+// Manual review service & module
+export { ManualReviewService } from './manual-review.service';
+export { ManualReviewModule } from './manual-review.module';
+
+// Classification gate
+export type { GateResult, GateProduct } from './classification-gate.service';
+export { ClassificationGateService } from './classification-gate.service';

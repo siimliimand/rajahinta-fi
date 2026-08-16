@@ -8,6 +8,10 @@
  *  2. **Fuzzy**: weighted scoring of name similarity, brand, volume, ABV,
  *     and category when no barcode is available or no barcode match exists.
  *
+ * After matching, results with MEDIUM or LOW confidence are automatically
+ * enqueued for manual review via ManualReviewService. The match result
+ * carries a `requiresManualReview` flag and a `reviewId` when enqueued.
+ *
  * All fuzzy-matching helpers are exported as pure functions so they can be
  * unit-tested independently of the repository adapter.
  *
@@ -19,6 +23,10 @@ import type { NormalizedProduct } from './normalization.types';
 import type { ProductMatchResult, MatchConfidence, ProductMatchCandidate } from './product-matcher.types';
 import type { IProductMasterQuery, ProductMasterRecord } from './ports/product-master-query.port';
 import { PRODUCT_MASTER_QUERY_PORT } from './ports/product-master-query.port';
+import { ManualReviewService } from './manual-review.service';
+
+/** Confidence levels that require manual review before the match is accepted. */
+const REQUIRES_REVIEW: ReadonlySet<MatchConfidence> = new Set<MatchConfidence>(['MEDIUM', 'LOW', 'NONE']);
 
 // ---------------------------------------------------------------------------
 // Pure helpers — exported for unit testing
@@ -212,6 +220,7 @@ export class ProductMatcherService {
   constructor(
     @Inject(PRODUCT_MASTER_QUERY_PORT)
     private readonly productQuery: IProductMasterQuery,
+    private readonly manualReview: ManualReviewService,
   ) {}
 
   /**
@@ -222,6 +231,10 @@ export class ProductMatcherService {
    * 2. **Fuzzy match** — query candidate products by broad criteria, score
    *    each one, and return the best match when confidence ≥ HIGH.
    * 3. **No match** — return with confidence NONE and matchMethod 'none'.
+   *
+   * When the resulting confidence is MEDIUM or lower, the result is
+   * automatically enqueued for manual review. The returned result carries
+   * `requiresManualReview: true` and a `reviewId` referencing the queue entry.
    */
   async findMatch(normalized: NormalizedProduct): Promise<ProductMatchResult> {
     const candidates: ProductMatchCandidate[] = [];
@@ -236,6 +249,7 @@ export class ProductMatcherService {
           confidence: 'EXACT',
           matchMethod: 'ean',
           candidates: [{ productId: record.id, score: 100 }],
+          requiresManualReview: false,
         };
       }
     }
@@ -258,21 +272,47 @@ export class ProductMatcherService {
 
     if (candidates.length > 0 && candidates[0].score >= 75) {
       const best = candidates[0];
-      return {
-        matched: true,
+      const confidence = scoreToConfidence(best.score);
+      const baseResult = {
+        matched: true as const,
         productId: best.productId,
-        confidence: scoreToConfidence(best.score),
-        matchMethod: 'fuzzy',
+        confidence,
+        matchMethod: 'fuzzy' as const,
         candidates,
       };
+
+      // Build final result — auto-enqueue if confidence is MEDIUM or lower
+      if (REQUIRES_REVIEW.has(confidence)) {
+        const result: ProductMatchResult = {
+          ...baseResult,
+          requiresManualReview: true,
+        };
+        const review = await this.manualReview.enqueueForReview(normalized, result);
+        return { ...result, reviewId: review.id };
+      }
+
+      return { ...baseResult, requiresManualReview: false };
     }
 
-    // --- 3. No match ---
-    return {
-      matched: false,
-      confidence: candidates.length > 0 ? scoreToConfidence(candidates[0].score) : 'NONE',
-      matchMethod: 'none',
+    // --- 3. No match (or low-confidence fuzzy) ---
+    const confidence = candidates.length > 0 ? scoreToConfidence(candidates[0].score) : 'NONE';
+    const baseResult = {
+      matched: false as const,
+      confidence,
+      matchMethod: 'none' as const,
       candidates,
     };
+
+    // Auto-enqueue for review (MEDIUM, LOW, or NONE)
+    if (REQUIRES_REVIEW.has(confidence)) {
+      const result: ProductMatchResult = {
+        ...baseResult,
+        requiresManualReview: true,
+      };
+      const review = await this.manualReview.enqueueForReview(normalized, result);
+      return { ...result, reviewId: review.id };
+    }
+
+    return { ...baseResult, requiresManualReview: false };
   }
 }

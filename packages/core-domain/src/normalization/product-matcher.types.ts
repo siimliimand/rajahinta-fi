@@ -28,4 +28,15 @@ export interface ProductMatchResult {
   readonly matchMethod: MatchMethod;
   /** All candidates considered, ranked by score descending. */
   readonly candidates: ProductMatchCandidate[];
+  /**
+   * True when the confidence is MEDIUM or LOW and the result should be
+   * routed to the manual-review queue before acting on it.
+   */
+  readonly requiresManualReview: boolean;
+  /**
+   * The id of the PendingReview entry created for this result.
+   * Present only when requiresManualReview is true and the caller has
+   * created the review entry (typically via ManualReviewService).
+   */
+  readonly reviewId?: string;
 }

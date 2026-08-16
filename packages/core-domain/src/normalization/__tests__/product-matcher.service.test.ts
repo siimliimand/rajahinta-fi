@@ -24,6 +24,9 @@ import {
 import type { NormalizedProduct } from '../normalization.types';
 import type { ProductMasterRecord } from '../ports/product-master-query.port';
 import type { IProductMasterQuery } from '../ports/product-master-query.port';
+import { ManualReviewService } from '../manual-review.service';
+import type { IManualReviewRepository } from '../ports/manual-review-repository.port';
+import type { PendingReview } from '../manual-review.types';
 
 // ---------------------------------------------------------------------------
 // tokenize
@@ -410,6 +413,37 @@ describe('ProductMatcherService', () => {
     };
   }
 
+  /** Fake IManualReviewRepository backed by an in-memory Map. */
+  function createFakeReviewRepo(): IManualReviewRepository {
+    const store = new Map<string, PendingReview>();
+    return {
+      create: vi.fn().mockImplementation(async (entry: PendingReview) => {
+        store.set(entry.id, entry);
+      }),
+      findById: vi.fn().mockImplementation(async (id: string) => {
+        return store.get(id) ?? null;
+      }),
+      findByStatus: vi.fn().mockImplementation(async () => {
+        return Array.from(store.values());
+      }),
+      updateStatus: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  function createService(
+    queryOverrides?: Partial<IProductMasterQuery>,
+  ): {
+    service: ProductMatcherService;
+    query: IProductMasterQuery;
+    reviewRepo: IManualReviewRepository;
+  } {
+    const query = createFakeQuery(queryOverrides);
+    const reviewRepo = createFakeReviewRepo();
+    const reviewService = new ManualReviewService(reviewRepo);
+    const service = new ProductMatcherService(query, reviewService);
+    return { service, query, reviewRepo };
+  }
+
   const baseProduct: NormalizedProduct = {
     normalizedName: 'Session IPA',
     normalizedBrand: 'Brewdog',
@@ -432,9 +466,8 @@ describe('ProductMatcherService', () => {
     normalizationWarnings: [],
   };
 
-  it('returns EXACT match when EAN matches', async () => {
-    const query = createFakeQuery();
-    const service = new ProductMatcherService(query);
+  it('returns EXACT match when EAN matches, no review needed', async () => {
+    const { service, query } = createService();
 
     const result = await service.findMatch({
       ...baseProduct,
@@ -445,13 +478,14 @@ describe('ProductMatcherService', () => {
     expect(result.productId).toBe(10);
     expect(result.confidence).toBe('EXACT');
     expect(result.matchMethod).toBe('ean');
+    expect(result.requiresManualReview).toBe(false);
+    expect(result.reviewId).toBeUndefined();
     expect(query.findByEan).toHaveBeenCalledWith('6410660012348');
     expect(query.findCandidates).not.toHaveBeenCalled();
   });
 
-  it('falls back to fuzzy when EAN is null', async () => {
-    const query = createFakeQuery();
-    const service = new ProductMatcherService(query);
+  it('falls back to fuzzy when EAN is null, EXACT confidence skips review', async () => {
+    const { service, query } = createService();
 
     const result = await service.findMatch(baseProduct);
 
@@ -459,13 +493,14 @@ describe('ProductMatcherService', () => {
     expect(result.productId).toBe(10); // Session IPA scores highest
     expect(result.confidence).toBe('EXACT'); // identical → score 100
     expect(result.matchMethod).toBe('fuzzy');
+    expect(result.requiresManualReview).toBe(false);
+    expect(result.reviewId).toBeUndefined();
     expect(query.findByEan).not.toHaveBeenCalled();
     expect(query.findCandidates).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to fuzzy when EAN does not match any record', async () => {
-    const query = createFakeQuery();
-    const service = new ProductMatcherService(query);
+    const { service, query } = createService();
 
     const result = await service.findMatch({
       ...baseProduct,
@@ -479,8 +514,7 @@ describe('ProductMatcherService', () => {
   });
 
   it('returns no match for completely different product', async () => {
-    const query = createFakeQuery();
-    const service = new ProductMatcherService(query);
+    const { service } = createService();
 
     const result = await service.findMatch({
       ...baseProduct,
@@ -497,9 +531,74 @@ describe('ProductMatcherService', () => {
     expect(result.candidates.length).toBe(2);
   });
 
+  it('enqueues for review when no match and confidence is NONE', async () => {
+    const { service, reviewRepo } = createService();
+
+    const result = await service.findMatch({
+      ...baseProduct,
+      normalizedName: 'Château Margaux',
+      normalizedBrand: 'Château Margaux',
+      canonicalCategory: 'wine',
+      volumeLitres: 0.75,
+      alcoholByVolume: 13.5,
+    });
+
+    expect(result.requiresManualReview).toBe(true);
+    expect(result.reviewId).toBeDefined();
+    // Verify the review entry was actually persisted
+    const pending = await reviewRepo.findByStatus('pending');
+    expect(pending).toHaveLength(1);
+    expect(pending[0].id).toBe(result.reviewId);
+  });
+
+  it('enqueues for review when fuzzy match has MEDIUM confidence', async () => {
+    // Create a single candidate that scores just above MEDIUM threshold
+    const query = createFakeQuery({
+      findCandidates: vi.fn().mockResolvedValue([
+        {
+          id: 99,
+          ean: null,
+          normalizedName: 'Generic Beer',
+          normalizedBrand: 'Unknown',
+          canonicalCategory: 'beer',
+          volumeLitres: 0.33,
+          alcoholByVolume: 4.5,
+        },
+      ]),
+    });
+    const reviewRepo = createFakeReviewRepo();
+    const reviewService = new ManualReviewService(reviewRepo);
+    const service = new ProductMatcherService(query, reviewService);
+
+    const result = await service.findMatch({
+      ...baseProduct,
+      normalizedName: 'Generic Lager Beer',
+      normalizedBrand: 'Unknown Brand',
+    });
+
+    // Name "Generic Lager Beer" vs "Generic Beer" — should be similar but not high
+    expect(result.confidence).toBe('MEDIUM');
+    expect(result.requiresManualReview).toBe(true);
+    expect(result.reviewId).toBeDefined();
+  });
+
+  it('does not enqueue for review when fuzzy match has HIGH confidence', async () => {
+    // The identical product should score EXACT (100), skipping review
+    const { service, reviewRepo } = createService();
+
+    const result = await service.findMatch(baseProduct);
+
+    expect(result.confidence).toBe('EXACT');
+    expect(result.requiresManualReview).toBe(false);
+    expect(result.reviewId).toBeUndefined();
+
+    // No pending entries should exist
+    const pending = await reviewRepo.findByStatus('pending');
+    expect(pending).toHaveLength(0);
+  });
+
   it('returns all candidates sorted by score descending', async () => {
-    const query = createFakeQuery();
-    const service = new ProductMatcherService(query);
+    const { service } = createService();
 
     const result = await service.findMatch(baseProduct);
 
@@ -510,8 +609,7 @@ describe('ProductMatcherService', () => {
   });
 
   it('passes correct params to findCandidates', async () => {
-    const query = createFakeQuery();
-    const service = new ProductMatcherService(query);
+    const { service, query } = createService();
 
     await service.findMatch(baseProduct);
 
@@ -524,10 +622,9 @@ describe('ProductMatcherService', () => {
   });
 
   it('handles empty candidate list gracefully', async () => {
-    const query = createFakeQuery({
+    const { service } = createService({
       findCandidates: vi.fn().mockResolvedValue([]),
     });
-    const service = new ProductMatcherService(query);
 
     const result = await service.findMatch(baseProduct);
 
