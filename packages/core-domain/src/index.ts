@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { TaxModule } from './tax/tax.module';
 
 // ---------------------------------------------------------------------------
 // Domain entities — pure TypeScript, zero framework logic
@@ -131,10 +132,20 @@ export abstract class TaxCalculationEngine {
 export type { ICalculationEngine, LandedCostParams } from './interfaces/calculation-engine.interface';
 
 // ---------------------------------------------------------------------------
+// Transport Estimation — carrier rates, weight-tier matching, route queries
+// ---------------------------------------------------------------------------
+
+export { TransportEstimationModule } from './transport/transport-estimation.module';
+export { TransportEstimationService, NotFoundError } from './transport/transport-estimation.service';
+export type { ITransportOfferQuery } from './transport/transport-offer-query.interface';
+export type { TransportOffer, TransportEstimate, WeightBracket } from './transport/transport-offer.type';
+
+// ---------------------------------------------------------------------------
 // NestJS module — registration shell; domain logic is injected via providers
 // ---------------------------------------------------------------------------
 
 @Module({
-  exports: [TaxCalculationEngine],
+  imports: [TaxModule],
+  exports: [TaxModule, TaxCalculationEngine],
 })
 export class CoreDomainModule {}
