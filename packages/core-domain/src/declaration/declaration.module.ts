@@ -21,10 +21,14 @@
 
 import { Module } from '@nestjs/common';
 import { ExciseDeclarationService } from './excise-declaration.service';
+import { CALCULATION_RECORD_QUERY_PORT } from './declaration.types';
 
 @Module({
   imports: [],
-  providers: [ExciseDeclarationService],
+  providers: [
+    ExciseDeclarationService,
+    { provide: CALCULATION_RECORD_QUERY_PORT, useValue: null },
+  ],
   exports: [ExciseDeclarationService],
 })
 export class DeclarationModule {}

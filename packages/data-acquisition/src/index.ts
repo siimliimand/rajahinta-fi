@@ -105,9 +105,12 @@ import { DataQualityService } from './services/data-quality.service';
 import { PriceIngestionService } from './abstract/price-ingestion.service';
 import { TransportRateService } from './abstract/transport-rate.service';
 import { TaxDatasetReviewService } from './abstract/tax-dataset-review.service';
+import { SourceGovernanceModule, ReliabilityModule } from '@rajahinta/core-domain';
+import { RATE_REVIEW_REPOSITORY_PORT } from './interfaces/rate-review-repository.port';
 import { RateReviewSchedulerService, RATE_REVIEW_CONFIG_TOKEN, DEFAULT_RATE_REVIEW_CONFIG } from './services/rate-review-scheduler.service';
 import { MERCHANT_CONFIG_TOKEN, DEFAULT_MERCHANTS } from './config/merchants.config';
 import { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
+import { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
 
 // ---------------------------------------------------------------------------
 // NestJS module — registers Bull queues, exposes pipeline services
@@ -115,6 +118,8 @@ import { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
 
 @Module({
   imports: [
+    SourceGovernanceModule,
+    ReliabilityModule,
     BullModule.registerQueue(
       { name: QUEUES.PRICE_INGESTION },
       { name: QUEUES.TRANSPORT_REFRESH },
@@ -138,6 +143,17 @@ import { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
     // Rate-review scheduler with default 24h interval
     RateReviewSchedulerService,
     { provide: RATE_REVIEW_CONFIG_TOKEN, useValue: DEFAULT_RATE_REVIEW_CONFIG },
+
+    // Upsert repository — composition root provides the concrete adapter
+    { provide: UPSERT_REPOSITORY_TOKEN, useValue: null },
+
+    // Rate-review repository port — composition root provides the concrete adapter
+    { provide: RATE_REVIEW_REPOSITORY_PORT, useValue: null },
+
+    // Deprecated abstract services — kept as nullable providers for worker DI
+    { provide: PriceIngestionService, useValue: null },
+    { provide: TransportRateService, useValue: null },
+    { provide: TaxDatasetReviewService, useValue: null },
   ],
   exports: [
     BullModule,

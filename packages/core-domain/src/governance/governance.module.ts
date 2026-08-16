@@ -11,9 +11,13 @@
  */
 import { Module } from '@nestjs/common';
 import { SourceGovernanceService } from './services/source-governance.service';
+import { SOURCE_GOVERNANCE_REPOSITORY_PORT } from './ports/source-governance-repository.port';
 
 @Module({
-  providers: [SourceGovernanceService],
+  providers: [
+    SourceGovernanceService,
+    { provide: SOURCE_GOVERNANCE_REPOSITORY_PORT, useValue: null },
+  ],
   exports: [SourceGovernanceService],
 })
 export class SourceGovernanceModule {}

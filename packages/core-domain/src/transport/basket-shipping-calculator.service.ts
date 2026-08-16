@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import type { ITransportOfferQuery } from './transport-offer-query.interface';
+import { Injectable, Inject } from '@nestjs/common';
+import { ITransportOfferQuery, TRANSPORT_OFFER_QUERY } from './transport-offer-query.interface';
 import type { TransportOffer } from './transport-offer.type';
 import type {
   BasketItem,
@@ -55,7 +55,9 @@ function inBracket(offer: TransportOffer, weightKg: number): boolean {
  */
 @Injectable()
 export class BasketShippingCalculator {
-  constructor(private readonly offerQuery: ITransportOfferQuery) {}
+  constructor(
+    @Inject(TRANSPORT_OFFER_QUERY) private readonly offerQuery: ITransportOfferQuery,
+  ) {}
 
   /**
    * Estimate shipping cost for a basket of items shipped together.

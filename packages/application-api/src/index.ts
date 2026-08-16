@@ -169,6 +169,10 @@ export abstract class UseCaseOrchestrator {
     DeclarationModule,
     DataPlatformModule,
   ],
+  providers: [
+    // Legacy TaxCalculationEngine — composition root wires the concrete
+    { provide: TaxCalculationEngine, useValue: null },
+  ],
   controllers: [
     CalculationController,
     HealthController,
@@ -176,7 +180,7 @@ export abstract class UseCaseOrchestrator {
     SearchController,
     DeclarationController,
   ],
-  exports: [UseCaseOrchestrator, FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule],
+  exports: [FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule],
 })
 export class ApplicationApiModule {}
 

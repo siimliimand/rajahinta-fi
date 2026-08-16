@@ -9,7 +9,6 @@ import { CalculatorModule } from './calculator/calculator.module';
 import { DeclarationModule } from './declaration/declaration.module';
 import { RankingModule } from './ranking/ranking.module';
 import { CorrectionModule } from './correction/correction.module';
-import { CorrectionService } from './correction/correction.service';
 import { EntitlementModule } from './entitlement/entitlement.module';
 
 // ---------------------------------------------------------------------------
@@ -372,6 +371,6 @@ export type { AuditEntry, AuditAction, AuditQuery } from './audit/audit.types';
 
 @Module({
   imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule],
-  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, TaxCalculationEngine, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, CorrectionService, EntitlementModule],
+  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule],
 })
 export class CoreDomainModule {}

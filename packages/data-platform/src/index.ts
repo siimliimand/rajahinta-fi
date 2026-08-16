@@ -283,6 +283,13 @@ export type {
 // ---------------------------------------------------------------------------
 
 @Module({
+  providers: [
+    { provide: ProductRepository, useValue: null },
+    { provide: TaxRateRepository, useValue: null },
+    { provide: TransportOfferRepository, useValue: null },
+    { provide: AuditRepository, useValue: null },
+    { provide: CalculationRecordRepository, useValue: null },
+  ],
   exports: [
     ProductRepository,
     TaxRateRepository,

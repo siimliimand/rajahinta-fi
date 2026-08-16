@@ -24,9 +24,13 @@
  */
 import { Module } from '@nestjs/common';
 import { AuditService } from './audit.service';
+import { AUDIT_REPOSITORY_PORT } from './audit-repository.port';
 
 @Module({
-  providers: [AuditService],
+  providers: [
+    AuditService,
+    { provide: AUDIT_REPOSITORY_PORT, useValue: null },
+  ],
   exports: [AuditService],
 })
 export class AuditModule {}

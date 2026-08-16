@@ -10,9 +10,13 @@
  */
 import { Module } from '@nestjs/common';
 import { ManualReviewService } from './manual-review.service';
+import { MANUAL_REVIEW_REPOSITORY_PORT } from './ports/manual-review-repository.port';
 
 @Module({
-  providers: [ManualReviewService],
+  providers: [
+    ManualReviewService,
+    { provide: MANUAL_REVIEW_REPOSITORY_PORT, useValue: null },
+  ],
   exports: [ManualReviewService],
 })
 export class ManualReviewModule {}

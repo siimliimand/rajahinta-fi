@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import type { ITransportOfferQuery } from './transport-offer-query.interface';
+import { Injectable, Inject } from '@nestjs/common';
+import { ITransportOfferQuery, TRANSPORT_OFFER_QUERY } from './transport-offer-query.interface';
 import type { TransportEstimate, TransportOffer } from './transport-offer.type';
 
 // ---------------------------------------------------------------------------
@@ -65,7 +65,9 @@ function closestBracket(
 
 @Injectable()
 export class TransportEstimationService {
-  constructor(private readonly offerQuery: ITransportOfferQuery) {}
+  constructor(
+    @Inject(TRANSPORT_OFFER_QUERY) private readonly offerQuery: ITransportOfferQuery,
+  ) {}
 
   /**
    * Find the single best-matching transport offer for the given parameters.

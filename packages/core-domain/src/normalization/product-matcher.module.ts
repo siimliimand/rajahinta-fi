@@ -13,11 +13,15 @@
  */
 import { Module } from '@nestjs/common';
 import { ProductMatcherService } from './product-matcher.service';
+import { PRODUCT_MASTER_QUERY_PORT } from './ports/product-master-query.port';
 import { ManualReviewModule } from './manual-review.module';
 
 @Module({
   imports: [ManualReviewModule],
-  providers: [ProductMatcherService],
+  providers: [
+    ProductMatcherService,
+    { provide: PRODUCT_MASTER_QUERY_PORT, useValue: null },
+  ],
   exports: [ProductMatcherService],
 })
 export class ProductMatcherModule {}

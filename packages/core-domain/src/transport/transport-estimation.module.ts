@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TransportEstimationService } from './transport-estimation.service';
 import { BasketShippingCalculator } from './basket-shipping-calculator.service';
 import { TransportClassificationService } from './transport-classification.service';
+import { TRANSPORT_OFFER_QUERY } from './transport-offer-query.interface';
 
 /**
  * Transport Estimation Module.
@@ -29,6 +30,7 @@ import { TransportClassificationService } from './transport-classification.servi
     TransportEstimationService,
     BasketShippingCalculator,
     TransportClassificationService,
+    { provide: TRANSPORT_OFFER_QUERY, useValue: null },
   ],
   exports: [
     TransportEstimationService,

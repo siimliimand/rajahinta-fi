@@ -29,6 +29,7 @@ import { ClassificationModule } from '../classification/classification.module';
 import { TransportEstimationModule } from '../transport/transport-estimation.module';
 import { ReliabilityModule } from '../reliability/reliability.module';
 import { LandedCostCalculatorService } from './landed-cost-calculator.service';
+import { PRODUCT_DATA_PORT, CALCULATION_RECORD_PORT } from './calculator.types';
 
 @Module({
   imports: [
@@ -38,7 +39,11 @@ import { LandedCostCalculatorService } from './landed-cost-calculator.service';
     TransportEstimationModule,
     ReliabilityModule,
   ],
-  providers: [LandedCostCalculatorService],
+  providers: [
+    LandedCostCalculatorService,
+    { provide: PRODUCT_DATA_PORT, useValue: null },
+    { provide: CALCULATION_RECORD_PORT, useValue: null },
+  ],
   exports: [LandedCostCalculatorService],
 })
 export class CalculatorModule {}

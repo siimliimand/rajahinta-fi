@@ -17,7 +17,11 @@ import {
 } from './correction-repository.port';
 
 @Module({
-  providers: [CorrectionService],
+  providers: [
+    CorrectionService,
+    { provide: CORRECTION_REPOSITORY_PORT, useValue: null },
+    { provide: CORRECTION_CALCULATION_RECORD_QUERY_PORT, useValue: null },
+  ],
   exports: [CorrectionService, CORRECTION_REPOSITORY_PORT, CORRECTION_CALCULATION_RECORD_QUERY_PORT],
 })
 export class CorrectionModule {}

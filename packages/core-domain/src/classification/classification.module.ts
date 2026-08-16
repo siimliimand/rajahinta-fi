@@ -28,10 +28,15 @@ import { Module } from '@nestjs/common';
 import { TransportEstimationModule } from '../transport/transport-estimation.module';
 import { TransactionClassificationService } from './transaction-classification.service';
 import { ClassificationRuleEngine } from './services/classification-rule-engine.service';
+import { CLASSIFICATION_RULE_REPOSITORY_PORT } from './ports/classification-rule-repository.port';
 
 @Module({
   imports: [TransportEstimationModule],
-  providers: [TransactionClassificationService, ClassificationRuleEngine],
+  providers: [
+    TransactionClassificationService,
+    ClassificationRuleEngine,
+    { provide: CLASSIFICATION_RULE_REPOSITORY_PORT, useValue: null },
+  ],
   exports: [TransactionClassificationService, ClassificationRuleEngine],
 })
 export class ClassificationModule {}

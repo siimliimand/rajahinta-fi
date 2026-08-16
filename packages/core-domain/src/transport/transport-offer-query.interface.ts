@@ -12,6 +12,9 @@
 
 import type { TransportOffer } from './transport-offer.type';
 
+/** Injection token for ITransportOfferQuery. */
+export const TRANSPORT_OFFER_QUERY = 'TRANSPORT_OFFER_QUERY';
+
 /**
  * Narrow query surface that TransportEstimationService needs from
  * the data layer.  Consumers inject this, not the full IRepositoryRegistry.

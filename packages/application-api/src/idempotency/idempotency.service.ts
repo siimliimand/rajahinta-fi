@@ -11,7 +11,7 @@
  * @module IdempotencyService
  */
 
-import { Injectable, Logger, Inject } from '@nestjs/common';
+import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { CalculatorResult } from '@rajahinta/core-domain';
 
@@ -116,7 +116,7 @@ export class InMemoryIdempotencyCache implements IIdempotencyCache {
   private readonly maxEntries: number;
   private readonly logger = new Logger(InMemoryIdempotencyCache.name);
 
-  constructor(options?: IdempotencyOptions) {
+  constructor(@Optional() options?: IdempotencyOptions) {
     this.maxEntries = options?.maxEntries ?? 5000;
   }
 

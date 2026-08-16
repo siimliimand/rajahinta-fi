@@ -8,9 +8,10 @@
  */
 import { Module } from '@nestjs/common';
 import { NormalizationService } from './normalization.service';
+import { ClassificationGateService } from './classification-gate.service';
 
 @Module({
-  providers: [NormalizationService],
-  exports: [NormalizationService],
+  providers: [NormalizationService, ClassificationGateService],
+  exports: [NormalizationService, ClassificationGateService],
 })
 export class NormalizationModule {}
