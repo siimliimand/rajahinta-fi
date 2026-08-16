@@ -308,13 +308,21 @@ jobs:
     steps:
       - name: Aggregate results
         run: |
-          FAILURES=false
-          for job in lint typecheck build unit-tests golden-dataset data-quality compliance; do
-            status="${{ needs.$job.result }}"
-            echo "$job: $status"
-            [ "$status" != "success" ] && [ "$status" != "skipped" ] && FAILURES=true
-          done
-          if [ "$FAILURES" = "true" ]; then
+          echo "lint: ${{ needs.lint.result }}"
+          echo "typecheck: ${{ needs.typecheck.result }}"
+          echo "build: ${{ needs.build.result }}"
+          echo "unit-tests: ${{ needs.unit-tests.result }}"
+          echo "golden-dataset: ${{ needs.golden-dataset.result }}"
+          echo "data-quality: ${{ needs.data-quality.result }}"
+          echo "compliance: ${{ needs.compliance.result }}"
+
+          if [ "${{ needs.lint.result }}" = "failure" ] \
+            || [ "${{ needs.typecheck.result }}" = "failure" ] \
+            || [ "${{ needs.build.result }}" = "failure" ] \
+            || [ "${{ needs.unit-tests.result }}" = "failure" ] \
+            || [ "${{ needs.golden-dataset.result }}" = "failure" ] \
+            || [ "${{ needs.data-quality.result }}" = "failure" ] \
+            || [ "${{ needs.compliance.result }}" = "failure" ]; then
             echo "One or more CI checks failed."
             exit 1
           fi
