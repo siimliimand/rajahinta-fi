@@ -16,7 +16,7 @@ on:
       - 'v*'
   pull_request:
     branches:
-      - main
+      - master
   workflow_dispatch:
     inputs:
       environment:
@@ -144,7 +144,7 @@ jobs:
     name: Staging deploy (${{ github.event_name }})
     needs: [build]
     if: |
-      (github.event_name == 'pull_request' && github.base_ref == 'main')
+      (github.event_name == 'pull_request' && github.base_ref == 'master')
       || (github.event_name == 'workflow_dispatch'
           && github.event.inputs.environment == 'staging')
     runs-on: ubuntu-latest
@@ -211,12 +211,16 @@ jobs:
             https://staging.rajahinta.fi/health
 
   # --------------------------------------------------------------------------
-  # PRODUCTION — tag push or manual trigger with approval gate
-  # --------------------------------------------------------------------------
-  production-deploy:
-    name: Production deploy
-    needs: [build, staging-deploy]
-    if: |
+# PRODUCTION — tag push or manual trigger with approval gate.
+    # NOTE: production-deploy deliberately does NOT depend on staging-deploy.
+    # If staging-deploy is skipped (e.g. a direct tag push without a PR),
+    # GitHub Actions would also skip production-deploy. The staging gate
+    # is enforced by the environment protection rules instead.
+    # --------------------------------------------------------------------------
+    production-deploy:
+      name: Production deploy
+      needs: [build]
+      if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
       || (github.event_name == 'workflow_dispatch'
           && github.event.inputs.environment == 'production')

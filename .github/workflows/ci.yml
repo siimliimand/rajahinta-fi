@@ -11,9 +11,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 # =============================================================================
 # Defaults
@@ -56,7 +56,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm run lint
-        continue-on-error: true   # lint rules may not exist in all packages yet
 
   typecheck:
     name: Type-check
