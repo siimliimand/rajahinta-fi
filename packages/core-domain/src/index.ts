@@ -1,10 +1,15 @@
 import { Module } from '@nestjs/common';
+import type { Disclaimer } from './calculator/calculator.types';
 import { TaxModule } from './tax/tax.module';
 import { NormalizationModule } from './normalization/normalization.module';
 import { SourceGovernanceModule } from './governance/governance.module';
 import { ClassificationModule } from './classification/classification.module';
 import { ReliabilityModule } from './reliability/reliability.module';
 import { CalculatorModule } from './calculator/calculator.module';
+import { DeclarationModule } from './declaration/declaration.module';
+import { RankingModule } from './ranking/ranking.module';
+import { CorrectionModule } from './correction/correction.module';
+import { CorrectionService } from './correction/correction.service';
 
 // ---------------------------------------------------------------------------
 // Domain entities — pure TypeScript, zero framework logic
@@ -79,21 +84,19 @@ export interface ContainerDutyCalculation {
 
 // ---------------------------------------------------------------------------
 // Disclaimer — structural part of every calculation result
+// Re-exported from calculator types for use across the domain.
 // ---------------------------------------------------------------------------
 
-export interface Disclaimer {
-  readonly text: string;
-  readonly language: 'fi' | 'en';
-}
-
 export const DISCLAIMER_FI: Disclaimer = {
-  text: 'Arvioitu kokonaiskustannus Suomessa, ei lopullinen verovelvollisuuden määrä.',
+  text: 'Arvioitu kokonaiskustannus Suomessa. Ei ole lopullinen verovelvollisuuden määrä. Lopullinen verovelvollisuus määräytyy Tullin ja Verohallinnon vahvistamien verokantojen ja säännösten mukaan.',
   language: 'fi',
+  version: '1.0',
 };
 
 export const DISCLAIMER_EN: Disclaimer = {
-  text: 'Estimated total cost in Finland, not final legal tax liability.',
+  text: 'Estimated total cost in Finland. Not final legal tax liability. Final tax liability is determined by the tax rates and regulations established by Finnish Customs and the Tax Administration.',
   language: 'en',
+  version: '1.0',
 };
 
 // ---------------------------------------------------------------------------
@@ -256,6 +259,7 @@ export type {
   CostCategory,
   ItemizedCost,
   CreateCalculationRecordInput,
+  Disclaimer,
   IProductDataPort,
   ICalculationRecordPort,
 } from './calculator/calculator.types';
@@ -266,6 +270,27 @@ export {
   ProductNotFoundError,
   NoRetailOffersError,
 } from './calculator/calculator.types';
+
+// ---------------------------------------------------------------------------
+// Declaration — excise declaration assistant
+// ---------------------------------------------------------------------------
+
+export { DeclarationModule } from './declaration/declaration.module';
+export { ExciseDeclarationService } from './declaration/excise-declaration.service';
+export type {
+  DeclarationSummary,
+  DeclarationProduct,
+  DeclarationContainer,
+  DeclarationTransport,
+  DeclarationEstimatedExcise,
+  DeclarationAdvanceNoticeInfo,
+  CalculationRecordData,
+  ICalculationRecordQueryPort,
+} from './declaration/declaration.types';
+export {
+  CALCULATION_RECORD_QUERY_PORT,
+  CalculationRecordNotFoundError,
+} from './declaration/declaration.types';
 
 // ---------------------------------------------------------------------------
 // Reliability — data-point freshness, availability, and composition
@@ -283,11 +308,40 @@ export {
 } from './reliability/reliability.types';
 
 // ---------------------------------------------------------------------------
+// Ranking & Sorting — objective sort orders for beverage price comparison
+// ---------------------------------------------------------------------------
+
+export { RankingModule } from './ranking/ranking.module';
+export { RankingService } from './ranking/ranking.service';
+export type { SortOrder } from './ranking/ranking.types';
+
+// ---------------------------------------------------------------------------
+// Correction — flagging calculations and data points for human review
+// ---------------------------------------------------------------------------
+
+export { CorrectionModule } from './correction/correction.module';
+export { CorrectionService } from './correction/correction.service';
+export type { FlaggedItem, FlagStatus, FlagTargetType } from './correction/correction.types';
+export type {
+  ICorrectionRepository,
+  ICorrectionCalculationRecordQuery,
+} from './correction/correction-repository.port';
+export {
+  CORRECTION_REPOSITORY_PORT,
+  CORRECTION_CALCULATION_RECORD_QUERY_PORT,
+} from './correction/correction-repository.port';
+export {
+  CalculationNotFoundError,
+  FlagNotFoundError,
+  FlagAlreadyResolvedError,
+} from './correction/correction.service';
+
+// ---------------------------------------------------------------------------
 // NestJS module — registration shell; domain logic is injected via providers
 // ---------------------------------------------------------------------------
 
 @Module({
-  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule],
-  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, TaxCalculationEngine, ReliabilityModule, CalculatorModule],
+  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule],
+  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, TaxCalculationEngine, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, CorrectionService],
 })
 export class CoreDomainModule {}
