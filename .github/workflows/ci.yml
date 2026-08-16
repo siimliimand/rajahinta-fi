@@ -1,10 +1,8 @@
 # =============================================================================
 # CI — Continuous integration (every push/PR to main)
 #
-# Fast-feedback gating pipeline: lint → typecheck → build → unit → golden →
-# data-quality → compliance.  Runs in parallel with the deploy.yml build job
-# but provides a richer suite of regression checks visible as required PR
-# status checks.
+# Fast-feedback gating pipeline: lint → build (includes typecheck) → unit →
+# golden → data-quality → compliance.
 # =============================================================================
 
 name: CI
@@ -36,7 +34,7 @@ concurrency:
 jobs:
 
   # --------------------------------------------------------------------------
-  # Gate: fast static checks — lint + typecheck run in parallel
+  # Gate: fast static checks — lint runs in parallel with build
   # --------------------------------------------------------------------------
   lint:
     name: Lint
@@ -57,32 +55,13 @@ jobs:
 
       - run: pnpm run lint
 
-  typecheck:
-    name: Type-check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm run typecheck
-
   # --------------------------------------------------------------------------
-  # Build — depends on typecheck having passed
+  # Build — includes typecheck (tsc during compilation) plus .d.ts generation
+  # needed by downstream package tests.  Runs in parallel with lint.
   # --------------------------------------------------------------------------
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [typecheck]
     steps:
       - uses: actions/checkout@v4
 
@@ -297,7 +276,6 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - lint
-      - typecheck
       - build
       - unit-tests
       - golden-dataset
@@ -309,7 +287,6 @@ jobs:
       - name: Aggregate results
         run: |
           echo "lint: ${{ needs.lint.result }}"
-          echo "typecheck: ${{ needs.typecheck.result }}"
           echo "build: ${{ needs.build.result }}"
           echo "unit-tests: ${{ needs.unit-tests.result }}"
           echo "golden-dataset: ${{ needs.golden-dataset.result }}"
@@ -317,7 +294,6 @@ jobs:
           echo "compliance: ${{ needs.compliance.result }}"
 
           if [ "${{ needs.lint.result }}" = "failure" ] \
-            || [ "${{ needs.typecheck.result }}" = "failure" ] \
             || [ "${{ needs.build.result }}" = "failure" ] \
             || [ "${{ needs.unit-tests.result }}" = "failure" ] \
             || [ "${{ needs.golden-dataset.result }}" = "failure" ] \
