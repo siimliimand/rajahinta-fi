@@ -14,7 +14,12 @@
 import { Injectable } from '@nestjs/common';
 import type { ReliabilityStatus } from './reliability.types';
 import { ReliabilityService } from './reliability.service';
-import type { ConfidenceLevel, ConfidenceDetail, ConfidenceReport } from './confidence-framework.types';
+import type {
+  ConfidenceLevel,
+  ConfidenceDetail,
+  ConfidenceReport,
+  LandingCostInputStatuses,
+} from './confidence-framework.types';
 
 /**
  * Default detail messages for each reliability status.
@@ -74,6 +79,67 @@ export class ConfidenceFrameworkService {
 
     // All VERIFIED
     return 'HIGH';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Domain-specific: landed cost
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Compute aggregate confidence for the landed-cost calculator.
+   *
+   * Domain-specific variant of {@link computeResultConfidence} that operates
+   * on the five named inputs the calculator materialises:
+   * `productPrice`, `transport`, `excise`, `containerDuty`, `classification`.
+   *
+   * Rules:
+   * - **HIGH**   — all five inputs are VERIFIED.
+   * - **MEDIUM** — one or more inputs are ESTIMATED; none are STALE or
+   *                UNAVAILABLE.
+   * - **LOW**    — any input is STALE or UNAVAILABLE.
+   *
+   * @param inputs  Reliability status for each landed-cost input.
+   * @returns       The aggregate confidence level.
+   */
+  computeLandingCostConfidence(inputs: LandingCostInputStatuses): ConfidenceLevel {
+    return this.computeResultConfidence([
+      inputs.productPrice,
+      inputs.transport,
+      inputs.excise,
+      inputs.containerDuty,
+      inputs.classification,
+    ]);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Evidence report from a status map
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Generate a confidence report from a labelled map of reliability statuses.
+   *
+   * Each entry in the map becomes a {@link ConfidenceDetail} in the
+   * breakdown, labelled by its key.  The overall confidence is computed
+   * from all values.
+   *
+   * Pure function — no I/O, no side effects.
+   *
+   * @param inputs  Record mapping data-point labels to reliability statuses.
+   * @returns       A {@link ConfidenceReport} with aggregate and breakdown.
+   */
+  computeEvidenceFromStatuses(inputs: Record<string, ReliabilityStatus>): ConfidenceReport {
+    const labels = Object.keys(inputs);
+    const values = Object.values(inputs);
+
+    const breakdown: ConfidenceDetail[] = labels.map((label) => ({
+      status: inputs[label],
+      detail: `[${label}] ${STATUS_DETAIL[inputs[label]]}`,
+    }));
+
+    return {
+      overall: this.computeResultConfidence(values),
+      breakdown,
+    };
   }
 
   // ---------------------------------------------------------------------------

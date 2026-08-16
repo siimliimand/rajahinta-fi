@@ -12,6 +12,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { ConfidenceFrameworkService } from '../confidence-framework.service';
 import { ReliabilityService } from '../reliability.service';
 import type { ReliabilityStatus } from '../reliability.types';
+import type { LandingCostInputStatuses } from '../confidence-framework.types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -187,6 +188,183 @@ describe('ConfidenceFrameworkService', () => {
 
       expect(report.breakdown[0].detail).toMatch(/\[transport\]/);
       expect(report.breakdown[1].detail).toMatch(/\[classification\]/);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // computeLandingCostConfidence — domain-specific variant
+  // -------------------------------------------------------------------------
+
+  describe('computeLandingCostConfidence', () => {
+    function allVerified(): LandingCostInputStatuses {
+      return {
+        productPrice: 'VERIFIED',
+        transport: 'VERIFIED',
+        excise: 'VERIFIED',
+        containerDuty: 'VERIFIED',
+        classification: 'VERIFIED',
+      };
+    }
+
+    it('returns HIGH when all five inputs are VERIFIED', () => {
+      expect(service.computeLandingCostConfidence(allVerified())).toBe('HIGH');
+    });
+
+    it('returns MEDIUM when one input is ESTIMATED and rest VERIFIED', () => {
+      const inputs: LandingCostInputStatuses = {
+        ...allVerified(),
+        transport: 'ESTIMATED',
+      };
+      expect(service.computeLandingCostConfidence(inputs)).toBe('MEDIUM');
+    });
+
+    it('returns MEDIUM when multiple inputs are ESTIMATED', () => {
+      const inputs: LandingCostInputStatuses = {
+        ...allVerified(),
+        productPrice: 'ESTIMATED',
+        transport: 'ESTIMATED',
+      };
+      expect(service.computeLandingCostConfidence(inputs)).toBe('MEDIUM');
+    });
+
+    it('returns LOW when any input is STALE', () => {
+      const inputs: LandingCostInputStatuses = {
+        ...allVerified(),
+        classification: 'STALE',
+      };
+      expect(service.computeLandingCostConfidence(inputs)).toBe('LOW');
+    });
+
+    it('returns LOW when any input is UNAVAILABLE', () => {
+      const inputs: LandingCostInputStatuses = {
+        ...allVerified(),
+        containerDuty: 'UNAVAILABLE',
+      };
+      expect(service.computeLandingCostConfidence(inputs)).toBe('LOW');
+    });
+
+    it('returns LOW when inputs include both STALE and ESTIMATED', () => {
+      const inputs: LandingCostInputStatuses = {
+        productPrice: 'VERIFIED',
+        transport: 'ESTIMATED',
+        excise: 'STALE',
+        containerDuty: 'VERIFIED',
+        classification: 'ESTIMATED',
+      };
+      expect(service.computeLandingCostConfidence(inputs)).toBe('LOW');
+    });
+
+    it('returns LOW when all five inputs are STALE', () => {
+      const inputs: LandingCostInputStatuses = {
+        productPrice: 'STALE',
+        transport: 'STALE',
+        excise: 'STALE',
+        containerDuty: 'STALE',
+        classification: 'STALE',
+      };
+      expect(service.computeLandingCostConfidence(inputs)).toBe('LOW');
+    });
+
+    it('returns MEDIUM when all inputs are ESTIMATED (no STALE/UNAVAILABLE)', () => {
+      const inputs: LandingCostInputStatuses = {
+        productPrice: 'ESTIMATED',
+        transport: 'ESTIMATED',
+        excise: 'ESTIMATED',
+        containerDuty: 'ESTIMATED',
+        classification: 'ESTIMATED',
+      };
+      expect(service.computeLandingCostConfidence(inputs)).toBe('MEDIUM');
+    });
+
+    it('delegates to computeResultConfidence internally (5 inputs)', () => {
+      const inputs: LandingCostInputStatuses = {
+        productPrice: 'VERIFIED',
+        transport: 'ESTIMATED',
+        excise: 'VERIFIED',
+        containerDuty: 'VERIFIED',
+        classification: 'VERIFIED',
+      };
+      // 4 VERIFIED + 1 ESTIMATED => MEDIUM
+      const direct = service.computeResultConfidence([
+        inputs.productPrice,
+        inputs.transport,
+        inputs.excise,
+        inputs.containerDuty,
+        inputs.classification,
+      ]);
+      expect(service.computeLandingCostConfidence(inputs)).toBe(direct);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // computeEvidenceFromStatuses — evidence report from a status map
+  // -------------------------------------------------------------------------
+
+  describe('computeEvidenceFromStatuses', () => {
+    it('produces overall HIGH with VERIFIED-only inputs', () => {
+      const report = service.computeEvidenceFromStatuses({
+        price: 'VERIFIED',
+        transport: 'VERIFIED',
+      });
+
+      expect(report.overall).toBe('HIGH');
+      expect(report.breakdown).toHaveLength(2);
+    });
+
+    it('produces overall MEDIUM when one input is ESTIMATED', () => {
+      const report = service.computeEvidenceFromStatuses({
+        price: 'VERIFIED',
+        transport: 'ESTIMATED',
+        excise: 'VERIFIED',
+      });
+
+      expect(report.overall).toBe('MEDIUM');
+    });
+
+    it('produces overall LOW when input is STALE', () => {
+      const report = service.computeEvidenceFromStatuses({
+        price: 'STALE',
+      });
+
+      expect(report.overall).toBe('LOW');
+    });
+
+    it('produces overall LOW when input is UNAVAILABLE', () => {
+      const report = service.computeEvidenceFromStatuses({
+        classification: 'UNAVAILABLE',
+      });
+
+      expect(report.overall).toBe('LOW');
+    });
+
+    it('includes every input key in the breakdown', () => {
+      const report = service.computeEvidenceFromStatuses({
+        productPrice: 'VERIFIED',
+        transport: 'ESTIMATED',
+        classification: 'STALE',
+      });
+
+      expect(report.breakdown).toHaveLength(3);
+      const labels = report.breakdown.map((d) => d.detail);
+      expect(labels.some((l) => l.includes('[productPrice]'))).toBe(true);
+      expect(labels.some((l) => l.includes('[transport]'))).toBe(true);
+      expect(labels.some((l) => l.includes('[classification]'))).toBe(true);
+    });
+
+    it('breakdown detail explains each status', () => {
+      const report = service.computeEvidenceFromStatuses({
+        excise: 'UNAVAILABLE',
+      });
+
+      expect(report.breakdown[0].status).toBe('UNAVAILABLE');
+      expect(report.breakdown[0].detail).toContain('No data is available');
+    });
+
+    it('returns LOW for empty inputs map', () => {
+      const report = service.computeEvidenceFromStatuses({});
+
+      expect(report.overall).toBe('LOW');
+      expect(report.breakdown).toHaveLength(0);
     });
   });
 });

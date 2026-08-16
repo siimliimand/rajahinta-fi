@@ -11,6 +11,32 @@
 import type { ReliabilityStatus } from './reliability.types';
 
 // ---------------------------------------------------------------------------
+// Landing-cost input statuses
+// ---------------------------------------------------------------------------
+
+/**
+ * Named reliability statuses for each material input to the landed-cost
+ * calculator.
+ *
+ * Every input maps to a named data point in the calculation:
+ * - `productPrice`  — base product price (source: merchant page or estimate).
+ * - `transport`     — shipping cost (source: carrier rate table or estimate).
+ * - `excise`        — alcohol excise duty rate (source: Tax Administration
+ *                     schedule or fallback).
+ * - `containerDuty` — container/package duty (source: official rate or
+ *                     category average).
+ * - `classification`— transaction classification outcome
+ *                     (distance-selling / distance-buying / traveller-import).
+ */
+export interface LandingCostInputStatuses {
+  readonly productPrice: ReliabilityStatus;
+  readonly transport: ReliabilityStatus;
+  readonly excise: ReliabilityStatus;
+  readonly containerDuty: ReliabilityStatus;
+  readonly classification: ReliabilityStatus;
+}
+
+// ---------------------------------------------------------------------------
 // Confidence level
 // ---------------------------------------------------------------------------
 
