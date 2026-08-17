@@ -1,0 +1,77 @@
+version: "3.8"
+
+# =============================================================================
+# Rajahinta.fi — local full-stack environment
+#
+# Starts PostgreSQL, Redis, and the NestJS backend (production build) in a
+# single command.  The build uses the monorepo-root Dockerfile (multi-stage,
+# production image).  For iterative development with hot-reload use the
+# infra/jobs compose stack instead.
+#
+# Usage:
+#   docker compose up --build          # Build & start everything
+#   docker compose up -d               # Start existing images in background
+#   docker compose down --volumes      # Tear down + delete DB/redis data
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 — primary data store
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: rajahinta-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: rajahinta
+      POSTGRES_PASSWORD: rajahinta
+      POSTGRES_DB: rajahinta
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rajahinta -d rajahinta"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  # ---------------------------------------------------------------------------
+  # Redis 7 — caching, BullMQ job queues, session store
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: rajahinta-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis-data:/data
+
+  # ---------------------------------------------------------------------------
+  # NestJS backend (production build via monorepo-root Dockerfile)
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rajahinta-app
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://rajahinta:rajahinta@postgres:5432/rajahinta
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:
