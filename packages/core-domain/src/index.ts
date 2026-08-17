@@ -83,6 +83,17 @@ export interface ContainerDutyCalculation {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Tax — excise duty, container duty, and tax rule repository port
+// ---------------------------------------------------------------------------
+
+export { TAX_RULE_REPOSITORY_PORT } from './tax/index';
+export type { ITaxRuleRepositoryPort, TaxRuleRecordPort } from './tax/index';
+
+// ---------------------------------------------------------------------------
+// Documentation section markers
+// ---------------------------------------------------------------------------
+
 // Disclaimer — structural part of every calculation result
 // Re-exported from calculator types for use across the domain.
 // ---------------------------------------------------------------------------
