@@ -279,6 +279,14 @@ export type {
 } from './interfaces/repository-registry.interface';
 
 // ---------------------------------------------------------------------------
+// Drizzle connection provider
+// ---------------------------------------------------------------------------
+
+export { DRIZZLE, DrizzleProvider } from './db/drizzle.provider';
+export type { DrizzleDatabase } from './db/drizzle.provider';
+export { DrizzleModule } from './db/drizzle.module';
+
+// ---------------------------------------------------------------------------
 // NestJS module
 // ---------------------------------------------------------------------------
 
