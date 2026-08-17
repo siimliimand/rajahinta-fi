@@ -27,6 +27,11 @@ on:
           - staging
           - production
 
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+
 # =============================================================================
 # Defaults shared by all jobs
 # =============================================================================
