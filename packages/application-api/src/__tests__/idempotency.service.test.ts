@@ -30,7 +30,7 @@ function makeResult(overrides?: Partial<CalculatorResult>): CalculatorResult {
     classification: { label: 'distance-selling', confidence: 'HIGH' as any, factors: [] } as any,
     metadata: {
       input: { productId: 1, quantity: 1, destination: 'FI' },
-      calculationTimestamp: new Date().toISOString(),
+      calculationTimestamp: '2026-08-17T08:00:00.000Z',
       productMasterId: 1,
       retailOfferIds: [],
       quantity: 1,
