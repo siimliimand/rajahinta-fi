@@ -17,6 +17,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\""
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.0",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^2.1.0"
   },

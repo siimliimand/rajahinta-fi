@@ -20,6 +20,9 @@ jobs:
   load-test:
     name: Load test (calculator)
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
 
     steps:
       - name: Checkout
