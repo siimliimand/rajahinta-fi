@@ -182,8 +182,7 @@ jobs:
           REDIS_URL: ${{ secrets.STAGING_REDIS_URL }}
 
       - name: Golden-dataset checks
-        run: |
-          pnpm run test:e2e -- --grep "golden-dataset"
+        run: pnpm run test:golden
         env:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           REDIS_URL: ${{ secrets.STAGING_REDIS_URL }}
