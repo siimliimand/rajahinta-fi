@@ -19,8 +19,16 @@ export {
   TaxRateRepository,
   TransportOfferRepository,
   CalculationRecordRepository,
-  AuditRepository,
 } from './abstracts';
+
+// ---------------------------------------------------------------------------
+// Concrete repository implementations — Drizzle-based
+// ---------------------------------------------------------------------------
+
+export { DrizzleProductRepository } from './repositories/product.repository';
+export { DrizzleTaxRateRepository, TaxRuleRepositoryAdapter } from './repositories/tax-rate.repository';
+export { DrizzleTransportOfferRepository } from './repositories/transport-offer.repository';
+export { DrizzleCalculationRecordRepository } from './repositories/calculation-record.repository';
 
 // ---------------------------------------------------------------------------
 // Module boundary — pure interfaces for cross-layer contracts

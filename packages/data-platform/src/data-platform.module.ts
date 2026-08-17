@@ -25,7 +25,6 @@ import {
   TaxRateRepository,
   TransportOfferRepository,
   CalculationRecordRepository,
-  AuditRepository,
 } from './abstracts';
 import { DrizzleProductRepository } from './repositories/product.repository';
 import { DrizzleTaxRateRepository } from './repositories/tax-rate.repository';
@@ -53,10 +52,6 @@ import { TaxRuleRepositoryAdapter } from './repositories/tax-rate.repository';
       provide: CalculationRecordRepository,
       useClass: DrizzleCalculationRecordRepository,
     },
-    {
-      provide: AuditRepository,
-      useValue: null, // Not yet implemented — placeholder
-    },
     // Domain-port adapter for tax rule lookup
     {
       provide: TAX_RULE_REPOSITORY_PORT,
@@ -69,11 +64,19 @@ import { TaxRuleRepositoryAdapter } from './repositories/tax-rate.repository';
     DrizzleCalculationRecordRepository,
   ],
   exports: [
+    // Abstract class tokens — inject by abstract class for loose coupling
     ProductRepository,
     TaxRateRepository,
     TransportOfferRepository,
     CalculationRecordRepository,
-    AuditRepository,
+    // Domain-port adapter token for tax rule lookup
+    TAX_RULE_REPOSITORY_PORT,
+    // Concrete implementations — inject directly when needed
+    DrizzleProductRepository,
+    DrizzleTaxRateRepository,
+    DrizzleTransportOfferRepository,
+    DrizzleCalculationRecordRepository,
+    TaxRuleRepositoryAdapter,
   ],
 })
 export class DataPlatformModule {}
