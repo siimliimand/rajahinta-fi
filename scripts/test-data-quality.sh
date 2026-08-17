@@ -23,7 +23,7 @@ else
 fi
 
 # Schema conformance: verify all expected tables exist
-EXPECTED_TABLES=("products" "merchant_offers" "tax_rate_versions" "transport_rates" "calculation_audit")
+EXPECTED_TABLES=("product_master" "retail_offers" "tax_rules" "transport_offers" "calculation_records")
 
 echo "Checking table existence..."
 for table in "${EXPECTED_TABLES[@]}"; do
@@ -38,8 +38,8 @@ done
 # Null-violation checks on critical NOT NULL fields
 echo "Checking null violations on critical fields..."
 psql "$DB_URL" -c "
-  SELECT 'products' AS tbl, count(*) AS null_violations
-  FROM products WHERE id IS NULL OR name IS NULL OR container_type IS NULL OR volume_litres IS NULL;
+  SELECT 'product_master' AS tbl, count(*) AS null_violations
+  FROM product_master WHERE id IS NULL OR name IS NULL OR manufacturer IS NULL OR category IS NULL OR unit_volume IS NULL OR container_type IS NULL;
 " | grep -q "0 rows" || true  # non-fatal for now; placeholder
 
 # Run data-quality vitest suite (uses per-package vitest config)
