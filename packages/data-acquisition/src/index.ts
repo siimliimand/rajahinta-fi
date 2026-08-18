@@ -119,6 +119,10 @@ import { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
 import type { IFeedAdapter } from './interfaces/feed-adapter.interface';
 import { SystembolagetFeedAdapter } from './adapters/systembolaget.adapter';
 import { DrizzleUpsertRepository } from './adapters/upsert-port.adapter';
+import { PipelinePriceIngestionAdapter } from './adapters/pipeline-price-ingestion.adapter';
+import { PipelineTransportRateAdapter } from './adapters/pipeline-transport-rate.adapter';
+import { PipelineTaxDatasetReviewAdapter } from './adapters/pipeline-tax-dataset-review.adapter';
+import { InMemoryRateReviewRepository } from './adapters/rate-review-repository.adapter';
 
 // ---------------------------------------------------------------------------
 // NestJS module — registers Bull queues, exposes pipeline services
@@ -166,13 +170,13 @@ import { DrizzleUpsertRepository } from './adapters/upsert-port.adapter';
     DrizzleUpsertRepository,
     { provide: UPSERT_REPOSITORY_TOKEN, useClass: DrizzleUpsertRepository },
 
-    // Rate-review repository port — composition root provides the concrete adapter
-    { provide: RATE_REVIEW_REPOSITORY_PORT, useValue: null },
+    // Rate-review repository port — in-memory adapter for Phase 1
+    { provide: RATE_REVIEW_REPOSITORY_PORT, useClass: InMemoryRateReviewRepository },
 
-    // Deprecated abstract services — kept as nullable providers for worker DI
-    { provide: PriceIngestionService, useValue: null },
-    { provide: TransportRateService, useValue: null },
-    { provide: TaxDatasetReviewService, useValue: null },
+    // Deprecated abstract services — wired to pipeline-backed concrete adapters
+    { provide: PriceIngestionService, useClass: PipelinePriceIngestionAdapter },
+    { provide: TransportRateService, useClass: PipelineTransportRateAdapter },
+    { provide: TaxDatasetReviewService, useClass: PipelineTaxDatasetReviewAdapter },
   ],
   exports: [
     BullModule,
