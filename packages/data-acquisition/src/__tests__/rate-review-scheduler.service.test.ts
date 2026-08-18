@@ -192,6 +192,18 @@ describe('RateReviewSchedulerService', () => {
       expect(result.newRatesDetected).toBe(false);
       expect(result).not.toHaveProperty('ratesApplied');
     });
+
+    it('createRateUpdateTask throws when fed a false result from checkForRateChanges', async () => {
+      const service = createService();
+
+      // Integration guard: the output of checkForRateChanges (Phase 1 always
+      // returns newRatesDetected=false) must never sneak through to publishing.
+      const result = await service.checkForRateChanges();
+
+      await expect(
+        service.createRateUpdateTask(result),
+      ).rejects.toThrow('Cannot create rate-update task');
+    });
   });
 
   // ---------------------------------------------------------------------------

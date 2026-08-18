@@ -102,13 +102,14 @@ export class RateReviewSchedulerService {
   /**
    * Check for newly published official rate changes.
    *
-   * In the current version this is a mock / simulated check.  When
-   * `discoveryDisabled` is true (e.g. in test environments), the method
-   * always returns "no new rates".  Otherwise it returns a deterministic
-   * result (newRatesDetected=false) that tests can override via DI.
+   * Phase 1: Rate-change detection is intentionally a documented no-op.
+   * Real API integration (vero.fi tax rate API, EUR-Lex legislative changes)
+   * is deferred until a dedicated adapter layer with proper error handling,
+   * rate limiting, and scheduled polling is designed. See docs/tasks.md T1.23.
    *
-   * Actual API integrations (vero.fi, EUR-Lex, etc.) will replace this
-   * method body in a future iteration.
+   * When `discoveryDisabled` is true (e.g. in test environments), the method
+   * always returns "no new rates".  Otherwise it also returns a deterministic
+   * result (newRatesDetected=false) that tests can override via DI.
    *
    * Rates are NEVER auto-published.
    */
@@ -120,9 +121,25 @@ export class RateReviewSchedulerService {
     }
 
     // -----------------------------------------------------------------------
-    // Mock implementation — replace with real source integration later.
-    // Currently always returns "no new rates" so the scheduler runs silently
-    // until real API adapters are wired.
+    // Phase 1: Detection is a documented no-op.
+    //
+    // Rationale: Real API integration (vero.fi, EUR-Lex) belongs in a
+    // dedicated adapter layer.  That work is deferred until:
+    //   1. A source-adapter interface is designed (error handling, rate
+    //      limiting, scheduled polling, idempotent fetch).
+    //   2. A poller task is wired into the task-orchestrator pipeline.
+    //   3. The adapter is tested against a vero.fi staging or sandbox
+    //      endpoint.
+    //
+    // Until then, checkForRateChanges() always reports "no new rates", so
+    // the scheduler runs silently without creating spurious review entries.
+    //
+    // Trigger conditions for replacement:
+    //   - A source-adapter abstraction is merged (see T1.23).
+    //   - A polling job is registered in the task orchestrator.
+    //   - Integration tests pass against a real or recorded API response.
+    //
+    // See: docs/tasks.md T1.23 — "Tax-rate source adapter"
     // -----------------------------------------------------------------------
     const newRatesDetected = false;
 
