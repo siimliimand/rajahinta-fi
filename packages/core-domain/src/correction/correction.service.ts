@@ -209,7 +209,7 @@ export class CorrectionService {
     // the flag exists above.
     const flag = updated!;
 
-    const action = this.buildResolutionAction(flag, resolution, note);
+    const action = await this.buildResolutionAction(flag, resolution, note);
 
     this.logger.log(
       `Flag ${flagId} resolved as ${resolution} by ${resolvedBy} ` +
@@ -225,14 +225,15 @@ export class CorrectionService {
    * - ACCEPTED calculation flags produce a `recalculation` action linked to
    *   the calculation record.
    * - ACCEPTED data-point flags (product, retailOffer, transportOffer, taxRule)
-   *   produce a `dataset_fix` action describing what needs correction.
+   *   produce a `dataset_fix` action with links to affected calculation records
+   *   resolved via {@link ICorrectionCalculationRecordQuery.findCalculationRecordIdsByEntity}.
    * - REJECTED flags produce a `note_only` action with the rejection note.
    */
-  private buildResolutionAction(
+  private async buildResolutionAction(
     flag: FlaggedItem,
     resolution: 'ACCEPTED' | 'REJECTED',
     note?: string,
-  ): ResolutionAction {
+  ): Promise<ResolutionAction> {
     if (resolution === 'REJECTED') {
       return {
         type: 'note_only',
@@ -251,12 +252,20 @@ export class CorrectionService {
     }
 
     // Data-point flag (product, retailOffer, transportOffer, taxRule)
+    // Look up which calculation records reference this entity so the
+    // resolution action can link back to affected records.
+    const recordIds =
+      await this.calculationQuery.findCalculationRecordIdsByEntity(
+        flag.targetType,
+        flag.targetId,
+      );
+
     return {
       type: 'dataset_fix',
       description:
         note ??
         `Flag accepted — ${flag.targetType} ${flag.targetId} requires data correction.`,
-      linksToCalculationRecords: [],
+      linksToCalculationRecords: recordIds,
     };
   }
 
