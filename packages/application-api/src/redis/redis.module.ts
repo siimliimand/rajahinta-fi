@@ -16,7 +16,7 @@
  * @module RedisModule
  */
 
-import { Global, Module, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Global, Inject, Module, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from './redis.constants';
 
@@ -63,7 +63,9 @@ function resolveRedisUrl(): string | null {
 export class RedisModule implements OnModuleDestroy {
   private readonly logger = new Logger(RedisModule.name);
 
-  constructor(private readonly redisClient: Redis | null) {}
+  constructor(
+    @Optional() @Inject(REDIS_CLIENT) private readonly redisClient: Redis | null,
+  ) {}
 
   /** Gracefully disconnect from Redis on application shutdown. */
   async onModuleDestroy(): Promise<void> {
