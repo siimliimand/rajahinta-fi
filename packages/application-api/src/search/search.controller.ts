@@ -174,7 +174,7 @@ export class SearchController {
           unitVolume: product.unitVolume,
           containerType: product.containerType,
           regulatoryClassification: product.regulatoryClassification,
-          depositSystemStatus: product.depositSystemStatus,
+          depositSystemStatus: product.depositSystemStatus ?? false,
           ean: product.ean,
         },
         offers: offers.map(

@@ -16,7 +16,13 @@ import {
   RankingModule,
   DeclarationModule,
 } from '@rajahinta/core-domain';
-import { DataPlatformModule } from '@rajahinta/data-platform';
+import {
+  DataPlatformModule,
+  ProductRepository,
+  CalculationRecordRepository,
+  DrizzleProductRepository,
+  DrizzleCalculationRecordRepository,
+} from '@rajahinta/data-platform';
 import { ObservabilityModule } from './observability';
 import { FeatureFlagsModule } from './feature-flags';
 import { JobsModule } from './jobs';
@@ -172,6 +178,14 @@ export abstract class UseCaseOrchestrator {
   providers: [
     // Legacy TaxCalculationEngine — composition root wires the concrete
     { provide: TaxCalculationEngine, useValue: null },
+
+    // Concrete repository implementations — wire SearchController and
+    // CalculatorController to Drizzle-backed data access
+    { provide: ProductRepository, useClass: DrizzleProductRepository },
+    { provide: CalculationRecordRepository, useClass: DrizzleCalculationRecordRepository },
+    // Register concrete classes so NestJS can resolve their constructor deps
+    DrizzleProductRepository,
+    DrizzleCalculationRecordRepository,
   ],
   controllers: [
     CalculationController,
