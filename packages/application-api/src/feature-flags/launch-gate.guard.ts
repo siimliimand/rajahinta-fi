@@ -15,7 +15,7 @@ export const LAUNCH_GATE_KEY = 'launch_gate';
 export enum LaunchGateType {
   /** Requires all three gates — for calculation endpoints. */
   CALCULATION = 'CALCULATION',
-  /** Requires legal opinion gate — for price-data endpoints. */
+  /** Requires all three gates — for price-data endpoints. */
   PRICE_DATA = 'PRICE_DATA',
 }
 
@@ -72,7 +72,7 @@ export class LaunchGateGuard implements CanActivate {
         }
         throw new ForbiddenException(
           'Price data is not yet publicly available. ' +
-            'The legal opinion gate must be confirmed before price data is visible.',
+            'All launch gates (legal opinion, tax-source mapping, correction mechanism) must be confirmed.',
         );
 
       default:

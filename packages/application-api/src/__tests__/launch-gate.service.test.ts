@@ -96,14 +96,16 @@ describe('LaunchGateService', () => {
       expect(service.isCalculationEnabled()).toBe(true);
     });
 
-    it('should show price data only when legal opinion is confirmed', () => {
+    it('should show price data only when all gates are confirmed', () => {
       process.env[GATE_ENV_KEYS.legalOpinion] = 'true';
+      process.env[GATE_ENV_KEYS.taxSourceMapping] = 'true';
+      process.env[GATE_ENV_KEYS.correctionMechanism] = 'true';
       const service = new LaunchGateService();
 
       expect(service.isPriceDataVisible()).toBe(true);
     });
 
-    it('should not show price data when legal opinion is not confirmed', () => {
+    it('should not show price data when any gate is not confirmed', () => {
       process.env[GATE_ENV_KEYS.taxSourceMapping] = 'true';
       process.env[GATE_ENV_KEYS.correctionMechanism] = 'true';
       const service = new LaunchGateService();
