@@ -1,0 +1,41 @@
+# mvp-testing Specification
+
+## Purpose
+TBD - created by archiving change phase1-mvp. Update Purpose after archive.
+## Requirements
+### Requirement: Unit tests for high-liability code
+
+Unit tests SHALL cover every tax/duty formula, classification rule, and confidence-computation function, at the highest coverage bar in the system.
+
+#### Scenario: Formula regression
+
+- **WHEN** a change touches an excise formula
+- **THEN** the unit tests SHALL run and catch any deviation from the official rate
+
+### Requirement: Golden-dataset regression tests
+
+A fixed set of known product/transport/tax input combinations with manually verified expected outputs SHALL run on every deploy and every new tax-dataset version.
+
+#### Scenario: Dataset version gate
+
+- **WHEN** a new tax-dataset version is published
+- **THEN** the golden-dataset tests SHALL pass against the manually verified expected outputs before the version ships
+
+### Requirement: Compliance tests
+
+Automated checks SHALL verify that no ranking result correlates with any commercial/payment signal and that banned promotional vocabulary does not appear in generated product copy.
+
+#### Scenario: Neutrality check
+
+- **WHEN** ranking results are produced
+- **THEN** automated checks SHALL confirm no correlation with a payment signal
+
+### Requirement: Load tests
+
+Load/performance tests SHALL run against the Landed-Cost Calculation endpoint, the highest-traffic and most computation-heavy path.
+
+#### Scenario: Endpoint under load
+
+- **WHEN** the calculation endpoint is driven at production-scale concurrency
+- **THEN** it SHALL meet the defined latency and throughput targets
+
