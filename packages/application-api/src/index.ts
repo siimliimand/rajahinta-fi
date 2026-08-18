@@ -35,6 +35,7 @@ import { AccountModule } from './accounts';
 import { CalculatorController } from './calculator';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
+import { TaxCalculationEngineAdapter } from './adapters/tax-calculation-engine.adapter';
 
 // ---------------------------------------------------------------------------
 // Module boundary — pure DTO interfaces for cross-layer contracts
@@ -176,13 +177,12 @@ export abstract class UseCaseOrchestrator {
     DataPlatformModule,
   ],
   providers: [
-    // Legacy TaxCalculationEngine — composition root wires the concrete
-    { provide: TaxCalculationEngine, useValue: null },
-
+    TaxCalculationEngineAdapter,
     // Concrete repository implementations — wire SearchController and
     // CalculatorController to Drizzle-backed data access
     { provide: ProductRepository, useClass: DrizzleProductRepository },
     { provide: CalculationRecordRepository, useClass: DrizzleCalculationRecordRepository },
+    { provide: TaxCalculationEngine, useClass: TaxCalculationEngineAdapter },
     // Register concrete classes so NestJS can resolve their constructor deps
     DrizzleProductRepository,
     DrizzleCalculationRecordRepository,
