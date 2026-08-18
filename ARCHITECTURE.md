@@ -2,9 +2,9 @@
 
 ## Architecture Overview
 
-Rajahinta.fi is a **cross-border beverage price index and Finnish landed-cost intelligence platform**. It is planned as a calculator, not a shop: there is no checkout, no payment collection for alcohol, and no physical-goods order management — the only commercial transaction is a software subscription.
+Rajahinta.fi is a **cross-border beverage price index and Finnish landed-cost intelligence platform**. It is a calculator, not a shop: there is no checkout, no payment collection for alcohol, and no physical-goods order management — the only commercial transaction is a software subscription.
 
-This repository implements a **modular monolith** for the MVP, organized into clearly bounded NestJS modules (data acquisition, core domain, data platform, application API) so any module can later be extracted into a separate service without redesigning domain logic. The technology stack is TypeScript/Node.js with PostgreSQL 16 (Drizzle ORM), Redis, and NestJS.
+The architecture is a **modular monolith** organized into clearly bounded packages (core-domain, application-api, data-acquisition, data-platform) with a NestJS 11 composition root and a Next.js 14 frontend. Every module is wired through explicit port/adapter interfaces so any module can later be extracted into a separate service without redesigning domain logic. The technology stack is TypeScript/Node.js with PostgreSQL 16 (Drizzle ORM), Redis, and BullMQ.
 
 ## 1. Project Structure
 
@@ -188,9 +188,19 @@ No `useValue: null` providers for data repos — all have concrete implementatio
 
 **Fallback rates are reconciled with seed**: `DEFAULT_RATES` in `alcohol-excise.math.ts` and `DEFAULT_CONTAINER_DUTY_RATE` in `container-duty.math.ts` carry the same official 2024 Finnish Tax Administration rates as the `seed/tax-rules.seed.ts` dataset. Fallbacks are used when no rule is found in the repository (reliability: ESTIMATED).
 
-### 3.2 Planned Frontend / User Interface
+### 3.2 Frontend / User Interface
 
-Planned consumer web application: calculator, comparison views, historical charts, and account/subscription management. No implementation exists yet.
+| Component | Responsibility | Key files |
+|---|---|---|
+| **Home page** | Navigation hub linking to calculator, compare, ranking, account | `apps/frontend/src/app/page.tsx` |
+| **Calculator page** | Product search, product selector, quantity selector, result display with itemized breakdown | `apps/frontend/src/app/calculator/` |
+| **Comparison page** | Side-by-side product comparison with sort controls | `apps/frontend/src/app/compare/` |
+| **Ranking page** | Explanation of ranking methodology (neutrality enforcement) | `apps/frontend/src/app/ranking/page.tsx` |
+| **Account page** | Account management, saved baskets | `apps/frontend/src/app/account/` |
+| **Age Gate** | Age verification wrapper (renders in root layout) | `apps/frontend/src/app/age-gate/` |
+| **DisclaimerBanner** | Structural disclaimer rendered on every calculation result | `apps/frontend/src/app/calculator/components/DisclaimerBanner.tsx` |
+
+**Technology:** Next.js 14.2 (App Router, standalone output), React 18.3, Tailwind CSS 3.4, Vitest + Testing Library.
 
 ### 3.3 Agent infrastructure
 
@@ -357,38 +367,39 @@ The repository is an agentic workspace with a working application build. Command
 
 ## 15. Constraints, Risks, and Technical Debt
 
-Resolved:
-- ✅ Language/framework/database selected: TypeScript, NestJS, PostgreSQL (Drizzle ORM).
-- ✅ Application code exists — all core modules implemented with tests.
-
-Open risks:
-- Deposit-return system status per product/packaging is tri-state (`boolean | null`); null means ESTIMATED — the container-duty engine flags uncertain exemptions, never silently assumes.
-- Classification rules subject to legislative change (e.g., 1 September 2024 joint-liability change) require versioned, dated rule sets.
-- Frontend presentation layer not yet built — the web application (calculator UI, comparison views, charts) is planned for a subsequent iteration.
-- K8s manifests not yet created — deployment currently uses Docker Compose only.
-- Alko adapter not yet implemented — registered in merchant config but skipped by pipeline.
+- **In-memory services:** Rate-limiting, idempotency, and audit repositories are in-memory — data loss on restart. Acceptable for MVP, must migrate to Redis/PostgreSQL before production.
+- **No authentication/authorization:** Account module exists but no auth provider is wired. Age-gate is a UI wrapper, not a verified identity check.
+- **Alko adapter not yet implemented** — registered in merchant config but skipped by pipeline.
+- **No centralized error tracking or APM:** Application-level observability exists but no external monitoring service is integrated.
+- **Billing is simulated:** Subscription billing module uses in-memory state with no payment provider.
+- **Legal review tasks incomplete** (5 external tasks marked `agent: none`): Finnish legal opinion, tax counsel validation, compliance review.
+- **Classification rules subject to legislative change** (e.g., 1 September 2024 joint-liability change) require versioned, dated rule sets.
+- **Deposit-return system status per product/packaging is tri-state** (`boolean | null`); null means ESTIMATED — the container-duty engine flags uncertain exemptions, never silently assumes.
 
 ## 16. Future Considerations
 
 Per the implementation plan's delivery phases:
-- Basket Optimizer (Phase 2) building on basket-level transport estimation.
-- API customer offering (Phase 2/3) — the disclaimer must be a structural part of result objects so API consumers inherit it.
-- Potential extraction of modules (e.g., Data Acquisition) into separate services without redesigning domain logic.
 
-Recommendation: after the frontend presentation layer is scaffolded, rerun `/make-architecture` to capture the updated component boundaries.
+- **Basket Optimizer** (Phase 2) building on basket-level transport estimation
+- **API customer offering** (Phase 2/3) — disclaimer must be a structural part of result objects so API consumers inherit it
+- **Persistent stores for cross-cutting concerns** — replace in-memory rate-limiting, idempotency, and audit with Redis/PostgreSQL
+- **External feed adapter implementation** — connect real merchant APIs, carrier rate feeds, and tax authority datasets
+- **Authentication & authorization** — wire real auth provider into AccountModule
+- **K8s manifests** — for staging/production deployment (currently Docker Compose only)
+- **Potential module extraction** — Data Acquisition, then Data Platform, into separate services without redesigning domain logic
 
 ## 17. Project Identification
 
 | Field | Value |
 |---|---|
-| Name | Rajahinta.fi |
-| Language | TypeScript |
-| Type | Cross-border beverage price index + Finnish landed-cost intelligence platform |
-| Runtime | Node.js (NestJS) |
-| Database | PostgreSQL 16 (Drizzle ORM) |
-| Cache/Queue | Redis 7 (BullMQ) |
-| Date of review | 2026-08-18 |
-| Maintainer | Not evident from the repository |
+| **Name** | Rajahinta.fi |
+| **Language** | TypeScript (ES2022, strict mode) |
+| **Type** | Cross-border beverage price index + Finnish landed-cost intelligence platform |
+| **Runtime** | Node.js 22 (backend), Next.js 14 (frontend) |
+| **Database** | PostgreSQL 16 (Drizzle ORM) |
+| **Cache/Queue** | Redis 7 (BullMQ) |
+| **Date of review** | 2026-08-18 |
+| **Maintainer** | Not evident from the repository |
 
 ## 18. Glossary / Acronyms
 

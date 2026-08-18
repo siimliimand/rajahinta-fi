@@ -1,9 +1,17 @@
 ---
-# Design tokens
-# No design tokens exist yet — this is a greenfield project with no UI code.
-# The design system will be defined and captured here via /make-design once a
-# frontend and its tokens/theme exist.
-colors: {}
+# Design Tokens
+colors:
+  primary:
+    50: "#eff6ff"
+    100: "#dbeafe"
+    200: "#bfdbfe"
+    300: "#93c5fd"
+    400: "#60a5fa"
+    500: "#3b82f6"
+    600: "#2563eb"
+    700: "#1d4ed8"
+    800: "#1e40af"
+    900: "#1e3a8a"
 typography: {}
 spacing: {}
 elevation: {}
@@ -16,22 +24,64 @@ shadows: {}
 
 ## State
 
-This is a **greenfield project**. There is no frontend, no CSS, no Tailwind config, no theme files, and no design tokens in the repository yet. DESIGN.md is intentionally empty of token values until a UI and design system exist.
+This project uses **Tailwind CSS 3.4** as its design system foundation. All tokens not listed in the frontmatter default to Tailwind's built-in design tokens. A custom `primary` color palette (blue scale) is defined to differentiate the brand. There are no custom plugins, CSS-in-JS libraries, or component frameworks.
 
-Run `/make-design` once a frontend, component library, or style system is in place to populate this file with real tokens and captured design intent.
+The design system is minimal and intentionally understated — the product is an explainable financial-intelligence tool, not a consumer marketplace.
 
-## Design intent (from planning documentation)
+## Design intent (from planning documentation and implementation)
 
-Although no UI exists, the engineering plan in `docs/rajahinta-fi-implementation-plan.md` fixes several design-relevant requirements that a future design system must honor:
+The UI is built around **transparency, neutrality, and explainability**. Every calculated figure must be traceable to its inputs, rate dataset version, and timestamp. Visual design prioritizes data legibility over marketing polish.
 
-- **Every number explainable.** The UI must make every calculated figure traceable to its inputs, rate dataset version, and timestamp. Visual design must prioritize transparency over marketing polish — price breakdowns, data-reliability flags, and disclaimer text are first-class UI citizens.
-- **Neutrality in presentation.** Ranking and comparison views must be visually neutral and deterministic; no design element may suggest a paid or promoted position for any merchant.
-- **Data freshness surfaced.** Every externally sourced fact (price, shipping cost, tax rate) carries a reliability status and timestamp that must be visibly surfaced to the user, not hidden.
-- **Disclaimer as structure.** The "estimated total cost in Finland, not final legal tax liability" disclaimer must render as a structural part of every result, not a decorative footer.
-- **Confidence & evidence.** Classification outputs are shown as observed patterns with confidence levels and evidence summaries — the UI should present these honestly (e.g., "likely distance selling, based on…") rather than as bare legal conclusions.
+### Core principles
+
+- **Every number explainable.** Price breakdowns, data-reliability flags, and disclaimer text are first-class UI citizens, not secondary footnotes.
+- **Neutrality in presentation.** Ranking and comparison views are visually neutral and deterministic; no design element suggests a paid or promoted position for any merchant.
+- **Data freshness surfaced.** Every externally sourced fact (price, shipping cost, tax rate) carries a reliability status and timestamp visibly surfaced to the user, not hidden in tooltips.
+- **Disclaimer as structure.** The "estimated total cost in Finland, not final legal tax liability" disclaimer renders as a structural part of every calculation result, not a decorative footer.
+- **Confidence and evidence.** Classification outputs are shown as observed patterns with confidence levels and evidence summaries ("likely distance selling, based on…") rather than bare legal conclusions.
+
+### Existing UI components
+
+| Component file | Route | Purpose |
+|---|---|---|
+| `AgeGate.tsx` | Root layout | Age verification wrapper rendered on every page |
+| `ProductSearch.tsx` | `/calculator` | Product search input |
+| `ProductSelector.tsx` | `/calculator` | Product selection from results |
+| `QuantitySelector.tsx` | `/calculator` | Quantity input for calculation |
+| `CalculatorResult.tsx` | `/calculator` | Itemized landed-cost result display |
+| `DisclaimerBanner.tsx` | `/calculator` | Structural disclaimer rendered on every result |
+| `ComparisonView.tsx` | `/compare` | Side-by-side product comparison |
+| `MerchantLink.tsx` | `/compare` | Neutral merchant link with outbound-disclosure |
+| `SortSelector.tsx` | `/compare` | Sort-order control for comparison view |
+
+### Routes
+
+| Route | Purpose |
+|---|---|
+| `/` | Home page with navigation to all sections |
+| `/calculator` | Landed-cost calculator with product search, selection, quantity, result |
+| `/calculator/result/[recordId]` | Individual calculation result page |
+| `/compare` | Product comparison with multiple sort orders |
+| `/ranking` | Explanation of ranking methodology and neutrality enforcement |
+| `/account` | Account management page |
+| `/account/saved-baskets` | User's saved calculation baskets |
+| `/age-gate` | Age verification page |
 
 ## Look and feel
 
-No visual language is established yet. When a design system is created, it should reflect the platform's positioning as a trustworthy, explainable financial/tax-intelligence tool for cross-border beverage purchases — prioritizing clarity, data legibility, and neutrality.
+No custom visual language beyond Tailwind's defaults plus the primary blue palette. The UI is utilitarian, emphasizing:
 
-<!-- Last updated: 2026-08-15 -->
+- **Data density** — numbers and breakdowns are front and center
+- **Minimal ornamentation** — no decorative elements, no branded graphics
+- **Status clarity** — reliability indicators use predictable visual cues (color-coded badges: green for VERIFIED, amber for STALE, gray for UNAVAILABLE, blue for ESTIMATED)
+- **Accessibility** — color choices from Tailwind's built-in contrast ratios; semantic HTML structure
+
+The platform is positioned as a trustworthy, explainable financial/tax-intelligence tool for cross-border beverage purchases — the design reflects that positioning through clarity and neutrality rather than visual polish.
+
+## Future design considerations
+
+- Run `/make-design` after adding new components, custom plugins, or token overrides
+- Consider shadcn/ui or similar component library if component count grows significantly
+- Evaluate dark-mode support (not implemented)
+
+<!-- Last updated: 2026-08-16 -->
