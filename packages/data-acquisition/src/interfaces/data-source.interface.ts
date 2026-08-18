@@ -29,6 +29,8 @@ export interface RateRefreshResult {
 export interface PublishedRatesCheckResult {
   readonly datasetsFound: number;
   readonly requiresConfirmation: boolean;
+  /** Dataset versions being replaced, for downstream cache invalidation. */
+  readonly detectedVersions?: readonly string[];
 }
 
 // --------------------------------------------------------------------------

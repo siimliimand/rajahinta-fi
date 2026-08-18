@@ -104,6 +104,29 @@ describe('RateReviewSchedulerService', () => {
       expect(result).toHaveProperty('newRatesDetected');
     });
 
+    it('does not include detectedVersions when no new rates found', async () => {
+      const service = createService();
+      const result = await service.checkForRateChanges();
+
+      expect(result.newRatesDetected).toBe(false);
+      expect(result.detectedVersions).toBeUndefined();
+    });
+
+    it('includes detectedVersions when rates are detected via custom source', async () => {
+      const source = {
+        checkForChanges: vi.fn().mockResolvedValue({
+          checkedAt: new Date().toISOString(),
+          newRatesDetected: true,
+          detectedVersions: ['excise-2024-Q1', 'vat-2024'],
+        }),
+      };
+      const service = createService({ rateChangeSource: source });
+      const result = await service.checkForRateChanges();
+
+      expect(result.newRatesDetected).toBe(true);
+      expect(result.detectedVersions).toEqual(['excise-2024-Q1', 'vat-2024']);
+    });
+
     it('returns newRatesDetected=false when discovery is disabled', async () => {
       const service = createService({ discoveryDisabled: true });
       const result = await service.checkForRateChanges();

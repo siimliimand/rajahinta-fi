@@ -10,5 +10,7 @@ export abstract class TaxDatasetReviewService {
   abstract checkForNewPublishedRates(): Promise<{
     datasetsFound: number;
     requiresConfirmation: boolean;
+    /** Dataset versions being replaced, for cache invalidation downstream. */
+    detectedVersions?: readonly string[];
   }>;
 }

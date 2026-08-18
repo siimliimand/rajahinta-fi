@@ -23,6 +23,11 @@
  * When {@code newRatesDetected} is true and a review entry was created,
  * {@code reviewId} holds the id of the pending-review entry so it can be
  * surfaced in monitoring or dashboards.
+ *
+ * When the rate-change source knows which dataset versions are being
+ * replaced, the {@code detectedVersions} field carries those version
+ * identifiers so downstream consumers (e.g. {@code IdempotencyService})
+ * can invalidate stale cache entries.
  */
 export interface RateReviewResult {
   /** ISO-8601 timestamp of the check. */
@@ -34,6 +39,12 @@ export interface RateReviewResult {
    * successfully.  Links to the pending-review entry for operator follow-up.
    */
   readonly reviewId?: string;
+  /**
+   * Dataset versions that are being replaced by the newly detected rates.
+   * When set, cache entries referencing these versions should be invalidated.
+   * Absent or empty when the source does not know which versions changed.
+   */
+  readonly detectedVersions?: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
