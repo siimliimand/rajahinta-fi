@@ -16,6 +16,8 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  BadRequestException,
+  UnprocessableEntityException,
   InternalServerErrorException,
   UseGuards,
   Headers,
@@ -98,7 +100,7 @@ export class CalculatorController {
 
     // ---- Idempotency check ----
     const cacheKey = idempotencyKey ?? this.idempotency.getCacheKey(input);
-    const cached = this.idempotency.lookup(cacheKey);
+    const cached = await this.idempotency.lookup(cacheKey);
     if (cached !== null) {
       const contentHash = this.idempotency.getContentHash(cached);
       res?.header('X-Cache', 'HIT');
@@ -110,7 +112,7 @@ export class CalculatorController {
       const result = await this.calculator.calculate(input);
 
       // ---- Cache the result ----
-      this.idempotency.store(cacheKey, result);
+      await this.idempotency.store(cacheKey, result);
 
       const contentHash = this.idempotency.getContentHash(result);
       res?.header('X-Cache', 'MISS');
@@ -122,7 +124,7 @@ export class CalculatorController {
         throw new NotFoundException(err.message);
       }
       if (err instanceof ClassificationGateRejectionError) {
-        throw new InternalServerErrorException({
+        throw new UnprocessableEntityException({
           statusCode: 422,
           message: err.message,
           error: 'ClassificationGateRejection',
@@ -188,7 +190,7 @@ export class CalculatorController {
     }
 
     if (errors.length > 0) {
-      throw new InternalServerErrorException({
+      throw new BadRequestException({
         statusCode: 400,
         message: errors.join('; '),
         error: 'ValidationError',
