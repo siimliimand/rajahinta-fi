@@ -45,7 +45,7 @@ const GUARDS_METADATA = '__guards__';
  * This lets guards / the Reflector walk the handler→class metadata chain.
  */
 function contextForMethod(
-  handler: (...args: unknown[]) => unknown,
+  handler: Function,
   controller: object,
   requestOverrides?: {
     headers?: Record<string, string | string[] | undefined>;
