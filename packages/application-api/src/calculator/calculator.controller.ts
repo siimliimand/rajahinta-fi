@@ -39,6 +39,7 @@ import {
 import type { CalculateRequest } from './calculator.dto';
 import { IdempotencyService } from '../idempotency';
 import { RateLimitGuard, RateLimit } from '../rate-limiting';
+import { LaunchGateGuard, LaunchGate, LaunchGateType } from '../feature-flags';
 
 @ApiTags('calculator')
 @Controller('api/v1/calculator')
@@ -54,7 +55,8 @@ export class CalculatorController {
   // ---------------------------------------------------------------------------
 
   @Post()
-  @UseGuards(RateLimitGuard)
+  @LaunchGate(LaunchGateType.CALCULATION)
+  @UseGuards(RateLimitGuard, LaunchGateGuard)
   @RateLimit('CALCULATOR')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
