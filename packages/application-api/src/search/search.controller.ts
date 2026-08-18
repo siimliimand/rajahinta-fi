@@ -9,6 +9,7 @@
  */
 
 import {
+  BadRequestException,
   Controller,
   Get,
   Param,
@@ -84,6 +85,12 @@ export class SearchController {
     const limitNum = Math.min(this.parsePositiveInt(limit, DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
     const sortBy = sort ?? DEFAULT_SORT;
 
+    if (sortBy !== 'ALPHABETICAL') {
+      throw new BadRequestException(
+        `Sort order '${sortBy}' is not supported in Phase 1. Only ALPHABETICAL is available.`,
+      );
+    }
+
     try {
       let items: ProductSearchItem[] = [];
 
@@ -115,13 +122,9 @@ export class SearchController {
           }));
       }
 
-      // Apply sort (Phase 1: alphabetical only; SortOrder ranking applies to
-      // CalculatorResult, not raw product records).
-      if (sortBy !== 'ALPHABETICAL') {
-        items.sort(compareByName);
-      } else {
-        items.sort(compareByName);
-      }
+      // Apply alphabetical sort (Phase 1: only ALPHABETICAL is supported;
+      // other SortOrder values are rejected above).
+      items.sort(compareByName);
 
       // Paginate
       const start = (pageNum - 1) * limitNum;
