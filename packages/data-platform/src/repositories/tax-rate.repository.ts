@@ -153,6 +153,23 @@ export class TaxRuleRepositoryAdapter implements ITaxRuleRepositoryPort {
     return rows.map(this.toPortRecord);
   }
 
+  /** @inheritdoc */
+  async findActiveVersionLabels(): Promise<readonly string[]> {
+    const now = new Date();
+    const rows = await this.db
+      .select({ versionLabel: taxRules.versionLabel })
+      .from(taxRules)
+      .where(
+        and(
+          lte(taxRules.effectiveFrom, now),
+          or(isNull(taxRules.effectiveTo), gt(taxRules.effectiveTo, now)),
+        ),
+      )
+      .groupBy(taxRules.versionLabel);
+
+    return rows.map((r) => r.versionLabel);
+  }
+
   // -----------------------------------------------------------------------
   // Private helpers
   // -----------------------------------------------------------------------

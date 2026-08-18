@@ -39,6 +39,8 @@ import {
   CalculatorController,
   IdempotencyModule,
   RateLimitingModule,
+  FeatureFlagsModule,
+  AgeGateModule,
 } from '@rajahinta/application-api';
 
 // -------------------------------------------------------------------
@@ -170,6 +172,18 @@ class InMemoryTaxRuleRepository implements ITaxRuleRepositoryPort {
       (r) => r.taxType === taxType && r.productCategory === productCategory,
     );
   }
+
+  async findActiveVersionLabels(): Promise<readonly string[]> {
+    const now = new Date();
+    return this.rules
+      .filter(
+        (r) =>
+          r.effectiveFrom <= now &&
+          (r.effectiveTo === null || r.effectiveTo > now),
+      )
+      .map((r) => r.versionLabel)
+      .filter((v, i, a) => a.indexOf(v) === i); // distinct
+  }
 }
 
 // -------------------------------------------------------------------
@@ -285,7 +299,7 @@ describe('Calculator e2e — controller → real engines → persisted record', 
 
     // --- Build NestJS test module ---
     const moduleRef = await Test.createTestingModule({
-      imports: [CoreDomainModule, IdempotencyModule, RateLimitingModule],
+      imports: [CoreDomainModule, IdempotencyModule, RateLimitingModule, FeatureFlagsModule, AgeGateModule],
       providers: [
         CalculatorController,
         { provide: CalculationRecordRepository, useValue: calcRecordRepo },

@@ -62,4 +62,13 @@ export interface ITaxRuleRepositoryPort {
     fromDate: Date,
     toDate: Date,
   ): Promise<TaxRuleRecordPort[]>;
+
+  /**
+   * Return the distinct version labels of all currently active tax rules.
+   *
+   * A rule is considered active when its effectiveness window covers the
+   * current date: effectiveFrom <= now AND (effectiveTo IS NULL OR effectiveTo > now).
+   * Used by the idempotency layer to detect stale cache entries.
+   */
+  findActiveVersionLabels(): Promise<readonly string[]>;
 }
