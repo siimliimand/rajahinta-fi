@@ -27,7 +27,7 @@ export const IDEMPOTENCY_CACHE = 'IDEMPOTENCY_CACHE';
 // ---------------------------------------------------------------------------
 
 /** A single cache entry keyed by input hash. */
-interface CacheEntry {
+export interface CacheEntry {
   /** The cached calculation result. */
   readonly result: CalculatorResult;
   /** Dataset versions that produced this result. */
@@ -58,13 +58,13 @@ export interface IdempotencyOptions {
  */
 export interface IIdempotencyCache {
   /** Retrieve a cached entry, or null on miss. */
-  get(key: string): CacheEntry | null;
+  get(key: string): Promise<CacheEntry | null>;
   /** Store an entry. */
-  set(key: string, entry: CacheEntry): void;
+  set(key: string, entry: CacheEntry): Promise<void>;
   /** Delete entries whose datasetVersions contain any of the given versions. */
-  invalidateVersions(versions: string[]): void;
+  invalidateVersions(versions: string[]): Promise<void>;
   /** Clear all entries. */
-  clear(): void;
+  clear(): Promise<void>;
   /** Current entry count. */
   readonly size: number;
 }
@@ -120,7 +120,7 @@ export class InMemoryIdempotencyCache implements IIdempotencyCache {
     this.maxEntries = options?.maxEntries ?? 5000;
   }
 
-  get(key: string): CacheEntry | null {
+  async get(key: string): Promise<CacheEntry | null> {
     const entry = this.store.get(key);
     if (entry === undefined) return null;
     // Refresh — delete & re-insert to move to end (LRU-friendly)
@@ -129,7 +129,7 @@ export class InMemoryIdempotencyCache implements IIdempotencyCache {
     return entry;
   }
 
-  set(key: string, entry: CacheEntry): void {
+  async set(key: string, entry: CacheEntry): Promise<void> {
     // Evict oldest entries when at capacity
     if (this.store.size >= this.maxEntries) {
       const oldestKey = this.store.keys().next().value;
@@ -141,7 +141,7 @@ export class InMemoryIdempotencyCache implements IIdempotencyCache {
     this.store.set(key, entry);
   }
 
-  invalidateVersions(versions: string[]): void {
+  async invalidateVersions(versions: string[]): Promise<void> {
     if (versions.length === 0) return;
     const versionSet = new Set(versions);
     let evicted = 0;
@@ -160,7 +160,7 @@ export class InMemoryIdempotencyCache implements IIdempotencyCache {
     }
   }
 
-  clear(): void {
+  async clear(): Promise<void> {
     this.store.clear();
   }
 
@@ -210,11 +210,11 @@ export class IdempotencyService {
    *        provided, the result is only returned if versions match.
    *        Pass an empty array to skip version checking.
    */
-  lookup(
+  async lookup(
     key: string,
     currentVersions?: readonly string[],
-  ): CalculatorResult | null {
-    const entry = this.cache.get(key);
+  ): Promise<CalculatorResult | null> {
+    const entry = await this.cache.get(key);
     if (entry === null) return null;
 
     // Version check: if caller provides expected versions and they differ
@@ -239,13 +239,13 @@ export class IdempotencyService {
    * @param key — cache key from {@link getCacheKey}
    * @param result — the calculator result
    */
-  store(key: string, result: CalculatorResult): void {
+  async store(key: string, result: CalculatorResult): Promise<void> {
     const entry: CacheEntry = {
       result,
       datasetVersions: result.metadata.datasetVersions,
       createdAt: new Date().toISOString(),
     };
-    this.cache.set(key, entry);
+    await this.cache.set(key, entry);
     this.logger.debug(
       `Cached result for ${key} (versions: ${entry.datasetVersions.join(',')})`,
     );
@@ -255,8 +255,8 @@ export class IdempotencyService {
    * Invalidate all cache entries that reference any of the given dataset
    * versions.  Called when a new dataset version is detected.
    */
-  invalidateOnVersionChange(versions: string[]): void {
-    this.cache.invalidateVersions(versions);
+  async invalidateOnVersionChange(versions: string[]): Promise<void> {
+    await this.cache.invalidateVersions(versions);
   }
 
   /**
