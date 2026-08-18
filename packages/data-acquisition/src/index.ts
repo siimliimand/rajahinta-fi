@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
+import { DataPlatformModule } from '@rajahinta/data-platform';
 
 // ---------------------------------------------------------------------------
 // Queue names — background jobs off the request path
@@ -76,8 +77,12 @@ export type { IngestionResult, RateRefreshResult, PublishedRatesCheckResult } fr
 export type { IFeedAdapter, RawFeedRecord } from './interfaces/feed-adapter.interface';
 export { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
 
+export { SystembolagetFeedAdapter } from './adapters/systembolaget.adapter';
+
 export type { IUpsertRepository, UpsertProductInput, UpsertOfferInput, UpsertResult } from './interfaces/upsert-port.interface';
 export { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
+
+export { DrizzleUpsertRepository } from './adapters/upsert-port.adapter';
 
 // ---------------------------------------------------------------------------
 // Rate review — scheduled checks, manual confirmation entries
@@ -111,6 +116,9 @@ import { RateReviewSchedulerService, RATE_REVIEW_CONFIG_TOKEN, DEFAULT_RATE_REVI
 import { MERCHANT_CONFIG_TOKEN, DEFAULT_MERCHANTS } from './config/merchants.config';
 import { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
 import { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
+import type { IFeedAdapter } from './interfaces/feed-adapter.interface';
+import { SystembolagetFeedAdapter } from './adapters/systembolaget.adapter';
+import { DrizzleUpsertRepository } from './adapters/upsert-port.adapter';
 
 // ---------------------------------------------------------------------------
 // NestJS module — registers Bull queues, exposes pipeline services
@@ -118,6 +126,7 @@ import { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
 
 @Module({
   imports: [
+    DataPlatformModule,
     SourceGovernanceModule,
     ReliabilityModule,
     BullModule.registerQueue(
@@ -137,15 +146,25 @@ import { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
     // Default merchant config — override at app level to provide real URLs
     { provide: MERCHANT_CONFIG_TOKEN, useValue: DEFAULT_MERCHANTS },
 
-    // Feed adapters multi-provider (empty by default; populated by merchant features)
-    { provide: FEED_ADAPTERS_TOKEN, useValue: new Map<string, import('./interfaces/feed-adapter.interface').IFeedAdapter>() },
+    // Feed adapters — registered as a Map keyed by merchantId
+    SystembolagetFeedAdapter,
+    {
+      provide: FEED_ADAPTERS_TOKEN,
+      useFactory: (systembolaget: SystembolagetFeedAdapter): Map<string, IFeedAdapter> => {
+        const map = new Map<string, IFeedAdapter>();
+        map.set(systembolaget.merchantId, systembolaget);
+        return map;
+      },
+      inject: [SystembolagetFeedAdapter],
+    },
 
     // Rate-review scheduler with default 24h interval
     RateReviewSchedulerService,
     { provide: RATE_REVIEW_CONFIG_TOKEN, useValue: DEFAULT_RATE_REVIEW_CONFIG },
 
-    // Upsert repository — composition root provides the concrete adapter
-    { provide: UPSERT_REPOSITORY_TOKEN, useValue: null },
+    // Upsert repository — Drizzle-backed adapter
+    DrizzleUpsertRepository,
+    { provide: UPSERT_REPOSITORY_TOKEN, useClass: DrizzleUpsertRepository },
 
     // Rate-review repository port — composition root provides the concrete adapter
     { provide: RATE_REVIEW_REPOSITORY_PORT, useValue: null },
