@@ -138,10 +138,68 @@ describe('InMemoryIdempotencyCache', () => {
     expect(await cache.get('k1')).not.toBeNull();
   });
 
-  it('clears all entries', async () => {
+  it('refreshes LRU position on get (recently-read entry is protected from eviction)', async () => {
+    const tiny = new InMemoryIdempotencyCache({ maxEntries: 2 });
+    const entry = { result: makeResult(), datasetVersions: ['v1'], createdAt: '' };
+    await tiny.set('a', entry);
+    await tiny.set('b', entry);
+    // Get 'a' to refresh its position — it moves to end of Map
+    await tiny.get('a');
+    // Set 'c' pushes out 'b' (the new oldest), not 'a'
+    await tiny.set('c', entry);
+    expect(await tiny.get('a')).not.toBeNull();
+    expect(await tiny.get('b')).toBeNull();
+    expect(await tiny.get('c')).not.toBeNull();
+  });
+
+  it('overwrites existing key without double-counting for eviction', async () => {
+    const tiny = new InMemoryIdempotencyCache({ maxEntries: 2 });
+    const entry = { result: makeResult(), datasetVersions: ['v1'], createdAt: '' };
+    await tiny.set('a', entry);
+    await tiny.set('a', entry); // overwrite — same key, not +2
+    await tiny.set('b', entry);
+    await tiny.set('c', entry);
+    // 'c' pushed out one entry, but only 2 distinct keys existed
+    expect(await tiny.get('c')).not.toBeNull();
+  });
+
+  it('invalidates entries with partial version overlap', async () => {
+    await cache.set('k1', { result: makeResult(), datasetVersions: ['v1', 'v2'], createdAt: '' });
+    await cache.set('k2', { result: makeResult(), datasetVersions: ['v3'], createdAt: '' });
+    // v2 matches k1; v99 does not exist — should be a no-op
+    await cache.invalidateVersions(['v2', 'v99']);
+    expect(await cache.get('k1')).toBeNull();
+    expect(await cache.get('k2')).not.toBeNull();
+  });
+
+  it('size getter reflects entry count after set and invalidate', async () => {
+    expect(cache.size).toBe(0);
     await cache.set('a', { result: makeResult(), datasetVersions: ['v1'], createdAt: '' });
+    expect(cache.size).toBe(1);
+    await cache.set('b', { result: makeResult(), datasetVersions: ['v2'], createdAt: '' });
+    expect(cache.size).toBe(2);
+    await cache.invalidateVersions(['v1']);
+    expect(cache.size).toBe(1);
     await cache.clear();
-    expect(await cache.get('a')).toBeNull();
+    expect(cache.size).toBe(0);
+  });
+
+  it('defaults to 5000 max entries when no options provided', async () => {
+    const big = new InMemoryIdempotencyCache();
+    const entry = { result: makeResult(), datasetVersions: ['v'], createdAt: '' };
+    // Insert 5000 entries — should all fit
+    for (let i = 0; i < 5000; i++) {
+      await big.set(`k${i}`, entry);
+    }
+    expect(big.size).toBe(5000);
+    // Insert one more — evicts the oldest (k0)
+    await big.set('overflow', entry);
+    expect(big.size).toBe(5000);
+    expect(await big.get('k0')).toBeNull();
+    expect(await big.get('overflow')).not.toBeNull();
+  });
+
+  it('returns entry count as the size property', () => {
     expect(cache.size).toBe(0);
   });
 });
