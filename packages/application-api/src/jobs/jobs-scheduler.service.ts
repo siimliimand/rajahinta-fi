@@ -1,8 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bullmq';
-import { QUEUES } from '@rajahinta/data-acquisition';
+import { QUEUES, RateReviewSchedulerService } from '@rajahinta/data-acquisition';
 import { JOB_REGISTRY } from './job-registry';
 import type { PriceIngestionJobData } from './workers/price-ingestion.worker';
 import type { TransportRateRefreshJobData } from './workers/transport-rate-refresh.worker';
@@ -19,7 +19,7 @@ import type { TimeSeriesAggregationJobData } from './workers/time-series-aggrega
  * high-frequency jobs run on short UTC intervals.
  */
 @Injectable()
-export class JobsSchedulerService {
+export class JobsSchedulerService implements OnModuleInit {
   private readonly logger = new Logger(JobsSchedulerService.name);
 
   constructor(
@@ -34,7 +34,17 @@ export class JobsSchedulerService {
 
     @InjectQueue(QUEUES.TIME_SERIES_AGGREGATION)
     private readonly timeSeriesQueue: Queue<TimeSeriesAggregationJobData>,
+
+    private readonly rateReviewScheduler: RateReviewSchedulerService,
   ) {}
+
+  /**
+   * Bootstrap lifecycle hook — start the rate-review scheduler after all
+   * Bull queues are set up.
+   */
+  async onModuleInit(): Promise<void> {
+    this.rateReviewScheduler.scheduleNextReview();
+  }
 
   // -----------------------------------------------------------------------
   // Price ingestion — every hour
