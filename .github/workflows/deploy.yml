@@ -130,11 +130,13 @@ jobs:
       - name: Start services
         run: |
           docker compose up -d
-          sleep 10
+          sleep 30
 
       - name: Health check
         run: |
-          curl --retry 5 --retry-delay 5 --retry-connrefused \
+          docker compose ps
+          docker compose logs --tail=50 app
+          curl --retry 10 --retry-delay 10 --retry-connrefused \
             http://localhost:3000/health
 
       - name: Cleanup
