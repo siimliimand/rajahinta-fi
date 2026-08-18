@@ -45,7 +45,7 @@ export const productMaster = pgTable('product_master', {
   /** Regulatory classification from feed — used for tax classification matching. */
   regulatoryClassification: varchar('regulatory_classification', { length: 64 }).notNull(),
   /** True if packaging participates in Finnish deposit-return system — checked by container-duty service for exemption. */
-  depositSystemStatus: boolean('deposit_system_status').default(false).notNull(),
+  depositSystemStatus: boolean('deposit_system_status'),
   /** EAN-13 barcode — primary product identification key for upsert matching. */
   ean: varchar('ean', { length: 13 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),

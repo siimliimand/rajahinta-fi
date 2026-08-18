@@ -33,8 +33,8 @@ export interface ProductMasterRecord {
   readonly containerType: string;
   /** Regulatory classification — used for tax classification matching. */
   readonly regulatoryClassification: string;
-  /** True if packaging participates in Finnish deposit-return system. */
-  readonly depositSystemStatus: boolean;
+  /** True if packaging participates in Finnish deposit-return system, null if unknown. */
+  readonly depositSystemStatus: boolean | null;
   /** EAN-13 barcode — primary product identification key for upsert matching. */
   readonly ean: string | null;
   readonly createdAt: Date;
