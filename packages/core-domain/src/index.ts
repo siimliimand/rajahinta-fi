@@ -90,6 +90,14 @@ export interface ContainerDutyCalculation {
 export { TAX_RULE_REPOSITORY_PORT } from './tax/index';
 export type { ITaxRuleRepositoryPort, TaxRuleRecordPort } from './tax/index';
 
+// Tax formula reference constants — values stored in taxRules.calculationFormulaReference
+export {
+  FORMULA_PER_LITRE_OF_PRODUCT,
+  FORMULA_PER_LITRE_OF_ALCOHOL,
+  FORMULA_PROGRESSIVE_ABV,
+  FORMULA_FLAT_PER_LITRE,
+} from './tax/index';
+
 // ---------------------------------------------------------------------------
 // Documentation section markers
 // ---------------------------------------------------------------------------
