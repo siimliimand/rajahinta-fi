@@ -140,6 +140,42 @@ describe('RateReviewSchedulerService', () => {
 
       expect(result.newRatesDetected).toBe(false);
     });
+
+    it('delegates to the injected RateChangeSourcePort', async () => {
+      const source = createFakeRateChangeSource();
+      const service = createService({ rateChangeSource: source });
+      await service.checkForRateChanges();
+
+      expect(source.checkForChanges).toHaveBeenCalledTimes(1);
+    });
+
+    it('detects new rates when the source returns newRatesDetected=true', async () => {
+      const source = createFakeRateChangeSource({
+        checkForChanges: vi.fn().mockResolvedValue({
+          checkedAt: new Date().toISOString(),
+          newRatesDetected: true,
+          reviewId: 'test-source-review-1',
+        }),
+      });
+      const service = createService({ rateChangeSource: source });
+      const result = await service.checkForRateChanges();
+
+      expect(result.newRatesDetected).toBe(true);
+      expect(result.reviewId).toBe('test-source-review-1');
+    });
+
+    it('reports no new rates when the source returns newRatesDetected=false', async () => {
+      const source = createFakeRateChangeSource({
+        checkForChanges: vi.fn().mockResolvedValue({
+          checkedAt: new Date().toISOString(),
+          newRatesDetected: false,
+        }),
+      });
+      const service = createService({ rateChangeSource: source });
+      const result = await service.checkForRateChanges();
+
+      expect(result.newRatesDetected).toBe(false);
+    });
   });
 
   // ---------------------------------------------------------------------------
