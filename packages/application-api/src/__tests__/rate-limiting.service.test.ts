@@ -24,7 +24,8 @@ describe('InMemoryRateLimiter', () => {
 
   afterEach(() => {
     // Cleanup the interval timer
-    (limiter as any).cleanupTimer && clearInterval((limiter as any).cleanupTimer);
+    const timer = (limiter as any).cleanupTimer;
+    if (timer) clearInterval(timer);
   });
 
   it('allows requests under the limit', () => {

@@ -18,4 +18,12 @@ export default tseslint.config(
       },
     },
   },
+  {
+    rules: {
+      // Allow underscore-prefixed unused variables (common pattern for destructured args)
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      // Allow `any` for now — can be tightened incrementally
+      '@typescript-eslint/no-explicit-any': 'warn',
+    },
+  },
 );

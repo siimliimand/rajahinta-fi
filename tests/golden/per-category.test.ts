@@ -28,7 +28,6 @@ import type { ITaxRuleRepositoryPort } from '@rajahinta/core-domain/tax/ports/ta
 import type { ITransportOfferQuery } from '@rajahinta/core-domain/transport/transport-offer-query.interface';
 import type { TransportOffer } from '@rajahinta/core-domain/transport/transport-offer.type';
 import type {
-  CalculatorInput,
   IProductDataPort,
   ICalculationRecordPort,
 } from '@rajahinta/core-domain';
@@ -210,7 +209,7 @@ describe('Per-category golden regressions', () => {
 
   describe('Wine still — per litre of product at 3.40', () => {
     it('applies correct excise for still wine', async () => {
-      const service = buildService(PRODUCT_BEER, [OFFER_BEER], 'beverage-de', 150);
+      buildService(PRODUCT_BEER, [OFFER_BEER], 'beverage-de', 150);
       // Temporarily swap product for this test
       const productData: IProductDataPort = {
         findProductById: () => Promise.resolve(PRODUCT_WINE_SPARKLING),

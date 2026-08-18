@@ -5,7 +5,7 @@
       "source": "rohitg00/agentmemory",
       "sourceType": "github",
       "skillPath": "plugin/skills/agentmemory-agents/SKILL.md",
-      "computedHash": "ce6856f1e06301be12f8d568650b8d0f6776dde04933a2694ecf0fd87af4806d"
+      "computedHash": "d07fce3e42bc10fd1ec2b9ad492b493c49663d10c259b2ab607ad91b1471523c"
     },
     "app-observability": {
       "source": "grafana/skills",
@@ -23,7 +23,7 @@
       "source": "juliusbrussee/caveman",
       "sourceType": "github",
       "skillPath": "skills/caveman/SKILL.md",
-      "computedHash": "59e1fe0d3eeb4189ee5c467efde567672e5cacb41f157c477a6152ca907d44ea"
+      "computedHash": "48646eeec87b27067502d8bd450484faf08af588df783706b1571ee72f2d918c"
     },
     "feature-flags": {
       "source": "react/react",
@@ -47,7 +47,7 @@
       "source": "blader/humanizer",
       "sourceType": "github",
       "skillPath": "SKILL.md",
-      "computedHash": "7f032c368d4355fb237e1980d73d7febe5bc1a03bad3de74a3d4a918e8940cd1"
+      "computedHash": "a454c5bace4dd159594fa78d6bcd2b8d19d754570e747d8405078ae957c9da99"
     },
     "kubernetes-specialist": {
       "source": "jeffallan/claude-skills",

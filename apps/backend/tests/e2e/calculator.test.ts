@@ -18,7 +18,6 @@ import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
   CoreDomainModule,
-  LandedCostCalculatorService,
   type IProductDataPort,
   type ICalculationRecordPort,
   PRODUCT_DATA_PORT,
@@ -34,7 +33,6 @@ import {
 } from '@rajahinta/core-domain';
 import {
   CalculationRecordRepository,
-  productMaster,
   calculationRecords,
 } from '@rajahinta/data-platform';
 import {
