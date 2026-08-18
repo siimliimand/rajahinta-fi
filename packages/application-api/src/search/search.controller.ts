@@ -28,6 +28,7 @@ import type {
   OfferItem,
 } from './search.dto';
 import { LaunchGateGuard, LaunchGate, LaunchGateType } from '../feature-flags';
+import { AgeGateGuard } from '../age-gate';
 
 /** Default page size for product listing. */
 const DEFAULT_PAGE_SIZE = 20;
@@ -43,7 +44,7 @@ function compareByName(a: ProductSearchItem, b: ProductSearchItem): number {
   return a.name.localeCompare(b.name, 'fi');
 }
 
-@UseGuards(LaunchGateGuard)
+@UseGuards(LaunchGateGuard, AgeGateGuard)
 @LaunchGate(LaunchGateType.PRICE_DATA)
 @ApiTags('products')
 @Controller('api/v1/products')
