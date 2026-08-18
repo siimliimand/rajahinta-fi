@@ -35,6 +35,7 @@ import { AccountModule } from './accounts';
 import { CalculatorController } from './calculator';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
+import { CorrectionController } from './correction';
 import { TaxCalculationEngineAdapter } from './adapters/tax-calculation-engine.adapter';
 
 // ---------------------------------------------------------------------------
@@ -193,6 +194,7 @@ export abstract class UseCaseOrchestrator {
     CalculatorController,
     SearchController,
     DeclarationController,
+    CorrectionController,
   ],
   exports: [FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule],
 })
@@ -225,8 +227,8 @@ export { JobsModule } from './jobs';
 // Idempotency re-exports for consumers outside the layer
 // ---------------------------------------------------------------------------
 
-export { IdempotencyModule, IdempotencyService, InMemoryIdempotencyCache, IDEMPOTENCY_CACHE, hashInput } from './idempotency';
-export type { CacheKeyInput, IdempotencyOptions, IIdempotencyCache } from './idempotency';
+export { IdempotencyModule, IdempotencyService, InMemoryIdempotencyCache, RedisIdempotencyCache, IDEMPOTENCY_CACHE, hashInput } from './idempotency';
+export type { CacheKeyInput, IdempotencyOptions, IIdempotencyCache, RedisIdempotencyOptions } from './idempotency';
 
 // ---------------------------------------------------------------------------
 // Rate Limiting re-exports for consumers outside the layer
@@ -262,6 +264,13 @@ export type { SearchProductsQuery, ProductSearchResult, ProductSearchItem, Produ
 
 export { DeclarationController } from './declaration';
 export type { DeclarationSummaryResponse } from './declaration';
+
+// ---------------------------------------------------------------------------
+// Correction — correction flagging API
+// ---------------------------------------------------------------------------
+
+export { CorrectionController } from './correction';
+export type { CreateCorrectionDto, CorrectionItem, CorrectionListResponse } from './correction';
 
 // ---------------------------------------------------------------------------
 // Audit — immutable audit log (in-memory Phase 1 implementation)
