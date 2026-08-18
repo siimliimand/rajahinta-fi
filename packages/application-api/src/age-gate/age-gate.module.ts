@@ -33,18 +33,20 @@
 
 import { Module } from '@nestjs/common';
 import { AgeGateService } from './age-gate.service';
+import { AgeGateGuard } from './age-gate.guard';
 import { SimpleConfirmationProvider } from './simple-confirmation.provider';
 import { VERIFICATION_PROVIDER } from './verification-provider.interface';
 
 @Module({
   providers: [
     AgeGateService,
+    AgeGateGuard,
     SimpleConfirmationProvider,
     {
       provide: VERIFICATION_PROVIDER,
       useExisting: SimpleConfirmationProvider,
     },
   ],
-  exports: [AgeGateService],
+  exports: [AgeGateService, AgeGateGuard],
 })
 export class AgeGateModule {}
