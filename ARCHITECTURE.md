@@ -371,7 +371,7 @@ The repository is an agentic workspace with a working application build. Command
 - **No authentication/authorization:** Account module exists but no auth provider is wired. Age-gate is a UI wrapper, not a verified identity check.
 - **Alko adapter not yet implemented** — registered in merchant config but skipped by pipeline.
 - **No centralized error tracking or APM:** Application-level observability exists but no external monitoring service is integrated.
-- **Billing is simulated:** Subscription billing module uses in-memory state with no payment provider.
+- **Billing is simulated:** Subscription billing module uses in-memory state with no payment provider. Real third-party billing integration (Stripe or equivalent) is explicitly deferred to Phase 2 — `BillingService` interface remains stable. See `docs/tasks.md` T1.56.
 - **Legal review tasks incomplete** (5 external tasks marked `agent: none`): Finnish legal opinion, tax counsel validation, compliance review.
 - **Classification rules subject to legislative change** (e.g., 1 September 2024 joint-liability change) require versioned, dated rule sets.
 - **Deposit-return system status per product/packaging is tri-state** (`boolean | null`); null means ESTIMATED — the container-duty engine flags uncertain exemptions, never silently assumes.
