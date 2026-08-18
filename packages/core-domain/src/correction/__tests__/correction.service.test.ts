@@ -76,6 +76,7 @@ describe('CorrectionService', () => {
       };
       const calculationQuery: ICorrectionCalculationRecordQuery = {
         findById: vi.fn().mockResolvedValue(mockRecord),
+        findCalculationRecordIdsByEntity: vi.fn(),
       };
 
       const service = new CorrectionService(repository, calculationQuery);
@@ -102,6 +103,7 @@ describe('CorrectionService', () => {
       };
       const calculationQuery: ICorrectionCalculationRecordQuery = {
         findById: vi.fn().mockResolvedValue(null),
+        findCalculationRecordIdsByEntity: vi.fn(),
       };
 
       const service = new CorrectionService(repository, calculationQuery);
@@ -128,6 +130,7 @@ describe('CorrectionService', () => {
       };
       const calculationQuery: ICorrectionCalculationRecordQuery = {
         findById: vi.fn().mockResolvedValue({ id: 1 }),
+        findCalculationRecordIdsByEntity: vi.fn(),
       };
 
       const service = new CorrectionService(repository, calculationQuery);
@@ -164,6 +167,7 @@ describe('CorrectionService', () => {
       };
       const calculationQuery: ICorrectionCalculationRecordQuery = {
         findById: vi.fn(),
+        findCalculationRecordIdsByEntity: vi.fn(),
       };
 
       const service = new CorrectionService(repository, calculationQuery);
@@ -194,6 +198,7 @@ describe('CorrectionService', () => {
       };
       const calculationQuery: ICorrectionCalculationRecordQuery = {
         findById: vi.fn(),
+        findCalculationRecordIdsByEntity: vi.fn(),
       };
 
       const service = new CorrectionService(repository, calculationQuery);
@@ -218,7 +223,7 @@ describe('CorrectionService', () => {
         findOpen: vi.fn(),
         findById: vi.fn().mockResolvedValue(null),
       };
-      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn(), findCalculationRecordIdsByEntity: vi.fn() };
 
       const service = new CorrectionService(repository, calculationQuery);
 
@@ -244,7 +249,7 @@ describe('CorrectionService', () => {
         findOpen: vi.fn(),
         findById: vi.fn().mockResolvedValue(acceptedFlag),
       };
-      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn(), findCalculationRecordIdsByEntity: vi.fn() };
 
       const service = new CorrectionService(repository, calculationQuery);
 
@@ -273,7 +278,7 @@ describe('CorrectionService', () => {
         findOpen: vi.fn(),
         findById: vi.fn().mockResolvedValue(rejectedFlag),
       };
-      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn(), findCalculationRecordIdsByEntity: vi.fn() };
 
       const service = new CorrectionService(repository, calculationQuery);
 
@@ -300,7 +305,7 @@ describe('CorrectionService', () => {
         findOpen: vi.fn(),
         findById: vi.fn().mockResolvedValue(openFlag),
       };
-      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn(), findCalculationRecordIdsByEntity: vi.fn() };
 
       const service = new CorrectionService(repository, calculationQuery);
 
@@ -337,7 +342,7 @@ describe('CorrectionService', () => {
         findOpen: vi.fn(),
         findById: vi.fn().mockResolvedValue(openFlag),
       };
-      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn(), findCalculationRecordIdsByEntity: vi.fn() };
 
       const service = new CorrectionService(repository, calculationQuery);
 
@@ -371,7 +376,7 @@ describe('CorrectionService', () => {
         findOpen: vi.fn(),
         findById: vi.fn().mockResolvedValue(openFlag),
       };
-      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn(), findCalculationRecordIdsByEntity: vi.fn() };
 
       const service = new CorrectionService(repository, calculationQuery);
 
@@ -401,7 +406,7 @@ describe('CorrectionService', () => {
         findOpen: vi.fn(),
         findById: vi.fn().mockResolvedValue(openFlag),
       };
-      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn(), findCalculationRecordIdsByEntity: vi.fn() };
 
       const service = new CorrectionService(repository, calculationQuery);
 
@@ -431,7 +436,7 @@ describe('CorrectionService', () => {
         findOpen: vi.fn(),
         findById: vi.fn().mockResolvedValue(openFlag),
       };
-      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn(), findCalculationRecordIdsByEntity: vi.fn() };
 
       const service = new CorrectionService(repository, calculationQuery);
 
@@ -466,7 +471,7 @@ describe('CorrectionService', () => {
         findOpen: vi.fn(),
         findById: vi.fn().mockResolvedValue(openFlag),
       };
-      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn(), findCalculationRecordIdsByEntity: vi.fn() };
 
       const service = new CorrectionService(repository, calculationQuery);
 
@@ -495,7 +500,7 @@ describe('CorrectionService', () => {
         findOpen: vi.fn().mockResolvedValue(openFlags),
         findById: vi.fn(),
       };
-      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn(), findCalculationRecordIdsByEntity: vi.fn() };
 
       const service = new CorrectionService(repository, calculationQuery);
 
@@ -512,7 +517,7 @@ describe('CorrectionService', () => {
         findOpen: vi.fn().mockResolvedValue([]),
         findById: vi.fn(),
       };
-      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn() };
+      const calculationQuery: ICorrectionCalculationRecordQuery = { findById: vi.fn(), findCalculationRecordIdsByEntity: vi.fn() };
 
       const service = new CorrectionService(repository, calculationQuery);
 
