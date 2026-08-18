@@ -265,6 +265,40 @@ describe('IdempotencyService', () => {
     expect(retrieved).toEqual(result);
   });
 
+  // ---------------------------------------------------------------------------
+  // Version-flip lifecycle (v1 → v2)
+  // ---------------------------------------------------------------------------
+
+  it('returns cached result when versions match, then null after version flip (v1 → v2)', async () => {
+    const input: CacheKeyInput = { productId: 1, quantity: 1, destination: 'FI' };
+    const key = service.getCacheKey(input);
+
+    // 1. Seed cache with result for dataset version "v1.0"
+    const resultV1 = makeResult({ metadata: { datasetVersions: ['v1.0'] } } as any);
+    await service.store(key, resultV1);
+
+    // 2. Lookup with matching versions → HIT
+    const hit = await service.lookup(key, ['v1.0']);
+    expect(hit).toEqual(resultV1);
+
+    // 3. Lookup with new version "v2.0" → MISS
+    const miss = await service.lookup(key, ['v2.0']);
+    expect(miss).toBeNull();
+  });
+
+  it('returns cached result when called without currentVersions (backward compat)', async () => {
+    const input: CacheKeyInput = { productId: 1, quantity: 1, destination: 'FI' };
+    const key = service.getCacheKey(input);
+
+    // Store a result with known versions
+    const result = makeResult({ metadata: { datasetVersions: ['v1.0'] } } as any);
+    await service.store(key, result);
+
+    // Call lookup without any version argument → should return cached result
+    const retrieved = await service.lookup(key);
+    expect(retrieved).toEqual(result);
+  });
+
   it('invalidates entries when dataset version changes', async () => {
     const input: CacheKeyInput = { productId: 1, quantity: 1, destination: 'FI' };
     const key = service.getCacheKey(input);
