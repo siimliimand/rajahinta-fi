@@ -6,5 +6,9 @@ export default defineConfig({
   test: {
     ...baseConfig.test,
     root: import.meta.dirname,
+    include: [
+      'src/**/*.test.ts',
+      'tests/e2e/**/*.test.ts',
+    ],
   },
 });
