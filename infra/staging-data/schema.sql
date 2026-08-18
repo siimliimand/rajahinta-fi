@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS product_master (
     unit_volume                 NUMERIC(10, 4) NOT NULL,
     container_type              VARCHAR(32) NOT NULL,
     regulatory_classification   VARCHAR(64) NOT NULL,
-    deposit_system_status       BOOLEAN NOT NULL DEFAULT FALSE,
+    deposit_system_status       BOOLEAN,
     ean                         VARCHAR(13),
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
