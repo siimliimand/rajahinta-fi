@@ -118,8 +118,8 @@ export class AccountController {
   @ApiResponse({ status: 201, description: 'Basket saved' })
   @ApiResponse({ status: 400, description: 'x-user-id header is required' })
   async saveBasket(
-    @Headers('x-user-id') userId?: string,
     @Body() body: { name: string; items: BasketItem[] },
+    @Headers('x-user-id') userId?: string,
   ): Promise<void> {
     const uid = this.requireUserId(userId);
 

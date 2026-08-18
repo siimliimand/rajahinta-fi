@@ -1,8 +1,10 @@
 /**
  * BillingService — subscription billing integration.
  *
- * **Phase 1:** Simulated/placeholder. All methods return mock data.
- * Real provider integration (Stripe, etc.) is Phase 2.
+ * **Phase 2 Deferral (explicit):** Third-party subscription billing integration
+ * (Stripe or equivalent) is explicitly deferred to Phase 2. The service interface
+ * remains stable. Phase 1 uses simulated responses only.
+ * See `docs/tasks.md` task T1.56 — marked as deferred to Phase 2.
  *
  * The three-tier plan maps to `EntitlementTier` from core-domain:
  *   - FREE         — basic product browsing and landed-cost calculations

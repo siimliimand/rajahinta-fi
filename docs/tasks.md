@@ -125,10 +125,10 @@
 - [ ] **T1.54** Build a correction mechanism: allow users or internal staff to flag a specific calculation or data point as incorrect.
 - [ ] **T1.55** Flagged items create a tracked review item; once resolved, corrections can trigger a dataset fix and link back to affected historical Calculation Records.
 
-### 1N: Subscription & Billing
+### 1N: Subscription & Billing (Phase 1 placeholder — real integration deferred to Phase 2)
 
-- [ ] **T1.56** Integrate with a third-party subscription billing provider for software subscriptions (Free / Premium €4.99/month / future Professional tier).
-- [ ] **T1.57** Enforce structural separation between the billing module and the Ranking & Sorting Module — no shared write path, so a merchant account (if ever introduced) cannot purchase better placement.
+- [ ] **T1.56** ~~Integrate with a third-party subscription billing provider~~ **Deferred to Phase 2.** `BillingService` in `application-api/billing/` provides a stable interface with simulated responses. Real Stripe (or equivalent) integration deferred. See `BillingService` JSDoc.
+- [ ] **T1.57** ~~Enforce structural separation between the billing module and the Ranking & Sorting Module~~ **Deferred to Phase 2.** Billing-ranking isolation test (`billing-ranking-isolation.test.ts`) covers source-level separation already. Full integration deferred with T1.56.
 
 ### 1O: Age Gate & Account System
 
@@ -239,6 +239,7 @@ Per the business plan and engineering plan, the following are explicitly deferre
 | Large-scale merchant advertising | Violates neutrality policy |
 | Identity document storage | Not legally required for MVP; minimal data by design |
 | Purchase tracking on outbound links | Violates "no purchase tracking at launch" policy |
+| Third-party subscription billing (Stripe etc.) | Deferred to Phase 2 — `BillingService` interface stable, Phase 1 uses simulated responses (T1.56) |
 
 ---
 
