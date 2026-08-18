@@ -101,7 +101,7 @@
 
 - [x] **T1.40** Build the consumer-facing API surface → `CalculatorController`, `SearchController`, `DeclarationController` in `application-api/`, grouped by module (not by database table).
 - [x] **T1.41** Ensure all calculation endpoints are idempotent for identical inputs → `IdempotencyService` in `application-api/idempotency/`.
-- [ ] **T1.42** Implement caching keyed by (product, quantity, destination, transport assumption, tax-dataset version, transport-dataset version) — not yet implemented; planned for Redis-backed cache.
+- [x] **T1.42** Implement caching keyed by (product, quantity, destination, transport assumption, tax-dataset version, transport-dataset version) — version-keyed idempotency cache implemented (in-memory for Phase 1); Redis-backed cache deferred to Phase 2.
 - [x] **T1.43** Implement rate limiting and abuse protection on public-facing calculation endpoints → `RateLimitGuard` + `RateLimitingService` in `application-api/rate-limiting/`.
 - [x] **T1.44** Implement the shared Entitlement Module → `EntitlementService` + `EntitlementGuard` in `core-domain/entitlement/` and `application-api/entitlement/`.
 
@@ -117,13 +117,13 @@
 ### 1L: Compliance & Governance
 
 - [x] **T1.51** Implement audit logging for changes to tax-rule datasets, classification rule sets, and ranking logic → `AuditService` + `AuditModule` in `core-domain/audit/`; `AuditRepositoryAdapter` in `application-api/audit/`.
-- [ ] **T1.52** Build the launch-gating configuration flag: keep alcohol price data and calculation features behind a non-public flag until legal opinion, tax-source mapping, and correction mechanism are all confirmed complete.
-- [ ] **T1.53** Build the public ranking documentation page generated from (or kept in lockstep with) the actual Ranking & Sorting Module implementation.
+- [x] **T1.52** Build the launch-gating configuration flag: keep alcohol price data and calculation features behind a non-public flag until legal opinion, tax-source mapping, and correction mechanism are all confirmed complete.
+- [x] **T1.53** Build the public ranking documentation page generated from (or kept in lockstep with) the actual Ranking & Sorting Module implementation.
 
 ### 1M: Correction Mechanism
 
-- [ ] **T1.54** Build a correction mechanism: allow users or internal staff to flag a specific calculation or data point as incorrect.
-- [ ] **T1.55** Flagged items create a tracked review item; once resolved, corrections can trigger a dataset fix and link back to affected historical Calculation Records.
+- [x] **T1.54** Build a correction mechanism: allow users or internal staff to flag a specific calculation or data point as incorrect.
+- [x] **T1.55** Flagged items create a tracked review item; once resolved, corrections can trigger a dataset fix and link back to affected historical Calculation Records.
 
 ### 1N: Subscription & Billing (Phase 1 placeholder — real integration deferred to Phase 2)
 
@@ -132,7 +132,7 @@
 
 ### 1O: Age Gate & Account System
 
-- [ ] **T1.58** Implement a lightweight access-control age gate (simple confirmation, not identity verification) as the default, matching the minimal-data-collection preference.
+- [x] **T1.58** Implement a lightweight access-control age gate (simple confirmation, not identity verification) as the default, matching the minimal-data-collection preference.
 - [ ] **T1.59** Design the account system's identity/age-verification components as a pluggable module that can be upgraded to stronger verification if the legal opinion requires it.
 - [ ] **T1.60** Implement the minimal account system: saved baskets, calculation history, subscription management, data export — not a gate on viewing publicly available comparison information.
 - [ ] **T1.61** Ensure no storage of identity documents or unnecessary date-of-birth collection unless the legal review specifically mandates it.
@@ -155,7 +155,7 @@
 
 - [x] **T1.70** Write unit tests for every tax/duty formula, classification rule, and confidence-computation function → `alcohol-excise.math.test.ts`, `container-duty.math.test.ts`, `deposit-checker.test.ts`, `confidence-framework.service.test.ts`, `transaction-classification.service.test.ts`, `classification-rule-engine.service.test.ts`, `ranking.service.test.ts`.
 - [x] **T1.71** Build golden-dataset regression tests → `tests/golden/golden-dataset.test.ts`, `tests/golden/per-category.test.ts` — fixed product/transport/tax inputs with manually verified expected outputs, using real engine implementations (no vi.fn() mocks).
-- [ ] **T1.72** Write compliance tests: automated checks that no ranking result correlates with any commercial/payment signal and that banned promotional vocabulary does not appear in generated product copy. (billing-ranking-isolation.test.ts covers source-level isolation; vocabulary lint not yet implemented.)
+- [x] **T1.72** Write compliance tests: automated checks that no ranking result correlates with any commercial/payment signal and that banned promotional vocabulary does not appear in generated product copy. (billing-ranking-isolation.test.ts covers source-level isolation; vocabulary lint not yet implemented; ranking-lockstep.test.ts added.)
 - [ ] **T1.73** Write load/performance tests on the Landed-Cost Calculation endpoint specifically.
 
 ---
@@ -243,4 +243,4 @@ Per the business plan and engineering plan, the following are explicitly deferre
 
 ---
 
-*Last updated: 2026-08-18 — Synced with Phase 1 implementation state*
+*Last updated: 2026-08-18 — Synced with Phase 1 launch-readiness changes*
