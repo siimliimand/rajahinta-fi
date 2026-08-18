@@ -173,6 +173,7 @@ imports: [
     AuditModule,
     AgeGateModule,
     AccountModule,
+    RedisModule,
     CalculatorModule,
     RankingModule,
     DeclarationModule,
