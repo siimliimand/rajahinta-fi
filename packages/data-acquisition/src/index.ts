@@ -90,12 +90,12 @@ export { DrizzleUpsertRepository } from './adapters/upsert-port.adapter';
 
 export type { RateReviewResult, RateReviewEntry, RateReviewStatus, RateReviewResolution } from './interfaces/rate-review.types';
 
-export type { IRateReviewRepository } from './interfaces/rate-review-repository.port';
-export { RATE_REVIEW_REPOSITORY_PORT } from './interfaces/rate-review-repository.port';
+export type { IRateReviewRepository, RateChangeSourcePort } from './interfaces/rate-review-repository.port';
+export { RATE_REVIEW_REPOSITORY_PORT, RATE_CHANGE_SOURCE_PORT } from './interfaces/rate-review-repository.port';
 
-export { RateReviewSchedulerService } from './services/rate-review-scheduler.service';
+export { RateReviewSchedulerService, ConfigBackedRateChangeSource } from './services/rate-review-scheduler.service';
 export type { RateReviewConfig } from './services/rate-review-scheduler.service';
-export { RATE_REVIEW_CONFIG_TOKEN, DEFAULT_RATE_REVIEW_CONFIG } from './services/rate-review-scheduler.service';
+export { RATE_REVIEW_CONFIG_TOKEN, DEFAULT_RATE_REVIEW_CONFIG, RATE_CHANGE_SOURCE_CONFIG_TOKEN, DEFAULT_RATE_CHANGE_SOURCE_CONFIG } from './services/rate-review-scheduler.service';
 
 export { RateReviewModule } from './services/rate-review.module';
 
@@ -111,8 +111,8 @@ import { PriceIngestionService } from './abstract/price-ingestion.service';
 import { TransportRateService } from './abstract/transport-rate.service';
 import { TaxDatasetReviewService } from './abstract/tax-dataset-review.service';
 import { SourceGovernanceModule, ReliabilityModule } from '@rajahinta/core-domain';
-import { RATE_REVIEW_REPOSITORY_PORT } from './interfaces/rate-review-repository.port';
-import { RateReviewSchedulerService, RATE_REVIEW_CONFIG_TOKEN, DEFAULT_RATE_REVIEW_CONFIG } from './services/rate-review-scheduler.service';
+import { RATE_REVIEW_REPOSITORY_PORT, RATE_CHANGE_SOURCE_PORT } from './interfaces/rate-review-repository.port';
+import { RateReviewSchedulerService, ConfigBackedRateChangeSource, RATE_REVIEW_CONFIG_TOKEN, RATE_CHANGE_SOURCE_CONFIG_TOKEN, DEFAULT_RATE_REVIEW_CONFIG, DEFAULT_RATE_CHANGE_SOURCE_CONFIG } from './services/rate-review-scheduler.service';
 import { MERCHANT_CONFIG_TOKEN, DEFAULT_MERCHANTS } from './config/merchants.config';
 import { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
 import { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
@@ -165,6 +165,10 @@ import { InMemoryRateReviewRepository } from './adapters/rate-review-repository.
     // Rate-review scheduler with default 24h interval
     RateReviewSchedulerService,
     { provide: RATE_REVIEW_CONFIG_TOKEN, useValue: DEFAULT_RATE_REVIEW_CONFIG },
+
+    // Rate-change source — config-backed default (no snapshot = no detection)
+    { provide: RATE_CHANGE_SOURCE_PORT, useClass: ConfigBackedRateChangeSource },
+    { provide: RATE_CHANGE_SOURCE_CONFIG_TOKEN, useValue: DEFAULT_RATE_CHANGE_SOURCE_CONFIG },
 
     // Upsert repository — Drizzle-backed adapter
     DrizzleUpsertRepository,

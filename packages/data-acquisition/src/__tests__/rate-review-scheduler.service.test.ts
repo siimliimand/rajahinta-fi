@@ -12,7 +12,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { RateReviewSchedulerService, DEFAULT_RATE_REVIEW_CONFIG } from '../services/rate-review-scheduler.service';
-import type { IRateReviewRepository } from '../interfaces/rate-review-repository.port';
+import type { IRateReviewRepository, RateChangeSourcePort } from '../interfaces/rate-review-repository.port';
 import type { RateReviewEntry } from '../interfaces/rate-review.types';
 
 // ---------------------------------------------------------------------------
@@ -51,16 +51,30 @@ function createFakeRepository(
   };
 }
 
+function createFakeRateChangeSource(
+  overrides?: Partial<RateChangeSourcePort>,
+): RateChangeSourcePort {
+  return {
+    checkForChanges: vi.fn().mockResolvedValue({
+      checkedAt: new Date().toISOString(),
+      newRatesDetected: false,
+    }),
+    ...overrides,
+  };
+}
+
 function createService(overrides?: {
   repository?: Partial<IRateReviewRepository>;
   discoveryDisabled?: boolean;
+  rateChangeSource?: RateChangeSourcePort;
 }): RateReviewSchedulerService {
   const repo = createFakeRepository(overrides?.repository);
   const config = {
     ...DEFAULT_RATE_REVIEW_CONFIG,
     discoveryDisabled: overrides?.discoveryDisabled ?? false,
   };
-  return new RateReviewSchedulerService(repo, config);
+  const source = overrides?.rateChangeSource ?? createFakeRateChangeSource();
+  return new RateReviewSchedulerService(repo, config, source);
 }
 
 // ---------------------------------------------------------------------------
@@ -150,7 +164,7 @@ describe('RateReviewSchedulerService', () => {
     it('persists the entry via the repository', async () => {
       const repo = createFakeRepository();
       const config = DEFAULT_RATE_REVIEW_CONFIG;
-      const service = new RateReviewSchedulerService(repo, config);
+      const service = new RateReviewSchedulerService(repo, config, createFakeRateChangeSource());
 
       const reviewResult = await service.createRateUpdateTask({
         checkedAt: new Date().toISOString(),
