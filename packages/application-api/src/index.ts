@@ -30,12 +30,13 @@ import { IdempotencyModule } from './idempotency';
 import { RateLimitingModule } from './rate-limiting';
 import { BillingModule } from './billing';
 import { AuditModule } from './audit';
+import { RedisModule } from './redis';
 import { AgeGateModule } from './age-gate';
 import { AccountModule } from './accounts';
 import { CalculatorController } from './calculator';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
-import { CorrectionController } from './correction';
+import { CorrectionModule } from './correction';
 import { TaxCalculationEngineAdapter } from './adapters/tax-calculation-engine.adapter';
 
 // ---------------------------------------------------------------------------
@@ -162,7 +163,7 @@ export abstract class UseCaseOrchestrator {
 // ---------------------------------------------------------------------------
 
 @Module({
-  imports: [
+imports: [
     FeatureFlagsModule,
     ObservabilityModule,
     JobsModule,
@@ -176,6 +177,7 @@ export abstract class UseCaseOrchestrator {
     RankingModule,
     DeclarationModule,
     DataPlatformModule,
+    CorrectionModule,
   ],
   providers: [
     TaxCalculationEngineAdapter,
@@ -194,9 +196,8 @@ export abstract class UseCaseOrchestrator {
     CalculatorController,
     SearchController,
     DeclarationController,
-    CorrectionController,
   ],
-  exports: [FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule],
+  exports: [FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule, RedisModule],
 })
 export class ApplicationApiModule {}
 
@@ -229,6 +230,12 @@ export { JobsModule } from './jobs';
 
 export { IdempotencyModule, IdempotencyService, InMemoryIdempotencyCache, RedisIdempotencyCache, IDEMPOTENCY_CACHE, hashInput } from './idempotency';
 export type { CacheKeyInput, IdempotencyOptions, IIdempotencyCache, RedisIdempotencyOptions } from './idempotency';
+
+// ---------------------------------------------------------------------------
+// Redis shared client — wire into feature modules for production use
+// ---------------------------------------------------------------------------
+
+export { RedisModule, REDIS_CLIENT } from './redis';
 
 // ---------------------------------------------------------------------------
 // Rate Limiting re-exports for consumers outside the layer
@@ -269,7 +276,7 @@ export type { DeclarationSummaryResponse } from './declaration';
 // Correction — correction flagging API
 // ---------------------------------------------------------------------------
 
-export { CorrectionController } from './correction';
+export { CorrectionModule, CorrectionController, CorrectionService } from './correction';
 export type { CreateCorrectionDto, CorrectionItem, CorrectionListResponse } from './correction';
 
 // ---------------------------------------------------------------------------

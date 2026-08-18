@@ -2,8 +2,8 @@
  * CorrectionController — endpoints for flagging calculations or data points
  * and tracking their review workflow.
  *
- * Phase 1 uses in-memory storage (a simple Map). Repository wiring comes
- * in a follow-up task.
+ * Delegates persistence to {@link CorrectionService}, which uses an
+ * {@link ICorrectionRepository} adapter wired at the composition root.
  *
  * @module CorrectionController
  */
@@ -21,19 +21,18 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { CorrectionService } from './correction.service';
 import type {
   CreateCorrectionDto,
   CorrectionItem,
   CorrectionListResponse,
 } from './correction.dto';
 
-/** In-memory store for correction flags (replaced by repository in task 2.2). */
-const store = new Map<number, CorrectionItem>();
-let nextId = 1;
-
 @ApiTags('corrections')
 @Controller('api/v1/corrections')
 export class CorrectionController {
+  constructor(private readonly correctionService: CorrectionService) {}
+
   // ---------------------------------------------------------------------------
   // POST /api/v1/corrections — flag a calculation or data point
   // ---------------------------------------------------------------------------
@@ -50,20 +49,7 @@ export class CorrectionController {
   @ApiResponse({ status: 400, description: 'Invalid input' })
   async create(@Body() dto: CreateCorrectionDto): Promise<CorrectionItem> {
     try {
-      const id = nextId++;
-      const now = new Date().toISOString();
-      const item: CorrectionItem = {
-        id,
-        targetType: dto.targetType,
-        targetId: dto.targetId,
-        reason: dto.reason,
-        status: 'open',
-        createdAt: now,
-        resolvedAt: null,
-        resolution: null,
-      };
-      store.set(id, item);
-      return item;
+      return await this.correctionService.createFlag(dto);
     } catch (err) {
       throw new InternalServerErrorException(
         err instanceof Error ? err.message : 'Failed to create correction flag',
@@ -85,8 +71,7 @@ export class CorrectionController {
   @ApiResponse({ status: 200, description: 'List of correction flags' })
   async list(): Promise<CorrectionListResponse> {
     try {
-      const items = Array.from(store.values());
-      return { items, total: items.length };
+      return await this.correctionService.listFlags();
     } catch (err) {
       throw new InternalServerErrorException(
         err instanceof Error ? err.message : 'Failed to list correction flags',
@@ -113,20 +98,7 @@ export class CorrectionController {
     @Body('resolution') resolution: string,
   ): Promise<CorrectionItem> {
     try {
-      const item = store.get(id);
-      if (item === undefined) {
-        throw new NotFoundException(`Correction flag ${id} not found`);
-      }
-
-      const now = new Date().toISOString();
-      const updated: CorrectionItem = {
-        ...item,
-        status: 'resolved',
-        resolvedAt: now,
-        resolution: resolution ?? null,
-      };
-      store.set(id, updated);
-      return updated;
+      return await this.correctionService.resolveFlag(id, resolution ?? null);
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
       throw new InternalServerErrorException(

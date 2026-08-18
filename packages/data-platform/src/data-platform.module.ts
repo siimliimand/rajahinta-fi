@@ -18,7 +18,7 @@
  * @module DataPlatformModule
  */
 import { Module } from '@nestjs/common';
-import { TAX_RULE_REPOSITORY_PORT } from '@rajahinta/core-domain';
+import { TAX_RULE_REPOSITORY_PORT, CORRECTION_REPOSITORY_PORT } from '@rajahinta/core-domain';
 import { DrizzleModule } from './db/drizzle.module';
 import {
   ProductRepository,
@@ -31,6 +31,7 @@ import { DrizzleTaxRateRepository } from './repositories/tax-rate.repository';
 import { DrizzleTransportOfferRepository } from './repositories/transport-offer.repository';
 import { DrizzleCalculationRecordRepository } from './repositories/calculation-record.repository';
 import { TaxRuleRepositoryAdapter } from './repositories/tax-rate.repository';
+import { DrizzleCorrectionRepository } from './repositories/correction.repository';
 
 @Module({
   imports: [DrizzleModule],
@@ -57,27 +58,35 @@ import { TaxRuleRepositoryAdapter } from './repositories/tax-rate.repository';
       provide: TAX_RULE_REPOSITORY_PORT,
       useClass: TaxRuleRepositoryAdapter,
     },
+    // Domain-port adapter for correction (stub — no DB schema yet)
+    {
+      provide: CORRECTION_REPOSITORY_PORT,
+      useClass: DrizzleCorrectionRepository,
+    },
     // Also register the concrete classes directly (they are @Injectable)
     DrizzleProductRepository,
     DrizzleTaxRateRepository,
     DrizzleTransportOfferRepository,
     DrizzleCalculationRecordRepository,
     TaxRuleRepositoryAdapter,
+    DrizzleCorrectionRepository,
   ],
-  exports: [
+exports: [
     // Abstract class tokens — inject by abstract class for loose coupling
     ProductRepository,
     TaxRateRepository,
     TransportOfferRepository,
     CalculationRecordRepository,
-    // Domain-port adapter token for tax rule lookup
+    // Domain-port adapter tokens
     TAX_RULE_REPOSITORY_PORT,
+    CORRECTION_REPOSITORY_PORT,
     // Concrete implementations — inject directly when needed
     DrizzleProductRepository,
     DrizzleTaxRateRepository,
     DrizzleTransportOfferRepository,
     DrizzleCalculationRecordRepository,
     TaxRuleRepositoryAdapter,
+    DrizzleCorrectionRepository,
   ],
 })
 export class DataPlatformModule {}
