@@ -8,7 +8,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['tests/e2e/**/*.test.ts'],
+    include: ['apps/backend/tests/e2e/**/*.test.ts'],
     root: __dirname,
     passWithNoTests: true,
     testTimeout: 30_000,
