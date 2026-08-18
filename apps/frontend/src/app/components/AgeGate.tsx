@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import React from 'react';
 
-const STORAGE_KEY = 'rajahinta_age_verified';
+const STORAGE_KEY = 'age_confirmed';
 
 function getAgeVerified(): boolean {
   if (typeof window === 'undefined') return false;
