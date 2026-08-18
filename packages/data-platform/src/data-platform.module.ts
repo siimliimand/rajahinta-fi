@@ -62,6 +62,7 @@ import { TaxRuleRepositoryAdapter } from './repositories/tax-rate.repository';
     DrizzleTaxRateRepository,
     DrizzleTransportOfferRepository,
     DrizzleCalculationRecordRepository,
+    TaxRuleRepositoryAdapter,
   ],
   exports: [
     // Abstract class tokens — inject by abstract class for loose coupling
