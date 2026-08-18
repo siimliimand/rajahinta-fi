@@ -16,6 +16,7 @@ import {
   ParseIntPipe,
   NotFoundException,
   InternalServerErrorException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import type { SortOrder } from '@rajahinta/core-domain';
@@ -26,6 +27,7 @@ import type {
   ProductDetailResponse,
   OfferItem,
 } from './search.dto';
+import { LaunchGateGuard, LaunchGate, LaunchGateType } from '../feature-flags';
 
 /** Default page size for product listing. */
 const DEFAULT_PAGE_SIZE = 20;
@@ -41,6 +43,8 @@ function compareByName(a: ProductSearchItem, b: ProductSearchItem): number {
   return a.name.localeCompare(b.name, 'fi');
 }
 
+@UseGuards(LaunchGateGuard)
+@LaunchGate(LaunchGateType.PRICE_DATA)
 @ApiTags('products')
 @Controller('api/v1/products')
 export class SearchController {
