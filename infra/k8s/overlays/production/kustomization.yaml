@@ -1,0 +1,85 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: rajahinta
+
+resources:
+  - ../../base
+
+patches:
+  # ── replica count ──
+  - target:
+      kind: Deployment
+      name: rajahinta-backend
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 3
+
+  # ── resource limits (production: higher headroom) ──
+  - target:
+      kind: Deployment
+      name: rajahinta-backend
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "512m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "1Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "200m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "256Mi"
+
+  # ── environment-specific ConfigMap entries ──
+  - target:
+      kind: ConfigMap
+      name: rajahinta-config
+    patch: |
+      - op: add
+        path: /data/NODE_ENV
+        value: "production"
+      - op: add
+        path: /data/LOG_LEVEL
+        value: "warn"
+      - op: add
+        path: /data/CORS_ORIGIN
+        value: "https://rajahinta.fi"
+
+  # ── ingress hostname ──
+  - target:
+      kind: Ingress
+      name: rajahinta-backend
+    patch: |
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: "rajahinta.fi"
+      - op: add
+        path: /spec/tls/0/hosts/-
+        value: "www.rajahinta.fi"
+      - op: replace
+        path: /spec/rules/0/host
+        value: "rajahinta.fi"
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: "rajahinta-tls-prod"
+      - op: add
+        path: /spec/rules/-
+        value:
+          host: "www.rajahinta.fi"
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: rajahinta-backend
+                    port:
+                      name: http
+
+commonLabels:
+  environment: production

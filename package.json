@@ -6,18 +6,24 @@
   "scripts": {
     "dev": "pnpm --parallel -r dev",
     "build": "pnpm -r build",
-    "lint": "pnpm -r lint",
+    "lint": "eslint .",
     "test": "pnpm -r test",
     "test:golden": "bash scripts/test-golden-dataset.sh",
     "test:data-quality": "bash scripts/test-data-quality.sh",
     "test:compliance": "bash scripts/test-compliance.sh",
     "typecheck": "pnpm -r typecheck",
+    "test:e2e": "vitest run --config vitest.config.e2e.ts",
     "test:load": "vitest run --config tests/load/vitest.config.ts",
     "clean": "pnpm -r clean",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\""
   },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
     "@vitest/coverage-v8": "^2.1.0",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^2.1.0"
   },

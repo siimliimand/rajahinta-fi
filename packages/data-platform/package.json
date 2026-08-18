@@ -17,10 +17,12 @@
     "@rajahinta/core-domain": "workspace:*",
     "drizzle-orm": "^0.38.0",
     "drizzle-kit": "^0.30.0",
+    "pg": "^8.13.0",
     "postgres": "^3.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
     "typescript": "^5.6.0",
     "vitest": "^2.0.0"
   }

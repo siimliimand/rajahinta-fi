@@ -39,7 +39,7 @@ COPY packages packages
 
 RUN pnpm install --frozen-lockfile
 
-RUN pnpm --filter @rajahinta/backend run build
+RUN pnpm --filter @rajahinta/backend... run build
 
 # ----------------------------------------------------------------------------
 # Stage 3: production runtime

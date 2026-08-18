@@ -130,9 +130,9 @@ describe('AlcoholExciseService', () => {
       expect(result.taxDatasetVersion).toBe('FALLBACK');
     });
 
-    it('uses default rate for wine (€0.355/L)', async () => {
+    it('uses default rate for wine (€3.40/L)', async () => {
       const result = await service.calculate('wine', 0.12, 0.75);
-      expect(result.taxCents).toBe(27);
+      expect(result.taxCents).toBe(255);
     });
 
     it('uses default progressive rate for beer', async () => {
@@ -140,9 +140,9 @@ describe('AlcoholExciseService', () => {
       expect(result.taxCents).toBe(30);
     });
 
-    it('uses default spirits rate (€0.565/L of pure alcohol)', async () => {
+    it('uses default spirits rate (€29.50/L of pure alcohol)', async () => {
       const result = await service.calculate('spirits', 0.40, 0.75);
-      expect(result.taxCents).toBe(17);
+      expect(result.taxCents).toBe(885);
     });
   });
 
@@ -152,9 +152,9 @@ describe('AlcoholExciseService', () => {
       expect(result.taxCents).toBe(0);
     });
 
-    it('handles 0 ABV (non-alcoholic)', async () => {
+    it('handles 0 ABV (non-alcoholic) — per-litre-of-product still applies', async () => {
       const result = await service.calculate('wine', 0, 0.75);
-      expect(result.taxCents).toBe(27); // still taxed at product rate
+      expect(result.taxCents).toBe(255); // 3.40 * 0.75 = 2.55 → 255
     });
 
     it('handles 100% ABV (spirits at abv = 1.0)', async () => {

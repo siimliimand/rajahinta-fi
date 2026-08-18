@@ -54,7 +54,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm run lint
-        continue-on-error: true   # no ESLint config exists yet; remove when rules are added
 
   # --------------------------------------------------------------------------
   # Build — includes typecheck (tsc during compilation) plus .d.ts generation
@@ -168,7 +167,7 @@ jobs:
         env:
           CI: true
           DATABASE_URL: postgresql://rajahinta:rajahinta@localhost:5432/rajahinta_test
-          GOLDEN_DATASET_PATH: ./infra/staging-data/seed.sql
+          GOLDEN_DATASET_PATH: ./infra/staging-data
 
   # --------------------------------------------------------------------------
   # Data-quality checks — schema conformance, null violations

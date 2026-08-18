@@ -1,0 +1,63 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: rajahinta
+
+resources:
+  - ../../base
+
+patches:
+  # ── replica count ──
+  - target:
+      kind: Deployment
+      name: rajahinta-backend
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 2
+
+  # ── resource limits (staging: modest) ──
+  - target:
+      kind: Deployment
+      name: rajahinta-backend
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "256m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "512Mi"
+
+  # ── environment-specific ConfigMap entries ──
+  - target:
+      kind: ConfigMap
+      name: rajahinta-config
+    patch: |
+      - op: add
+        path: /data/NODE_ENV
+        value: "staging"
+      - op: add
+        path: /data/LOG_LEVEL
+        value: "info"
+      - op: add
+        path: /data/CORS_ORIGIN
+        value: "https://staging.rajahinta.fi"
+
+  # ── ingress hostname ──
+  - target:
+      kind: Ingress
+      name: rajahinta-backend
+    patch: |
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: "staging.rajahinta.fi"
+      - op: replace
+        path: /spec/rules/0/host
+        value: "staging.rajahinta.fi"
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: "rajahinta-tls-staging"
+
+commonLabels:
+  environment: staging

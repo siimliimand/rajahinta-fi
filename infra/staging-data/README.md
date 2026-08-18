@@ -22,7 +22,7 @@ Typical workflow:
 
 | File | Description |
 |---|---|
-| `schema.sql` | Self-contained DDL mirroring the Drizzle ORM schemas from `packages/data-platform/src/index.ts`. Includes: `products`, `merchant_offers`, `tax_rate_versions`, `transport_rates`, `calculation_audit`, `staging_reviews`. |
+| `schema.sql` | Self-contained DDL mirroring the Drizzle ORM schemas from `packages/data-platform/src/schema.ts` (single source of truth). Includes: `product_master`, `retail_offers`, `tax_rules`, `transport_offers`, `calculation_records`, `staging_reviews`. |
 | `seed.sql` | Realistic Finnish excise tax rates (2024-2026), transport-rate reference for common import routes, 5 sample merchants with products and offers, and a 12-scenario golden dataset for CI regression testing. |
 | `setup.sh` | Idempotent load script — drops existing tables, recreates schema, loads seed data, runs verification queries. |
 

@@ -1,0 +1,8 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rajahinta
+  labels:
+    app.kubernetes.io/name: rajahinta
+    app.kubernetes.io/part-of: rajahinta

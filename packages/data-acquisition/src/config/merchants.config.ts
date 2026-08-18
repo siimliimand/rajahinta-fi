@@ -37,8 +37,8 @@ export interface MerchantConfig {
  * to PENDING.  A compliance review and a `SourceGovernanceService.registerSource`
  * call with GRANTED status is required to activate ingestion.
  *
- * Real feed URLs are empty strings until the corresponding merchant adapter
- * is built.  The pipeline skips merchants with an empty `feedUrl`.
+ * Merchants with an empty `feedUrl` (Alko pending adapter implementation)
+ * are skipped by the pipeline.
  */
 export const DEFAULT_MERCHANTS: MerchantConfig[] = [
   {
@@ -53,7 +53,7 @@ export const DEFAULT_MERCHANTS: MerchantConfig[] = [
     merchantId: 'systembolaget',
     name: 'Systembolaget',
     country: 'SE',
-    feedUrl: '',
+    feedUrl: 'https://www.systembolaget.se/api/assortment',
     feedFormat: 'json',
     pollingIntervalMs: 3_600_000,
   },

@@ -1,0 +1,90 @@
+/**
+ * Product Data Adapter — domain-port implementation for IProductDataPort.
+ *
+ * Maps between the Drizzle ProductRepository (data-platform layer) and the
+ * CalculatorProductData / CalculatorRetailOfferData read models that the
+ * domain-level LandedCostCalculatorService expects.
+ *
+ * ## Key transformations
+ *
+ * | Database column      | Domain field          | Notes                        |
+ * |----------------------|-----------------------|------------------------------|
+ * | `unitVolume` (string)| `volumeLitres` (num.) | parseFloat — numeric string  |
+ * | `alcoholByVolume`    | `alcoholByVolume`     | parseFloat or 0 when null    |
+ * | `name`               | `normalizedName`      | direct copy                  |
+ * | — (no weight field)  | `weightKg`            | estimated: vol × 1.0 kg/L    |
+ *
+ * @module ProductDataAdapter
+ */
+
+import { Injectable } from '@nestjs/common';
+import { ProductRepository } from '@rajahinta/data-platform';
+import type {
+  IProductDataPort,
+  CalculatorProductData,
+  CalculatorRetailOfferData,
+} from '@rajahinta/core-domain';
+
+/**
+ * Parse a Drizzle numeric string to a float.
+ * Drizzle maps `numeric()` columns to `string` in inferred types.
+ */
+function parseNumeric(value: string): number {
+  const n = Number.parseFloat(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Estimate weight in kilograms from volume in litres.
+ *
+ * Uses a density of 1.0 kg/L as a reasonable approximation for most
+ * beverages (water-based). When the product master gains an actual
+ * weight field, this estimate should be replaced with the real value.
+ */
+function estimateWeightKg(volumeLitres: number): number {
+  return volumeLitres * 1.0;
+}
+
+@Injectable()
+export class ProductDataAdapter implements IProductDataPort {
+  constructor(private readonly repo: ProductRepository) {}
+
+  /**
+   * Look up a product by ID and map to CalculatorProductData.
+   */
+  async findProductById(id: number): Promise<CalculatorProductData | null> {
+    const record = await this.repo.findById(id);
+    if (record === null) return null;
+
+    const volumeLitres = parseNumeric(record.unitVolume);
+
+    return {
+      id: record.id,
+      regulatoryClassification: record.regulatoryClassification,
+      category: record.category,
+      volumeLitres,
+      alcoholByVolume: record.alcoholByVolume !== null
+        ? parseNumeric(record.alcoholByVolume)
+        : 0,
+      containerType: record.containerType,
+      depositSystemStatus: record.depositSystemStatus,
+      weightKg: estimateWeightKg(volumeLitres),
+      normalizedName: record.name,
+    };
+  }
+
+  /**
+   * Return retail offers for a product, mapped to CalculatorRetailOfferData.
+   */
+  async findRetailOffers(productId: number): Promise<CalculatorRetailOfferData[]> {
+    const offers = await this.repo.findOffers(productId);
+
+    return offers.map((o) => ({
+      id: o.id,
+      priceCents: o.priceCents,
+      merchant: o.merchant,
+      country: o.country,
+      reliabilityStatus: o.reliabilityStatus,
+    }));
+  }
+}

@@ -8,21 +8,21 @@ echo "=== Compliance checks ==="
 
 DB_URL="${DATABASE_URL:-postgresql://rajahinta:rajahinta@localhost:5432/rajahinta_test}"
 
-# 1. Audit log structure — verify calculation_audit schema
+# 1. Audit log structure — verify calculation_records schema
 echo "Checking audit log structure..."
 psql "$DB_URL" -c "
   SELECT column_name, data_type, is_nullable
   FROM information_schema.columns
-  WHERE table_name = 'calculation_audit'
+  WHERE table_name = 'calculation_records'
   ORDER BY ordinal_position;
 " 2>/dev/null || echo "  (table not yet created — placeholder)"
 
-# 2. Rate versioning — ensure tax_rate_versions has effective range
+# 2. Rate versioning — ensure tax_rules has effective range
 echo "Checking rate versioning..."
 psql "$DB_URL" -c "
   SELECT column_name, data_type, is_nullable
   FROM information_schema.columns
-  WHERE table_name = 'tax_rate_versions'
+  WHERE table_name = 'tax_rules'
   ORDER BY ordinal_position;
 " 2>/dev/null || echo "  (table not yet created — placeholder)"
 

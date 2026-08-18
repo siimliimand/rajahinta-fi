@@ -4,199 +4,191 @@
 
 Rajahinta.fi is a **cross-border beverage price index and Finnish landed-cost intelligence platform**. It is a calculator, not a shop: there is no checkout, no payment collection for alcohol, and no physical-goods order management — the only commercial transaction is a software subscription.
 
-The architecture is a **modular monolith** organized into clearly bounded packages (core-domain, application-api, data-acquisition, data-platform) with a NestJS 11 composition root and a Next.js 14 frontend. Every module is wired through explicit port/adapter interfaces so any module can later be extracted into a separate service without redesigning domain logic.
+The architecture is a **modular monolith** organized into clearly bounded packages (core-domain, application-api, data-acquisition, data-platform) with a NestJS 11 composition root and a Next.js 14 frontend. Every module is wired through explicit port/adapter interfaces so any module can later be extracted into a separate service without redesigning domain logic. The technology stack is TypeScript/Node.js with PostgreSQL 16 (Drizzle ORM), Redis, and BullMQ.
 
 ## 1. Project Structure
 
 ```
 rajahinta/
-├── AGENTS.md                          # Agent operating contract (repo-wide workflow rules)
+├── AGENTS.md                          # Agent operating contract
 ├── ARCHITECTURE.md                    # This document
-├── DESIGN.md                          # Design system documentation
-├── opencode.jsonc                     # OpenCode configuration
-├── package.json                       # Root workspace package (pnpm workspace)
-├── pnpm-workspace.yaml                # Workspace definition: apps/* + packages/*
-├── tsconfig.base.json                 # Shared TS config (ES2022, commonjs, decorators)
-├── vitest.config.ts                   # Root vitest config
-├── Dockerfile                         # Multi-stage production Dockerfile (NestJS backend)
-├── .dockerignore                      # Dev/CI artifact exclusion for Docker
-│
+├── DESIGN.md                          # Design-system documentation
+├── Dockerfile                         # Multi-stage production image
+├── docker-compose.yml                 # Local full-stack (PostgreSQL + Redis + backend)
+├── eslint.config.mjs                  # ESLint flat config
+├── package.json                       # Root workspace (pnpm workspaces)
 ├── apps/
-│   ├── backend/                       # @rajahinta/backend — NestJS 11 composition root
-│   │   ├── nest-cli.json              # NestJS CLI config
-│   │   ├── src/
-│   │   │   ├── main.ts                # Bootstrap + Swagger + CORS
-│   │   │   └── app.module.ts          # Root module wiring all packages
-│   │   ├── vitest.config.ts
-│   │   └── tsconfig.json
-│   │
-│   └── frontend/                      # @rajahinta/frontend — Next.js 14 App Router
-│       ├── next.config.mjs
-│       ├── tailwind.config.ts         # Tailwind CSS 3.4 config
-│       ├── src/
-│       │   ├── app/                   # App Router routes
-│       │   │   ├── layout.tsx         # Root layout with AgeGate wrapper
-│       │   │   ├── page.tsx           # Home page
-│       │   │   ├── calculator/        # Landed-cost calculator UI
-│       │   │   ├── compare/           # Product comparison views
-│       │   │   ├── ranking/           # Methodology explanation
-│       │   │   ├── account/           # Account & saved baskets
-│       │   │   └── age-gate/          # Age verification
-│       │   ├── lib/                   # api.ts, types.ts, content-policy.ts
-│       │   └── setupTests.ts
-│       ├── vitest.config.ts
-│       └── tsconfig.json
-│
+│   └── backend/                       # NestJS composition root
+│       └── src/
+│           ├── app.module.ts          # AppModule — wires all packages + domain port adapters
+│           ├── main.ts                # Bootstrap
+│           └── adapters/              # Composition-root adapters (product-data, calculation-record)
 ├── packages/
-│   ├── core-domain/                   # @rajahinta/core-domain — pure domain logic
-│   │   ├── src/
-│   │   │   ├── tax/                   # TaxModule — excise + container duty calculation
-│   │   │   ├── calculator/            # CalculatorModule — landed-cost orchestrator
-│   │   │   ├── classification/        # ClassificationModule — transaction classification
-│   │   │   ├── normalization/         # NormalizationModule + ProductMatcher + ManualReview
-│   │   │   ├── transport/             # TransportEstimationModule — carrier rate matching
-│   │   │   ├── reliability/           # ReliabilityModule — data freshness & confidence
-│   │   │   ├── ranking/               # RankingModule — neutral sort orders
-│   │   │   ├── declaration/           # DeclarationModule — excise declaration assistant
-│   │   │   ├── correction/            # CorrectionModule — human-review flagging
-│   │   │   ├── entitlement/           # EntitlementModule — feature tier management
-│   │   │   ├── audit/                 # AuditModule — immutable domain audit log
-│   │   │   └── governance/            # SourceGovernanceModule — data-source provenance
-│   │   ├── vitest.config.ts
-│   │   └── tsconfig.json
-│   │
-│   ├── application-api/               # @rajahinta/application-api — HTTP API layer
-│   │   ├── src/
-│   │   │   ├── calculator/            # CalculatorController + DTOs
-│   │   │   ├── search/                # SearchController + DTOs
-│   │   │   ├── declaration/           # DeclarationController + DTOs
-│   │   │   ├── accounts/              # AccountModule (account, basket, data-export)
-│   │   │   ├── age-gate/              # AgeGateModule
-│   │   │   ├── billing/               # BillingModule (simulated subscription)
-│   │   │   ├── feature-flags/         # FeatureFlagsModule + LaunchGate
-│   │   │   ├── idempotency/           # IdempotencyModule (in-memory cache)
-│   │   │   ├── rate-limiting/         # RateLimitingModule (in-memory + guard)
-│   │   │   ├── observability/         # ObservabilityModule (KPI, OpsDashboard)
-│   │   │   ├── jobs/                  # JobsModule — BullMQ workers & scheduler
-│   │   │   └── audit/                 # InMemoryAuditRepository
-│   │   ├── vitest.config.ts
-│   │   └── tsconfig.json
-│   │
-│   ├── data-acquisition/              # @rajahinta/data-acquisition — data ingestion
-│   │   ├── src/
-│   │   │   ├── services/              # PipelineOrchestrator, FeedIngestion, DataQuality, RateReview
-│   │   │   ├── config/                # merchants.config.ts
-│   │   │   ├── interfaces/            # IDataSourceRegistry, IFeedAdapter, IUpsertRepository
-│   │   │   └── index.ts               # DataAcquisitionModule — BullMQ queues
-│   │   ├── vitest.config.ts
-│   │   └── tsconfig.json
-│   │
-│   └── data-platform/                 # @rajahinta/data-platform — persistence layer
-│       ├── src/
-│       │   ├── index.ts               # Drizzle ORM schemas (5 tables) + repository interfaces
-│       │   ├── interfaces/            # IRepositoryRegistry
-│       │   └── seed/                  # tax-rules.seed.ts
-│       ├── vitest.config.ts
-│       └── tsconfig.json
-│
-├── tests/
-│   ├── golden/                        # Golden-dataset regression tests
-│   │   ├── data/                      # Fixture products/offers
-│   │   ├── golden-dataset.test.ts     # 12 pre-calculated scenarios
-│   │   └── vitest.config.ts
-│   ├── compliance/                    # Neutrality & compliance tests
-│   │   ├── neutrality-compliance.test.ts
-│   │   └── vitest.config.ts
-│   └── load/                          # Calculator load/performance tests
-│       ├── calculator-load.test.ts    # 50 concurrent, p95<500ms assertion
-│       └── vitest.config.ts
-│
+│   ├── core-domain/                   # Domain logic: tax engines, classification, ranking, calculator
+│   │   └── src/
+│   │       ├── tax/                   # AlcoholExciseService, ContainerDutyService, TaxRuleQueryService
+│   │       │   ├── services/          # Pure math functions, deposit-checker
+│   │       │   └── ports/             # ITaxRuleRepositoryPort (domain port)
+│   │       ├── classification/        # TransactionClassificationService, ClassificationRuleEngine
+│   │       ├── normalization/         # ProductNormalizer, ClassificationGate, ManualReview
+│   │       ├── transport/             # TransportEstimationService, BasketShippingCalculator
+│   │       ├── calculator/            # LandedCostCalculatorService (orchestrator)
+│   │       ├── reliability/           # ConfidenceFrameworkService, ReliabilityService
+│   │       ├── ranking/               # RankingService (neutrality-enforced sorting)
+│   │       ├── declaration/           # ExciseDeclarationService (read-only, never submits)
+│   │       ├── correction/            # CorrectionService, CorrectionModule
+│   │       ├── entitlement/           # EntitlementService (free/premium gating)
+│   │       ├── audit/                 # AuditService, AuditModule
+│   │       └── governance/            # SourceGovernanceService (merchant permission gating)
+│   ├── data-platform/                 # Drizzle ORM repositories, schema, seed data
+│   │   └── src/
+│   │       ├── schema.ts              # Canonical Drizzle schema (productMaster, retailOffers, taxRules, transportOffers, calculationRecords)
+│   │       ├── abstracts.ts           # Abstract repository classes (ProductRepository, TaxRateRepository, etc.)
+│   │       ├── db/
+│   │       │   ├── drizzle.provider.ts  # DRIZZLE token, pg.Pool + Drizzle factory (DATABASE_URL)
+│   │       │   └── drizzle.module.ts    # @Global DrizzleModule
+│   │       ├── repositories/          # Concrete Drizzle implementations
+│   │       │   ├── product.repository.ts
+│   │       │   ├── tax-rate.repository.ts  # Includes TaxRuleRepositoryAdapter
+│   │       │   ├── transport-offer.repository.ts
+│   │       │   └── calculation-record.repository.ts
+│   │       ├── data-platform.module.ts # DataPlatformModule — registers concrete repos + TAX_RULE_REPOSITORY_PORT
+│   │       └── seed/tax-rules.seed.ts # v1.0-2024 Finnish excise duty rates
+│   ├── data-acquisition/              # Merchant feed ingestion pipeline
+│   │   └── src/
+│   │       ├── adapters/
+│   │       │   ├── systembolaget.adapter.ts  # Systembolaget JSON feed adapter
+│   │       │   ├── pipeline-price-ingestion.adapter.ts
+│   │       │   ├── pipeline-transport-rate.adapter.ts
+│   │       │   └── pipeline-tax-dataset-review.adapter.ts
+│   │       ├── services/              # FeedIngestion, DataQuality, RateReviewScheduler, DataMapping
+│   │       └── config/merchants.config.ts  # Merchant registry (Alko, Systembolaget)
+│   └── application-api/               # API layer: controllers, DTOs, guards, jobs
+│       └── src/
+│           ├── calculator/            # CalculatorController, CalculatorDto
+│           ├── search/                # SearchController
+│           ├── declaration/           # DeclarationController (read-only)
+│           ├── adapters/              # TaxCalculationEngineAdapter (wires LandedCostCalculatorService)
+│           ├── feature-flags/         # FeatureFlagService, LaunchGateService, LaunchGateGuard
+│           ├── rate-limiting/         # RateLimitGuard, RateLimitingService
+│           ├── idempotency/           # IdempotencyService
+│           ├── age-gate/              # AgeGateService, SimpleConfirmationProvider
+│           ├── entitlement/           # EntitlementGuard
+│           ├── billing/               # BillingService, BillingModule
+│           ├── accounts/              # AccountService, DataExportService, AccountRetentionService
+│           ├── jobs/                  # BullMQ workers: price-ingestion, transport-rate-refresh, tax-dataset-review, time-series-aggregation
+│           ├── audit/                 # AuditRepositoryAdapter (bridges to core-domain)
+│           └── observability/         # KpiService, OpsDashboardController, CostAttributionService, InstrumentationService
 ├── infra/
-│   ├── environments/                  # Environment configs (dev.yaml, staging.yaml, prod.yaml)
-│   ├── staging-data/                  # schema.sql, seed.sql, setup.sh
-│   └── jobs/                          # docker-compose.jobs.yml (Redis 7.2)
-│
-├── scripts/
-│   ├── test-golden-dataset.sh         # Golden-dataset CI test runner
-│   ├── test-data-quality.sh           # Data-quality CI test runner
-│   └── test-compliance.sh             # Compliance CI test runner
-│
-├── .github/workflows/
-│   ├── ci.yml                         # 6-stage CI pipeline
-│   ├── deploy.yml                     # 3-tier deployment pipeline
-│   └── load-tests.yml                 # PR-gating load test
-│
-├── docs/                              # Business & engineering plans
-├── .agents/skills/                    # Agent skill library
-├── .opencode/                         # OpenCode configuration
-└── openspec/                          # OpenSpec change management
+│   └── jobs/
+│       ├── docker-compose.jobs.yml    # Dev hot-reload stack
+│       └── Dockerfile.dev             # Dev Dockerfile for job workers
+├── tests/
+│   └── golden/                        # Golden-dataset regression tests (real engines, no vi.fn mocks)
+│       ├── golden-dataset.test.ts
+│       ├── per-category.test.ts
+│       └── data/products.ts           # Fixed product/offer fixtures
+├── docs/
+│   ├── Rajahinta-FI.docx              # Business plan (Finnish)
+│   ├── rajahinta-fi-implementation-plan.md  # Engineering implementation plan
+│   ├── tasks.md                       # Task checkboxes (Phase 0–3)
+│   └── tech-stack.md                  # Technology decisions
+└── openspec/
+    ├── config.yaml
+    ├── changes/archive/
+    └── specs/
 ```
 
 ## 2. High-Level System Diagram
 
+Application architecture (NestJS modular monolith):
+
 ```mermaid
 flowchart LR
     subgraph Users
-        Consumer[Consumer web app<br/>Next.js 14 / React 18]
-        APIUser[API customers<br/>Phase 2/3]
+        Consumer[Consumer web app]
+        APIUser[API customers (Phase 2/3)]
     end
 
     subgraph Presentation
         Calculator[Landed-Cost Calculator]
         Comparison[Comparison views]
-        Ranking[Ranking methodology]
+        Charts[Historical charts]
         Account[Account / subscription]
     end
 
     subgraph Application Layer
-        Controllers[Calc / Search / Declaration controllers]
-        CrossCutting[Feature flags, rate limiting,<br/>idempotency, observability]
-        Jobs[BullMQ workers]
+        API[Calculation / search / comparison API]
     end
 
     subgraph Core Domain
-        Tax[Tax & Duty Calculation]
-        Classification[Transaction Classification]
         Normalization[Product Normalization]
+        Classification[Transaction Classification]
+        Tax[Tax & Duty Calculation]
         Transport[Transport Estimation]
-        Landed[Landed-Cost Orchestrator]
-        Reliability[Data-Reliability Framework]
-        RankingSort[Ranking & Sorting]
+        Landed[Landed-Cost / Excise Assistant]
     end
 
     subgraph Data Platform
-        DB[(PostgreSQL 16<br/>TimescaleDB)]
+        DB[(Product / merchant / transport / tax DB)]
+        TS[(Historical time-series store)]
     end
 
     subgraph Acquisition
-        Ingest[Price / transport ingestion]
-        DataQuality[Data-quality pipeline]
-        RateReview[Tax-rate dataset review]
-    end
-
-    subgraph Infrastructure
-        Cache[(Redis 7.2<br/>BullMQ + rate-limiting)]
+        Scrapers[Price / product ingestion]
+        Rates[Tax-rate dataset sync]
+        Shipping[Transport-rate refresh]
     end
 
     External[External merchants / carriers / tax authority]
 
-    External --> Ingest
-    Ingest --> DB
-    DataQuality --> DB
-    RateReview --> DB
-    DB --> Core Domain
-    Consumer --> Presentation --> Controllers --> Core Domain
-    Controllers --> Cache
-    CoreDomain --> DB
-    Jobs --> Cache
-    APIUser --> Controllers
+    External --> Acquisition
+    Acquisition --> Data Platform
+    Data Platform --> Core Domain
+    Consumer --> Presentation --> API --> Core Domain
+    APIUser --> API
 ```
 
-The **Compliance & Governance layer** runs across all layers (neutrality enforcement, reliability labeling, audit logging, structured disclaimer).
+The planned **Compliance & Governance layer** runs across all layers (neutrality enforcement, reliability labeling, audit logging) rather than as a separate service.
 
 ## 3. Core Components
 
-### 3.1 Frontend / User Interface
+### 3.1 Implemented Backend / Server / API
+
+The application is a **NestJS modular monolith** with four bounded layers:
+
+| Package | Responsibility | Key modules / files |
+|---|---|---|
+| `packages/core-domain` | Domain logic — tax engines, classification, ranking, calculator orchestrator, confidence framework, correction, entitlement, audit, source governance | `tax/`, `classification/`, `normalization/`, `transport/`, `calculator/`, `reliability/`, `ranking/`, `declaration/`, `correction/`, `entitlement/`, `audit/`, `governance/` |
+| `packages/data-platform` | Drizzle ORM schema, concrete repositories, connection provider, seed data | `schema.ts`, `abstracts.ts`, `repositories/`, `db/drizzle.provider.ts`, `data-platform.module.ts`, `seed/tax-rules.seed.ts` |
+| `packages/data-acquisition` | Merchant feed ingestion pipeline, data-quality checks, rate-review scheduler | `adapters/systembolaget.adapter.ts`, `services/`, `config/merchants.config.ts` |
+| `packages/application-api` | API controllers, DTOs, guards (rate limiting, idempotency, age gate, entitlement, launch gate), background job workers, observability | `calculator/`, `search/`, `declaration/`, `feature-flags/`, `rate-limiting/`, `age-gate/`, `jobs/`, `observability/` |
+| `apps/backend` | Composition root — AppModule wires all packages and provides domain-port adapters | `app.module.ts`, `adapters/product-data.adapter.ts`, `adapters/calculation-record.adapter.ts` |
+
+**Connection provider**: `DRIZZLE` token in `packages/data-platform/src/db/drizzle.provider.ts` creates a `pg.Pool` from `DATABASE_URL` and returns a fully-typed Drizzle ORM instance. The `DrizzleModule` is `@Global()`, making the connection available application-wide.
+
+**DataPlatformModule** (`packages/data-platform/src/data-platform.module.ts`) registers concrete Drizzle repositories under abstract class tokens and exports them:
+
+- `ProductRepository` → `DrizzleProductRepository`
+- `TaxRateRepository` → `DrizzleTaxRateRepository`
+- `TransportOfferRepository` → `DrizzleTransportOfferRepository`
+- `CalculationRecordRepository` → `DrizzleCalculationRecordRepository`
+
+No `useValue: null` providers for data repos — all have concrete implementations.
+
+**TaxRuleRepositoryAdapter** (in `tax-rate.repository.ts`) bridges the Drizzle repository to the domain-layer `ITaxRuleRepositoryPort`. It is registered in `DataPlatformModule` under the `TAX_RULE_REPOSITORY_PORT` token consumed by `AlcoholExciseService` and `ContainerDutyService`.
+
+**Composition root adapters** (`apps/backend/src/app.module.ts`):
+- `ProductDataAdapter` → `PRODUCT_DATA_PORT` (domain port for product/offer lookup)
+- `CalculationRecordAdapter` → `CALCULATION_RECORD_PORT` (domain port for calculation persistence)
+
+**TaxCalculationEngine** is now wired via `TaxCalculationEngineAdapter` in `packages/application-api/src/adapters/`, which delegates to `LandedCostCalculatorService`.
+
+**Deposit status is tri-state**: `depositSystemStatus` is `boolean | null` (nullable boolean in the schema). `checkDepositExemption()` returns `VERIFIED` for `true`/`false`, and `ESTIMATED` when `null` (unknown). The container-duty engine uses this to flag uncertain exemptions.
+
+**Fallback rates are reconciled with seed**: `DEFAULT_RATES` in `alcohol-excise.math.ts` and `DEFAULT_CONTAINER_DUTY_RATE` in `container-duty.math.ts` carry the same official 2024 Finnish Tax Administration rates as the `seed/tax-rules.seed.ts` dataset. Fallbacks are used when no rule is found in the repository (reliability: ESTIMATED).
+
+### 3.2 Frontend / User Interface
 
 | Component | Responsibility | Key files |
 |---|---|---|
@@ -205,213 +197,184 @@ The **Compliance & Governance layer** runs across all layers (neutrality enforce
 | **Comparison page** | Side-by-side product comparison with sort controls | `apps/frontend/src/app/compare/` |
 | **Ranking page** | Explanation of ranking methodology (neutrality enforcement) | `apps/frontend/src/app/ranking/page.tsx` |
 | **Account page** | Account management, saved baskets | `apps/frontend/src/app/account/` |
-| **Age Gate** | Age verification wrapper (renders in root layout) | `apps/frontend/src/app/components/AgeGate.tsx` |
+| **Age Gate** | Age verification wrapper (renders in root layout) | `apps/frontend/src/app/age-gate/` |
 | **DisclaimerBanner** | Structural disclaimer rendered on every calculation result | `apps/frontend/src/app/calculator/components/DisclaimerBanner.tsx` |
 
 **Technology:** Next.js 14.2 (App Router, standalone output), React 18.3, Tailwind CSS 3.4, Vitest + Testing Library.
 
-### 3.2 Backend / Server / API
+### 3.3 Agent infrastructure
 
 | Component | Responsibility | Key files |
 |---|---|---|
-| **Composition root** | Wires all packages, starts HTTP server, Swagger docs | `apps/backend/src/main.ts`, `app.module.ts` |
-| **Calculation API** | POST `api/v1/calculations/excise`, `api/v1/calculations/landed-cost` | `packages/application-api/src/calculator/` |
-| **Search API** | Product search/discovery | `packages/application-api/src/search/` |
-| **Declaration API** | Excise declaration assistant endpoints | `packages/application-api/src/declaration/` |
-| **Feature flags** | Launch-gating flag for pre-launch compliance review | `packages/application-api/src/feature-flags/` |
-| **Idempotency** | In-memory idempotency cache | `packages/application-api/src/idempotency/` |
-| **Rate limiting** | In-memory rate limiter + NestJS guard | `packages/application-api/src/rate-limiting/` |
-| **Jobs / workers** | BullMQ queue definitions: price-ingestion, transport-refresh, tax-dataset-review, time-series-aggregation | `packages/application-api/src/jobs/` |
-| **Observability** | KPI tracking, ops dashboard, cost attribution | `packages/application-api/src/observability/` |
-| **Billing** | Simulated subscription billing | `packages/application-api/src/billing/` |
-| **Accounts** | Account management, data export, retention | `packages/application-api/src/accounts/` |
-| **Age Gate** | Age verification provider interface | `packages/application-api/src/age-gate/` |
-
-**Technology:** NestJS 11, TypeScript (ES2022), Zod DTOs, Swagger/OpenAPI via `@nestjs/swagger`.
-
-### 3.3 Shared Libraries / Domain Packages
-
-| Package | Responsibility | Key modules |
-|---|---|---|
-| **core-domain** | Pure domain logic — no I/O, no framework coupling beyond decorators | TaxModule, CalculatorModule, ClassificationModule, NormalizationModule, TransportEstimationModule, ReliabilityModule, RankingModule, DeclarationModule, CorrectionModule, EntitlementModule, AuditModule, SourceGovernanceModule |
-| **application-api** | HTTP API layer — controllers, DTOs, cross-cutting concerns | CalculatorController, SearchController, DeclarationController, FeatureFlagsModule, RateLimitingModule, IdempotencyModule, JobsModule, ObservabilityModule, BillingModule |
-| **data-acquisition** | External data ingestion pipeline | PipelineOrchestratorService, FeedIngestionService, DataMappingService, DataQualityService, RateReviewSchedulerService |
-| **data-platform** | Persistence — Drizzle ORM schemas, repository abstractions, seed data | 5 tables (productMaster, retailOffers, taxRules, transportOffers, calculationRecords), IRepositoryRegistry |
-
-### 3.4 CLI / Scripts / Automation
-
-| Script | Purpose |
-|---|---|
-| `scripts/test-golden-dataset.sh` | Seeds database from schema.sql + seed.sql, runs golden-dataset regression tests |
-| `scripts/test-data-quality.sh` | Loads schema + seed, checks table existence and null violations, runs data-quality vitest suite |
-| `scripts/test-compliance.sh` | Seeds database, runs neutrality and compliance vitest suite |
+| Agent skill library | Instructions that govern agent behavior (planning, guardrails, codegen, evidence) | `.agents/skills/` |
+| Slash commands | User-facing entry points for init, planning, shipping, verification | `.opencode/commands/*.md` |
+| OpenCode config | Model selection, MCP servers (codegraph, agentmemory), plugin wiring, permissions | `opencode.jsonc` |
+| OpenSpec workspace | Specification-driven change management | `openspec/` |
+| Documentation | Business + engineering plans + task tracking | `docs/` |
 
 ## 4. Data Flow
 
-### Primary user journey: landed-cost calculation
+The implemented primary user journey:
 
-1. **User selects product** via search or category browser → `SearchController`
-2. **Calculator page** dispatches POST `/api/v1/calculations/landed-cost` with product ID, quantity, destination, optional transport method
-3. **LandedCostCalculatorService** (orchestrator) coordinates:
-   - Product normalization → resolve canonical product
-   - Tax calculation → resolve effective tax-rate version, compute alcohol excise + container duty
-   - Transport estimation → match carrier rates, compute basket shipping
-   - Transaction classification → determine Distance Selling / Distance Buying / Traveller Import
-   - Reliability check → status of every external input
-4. **Result assembled** with itemized breakdown, confidence levels, provenance metadata, structural disclaimer
-5. **CalculationRecord persisted** for auditability
-6. **Result returned** to frontend and rendered with freshness indicators
-
-### Background job flow
-
-- BullMQ workers consume queues: `price-ingestion`, `transport-refresh`, `tax-dataset-review`, `time-series-aggregation`
-- Jobs run off the request/response path, scheduled via `@nestjs/bull`
-- Rate review produces pending-change records that require manual approval before effective
+1. **Data Acquisition** → Systembolaget adapter fetches product assortment JSON, maps to `RawFeedRecord`, pipeline orchestrator runs data-quality checks, `DataMappingService` normalizes fields, `UpsertPortAdapter` persists via `ProductRepository.upsertByEan()`.
+2. **User selects product + quantity + destination** → `CalculatorController` receives request.
+3. **Transport Estimation** → `TransportEstimationService` queries `ITransportOfferQuery` for applicable carrier rates by route/weight/package tier; `BasketShippingCalculator` handles multi-item baskets.
+4. **Transaction Classification** → `TransactionClassificationService` determines Distance Selling / Distance Buying / Traveller Import with evidence summary.
+5. **Tax & Duty Calculation** → `AlcoholExciseService` resolves versioned tax rules via `ITaxRuleRepositoryPort.findApplicable()` (with fallback to `DEFAULT_RATES`), computes excise duty. `ContainerDutyService` evaluates deposit-return exemption via `checkDepositExemption()` (tri-state: true/false/null) then applies container duty.
+6. **Confidence Framework** → `ConfidenceFrameworkService` computes result confidence as a pure function of underlying data statuses (HIGH/MEDIUM/LOW).
+7. **Landed-Cost Calculator** → `LandedCostCalculatorService` orchestrates the above, assembles itemized result with structural disclaimer.
+8. **Calculation Record** → Persisted via `ICalculationRecordPort` for auditability.
+9. **Excise Declaration Assistant** → `ExciseDeclarationService` packages calculation into structured summary, links to MyTax (never submits).
 
 ## 5. Data Stores
 
-| Store | Type | Purpose | Schema location |
-|---|---|---|---|
-| **PostgreSQL 16** | Primary database | productMaster, retailOffers, taxRules (versioned), transportOffers, calculationRecords (immutable) | `packages/data-platform/src/index.ts` (Drizzle ORM) |
-| **TimescaleDB 2.16** | Time-series extension | Historical product prices, rate versions (via PostgreSQL extension) | `infra/staging-data/schema.sql` |
-| **Redis 7.2** | In-memory cache | BullMQ job queues, rate-limiting state, idempotency cache, in-memory audit | `infra/jobs/docker-compose.jobs.yml` |
+| Store | Purpose | Implementation |
+|---|---|---|
+| PostgreSQL 16 | Primary structured data store — products, retail offers, transport offers, versioned tax rules, calculation records | `docker-compose.yml` (postgres:16-alpine), Drizzle ORM via `DRIZZLE` token |
+| Redis 7 | Caching, BullMQ job queues, session store | `docker-compose.yml` (redis:7-alpine) |
+| Drizzle schema | Canonical table definitions — `productMaster`, `retailOffers`, `taxRules`, `transportOffers`, `calculationRecords` | `packages/data-platform/src/schema.ts` |
 
-**Migration approach:** Drizzle Kit (`drizzle-kit`) for schema generation; idempotent SQL scripts (`schema.sql`, `seed.sql`, `setup.sh`) for CI/staging environments. Tax rules are never mutated in place — new versions create new rows with effective date ranges.
+Schema design principles applied:
+- Data minimization at schema level — no optional fields "for later"
+- Versioned tax rules are append-only (never mutated in place)
+- `depositSystemStatus` is tri-state (`boolean | null`) — unknown is explicitly represented
+- Reliability status per data point (`VERIFIED`/`ESTIMATED`/`STALE`/`UNAVAILABLE`)
+- Structural disclaimer text stored on every `calculationRecords` row (not UI-only)
 
 ## 6. External Integrations / APIs
 
-| Integration | Method | Config location | Notes |
-|---|---|---|---|
-| External merchants (product/price feeds) | Planned via permitted APIs (not broad scraping) | `packages/data-acquisition/src/config/merchants.config.ts` | Off-by-default: new sources inactive until permission recorded |
-| Carriers (transport rates) | Planned via carrier rate APIs | Data-acquisition pipeline | Reliability status attached to every rate |
-| Finnish Tax Administration | Official tax-rate datasets (manual review pipeline) | `packages/data-platform/src/seed/tax-rules.seed.ts` | Never auto-published; manual review gate |
+| Integration | Status | Implementation |
+|---|---|---|
+| Systembolaget JSON assortment API | Adapter implemented | `packages/data-acquisition/src/adapters/systembolaget.adapter.ts` — fetches, maps to `RawFeedRecord`, handles pagination and per-item errors |
+| Finnish Tax Administration rate tables | Seed data (v1.0-2024) + fallback rates | `packages/data-platform/src/seed/tax-rules.seed.ts`, `packages/core-domain/src/tax/services/alcohol-excise.math.ts` |
+| Alko (Finnish retailer) | Registered, adapter pending | `merchants.config.ts` — empty feedUrl, skipped by pipeline until adapter is built |
 
-No external integrations are actively connected in the current state — all data sources are simulated/planned, with port abstractions ready for real adapters.
+Merchant ingestion is gated by `SourceGovernanceService` — a merchant must have `GRANTED` permission status before the pipeline will fetch or persist its data. New merchants default to `PENDING` (off) until compliance review.
 
 ## 7. Key Technologies
 
-| Technology | Version | Role | Architectural relevance |
-|---|---|---|---|
-| NestJS | 11 | Backend framework, composition root | DI container, module system, lifecycle hooks |
-| Next.js | 14.2 | Frontend framework | App Router, standalone output, server-side rendering |
-| React | 18.3 | UI library | Component model, hooks |
-| TypeScript | 5.x | Language | Strict mode, ES2022 target, decorators |
-| PostgreSQL | 16 | Primary database | JSONB for rate exemptions/acquisition metadata |
-| TimescaleDB | 2.16 | Time-series extension | Historical price/rate tracking for reproducibility |
-| Drizzle ORM | 0.38 | Type-safe SQL ORM | Schema-first, migration generation |
-| BullMQ | 5 | Job queue | Background ingestion, refresh, review jobs |
-| Redis | 7.2 | Cache / queue backend | BullMQ broker, rate-limiting store, idempotency cache |
-| Vitest | 2.1 | Test framework | In-source tests, per-package configs, cross-package suites |
-| Zod | Recent | Schema validation | DTO validation in API controllers |
-| Tailwind CSS | 3.4 | Utility-first CSS | Design system via config tokens |
-| pnpm | 9 | Package manager | Workspace monorepo, strict dependency resolution |
+| Technology | Role |
+|---|---|
+| TypeScript | Primary language — all packages and apps |
+| Node.js | Runtime (NestJS framework) |
+| NestJS | Modular monolith framework — DI, modules, guards, controllers |
+| PostgreSQL 16 | Primary data store (via `pg` pool) |
+| Drizzle ORM | Type-safe SQL ORM — schema in `packages/data-platform/src/schema.ts` |
+| Redis 7 | Caching, BullMQ job queues, session store |
+| BullMQ | Background job processing (price ingestion, transport refresh, tax review, time-series aggregation) |
+| Vitest | Test runner — unit tests, golden-dataset regression tests |
+| ESLint | Linting (flat config in `eslint.config.mjs`) |
+| Docker / docker-compose | Local development and production deployment |
+| OpenCode | Agent runtime and developer interface |
+| OpenSpec | Change/specification management |
+| CodeGraph | Code intelligence / indexing MCP server |
+| AgentMemory | Cross-session memory MCP server |
 
 ## 8. Deployment & Infrastructure
 
-### Build artifacts
-- **Backend:** Single Docker image (multi-stage, `node:22-alpine`) containing compiled NestJS app + all package `dist/` directories
-- **Frontend:** Next.js standalone build (static/serverless)
+| Component | Status | Details |
+|---|---|---|
+| Docker Compose (production) | Implemented | `docker-compose.yml` — PostgreSQL 16, Redis 7, NestJS backend (multi-stage build) |
+| Docker Compose (dev jobs) | Implemented | `infra/jobs/docker-compose.jobs.yml` + `Dockerfile.dev` — hot-reload for background workers |
+| Dockerfile | Implemented | Monorepo-root multi-stage production image |
+| K8s manifests | Not yet implemented | Planned for staging/production deployment |
+| Feature flags | Implemented | `FeatureFlagService`, `LaunchGateService`, `LaunchGateGuard` in `application-api/feature-flags/` |
+| Background jobs | Implemented | BullMQ workers: price-ingestion, transport-rate-refresh, tax-dataset-review, time-series-aggregation |
 
-### Environments
-| Environment | Config | Trigger | Notes |
-|---|---|---|---|
-| **DEV** | `infra/environments/dev.yaml` | Push to `feature/*` | Build + Docker Compose health check |
-| **STAGING** | `infra/environments/staging.yaml` | PR to `master` or manual | Full test + Docker push to `ghcr.io` |
-| **PRODUCTION** | `infra/environments/prod.yaml` | Tag `v*` or manual | Compliance checks + DB migration + deploy + smoke test + GitHub Release |
-
-### CI/CD
-- **CI pipeline** (`.github/workflows/ci.yml`): 6-stage DAG — lint → build → unit-tests → golden-dataset → data-quality → compliance → aggregate gate
-- **Deploy pipeline** (`.github/workflows/deploy.yml`): 3-tier with environment protection; production requires manual approval gate
-- **Load tests** (`.github/workflows/load-tests.yml`): PR-gating, p95 < 500ms assertion
-
-### Containerization
-- Multi-stage Dockerfile (deps → builder → runner) with production non-root user
-- Frontend deployed separately (static site / serverless function — not Dockerized)
+The promotion path is development → staging → production, with staging carrying its own tax-rule and merchant data copies, and feature flags gating new merchant sources, tax rulesets, and UI ranking behavior.
 
 ## 9. Security Architecture
 
-- **Minimal personal data:** Default to anonymous usage; age-verification is isolated subsystem
-- **Data minimization:** Schema enforces no optional fields "for later" unless a shipped feature uses them
-- **Versioned tax data:** Never overwritten; historical calculations resolve against effective rate version
-- **Neutrality in code:** No code path may allow paid/manual boost of any merchant's position (enforced in compliance tests)
-- **Feature gating:** LaunchGate flag controls production release of new merchants, rate versions, and features
-- **Disclaimer as structure:** Every calculation result includes structural disclaimer — not decorative
-- **Secrets management:** `.env` files are gitignored; credentials stay out of logs and committed files
+Implemented measures:
+
+- **Rate limiting**: `RateLimitGuard` + `RateLimitingService` on public-facing calculation endpoints.
+- **Idempotency**: `IdempotencyService` ensures calculation endpoints are idempotent for identical inputs.
+- **Age gate**: `AgeGateService` with `SimpleConfirmationProvider` — lightweight confirmation, not identity verification.
+- **Entitlement gating**: `EntitlementGuard` enforces free vs. premium feature access.
+- **Launch gate**: `LaunchGateGuard` keeps alcohol features behind a flag until legal/tax review is confirmed.
+- **Data minimization**: Schema-level enforcement — no optional fields "for later"; identity document storage deferred.
+- **Neutrality enforcement**: `RankingService` structurally rejects any input with billing-related fields; no code path allows paid/manual boost.
+
+Non-negotiable constraints from the implementation plan:
+
+- Minimal personal data: default to anonymous usage; identity/age-verification (only if legally required) is a separate, isolated subsystem.
+- Tax data is versioned, never overwritten; historical calculations resolve against the effective rate version.
+- No code path may allow paid/manual boost of a merchant's position (neutrality enforced in code).
+
+Agent infrastructure constraints: credentials stay out of logs and committed files; `.env` files are write-only.
 
 ## 10. Monitoring & Observability
 
-- **In-app observability module:** KPI tracking, ops dashboard endpoints, cost attribution per feature
-- **Data freshness:** Every externally sourced fact carries reliability status (VERIFIED / STALE / UNAVAILABLE / ESTIMATED) and timestamp surfaced to the user
-- **Audit logging:** Immutable calculation record persisted per calculation
-- **CI test observability:** Golden-dataset, data-quality, and compliance suites run in CI as regression guards
-- **Load testing:** p95 < 500ms assertion in PR-gating load test
+Implemented in `packages/application-api/src/observability/`:
 
-Not evident from the repository: external APM, centralized logging, error tracking service.
+| Service | Purpose |
+|---|---|
+| `KpiService` | Tracks four KPI categories (product, commercial, data, compliance metrics) |
+| `OpsDashboardController` | Exposes operational health signals on an internal endpoint |
+| `CostAttributionService` | Per-calculation cost attribution tied to commercial metrics |
+| `InstrumentationService` | OpenTelemetry instrumentation setup |
+
+Every externally sourced fact carries a reliability status and timestamp surfaced to the user.
 
 ## 11. Performance & Scalability
 
-- **Background jobs:** BullMQ workers run price ingestion, transport refresh, and tax review off the request/response path — a slow scrape never blocks a user's calculation
-- **Basket-level transport estimation:** Handles non-linear shipping thresholds (per implementation plan)
-- **Rate limiting:** In-memory rate limiter prevents API abuse per consumer
-- **Idempotency:** In-memory cache prevents duplicate calculation submissions
-- **Known bottleneck:** In-memory implementations for rate-limiting, idempotency, and audit are suitable for MVP scale but should be backed by Redis/PostgreSQL for production
+Implemented:
+
+- **Background jobs separate from request/response path**: BullMQ workers handle price ingestion, transport-rate refresh, tax-dataset review, and time-series aggregation — a slow scrape never blocks a user's calculation.
+- **Basket-level transport estimation**: `BasketShippingCalculator` handles non-linear shipping thresholds for multi-item baskets.
+- **Idempotent calculation endpoints**: results are reproducible and cacheable for identical inputs given the same dataset versions.
+
+Planned: Redis-backed caching keyed by (product, quantity, destination, transport assumption, tax-dataset version, transport-dataset version).
 
 ## 12. Development Workflow
 
-```bash
-pnpm install                  # Install all workspace dependencies
-pnpm dev                      # Start all apps in parallel (backend :3000, frontend :3001)
-pnpm build                    # Build all packages (generates dist/ for cross-package resolution)
-pnpm test                     # Run all unit tests
-pnpm test:golden              # Run golden-dataset regression tests (requires PostgreSQL)
-pnpm test:data-quality        # Run data-quality checks (requires PostgreSQL)
-pnpm test:compliance          # Run compliance/neutrality tests (requires PostgreSQL)
-pnpm test:load                # Run calculator load tests
-pnpm lint                     # Lint all packages
-pnpm typecheck                # Type-check all packages
-pnpm clean                    # Clean all dist/ directories
-pnpm format                   # Format code with Prettier
-```
+The repository is an agentic workspace with a working application build. Commands:
 
-**Agent tooling:** OpenCode slash commands — `/init`, `/plan-*` (OpenSpec planning), `/make-*` (documentation generation), `/repo-*` (audit, onboard, verify), `/ops-*` (ship, evidence).
+| Command | Purpose |
+|---|---|
+| `docker compose up --build` | Full local stack (PostgreSQL + Redis + backend) |
+| `pnpm test` | Run all Vitest test suites |
+| `pnpm lint` | ESLint check |
+| Agent tooling | `/init` (repo initialization), `/plan-*` (OpenSpec planning), `/make-*` (doc/engineer generation), `/repo-*` (audit, onboard, verify), `/ops-*` (ship, evidence, review) |
 
 ## 13. Testing Strategy
 
-| Test suite | Location | What it covers | Dependencies |
-|---|---|---|---|
-| **Unit tests** | `packages/*/src/__tests__/` | Individual module/service behavior in isolation | None (mocked I/O) |
-| **Golden-dataset** | `tests/golden/` | 12 pre-calculated landed-cost scenarios as regression tests | PostgreSQL, fixture data |
-| **Data-quality** | `packages/data-acquisition/src/__tests__/` | Table conformance, null violations, freshness pipeline | PostgreSQL |
-| **Compliance** | `tests/compliance/` | Ranking neutrality, structural disclaimer presence | PostgreSQL |
-| **Load tests** | `tests/load/` | p95 < 500ms at 50 concurrent requests | Full app stack |
-| **Content policy** | `apps/frontend/src/__tests__/` | Promotional-language detection in copy | None |
+| Test type | Status | Location |
+|---|---|---|
+| Tax formula unit tests | Implemented | `packages/core-domain/src/tax/__tests__/alcohol-excise.math.test.ts`, `container-duty.math.test.ts`, `deposit-checker.test.ts` |
+| Tax service tests | Implemented | `packages/core-domain/src/tax/__tests__/alcohol-excise.service.test.ts`, `container-duty.service.test.ts`, `tax-rule-query.service.test.ts` |
+| Confidence framework tests | Implemented | `packages/core-domain/src/reliability/__tests__/confidence-framework.service.test.ts`, `reliability.service.test.ts` |
+| Classification tests | Implemented | `packages/core-domain/src/classification/__tests__/transaction-classification.service.test.ts`, `classification-rule-engine.service.test.ts` |
+| Transport tests | Implemented | `packages/core-domain/src/transport/__tests__/transport-estimation.service.test.ts`, `transport-classification.service.test.ts`, `basket-shipping-calculator.service.test.ts` |
+| Ranking isolation tests | Implemented | `packages/core-domain/src/ranking/__tests__/ranking.service.test.ts`, `packages/application-api/src/__tests__/billing-ranking-isolation.test.ts` |
+| Golden-dataset regression | Implemented | `tests/golden/golden-dataset.test.ts`, `tests/golden/per-category.test.ts` — uses plain in-memory implementations, not `vi.fn()` mocks |
+| Data acquisition tests | Implemented | `packages/data-acquisition/src/__tests__/feed-ingestion.service.test.ts`, `data-mapping.service.test.ts`, `data-quality.service.test.ts`, `pipeline-orchestrator.service.test.ts` |
+| API-layer tests | Implemented | `packages/application-api/src/__tests__/rate-limiting.service.test.ts`, `age-gate.service.test.ts`, `idempotency.service.test.ts`, `launch-gate.service.test.ts` |
 
-**CI integration:** All test suites run in CI as separate jobs. Golden-dataset, data-quality, and compliance tests share a PostgreSQL 16 service container.
+**Testing principle**: golden-dataset tests use real engine implementations (plain classes implementing ports), not `vi.fn()` mocks. This ensures the tested behavior matches production behavior exactly.
 
 ## 14. Architectural Decisions & Rationale
 
 | Decision | Rationale |
 |---|---|
-| **Modular monolith** (NestJS packages) | Calculation, classification, and data platform are tightly coupled; microservices would add latency and consistency risk without MVP-scale benefit. Package boundaries map directly to future service extraction points. |
-| **Port/adapter pattern** | Each module exports abstract port interfaces; the composition root wires concrete implementations. Enables test isolation and future service extraction without domain-logic changes. |
-| **Drizzle ORM over Prisma** | Type-safe SQL with schema-first approach; lighter than Prisma for CI; supports TimescaleDB natively. |
-| **BullMQ for background jobs** | Redis-backed, NestJS-native integration, supports delayed/retry/cron scheduling. |
-| **Versioned, reviewed tax datasets** | Tax calculations carry legal risk; rates are never auto-published, never overwritten — new versions create new rows. |
-| **Transaction Classification isolated** | Most important proprietary logic; independently testable, versioned rule sets subject to legislative change. |
-| **Neutrality enforced in code + tests** | Ranking must be objective and deterministic; compliance tests serve as regression guards against manipulation. |
-| **Data freshness first-class** | Every external fact carries reliability status + timestamp surfaced to the user, not buried in metadata. |
-| **Calculator, not a shop** | Per business plan; only transaction is the software subscription. |
-| **In-memory cross-cutting concerns** | Rate limiting, idempotency, and audit are in-memory for MVP speed; Redis-backed upgrades are isolated behind the same port interfaces. |
+| Modular monolith for MVP | Calculation, classification, and data platform are tightly coupled; microservices would add latency and consistency risk without MVP-scale benefit |
+| Calculator, not a shop | Per business plan; only transaction is the software subscription |
+| Versioned, reviewed tax datasets | Tax calculations carry legal risk; rates are never auto-published, never overwritten |
+| Transaction Classification isolated | Most important proprietary logic; independently testable, versioned rule sets subject to legislative change |
+| Neutrality enforced in code | Ranking must be objective and deterministic; no paid/manual boost path |
+| Data freshness first-class | Every external fact carries reliability status + timestamp surfaced to the user |
+| Compliance layer across all layers | Neutrality, reliability labeling, and audit at each boundary, not a separate service |
 
 ## 15. Constraints, Risks, and Technical Debt
 
 - **In-memory services:** Rate-limiting, idempotency, and audit repositories are in-memory — data loss on restart. Acceptable for MVP, must migrate to Redis/PostgreSQL before production.
 - **No authentication/authorization:** Account module exists but no auth provider is wired. Age-gate is a UI wrapper, not a verified identity check.
-- **No real external integrations:** All data sources are simulated; port abstractions exist but no feed adapters are connected to real merchant/carrier APIs.
-- **ESLint not configured:** Lint step in CI has `continue-on-error: true`; no ESLint config exists anywhere.
-- **Legal review tasks incomplete** (5 external tasks marked `agent: none`): Finnish legal opinion, tax counsel validation, compliance review.
+- **Alko adapter not yet implemented** — registered in merchant config but skipped by pipeline.
 - **No centralized error tracking or APM:** Application-level observability exists but no external monitoring service is integrated.
 - **Billing is simulated:** Subscription billing module uses in-memory state with no payment provider.
+- **Legal review tasks incomplete** (5 external tasks marked `agent: none`): Finnish legal opinion, tax counsel validation, compliance review.
+- **Classification rules subject to legislative change** (e.g., 1 September 2024 joint-liability change) require versioned, dated rule sets.
+- **Deposit-return system status per product/packaging is tri-state** (`boolean | null`); null means ESTIMATED — the container-duty engine flags uncertain exemptions, never silently assumes.
 
 ## 16. Future Considerations
 
@@ -422,7 +385,7 @@ Per the implementation plan's delivery phases:
 - **Persistent stores for cross-cutting concerns** — replace in-memory rate-limiting, idempotency, and audit with Redis/PostgreSQL
 - **External feed adapter implementation** — connect real merchant APIs, carrier rate feeds, and tax authority datasets
 - **Authentication & authorization** — wire real auth provider into AccountModule
-- **ESLint configuration** — add project-wide lint rules
+- **K8s manifests** — for staging/production deployment (currently Docker Compose only)
 - **Potential module extraction** — Data Acquisition, then Data Platform, into separate services without redesigning domain logic
 
 ## 17. Project Identification
@@ -433,24 +396,22 @@ Per the implementation plan's delivery phases:
 | **Language** | TypeScript (ES2022, strict mode) |
 | **Type** | Cross-border beverage price index + Finnish landed-cost intelligence platform |
 | **Runtime** | Node.js 22 (backend), Next.js 14 (frontend) |
-| **Date of review** | 2026-08-16 |
+| **Database** | PostgreSQL 16 (Drizzle ORM) |
+| **Cache/Queue** | Redis 7 (BullMQ) |
+| **Date of review** | 2026-08-18 |
 | **Maintainer** | Not evident from the repository |
 
 ## 18. Glossary / Acronyms
 
 | Term | Meaning |
 |---|---|
-| **Landed cost** | Total cost of a foreign-purchased item delivered to Finland, incl. retail price, transport, excise, container duty |
-| **Excise** | Alcohol duty levied by the Finnish Tax Administration based on category, ABV, and volume |
-| **Container duty** | Beverage-container duty (general rate €0.51/litre), with deposit-return exemptions |
-| **Distance Selling** | Transaction classified where the merchant arranges delivery to Finland |
-| **Distance Buying** | Transaction classified where the buyer arranges transport independently |
-| **Traveller Import** | Personal import excluded from landed-cost calculation |
-| **BullMQ** | Redis-backed job queue for background processing |
-| **Drizzle ORM** | Type-safe SQL ORM used for database access and schema definition |
-| **MyTax** | Finnish Tax Administration's online tax service |
-| **ABV** | Alcohol by volume |
-| **VERIFIED / STALE / UNAVAILABLE / ESTIMATED** | Four-tier data reliability status attached to every external fact |
-| **LaunchGate** | Feature flag that gates production availability of merchants, rate versions, and features pending compliance sign-off |
+| Landed cost | Total cost of a foreign-purchased item delivered to Finland, incl. retail price, transport, excise, container duty |
+| Excise | Alcohol duty levied by the Finnish Tax Administration based on category, ABV, and volume |
+| Container duty | Beverage-container duty (general rate €0.51/litre), with deposit-return exemptions |
+| Distance Selling | Transaction classified where the merchant arranges delivery to Finland |
+| Distance Buying | Transaction classified where the buyer arranges transport independently |
+| Traveller Import | Personal import excluded from landed-cost calculation |
+| MyTax | Finnish Tax Administration's online tax service |
+| ABV | Alcohol by volume |
 
-<!-- Last updated: 2026-08-16 -->
+<!-- Last updated: 2026-08-18 — Phase 1 implementation state -->

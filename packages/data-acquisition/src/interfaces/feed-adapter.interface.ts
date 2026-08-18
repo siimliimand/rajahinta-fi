@@ -10,8 +10,6 @@
  * @module FeedAdapter
  */
 
-import type { IngestionResult } from './data-source.interface';
-
 /**
  * A single item returned by a merchant's feed or API, in a canonical shape
  * that the data-mapping service can consume.  Adapters are responsible for
@@ -24,7 +22,7 @@ export interface RawFeedRecord {
   readonly manufacturer: string;
   readonly brand: string;
   readonly category: string;
-  /** Alcohol by volume as a decimal fraction (e.g. 0.047 for 4.7 %). */
+  /** Alcohol by volume as a decimal fraction (e.g. 0.047 for 4.7 %). */
   readonly alcoholByVolume: number | null;
   /** Package volume in millilitres. */
   readonly volumeMl: number;

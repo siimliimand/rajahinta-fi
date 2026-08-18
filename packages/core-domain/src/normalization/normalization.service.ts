@@ -236,13 +236,11 @@ export function validateAbv(abv: number): number {
   // scale values that are strictly positive and ≤ 1, AND where no explicit
   // "this is a percentage" indicator exists in the API contract.
   // For safety we always treat the input as percentage scale.
-  let percentage = abv;
-
   if (abv < 0 || abv > 100) {
     throw new RangeError(`ABV must be between 0 and 100, got ${abv}`);
   }
 
-  return percentage;
+  return abv;
 }
 
 // ---------------------------------------------------------------------------

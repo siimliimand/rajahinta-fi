@@ -1,7 +1,6 @@
 'use client';
 
 import type {
-  ProductSearchItem,
   ComparisonProduct,
   ConfidenceLevel,
   ReliabilityStatus,

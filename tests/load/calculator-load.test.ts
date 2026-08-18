@@ -12,7 +12,6 @@
 
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { LandedCostCalculatorService } from '@rajahinta/core-domain';
-import { TransportClassificationService } from '@rajahinta/core-domain';
 import type {
   CalculatorInput,
   CalculatorProductData,
@@ -78,15 +77,13 @@ function percentile(sorted: number[], p: number): number {
 // Service factory — creates a LandedCostCalculatorService with mocked I/O
 // ---------------------------------------------------------------------------
 
-function createCalculatorService(options?: {
-  transportDelayMs?: number;
-}): LandedCostCalculatorService {
+function createCalculatorService(
+  _options?: { transportDelayMs?: number },
+): LandedCostCalculatorService {
   // --- Pure-logic services (real instances, zero I/O) ---
   const classificationGate = {
     checkProductGate: vi.fn().mockReturnValue({ passed: true }),
   };
-
-  const transportClassification = new TransportClassificationService();
 
   const confidenceFramework = {
     buildReport: vi.fn().mockReturnValue({

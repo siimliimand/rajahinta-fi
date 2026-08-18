@@ -1,0 +1,15 @@
+---
+# Non-sensitive environment variables shared across environments.
+# Environment-specific overrides (NODE_ENV, LOG_LEVEL, CORS_ORIGIN, etc.)
+# are applied via Kustomize overlay patches.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rajahinta-config
+  namespace: rajahinta
+  labels:
+    app.kubernetes.io/name: rajahinta
+    app.kubernetes.io/part-of: rajahinta
+data:
+  APP_HOST: "0.0.0.0"
+  APP_PORT: "3000"

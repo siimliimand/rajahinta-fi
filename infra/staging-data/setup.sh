@@ -72,11 +72,11 @@ fi
 echo "=== Dropping existing staging tables ==="
 ${PSQL_CMD} -c "
     DROP TABLE IF EXISTS staging_reviews CASCADE;
-    DROP TABLE IF EXISTS calculation_audit CASCADE;
-    DROP TABLE IF EXISTS transport_rates CASCADE;
-    DROP TABLE IF EXISTS tax_rate_versions CASCADE;
-    DROP TABLE IF EXISTS merchant_offers CASCADE;
-    DROP TABLE IF EXISTS products CASCADE;
+    DROP TABLE IF EXISTS calculation_records CASCADE;
+    DROP TABLE IF EXISTS transport_offers CASCADE;
+    DROP TABLE IF EXISTS retail_offers CASCADE;
+    DROP TABLE IF EXISTS tax_rules CASCADE;
+    DROP TABLE IF EXISTS product_master CASCADE;
 "
 
 # ---- Apply schema ----------------------------------------------------------
@@ -89,17 +89,17 @@ ${PSQL_CMD} -f "$SEED_FILE"
 
 # ---- Verify ----------------------------------------------------------------
 echo "=== Verifying data load ==="
-${PSQL_CMD} -c "SELECT 'products', COUNT(*) FROM products"
-${PSQL_CMD} -c "SELECT 'merchant_offers', COUNT(*) FROM merchant_offers"
-${PSQL_CMD} -c "SELECT 'tax_rate_versions', COUNT(*) FROM tax_rate_versions"
-${PSQL_CMD} -c "SELECT 'transport_rates', COUNT(*) FROM transport_rates"
-${PSQL_CMD} -c "SELECT 'calculation_audit', COUNT(*) FROM calculation_audit"
+${PSQL_CMD} -c "SELECT 'product_master', COUNT(*) FROM product_master"
+${PSQL_CMD} -c "SELECT 'retail_offers', COUNT(*) FROM retail_offers"
+${PSQL_CMD} -c "SELECT 'tax_rules', COUNT(*) FROM tax_rules"
+${PSQL_CMD} -c "SELECT 'transport_offers', COUNT(*) FROM transport_offers"
+${PSQL_CMD} -c "SELECT 'calculation_records', COUNT(*) FROM calculation_records"
 ${PSQL_CMD} -c "SELECT 'staging_reviews', COUNT(*) FROM staging_reviews"
 
 echo ""
 echo "=== Staging data load complete ==="
-echo "  Tables: products, merchant_offers, tax_rate_versions,"
-echo "          transport_rates, calculation_audit, staging_reviews"
+echo "  Tables: product_master, retail_offers, tax_rules,"
+echo "          transport_offers, calculation_records, staging_reviews"
 echo "  Golden dataset: 12 pre-calculated scenarios (golden-001 to golden-012)"
 echo "  Rate versions: 2024-01, 2025-01, 2026-PROPOSAL (pending review)"
 echo "  Merchants: HelsinkiPremium Oy, SuomiLogistiikka, PohjolanTuonti,"
