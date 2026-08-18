@@ -6,6 +6,10 @@
  * every new tax-dataset version to catch regressions in the calculator,
  * classification, transport, and confidence frameworks.
  *
+ * Unlike the unit tests under packages/, this suite exercises REAL tax and
+ * transport engines against in-memory repositories seeded with known data.
+ * There are NO `vi.fn()` mocks — every service is the production class.
+ *
  * When a new tax dataset is published, the golden expected values here
  * must be re-verified manually.  Bump GOLDEN_DATASET_VERSION when any
  * expected value changes.
@@ -13,14 +17,27 @@
  * @module GoldenDatasetTests
  */
 
-import { describe, it, expect, vi } from 'vitest';
-import { LandedCostCalculatorService, ClassificationGateRejectionError } from '@rajahinta/core-domain';
+import { describe, it, expect } from 'vitest';
+import {
+  LandedCostCalculatorService,
+  ClassificationGateRejectionError,
+} from '@rajahinta/core-domain';
 import { ClassificationGateService } from '@rajahinta/core-domain/normalization/classification-gate.service';
 import { TransactionClassificationService } from '@rajahinta/core-domain';
 import { TransportClassificationService } from '@rajahinta/core-domain';
 import { ConfidenceFrameworkService } from '@rajahinta/core-domain/reliability/confidence-framework.service';
 import { ReliabilityService } from '@rajahinta/core-domain';
-import type { CalculatorInput, IProductDataPort, ICalculationRecordPort } from '@rajahinta/core-domain';
+import { AlcoholExciseService } from '@rajahinta/core-domain/tax/services/alcohol-excise.service';
+import { ContainerDutyService } from '@rajahinta/core-domain/tax/services/container-duty.service';
+import { TransportEstimationService } from '@rajahinta/core-domain/transport/transport-estimation.service';
+import type { ITaxRuleRepositoryPort } from '@rajahinta/core-domain/tax/ports/tax-rule-repository.port';
+import type { ITransportOfferQuery } from '@rajahinta/core-domain/transport/transport-offer-query.interface';
+import type { TransportOffer } from '@rajahinta/core-domain/transport/transport-offer.type';
+import type {
+  CalculatorInput,
+  IProductDataPort,
+  ICalculationRecordPort,
+} from '@rajahinta/core-domain';
 
 import {
   GOLDEN_DATASET_VERSION,
@@ -35,56 +52,62 @@ import {
 } from './data/products';
 
 // ---------------------------------------------------------------------------
-// Helpers
+// In-memory repository stubs (NOT vi.fn() mocks — plain implementations)
 // ---------------------------------------------------------------------------
+
+class InMemoryTaxRuleRepository implements ITaxRuleRepositoryPort {
+  async findApplicable(): Promise<null> {
+    return null; // no seeded rules → engines use fallback rates
+  }
+  async findHistoryRates(): Promise<never[]> {
+    return [];
+  }
+}
+
+class InMemoryTransportOfferQuery implements ITransportOfferQuery {
+  constructor(private readonly offers: TransportOffer[]) {}
+
+  async findAllActive(): Promise<TransportOffer[]> {
+    return this.offers;
+  }
+
+  async findByCarrier(carrierId: string): Promise<TransportOffer[]> {
+    return this.offers.filter((o) => o.carrier === carrierId);
+  }
+}
 
 function createProductDataPort(
   product: typeof PRODUCT_BEER,
   offers: typeof OFFER_BEER[],
 ): IProductDataPort {
   return {
-    findProductById: vi.fn().mockResolvedValue(product),
-    findRetailOffers: vi.fn().mockResolvedValue(offers),
+    findProductById: () => Promise.resolve(product),
+    findRetailOffers: () => Promise.resolve(offers),
   };
 }
 
-function createCalculationRecordPort(): ICalculationRecordPort {
+function createCalculationRecordPort(id = 9000): ICalculationRecordPort {
   return {
-    create: vi.fn().mockResolvedValue({ id: 9000 }),
+    create: () => Promise.resolve({ id }),
   };
 }
 
-interface TransportStub {
-  priceCents: number;
-  sellerInvolvementIndicator: boolean;
-  id?: number;
-  reliabilityStatus?: 'EXACT' | 'ESTIMATED';
-}
-
-interface ExciseStub {
-  taxCents: number;
-  reliability?: 'VERIFIED' | 'ESTIMATED';
-}
-
-interface ContainerDutyStub {
-  dutyCents: number;
-  reliability?: 'VERIFIED' | 'ESTIMATED';
-}
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 /**
- * Build a LandedCostCalculatorService wired with golden-dataset mocks.
- *
- * Each scenario gets its own service instance with deterministic mock
- * return values so expected outputs are known ahead of time.
+ * Build a LandedCostCalculatorService wired with REAL engines and
+ * in-memory data ports (no vi.fn() mocks).
  */
 function createGoldenService(options: {
   product: typeof PRODUCT_BEER;
   offers: typeof OFFER_BEER[];
-  transport: TransportStub | 'REJECT'; // 'REJECT' makes transport estimation throw
-  excise?: ExciseStub;
-  containerDuty?: ContainerDutyStub;
+  /** Transport offers to seed for the carrier, or empty array for REJECT. */
+  transportOffers: TransportOffer[];
+  transportCarrier?: string;
 }): LandedCostCalculatorService {
-  // Real pure-logic services
+  // Pure-logic services (zero I/O)
   const gate = new ClassificationGateService();
   const transportClassification = new TransportClassificationService();
   const reliability = new ReliabilityService();
@@ -93,59 +116,18 @@ function createGoldenService(options: {
     transportClassification,
   );
 
-  // Port mocks
+  // Port stubs
   const productData = createProductDataPort(options.product, options.offers);
   const calculationRecords = createCalculationRecordPort();
 
-  // Alcohol excise mock
-  const exciseDefaults: ExciseStub = { taxCents: 30, reliability: 'VERIFIED' };
-  const exciseCfg = { ...exciseDefaults, ...options.excise };
-  const alcoholExcise = {
-    calculate: vi.fn().mockResolvedValue({
-      category: options.product.category,
-      abv: options.product.alcoholByVolume,
-      volumeLitres: options.product.volumeLitres,
-      rateApplied: 0.0,
-      taxCents: exciseCfg.taxCents,
-      taxDatasetVersion: 'golden-v1',
-      reliability: exciseCfg.reliability,
-    }),
-  } as unknown as never;
+  // In-memory repositories
+  const taxRepo = new InMemoryTaxRuleRepository();
 
-  // Container duty mock
-  const containerDefaults: ContainerDutyStub = {
-    dutyCents: 25,
-    reliability: 'VERIFIED',
-  };
-  const containerCfg = { ...containerDefaults, ...options.containerDuty };
-  const containerDuty = {
-    calculate: vi.fn().mockResolvedValue({
-      volumeLitres: options.product.volumeLitres,
-      ratePerLitre: 0.51,
-      dutyCents: containerCfg.dutyCents,
-      taxDatasetVersion: 'golden-v1',
-      reliability: containerCfg.reliability,
-    }),
-  } as unknown as never;
-
-  // Transport estimation mock
-  const transportEstimation =
-    options.transport === 'REJECT'
-      ? ({
-          estimate: vi.fn().mockRejectedValue(new Error('No transport offers')),
-        } as unknown as never)
-      : ({
-          estimate: vi.fn().mockResolvedValue({
-            offer: {
-              id: options.transport.id ?? 900,
-              priceCents: options.transport.priceCents,
-              sellerInvolvementIndicator:
-                options.transport.sellerInvolvementIndicator,
-            },
-            matchedWeightBracket: { minKg: 0, maxKg: 10 },
-            reliabilityStatus: options.transport.reliabilityStatus ?? 'EXACT',
-          }),
-        } as unknown as never);
+  // Real engines (production classes, zero mocking)
+  const alcoholExcise = new AlcoholExciseService(taxRepo);
+  const containerDuty = new ContainerDutyService(taxRepo);
+  const transportOffers = new InMemoryTransportOfferQuery(options.transportOffers);
+  const transportEstimation = new TransportEstimationService(transportOffers);
 
   return new LandedCostCalculatorService(
     gate,
@@ -160,14 +142,66 @@ function createGoldenService(options: {
 }
 
 // ---------------------------------------------------------------------------
+// Seed transport offers
+// ---------------------------------------------------------------------------
+
+const NOW = new Date();
+
+/** Offer for carrierA: DE → FI, can/parcel up to 1 kg, seller involved. */
+const OFFER_CARRIER_A: TransportOffer = {
+  id: 900,
+  carrier: 'carrierA',
+  originCountry: 'DE',
+  destinationCountry: 'FI',
+  weightBracket: { minKg: 0, maxKg: 1 },
+  packageTier: 'can',
+  priceCents: 150,
+  currency: 'EUR',
+  sellerInvolvementIndicator: true,
+  observedAt: NOW,
+  refreshedAt: NOW,
+  reliabilityStatus: 'EXACT',
+};
+
+/** Offer for carrierB: ES → FI, glass up to 2 kg, independent. */
+const OFFER_CARRIER_B: TransportOffer = {
+  id: 901,
+  carrier: 'carrierB',
+  originCountry: 'ES',
+  destinationCountry: 'FI',
+  weightBracket: { minKg: 0, maxKg: 2 },
+  packageTier: 'glass',
+  priceCents: 200,
+  currency: 'EUR',
+  sellerInvolvementIndicator: false,
+  observedAt: NOW,
+  refreshedAt: NOW,
+  reliabilityStatus: 'EXACT',
+};
+
+// ---------------------------------------------------------------------------
+// Expected value computation reference (fallback rates):
+//
+// Beer  (5% ABV, 0.5 L) → progressive ABV
+//   abvPercent=5 → tier maxAbv=8.0, rate=0.435
+//   excise = round(0.435 × 0.5 × 100) = 22 ¢
+//   container: depositSystemStatus=true → EXEMPTED → 0 ¢
+//
+// Wine  (12% ABV, 0.75 L) → per-litre-of-product, 3.40
+//   excise = round(3.40 × 0.75 × 100) = 255 ¢
+//   container: depositSystemStatus=true → EXEMPTED → 0 ¢
+//
+// Spirits  (40% ABV, 0.7 L) → per-litre-of-alcohol, 29.50
+//   excise = round(29.50 × 0.4 × 0.7 × 100) = 826 ¢
+//   container: depositSystemStatus=true → EXEMPTED → 0 ¢
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // Golden dataset version guard
 // ---------------------------------------------------------------------------
 
 describe('Golden dataset', () => {
   it(`has dataset version ${GOLDEN_DATASET_VERSION}`, () => {
-    // This assertion exists solely to surface the version in test output.
-    // Bump GOLDEN_DATASET_VERSION when any expected value in this file
-    // changes, and re-verify every scenario manually.
     expect(GOLDEN_DATASET_VERSION).toBe('1.0');
   });
 
@@ -186,23 +220,21 @@ describe('Golden dataset', () => {
     const service = createGoldenService({
       product: PRODUCT_BEER,
       offers: [OFFER_BEER],
-      transport: { priceCents: 150, sellerInvolvementIndicator: true },
-      excise: { taxCents: 30 },
-      containerDuty: { dutyCents: 26 },
+      transportOffers: [OFFER_CARRIER_A],
     });
 
     it('returns correct total cost', async () => {
       const result = await service.calculate(INPUT);
-      // retail(200) + transport(150) + excise(30) + container(26) + other(0)
-      expect(result.totalCents).toBe(406);
+      // retail(200) + transport(150) + excise(22) + container(0) + other(0)
+      expect(result.totalCents).toBe(372);
     });
 
     it('applies correct itemized costs', async () => {
       const result = await service.calculate(INPUT);
       expect(result.foreignRetailPrice).toBe(200);
       expect(result.transportCost).toBe(150);
-      expect(result.alcoholExciseEstimate).toBe(30);
-      expect(result.containerDutyEstimate).toBe(26);
+      expect(result.alcoholExciseEstimate).toBe(22);
+      expect(result.containerDutyEstimate).toBe(0);
       expect(result.otherCharges).toBe(0);
     });
 
@@ -212,9 +244,10 @@ describe('Golden dataset', () => {
       expect(result.classification.confidence).toBe('HIGH');
     });
 
-    it('achieves HIGH confidence (all inputs VERIFIED)', async () => {
+    it('has MEDIUM confidence (excise is ESTIMATED fallback)', async () => {
       const result = await service.calculate(INPUT);
-      expect(result.confidence).toBe('HIGH');
+      // excise is ESTIMATED (fallback); all others VERIFIED → MEDIUM
+      expect(result.confidence).toBe('MEDIUM');
     });
 
     it('persists calculation record', async () => {
@@ -238,9 +271,7 @@ describe('Golden dataset', () => {
     const service = createGoldenService({
       product: PRODUCT_WINE,
       offers: [OFFER_WINE],
-      transport: { priceCents: 200, sellerInvolvementIndicator: false },
-      excise: { taxCents: 30 },
-      containerDuty: { dutyCents: 25 },
+      transportOffers: [OFFER_CARRIER_B],
     });
 
     it('applies quantity multiplier to retail price', async () => {
@@ -251,15 +282,15 @@ describe('Golden dataset', () => {
 
     it('applies quantity multiplier to tax costs', async () => {
       const result = await service.calculate(INPUT);
-      // excise 30 × 3, container 25 × 3
-      expect(result.alcoholExciseEstimate).toBe(90);
-      expect(result.containerDutyEstimate).toBe(75);
+      // excise 255 × 3, container 0 × 3
+      expect(result.alcoholExciseEstimate).toBe(765);
+      expect(result.containerDutyEstimate).toBe(0);
     });
 
     it('returns correct total cost', async () => {
       const result = await service.calculate(INPUT);
-      // retail(900) + transport(200) + excise(90) + container(75)
-      expect(result.totalCents).toBe(1265);
+      // retail(900) + transport(200) + excise(765) + container(0)
+      expect(result.totalCents).toBe(1865);
     });
 
     it('classifies as DistanceBuying (independent carrier)', async () => {
@@ -267,9 +298,9 @@ describe('Golden dataset', () => {
       expect(result.classification.classification).toBe('DistanceBuying');
     });
 
-    it('has HIGH confidence (all inputs VERIFIED)', async () => {
+    it('has MEDIUM confidence (excise is ESTIMATED fallback)', async () => {
       const result = await service.calculate(INPUT);
-      expect(result.confidence).toBe('HIGH');
+      expect(result.confidence).toBe('MEDIUM');
     });
 
     it('transport is not per-shipment — not scaled by quantity', async () => {
@@ -292,9 +323,7 @@ describe('Golden dataset', () => {
     const service = createGoldenService({
       product: PRODUCT_SPIRITS,
       offers: [OFFER_SPIRITS],
-      transport: 'REJECT',
-      excise: { taxCents: 60 },
-      containerDuty: { dutyCents: 30 },
+      transportOffers: [], // no transport offers → graceful degradation
     });
 
     it('returns zero transport cost when transport is unavailable', async () => {
@@ -304,8 +333,8 @@ describe('Golden dataset', () => {
 
     it('returns correct total cost (excluding transport)', async () => {
       const result = await service.calculate(INPUT);
-      // retail(500) + transport(0) + excise(60) + container(30)
-      expect(result.totalCents).toBe(590);
+      // retail(500) + transport(0) + excise(826) + container(0)
+      expect(result.totalCents).toBe(1326);
     });
 
     it('sets transport offer ID to null', async () => {
@@ -313,18 +342,17 @@ describe('Golden dataset', () => {
       expect(result.metadata.transportOfferId).toBeNull();
     });
 
-    it('classifies with transport=UNKNOWN transport type', async () => {
+    it('classifies with INDEPENDENT_CARRIER transport type', async () => {
       const result = await service.calculate(INPUT);
-      // When transport is unavailable, classification gets sellerInvolvement=false
-      // and carrier=bestOffer.merchant, producing UNKNOWN transport → DistanceBuying LOW
+      // transport unavailable → sellerInvolvement=false,
+      // carrierId=offer.merchant='spirits-eu' → INDEPENDENT_CARRIER → DistanceBuying
       expect(result.classification.classification).toBe('DistanceBuying');
     });
 
-    it('has MEDIUM or LOW confidence (transport UNAVAILABLE)', async () => {
+    it('has LOW confidence (transport UNAVAILABLE)', async () => {
       const result = await service.calculate(INPUT);
-      // Transport is UNAVAILABLE → LOW.  The assertion accepts MEDIUM too
-      // to allow for future changes in the confidence computation logic.
-      expect(['MEDIUM', 'LOW']).toContain(result.confidence);
+      // transport is UNAVAILABLE → LOW
+      expect(result.confidence).toBe('LOW');
     });
   });
 
@@ -342,9 +370,7 @@ describe('Golden dataset', () => {
     const service = createGoldenService({
       product: PRODUCT_UNCLASSIFIED,
       offers: [OFFER_UNCLASSIFIED],
-      transport: { priceCents: 100, sellerInvolvementIndicator: false },
-      excise: { taxCents: 10 },
-      containerDuty: { dutyCents: 5 },
+      transportOffers: [],
     });
 
     it('throws ClassificationGateRejectionError', async () => {

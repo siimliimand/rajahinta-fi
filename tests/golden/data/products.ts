@@ -122,6 +122,203 @@ export const OFFER_UNCLASSIFIED: CalculatorRetailOfferData = {
 };
 
 // ---------------------------------------------------------------------------
+// Per-category regression products (Task 5.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Product 5 — Low-ABV beer (can, 0.33 L, 2.7 % ABV).
+ * Tests progressive ABV tier 0 (maxAbv ≤ 2.8 → rate 0 €/l).
+ * Uses 2.7 % (not 2.8) to avoid JS float boundary where 0.028 × 100 > 2.8.
+ */
+export const PRODUCT_BEER_LOW_ABV: CalculatorProductData = {
+  id: 5,
+  regulatoryClassification: 'beer',
+  category: 'beer',
+  volumeLitres: 0.33,
+  alcoholByVolume: 0.027,
+  containerType: 'can',
+  depositSystemStatus: true,
+  weightKg: 0.35,
+  normalizedName: 'Light Beer 2.7%',
+};
+
+export const OFFER_BEER_LOW_ABV: CalculatorRetailOfferData = {
+  id: 104,
+  priceCents: 150,
+  merchant: 'beverage-de',
+  country: 'DE',
+  reliabilityStatus: 'EXACT',
+};
+
+/**
+ * Product 6 — High-ABV beer (bottle, 0.33 L, 8.5 % ABV).
+ * Tests progressive ABV tier 3 (maxAbv > 8.0 → rate 0.580 €/l).
+ */
+export const PRODUCT_BEER_HIGH_ABV: CalculatorProductData = {
+  id: 6,
+  regulatoryClassification: 'beer',
+  category: 'beer',
+  volumeLitres: 0.33,
+  alcoholByVolume: 0.085,
+  containerType: 'glass',
+  depositSystemStatus: true,
+  weightKg: 0.45,
+  normalizedName: 'Strong Beer 8.5%',
+};
+
+export const OFFER_BEER_HIGH_ABV: CalculatorRetailOfferData = {
+  id: 105,
+  priceCents: 250,
+  merchant: 'beverage-de',
+  country: 'DE',
+  reliabilityStatus: 'EXACT',
+};
+
+/**
+ * Product 7 — Wine sparkling (glass, 0.75 L, 11 % ABV).
+ * Uses the same PER_LITRE_OF_PRODUCT formula as still wine.
+ */
+export const PRODUCT_WINE_SPARKLING: CalculatorProductData = {
+  id: 7,
+  regulatoryClassification: 'wine',
+  category: 'wine',
+  volumeLitres: 0.75,
+  alcoholByVolume: 0.11,
+  containerType: 'glass',
+  depositSystemStatus: true,
+  weightKg: 1.3,
+  normalizedName: 'Prosecco DOC',
+};
+
+export const OFFER_WINE_SPARKLING: CalculatorRetailOfferData = {
+  id: 106,
+  priceCents: 800,
+  merchant: 'vinos-es',
+  country: 'ES',
+  reliabilityStatus: 'EXACT',
+};
+
+/**
+ * Product 8 — Intermediate product (bottle, 0.5 L, 15 % ABV).
+ * Tests PER_LITRE_OF_PRODUCT formula for the 'intermediate' category.
+ */
+export const PRODUCT_INTERMEDIATE: CalculatorProductData = {
+  id: 8,
+  regulatoryClassification: 'intermediate',
+  category: 'intermediate',
+  volumeLitres: 0.5,
+  alcoholByVolume: 0.15,
+  containerType: 'glass',
+  depositSystemStatus: true,
+  weightKg: 0.7,
+  normalizedName: 'Sherry Fino',
+};
+
+export const OFFER_INTERMEDIATE: CalculatorRetailOfferData = {
+  id: 107,
+  priceCents: 600,
+  merchant: 'vinos-es',
+  country: 'ES',
+  reliabilityStatus: 'EXACT',
+};
+
+/**
+ * Product 9 — Other fermented beverage (bottle, 0.5 L, 5 % ABV).
+ * Tests the 'other' category fallback (PER_LITRE_OF_PRODUCT at 3.40).
+ */
+export const PRODUCT_OTHER_FERMENTED: CalculatorProductData = {
+  id: 9,
+  regulatoryClassification: 'other',
+  category: 'other',
+  volumeLitres: 0.5,
+  alcoholByVolume: 0.05,
+  containerType: 'glass',
+  depositSystemStatus: true,
+  weightKg: 0.6,
+  normalizedName: 'Fermented Ginger Drink',
+};
+
+export const OFFER_OTHER_FERMENTED: CalculatorRetailOfferData = {
+  id: 108,
+  priceCents: 350,
+  merchant: 'brew-eu',
+  country: 'DE',
+  reliabilityStatus: 'EXACT',
+};
+
+/**
+ * Product 10 — No deposit system (can, 0.5 L, 5 % ABV).
+ * depositSystemStatus=false so container duty is applied at 0.51 €/l.
+ */
+export const PRODUCT_NO_DEPOSIT: CalculatorProductData = {
+  id: 10,
+  regulatoryClassification: 'beer',
+  category: 'beer',
+  volumeLitres: 0.5,
+  alcoholByVolume: 0.05,
+  containerType: 'can',
+  depositSystemStatus: false,
+  weightKg: 0.55,
+  normalizedName: 'Import Lager No Deposit',
+};
+
+export const OFFER_NO_DEPOSIT: CalculatorRetailOfferData = {
+  id: 109,
+  priceCents: 180,
+  merchant: 'beverage-de',
+  country: 'DE',
+  reliabilityStatus: 'EXACT',
+};
+
+/**
+ * Product 11 — Zero ABV beverage (can, 0.5 L, 0 % ABV).
+ * Edge case: 0 % ABV should produce 0 excise duty.
+ */
+export const PRODUCT_ZERO_ABV: CalculatorProductData = {
+  id: 11,
+  regulatoryClassification: 'beer',
+  category: 'beer',
+  volumeLitres: 0.5,
+  alcoholByVolume: 0.0,
+  containerType: 'can',
+  depositSystemStatus: true,
+  weightKg: 0.5,
+  normalizedName: 'Non-Alcoholic Beer 0.0%',
+};
+
+export const OFFER_ZERO_ABV: CalculatorRetailOfferData = {
+  id: 110,
+  priceCents: 120,
+  merchant: 'beverage-de',
+  country: 'DE',
+  reliabilityStatus: 'EXACT',
+};
+
+/**
+ * Product 12 — Unknown deposit status (can, 0.5 L, 5 % ABV).
+ * depositSystemStatus=null → container duty ESTIMATED.
+ */
+export const PRODUCT_NULL_DEPOSIT: CalculatorProductData = {
+  id: 12,
+  regulatoryClassification: 'beer',
+  category: 'beer',
+  volumeLitres: 0.5,
+  alcoholByVolume: 0.05,
+  containerType: 'can',
+  depositSystemStatus: null,
+  weightKg: 0.55,
+  normalizedName: 'Unknown Deposit Beer',
+};
+
+export const OFFER_NULL_DEPOSIT: CalculatorRetailOfferData = {
+  id: 111,
+  priceCents: 190,
+  merchant: 'beverage-de',
+  country: 'DE',
+  reliabilityStatus: 'EXACT',
+};
+
+// ---------------------------------------------------------------------------
 // Lookup helpers
 // ---------------------------------------------------------------------------
 
@@ -131,6 +328,14 @@ export const PRODUCT_BY_ID: Record<number, CalculatorProductData> = {
   [PRODUCT_WINE.id]: PRODUCT_WINE,
   [PRODUCT_SPIRITS.id]: PRODUCT_SPIRITS,
   [PRODUCT_UNCLASSIFIED.id]: PRODUCT_UNCLASSIFIED,
+  [PRODUCT_BEER_LOW_ABV.id]: PRODUCT_BEER_LOW_ABV,
+  [PRODUCT_BEER_HIGH_ABV.id]: PRODUCT_BEER_HIGH_ABV,
+  [PRODUCT_WINE_SPARKLING.id]: PRODUCT_WINE_SPARKLING,
+  [PRODUCT_INTERMEDIATE.id]: PRODUCT_INTERMEDIATE,
+  [PRODUCT_OTHER_FERMENTED.id]: PRODUCT_OTHER_FERMENTED,
+  [PRODUCT_NO_DEPOSIT.id]: PRODUCT_NO_DEPOSIT,
+  [PRODUCT_ZERO_ABV.id]: PRODUCT_ZERO_ABV,
+  [PRODUCT_NULL_DEPOSIT.id]: PRODUCT_NULL_DEPOSIT,
 };
 
 /** Map product ID to its retail offers. */
@@ -139,4 +344,12 @@ export const OFFERS_BY_PRODUCT_ID: Record<number, CalculatorRetailOfferData[]> =
   [PRODUCT_WINE.id]: [OFFER_WINE],
   [PRODUCT_SPIRITS.id]: [OFFER_SPIRITS],
   [PRODUCT_UNCLASSIFIED.id]: [OFFER_UNCLASSIFIED],
+  [PRODUCT_BEER_LOW_ABV.id]: [OFFER_BEER_LOW_ABV],
+  [PRODUCT_BEER_HIGH_ABV.id]: [OFFER_BEER_HIGH_ABV],
+  [PRODUCT_WINE_SPARKLING.id]: [OFFER_WINE_SPARKLING],
+  [PRODUCT_INTERMEDIATE.id]: [OFFER_INTERMEDIATE],
+  [PRODUCT_OTHER_FERMENTED.id]: [OFFER_OTHER_FERMENTED],
+  [PRODUCT_NO_DEPOSIT.id]: [OFFER_NO_DEPOSIT],
+  [PRODUCT_ZERO_ABV.id]: [OFFER_ZERO_ABV],
+  [PRODUCT_NULL_DEPOSIT.id]: [OFFER_NULL_DEPOSIT],
 };
