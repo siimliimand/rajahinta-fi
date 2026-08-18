@@ -9,23 +9,23 @@
 
 ### Tech Stack & Architecture
 
-- [ ] **T0.1** Select backend language/framework, database, and frontend framework (open decision — plan deliberately leaves this to the engineering team).
-- [ ] **T0.2** Scaffold the modular monolith project structure with five bounded layers: Data Acquisition, Core Domain, Data Platform, Application/API, Presentation.
-- [ ] **T0.3** Establish strict module interfaces between layers so any module (e.g., Data Acquisition) can be extracted into a separate service in Phase 2/3 without redesigning domain logic.
+- [x] **T0.1** Select backend language/framework, database, and frontend framework → TypeScript, NestJS, PostgreSQL (Drizzle ORM), Redis, Vitest. Frontend TBD.
+- [x] **T0.2** Scaffold the modular monolith project structure with five bounded layers: Data Acquisition (`data-acquisition`), Core Domain (`core-domain`), Data Platform (`data-platform`), Application/API (`application-api`), Presentation (not yet built).
+- [x] **T0.3** Establish strict module interfaces between layers — port interfaces in `core-domain`, adapters in `data-platform` and `apps/backend` composition root.
 
 ### Infrastructure
 
-- [ ] **T0.4** Set up the three-tier environment pipeline: development → staging → production.
+- [ ] **T0.4** Set up the three-tier environment pipeline: development → staging → production. (Docker Compose for dev exists; staging/prod pipeline not yet configured.)
 - [ ] **T0.5** Provision a staging copy of tax-rule and merchant data so legal/tax review of rule changes runs against realistic data before promotion.
 - [ ] **T0.6** Configure CI/CD with automated regression tests (golden-dataset tax tests, data-quality checks, compliance checks) on every deploy.
-- [ ] **T0.7** Deploy a feature-flag system that gates new merchant sources, new tax rulesets, and new UI ranking behavior for phased rollout and instant rollback.
-- [ ] **T0.8** Set up scheduled/queued job infrastructure for background work (price ingestion, transport-rate refresh, tax-dataset review, time-series aggregation), isolated from the request/response path.
+- [x] **T0.7** Deploy a feature-flag system that gates new merchant sources, new tax rulesets, and new UI ranking behavior → `FeatureFlagService`, `LaunchGateService`, `LaunchGateGuard` in `application-api/feature-flags/`.
+- [x] **T0.8** Set up scheduled/queued job infrastructure for background work → BullMQ workers in `application-api/jobs/`: price-ingestion, transport-rate-refresh, tax-dataset-review, time-series-aggregation.
 
 ### Monitoring & Observability
 
-- [ ] **T0.9** Instrument the four KPI categories defined in the business plan (product, commercial, data, compliance metrics) directly, not reconstructed from raw logs later.
-- [ ] **T0.10** Expose operational health signals (stale-data rate, percentage of verified calculations, compliance incidents) on an internal operations dashboard.
-- [ ] **T0.11** Instrument per-calculation cost attribution early so infrastructure spend can be tied back to commercial metrics.
+- [x] **T0.9** Instrument the four KPI categories defined in the business plan → `KpiService` in `application-api/observability/`.
+- [x] **T0.10** Expose operational health signals (stale-data rate, percentage of verified calculations, compliance incidents) → `OpsDashboardController` in `application-api/observability/`.
+- [x] **T0.11** Instrument per-calculation cost attribution early → `CostAttributionService` in `application-api/observability/`.
 
 ---
 
@@ -33,77 +33,77 @@
 
 ### 1A: Data Model & Data Platform
 
-- [ ] **T1.1** Implement the Product Master entity: manufacturer, brand, product category, alcohol %, unit volume, container type, regulatory classification, deposit-system status. One record per canonical product.
-- [ ] **T1.2** Implement the Retail Offer entity: merchant, country, linked product, current price, currency, availability, source URL, timestamp, reliability status. Many-to-one against Product Master.
-- [ ] **T1.3** Implement the Transport Offer entity: carrier, route, destination, weight tier, package tier, price, seller-involvement indicator, timestamp, reliability status.
-- [ ] **T1.4** Implement the versioned Tax Rule entity: tax type (excise / container duty), product category, rate, effective date range, exemption conditions, calculation formula reference, official source, verification date. Versioned — never mutated in place.
-- [ ] **T1.5** Implement the Calculation Record entity: persist every landed-cost result shown to a user (or a sampled/aggregated subset), storing which Product Master, Retail Offer, Transport Offer, and Tax Rule versions were used, plus the resulting confidence level. Enables auditability and the correction mechanism.
-- [ ] **T1.6** Apply data minimization at the schema level — do not add optional fields "for later" if no shipped feature uses them.
+- [x] **T1.1** Implement the Product Master entity → `productMaster` table in `packages/data-platform/src/schema.ts`: manufacturer, brand, category, alcohol %, unit volume, container type, regulatory classification, deposit-system status (tri-state boolean|null), EAN barcode.
+- [x] **T1.2** Implement the Retail Offer entity → `retailOffers` table: merchant, country, linked product, current price (cents), currency, availability, source URL, timestamp, reliability status.
+- [x] **T1.3** Implement the Transport Offer entity → `transportOffers` table: carrier, origin/destination country, weight tier, package tier, price, seller-involvement indicator, timestamp, reliability status.
+- [x] **T1.4** Implement the versioned Tax Rule entity → `taxRules` table: tax type, product category, rate, effective date range, exemption conditions, calculation formula reference, official source, verification date, version label. Append-only — never mutated.
+- [x] **T1.5** Implement the Calculation Record entity → `calculationRecords` table: FK refs to product, offers, transport, tax rule versions, total (cents), structured breakdown (JSONB), confidence, quantity, destination, structural disclaimer, session ID, timestamp.
+- [x] **T1.6** Apply data minimization at the schema level — no optional fields "for later" enforced.
 
 ### 1B: Data Acquisition Layer
 
-- [ ] **T1.7** Build data acquisition pipeline for an initial small set of merchants using permitted feeds/APIs (not broad scraping).
-- [ ] **T1.8** Implement the Merchant & Source Governance Module: track each source's acquisition method (permitted feed, retailer API, structured merchant feed, licensed provider, compliant crawling, manual verification) and permission/compliance status.
-- [ ] **T1.9** Enforce that any new merchant or data source is off (not queried, not displayed) until it has a recorded permission status.
-- [ ] **T1.10** Implement source reliability status per data point: VERIFIED, STALE, UNAVAILABLE, ESTIMATED — attached to price, transport, and classification inputs.
-- [ ] **T1.11** Build automated data-quality checks that flag any Retail Offer or Transport Offer older than its staleness threshold, and verify that STALE/UNAVAILABLE data is never silently presented as VERIFIED.
+- [x] **T1.7** Build data acquisition pipeline for an initial small set of merchants using permitted feeds/APIs → `FeedIngestionService`, `PipelineOrchestratorService`, `DataMappingService`, `UpsertPortAdapter` in `data-acquisition/`.
+- [x] **T1.8** Implement the Merchant & Source Governance Module → `SourceGovernanceService` in `core-domain/governance/` tracks acquisition method and permission/compliance status per source.
+- [x] **T1.9** Enforce that any new merchant or data source is off (not queried, not displayed) until it has a recorded permission status → `SourceGovernanceService` defaults to PENDING; `merchants.config.ts` documents this contract.
+- [x] **T1.10** Implement source reliability status per data point: VERIFIED, STALE, UNAVAILABLE, ESTIMATED → `reliability_status` column on `retailOffers` and `transportOffers`; `ReliabilityService` and `ConfidenceFrameworkService` in `core-domain/reliability/`.
+- [x] **T1.11** Build automated data-quality checks → `DataQualityService` in `data-acquisition/services/` flags stale offers and verifies STALE/UNAVAILABLE is never presented as VERIFIED.
 
 ### 1C: Product Normalization Module
 
-- [ ] **T1.12** Build the Product Normalization Module: ingest raw product data (name, brand, category, volume, ABV, packaging, images, description) from the Data Acquisition Layer.
-- [ ] **T1.13** Implement product matching/deduplication across merchants — the same physical product sold by multiple foreign retailers must resolve to one canonical Product Master with multiple linked Retail Offers.
-- [ ] **T1.14** Implement deterministic matching (GTIN/EAN barcode) combined with fuzzy matching (name, brand, volume, ABV) and a manual-review queue for low-confidence matches.
-- [ ] **T1.15** Enforce that every canonical product carries a regulatory classification before appearing in a landed-cost calculation — unclassified products are excluded from calculator results, never shown with a guessed classification.
+- [x] **T1.12** Build the Product Normalization Module → `NormalizationService` in `core-domain/normalization/` ingests raw product data from Data Acquisition.
+- [x] **T1.13** Implement product matching/deduplication across merchants → `ProductMatcherService` with EAN barcode matching + fuzzy name/brand/volume/ABV matching.
+- [x] **T1.14** Implement deterministic matching (GTIN/EAN barcode) combined with fuzzy matching + manual-review queue → `ProductMatcherService` + `ManualReviewService` in `core-domain/normalization/`.
+- [x] **T1.15** Enforce that every canonical product carries a regulatory classification before appearing in a landed-cost calculation → `ClassificationGateService` in `core-domain/normalization/` excludes unclassified products.
 
 ### 1D: Transport Estimation Module
 
-- [ ] **T1.16** Build the Transport Estimation Module: maintain transport offers by carrier, route, destination, weight tier, and package tier.
-- [ ] **T1.17** Implement basket-level shipping-cost computation (not just single-item) since shipping thresholds and incremental charges are non-linear. Required for the Basket Optimizer in Phase 2.
-- [ ] **T1.18** Distinguish retailer-arranged transport from independent-carrier transport — this distinction feeds directly into Transaction Classification.
+- [x] **T1.16** Build the Transport Estimation Module → `TransportEstimationService` in `core-domain/transport/` maintains transport offers by carrier, route, weight tier, and package tier.
+- [x] **T1.17** Implement basket-level shipping-cost computation → `BasketShippingCalculator` in `core-domain/transport/` handles non-linear shipping thresholds for multi-item baskets.
+- [x] **T1.18** Distinguish retailer-arranged transport from independent-carrier transport → `TransportClassificationService` + `sellerInvolvementIndicator` on `transportOffers` feeds into Transaction Classification.
 
 ### 1E: Tax & Duty Calculation Module
 
-- [ ] **T1.19** Build the Alcohol Excise Sub-Engine: calculate excise duty based on product category, alcohol percentage, and volume using official Finnish Tax Administration rate tables as the primary source.
-- [ ] **T1.20** Build the Beverage-Container Duty Sub-Engine: calculate container duty (general rate €0.51/litre) as a distinct calculation from alcohol excise.
-- [ ] **T1.21** Implement deposit-return system exemption check: the container-duty engine must evaluate whether packaging participates in the Finnish deposit-return system before applying the duty. Where deposit status cannot be determined, flag the duty calculation as ESTIMATED (never silently assume either way).
-- [ ] **T1.22** Populate the initial versioned Tax Rule dataset (excise + container duty) sourced exclusively from official Finnish Tax Administration data — never independently derived.
-- [ ] **T1.23** Implement the scheduled rate-review process: a recurring job checks for newly published official rate changes and creates a task for manual/legal confirmation before any new dataset version goes live. Rates are never auto-published.
-- [ ] **T1.24** Historical rates remain queryable after a rate change; past calculations always resolve against the rate version effective on the relevant date.
+- [x] **T1.19** Build the Alcohol Excise Sub-Engine → `AlcoholExciseService` + pure math in `alcohol-excise.math.ts` calculates excise based on category, ABV, and volume with official rate tables.
+- [x] **T1.20** Build the Beverage-Container Duty Sub-Engine → `ContainerDutyService` + `container-duty.math.ts` calculates container duty (€0.51/litre) as distinct from excise.
+- [x] **T1.21** Implement deposit-return system exemption check → `checkDepositExemption()` in `deposit-checker.ts` evaluates tri-state `depositSystemStatus` (true/false/null); null → ESTIMATED.
+- [x] **T1.22** Populate the initial versioned Tax Rule dataset (excise + container duty) sourced from official Finnish Tax Administration data → `seed/tax-rules.seed.ts` (v1.0-2024) + `DEFAULT_RATES` reconciled.
+- [ ] **T1.23** Implement the scheduled rate-review process → `RateReviewSchedulerService` in `data-acquisition/services/` exists but the recurring job that checks for newly published official rate changes and creates a task for manual/legal confirmation before any new dataset version goes live is not fully automated yet.
+- [x] **T1.24** Historical rates remain queryable after a rate change → `TaxRuleQueryService.findHistoryRates()` and `findEffectiveVersion()` resolve against effective date ranges.
 
 ### 1F: Transaction Classification Module
 
-- [ ] **T1.25** Build the Transaction Classification Module as an isolated, independently testable module (the most important proprietary logic in the system).
-- [ ] **T1.26** Implement the three-way classification: Distance Selling, Distance Buying, Traveller Import (excluded from calculation) — with confidence level and human-readable evidence summary per result.
-- [ ] **T1.27** Classification rules stored as versioned, dated rule sets (mirroring the tax-rule versioning approach), since the rules are subject to legislative change (e.g., the 1 September 2024 joint-liability change).
-- [ ] **T1.28** Output must never be a bare legal conclusion — always phrased as an observed pattern with supporting evidence (e.g., "likely distance selling, based on: retailer offers direct delivery to Finland").
+- [x] **T1.25** Build the Transaction Classification Module as an isolated, independently testable module → `TransactionClassificationService`, `ClassificationRuleEngineService`, `ClassificationGateService` in `core-domain/classification/`.
+- [x] **T1.26** Implement the three-way classification: Distance Selling, Distance Buying, Traveller Import (excluded from calculation) → with confidence level and human-readable evidence summary per result via `evidence.utils.ts`.
+- [x] **T1.27** Classification rules stored as versioned, dated rule sets → `ClassificationRuleRepositoryPort` in `core-domain/classification/ports/`, rule engine in `services/classification-rule-engine.service.ts`.
+- [x] **T1.28** Output must never be a bare legal conclusion → always phrased as an observed pattern with supporting evidence (evidence.utils.ts).
 
 ### 1G: Confidence & Data-Reliability Framework
 
-- [ ] **T1.29** Implement the cross-cutting Confidence & Data-Reliability Framework consumed by nearly every module.
-- [ ] **T1.30** Compute result confidence as a pure function of underlying data statuses (not a manually set field): HIGH (all material inputs verified), MEDIUM (one or more estimated), LOW (shipping or classification unverifiable).
-- [ ] **T1.31** Expose enough detail that the UI can show *why* a result has a given confidence level.
+- [x] **T1.29** Implement the cross-cutting Confidence & Data-Reliability Framework → `ConfidenceFrameworkService` and `ReliabilityService` in `core-domain/reliability/`.
+- [x] **T1.30** Compute result confidence as a pure function of underlying data statuses → `computeResultConfidence()` maps statuses to HIGH/MEDIUM/LOW; `computeLandingCostConfidence()` aggregates five inputs.
+- [x] **T1.31** Expose enough detail that the UI can show *why* a result has a given confidence level → `computeEvidenceFromStatuses()`, `computeLandingCostDetail()`, `buildReport()` return `ConfidenceReport` with per-input breakdown.
 
 ### 1H: Landed-Cost Calculator & Excise Declaration Assistant
 
-- [ ] **T1.32** Build the Landed-Cost Calculator: orchestrate the modules above — take a product + quantity + destination (+ optional transport method), call Transport Estimation, Tax & Duty Calculation, and Transaction Classification, and assemble the itemized result.
-- [ ] **T1.33** Ensure the itemized breakdown includes: foreign retail price, transport cost, alcohol excise estimate, container duty estimate, other charges, total, calculation-status metadata, and confidence level.
-- [ ] **T1.34** Embed the standing disclaimer ("estimated total cost in Finland, not final legal tax liability") as a structural part of every result object, not as a UI-only string, so future API consumers inherit it automatically.
-- [ ] **T1.35** Build the Excise Declaration Assistant: a read-mostly module that packages a completed calculation into a structured summary (product, ABV, volume, category, units, container info, transport info, estimated excise, advance-notice information) and links out to MyTax.
-- [ ] **T1.36** The Excise Declaration Assistant must never attempt to submit anything on the user's behalf — it prepares information only.
+- [x] **T1.32** Build the Landed-Cost Calculator → `LandedCostCalculatorService` in `core-domain/calculator/` orchestrates Transport Estimation, Tax & Duty Calculation, Transaction Classification, and assembles the itemized result.
+- [x] **T1.33** Ensure the itemized breakdown includes: foreign retail price, transport cost, alcohol excise estimate, container duty estimate, other charges, total, calculation-status metadata, and confidence level → structured `breakdown` JSONB in `calculationRecords`.
+- [x] **T1.34** Embed the standing disclaimer as a structural part of every result object → `disclaimer` text column on `calculationRecords` table; `Disclaimer` interface in calculator.types.ts.
+- [x] **T1.35** Build the Excise Declaration Assistant → `ExciseDeclarationService` in `core-domain/declaration/` packages calculation into structured summary, links to MyTax.
+- [x] **T1.36** The Excise Declaration Assistant must never attempt to submit anything on the user's behalf → safety test in `declaration/__tests__/excise-declaration-service.safety.test.ts`.
 
 ### 1I: Ranking & Sorting Module
 
-- [ ] **T1.37** Implement the Ranking & Sorting Module with only the objective sort orders defined in the business plan: lowest estimated landed cost, lowest €/litre, lowest €/unit, alphabetical, alcohol percentage, product category.
-- [ ] **T1.38** Enforce neutrality structurally — the sorting function's input type must have no field available for a merchant payment, promotional flag, or manually curated boost. No code path may allow a paid or manual boost to a merchant's position.
-- [ ] **T1.39** Design the module so its logic can be described in plain language on a public "how ranking works" page without omitting any actual factor.
+- [x] **T1.37** Implement the Ranking & Sorting Module with only the objective sort orders → `RankingService` in `core-domain/ranking/` supports lowest landed cost, lowest €/litre, lowest €/unit, alphabetical, ABV, category.
+- [x] **T1.38** Enforce neutrality structurally → `RankingModule` imports zero billing-related types; `RankingService.rank()` rejects unknown properties at runtime; `billing-ranking-isolation.test.ts` verifies source-level separation.
+- [x] **T1.39** Design the module so its logic can be described in plain language on a public "how ranking works" page → `NeutralSortInput` type has only objective, factual product data fields.
 
 ### 1J: Application / API Layer
 
-- [ ] **T1.40** Build the consumer-facing API surface, grouped by module (not by database table): Search & Product Discovery, Landed-Cost Calculation, Excise Declaration Assistant, Account & Subscription.
-- [ ] **T1.41** Ensure all calculation endpoints are idempotent for identical inputs given the same underlying dataset versions (results reproducible and cacheable).
-- [ ] **T1.42** Implement caching keyed by (product, quantity, destination, transport assumption, tax-dataset version, transport-dataset version) — driven by dataset version changes, not arbitrary TTLs.
-- [ ] **T1.43** Implement rate limiting and abuse protection on public-facing calculation endpoints (each calculation triggers real/cached external lookups — unit-economics risk).
-- [ ] **T1.44** Implement the shared Entitlement Module consulted by every relevant API endpoint to enforce free vs. premium feature access.
+- [x] **T1.40** Build the consumer-facing API surface → `CalculatorController`, `SearchController`, `DeclarationController` in `application-api/`, grouped by module (not by database table).
+- [x] **T1.41** Ensure all calculation endpoints are idempotent for identical inputs → `IdempotencyService` in `application-api/idempotency/`.
+- [ ] **T1.42** Implement caching keyed by (product, quantity, destination, transport assumption, tax-dataset version, transport-dataset version) — not yet implemented; planned for Redis-backed cache.
+- [x] **T1.43** Implement rate limiting and abuse protection on public-facing calculation endpoints → `RateLimitGuard` + `RateLimitingService` in `application-api/rate-limiting/`.
+- [x] **T1.44** Implement the shared Entitlement Module → `EntitlementService` + `EntitlementGuard` in `core-domain/entitlement/` and `application-api/entitlement/`.
 
 ### 1K: Presentation Layer — Web Application
 
@@ -116,7 +116,7 @@
 
 ### 1L: Compliance & Governance
 
-- [ ] **T1.51** Implement audit logging for changes to tax-rule datasets, classification rule sets, and ranking logic (author, timestamp, reason).
+- [x] **T1.51** Implement audit logging for changes to tax-rule datasets, classification rule sets, and ranking logic → `AuditService` + `AuditModule` in `core-domain/audit/`; `AuditRepositoryAdapter` in `application-api/audit/`.
 - [ ] **T1.52** Build the launch-gating configuration flag: keep alcohol price data and calculation features behind a non-public flag until legal opinion, tax-source mapping, and correction mechanism are all confirmed complete.
 - [ ] **T1.53** Build the public ranking documentation page generated from (or kept in lockstep with) the actual Ranking & Sorting Module implementation.
 
@@ -153,10 +153,10 @@
 
 ### 1R: Testing — MVP
 
-- [ ] **T1.70** Write unit tests for every tax/duty formula, classification rule, and confidence-computation function — highest-coverage bar for the highest-liability code paths.
-- [ ] **T1.71** Build golden-dataset regression tests: a fixed set of known product/transport/tax input combinations with manually verified expected outputs, run on every deploy and every new tax-dataset version.
-- [ ] **T1.72** Write compliance tests: automated checks that no ranking result correlates with any commercial/payment signal and that banned promotional vocabulary does not appear in generated product copy.
-- [ ] **T1.73** Write load/performance tests on the Landed-Cost Calculation endpoint specifically (highest-traffic, most computation-heavy path).
+- [x] **T1.70** Write unit tests for every tax/duty formula, classification rule, and confidence-computation function → `alcohol-excise.math.test.ts`, `container-duty.math.test.ts`, `deposit-checker.test.ts`, `confidence-framework.service.test.ts`, `transaction-classification.service.test.ts`, `classification-rule-engine.service.test.ts`, `ranking.service.test.ts`.
+- [x] **T1.71** Build golden-dataset regression tests → `tests/golden/golden-dataset.test.ts`, `tests/golden/per-category.test.ts` — fixed product/transport/tax inputs with manually verified expected outputs, using real engine implementations (no vi.fn() mocks).
+- [ ] **T1.72** Write compliance tests: automated checks that no ranking result correlates with any commercial/payment signal and that banned promotional vocabulary does not appear in generated product copy. (billing-ranking-isolation.test.ts covers source-level isolation; vocabulary lint not yet implemented.)
+- [ ] **T1.73** Write load/performance tests on the Landed-Cost Calculation endpoint specifically.
 
 ---
 
@@ -242,4 +242,4 @@ Per the business plan and engineering plan, the following are explicitly deferre
 
 ---
 
-*Last updated: 2026-08-15 — Generated from `docs/rajahinta-fi-implementation-plan.md` and `docs/Rajahinta-FI.docx`*
+*Last updated: 2026-08-18 — Synced with Phase 1 implementation state*
