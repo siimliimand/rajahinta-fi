@@ -74,11 +74,11 @@ export const DEFAULT_RATES: Record<
 > = {
   beer: { formula: FORMULA_PROGRESSIVE_ABV, rate: 0.295, note: 'See DEFAULT_BEER_TIERS' },
   cider: { formula: FORMULA_PROGRESSIVE_ABV, rate: 0.295, note: 'Same as beer tiers' },
-  wine: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 0.355, note: 'Still & sparkling, < 15 % ABV' },
-  intermediate: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 0.710, note: '> 15 % ABV fortified' },
-  spirits: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 0.565, note: 'Per litre of pure alcohol' },
-  rtd: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 0.565, note: 'Spirits-based RTD' },
-  other: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 0.355, note: 'Wine rate fallback' },
+  wine: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: 'Still & sparkling, > 1.2 % ABV (seed: 3.40)' },
+  intermediate: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: '≤ 15 % ABV (seed: 3.40)' },
+  spirits: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 29.50, note: 'Per litre of pure alcohol (seed: 29.50)' },
+  rtd: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 29.50, note: 'Spirits-based RTD (seed: 29.50)' },
+  other: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: 'Other fermented > 2.8 % ABV (seed: 3.40)' },
 };
 
 // ---------------------------------------------------------------------------
