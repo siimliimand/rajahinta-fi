@@ -9,6 +9,12 @@ function getAgeVerified(): boolean {
   return localStorage.getItem(STORAGE_KEY) === 'true';
 }
 
+const COOKIE_NAME = 'age_confirmed';
+
+function setAgeConfirmedCookie(): void {
+  document.cookie = `${COOKIE_NAME}=true; path=/; SameSite=Lax; max-age=86400`;
+}
+
 function setAgeVerified(): void {
   localStorage.setItem(STORAGE_KEY, 'true');
 }
@@ -27,6 +33,7 @@ export function AgeGate({ children }: { children: React.ReactNode }) {
 
   const handleConfirm = () => {
     setAgeVerified();
+    setAgeConfirmedCookie();
     setVerified(true);
   };
 
