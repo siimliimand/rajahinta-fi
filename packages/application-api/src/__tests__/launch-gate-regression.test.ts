@@ -103,6 +103,8 @@ describe('LaunchGateGuard (regression)', () => {
         expect(err).toBeInstanceOf(ForbiddenException);
         const fb = err as ForbiddenException;
         expect(fb.message).toMatch(/calculations?/i);
+        expect(fb.message).toMatch(/not yet publicly available/i);
+        expect(fb.message).toMatch(/all launch gates/i);
       }
     });
 
@@ -119,6 +121,8 @@ describe('LaunchGateGuard (regression)', () => {
         expect(err).toBeInstanceOf(ForbiddenException);
         const fb = err as ForbiddenException;
         expect(fb.message).toMatch(/price data/i);
+        expect(fb.message).toMatch(/not yet publicly available/i);
+        expect(fb.message).toMatch(/all launch gates/i);
       }
     });
   });

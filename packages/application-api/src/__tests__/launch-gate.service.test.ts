@@ -105,12 +105,61 @@ describe('LaunchGateService', () => {
       expect(service.isPriceDataVisible()).toBe(true);
     });
 
-    it('should not show price data when any gate is not confirmed', () => {
+    it('should NOT show price data when legal opinion is off (tax + correction on)', () => {
       process.env[GATE_ENV_KEYS.taxSourceMapping] = 'true';
       process.env[GATE_ENV_KEYS.correctionMechanism] = 'true';
+      // legalOpinion left unset (OFF)
       const service = new LaunchGateService();
 
       expect(service.isPriceDataVisible()).toBe(false);
+    });
+
+    it('should NOT show price data when tax source mapping is off (legal + correction on)', () => {
+      process.env[GATE_ENV_KEYS.legalOpinion] = 'true';
+      process.env[GATE_ENV_KEYS.correctionMechanism] = 'true';
+      // taxSourceMapping left unset (OFF)
+      const service = new LaunchGateService();
+
+      expect(service.isPriceDataVisible()).toBe(false);
+    });
+
+    it('should NOT show price data when correction mechanism is off (legal + tax on)', () => {
+      process.env[GATE_ENV_KEYS.legalOpinion] = 'true';
+      process.env[GATE_ENV_KEYS.taxSourceMapping] = 'true';
+      // correctionMechanism left unset (OFF)
+      const service = new LaunchGateService();
+
+      expect(service.isPriceDataVisible()).toBe(false);
+    });
+
+    it('should match price data visibility to launchReady (identical to isCalculationEnabled)', () => {
+      // all gates OFF
+      let service = new LaunchGateService();
+      expect(service.isPriceDataVisible()).toBe(service.isCalculationEnabled());
+
+      // legal alone
+      process.env[GATE_ENV_KEYS.legalOpinion] = 'true';
+      service = new LaunchGateService();
+      expect(service.isPriceDataVisible()).toBe(service.isCalculationEnabled());
+
+      // tax alone
+      delete process.env[GATE_ENV_KEYS.legalOpinion];
+      process.env[GATE_ENV_KEYS.taxSourceMapping] = 'true';
+      service = new LaunchGateService();
+      expect(service.isPriceDataVisible()).toBe(service.isCalculationEnabled());
+
+      // correction alone
+      delete process.env[GATE_ENV_KEYS.taxSourceMapping];
+      process.env[GATE_ENV_KEYS.correctionMechanism] = 'true';
+      service = new LaunchGateService();
+      expect(service.isPriceDataVisible()).toBe(service.isCalculationEnabled());
+
+      // all three ON
+      process.env[GATE_ENV_KEYS.legalOpinion] = 'true';
+      process.env[GATE_ENV_KEYS.taxSourceMapping] = 'true';
+      process.env[GATE_ENV_KEYS.correctionMechanism] = 'true';
+      service = new LaunchGateService();
+      expect(service.isPriceDataVisible()).toBe(service.isCalculationEnabled());
     });
   });
 
