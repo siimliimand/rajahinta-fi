@@ -29,6 +29,7 @@ export { DrizzleProductRepository } from './repositories/product.repository';
 export { DrizzleTaxRateRepository, TaxRuleRepositoryAdapter } from './repositories/tax-rate.repository';
 export { DrizzleTransportOfferRepository } from './repositories/transport-offer.repository';
 export { DrizzleCalculationRecordRepository } from './repositories/calculation-record.repository';
+export { DrizzleCorrectionRepository } from './repositories/correction.repository';
 
 // ---------------------------------------------------------------------------
 // Module boundary — pure interfaces for cross-layer contracts

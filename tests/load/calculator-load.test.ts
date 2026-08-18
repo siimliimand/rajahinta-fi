@@ -1,9 +1,16 @@
 /**
- * Load/performance test — Landed-Cost Calculator endpoint.
+ * Load/performance test — Landed Cost Calculator orchestrator.
  *
- * Simulates 50 concurrent requests to the LandedCostCalculatorService
- * with mocked domain services, measures p50/p95/p99 latency, and
- * asserts p95 < 500 ms.
+ * Measures core-domain orchestrator throughput under load by calling
+ * LandedCostCalculatorService directly with mocked I/O ports (product
+ * data, calculation records). Simulates 50 concurrent requests, measures
+ * p50/p95/p99 latency, and asserts p95 < 500 ms.
+ *
+ * **Scope:** This test exercises the orchestrator logic only. It does NOT
+ * exercise the HTTP transport layer (NestJS controllers, middleware,
+ * guards, serialization, rate limiting). HTTP-layer load testing
+ * (POST /api/v1/calculator through the full stack) is a separate concern
+ * and should use tools like k6 or autocannon once the backend is deployed.
  *
  * Uses Promise.all for concurrency (no external tools needed).
  * All I/O-bound services are mocked so the test measures orchestrator
