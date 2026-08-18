@@ -1,28 +1,32 @@
 /**
  * IdempotencyModule — provides version-keyed calculation caching.
  *
- * Registers the in-memory cache as the default idempotency cache backend.
- * Replace the provider binding to switch to RedisIdempotencyCache or another
- * distributed store (see `redis-idempotency-cache.ts`).
- *
- * ```typescript
- * // To use Redis instead:
- * {
- *   provide: IDEMPOTENCY_CACHE,
- *   useFactory: () => new RedisIdempotencyCache({ url: process.env.REDIS_URL }),
- * }
- * ```
+ * Uses `RedisIdempotencyCache` when a Redis client is available (provided
+ * by `RedisModule`), falling back to `InMemoryIdempotencyCache` otherwise.
  *
  * @module IdempotencyModule
  */
 
 import { Module } from '@nestjs/common';
 import { IdempotencyService, InMemoryIdempotencyCache, IDEMPOTENCY_CACHE } from './idempotency.service';
+import { RedisIdempotencyCache } from './redis-idempotency-cache';
+import { RedisModule, REDIS_CLIENT } from '../redis';
+import type Redis from 'ioredis';
 
 @Module({
+  imports: [RedisModule],
   providers: [
     IdempotencyService,
-    { provide: IDEMPOTENCY_CACHE, useClass: InMemoryIdempotencyCache },
+    {
+      provide: IDEMPOTENCY_CACHE,
+      useFactory: (redisClient: Redis | null) => {
+        if (redisClient) {
+          return new RedisIdempotencyCache({ client: redisClient });
+        }
+        return new InMemoryIdempotencyCache();
+      },
+      inject: [REDIS_CLIENT],
+    },
   ],
   exports: [IdempotencyService],
 })
