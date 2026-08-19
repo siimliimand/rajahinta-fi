@@ -40,18 +40,15 @@ import { SimpleConfirmationProvider } from '../../age-gate/simple-confirmation.p
 /** NestJS internal metadata key for guards applied via @UseGuards. */
 const GUARDS_METADATA = '__guards__';
 
+/** Constructor reference for a NestJS guard — not instantiated through this type, only compared. */
+type GuardConstructor = abstract new (...args: never[]) => unknown;
+
 /**
  * Build an ExecutionContext that points at a specific controller method.
- * This lets guards / the Reflector walk the handler→class metadata chain.
+ * @param handler The controller method — never invoked through this type, only stored for metadata reflection.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type GuardConstructor = abstract new (...args: any[]) => unknown;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- handler is only used for metadata reflection, never invoked
-type AnyFunction = (...args: any[]) => any;
-
-function contextForMethod(
-  handler: AnyFunction,
+function contextForMethod<F>(
+  handler: F,
   controller: object,
   requestOverrides?: {
     headers?: Record<string, string | string[] | undefined>;
