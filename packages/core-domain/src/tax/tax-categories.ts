@@ -50,7 +50,6 @@ export type TaxCategory = (typeof TAX_CATEGORY_KEYS)[number];
 export type FormulaType =
   | 'PER_LITRE_OF_PRODUCT'
   | 'PER_LITRE_OF_ALCOHOL'
-  | 'PROGRESSIVE_ABV'
   | 'PER_DEGREE_PLATO';
 
 // ---------------------------------------------------------------------------
@@ -66,7 +65,7 @@ export type FormulaType =
  * handled by the dedicated resolver in task 1.3.
  */
 export const CATEGORY_DEFAULT_FORMULA: Record<TaxCategory, FormulaType> = {
-  beer: 'PROGRESSIVE_ABV',
+  beer: 'PER_DEGREE_PLATO',
   wine_still: 'PER_LITRE_OF_PRODUCT',
   wine_sparkling: 'PER_LITRE_OF_PRODUCT',
   spirits: 'PER_LITRE_OF_ALCOHOL',

@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { AlcoholExciseService } from '../services/alcohol-excise.service';
 import type { ITaxRuleRepositoryPort, TaxRuleRecordPort } from '../ports/tax-rule-repository.port';
-import { FORMULA_PER_LITRE_OF_PRODUCT, FORMULA_PROGRESSIVE_ABV, FORMULA_PER_LITRE_OF_ALCOHOL } from '../services/alcohol-excise.math';
+import { FORMULA_PER_LITRE_OF_PRODUCT, FORMULA_PER_DEGREE_PLATO, FORMULA_PER_LITRE_OF_ALCOHOL } from '../services/alcohol-excise.math';
 
 // ---------------------------------------------------------------------------
 // Mock factory
@@ -83,16 +83,17 @@ describe('AlcoholExciseService', () => {
       expect(result.rateApplied).toBeCloseTo(0.355);
     });
 
-    it('correctly applies progressive formula (beer)', async () => {
+    it('correctly applies per-degree-Plato formula (beer)', async () => {
       repo.findApplicable = async () =>
         makeRule({
           productCategory: 'beer',
-          calculationFormulaReference: FORMULA_PROGRESSIVE_ABV,
+          calculationFormulaReference: FORMULA_PER_DEGREE_PLATO,
+          rate: '33.00',
         });
-      // 1L at 4.0% ABV → €0.295 → 30 cents
-      const result = await service.calculate('beer', 0.04, 1.0);
-      expect(result.taxCents).toBe(30);
-      expect(result.rateApplied).toBeCloseTo(0.295);
+      // 0.33L at 4.7% ABV: 33.00 × 0.047 × 0.33 = 0.51183 → 51 cents
+      const result = await service.calculate('beer', 0.047, 0.33);
+      expect(result.taxCents).toBe(51);
+      expect(result.rateApplied).toBeCloseTo(33.0 * 0.047);
     });
 
     it('correctly applies per-litre-of-alcohol formula (spirits)', async () => {
@@ -112,7 +113,7 @@ describe('AlcoholExciseService', () => {
       repo.findApplicable = async () =>
         makeRule({
           productCategory: 'other_fermented',
-          calculationFormulaReference: FORMULA_PROGRESSIVE_ABV,
+          calculationFormulaReference: FORMULA_PER_LITRE_OF_ALCOHOL,
         });
       const result = await service.calculate('cider', 0.045, 0.33);
       expect(result.category).toBe('other_fermented');
@@ -136,9 +137,9 @@ describe('AlcoholExciseService', () => {
       expect(result.taxCents).toBe(255);
     });
 
-    it('uses default progressive rate for beer', async () => {
+    it('uses default per-degree-Plato rate for beer', async () => {
       const result = await service.calculate('beer', 0.04, 1.0);
-      expect(result.taxCents).toBe(30);
+      expect(result.taxCents).toBe(132); // 33.00 × 0.04 × 1.0 = 1.32 → 132 cents
     });
 
     it('uses default spirits rate (€29.50/L of pure alcohol)', async () => {
@@ -149,7 +150,7 @@ describe('AlcoholExciseService', () => {
 
   describe('edge cases', () => {
     it('handles 0 volume (returns 0 cents)', async () => {
-      const result = await service.calculate('beer', 0.04, 0);
+      const result = await service.calculate('beer', 0.047, 0);
       expect(result.taxCents).toBe(0);
     });
 

@@ -15,7 +15,7 @@ import { taxRules } from '../index';
 import {
   FORMULA_PER_LITRE_OF_PRODUCT,
   FORMULA_PER_LITRE_OF_ALCOHOL,
-  FORMULA_PROGRESSIVE_ABV,
+  FORMULA_PER_DEGREE_PLATO,
   FORMULA_FLAT_PER_LITRE,
 } from '@rajahinta/core-domain';
 
@@ -69,7 +69,7 @@ const BEER_FULL_RATE: TaxRuleSeed = {
     description: 'Beer ≤ 0.5 %ABV not subject to excise duty',
     appliesTo: { maxAlcoholByVolume: 0.5 },
   },
-  calculationFormulaReference: FORMULA_PROGRESSIVE_ABV,
+  calculationFormulaReference: FORMULA_PER_DEGREE_PLATO,
   officialSource: SOURCE_VERO_FI,
   verificationDate: VERIFIED_2024_Q1,
   versionLabel: VERSION,
@@ -77,7 +77,7 @@ const BEER_FULL_RATE: TaxRuleSeed = {
 
 const BEER_SMALL_BREWERY_RATE: TaxRuleSeed = {
   taxType: 'excise_duty',
-  productCategory: 'beer_small_brewery',
+  productCategory: 'beer',
   rate: '16.50',
   effectiveFrom: EFFECTIVE_FROM,
   effectiveTo: null,
@@ -89,7 +89,7 @@ const BEER_SMALL_BREWERY_RATE: TaxRuleSeed = {
       breweryType: 'independent_small',
     },
   },
-  calculationFormulaReference: FORMULA_PROGRESSIVE_ABV,
+  calculationFormulaReference: FORMULA_PER_DEGREE_PLATO,
   officialSource: SOURCE_VERO_FI,
   verificationDate: VERIFIED_2024_Q1,
   versionLabel: VERSION,

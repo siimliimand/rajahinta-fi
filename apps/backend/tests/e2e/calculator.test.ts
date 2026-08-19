@@ -267,7 +267,7 @@ const BEER_EXCISE_RULE: TaxRuleRecordPort = {
   rate: '33.00',
   effectiveFrom: new Date('2024-01-01'),
   effectiveTo: null,
-  calculationFormulaReference: 'PROGRESSIVE_ABV',
+  calculationFormulaReference: 'PER_DEGREE_PLATO',
   officialSource: 'Finnish Tax Administration — 2024',
   verificationDate: new Date('2024-03-01'),
   versionLabel: 'v1.0-2024',

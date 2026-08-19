@@ -26,13 +26,12 @@ export {
   calculateAlcoholExcise,
   calcPerLitreOfProduct,
   calcPerLitreOfAlcohol,
-  calcProgressiveAbv,
+  calcPerDegreePlato,
   normaliseCategory,
   FORMULA_PER_LITRE_OF_PRODUCT,
   FORMULA_PER_LITRE_OF_ALCOHOL,
-  FORMULA_PROGRESSIVE_ABV,
+  FORMULA_PER_DEGREE_PLATO,
   DEFAULT_RATES,
-  DEFAULT_BEER_TIERS,
 } from './services/alcohol-excise.math';
 
 // Canonical taxonomy

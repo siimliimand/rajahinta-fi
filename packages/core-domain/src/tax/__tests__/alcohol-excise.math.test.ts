@@ -8,13 +8,12 @@ import { describe, it, expect } from 'vitest';
 import {
   calcPerLitreOfProduct,
   calcPerLitreOfAlcohol,
-  calcProgressiveAbv,
+  calcPerDegreePlato,
   calculateAlcoholExcise,
   normaliseCategory,
   FORMULA_PER_LITRE_OF_PRODUCT,
   FORMULA_PER_LITRE_OF_ALCOHOL,
-  FORMULA_PROGRESSIVE_ABV,
-  DEFAULT_BEER_TIERS,
+  FORMULA_PER_DEGREE_PLATO,
 } from '../services/alcohol-excise.math';
 
 // ---------------------------------------------------------------------------
@@ -82,53 +81,51 @@ describe('calcPerLitreOfAlcohol', () => {
 });
 
 // ---------------------------------------------------------------------------
-// calcProgressiveAbv
+// calcPerDegreePlato
 // ---------------------------------------------------------------------------
 
-describe('calcProgressiveAbv', () => {
-  it('applies lowest tier for low ABV (2.5% → < 2.8% → €0)', () => {
-    const result = calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.025, 1.0);
+describe('calcPerDegreePlato', () => {
+  it('returns 0 for 0 ABV (alcohol-free beer)', () => {
+    const result = calcPerDegreePlato(33.0, 0, 0.33);
     expect(result).toBe(0);
   });
 
-  it('applies mid tier for 4.0% ABV: €0.295/L × 1L = 30 cents', () => {
-    const result = calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.04, 1.0);
-    expect(result).toBe(30); // 0.295 * 1.0 = 0.295 → round → 30
+  it('returns 0 for 0 volume', () => {
+    expect(calcPerDegreePlato(33.0, 0.047, 0)).toBe(0);
   });
 
-  it('applies high tier for 5.0% ABV: €0.435/L × 1L = 44 cents', () => {
-    const result = calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.05, 1.0);
-    expect(result).toBe(44); // 0.435 * 1.0 = 0.435 → round → 44
+  it('calculates 0.33L at 4.7% ABV: 33.00 × 0.047 × 0.33 = 0.51183 → 51 cents', () => {
+    // 33.00 * 0.047 * 0.33 = 0.51183 → round → 51
+    const result = calcPerDegreePlato(33.0, 0.047, 0.33);
+    expect(result).toBe(51);
   });
 
-  it('applies top tier for 9.0% ABV: €0.580/L × 1L = 58 cents', () => {
-    const result = calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.09, 1.0);
-    expect(result).toBe(58);
+  it('calculates 1L at 4.7% ABV: 33.00 × 0.047 × 1.0 = 1.551 → 155 cents', () => {
+    expect(calcPerDegreePlato(33.0, 0.047, 1.0)).toBe(155);
   });
 
-  it('handles partial litres correctly: 0.33L × €0.295 = 0.09735 → 10 cents', () => {
-    const result = calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.04, 0.33);
-    expect(result).toBe(10); // 0.295 * 0.33 = 0.09735 → round → 10
+  it('calculates 0.5L at 8.0% ABV: 33.00 × 0.080 × 0.5 = 1.32 → 132 cents', () => {
+    expect(calcPerDegreePlato(33.0, 0.08, 0.5)).toBe(132);
   });
 
-  it('applies lowest tier just below boundary: 2.7% ABV → €0', () => {
-    expect(calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.027, 1.0)).toBe(0);
+  it('handles small-brewery reduced rate: 16.50 × 0.047 × 0.33 = 0.2559 → 26 cents', () => {
+    expect(calcPerDegreePlato(16.5, 0.047, 0.33)).toBe(26);
   });
 
-  it('applies mid tier just below 4.7% boundary: 4.6% ABV → €0.295/L', () => {
-    expect(calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.046, 1.0)).toBe(30);
+  it('throws on ABV > 1', () => {
+    expect(() => calcPerDegreePlato(33.0, 1.1, 0.33)).toThrow(RangeError);
   });
 
-  it('applies high tier just below 8.0% boundary: 7.9% ABV → €0.435/L', () => {
-    expect(calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.079, 1.0)).toBe(44);
+  it('throws on negative ABV', () => {
+    expect(() => calcPerDegreePlato(33.0, -0.1, 0.33)).toThrow(RangeError);
   });
 
-  it('applies top tier for ABV above 8.0% (last tier fallback): 12% → €0.580/L', () => {
-    expect(calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.12, 1.0)).toBe(58); // 0.580 * 1.0 = 0.580 → 58
+  it('throws on negative volume', () => {
+    expect(() => calcPerDegreePlato(33.0, 0.047, -1)).toThrow(RangeError);
   });
 
-  it('handles 0 volume at a mid tier', () => {
-    expect(calcProgressiveAbv(DEFAULT_BEER_TIERS, 0.04, 0)).toBe(0);
+  it('handles high ABV near the limit: 0.99 × 33.00 × 0.33 = 10.7811 → 1078 cents', () => {
+    expect(calcPerDegreePlato(33.0, 0.99, 0.33)).toBe(1078);
   });
 });
 
@@ -161,16 +158,16 @@ describe('calculateAlcoholExcise', () => {
     expect(result.rateApplied).toBeCloseTo(0.565 * 0.40, 3);
   });
 
-  it('PROGRESSIVE_ABV: 1L beer at 4.0% ABV → 30 cents, rate 0.295', () => {
+  it('PER_DEGREE_PLATO: 0.33L beer at 4.7% ABV → 51 cents, rate 1.551', () => {
     const result = calculateAlcoholExcise(
-      FORMULA_PROGRESSIVE_ABV,
-      0.295, // ignored for progressive
-      0.04,
-      1.0,
+      FORMULA_PER_DEGREE_PLATO,
+      33.0,
+      0.047,
+      0.33,
       'beer',
     );
-    expect(result.taxCents).toBe(30);
-    expect(result.rateApplied).toBeCloseTo(0.295);
+    expect(result.taxCents).toBe(51);
+    expect(result.rateApplied).toBeCloseTo(33.0 * 0.047, 3);
   });
 
   it('intermediate: 0.75L at €0.710/L → 53 cents', () => {
@@ -226,7 +223,7 @@ describe('calculateAlcoholExcise', () => {
   it('handles 0 volume: returns 0 cents regardless of category', () => {
     expect(calculateAlcoholExcise(FORMULA_PER_LITRE_OF_PRODUCT, 0.355, 0.12, 0, 'wine_still').taxCents).toBe(0);
     expect(calculateAlcoholExcise(FORMULA_PER_LITRE_OF_ALCOHOL, 0.565, 0.40, 0, 'spirits').taxCents).toBe(0);
-    expect(calculateAlcoholExcise(FORMULA_PROGRESSIVE_ABV, 0.295, 0.04, 0, 'beer').taxCents).toBe(0);
+    expect(calculateAlcoholExcise(FORMULA_PER_DEGREE_PLATO, 33.0, 0.047, 0, 'beer').taxCents).toBe(0);
   });
 });
 
