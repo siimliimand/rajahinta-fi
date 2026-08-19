@@ -15,6 +15,7 @@ function createMockRepo(
 ): ITaxRuleRepositoryPort {
   return {
     findApplicable: async () => null,
+    findAllApplicable: async () => [],
     findHistoryRates: async () => [],
     findActiveVersionLabels: async () => [],
     ...overrides,
@@ -35,6 +36,7 @@ function makeRule(
     officialSource: 'Finnish Tax Administration',
     verificationDate: new Date('2025-06-01'),
     versionLabel: '2025.1',
+    exemptionConditions: null,
     ...overrides,
   };
 }

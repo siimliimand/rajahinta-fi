@@ -8,7 +8,7 @@
  */
 
 // Ports
-export type { ITaxRuleRepositoryPort, TaxRuleRecordPort } from './ports/tax-rule-repository.port';
+export type { ITaxRuleRepositoryPort, TaxRuleRecordPort, AbvTierConditions } from './ports/tax-rule-repository.port';
 export { TAX_RULE_REPOSITORY_PORT } from './services/alcohol-excise.service';
 
 // Services

@@ -88,7 +88,7 @@ export interface ContainerDutyCalculation {
 // ---------------------------------------------------------------------------
 
 export { TAX_RULE_REPOSITORY_PORT } from './tax/index';
-export type { ITaxRuleRepositoryPort, TaxRuleRecordPort } from './tax/index';
+export type { ITaxRuleRepositoryPort, TaxRuleRecordPort, AbvTierConditions } from './tax/index';
 
 // Tax formula reference constants — values stored in taxRules.calculationFormulaReference
 export {

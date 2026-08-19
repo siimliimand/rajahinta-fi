@@ -61,6 +61,9 @@ class InMemoryTaxRuleRepository implements ITaxRuleRepositoryPort {
   async findApplicable(): Promise<null> {
     return null; // fallback rates
   }
+  async findAllApplicable(): Promise<never[]> {
+    return [];
+  }
   async findHistoryRates(): Promise<never[]> {
     return [];
   }
