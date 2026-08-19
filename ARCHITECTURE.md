@@ -162,7 +162,7 @@ The application is a **NestJS modular monolith** with four bounded layers:
 | `packages/core-domain`      | Domain logic — tax engines, classification, ranking, calculator orchestrator, confidence framework, correction, entitlement, audit, source governance | `tax/`, `classification/`, `normalization/`, `transport/`, `calculator/`, `reliability/`, `ranking/`, `declaration/`, `correction/`, `entitlement/`, `audit/`, `governance/` |
 | `packages/data-platform`    | Drizzle ORM schema, concrete repositories, connection provider, seed data                                                                             | `schema.ts`, `abstracts.ts`, `repositories/`, `db/drizzle.provider.ts`, `data-platform.module.ts`, `seed/tax-rules.seed.ts`                                                  |
 | `packages/data-acquisition` | Merchant feed ingestion pipeline, data-quality checks, rate-review scheduler                                                                          | `adapters/systembolaget.adapter.ts`, `services/`, `config/merchants.config.ts`                                                                                               |
-| `packages/application-api`  | API controllers, DTOs, guards (rate limiting, idempotency, age gate, entitlement, launch gate), background job workers, observability                 | `calculator/`, `search/`, `declaration/`, `feature-flags/`, `rate-limiting/`, `age-gate/`, `jobs/`, `observability/`                                                         |
+| `packages/application-api`  | API controllers, DTOs, guards (rate limiting, idempotency, age gate, entitlement, launch gate), background job workers, observability                 | `calculator/`, `search/`, `ranking/`, `declaration/`, `feature-flags/`, `rate-limiting/`, `age-gate/`, `jobs/`, `observability/`                                                         |
 | `apps/backend`              | Composition root — AppModule wires all packages and provides domain-port adapters                                                                     | `app.module.ts`, `adapters/product-data.adapter.ts`, `adapters/calculation-record.adapter.ts`                                                                                |
 
 **Connection provider**: `DRIZZLE` token in `packages/data-platform/src/db/drizzle.provider.ts` creates a `pg.Pool` from `DATABASE_URL` and returns a fully-typed Drizzle ORM instance. The `DrizzleModule` is `@Global()`, making the connection available application-wide.
@@ -196,7 +196,7 @@ No `useValue: null` providers for data repos — all have concrete implementatio
 | **Home page**        | Navigation hub linking to calculator, compare, ranking, account                             | `apps/frontend/src/app/page.tsx`                                   |
 | **Calculator page**  | Product search, product selector, quantity selector, result display with itemized breakdown | `apps/frontend/src/app/calculator/`                                |
 | **Comparison page**  | Side-by-side product comparison with sort controls                                          | `apps/frontend/src/app/compare/`                                   |
-| **Ranking page**     | Explanation of ranking methodology (neutrality enforcement)                                 | `apps/frontend/src/app/ranking/page.tsx`                           |
+| **Ranking page**     | Explanation of ranking methodology (neutrality enforcement); structured JSON via `GET /api/v1/ranking/methodology` | `apps/frontend/src/app/ranking/page.tsx`, `packages/application-api/src/ranking/ranking.controller.ts` |
 | **Account page**     | Account management, saved baskets                                                           | `apps/frontend/src/app/account/`                                   |
 | **Age Gate**         | Age verification wrapper (renders in root layout)                                           | `apps/frontend/src/app/age-gate/`                                  |
 | **DisclaimerBanner** | Structural disclaimer rendered on every calculation result                                  | `apps/frontend/src/app/calculator/components/DisclaimerBanner.tsx` |
@@ -248,7 +248,7 @@ Schema design principles applied:
 | Integration                            | Status                                 | Implementation                                                                                                                               |
 | -------------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Systembolaget JSON assortment API      | Adapter implemented                    | `packages/data-acquisition/src/adapters/systembolaget.adapter.ts` — fetches, maps to `RawFeedRecord`, handles pagination and per-item errors |
-| Finnish Tax Administration rate tables | Seed data (v1.0-2024) + fallback rates | `packages/data-platform/src/seed/tax-rules.seed.ts`, `packages/core-domain/src/tax/services/alcohol-excise.math.ts`                          |
+| Finnish Tax Administration rate tables | Seed data (v1.0-2024) + fallback rates + snapshot-based rate review  | `packages/data-platform/src/seed/tax-rules.seed.ts`, `packages/core-domain/src/tax/services/alcohol-excise.math.ts`, `packages/data-acquisition/src/services/rate-review-scheduler.service.ts` — `ConfigBackedRateChangeSource` reads a configured snapshot file, computes a SHA-256 hash, and compares against the last-reviewed entry to detect rate changes; review entries require manual/legal confirmation before promoting dataset versions |
 | Alko (Finnish retailer)                | Registered, adapter pending            | `merchants.config.ts` — empty feedUrl, skipped by pipeline until adapter is built                                                            |
 
 Merchant ingestion is gated by `SourceGovernanceService` — a merchant must have `GRANTED` permission status before the pipeline will fetch or persist its data. New merchants default to `PENDING` (off) until compliance review.
@@ -400,7 +400,7 @@ Per the implementation plan's delivery phases:
 | **Runtime**        | Node.js 22 (backend), Next.js 14 (frontend)                                   |
 | **Database**       | PostgreSQL 16 (Drizzle ORM)                                                   |
 | **Cache/Queue**    | Redis 7 (BullMQ)                                                              |
-| **Date of review** | 2026-08-18                                                                    |
+| **Date of review** | 2026-08-19                                                                    |
 | **Maintainer**     | Not evident from the repository                                               |
 
 ## 18. Glossary / Acronyms
@@ -416,4 +416,4 @@ Per the implementation plan's delivery phases:
 | MyTax            | Finnish Tax Administration's online tax service                                                                    |
 | ABV              | Alcohol by volume                                                                                                  |
 
-<!-- Last updated: 2026-08-18 — Phase 1 implementation state -->
+<!-- Last updated: 2026-08-19 — Phase 1 implementation state (Tax Engine Correction complete) -->

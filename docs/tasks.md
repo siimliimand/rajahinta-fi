@@ -67,7 +67,7 @@
 - [x] **T1.20** Build the Beverage-Container Duty Sub-Engine → `ContainerDutyService` + `container-duty.math.ts` calculates container duty (€0.51/litre) as distinct from excise.
 - [x] **T1.21** Implement deposit-return system exemption check → `checkDepositExemption()` in `deposit-checker.ts` evaluates tri-state `depositSystemStatus` (true/false/null); null → ESTIMATED.
 - [x] **T1.22** Populate the initial versioned Tax Rule dataset (excise + container duty) sourced from official Finnish Tax Administration data → `seed/tax-rules.seed.ts` (v1.0-2024) + `DEFAULT_RATES` reconciled.
-- [ ] **T1.23** Implement the scheduled rate-review process → `RateReviewSchedulerService` in `data-acquisition/services/` exists but the recurring job that checks for newly published official rate changes and creates a task for manual/legal confirmation before any new dataset version goes live is not fully automated yet.
+- [ ] **T1.23** Implement the scheduled rate-review process → `RateReviewSchedulerService` + `ConfigBackedRateChangeSource` in `data-acquisition/services/` implement an automated periodic check that reads a configured snapshot file, computes a SHA-256 hash, and compares it against the last-reviewed entry to detect new rates. When changes are found, a pending review entry is created for manual/legal confirmation — rates are never auto-published. The snapshot-based detection mechanism is implemented and functional; direct vero.fi API integration for live rate fetching remains deferred to Phase 2.
 - [x] **T1.24** Historical rates remain queryable after a rate change → `TaxRuleQueryService.findHistoryRates()` and `findEffectiveVersion()` resolve against effective date ranges.
 
 ### 1F: Transaction Classification Module
@@ -243,4 +243,4 @@ Per the business plan and engineering plan, the following are explicitly deferre
 
 ---
 
-*Last updated: 2026-08-18 — Synced with Phase 1 launch-readiness changes*
+*Last updated: 2026-08-19 — Synced with Phase 1 implementation state (Tax Engine Correction complete)*
