@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DataAcquisitionModule } from '@rajahinta/data-acquisition';
+import { IdempotencyModule } from '../idempotency';
 import { JobsSchedulerService } from './jobs-scheduler.service';
 import { PriceIngestionWorker } from './workers/price-ingestion.worker';
 import { TransportRateRefreshWorker } from './workers/transport-rate-refresh.worker';
@@ -13,6 +14,10 @@ import { TimeSeriesAggregationWorker } from './workers/time-series-aggregation.w
     // - Bull queue providers (registered via BullModule.registerQueue)
     // - Abstract service tokens injected by workers (PriceIngestionService, etc.)
     DataAcquisitionModule,
+
+    // IdempotencyModule provides IdempotencyService for cache invalidation
+    // when new dataset versions are detected.
+    IdempotencyModule,
 
     // Enable @Cron() decorators in JobsSchedulerService
     ScheduleModule.forRoot(),

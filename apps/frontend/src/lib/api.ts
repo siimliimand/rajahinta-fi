@@ -55,14 +55,40 @@ export class ApiFetchError extends Error {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Read a browser cookie by name. Returns the value or undefined.
+ */
+function getCookie(name: string): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const match = document.cookie
+    .split(';')
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${name}=`));
+  return match ? match.slice(name.length + 1) : undefined;
+}
+
 async function request<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
   const url = `${BASE_URL}${path}`;
+
+  // Merge default Content-Type with caller-provided headers and
+  // inject the age-confirmation header when the cookie is present.
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...Object.fromEntries(
+      Object.entries(init?.headers ?? {}).map(([k, v]) => [k.toLowerCase(), String(v)]),
+    ),
+  };
+  const ageToken = getCookie('age_confirmed');
+  if (ageToken) {
+    headers['x-age-confirmed'] = ageToken;
+  }
+
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
     ...init,
+    headers,
   });
 
   if (!res.ok) {

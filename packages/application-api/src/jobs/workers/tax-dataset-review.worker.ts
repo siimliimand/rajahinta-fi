@@ -5,6 +5,7 @@ import {
   QUEUES,
   TaxDatasetReviewService,
 } from '@rajahinta/data-acquisition';
+import { IdempotencyService } from '../../idempotency';
 
 /**
  * Empty job data — TaxDatasetReview checks all known sources.
@@ -20,6 +21,7 @@ export class TaxDatasetReviewWorker {
 
   constructor(
     private readonly taxReview: TaxDatasetReviewService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   @Process({ concurrency: 1 })
@@ -38,6 +40,16 @@ export class TaxDatasetReviewWorker {
       this.logger.warn(
         'New tax datasets found requiring manual confirmation — no rates auto-published',
       );
+
+      // Invalidate cached calculations that reference the replaced
+      // dataset versions so subsequent lookups re-compute with fresh data.
+      const versions = result.detectedVersions;
+      if (versions !== undefined && versions.length > 0) {
+        this.logger.log(
+          `Invalidating idempotency cache for versions: ${versions.join(', ')}`,
+        );
+        await this.idempotency.invalidateOnVersionChange([...versions]);
+      }
     }
   }
 }

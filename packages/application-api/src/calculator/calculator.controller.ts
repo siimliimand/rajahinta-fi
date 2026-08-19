@@ -22,6 +22,7 @@ import {
   UseGuards,
   Headers,
   Res,
+  Inject,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
@@ -31,6 +32,8 @@ import {
   ProductNotFoundError,
   NoRetailOffersError,
   ClassificationGateRejectionError,
+  TAX_RULE_REPOSITORY_PORT,
+  ITaxRuleRepositoryPort,
 } from '@rajahinta/core-domain';
 import {
   CalculationRecordRepository,
@@ -44,11 +47,15 @@ import { AgeGateGuard } from '../age-gate';
 
 @ApiTags('calculator')
 @Controller('api/v1/calculator')
+@LaunchGate(LaunchGateType.CALCULATION)
+@UseGuards(RateLimitGuard, LaunchGateGuard, AgeGateGuard)
 export class CalculatorController {
   constructor(
     private readonly calculator: LandedCostCalculatorService,
     private readonly recordRepo: CalculationRecordRepository,
     private readonly idempotency: IdempotencyService,
+    @Inject(TAX_RULE_REPOSITORY_PORT)
+    private readonly taxRepo: ITaxRuleRepositoryPort,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -56,8 +63,6 @@ export class CalculatorController {
   // ---------------------------------------------------------------------------
 
   @Post()
-  @LaunchGate(LaunchGateType.CALCULATION)
-  @UseGuards(RateLimitGuard, LaunchGateGuard, AgeGateGuard)
   @RateLimit('CALCULATOR')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -103,7 +108,8 @@ export class CalculatorController {
 
     // ---- Idempotency check ----
     const cacheKey = idempotencyKey ?? this.idempotency.getCacheKey(input);
-    const cached = await this.idempotency.lookup(cacheKey);
+    const currentVersions = await this.taxRepo.findActiveVersionLabels();
+    const cached = await this.idempotency.lookup(cacheKey, currentVersions);
     if (cached !== null) {
       const contentHash = this.idempotency.getContentHash(cached);
       res?.header('X-Cache', 'HIT');
@@ -146,6 +152,7 @@ export class CalculatorController {
   // ---------------------------------------------------------------------------
 
   @Get('result/:recordId')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Retrieve a previous calculation result by record ID',
     description:
@@ -153,6 +160,7 @@ export class CalculatorController {
       'confidence level, and metadata.',
   })
   @ApiResponse({ status: 200, description: 'Calculation record' })
+  @ApiResponse({ status: 403, description: 'Feature not available' })
   @ApiResponse({ status: 404, description: 'Record not found' })
   async getResult(
     @Param('recordId', ParseIntPipe) recordId: number,

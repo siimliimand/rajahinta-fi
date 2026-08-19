@@ -7,7 +7,7 @@
  * @module DrizzleCalculationRecordRepository
  */
 import { Injectable, Inject } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, or, sql, type SQL } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDatabase } from '../db/drizzle.provider';
 import {
   CalculationRecordRepository,
@@ -56,5 +56,40 @@ export class DrizzleCalculationRecordRepository extends CalculationRecordReposit
       .from(calculationRecords)
       .where(eq(calculationRecords.sessionId, sessionId))
       .orderBy(calculationRecords.calculatedAt);
+  }
+
+  /** @inheritdoc */
+  async findCalculationRecordIdsByEntity(
+    entityType: string,
+    entityId: number,
+  ): Promise<number[]> {
+    let whereClause: SQL;
+
+    switch (entityType) {
+      case 'product':
+        whereClause = eq(calculationRecords.productMasterId, entityId);
+        break;
+      case 'retailOffer':
+        whereClause = sql`${calculationRecords.retailOfferIds} @> ${JSON.stringify([entityId])}::jsonb`;
+        break;
+      case 'transportOffer':
+        whereClause = eq(calculationRecords.transportOfferId, entityId);
+        break;
+      case 'taxRule':
+        whereClause = or(
+          eq(calculationRecords.exciseRuleVersionId, entityId),
+          eq(calculationRecords.containerDutyRuleVersionId, entityId),
+        )!;
+        break;
+      default:
+        return [];
+    }
+
+    const rows = await this.db
+      .select({ id: calculationRecords.id })
+      .from(calculationRecords)
+      .where(whereClause);
+
+    return rows.map((r) => r.id);
   }
 }

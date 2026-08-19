@@ -14,16 +14,27 @@
  */
 
 import { Module } from '@nestjs/common';
-import { RateReviewSchedulerService, RATE_REVIEW_CONFIG_TOKEN, DEFAULT_RATE_REVIEW_CONFIG } from './rate-review-scheduler.service';
+import {
+  RateReviewSchedulerService,
+  ConfigBackedRateChangeSource,
+  RATE_REVIEW_CONFIG_TOKEN,
+  DEFAULT_RATE_REVIEW_CONFIG,
+  RATE_CHANGE_SOURCE_CONFIG_TOKEN,
+  DEFAULT_RATE_CHANGE_SOURCE_CONFIG,
+} from './rate-review-scheduler.service';
+import { RATE_CHANGE_SOURCE_PORT } from '../interfaces/rate-review-repository.port';
 
 @Module({
   providers: [
     RateReviewSchedulerService,
     { provide: RATE_REVIEW_CONFIG_TOKEN, useValue: DEFAULT_RATE_REVIEW_CONFIG },
+    { provide: RATE_CHANGE_SOURCE_PORT, useClass: ConfigBackedRateChangeSource },
+    { provide: RATE_CHANGE_SOURCE_CONFIG_TOKEN, useValue: DEFAULT_RATE_CHANGE_SOURCE_CONFIG },
   ],
   exports: [
     RateReviewSchedulerService,
     RATE_REVIEW_CONFIG_TOKEN,
+    RATE_CHANGE_SOURCE_PORT,
   ],
 })
 export class RateReviewModule {}

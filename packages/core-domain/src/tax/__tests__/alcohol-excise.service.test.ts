@@ -19,6 +19,7 @@ function createMockRepo(
   return {
     findApplicable: async () => null,
     findHistoryRates: async () => [],
+    findActiveVersionLabels: async () => [],
     ...overrides,
   };
 }

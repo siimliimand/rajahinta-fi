@@ -37,11 +37,10 @@ export class LaunchGateService {
 
   /**
    * Whether price data is visible to end users.
-   * Returns true when the legal opinion gate is confirmed.
-   * The other gates are not required for read-only price display.
+   * Returns true only when ALL three gates (legal, tax, correction) are confirmed.
    */
   isPriceDataVisible(): boolean {
-    return this.gates.legalOpinionConfirmed;
+    return this.gates.launchReady;
   }
 
   /** Return the full gate status snapshot. */

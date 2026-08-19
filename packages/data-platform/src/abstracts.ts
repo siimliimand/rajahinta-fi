@@ -86,6 +86,16 @@ export abstract class CalculationRecordRepository {
   abstract findBySession(
     sessionId: string,
   ): Promise<typeof calculationRecords.$inferSelect[]>;
+
+  /**
+   * Return the IDs of calculation records that reference a given entity.
+   *
+   * Supported entity types: 'product', 'retailOffer', 'transportOffer', 'taxRule'.
+   */
+  abstract findCalculationRecordIdsByEntity(
+    entityType: string,
+    entityId: number,
+  ): Promise<number[]>;
 }
 
 @Injectable()

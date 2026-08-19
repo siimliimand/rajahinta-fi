@@ -12,7 +12,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { RateReviewSchedulerService, DEFAULT_RATE_REVIEW_CONFIG } from '../services/rate-review-scheduler.service';
-import type { IRateReviewRepository } from '../interfaces/rate-review-repository.port';
+import type { IRateReviewRepository, RateChangeSourcePort } from '../interfaces/rate-review-repository.port';
 import type { RateReviewEntry } from '../interfaces/rate-review.types';
 
 // ---------------------------------------------------------------------------
@@ -51,16 +51,30 @@ function createFakeRepository(
   };
 }
 
+function createFakeRateChangeSource(
+  overrides?: Partial<RateChangeSourcePort>,
+): RateChangeSourcePort {
+  return {
+    checkForChanges: vi.fn().mockResolvedValue({
+      checkedAt: new Date().toISOString(),
+      newRatesDetected: false,
+    }),
+    ...overrides,
+  };
+}
+
 function createService(overrides?: {
   repository?: Partial<IRateReviewRepository>;
   discoveryDisabled?: boolean;
+  rateChangeSource?: RateChangeSourcePort;
 }): RateReviewSchedulerService {
   const repo = createFakeRepository(overrides?.repository);
   const config = {
     ...DEFAULT_RATE_REVIEW_CONFIG,
     discoveryDisabled: overrides?.discoveryDisabled ?? false,
   };
-  return new RateReviewSchedulerService(repo, config);
+  const source = overrides?.rateChangeSource ?? createFakeRateChangeSource();
+  return new RateReviewSchedulerService(repo, config, source);
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +104,29 @@ describe('RateReviewSchedulerService', () => {
       expect(result).toHaveProperty('newRatesDetected');
     });
 
+    it('does not include detectedVersions when no new rates found', async () => {
+      const service = createService();
+      const result = await service.checkForRateChanges();
+
+      expect(result.newRatesDetected).toBe(false);
+      expect(result.detectedVersions).toBeUndefined();
+    });
+
+    it('includes detectedVersions when rates are detected via custom source', async () => {
+      const source = {
+        checkForChanges: vi.fn().mockResolvedValue({
+          checkedAt: new Date().toISOString(),
+          newRatesDetected: true,
+          detectedVersions: ['excise-2024-Q1', 'vat-2024'],
+        }),
+      };
+      const service = createService({ rateChangeSource: source });
+      const result = await service.checkForRateChanges();
+
+      expect(result.newRatesDetected).toBe(true);
+      expect(result.detectedVersions).toEqual(['excise-2024-Q1', 'vat-2024']);
+    });
+
     it('returns newRatesDetected=false when discovery is disabled', async () => {
       const service = createService({ discoveryDisabled: true });
       const result = await service.checkForRateChanges();
@@ -99,6 +136,42 @@ describe('RateReviewSchedulerService', () => {
 
     it('returns newRatesDetected=false by default (mock behaviour)', async () => {
       const service = createService();
+      const result = await service.checkForRateChanges();
+
+      expect(result.newRatesDetected).toBe(false);
+    });
+
+    it('delegates to the injected RateChangeSourcePort', async () => {
+      const source = createFakeRateChangeSource();
+      const service = createService({ rateChangeSource: source });
+      await service.checkForRateChanges();
+
+      expect(source.checkForChanges).toHaveBeenCalledTimes(1);
+    });
+
+    it('detects new rates when the source returns newRatesDetected=true', async () => {
+      const source = createFakeRateChangeSource({
+        checkForChanges: vi.fn().mockResolvedValue({
+          checkedAt: new Date().toISOString(),
+          newRatesDetected: true,
+          reviewId: 'test-source-review-1',
+        }),
+      });
+      const service = createService({ rateChangeSource: source });
+      const result = await service.checkForRateChanges();
+
+      expect(result.newRatesDetected).toBe(true);
+      expect(result.reviewId).toBe('test-source-review-1');
+    });
+
+    it('reports no new rates when the source returns newRatesDetected=false', async () => {
+      const source = createFakeRateChangeSource({
+        checkForChanges: vi.fn().mockResolvedValue({
+          checkedAt: new Date().toISOString(),
+          newRatesDetected: false,
+        }),
+      });
+      const service = createService({ rateChangeSource: source });
       const result = await service.checkForRateChanges();
 
       expect(result.newRatesDetected).toBe(false);
@@ -150,7 +223,7 @@ describe('RateReviewSchedulerService', () => {
     it('persists the entry via the repository', async () => {
       const repo = createFakeRepository();
       const config = DEFAULT_RATE_REVIEW_CONFIG;
-      const service = new RateReviewSchedulerService(repo, config);
+      const service = new RateReviewSchedulerService(repo, config, createFakeRateChangeSource());
 
       const reviewResult = await service.createRateUpdateTask({
         checkedAt: new Date().toISOString(),

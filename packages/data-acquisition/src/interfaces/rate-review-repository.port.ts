@@ -11,10 +11,29 @@
  * @module RateReviewRepositoryPort
  */
 
-import type { RateReviewEntry, RateReviewStatus, RateReviewResolution } from './rate-review.types';
+import type { RateReviewEntry, RateReviewResult, RateReviewStatus, RateReviewResolution } from './rate-review.types';
 
 /** Injection token for the rate-review repository port. */
 export const RATE_REVIEW_REPOSITORY_PORT = 'RATE_REVIEW_REPOSITORY_PORT';
+
+/** Injection token for the rate-change source port. */
+export const RATE_CHANGE_SOURCE_PORT = 'RATE_CHANGE_SOURCE_PORT';
+
+/**
+ * Port interface for detecting newly published official tax-rate changes.
+ *
+ * Implementations check configured external sources (API, RSS, file snapshot)
+ * and return whether new rates were found since the last check.
+ *
+ * @module RateChangeSourcePort
+ */
+export interface RateChangeSourcePort {
+  /**
+   * Check for newly published rate changes.
+   * Returns a result indicating whether changes were detected.
+   */
+  checkForChanges(): Promise<RateReviewResult>;
+}
 
 /**
  * Repository contract for rate-review entries.

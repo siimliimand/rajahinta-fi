@@ -18,6 +18,6 @@ import { TaxRuleQueryService } from './services/tax-rule-query.service';
     TaxRuleQueryService,
     { provide: TAX_RULE_REPOSITORY_PORT, useValue: null },
   ],
-  exports: [AlcoholExciseService, ContainerDutyService, TaxRuleQueryService],
+  exports: [AlcoholExciseService, ContainerDutyService, TaxRuleQueryService, TAX_RULE_REPOSITORY_PORT],
 })
 export class TaxModule {}

@@ -17,8 +17,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import type { RateReviewResult, RateReviewEntry } from '../interfaces/rate-review.types';
-import type { IRateReviewRepository } from '../interfaces/rate-review-repository.port';
-import { RATE_REVIEW_REPOSITORY_PORT } from '../interfaces/rate-review-repository.port';
+import type { IRateReviewRepository, RateChangeSourcePort } from '../interfaces/rate-review-repository.port';
+import { RATE_REVIEW_REPOSITORY_PORT, RATE_CHANGE_SOURCE_PORT } from '../interfaces/rate-review-repository.port';
 
 /**
  * Configuration for the rate-review scheduler.
@@ -44,6 +44,44 @@ export const DEFAULT_RATE_REVIEW_CONFIG: RateReviewConfig = {
   discoveryDisabled: false,
 };
 
+// ---------------------------------------------------------------------------
+// Rate-change source — config-backed default implementation
+// ---------------------------------------------------------------------------
+
+/** Injection token for the rate-change source configuration (snapshot path). */
+export const RATE_CHANGE_SOURCE_CONFIG_TOKEN = 'RATE_CHANGE_SOURCE_CONFIG_TOKEN';
+
+/** Default: empty string means "not configured" — no detection. */
+export const DEFAULT_RATE_CHANGE_SOURCE_CONFIG = '';
+
+/**
+ * Config-backed default implementation of {@link RateChangeSourcePort}.
+ *
+ * Reads a configured snapshot path/URL. When the path is empty (the default),
+ * returns no new rates — preserving the Phase 1 no-op behaviour.
+ */
+@Injectable()
+export class ConfigBackedRateChangeSource implements RateChangeSourcePort {
+  constructor(
+    @Inject(RATE_CHANGE_SOURCE_CONFIG_TOKEN)
+    private readonly snapshotPath: string,
+  ) {}
+
+  async checkForChanges(): Promise<RateReviewResult> {
+    const checkedAt = new Date().toISOString();
+
+    if (!this.snapshotPath) {
+      // No snapshot source configured — no detection possible.
+      return { checkedAt, newRatesDetected: false };
+    }
+
+    // Phase 1: snapshot path is configured but we still return no changes.
+    // Real implementation would read the snapshot file/URL and compare
+    // against the last-known rate set.
+    return { checkedAt, newRatesDetected: false };
+  }
+}
+
 @Injectable()
 export class RateReviewSchedulerService {
   private readonly logger = new Logger(RateReviewSchedulerService.name);
@@ -55,6 +93,8 @@ export class RateReviewSchedulerService {
     private readonly repository: IRateReviewRepository,
     @Inject(RATE_REVIEW_CONFIG_TOKEN)
     private readonly config: RateReviewConfig,
+    @Inject(RATE_CHANGE_SOURCE_PORT)
+    private readonly rateChangeSource: RateChangeSourcePort,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -120,38 +160,15 @@ export class RateReviewSchedulerService {
       return { checkedAt, newRatesDetected: false };
     }
 
-    // -----------------------------------------------------------------------
-    // Phase 1: Detection is a documented no-op.
-    //
-    // Rationale: Real API integration (vero.fi, EUR-Lex) belongs in a
-    // dedicated adapter layer.  That work is deferred until:
-    //   1. A source-adapter interface is designed (error handling, rate
-    //      limiting, scheduled polling, idempotent fetch).
-    //   2. A poller task is wired into the task-orchestrator pipeline.
-    //   3. The adapter is tested against a vero.fi staging or sandbox
-    //      endpoint.
-    //
-    // Until then, checkForRateChanges() always reports "no new rates", so
-    // the scheduler runs silently without creating spurious review entries.
-    //
-    // Trigger conditions for replacement:
-    //   - A source-adapter abstraction is merged (see T1.23).
-    //   - A polling job is registered in the task orchestrator.
-    //   - Integration tests pass against a real or recorded API response.
-    //
-    // See: docs/tasks.md T1.23 — "Tax-rate source adapter"
-    // -----------------------------------------------------------------------
-    const newRatesDetected = false;
+    // Delegate to the injected rate-change source port.
+    // Phase 1 default: ConfigBackedRateChangeSource returns no new rates
+    // when no snapshot path is configured (preserving the documented no-op).
+    const result = await this.rateChangeSource.checkForChanges();
 
-    if (!newRatesDetected) {
-      return { checkedAt, newRatesDetected: false };
-    }
-
-    // When real detection lands, the code below creates a review entry.
-    return {
-      checkedAt,
-      newRatesDetected: true,
-    };
+    // When real detection returns true, the caller (scheduleNextReview)
+    // logs a warning and expects an operator to call createRateUpdateTask.
+    // Rates are NEVER auto-published.
+    return result;
   }
 
   // ---------------------------------------------------------------------------

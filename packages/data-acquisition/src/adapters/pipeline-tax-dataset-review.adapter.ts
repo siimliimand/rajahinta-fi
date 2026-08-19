@@ -30,11 +30,13 @@ export class PipelineTaxDatasetReviewAdapter extends TaxDatasetReviewService {
    * Check for newly published official tax rates.
    *
    * Delegates to {@link RateReviewSchedulerService.checkForRateChanges}
-   * and maps the result to the legacy return shape.
+   * and maps the result to the legacy return shape.  When detected,
+   * passes through the dataset versions for downstream cache invalidation.
    */
   async checkForNewPublishedRates(): Promise<{
     datasetsFound: number;
     requiresConfirmation: boolean;
+    detectedVersions?: readonly string[];
   }> {
     const result = await this.rateReviewScheduler.checkForRateChanges();
 
@@ -42,7 +44,11 @@ export class PipelineTaxDatasetReviewAdapter extends TaxDatasetReviewService {
       this.logger.warn(
         'New tax datasets detected — manual confirmation required before publishing',
       );
-      return { datasetsFound: 1, requiresConfirmation: true };
+      return {
+        datasetsFound: 1,
+        requiresConfirmation: true,
+        detectedVersions: result.detectedVersions,
+      };
     }
 
     return { datasetsFound: 0, requiresConfirmation: false };

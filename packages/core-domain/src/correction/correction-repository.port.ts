@@ -95,4 +95,23 @@ export interface ICorrectionCalculationRecordQuery {
    * Returns null when the record does not exist.
    */
   findById(id: number): Promise<unknown | null>;
+
+  /**
+   * Given a flagged entity type and ID, return the Calculation Record IDs
+   * that referenced that entity. Used by the resolution workflow so that
+   * ACCEPTED data-point corrections can link back to affected records.
+   *
+   * Supported entity types and the columns they map to:
+   * - `'product'`       → `productMasterId`
+   * - `'retailOffer'`   → `retailOfferIds` (JSONB array containment)
+   * - `'transportOffer'`→ `transportOfferId`
+   * - `'taxRule'`       → `exciseRuleVersionId` OR `containerDutyRuleVersionId`
+   *
+   * Returns an empty array when the entity type is unrecognised or no
+   * calculation records reference the entity.
+   */
+  findCalculationRecordIdsByEntity(
+    entityType: string,
+    entityId: number,
+  ): Promise<number[]>;
 }

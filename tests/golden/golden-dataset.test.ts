@@ -62,6 +62,9 @@ class InMemoryTaxRuleRepository implements ITaxRuleRepositoryPort {
   async findHistoryRates(): Promise<never[]> {
     return [];
   }
+  async findActiveVersionLabels(): Promise<readonly string[]> {
+    return ['FALLBACK'];
+  }
 }
 
 class InMemoryTransportOfferQuery implements ITransportOfferQuery {

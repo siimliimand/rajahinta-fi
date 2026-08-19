@@ -1,12 +1,19 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import React from 'react';
 
-const STORAGE_KEY = 'rajahinta_age_verified';
+const STORAGE_KEY = 'age_confirmed';
 
 function getAgeVerified(): boolean {
   if (typeof window === 'undefined') return false;
   return localStorage.getItem(STORAGE_KEY) === 'true';
+}
+
+const COOKIE_NAME = 'age_confirmed';
+
+function setAgeConfirmedCookie(): void {
+  document.cookie = `${COOKIE_NAME}=true; path=/; SameSite=Lax; max-age=86400`;
 }
 
 function setAgeVerified(): void {
@@ -27,6 +34,7 @@ export function AgeGate({ children }: { children: React.ReactNode }) {
 
   const handleConfirm = () => {
     setAgeVerified();
+    setAgeConfirmedCookie();
     setVerified(true);
   };
 
