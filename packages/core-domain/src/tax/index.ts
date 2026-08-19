@@ -35,6 +35,13 @@ export {
   DEFAULT_BEER_TIERS,
 } from './services/alcohol-excise.math';
 
+// Canonical taxonomy
+export {
+  TAX_CATEGORY_KEYS,
+  CATEGORY_DEFAULT_FORMULA,
+} from './tax-categories';
+export type { TaxCategory, FormulaType } from './tax-categories';
+
 export {
   calculateContainerDuty,
   calcContainerDuty,

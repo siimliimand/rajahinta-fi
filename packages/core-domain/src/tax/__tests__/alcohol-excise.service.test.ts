@@ -30,7 +30,7 @@ function makeRule(
   return {
     id: 1,
     taxType: 'excise',
-    productCategory: 'wine',
+    productCategory: 'wine_still',
     rate: '0.355',
     effectiveFrom: new Date('2025-01-01'),
     effectiveTo: null,
@@ -108,14 +108,14 @@ describe('AlcoholExciseService', () => {
       expect(result.rateApplied).toBeCloseTo(0.565 * 0.40);
     });
 
-    it('maps cider category to beer rules via normaliseCategory', async () => {
+    it('maps cider category to other_fermented via normaliseCategory', async () => {
       repo.findApplicable = async () =>
         makeRule({
-          productCategory: 'cider',
+          productCategory: 'other_fermented',
           calculationFormulaReference: FORMULA_PROGRESSIVE_ABV,
         });
       const result = await service.calculate('cider', 0.045, 0.33);
-      expect(result.category).toBe('cider');
+      expect(result.category).toBe('other_fermented');
       expect(result.taxCents).toBeGreaterThanOrEqual(0);
     });
   });
@@ -164,8 +164,8 @@ describe('AlcoholExciseService', () => {
       expect(result.category).toBe('spirits');
     });
 
-    it('handles all 7 categories gracefully', async () => {
-      const categories = ['beer', 'wine', 'spirits', 'cider', 'rtd', 'intermediate', 'other'];
+    it('handles all 6 canonical categories gracefully', async () => {
+      const categories = ['beer', 'wine_still', 'spirits', 'intermediate_products', 'other_fermented'];
       for (const cat of categories) {
         const result = await service.calculate(cat, 0.05, 0.33);
         expect(result.taxCents).toBeGreaterThanOrEqual(0);

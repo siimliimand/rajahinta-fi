@@ -123,7 +123,7 @@ export class AlcoholExciseService {
     abv: number,
     volumeLitres: number,
   ): ExciseResult {
-    const defaults = DEFAULT_RATES[category] ?? DEFAULT_RATES.other;
+    const defaults = DEFAULT_RATES[category] ?? DEFAULT_RATES.other_fermented;
     const { taxCents, rateApplied } = calculateAlcoholExcise(
       defaults.formula,
       defaults.rate,

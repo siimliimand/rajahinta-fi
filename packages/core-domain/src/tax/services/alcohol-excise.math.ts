@@ -7,6 +7,8 @@
  * @module AlcoholExciseMath
  */
 
+import type { TaxCategory } from '../tax-categories';
+
 // ---------------------------------------------------------------------------
 // Formula reference constants — values stored in taxRules.calculationFormulaReference
 // ---------------------------------------------------------------------------
@@ -33,17 +35,12 @@ export const FORMULA_PROGRESSIVE_ABV = 'PROGRESSIVE_ABV';
 // ---------------------------------------------------------------------------
 
 /**
- * Finnish alcohol excise categories as understood by the service.
- * 'cider' and 'rtd' are runtime aliases (cider→beer rates, rtd→spirits rates).
+ * Canonical excise-duty category key.
+ *
+ * Re-exported from {@link TaxCategory} in `tax-categories.ts` so consumers
+ * can import from this file as before.
  */
-export type AlcoholExciseCategory =
-  | 'beer'
-  | 'wine'
-  | 'spirits'
-  | 'cider'
-  | 'rtd'
-  | 'intermediate'
-  | 'other';
+export type AlcoholExciseCategory = TaxCategory;
 
 /**
  * Internal ABV-tier descriptor for progressive-rate categories.
@@ -73,12 +70,11 @@ export const DEFAULT_RATES: Record<
   { formula: string; rate: number; note: string }
 > = {
   beer: { formula: FORMULA_PROGRESSIVE_ABV, rate: 0.295, note: 'See DEFAULT_BEER_TIERS' },
-  cider: { formula: FORMULA_PROGRESSIVE_ABV, rate: 0.295, note: 'Same as beer tiers' },
-  wine: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: 'Still & sparkling, > 1.2 % ABV (seed: 3.40)' },
-  intermediate: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: '≤ 15 % ABV (seed: 3.40)' },
+  wine_still: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: 'Still wine > 1.2 % ABV (seed: 3.40)' },
+  wine_sparkling: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.73, note: 'Sparkling wine > 1.2 % ABV (seed: 3.73)' },
   spirits: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 29.50, note: 'Per litre of pure alcohol (seed: 29.50)' },
-  rtd: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 29.50, note: 'Spirits-based RTD (seed: 29.50)' },
-  other: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: 'Other fermented > 2.8 % ABV (seed: 3.40)' },
+  intermediate_products: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: '≤ 15 % ABV (seed: 3.40)' },
+  other_fermented: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 3.40, note: 'Cider, RTD, etc. > 2.8 % ABV (seed: 3.40/l alcohol)' },
 };
 
 // ---------------------------------------------------------------------------
@@ -86,18 +82,45 @@ export const DEFAULT_RATES: Record<
 // ---------------------------------------------------------------------------
 
 /**
- * Normalise a raw category string to the internal category key.
+ * Normalise a raw product-category string to the canonical seed key.
+ *
+ * Canonical keys are idempotent — passing an already-canonical key returns it
+ * unchanged.  This ensures the function is safe to call on keys that may or
+ * may not have been normalised already.
+ *
+ * Mapping rules:
+ *   beer / olut / already-canonical    → beer
+ *   wine / viini (default)             → wine_still
+ *   sparkling / champagne / kuohuviini → wine_sparkling
+ *   spirits / viina / vodka / whisky/whiskey → spirits
+ *   cider / siideri                    → other_fermented
+ *   rtd / ready-to-drink / lonkero     → other_fermented
+ *   intermediate / väli / portviini / sherry → intermediate_products
+ *   already-canonical (wine_still, wine_sparkling, other_fermented, intermediate_products) → unchanged
+ *   (anything else)                    → other_fermented
  */
 export function normaliseCategory(raw: string): AlcoholExciseCategory {
   const lower = raw.toLowerCase().trim();
   switch (lower) {
+    // Canonical keys (idempotent passthrough)
     case 'beer':
+    case 'wine_still':
+    case 'wine_sparkling':
+    case 'spirits':
+    case 'intermediate_products':
+    case 'other_fermented':
+      return lower as AlcoholExciseCategory;
+
+    // Finnish / common aliases
     case 'olut':
       return 'beer';
     case 'wine':
     case 'viini':
-      return 'wine';
-    case 'spirits':
+      return 'wine_still';
+    case 'sparkling':
+    case 'champagne':
+    case 'kuohuviini':
+      return 'wine_sparkling';
     case 'viina':
     case 'vodka':
     case 'whisky':
@@ -105,18 +128,17 @@ export function normaliseCategory(raw: string): AlcoholExciseCategory {
       return 'spirits';
     case 'cider':
     case 'siideri':
-      return 'cider';
     case 'rtd':
     case 'ready-to-drink':
     case 'lonkero':
-      return 'rtd';
+      return 'other_fermented';
     case 'intermediate':
     case 'väli':
     case 'portviini':
     case 'sherry':
-      return 'intermediate';
+      return 'intermediate_products';
     default:
-      return 'other';
+      return 'other_fermented';
   }
 }
 
