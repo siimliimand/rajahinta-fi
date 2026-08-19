@@ -15,15 +15,15 @@
 ## 3. Container duty
 
 - [x] 3.1 Fix container-duty lookup to resolve by a container-duty category key (not the packaging string); restore €0.51 and make the seeded rule reachable. <!-- agent: platform-engineer.build, depends_on: [1.2,1.3], touches: [packages/core-domain/src/tax/services/container-duty.service.ts, packages/data-platform/src/repositories/tax-rate.repository.ts] -->
-- [ ] 3.2 Preserve deposit-exemption and `null → ESTIMATED` semantics; add/adjust container-duty tests for the corrected lookup. <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [packages/core-domain/src/tax/__tests__/**] -->
+- [x] 3.2 Preserve deposit-exemption and `null → ESTIMATED` semantics; add/adjust container-duty tests for the corrected lookup. <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [packages/core-domain/src/tax/__tests__/**] -->
 
 ## 4. Version traceability
 
-- [ ] 4.1 Add a numeric `ruleId` to `ExciseResult` and `ContainerDutyResult`; populate `calculationRecords.exciseRuleVersionId` and `containerDutyRuleVersionId` instead of `null`. <!-- agent: platform-engineer.build, depends_on: [1.3], touches: [packages/core-domain/src/tax/services/*, packages/core-domain/src/calculator/landed-cost-calculator.service.ts] -->
+- [x] 4.1 Add a numeric `ruleId` to `ExciseResult` and `ContainerDutyResult`; populate `calculationRecords.exciseRuleVersionId` and `containerDutyRuleVersionId` instead of `null`. <!-- agent: platform-engineer.build, depends_on: [1.3], touches: [packages/core-domain/src/tax/services/*, packages/core-domain/src/calculator/landed-cost-calculator.service.ts] -->
 
 ## 5. Golden tests
 
-- [ ] 5.1 Replace the `InMemoryTaxRuleRepository → null` stubs with a seed-backed repository in the golden tests so they exercise real rates. <!-- agent: platform-engineer.build, depends_on: [1.2,1.3,2.1,2.2,2.3,3.1], touches: [tests/golden/**] -->
+- [x] 5.1 Replace the `InMemoryTaxRuleRepository → null` stubs with a seed-backed repository in the golden tests so they exercise real rates. <!-- agent: platform-engineer.build, depends_on: [1.2,1.3,2.1,2.2,2.3,3.1], touches: [tests/golden/**] -->
 - [ ] 5.2 Re-verify and correct all golden expected values against official Finnish Tax Administration rates (sparkling 3.73, beer per-°Plato, cider, container duty 0.51). <!-- agent: platform-engineer.build, depends_on: [5.1], touches: [tests/golden/**, tests/golden/data/products.ts] -->
 
 ## 6. Lint

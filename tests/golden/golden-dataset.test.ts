@@ -168,11 +168,10 @@ const OFFER_CARRIER_B: TransportOffer = {
 };
 
 // ---------------------------------------------------------------------------
-// Expected value computation reference (fallback rates):
+// Expected value computation reference (seeded rates):
 //
-// Beer  (5% ABV, 0.5 L) → progressive ABV
-//   abvPercent=5 → tier maxAbv=8.0, rate=0.435
-//   excise = round(0.435 × 0.5 × 100) = 22 ¢
+// Beer  (5% ABV, 0.5 L) → PER_DEGREE_PLATO at 33.00
+//   excise = round(33.00 × 0.05 × 0.5 × 100) = 83 ¢
 //   container: depositSystemStatus=true → EXEMPTED → 0 ¢
 //
 // Wine  (12% ABV, 0.75 L) → per-litre-of-product, 3.40
@@ -232,10 +231,10 @@ describe('Golden dataset', () => {
       expect(result.classification.confidence).toBe('HIGH');
     });
 
-    it('has MEDIUM confidence (excise is ESTIMATED fallback)', async () => {
+    it('has HIGH confidence (all components VERIFIED)', async () => {
       const result = await service.calculate(INPUT);
-      // excise is ESTIMATED (fallback); all others VERIFIED → MEDIUM
-      expect(result.confidence).toBe('MEDIUM');
+      // excise is VERIFIED (seed data with verificationDate); all others VERIFIED → HIGH
+      expect(result.confidence).toBe('HIGH');
     });
 
     it('persists calculation record', async () => {
@@ -286,9 +285,9 @@ describe('Golden dataset', () => {
       expect(result.classification.classification).toBe('DistanceBuying');
     });
 
-    it('has MEDIUM confidence (excise is ESTIMATED fallback)', async () => {
+    it('has HIGH confidence (all components VERIFIED)', async () => {
       const result = await service.calculate(INPUT);
-      expect(result.confidence).toBe('MEDIUM');
+      expect(result.confidence).toBe('HIGH');
     });
 
     it('transport is not per-shipment — not scaled by quantity', async () => {

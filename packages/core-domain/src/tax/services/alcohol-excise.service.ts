@@ -47,9 +47,10 @@ export const TAX_RULE_REPOSITORY_PORT = 'TAX_RULE_REPOSITORY_PORT';
  *
  * Looks up ALL active rules for the category and selects the one whose
  * ABV tier (from {@code exemptionConditions}) matches the product's ABV.
- * If the matched rule has an exemption threshold (maxAlcoholByVolume set
- * without minAlcoholByVolume), the rate is zero when the product's ABV
- * is below or equal to that threshold.
+ * Exemption rules (rate "0.00") match ABV ≤ maxAlcoholByVolume and produce
+ * zero tax.  Non-zero-rate rules with a maxAlcoholByVolume alone are tier
+ * boundaries, not exemptions — the rate applies when ABV falls within the
+ * tier.
  *
  * If no rule is found for the given date, falls back to hardcoded default
  * rates and returns {@code reliability: 'ESTIMATED'}.
@@ -109,9 +110,12 @@ export class AlcoholExciseService {
    * Select the rule whose ABV tier matches the product's ABV.
    *
    * ABV tiers are defined by {@code exemptionConditions}:
-   * - `maxAlcoholByVolume` alone (no `minAlcoholByVolume`): ABV ≤ threshold
-   * - `minAlcoholByVolume` alone: ABV ≥ threshold
-   * - Both: ABV within [min, max]
+   * - `maxAlcoholByVolume` alone (no `minAlcoholByVolume`):
+   *   exemption tier — ABV ≤ threshold.  Exemption is only applied when
+   *   the rule's rate is "0.00" (see {@link isExempt}).
+   * - `minAlcoholByVolume` alone: ABV ≥ threshold.
+   * - Both: ABV within [min, max].
+   * - Neither: catch-all (no ABV constraints).
    *
    * @param rules  All active rules for the category, ordered by effectiveFrom desc.
    * @param abv    Product ABV as a decimal fraction (0–1).
@@ -165,13 +169,18 @@ export class AlcoholExciseService {
 
   /**
    * Determine whether the product is exempt from excise duty based on the
-   * rule's exemption conditions.
+   * rule's rate and exemption conditions.
    *
-   * A rule with `maxAlcoholByVolume` set (and no `minAlcoholByVolume`) is
-   * an exemption threshold: products with ABV ≤ that threshold are exempt
-   * (rate 0).
+   * A rule is exempt ONLY when its rate is "0.00" AND the ABV falls within
+   * the exemption threshold (maxAlcoholByVolume alone, no minAlcoholByVolume).
+   *
+   * Rules with non-zero rates are never exempt — their `maxAlcoholByVolume`
+   * is a tier boundary, not an exemption threshold.
    */
   private isExempt(rule: TaxRuleRecordPort, abvPct: number): boolean {
+    // Only zero-rate rules can be exemption rules
+    if (rule.rate !== '0.00') return false;
+
     const cond = rule.exemptionConditions;
     if (!cond) return false;
 

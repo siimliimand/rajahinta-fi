@@ -38,8 +38,25 @@ const SOURCE =
  */
 const SEED_RULES: TaxRuleRecordPort[] = [
   // ---- Beer ----
+  // Exempt rule: ABV ≤ 0.5 → rate 0.00
   {
     id: 1,
+    taxType: 'excise',
+    productCategory: 'beer',
+    rate: '0.00',
+    effectiveFrom: EFFECTIVE_FROM,
+    effectiveTo: null,
+    calculationFormulaReference: 'PER_DEGREE_PLATO',
+    officialSource: SOURCE,
+    verificationDate: VERIFIED_DATE,
+    versionLabel: VERSION,
+    exemptionConditions: {
+      maxAlcoholByVolume: 0.5,
+    },
+  },
+  // Full rate: ABV > 0.5 → rate 33.00 (€/hl per degree Plato)
+  {
+    id: 101,
     taxType: 'excise',
     productCategory: 'beer',
     rate: '33.00',
@@ -50,7 +67,7 @@ const SEED_RULES: TaxRuleRecordPort[] = [
     verificationDate: VERIFIED_DATE,
     versionLabel: VERSION,
     exemptionConditions: {
-      maxAlcoholByVolume: 0.5,
+      minAlcoholByVolume: 0.5,
     },
   },
   {
@@ -71,11 +88,12 @@ const SEED_RULES: TaxRuleRecordPort[] = [
   },
 
   // ---- Still wine ----
+  // Exempt tier: ABV ≤ 1.2 → rate 0.00
   {
     id: 3,
     taxType: 'excise',
     productCategory: 'wine_still',
-    rate: '3.40',
+    rate: '0.00',
     effectiveFrom: EFFECTIVE_FROM,
     effectiveTo: null,
     calculationFormulaReference: 'PER_LITRE_OF_PRODUCT',
@@ -120,11 +138,12 @@ const SEED_RULES: TaxRuleRecordPort[] = [
   },
 
   // ---- Sparkling wine ----
+  // Exempt tier: ABV ≤ 1.2 → rate 0.00
   {
     id: 6,
     taxType: 'excise',
     productCategory: 'wine_sparkling',
-    rate: '3.73',
+    rate: '0.00',
     effectiveFrom: EFFECTIVE_FROM,
     effectiveTo: null,
     calculationFormulaReference: 'PER_LITRE_OF_PRODUCT',
@@ -135,13 +154,30 @@ const SEED_RULES: TaxRuleRecordPort[] = [
       maxAlcoholByVolume: 1.2,
     },
   },
+  // Full rate: ABV > 1.2 → rate 3.73
+  {
+    id: 102,
+    taxType: 'excise',
+    productCategory: 'wine_sparkling',
+    rate: '3.73',
+    effectiveFrom: EFFECTIVE_FROM,
+    effectiveTo: null,
+    calculationFormulaReference: 'PER_LITRE_OF_PRODUCT',
+    officialSource: SOURCE,
+    verificationDate: VERIFIED_DATE,
+    versionLabel: VERSION,
+    exemptionConditions: {
+      minAlcoholByVolume: 1.2,
+    },
+  },
 
   // ---- Spirits ----
+  // Exempt tier: ABV ≤ 1.2 → rate 0.00
   {
     id: 7,
     taxType: 'excise',
     productCategory: 'spirits',
-    rate: '29.50',
+    rate: '0.00',
     effectiveFrom: EFFECTIVE_FROM,
     effectiveTo: null,
     calculationFormulaReference: 'PER_LITRE_OF_ALCOHOL',
@@ -152,8 +188,25 @@ const SEED_RULES: TaxRuleRecordPort[] = [
       maxAlcoholByVolume: 1.2,
     },
   },
+  // Full rate: ABV > 1.2 → rate 29.50 / L of pure alcohol
+  {
+    id: 103,
+    taxType: 'excise',
+    productCategory: 'spirits',
+    rate: '29.50',
+    effectiveFrom: EFFECTIVE_FROM,
+    effectiveTo: null,
+    calculationFormulaReference: 'PER_LITRE_OF_ALCOHOL',
+    officialSource: SOURCE,
+    verificationDate: VERIFIED_DATE,
+    versionLabel: VERSION,
+    exemptionConditions: {
+      minAlcoholByVolume: 1.2,
+    },
+  },
 
   // ---- Intermediate products ----
+  // Low tier: ABV 0–15 → rate 3.40 / L
   {
     id: 8,
     taxType: 'excise',
@@ -166,6 +219,7 @@ const SEED_RULES: TaxRuleRecordPort[] = [
     verificationDate: VERIFIED_DATE,
     versionLabel: VERSION,
     exemptionConditions: {
+      minAlcoholByVolume: 0,
       maxAlcoholByVolume: 15,
     },
   },

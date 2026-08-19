@@ -32,9 +32,10 @@ export interface TaxRuleRecordPort {
   /**
    * ABV-tier / exemption conditions extracted from the JSONB column.
    *
-   * - `maxAlcoholByVolume` alone (no `minAlcoholByVolume`): the rule applies to
-   *   products with ABV ≤ this threshold. When the product's ABV is below this
-   *   threshold, the rate is **zero** (exempt).
+   * - `maxAlcoholByVolume` alone (no `minAlcoholByVolume`): the rule applies
+   *   to products with ABV ≤ this threshold.  When the rule's rate is "0.00"
+   *   the rate is zero (exempt).  Non-zero rates at this boundary are tier
+   *   definitions, not exemptions.
    * - `minAlcoholByVolume` alone: the rule applies to products with ABV ≥ this
    *   threshold at the stated rate.
    * - Both `minAlcoholByVolume` and `maxAlcoholByVolume`: the rule applies to

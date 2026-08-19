@@ -147,12 +147,12 @@ describe('AlcoholExciseService', () => {
 
   describe('ABV-tier selection', () => {
     // Three-tier wine_still model:
-    //   Exempt:  maxAlcoholByVolume: 1.2   → rate 0 (isExempt)
+    //   Exempt:  maxAlcoholByVolume: 1.2   → rate 0.00 (exempt)
     //   Mid:     min: 1.2, max: 15         → rate 3.40
     //   High:    min: 15, max: 18          → rate 4.55
     const exemptRule = makeRule({
       id: 1,
-      rate: '3.40',
+      rate: '0.00',
       exemptionConditions: { maxAlcoholByVolume: 1.2 },
     });
     const midRule = makeRule({
@@ -171,7 +171,7 @@ describe('AlcoholExciseService', () => {
     });
 
     it('selects the exempt tier when ABV ≤ 1.2%', async () => {
-      // 0.5% ABV → matches exemptRule (maxAlcoholByVolume: 1.2) → isExempt → rate 0
+      // 0.5% ABV → matches exemptRule (maxAlcoholByVolume: 1.2, rate: 0.00) → isExempt → rate 0
       const result = await service.calculate('wine_still', 0.005, 0.75);
       expect(result.taxCents).toBe(0);
       expect(result.rateApplied).toBe(0);
@@ -231,10 +231,10 @@ describe('AlcoholExciseService', () => {
   });
 
   describe('exemption handling', () => {
-    it('applies zero rate when ABV is below the exemption threshold (maxAlcoholByVolume alone)', async () => {
-      // Rule with maxAlcoholByVolume alone → exemption threshold
+    it('applies zero rate when ABV is below the exemption threshold (rate "0.00" + maxAlcoholByVolume alone)', async () => {
+      // Rule with rate "0.00" + maxAlcoholByVolume alone → exemption
       const rule = makeRule({
-        rate: '3.40',
+        rate: '0.00',
         exemptionConditions: { maxAlcoholByVolume: 1.2 },
       });
       repo.findAllApplicable = async () => [rule];
