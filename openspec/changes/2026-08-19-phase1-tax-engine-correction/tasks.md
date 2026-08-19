@@ -24,7 +24,7 @@
 ## 5. Golden tests
 
 - [x] 5.1 Replace the `InMemoryTaxRuleRepository → null` stubs with a seed-backed repository in the golden tests so they exercise real rates. <!-- agent: platform-engineer.build, depends_on: [1.2,1.3,2.1,2.2,2.3,3.1], touches: [tests/golden/**] -->
-- [ ] 5.2 Re-verify and correct all golden expected values against official Finnish Tax Administration rates (sparkling 3.73, beer per-°Plato, cider, container duty 0.51). <!-- agent: platform-engineer.build, depends_on: [5.1], touches: [tests/golden/**, tests/golden/data/products.ts] -->
+- [x] 5.2 Re-verify and correct all golden expected values against official Finnish Tax Administration rates (sparkling 3.73, beer per-°Plato, cider, container duty 0.51). <!-- agent: platform-engineer.build, depends_on: [5.1], touches: [tests/golden/**, tests/golden/data/products.ts] -->
 
 ## 6. Lint
 
@@ -40,4 +40,4 @@
 
 ## 9. Docs resync
 
-- [ ] 9.1 Resync `docs/tasks.md` and `ARCHITECTURE.md` to the true implementation state. <!-- agent: platform-engineer.fast, depends_on: [1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,4.1,5.1,5.2,6.1,7.1,8.1], touches: [docs/tasks.md, docs/ARCHITECTURE.md] -->
+- [x] 9.1 Resync `docs/tasks.md` and `ARCHITECTURE.md` to the true implementation state. <!-- agent: platform-engineer.fast, depends_on: [1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,4.1,5.1,5.2,6.1,7.1,8.1], touches: [docs/tasks.md, docs/ARCHITECTURE.md] -->
