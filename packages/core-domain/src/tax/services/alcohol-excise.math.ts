@@ -75,6 +75,8 @@ export const DEFAULT_RATES: Record<
  *   intermediate / väli / portviini / sherry → intermediate_products
  *   already-canonical (wine_still, wine_sparkling, other_fermented, intermediate_products) → unchanged
  *   (anything else)                    → other_fermented
+ *
+ * @returns The canonical category key.
  */
 export function normaliseCategory(raw: string): AlcoholExciseCategory {
   const lower = raw.toLowerCase().trim();
@@ -117,6 +119,39 @@ export function normaliseCategory(raw: string): AlcoholExciseCategory {
     default:
       return 'other_fermented';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Sub-type formula resolution for other_fermented (cider vs RTD)
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine the correct calculation formula for an `other_fermented` product
+ * based on its original (pre-normalisation) category string.
+ *
+ * Finnish excise rules distinguish:
+ *   - **Cider** (cider, siideri): per litre of **product** at flat rate (€3.40/l),
+ *     like wine.
+ *   - **RTD / long-drink** (rtd, ready-to-drink, lonkero): per litre of **alcohol**
+ *     (€3.40/l of pure alcohol), like spirits.
+ *
+ * The default (any unrecognised `other_fermented` sub-type, or a canonical
+ * `other_fermented` passed directly) defaults to per-litre-of-alcohol as the
+ * more conservative (higher-tax) option for estimation.
+ *
+ * @param rawCategory — The original category string (pre-normalisation).
+ * @returns The formula reference constant for the correct formula type.
+ */
+export function resolveOtherFermentedFormula(
+  rawCategory: string,
+): 'PER_LITRE_OF_PRODUCT' | 'PER_LITRE_OF_ALCOHOL' {
+  const lower = rawCategory.toLowerCase().trim();
+  if (lower === 'cider' || lower === 'siideri') {
+    return 'PER_LITRE_OF_PRODUCT';
+  }
+  // RTD, lonkero, ready-to-drink, unknown, or canonical 'other_fermented'
+  // Default: per-litre-of-alcohol (like spirits, conservative estimate)
+  return 'PER_LITRE_OF_ALCOHOL';
 }
 
 // ---------------------------------------------------------------------------

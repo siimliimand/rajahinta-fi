@@ -165,46 +165,44 @@ function buildService(
 
 describe('Per-category golden regressions', () => {
   // -------------------------------------------------------------------------
-  // Beer — progressive ABV tiers
+  // Beer — flat rate 33.00 €/hl/°P (fallback)
   //
-  // Fallback beer tiers:
-  //   ≤2.8 % ABV → 0.000 €/l  (taxCents = 0)
-  //   ≤4.7 % ABV → 0.295 €/l
-  //   ≤8.0 % ABV → 0.435 €/l
+  // Fallback uses DEFAULT_RATES.beer = 33.00 €/hl per degree Plato
+  // (per-litre-of-alcohol equivalent).  No ABV-tiered rates in fallback.
   // -------------------------------------------------------------------------
 
-  describe('Beer — progressive ABV tiers', () => {
-    it('2.7% ABV beer → tier 0.000 €/l (0 excise)', async () => {
+  describe('Beer — flat fallback rate (33.00 €/hl/°P)', () => {
+    it('2.7% ABV beer → 33.00 × 0.027 × 0.33 = 29 cents', async () => {
       const service = buildService(PRODUCT_BEER_LOW_ABV, [OFFER_BEER_LOW_ABV], 'beverage-de', 100);
       const result = await service.calculate({
         productId: 5,
         quantity: 1,
         destination: 'FI',
       });
-      // round(0.000 × 0.33 × 100) = 0
-      expect(result.alcoholExciseEstimate).toBe(0);
+      // round(33.00 × 0.027 × 0.33 × 100) = 29
+      expect(result.alcoholExciseEstimate).toBe(29);
     });
 
-    it('5.0% ABV beer → tier 0.435 €/l', async () => {
+    it('5.0% ABV beer → 33.00 × 0.05 × 0.5 = 83 cents', async () => {
       const service = buildService(PRODUCT_BEER, [OFFER_BEER], 'beverage-de', 150);
       const result = await service.calculate({
         productId: 1,
         quantity: 1,
         destination: 'FI',
       });
-      // round(0.435 × 0.5 × 100) = 22
-      expect(result.alcoholExciseEstimate).toBe(22);
+      // round(33.00 × 0.05 × 0.5 × 100) = 83
+      expect(result.alcoholExciseEstimate).toBe(83);
     });
 
-    it('8.5% ABV beer → tier 0.580 €/l', async () => {
+    it('8.5% ABV beer → 33.00 × 0.085 × 0.33 = 93 cents', async () => {
       const service = buildService(PRODUCT_BEER_HIGH_ABV, [OFFER_BEER_HIGH_ABV], 'beverage-de', 100);
       const result = await service.calculate({
         productId: 6,
         quantity: 1,
         destination: 'FI',
       });
-      // round(0.580 × 0.33 × 100) = 19
-      expect(result.alcoholExciseEstimate).toBe(19);
+      // round(33.00 × 0.085 × 0.33 × 100) = 93
+      expect(result.alcoholExciseEstimate).toBe(93);
     });
   });
 
@@ -335,19 +333,19 @@ describe('Per-category golden regressions', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Other fermented beverages — per-litre-of-product at 3.40 €/l
+  // Other fermented beverages — per-litre-of-alcohol at 3.40 €/l (fallback)
   // -------------------------------------------------------------------------
 
-  describe('Other fermented beverages — per litre of product at 3.40', () => {
-    it('applies per-litre-of-product formula for other', async () => {
+  describe('Other fermented beverages — per litre of alcohol at 3.40', () => {
+    it('applies per-litre-of-alcohol formula for other (fallback)', async () => {
       const service = buildService(PRODUCT_OTHER_FERMENTED, [OFFER_OTHER_FERMENTED], 'brew-eu', 150);
       const result = await service.calculate({
         productId: 9,
         quantity: 1,
         destination: 'FI',
       });
-      // round(3.40 × 0.5 × 100) = 170
-      expect(result.alcoholExciseEstimate).toBe(170);
+      // round(3.40 × 0.05 × 0.5 × 100) = 9
+      expect(result.alcoholExciseEstimate).toBe(9);
     });
   });
 

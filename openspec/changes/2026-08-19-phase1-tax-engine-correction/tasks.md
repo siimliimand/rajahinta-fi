@@ -4,7 +4,7 @@
 
 - [x] 1.1 Define a single canonical tax-category taxonomy and mapping in core-domain so `normaliseCategory()` produces the seed keys (beer, wine_still, wine_sparkling, spirits, intermediate_products, other_fermented, container_duty). <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/core-domain/src/tax/**] -->
 - [x] 1.2 Reconcile `packages/data-platform/src/seed/tax-rules.seed.ts` and `infra/staging-data/seed.sql` to one taxonomy and one official rate set; fix `wine_still = 0.00`, container duty `0.10/0.15` → `0.51`, and exclude unverified `2026-PROPOSAL` rows from active resolution. <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [packages/data-platform/src/seed/tax-rules.seed.ts, infra/staging-data/seed.sql] -->
-- [ ] 1.3 Make category resolution reach seeded rules: align `findApplicable`/`findByCategory` and the excise service so wine/intermediate/other/cider/rtd resolve to real rules, including ABV-tier selection within a category. <!-- agent: platform-engineer.build, depends_on: [1.1,1.2], touches: [packages/data-platform/src/repositories/tax-rate.repository.ts, packages/core-domain/src/tax/services/alcohol-excise.service.ts] -->
+- [x] 1.3 Make category resolution reach seeded rules: align `findApplicable`/`findByCategory` and the excise service so wine/intermediate/other/cider/rtd resolve to real rules, including ABV-tier selection within a category. <!-- agent: platform-engineer.build, depends_on: [1.1,1.2], touches: [packages/data-platform/src/repositories/tax-rate.repository.ts, packages/core-domain/src/tax/services/alcohol-excise.service.ts] -->
 
 ## 2. Excise formula correctness
 

@@ -28,6 +28,7 @@ export {
   calcPerLitreOfAlcohol,
   calcPerDegreePlato,
   normaliseCategory,
+  resolveOtherFermentedFormula,
   FORMULA_PER_LITRE_OF_PRODUCT,
   FORMULA_PER_LITRE_OF_ALCOHOL,
   FORMULA_PER_DEGREE_PLATO,

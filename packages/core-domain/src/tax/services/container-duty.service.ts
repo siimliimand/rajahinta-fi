@@ -88,10 +88,13 @@ export class ContainerDutyService {
       const normalised = normalisePackaging(packaging);
       const lookupDate = asOf ?? new Date();
 
-      // Try repository lookup
+      // Try repository lookup — container duty uses 'all_beverages' as the
+      // product-category key.  The raw packaging string is not part of the
+      // lookup because Finnish Tax Administration sets a single rate for all
+      // standard beverage containers.
       const rule = await this.taxRepo.findApplicable(
         'container_duty',
-        normalised,
+        'all_beverages',
         lookupDate,
       );
 

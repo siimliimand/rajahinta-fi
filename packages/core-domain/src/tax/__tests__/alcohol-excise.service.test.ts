@@ -119,92 +119,112 @@ describe('AlcoholExciseService', () => {
         makeRule({
           productCategory: 'other_fermented',
           calculationFormulaReference: FORMULA_PER_LITRE_OF_ALCOHOL,
+          rate: '3.40',
         }),
       ];
       const result = await service.calculate('cider', 0.045, 0.33);
       expect(result.category).toBe('other_fermented');
-      expect(result.taxCents).toBeGreaterThanOrEqual(0);
+      // Cider sub-type overrides to PER_LITRE_OF_PRODUCT: 3.40 * 0.33 = 1.122 → 112
+      expect(result.taxCents).toBe(112);
+      expect(result.rateApplied).toBeCloseTo(3.40);
+    });
+
+    it('maps rtd category to other_fermented and uses per-litre-of-alcohol', async () => {
+      repo.findAllApplicable = async () => [
+        makeRule({
+          productCategory: 'other_fermented',
+          calculationFormulaReference: FORMULA_PER_LITRE_OF_ALCOHOL,
+          rate: '3.40',
+        }),
+      ];
+      const result = await service.calculate('rtd', 0.055, 0.33);
+      expect(result.category).toBe('other_fermented');
+      // RTD keeps PER_LITRE_OF_ALCOHOL: 3.40 * 0.055 * 0.33 = 0.06171 → 6
+      expect(result.taxCents).toBe(6);
+      expect(result.rateApplied).toBeCloseTo(3.40 * 0.055);
     });
   });
 
   describe('ABV-tier selection', () => {
-    it('selects the low-ABV tier rule when ABV matches', async () => {
-      // Rules ordered by effectiveFrom desc — both active, same effective date
-      const lowRule = makeRule({
-        id: 1,
-        rate: '3.40',
-        exemptionConditions: { maxAlcoholByVolume: 1.2 },
-      });
-      const highRule = makeRule({
-        id: 2,
-        rate: '4.55',
-        exemptionConditions: { minAlcoholByVolume: 15, maxAlcoholByVolume: 18 },
-      });
-      repo.findAllApplicable = async () => [highRule, lowRule];
-
-      // 12% ABV = 12% → matches lowRule (≤ 1.2? no) → falls through to most recent (highRule)
-      // Actually 12% ABV is 12 in percentage, and lowRule max is 1.2, so 12 > 1.2 → no match.
-      // highRule min is 15, so 12 < 15 → no match. Falls to rules[0] = highRule.
-      const result = await service.calculate('wine_still', 0.12, 0.75);
-      // Falls to rules[0] = highRule with rate 4.55
-      expect(result.rateApplied).toBeCloseTo(4.55);
-      expect(result.taxCents).toBe(341); // 4.55 * 0.75 = 3.4125 → 341
+    // Three-tier wine_still model:
+    //   Exempt:  maxAlcoholByVolume: 1.2   → rate 0 (isExempt)
+    //   Mid:     min: 1.2, max: 15         → rate 3.40
+    //   High:    min: 15, max: 18          → rate 4.55
+    const exemptRule = makeRule({
+      id: 1,
+      rate: '3.40',
+      exemptionConditions: { maxAlcoholByVolume: 1.2 },
+    });
+    const midRule = makeRule({
+      id: 2,
+      rate: '3.40',
+      exemptionConditions: { minAlcoholByVolume: 1.2, maxAlcoholByVolume: 15 },
+    });
+    const highRule = makeRule({
+      id: 3,
+      rate: '4.55',
+      exemptionConditions: { minAlcoholByVolume: 15, maxAlcoholByVolume: 18 },
     });
 
-    it('selects the high-ABV tier rule when ABV is in range', async () => {
-      const lowRule = makeRule({
-        id: 1,
-        rate: '3.40',
-        exemptionConditions: { maxAlcoholByVolume: 1.2 },
-      });
-      const highRule = makeRule({
-        id: 2,
-        rate: '4.55',
-        exemptionConditions: { minAlcoholByVolume: 15, maxAlcoholByVolume: 18 },
-      });
-      repo.findAllApplicable = async () => [highRule, lowRule];
+    beforeEach(() => {
+      repo.findAllApplicable = async () => [highRule, midRule, exemptRule];
+    });
 
-      // 16% ABV → matches highRule (15 ≤ 16 ≤ 18)
+    it('selects the exempt tier when ABV ≤ 1.2%', async () => {
+      // 0.5% ABV → matches exemptRule (maxAlcoholByVolume: 1.2) → isExempt → rate 0
+      const result = await service.calculate('wine_still', 0.005, 0.75);
+      expect(result.taxCents).toBe(0);
+      expect(result.rateApplied).toBe(0);
+    });
+
+    it('selects the mid tier when ABV is between 1.2% and 15%', async () => {
+      // 12% ABV → matches midRule (1.2 ≤ 12 ≤ 15) → rate 3.40
+      const result = await service.calculate('wine_still', 0.12, 0.75);
+      expect(result.rateApplied).toBeCloseTo(3.40);
+      expect(result.taxCents).toBe(255); // 3.40 * 0.75 = 2.55 → 255
+    });
+
+    it('selects the high tier when ABV is between 15% and 18%', async () => {
+      // 16% ABV → matches highRule (15 ≤ 16 ≤ 18) → rate 4.55
       const result = await service.calculate('wine_still', 0.16, 0.75);
       expect(result.rateApplied).toBeCloseTo(4.55);
       expect(result.taxCents).toBe(341); // 4.55 * 0.75 = 3.4125 → 341
     });
 
     it('falls back to the most recent rule when no ABV tier matches', async () => {
-      const lowRule = makeRule({
-        id: 1,
-        rate: '3.40',
-        exemptionConditions: { maxAlcoholByVolume: 1.2 },
-      });
-      const highRule = makeRule({
-        id: 2,
-        rate: '4.55',
-        exemptionConditions: { minAlcoholByVolume: 15, maxAlcoholByVolume: 18 },
-      });
-      // Order: most recent first (highRule has id 2, lowRule has id 1 — same effective date)
-      repo.findAllApplicable = async () => [highRule, lowRule];
-
-      // 10% ABV → neither tier matches (10 > 1.2, 10 < 15) → falls to rules[0] = highRule
-      const result = await service.calculate('wine_still', 0.10, 0.75);
+      // 19% ABV → no tier matches (19 > 1.2, 19 > 15, 19 > 18)
+      // Falls to rules[0] = highRule with rate 4.55
+      const result = await service.calculate('wine_still', 0.19, 0.75);
       expect(result.rateApplied).toBeCloseTo(4.55);
       expect(result.taxCents).toBe(341);
     });
 
-    it('selects a catch-all rule (no exemptionConditions) when present', async () => {
+    it('mid-tier takes precedence over catch-all when ABV is within range', async () => {
       const catchAll = makeRule({
         id: 1,
         rate: '2.50',
         exemptionConditions: null,
+        productCategory: 'wine_still',
       });
-      const tiered = makeRule({
-        id: 2,
-        rate: '3.40',
-        exemptionConditions: { maxAlcoholByVolume: 1.2 },
-      });
-      repo.findAllApplicable = async () => [tiered, catchAll];
+      repo.findAllApplicable = async () => [highRule, midRule, exemptRule, catchAll];
 
-      // 10% ABV → catchAll matches (no conditions) → uses 2.50
+      // 10% ABV → midRule matches (1.2 ≤ 10 ≤ 15) → rate 3.40, NOT catchAll rate 2.50
       const result = await service.calculate('wine_still', 0.10, 0.75);
+      expect(result.rateApplied).toBeCloseTo(3.40);
+      expect(result.taxCents).toBe(255);
+    });
+
+    it('selects a catch-all rule when no tiered rule matches', async () => {
+      const catchAll = makeRule({
+        id: 1,
+        rate: '2.50',
+        exemptionConditions: null,
+        productCategory: 'wine_still',
+      });
+      repo.findAllApplicable = async () => [highRule, midRule, exemptRule, catchAll];
+
+      // 19% ABV → no tier matches → catchAll matches (no conditions) → rate 2.50
+      const result = await service.calculate('wine_still', 0.19, 0.75);
       expect(result.rateApplied).toBeCloseTo(2.50);
       expect(result.taxCents).toBe(188); // 2.50 * 0.75 = 1.875 → 188
     });

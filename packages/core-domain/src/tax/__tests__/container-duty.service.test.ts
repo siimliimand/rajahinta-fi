@@ -28,7 +28,7 @@ function makeRule(
   return {
     id: 10,
     taxType: 'container_duty',
-    productCategory: 'glass',
+    productCategory: 'all_beverages',
     rate: '0.51',
     effectiveFrom: new Date('2025-01-01'),
     effectiveTo: null,

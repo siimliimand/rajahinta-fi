@@ -99,9 +99,9 @@ const BEER_SMALL_BREWERY_RATE: TaxRuleSeed = {
  * Wine excise (still wine) in €/l based on alcohol content.
  *
  * 2024 rates:
- *   ≤ 1.2 %ABV  → 0
- *   1.2–15 %ABV → €3.40/l
- *   15–18 %ABV  → €4.55/l
+ *   ≤ 1.2 %ABV  → 0 (exempt, WINE_STILL_LOW with isExempt)
+ *   1.2–15 %ABV → €3.40/l (WINE_STILL_MID)
+ *   15–18 %ABV  → €4.55/l (WINE_STILL_HIGH)
  */
 const WINE_STILL_LOW: TaxRuleSeed = {
   taxType: 'excise_duty',
@@ -110,8 +110,25 @@ const WINE_STILL_LOW: TaxRuleSeed = {
   effectiveFrom: EFFECTIVE_FROM,
   effectiveTo: null,
   exemptionConditions: {
-    description: 'Still wine ≤ 1.2 %ABV not subject to excise duty',
+    description: 'Still wine ≤ 1.2 %ABV — exempt, rate stored for reference',
     appliesTo: { maxAlcoholByVolume: 1.2 },
+  },
+  calculationFormulaReference: FORMULA_PER_LITRE_OF_PRODUCT,
+  officialSource: SOURCE_VERO_FI,
+  verificationDate: VERIFIED_2024_Q1,
+  versionLabel: VERSION,
+};
+
+/** Still wine > 1.2 %ABV up to 15 %ABV at €3.40/l. */
+const WINE_STILL_MID: TaxRuleSeed = {
+  taxType: 'excise_duty',
+  productCategory: 'wine_still',
+  rate: '3.40',
+  effectiveFrom: EFFECTIVE_FROM,
+  effectiveTo: null,
+  exemptionConditions: {
+    description: 'Still wine > 1.2 %ABV up to 15 %ABV',
+    appliesTo: { minAlcoholByVolume: 1.2, maxAlcoholByVolume: 15 },
   },
   calculationFormulaReference: FORMULA_PER_LITRE_OF_PRODUCT,
   officialSource: SOURCE_VERO_FI,
@@ -284,6 +301,7 @@ const SEED_RULES: TaxRuleSeed[] = [
   BEER_FULL_RATE,
   BEER_SMALL_BREWERY_RATE,
   WINE_STILL_LOW,
+  WINE_STILL_MID,
   WINE_STILL_HIGH,
   WINE_SPARKLING,
   SPIRITS_RATE,

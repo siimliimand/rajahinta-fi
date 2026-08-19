@@ -8,6 +8,7 @@ import {
   AlcoholExciseCategory,
   calculateAlcoholExcise,
   normaliseCategory,
+  resolveOtherFermentedFormula,
   DEFAULT_RATES,
 } from './alcohol-excise.math';
 
@@ -88,10 +89,10 @@ export class AlcoholExciseService {
       // Find the rule whose ABV tier matches the product's ABV
       const matchedRule = this.findMatchingRule(rules, abv);
       if (matchedRule) {
-        return this.computeFromRule(matchedRule, normalised, abv, volumeLitres);
+        return this.computeFromRule(matchedRule, normalised, abv, volumeLitres, category);
       }
       // No ABV tier matched — use the most recently effective rule
-      return this.computeFromRule(rules[0], normalised, abv, volumeLitres);
+      return this.computeFromRule(rules[0], normalised, abv, volumeLitres, category);
     }
 
     // Fallback — no rule found
@@ -185,6 +186,7 @@ export class AlcoholExciseService {
     category: AlcoholExciseCategory,
     abv: number,
     volumeLitres: number,
+    originalCategory?: string,
   ): ExciseResult {
     const abvPct = abv * 100;
 
@@ -205,9 +207,16 @@ export class AlcoholExciseService {
       };
     }
 
+    // Resolve formula — for other_fermented, the formula depends on whether
+    // the original product is cider (per-litre-of-product) or RTD (per-litre-of-alcohol).
+    const formulaRef =
+      category === 'other_fermented' && originalCategory
+        ? resolveOtherFermentedFormula(originalCategory)
+        : rule.calculationFormulaReference;
+
     const rateNumeric = parseDecimal(rule.rate);
     const { taxCents, rateApplied } = calculateAlcoholExcise(
-      rule.calculationFormulaReference,
+      formulaRef,
       rateNumeric,
       abv,
       volumeLitres,

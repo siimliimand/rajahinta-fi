@@ -231,15 +231,15 @@ describe('Golden dataset', () => {
 
     it('returns correct total cost', async () => {
       const result = await service.calculate(INPUT);
-      // retail(200) + transport(150) + excise(22) + container(0) + other(0)
-      expect(result.totalCents).toBe(372);
+      // retail(200) + transport(150) + excise(83) + container(0) + other(0)
+      expect(result.totalCents).toBe(433);
     });
 
     it('applies correct itemized costs', async () => {
       const result = await service.calculate(INPUT);
       expect(result.foreignRetailPrice).toBe(200);
       expect(result.transportCost).toBe(150);
-      expect(result.alcoholExciseEstimate).toBe(22);
+      expect(result.alcoholExciseEstimate).toBe(83);
       expect(result.containerDutyEstimate).toBe(0);
       expect(result.otherCharges).toBe(0);
     });

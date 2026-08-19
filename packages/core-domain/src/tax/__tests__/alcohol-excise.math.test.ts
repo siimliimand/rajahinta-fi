@@ -11,6 +11,7 @@ import {
   calcPerDegreePlato,
   calculateAlcoholExcise,
   normaliseCategory,
+  resolveOtherFermentedFormula,
   FORMULA_PER_LITRE_OF_PRODUCT,
   FORMULA_PER_LITRE_OF_ALCOHOL,
   FORMULA_PER_DEGREE_PLATO,
@@ -265,4 +266,42 @@ describe('normaliseCategory', () => {
   it('canonical key "intermediate_products" is idempotent', () => expect(normaliseCategory('intermediate_products')).toBe('intermediate_products'));
   it('canonical key "other_fermented" is idempotent', () => expect(normaliseCategory('other_fermented')).toBe('other_fermented'));
   it('canonical key "spirits" is idempotent', () => expect(normaliseCategory('spirits')).toBe('spirits'));
+});
+
+// ---------------------------------------------------------------------------
+// resolveOtherFermentedFormula
+// ---------------------------------------------------------------------------
+
+describe('resolveOtherFermentedFormula', () => {
+  it('returns PER_LITRE_OF_PRODUCT for "cider"', () => {
+    expect(resolveOtherFermentedFormula('cider')).toBe(FORMULA_PER_LITRE_OF_PRODUCT);
+  });
+
+  it('returns PER_LITRE_OF_PRODUCT for "siideri" (fi)', () => {
+    expect(resolveOtherFermentedFormula('siideri')).toBe(FORMULA_PER_LITRE_OF_PRODUCT);
+  });
+
+  it('returns PER_LITRE_OF_PRODUCT for uppercase "CIDER"', () => {
+    expect(resolveOtherFermentedFormula('CIDER')).toBe(FORMULA_PER_LITRE_OF_PRODUCT);
+  });
+
+  it('returns PER_LITRE_OF_ALCOHOL for "rtd"', () => {
+    expect(resolveOtherFermentedFormula('rtd')).toBe(FORMULA_PER_LITRE_OF_ALCOHOL);
+  });
+
+  it('returns PER_LITRE_OF_ALCOHOL for "lonkero" (fi)', () => {
+    expect(resolveOtherFermentedFormula('lonkero')).toBe(FORMULA_PER_LITRE_OF_ALCOHOL);
+  });
+
+  it('returns PER_LITRE_OF_ALCOHOL for "ready-to-drink"', () => {
+    expect(resolveOtherFermentedFormula('ready-to-drink')).toBe(FORMULA_PER_LITRE_OF_ALCOHOL);
+  });
+
+  it('returns PER_LITRE_OF_ALCOHOL for canonical "other_fermented"', () => {
+    expect(resolveOtherFermentedFormula('other_fermented')).toBe(FORMULA_PER_LITRE_OF_ALCOHOL);
+  });
+
+  it('returns PER_LITRE_OF_ALCOHOL for unknown sub-type', () => {
+    expect(resolveOtherFermentedFormula('sake')).toBe(FORMULA_PER_LITRE_OF_ALCOHOL);
+  });
 });
