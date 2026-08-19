@@ -9,12 +9,12 @@
 ## 2. Excise formula correctness
 
 - [x] 2.1 Replace the hardcoded `DEFAULT_BEER_TIERS`/ABV-tier beer model with the official per-degree-Plato (hectolitre-percent) formula; make `calculateAlcoholExcise` honor the rule's `rateValue`. <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [packages/core-domain/src/tax/services/alcohol-excise.math.ts] -->
-- [ ] 2.2 Implement ABV-tier selection for still wine (≤1.2 → 0, 1.2–15 → 3.40, 15–18 → 4.55), sparkling wine (>1.2 → 3.73), and intermediate products (≤15 → 3.40, 15–22 → 4.55). <!-- agent: platform-engineer.build, depends_on: [1.2,1.3], touches: [packages/core-domain/src/tax/services/alcohol-excise.math.ts] -->
-- [ ] 2.3 Fix cider (flat per-litre-of-product) and RTD/long-drink (per-litre-of-alcohol) mapping; correct the `other_fermented` formula from `PER_LITRE_OF_ALCOHOL` to `PER_LITRE_OF_PRODUCT`. <!-- agent: platform-engineer.build, depends_on: [1.2,1.3], touches: [packages/core-domain/src/tax/services/alcohol-excise.math.ts, packages/data-platform/src/seed/tax-rules.seed.ts] -->
+- [x] 2.2 Implement ABV-tier selection for still wine (≤1.2 → 0, 1.2–15 → 3.40, 15–18 → 4.55), sparkling wine (>1.2 → 3.73), and intermediate products (≤15 → 3.40, 15–22 → 4.55). <!-- agent: platform-engineer.build, depends_on: [1.2,1.3], touches: [packages/core-domain/src/tax/services/alcohol-excise.math.ts] -->
+- [x] 2.3 Fix cider (flat per-litre-of-product) and RTD/long-drink (per-litre-of-alcohol) mapping; correct the `other_fermented` formula from `PER_LITRE_OF_ALCOHOL` to `PER_LITRE_OF_PRODUCT`. <!-- agent: platform-engineer.build, depends_on: [1.2,1.3], touches: [packages/core-domain/src/tax/services/alcohol-excise.math.ts, packages/data-platform/src/seed/tax-rules.seed.ts] -->
 
 ## 3. Container duty
 
-- [ ] 3.1 Fix container-duty lookup to resolve by a container-duty category key (not the packaging string); restore €0.51 and make the seeded rule reachable. <!-- agent: platform-engineer.build, depends_on: [1.2,1.3], touches: [packages/core-domain/src/tax/services/container-duty.service.ts, packages/data-platform/src/repositories/tax-rate.repository.ts] -->
+- [x] 3.1 Fix container-duty lookup to resolve by a container-duty category key (not the packaging string); restore €0.51 and make the seeded rule reachable. <!-- agent: platform-engineer.build, depends_on: [1.2,1.3], touches: [packages/core-domain/src/tax/services/container-duty.service.ts, packages/data-platform/src/repositories/tax-rate.repository.ts] -->
 - [ ] 3.2 Preserve deposit-exemption and `null → ESTIMATED` semantics; add/adjust container-duty tests for the corrected lookup. <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [packages/core-domain/src/tax/__tests__/**] -->
 
 ## 4. Version traceability

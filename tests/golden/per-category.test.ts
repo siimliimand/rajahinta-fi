@@ -24,7 +24,6 @@ import { ReliabilityService } from '@rajahinta/core-domain';
 import { AlcoholExciseService } from '@rajahinta/core-domain/tax/services/alcohol-excise.service';
 import { ContainerDutyService } from '@rajahinta/core-domain/tax/services/container-duty.service';
 import { TransportEstimationService } from '@rajahinta/core-domain/transport/transport-estimation.service';
-import type { ITaxRuleRepositoryPort } from '@rajahinta/core-domain/tax/ports/tax-rule-repository.port';
 import type { ITransportOfferQuery } from '@rajahinta/core-domain/transport/transport-offer-query.interface';
 import type { TransportOffer } from '@rajahinta/core-domain/transport/transport-offer.type';
 import type {
@@ -53,24 +52,7 @@ import {
   OFFER_NULL_DEPOSIT,
 } from './data/products';
 
-// ---------------------------------------------------------------------------
-// In-memory repository stubs
-// ---------------------------------------------------------------------------
-
-class InMemoryTaxRuleRepository implements ITaxRuleRepositoryPort {
-  async findApplicable(): Promise<null> {
-    return null; // fallback rates
-  }
-  async findAllApplicable(): Promise<never[]> {
-    return [];
-  }
-  async findHistoryRates(): Promise<never[]> {
-    return [];
-  }
-  async findActiveVersionLabels(): Promise<readonly string[]> {
-    return ['FALLBACK'];
-  }
-}
+import { InMemoryTaxRuleRepository } from './helpers/in-memory-tax-rule.repository';
 
 class InMemoryTransportOfferQuery implements ITransportOfferQuery {
   constructor(private readonly offers: TransportOffer[]) {}

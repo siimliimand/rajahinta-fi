@@ -64,6 +64,19 @@ describe('ContainerDutyService', () => {
       expect(result.reliability).toBe('VERIFIED');
     });
 
+    it('looks up container duty using all_beverages product category', async () => {
+      let capturedTaxType = '';
+      let capturedCategory = '';
+      repo.findApplicable = async (taxType, category) => {
+        capturedTaxType = taxType;
+        capturedCategory = category;
+        return makeRule();
+      };
+      await service.calculate(1.0, 'glass', false);
+      expect(capturedTaxType).toBe('container_duty');
+      expect(capturedCategory).toBe('all_beverages');
+    });
+
     it('returns ESTIMATED reliability when verificationDate is null', async () => {
       repo.findApplicable = async () => makeRule({ verificationDate: null });
       const result = await service.calculate(1.0, 'glass');
@@ -122,6 +135,31 @@ describe('ContainerDutyService', () => {
     it('uses default rate for bulk (no rule → ESTIMATED)', async () => {
       const result = await service.calculate(100, 'bulk');
       expect(result.reliability).toBe('ESTIMATED');
+    });
+  });
+
+  describe('non-standard packaging with a matching rule', () => {
+    beforeEach(() => {
+      repo.findApplicable = async () => makeRule();
+    });
+
+    it('returns ESTIMATED for keg even when rule exists (non-standard packaging)', async () => {
+      const result = await service.calculate(50, 'keg', false);
+      expect(result.reliability).toBe('ESTIMATED');
+      expect(result.dutyCents).toBe(2550); // 50 * 0.51 * 100
+      expect(result.taxDatasetVersion).toBe('2025.1');
+    });
+
+    it('returns ESTIMATED for bulk even when rule exists (non-standard packaging)', async () => {
+      const result = await service.calculate(100, 'bulk', false);
+      expect(result.reliability).toBe('ESTIMATED');
+    });
+
+    it('returns ESTIMATED for keg when deposit is unknown and rule exists', async () => {
+      const result = await service.calculate(50, 'keg');
+      expect(result.reliability).toBe('ESTIMATED');
+      // Both non-standard packaging AND unknown deposit contribute
+      expect(result.depositExemption!.reliability).toBe('ESTIMATED');
     });
   });
 

@@ -24,6 +24,8 @@ export interface ExciseResult {
   readonly taxCents: number;
   readonly taxDatasetVersion: string;
   readonly reliability: 'VERIFIED' | 'ESTIMATED';
+  /** The tax-rule version ID that was applied, or null when falling back to defaults. */
+  readonly ruleId: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +206,7 @@ export class AlcoholExciseService {
         taxCents: 0,
         taxDatasetVersion: rule.versionLabel,
         reliability,
+        ruleId: rule.id,
       };
     }
 
@@ -234,6 +237,7 @@ export class AlcoholExciseService {
       taxCents,
       taxDatasetVersion: rule.versionLabel,
       reliability,
+      ruleId: rule.id,
     };
   }
 
@@ -259,6 +263,7 @@ export class AlcoholExciseService {
       taxCents,
       taxDatasetVersion: 'FALLBACK',
       reliability: 'ESTIMATED',
+      ruleId: null,
     };
   }
 }

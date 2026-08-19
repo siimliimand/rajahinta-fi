@@ -270,8 +270,8 @@ export class LandedCostCalculatorService {
       productMasterId: product.id,
       retailOfferIds: [bestOffer.id],
       transportOfferId,
-      exciseRuleVersionId: null, // exciseResult doesn't carry a numeric version ID
-      containerDutyRuleVersionId: null, // same for container duty
+      exciseRuleVersionId: exciseResult.ruleId,
+      containerDutyRuleVersionId: containerDutyResult.ruleId,
       totalCents,
       breakdown: itemizedCosts,
       confidence: confidenceReport.overall,

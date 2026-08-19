@@ -6,6 +6,7 @@ import {
 import {
   calculateContainerDuty,
   normalisePackaging,
+  isStandardPackaging,
   DEFAULT_CONTAINER_DUTY_RATE,
 } from './container-duty.math';
 import {
@@ -23,6 +24,8 @@ export interface ContainerDutyResult {
   readonly dutyCents: number;
   readonly taxDatasetVersion: string;
   readonly reliability: 'VERIFIED' | 'ESTIMATED';
+  /** The tax-rule version ID that was applied, or null when falling back to defaults or exempted. */
+  readonly ruleId: number | null;
   /** Details on the deposit-return system exemption decision. */
   readonly depositExemption?: DepositCheckResult;
 }
@@ -81,6 +84,7 @@ export class ContainerDutyService {
           dutyCents: 0,
           taxDatasetVersion: 'EXEMPTED',
           reliability: depositCheck.reliability,
+          ruleId: null,
           depositExemption: depositCheck,
         };
       }
@@ -113,7 +117,7 @@ export class ContainerDutyService {
   private computeFromRule(
     rule: TaxRuleRecordPort,
     volumeLitres: number,
-    _packaging: string,
+    packaging: string,
     depositCheck: DepositCheckResult,
   ): ContainerDutyResult {
     const rateNumeric = parseDecimal(rule.rate);
@@ -122,9 +126,13 @@ export class ContainerDutyService {
       volumeLitres,
     );
 
-    // Overall reliability is the stricter of rule reliability and deposit reliability
+    // Overall reliability is the stricter of rule reliability and deposit reliability.
+    // Non-standard packaging (keg, bulk) forces ESTIMATED even with a verified rule
+    // because the published rate is defined for standard beverage containers only.
     const reliability: 'VERIFIED' | 'ESTIMATED' =
-      rule.verificationDate !== null && depositCheck.reliability === 'VERIFIED'
+      rule.verificationDate !== null &&
+      depositCheck.reliability === 'VERIFIED' &&
+      isStandardPackaging(packaging)
         ? 'VERIFIED'
         : 'ESTIMATED';
 
@@ -134,6 +142,7 @@ export class ContainerDutyService {
       dutyCents,
       taxDatasetVersion: rule.versionLabel,
       reliability,
+      ruleId: rule.id,
       depositExemption: depositCheck,
     };
   }
@@ -154,6 +163,7 @@ export class ContainerDutyService {
       dutyCents,
       taxDatasetVersion: 'FALLBACK',
       reliability: 'ESTIMATED', // no verified rule → always ESTIMATED
+      ruleId: null,
       depositExemption: depositCheck,
     };
   }

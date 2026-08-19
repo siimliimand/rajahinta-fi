@@ -133,6 +133,7 @@ function createService(options?: {
       taxCents: 30,
       taxDatasetVersion: 'v1',
       reliability: 'VERIFIED' as const,
+      ruleId: null,
     }),
   } as unknown as AlcoholExciseService;
 
@@ -143,6 +144,7 @@ function createService(options?: {
       dutyCents: 26,
       taxDatasetVersion: 'v1',
       reliability: 'VERIFIED' as const,
+      ruleId: null,
     }),
   } as unknown as ContainerDutyService;
 
