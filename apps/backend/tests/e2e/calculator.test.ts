@@ -196,6 +196,16 @@ class InMemoryTaxRuleRepository implements ITaxRuleRepositoryPort {
       .map((r) => r.versionLabel)
       .filter((v, i, a) => a.indexOf(v) === i); // distinct
   }
+
+  async findAllApplicable(
+    taxType: string,
+    productCategory: string,
+    _asOf: Date,
+  ): Promise<TaxRuleRecordPort[]> {
+    return this.rules.filter(
+      (r) => r.taxType === taxType && r.productCategory === productCategory,
+    );
+  }
 }
 
 // -------------------------------------------------------------------
@@ -271,12 +281,27 @@ const BEER_EXCISE_RULE: TaxRuleRecordPort = {
   officialSource: 'Finnish Tax Administration — 2024',
   verificationDate: new Date('2024-03-01'),
   versionLabel: 'v1.0-2024',
+  exemptionConditions: null,
+};
+
+const BEER_EXEMPT_RULE: TaxRuleRecordPort = {
+  id: 2,
+  taxType: 'excise_duty',
+  productCategory: 'beer',
+  rate: '0.00',
+  effectiveFrom: new Date('2024-01-01'),
+  effectiveTo: null,
+  calculationFormulaReference: 'PER_DEGREE_PLATO',
+  officialSource: 'Finnish Tax Administration — 2024',
+  verificationDate: new Date('2024-03-01'),
+  versionLabel: 'v1.0-2024',
+  exemptionConditions: { appliesTo: { maxAlcoholByVolume: 0.5 } },
 };
 
 const CONTAINER_DUTY_RULE: TaxRuleRecordPort = {
-  id: 2,
+  id: 3,
   taxType: 'container_duty',
-  productCategory: 'can',
+  productCategory: 'all_beverages',
   rate: '0.51',
   effectiveFrom: new Date('2024-01-01'),
   effectiveTo: null,
@@ -284,6 +309,7 @@ const CONTAINER_DUTY_RULE: TaxRuleRecordPort = {
   officialSource: 'Finnish Tax Administration — 2024',
   verificationDate: new Date('2024-03-01'),
   versionLabel: 'v1.0-2024',
+  exemptionConditions: null,
 };
 
 // -------------------------------------------------------------------
@@ -336,7 +362,7 @@ async function buildTestModule(gatesOpen: boolean): Promise<{
 
   // Seed data
   productDataPort.seed(PRODUCT_BEER_DATA, [OFFER_BEER_DATA]);
-  taxRuleRepo.seed([BEER_EXCISE_RULE, CONTAINER_DUTY_RULE]);
+  taxRuleRepo.seed([BEER_EXCISE_RULE, BEER_EXEMPT_RULE, CONTAINER_DUTY_RULE]);
   transportQuery.seed([TRANSPORT_OFFER]);
 
   const moduleRef = await Test.createTestingModule({
@@ -452,17 +478,17 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
         const result = res.body;
 
         // Beer 5% ABV, 0.5 L, depositSystemStatus=true
-        // progressive ABV: tier maxAbv=8.0, rate=0.435, excise=round(0.435*0.5*100)=22¢
+        // per-degree-Plato: rate=33.00, excise=round(33.00*0.05*0.5*100)=83¢
         // container: depositSystem=true → EXEMPTED → 0¢
         // transport: DE→FI, carrierA, 150¢
         // retail: 200¢
-        // total: 200 + 150 + 22 + 0 + 0 = 372
+        // total: 200 + 150 + 83 + 0 + 0 = 433
         expect(result.foreignRetailPrice).toBe(200);
         expect(result.transportCost).toBe(150);
-        expect(result.alcoholExciseEstimate).toBe(22);
+        expect(result.alcoholExciseEstimate).toBe(83);
         expect(result.containerDutyEstimate).toBe(0);
         expect(result.otherCharges).toBe(0);
-        expect(result.totalCents).toBe(372);
+        expect(result.totalCents).toBe(433);
       });
 
       it('classifies the transaction', async () => {
