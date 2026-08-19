@@ -8,7 +8,7 @@
  */
 
 // Ports
-export type { ITaxRuleRepositoryPort, TaxRuleRecordPort } from './ports/tax-rule-repository.port';
+export type { ITaxRuleRepositoryPort, TaxRuleRecordPort, AbvTierConditions } from './ports/tax-rule-repository.port';
 export { TAX_RULE_REPOSITORY_PORT } from './services/alcohol-excise.service';
 
 // Services
@@ -26,14 +26,21 @@ export {
   calculateAlcoholExcise,
   calcPerLitreOfProduct,
   calcPerLitreOfAlcohol,
-  calcProgressiveAbv,
+  calcPerDegreePlato,
   normaliseCategory,
+  resolveOtherFermentedFormula,
   FORMULA_PER_LITRE_OF_PRODUCT,
   FORMULA_PER_LITRE_OF_ALCOHOL,
-  FORMULA_PROGRESSIVE_ABV,
+  FORMULA_PER_DEGREE_PLATO,
   DEFAULT_RATES,
-  DEFAULT_BEER_TIERS,
 } from './services/alcohol-excise.math';
+
+// Canonical taxonomy
+export {
+  TAX_CATEGORY_KEYS,
+  CATEGORY_DEFAULT_FORMULA,
+} from './tax-categories';
+export type { TaxCategory, FormulaType } from './tax-categories';
 
 export {
   calculateContainerDuty,

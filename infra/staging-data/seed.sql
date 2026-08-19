@@ -27,82 +27,92 @@ BEGIN;
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
--- Version 2024-01 — rates effective 2024-01-01 (IDs 1—14)
+-- Version 2024-01 — rates effective 2024-01-01 (IDs 1—11)
 -- ---------------------------------------------------------------------------
+
+-- Note: product_category values use the canonical taxonomy keys from
+-- packages/core-domain/src/tax/tax-categories.ts.  The normaliseCategory()
+-- function maps legacy aliases to these keys at runtime.
 
 INSERT INTO tax_rules (tax_type, product_category, rate, effective_from, effective_to, exemption_conditions, calculation_formula_reference, official_source, verification_date, version_label)
 VALUES
     -- Excise duty — alcohol
-    ('excise_duty', 'spirits',              265500.000000, '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', NULL, 'pure_alcohol_volume_based', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
-    ('excise_duty', 'beer_strong',           3595.000000,  '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', '{"min_abv": 4.7}'::jsonb, 'hectolitre_percent_based', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
-    ('excise_duty', 'beer_standard',         3050.000000,  '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', '{"min_abv": 2.8, "max_abv": 4.7}'::jsonb, 'hectolitre_percent_based', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
-    ('excise_duty', 'beer_low',              0.000000,     '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', '{"max_abv": 2.8}'::jsonb, 'zero_rate', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
-    ('excise_duty', 'wine_still',            0.000000,     '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', NULL, 'zero_rate', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
-    ('excise_duty', 'wine_sparkling',        0.000000,     '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', NULL, 'zero_rate', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
-    ('excise_duty', 'intermediate_products', 20300.000000, '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', NULL, 'hectolitre_based', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
+    -- Spirits: €29.50/litre of pure alcohol (stored in cents: 2950.00)
+    ('excise_duty', 'spirits',              2950.000000, '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', NULL, 'PER_LITRE_OF_ALCOHOL', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
+    -- Beer: €33.00/hl/°Plato full rate (PER_DEGREE_PLATO — rate used with abv fraction)
+    ('excise_duty', 'beer',                 3300.000000, '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', '{"max_abv": 0.5, "description": "Beer ≤ 0.5 %ABV not subject to excise"}'::jsonb, 'PER_DEGREE_PLATO', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
+    -- Still wine > 1.2 %ABV: €3.40/litre of product
+    ('excise_duty', 'wine_still',           340.000000,  '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', '{"min_abv": 1.2, "max_abv": 15, "description": "Still wine 1.2–15 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
+    -- Still wine 15–18 %ABV: €4.55/litre of product
+    ('excise_duty', 'wine_still',           455.000000,  '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', '{"min_abv": 15, "max_abv": 18, "description": "Still wine 15–18 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
+    -- Sparkling wine > 1.2 %ABV: €3.73/litre of product
+    ('excise_duty', 'wine_sparkling',       373.000000,  '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', '{"min_abv": 1.2, "description": "Sparkling wine > 1.2 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
+    -- Intermediate products ≤ 15 %ABV: €3.40/litre of product
+    ('excise_duty', 'intermediate_products', 340.000000, '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', '{"max_abv": 15, "description": "Intermediate products ≤ 15 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
+    -- Intermediate products > 15 %ABV: €4.55/litre of product
+    ('excise_duty', 'intermediate_products', 455.000000, '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', '{"min_abv": 15, "max_abv": 22, "description": "Intermediate products 15–22 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
+    -- Other fermented > 2.8 %ABV: €3.40/litre of product
+    ('excise_duty', 'other_fermented',      340.000000,  '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', '{"min_abv": 2.8, "description": "Other fermented beverages > 2.8 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
     -- Excise duty — tobacco
-    ('excise_duty', 'cigarettes',             64200.000000, '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', NULL, 'per_1000_based', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
-    ('excise_duty', 'cigars',                 38500.000000, '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', NULL, 'per_1000_based', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
+    ('excise_duty', 'cigarettes',            64200.000000, '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', NULL, 'per_1000_based', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
+    ('excise_duty', 'cigars',                38500.000000, '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', NULL, 'per_1000_based', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
     ('excise_duty', 'fine_cut_tobacco',       32500.000000, '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', NULL, 'per_kg_based', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
     ('excise_duty', 'pipe_tobacco',           24500.000000, '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', NULL, 'per_kg_based', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
-    -- Container duty
-    ('container_duty', 'container_plastic',   0.150000,     '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', '{"deposit_system_exempt": false}'::jsonb, 'container_duty_fixed', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
-    ('container_duty', 'container_glass',     0.100000,     '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', '{"deposit_system_exempt": false}'::jsonb, 'container_duty_fixed', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01'),
-    ('container_duty', 'container_aluminium', 0.150000,     '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', '{"deposit_system_exempt": false}'::jsonb, 'container_duty_fixed', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01');
+    -- Container duty: €0.51/litre flat rate on all beverage containers
+    ('container_duty', 'all_beverages',     51.000000,    '2024-01-01T00:00:00+02:00', '2024-12-31T23:59:59+02:00', NULL, 'FLAT_PER_LITRE', 'https://www.vero.fi/valmisteverotus', '2023-12-15T10:00:00+02:00', '2024-01');
 
 -- ---------------------------------------------------------------------------
--- Version 2025-01 — rates effective 2025-01-01, index-adjusted +3.2% (IDs 15—28)
+-- Version 2025-01 — rates effective 2025-01-01, index-adjusted (IDs 12—22)
 -- ---------------------------------------------------------------------------
 
 INSERT INTO tax_rules (tax_type, product_category, rate, effective_from, effective_to, exemption_conditions, calculation_formula_reference, official_source, verification_date, version_label)
 VALUES
     -- Excise duty — alcohol
-    ('excise_duty', 'spirits',              274200.000000, '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', NULL, 'pure_alcohol_volume_based', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
-    ('excise_duty', 'beer_strong',           3710.000000,  '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', '{"min_abv": 4.7}'::jsonb, 'hectolitre_percent_based', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
-    ('excise_duty', 'beer_standard',         3150.000000,  '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', '{"min_abv": 2.8, "max_abv": 4.7}'::jsonb, 'hectolitre_percent_based', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
-    ('excise_duty', 'beer_low',              0.000000,     '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', '{"max_abv": 2.8}'::jsonb, 'zero_rate', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
-    ('excise_duty', 'wine_still',            0.000000,     '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', NULL, 'zero_rate', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
-    ('excise_duty', 'wine_sparkling',        0.000000,     '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', NULL, 'zero_rate', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
-    ('excise_duty', 'intermediate_products', 20950.000000, '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', NULL, 'hectolitre_based', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
+    ('excise_duty', 'spirits',              3044.000000, '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', NULL, 'PER_LITRE_OF_ALCOHOL', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
+    ('excise_duty', 'beer',                 3404.000000, '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', '{"max_abv": 0.5, "description": "Beer ≤ 0.5 %ABV not subject to excise"}'::jsonb, 'PER_DEGREE_PLATO', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
+    ('excise_duty', 'wine_still',           351.000000,  '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', '{"min_abv": 1.2, "max_abv": 15, "description": "Still wine 1.2–15 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
+    ('excise_duty', 'wine_still',           470.000000,  '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', '{"min_abv": 15, "max_abv": 18, "description": "Still wine 15–18 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
+    ('excise_duty', 'wine_sparkling',       385.000000,  '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', '{"min_abv": 1.2, "description": "Sparkling wine > 1.2 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
+    ('excise_duty', 'intermediate_products', 351.000000, '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', '{"max_abv": 15, "description": "Intermediate products ≤ 15 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
+    ('excise_duty', 'intermediate_products', 470.000000, '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', '{"min_abv": 15, "max_abv": 22, "description": "Intermediate products 15–22 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
+    ('excise_duty', 'other_fermented',      351.000000,  '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', '{"min_abv": 2.8, "description": "Other fermented beverages > 2.8 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
     -- Excise duty — tobacco
     ('excise_duty', 'cigarettes',             66200.000000, '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', NULL, 'per_1000_based', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
     ('excise_duty', 'cigars',                 39700.000000, '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', NULL, 'per_1000_based', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
     ('excise_duty', 'fine_cut_tobacco',       33500.000000, '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', NULL, 'per_kg_based', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
     ('excise_duty', 'pipe_tobacco',           25300.000000, '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', NULL, 'per_kg_based', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
-    -- Container duty (2025 rates)
-    ('container_duty', 'container_plastic',   0.150000,     '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', '{"deposit_system_exempt": false}'::jsonb, 'container_duty_fixed', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
-    ('container_duty', 'container_glass',     0.100000,     '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', '{"deposit_system_exempt": false}'::jsonb, 'container_duty_fixed', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01'),
-    ('container_duty', 'container_aluminium', 0.150000,     '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', '{"deposit_system_exempt": false}'::jsonb, 'container_duty_fixed', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01');
+    -- Container duty (2025 rates): €0.51/litre flat rate on all beverage containers
+    ('container_duty', 'all_beverages',     51.000000,    '2025-01-01T00:00:00+02:00', '2025-12-31T23:59:59+02:00', NULL, 'FLAT_PER_LITRE', 'https://www.vero.fi/valmisteverotus', '2024-12-10T14:30:00+02:00', '2025-01');
 
 -- ---------------------------------------------------------------------------
--- Version 2026-PROPOSAL — proposed rates for review cycle (IDs 29—45)
+-- Version 2026-PROPOSAL — proposed rates for review cycle (IDs 23—38)
 -- Raises spirits duty +5% and adds nicotine product categories.
 -- This version is NOT yet confirmed (verification_date = NULL).
+-- Marked inactive by setting effective_to to a past date.
 -- ---------------------------------------------------------------------------
 
 INSERT INTO tax_rules (tax_type, product_category, rate, effective_from, effective_to, exemption_conditions, calculation_formula_reference, official_source, verification_date, version_label)
 VALUES
     -- Excise duty — alcohol (2026 proposed)
-    ('excise_duty', 'spirits',              288000.000000, '2026-01-01T00:00:00+02:00', NULL, NULL, 'pure_alcohol_volume_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    ('excise_duty', 'beer_strong',           3820.000000,  '2026-01-01T00:00:00+02:00', NULL, '{"min_abv": 4.7}'::jsonb, 'hectolitre_percent_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    ('excise_duty', 'beer_standard',         3245.000000,  '2026-01-01T00:00:00+02:00', NULL, '{"min_abv": 2.8, "max_abv": 4.7}'::jsonb, 'hectolitre_percent_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    ('excise_duty', 'beer_low',              0.000000,     '2026-01-01T00:00:00+02:00', NULL, '{"max_abv": 2.8}'::jsonb, 'zero_rate', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    ('excise_duty', 'wine_still',            0.000000,     '2026-01-01T00:00:00+02:00', NULL, NULL, 'zero_rate', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    ('excise_duty', 'wine_sparkling',        0.000000,     '2026-01-01T00:00:00+02:00', NULL, NULL, 'zero_rate', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    ('excise_duty', 'intermediate_products', 21580.000000, '2026-01-01T00:00:00+02:00', NULL, NULL, 'hectolitre_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    ('excise_duty', 'spirits',              3196.000000, '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', NULL, 'PER_LITRE_OF_ALCOHOL', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    ('excise_duty', 'beer',                 3506.000000, '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', '{"max_abv": 0.5, "description": "Beer ≤ 0.5 %ABV not subject to excise"}'::jsonb, 'PER_DEGREE_PLATO', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    ('excise_duty', 'wine_still',           362.000000,  '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', '{"min_abv": 1.2, "max_abv": 15, "description": "Still wine 1.2–15 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    ('excise_duty', 'wine_still',           484.000000,  '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', '{"min_abv": 15, "max_abv": 18, "description": "Still wine 15–18 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    ('excise_duty', 'wine_sparkling',       397.000000,  '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', '{"min_abv": 1.2, "description": "Sparkling wine > 1.2 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    ('excise_duty', 'intermediate_products', 362.000000, '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', '{"max_abv": 15, "description": "Intermediate products ≤ 15 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    ('excise_duty', 'intermediate_products', 484.000000, '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', '{"min_abv": 15, "max_abv": 22, "description": "Intermediate products 15–22 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    ('excise_duty', 'other_fermented',      362.000000,  '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', '{"min_abv": 2.8, "description": "Other fermented beverages > 2.8 %ABV"}'::jsonb, 'PER_LITRE_OF_PRODUCT', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
     -- Excise duty — tobacco (2026 proposed)
-    ('excise_duty', 'cigarettes',             68200.000000, '2026-01-01T00:00:00+02:00', NULL, NULL, 'per_1000_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    ('excise_duty', 'cigars',                 40900.000000, '2026-01-01T00:00:00+02:00', NULL, NULL, 'per_1000_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    ('excise_duty', 'fine_cut_tobacco',       34500.000000, '2026-01-01T00:00:00+02:00', NULL, NULL, 'per_kg_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    ('excise_duty', 'pipe_tobacco',           26000.000000, '2026-01-01T00:00:00+02:00', NULL, NULL, 'per_kg_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    -- Container duty (2026 proposed rates — +20% across the board)
-    ('container_duty', 'container_plastic',   0.180000,     '2026-01-01T00:00:00+02:00', NULL, '{"deposit_system_exempt": false}'::jsonb, 'container_duty_fixed', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    ('container_duty', 'container_glass',     0.120000,     '2026-01-01T00:00:00+02:00', NULL, '{"deposit_system_exempt": false}'::jsonb, 'container_duty_fixed', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    ('container_duty', 'container_aluminium', 0.180000,     '2026-01-01T00:00:00+02:00', NULL, '{"deposit_system_exempt": false}'::jsonb, 'container_duty_fixed', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    -- New nicotine categories (2026 proposed)
-    ('excise_duty', 'nicotine_pouches',       25.000000,    '2026-01-01T00:00:00+02:00', NULL, NULL, 'per_gram_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    ('excise_duty', 'e_liquid',               40.000000,    '2026-01-01T00:00:00+02:00', NULL, NULL, 'per_ml_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
-    ('excise_duty', 'snus',                   28000.000000, '2026-01-01T00:00:00+02:00', NULL, NULL, 'per_kg_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL');
+    ('excise_duty', 'cigarettes',             68200.000000, '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', NULL, 'per_1000_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    ('excise_duty', 'cigars',                 40900.000000, '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', NULL, 'per_1000_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    ('excise_duty', 'fine_cut_tobacco',       34500.000000, '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', NULL, 'per_kg_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    ('excise_duty', 'pipe_tobacco',           26000.000000, '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', NULL, 'per_kg_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    -- Container duty (2026 proposed rates — inactive)
+    ('container_duty', 'all_beverages',     53.000000,    '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', NULL, 'FLAT_PER_LITRE', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    -- New nicotine categories (2026 proposed — inactive)
+    ('excise_duty', 'nicotine_pouches',       25.000000,    '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', NULL, 'per_gram_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    ('excise_duty', 'e_liquid',               40.000000,    '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', NULL, 'per_ml_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL'),
+    ('excise_duty', 'snus',                   28000.000000, '2026-01-01T00:00:00+02:00', '2025-01-01T00:00:00+02:00', NULL, 'per_kg_based', 'https://www.vero.fi/valmisteverotus', NULL, '2026-PROPOSAL');
 
 -- =============================================================================
 -- 2. TRANSPORT OFFERS
@@ -169,11 +179,11 @@ FROM (VALUES
 -- ---------------------------------------------------------------------------
 INSERT INTO product_master (name, manufacturer, brand, category, alcohol_by_volume, unit_volume, container_type, regulatory_classification, deposit_system_status, ean)
 VALUES
-    ('Sandels Lager 24pk',       'Sandels',       'Sandels',       'beer_strong', 4.700,  0.330, 'can',    'alcoholic_beverage', TRUE,  '6411953111110'),
-    ('Karjala 24pk',             'Karjala',       'Karjala',       'beer_standard', 4.600, 0.330, 'can',    'alcoholic_beverage', TRUE,  '6411953222220'),
-    ('Lapin Kulta 24pk',         'Lapin Kulta',   'Lapin Kulta',   'beer_standard', 4.500, 0.330, 'can',    'alcoholic_beverage', TRUE,  '6411953333330'),
-    ('Olvi 12pk',                'Olvi',          'Olvi',          'beer_standard', 4.500, 0.330, 'can',    'alcoholic_beverage', TRUE,  '6411953444440'),
-    ('Koff 24pk',                'Koff',          'Koff',          'beer_strong', 4.700,  0.330, 'bottle', 'alcoholic_beverage', TRUE,  '6411953555550'),
+    ('Sandels Lager 24pk',       'Sandels',       'Sandels',       'beer', 4.700,  0.330, 'can',    'alcoholic_beverage', TRUE,  '6411953111110'),
+    ('Karjala 24pk',             'Karjala',       'Karjala',       'beer', 4.600, 0.330, 'can',    'alcoholic_beverage', TRUE,  '6411953222220'),
+    ('Lapin Kulta 24pk',         'Lapin Kulta',   'Lapin Kulta',   'beer', 4.500, 0.330, 'can',    'alcoholic_beverage', TRUE,  '6411953333330'),
+    ('Olvi 12pk',                'Olvi',          'Olvi',          'beer', 4.500, 0.330, 'can',    'alcoholic_beverage', TRUE,  '6411953444440'),
+    ('Koff 24pk',                'Koff',          'Koff',          'beer', 4.700,  0.330, 'bottle', 'alcoholic_beverage', TRUE,  '6411953555550'),
     ('Fanta Orange',             'Fanta',         'Fanta',         'non_alcoholic', NULL,  1.500, 'bottle', 'non_alcoholic_beverage', TRUE, '5449000000996'),
     ('Coca-Cola 24pk',           'Coca-Cola',     'Coca-Cola',     'non_alcoholic', NULL,  0.330, 'can',    'non_alcoholic_beverage', TRUE, '5449000009999'),
     ('Bonduelle Herneet',        'Bonduelle',     'Bonduelle',     'non_alcoholic', NULL,  0.400, 'can',    'food_product', TRUE,    '6412400012340'),
@@ -200,14 +210,14 @@ FROM (VALUES
 -- ---------------------------------------------------------------------------
 INSERT INTO product_master (name, manufacturer, brand, category, alcohol_by_volume, unit_volume, container_type, regulatory_classification, deposit_system_status, ean)
 VALUES
-    ('Põhjala Must Kuld',       'Põhjala',        'Põhjala',        'beer_strong', 10.500, 0.330, 'bottle', 'alcoholic_beverage', TRUE,  '4740079123451'),
-    ('Põhjala Virmalised',      'Põhjala',        'Põhjala',        'beer_strong', 8.000,  0.330, 'bottle', 'alcoholic_beverage', TRUE,  '4740079123468'),
-    ('Sori Brewing Long Dreams','Sori Brewing',   'Sori Brewing',   'beer_strong', 6.500,  0.440, 'can',    'alcoholic_beverage', TRUE,  '4740079222222'),
-    ('Sori Brewing Citra IPA',  'Sori Brewing',   'Sori Brewing',   'beer_strong', 5.500,  0.440, 'can',    'alcoholic_beverage', TRUE,  '4740079222239'),
-    ('Mikkeller Green Gold',    'Mikkeller',      'Mikkeller',      'beer_strong', 8.000,  0.330, 'can',    'alcoholic_beverage', TRUE,  '5711833001234'),
-    ('To Øl Garden of Eden',    'To Øl',          'To Øl',          'beer_strong', 6.800,  0.330, 'can',    'alcoholic_beverage', TRUE,  '5711833002239'),
-    ('Fat Lizard Kama IPA',     'Fat Lizard',     'Fat Lizard',     'beer_strong', 6.500,  0.440, 'can',    'alcoholic_beverage', TRUE,  '6438456000011'),
-    ('Fat Lizard Saison',       'Fat Lizard',     'Fat Lizard',     'beer_strong', 5.500,  0.750, 'bottle', 'alcoholic_beverage', TRUE,  '6438456000028');
+    ('Põhjala Must Kuld',       'Põhjala',        'Põhjala',        'beer', 10.500, 0.330, 'bottle', 'alcoholic_beverage', TRUE,  '4740079123451'),
+    ('Põhjala Virmalised',      'Põhjala',        'Põhjala',        'beer', 8.000,  0.330, 'bottle', 'alcoholic_beverage', TRUE,  '4740079123468'),
+    ('Sori Brewing Long Dreams','Sori Brewing',   'Sori Brewing',   'beer', 6.500,  0.440, 'can',    'alcoholic_beverage', TRUE,  '4740079222222'),
+    ('Sori Brewing Citra IPA',  'Sori Brewing',   'Sori Brewing',   'beer', 5.500,  0.440, 'can',    'alcoholic_beverage', TRUE,  '4740079222239'),
+    ('Mikkeller Green Gold',    'Mikkeller',      'Mikkeller',      'beer', 8.000,  0.330, 'can',    'alcoholic_beverage', TRUE,  '5711833001234'),
+    ('To Øl Garden of Eden',    'To Øl',          'To Øl',          'beer', 6.800,  0.330, 'can',    'alcoholic_beverage', TRUE,  '5711833002239'),
+    ('Fat Lizard Kama IPA',     'Fat Lizard',     'Fat Lizard',     'beer', 6.500,  0.440, 'can',    'alcoholic_beverage', TRUE,  '6438456000011'),
+    ('Fat Lizard Saison',       'Fat Lizard',     'Fat Lizard',     'beer', 5.500,  0.750, 'bottle', 'alcoholic_beverage', TRUE,  '6438456000028');
 
 INSERT INTO retail_offers (merchant, country, product_id, price_cents, currency, availability, source_url, reliability_status)
 SELECT 'pohjolan_tuonti', 'EE', id, price, 'EUR', 'in_stock', 'https://pohjolantuonti.fi/tuote/' || id, 'EXACT'
@@ -294,21 +304,20 @@ VALUES ('Sample Aperitif', 'Generic', 'Generic', 'intermediate_products', 18.000
 -- =============================================================================
 
 -- Tax rule reference IDs for 2025-01 (used in golden-001 through golden-010):
---   excise/spirits=15, excise/beer_strong=16, excise/beer_standard=17,
---   excise/wine_still=19, excise/wine_sparkling=20, excise/intermediate=21,
---   excise/cigarettes=22, container/glass=27, container/aluminium=28
+--   excise/spirits=14, excise/beer=15, excise/wine_still=16, excise/wine_still_high=17,
+--   excise/wine_sparkling=18, excise/intermediate_low=19, excise/intermediate_high=20,
+--   excise/other_fermented=21, excise/cigarettes=22, container/all_beverages=26
 --
 -- Tax rule reference IDs for 2026-PROPOSAL (used in golden-011, golden-012):
---   excise/spirits=29, excise/nicotine_pouches=43, container/glass=41,
---   container/aluminium=42
+--   excise/spirits=27, excise/nicotine_pouches=41, container/all_beverages=39
 
 INSERT INTO calculation_records (product_master_id, retail_offer_ids, transport_offer_id, excise_rule_version_id, container_duty_rule_version_id, total_cents, breakdown, confidence, quantity, destination, disclaimer, session_id, calculated_at)
 VALUES
 
 -- SCENARIO 1: Standard spirits bottle (0.7L, 40% ABV) — HelsinkiPremium → DHL from DE
-(3, '[3]'::jsonb, 3, 15, 27, 83910, '{
-    "excise": {"category": "spirits", "pure_alcohol_litres": 0.28, "rate_cents_per_litre": 274200, "amount_cents": 76776},
-    "container_duty": {"type": "glass_bottle", "rate_cents": 0.10, "quantity": 1, "amount_cents": 0},
+(3, '[3]'::jsonb, 3, 14, 26, 83910, '{
+    "excise": {"category": "spirits", "pure_alcohol_litres": 0.28, "rate_cents_per_litre": 3044, "amount_cents": 852},
+    "container_duty": {"type": "glass_bottle", "rate_cents": 0.51, "quantity": 1, "amount_cents": 1},
     "transport": {"base_cents": 3500, "weight_charge_cents": 144, "total_transport_cents": 3644},
     "merchant_price_cents": 3490,
     "total_estimated_cents": 83910,
@@ -317,9 +326,9 @@ VALUES
 }'::jsonb, 'HIGH', 1, 'FI', 'Estimated total cost in Finland, not final legal tax liability', 'golden-001', '2025-06-15T10:00:00+03:00'),
 
 -- SCENARIO 2: Strong beer case (24×0.33L, 4.7% ABV) — SuomiLogistiikka → Posti from EE
-(11, '[11]'::jsonb, 1, 16, 28, 7907, '{
-    "excise": {"category": "beer_strong", "hectolitre_percent": 0.37224, "rate_cents_per_hlt_percent": 3710, "amount_cents": 1381},
-    "container_duty": {"type": "aluminium_can", "rate_cents": 0.15, "quantity": 24, "amount_cents": 4, "deposit_system_exempt": false},
+(11, '[11]'::jsonb, 1, 15, 26, 7907, '{
+    "excise": {"category": "beer", "hectolitre_percent": 0.37224, "rate_cents_per_hlt_percent": 3404, "amount_cents": 1267},
+    "container_duty": {"type": "aluminium_can", "rate_cents": 0.51, "quantity": 24, "amount_cents": 12, "deposit_system_exempt": false},
     "transport": {"base_cents": 2500, "weight_charge_cents": 723, "total_transport_cents": 3223},
     "merchant_price_cents": 3299,
     "total_estimated_cents": 7907,
@@ -328,13 +337,13 @@ VALUES
 }'::jsonb, 'HIGH', 1, 'FI', 'Estimated total cost in Finland, not final legal tax liability', 'golden-002', '2025-06-15T10:05:00+03:00'),
 
 -- SCENARIO 3: Fine wine (0.75L, 13.5% ABV) — HelsinkiPremium → DB Schenker from DE
-(9, '[9]'::jsonb, 5, 19, 27, 50613, '{
-    "excise": {"category": "wine_still", "amount_cents": 0, "note": "Still wine excise is €0 in Finland"},
-    "container_duty": {"type": "glass_bottle", "rate_cents": 0.10, "quantity": 1, "amount_cents": 0},
+(9, '[9]'::jsonb, 5, 16, 26, 50895, '{
+    "excise": {"category": "wine_still", "rate_cents_per_litre": 351, "volume_litres": 0.75, "amount_cents": 263},
+    "container_duty": {"type": "glass_bottle", "rate_cents": 0.51, "quantity": 1, "amount_cents": 1},
     "transport": {"base_cents": 5500, "weight_charge_cents": 113, "total_transport_cents": 5613},
     "merchant_price_cents": 45000,
-    "total_estimated_cents": 50613,
-    "total_estimated_eur": 506.13,
+    "total_estimated_cents": 50895,
+    "total_estimated_eur": 508.95,
     "disclaimer": "Estimated total cost in Finland, not final legal tax liability"
 }'::jsonb, 'HIGH', 1, 'FI', 'Estimated total cost in Finland, not final legal tax liability', 'golden-003', '2025-06-15T10:10:00+03:00'),
 
@@ -350,9 +359,9 @@ VALUES
 }'::jsonb, 'HIGH', 1, 'FI', 'Estimated total cost in Finland, not final legal tax liability', 'golden-004', '2025-06-15T10:15:00+03:00'),
 
 -- SCENARIO 5: Craft beer (single 0.44L, 6.5% ABV) — PohjolanTuonti → Kaukokiito from EE
-(23, '[23]'::jsonb, 12, 16, 28, 2580, '{
-    "excise": {"category": "beer_strong", "hectolitre_percent": 0.0286, "rate_cents_per_hlt_percent": 3710, "amount_cents": 106},
-    "container_duty": {"type": "aluminium_can", "rate_cents": 0.15, "quantity": 1, "amount_cents": 0},
+(23, '[23]'::jsonb, 12, 15, 26, 2580, '{
+    "excise": {"category": "beer", "hectolitre_percent": 0.0286, "rate_cents_per_hlt_percent": 3404, "amount_cents": 97},
+    "container_duty": {"type": "aluminium_can", "rate_cents": 0.51, "quantity": 1, "amount_cents": 1},
     "transport": {"base_cents": 1800, "weight_charge_cents": 25, "total_transport_cents": 1825},
     "merchant_price_cents": 649,
     "total_estimated_cents": 2580,
@@ -361,20 +370,20 @@ VALUES
 }'::jsonb, 'HIGH', 1, 'FI', 'Estimated total cost in Finland, not final legal tax liability', 'golden-005', '2025-06-15T10:20:00+03:00'),
 
 -- SCENARIO 6: Sparkling wine — ArcticBev → DHL from DE
-(31, '[31]'::jsonb, 3, 20, 27, 16670, '{
-    "excise": {"category": "wine_sparkling", "amount_cents": 0, "note": "Sparkling wine excise is €0 in Finland"},
-    "container_duty": {"type": "glass_bottle", "rate_cents": 0.10, "quantity": 1, "amount_cents": 0},
+(31, '[31]'::jsonb, 3, 18, 26, 17109, '{
+    "excise": {"category": "wine_sparkling", "rate_cents_per_litre": 385, "volume_litres": 0.75, "amount_cents": 289},
+    "container_duty": {"type": "glass_bottle", "rate_cents": 0.51, "quantity": 1, "amount_cents": 1},
     "transport": {"base_cents": 3500, "weight_charge_cents": 180, "total_transport_cents": 3680},
     "merchant_price_cents": 12990,
-    "total_estimated_cents": 16670,
-    "total_estimated_eur": 166.70,
+    "total_estimated_cents": 17109,
+    "total_estimated_eur": 171.09,
     "disclaimer": "Estimated total cost in Finland, not final legal tax liability"
 }'::jsonb, 'HIGH', 1, 'FI', 'Estimated total cost in Finland, not final legal tax liability', 'golden-006', '2025-06-15T10:25:00+03:00'),
 
 -- SCENARIO 7: Non-alcoholic product (no excise) — SuomiLogistiikka → Posti from EE
-(17, '[17]'::jsonb, 1, NULL, 28, 6083, '{
+(17, '[17]'::jsonb, 1, NULL, 26, 6083, '{
     "excise": {"category": "non_alcoholic", "amount_cents": 0, "note": "No excise on non-alcoholic products"},
-    "container_duty": {"type": "aluminium_can", "rate_cents": 0.15, "quantity": 24, "amount_cents": 4, "deposit_system_exempt": false},
+    "container_duty": {"type": "aluminium_can", "rate_cents": 0.51, "quantity": 24, "amount_cents": 12, "deposit_system_exempt": false},
     "transport": {"base_cents": 2500, "weight_charge_cents": 680, "total_transport_cents": 3180},
     "merchant_price_cents": 2899,
     "total_estimated_cents": 6083,
@@ -383,9 +392,9 @@ VALUES
 }'::jsonb, 'HIGH', 1, 'FI', 'Estimated total cost in Finland, not final legal tax liability', 'golden-007', '2025-06-15T10:30:00+03:00'),
 
 -- SCENARIO 8: Premium whisky via sea freight — HelsinkiPremium → Maersk from USA
-(6, '[6]'::jsonb, 8, 15, 27, 156650, '{
-    "excise": {"category": "spirits", "pure_alcohol_litres": 0.28, "rate_cents_per_litre": 274200, "amount_cents": 76776},
-    "container_duty": {"type": "glass_bottle", "rate_cents": 0.10, "quantity": 1, "amount_cents": 0},
+(6, '[6]'::jsonb, 8, 14, 26, 156650, '{
+    "excise": {"category": "spirits", "pure_alcohol_litres": 0.28, "rate_cents_per_litre": 3044, "amount_cents": 852},
+    "container_duty": {"type": "glass_bottle", "rate_cents": 0.51, "quantity": 1, "amount_cents": 1},
     "transport": {"base_cents": 72000, "weight_charge_cents": 384, "total_transport_cents": 72384},
     "merchant_price_cents": 7490,
     "total_estimated_cents": 156650,
@@ -394,9 +403,9 @@ VALUES
 }'::jsonb, 'HIGH', 1, 'FI', 'Estimated total cost in Finland, not final legal tax liability', 'golden-008', '2025-06-15T10:35:00+03:00'),
 
 -- SCENARIO 9: Intermediate product (aperitif) — ArcticBev → DSV from IT
-(45, NULL, 11, 21, 27, 6957, '{
-    "excise": {"category": "intermediate", "hectolitres": 0.0075, "rate_cents_per_hectolitre": 20950, "amount_cents": 157},
-    "container_duty": {"type": "glass_bottle", "rate_cents": 0.10, "quantity": 1, "amount_cents": 0},
+(45, NULL, 11, 19, 26, 6957, '{
+    "excise": {"category": "intermediate_products", "hectolitres": 0.0075, "rate_cents_per_hectolitre": 351, "amount_cents": 3},
+    "container_duty": {"type": "glass_bottle", "rate_cents": 0.51, "quantity": 1, "amount_cents": 1},
     "transport": {"base_cents": 4200, "weight_charge_cents": 110, "total_transport_cents": 4310},
     "merchant_price_cents": 2490,
     "total_estimated_cents": 6957,
@@ -404,10 +413,10 @@ VALUES
     "disclaimer": "Estimated total cost in Finland, not final legal tax liability"
 }'::jsonb, 'HIGH', 1, 'FI', 'Estimated total cost in Finland, not final legal tax liability', 'golden-009', '2025-06-15T10:40:00+03:00'),
 
--- SCENARIO 10: Standard beer (below strong threshold, 4.5%) — SuomiLogistiikka → VR from SE
-(13, '[13]'::jsonb, 9, 17, 27, 7819, '{
-    "excise": {"category": "beer_standard", "hectolitre_percent": 0.3564, "rate_cents_per_hlt_percent": 3150, "amount_cents": 1123},
-    "container_duty": {"type": "glass_bottle", "rate_cents": 0.10, "quantity": 24, "amount_cents": 2, "deposit_system_exempt": false},
+-- SCENARIO 10: Standard beer (4.5%) — SuomiLogistiikka → VR from SE
+(13, '[13]'::jsonb, 9, 15, 26, 7819, '{
+    "excise": {"category": "beer", "hectolitre_percent": 0.3564, "rate_cents_per_hlt_percent": 3404, "amount_cents": 1213},
+    "container_duty": {"type": "glass_bottle", "rate_cents": 0.51, "quantity": 24, "amount_cents": 12, "deposit_system_exempt": false},
     "transport": {"base_cents": 3200, "weight_charge_cents": 495, "total_transport_cents": 3695},
     "merchant_price_cents": 2999,
     "total_estimated_cents": 7819,
@@ -416,9 +425,9 @@ VALUES
 }'::jsonb, 'HIGH', 1, 'FI', 'Estimated total cost in Finland, not final legal tax liability', 'golden-010', '2025-06-15T10:45:00+03:00'),
 
 -- SCENARIO 11: Proposed 2026 rates — spirits increase impact (same as golden-001 but 2026 rates)
-(3, '[3]'::jsonb, 3, 29, 41, 87774, '{
-    "excise": {"category": "spirits", "pure_alcohol_litres": 0.28, "rate_cents_per_litre": 288000, "amount_cents": 80640},
-    "container_duty": {"type": "glass_bottle", "rate_cents": 0.12, "quantity": 1, "amount_cents": 0},
+(3, '[3]'::jsonb, 3, 27, 39, 87774, '{
+    "excise": {"category": "spirits", "pure_alcohol_litres": 0.28, "rate_cents_per_litre": 3196, "amount_cents": 895},
+    "container_duty": {"type": "glass_bottle", "rate_cents": 0.53, "quantity": 1, "amount_cents": 1},
     "transport": {"base_cents": 3500, "weight_charge_cents": 144, "total_transport_cents": 3644},
     "merchant_price_cents": 3490,
     "total_estimated_cents": 87774,
@@ -427,9 +436,9 @@ VALUES
 }'::jsonb, 'HIGH', 1, 'FI', 'Estimated total cost in Finland, not final legal tax liability', 'golden-011', '2025-08-01T10:00:00+03:00'),
 
 -- SCENARIO 12: Nicotine pouches (2026 proposed) — NordicTobacco → Posti from EE
-(43, '[43]'::jsonb, 1, 43, 42, 3703, '{
+(43, '[43]'::jsonb, 1, 41, 39, 3703, '{
     "excise": {"category": "nicotine_pouches", "weight_grams": 20, "rate_cents_per_gram": 25, "amount_cents": 500, "note": "New nicotine category proposed for 2026"},
-    "container_duty": {"type": "aluminium_can", "rate_cents": 0.18, "quantity": 1, "amount_cents": 0},
+    "container_duty": {"type": "aluminium_can", "rate_cents": 0.53, "quantity": 1, "amount_cents": 1},
     "transport": {"base_cents": 2500, "weight_charge_cents": 4, "total_transport_cents": 2504},
     "merchant_price_cents": 699,
     "total_estimated_cents": 3703,

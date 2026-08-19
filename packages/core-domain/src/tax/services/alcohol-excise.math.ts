@@ -7,6 +7,8 @@
  * @module AlcoholExciseMath
  */
 
+import type { TaxCategory } from '../tax-categories';
+
 // ---------------------------------------------------------------------------
 // Formula reference constants — values stored in taxRules.calculationFormulaReference
 // ---------------------------------------------------------------------------
@@ -20,12 +22,8 @@ export const FORMULA_PER_LITRE_OF_PRODUCT = 'PER_LITRE_OF_PRODUCT';
  */
 export const FORMULA_PER_LITRE_OF_ALCOHOL = 'PER_LITRE_OF_ALCOHOL';
 
-/**
- * Rate is selected from a progressive ABV tier table.
- * Used for beer and cider.  The `rate` field in the DB is a JSON-encoded
- * string of tiers: `[{"maxAbv": 2.8, "rate": 0}, {"maxAbv": 4.7, "rate": 0.295}, ...]`
- */
-export const FORMULA_PROGRESSIVE_ABV = 'PROGRESSIVE_ABV';
+/** Rate is applied per hectolitre per degree Plato (€/hl-°P). */
+export const FORMULA_PER_DEGREE_PLATO = 'PER_DEGREE_PLATO';
 
 // ---------------------------------------------------------------------------
 // Fallback rates — used when no tax rule is found in the repository
@@ -33,36 +31,12 @@ export const FORMULA_PROGRESSIVE_ABV = 'PROGRESSIVE_ABV';
 // ---------------------------------------------------------------------------
 
 /**
- * Finnish alcohol excise categories as understood by the service.
- * 'cider' and 'rtd' are runtime aliases (cider→beer rates, rtd→spirits rates).
+ * Canonical excise-duty category key.
+ *
+ * Re-exported from {@link TaxCategory} in `tax-categories.ts` so consumers
+ * can import from this file as before.
  */
-export type AlcoholExciseCategory =
-  | 'beer'
-  | 'wine'
-  | 'spirits'
-  | 'cider'
-  | 'rtd'
-  | 'intermediate'
-  | 'other';
-
-/**
- * Internal ABV-tier descriptor for progressive-rate categories.
- */
-export interface AbvTier {
-  readonly maxAbv: number;
-  readonly ratePerLitre: number;
-}
-
-// ---------------------------------------------------------------------------
-// Default ABV tiers (beer / cider)
-// ---------------------------------------------------------------------------
-
-export const DEFAULT_BEER_TIERS: readonly AbvTier[] = [
-  { maxAbv: 2.8, ratePerLitre: 0 },
-  { maxAbv: 4.7, ratePerLitre: 0.295 },
-  { maxAbv: 8.0, ratePerLitre: 0.435 },
-  { maxAbv: Infinity, ratePerLitre: 0.580 },
-] as const;
+export type AlcoholExciseCategory = TaxCategory;
 
 // ---------------------------------------------------------------------------
 // Default flat rates per category (€/litre of product unless noted)
@@ -72,13 +46,12 @@ export const DEFAULT_RATES: Record<
   AlcoholExciseCategory,
   { formula: string; rate: number; note: string }
 > = {
-  beer: { formula: FORMULA_PROGRESSIVE_ABV, rate: 0.295, note: 'See DEFAULT_BEER_TIERS' },
-  cider: { formula: FORMULA_PROGRESSIVE_ABV, rate: 0.295, note: 'Same as beer tiers' },
-  wine: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: 'Still & sparkling, > 1.2 % ABV (seed: 3.40)' },
-  intermediate: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: '≤ 15 % ABV (seed: 3.40)' },
+  beer: { formula: FORMULA_PER_DEGREE_PLATO, rate: 33.00, note: '€/hl per degree Plato (seed: 33.00)' },
+  wine_still: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: 'Still wine > 1.2 % ABV (seed: 3.40)' },
+  wine_sparkling: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.73, note: 'Sparkling wine > 1.2 % ABV (seed: 3.73)' },
   spirits: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 29.50, note: 'Per litre of pure alcohol (seed: 29.50)' },
-  rtd: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 29.50, note: 'Spirits-based RTD (seed: 29.50)' },
-  other: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: 'Other fermented > 2.8 % ABV (seed: 3.40)' },
+  intermediate_products: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: '≤ 15 % ABV (seed: 3.40)' },
+  other_fermented: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 3.40, note: 'Cider, RTD, etc. > 2.8 % ABV (seed: 3.40/l alcohol)' },
 };
 
 // ---------------------------------------------------------------------------
@@ -86,18 +59,47 @@ export const DEFAULT_RATES: Record<
 // ---------------------------------------------------------------------------
 
 /**
- * Normalise a raw category string to the internal category key.
+ * Normalise a raw product-category string to the canonical seed key.
+ *
+ * Canonical keys are idempotent — passing an already-canonical key returns it
+ * unchanged.  This ensures the function is safe to call on keys that may or
+ * may not have been normalised already.
+ *
+ * Mapping rules:
+ *   beer / olut / already-canonical    → beer
+ *   wine / viini (default)             → wine_still
+ *   sparkling / champagne / kuohuviini → wine_sparkling
+ *   spirits / viina / vodka / whisky/whiskey → spirits
+ *   cider / siideri                    → other_fermented
+ *   rtd / ready-to-drink / lonkero     → other_fermented
+ *   intermediate / väli / portviini / sherry → intermediate_products
+ *   already-canonical (wine_still, wine_sparkling, other_fermented, intermediate_products) → unchanged
+ *   (anything else)                    → other_fermented
+ *
+ * @returns The canonical category key.
  */
 export function normaliseCategory(raw: string): AlcoholExciseCategory {
   const lower = raw.toLowerCase().trim();
   switch (lower) {
+    // Canonical keys (idempotent passthrough)
     case 'beer':
+    case 'wine_still':
+    case 'wine_sparkling':
+    case 'spirits':
+    case 'intermediate_products':
+    case 'other_fermented':
+      return lower as AlcoholExciseCategory;
+
+    // Finnish / common aliases
     case 'olut':
       return 'beer';
     case 'wine':
     case 'viini':
-      return 'wine';
-    case 'spirits':
+      return 'wine_still';
+    case 'sparkling':
+    case 'champagne':
+    case 'kuohuviini':
+      return 'wine_sparkling';
     case 'viina':
     case 'vodka':
     case 'whisky':
@@ -105,19 +107,51 @@ export function normaliseCategory(raw: string): AlcoholExciseCategory {
       return 'spirits';
     case 'cider':
     case 'siideri':
-      return 'cider';
     case 'rtd':
     case 'ready-to-drink':
     case 'lonkero':
-      return 'rtd';
+      return 'other_fermented';
     case 'intermediate':
     case 'väli':
     case 'portviini':
     case 'sherry':
-      return 'intermediate';
+      return 'intermediate_products';
     default:
-      return 'other';
+      return 'other_fermented';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Sub-type formula resolution for other_fermented (cider vs RTD)
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine the correct calculation formula for an `other_fermented` product
+ * based on its original (pre-normalisation) category string.
+ *
+ * Finnish excise rules distinguish:
+ *   - **Cider** (cider, siideri): per litre of **product** at flat rate (€3.40/l),
+ *     like wine.
+ *   - **RTD / long-drink** (rtd, ready-to-drink, lonkero): per litre of **alcohol**
+ *     (€3.40/l of pure alcohol), like spirits.
+ *
+ * The default (any unrecognised `other_fermented` sub-type, or a canonical
+ * `other_fermented` passed directly) defaults to per-litre-of-alcohol as the
+ * more conservative (higher-tax) option for estimation.
+ *
+ * @param rawCategory — The original category string (pre-normalisation).
+ * @returns The formula reference constant for the correct formula type.
+ */
+export function resolveOtherFermentedFormula(
+  rawCategory: string,
+): 'PER_LITRE_OF_PRODUCT' | 'PER_LITRE_OF_ALCOHOL' {
+  const lower = rawCategory.toLowerCase().trim();
+  if (lower === 'cider' || lower === 'siideri') {
+    return 'PER_LITRE_OF_PRODUCT';
+  }
+  // RTD, lonkero, ready-to-drink, unknown, or canonical 'other_fermented'
+  // Default: per-litre-of-alcohol (like spirits, conservative estimate)
+  return 'PER_LITRE_OF_ALCOHOL';
 }
 
 // ---------------------------------------------------------------------------
@@ -161,29 +195,31 @@ export function calcPerLitreOfAlcohol(
 }
 
 /**
- * Calculate excise using a progressive ABV tier table.
+ * Calculate excise using a per-degree-Plato (hectolitre-percent) formula.
  *
- * @param tiers        Ordered array of `{maxAbv, ratePerLitre}` (ascending by maxAbv).
- * @param abv          Alcohol by volume fraction (e.g. 0.40).
- * @param volumeLitres Volume in litres.
+ * Finnish beer excise is levied at €X per hectolitre per degree Plato
+ * of original wort.  Degree Plato is approximately equal to ABV for
+ * finished beer, so the formula is:
+ *
+ *   tax = ratePerHectolitrePercent * abv * volumeLitres
+ *
+ * where `abv` is the alcohol-by-volume fraction (0–1) and the result
+ * is returned in euro-cents.
+ *
+ * @param ratePerHectolitrePercent  Rate in € per hectolitre per percent (e.g. 33.00).
+ * @param abv                       Alcohol by volume fraction (0–1, e.g. 0.047 for 4.7 %).
+ * @param volumeLitres              Volume in litres.
  * @returns Excise amount in euro-cents.
  */
-export function calcProgressiveAbv(
-  tiers: readonly AbvTier[],
+export function calcPerDegreePlato(
+  ratePerHectolitrePercent: number,
   abv: number,
   volumeLitres: number,
 ): number {
   validatePositive(volumeLitres, 'volumeLitres');
   validateRange(abv, 0, 1, 'abv');
-
-  const abvPercent = abv * 100; // convert to percentage scale for tier comparison
-  const tier = tiers.find((t) => abvPercent <= t.maxAbv);
-  if (!tier) {
-    // Use last tier as fallback
-    const last = tiers[tiers.length - 1];
-    return calcPerLitreOfProduct(last.ratePerLitre, volumeLitres);
-  }
-  return calcPerLitreOfProduct(tier.ratePerLitre, volumeLitres);
+  const amount = ratePerHectolitrePercent * abv * volumeLitres;
+  return roundToCents(amount);
 }
 
 // ---------------------------------------------------------------------------
@@ -211,14 +247,11 @@ export function calculateAlcoholExcise(
       const effectiveRate = rateValue * abv;
       return { taxCents, rateApplied: effectiveRate };
     }
-    case FORMULA_PROGRESSIVE_ABV: {
-      // rateValue is ignored for progressive — tiers are parsed or use defaults
-      const tiers = DEFAULT_BEER_TIERS;
-      const taxCents = calcProgressiveAbv(tiers, abv, volumeLitres);
-      const abvPercent = abv * 100;
-      const appliedTier =
-        tiers.find((t) => abvPercent <= t.maxAbv) ?? tiers[tiers.length - 1];
-      return { taxCents, rateApplied: appliedTier.ratePerLitre };
+    case FORMULA_PER_DEGREE_PLATO: {
+      const taxCents = calcPerDegreePlato(rateValue, abv, volumeLitres);
+      // Effective per-litre-of-product rate for evidence
+      const effectiveRate = rateValue * abv;
+      return { taxCents, rateApplied: effectiveRate };
     }
     case FORMULA_PER_LITRE_OF_PRODUCT:
     default: {

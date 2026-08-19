@@ -15,7 +15,7 @@ import { taxRules } from '../index';
 import {
   FORMULA_PER_LITRE_OF_PRODUCT,
   FORMULA_PER_LITRE_OF_ALCOHOL,
-  FORMULA_PROGRESSIVE_ABV,
+  FORMULA_PER_DEGREE_PLATO,
   FORMULA_FLAT_PER_LITRE,
 } from '@rajahinta/core-domain';
 
@@ -59,6 +59,22 @@ const EFFECTIVE_FROM = new Date('2024-01-01');
  * Small independent breweries (< 500 000 l/year) receive a reduced
  * rate of €16.50/hl/°Plato on the first 100 000 hl/year, full rate above.
  */
+const BEER_EXEMPT: TaxRuleSeed = {
+  taxType: 'excise_duty',
+  productCategory: 'beer',
+  rate: '0.00',
+  effectiveFrom: EFFECTIVE_FROM,
+  effectiveTo: null,
+  exemptionConditions: {
+    description: 'Beer ≤ 0.5 %ABV not subject to excise duty',
+    appliesTo: { maxAlcoholByVolume: 0.5 },
+  },
+  calculationFormulaReference: FORMULA_PER_DEGREE_PLATO,
+  officialSource: SOURCE_VERO_FI,
+  verificationDate: VERIFIED_2024_Q1,
+  versionLabel: VERSION,
+};
+
 const BEER_FULL_RATE: TaxRuleSeed = {
   taxType: 'excise_duty',
   productCategory: 'beer',
@@ -66,10 +82,11 @@ const BEER_FULL_RATE: TaxRuleSeed = {
   effectiveFrom: EFFECTIVE_FROM,
   effectiveTo: null,
   exemptionConditions: {
-    description: 'Beer ≤ 0.5 %ABV not subject to excise duty',
-    appliesTo: { maxAlcoholByVolume: 0.5 },
+    description:
+      'Beer > 0.5 %ABV — standard rate €33.00/hl/°Plato',
+    appliesTo: { minAlcoholByVolume: 0.5 },
   },
-  calculationFormulaReference: FORMULA_PROGRESSIVE_ABV,
+  calculationFormulaReference: FORMULA_PER_DEGREE_PLATO,
   officialSource: SOURCE_VERO_FI,
   verificationDate: VERIFIED_2024_Q1,
   versionLabel: VERSION,
@@ -77,7 +94,7 @@ const BEER_FULL_RATE: TaxRuleSeed = {
 
 const BEER_SMALL_BREWERY_RATE: TaxRuleSeed = {
   taxType: 'excise_duty',
-  productCategory: 'beer_small_brewery',
+  productCategory: 'beer',
   rate: '16.50',
   effectiveFrom: EFFECTIVE_FROM,
   effectiveTo: null,
@@ -89,7 +106,7 @@ const BEER_SMALL_BREWERY_RATE: TaxRuleSeed = {
       breweryType: 'independent_small',
     },
   },
-  calculationFormulaReference: FORMULA_PROGRESSIVE_ABV,
+  calculationFormulaReference: FORMULA_PER_DEGREE_PLATO,
   officialSource: SOURCE_VERO_FI,
   verificationDate: VERIFIED_2024_Q1,
   versionLabel: VERSION,
@@ -99,19 +116,36 @@ const BEER_SMALL_BREWERY_RATE: TaxRuleSeed = {
  * Wine excise (still wine) in €/l based on alcohol content.
  *
  * 2024 rates:
- *   ≤ 1.2 %ABV  → 0
+ *   ≤ 1.2 %ABV  → 0 (exempt)
  *   1.2–15 %ABV → €3.40/l
  *   15–18 %ABV  → €4.55/l
  */
-const WINE_STILL_LOW: TaxRuleSeed = {
+const WINE_STILL_EXEMPT: TaxRuleSeed = {
+  taxType: 'excise_duty',
+  productCategory: 'wine_still',
+  rate: '0.00',
+  effectiveFrom: EFFECTIVE_FROM,
+  effectiveTo: null,
+  exemptionConditions: {
+    description: 'Still wine ≤ 1.2 %ABV — exempt',
+    appliesTo: { maxAlcoholByVolume: 1.2 },
+  },
+  calculationFormulaReference: FORMULA_PER_LITRE_OF_PRODUCT,
+  officialSource: SOURCE_VERO_FI,
+  verificationDate: VERIFIED_2024_Q1,
+  versionLabel: VERSION,
+};
+
+/** Still wine > 1.2 %ABV up to 15 %ABV at €3.40/l. */
+const WINE_STILL_MID: TaxRuleSeed = {
   taxType: 'excise_duty',
   productCategory: 'wine_still',
   rate: '3.40',
   effectiveFrom: EFFECTIVE_FROM,
   effectiveTo: null,
   exemptionConditions: {
-    description: 'Still wine ≤ 1.2 %ABV not subject to excise duty',
-    appliesTo: { maxAlcoholByVolume: 1.2 },
+    description: 'Still wine > 1.2 %ABV up to 15 %ABV',
+    appliesTo: { minAlcoholByVolume: 1.2, maxAlcoholByVolume: 15 },
   },
   calculationFormulaReference: FORMULA_PER_LITRE_OF_PRODUCT,
   officialSource: SOURCE_VERO_FI,
@@ -142,15 +176,31 @@ const WINE_STILL_HIGH: TaxRuleSeed = {
  *   ≤ 1.2 %ABV  → 0
  *   > 1.2 %ABV  → €3.73/l
  */
-const WINE_SPARKLING: TaxRuleSeed = {
+const WINE_SPARKLING_EXEMPT: TaxRuleSeed = {
+  taxType: 'excise_duty',
+  productCategory: 'wine_sparkling',
+  rate: '0.00',
+  effectiveFrom: EFFECTIVE_FROM,
+  effectiveTo: null,
+  exemptionConditions: {
+    description: 'Sparkling wine ≤ 1.2 %ABV not subject to excise duty',
+    appliesTo: { maxAlcoholByVolume: 1.2 },
+  },
+  calculationFormulaReference: FORMULA_PER_LITRE_OF_PRODUCT,
+  officialSource: SOURCE_VERO_FI,
+  verificationDate: VERIFIED_2024_Q1,
+  versionLabel: VERSION,
+};
+
+const WINE_SPARKLING_RATE: TaxRuleSeed = {
   taxType: 'excise_duty',
   productCategory: 'wine_sparkling',
   rate: '3.73',
   effectiveFrom: EFFECTIVE_FROM,
   effectiveTo: null,
   exemptionConditions: {
-    description: 'Sparkling wine ≤ 1.2 %ABV not subject to excise duty',
-    appliesTo: { maxAlcoholByVolume: 1.2 },
+    description: 'Sparkling wine > 1.2 %ABV',
+    appliesTo: { minAlcoholByVolume: 1.2 },
   },
   calculationFormulaReference: FORMULA_PER_LITRE_OF_PRODUCT,
   officialSource: SOURCE_VERO_FI,
@@ -164,10 +214,10 @@ const WINE_SPARKLING: TaxRuleSeed = {
  * 2024 rate: €29.50/l of pure alcohol (100 %ABV equivalent at 20 °C).
  * Products < 1.2 %ABV exempt.
  */
-const SPIRITS_RATE: TaxRuleSeed = {
+const SPIRITS_EXEMPT: TaxRuleSeed = {
   taxType: 'excise_duty',
   productCategory: 'spirits',
-  rate: '29.50',
+  rate: '0.00',
   effectiveFrom: EFFECTIVE_FROM,
   effectiveTo: null,
   exemptionConditions: {
@@ -180,12 +230,28 @@ const SPIRITS_RATE: TaxRuleSeed = {
   versionLabel: VERSION,
 };
 
+const SPIRITS_RATE: TaxRuleSeed = {
+  taxType: 'excise_duty',
+  productCategory: 'spirits',
+  rate: '29.50',
+  effectiveFrom: EFFECTIVE_FROM,
+  effectiveTo: null,
+  exemptionConditions: {
+    description: 'Spirits ≥ 1.2 %ABV — €29.50/l of pure alcohol',
+    appliesTo: { minAlcoholByVolume: 1.2 },
+  },
+  calculationFormulaReference: FORMULA_PER_LITRE_OF_ALCOHOL,
+  officialSource: SOURCE_VERO_FI,
+  verificationDate: VERIFIED_2024_Q1,
+  versionLabel: VERSION,
+};
+
 /**
  * Intermediate products (e.g. vermouth, fortified wine).
  *
  * 2024 rates:
- *   ≤ 15 %ABV  → €3.40/l
- *   > 15 %ABV  → €4.55/l
+ *   0–15 %ABV   → €3.40/l
+ *   > 15 %ABV   → €4.55/l
  */
 const INTERMEDIATE_LOW: TaxRuleSeed = {
   taxType: 'excise_duty',
@@ -194,8 +260,8 @@ const INTERMEDIATE_LOW: TaxRuleSeed = {
   effectiveFrom: EFFECTIVE_FROM,
   effectiveTo: null,
   exemptionConditions: {
-    description: 'Intermediate products ≤ 15 %ABV',
-    appliesTo: { maxAlcoholByVolume: 15 },
+    description: 'Intermediate products 0–15 %ABV',
+    appliesTo: { minAlcoholByVolume: 0, maxAlcoholByVolume: 15 },
   },
   calculationFormulaReference: FORMULA_PER_LITRE_OF_PRODUCT,
   officialSource: SOURCE_VERO_FI,
@@ -281,11 +347,15 @@ const CONTAINER_DUTY: TaxRuleSeed = {
 // ---------------------------------------------------------------------------
 
 const SEED_RULES: TaxRuleSeed[] = [
+  BEER_EXEMPT,
   BEER_FULL_RATE,
   BEER_SMALL_BREWERY_RATE,
-  WINE_STILL_LOW,
+  WINE_STILL_EXEMPT,
+  WINE_STILL_MID,
   WINE_STILL_HIGH,
-  WINE_SPARKLING,
+  WINE_SPARKLING_EXEMPT,
+  WINE_SPARKLING_RATE,
+  SPIRITS_EXEMPT,
   SPIRITS_RATE,
   INTERMEDIATE_LOW,
   INTERMEDIATE_HIGH,

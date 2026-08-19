@@ -37,6 +37,7 @@ import { CalculatorController } from './calculator';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
 import { CorrectionModule } from './correction';
+import { RankingModule as ApplicationRankingModule } from './ranking';
 import { TaxCalculationEngineAdapter } from './adapters/tax-calculation-engine.adapter';
 
 // ---------------------------------------------------------------------------
@@ -178,7 +179,8 @@ imports: [
     RankingModule,
     DeclarationModule,
     DataPlatformModule,
-    CorrectionModule,
+CorrectionModule,
+    ApplicationRankingModule,
   ],
   providers: [
     TaxCalculationEngineAdapter,
@@ -299,3 +301,10 @@ export type { IVerificationProvider, VerificationResult } from './age-gate';
 
 export { AccountModule, AccountService, AccountRetentionService, DataExportService } from './accounts';
 export type { Account, Basket, BasketItem, PurgeResult, AnonymizeResult, DataExport, CalculationExportRecord } from './accounts';
+
+// ---------------------------------------------------------------------------
+// Ranking — ranking methodology API
+// ---------------------------------------------------------------------------
+
+export { RankingModule, RankingController } from './ranking';
+export type { RankingMethodology, SortOrderDescription } from './ranking';

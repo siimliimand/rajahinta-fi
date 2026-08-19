@@ -30,7 +30,6 @@ import { ReliabilityService } from '@rajahinta/core-domain';
 import { AlcoholExciseService } from '@rajahinta/core-domain/tax/services/alcohol-excise.service';
 import { ContainerDutyService } from '@rajahinta/core-domain/tax/services/container-duty.service';
 import { TransportEstimationService } from '@rajahinta/core-domain/transport/transport-estimation.service';
-import type { ITaxRuleRepositoryPort } from '@rajahinta/core-domain/tax/ports/tax-rule-repository.port';
 import type { ITransportOfferQuery } from '@rajahinta/core-domain/transport/transport-offer-query.interface';
 import type { TransportOffer } from '@rajahinta/core-domain/transport/transport-offer.type';
 import type {
@@ -51,21 +50,7 @@ import {
   OFFER_UNCLASSIFIED,
 } from './data/products';
 
-// ---------------------------------------------------------------------------
-// In-memory repository stubs (NOT vi.fn() mocks — plain implementations)
-// ---------------------------------------------------------------------------
-
-class InMemoryTaxRuleRepository implements ITaxRuleRepositoryPort {
-  async findApplicable(): Promise<null> {
-    return null; // no seeded rules → engines use fallback rates
-  }
-  async findHistoryRates(): Promise<never[]> {
-    return [];
-  }
-  async findActiveVersionLabels(): Promise<readonly string[]> {
-    return ['FALLBACK'];
-  }
-}
+import { InMemoryTaxRuleRepository } from './helpers/in-memory-tax-rule.repository';
 
 class InMemoryTransportOfferQuery implements ITransportOfferQuery {
   constructor(private readonly offers: TransportOffer[]) {}
@@ -183,11 +168,10 @@ const OFFER_CARRIER_B: TransportOffer = {
 };
 
 // ---------------------------------------------------------------------------
-// Expected value computation reference (fallback rates):
+// Expected value computation reference (seeded rates):
 //
-// Beer  (5% ABV, 0.5 L) → progressive ABV
-//   abvPercent=5 → tier maxAbv=8.0, rate=0.435
-//   excise = round(0.435 × 0.5 × 100) = 22 ¢
+// Beer  (5% ABV, 0.5 L) → PER_DEGREE_PLATO at 33.00
+//   excise = round(33.00 × 0.05 × 0.5 × 100) = 83 ¢
 //   container: depositSystemStatus=true → EXEMPTED → 0 ¢
 //
 // Wine  (12% ABV, 0.75 L) → per-litre-of-product, 3.40
@@ -228,15 +212,15 @@ describe('Golden dataset', () => {
 
     it('returns correct total cost', async () => {
       const result = await service.calculate(INPUT);
-      // retail(200) + transport(150) + excise(22) + container(0) + other(0)
-      expect(result.totalCents).toBe(372);
+      // retail(200) + transport(150) + excise(83) + container(0) + other(0)
+      expect(result.totalCents).toBe(433);
     });
 
     it('applies correct itemized costs', async () => {
       const result = await service.calculate(INPUT);
       expect(result.foreignRetailPrice).toBe(200);
       expect(result.transportCost).toBe(150);
-      expect(result.alcoholExciseEstimate).toBe(22);
+      expect(result.alcoholExciseEstimate).toBe(83);
       expect(result.containerDutyEstimate).toBe(0);
       expect(result.otherCharges).toBe(0);
     });
@@ -247,10 +231,10 @@ describe('Golden dataset', () => {
       expect(result.classification.confidence).toBe('HIGH');
     });
 
-    it('has MEDIUM confidence (excise is ESTIMATED fallback)', async () => {
+    it('has HIGH confidence (all components VERIFIED)', async () => {
       const result = await service.calculate(INPUT);
-      // excise is ESTIMATED (fallback); all others VERIFIED → MEDIUM
-      expect(result.confidence).toBe('MEDIUM');
+      // excise is VERIFIED (seed data with verificationDate); all others VERIFIED → HIGH
+      expect(result.confidence).toBe('HIGH');
     });
 
     it('persists calculation record', async () => {
@@ -301,9 +285,9 @@ describe('Golden dataset', () => {
       expect(result.classification.classification).toBe('DistanceBuying');
     });
 
-    it('has MEDIUM confidence (excise is ESTIMATED fallback)', async () => {
+    it('has HIGH confidence (all components VERIFIED)', async () => {
       const result = await service.calculate(INPUT);
-      expect(result.confidence).toBe('MEDIUM');
+      expect(result.confidence).toBe('HIGH');
     });
 
     it('transport is not per-shipment — not scaled by quantity', async () => {

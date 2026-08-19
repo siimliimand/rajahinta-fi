@@ -78,6 +78,12 @@ export interface RateReviewEntry {
    * (e.g. 'vero.fi', 'EUR-Lex').
    */
   readonly source: string;
+  /**
+   * SHA-256 hash of the snapshot content that triggered this review entry.
+   * Used by ConfigBackedRateChangeSource to detect content changes across
+   * check cycles.  Absent for entries created before this field was added.
+   */
+  readonly contentHash?: string;
   /** Current status of the review entry. */
   readonly status: RateReviewStatus;
   /** Resolution action, set when status is 'resolved'. */

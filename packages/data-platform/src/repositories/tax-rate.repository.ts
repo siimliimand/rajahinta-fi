@@ -19,6 +19,7 @@ import {
 import type {
   ITaxRuleRepositoryPort,
   TaxRuleRecordPort,
+  AbvTierConditions,
 } from '@rajahinta/core-domain';
 
 // ---------------------------------------------------------------------------
@@ -128,6 +129,31 @@ export class TaxRuleRepositoryAdapter implements ITaxRuleRepositoryPort {
   }
 
   /** @inheritdoc */
+  async findAllApplicable(
+    taxType: string,
+    productCategory: string,
+    asOf: Date,
+  ): Promise<TaxRuleRecordPort[]> {
+    const rows = await this.db
+      .select()
+      .from(taxRules)
+      .where(
+        and(
+          eq(taxRules.taxType, taxType),
+          eq(taxRules.productCategory, productCategory),
+          lte(taxRules.effectiveFrom, asOf),
+          or(
+            isNull(taxRules.effectiveTo),
+            gt(taxRules.effectiveTo, asOf),
+          ),
+        ),
+      )
+      .orderBy(desc(taxRules.effectiveFrom));
+
+    return rows.map(this.toPortRecord);
+  }
+
+  /** @inheritdoc */
   async findHistoryRates(
     taxType: string,
     productCategory: string,
@@ -205,6 +231,20 @@ export class TaxRuleRepositoryAdapter implements ITaxRuleRepositoryPort {
   private toPortRecord(
     row: typeof taxRules.$inferSelect,
   ): TaxRuleRecordPort {
+    // The DB stores exemptionConditions as JSONB with a nested structure:
+    //   { description: string, appliesTo: { minAlcoholByVolume?: number, maxAlcoholByVolume?: number } }
+    // We flatten to AbvTierConditions for the port.
+    const raw = row.exemptionConditions as Record<string, unknown> | null;
+    let exemptionConditions: AbvTierConditions | null = null;
+    if (raw && typeof raw.appliesTo === 'object' && raw.appliesTo !== null) {
+      const appliesTo = raw.appliesTo as Record<string, unknown>;
+      const min = typeof appliesTo.minAlcoholByVolume === 'number' ? appliesTo.minAlcoholByVolume : undefined;
+      const max = typeof appliesTo.maxAlcoholByVolume === 'number' ? appliesTo.maxAlcoholByVolume : undefined;
+      if (min !== undefined || max !== undefined) {
+        exemptionConditions = { minAlcoholByVolume: min, maxAlcoholByVolume: max };
+      }
+    }
+
     return {
       id: row.id,
       taxType: row.taxType,
@@ -216,6 +256,7 @@ export class TaxRuleRepositoryAdapter implements ITaxRuleRepositoryPort {
       officialSource: row.officialSource,
       verificationDate: row.verificationDate,
       versionLabel: row.versionLabel,
+      exemptionConditions,
     };
   }
 }
