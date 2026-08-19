@@ -319,6 +319,15 @@ async function buildTestModule(gatesOpen: boolean): Promise<{
     delete process.env.LAUNCH_GATES_OVERRIDE;
   }
 
+  // Clear Redis env vars so RedisModule uses its in-memory fallback.
+  // The Deploy workflow sets REDIS_HOST to staging, which the test runner
+  // inherits — without cleanup ioredis would try to resolve an unreachable
+  // hostname and the beforeAll hook would time out.
+  const origRedisUrl = process.env.REDIS_URL;
+  const origRedisHost = process.env.REDIS_HOST;
+  delete process.env.REDIS_URL;
+  delete process.env.REDIS_HOST;
+
   const productDataPort = new InMemoryProductDataPort();
   const calcRecordPort = new InMemoryCalculationRecordPort();
   const calcRecordRepo = new InMemoryCalculationRecordRepository();
@@ -357,6 +366,10 @@ async function buildTestModule(gatesOpen: boolean): Promise<{
 
   const app = moduleRef.createNestApplication();
   await app.init();
+
+  // Restore Redis env vars so other tests (if any) see the original values
+  if (origRedisUrl) process.env.REDIS_URL = origRedisUrl;
+  if (origRedisHost) process.env.REDIS_HOST = origRedisHost;
 
   return { app, calcRecordPort, calcRecordRepo };
 }

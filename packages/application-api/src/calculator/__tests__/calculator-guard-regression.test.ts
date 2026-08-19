@@ -44,8 +44,14 @@ const GUARDS_METADATA = '__guards__';
  * Build an ExecutionContext that points at a specific controller method.
  * This lets guards / the Reflector walk the handler→class metadata chain.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type GuardConstructor = abstract new (...args: any[]) => unknown;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- handler is only used for metadata reflection, never invoked
+type AnyFunction = (...args: any[]) => any;
+
 function contextForMethod(
-  handler: Function,
+  handler: AnyFunction,
   controller: object,
   requestOverrides?: {
     headers?: Record<string, string | string[] | undefined>;
@@ -66,7 +72,7 @@ function contextForMethod(
     }),
     getArgs: () => [],
     getType: () => 'http',
-  } as ExecutionContext;
+  } as unknown as ExecutionContext;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +88,7 @@ describe('CalculatorController — getResult guard regression', () => {
 
   describe('guard metadata inheritance', () => {
     it('inherits class-level @UseGuards metadata for getResult', () => {
-      const guards = reflector.getAllAndOverride<Function[]>(
+      const guards = reflector.getAllAndOverride<GuardConstructor[]>(
         GUARDS_METADATA,
         [
           CalculatorController.prototype.getResult,
