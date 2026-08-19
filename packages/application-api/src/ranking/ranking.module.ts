@@ -9,8 +9,10 @@
 
 import { Module } from '@nestjs/common';
 import { RankingController } from './ranking.controller';
+import { CoreDomainModule } from '@rajahinta/core-domain';
 
 @Module({
+  imports: [CoreDomainModule],
   controllers: [RankingController],
 })
 export class RankingModule {}
