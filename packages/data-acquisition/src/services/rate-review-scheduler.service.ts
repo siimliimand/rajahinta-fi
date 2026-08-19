@@ -16,6 +16,7 @@
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
+import * as fs from 'fs/promises';
 import type { RateReviewResult, RateReviewEntry } from '../interfaces/rate-review.types';
 import type { IRateReviewRepository, RateChangeSourcePort } from '../interfaces/rate-review-repository.port';
 import { RATE_REVIEW_REPOSITORY_PORT, RATE_CHANGE_SOURCE_PORT } from '../interfaces/rate-review-repository.port';
@@ -57,14 +58,27 @@ export const DEFAULT_RATE_CHANGE_SOURCE_CONFIG = '';
 /**
  * Config-backed default implementation of {@link RateChangeSourcePort}.
  *
- * Reads a configured snapshot path/URL. When the path is empty (the default),
- * returns no new rates — preserving the Phase 1 no-op behaviour.
+ * Reads a configured snapshot path (local file). When the path is empty
+ * (the default), returns no new rates — preserving the Phase 1 no-op
+ * behaviour.
+ *
+ * Detection works by computing a SHA-256 hash of the snapshot file content
+ * and comparing it against the hash stored in the most recent review entry.
+ * When the hash differs, new rates are reported.  The hash is persisted in
+ * the review entry so detection survives process restarts.
+ *
+ * Rates are NEVER auto-published — the caller creates a pending review
+ * entry that requires manual/legal confirmation.
  */
 @Injectable()
 export class ConfigBackedRateChangeSource implements RateChangeSourcePort {
+  private readonly logger = new Logger(ConfigBackedRateChangeSource.name);
+
   constructor(
     @Inject(RATE_CHANGE_SOURCE_CONFIG_TOKEN)
     private readonly snapshotPath: string,
+    @Inject(RATE_REVIEW_REPOSITORY_PORT)
+    private readonly repository: IRateReviewRepository,
   ) {}
 
   async checkForChanges(): Promise<RateReviewResult> {
@@ -75,10 +89,49 @@ export class ConfigBackedRateChangeSource implements RateChangeSourcePort {
       return { checkedAt, newRatesDetected: false };
     }
 
-    // Phase 1: snapshot path is configured but we still return no changes.
-    // Real implementation would read the snapshot file/URL and compare
-    // against the last-known rate set.
-    return { checkedAt, newRatesDetected: false };
+    try {
+      const content = await fs.readFile(this.snapshotPath, 'utf-8');
+      const hash = crypto.createHash('sha256').update(content).digest('hex');
+
+      // Retrieve the last-known hash from the most recent review entry.
+      // The entry may be pending (active review) or resolved (previously
+      // reviewed and actioned).
+      const lastEntry = await this.getLatestEntry();
+      const lastHash = lastEntry?.contentHash;
+
+      if (lastHash === hash) {
+        this.logger.log('Snapshot content unchanged — no new rates detected');
+        return { checkedAt, newRatesDetected: false };
+      }
+
+      // Content differs from the last-known state.
+      this.logger.warn('Snapshot content changed — new rates detected');
+      return {
+        checkedAt,
+        newRatesDetected: true,
+        reviewId: crypto.randomUUID(),
+        detectedVersions: [`snapshot-hash:${hash.slice(0, 12)}`],
+      };
+    } catch (err) {
+      this.logger.error(
+        'Failed to read snapshot file — degrading to no-change',
+        err instanceof Error ? err.message : String(err),
+      );
+      // Graceful degradation: if the file can't be read we return
+      // no changes so the scheduler loop doesn't break.
+      return { checkedAt, newRatesDetected: false };
+    }
+  }
+
+  /**
+   * Return the most recent review entry, preferring pending over resolved.
+   * Entries are ordered newest-first by the repository implementation.
+   */
+  private async getLatestEntry(): Promise<RateReviewEntry | null> {
+    const pending = await this.repository.findByStatus('pending');
+    if (pending.length > 0) return pending[0];
+    const resolved = await this.repository.findByStatus('resolved');
+    return resolved.length > 0 ? resolved[0] : null;
   }
 }
 
