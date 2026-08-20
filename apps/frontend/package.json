@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "next lint",
+    "lint:content": "tsx scripts/lint-content-policy.ts",
     "test": "vitest run",
     "test:content-policy": "vitest run src/__tests__/content-policy-lint.test.ts",
     "typecheck": "tsc --noEmit",
