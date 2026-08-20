@@ -15,3 +15,5 @@ export type { TaxDatasetReviewJobData } from './workers/tax-dataset-review.worke
 
 export { TimeSeriesAggregationWorker } from './workers/time-series-aggregation.worker';
 export type { TimeSeriesAggregationJobData } from './workers/time-series-aggregation.worker';
+
+export { AccountRetentionWorker } from './workers/account-retention.worker';

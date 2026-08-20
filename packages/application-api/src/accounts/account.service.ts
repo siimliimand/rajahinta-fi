@@ -123,6 +123,26 @@ export class AccountService {
   }
 
   /**
+   * Append a calculation record ID to the user's calculation history.
+   *
+   * Phase 1: in-memory mutation. The account is created on first access
+   * if it doesn't already exist.
+   *
+   * @param userId — unique user identifier
+   * @param recordId — the calculation record ID to append
+   */
+  async addCalculationToHistory(
+    userId: string,
+    recordId: number,
+  ): Promise<void> {
+    const account = await this.getAccount(userId);
+    account.calculationHistory.push(recordId);
+    this.logger.debug(
+      `Calculation record ${recordId} appended for userId="${userId}"`,
+    );
+  }
+
+  /**
    * Anonymize an account — replace identifying fields while retaining
    * non-personal data (saved baskets, calculation history).
    */

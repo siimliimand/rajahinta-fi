@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "next lint",
+    "lint:content": "tsx scripts/lint-content-policy.ts",
     "test": "vitest run",
     "test:content-policy": "vitest run src/__tests__/content-policy-lint.test.ts",
     "typecheck": "tsc --noEmit",
@@ -30,6 +31,7 @@
     "jsdom": "^30.0.1",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.0.0"
   }

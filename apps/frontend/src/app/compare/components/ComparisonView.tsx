@@ -6,6 +6,8 @@ import type {
   ReliabilityStatus,
   SortOrder,
 } from '@/lib/types';
+import { logClick } from '@/lib/api';
+import { MerchantLink } from './MerchantLink';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -107,6 +109,20 @@ function ProductColumn({
           </div>
         ))}
       </div>
+
+      {/* Merchant link — shown when a retail offer URL is available */}
+      {product.offerUrl && product.merchantName && (
+        <div className="mt-3">
+          <MerchantLink
+            label={`View at ${product.merchantName}`}
+            href={product.offerUrl}
+            onClick={() => {
+              logClick(product.merchantName!, product.offerUrl!);
+            }}
+            className="text-xs text-primary-600 hover:text-primary-800"
+          />
+        </div>
+      )}
 
       {/* Separator */}
       <hr className="my-3 border-gray-100" />

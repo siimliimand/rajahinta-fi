@@ -107,10 +107,10 @@
 
 ### 1K: Presentation Layer — Web Application
 
-- [ ] **T1.45** Build the Landed-Cost Calculator UI: search, select product + quantity, display itemized breakdown with calculation-status metadata and confidence level.
-- [ ] **T1.46** Build the calculation explanation page: surface every figure's traceable inputs, rate dataset version, and timestamp.
-- [ ] **T1.47** Build comparison views with neutral, objective ranking (enforce visual neutrality — no design element suggesting a paid/promoted position).
-- [ ] **T1.48** Surface data-freshness indicators visibly: reliability status and timestamp for every externally sourced fact.
+- [x] **T1.45** Build the Landed-Cost Calculator UI: search, select product + quantity, display itemized breakdown with calculation-status metadata and confidence level. *(completed: calculator UI renders with full itemized breakdown, status metadata, and confidence display)*
+- [x] **T1.46** Build the calculation explanation page: surface every figure's traceable inputs, rate dataset version, and timestamp. *(completed: explanation page surfaces traceable inputs, dataset version, and timestamps)*
+- [x] **T1.47** Build comparison views with neutral, objective ranking (enforce visual neutrality — no design element suggesting a paid/promoted position). *(completed: comparison views with neutral ranking implement visual neutrality)*
+- [x] **T1.48** Surface data-freshness indicators visibly: reliability status and timestamp for every externally sourced fact. *(completed: reliability status and timestamps displayed on all external-sourced facts)*
 - [ ] **T1.49** Restrict content/copy to a controlled vocabulary: identification, classification, calculation, comparison — no subjective adjectives (no "best," "amazing," "top bargain"). Enforce via a lint/review step in the content pipeline.
 - [ ] **T1.50** Implement outbound merchant links as plain links recorded for basic analytics only (click-through counts) — no purchase tracking, no commission tracking infrastructure at launch.
 
@@ -133,7 +133,7 @@
 ### 1O: Age Gate & Account System
 
 - [x] **T1.58** Implement a lightweight access-control age gate (simple confirmation, not identity verification) as the default, matching the minimal-data-collection preference.
-- [ ] **T1.59** Design the account system's identity/age-verification components as a pluggable module that can be upgraded to stronger verification if the legal opinion requires it.
+- [x] **T1.59** Design the account system's identity/age-verification components as a pluggable module that can be upgraded to stronger verification if the legal opinion requires it. *(completed: identity/age-verification designed as a pluggable module with upgrade path)*
 - [ ] **T1.60** Implement the minimal account system: saved baskets, calculation history, subscription management, data export — not a gate on viewing publicly available comparison information.
 - [ ] **T1.61** Ensure no storage of identity documents or unnecessary date-of-birth collection unless the legal review specifically mandates it.
 

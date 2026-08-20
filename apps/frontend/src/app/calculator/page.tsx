@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import type { ProductSearchItem, CalculatorResult } from '@/lib/types';
-import { searchProducts, calculateLandedCost } from '@/lib/api';
+import { searchProducts, calculateLandedCost, request } from '@/lib/api';
 import ProductSearch from './components/ProductSearch';
 import ProductSelector from './components/ProductSelector';
 import QuantitySelector from './components/QuantitySelector';
@@ -98,6 +98,14 @@ export default function CalculatorPage() {
         destination: DEFAULT_DESTINATION,
       });
       setResult(res);
+
+      // Fire-and-forget: record this calculation in the user's history.
+      // The `request()` helper auto-injects `x-user-id` for account-scoped
+      // paths.  History recording is non-critical — silently ignore failures.
+      request<{ success: boolean }>('/api/v1/account/history', {
+        method: 'POST',
+        body: JSON.stringify({ recordId: res.calculationRecordId }),
+      }).catch(() => { /* noop */ });
     } catch (err: unknown) {
       const message =
         err instanceof Error

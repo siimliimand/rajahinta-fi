@@ -1,17 +1,102 @@
 'use client';
 
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { getSessionUserId, request, getCalculationResult } from '../../lib/api';
+import type { CalculatorResult } from '@/lib/types';
 
 /**
  * Account overview page.
  *
- * Phase 1: shows a sign-in prompt. Account creation is NOT required
- * to view public product comparisons — the calculator, comparison,
- * and ranking pages all work without an account.
+ * Phase 1: shows the current session state and a list of account features.
+ * The session is created automatically on first visit. Anonymous-only
+ * design — no email or personal data collection.
  *
  * @module AccountPage
  */
 export default function AccountPage() {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  // ── Calculation history state ──
+  const [historyResults, setHistoryResults] = useState<CalculatorResult[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+
+  // ── Data export state ──
+  const [exporting, setExporting] = useState(false);
+  const [exportSuccess, setExportSuccess] = useState(false);
+
+  useEffect(() => {
+    // getSessionUserId creates the cookie if absent, so by the time this
+    // component mounts the anonymous session always exists.
+    setSessionId(getSessionUserId());
+  }, []);
+
+  // ── Fetch calculation history ──
+  useEffect(() => {
+    if (!sessionId) return;
+
+    let cancelled = false;
+
+    async function loadHistory() {
+      setHistoryLoading(true);
+      try {
+        const ids = await request<number[]>('/api/v1/account/history');
+        if (cancelled) return;
+
+        // Fetch full results for the last 10 records (newest first when reversed).
+        const recentIds = ids.slice(-10).reverse();
+        const results = await Promise.all(
+          recentIds.map((id) =>
+            getCalculationResult(id).catch(() => null),
+          ),
+        );
+        if (cancelled) return;
+        setHistoryResults(
+          results.filter((r): r is CalculatorResult => r !== null),
+        );
+      } catch {
+        // Phase 1: history is non-critical; silently ignore failures.
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    }
+
+    loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  // ── Data export handler ──
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    setExportSuccess(false);
+
+    try {
+      const data = await request<Record<string, unknown>>(
+        '/api/v1/account/export',
+      );
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `rajahinta-export-${(sessionId ?? 'unknown').slice(0, 8)}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+      setExportSuccess(true);
+      setTimeout(() => setExportSuccess(false), 4000);
+    } catch {
+      // Phase 1: export failure is non-critical; leave no visible error state.
+    } finally {
+      setExporting(false);
+    }
+  }, [sessionId]);
+
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
       <nav className="mb-6">
@@ -28,38 +113,59 @@ export default function AccountPage() {
         Manage your saved baskets, calculation history, and subscription.
       </p>
 
-      {/* ── Sign-in prompt ── */}
+      {/* ── Session status ── */}
       <section className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900">Sign in to your account</h2>
-        <p className="mt-2 text-sm text-gray-600">
-          Sign in to save baskets, view your calculation history, and manage
-          your subscription. Browsing the product catalogue, comparing products,
-          and running calculations does not require an account.
-        </p>
-        <div className="mt-4 flex gap-3">
-          <button
-            type="button"
-            disabled
-            className="inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white opacity-60"
-            title="Sign-in will be available in a future update"
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            disabled
-            className="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 opacity-60"
-            title="Account creation will be available in a future update"
-          >
-            Create account
-          </button>
-        </div>
-        <p className="mt-3 text-xs text-gray-400">
-          Account creation is coming in a future update.
-        </p>
+        {sessionId ? (
+          <>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Welcome back
+            </h2>
+            <p className="mt-2 text-sm text-gray-600">
+              You are signed in as an anonymous user. Your session is active,
+              and account features are available below.
+            </p>
+            <div className="mt-4 flex gap-3">
+              <Link
+                href="/account/saved-baskets"
+                className="inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+              >
+                Continue &rarr;
+              </Link>
+              <Link
+                href="/account/create"
+                className="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Create new session
+              </Link>
+            </div>
+            <p className="mt-3 text-xs text-gray-400">
+              Session ID: {sessionId.slice(0, 8)}&hellip;
+              &nbsp;&middot;&nbsp; Anonymous account
+            </p>
+          </>
+        ) : (
+          <>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Anonymous account
+            </h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Create an anonymous account to save baskets, view your
+              calculation history, and manage your preferences. No email or
+              personal data required.
+            </p>
+            <div className="mt-4 flex gap-3">
+              <Link
+                href="/account/create"
+                className="inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+              >
+                Create account
+              </Link>
+            </div>
+          </>
+        )}
       </section>
 
-      {/* ── Account-only feature list ── */}
+      {/* ── Account feature list ── */}
       <section className="mb-8">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-400">
           Account features
@@ -74,19 +180,22 @@ export default function AccountPage() {
               Save product selections for quick re-calculation.
             </p>
             <span className="mt-2 inline-block text-xs font-medium text-primary-600">
-              Sign in to save &rarr;
+              Browse saved baskets &rarr;
             </span>
           </Link>
 
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 opacity-60">
+          <Link
+            href="/account#calculation-history"
+            className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-primary-300 hover:shadow-md"
+          >
             <h3 className="font-medium text-gray-900">Calculation history</h3>
             <p className="mt-1 text-xs text-gray-500">
               View and re-run past landed-cost calculations.
             </p>
-            <span className="mt-2 inline-block text-xs font-medium text-gray-400">
-              Coming soon
+            <span className="mt-2 inline-block text-xs font-medium text-primary-600">
+              View history &rarr;
             </span>
-          </div>
+          </Link>
 
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 opacity-60">
             <h3 className="font-medium text-gray-900">Subscription</h3>
@@ -98,16 +207,99 @@ export default function AccountPage() {
             </span>
           </div>
 
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 opacity-60">
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-primary-300 hover:shadow-md">
             <h3 className="font-medium text-gray-900">Data export</h3>
             <p className="mt-1 text-xs text-gray-500">
               Export your data in JSON format.
             </p>
-            <span className="mt-2 inline-block text-xs font-medium text-gray-400">
-              Coming soon
-            </span>
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={exporting}
+              className="mt-2 inline-flex items-center rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {exporting ? 'Exporting…' : 'Export my data'}
+            </button>
+            {exportSuccess && (
+              <p className="mt-1.5 text-xs text-green-600">
+                Download started &mdash; check your downloads folder.
+              </p>
+            )}
           </div>
         </div>
+      </section>
+
+      {/* ── Calculation history ── */}
+      <section
+        id="calculation-history"
+        className="mb-8 scroll-mt-16 rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
+      >
+        <h2 className="text-lg font-semibold text-gray-900">
+          Calculation history
+        </h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Your recent landed-cost calculations, newest first.
+        </p>
+
+        {historyLoading && (
+          <p className="mt-4 text-sm text-gray-400">Loading history…</p>
+        )}
+
+        {!historyLoading && historyResults.length === 0 && (
+          <div className="mt-6 rounded-md bg-gray-50 p-4 text-center text-sm text-gray-500">
+            <p className="font-medium">No calculations yet</p>
+            <p className="mt-1">
+              Visit the{' '}
+              <Link
+                href="/calculator"
+                className="text-primary-600 hover:text-primary-800"
+              >
+                landed-cost calculator
+              </Link>{' '}
+              to run your first calculation.
+            </p>
+          </div>
+        )}
+
+        {!historyLoading && historyResults.length > 0 && (
+          <ul className="mt-4 divide-y divide-gray-100">
+            {historyResults.map((calc) => {
+              const ts = calc.metadata.calculationTimestamp;
+              const date = new Date(ts);
+              const formatted = date.toLocaleDateString('fi-FI', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+
+              return (
+                <li
+                  key={calc.calculationRecordId}
+                  className="flex items-center justify-between py-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-900">
+                      {calc.metadata.productName}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {formatted}
+                      &nbsp;&middot;&nbsp;{calc.metadata.quantity} &times;
+                      &euro;{(calc.totalCents / 100).toFixed(2)}
+                    </p>
+                  </div>
+                  <Link
+                    href="/calculator"
+                    className="ml-4 shrink-0 text-xs font-medium text-primary-600 hover:text-primary-800"
+                  >
+                    Re-run
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
 
       {/* ── Data retention ── */}
