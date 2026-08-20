@@ -18,7 +18,6 @@ export default function AccountPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   // ── Calculation history state ──
-  const [historyIds, setHistoryIds] = useState<number[]>([]);
   const [historyResults, setHistoryResults] = useState<CalculatorResult[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
 
@@ -43,7 +42,6 @@ export default function AccountPage() {
       try {
         const ids = await request<number[]>('/api/v1/account/history');
         if (cancelled) return;
-        setHistoryIds(ids);
 
         // Fetch full results for the last 10 records (newest first when reversed).
         const recentIds = ids.slice(-10).reverse();

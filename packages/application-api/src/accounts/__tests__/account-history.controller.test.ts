@@ -13,14 +13,13 @@ import { BadRequestException } from '@nestjs/common';
 import { AccountController } from '../account.controller';
 import type { AccountService } from '../account.service';
 import type { DataExportService } from '../data-export.service';
-import type { Account, Basket } from '../account.types';
+import type { Account } from '../account.types';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const USER_ID = 'history-test-user';
-const ANOTHER_USER_ID = 'history-test-user-2';
 
 // ---------------------------------------------------------------------------
 // Mock factory helpers
