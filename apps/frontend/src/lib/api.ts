@@ -67,6 +67,47 @@ function getCookie(name: string): string | undefined {
   return match ? match.slice(name.length + 1) : undefined;
 }
 
+/**
+ * Set a browser cookie with the given name, value, and attributes.
+ */
+function setCookie(
+  name: string,
+  value: string,
+  attributes: string = 'path=/; max-age=31536000; SameSite=Lax',
+): void {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${name}=${encodeURIComponent(value)}; ${attributes}`;
+}
+
+const SESSION_COOKIE = 'session_id';
+const ACCOUNT_SCOPE_PREFIXES = ['/api/v1/account/', '/api/v1/analytics/'];
+
+/**
+ * Get or create the anonymous session identifier.
+ *
+ * Reads the `session_id` cookie; if absent, generates a UUID v4, persists it
+ * as a cookie (1-year expiry, SameSite=Lax), and returns the value.
+ */
+function getSessionId(): string {
+  const existing = getCookie(SESSION_COOKIE);
+  if (existing) return existing;
+
+  const id = crypto.randomUUID();
+  setCookie(SESSION_COOKIE, id);
+  return id;
+}
+
+/**
+ * Returns the current anonymous session user ID.
+ *
+ * Exported so components can read the stable identifier without calling the
+ * API.  The value matches the `x-user-id` header sent on account-scoped
+ * requests.
+ */
+export function getSessionUserId(): string {
+  return getSessionId();
+}
+
 async function request<T>(
   path: string,
   init?: RequestInit,
@@ -84,6 +125,11 @@ async function request<T>(
   const ageToken = getCookie('age_confirmed');
   if (ageToken) {
     headers['x-age-confirmed'] = ageToken;
+  }
+
+  // Inject anonymous session ID on account-scoped requests.
+  if (ACCOUNT_SCOPE_PREFIXES.some((prefix) => path.startsWith(prefix))) {
+    headers['x-user-id'] = getSessionId();
   }
 
   const res = await fetch(url, {
