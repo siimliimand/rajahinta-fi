@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getSessionUserId } from '../../lib/api';
+import { getSessionUserId, request, getCalculationResult } from '../../lib/api';
+import type { CalculatorResult } from '@/lib/types';
 
 /**
  * Account overview page.
@@ -16,11 +17,87 @@ import { getSessionUserId } from '../../lib/api';
 export default function AccountPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
 
+  // ── Calculation history state ──
+  const [historyIds, setHistoryIds] = useState<number[]>([]);
+  const [historyResults, setHistoryResults] = useState<CalculatorResult[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+
+  // ── Data export state ──
+  const [exporting, setExporting] = useState(false);
+  const [exportSuccess, setExportSuccess] = useState(false);
+
   useEffect(() => {
     // getSessionUserId creates the cookie if absent, so by the time this
     // component mounts the anonymous session always exists.
     setSessionId(getSessionUserId());
   }, []);
+
+  // ── Fetch calculation history ──
+  useEffect(() => {
+    if (!sessionId) return;
+
+    let cancelled = false;
+
+    async function loadHistory() {
+      setHistoryLoading(true);
+      try {
+        const ids = await request<number[]>('/api/v1/account/history');
+        if (cancelled) return;
+        setHistoryIds(ids);
+
+        // Fetch full results for the last 10 records (newest first when reversed).
+        const recentIds = ids.slice(-10).reverse();
+        const results = await Promise.all(
+          recentIds.map((id) =>
+            getCalculationResult(id).catch(() => null),
+          ),
+        );
+        if (cancelled) return;
+        setHistoryResults(
+          results.filter((r): r is CalculatorResult => r !== null),
+        );
+      } catch {
+        // Phase 1: history is non-critical; silently ignore failures.
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    }
+
+    loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  // ── Data export handler ──
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    setExportSuccess(false);
+
+    try {
+      const data = await request<Record<string, unknown>>(
+        '/api/v1/account/export',
+      );
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `rajahinta-export-${(sessionId ?? 'unknown').slice(0, 8)}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+      setExportSuccess(true);
+      setTimeout(() => setExportSuccess(false), 4000);
+    } catch {
+      // Phase 1: export failure is non-critical; leave no visible error state.
+    } finally {
+      setExporting(false);
+    }
+  }, [sessionId]);
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
@@ -110,7 +187,7 @@ export default function AccountPage() {
           </Link>
 
           <Link
-            href="/account"
+            href="/account#calculation-history"
             className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-primary-300 hover:shadow-md"
           >
             <h3 className="font-medium text-gray-900">Calculation history</h3>
@@ -132,19 +209,99 @@ export default function AccountPage() {
             </span>
           </div>
 
-          <Link
-            href="/account"
-            className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-primary-300 hover:shadow-md"
-          >
+          <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-primary-300 hover:shadow-md">
             <h3 className="font-medium text-gray-900">Data export</h3>
             <p className="mt-1 text-xs text-gray-500">
               Export your data in JSON format.
             </p>
-            <span className="mt-2 inline-block text-xs font-medium text-primary-600">
-              Export data &rarr;
-            </span>
-          </Link>
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={exporting}
+              className="mt-2 inline-flex items-center rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {exporting ? 'Exporting…' : 'Export my data'}
+            </button>
+            {exportSuccess && (
+              <p className="mt-1.5 text-xs text-green-600">
+                Download started &mdash; check your downloads folder.
+              </p>
+            )}
+          </div>
         </div>
+      </section>
+
+      {/* ── Calculation history ── */}
+      <section
+        id="calculation-history"
+        className="mb-8 scroll-mt-16 rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
+      >
+        <h2 className="text-lg font-semibold text-gray-900">
+          Calculation history
+        </h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Your recent landed-cost calculations, newest first.
+        </p>
+
+        {historyLoading && (
+          <p className="mt-4 text-sm text-gray-400">Loading history…</p>
+        )}
+
+        {!historyLoading && historyResults.length === 0 && (
+          <div className="mt-6 rounded-md bg-gray-50 p-4 text-center text-sm text-gray-500">
+            <p className="font-medium">No calculations yet</p>
+            <p className="mt-1">
+              Visit the{' '}
+              <Link
+                href="/calculator"
+                className="text-primary-600 hover:text-primary-800"
+              >
+                landed-cost calculator
+              </Link>{' '}
+              to run your first calculation.
+            </p>
+          </div>
+        )}
+
+        {!historyLoading && historyResults.length > 0 && (
+          <ul className="mt-4 divide-y divide-gray-100">
+            {historyResults.map((calc) => {
+              const ts = calc.metadata.calculationTimestamp;
+              const date = new Date(ts);
+              const formatted = date.toLocaleDateString('fi-FI', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+
+              return (
+                <li
+                  key={calc.calculationRecordId}
+                  className="flex items-center justify-between py-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-900">
+                      {calc.metadata.productName}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {formatted}
+                      &nbsp;&middot;&nbsp;{calc.metadata.quantity} &times;
+                      &euro;{(calc.totalCents / 100).toFixed(2)}
+                    </p>
+                  </div>
+                  <Link
+                    href="/calculator"
+                    className="ml-4 shrink-0 text-xs font-medium text-primary-600 hover:text-primary-800"
+                  >
+                    Re-run
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
 
       {/* ── Data retention ── */}
