@@ -161,6 +161,25 @@ export interface CalculatorResult {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// Basket types (mirrors account.types from application-api)
+// ---------------------------------------------------------------------------
+
+/** A single item in a saved basket. */
+export interface BasketItem {
+  readonly productId: number;
+  readonly productName: string;
+  readonly quantity: number;
+}
+
+/** A saved product selection (basket). */
+export interface Basket {
+  readonly id: string;
+  readonly name: string;
+  readonly createdAt: string;
+  readonly items: BasketItem[];
+}
+
+// ---------------------------------------------------------------------------
 // Sort order for product ranking (mirrors SortOrder from core-domain)
 // ---------------------------------------------------------------------------
 
@@ -204,6 +223,10 @@ export interface ComparisonProduct {
   readonly itemizedCosts: readonly ItemizedCost[];
   readonly confidence: ConfidenceLevel;
   readonly reliability: ReliabilityStatus;
+  /** Optional URL to view this product at a merchant's store */
+  readonly offerUrl?: string;
+  /** Optional merchant display name (shown as the link label) */
+  readonly merchantName?: string;
 }
 
 // ---------------------------------------------------------------------------

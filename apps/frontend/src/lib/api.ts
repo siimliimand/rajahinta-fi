@@ -108,7 +108,7 @@ export function getSessionUserId(): string {
   return getSessionId();
 }
 
-async function request<T>(
+export async function request<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
@@ -241,4 +241,25 @@ export async function getRankingMethodology(): Promise<RankingMethodology | null
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Analytics
+// ---------------------------------------------------------------------------
+
+/**
+ * Record a merchant-link click for basic click-through analytics.
+ *
+ * Sends the merchant identifier and the destination URL to the backend.
+ * The backend rejects any payload containing affiliate, commission, or
+ * purchase-tracking fields (Phase 1 policy).
+ *
+ * @param merchantId  Merchant identifier (e.g. merchant name or slug)
+ * @param url         The destination URL of the clicked link
+ */
+export async function logClick(merchantId: string, url: string): Promise<void> {
+  await request<{ success: boolean; count: number }>('/api/v1/analytics/click', {
+    method: 'POST',
+    body: JSON.stringify({ merchantId, url }),
+  });
 }

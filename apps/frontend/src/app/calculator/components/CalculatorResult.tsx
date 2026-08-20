@@ -6,7 +6,10 @@ import type {
   CostCategory,
   ReliabilityStatus,
   DataFreshnessEntry,
+  RetailOffer,
 } from '@/lib/types';
+import { logClick } from '@/lib/api';
+import { MerchantLink } from '../../compare/components/MerchantLink';
 import DisclaimerBanner from './DisclaimerBanner';
 
 // ---------------------------------------------------------------------------
@@ -188,7 +191,9 @@ function buildFreshnessEntries(
 // ---------------------------------------------------------------------------
 
 interface CalculatorResultProps {
-  result: CalculatorResultType;
+  readonly result: CalculatorResultType;
+  /** Optional retail offers for rendering merchant outbound links */
+  readonly offers?: readonly RetailOffer[];
 }
 
 /**
@@ -201,7 +206,7 @@ interface CalculatorResultProps {
  *  - Calculation metadata (timestamp, dataset versions)
  *  - Structural disclaimer banner
  */
-export default function CalculatorResult({ result }: CalculatorResultProps) {
+export default function CalculatorResult({ result, offers }: CalculatorResultProps) {
   const meta = result.metadata;
 
   return (
@@ -304,6 +309,31 @@ export default function CalculatorResult({ result }: CalculatorResultProps) {
           {result.classification.evidenceSummary}
         </p>
       </div>
+
+      {/* ── Merchant offers ── */}
+      {offers && offers.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Available at
+          </h3>
+          <ul className="space-y-1">
+            {offers.map((offer) =>
+              offer.sourceUrl ? (
+                <li key={offer.id}>
+                  <MerchantLink
+                    label={`View at ${offer.merchant}`}
+                    href={offer.sourceUrl}
+                    onClick={() => {
+                      logClick(offer.merchant, offer.sourceUrl!);
+                    }}
+                    className="text-xs text-primary-600 hover:text-primary-800"
+                  />
+                </li>
+              ) : null,
+            )}
+          </ul>
+        </div>
+      )}
 
       {/* ── Metadata ── */}
       <div className="rounded-md bg-gray-50 px-3 py-2">
