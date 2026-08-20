@@ -32,26 +32,36 @@ Accounts SHALL support saved baskets, calculation history, subscription manageme
 
 ### Requirement: Minimal personal data
 
-The system SHALL default to anonymous usage, SHALL NOT store identity documents or unnecessary date-of-birth, and SHALL collect personal data only for account-based features.
+The system SHALL default to anonymous usage, SHALL NOT store identity documents or unnecessary date-of-birth, SHALL collect personal data only for account-based features, and SHALL support anonymous session establishment with no personal data collection.
 
 #### Scenario: No identity document storage
 
 - **WHEN** an account is created
 - **THEN** no identity document or unnecessary date-of-birth SHALL be collected or stored unless legally mandated
 
+#### Scenario: Anonymous session establishment
+
+- **WHEN** a user chooses to create an account or sign in
+- **THEN** the system SHALL generate an anonymous session identity and persist it client-side, without collecting personal data
+
+#### Scenario: Session propagates to API
+
+- **WHEN** the web app makes an account-scoped request
+- **THEN** it SHALL send the session identity so the request is attributed to the account
+
 ### Requirement: Retention and export
 
-The system SHALL enforce retention limits with automated deletion/anonymization jobs, and SHALL provide data export covering the user's own data (GDPR portability).
+The system SHALL enforce retention limits with automated deletion/anonymization jobs driven by a scheduled recurring job, and SHALL provide data export reachable from the account UI covering the user's own data (GDPR portability).
 
 #### Scenario: Retention expiry
 
 - **WHEN** account data reaches its retention limit
-- **THEN** an automated job SHALL delete or anonymize it
+- **THEN** an automated recurring job SHALL delete or anonymize it without manual intervention
 
 #### Scenario: Data export request
 
-- **WHEN** a user requests their data
-- **THEN** the system SHALL return their calculation history and account data in a portable form
+- **WHEN** a user requests their data from the account page
+- **THEN** the system SHALL return their calculation history and account data as a downloadable JSON payload
 
 ### Requirement: Server-side age gate
 
@@ -85,6 +95,11 @@ The minimal account system SHALL expose saved baskets, calculation history, and 
 
 - **WHEN** an account has calculation history
 - **THEN** the API SHALL return it
+
+#### Scenario: History recorded
+
+- **WHEN** a user with an active session runs a calculation
+- **THEN** the resulting record ID SHALL be appended to the user's calculation history
 
 #### Scenario: Subscription status
 
