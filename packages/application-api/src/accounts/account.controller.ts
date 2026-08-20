@@ -180,6 +180,32 @@ export class AccountController {
   }
 
   // ---------------------------------------------------------------------------
+  // 7.2 — POST /api/v1/account/history — append a calculation record
+  // ---------------------------------------------------------------------------
+
+  @Post('history')
+  @ApiOperation({ summary: 'Append a calculation record ID to history' })
+  @ApiResponse({ status: 201, description: 'Calculation record appended' })
+  @ApiResponse({ status: 400, description: 'x-user-id header or valid recordId required' })
+  async addHistory(
+    @Body() body: { recordId: number },
+    @Headers('x-user-id') userId?: string,
+  ): Promise<{ success: boolean; recordId: number }> {
+    const uid = this.requireUserId(userId);
+
+    if (!Number.isInteger(body.recordId) || body.recordId <= 0) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'recordId must be a positive integer',
+        error: 'InvalidRecordId',
+      });
+    }
+
+    await this.accountService.addCalculationToHistory(uid, body.recordId);
+    return { success: true, recordId: body.recordId };
+  }
+
+  // ---------------------------------------------------------------------------
   // 7.3 — GET /api/v1/account/subscription — subscription status
   // ---------------------------------------------------------------------------
 
