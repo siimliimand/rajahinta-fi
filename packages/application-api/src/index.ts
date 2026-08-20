@@ -36,6 +36,7 @@ import { AccountModule } from './accounts';
 import { CalculatorController } from './calculator';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
+import { AnalyticsModule } from './analytics';
 import { CorrectionModule } from './correction';
 import { RankingModule as ApplicationRankingModule } from './ranking';
 import { TaxCalculationEngineAdapter } from './adapters/tax-calculation-engine.adapter';
@@ -174,6 +175,7 @@ imports: [
     AuditModule,
     AgeGateModule,
     AccountModule,
+    AnalyticsModule,
     RedisModule,
     CalculatorModule,
     RankingModule,
@@ -301,6 +303,12 @@ export type { IVerificationProvider, VerificationResult } from './age-gate';
 
 export { AccountModule, AccountService, AccountRetentionService, DataExportService } from './accounts';
 export type { Account, Basket, BasketItem, PurgeResult, AnonymizeResult, DataExport, CalculationExportRecord } from './accounts';
+
+// ---------------------------------------------------------------------------
+// Analytics — click analytics (Phase 1: in-memory, no purchase tracking)
+// ---------------------------------------------------------------------------
+
+export { AnalyticsModule, ClickAnalyticsService } from './analytics';
 
 // ---------------------------------------------------------------------------
 // Ranking — ranking methodology API
