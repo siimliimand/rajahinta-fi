@@ -63,7 +63,8 @@ The UI is built around **transparency, neutrality, and explainability**. Every c
 | `/calculator/result/[recordId]` | Individual calculation result page |
 | `/compare` | Product comparison with multiple sort orders |
 | `/ranking` | Explanation of ranking methodology and neutrality enforcement |
-| `/account` | Account management page |
+| `/account` | Account management page (anonymous session, calculation history, data export) |
+| `/account/create` | Anonymous account creation confirmation |
 | `/account/saved-baskets` | User's saved calculation baskets |
 | `/age-gate` | Age verification page |
 
