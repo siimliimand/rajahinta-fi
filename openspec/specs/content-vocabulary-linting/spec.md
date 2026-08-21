@@ -4,7 +4,7 @@
 
 Automated content-safety service that scans product names and descriptions for banned subjective/promotional adjectives and flags violations. This enforces the business plan's prohibition against promotional language in product listings (identification, classification, calculation, comparison only).
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Banned vocabulary patterns
 

@@ -4,7 +4,7 @@
 
 Plain outbound merchant link redirect endpoint that records basic click-through counts without any purchase tracking, commission calculation, or affiliate infrastructure. Enforces the business plan's "no purchase tracking at launch" and "no affiliate incentives at launch" policies.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Redirect endpoint
 
