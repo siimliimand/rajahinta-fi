@@ -15,7 +15,7 @@
 
 ## 2. Legacy pipeline removal (R3-2 — FS-2)
 
-- [x] 2.1 Delete `.github/workflows/deploy.yml`; relocate its dev-compose smoke for feature-branch pushes into `ci.yml` only if still wanted; verify branch protection reports no missing required checks and no stuck check on open PRs (design D2) <!-- agent: devops-engineer.fast, depends_on: [], touches: [.github/workflows/deploy.yml, .github/workflows/ci.yml] -->
+- [x] 2.1 Delete `.github/workflows/deploy.yml`; relocate its dev-compose smoke for feature-branch pushes into `ci.yml` only if still wanted; verify branch protection reports no missing required checks and no stuck check on open PRs (design D2) <!-- reopened once: compose-smoke curled /health which 404ed; real route /api/v1/health, Dockerfile HEALTHCHECK + k8s probe paths fixed with it; CI green on PR 22 after fix --> <!-- agent: devops-engineer.fast, depends_on: [], touches: [.github/workflows/deploy.yml, .github/workflows/ci.yml] -->
 
 ## 3. schema.sql retirement + doc truth (R3-4, R3-5 — FS-4)
 
