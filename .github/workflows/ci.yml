@@ -395,9 +395,10 @@ jobs:
 
   # --------------------------------------------------------------------------
   # Compose smoke — builds the production image through docker-compose, boots
-  # the full local stack (Postgres, Redis, backend), and curls /health.
-  # Guards the exact artifact deploy-staging.yml builds; relocated from the
-  # deleted legacy deploy.yml, which covered feature-branch pushes.
+  # the full local stack (Postgres, Redis, backend), and curls
+  # /api/v1/health (the real HealthController route). Guards the exact
+  # artifact deploy-staging.yml builds; relocated from the deleted legacy
+  # deploy.yml, which covered feature-branch pushes.
   # --------------------------------------------------------------------------
   compose-smoke:
     name: Compose smoke
@@ -416,8 +417,13 @@ jobs:
         run: |
           docker compose ps
           docker compose logs --tail=50 app
-          curl --retry 20 --retry-delay 5 --retry-connrefused \
-            http://localhost:3000/health
+          if ! curl --fail --silent --show-error \
+               --retry 15 --retry-delay 5 --retry-connrefused --retry-all-errors \
+               http://localhost:3000/api/v1/health; then
+            echo "::error::compose smoke health check failed — app logs follow"
+            docker compose logs --tail=80 app
+            exit 1
+          fi
 
       - name: Cleanup
         if: always()
