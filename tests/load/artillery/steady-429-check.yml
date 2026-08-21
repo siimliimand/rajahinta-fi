@@ -1,0 +1,86 @@
+# ──────────────────────────────────────────────────────────────────────
+# Steady-state 429 (rate-limit) check — rajahinta.fi calculator endpoint
+#
+# Purpose: verify that the rate limiter does NOT fire at the expected
+# steady-state load.  This spec runs a single short steady phase at
+# 50 concurrent users / s and asserts zero 429 responses.
+#
+# Why a separate spec: Artillery's `ensure` block evaluates conditions
+# over the entire test run.  By isolating the steady window in its own
+# spec, the 429 check is not diluted by the ramp phase where lower
+# concurrency naturally produces no 429s.
+#
+# Usage:
+#   npx artillery run tests/load/artillery/steady-429-check.yml \
+#     --target https://staging.rajahinta.fi
+#
+# Target default: staging. Set via --target CLI flag or TARGET_URL env.
+# ──────────────────────────────────────────────────────────────────────
+
+config:
+  target: "https://staging.rajahinta.fi"
+
+  phases:
+    # Run steady at 50 for 30 seconds — long enough to detect rate-
+    # limiter activation without adding significant test time.
+    - duration: 30
+      arrivalRate: 50
+      name: "Steady 50 — 429 check"
+
+  ensure:
+    conditions:
+      # Zero 429 responses in the steady window
+      - expression: "http.response_status.{code:429}.count == 0"
+
+  plugins:
+    ensure: {}
+
+  http:
+    timeout: 30
+    pool: 50
+
+scenarios:
+  # Same three profiles as the main suite, with the same weights.
+  - name: "beer-light"
+    weight: 4
+    flow:
+      - post:
+          url: "/api/v1/calculator"
+          headers:
+            x-age-confirmed: "test-token"
+          json:
+            productId: 1
+            quantity: 1
+            destination: "FI"
+
+  - name: "spirits-full"
+    weight: 3
+    flow:
+      - post:
+          url: "/api/v1/calculator"
+          headers:
+            x-age-confirmed: "test-token"
+          json:
+            productId: 3
+            quantity: 1
+            destination: "FI"
+
+  - name: "basket"
+    weight: 3
+    flow:
+      - post:
+          url: "/api/v1/calculator"
+          headers:
+            x-age-confirmed: "test-token"
+          json:
+            productId: 1
+            quantity: 1
+            destination: "FI"
+      - post:
+          url: "/api/v1/calculator"
+          headers:
+            x-age-confirmed: "test-token"
+          json:
+            productId: 3
+            quantity: 1
+            destination: "FI"
