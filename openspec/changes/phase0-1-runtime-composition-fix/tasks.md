@@ -30,7 +30,7 @@
 ## 4. Staging truth + docs (WS-D — N5, N7, N8)
 
 - [x] 4.1 Eliminate the stale legacy SQL dataset — regenerate `infra/staging-data/seed.sql` from `SEED_RULES` via a small export script, or delete it and point `scripts/test-data-quality.sh` at a generated fixture; remove the dead `GOLDEN_DATASET_PATH` env from `ci.yml` <!-- agent: platform-engineer.fast, depends_on: [3.2], touches: [infra/staging-data/**, scripts/test-data-quality.sh, .github/workflows/ci.yml] -->
-- [ ] 4.2 Documentation truth — `docs/staging-verification.md` §3b/4 (isolation = no production merchant data; expected tax labels v1.0-2024…v3.0-2026 + v9999), `docs/tasks.md` T0.4 annotation, ARCHITECTURE §15 debt resync, round-1 plan round-2 addendum pointer <!-- agent: platform-engineer.fast, depends_on: [3.2, 4.1], touches: [docs/**, ARCHITECTURE.md] -->
+- [x] 4.2 Documentation truth — `docs/staging-verification.md` §3b/4 (isolation = no production merchant data; expected tax labels v1.0-2024…v3.0-2026 + v9999), `docs/tasks.md` T0.4 annotation, ARCHITECTURE §15 debt resync, round-1 plan round-2 addendum pointer <!-- agent: platform-engineer.fast, depends_on: [3.2, 4.1], touches: [docs/**, ARCHITECTURE.md] -->
 - [x] 4.3 Transport reliability at the producer — emit the canonical `ReliabilityStatus` from the transport estimator and delete the ad-hoc `EXACT`→`VERIFIED` bridge, or record the bridge as accepted debt in ARCHITECTURE §15 (design D6) <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/core-domain/src/transport/**, packages/core-domain/src/calculator/landed-cost-calculator.service.ts] -->
 
 ## 5. HTTP load test (WS-E — N6, T1.73)
