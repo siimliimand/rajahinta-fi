@@ -1,10 +1,19 @@
 /**
- * Golden-dataset mock product data — v1.0.
+ * Golden-dataset mock product data — v2.0.
  *
  * Every product in the golden dataset has a fixed ID, known input
  * parameters, and manually verified expected outputs.  These values
  * should never change without a version bump and a corresponding update
  * to every test assertion in golden-dataset.test.ts.
+ *
+ * @version 2.0
+ *   Updated 2024-08-26: rates aligned with v1.0-2024 seed
+ *   (packages/data-platform/src/seed/tax-rules.seed.ts).
+ *   Beer flat 33.00 → progressive 28.35/36.20 snt/cl ethanol bands.
+ *   Wine still/sparkling: single 3.40 → six-band structure.
+ *   Spirits 29.50 → 30.90/54.80 €/l pure alcohol.
+ *   Intermediate 3.40 → 5.68/8.63 €/l product.
+ *   Other fermented 3.40/l alcohol → wine bands per litre of product.
  *
  * @module GoldenDatasetProducts
  */
@@ -19,7 +28,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 /** Bump this when adding scenarios or changing expected values. */
-export const GOLDEN_DATASET_VERSION = '1.0' as const;
+export const GOLDEN_DATASET_VERSION = '2.0' as const;
 
 // ---------------------------------------------------------------------------
 // Product definitions
