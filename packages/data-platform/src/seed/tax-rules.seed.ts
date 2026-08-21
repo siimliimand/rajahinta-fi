@@ -26,7 +26,7 @@
  * @module Seed
  */
 
-import { inArray } from 'drizzle-orm';
+import { count, inArray } from 'drizzle-orm';
 import { type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { taxRules } from '../index';
 import {
@@ -870,17 +870,72 @@ export const SEED_RULES: TaxRuleSeed[] = [
 // ---------------------------------------------------------------------------
 
 /**
+ * A per-version row-count drift between the database and `SEED_RULES`.
+ *
+ * Reported by `seedTaxRules` when a version label that already exists in
+ * the database carries a different number of rows than `SEED_RULES`
+ * defines for that label (e.g. a same-label correction, or hand-trimmed
+ * dev rows). Detection only — existing rows are never mutated.
+ */
+export interface TaxRuleSeedMismatch {
+  versionLabel: string;
+  /** Row count currently in the database for this label. */
+  present: number;
+  /** Row count `SEED_RULES` defines for this label. */
+  expected: number;
+}
+
+/** Env flag that turns row-count mismatch warnings into hard failures. */
+const TAX_SEED_STRICT_ENV = 'TAX_SEED_STRICT';
+
+/**
+ * Expected row count per version label, derived from `SEED_RULES`.
+ * Built once at module load — `SEED_RULES` is a static constant.
+ */
+const EXPECTED_COUNTS_PER_LABEL: ReadonlyMap<string, number> = (() => {
+  const counts = new Map<string, number>();
+  for (const rule of SEED_RULES) {
+    counts.set(rule.versionLabel, (counts.get(rule.versionLabel) ?? 0) + 1);
+  }
+  return counts;
+})();
+
+/**
+ * Strict mode is an explicit opt-in via the `TAX_SEED_STRICT` environment
+ * variable (read at call time so callers — tests, the staging seed Job —
+ * can flip it per run). Recognized truthy values: `1`, `true`, `yes`, `on`
+ * (case-insensitive). Anything else, including unset, means warn-only.
+ */
+function isStrictSeedMode(): boolean {
+  const raw = process.env[TAX_SEED_STRICT_ENV]?.trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
+/**
  * Seed the `taxRules` table with v1.0-2024, v2.0-2025, and v3.0-2026
  * Finnish excise duty rates.
  *
  * Safe to call multiple times — skips records where `versionLabel` already
  * exists. Uses a single batch insert for performance.
  *
+ * Row-count mismatch detection (design D5): a version label that already
+ * exists in the database but with a different number of rows than
+ * `SEED_RULES` defines is reported in `result.mismatches` and logged via
+ * `console.warn`. By default the seed still completes — dev databases with
+ * hand-trimmed rows must not break. When the `TAX_SEED_STRICT` env var is
+ * set to a truthy value (`1`/`true`/`yes`/`on`), a mismatch makes the seed
+ * throw before inserting anything, so drift is caught at deploy time (the
+ * staging seed Job path sets this flag). Detection only — existing rows
+ * are never mutated, deleted, or repaired; repair requires a new labelled
+ * version or a data migration (append-only dataset policy).
+ *
  * @param db — A Postgres.js-dialect Drizzle database instance.
+ * @returns `inserted`/`skipped` counts plus the `mismatches` array (empty
+ *   when every present label's row count matches `SEED_RULES`).
  */
 export async function seedTaxRules(
   db: PostgresJsDatabase,
-): Promise<{ inserted: number; skipped: number }> {
+): Promise<{ inserted: number; skipped: number; mismatches: TaxRuleSeedMismatch[] }> {
   // Check which version labels are already present
   const existing = await db
     .select({ versionLabel: taxRules.versionLabel })
@@ -888,15 +943,55 @@ export async function seedTaxRules(
     .where(inArray(taxRules.versionLabel, SEED_RULES.map((r) => r.versionLabel)));
 
   const existingLabels = new Set(existing.map((r: { versionLabel: string }) => r.versionLabel));
+
+  // Detect per-label row-count drift (D5) before deciding what to insert,
+  // so a partially-populated label surfaces even when nothing is insertable.
+  const mismatches: TaxRuleSeedMismatch[] = [];
+  if (existingLabels.size > 0) {
+    const countRows = await db
+      .select({ versionLabel: taxRules.versionLabel, rowCount: count() })
+      .from(taxRules)
+      .where(inArray(taxRules.versionLabel, Array.from(existingLabels)))
+      .groupBy(taxRules.versionLabel);
+
+    for (const row of countRows) {
+      const present = Number(row.rowCount);
+      const expected = EXPECTED_COUNTS_PER_LABEL.get(row.versionLabel) ?? 0;
+      if (present !== expected) {
+        mismatches.push({ versionLabel: row.versionLabel, present, expected });
+        console.warn(
+          `[seedTaxRules] row-count mismatch for version label ` +
+            `"${row.versionLabel}": database has ${present} row(s), SEED_RULES ` +
+            `defines ${expected}. Existing rows are never mutated (append-only ` +
+            `dataset) — repair requires a new labelled version or a data ` +
+            `migration. Set ${TAX_SEED_STRICT_ENV}=1 to fail the seed on this drift.`,
+        );
+      }
+    }
+  }
+
+  if (mismatches.length > 0 && isStrictSeedMode()) {
+    const detail = mismatches
+      .map((m) => `${m.versionLabel} (present ${m.present}, expected ${m.expected})`)
+      .join('; ');
+    throw new Error(
+      `seedTaxRules strict mode (${TAX_SEED_STRICT_ENV}): row-count mismatch ` +
+        `for ${mismatches.length} version label(s): ${detail}. ` +
+        `Refusing to insert — repair requires a new labelled version or a data migration.`,
+    );
+  }
+
+  // A mismatched label is by definition already present, so it is skipped
+  // here — its existing (partial or over-populated) rows are left untouched.
   const toInsert = SEED_RULES.filter((r) => !existingLabels.has(r.versionLabel));
 
   if (toInsert.length === 0) {
-    return { inserted: 0, skipped: SEED_RULES.length };
+    return { inserted: 0, skipped: SEED_RULES.length, mismatches };
   }
 
   await db.insert(taxRules).values(toInsert);
 
-  return { inserted: toInsert.length, skipped: SEED_RULES.length - toInsert.length };
+  return { inserted: toInsert.length, skipped: SEED_RULES.length - toInsert.length, mismatches };
 }
 
 // ---------------------------------------------------------------------------
