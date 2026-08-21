@@ -39,19 +39,6 @@ class TestKpiService extends KpiService {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Factory to produce a KpiMetric that matches the service schema. */
-function makeMetric(overrides?: Partial<KpiMetric>): KpiMetric {
-  return {
-    timestamp: expect.any(String),
-    category: KpiCategory.PRODUCT,
-    metric: 'test.metric',
-    value: 42,
-    metricType: MetricType.COUNTER,
-    tags: {},
-    ...overrides,
-  };
-}
-
 /** Parse a log line captured by the spy back into a KpiMetric object. */
 function parseLogLine(line: string): KpiMetric | null {
   // Expected format: "[KPI] { ...json... }"

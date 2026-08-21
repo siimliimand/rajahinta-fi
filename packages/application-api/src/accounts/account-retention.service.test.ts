@@ -4,6 +4,21 @@
  * Verifies retention-policy enforcement: purge expired accounts,
  * purge calculation history, anonymize inactive accounts.
  *
+ * ## Persistence boundary
+ *
+ * These tests construct `AccountService` without repository arguments,
+ * so the in-memory Map fallback is used. This is intentional:
+ *
+ * - **Unit tests** (here): verify retention logic — date comparisons,
+ *   anonymization rules, purge targeting. Fast, deterministic, no DB.
+ * - **Integration tests** (separate): verify that baskets and history
+ *   survive process restart via PostgreSQL. Those tests require a
+ *   running database and are not in this file.
+ *
+ * Both layers must pass. The unit layer proves the algorithm is correct;
+ * the integration layer proves data survives restarts. See
+ * `ARCHITECTURE.md` § "Persistence boundary" for the contract.
+ *
  * @module AccountRetentionServiceTest
  */
 

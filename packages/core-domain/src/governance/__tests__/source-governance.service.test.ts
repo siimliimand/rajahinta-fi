@@ -16,7 +16,7 @@
  * @module SourceGovernanceServiceTest
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { SourceGovernanceService } from '../services/source-governance.service';
 import type {
   ISourceGovernanceRepository,
@@ -91,7 +91,7 @@ function createService(repo?: ISourceGovernanceRepository): {
 describe('registerSource', () => {
   it('creates a record and returns it', async () => {
     const expected = createRecord({ id: 42 });
-    const { service, repository } = createService(
+    const { service } = createService(
       createMockRepository({
         create: vi.fn().mockResolvedValue(expected),
       }),
@@ -193,7 +193,7 @@ describe('checkPermission', () => {
       sources: [createRecord({ permissionStatus: 'GRANTED' })],
       hasWarnings: false,
     };
-    const { service, repository } = createService(
+    const { service } = createService(
       createMockRepository({
         checkPermission: vi.fn().mockResolvedValue(result),
       }),
@@ -214,7 +214,7 @@ describe('checkPermission', () => {
       ],
       hasWarnings: false,
     };
-    const { service, repository } = createService(
+    const { service } = createService(
       createMockRepository({
         checkPermission: vi.fn().mockResolvedValue(result),
       }),
@@ -235,7 +235,7 @@ describe('checkPermission', () => {
       ],
       hasWarnings: true,
     };
-    const { service, repository } = createService(
+    const { service } = createService(
       createMockRepository({
         checkPermission: vi.fn().mockResolvedValue(result),
       }),
@@ -254,7 +254,7 @@ describe('checkPermission', () => {
       sources: [createRecord({ permissionStatus: 'REVOKED', statusReason: 'Agreement ended' })],
       hasWarnings: true,
     };
-    const { service, repository } = createService(
+    const { service } = createService(
       createMockRepository({
         checkPermission: vi.fn().mockResolvedValue(result),
       }),
@@ -276,7 +276,7 @@ describe('checkPermission', () => {
       ],
       hasWarnings: true,
     };
-    const { service, repository } = createService(
+    const { service } = createService(
       createMockRepository({
         checkPermission: vi.fn().mockResolvedValue(result),
       }),

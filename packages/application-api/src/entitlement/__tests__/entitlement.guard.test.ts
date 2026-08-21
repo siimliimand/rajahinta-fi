@@ -11,6 +11,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { ForbiddenException, ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { EntitlementGuard, RequireFeature, REQUIRE_FEATURE_KEY } from '../entitlement.guard';
 import { EntitlementService } from '@rajahinta/core-domain';
 import type { Entitlement, FeatureId } from '@rajahinta/core-domain';

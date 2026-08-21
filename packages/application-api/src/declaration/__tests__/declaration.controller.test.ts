@@ -24,12 +24,10 @@ import {
   DeclarationSummary,
   CalculationRecordNotFoundError,
   EntitlementService,
-  isTierSufficient,
 } from '@rajahinta/core-domain';
 import { DeclarationController } from '../declaration.controller';
 import {
   EntitlementGuard,
-  RequireFeature,
   REQUIRE_FEATURE_KEY,
 } from '../../entitlement';
 

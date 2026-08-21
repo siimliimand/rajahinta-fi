@@ -18,13 +18,12 @@
  * @module ExciseDeclarationServiceTest
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ExciseDeclarationService } from '../excise-declaration.service';
 import { CalculationRecordNotFoundError } from '../declaration.types';
 import type {
   CalculationRecordData,
   ICalculationRecordQueryPort,
-  DeclarationSummary,
   DeclarationAdvanceNoticeInfo,
 } from '../declaration.types';
 import type { ConfidenceLevel } from '../../reliability/confidence-framework.types';
@@ -104,7 +103,7 @@ function createService(port?: ICalculationRecordQueryPort): {
 describe('prepareDeclaration', () => {
   it('returns a complete DeclarationSummary when the record exists', async () => {
     const record = createRecord({ id: 42 });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -123,7 +122,7 @@ describe('prepareDeclaration', () => {
       alcoholByVolume: 5.5,
       volumeLitres: 0.33,
     });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -140,7 +139,7 @@ describe('prepareDeclaration', () => {
 
   it('maps units from record.quantity', async () => {
     const record = createRecord({ quantity: 12 });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -157,7 +156,7 @@ describe('prepareDeclaration', () => {
       volumeLitres: 0.75,
       depositSystemStatus: false,
     });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -172,7 +171,7 @@ describe('prepareDeclaration', () => {
 
   it('maps depositSystemStatus null when record has null', async () => {
     const record = createRecord({ depositSystemStatus: null });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -189,7 +188,7 @@ describe('prepareDeclaration', () => {
       transportOrigin: 'EE',
       transportDestination: 'FI',
     });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -204,7 +203,7 @@ describe('prepareDeclaration', () => {
 
   it('maps transport carrier as null when record has null', async () => {
     const record = createRecord({ transportCarrier: null });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -220,7 +219,7 @@ describe('prepareDeclaration', () => {
       alcoholExciseCents: 500,
       containerDutyCents: 75,
     });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -238,7 +237,7 @@ describe('prepareDeclaration', () => {
       alcoholExciseCents: 200,
       containerDutyCents: 0,
     });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -250,7 +249,7 @@ describe('prepareDeclaration', () => {
   });
 
   it('maps confidence from record', async () => {
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(createRecord({ confidence: 'MEDIUM' as ConfidenceLevel })),
       }),
@@ -263,7 +262,7 @@ describe('prepareDeclaration', () => {
 
   it('maps declarationDate from record.calculationTimestamp', async () => {
     const ts = '2026-07-01T08:15:00.000Z';
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(createRecord({ calculationTimestamp: ts })),
       }),
@@ -275,7 +274,7 @@ describe('prepareDeclaration', () => {
   });
 
   it('maps disclaimer fields correctly', async () => {
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(
           createRecord({
@@ -318,7 +317,7 @@ describe('prepareDeclaration', () => {
       disclaimerVersion: '1.0.0',
       calculationTimestamp: '2026-08-01T00:00:00.000Z',
     });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -367,7 +366,7 @@ describe('prepareDeclaration', () => {
 
 describe('CalculationRecordNotFoundError', () => {
   it('throws CalculationRecordNotFoundError when record is null', async () => {
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(null),
       }),
@@ -379,7 +378,7 @@ describe('CalculationRecordNotFoundError', () => {
   });
 
   it('includes the record ID in the error message', async () => {
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(null),
       }),
@@ -391,7 +390,7 @@ describe('CalculationRecordNotFoundError', () => {
   });
 
   it('sets the error name to CalculationRecordNotFoundError', async () => {
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(null),
       }),
@@ -409,7 +408,7 @@ describe('CalculationRecordNotFoundError', () => {
   });
 
   it('exposes calculationRecordId property', async () => {
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(null),
       }),
@@ -429,7 +428,7 @@ describe('CalculationRecordNotFoundError', () => {
   it('propagates non-null errors from query port as-is', async () => {
     // If findById throws (not returns null), the error should propagate
     // without being caught/converted.
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockRejectedValue(new Error('DB connection lost')),
       }),
@@ -448,7 +447,7 @@ describe('CalculationRecordNotFoundError', () => {
 describe('advance-notice logic', () => {
   it('requires advance notice for TravellerImport with 4-day deadline', async () => {
     const record = createRecord({ classification: 'TravellerImport' });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -462,7 +461,7 @@ describe('advance-notice logic', () => {
 
   it('does not require advance notice for DistanceSelling', async () => {
     const record = createRecord({ classification: 'DistanceSelling' });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -476,7 +475,7 @@ describe('advance-notice logic', () => {
 
   it('does not require advance notice for DistanceBuying', async () => {
     const record = createRecord({ classification: 'DistanceBuying' });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -489,26 +488,18 @@ describe('advance-notice logic', () => {
   });
 
   it('produces correctly typed DeclarationAdvanceNoticeInfo for all classifications', async () => {
-    const classifications: ClassificationLabel[] = [
-      'TravellerImport',
-      'DistanceSelling',
-      'DistanceBuying',
-    ];
+    const record = createRecord({ id: 1 });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
 
-    for (const classification of classifications) {
-      const record = createRecord({ classification });
-      const { service, queryPort } = createService(
-        createMockQueryPort({
-          findById: vi.fn().mockResolvedValue(record),
-        }),
-      );
+    const result = await service.prepareDeclaration(1);
 
-      const result = await service.prepareDeclaration(1);
-
-      // Type-level check: advanceNoticeInfo conforms to DeclarationAdvanceNoticeInfo
-      const notice: DeclarationAdvanceNoticeInfo = result.advanceNoticeInfo;
-      expect(typeof notice.required).toBe('boolean');
-    }
+    // Type-level check: advanceNoticeInfo conforms to DeclarationAdvanceNoticeInfo
+    const notice: DeclarationAdvanceNoticeInfo = result.advanceNoticeInfo;
+    expect(typeof notice.required).toBe('boolean');
   });
 });
 
@@ -518,7 +509,7 @@ describe('advance-notice logic', () => {
 
 describe('MyTax link', () => {
   it('includes the MyTax link in the declaration summary', async () => {
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(createRecord()),
       }),
@@ -548,7 +539,7 @@ describe('MyTax link', () => {
   });
 
   it('myTaxLink is a string', async () => {
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(createRecord()),
       }),
@@ -571,7 +562,7 @@ describe('disclaimer', () => {
       disclaimerLanguage: 'fi',
       disclaimerVersion: '3.0.0',
     });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -590,7 +581,7 @@ describe('disclaimer', () => {
       disclaimerLanguage: 'en',
       disclaimerVersion: '1.0.0',
     });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -611,7 +602,7 @@ describe('disclaimer', () => {
 describe('edge cases', () => {
   it('handles record with zero quantity', async () => {
     const record = createRecord({ quantity: 0 });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -627,7 +618,7 @@ describe('edge cases', () => {
       alcoholExciseCents: 0,
       containerDutyCents: 0,
     });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -643,7 +634,7 @@ describe('edge cases', () => {
       alcoholExciseCents: 2_147_483_647,
       containerDutyCents: 1_000_000_000,
     });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),
@@ -660,7 +651,7 @@ describe('edge cases', () => {
 
   it('handles record with null brand', async () => {
     const record = createRecord({ productBrand: null });
-    const { service, queryPort } = createService(
+    const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
       }),

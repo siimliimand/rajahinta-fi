@@ -357,7 +357,6 @@ describe('LandedCostCalculator — load/performance', () => {
   it('handles basket scenario (beer + wine + spirits mix)', async () => {
     const result = await runConcurrentBenchmark(service, CONCURRENCY, 'basket');
 
-    // eslint-disable-next-line no-console
     console.log(`
       ┌─ Basket Load Test ─────────────────────────────────────
       │  Calls:      ${result.successCount + result.failureCount}
@@ -402,7 +401,6 @@ describe('LandedCostCalculator — load/performance', () => {
       const errorRate = totalCalls > 0 ? totalFailure / totalCalls : 0;
 
       // Log results for CI visibility
-      // eslint-disable-next-line no-console
       console.log(`
         ┌─ Landed-Cost Calculator Load Test ──────────────────────────
         │  Concurrency:    ${CONCURRENCY} × ${MEASURED_RUNS} rounds
