@@ -16,6 +16,7 @@ import type {
   SortOrder,
   RankingMethodology,
   ApiError,
+  CorrectionItem,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -264,5 +265,30 @@ export async function logClick(merchantId: string, url: string): Promise<void> {
   await request<{ success: boolean; count: number }>('/api/v1/analytics/click', {
     method: 'POST',
     body: JSON.stringify({ merchantId, url }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Correction flags
+// ---------------------------------------------------------------------------
+
+/**
+ * Flag a calculation or data point for correction.
+ *
+ * Posts a correction flag to the backend with the target type, target ID,
+ * and a human-readable reason.  Returns the created {@link CorrectionItem}.
+ *
+ * @param targetType  'calculation' to flag a calculation result, 'data_point' for product data
+ * @param targetId    The record identifier of the flagged target
+ * @param reason      Free-text explanation of the problem
+ */
+export async function createCorrectionFlag(
+  targetType: 'calculation' | 'data_point',
+  targetId: number,
+  reason: string,
+): Promise<CorrectionItem> {
+  return request<CorrectionItem>('/api/v1/corrections', {
+    method: 'POST',
+    body: JSON.stringify({ targetType, targetId, reason }),
   });
 }
