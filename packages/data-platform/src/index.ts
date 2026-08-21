@@ -63,6 +63,12 @@ export type {
 export { seedStagingDatabase } from './seed/staging-seed';
 
 // ---------------------------------------------------------------------------
+// Tax rule seed — idempotent seeder for official excise duty rates
+// ---------------------------------------------------------------------------
+
+export { seedTaxRules } from './seed/tax-rules.seed';
+
+// ---------------------------------------------------------------------------
 // Drizzle connection provider
 // ---------------------------------------------------------------------------
 
