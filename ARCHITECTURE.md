@@ -381,7 +381,7 @@ The repository is an agentic workspace with a working application build. Command
 - **Deposit-return system status per product/packaging is tri-state** (`boolean | null`); null means ESTIMATED — the container-duty engine flags uncertain exemptions, never silently assumes.
 - **Small-brewery relief (pienpanimoalennus) UNAVAILABLE:** The official vero.fi scheme is a progressive 10–50 % discount by annual production volume (ceiling 15 000 000 l/year, HE 106/2024). The current rule evaluator cannot express production-volume tiers, so only the general beer rate is shipped. Small-brewery treatment is documented as `UNAVAILABLE` pending Phase 2 evaluator support. See vero.fi pienpanimoalennus guidance; rationale in `docs/phase-0-1-verification-fix-plan.md` §3 C1.
 - **GDPR integration tests require `TEST_DATABASE_URL`:** `packages/application-api/src/accounts/__tests__/gdpr-integration.test.ts` runs against a real PostgreSQL instance. There is no always-on Postgres harness in CI; these tests are skipped unless `TEST_DATABASE_URL` is set.
-- **HTTP-level load test pending baseline:** resolved in the runtime composition fix — `tests/load/artillery/` provides the HTTP suite (ramp 1→50 over 60 s, steady 50 for 120 s, p95 < 2 s, error < 1 %, zero 429s in the steady window) and `deploy-staging.yml` runs it as a non-blocking post-deploy step. Residual: promote to blocking once a staging baseline exists (`docs/staging-verification.md` §5).
+- **HTTP-level load test pending baseline:** resolved in the runtime composition fix — `tests/load/artillery/` provides the HTTP suite (ramp 1→50 over 60 s, steady 50 for 120 s, p95 < 2 s, error < 1 %, zero 429s in the steady window) and `deploy-staging.yml` runs it as a non-blocking post-deploy step. Residual: promote to blocking once a staging baseline exists (`docs/staging-verification.md` §5). Staging deploys are deferred (§15.2), so no baseline can exist until the cluster does.
 - **E2E suite relies on decorator-metadata transform + single-instance pin:** `vitest.config.e2e.ts` uses a custom TypeScript transpile plugin to emit `emitDecoratorMetadata` and pins `@nestjs/core` to a single physical path. Root cause: pnpm instantiates `@nestjs/core` twice (two peer-set variants), giving two `Reflector`/class identities and breaking NestJS DI. A durable fix would resolve the dependency-side duplication; the current workaround is functional but fragile.
 - **Idempotency controller ordering follow-up:** `CalculatorController` calls `getCacheKey(input)` before `findActiveVersionLabels()`, but `hashInput()` now includes dataset versions in the hash. Since the versions are fetched after the key is computed, the caller must populate `datasetVersions` on the input object before calling `getCacheKey`. Currently the versions are only passed to `lookup()` as `currentVersions`, so the hash key does not reflect dataset versions — the lookup-time version comparison serves as defence in depth, but the cache key itself is version-blind. See task 5.5 follow-up.
 - **Transport EXACT→VERIFIED bridge removed (resolved, task 4.3):** `TransportEstimationService` now emits canonical `ReliabilityStatus` (`'VERIFIED'` for exact weight match, `'ESTIMATED'` for closest bracket); the ad-hoc `EXACT → VERIFIED` mapping in `LandedCostCalculatorService` is deleted. `BasketShippingResult.reliability` retains a local `'EXACT' | 'ESTIMATED' | 'PARTIAL'` type scoped to basket-level computation (not the canonical reliability union) — acceptable as an internal transport-layer signal. `DataReliability` is retained as a deprecated type alias (`= ReliabilityStatus`) in `core-domain/src/index.ts` for backward compatibility.
@@ -401,6 +401,21 @@ The repository is an agentic workspace with a working application build. Command
 - `schema.ts` is the authoritative reference for repositories, seed data, and type inference — no parallel maintenance burden.
 - Generated SQL remains reviewable in git (migration files are plain SQL).
 - `infra/staging-data/schema.sql` is deleted once the migration path is wired into the staging deploy pipeline.
+
+### 15.2 Staging cluster deferral decision
+
+> **Decision recorded 2026-08-22, repo owner; delivery work in PRs #22–#25.**
+
+**Context:** The deploy workflows authenticate to the cluster with a `KUBE_CONFIG` secret that was never set — the repo held no secrets at all, so every `Deploy Staging` run on `master` failed at the first `kubectl` step (the auth step `echo`-writes the secret and exits 0 even when it is empty). No staging cluster exists and no kubeconfig for one is available. The registry side works: `deploy-staging.yml` and `deploy-production.yml` push to `ghcr.io/siimliimand/rajahinta` with the workflow-scoped `GITHUB_TOKEN` (verified by a pushed image, run 32529902593).
+
+**Decision:** Kubernetes is deferred until traffic justifies it. `deploy-staging.yml` triggers on `workflow_dispatch` only, so `master` pushes no longer run a known-red deploy. The three-tier promotion path (development → staging → production) resumes when a cluster is provisioned.
+
+**Resume steps:**
+
+- Provision the staging cluster; set the `KUBE_CONFIG` repo secret.
+- Make `ghcr.io/siimliimand/rajahinta` public (Actions-pushed packages are private by default) or wire an `imagePullSecrets` entry — the cluster currently has no registry credentials.
+- Restore the `push: master` trigger on `deploy-staging.yml` or dispatch manually.
+- Run the deferred OpenSpec gates recorded in the archived `phase0-1-delivery-cleanup` change (`openspec/changes/archive/2026-08-21-phase0-1-delivery-cleanup/tasks.md`): the 1.2 staging-verification walk, the 1.3 artillery blocking promotion, and the staging half of 5.1.
 
 ## 16. Future Considerations
 
