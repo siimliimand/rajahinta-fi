@@ -74,20 +74,22 @@ Expected: Two products returned — the EANs `000000000001` (test beer) and `000
 - [ ] Test beer product present (EAN `000000000001`)
 - [ ] Test wine product present (EAN `000000000002`)
 
-### 3b. Test tax rules are seeded
+### 3b. Tax rules are seeded
 
 ```bash
-curl -s https://staging.rajahinta.fi/api/v1/tax-rules | jq '.data[] | select(.versionLabel == "v9999-staging")'
+curl -s https://staging.rajahinta.fi/api/v1/tax-rules | jq '[.data[].versionLabel] | unique'
 ```
 
-Expected: Three tax rules with `versionLabel: "v9999-staging"`:
-- Beer excise duty (`rate: 9.99`)
-- Wine excise duty (`rate: 1.23`)
-- Container duty (`rate: 0.10`)
+Expected: the official versioned dataset **plus** the staging placeholders:
+- `v1.0-2024`, `v2.0-2025`, `v3.0-2026` — the official vero.fi dataset (89 rows,
+  official rates; this is what the calculator resolves against, satisfying
+  T0.5's "staging carries a realistic tax-rule dataset")
+- `v9999-staging` — three clearly-marked placeholder rules (beer 9.99, wine
+  1.23, container 0.10) retained for tests that assert placeholder isolation
 
-- [ ] Staging beer excise rule present (rate 9.99)
-- [ ] Staging wine excise rule present (rate 1.23)
-- [ ] Staging container duty rule present (rate 0.10)
+- [ ] Official version labels present (v1.0-2024, v2.0-2025, v3.0-2026)
+- [ ] Staging placeholder rules present (rate 9.99 / 1.23 / 0.10)
+- [ ] Calculator result cites a `v*.0-20xx` dataset version, not a placeholder
 
 ### 3c. Test transport offers are seeded
 
@@ -120,16 +122,16 @@ This is critical — staging must be isolated from production.
   - Check the staging Secret/ConfigMap for a `DATABASE_URL` pointing to a staging-specific database host/name
   - The URL must differ from the production database URL
 
-- [ ] Verify there are no rows referencing real merchant EANs or production tax version labels:
+- [ ] Verify there are no rows referencing real merchant EANs or production-only data:
 
 ```bash
-# No production tax version labels should exist
+# Official tax version labels ARE expected in staging (T0.5); merchant data must stay fake
 curl -s https://staging.rajahinta.fi/api/v1/tax-rules | jq '[.data[].versionLabel] | unique'
 ```
 
-Expected: only `"v9999-staging"` (no production version labels)
+Expected: official labels (`v1.0-2024`, `v2.0-2025`, `v3.0-2026`) plus
+`v9999-staging` — official TAX data is intentionally present; merchant data must not be.
 
-- [ ] Staging tax rules contain only `v9999-staging` labels
 - [ ] No production merchant names appear in transport or retail offers
 
 > **What to do if production data is found:** Stop immediately. Do not use the staging environment for testing. Check `DATABASE_URL` configuration and the seed Job isolation — production data in staging indicates a database sharing misconfiguration. File a blocking bug.
