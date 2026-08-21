@@ -69,12 +69,12 @@ jobs:
 
       - name: Clean up previous seed Job
         run: |
-          # Jobs are immutable — delete before re-creating
+          # Jobs are immutable — delete before re-creating.
+          # --ignore-not-found handles first-run / already-clean cases.
           kubectl delete job rajahinta-staging-seed \
             -n rajahinta \
             --ignore-not-found \
             --wait
-        continue-on-error: true
 
       - name: Deploy to staging
         run: |
@@ -83,16 +83,19 @@ jobs:
           kustomize edit set image ${{ env.IMAGE_NAME }}:$SHORT_SHA
           kustomize build . | kubectl apply -f -
 
-      - name: Seed staging database
+      - name: Wait for seed Job completion
         run: |
           # Idempotent seed Job — safe to re-run (skips already-seeded rows).
-          # kubectl create is not used because the Job name is fixed and
-          # we want Kustomize to set the correct image tag.
+          # The Job was created by kustomize apply in the previous step with
+          # the correct image tag.
           kubectl wait job rajahinta-staging-seed \
             -n rajahinta \
             --for condition=complete \
-            --timeout=300s
-        continue-on-error: true
+            --timeout=300s || {
+            echo "::error::Seed Job rajahinta-staging-seed failed — fetching logs:"
+            kubectl logs job/rajahinta-staging-seed -n rajahinta --tail=50 || true
+            exit 1
+          }
 
       - name: Load test
         continue-on-error: true
