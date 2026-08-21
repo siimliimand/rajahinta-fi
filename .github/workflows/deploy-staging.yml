@@ -2,7 +2,7 @@ name: Deploy Staging
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 env:
@@ -97,5 +97,3 @@ jobs:
       - name: Load test
         continue-on-error: true
         run: pnpm test:load
-        env:
-          STAGING_URL: https://staging.rajahinta.fi

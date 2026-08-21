@@ -1,7 +1,7 @@
 # Staging Environment — Verification Checklist
 
 > **Purpose:** Manual verification steps to confirm the staging environment is correctly deployed and functional.  
-> **When to run:** After the `deploy-staging` GitHub Actions workflow has completed successfully (on push to `main`).  
+> **When to run:** After the `deploy-staging` GitHub Actions workflow has completed successfully (on push to `master`).  
 > **Who:** Any team member with cluster access and the staging URL.
 
 ---
@@ -17,7 +17,7 @@
 
 ## 1. Deploy staging via the deploy-staging workflow
 
-1. Push to `main` (or manually trigger `workflow_dispatch` on the `deploy-staging` workflow).
+1. Push to `master` (or manually trigger `workflow_dispatch` on the `deploy-staging` workflow).
 2. Wait for the workflow to complete — check GitHub Actions for green status.
 3. Confirm the workflow built the Docker image, pushed it to `ghcr.io/rajahinta/rajahinta:latest`, and applied `infra/k8s/overlays/staging/`.
 
@@ -136,49 +136,37 @@ Expected: only `"v9999-staging"` (no production version labels)
 
 ---
 
-## 5. Run load tests against staging URL
+## 5. Run load tests
 
-### Prerequisites
+### In-process benchmark (CI-safe, no infrastructure required)
 
-```bash
-# Install k6 (if not already installed)
-npm install -g k6
-
-# Or use Docker
-docker pull grafana/k6
-```
-
-### Run load test
+The primary load/performance test today is an in-process Vitest benchmark that
+runs the calculation pipeline without network overhead:
 
 ```bash
-# Basic smoke test — 10 concurrent users, 30 seconds
-k6 run tests/load/calculator-load.test.ts \
-  --env BASE_URL=https://staging.rajahinta.fi \
-  --vus 10 \
-  --duration 30s
+pnpm test:load
 ```
 
-Full staging load test (matching the planned T1.73 profile):
+This executes `tests/load/calculator-load.test.ts` through the Vitest runner
+with a dedicated config (`tests/load/vitest.config.ts`). It measures CPU-bound
+calculation throughput and is safe to run in CI, locally, or inside a container.
 
-```bash
-k6 run tests/load/calculator-load.test.ts \
-  --env BASE_URL=https://staging.rajahinta.fi \
-  --vus 50 \
-  --duration 180s
-```
+- [ ] In-process benchmark completes without errors
 
-### Expected results
+### HTTP-level load testing (not yet implemented)
+
+HTTP-level load testing against the deployed staging environment is planned but
+not yet wired. When implemented, this section will document the tool and command
+(e.g. `artillery`, `k6`, or a custom script) for running concurrent requests
+against `https://staging.rajahinta.fi` and reporting p95 latency and error rates.
+
+### Expected results (once HTTP-level testing is added)
 
 | Metric | Threshold |
 |--------|-----------|
 | p95 latency (landed-cost calc) | `< 2000ms` |
 | Error rate | `< 1%` |
 | HTTP 429 (rate limited) | `0` |
-
-- [ ] Load test completes without errors
-- [ ] p95 latency is below 2 seconds
-- [ ] Error rate is below 1%
-- [ ] No 429 rate-limiting responses
 
 ---
 
