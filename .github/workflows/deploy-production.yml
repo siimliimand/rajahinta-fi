@@ -79,15 +79,46 @@ jobs:
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
 
-      - name: Deploy to production
+      - name: Set image tag
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           cd infra/k8s/overlays/production
           kustomize edit set image ${{ env.IMAGE_NAME }}:$SHORT_SHA
-          kustomize build . | kubectl apply -f -
+
+      - name: Clean up previous migrate Job
+        run: |
+          # Jobs are immutable — delete before re-creating.
+          kubectl delete job rajahinta-migrate \
+            -n rajahinta \
+            --ignore-not-found \
+            --wait
+
+      - name: Run database migrations
+        run: |
+          # Apply only the migrate Job (identified by component label).
+          # ConfigMap/Secret already exist from previous deploys.
+          kustomize build infra/k8s/overlays/production \
+            | kubectl apply -f- \
+              --selector='app.kubernetes.io/component=migrate-job'
+          kubectl wait job rajahinta-migrate \
+            -n rajahinta \
+            --for condition=complete \
+            --timeout=300s || {
+            echo "::error::Migration Job rajahinta-migrate failed — fetching logs:"
+            kubectl logs job/rajahinta-migrate -n rajahinta --tail=50 || true
+            exit 1
+          }
+
+      - name: Deploy workloads
+        run: |
+          # Apply all resources (deployment, service, etc.).
+          # The migrate Job already exists — kubectl apply with identical
+          # spec is a server-side no-op.
+          kustomize build infra/k8s/overlays/production | kubectl apply -f-
 
       - name: Verify production deployment
         run: |
           kubectl rollout status deployment/rajahinta-backend \
             -n rajahinta \
             --timeout=120s
+          # No seed Job on production — migrations only, no fake data.

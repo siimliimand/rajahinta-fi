@@ -38,10 +38,11 @@ export {
 
 // Canonical taxonomy
 export {
+  TAX_TYPES,
   TAX_CATEGORY_KEYS,
   CATEGORY_DEFAULT_FORMULA,
 } from './tax-categories';
-export type { TaxCategory, FormulaType } from './tax-categories';
+export type { TaxType, TaxCategory, FormulaType } from './tax-categories';
 
 export {
   calculateContainerDuty,

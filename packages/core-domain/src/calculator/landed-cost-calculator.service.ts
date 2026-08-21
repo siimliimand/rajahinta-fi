@@ -45,8 +45,6 @@ import {
 import type { ReliabilityStatus } from '../reliability/reliability.types';
 import type { ClassificationInput } from '../classification/classification.types';
 
-/** Map transport estimation reliability status to canonical ReliabilityStatus. */
-
 @Injectable()
 export class LandedCostCalculatorService {
   constructor(
@@ -129,8 +127,7 @@ export class LandedCostCalculatorService {
     if (transportResult !== null) {
       transportCostCents = transportResult.offer.priceCents;
       transportOfferId = transportResult.offer.id;
-      transportStatus =
-        transportResult.reliabilityStatus === 'EXACT' ? 'VERIFIED' : 'ESTIMATED';
+      transportStatus = transportResult.reliabilityStatus;
     }
 
     // -----------------------------------------------------------------------
@@ -356,7 +353,7 @@ const classificationInput: ClassificationInput = {
     offer: CalculatorRetailOfferData,
   ): Promise<{
     offer: { id: number; priceCents: number; sellerInvolvementIndicator: boolean };
-    reliabilityStatus: 'EXACT' | 'ESTIMATED';
+    reliabilityStatus: ReliabilityStatus;
   } | null> {
     const carrier = input.transportMethod ?? offer.merchant;
     const origin = offer.country;

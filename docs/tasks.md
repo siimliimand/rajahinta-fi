@@ -15,7 +15,7 @@
 
 ### Infrastructure
 
-- [x] **T0.4** Set up the three-tier environment pipeline: development → staging → production. (Docker Compose for dev exists; staging/prod pipeline not yet configured.)
+- [x] **T0.4** Set up the three-tier environment pipeline: development → staging → production. (Docker Compose for dev exists; staging/prod pipeline not yet configured.) *Note (task 4.2, 2026-08-21): T0.5's "realistic tax-rule dataset in staging" condition is now met — the staging seed runner wires `SEED_RULES` (official v1.0-2024…v3.0-2026 dataset, 86 rules) alongside v9999-staging placeholders. Box checked; live staging verification still required.*
 - [x] **T0.5** Provision a staging copy of tax-rule and merchant data so legal/tax review of rule changes runs against realistic data before promotion.
 - [x] **T0.6** Configure CI/CD with automated regression tests (golden-dataset tax tests, data-quality checks, compliance checks) on every deploy.
 - [x] **T0.7** Deploy a feature-flag system that gates new merchant sources, new tax rulesets, and new UI ranking behavior → `FeatureFlagService`, `LaunchGateService`, `LaunchGateGuard` in `application-api/feature-flags/`.
@@ -156,7 +156,7 @@
 - [x] **T1.70** Write unit tests for every tax/duty formula, classification rule, and confidence-computation function → `alcohol-excise.math.test.ts`, `container-duty.math.test.ts`, `deposit-checker.test.ts`, `confidence-framework.service.test.ts`, `transaction-classification.service.test.ts`, `classification-rule-engine.service.test.ts`, `ranking.service.test.ts`.
 - [x] **T1.71** Build golden-dataset regression tests → `tests/golden/golden-dataset.test.ts`, `tests/golden/per-category.test.ts` — fixed product/transport/tax inputs with manually verified expected outputs, using real engine implementations (no vi.fn() mocks).
 - [x] **T1.72** Write compliance tests: automated checks that no ranking result correlates with any commercial/payment signal and that banned promotional vocabulary does not appear in generated product copy. (billing-ranking-isolation.test.ts covers source-level isolation; vocabulary lint not yet implemented; ranking-lockstep.test.ts added.)
-- [ ] **T1.73** Write load/performance tests on the Landed-Cost Calculation endpoint specifically.
+- [ ] **T1.73** Write load/performance tests on the Landed-Cost Calculation endpoint specifically. *Note: HTTP Artillery suite wired in deploy-staging.yml (non-blocking post-deploy step) as of 2026-08-21; T1.73 to be checked only after first successful staging run per D5.*
 
 ---
 

@@ -27,6 +27,7 @@ import type {
   ITaxRuleRepositoryPort,
   TaxRuleRecordPort,
 } from '@rajahinta/core-domain';
+import { TAX_TYPES } from '@rajahinta/core-domain';
 
 // ---------------------------------------------------------------------------
 // Seed data — official Finnish Tax Administration rates v1.0-2024
@@ -59,7 +60,7 @@ const CONTAINER_SOURCE =
 
 const BEER_EXEMPT: TaxRuleRecordPort = {
   id: 1,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'beer',
   rate: '0.00',
   effectiveFrom: EFFECTIVE_FROM,
@@ -73,7 +74,7 @@ const BEER_EXEMPT: TaxRuleRecordPort = {
 
 const BEER_MID: TaxRuleRecordPort = {
   id: 101,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'beer',
   rate: '28.35',
   effectiveFrom: EFFECTIVE_FROM,
@@ -87,7 +88,7 @@ const BEER_MID: TaxRuleRecordPort = {
 
 const BEER_FULL: TaxRuleRecordPort = {
   id: 102,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'beer',
   rate: '36.20',
   effectiveFrom: EFFECTIVE_FROM,
@@ -114,7 +115,7 @@ const BEER_FULL: TaxRuleRecordPort = {
 
 const WINE_EXEMPT: TaxRuleRecordPort = {
   id: 2,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'wine_still',
   rate: '0.00',
   effectiveFrom: EFFECTIVE_FROM,
@@ -128,7 +129,7 @@ const WINE_EXEMPT: TaxRuleRecordPort = {
 
 const WINE_BAND_1: TaxRuleRecordPort = {
   id: 3,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'wine_still',
   rate: '0.36',
   effectiveFrom: EFFECTIVE_FROM,
@@ -142,7 +143,7 @@ const WINE_BAND_1: TaxRuleRecordPort = {
 
 const WINE_BAND_2: TaxRuleRecordPort = {
   id: 4,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'wine_still',
   rate: '1.98',
   effectiveFrom: EFFECTIVE_FROM,
@@ -156,7 +157,7 @@ const WINE_BAND_2: TaxRuleRecordPort = {
 
 const WINE_BAND_3: TaxRuleRecordPort = {
   id: 5,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'wine_still',
   rate: '3.08',
   effectiveFrom: EFFECTIVE_FROM,
@@ -170,7 +171,7 @@ const WINE_BAND_3: TaxRuleRecordPort = {
 
 const WINE_BAND_4: TaxRuleRecordPort = {
   id: 6,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'wine_still',
   rate: '4.56',
   effectiveFrom: EFFECTIVE_FROM,
@@ -184,7 +185,7 @@ const WINE_BAND_4: TaxRuleRecordPort = {
 
 const WINE_BAND_5: TaxRuleRecordPort = {
   id: 7,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'wine_still',
   rate: '4.56',
   effectiveFrom: EFFECTIVE_FROM,
@@ -243,7 +244,7 @@ const SPARKLING_BAND_5: TaxRuleRecordPort = {
 
 const SPIRITS_EXEMPT: TaxRuleRecordPort = {
   id: 14,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'spirits',
   rate: '0.00',
   effectiveFrom: EFFECTIVE_FROM,
@@ -257,7 +258,7 @@ const SPIRITS_EXEMPT: TaxRuleRecordPort = {
 
 const SPIRITS_MID: TaxRuleRecordPort = {
   id: 15,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'spirits',
   rate: '30.90',
   effectiveFrom: EFFECTIVE_FROM,
@@ -271,7 +272,7 @@ const SPIRITS_MID: TaxRuleRecordPort = {
 
 const SPIRITS_FULL: TaxRuleRecordPort = {
   id: 16,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'spirits',
   rate: '54.80',
   effectiveFrom: EFFECTIVE_FROM,
@@ -294,7 +295,7 @@ const SPIRITS_FULL: TaxRuleRecordPort = {
 
 const INTERMEDIATE_LOW: TaxRuleRecordPort = {
   id: 17,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'intermediate_products',
   rate: '5.68',
   effectiveFrom: EFFECTIVE_FROM,
@@ -308,7 +309,7 @@ const INTERMEDIATE_LOW: TaxRuleRecordPort = {
 
 const INTERMEDIATE_HIGH: TaxRuleRecordPort = {
   id: 18,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'intermediate_products',
   rate: '8.63',
   effectiveFrom: EFFECTIVE_FROM,
@@ -338,7 +339,7 @@ const INTERMEDIATE_HIGH: TaxRuleRecordPort = {
 
 const OTHER_EXEMPT: TaxRuleRecordPort = {
   id: 19,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'other_fermented',
   rate: '0.00',
   effectiveFrom: EFFECTIVE_FROM,
@@ -352,7 +353,7 @@ const OTHER_EXEMPT: TaxRuleRecordPort = {
 
 const OTHER_BAND_1: TaxRuleRecordPort = {
   id: 20,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'other_fermented',
   rate: '0.36',
   effectiveFrom: EFFECTIVE_FROM,
@@ -366,7 +367,7 @@ const OTHER_BAND_1: TaxRuleRecordPort = {
 
 const OTHER_BAND_2: TaxRuleRecordPort = {
   id: 21,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'other_fermented',
   rate: '1.98',
   effectiveFrom: EFFECTIVE_FROM,
@@ -380,7 +381,7 @@ const OTHER_BAND_2: TaxRuleRecordPort = {
 
 const OTHER_BAND_3: TaxRuleRecordPort = {
   id: 22,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'other_fermented',
   rate: '3.08',
   effectiveFrom: EFFECTIVE_FROM,
@@ -394,7 +395,7 @@ const OTHER_BAND_3: TaxRuleRecordPort = {
 
 const OTHER_BAND_4: TaxRuleRecordPort = {
   id: 23,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'other_fermented',
   rate: '4.56',
   effectiveFrom: EFFECTIVE_FROM,
@@ -408,7 +409,7 @@ const OTHER_BAND_4: TaxRuleRecordPort = {
 
 const OTHER_BAND_5: TaxRuleRecordPort = {
   id: 24,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'other_fermented',
   rate: '4.56',
   effectiveFrom: EFFECTIVE_FROM,
@@ -431,7 +432,7 @@ const OTHER_BAND_5: TaxRuleRecordPort = {
 
 const CONTAINER_DUTY: TaxRuleRecordPort = {
   id: 25,
-  taxType: 'container_duty',
+  taxType: TAX_TYPES.containerDuty,
   productCategory: 'all_beverages',
   rate: '0.51',
   effectiveFrom: EFFECTIVE_FROM,

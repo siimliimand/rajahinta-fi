@@ -1,5 +1,9 @@
 # Phase 0 + Phase 1 Verification — Findings & Fix Plan
 
+> **Superseded by round 2.** See `docs/phase-0-1-verification-round-2.md` for
+> the follow-up audit (runtime composition, vocabulary fix, deploy sequencing)
+> and the `phase0-1-runtime-composition-fix` change that resolves the findings below.
+
 > **Audit date:** 2026-08-21
 > **Scope:** Deep verification of Phase 0 (Foundation) and Phase 1 (MVP) against
 > `docs/rajahinta-fi-implementation-plan.md` and `docs/tasks.md`.

@@ -49,7 +49,8 @@ FROM node:22-alpine AS runner
 ENV NODE_ENV=production
 
 RUN addgroup --system --gid 1001 nodejs \
-    && adduser --system --uid 1001 rajahinta
+    && adduser --system --uid 1001 rajahinta \
+    && apk add --no-cache postgresql-client
 
 WORKDIR /app
 
@@ -68,6 +69,10 @@ COPY --from=builder /app/packages/data-platform/dist packages/data-platform/dist
 # Copy package.json for the start command
 COPY --from=builder /app/apps/backend/package.json apps/backend/
 COPY --from=builder /app/package.json ./
+
+# Copy drizzle migrations and config for deploy-time database migrations
+COPY --from=builder /app/packages/data-platform/drizzle.config.ts packages/data-platform/
+COPY --from=builder /app/packages/data-platform/drizzle packages/data-platform/drizzle
 
 USER rajahinta
 

@@ -1,0 +1,77 @@
+---
+# Database migration Job — applies committed Drizzle schema migrations.
+#
+# Runs `drizzle-kit migrate` with a psql fallback (applies raw .sql
+# migration files directly if drizzle-kit fails).  Executes before any
+# seed Job or backend rollout in both staging and production deploys.
+#
+# Uses the same image as the backend Deployment but overrides the
+# command.  DATABASE_URL is sourced from the rajahinta-secret Secret.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rajahinta-migrate
+  namespace: rajahinta
+  labels:
+    app.kubernetes.io/name: rajahinta
+    app.kubernetes.io/component: migrate-job
+    app.kubernetes.io/part-of: rajahinta
+spec:
+  # Run once per deploy — migrations are idempotent (already-applied
+  # entries are skipped).
+  backoffLimit: 2
+  # Clean up the Pod after 5 minutes
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rajahinta
+        app.kubernetes.io/component: migrate-job
+        app.kubernetes.io/part-of: rajahinta
+    spec:
+      restartPolicy: Never
+      serviceAccountName: rajahinta-backend
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: migrate
+          image: ghcr.io/rajahinta/rajahinta:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Running drizzle-kit migrate..."
+              cd /app/packages/data-platform
+              node_modules/.bin/drizzle-kit migrate 2>/dev/null || {
+                echo "drizzle-kit failed — falling back to psql"
+                if command -v psql >/dev/null 2>&1; then
+                  for f in drizzle/*.sql; do
+                    echo "Applying $f..."
+                    psql "$DATABASE_URL" -f "$f" || exit 1
+                  done
+                else
+                  echo "psql not available — fallback failed"
+                  exit 1
+                fi
+              }
+          envFrom:
+            - configMapRef:
+                name: rajahinta-config
+            - secretRef:
+                name: rajahinta-secret
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]

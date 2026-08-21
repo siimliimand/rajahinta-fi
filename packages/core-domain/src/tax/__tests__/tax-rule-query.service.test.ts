@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TaxRuleQueryService } from '../services/tax-rule-query.service';
 import type { ITaxRuleRepositoryPort, TaxRuleRecordPort } from '../ports/tax-rule-repository.port';
+import { TAX_TYPES } from '../tax-categories';
 
 // ---------------------------------------------------------------------------
 // Mock factory
@@ -29,7 +30,7 @@ function makeRule(
 ): TaxRuleRecordPort {
   return {
     id: 1,
-    taxType: 'excise_duty',
+    taxType: TAX_TYPES.excise,
     productCategory: 'beer',
     rate: '0.295',
     effectiveFrom: new Date('2024-01-01'),
@@ -61,7 +62,7 @@ describe('TaxRuleQueryService', () => {
       repo.findHistoryRates = async () => [];
 
       const result = await service.getRateHistory(
-        'excise_duty',
+        TAX_TYPES.excise,
         'beer',
         new Date('2025-01-01'),
         new Date('2025-06-01'),
@@ -75,7 +76,7 @@ describe('TaxRuleQueryService', () => {
       repo.findHistoryRates = async () => [rule];
 
       const result = await service.getRateHistory(
-        'excise_duty',
+        TAX_TYPES.excise,
         'beer',
         new Date('2024-01-01'),
         new Date('2024-12-31'),
@@ -92,7 +93,7 @@ describe('TaxRuleQueryService', () => {
       const rule = makeRule({ effectiveTo: null });
       repo.findHistoryRates = async () => [rule];
 
-      const result = await service.getRateHistory('excise_duty', 'beer', new Date('2024-01-01'), new Date('2025-01-01'));
+      const result = await service.getRateHistory(TAX_TYPES.excise, 'beer', new Date('2024-01-01'), new Date('2025-01-01'));
 
       expect(result[0].isCurrent).toBe(true);
     });
@@ -101,7 +102,7 @@ describe('TaxRuleQueryService', () => {
       const rule = makeRule({ effectiveTo: new Date('2025-01-01') });
       repo.findHistoryRates = async () => [rule];
 
-      const result = await service.getRateHistory('excise_duty', 'beer', new Date('2024-01-01'), new Date('2025-01-01'));
+      const result = await service.getRateHistory(TAX_TYPES.excise, 'beer', new Date('2024-01-01'), new Date('2025-01-01'));
 
       expect(result[0].isCurrent).toBe(false);
     });
@@ -121,7 +122,7 @@ describe('TaxRuleQueryService', () => {
       repo.findHistoryRates = async () => [rule2024, rule2025];
 
       const result = await service.getRateHistory(
-        'excise_duty',
+        TAX_TYPES.excise,
         'beer',
         new Date('2024-01-01'),
         new Date('2026-01-01'),
@@ -166,7 +167,7 @@ describe('TaxRuleQueryService', () => {
       const from = new Date('2024-06-01');
       const to = new Date('2024-12-31');
 
-      await service.getRateHistory('excise_duty', 'wine', from, to);
+      await service.getRateHistory(TAX_TYPES.excise, 'wine', from, to);
 
       expect(capturedFrom).toBe(from);
       expect(capturedTo).toBe(to);
@@ -176,7 +177,7 @@ describe('TaxRuleQueryService', () => {
       const rule = makeRule({ verificationDate: null });
       repo.findHistoryRates = async () => [rule];
 
-      const result = await service.getRateHistory('excise_duty', 'beer', new Date('2024-01-01'), new Date('2025-01-01'));
+      const result = await service.getRateHistory(TAX_TYPES.excise, 'beer', new Date('2024-01-01'), new Date('2025-01-01'));
 
       expect(result[0].verificationDate).toBeNull();
     });

@@ -31,7 +31,7 @@ function makeOffer(
     sellerInvolvementIndicator: overrides.sellerInvolvementIndicator ?? false,
     observedAt: overrides.observedAt ?? BASE_DATE,
     refreshedAt: overrides.refreshedAt ?? BASE_DATE,
-    reliabilityStatus: overrides.reliabilityStatus ?? 'EXACT',
+    reliabilityStatus: overrides.reliabilityStatus ?? 'VERIFIED',
   };
 }
 
@@ -58,7 +58,7 @@ describe('TransportEstimationService', () => {
   // -----------------------------------------------------------------------
 
   describe('estimate', () => {
-    it('returns EXACT when weight fits an existing bracket', async () => {
+    it('returns VERIFIED when weight fits an existing bracket', async () => {
       const offers = [
         makeOffer({
           carrier: 'posti',
@@ -82,7 +82,7 @@ describe('TransportEstimationService', () => {
 
       const result = await service.estimate('posti', 'DE', 'FI', 5, 'parcel');
 
-      expect(result.reliabilityStatus).toBe('EXACT');
+      expect(result.reliabilityStatus).toBe('VERIFIED');
       expect(result.offer.priceCents).toBe(2000);
       expect(result.offer.weightBracket).toEqual({ minKg: 0, maxKg: 10 });
       expect(result.matchedWeightBracket).toEqual({ minKg: 0, maxKg: 10 });
@@ -173,7 +173,7 @@ describe('TransportEstimationService', () => {
 
       const result = await service.estimate('posti', 'DE', 'FI', 100, 'parcel');
 
-      expect(result.reliabilityStatus).toBe('EXACT');
+      expect(result.reliabilityStatus).toBe('VERIFIED');
       expect(result.offer.priceCents).toBe(8000);
     });
 
@@ -192,7 +192,7 @@ describe('TransportEstimationService', () => {
 
       const result = await service.estimate('posti', 'DE', 'FI', 2, 'parcel');
 
-      expect(result.reliabilityStatus).toBe('EXACT');
+      expect(result.reliabilityStatus).toBe('VERIFIED');
       expect(result.offer.priceCents).toBe(1000);
     });
 
@@ -211,7 +211,7 @@ describe('TransportEstimationService', () => {
 
       const result = await service.estimate('posti', 'DE', 'FI', 42, 'parcel');
 
-      expect(result.reliabilityStatus).toBe('EXACT');
+      expect(result.reliabilityStatus).toBe('VERIFIED');
       expect(result.offer.priceCents).toBe(3000);
     });
 

@@ -34,6 +34,7 @@ import {
   type TaxRuleRecordPort,
   type ITransportOfferQuery,
   type TransportOffer,
+  TAX_TYPES,
 } from '@rajahinta/core-domain';
 import { TRANSPORT_OFFER_QUERY } from '@rajahinta/core-domain';
 import {
@@ -277,7 +278,7 @@ const VERSION = 'v1.0-2024';
 
 const BEER_EXEMPT: TaxRuleRecordPort = {
   id: 1,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'beer',
   rate: '0.00',
   effectiveFrom: EFFECTIVE_FROM,
@@ -291,7 +292,7 @@ const BEER_EXEMPT: TaxRuleRecordPort = {
 
 const BEER_MID: TaxRuleRecordPort = {
   id: 2,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'beer',
   rate: '28.35',
   effectiveFrom: EFFECTIVE_FROM,
@@ -305,7 +306,7 @@ const BEER_MID: TaxRuleRecordPort = {
 
 const BEER_FULL: TaxRuleRecordPort = {
   id: 3,
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'beer',
   rate: '36.20',
   effectiveFrom: EFFECTIVE_FROM,
@@ -319,7 +320,7 @@ const BEER_FULL: TaxRuleRecordPort = {
 
 const CONTAINER_DUTY_RULE: TaxRuleRecordPort = {
   id: 4,
-  taxType: 'container_duty',
+  taxType: TAX_TYPES.containerDuty,
   productCategory: 'all_beverages',
   rate: '0.51',
   effectiveFrom: EFFECTIVE_FROM,

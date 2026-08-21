@@ -72,6 +72,11 @@ Official source: vero.fi alcohol excise table (page version 11.6.2026), fetched
   CorrectionFlagPanel in the frontend (WS5.9).
 - Frontend pages present: calculator, result/explanation, compare, ranking
   methodology, account, age gate.
+- **Branch protection applied (2026-08-21):** `CI / ci-pass` required status
+  check enabled on `master` via classic branch protection API (`PUT
+  …/branches/master/protection`). No prior protection or rulesets existed;
+  purely additive. PRs to `master` now cannot merge until the `ci-pass` job
+  (aggregator of all 10 CI jobs) succeeds.
 
 ## Findings
 
@@ -280,7 +285,8 @@ staging DB after redeploy serves real excise values.
    still applying migrations.
 3. Bring `deploy-production.yml` env/secret handling up to the staging
    workflow's level (round-1 L3 remainder).
-4. GitHub settings (manual): require the `CI passed` check on `master` PRs.
+4. ~~GitHub settings (manual): require the `CI passed` check on `master` PRs.~~
+   **Applied (2026-08-21):** `CI / ci-pass` required on `master` via classic branch protection API.
 
 Acceptance: a fresh database (empty Postgres) deployed via the staging workflow
 ends with schema present, v1.0-2024 through v3.0-2026 rows, and a healthy
@@ -350,3 +356,4 @@ publish flow so the T1.66 sign-off covers them, as in round 1.
 - `.github/workflows/deploy-*.yml`: no migration step
 - `diag-tmp.mjs`, uncommitted diff, local e2e failure vs green CI on `a8f353b`
 - vero.fi alcohol excise table (11.6.2026 version), fetched 2026-08-21
+- Branch protection (classic API): `{"checks":[{"app_id":null,"context":"CI / ci-pass"}],"strict":true}` — verified via `gh api …/branches/master/protection` on 2026-08-21

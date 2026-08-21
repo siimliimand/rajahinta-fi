@@ -153,7 +153,7 @@ function createService(options?: {
     estimate: vi.fn().mockResolvedValue({
       offer: { id: 200, priceCents: 150, sellerInvolvementIndicator: false },
       matchedWeightBracket: { minKg: 0, maxKg: 1 },
-      reliabilityStatus: 'EXACT' as const,
+      reliabilityStatus: 'VERIFIED' as const,
     }),
   } as unknown as TransportEstimationService;
 
@@ -192,7 +192,7 @@ function createTransportEstimateStub(
     id?: number;
     priceCents?: number;
     sellerInvolvementIndicator?: boolean;
-    reliabilityStatus?: 'EXACT' | 'ESTIMATED';
+    reliabilityStatus?: 'VERIFIED' | 'ESTIMATED';
   } | null,
 ) {
   if (result === null) {
@@ -205,7 +205,7 @@ function createTransportEstimateStub(
       sellerInvolvementIndicator: result.sellerInvolvementIndicator ?? false,
     },
     matchedWeightBracket: { minKg: 0, maxKg: 1 },
-    reliabilityStatus: result.reliabilityStatus ?? 'EXACT',
+    reliabilityStatus: result.reliabilityStatus ?? 'VERIFIED',
   });
 }
 
@@ -316,7 +316,7 @@ describe('LandedCostCalculatorService', () => {
     it('calls transport estimation with correct parameters', async () => {
       const transportStub = createTransportEstimateStub({
         priceCents: 150,
-        reliabilityStatus: 'EXACT',
+        reliabilityStatus: 'VERIFIED',
       });
 
       const { service, mocks } = createService({
@@ -337,7 +337,7 @@ describe('LandedCostCalculatorService', () => {
     it('uses transportMethod when provided', async () => {
       const transportStub = createTransportEstimateStub({
         priceCents: 150,
-        reliabilityStatus: 'EXACT',
+        reliabilityStatus: 'VERIFIED',
       });
 
       const { service, mocks } = createService({
@@ -415,7 +415,7 @@ describe('LandedCostCalculatorService', () => {
       const transportStub = createTransportEstimateStub({
         priceCents: 150,
         sellerInvolvementIndicator: true,
-        reliabilityStatus: 'EXACT',
+        reliabilityStatus: 'VERIFIED',
       });
 
       const { service } = createService({

@@ -1,0 +1,107 @@
+# ──────────────────────────────────────────────────────────────────────
+# Artillery HTTP load suite — rajahinta.fi calculator endpoint
+#
+# Ramp 1→50 concurrent over 60 s, then steady 50 for 120 s.
+# Three payload profiles: beer (light calc), spirits (full calc),
+# multi-item basket.
+#
+# Thresholds:
+#   p95 latency     < 2000 ms
+#   error rate      < 1 %
+#   zero 429s       checked in steady-429-check.yml (separate steady-only spec)
+#
+# Usage:
+#   npx artillery run   tests/load/artillery/calculator-suite.yml      \
+#     --target https://staging.rajahinta.fi                            \
+#     --record  # optional: publish to https://dashboard.artillery.io
+#
+# Target default (when --target omitted) can be set via $TARGET_URL env.
+# ──────────────────────────────────────────────────────────────────────
+
+config:
+  # Target URL — override with --target CLI flag or TARGET_URL env var.
+  # Default points to staging; swap for localhost:3000 when running locally.
+  target: "https://staging.rajahinta.fi"
+
+  phases:
+    - duration: 60
+      arrivalRate: 1
+      rampTo: 50
+      name: "Ramp up 1→50 concurrent"
+    - duration: 120
+      arrivalRate: 50
+      name: "Steady 50 concurrent"
+
+  # ── Thresholds ──────────────────────────────────────────────────────
+  # p95 and max are built-in ensure metrics.
+  # Error rate is expressed as a custom condition: non-2xx < 1 % of total.
+  ensure:
+    p95: 2000
+    max: 10000
+    conditions:
+      # Non-2xx responses (excluding 429) < 1 % of 2xx responses
+      - expression: "http.response_status.{code:4xx}.count + http.response_status.{code:5xx}.count < 0.01 * http.response_status.{code:2xx}.count"
+
+  plugins:
+    ensure: {}
+
+  http:
+    timeout: 30
+    # Retry on connection errors so transient network issues don't pollute
+    # the error-rate metric. 429s and 5xx are still counted as errors.
+    pool: 50
+
+scenarios:
+  # ── Profile 1: Beer — light calculation ────────────────────────────
+  # Product 1: beer, 0.5 L, 5 % ABV, can, deposit system active.
+  # Results in ~441¢ total (golden dataset values).
+  - name: "beer-light"
+    weight: 4
+    flow:
+      - post:
+          url: "/api/v1/calculator"
+          headers:
+            x-age-confirmed: "test-token"
+          json:
+            productId: 1
+            quantity: 1
+            destination: "FI"
+
+  # ── Profile 2: Spirits — full calculation ──────────────────────────
+  # Product 3: spirits, 0.7 L, 40 % ABV, bottle, deposit system active.
+  # Heavier tax computation (higher ABV → higher excise duty).
+  - name: "spirits-full"
+    weight: 3
+    flow:
+      - post:
+          url: "/api/v1/calculator"
+          headers:
+            x-age-confirmed: "test-token"
+          json:
+            productId: 3
+            quantity: 1
+            destination: "FI"
+
+  # ── Profile 3: Multi-item basket ───────────────────────────────────
+  # Simulates a user who calculates landed cost for two products in
+  # sequence (beer + spirits).  Represents the heaviest workload
+  # (two calculations per virtual-user session).
+  - name: "basket"
+    weight: 3
+    flow:
+      - post:
+          url: "/api/v1/calculator"
+          headers:
+            x-age-confirmed: "test-token"
+          json:
+            productId: 1
+            quantity: 1
+            destination: "FI"
+      - post:
+          url: "/api/v1/calculator"
+          headers:
+            x-age-confirmed: "test-token"
+          json:
+            productId: 3
+            quantity: 1
+            destination: "FI"

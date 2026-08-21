@@ -67,6 +67,36 @@ jobs:
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
 
+      - name: Set image tag
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          cd infra/k8s/overlays/staging
+          kustomize edit set image ${{ env.IMAGE_NAME }}:$SHORT_SHA
+
+      - name: Clean up previous migrate Job
+        run: |
+          # Jobs are immutable — delete before re-creating.
+          kubectl delete job rajahinta-migrate \
+            -n rajahinta \
+            --ignore-not-found \
+            --wait
+
+      - name: Run database migrations
+        run: |
+          # Apply only the migrate Job (identified by component label).
+          # ConfigMap/Secret already exist from previous deploys.
+          kustomize build infra/k8s/overlays/staging \
+            | kubectl apply -f- \
+              --selector='app.kubernetes.io/component=migrate-job'
+          kubectl wait job rajahinta-migrate \
+            -n rajahinta \
+            --for condition=complete \
+            --timeout=300s || {
+            echo "::error::Migration Job rajahinta-migrate failed — fetching logs:"
+            kubectl logs job/rajahinta-migrate -n rajahinta --tail=50 || true
+            exit 1
+          }
+
       - name: Clean up previous seed Job
         run: |
           # Jobs are immutable — delete before re-creating.
@@ -76,18 +106,16 @@ jobs:
             --ignore-not-found \
             --wait
 
-      - name: Deploy to staging
+      - name: Deploy workloads
         run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          cd infra/k8s/overlays/staging
-          kustomize edit set image ${{ env.IMAGE_NAME }}:$SHORT_SHA
-          kustomize build . | kubectl apply -f -
+          # Apply all resources (deployment, seed-job, service, etc.).
+          # The migrate Job already exists — kubectl apply with identical
+          # spec is a server-side no-op.
+          kustomize build infra/k8s/overlays/staging | kubectl apply -f-
 
       - name: Wait for seed Job completion
         run: |
           # Idempotent seed Job — safe to re-run (skips already-seeded rows).
-          # The Job was created by kustomize apply in the previous step with
-          # the correct image tag.
           kubectl wait job rajahinta-staging-seed \
             -n rajahinta \
             --for condition=complete \
@@ -97,6 +125,23 @@ jobs:
             exit 1
           }
 
-      - name: Load test
+      - name: Verify rollout
+        run: |
+          kubectl rollout status deployment/rajahinta-backend \
+            -n rajahinta \
+            --timeout=120s
+
+      - name: In-process benchmark
         continue-on-error: true
         run: pnpm test:load
+
+      # ── HTTP-level load test ───────────────────────────────────────────
+      # Runs the Artillery HTTP suite (ramp 1→50 / steady 50) against the
+      # deployed staging endpoint.  NON-BLOCKING until a baseline exists
+      # (D5); promote to blocking after the first successful staging run.
+      # ───────────────────────────────────────────────────────────────────
+      - name: HTTP load test (non-blocking until baseline)
+        continue-on-error: true
+        env:
+          TARGET_URL: https://staging.rajahinta.fi
+        run: pnpm load:http

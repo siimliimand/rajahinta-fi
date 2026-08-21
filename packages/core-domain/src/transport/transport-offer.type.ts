@@ -7,6 +7,8 @@
  * @module TransportOffer
  */
 
+import type { ReliabilityStatus } from '../reliability/reliability.types';
+
 /** Weight bracket for a transport offer. Either bound may be null (open-ended). */
 export interface WeightBracket {
   readonly minKg: number | null;
@@ -33,5 +35,5 @@ export interface TransportOffer {
 export interface TransportEstimate {
   readonly offer: TransportOffer;
   readonly matchedWeightBracket: WeightBracket;
-  readonly reliabilityStatus: 'EXACT' | 'ESTIMATED';
+  readonly reliabilityStatus: ReliabilityStatus;
 }

@@ -81,6 +81,7 @@ export class TransportEstimationService {
    *
    * If no weight bracket matches exactly the result carries
    * `reliabilityStatus: 'ESTIMATED'` and uses the closest bracket.
+   * An exact weight match carries `reliabilityStatus: 'VERIFIED'`.
    */
   async estimate(
     carrier: string,
@@ -108,7 +109,7 @@ export class TransportEstimationService {
       return {
         offer: exact,
         matchedWeightBracket: exact.weightBracket,
-        reliabilityStatus: 'EXACT',
+        reliabilityStatus: 'VERIFIED',
       };
     }
 

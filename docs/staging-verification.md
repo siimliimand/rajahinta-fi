@@ -155,14 +155,45 @@ calculation throughput and is safe to run in CI, locally, or inside a container.
 
 - [ ] In-process benchmark completes without errors
 
-### HTTP-level load testing (not yet implemented)
+### HTTP-level load testing (Artillery suite)
 
-HTTP-level load testing against the deployed staging environment is planned but
-not yet wired. When implemented, this section will document the tool and command
-(e.g. `artillery`, `k6`, or a custom script) for running concurrent requests
-against `https://staging.rajahinta.fi` and reporting p95 latency and error rates.
+An Artillery HTTP load suite exercises the calculator endpoint through the
+deployed staging ingress, exercising the full HTTP path (routing, middleware,
+rate limiting, calculation pipeline). Runs as a post-deploy step in
+`deploy-staging.yml` (non-blocking until a baseline exists per D5).
 
-### Expected results (once HTTP-level testing is added)
+**Command:**
+
+```bash
+# Run the full suite against staging (TARGET_URL defaults to staging):
+pnpm load:http
+
+# Run against a custom target:
+TARGET_URL=http://localhost:3000 pnpm load:http
+
+# Run only the steady-state 429 check (quick smoke):
+pnpm load:http -- --429-only
+
+# Validate YAML syntax without making HTTP requests:
+pnpm load:http -- --validate
+```
+
+The suite comprises:
+- `tests/load/artillery/calculator-suite.yml` — ramp 1→50 concurrent over 60 s,
+  then steady 50 for 120 s, with beer (light), spirits (full), and multi-item
+  basket payload profiles.
+- `tests/load/artillery/steady-429-check.yml` — 30 s steady at 50 concurrent,
+  asserting zero HTTP 429 responses.
+
+**CI integration:** The `deploy-staging` workflow runs the full suite
+(`pnpm load:http`) after rollout verification under step
+`HTTP load test (non-blocking until baseline)` with `continue-on-error: true`.
+This step will be promoted to blocking once a performance baseline is
+established.
+
+- [ ] HTTP load test completes (or is skipped) — check workflow logs
+
+### Expected results
 
 | Metric | Threshold |
 |--------|-----------|
