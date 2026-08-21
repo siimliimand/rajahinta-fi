@@ -1,5 +1,5 @@
 # =============================================================================
-# CI — Continuous integration (every push/PR to master)
+# CI — Continuous integration (push to master or feature/*, PR to master)
 #
 # Fast-feedback gating pipeline: lint → build (includes typecheck) → unit →
 # golden → data-quality → compliance → e2e → ci-pass.
@@ -9,7 +9,7 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, 'feature/*']
   pull_request:
     branches: [master]
 
@@ -394,6 +394,42 @@ jobs:
           DATABASE_URL: postgresql://rajahinta:rajahinta@localhost:5432/rajahinta_test
 
   # --------------------------------------------------------------------------
+  # Compose smoke — builds the production image through docker-compose, boots
+  # the full local stack (Postgres, Redis, backend), and curls
+  # /api/v1/health (the real HealthController route). Guards the exact
+  # artifact deploy-staging.yml builds; relocated from the deleted legacy
+  # deploy.yml, which covered feature-branch pushes.
+  # --------------------------------------------------------------------------
+  compose-smoke:
+    name: Compose smoke
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker images
+        run: docker compose -f docker-compose.yml build
+
+      - name: Start services
+        run: docker compose up -d
+
+      - name: Health check
+        run: |
+          docker compose ps
+          docker compose logs --tail=50 app
+          if ! curl --fail --silent --show-error \
+               --retry 15 --retry-delay 5 --retry-connrefused --retry-all-errors \
+               http://localhost:3000/api/v1/health; then
+            echo "::error::compose smoke health check failed — app logs follow"
+            docker compose logs --tail=80 app
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
+
+  # --------------------------------------------------------------------------
   # Summary — aggregates all results into a single required check
   # --------------------------------------------------------------------------
   ci-pass:
@@ -410,6 +446,7 @@ jobs:
       - e2e-tests
       - composition-smoke
       - integration
+      - compose-smoke
     if: always()
 
     steps:
@@ -425,6 +462,7 @@ jobs:
           echo "e2e-tests: ${{ needs.e2e-tests.result }}"
           echo "composition-smoke: ${{ needs.composition-smoke.result }}"
           echo "integration: ${{ needs.integration.result }}"
+          echo "compose-smoke: ${{ needs.compose-smoke.result }}"
 
           if [ "${{ needs.lint.result }}" = "failure" ] \
             || [ "${{ needs.content-policy.result }}" = "failure" ] \
@@ -435,7 +473,8 @@ jobs:
             || [ "${{ needs.compliance.result }}" = "failure" ] \
             || [ "${{ needs.e2e-tests.result }}" = "failure" ] \
             || [ "${{ needs.composition-smoke.result }}" = "failure" ] \
-            || [ "${{ needs.integration.result }}" = "failure" ]; then
+            || [ "${{ needs.integration.result }}" = "failure" ] \
+            || [ "${{ needs.compose-smoke.result }}" = "failure" ]; then
             echo "One or more CI checks failed."
             exit 1
           fi

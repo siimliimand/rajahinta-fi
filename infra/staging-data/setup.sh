@@ -3,11 +3,12 @@
 # setup.sh — Load staging data into a Rajahinta.fi staging Postgres instance
 # =============================================================================
 # Idempotent: applies Drizzle-generated migrations (from schema.ts), then the
-# infra-only staging_reviews table, then seed.sql.  Safe to re-run at any time.
+# infra-only staging_reviews table, then the generated seed.sql.  Safe to
+# re-run at any time.
 #
 # NOTE: schema.ts (Drizzle ORM) is the single source of truth per
-# ARCHITECTURE.md §15.1.  The hand-written schema.sql is retained for
-# documentation only — the deploy path uses Drizzle migrations.
+# ARCHITECTURE.md §15.1.  The schema is applied only via the committed
+# Drizzle migrations in packages/data-platform/drizzle/.
 #
 # Usage:
 #   ./setup.sh                          # uses defaults from staging.yaml

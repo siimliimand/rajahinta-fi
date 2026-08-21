@@ -43,6 +43,11 @@ spec:
           command:
             - node
             - packages/data-platform/dist/seed/seed-runner.js
+          # Strict seed mode: per-version row-count mismatches fail the Job
+          # (and thus the staging deploy) instead of warning. See D5.
+          env:
+            - name: TAX_SEED_STRICT
+              value: "1"
           envFrom:
             - configMapRef:
                 name: rajahinta-config
