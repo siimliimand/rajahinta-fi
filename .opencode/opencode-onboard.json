@@ -8,9 +8,9 @@
     "repo": "github"
   },
   "models": {
-    "plan": "openrouter/deepseek/deepseek-v4-pro",
-    "build": "openrouter/deepseek/deepseek-v4-flash",
-    "fast": "openrouter/xiaomi/mimo-v2.5"
+    "plan": "zai-coding-plan/glm-5.3",
+    "build": "zai-coding-plan/glm-5.3",
+    "fast": "zai-coding-plan/glm-5.3"
   },
   "agents": {
     "maxConcurrent": 5
