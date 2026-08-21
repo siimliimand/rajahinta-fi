@@ -409,6 +409,46 @@ describe('RateReviewSchedulerService', () => {
       expect(stored!.confirmedRole).toBe('Compliance Officer');
       expect(stored!.status).toBe('pending');
     });
+
+    it('records an audit entry via AuditService when available', async () => {
+      const logChange = vi.fn().mockResolvedValue(undefined);
+      const mockAuditService = { logChange } as unknown as import('@rajahinta/core-domain').AuditService;
+      const service = new RateReviewSchedulerService(
+        createFakeRepository(),
+        DEFAULT_RATE_REVIEW_CONFIG,
+        createFakeRateChangeSource(),
+        mockAuditService,
+      );
+
+      const entry = await service.createVersionedPublicationReview(
+        'v2.0-2025',
+        'Matti Meikäläinen',
+        'Finnish Tax Counsel',
+      );
+
+      expect(logChange).toHaveBeenCalledTimes(1);
+      expect(logChange).toHaveBeenCalledWith({
+        entityType: 'tax_rule_version',
+        entityId: entry.id,
+        action: 'created',
+        author: 'Matti Meikäläinen',
+        reason: 'Pending review created for version v2.0-2025',
+        newValue: { versionLabel: 'v2.0-2025', confirmedBy: 'Matti Meikäläinen', confirmedRole: 'Finnish Tax Counsel' },
+      });
+    });
+
+    it('skips audit silently when AuditService is not injected', async () => {
+      const service = createService();
+
+      const entry = await service.createVersionedPublicationReview(
+        'v2.0-2025',
+        'Matti Meikäläinen',
+        'Finnish Tax Counsel',
+      );
+
+      expect(entry.id).toBeTruthy();
+      // No audit service = no error thrown
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -500,6 +540,53 @@ describe('RateReviewSchedulerService', () => {
       expect(stored!.reviewerNotes).toContain(
         'Intra-year split verified against vero.fi table.',
       );
+    });
+
+    it('records an audit entry via AuditService when approving', async () => {
+      const logChange = vi.fn().mockResolvedValue(undefined);
+      const mockAuditService = { logChange } as unknown as import('@rajahinta/core-domain').AuditService;
+      const repo = createFakeRepository();
+      const service = new RateReviewSchedulerService(
+        repo,
+        DEFAULT_RATE_REVIEW_CONFIG,
+        createFakeRateChangeSource(),
+        mockAuditService,
+      );
+
+      const entry = await service.createVersionedPublicationReview(
+        'v2.0-2025',
+        'Matti Meikäläinen',
+        'Finnish Tax Counsel',
+      );
+
+      await service.approveReview(entry.id, 'Matti Meikäläinen', 'Rates verified');
+
+      expect(logChange).toHaveBeenCalledTimes(2); // once for create, once for approve
+
+      // The second call should be the approve audit
+      const approveCall = logChange.mock.calls[1][0];
+      expect(approveCall.entityType).toBe('tax_rule_version');
+      expect(approveCall.entityId).toBe(entry.id);
+      expect(approveCall.action).toBe('confirmed');
+      expect(approveCall.author).toBe('Matti Meikäläinen');
+      expect(approveCall.reason).toContain('Rates verified');
+      expect(approveCall.previousValue).toEqual({ status: 'pending', resolution: undefined, versionLabel: 'v2.0-2025' });
+      expect(approveCall.newValue.status).toBe('resolved');
+      expect(approveCall.newValue.resolution).toBe('approve');
+    });
+
+    it('skips audit silently on approve when AuditService is not injected', async () => {
+      const service = createService();
+
+      const entry = await service.createVersionedPublicationReview(
+        'v2.0-2025',
+        'Matti Meikäläinen',
+        'Finnish Tax Counsel',
+      );
+
+      await expect(
+        service.approveReview(entry.id, 'Matti Meikäläinen'),
+      ).resolves.toBeDefined();
     });
   });
 

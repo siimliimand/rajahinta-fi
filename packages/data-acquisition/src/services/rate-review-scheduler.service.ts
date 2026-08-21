@@ -14,10 +14,11 @@
  * @module RateReviewSchedulerService
  */
 
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { AuditService } from '@rajahinta/core-domain';
 import type { RateReviewResult, RateReviewEntry } from '../interfaces/rate-review.types';
 import type { IRateReviewRepository, RateChangeSourcePort } from '../interfaces/rate-review-repository.port';
 import { RATE_REVIEW_REPOSITORY_PORT, RATE_CHANGE_SOURCE_PORT } from '../interfaces/rate-review-repository.port';
@@ -157,6 +158,7 @@ export class RateReviewSchedulerService {
     private readonly config: RateReviewConfig,
     @Inject(RATE_CHANGE_SOURCE_PORT)
     private readonly rateChangeSource: RateChangeSourcePort,
+    @Optional() private readonly auditService?: AuditService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -323,6 +325,18 @@ export class RateReviewSchedulerService {
 
     await this.repository.create(entry);
 
+    // Record audit entry for the pending publication review.
+    if (this.auditService) {
+      await this.auditService.logChange({
+        entityType: 'tax_rule_version',
+        entityId: id,
+        action: 'created',
+        author: confirmedBy,
+        reason: `Pending review created for version ${versionLabel}`,
+        newValue: { versionLabel, confirmedBy, confirmedRole },
+      });
+    }
+
     this.logger.log(
       `Versioned-publication review entry created: ${id} (version=${versionLabel}, confirmedBy=${confirmedBy})`,
     );
@@ -375,6 +389,20 @@ export class RateReviewSchedulerService {
     );
 
     const updated = await this.repository.findById(id);
+
+    // Record audit entry for the approval.
+    if (this.auditService) {
+      await this.auditService.logChange({
+        entityType: 'tax_rule_version',
+        entityId: id,
+        action: 'confirmed',
+        author: approvedBy,
+        reason: reviewerNotes,
+        previousValue: { status: existing.status, resolution: existing.resolution, versionLabel: existing.versionLabel },
+        newValue: { status: updated!.status, resolution: updated!.resolution, resolvedAt, versionLabel: updated!.versionLabel },
+      });
+    }
+
     // The repository returns a copy, so updated is guaranteed non-null here.
     return updated!;
   }

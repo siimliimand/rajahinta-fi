@@ -171,6 +171,7 @@ describe('ClassificationRuleEngine', () => {
     const mockRepository: IClassificationRuleRepositoryPort = {
       findEffective: vi.fn().mockResolvedValue(mockRecord),
       listVersions: vi.fn().mockResolvedValue([mockRecord]),
+      saveRuleSet: vi.fn().mockResolvedValue(undefined),
     };
 
     let engine: ClassificationRuleEngine;
@@ -204,6 +205,7 @@ describe('ClassificationRuleEngine', () => {
       const emptyRepo: IClassificationRuleRepositoryPort = {
         findEffective: vi.fn().mockResolvedValue(null),
         listVersions: vi.fn().mockResolvedValue([]),
+        saveRuleSet: vi.fn().mockResolvedValue(undefined),
       };
 
       const fallbackEngine = new ClassificationRuleEngine(emptyRepo);
@@ -234,6 +236,7 @@ describe('ClassificationRuleEngine', () => {
       const reorderRepo: IClassificationRuleRepositoryPort = {
         findEffective: vi.fn().mockResolvedValue(reorderedRecord),
         listVersions: vi.fn().mockResolvedValue([reorderedRecord]),
+        saveRuleSet: vi.fn().mockResolvedValue(undefined),
       };
 
       const reorderEngine = new ClassificationRuleEngine(reorderRepo);
@@ -398,6 +401,7 @@ describe('ClassificationRuleEngine', () => {
       const unknownRepo: IClassificationRuleRepositoryPort = {
         findEffective: vi.fn().mockResolvedValue(recordWithUnknown),
         listVersions: vi.fn().mockResolvedValue([]),
+        saveRuleSet: vi.fn().mockResolvedValue(undefined),
       };
 
       const unknownEngine = new ClassificationRuleEngine(unknownRepo);

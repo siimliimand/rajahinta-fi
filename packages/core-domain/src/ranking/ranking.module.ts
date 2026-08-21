@@ -29,9 +29,10 @@
  */
 import { Module } from '@nestjs/common';
 import { RankingService } from './ranking.service';
+import { RankingConfigService } from './ranking-config.service';
 
 @Module({
-  providers: [RankingService],
-  exports: [RankingService],
+  providers: [RankingService, RankingConfigService],
+  exports: [RankingService, RankingConfigService],
 })
 export class RankingModule {}

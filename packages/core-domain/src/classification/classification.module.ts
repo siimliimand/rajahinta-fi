@@ -28,6 +28,7 @@ import { Module } from '@nestjs/common';
 import { TransportEstimationModule } from '../transport/transport-estimation.module';
 import { TransactionClassificationService } from './transaction-classification.service';
 import { ClassificationRuleEngine } from './services/classification-rule-engine.service';
+import { ClassificationRuleSetService } from './services/classification-rule-set.service';
 import { CLASSIFICATION_RULE_REPOSITORY_PORT } from './ports/classification-rule-repository.port';
 
 @Module({
@@ -35,8 +36,9 @@ import { CLASSIFICATION_RULE_REPOSITORY_PORT } from './ports/classification-rule
   providers: [
     TransactionClassificationService,
     ClassificationRuleEngine,
+    ClassificationRuleSetService,
     { provide: CLASSIFICATION_RULE_REPOSITORY_PORT, useValue: null },
   ],
-  exports: [TransactionClassificationService, ClassificationRuleEngine],
+  exports: [TransactionClassificationService, ClassificationRuleEngine, ClassificationRuleSetService],
 })
 export class ClassificationModule {}

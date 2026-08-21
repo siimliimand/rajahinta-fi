@@ -202,6 +202,8 @@ export {
   createDefaultRuleSet,
 } from './classification/services/classification-rule-engine.service';
 export type { ClassificationEngineResult } from './classification/services/classification-rule-engine.service';
+export { ClassificationRuleSetService } from './classification/services/classification-rule-set.service';
+export type { PublishRuleSetInput } from './classification/services/classification-rule-set.service';
 export type {
   ClassificationInput,
   ClassificationResult,
@@ -338,6 +340,8 @@ export {
 
 export { RankingModule } from './ranking/ranking.module';
 export { RankingService } from './ranking/ranking.service';
+export { RankingConfigService } from './ranking/ranking-config.service';
+export type { RankingConfig } from './ranking/ranking-config.service';
 export type { NeutralSortInput, SortOrder } from './ranking/ranking.types';
 
 // ---------------------------------------------------------------------------
