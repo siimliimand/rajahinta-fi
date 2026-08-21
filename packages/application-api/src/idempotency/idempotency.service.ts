@@ -79,13 +79,34 @@ export interface CacheKeyInput {
   readonly quantity: number;
   readonly destination: string;
   readonly transportMethod?: string;
+  /**
+   * Resolved dataset version labels (tax + transport) at the time of request.
+   *
+   * Tax: returned by `ITaxRuleRepositoryPort.findActiveVersionLabels()` —
+   *      currently active version labels such as `["v1.0-2024","v2.0-2025","v3.0-2026"]`.
+   * Transport: no explicit version identity exists yet.  Callers should supply
+   *           `max(refreshedAt)` of all active transport offers as a stable proxy,
+   *           formatted as ISO-8601 strings.  When omitted (empty or undefined),
+   *           versioning is not included in the hash and the defence-in-depth
+   *           lookup-time comparison remains the sole protection.
+   *
+   * The array is sorted before hashing so order does not affect the cache key.
+   */
+  readonly datasetVersions?: readonly string[];
 }
 
 /**
- * Deterministic SHA-256 hash of the input parameters.
+ * Deterministic SHA-256 hash of the input parameters and resolved dataset
+ * versions.
  *
  * The hash is stable across process restarts — cache invalidation is
  * driven by dataset version changes, not TTL or redeployment.
+ *
+ * When `datasetVersions` is present, the hash differs after a dataset
+ * version change, producing a different cache key and guaranteeing a
+ * fresh calculation.  When absent (legacy callers, explicit idempotency
+ * keys), the lookup-time comparison in {@link IdempotencyService.lookup}
+ * remains the defence-in-depth.
  */
 export function hashInput(input: CacheKeyInput): string {
   const h = createHash('sha256');
@@ -96,6 +117,19 @@ export function hashInput(input: CacheKeyInput): string {
   h.update(input.destination.toUpperCase());
   h.update('|');
   h.update(input.transportMethod ?? '__NONE__');
+
+  // Include dataset versions (sorted for determinism) when provided.
+  // The sentinel marker ensures the version section is unambiguous even
+  // when all components happen to be empty.
+  h.update('|V|');
+  if (input.datasetVersions && input.datasetVersions.length > 0) {
+    const sorted = [...input.datasetVersions].sort();
+    for (const v of sorted) {
+      h.update(v);
+      h.update('|');
+    }
+  }
+
   return h.digest('hex');
 }
 
