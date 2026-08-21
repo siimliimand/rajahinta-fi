@@ -48,3 +48,17 @@ The load/performance test for the Landed-Cost Calculation SHALL exercise the HTT
 - **WHEN** the load test runs
 - **THEN** it SHALL measure the calculation path end-to-end (or state explicitly that it measures orchestrator throughput only)
 
+### Requirement: Load test integration
+
+A load test suite SHALL exist for the Landed-Cost Calculation endpoint, exercising the full HTTP path with realistic payloads, baseline thresholds, and non-blocking CI integration.
+
+#### Scenario: Load test runs successfully
+
+- **WHEN** the load test is invoked against a running instance
+- **THEN** it SHALL complete, report p95 latency and error rate, and assert against defined thresholds
+
+#### Scenario: Load test runs in CI
+
+- **WHEN** a staging deployment completes
+- **THEN** the load test SHALL be triggered and results reported (informational, not blocking)
+

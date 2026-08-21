@@ -369,7 +369,7 @@ The repository is an agentic workspace with a working application build. Command
 
 ## 15. Constraints, Risks, and Technical Debt
 
-- **In-memory services:** Rate-limiting, idempotency, and audit repositories are in-memory — data loss on restart. Acceptable for MVP, must migrate to Redis/PostgreSQL before production.
+- **In-memory services:** Rate-limiting, idempotency, and audit repositories are in-memory — data loss on restart. Acceptable for MVP, must migrate to Redis/PostgreSQL before production. **Note:** Account data (profiles, saved baskets, history) was migrated from in-memory to PostgreSQL in Phase 1 completeness fix — the `accounts` and `savedBaskets` tables now provide persistence across restarts.
 - **No authentication/authorization:** Account module exists but no auth provider is wired. Age-gate is a UI wrapper, not a verified identity check.
 - **Alko adapter not yet implemented** — registered in merchant config but skipped by pipeline.
 - **No centralized error tracking or APM:** Application-level observability exists but no external monitoring service is integrated.
