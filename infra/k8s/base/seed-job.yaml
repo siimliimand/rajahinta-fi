@@ -38,7 +38,7 @@ spec:
         fsGroup: 1001
       containers:
         - name: seed
-          image: ghcr.io/rajahinta/rajahinta:latest
+          image: ghcr.io/siimliimand/rajahinta:latest
           imagePullPolicy: IfNotPresent
           command:
             - node
