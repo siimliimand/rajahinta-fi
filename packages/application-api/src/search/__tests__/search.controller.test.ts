@@ -68,6 +68,20 @@ function createMockProductRepository(): Partial<ProductRepository> {
       if (id === PROD_Z.id) return PROD_Z;
       return null;
     }),
+    searchByName: vi.fn(
+      async (
+        query: string | null,
+        _limit: number,
+      ): Promise<MockProduct[]> => {
+        if (query === null || query.trim().length === 0) {
+          return [PROD_A, PROD_Z];
+        }
+        const q = query.trim().toLowerCase();
+        return [PROD_A, PROD_Z].filter((p) =>
+          p.name.toLowerCase().includes(q),
+        );
+      },
+    ),
   };
 }
 
@@ -193,7 +207,7 @@ describe('SearchController — sort behavior', () => {
       expect(result.total).toBe(0);
     });
 
-    it('returns empty result when ids is empty string', async () => {
+    it('falls back to listing all products when ids is empty string', async () => {
       const result: ProductSearchResult = await controller.search(
         '',
         undefined,
@@ -203,11 +217,13 @@ describe('SearchController — sort behavior', () => {
         undefined,
       );
 
-      expect(result.items).toHaveLength(0);
-      expect(result.total).toBe(0);
+      // No ids and no query → the repository lists products (Phase 1
+      // default listing; empty ids no longer short-circuits to empty).
+      expect(result.items).toHaveLength(2);
+      expect(result.total).toBe(2);
     });
 
-    it('returns empty result when ids is undefined', async () => {
+    it('falls back to listing all products when ids is undefined', async () => {
       const result: ProductSearchResult = await controller.search(
         undefined,
         undefined,
@@ -217,8 +233,22 @@ describe('SearchController — sort behavior', () => {
         undefined,
       );
 
-      expect(result.items).toHaveLength(0);
-      expect(result.total).toBe(0);
+      expect(result.items).toHaveLength(2);
+      expect(result.total).toBe(2);
+    });
+
+    it('searches by name when q is provided', async () => {
+      const result: ProductSearchResult = await controller.search(
+        undefined,
+        'Aino',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
+
+      expect(mockRepo.searchByName).toHaveBeenCalledWith('Aino', 100);
+      expect(result.items.every((i) => i.name.toLowerCase().includes('aino'))).toBe(true);
     });
   });
 });

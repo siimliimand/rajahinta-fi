@@ -94,8 +94,10 @@ export class SearchController {
     try {
       let items: ProductSearchItem[] = [];
 
-      // Phase 1: fetch products by comma-separated IDs when provided.
-      // Full-text search index (q, category) is Phase 2.
+      // Phase 1: fetch products by comma-separated IDs when provided;
+      // otherwise search by name (case-insensitive substring) or list the
+      // first page alphabetically. The Phase 2 full-text index will
+      // replace the substring search.
       if (ids !== undefined && ids.trim().length > 0) {
         const productIds = ids
           .split(',')
@@ -108,18 +110,13 @@ export class SearchController {
 
         items = products
           .filter((p): p is NonNullable<typeof p> => p !== null)
-          .map((p) => ({
-            id: p.id,
-            name: p.name,
-            brand: p.brand,
-            category: p.category,
-            alcoholByVolume:
-              p.alcoholByVolume !== null ? parseFloat(p.alcoholByVolume) : null,
-            unitVolume: p.unitVolume,
-            containerType: p.containerType,
-            lowestPriceCents: null,
-            merchantCount: 0,
-          }));
+          .map((p) => this.toSearchItem(p));
+      } else {
+        const products = await this.productRepo.searchByName(
+          _q ?? null,
+          MAX_PAGE_SIZE,
+        );
+        items = products.map((p) => this.toSearchItem(p));
       }
 
       // Apply alphabetical sort (Phase 1: only ALPHABETICAL is supported;
@@ -218,5 +215,23 @@ export class SearchController {
     if (raw === undefined || raw === '') return fallback;
     const n = Number.parseInt(raw, 10);
     return Number.isFinite(n) && n > 0 ? n : fallback;
+  }
+
+  /** Map a product_master row to a search-result item. */
+  private toSearchItem(
+    p: NonNullable<Awaited<ReturnType<ProductRepository['findById']>>>,
+  ): ProductSearchItem {
+    return {
+      id: p.id,
+      name: p.name,
+      brand: p.brand,
+      category: p.category,
+      alcoholByVolume:
+        p.alcoholByVolume !== null ? parseFloat(p.alcoholByVolume) : null,
+      unitVolume: p.unitVolume,
+      containerType: p.containerType,
+      lowestPriceCents: null,
+      merchantCount: 0,
+    };
   }
 }

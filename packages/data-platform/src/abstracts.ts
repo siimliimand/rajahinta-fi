@@ -24,6 +24,14 @@ import {
 
 @Injectable()
 export abstract class ProductRepository {
+  /**
+   * Search products by name (case-insensitive substring), or list the
+   * first `limit` products alphabetically when `query` is null/empty.
+   */
+  abstract searchByName(
+    query: string | null,
+    limit: number,
+  ): Promise<(typeof productMaster.$inferSelect)[]>;
   abstract findById(id: number): Promise<typeof productMaster.$inferSelect | null>;
   abstract findOffers(productId: number): Promise<typeof retailOffers.$inferSelect[]>;
   abstract findRetailOfferById(id: number): Promise<typeof retailOffers.$inferSelect | null>;
