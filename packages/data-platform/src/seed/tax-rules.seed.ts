@@ -35,7 +35,7 @@ import {
   FORMULA_PER_DEGREE_PLATO,
   FORMULA_FLAT_PER_LITRE,
 } from '@rajahinta/core-domain';
-import { validateEffectiveRanges } from '../repositories/tax-rate.repository';
+import { validateEffectiveRanges } from '../repositories/effective-range-validator';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,7 +98,7 @@ const EFFECTIVE_FROM_2026 = new Date('2026-01-01');
  * design D4 in phase0-1-verification-fix.
  */
 const BEER_EXEMPT: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'beer',
   rate: '0.00',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -114,7 +114,7 @@ const BEER_EXEMPT: TaxRuleSeed = {
 };
 
 const BEER_MID: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'beer',
   rate: '28.35',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -131,7 +131,7 @@ const BEER_MID: TaxRuleSeed = {
 };
 
 const BEER_FULL_RATE: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'beer',
   rate: '36.20',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -159,7 +159,7 @@ const BEER_FULL_RATE: TaxRuleSeed = {
  *   > 15 – 18 %ABV  → 4.56 €/l
  */
 const WINE_STILL_EXEMPT: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'wine_still',
   rate: '0.00',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -176,7 +176,7 @@ const WINE_STILL_EXEMPT: TaxRuleSeed = {
 
 /** Still wine > 1.2 %ABV up to 2.8 %ABV at 0.36 €/l. */
 const WINE_STILL_BAND_1: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'wine_still',
   rate: '0.36',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -193,7 +193,7 @@ const WINE_STILL_BAND_1: TaxRuleSeed = {
 
 /** Still wine > 2.8 %ABV up to 5.5 %ABV at 1.98 €/l. */
 const WINE_STILL_BAND_2: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'wine_still',
   rate: '1.98',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -210,7 +210,7 @@ const WINE_STILL_BAND_2: TaxRuleSeed = {
 
 /** Still wine > 5.5 %ABV up to 8 %ABV at 3.08 €/l. */
 const WINE_STILL_BAND_3: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'wine_still',
   rate: '3.08',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -227,7 +227,7 @@ const WINE_STILL_BAND_3: TaxRuleSeed = {
 
 /** Still wine > 8 %ABV up to 15 %ABV at 4.56 €/l. */
 const WINE_STILL_BAND_4: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'wine_still',
   rate: '4.56',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -244,7 +244,7 @@ const WINE_STILL_BAND_4: TaxRuleSeed = {
 
 /** Still wine > 15 %ABV up to 18 %ABV at 4.56 €/l. */
 const WINE_STILL_BAND_5: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'wine_still',
   rate: '4.56',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -268,7 +268,7 @@ const WINE_STILL_BAND_5: TaxRuleSeed = {
  * and rates defined for still wine.
  */
 const WINE_SPARKLING_EXEMPT: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'wine_sparkling',
   rate: '0.00',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -284,7 +284,7 @@ const WINE_SPARKLING_EXEMPT: TaxRuleSeed = {
 };
 
 const WINE_SPARKLING_BAND_1: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'wine_sparkling',
   rate: '0.36',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -300,7 +300,7 @@ const WINE_SPARKLING_BAND_1: TaxRuleSeed = {
 };
 
 const WINE_SPARKLING_BAND_2: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'wine_sparkling',
   rate: '1.98',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -316,7 +316,7 @@ const WINE_SPARKLING_BAND_2: TaxRuleSeed = {
 };
 
 const WINE_SPARKLING_BAND_3: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'wine_sparkling',
   rate: '3.08',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -332,7 +332,7 @@ const WINE_SPARKLING_BAND_3: TaxRuleSeed = {
 };
 
 const WINE_SPARKLING_BAND_4: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'wine_sparkling',
   rate: '4.56',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -348,7 +348,7 @@ const WINE_SPARKLING_BAND_4: TaxRuleSeed = {
 };
 
 const WINE_SPARKLING_BAND_5: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'wine_sparkling',
   rate: '4.56',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -377,7 +377,7 @@ const WINE_SPARKLING_BAND_5: TaxRuleSeed = {
  * 1 €/l (100 snt/€ × 1/100 cl/L scaling).
  */
 const SPIRITS_EXEMPT: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'spirits',
   rate: '0.00',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -393,7 +393,7 @@ const SPIRITS_EXEMPT: TaxRuleSeed = {
 };
 
 const SPIRITS_MID: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'spirits',
   rate: '30.90',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -410,7 +410,7 @@ const SPIRITS_MID: TaxRuleSeed = {
 };
 
 const SPIRITS_FULL_RATE: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'spirits',
   rate: '54.80',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -438,7 +438,7 @@ const SPIRITS_FULL_RATE: TaxRuleSeed = {
  * classified to wine at data-ingestion time per Finnish Excise rules.
  */
 const INTERMEDIATE_LOW: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'intermediate_products',
   rate: '5.68',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -454,7 +454,7 @@ const INTERMEDIATE_LOW: TaxRuleSeed = {
 };
 
 const INTERMEDIATE_HIGH: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'intermediate_products',
   rate: '8.63',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -486,7 +486,7 @@ const INTERMEDIATE_HIGH: TaxRuleSeed = {
  *   > 15 – 18 %ABV  → 4.56 €/l
  */
 const OTHER_FERMENTED_EXEMPT: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'other_fermented',
   rate: '0.00',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -502,7 +502,7 @@ const OTHER_FERMENTED_EXEMPT: TaxRuleSeed = {
 };
 
 const OTHER_FERMENTED_BAND_1: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'other_fermented',
   rate: '0.36',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -518,7 +518,7 @@ const OTHER_FERMENTED_BAND_1: TaxRuleSeed = {
 };
 
 const OTHER_FERMENTED_BAND_2: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'other_fermented',
   rate: '1.98',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -534,7 +534,7 @@ const OTHER_FERMENTED_BAND_2: TaxRuleSeed = {
 };
 
 const OTHER_FERMENTED_BAND_3: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'other_fermented',
   rate: '3.08',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -550,7 +550,7 @@ const OTHER_FERMENTED_BAND_3: TaxRuleSeed = {
 };
 
 const OTHER_FERMENTED_BAND_4: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'other_fermented',
   rate: '4.56',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -566,7 +566,7 @@ const OTHER_FERMENTED_BAND_4: TaxRuleSeed = {
 };
 
 const OTHER_FERMENTED_BAND_5: TaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'other_fermented',
   rate: '4.56',
   effectiveFrom: EFFECTIVE_FROM_2024,
@@ -808,7 +808,7 @@ const V2026_CONTAINER_DUTY: TaxRuleSeed = {
 // Registry – ordered for deterministic insertion
 // ---------------------------------------------------------------------------
 
-const SEED_RULES: TaxRuleSeed[] = [
+export const SEED_RULES: TaxRuleSeed[] = [
   // ── v1.0-2024 ────────────────────────────────────────────────────────
   // Beer
   BEER_EXEMPT,
@@ -903,15 +903,22 @@ export async function seedTaxRules(
 // ---------------------------------------------------------------------------
 
 /**
- * Validate that every (taxType, productCategory) group in SEED_RULES has
- * contiguous, non-overlapping effective-date intervals.
+ * Validate that every (taxType, productCategory, band) group in SEED_RULES
+ * has contiguous, non-overlapping effective-date intervals.
+ *
+ * Grouping includes the ABV band: a category carries one concurrent
+ * timeline PER BAND (wine has six), so ranges are contiguous within a
+ * band — never across bands.
  *
  * Throws on failure so the module fails loudly at import time in tests.
  */
 (function selfCheckRanges(): void {
   const groups = new Map<string, TaxRuleSeed[]>();
   for (const rule of SEED_RULES) {
-    const key = `${rule.taxType}:${rule.productCategory}`;
+    const bandKey = rule.exemptionConditions === null
+      ? 'none'
+      : JSON.stringify(rule.exemptionConditions);
+    const key = `${rule.taxType}:${rule.productCategory}:${bandKey}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(rule);
   }

@@ -95,7 +95,7 @@ export const retailOffers = pgTable('retail_offers', {
  */
 export const taxRules = pgTable('tax_rules', {
   id: serial('id').primaryKey(),
-  /** Tax type discriminator: "excise_duty" or "container_duty". */
+  /** Tax type discriminator: "excise" (alcohol excise) or "container_duty". */
   taxType: varchar('tax_type', { length: 32 }).notNull(),
   /** Matches productMaster.category — selects applicable rule for a product. */
   productCategory: varchar('product_category', { length: 32 }).notNull(),
