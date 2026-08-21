@@ -362,33 +362,25 @@ describe('Per-category golden regressions', () => {
   // Source-mapping (vero.fi → wine excise bands applied to other fermented):
   //   > 2.8–5.5 %ABV  → 1.98 €/l
   //
-  // NOTE: The engine's resolveOtherFermentedFormula overrides the
-  // repository-stored PER_LITRE_OF_PRODUCT to PER_LITRE_OF_ALCOHOL for
-  // non-cider subtypes (the 'other' category).  The actual computation
-  // below therefore uses calcPerLitreOfAlcohol, not calcPerLitreOfProduct.
-  //
-  // As-published official value (PER_LITRE_OF_PRODUCT):
-  //   round(1.98 × 0.5 × 100) = 99
-  //
-  // Engine value (after formula override):
-  //   round(1.98 × 0.05 × 0.5 × 100) = round(4.95) = 5
+  // Per D2 (phase0-1-verification-fix design), ALL fermented beverages are
+  // taxed per litre of product using the wine band structure. Spirit-based
+  // RTDs map to spirits at data-mapping time and never reach this category.
   //
   // Product 9 (5% ABV, 0.5 L, category 'other')
   //   → OTHER_BAND_2 (> 2.8–5.5 %ABV at 1.98 €/l)
-  //   → formula overridden to PER_LITRE_OF_ALCOHOL (via resolveOtherFermentedFormula('other'))
-  //   → 5 cents  (known discrepancy — tracked in WS1.7)
+  //   → calcPerLitreOfProduct(1.98, 0.5) = round(0.99 × 100) = 99¢
   // -------------------------------------------------------------------------
 
   describe('Other fermented — wine bands per litre of product', () => {
-    it('applies formula override → 5 cents (known issue WS1.7)', async () => {
+    it('applies PER_LITRE_OF_PRODUCT formula → 99 cents', async () => {
       const service = buildService(PRODUCT_OTHER_FERMENTED, [OFFER_OTHER_FERMENTED], 'brew-eu', 150);
       const result = await service.calculate({
         productId: 9,
         quantity: 1,
         destination: 'FI',
       });
-      // round(1.98 × 0.05 × 0.5 × 100) = 5  (formula overridden to PER_LITRE_OF_ALCOHOL)
-      expect(result.alcoholExciseEstimate).toBe(5);
+      // round(1.98 × 0.5 × 100) = 99
+      expect(result.alcoholExciseEstimate).toBe(99);
     });
   });
 

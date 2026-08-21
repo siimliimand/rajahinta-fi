@@ -89,10 +89,13 @@ const EFFECTIVE_FROM_2026 = new Date('2026-01-01');
  * backward compatibility with DB-stored references). The constant imported
  * below aliases FORMULA_PER_CENTILITRE_ETHANOL.
  *
- * Small independent breweries (< 500 000 l/year) receive a reduced rate
- * on the first 100 000 hl/year — handled by a separate row below
- * (BEER_SMALL_BREWERY_RATE, preserved as-is from the original seed pending
- * WS1.4 which corrects the progressive tier structure).
+ * Small-brewery relief (pienpanimoalennus) is NOT seeded: the official
+ * vero.fi scheme is a progressive 10–50 % discount by annual production
+ * (ceiling 15 000 000 l/year; HE 106/2024). The current rule evaluator
+ * cannot express production-volume tiers, so only the general rate is
+ * shipped. Small-brewery treatment is documented as UNAVAILABLE pending
+ * Phase 2 evaluator support. See vero.fi pienpanimoalennus guidance and
+ * design D4 in phase0-1-verification-fix.
  */
 const BEER_EXEMPT: TaxRuleSeed = {
   taxType: 'excise_duty',
@@ -137,26 +140,6 @@ const BEER_FULL_RATE: TaxRuleSeed = {
     description:
       'Beer > 3.5 %ABV — 36.20 snt/cl ethanol',
     appliesTo: { minAlcoholByVolume: 3.5 },
-  },
-  calculationFormulaReference: FORMULA_PER_DEGREE_PLATO,
-  officialSource: SOURCE_VERO_FI,
-  verificationDate: VERIFIED_2024_Q1,
-  versionLabel: VERSION_2024,
-};
-
-const BEER_SMALL_BREWERY_RATE: TaxRuleSeed = {
-  taxType: 'excise_duty',
-  productCategory: 'beer',
-  rate: '16.50',
-  effectiveFrom: EFFECTIVE_FROM_2024,
-  effectiveTo: EFFECTIVE_TO_2024,
-  exemptionConditions: {
-    description:
-      'Reduced rate for small independent breweries (< 500 000 l/year) on first 100 000 hl',
-    appliesTo: {
-      maxAnnualProductionHl: 100_000,
-      breweryType: 'independent_small',
-    },
   },
   calculationFormulaReference: FORMULA_PER_DEGREE_PLATO,
   officialSource: SOURCE_VERO_FI,
@@ -675,7 +658,6 @@ const V2025_BEER: TaxRuleSeed[] = [
   makeRule(BEER_EXEMPT, { rate: '0.00', effectiveFrom: EFFECTIVE_FROM_2025, effectiveTo: EFFECTIVE_TO_2025, verificationDate: VERIFIED_2026_AUG, versionLabel: VERSION_2025, officialSource: SOURCE_VERO_FI_2025 }),
   makeRule(BEER_MID, { rate: '28.35', effectiveFrom: EFFECTIVE_FROM_2025, effectiveTo: EFFECTIVE_TO_2025, verificationDate: VERIFIED_2026_AUG, versionLabel: VERSION_2025, officialSource: SOURCE_VERO_FI_2025 }),
   makeRule(BEER_FULL_RATE, { rate: '36.20', effectiveFrom: EFFECTIVE_FROM_2025, effectiveTo: EFFECTIVE_TO_2025, verificationDate: VERIFIED_2026_AUG, versionLabel: VERSION_2025, officialSource: SOURCE_VERO_FI_2025 }),
-  makeRule(BEER_SMALL_BREWERY_RATE, { rate: '16.50', effectiveFrom: EFFECTIVE_FROM_2025, effectiveTo: EFFECTIVE_TO_2025, verificationDate: VERIFIED_2026_AUG, versionLabel: VERSION_2025, officialSource: SOURCE_VERO_FI_2025 }),
 ];
 
 const V2025_WINE_STILL: TaxRuleSeed[] = [
@@ -760,7 +742,6 @@ const V2026_BEER: TaxRuleSeed[] = [
   makeRule(BEER_EXEMPT, { rate: '0.00', effectiveFrom: EFFECTIVE_FROM_2026, effectiveTo: null, verificationDate: VERIFIED_2026_AUG, versionLabel: VERSION_2026, officialSource: SOURCE_VERO_FI_2026 }),
   makeRule(BEER_MID, { rate: '28.75', effectiveFrom: EFFECTIVE_FROM_2026, effectiveTo: null, verificationDate: VERIFIED_2026_AUG, versionLabel: VERSION_2026, officialSource: SOURCE_VERO_FI_2026 }),
   makeRule(BEER_FULL_RATE, { rate: '36.71', effectiveFrom: EFFECTIVE_FROM_2026, effectiveTo: null, verificationDate: VERIFIED_2026_AUG, versionLabel: VERSION_2026, officialSource: SOURCE_VERO_FI_2026 }),
-  makeRule(BEER_SMALL_BREWERY_RATE, { rate: '16.50', effectiveFrom: EFFECTIVE_FROM_2026, effectiveTo: null, verificationDate: VERIFIED_2026_AUG, versionLabel: VERSION_2026, officialSource: SOURCE_VERO_FI_2026 }),
 ];
 
 /**
@@ -833,7 +814,6 @@ const SEED_RULES: TaxRuleSeed[] = [
   BEER_EXEMPT,
   BEER_MID,
   BEER_FULL_RATE,
-  BEER_SMALL_BREWERY_RATE,
   // Still wine
   WINE_STILL_EXEMPT,
   WINE_STILL_BAND_1,

@@ -47,6 +47,13 @@ const CONTAINER_SOURCE =
 //   > 0.5 – 3.5 %ABV  → 28.35 snt/cl ethanol
 //   > 3.5 %ABV  → 36.20 snt/cl ethanol
 //
+// Small-brewery relief (pienpanimoalennus) is NOT seeded: the official
+// vero.fi scheme is a progressive 10–50 % discount by annual production
+// (ceiling 15 000 000 l/year; HE 106/2024). The current rule evaluator
+// cannot express production-volume tiers, so only the general rate is
+// shipped. Small-brewery treatment is documented as UNAVAILABLE pending
+// Phase 2 evaluator support.
+//
 // Formula: rate(snt/cl) × abv × volumeLitres → euro-cents (Math.round)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -90,23 +97,6 @@ const BEER_FULL: TaxRuleRecordPort = {
   verificationDate: VERIFIED_DATE,
   versionLabel: VERSION,
   exemptionConditions: { minAlcoholByVolume: 3.5 },
-};
-
-const BEER_SMALL_BREWERY: TaxRuleRecordPort = {
-  id: 103,
-  taxType: 'excise',
-  productCategory: 'beer',
-  rate: '16.50',
-  effectiveFrom: EFFECTIVE_FROM,
-  effectiveTo: null,
-  calculationFormulaReference: 'PER_DEGREE_PLATO',
-  officialSource: SOURCE,
-  verificationDate: VERIFIED_DATE,
-  versionLabel: VERSION,
-  exemptionConditions: {
-    maxAnnualProductionHl: 100_000,
-    breweryType: 'independent_small',
-  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -462,7 +452,6 @@ const SEED_RULES: TaxRuleRecordPort[] = [
   BEER_EXEMPT,
   BEER_MID,
   BEER_FULL,
-  BEER_SMALL_BREWERY,
 
   // Wine (still)
   WINE_EXEMPT,
