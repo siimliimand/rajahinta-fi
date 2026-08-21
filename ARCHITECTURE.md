@@ -53,7 +53,7 @@ rajahinta/
 │   │       │   ├── transport-offer.repository.ts
 │   │       │   └── calculation-record.repository.ts
 │   │       ├── data-platform.module.ts # DataPlatformModule — registers concrete repos + TAX_RULE_REPOSITORY_PORT
-│   │       └── seed/tax-rules.seed.ts # v1.0-2024 Finnish excise duty rates
+│   │       └── seed/tax-rules.seed.ts # Versioned Finnish excise duty rates (v1.0-2024 … v3.0-2026)
 │   ├── data-acquisition/              # Merchant feed ingestion pipeline
 │   │   └── src/
 │   │       ├── adapters/
@@ -187,7 +187,7 @@ No `useValue: null` providers for data repos — all have concrete implementatio
 
 **Deposit status is tri-state**: `depositSystemStatus` is `boolean | null` (nullable boolean in the schema). `checkDepositExemption()` returns `VERIFIED` for `true`/`false`, and `ESTIMATED` when `null` (unknown). The container-duty engine uses this to flag uncertain exemptions.
 
-**Fallback rates are reconciled with seed**: `DEFAULT_RATES` in `alcohol-excise.math.ts` and `DEFAULT_CONTAINER_DUTY_RATE` in `container-duty.math.ts` carry the same official 2024 Finnish Tax Administration rates as the `seed/tax-rules.seed.ts` dataset. Fallbacks are used when no rule is found in the repository (reliability: ESTIMATED).
+**No plausible fallback rates**: `DEFAULT_RATES` in `alcohol-excise.math.ts` contains zero-rate placeholders per category — when no rule is found in the repository, the result is zero duty with reliability `ESTIMATED` (`taxDatasetVersion: FALLBACK`), never a silently substituted plausible number. `DEFAULT_CONTAINER_DUTY_RATE` in `container-duty.math.ts` remains the official general container-duty rate (€0.51/l).
 
 ### 3.2 Frontend / User Interface
 
@@ -221,7 +221,7 @@ The implemented primary user journey:
 2. **User selects product + quantity + destination** → `CalculatorController` receives request.
 3. **Transport Estimation** → `TransportEstimationService` queries `ITransportOfferQuery` for applicable carrier rates by route/weight/package tier; `BasketShippingCalculator` handles multi-item baskets.
 4. **Transaction Classification** → `TransactionClassificationService` determines Distance Selling / Distance Buying / Traveller Import with evidence summary.
-5. **Tax & Duty Calculation** → `AlcoholExciseService` resolves versioned tax rules via `ITaxRuleRepositoryPort.findApplicable()` (with fallback to `DEFAULT_RATES`), computes excise duty. `ContainerDutyService` evaluates deposit-return exemption via `checkDepositExemption()` (tri-state: true/false/null) then applies container duty.
+5. **Tax & Duty Calculation** → `AlcoholExciseService` resolves versioned tax rules via `ITaxRuleRepositoryPort.findApplicable()` (no plausible numeric fallback — a missing rule yields zero duty flagged `ESTIMATED`), computes excise duty. `ContainerDutyService` evaluates deposit-return exemption via `checkDepositExemption()` (tri-state: true/false/null) then applies container duty.
 6. **Confidence Framework** → `ConfidenceFrameworkService` computes result confidence as a pure function of underlying data statuses (HIGH/MEDIUM/LOW).
 7. **Landed-Cost Calculator** → `LandedCostCalculatorService` orchestrates the above, assembles itemized result with structural disclaimer.
 8. **Calculation Record** → Persisted via `ICalculationRecordPort` for auditability.
@@ -248,7 +248,7 @@ Schema design principles applied:
 | Integration                            | Status                                 | Implementation                                                                                                                               |
 | -------------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Systembolaget JSON assortment API      | Adapter implemented                    | `packages/data-acquisition/src/adapters/systembolaget.adapter.ts` — fetches, maps to `RawFeedRecord`, handles pagination and per-item errors |
-| Finnish Tax Administration rate tables | Seed data (v1.0-2024) + fallback rates + snapshot-based rate review  | `packages/data-platform/src/seed/tax-rules.seed.ts`, `packages/core-domain/src/tax/services/alcohol-excise.math.ts`, `packages/data-acquisition/src/services/rate-review-scheduler.service.ts` — `ConfigBackedRateChangeSource` reads a configured snapshot file, computes a SHA-256 hash, and compares against the last-reviewed entry to detect rate changes; review entries require manual/legal confirmation before promoting dataset versions |
+| Finnish Tax Administration rate tables | Seed data (v1.0-2024 … v3.0-2026) + snapshot-based rate review  | `packages/data-platform/src/seed/tax-rules.seed.ts`, `packages/core-domain/src/tax/services/alcohol-excise.math.ts`, `packages/data-acquisition/src/services/rate-review-scheduler.service.ts` — `ConfigBackedRateChangeSource` reads a configured snapshot file, computes a SHA-256 hash, and compares against the last-reviewed entry to detect rate changes; review entries require manual/legal confirmation before promoting dataset versions |
 | Alko (Finnish retailer)                | Registered, adapter pending            | `merchants.config.ts` — empty feedUrl, skipped by pipeline until adapter is built                                                            |
 
 Merchant ingestion is gated by `SourceGovernanceService` — a merchant must have `GRANTED` permission status before the pipeline will fetch or persist its data. New merchants default to `PENDING` (off) until compliance review.
@@ -336,6 +336,7 @@ The repository is an agentic workspace with a working application build. Command
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `docker compose up --build` | Full local stack (PostgreSQL + Redis + backend)                                                                                                                          |
 | `pnpm test`                 | Run all Vitest test suites                                                                                                                                               |
+| `pnpm test:e2e`             | End-to-end API tests (NestJS app booted via `vitest.config.e2e.ts`)                                                                                                      |
 | `pnpm lint`                 | ESLint check                                                                                                                                                             |
 | Agent tooling               | `/init` (repo initialization), `/plan-*` (OpenSpec planning), `/make-*` (doc/engineer generation), `/repo-*` (audit, onboard, verify), `/ops-*` (ship, evidence, review) |
 
@@ -350,6 +351,7 @@ The repository is an agentic workspace with a working application build. Command
 | Transport tests            | Implemented | `packages/core-domain/src/transport/__tests__/transport-estimation.service.test.ts`, `transport-classification.service.test.ts`, `basket-shipping-calculator.service.test.ts`     |
 | Ranking isolation tests    | Implemented | `packages/core-domain/src/ranking/__tests__/ranking.service.test.ts`, `packages/application-api/src/__tests__/billing-ranking-isolation.test.ts`                                  |
 | Golden-dataset regression  | Implemented | `tests/golden/golden-dataset.test.ts`, `tests/golden/per-category.test.ts` — uses plain in-memory implementations, not `vi.fn()` mocks                                            |
+| End-to-end API tests       | Implemented | `apps/backend/tests/e2e/calculator.test.ts` via `vitest.config.e2e.ts` — full NestJS app with real engines, official-rate expectations, TravellerImport case |
 | Data acquisition tests     | Implemented | `packages/data-acquisition/src/__tests__/feed-ingestion.service.test.ts`, `data-mapping.service.test.ts`, `data-quality.service.test.ts`, `pipeline-orchestrator.service.test.ts` |
 | API-layer tests            | Implemented | `packages/application-api/src/__tests__/rate-limiting.service.test.ts`, `age-gate.service.test.ts`, `idempotency.service.test.ts`, `launch-gate.service.test.ts`                  |
 
@@ -438,4 +440,4 @@ Per the implementation plan's delivery phases:
 | MyTax            | Finnish Tax Administration's online tax service                                                                    |
 | ABV              | Alcohol by volume                                                                                                  |
 
-<!-- Last updated: 2026-08-19 — Phase 1 implementation state (Tax Engine Correction complete) -->
+<!-- Last updated: 2026-08-21 — Phase 0+1 verification fix (official tax datasets, CI on master, e2e repair, GDPR erasure) -->

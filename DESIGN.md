@@ -50,6 +50,7 @@ The UI is built around **transparency, neutrality, and explainability**. Every c
 | `QuantitySelector.tsx` | `/calculator` | Quantity input for calculation |
 | `CalculatorResult.tsx` | `/calculator` | Itemized landed-cost result display |
 | `DisclaimerBanner.tsx` | `/calculator` | Structural disclaimer rendered on every result |
+| `CorrectionFlagPanel.tsx` | `/calculator/result/[recordId]` | "Flag a problem" affordance posting correction feedback to `POST /api/v1/corrections` |
 | `ComparisonView.tsx` | `/compare` | Side-by-side product comparison |
 | `MerchantLink.tsx` | `/compare` | Neutral merchant link with outbound-disclosure |
 | `SortSelector.tsx` | `/compare` | Sort-order control for comparison view |
@@ -85,4 +86,4 @@ The platform is positioned as a trustworthy, explainable financial/tax-intellige
 - Consider shadcn/ui or similar component library if component count grows significantly
 - Evaluate dark-mode support (not implemented)
 
-<!-- Last updated: 2026-08-16 -->
+<!-- Last updated: 2026-08-21 -->
