@@ -31,6 +31,7 @@ export {
   resolveOtherFermentedFormula,
   FORMULA_PER_LITRE_OF_PRODUCT,
   FORMULA_PER_LITRE_OF_ALCOHOL,
+  FORMULA_PER_CENTILITRE_ETHANOL,
   FORMULA_PER_DEGREE_PLATO,
   DEFAULT_RATES,
 } from './services/alcohol-excise.math';
