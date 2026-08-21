@@ -67,7 +67,7 @@
 - [x] **T1.20** Build the Beverage-Container Duty Sub-Engine → `ContainerDutyService` + `container-duty.math.ts` calculates container duty (€0.51/litre) as distinct from excise.
 - [x] **T1.21** Implement deposit-return system exemption check → `checkDepositExemption()` in `deposit-checker.ts` evaluates tri-state `depositSystemStatus` (true/false/null); null → ESTIMATED.
 - [x] **T1.22** Populate the initial versioned Tax Rule dataset (excise + container duty) sourced from official Finnish Tax Administration data → `seed/tax-rules.seed.ts` (v1.0-2024) + `DEFAULT_RATES` reconciled.
-- [ ] **T1.23** Implement the scheduled rate-review process → `RateReviewSchedulerService` + `ConfigBackedRateChangeSource` in `data-acquisition/services/` implement an automated periodic check that reads a configured snapshot file, computes a SHA-256 hash, and compares it against the last-reviewed entry to detect new rates. When changes are found, a pending review entry is created for manual/legal confirmation — rates are never auto-published. The snapshot-based detection mechanism is implemented and functional; direct vero.fi API integration for live rate fetching remains deferred to Phase 2.
+- [x] **T1.23** Implement the scheduled rate-review process → `RateReviewSchedulerService` + `ConfigBackedRateChangeSource` in `data-acquisition/services/` implement an automated periodic check that reads a configured snapshot file, computes a SHA-256 hash, and compares it against the last-reviewed entry to detect new rates. When changes are found, a pending review entry is created for manual/legal confirmation — rates are never auto-published. The snapshot-based detection mechanism is implemented and functional; direct vero.fi API integration for live rate fetching remains deferred to Phase 2.
 - [x] **T1.24** Historical rates remain queryable after a rate change → `TaxRuleQueryService.findHistoryRates()` and `findEffectiveVersion()` resolve against effective date ranges.
 
 ### 1F: Transaction Classification Module
@@ -135,7 +135,7 @@
 - [x] **T1.58** Implement a lightweight access-control age gate (simple confirmation, not identity verification) as the default, matching the minimal-data-collection preference.
 - [x] **T1.59** Design the account system's identity/age-verification components as a pluggable module that can be upgraded to stronger verification if the legal opinion requires it. *(completed: identity/age-verification designed as a pluggable module with upgrade path)*
 - [ ] **T1.60** Implement the minimal account system: saved baskets, calculation history, subscription management, data export — not a gate on viewing publicly available comparison information.
-- [ ] **T1.61** Ensure no storage of identity documents or unnecessary date-of-birth collection unless the legal review specifically mandates it.
+- [x] **T1.61** Ensure no storage of identity documents or unnecessary date-of-birth collection unless the legal review specifically mandates it. ✓ Audited: zero fields related to identity documents or date-of-birth exist in the Phase 1 schema — audit confirmed full compliance.
 
 ### 1P: Privacy & GDPR
 

@@ -1,9 +1,12 @@
-name: Deploy Staging
+name: Deploy Production
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      confirm_deploy:
+        description: "Type 'yes' to confirm production deploy"
+        required: true
+        default: "no"
 
 env:
   CI: true
@@ -16,6 +19,12 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Require confirmation
+        if: ${{ github.event.inputs.confirm_deploy != 'yes' }}
+        run: |
+          echo "::error ::Confirmation required — set confirm_deploy to 'yes'"
+          exit 1
+
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
@@ -67,15 +76,9 @@ jobs:
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
 
-      - name: Deploy to staging
+      - name: Deploy to production
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          cd infra/k8s/overlays/staging
+          cd infra/k8s/overlays/production
           kustomize edit set image ${{ env.IMAGE_NAME }}:$SHORT_SHA
           kustomize build . | kubectl apply -f -
-
-      - name: Load test
-        continue-on-error: true
-        run: pnpm test:load
-        env:
-          STAGING_URL: https://staging.rajahinta.fi

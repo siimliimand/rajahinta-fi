@@ -26,6 +26,8 @@ import { FeedIngestionService } from './feed-ingestion.service';
 import { DataMappingService } from './data-mapping.service';
 import { DataQualityService } from './data-quality.service';
 import type { DataQualityReport } from './data-quality.service';
+import { ContentLintService } from '../content/content-lint.service';
+import type { ContentViolation } from '../content/content-lint.service';
 import {
   UPSERT_REPOSITORY_TOKEN,
   type IUpsertRepository,
@@ -67,6 +69,14 @@ export interface PipelineRunReport {
    * no records fetched, or all upserts failed).
    */
   readonly qualityReport?: DataQualityReport;
+  /**
+   * Content-policy violations detected during linting of product names
+   * in this batch.  Empty array when no violations were found or when no
+   * records were mapped.
+   *
+   * Linting is a warning mechanism — violations do not block ingestion.
+   */
+  readonly contentViolations: ContentViolation[];
 }
 
 @Injectable()
@@ -80,6 +90,7 @@ export class PipelineOrchestratorService {
     @Inject(UPSERT_REPOSITORY_TOKEN)
     private readonly upsertRepository: IUpsertRepository,
     private readonly governanceService: SourceGovernanceService,
+    private readonly contentLint: ContentLintService,
   ) {}
 
   /**
@@ -105,6 +116,7 @@ export class PipelineOrchestratorService {
         recordsUpdated: 0,
         errors: [],
         durationMs: Date.now() - start,
+        contentViolations: [],
       };
     }
 
@@ -122,6 +134,7 @@ export class PipelineOrchestratorService {
         errors: [],
         durationMs: Date.now() - start,
         gateResult,
+        contentViolations: [],
       };
     }
 
@@ -146,6 +159,7 @@ export class PipelineOrchestratorService {
         recordsUpdated: 0,
         errors: fetchResult.errors,
         durationMs: Date.now() - start,
+        contentViolations: [],
       };
     }
 
@@ -155,7 +169,23 @@ export class PipelineOrchestratorService {
       config.merchantId,
     );
 
-    // -- Step 3: Upsert -------------------------------------------------------
+    // -- Step 3: Lint ---------------------------------------------------------
+    const contentViolations: ContentViolation[] = [];
+    for (const pair of mapped) {
+      const result = this.contentLint.lintProductContent(
+        pair.product.name,
+        '', // description — not available in Phase 1 feed data
+      );
+      contentViolations.push(...result.violations);
+    }
+
+    if (contentViolations.length > 0) {
+      this.logger.warn(
+        `Content violations for "${config.merchantId}": ${contentViolations.length} found`,
+      );
+    }
+
+    // -- Step 4: Upsert -------------------------------------------------------
     let recordsAdded = 0;
     let recordsUpdated = 0;
     const upsertErrors: string[] = [];
@@ -200,25 +230,33 @@ export class PipelineOrchestratorService {
       }
     }
 
-    // -- Step 4: Quality check ------------------------------------------------
+    // -- Step 5: Quality check ------------------------------------------------
     let qualityReport: DataQualityReport | undefined;
     if (upsertedOffers.length > 0) {
       qualityReport = this.dataQuality.runQualityCheck(upsertedOffers);
     }
 
-    // -- Step 5: Log ----------------------------------------------------------
+    // -- Step 6: Log ----------------------------------------------------------
     const durationMs = Date.now() - start;
     const allErrors = [...fetchResult.errors, ...upsertErrors];
 
-    this.logger.log(
-      `Pipeline run for "${config.merchantId}": ` +
-        `${fetchResult.records.length} fetched, ` +
-        `${recordsAdded} added, ${recordsUpdated} updated, ` +
-        `${allErrors.length} errors, ${durationMs} ms` +
-        (qualityReport && qualityReport.flaggedIssues.length > 0
-          ? `, ${qualityReport.flaggedIssues.length} quality issues`
-          : ''),
-    );
+    const logParts = [
+      `Pipeline run for "${config.merchantId}": `,
+      `${fetchResult.records.length} fetched, `,
+      `${recordsAdded} added, ${recordsUpdated} updated, `,
+      `${allErrors.length} errors, ${durationMs} ms`,
+    ];
+
+    if (contentViolations.length > 0) {
+      logParts.push(`, ${contentViolations.length} content violations`);
+    }
+    if (qualityReport && qualityReport.flaggedIssues.length > 0) {
+      logParts.push(
+        `, ${qualityReport.flaggedIssues.length} quality issues`,
+      );
+    }
+
+    this.logger.log(logParts.join(''));
 
     return {
       merchantId: config.merchantId,
@@ -228,6 +266,7 @@ export class PipelineOrchestratorService {
       errors: allErrors,
       durationMs,
       qualityReport,
+      contentViolations,
     };
   }
 
