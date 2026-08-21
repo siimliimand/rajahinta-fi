@@ -22,9 +22,11 @@ import {
   CalculationRecordNotFoundError,
 } from '@rajahinta/core-domain';
 import { EntitlementGuard, RequireFeature } from '../entitlement';
+import { AgeGateGuard } from '../age-gate';
 
 @ApiTags('declaration')
 @Controller('api/v1/declaration')
+@UseGuards(AgeGateGuard)
 export class DeclarationController {
   constructor(
     private readonly declarationService: ExciseDeclarationService,

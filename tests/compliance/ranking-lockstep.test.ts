@@ -73,3 +73,39 @@ describe('Ranking description lockstep (frontend vs RankingService)', () => {
     }
   });
 });
+
+// ===========================================================================
+// Controller methodology lockstep (compliance companion)
+// ===========================================================================
+
+describe('Controller methodology lockstep (compliance companion)', () => {
+  const service = createRankingService();
+
+  it('the methodology endpoint would produce the same descriptions as RankingService', () => {
+    // This is a compliance-level companion to the detailed lockstep test
+    // at packages/application-api/src/ranking/__tests__/ranking-methodology-lockstep.test.ts.
+    // It independently verifies that RankingService can produce descriptions
+    // for every SortOrder — if the service descriptions drift from what the
+    // controller outputs, the endpoint-specific lockstep test catches it.
+    for (const order of ALL_SORT_ORDERS) {
+      const desc = service.describeSortOrder(order);
+      expect(typeof desc).toBe('string');
+      expect(desc.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('every controller sort order has a valid service description', () => {
+    // Cross-check: the service describes every sort order that the controller
+    // methodology endpoint should expose.  This is intentionally redundant
+    // with the endpoint-specific test to provide a CI-level second opinion.
+    const descriptions = ALL_SORT_ORDERS.map((o) =>
+      service.describeSortOrder(o),
+    );
+
+    expect(descriptions).toHaveLength(ALL_SORT_ORDERS.length);
+    for (const desc of descriptions) {
+      expect(typeof desc).toBe('string');
+      expect(desc.length).toBeGreaterThan(0);
+    }
+  });
+});

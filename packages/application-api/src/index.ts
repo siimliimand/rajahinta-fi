@@ -7,6 +7,7 @@ import {
   Injectable,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
@@ -32,6 +33,7 @@ import { BillingModule } from './billing';
 import { AuditModule } from './audit';
 import { RedisModule } from './redis';
 import { AgeGateModule } from './age-gate';
+import { AgeGateGuard } from './age-gate';
 import { AccountModule } from './accounts';
 import { CalculatorController } from './calculator';
 import { SearchController } from './search';
@@ -84,6 +86,7 @@ export class HealthCheckResponse {
 
 @ApiTags('calculations')
 @Controller('api/v1/calculations')
+@UseGuards(AgeGateGuard)
 export class CalculationController {
   constructor(private readonly engine: TaxCalculationEngine) {}
 
