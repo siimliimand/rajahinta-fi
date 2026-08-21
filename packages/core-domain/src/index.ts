@@ -169,6 +169,7 @@ export { TransportEstimationService, NotFoundError } from './transport/transport
 export { BasketShippingCalculator } from './transport/basket-shipping-calculator.service';
 export { TransportClassificationService } from './transport/transport-classification.service';
 export type { ITransportOfferQuery } from './transport/transport-offer-query.interface';
+export { TRANSPORT_OFFER_QUERY } from './transport/transport-offer-query.interface';
 export type { TransportOffer, TransportEstimate, WeightBracket } from './transport/transport-offer.type';
 export type { BasketItem, BasketShippingResult, BasketShippingThresholdCheck, BasketItemBreakdown } from './transport/basket-shipping.types';
 export type { TransactionTransportType } from './transport/transport-classification.types';

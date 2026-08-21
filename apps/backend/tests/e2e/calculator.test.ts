@@ -35,7 +35,7 @@ import {
   type ITransportOfferQuery,
   type TransportOffer,
 } from '@rajahinta/core-domain';
-import { TRANSPORT_OFFER_QUERY } from '@rajahinta/core-domain/transport/transport-offer-query.interface';
+import { TRANSPORT_OFFER_QUERY } from '@rajahinta/core-domain';
 import {
   CalculationRecordRepository,
   calculationRecords,

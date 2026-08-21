@@ -3,6 +3,7 @@ export { TransportEstimationService, NotFoundError } from './transport-estimatio
 export { BasketShippingCalculator } from './basket-shipping-calculator.service';
 export { TransportClassificationService } from './transport-classification.service';
 export type { ITransportOfferQuery } from './transport-offer-query.interface';
+export { TRANSPORT_OFFER_QUERY } from './transport-offer-query.interface';
 export type {
   TransportOffer,
   TransportEstimate,
