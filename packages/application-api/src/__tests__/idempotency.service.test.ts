@@ -30,7 +30,9 @@ function makeResult(overrides?: Partial<CalculatorResult>): CalculatorResult {
     classification: { label: 'distance-selling', confidence: 'HIGH' as any, factors: [] } as any,
     metadata: {
       input: { productId: 1, quantity: 1, destination: 'FI' },
-      calculationTimestamp: new Date().toISOString(),
+      // Pinned: a live timestamp makes two makeResult() calls differ across a
+      // millisecond boundary, flipping the stable-hash test into a coin flip.
+      calculationTimestamp: '2026-01-01T00:00:00.000Z',
       productMasterId: 1,
       retailOfferIds: [],
       quantity: 1,
