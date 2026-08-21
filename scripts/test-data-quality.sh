@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
 # Data-quality checks — schema conformance, null violations in critical fields
+#
+# Tax rules are generated at runtime from SEED_RULES (single source of truth)
+# via scripts/export-seed-sql.mjs — the stale legacy seed.sql is no longer used.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -21,7 +24,6 @@ if [ "$PSQL_AVAILABLE" = true ]; then
   # (ARCHITECTURE.md §15.1: schema.ts is the single source of truth).
   MIGRATIONS_DIR="packages/data-platform/drizzle"
   STAGING_REVIEWS_FILE="./infra/staging-data/staging-reviews.sql"
-  SEED_PATH="${GOLDEN_DATASET_PATH:-./infra/staging-data}/seed.sql"
   if [ -d "$MIGRATIONS_DIR" ]; then
     echo "Applying Drizzle migrations from $MIGRATIONS_DIR..."
     # drizzle-kit is a devDependency of @rajahinta/data-platform; run it from
@@ -48,11 +50,19 @@ if [ "$PSQL_AVAILABLE" = true ]; then
   else
     echo "WARN: No drizzle/ directory found — skipping schema migration"
   fi
-  if [ -f "$SEED_PATH" ]; then
-    echo "Loading seed data from $SEED_PATH..."
-    psql "$DB_URL" -f "$SEED_PATH" > /dev/null 2>&1 || echo "WARN: Seed load failed (tables may already exist or schema differs)"
+
+  # Generate tax rules from SEED_RULES (single source of truth)
+  # The old static seed.sql contained stale pre-round-1 wrong rates.
+  # This generates a fresh SQL INSERT from the canonical TypeScript seed data.
+  echo "Generating tax rules from SEED_RULES..."
+  SEED_SQL=$(mktemp /tmp/seed-tax-rules.XXXXXX.sql)
+  trap 'rm -f "$SEED_SQL"' EXIT
+
+  if node scripts/export-seed-sql.mjs --out "$SEED_SQL" 2>&1; then
+    echo "Loading generated tax rules into $DB_URL..."
+    psql "$DB_URL" -f "$SEED_SQL" > /dev/null 2>&1 || echo "WARN: Seed load failed (tables may already exist or schema differs)"
   else
-    echo "WARN: No seed file found at $SEED_PATH — skipping seed"
+    echo "WARN: export-seed-sql.mjs failed — skipping tax rules seed"
   fi
 
   # Schema conformance: verify all expected tables exist

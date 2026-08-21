@@ -189,7 +189,6 @@ jobs:
         run: bash scripts/test-golden-dataset.sh
         env:
           DATABASE_URL: postgresql://rajahinta:rajahinta@localhost:5432/rajahinta_test
-          GOLDEN_DATASET_PATH: ./infra/staging-data
 
   # --------------------------------------------------------------------------
   # Data-quality checks — schema conformance, null violations
