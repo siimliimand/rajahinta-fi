@@ -15,7 +15,7 @@
 
 ### Infrastructure
 
-- [x] **T0.4** Set up the three-tier environment pipeline: development → staging → production. (Docker Compose for dev exists; staging/prod pipeline not yet configured.)
+- [x] **T0.4** Set up the three-tier environment pipeline: development → staging → production. (Docker Compose for dev exists; staging/prod pipeline not yet configured.) *Note (task 4.2, 2026-08-21): T0.5's "realistic tax-rule dataset in staging" condition is now met — the staging seed runner wires `SEED_RULES` (official v1.0-2024…v3.0-2026 dataset, 86 rules) alongside v9999-staging placeholders. Box checked; live staging verification still required.*
 - [x] **T0.5** Provision a staging copy of tax-rule and merchant data so legal/tax review of rule changes runs against realistic data before promotion.
 - [x] **T0.6** Configure CI/CD with automated regression tests (golden-dataset tax tests, data-quality checks, compliance checks) on every deploy.
 - [x] **T0.7** Deploy a feature-flag system that gates new merchant sources, new tax rulesets, and new UI ranking behavior → `FeatureFlagService`, `LaunchGateService`, `LaunchGateGuard` in `application-api/feature-flags/`.
