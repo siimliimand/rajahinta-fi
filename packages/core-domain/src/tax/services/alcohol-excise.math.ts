@@ -43,8 +43,7 @@ export const FORMULA_PER_CENTILITRE_ETHANOL = 'PER_CENTILITRE_ETHANOL';
 export const FORMULA_PER_DEGREE_PLATO: typeof FORMULA_PER_CENTILITRE_ETHANOL = FORMULA_PER_CENTILITRE_ETHANOL;
 
 // ---------------------------------------------------------------------------
-// Fallback rates — used when no tax rule is found in the repository
-// (reliability: ESTIMATED)
+// Zero-rate fallback placeholders — used when no tax rule is found
 // ---------------------------------------------------------------------------
 
 /**
@@ -56,19 +55,29 @@ export const FORMULA_PER_DEGREE_PLATO: typeof FORMULA_PER_CENTILITRE_ETHANOL = F
 export type AlcoholExciseCategory = TaxCategory;
 
 // ---------------------------------------------------------------------------
-// Default flat rates per category (€/litre of product unless noted)
+// Default zero-rate placeholders per category
 // ---------------------------------------------------------------------------
 
+/**
+ * Zero-rate fallback entries keyed by canonical category.
+ *
+ * These are intentionally zero so that a missing tax rule produces
+ * `reliability: ESTIMATED` and `taxCents: 0` — **never** a silent plausible
+ * number.  The formula reference is kept correct per category so the
+ * `calculateAlcoholExcise` dispatch remains valid; only the rate is zeroed.
+ *
+ * See design D6 in phase0-1-verification-fix.
+ */
 export const DEFAULT_RATES: Record<
   AlcoholExciseCategory,
   { formula: string; rate: number; note: string }
 > = {
-  beer: { formula: FORMULA_PER_DEGREE_PLATO, rate: 33.00, note: 'snt per cl ethanol (seed: 33.00)' },
-  wine_still: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: 'Still wine > 1.2 % ABV (seed: 3.40)' },
-  wine_sparkling: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.73, note: 'Sparkling wine > 1.2 % ABV (seed: 3.73)' },
-  spirits: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 29.50, note: 'Per litre of pure alcohol (seed: 29.50)' },
-  intermediate_products: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: '≤ 15 % ABV (seed: 3.40)' },
-  other_fermented: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 3.40, note: 'Cider, RTD, etc. > 2.8 % ABV (seed: 3.40/l alcohol)' },
+  beer: { formula: FORMULA_PER_CENTILITRE_ETHANOL, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
+  wine_still: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
+  wine_sparkling: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
+  spirits: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
+  intermediate_products: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
+  other_fermented: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
 };
 
 // ---------------------------------------------------------------------------

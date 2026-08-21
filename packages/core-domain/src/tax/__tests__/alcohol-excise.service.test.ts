@@ -285,19 +285,22 @@ describe('AlcoholExciseService', () => {
       expect(result.taxDatasetVersion).toBe('FALLBACK');
     });
 
-    it('uses default rate for wine (€3.40/L)', async () => {
+    it('returns zero tax when no rule exists (wine fallback)', async () => {
       const result = await service.calculate('wine', 0.12, 0.75);
-      expect(result.taxCents).toBe(255);
+      expect(result.taxCents).toBe(0);
+      expect(result.rateApplied).toBe(0);
     });
 
-    it('uses default per-degree-Plato rate for beer', async () => {
+    it('returns zero tax when no rule exists (beer fallback)', async () => {
       const result = await service.calculate('beer', 0.04, 1.0);
-      expect(result.taxCents).toBe(132); // 33.00 × 0.04 × 1.0 = 1.32 → 132 cents
+      expect(result.taxCents).toBe(0);
+      expect(result.rateApplied).toBe(0);
     });
 
-    it('uses default spirits rate (€29.50/L of pure alcohol)', async () => {
+    it('returns zero tax when no rule exists (spirits fallback)', async () => {
       const result = await service.calculate('spirits', 0.40, 0.75);
-      expect(result.taxCents).toBe(885);
+      expect(result.taxCents).toBe(0);
+      expect(result.rateApplied).toBe(0);
     });
   });
 
