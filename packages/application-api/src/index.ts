@@ -36,7 +36,7 @@ import { AccountModule } from './accounts';
 import { CalculatorController } from './calculator';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
-import { AnalyticsModule } from './analytics';
+import { AnalyticsModule, OutboundRedirectController } from './analytics';
 import { CorrectionModule } from './correction';
 import { RankingModule as ApplicationRankingModule } from './ranking';
 import { TaxCalculationEngineAdapter } from './adapters/tax-calculation-engine.adapter';
@@ -201,6 +201,7 @@ CorrectionModule,
     CalculatorController,
     SearchController,
     DeclarationController,
+    OutboundRedirectController,
   ],
   exports: [FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule, RedisModule],
 })

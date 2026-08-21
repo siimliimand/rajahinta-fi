@@ -25,6 +25,8 @@ import {
   TaxRateRepository,
   TransportOfferRepository,
   CalculationRecordRepository,
+  AccountRepository,
+  SavedBasketRepository,
 } from './abstracts';
 import { DrizzleProductRepository } from './repositories/product.repository';
 import { DrizzleTaxRateRepository } from './repositories/tax-rate.repository';
@@ -32,6 +34,8 @@ import { DrizzleTransportOfferRepository } from './repositories/transport-offer.
 import { DrizzleCalculationRecordRepository } from './repositories/calculation-record.repository';
 import { TaxRuleRepositoryAdapter } from './repositories/tax-rate.repository';
 import { DrizzleCorrectionRepository } from './repositories/correction.repository';
+import { DrizzleAccountRepository } from './repositories/account.repository';
+import { DrizzleSavedBasketRepository } from './repositories/saved-basket.repository';
 
 @Module({
   imports: [DrizzleModule],
@@ -63,6 +67,15 @@ import { DrizzleCorrectionRepository } from './repositories/correction.repositor
       provide: CORRECTION_REPOSITORY_PORT,
       useClass: DrizzleCorrectionRepository,
     },
+    // Account and saved-basket repositories
+    {
+      provide: AccountRepository,
+      useClass: DrizzleAccountRepository,
+    },
+    {
+      provide: SavedBasketRepository,
+      useClass: DrizzleSavedBasketRepository,
+    },
     // Also register the concrete classes directly (they are @Injectable)
     DrizzleProductRepository,
     DrizzleTaxRateRepository,
@@ -70,6 +83,8 @@ import { DrizzleCorrectionRepository } from './repositories/correction.repositor
     DrizzleCalculationRecordRepository,
     TaxRuleRepositoryAdapter,
     DrizzleCorrectionRepository,
+    DrizzleAccountRepository,
+    DrizzleSavedBasketRepository,
   ],
 exports: [
     // Abstract class tokens — inject by abstract class for loose coupling
@@ -77,6 +92,8 @@ exports: [
     TaxRateRepository,
     TransportOfferRepository,
     CalculationRecordRepository,
+    AccountRepository,
+    SavedBasketRepository,
     // Domain-port adapter tokens
     TAX_RULE_REPOSITORY_PORT,
     CORRECTION_REPOSITORY_PORT,
@@ -87,6 +104,8 @@ exports: [
     DrizzleCalculationRecordRepository,
     TaxRuleRepositoryAdapter,
     DrizzleCorrectionRepository,
+    DrizzleAccountRepository,
+    DrizzleSavedBasketRepository,
   ],
 })
 export class DataPlatformModule {}
