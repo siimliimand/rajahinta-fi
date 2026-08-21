@@ -17,6 +17,7 @@ import {
   FORMULA_PER_LITRE_OF_PRODUCT,
   FORMULA_PER_DEGREE_PLATO,
   FORMULA_FLAT_PER_LITRE,
+  TAX_TYPES,
 } from '@rajahinta/core-domain';
 import {
   productMaster,
@@ -92,7 +93,7 @@ const STAGING_VERSION = 'v9999-staging';
 const STAGING_EFFECTIVE_FROM = new Date('2025-01-01');
 
 const STAGING_BEER_EXCISE: StagingTaxRuleSeed = {
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'beer',
   rate: '9.99',
   effectiveFrom: STAGING_EFFECTIVE_FROM,
@@ -105,7 +106,7 @@ const STAGING_BEER_EXCISE: StagingTaxRuleSeed = {
 };
 
 const STAGING_WINE_EXCISE: StagingTaxRuleSeed = {
-  taxType: 'excise',
+  taxType: TAX_TYPES.excise,
   productCategory: 'wine_still',
   rate: '1.23',
   effectiveFrom: STAGING_EFFECTIVE_FROM,
@@ -118,7 +119,7 @@ const STAGING_WINE_EXCISE: StagingTaxRuleSeed = {
 };
 
 const STAGING_CONTAINER_DUTY: StagingTaxRuleSeed = {
-  taxType: 'container_duty',
+  taxType: TAX_TYPES.containerDuty,
   productCategory: 'all_beverages',
   rate: '0.10',
   effectiveFrom: STAGING_EFFECTIVE_FROM,

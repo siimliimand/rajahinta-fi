@@ -11,6 +11,7 @@ import {
   resolveOtherFermentedFormula,
   DEFAULT_RATES,
 } from './alcohol-excise.math';
+import { TAX_TYPES } from '../tax-categories';
 
 // ---------------------------------------------------------------------------
 // Result type
@@ -83,7 +84,7 @@ export class AlcoholExciseService {
 
     // Get ALL active rules for this category (multiple ABV tiers)
     const rules = await this.taxRepo.findAllApplicable(
-      'excise',
+      TAX_TYPES.excise,
       normalised,
       lookupDate,
     );

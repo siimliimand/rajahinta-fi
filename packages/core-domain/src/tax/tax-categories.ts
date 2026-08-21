@@ -22,6 +22,21 @@
  */
 
 // ---------------------------------------------------------------------------
+// Tax-type discriminator — used as the `taxType` column value in the seed
+// and as the first argument to every ITaxRuleRepositoryPort query method.
+// Every consumer SHALL reference these constants, never a string literal.
+// ---------------------------------------------------------------------------
+
+/** Map of canonical tax-type values used throughout the system. */
+export const TAX_TYPES = {
+  excise: 'excise',
+  containerDuty: 'container_duty',
+} as const;
+
+/** Union of all valid tax-type discriminators. */
+export type TaxType = (typeof TAX_TYPES)[keyof typeof TAX_TYPES];
+
+// ---------------------------------------------------------------------------
 // Canonical category keys (excise duty)
 // ---------------------------------------------------------------------------
 

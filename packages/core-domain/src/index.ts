@@ -100,6 +100,10 @@ export {
   FORMULA_FLAT_PER_LITRE,
 } from './tax/index';
 
+// Tax-type constants — canonical vocabulary used across seed, engine, tests
+export { TAX_TYPES } from './tax/index';
+export type { TaxType } from './tax/index';
+
 // ---------------------------------------------------------------------------
 // Documentation section markers
 // ---------------------------------------------------------------------------
