@@ -15,6 +15,7 @@ import {
   FORMULA_PER_LITRE_OF_PRODUCT,
   FORMULA_PER_LITRE_OF_ALCOHOL,
   FORMULA_PER_DEGREE_PLATO,
+  FORMULA_PER_CENTILITRE_ETHANOL,
 } from '../services/alcohol-excise.math';
 
 // ---------------------------------------------------------------------------
@@ -225,6 +226,30 @@ describe('calculateAlcoholExcise', () => {
     expect(calculateAlcoholExcise(FORMULA_PER_LITRE_OF_PRODUCT, 0.355, 0.12, 0, 'wine_still').taxCents).toBe(0);
     expect(calculateAlcoholExcise(FORMULA_PER_LITRE_OF_ALCOHOL, 0.565, 0.40, 0, 'spirits').taxCents).toBe(0);
     expect(calculateAlcoholExcise(FORMULA_PER_DEGREE_PLATO, 33.0, 0.047, 0, 'beer').taxCents).toBe(0);
+  });
+
+  // -----------------------------------------------------------------------
+  // Dispatch compatibility — both the old DB-stored string and the new
+  // constant must route identically through calculateAlcoholExcise.
+  // -----------------------------------------------------------------------
+
+  it('PER_CENTILITRE_ETHANOL gives same result as the deprecated alias for beer', () => {
+    const result = calculateAlcoholExcise(
+      FORMULA_PER_CENTILITRE_ETHANOL,
+      33.0,
+      0.047,
+      0.33,
+      'beer',
+    );
+    expect(result.taxCents).toBe(51);
+    expect(result.rateApplied).toBeCloseTo(33.0 * 0.047, 3);
+  });
+
+  it('legacy string "PER_DEGREE_PLATO" routes through the same math as PER_CENTILITRE_ETHANOL', () => {
+    const legacy = calculateAlcoholExcise('PER_DEGREE_PLATO', 33.0, 0.047, 0.33, 'beer');
+    const modern = calculateAlcoholExcise(FORMULA_PER_CENTILITRE_ETHANOL, 33.0, 0.047, 0.33, 'beer');
+    expect(legacy.taxCents).toBe(modern.taxCents);
+    expect(legacy.rateApplied).toBe(modern.rateApplied);
   });
 });
 
