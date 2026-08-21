@@ -1,0 +1,62 @@
+---
+# Staging seed Job — populates the staging database with fake/test data.
+#
+# Idempotent: seedStagingDatabase checks for existing rows (by EAN,
+# versionLabel, etc.) before inserting. Running the Job multiple times
+# is safe — it will skip already-seeded rows.
+#
+# The Job uses the same image as the backend Deployment but overrides
+# the command to run the seed runner script.  DATABASE_URL is sourced
+# from the rajahinta-secret Secret.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rajahinta-staging-seed
+  namespace: rajahinta
+  labels:
+    app.kubernetes.io/name: rajahinta
+    app.kubernetes.io/component: seed-job
+    app.kubernetes.io/part-of: rajahinta
+    app.kubernetes.io/version: staging
+spec:
+  # Run once per deploy — safe to re-run (idempotent)
+  backoffLimit: 2
+  # Clean up the Pod after 5 minutes so the cluster isn't littered
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rajahinta
+        app.kubernetes.io/component: seed-job
+        app.kubernetes.io/part-of: rajahinta
+    spec:
+      restartPolicy: Never
+      serviceAccountName: rajahinta-backend
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: seed
+          image: ghcr.io/rajahinta/rajahinta:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - node
+            - packages/data-platform/dist/seed/seed-runner.js
+          envFrom:
+            - configMapRef:
+                name: rajahinta-config
+            - secretRef:
+                name: rajahinta-secret
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

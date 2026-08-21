@@ -67,12 +67,32 @@ jobs:
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
 
+      - name: Clean up previous seed Job
+        run: |
+          # Jobs are immutable — delete before re-creating
+          kubectl delete job rajahinta-staging-seed \
+            -n rajahinta \
+            --ignore-not-found \
+            --wait
+        continue-on-error: true
+
       - name: Deploy to staging
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           cd infra/k8s/overlays/staging
           kustomize edit set image ${{ env.IMAGE_NAME }}:$SHORT_SHA
           kustomize build . | kubectl apply -f -
+
+      - name: Seed staging database
+        run: |
+          # Idempotent seed Job — safe to re-run (skips already-seeded rows).
+          # kubectl create is not used because the Job name is fixed and
+          # we want Kustomize to set the correct image tag.
+          kubectl wait job rajahinta-staging-seed \
+            -n rajahinta \
+            --for condition=complete \
+            --timeout=300s
+        continue-on-error: true
 
       - name: Load test
         continue-on-error: true

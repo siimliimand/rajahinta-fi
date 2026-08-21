@@ -223,8 +223,8 @@ export interface ComparisonProduct {
   readonly itemizedCosts: readonly ItemizedCost[];
   readonly confidence: ConfidenceLevel;
   readonly reliability: ReliabilityStatus;
-  /** Optional URL to view this product at a merchant's store */
-  readonly offerUrl?: string;
+  /** Optional retail-offer ID for the outbound redirect link */
+  readonly offerId?: number;
   /** Optional merchant display name (shown as the link label) */
   readonly merchantName?: string;
 }

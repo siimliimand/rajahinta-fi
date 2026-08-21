@@ -6,6 +6,7 @@ namespace: rajahinta
 
 resources:
   - ../../base
+  - ../../base/seed-job.yaml
 
 patches:
   # ── replica count ──

@@ -9,12 +9,14 @@
  */
 
 import { Module } from '@nestjs/common';
+import { DataPlatformModule } from '@rajahinta/data-platform';
 import { AccountService } from './account.service';
 import { AccountRetentionService } from './account-retention.service';
 import { DataExportService } from './data-export.service';
 import { AccountController } from './account.controller';
 
 @Module({
+  imports: [DataPlatformModule],
   controllers: [AccountController],
   providers: [
     AccountService,

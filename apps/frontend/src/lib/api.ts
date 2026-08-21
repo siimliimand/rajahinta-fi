@@ -31,6 +31,9 @@ import type {
 const BASE_URL: string =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
 
+/** Exported so other modules can construct full outbound URLs. */
+export { BASE_URL };
+
 // ---------------------------------------------------------------------------
 // Error type
 // ---------------------------------------------------------------------------

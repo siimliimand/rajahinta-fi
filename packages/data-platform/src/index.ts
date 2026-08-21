@@ -57,6 +57,12 @@ export type {
 } from './interfaces/repository-registry.interface';
 
 // ---------------------------------------------------------------------------
+// Staging seed — idempotent database populator for staging environments
+// ---------------------------------------------------------------------------
+
+export { seedStagingDatabase } from './seed/staging-seed';
+
+// ---------------------------------------------------------------------------
 // Drizzle connection provider
 // ---------------------------------------------------------------------------
 
