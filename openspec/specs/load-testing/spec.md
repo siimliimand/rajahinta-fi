@@ -43,17 +43,22 @@ The load-testing story SHALL consist of two explicitly labelled layers: (a) an i
 
 ### Requirement: CI integration (non-blocking initially)
 
-The load test SHALL be runnable in CI against the staging environment after deployment. Initially it SHALL be non-blocking (informational only); it SHALL become blocking once the baseline is validated and any necessary optimizations are complete. The workflow SHALL either consume the staging URL it declares (running the HTTP-level test against it) or declare no such environment — it SHALL NOT define an unused staging URL while running only the in-process benchmark.
+The HTTP artillery suite SHALL run as a post-deploy step of the staging deploy. It SHALL remain non-blocking (`continue-on-error`) only until a performance baseline from a successful staging deploy exists; once a baseline exists, the step SHALL be blocking so that a threshold breach fails the deploy. With the step promoted to blocking, `docs/tasks.md` T1.73 SHALL be checked with a reference to the baseline run.
 
-#### Scenario: CI runs load test after staging deploy
+#### Scenario: Post-deploy load check runs against staging
 
-- **WHEN** a staging deployment completes
-- **THEN** the load test SHALL be triggered against the staging URL and results SHALL be reported without blocking the deployment
+- **WHEN** a staging deploy completes successfully
+- **THEN** the artillery suite SHALL execute against the deployed staging URL with the documented command (`pnpm load:http`)
 
-#### Scenario: No phantom configuration
+#### Scenario: Promotion to blocking after baseline
 
-- **WHEN** the staging deploy workflow declares a `STAGING_URL` environment variable
-- **THEN** a step in that workflow SHALL consume it; declared-but-unused environment variables and dependencies SHALL be removed
+- **WHEN** a green staging deploy has produced a recorded artillery baseline
+- **THEN** the HTTP load step SHALL run without `continue-on-error`, and a threshold breach (p95 ≥ 2 s, error rate ≥ 1 %, or any 429 in the steady window) SHALL fail the deploy workflow
+
+#### Scenario: T1.73 reflects reality
+
+- **WHEN** the blocking promotion lands
+- **THEN** `docs/tasks.md` T1.73 SHALL be checked and annotated with the baseline run reference
 
 ### Requirement: HTTP-level load test on the landed-cost endpoint
 
