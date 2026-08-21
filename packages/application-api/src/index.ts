@@ -13,7 +13,8 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
   TaxCalculationEngine,
   LandedCostResult,
-  CalculatorModule,
+  CoreDomainModule,
+  type CalculatorPorts,
   RankingModule,
   DeclarationModule,
 } from '@rajahinta/core-domain';
@@ -23,6 +24,7 @@ import {
   CalculationRecordRepository,
   DrizzleProductRepository,
   DrizzleCalculationRecordRepository,
+  TaxRuleRepositoryAdapter,
 } from '@rajahinta/data-platform';
 import { ObservabilityModule } from './observability';
 import { FeatureFlagsModule } from './feature-flags';
@@ -180,7 +182,7 @@ imports: [
     AccountModule,
     AnalyticsModule,
     RedisModule,
-    CalculatorModule,
+    CoreDomainModule,
     RankingModule,
     DeclarationModule,
     DataPlatformModule,
@@ -209,6 +211,80 @@ CorrectionModule,
   exports: [FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule, RedisModule],
 })
 export class ApplicationApiModule {}
+
+/**
+ * Deliberately undecorated class used as the identity of the CONFIGURED
+ * module returned by {@link ApplicationApiModule.forRoot} — a fresh class
+ * avoids NestJS merging the static @Module metadata of ApplicationApiModule
+ * (whose default imports bring a null-port CalculatorModule) into the
+ * configured graph. See CoreDomainConfiguredModule for the same pattern.
+ */
+export class ApplicationApiConfiguredModule {}
+
+// eslint-disable-next-line @typescript-eslint/no-namespace
+export namespace ApplicationApiModule {
+  /**
+   * Configure the layer with concrete calculator port implementations
+   * (product data lookup + calculation record persistence). The ports are
+   * threaded into CoreDomainModule.forRoot so they are visible to
+   * LandedCostCalculatorService inside its own module scope.
+   */
+  export function forRoot(ports: CalculatorPorts) {
+    const coreDomain = CoreDomainModule.forRoot({
+      ...ports,
+      // The real tax-rule repository for AlcoholExciseService — without
+      // this the core-domain TaxModule binds the port to null and every
+      // calculation degrades to the no-rule fallback.
+      taxRuleRepository: TaxRuleRepositoryAdapter,
+      // The port adapters (defined in the host app) inject repository
+      // tokens — register the concrete bindings inside the calculator
+      // module scope where the adapters are instantiated.
+      extraProviders: [
+        { provide: ProductRepository, useClass: DrizzleProductRepository },
+        { provide: CalculationRecordRepository, useClass: DrizzleCalculationRecordRepository },
+      ],
+    });
+    return {
+      module: ApplicationApiConfiguredModule,
+      imports: [
+        FeatureFlagsModule,
+        ObservabilityModule,
+        JobsModule,
+        IdempotencyModule,
+        RateLimitingModule,
+        BillingModule,
+        AuditModule,
+        AgeGateModule,
+        AccountModule,
+        AnalyticsModule,
+        RedisModule,
+        RankingModule,
+        DeclarationModule,
+        DataPlatformModule,
+        CorrectionModule,
+        ApplicationRankingModule,
+        coreDomain, // brings the CONFIGURED CalculatorModule (ports injected)
+      ],
+      providers: [
+        TaxCalculationEngineAdapter,
+        { provide: ProductRepository, useClass: DrizzleProductRepository },
+        { provide: CalculationRecordRepository, useClass: DrizzleCalculationRecordRepository },
+        { provide: TaxCalculationEngine, useClass: TaxCalculationEngineAdapter },
+        DrizzleProductRepository,
+        DrizzleCalculationRecordRepository,
+      ],
+      controllers: [
+        CalculationController,
+        HealthController,
+        CalculatorController,
+        SearchController,
+        DeclarationController,
+        OutboundRedirectController,
+      ],
+      exports: [FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule, RedisModule],
+    };
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Feature-flag re-exports for consumers outside the layer

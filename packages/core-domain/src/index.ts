@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import type { Disclaimer } from './calculator/calculator.types';
 import type { ReliabilityStatus } from './reliability/reliability.types';
-import { TaxModule } from './tax/tax.module';
+import { TaxModule, type TaxModuleOptions } from './tax/tax.module';
 import { NormalizationModule } from './normalization/normalization.module';
 import { SourceGovernanceModule } from './governance/governance.module';
 import { ClassificationModule } from './classification/classification.module';
 import { ReliabilityModule } from './reliability/reliability.module';
-import { CalculatorModule } from './calculator/calculator.module';
+import { CalculatorModule, type CalculatorPorts } from './calculator/calculator.module';
 import { DeclarationModule } from './declaration/declaration.module';
 import { RankingModule } from './ranking/ranking.module';
 import { CorrectionModule } from './correction/correction.module';
@@ -273,7 +273,7 @@ export { PRODUCT_MASTER_QUERY_PORT } from './normalization/ports/product-master-
 // Calculator — landed-cost orchestrator
 // ---------------------------------------------------------------------------
 
-export { CalculatorModule } from './calculator/calculator.module';
+export { CalculatorModule, type CalculatorPorts } from './calculator/calculator.module';
 export { LandedCostCalculatorService } from './calculator/landed-cost-calculator.service';
 export type {
   CalculatorInput,
@@ -401,3 +401,36 @@ export type { AuditEntry, AuditAction, AuditQuery } from './audit/audit.types';
   exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule],
 })
 export class CoreDomainModule {}
+
+/**
+ * Deliberately undecorated class used as the identity of the CONFIGURED
+ * domain module returned by {@link CoreDomainModule.forRoot}. A fresh class
+ * is required because Nest merges a DynamicModule's fields with the static
+ * @Module metadata of the referenced class — reusing CoreDomainModule as
+ * the identity would drag the default (null-port) CalculatorModule into
+ * the configured graph alongside the port-injected one.
+ */
+export class CoreDomainConfiguredModule {}
+
+export interface CoreDomainOptions extends CalculatorPorts, TaxModuleOptions {}
+
+// eslint-disable-next-line @typescript-eslint/no-namespace
+export namespace CoreDomainModule {
+  /**
+   * Configure the domain with concrete calculator port implementations
+   * (product data + calculation record persistence) and an optional
+   * tax-rule repository. Pass-through to CalculatorModule.forRoot /
+   * TaxModule.forRoot — see their docs for why the providers must
+   * live inside the consuming module's own scope.
+   */
+  export function forRoot(options: CoreDomainOptions) {
+    const domainImports = [SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule];
+    const calculator = CalculatorModule.forRoot(options);
+    const tax = TaxModule.forRoot(options);
+    return {
+      module: CoreDomainConfiguredModule,
+      imports: [...domainImports, calculator, tax],
+      exports: [...domainImports, calculator, tax],
+    };
+  }
+}
