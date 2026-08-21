@@ -40,4 +40,4 @@
 
 ## 6. Final gate (WS-F)
 
-- [ ] 6.1 Full verification — clean-install `pnpm install --frozen-lockfile && pnpm test && pnpm test:e2e && pnpm test:golden` green locally and in CI; `grep -r "excise_duty"` matches only migration history; fresh-DB staging deploy drill produces schema + v1.0-2024…v3.0-2026 + healthy backend; PR #18 ready to merge with this change included <!-- agent: platform-engineer.fast, depends_on: [1.3, 2.3, 3.2, 4.1, 4.2, 5.2], touches: [] -->
+- [x] 6.1 Full verification — clean-install `pnpm install --frozen-lockfile && pnpm test && pnpm test:e2e && pnpm test:golden` green locally and in CI; `grep -r "excise_duty"` matches only migration history; fresh-DB staging deploy drill produces schema + v1.0-2024…v3.0-2026 + healthy backend; PR #18 ready to merge with this change included <!-- agent: platform-engineer.fast, depends_on: [1.3, 2.3, 3.2, 4.1, 4.2, 5.2], touches: [] -->
