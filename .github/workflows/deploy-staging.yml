@@ -1,8 +1,10 @@
 name: Deploy Staging
 
+# Staging cluster is not provisioned yet (KUBE_CONFIG secret unset), so every
+# deploy run fails at the first kubectl step. Kubernetes is deferred until
+# traffic justifies it. When the cluster exists: set the KUBE_CONFIG secret
+# and restore the push trigger, or run manually via workflow_dispatch.
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
 
 env:
