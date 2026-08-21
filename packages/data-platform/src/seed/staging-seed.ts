@@ -89,7 +89,7 @@ interface StagingTaxRuleSeed {
   versionLabel: string;
 }
 
-const STAGING_VERSION = 'v9999-staging';
+export const STAGING_VERSION = 'v9999-staging';
 const STAGING_EFFECTIVE_FROM = new Date('2025-01-01');
 
 const STAGING_BEER_EXCISE: StagingTaxRuleSeed = {
@@ -131,7 +131,7 @@ const STAGING_CONTAINER_DUTY: StagingTaxRuleSeed = {
   versionLabel: STAGING_VERSION,
 };
 
-const STAGING_TAX_RULES = [STAGING_BEER_EXCISE, STAGING_WINE_EXCISE, STAGING_CONTAINER_DUTY] as const;
+export const STAGING_TAX_RULES = [STAGING_BEER_EXCISE, STAGING_WINE_EXCISE, STAGING_CONTAINER_DUTY] as const;
 
 // ---------------------------------------------------------------------------
 // Transport offer seed data — test carriers, obviously fake prices
