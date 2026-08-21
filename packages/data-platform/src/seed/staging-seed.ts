@@ -24,6 +24,7 @@ import {
   taxRules,
   transportOffers,
 } from '../index';
+import { SEED_RULES } from './tax-rules.seed';
 
 // ---------------------------------------------------------------------------
 // Product seed data
@@ -91,7 +92,7 @@ const STAGING_VERSION = 'v9999-staging';
 const STAGING_EFFECTIVE_FROM = new Date('2025-01-01');
 
 const STAGING_BEER_EXCISE: StagingTaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'beer',
   rate: '9.99',
   effectiveFrom: STAGING_EFFECTIVE_FROM,
@@ -104,7 +105,7 @@ const STAGING_BEER_EXCISE: StagingTaxRuleSeed = {
 };
 
 const STAGING_WINE_EXCISE: StagingTaxRuleSeed = {
-  taxType: 'excise_duty',
+  taxType: 'excise',
   productCategory: 'wine_still',
   rate: '1.23',
   effectiveFrom: STAGING_EFFECTIVE_FROM,
@@ -279,18 +280,21 @@ export async function seedStagingDatabase(
   }
 
   // -----------------------------------------------------------------------
-  // 2. Tax rules
+  // 2. Tax rules — the OFFICIAL versioned dataset (v1.0-2024 …
+  // v3.0-2026, official vero.fi rates) plus clearly-marked staging
+  // placeholders that never collide with it (own version label).
   // -----------------------------------------------------------------------
+  const allTaxSeed = [...SEED_RULES, ...STAGING_TAX_RULES];
   const existingTaxLabels = await db
     .select({ versionLabel: taxRules.versionLabel })
     .from(taxRules)
-    .where(inArray(taxRules.versionLabel, STAGING_TAX_RULES.map((r) => r.versionLabel)));
+    .where(inArray(taxRules.versionLabel, allTaxSeed.map((r) => r.versionLabel)));
 
   const knownTaxLabels = new Set(existingTaxLabels.map((r) => r.versionLabel));
-  const taxRulesToInsert = STAGING_TAX_RULES.filter((r) => !knownTaxLabels.has(r.versionLabel));
+  const taxRulesToInsert = allTaxSeed.filter((r) => !knownTaxLabels.has(r.versionLabel));
 
   if (taxRulesToInsert.length > 0) {
-    await db.insert(taxRules).values(taxRulesToInsert);
+    await db.insert(taxRules).values(taxRulesToInsert as typeof taxRules.$inferInsert[]);
   }
 
   // -----------------------------------------------------------------------
@@ -382,7 +386,7 @@ export async function seedStagingDatabase(
     },
     taxRules: {
       inserted: taxRulesToInsert.length,
-      skipped: STAGING_TAX_RULES.length - taxRulesToInsert.length,
+      skipped: allTaxSeed.length - taxRulesToInsert.length,
     },
     transportOffers: {
       inserted: transportToInsert.length,

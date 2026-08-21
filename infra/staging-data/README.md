@@ -21,14 +21,18 @@ Typical workflow:
 ## Files
 
 | File | Description |
-|---|---|
-| `schema.sql` | Self-contained DDL mirroring the Drizzle ORM schemas from `packages/data-platform/src/schema.ts` (single source of truth). Includes: `product_master`, `retail_offers`, `tax_rules`, `transport_offers`, `calculation_records`, `staging_reviews`. |
+|---|---|---|
+| `schema.sql` | **DEPRECATED — retained for reference only.** Hand-written DDL that was the pre-Drizzle schema. The deploy path no longer uses this file. See ARCHITECTURE.md §15.1. |
+| `staging-reviews.sql` | DDL for the `staging_reviews` table — staging infra only, no Drizzle ORM equivalent. Applied after Drizzle migrations in the deploy path. |
 | `seed.sql` | Realistic Finnish excise tax rates (2024-2026), transport-rate reference for common import routes, 5 sample merchants with products and offers, and a 12-scenario golden dataset for CI regression testing. |
-| `setup.sh` | Idempotent load script — drops existing tables, recreates schema, loads seed data, runs verification queries. |
+| `setup.sh` | Idempotent load script — applies Drizzle-generated migrations (from `packages/data-platform/drizzle/`), then `staging-reviews.sql`, then loads seed data, runs verification queries. |
 
-## Quick Start
+## Quick Start (Local)
 
 ```bash
+# Requires Drizzle migrations to be generated first:
+pnpm --filter @rajahinta/data-platform exec drizzle-kit generate
+
 # Load default staging config
 ./infra/staging-data/setup.sh
 
@@ -52,13 +56,15 @@ export STAGING_DB_PASSWORD=secret
 ## Using in CI/CD
 
 The golden dataset in `seed.sql` contains 12 pre-calculated scenarios
-(`golden-001` through `golden-012`) stored in the `calculation_audit` table.
-A CI regression test can:
+(`golden-001` through `golden-012`) stored in the `calculation_records` table.
+In CI, the schema is applied via Drizzle migrations (not setup.sh):
 
-1. Load seed data via `setup.sh --ci`.
-2. Re-calculate each scenario using the current calculation engine.
-3. Compare the re-calculated results against the stored golden snapshots.
-4. Flag any deviation larger than the configured tolerance.
+1. Apply Drizzle migrations (`drizzle-kit migrate`).
+2. Create infra-only `staging_reviews` table (`staging-reviews.sql`).
+3. Load seed data (`seed.sql`).
+4. Re-calculate each scenario using the current calculation engine.
+5. Compare the re-calculated results against the stored golden snapshots.
+6. Flag any deviation larger than the configured tolerance.
 
 ### Golden dataset scenarios
 
@@ -96,8 +102,8 @@ SELECT * FROM staging_reviews;
 ## Adding a New Golden Dataset Scenario
 
 1. Add the INSERT to `seed.sql` with `session_id = 'golden-NNN'`.
-2. Include both `input_snapshot` (product, offer, transport, rate version) and
-   `result_snapshot` (all calculated figures).
+2. The schema must already support the required columns (defined in Drizzle
+   `packages/data-platform/src/schema.ts` — the single source of truth).
 3. Document the key calculation path being tested in the table above.
 
 ## Idempotency

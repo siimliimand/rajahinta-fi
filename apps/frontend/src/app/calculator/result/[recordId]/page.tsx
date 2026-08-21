@@ -6,6 +6,7 @@ import Link from 'next/link';
 import type { CalculatorResult as CalculatorResultType } from '@/lib/types';
 import { getCalculationResult } from '@/lib/api';
 import CalculatorResultView from '../../components/CalculatorResult';
+import CorrectionFlagPanel from '../../components/CorrectionFlagPanel';
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -247,6 +248,12 @@ export default function CalculationResultPage() {
           </ul>
         </section>
       )}
+
+      {/* ── Correction flag affordance ── */}
+      <CorrectionFlagPanel
+        recordId={result.calculationRecordId}
+        productName={result.metadata.productName}
+      />
 
       {/* ── Footer nav ── */}
       <nav className="mt-8 text-center">

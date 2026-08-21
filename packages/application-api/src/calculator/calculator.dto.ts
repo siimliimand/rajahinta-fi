@@ -7,6 +7,8 @@
  * @module CalculatorDto
  */
 
+import type { TransportArrangement } from '@rajahinta/core-domain';
+
 // ---------------------------------------------------------------------------
 // Request DTOs
 // ---------------------------------------------------------------------------
@@ -21,6 +23,13 @@ export interface CalculateRequest {
   readonly destination: string;
   /** Optional carrier override for transport estimation. */
   readonly transportMethod?: string;
+  /**
+   * How transport is arranged. Defaults to SELLER_ARRANGED when absent.
+   * - `SELLER_ARRANGED`:    Seller arranges and pays for transport.
+   * - `INDEPENDENT_CARRIER`: Buyer arranges via third-party carrier.
+   * - `PERSONAL`:           Buyer physically carries goods (traveller import).
+   */
+  readonly transportArrangement?: TransportArrangement;
   /** Optional session identifier for audit-trail grouping. */
   readonly sessionId?: string;
 }

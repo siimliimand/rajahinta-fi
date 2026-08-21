@@ -1,5 +1,5 @@
 /**
- * Golden-dataset regression tests — v1.0.
+ * Golden-dataset regression tests — v2.0.
  *
  * A fixed set of known product / transport / tax input combinations with
  * manually verified expected outputs.  These tests run on every deploy and
@@ -13,6 +13,9 @@
  * When a new tax dataset is published, the golden expected values here
  * must be re-verified manually.  Bump GOLDEN_DATASET_VERSION when any
  * expected value changes.
+ *
+ * @version 2.0 — aligned with v1.0-2024 seed (see source-mapping tables
+ *   below for rate → vero.fi citation per expectation)
  *
  * @module GoldenDatasetTests
  */
@@ -168,19 +171,45 @@ const OFFER_CARRIER_B: TransportOffer = {
 };
 
 // ---------------------------------------------------------------------------
-// Expected value computation reference (seeded rates):
+// Expected value computation reference (v2.0, seeded rates v1.0-2024):
 //
-// Beer  (5% ABV, 0.5 L) → PER_DEGREE_PLATO at 33.00
-//   excise = round(33.00 × 0.05 × 0.5 × 100) = 83 ¢
-//   container: depositSystemStatus=true → EXEMPTED → 0 ¢
+// ── Case 1: Beer (5% ABV, 0.5 L) ──────────────────────────────────────────
+//   Category 'beer' → normaliseCategory → 'beer'
+//   ABV 5.0 % → matches BEER_FULL (minAlcoholByVolume: 3.5)
+//   Rate: 36.20 €/hl per degree Plato (= 36.20 snt/cl ethanol)
+//   Formula: PER_DEGREE_PLATO (calcPerDegreePlato)
+//     excise = Math.round(36.20 × 0.05 × 0.5 × 100) = Math.round(90.5) = 91 ¢
+//   Container: depositSystemStatus=true → EXEMPTED → 0 ¢
+//   Total: 200(retail) + 150(transport) + 91(excise) + 0(container) = 441
+//   Source: vero.fi alcohol table → beer > 3.5 %ABV at 36.20 snt/cl ethanol
+//     https://www.vero.fi/yritykset-ja-yhteisot/verot-ja-maksut/valmisteverotus/alkoholijuomavero/alkoholi-ja-alkoholijuomaverotaulukko/
 //
-// Wine  (12% ABV, 0.75 L) → per-litre-of-product, 3.40
-//   excise = round(3.40 × 0.75 × 100) = 255 ¢
-//   container: depositSystemStatus=true → EXEMPTED → 0 ¢
+// ── Case 2: Wine (12% ABV, 0.75 L) × 3 ────────────────────────────────────
+//   Category 'wine' → normaliseCategory → 'wine_still'
+//   ABV 12.0 % → matches WINE_BAND_4 (min: 8, max: 15)
+//   Rate: 4.56 €/l of product
+//   Formula: PER_LITRE_OF_PRODUCT (calcPerLitreOfProduct)
+//     excise per unit = Math.round(4.56 × 0.75 × 100) = Math.round(342.0) = 342 ¢
+//     excise × 3 = 1026 ¢
+//   Container: depositSystemStatus=true → EXEMPTED → 0 ¢
+//   Total: 900(retail) + 200(transport) + 1026(excise) + 0 = 2126
+//   Source: vero.fi alcohol table → wine > 8–15 %ABV at 4.56 €/l
 //
-// Spirits  (40% ABV, 0.7 L) → per-litre-of-alcohol, 29.50
-//   excise = round(29.50 × 0.4 × 0.7 × 100) = 826 ¢
-//   container: depositSystemStatus=true → EXEMPTED → 0 ¢
+// ── Case 3: Spirits (40% ABV, 0.7 L) ─────────────────────────────────────
+//   Category 'spirits' → normaliseCategory → 'spirits'
+//   ABV 40.0 % → matches SPIRITS_FULL (minAlcoholByVolume: 2.8)
+//   Rate: 54.80 €/l of pure alcohol (= 54.80 snt/cl ethanol)
+//   Formula: PER_LITRE_OF_ALCOHOL (calcPerLitreOfAlcohol)
+//     excise = Math.round(54.80 × 0.4 × 0.7 × 100) = Math.round(1534.4) = 1534 ¢
+//     (Official: €15.34)
+//   Container: depositSystemStatus=true → EXEMPTED → 0 ¢
+//   Total: 500(retail) + 0(transport) + 1534(excise) + 0 = 2034
+//   Source: vero.fi alcohol table → spirits > 2.8 %ABV at 54.80 €/l pure alcohol
+//
+// ── Container duty (all cases w/ depositSystemStatus=true) ─────────────────
+//   Verified deposit → EXEMPTED → 0 ¢
+//   Source: vero.fi beverage container duty page
+//     https://www.vero.fi/en/businesses-and-corporations/taxes-and-charges/excise-taxation/excise-duty-on-beverage-containers/
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -189,7 +218,7 @@ const OFFER_CARRIER_B: TransportOffer = {
 
 describe('Golden dataset', () => {
   it(`has dataset version ${GOLDEN_DATASET_VERSION}`, () => {
-    expect(GOLDEN_DATASET_VERSION).toBe('1.0');
+    expect(GOLDEN_DATASET_VERSION).toBe('2.0');
   });
 
   // -----------------------------------------------------------------------
@@ -212,15 +241,15 @@ describe('Golden dataset', () => {
 
     it('returns correct total cost', async () => {
       const result = await service.calculate(INPUT);
-      // retail(200) + transport(150) + excise(83) + container(0) + other(0)
-      expect(result.totalCents).toBe(433);
+      // retail(200) + transport(150) + excise(91) + container(0) + other(0)
+      expect(result.totalCents).toBe(441);
     });
 
     it('applies correct itemized costs', async () => {
       const result = await service.calculate(INPUT);
       expect(result.foreignRetailPrice).toBe(200);
       expect(result.transportCost).toBe(150);
-      expect(result.alcoholExciseEstimate).toBe(83);
+      expect(result.alcoholExciseEstimate).toBe(91);
       expect(result.containerDutyEstimate).toBe(0);
       expect(result.otherCharges).toBe(0);
     });
@@ -231,10 +260,11 @@ describe('Golden dataset', () => {
       expect(result.classification.confidence).toBe('HIGH');
     });
 
-    it('has HIGH confidence (all components VERIFIED)', async () => {
+    it('has MEDIUM confidence (product price ESTIMATED)', async () => {
       const result = await service.calculate(INPUT);
-      // excise is VERIFIED (seed data with verificationDate); all others VERIFIED → HIGH
-      expect(result.confidence).toBe('HIGH');
+      // excise is VERIFIED (seed data with verificationDate);
+      // product price is ESTIMATED (reliabilityStatus:'EXACT' → ESTIMATED)
+      expect(result.confidence).toBe('MEDIUM');
     });
 
     it('persists calculation record', async () => {
@@ -269,15 +299,15 @@ describe('Golden dataset', () => {
 
     it('applies quantity multiplier to tax costs', async () => {
       const result = await service.calculate(INPUT);
-      // excise 255 × 3, container 0 × 3
-      expect(result.alcoholExciseEstimate).toBe(765);
+      // excise 342 × 3, container 0 × 3
+      expect(result.alcoholExciseEstimate).toBe(1026);
       expect(result.containerDutyEstimate).toBe(0);
     });
 
     it('returns correct total cost', async () => {
       const result = await service.calculate(INPUT);
-      // retail(900) + transport(200) + excise(765) + container(0)
-      expect(result.totalCents).toBe(1865);
+      // retail(900) + transport(200) + excise(1026) + container(0)
+      expect(result.totalCents).toBe(2126);
     });
 
     it('classifies as DistanceBuying (independent carrier)', async () => {
@@ -285,9 +315,10 @@ describe('Golden dataset', () => {
       expect(result.classification.classification).toBe('DistanceBuying');
     });
 
-    it('has HIGH confidence (all components VERIFIED)', async () => {
+    it('has MEDIUM confidence (product price ESTIMATED)', async () => {
       const result = await service.calculate(INPUT);
-      expect(result.confidence).toBe('HIGH');
+      // Same reason as Case 1: productPrice reliabilityStatus:'EXACT' → ESTIMATED
+      expect(result.confidence).toBe('MEDIUM');
     });
 
     it('transport is not per-shipment — not scaled by quantity', async () => {
@@ -320,8 +351,8 @@ describe('Golden dataset', () => {
 
     it('returns correct total cost (excluding transport)', async () => {
       const result = await service.calculate(INPUT);
-      // retail(500) + transport(0) + excise(826) + container(0)
-      expect(result.totalCents).toBe(1326);
+      // retail(500) + transport(0) + excise(1534) + container(0)
+      expect(result.totalCents).toBe(2034);
     });
 
     it('sets transport offer ID to null', async () => {

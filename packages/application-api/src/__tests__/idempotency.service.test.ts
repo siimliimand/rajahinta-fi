@@ -87,6 +87,64 @@ describe('hashInput', () => {
     const h = hashInput({ productId: 1, quantity: 1, destination: 'FI' });
     expect(h).toMatch(/^[0-9a-f]{64}$/);
   });
+
+  // ---------------------------------------------------------------------------
+  // Dataset versions in hash
+  // ---------------------------------------------------------------------------
+
+  it('produces the same hash when datasetVersions are identical (order-independent)', () => {
+    const input: CacheKeyInput = {
+      productId: 1, quantity: 1, destination: 'FI',
+      datasetVersions: ['v2.0-2025', 'v3.0-2026', 'v1.0-2024'],
+    };
+    const h1 = hashInput(input);
+    const reversed: CacheKeyInput = {
+      productId: 1, quantity: 1, destination: 'FI',
+      datasetVersions: ['v1.0-2024', 'v3.0-2026', 'v2.0-2025'],
+    };
+    const h2 = hashInput(reversed);
+    expect(h1).toEqual(h2);
+  });
+
+  it('produces a different hash when datasetVersions change (tax version bump)', () => {
+    const inputV2: CacheKeyInput = {
+      productId: 42, quantity: 2, destination: 'FI',
+      datasetVersions: ['v2.0-2025', 'transport-v1'],
+    };
+    const inputV3: CacheKeyInput = {
+      productId: 42, quantity: 2, destination: 'FI',
+      datasetVersions: ['v3.0-2026', 'transport-v1'],
+    };
+    const hV2 = hashInput(inputV2);
+    const hV3 = hashInput(inputV3);
+    expect(hV2).not.toEqual(hV3);
+  });
+
+  it('produces the same hash with or without empty datasetVersions', () => {
+    const hNoField = hashInput({ productId: 1, quantity: 1, destination: 'FI' });
+    const hEmpty = hashInput({ productId: 1, quantity: 1, destination: 'FI', datasetVersions: [] });
+    expect(hNoField).toEqual(hEmpty);
+  });
+
+  it('produces a different hash when datasetVersions are added vs omitted', () => {
+    const hOmitted = hashInput({ productId: 1, quantity: 1, destination: 'FI' });
+    const hPresent = hashInput({ productId: 1, quantity: 1, destination: 'FI', datasetVersions: ['v1.0-2024'] });
+    expect(hOmitted).not.toEqual(hPresent);
+  });
+
+  it('produces a different hash when transport proxy version changes', () => {
+    const input: CacheKeyInput = {
+      productId: 1, quantity: 1, destination: 'FI',
+      datasetVersions: ['v3.0-2026', '2026-08-21T12:00:00.000Z'],
+    };
+    const h1 = hashInput(input);
+    const inputRefreshed: CacheKeyInput = {
+      productId: 1, quantity: 1, destination: 'FI',
+      datasetVersions: ['v3.0-2026', '2026-08-22T12:00:00.000Z'],
+    };
+    const h2 = hashInput(inputRefreshed);
+    expect(h1).not.toEqual(h2);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -310,7 +368,7 @@ describe('IdempotencyService', () => {
     expect(await service.lookup(key)).toBeNull();
   });
 
-  it('generates a stable content hash for identical results', () => {
+  it('generates stable content hash for identical results', () => {
     const r1 = makeResult();
     const r2 = makeResult();
     expect(service.getContentHash(r1)).toEqual(service.getContentHash(r2));
@@ -320,5 +378,72 @@ describe('IdempotencyService', () => {
     const r1 = makeResult({ totalCents: 1000 });
     const r2 = makeResult({ totalCents: 2000 });
     expect(service.getContentHash(r1)).not.toEqual(service.getContentHash(r2));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Version-aware cache key (hash includes datasetVersions)
+  // ---------------------------------------------------------------------------
+
+  it('returns cached result when datasetVersions match (cache not broken)', async () => {
+    const input: CacheKeyInput = {
+      productId: 10, quantity: 3, destination: 'DE',
+      datasetVersions: ['v2.0-2025', 'transport-v1'],
+    };
+    const key = service.getCacheKey(input);
+    const result = makeResult({ metadata: { datasetVersions: ['v2.0-2025', 'transport-v1'] } } as any);
+
+    await service.store(key, result);
+    const retrieved = await service.lookup(key, ['v2.0-2025', 'transport-v1']);
+    expect(retrieved).toEqual(result);
+  });
+
+  it('returns null (fresh calculation) when tax datasetVersion changes (v2 → v3)', async () => {
+    // 1. Cache a result under version v2
+    const inputV2: CacheKeyInput = {
+      productId: 99, quantity: 1, destination: 'FI',
+      datasetVersions: ['v2.0-2025', 'transport-v1'],
+    };
+    const keyV2 = service.getCacheKey(inputV2);
+    const resultV2 = makeResult({ metadata: { datasetVersions: ['v2.0-2025', 'transport-v1'] } } as any);
+    await service.store(keyV2, resultV2);
+
+    // 2. Same product/quantity/destination, but tax version bumped to v3
+    const inputV3: CacheKeyInput = {
+      productId: 99, quantity: 1, destination: 'FI',
+      datasetVersions: ['v3.0-2026', 'transport-v1'],
+    };
+    const keyV3 = service.getCacheKey(inputV3);
+
+    // Keys differ because versions are in the hash → different key, cache miss
+    expect(keyV2).not.toEqual(keyV3);
+    const miss = await service.lookup(keyV3, ['v3.0-2026', 'transport-v1']);
+    expect(miss).toBeNull();
+
+    // Also verify the old key is untouched (v2 result still available under v2 key)
+    const oldHit = await service.lookup(keyV2, ['v2.0-2025', 'transport-v1']);
+    expect(oldHit).toEqual(resultV2);
+  });
+
+  it('returns null when transport proxy version changes (observedAt bump)', async () => {
+    const inputOld: CacheKeyInput = {
+      productId: 55, quantity: 1, destination: 'SE',
+      datasetVersions: ['v3.0-2026', '2026-08-21T00:00:00.000Z'],
+    };
+    const oldKey = service.getCacheKey(inputOld);
+    const resultOld = makeResult({
+      metadata: {
+        datasetVersions: ['v3.0-2026', '2026-08-21T00:00:00.000Z'],
+      },
+    } as any);
+    await service.store(oldKey, resultOld);
+
+    // Transport refreshed — new max(observedAt)
+    const inputNew: CacheKeyInput = {
+      productId: 55, quantity: 1, destination: 'SE',
+      datasetVersions: ['v3.0-2026', '2026-08-22T00:00:00.000Z'],
+    };
+    const newKey = service.getCacheKey(inputNew);
+    expect(newKey).not.toEqual(oldKey);
+    expect(await service.lookup(newKey)).toBeNull();
   });
 });

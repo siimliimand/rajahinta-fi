@@ -35,6 +35,7 @@ import {
   type ITransportOfferQuery,
   type TransportOffer,
 } from '@rajahinta/core-domain';
+import { TRANSPORT_OFFER_QUERY } from '@rajahinta/core-domain';
 import {
   CalculationRecordRepository,
   calculationRecords,
@@ -51,9 +52,6 @@ import {
 // -------------------------------------------------------------------
 // Constants
 // -------------------------------------------------------------------
-
-/** Injection token for ITransportOfferQuery — same string as the domain constant. */
-const TRANSPORT_OFFER_QUERY = 'TRANSPORT_OFFER_QUERY';
 
 const NOW = new Date('2025-06-01T12:00:00Z');
 
@@ -270,45 +268,66 @@ const TRANSPORT_OFFER: TransportOffer = {
 };
 
 /** Seeded tax rules so engines use real rates (no fallback). */
-const BEER_EXCISE_RULE: TaxRuleRecordPort = {
-  id: 1,
-  taxType: 'excise_duty',
-  productCategory: 'beer',
-  rate: '33.00',
-  effectiveFrom: new Date('2024-01-01'),
-  effectiveTo: null,
-  calculationFormulaReference: 'PER_DEGREE_PLATO',
-  officialSource: 'Finnish Tax Administration — 2024',
-  verificationDate: new Date('2024-03-01'),
-  versionLabel: 'v1.0-2024',
-  exemptionConditions: null,
-};
 
-const BEER_EXEMPT_RULE: TaxRuleRecordPort = {
-  id: 2,
-  taxType: 'excise_duty',
+const VERIFIED_DATE = new Date('2024-03-01');
+const EFFECTIVE_FROM = new Date('2024-01-01');
+const SOURCE = 'Finnish Tax Administration — Excise Duty on Alcohol and Alcoholic Beverages, Rates 2024 (vero.fi)';
+const CONTAINER_SOURCE = 'Finnish Tax Administration — Beverage Container Duty Rate 2024 (vero.fi)';
+const VERSION = 'v1.0-2024';
+
+const BEER_EXEMPT: TaxRuleRecordPort = {
+  id: 1,
+  taxType: 'excise',
   productCategory: 'beer',
   rate: '0.00',
-  effectiveFrom: new Date('2024-01-01'),
+  effectiveFrom: EFFECTIVE_FROM,
   effectiveTo: null,
   calculationFormulaReference: 'PER_DEGREE_PLATO',
-  officialSource: 'Finnish Tax Administration — 2024',
-  verificationDate: new Date('2024-03-01'),
-  versionLabel: 'v1.0-2024',
-  exemptionConditions: { appliesTo: { maxAlcoholByVolume: 0.5 } },
+  officialSource: SOURCE,
+  verificationDate: VERIFIED_DATE,
+  versionLabel: VERSION,
+  exemptionConditions: { maxAlcoholByVolume: 0.5 },
+};
+
+const BEER_MID: TaxRuleRecordPort = {
+  id: 2,
+  taxType: 'excise',
+  productCategory: 'beer',
+  rate: '28.35',
+  effectiveFrom: EFFECTIVE_FROM,
+  effectiveTo: null,
+  calculationFormulaReference: 'PER_DEGREE_PLATO',
+  officialSource: SOURCE,
+  verificationDate: VERIFIED_DATE,
+  versionLabel: VERSION,
+  exemptionConditions: { minAlcoholByVolume: 0.5, maxAlcoholByVolume: 3.5 },
+};
+
+const BEER_FULL: TaxRuleRecordPort = {
+  id: 3,
+  taxType: 'excise',
+  productCategory: 'beer',
+  rate: '36.20',
+  effectiveFrom: EFFECTIVE_FROM,
+  effectiveTo: null,
+  calculationFormulaReference: 'PER_DEGREE_PLATO',
+  officialSource: SOURCE,
+  verificationDate: VERIFIED_DATE,
+  versionLabel: VERSION,
+  exemptionConditions: { minAlcoholByVolume: 3.5 },
 };
 
 const CONTAINER_DUTY_RULE: TaxRuleRecordPort = {
-  id: 3,
+  id: 4,
   taxType: 'container_duty',
   productCategory: 'all_beverages',
   rate: '0.51',
-  effectiveFrom: new Date('2024-01-01'),
+  effectiveFrom: EFFECTIVE_FROM,
   effectiveTo: null,
   calculationFormulaReference: 'FLAT_PER_LITRE',
-  officialSource: 'Finnish Tax Administration — 2024',
-  verificationDate: new Date('2024-03-01'),
-  versionLabel: 'v1.0-2024',
+  officialSource: CONTAINER_SOURCE,
+  verificationDate: VERIFIED_DATE,
+  versionLabel: VERSION,
   exemptionConditions: null,
 };
 
@@ -322,6 +341,15 @@ const BEER_DTO = {
   quantity: 1,
   destination: 'FI',
   transportMethod: 'carrierA',
+};
+
+/** POST body for personal (traveller) transport — buyer carries goods. */
+const PERSONAL_BEER_DTO = {
+  productId: 1,
+  quantity: 1,
+  destination: 'FI',
+  transportMethod: 'carrierA',
+  transportArrangement: 'PERSONAL' as const,
 };
 
 /** Standard POST body for beer with quantity 2. */
@@ -362,7 +390,7 @@ async function buildTestModule(gatesOpen: boolean): Promise<{
 
   // Seed data
   productDataPort.seed(PRODUCT_BEER_DATA, [OFFER_BEER_DATA]);
-  taxRuleRepo.seed([BEER_EXCISE_RULE, BEER_EXEMPT_RULE, CONTAINER_DUTY_RULE]);
+  taxRuleRepo.seed([BEER_EXEMPT, BEER_MID, BEER_FULL, CONTAINER_DUTY_RULE]);
   transportQuery.seed([TRANSPORT_OFFER]);
 
   const moduleRef = await Test.createTestingModule({
@@ -478,17 +506,18 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
         const result = res.body;
 
         // Beer 5% ABV, 0.5 L, depositSystemStatus=true
-        // per-degree-Plato: rate=33.00, excise=round(33.00*0.05*0.5*100)=83¢
+        // per-degree-Plato: BEER_FULL rate=36.20 snt/cl ethanol
+        // excise=Math.round(36.20*0.05*0.5*100)=Math.round(90.5)=91¢
         // container: depositSystem=true → EXEMPTED → 0¢
         // transport: DE→FI, carrierA, 150¢
         // retail: 200¢
-        // total: 200 + 150 + 83 + 0 + 0 = 433
+        // total: 200 + 150 + 91 + 0 + 0 = 441
         expect(result.foreignRetailPrice).toBe(200);
         expect(result.transportCost).toBe(150);
-        expect(result.alcoholExciseEstimate).toBe(83);
+        expect(result.alcoholExciseEstimate).toBe(91);
         expect(result.containerDutyEstimate).toBe(0);
         expect(result.otherCharges).toBe(0);
-        expect(result.totalCents).toBe(433);
+        expect(result.totalCents).toBe(441);
       });
 
       it('classifies the transaction', async () => {
@@ -502,6 +531,41 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
         expect(result.classification).toHaveProperty('classification');
         expect(result.classification).toHaveProperty('confidence');
         expect(result.classification.confidence).toBe('HIGH');
+      });
+
+      it('classifies as TravellerImport when transportArrangement is PERSONAL', async () => {
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/calculator')
+          .set('x-age-confirmed', 'test-token')
+          .send(PERSONAL_BEER_DTO)
+          .expect(200);
+
+        const result = res.body;
+
+        // --- Classification assertion ---
+        expect(result.classification).toHaveProperty('classification');
+        expect(result.classification.classification).toBe('TravellerImport');
+        expect(result.classification).toHaveProperty('confidence');
+        expect(result.classification.confidence).toBe('HIGH');
+
+        // --- Evidence contains the personal-import allowance message ---
+        expect(result.classification).toHaveProperty('evidence');
+        expect(Array.isArray(result.classification.evidence)).toBe(true);
+        const personalAllowanceEvidence = result.classification.evidence.find(
+          (e: { observation: string }) =>
+            e.observation ===
+            'Personal import allowance applies — excluded from landed-cost calculator',
+        );
+        expect(personalAllowanceEvidence).toBeDefined();
+        expect(personalAllowanceEvidence.source).toBe('buyerIsTravelling');
+
+        // --- Result still computed (calculator does not short-circuit) ---
+        expect(result).toHaveProperty('totalCents');
+        expect(typeof result.totalCents).toBe('number');
+        expect(result.totalCents).toBeGreaterThan(0);
+        expect(result).toHaveProperty('itemizedCosts');
+        expect(result.itemizedCosts).toBeInstanceOf(Array);
+        expect(result.itemizedCosts.length).toBeGreaterThanOrEqual(4);
       });
 
       it('includes metadata with product info', async () => {

@@ -1,0 +1,75 @@
+{
+  "_generated": "2026-08-21",
+  "_source": "vero.fi Excise Duty on Alcohol and Alcoholic Beverages — snapshot for ConfigBackedRateChangeSource baseline",
+  "_note": "Hash of this file is compared against the last-known review entry's contentHash to detect official rate changes.",
+  "versions": {
+    "v1.0-2024": {
+      "beer": [
+        { "band": "≤ 0.5 %ABV", "rate": "0.00", "unit": "snt/cl ethanol" },
+        { "band": "> 0.5 – 3.5 %ABV", "rate": "28.35", "unit": "snt/cl ethanol" },
+        { "band": "> 3.5 %ABV", "rate": "36.20", "unit": "snt/cl ethanol" }
+      ],
+      "wine_still": [
+        { "band": "≤ 1.2 %ABV", "rate": "0.00", "unit": "€/l" },
+        { "band": "> 1.2 – 2.8 %ABV", "rate": "0.36", "unit": "€/l" },
+        { "band": "> 2.8 – 5.5 %ABV", "rate": "1.98", "unit": "€/l" },
+        { "band": "> 5.5 – 8 %ABV", "rate": "3.08", "unit": "€/l" },
+        { "band": "> 8 – 15 %ABV", "rate": "4.56", "unit": "€/l" },
+        { "band": "> 15 – 18 %ABV", "rate": "4.56", "unit": "€/l" }
+      ],
+      "wine_sparkling": "same as wine_still",
+      "intermediate_products": [
+        { "band": "> 1.2 – 15 %ABV", "rate": "5.68", "unit": "€/l" },
+        { "band": "> 15 – 22 %ABV", "rate": "8.63", "unit": "€/l" }
+      ],
+      "spirits": [
+        { "band": "≤ 1.2 %ABV", "rate": "0.00", "unit": "snt/cl ethanol" },
+        { "band": "> 1.2 – 2.8 %ABV", "rate": "30.90", "unit": "snt/cl ethanol" },
+        { "band": "> 2.8 %ABV", "rate": "54.80", "unit": "snt/cl ethanol" }
+      ],
+      "other_fermented": "uses wine_still bands and rates",
+      "container_duty": { "rate": "0.51", "unit": "€/l", "note": "all beverage containers" }
+    },
+    "v2.0-2025": {
+      "beer": "same as v1.0-2024",
+      "wine_still": "same as v1.0-2024",
+      "wine_sparkling": "same as v1.0-2024",
+      "intermediate_products": [
+        { "band": "> 1.2 – 15 %ABV", "rate": "5.68", "unit": "€/l" },
+        { "band": "> 15 – 22 %ABV", "rate": "8.74", "unit": "€/l" }
+      ],
+      "spirits": [
+        { "band": "> 2.8–10 %ABV", "rate": "54.80", "unit": "snt/cl ethanol" },
+        { "band": "> 10 %ABV", "rate": "55.50", "unit": "snt/cl ethanol" }
+      ],
+      "other_fermented": "uses wine_still bands and rates",
+      "container_duty": { "rate": "0.51", "unit": "€/l" }
+    },
+    "v3.0-2026": {
+      "beer": [
+        { "band": "> 0.5 – 3.5 %ABV", "rate": "28.75", "unit": "snt/cl ethanol" },
+        { "band": "> 3.5 %ABV", "rate": "36.71", "unit": "snt/cl ethanol" }
+      ],
+      "wine_still": [
+        { "band": "> 1.2 – 2.8 %ABV (to 31.3.2026)", "rate": "0.36", "unit": "€/l" },
+        { "band": "> 1.2 – 2.8 %ABV (from 1.4.2026)", "rate": "0.50", "unit": "€/l" },
+        { "band": "> 2.8 – 5.5 %ABV", "rate": "2.1902", "unit": "€/l" },
+        { "band": "> 5.5 – 8 %ABV", "rate": "3.4070", "unit": "€/l" },
+        { "band": "> 8 – 15 %ABV", "rate": "5.0497", "unit": "€/l" },
+        { "band": "> 15 – 18 %ABV", "rate": "5.0497", "unit": "€/l" }
+      ],
+      "wine_sparkling": "same as wine_still",
+      "intermediate_products": [
+        { "band": "> 1.2 – 15 %ABV", "rate": "5.7595", "unit": "€/l" },
+        { "band": "> 15 – 22 %ABV", "rate": "8.8624", "unit": "€/l" }
+      ],
+      "spirits": [
+        { "band": "> 1.2 – 2.8 %ABV", "rate": "31.33", "unit": "snt/cl ethanol" },
+        { "band": "> 2.8 – 10 %ABV", "rate": "55.57", "unit": "snt/cl ethanol" },
+        { "band": "> 10 %ABV", "rate": "56.28", "unit": "snt/cl ethanol" }
+      ],
+      "other_fermented": "uses wine_still bands and rates",
+      "container_duty": { "rate": "0.51", "unit": "€/l" }
+    }
+  }
+}

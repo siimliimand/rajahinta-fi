@@ -31,12 +31,18 @@
  * @module AgeGateModule
  */
 
-import { Module } from '@nestjs/common';
+import { Module, Global } from '@nestjs/common';
 import { AgeGateService } from './age-gate.service';
 import { AgeGateGuard } from './age-gate.guard';
 import { SimpleConfirmationProvider } from './simple-confirmation.provider';
 import { VERIFICATION_PROVIDER } from './verification-provider.interface';
 
+/**
+ * Global: the guard is applied to every alcohol-content controller
+ * (see the age-gate coverage test), so its AgeGateService dependency must
+ * resolve from any feature module — same convention as RateLimitingModule.
+ */
+@Global()
 @Module({
   providers: [
     AgeGateService,

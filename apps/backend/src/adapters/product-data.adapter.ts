@@ -23,6 +23,7 @@ import type {
   IProductDataPort,
   CalculatorProductData,
   CalculatorRetailOfferData,
+  ReliabilityStatus,
 } from '@rajahinta/core-domain';
 
 /**
@@ -84,7 +85,20 @@ export class ProductDataAdapter implements IProductDataPort {
       priceCents: o.priceCents,
       merchant: o.merchant,
       country: o.country,
-      reliabilityStatus: o.reliabilityStatus,
+      reliabilityStatus: toReliabilityStatus(o.reliabilityStatus),
     }));
   }
+}
+
+/**
+ * Narrow a persisted reliability string to the domain union.
+ *
+ * The database column is a free string; rows written before the vocabulary
+ * unification may hold legacy values such as 'EXACT'. Unknown or legacy
+ * values degrade to ESTIMATED — reliability is never overstated.
+ */
+function toReliabilityStatus(value: string): ReliabilityStatus {
+  return value === 'VERIFIED' || value === 'STALE' || value === 'UNAVAILABLE'
+    ? value
+    : 'ESTIMATED';
 }

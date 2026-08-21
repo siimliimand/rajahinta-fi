@@ -7,7 +7,7 @@
  * @module DrizzleProductRepository
  */
 import { Injectable, Inject } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, ilike, asc } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDatabase } from '../db/drizzle.provider';
 import {
   ProductRepository,
@@ -23,6 +23,24 @@ export class DrizzleProductRepository extends ProductRepository {
     @Inject(DRIZZLE) private readonly db: DrizzleDatabase,
   ) {
     super();
+  }
+
+  /** @inheritdoc */
+  async searchByName(
+    query: string | null,
+    limit: number,
+  ): Promise<(typeof productMaster.$inferSelect)[]> {
+    const base = this.db
+      .select()
+      .from(productMaster)
+      .orderBy(asc(productMaster.name))
+      .limit(limit);
+    if (query === null || query.trim().length === 0) {
+      return base;
+    }
+    // Simple substring match — the Phase 2 full-text index will replace
+    // this, but ILIKE over the product master is correct for Phase 1.
+    return base.where(ilike(productMaster.name, `%${query.trim()}%`));
   }
 
   /** @inheritdoc */

@@ -67,7 +67,7 @@ export interface RetailOfferRecord {
 /** Versioned tax rule — never mutated in place. */
 export interface TaxRuleRecord {
   readonly id: number;
-  /** Tax type discriminator: "excise_duty" or "container_duty". */
+  /** Tax type discriminator: "excise" (alcohol excise) or "container_duty". */
   readonly taxType: string;
   /** Matches productMaster.category for rule lookup. */
   readonly productCategory: string;

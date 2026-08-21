@@ -14,9 +14,11 @@
  * @module RateReviewSchedulerService
  */
 
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
+import * as path from 'path';
+import { AuditService } from '@rajahinta/core-domain';
 import type { RateReviewResult, RateReviewEntry } from '../interfaces/rate-review.types';
 import type { IRateReviewRepository, RateChangeSourcePort } from '../interfaces/rate-review-repository.port';
 import { RATE_REVIEW_REPOSITORY_PORT, RATE_CHANGE_SOURCE_PORT } from '../interfaces/rate-review-repository.port';
@@ -52,8 +54,16 @@ export const DEFAULT_RATE_REVIEW_CONFIG: RateReviewConfig = {
 /** Injection token for the rate-change source configuration (snapshot path). */
 export const RATE_CHANGE_SOURCE_CONFIG_TOKEN = 'RATE_CHANGE_SOURCE_CONFIG_TOKEN';
 
-/** Default: empty string means "not configured" — no detection. */
-export const DEFAULT_RATE_CHANGE_SOURCE_CONFIG = '';
+/**
+ * Default: resolved path to the rate snapshot file (config/rate-snapshot.json).
+ *
+ * The snapshot baseline reflects the current official 2024/2025/2026 rates.
+ * When the file content changes (e.g. a new 2027 version is added), the
+ * hash comparison detects the drift and creates a pending review entry.
+ */
+export const DEFAULT_RATE_CHANGE_SOURCE_CONFIG = path.join(
+  __dirname, '../../config/rate-snapshot.json',
+);
 
 /**
  * Config-backed default implementation of {@link RateChangeSourcePort}.
@@ -148,6 +158,7 @@ export class RateReviewSchedulerService {
     private readonly config: RateReviewConfig,
     @Inject(RATE_CHANGE_SOURCE_PORT)
     private readonly rateChangeSource: RateChangeSourcePort,
+    @Optional() private readonly auditService?: AuditService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -262,6 +273,138 @@ export class RateReviewSchedulerService {
     this.logger.log(`Rate-update review entry created: ${id}`);
 
     return entry;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Versioned-publication review (Task 1.3)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Create a pending-review entry for a versioned tax-rate publication.
+   *
+   * The entry records that a specific dataset version (e.g. 'v2.0-2025')
+   * has been checked against the official publication and confirmed by a
+   * named person.  The entry starts as `pending` — it requires explicit
+   * {@link approveReview} before the version is considered published.
+   *
+   * Rates are NEVER auto-published.  The seed function inserts rows as
+   * data bootstrap; the review entry is the legal-compliance record that
+   * confirms the bootstrap data matches the official rates.
+   *
+   * @param versionLabel — The dataset version being published
+   *   (e.g. 'v2.0-2025', 'v3.0-2026').
+   * @param confirmedBy — Name/identifier of the person who performed the
+   *   legal confirmation (e.g. 'Matti Meikäläinen').
+   * @param confirmedRole — Role or title of the confirming person
+   *   (e.g. 'Finnish Tax Counsel').
+   * @param description — Optional description; defaults to a standard
+   *   message including the version label.
+   * @returns The created review entry in `pending` status.
+   */
+  async createVersionedPublicationReview(
+    versionLabel: string,
+    confirmedBy: string,
+    confirmedRole: string,
+    description?: string,
+  ): Promise<RateReviewEntry> {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const entry: RateReviewEntry = {
+      id,
+      createdAt: now,
+      description:
+        description ??
+        `Version ${versionLabel} — rates confirmed against official vero.fi publication`,
+      source: 'vero.fi (legal confirmation)',
+      status: 'pending',
+      versionLabel,
+      confirmedBy,
+      confirmedRole,
+    };
+
+    await this.repository.create(entry);
+
+    // Record audit entry for the pending publication review.
+    if (this.auditService) {
+      await this.auditService.logChange({
+        entityType: 'tax_rule_version',
+        entityId: id,
+        action: 'created',
+        author: confirmedBy,
+        reason: `Pending review created for version ${versionLabel}`,
+        newValue: { versionLabel, confirmedBy, confirmedRole },
+      });
+    }
+
+    this.logger.log(
+      `Versioned-publication review entry created: ${id} (version=${versionLabel}, confirmedBy=${confirmedBy})`,
+    );
+
+    return entry;
+  }
+
+  /**
+   * Approve a pending rate-review entry, transitioning it to resolved.
+   *
+   * This is the explicit manual-approval step that moves a versioned
+   * publication review from `pending` to `resolved` with resolution
+   * `approve`.  Until this method is called, no rate version is
+   * considered published — the "never auto-publish" invariant.
+   *
+   * @param id — The review entry id to approve.
+   * @param approvedBy — Name/identifier of the approving person.
+   * @param notes — Optional reviewer notes to append.
+   * @returns The updated entry with status=resolved, resolution=approve.
+   * @throws When no entry with this id exists.
+   */
+  async approveReview(
+    id: string,
+    approvedBy: string,
+    notes?: string,
+  ): Promise<RateReviewEntry> {
+    const existing = await this.repository.findById(id);
+    if (!existing) {
+      throw new Error(
+        `Cannot approve review: no rate-review entry with id "${id}"`,
+      );
+    }
+    if (existing.status !== 'pending') {
+      throw new Error(
+        `Cannot approve review: entry "${id}" is already ${existing.status}`,
+      );
+    }
+
+    const resolvedAt = new Date().toISOString();
+    const reviewerNotes = notes
+      ? `Approved by ${approvedBy}. ${notes}`
+      : `Approved by ${approvedBy}.`;
+
+    await this.repository.updateStatus(
+      id,
+      'resolved',
+      'approve',
+      resolvedAt,
+      reviewerNotes,
+    );
+
+    const updated = await this.repository.findById(id);
+
+    // Record audit entry for the approval.
+    if (this.auditService) {
+      await this.auditService.logChange({
+        entityType: 'tax_rule_version',
+        entityId: id,
+        action: 'confirmed',
+        author: approvedBy,
+        reason: reviewerNotes,
+        previousValue: { status: existing.status, resolution: existing.resolution, versionLabel: existing.versionLabel },
+        newValue: { status: updated!.status, resolution: updated!.resolution, resolvedAt, versionLabel: updated!.versionLabel },
+      });
+    }
+
+    // The repository returns a copy, so updated is guaranteed non-null here.
+    return updated!;
   }
 
   // ---------------------------------------------------------------------------

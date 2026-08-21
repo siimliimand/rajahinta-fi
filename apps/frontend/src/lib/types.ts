@@ -157,6 +157,30 @@ export interface CalculatorResult {
 }
 
 // ---------------------------------------------------------------------------
+// Correction / flagging (POST /api/v1/corrections)
+// ---------------------------------------------------------------------------
+
+/** A correction flag returned by the API. */
+export interface CorrectionItem {
+  /** Unique correction flag identifier. */
+  readonly id: number;
+  /** The kind of target being flagged. */
+  readonly targetType: 'calculation' | 'data_point';
+  /** Identifier of the target record. */
+  readonly targetId: number;
+  /** Human-readable reason supplied at creation time. */
+  readonly reason: string;
+  /** Current review status. */
+  readonly status: 'open' | 'resolved';
+  /** ISO-8601 timestamp of flag creation. */
+  readonly createdAt: string;
+  /** ISO-8601 timestamp of resolution, null while open. */
+  readonly resolvedAt: string | null;
+  /** Resolution notes recorded when the flag was closed, null while open. */
+  readonly resolution: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // API error response
 // ---------------------------------------------------------------------------
 

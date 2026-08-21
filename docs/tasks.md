@@ -15,9 +15,9 @@
 
 ### Infrastructure
 
-- [ ] **T0.4** Set up the three-tier environment pipeline: development → staging → production. (Docker Compose for dev exists; staging/prod pipeline not yet configured.)
-- [ ] **T0.5** Provision a staging copy of tax-rule and merchant data so legal/tax review of rule changes runs against realistic data before promotion.
-- [ ] **T0.6** Configure CI/CD with automated regression tests (golden-dataset tax tests, data-quality checks, compliance checks) on every deploy.
+- [x] **T0.4** Set up the three-tier environment pipeline: development → staging → production. (Docker Compose for dev exists; staging/prod pipeline not yet configured.)
+- [x] **T0.5** Provision a staging copy of tax-rule and merchant data so legal/tax review of rule changes runs against realistic data before promotion.
+- [x] **T0.6** Configure CI/CD with automated regression tests (golden-dataset tax tests, data-quality checks, compliance checks) on every deploy.
 - [x] **T0.7** Deploy a feature-flag system that gates new merchant sources, new tax rulesets, and new UI ranking behavior → `FeatureFlagService`, `LaunchGateService`, `LaunchGateGuard` in `application-api/feature-flags/`.
 - [x] **T0.8** Set up scheduled/queued job infrastructure for background work → BullMQ workers in `application-api/jobs/`: price-ingestion, transport-rate-refresh, tax-dataset-review, time-series-aggregation.
 
@@ -66,7 +66,7 @@
 - [x] **T1.19** Build the Alcohol Excise Sub-Engine → `AlcoholExciseService` + pure math in `alcohol-excise.math.ts` calculates excise based on category, ABV, and volume with official rate tables.
 - [x] **T1.20** Build the Beverage-Container Duty Sub-Engine → `ContainerDutyService` + `container-duty.math.ts` calculates container duty (€0.51/litre) as distinct from excise.
 - [x] **T1.21** Implement deposit-return system exemption check → `checkDepositExemption()` in `deposit-checker.ts` evaluates tri-state `depositSystemStatus` (true/false/null); null → ESTIMATED.
-- [x] **T1.22** Populate the initial versioned Tax Rule dataset (excise + container duty) sourced from official Finnish Tax Administration data → `seed/tax-rules.seed.ts` (v1.0-2024) + `DEFAULT_RATES` reconciled.
+- [x] **T1.22** Populate the initial versioned Tax Rule dataset (excise + container duty) sourced from official Finnish Tax Administration data → `seed/tax-rules.seed.ts` (v1.0-2024) + `DEFAULT_RATES` reconciled. *Note: original v1.0-2024 values were incorrect and have been superseded by corrected versioned datasets in `tax-rules.seed.ts` — v1.0-2024 rows closed with effectiveTo 2024-12-31; v2.0-2025 (2025-01-01–2025-12-31) and v3.0-2026 (2026-01-01–current) appended with official vero.fi rates. See the seed file for the corrected bands and values.*
 - [x] **T1.23** Implement the scheduled rate-review process → `RateReviewSchedulerService` + `ConfigBackedRateChangeSource` in `data-acquisition/services/` implement an automated periodic check that reads a configured snapshot file, computes a SHA-256 hash, and compares it against the last-reviewed entry to detect new rates. When changes are found, a pending review entry is created for manual/legal confirmation — rates are never auto-published. The snapshot-based detection mechanism is implemented and functional; direct vero.fi API integration for live rate fetching remains deferred to Phase 2.
 - [x] **T1.24** Historical rates remain queryable after a rate change → `TaxRuleQueryService.findHistoryRates()` and `findEffectiveVersion()` resolve against effective date ranges.
 
@@ -111,8 +111,8 @@
 - [x] **T1.46** Build the calculation explanation page: surface every figure's traceable inputs, rate dataset version, and timestamp. *(completed: explanation page surfaces traceable inputs, dataset version, and timestamps)*
 - [x] **T1.47** Build comparison views with neutral, objective ranking (enforce visual neutrality — no design element suggesting a paid/promoted position). *(completed: comparison views with neutral ranking implement visual neutrality)*
 - [x] **T1.48** Surface data-freshness indicators visibly: reliability status and timestamp for every externally sourced fact. *(completed: reliability status and timestamps displayed on all external-sourced facts)*
-- [ ] **T1.49** Restrict content/copy to a controlled vocabulary: identification, classification, calculation, comparison — no subjective adjectives (no "best," "amazing," "top bargain"). Enforce via a lint/review step in the content pipeline.
-- [ ] **T1.50** Implement outbound merchant links as plain links recorded for basic analytics only (click-through counts) — no purchase tracking, no commission tracking infrastructure at launch.
+- [x] **T1.49** Restrict content/copy to a controlled vocabulary: identification, classification, calculation, comparison — no subjective adjectives (no "best," "amazing," "top bargain"). Enforce via a lint/review step in the content pipeline.
+- [x] **T1.50** Implement outbound merchant links as plain links recorded for basic analytics only (click-through counts) — no purchase tracking, no commission tracking infrastructure at launch.
 
 ### 1L: Compliance & Governance
 
@@ -134,14 +134,14 @@
 
 - [x] **T1.58** Implement a lightweight access-control age gate (simple confirmation, not identity verification) as the default, matching the minimal-data-collection preference.
 - [x] **T1.59** Design the account system's identity/age-verification components as a pluggable module that can be upgraded to stronger verification if the legal opinion requires it. *(completed: identity/age-verification designed as a pluggable module with upgrade path)*
-- [ ] **T1.60** Implement the minimal account system: saved baskets, calculation history, subscription management, data export — not a gate on viewing publicly available comparison information.
+- [x] **T1.60** Implement the minimal account system: saved baskets, calculation history, subscription management, data export — not a gate on viewing publicly available comparison information.
 - [x] **T1.61** Ensure no storage of identity documents or unnecessary date-of-birth collection unless the legal review specifically mandates it. ✓ Audited: zero fields related to identity documents or date-of-birth exist in the Phase 1 schema — audit confirmed full compliance.
 
 ### 1P: Privacy & GDPR
 
-- [ ] **T1.62** Default to anonymous usage; collect personal data only for account-based features.
-- [ ] **T1.63** Define and implement retention limits for account data, calculation history, and analytics/telemetry, with automated deletion/anonymization jobs.
-- [ ] **T1.64** Implement data export functionality early (supports both user-requested export and GDPR data-portability obligations).
+- [x] **T1.62** Default to anonymous usage; collect personal data only for account-based features.
+- [x] **T1.63** Define and implement retention limits for account data, calculation history, and analytics/telemetry, with automated deletion/anonymization jobs.
+- [x] **T1.64** Implement data export functionality early (supports both user-requested export and GDPR data-portability obligations).
 
 ### 1Q: Pre-Launch Legal Review & Gating
 
@@ -243,4 +243,4 @@ Per the business plan and engineering plan, the following are explicitly deferre
 
 ---
 
-*Last updated: 2026-08-19 — Synced with Phase 1 implementation state (Tax Engine Correction complete)*
+*Last updated: 2026-08-21 — Synced with Phase 0+1 verification-fix branch (task 6.1 resync)*

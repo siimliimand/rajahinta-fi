@@ -62,6 +62,10 @@ export type RateReviewResolution = 'approve' | 'reject' | 'escalate';
  *
  * Stores what the scheduler detected so the reviewer can compare against
  * the official publication before approving the new rates.
+ *
+ * When created via {@code createVersionedPublicationReview}, the entry carries
+ * the version label and legal-confirmation metadata (confirmedBy, confirmedRole)
+ * so the review record captures who/when/why for compliance auditing.
  */
 export interface RateReviewEntry {
   /** Unique identifier for this review entry. */
@@ -92,4 +96,27 @@ export interface RateReviewEntry {
   readonly resolvedAt?: string;
   /** Free-text notes left by the reviewer. */
   readonly reviewerNotes?: string;
+
+  // ── Versioned-publication metadata (Task 1.3) ──────────────────────
+
+  /**
+   * Dataset version label that this review entry pertains to.
+   * Present when the entry was created through the versioned-publication
+   * flow (e.g. 'v2.0-2025', 'v3.0-2026').  Absent for auto-detection
+   * entries from the scheduler.
+   */
+  readonly versionLabel?: string;
+
+  /**
+   * Name or identifier of the person who performed the legal/regulatory
+   * confirmation that the rates in this version match the official
+   * publication.  Recorded at entry creation time for compliance auditing.
+   */
+  readonly confirmedBy?: string;
+
+  /**
+   * Role or title of the person who performed the confirmation
+   * (e.g. 'Finnish Tax Counsel', 'Compliance Officer').
+   */
+  readonly confirmedRole?: string;
 }

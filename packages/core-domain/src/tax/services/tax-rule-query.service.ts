@@ -49,7 +49,7 @@ export class TaxRuleQueryService {
    * Return all tax rules for the given type and category whose effectiveness
    * window overlaps {@code [fromDate, toDate)}.
    *
-   * @param taxType         "excise_duty" or "container_duty".
+   * @param taxType         "excise" (alcohol excise) or "container_duty".
    * @param productCategory Product category (beer, wine, spirits, glass, etc.).
    * @param fromDate        Start of query range (inclusive).
    * @param toDate          End of query range (exclusive).

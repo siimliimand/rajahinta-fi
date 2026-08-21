@@ -201,6 +201,25 @@ export default function RankingPage() {
         </div>
       </section>
 
+      {/* ── Correction flow link ── */}
+      <section className="mb-8 rounded-lg border border-amber-200 bg-amber-50 p-5">
+        <h2 className="mb-2 text-sm font-semibold text-amber-800">
+          Spot a problem?
+        </h2>
+        <p className="text-sm leading-relaxed text-amber-700">
+          If you believe a product ranking, calculation, or data point is
+          incorrect, you can flag it for review from the{' '}
+          <Link
+            href="/calculator"
+            className="font-medium text-amber-900 underline hover:text-amber-950"
+          >
+            calculator result page
+          </Link>
+          . Each result includes a &ldquo;Flag a problem&rdquo; affordance
+          that sends your feedback directly to our review team.
+        </p>
+      </section>
+
       {/* ── Footer ── */}
       <nav className="mt-8 flex flex-wrap gap-4">
         <Link

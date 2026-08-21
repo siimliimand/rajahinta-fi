@@ -22,12 +22,28 @@ export const FORMULA_PER_LITRE_OF_PRODUCT = 'PER_LITRE_OF_PRODUCT';
  */
 export const FORMULA_PER_LITRE_OF_ALCOHOL = 'PER_LITRE_OF_ALCOHOL';
 
-/** Rate is applied per hectolitre per degree Plato (€/hl-°P). */
-export const FORMULA_PER_DEGREE_PLATO = 'PER_DEGREE_PLATO';
+/**
+ * Rate in euro-cents per centilitre of ethyl alcohol (snt / cl ethanol).
+ *
+ * Numerically equals snt per %-litre (36.20 snt/cl ethanol × 5 cl ≡ 181 snt,
+ * the official duty for 1 l of 5 % beer).  The unit is "euro-cents per
+ * centilitre of pure ethyl alcohol" — what Finnish law actually levies on
+ * beer and spirits, NOT per degree Plato.
+ */
+export const FORMULA_PER_CENTILITRE_ETHANOL = 'PER_CENTILITRE_ETHANOL';
+
+/**
+ * @deprecated Use {@link FORMULA_PER_CENTILITRE_ETHANOL} instead.
+ *
+ * This alias is kept so existing imports and DB-stored references keep
+ * compiling and resolving.  Its string value is identical to the new
+ * constant; it was renamed because "degree Plato" describes wort gravity,
+ * not the actual legal unit of taxation (snt / cl ethyl alcohol).
+ */
+export const FORMULA_PER_DEGREE_PLATO: typeof FORMULA_PER_CENTILITRE_ETHANOL = FORMULA_PER_CENTILITRE_ETHANOL;
 
 // ---------------------------------------------------------------------------
-// Fallback rates — used when no tax rule is found in the repository
-// (reliability: ESTIMATED)
+// Zero-rate fallback placeholders — used when no tax rule is found
 // ---------------------------------------------------------------------------
 
 /**
@@ -39,19 +55,29 @@ export const FORMULA_PER_DEGREE_PLATO = 'PER_DEGREE_PLATO';
 export type AlcoholExciseCategory = TaxCategory;
 
 // ---------------------------------------------------------------------------
-// Default flat rates per category (€/litre of product unless noted)
+// Default zero-rate placeholders per category
 // ---------------------------------------------------------------------------
 
+/**
+ * Zero-rate fallback entries keyed by canonical category.
+ *
+ * These are intentionally zero so that a missing tax rule produces
+ * `reliability: ESTIMATED` and `taxCents: 0` — **never** a silent plausible
+ * number.  The formula reference is kept correct per category so the
+ * `calculateAlcoholExcise` dispatch remains valid; only the rate is zeroed.
+ *
+ * See design D6 in phase0-1-verification-fix.
+ */
 export const DEFAULT_RATES: Record<
   AlcoholExciseCategory,
   { formula: string; rate: number; note: string }
 > = {
-  beer: { formula: FORMULA_PER_DEGREE_PLATO, rate: 33.00, note: '€/hl per degree Plato (seed: 33.00)' },
-  wine_still: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: 'Still wine > 1.2 % ABV (seed: 3.40)' },
-  wine_sparkling: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.73, note: 'Sparkling wine > 1.2 % ABV (seed: 3.73)' },
-  spirits: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 29.50, note: 'Per litre of pure alcohol (seed: 29.50)' },
-  intermediate_products: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 3.40, note: '≤ 15 % ABV (seed: 3.40)' },
-  other_fermented: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 3.40, note: 'Cider, RTD, etc. > 2.8 % ABV (seed: 3.40/l alcohol)' },
+  beer: { formula: FORMULA_PER_CENTILITRE_ETHANOL, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
+  wine_still: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
+  wine_sparkling: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
+  spirits: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
+  intermediate_products: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
+  other_fermented: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
 };
 
 // ---------------------------------------------------------------------------
@@ -122,36 +148,33 @@ export function normaliseCategory(raw: string): AlcoholExciseCategory {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-type formula resolution for other_fermented (cider vs RTD)
+// Sub-type formula resolution for other_fermented — all variants use
+// per-litre-of-product (Finnish excise taxes fermented beverages per litre
+// of product, not per litre of alcohol).  Spirit-based RTDs are mapped to
+// the spirits category at data-ingestion time per D2 in the
+// phase0-1-verification-fix design.
 // ---------------------------------------------------------------------------
 
 /**
- * Determine the correct calculation formula for an `other_fermented` product
- * based on its original (pre-normalisation) category string.
+ * Determine the correct calculation formula for an `other_fermented` product.
  *
- * Finnish excise rules distinguish:
- *   - **Cider** (cider, siideri): per litre of **product** at flat rate (€3.40/l),
- *     like wine.
- *   - **RTD / long-drink** (rtd, ready-to-drink, lonkero): per litre of **alcohol**
- *     (€3.40/l of pure alcohol), like spirits.
+ * Finnish excise rules tax ALL fermented beverages per litre of product
+ * (like wine) using the wine band structure.  Spirit-based RTDs (lonkero,
+ * ready-to-drink) are classified as spirits at data-mapping time and do
+ * not reach this function.
  *
- * The default (any unrecognised `other_fermented` sub-type, or a canonical
- * `other_fermented` passed directly) defaults to per-litre-of-alcohol as the
- * more conservative (higher-tax) option for estimation.
+ * The function exists as a conceptual hook for future sub-type distinctions
+ * if Finnish tax law changes; currently it always returns
+ * `PER_LITRE_OF_PRODUCT`.
  *
- * @param rawCategory — The original category string (pre-normalisation).
- * @returns The formula reference constant for the correct formula type.
+ * @param _rawCategory — The original category string (pre-normalisation).
+ *        Ignored — all fermented beverages use PER_LITRE_OF_PRODUCT.
+ * @returns Always `PER_LITRE_OF_PRODUCT`.
  */
 export function resolveOtherFermentedFormula(
-  rawCategory: string,
-): 'PER_LITRE_OF_PRODUCT' | 'PER_LITRE_OF_ALCOHOL' {
-  const lower = rawCategory.toLowerCase().trim();
-  if (lower === 'cider' || lower === 'siideri') {
-    return 'PER_LITRE_OF_PRODUCT';
-  }
-  // RTD, lonkero, ready-to-drink, unknown, or canonical 'other_fermented'
-  // Default: per-litre-of-alcohol (like spirits, conservative estimate)
-  return 'PER_LITRE_OF_ALCOHOL';
+  _rawCategory: string,
+): 'PER_LITRE_OF_PRODUCT' {
+  return 'PER_LITRE_OF_PRODUCT';
 }
 
 // ---------------------------------------------------------------------------
@@ -195,30 +218,35 @@ export function calcPerLitreOfAlcohol(
 }
 
 /**
- * Calculate excise using a per-degree-Plato (hectolitre-percent) formula.
+ * Calculate excise using a per-centilitre-of-ethyl-alcohol formula.
  *
- * Finnish beer excise is levied at €X per hectolitre per degree Plato
- * of original wort.  Degree Plato is approximately equal to ABV for
- * finished beer, so the formula is:
+ * Finnish beer and spirits excise is levied at €X per centilitre of ethyl
+ * alcohol.  Numerically this equals €X per %-litre (e.g. €0.3620 / %-litre),
+ * which is what the code computes:
  *
- *   tax = ratePerHectolitrePercent * abv * volumeLitres
+ *   tax = ratePerCentilitreEthanol * abv * volumeLitres
  *
  * where `abv` is the alcohol-by-volume fraction (0–1) and the result
  * is returned in euro-cents.
  *
- * @param ratePerHectolitrePercent  Rate in € per hectolitre per percent (e.g. 33.00).
+ * @deprecated-function-name This function was originally named for degree
+ *   Plato, which describes wort gravity rather than the actual legal unit.
+ *   The arithmetic is correct; only the historical name remains.
+ *
+ * @param ratePerCentilitreEthanol  Rate in € per centilitre of ethyl alcohol
+ *   (e.g. 36.20 for the standard beer rate).
  * @param abv                       Alcohol by volume fraction (0–1, e.g. 0.047 for 4.7 %).
  * @param volumeLitres              Volume in litres.
  * @returns Excise amount in euro-cents.
  */
 export function calcPerDegreePlato(
-  ratePerHectolitrePercent: number,
+  ratePerCentilitreEthanol: number,
   abv: number,
   volumeLitres: number,
 ): number {
   validatePositive(volumeLitres, 'volumeLitres');
   validateRange(abv, 0, 1, 'abv');
-  const amount = ratePerHectolitrePercent * abv * volumeLitres;
+  const amount = ratePerCentilitreEthanol * abv * volumeLitres;
   return roundToCents(amount);
 }
 
@@ -247,7 +275,8 @@ export function calculateAlcoholExcise(
       const effectiveRate = rateValue * abv;
       return { taxCents, rateApplied: effectiveRate };
     }
-    case FORMULA_PER_DEGREE_PLATO: {
+    case FORMULA_PER_CENTILITRE_ETHANOL:
+    case 'PER_DEGREE_PLATO': {
       const taxCents = calcPerDegreePlato(rateValue, abv, volumeLitres);
       // Effective per-litre-of-product rate for evidence
       const effectiveRate = rateValue * abv;

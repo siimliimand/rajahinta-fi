@@ -9,10 +9,11 @@
  * @module RankingController
  */
 
-import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { RankingService } from '@rajahinta/core-domain';
 import type { SortOrder } from '@rajahinta/core-domain';
+import { AgeGateGuard } from '../age-gate';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,6 +51,7 @@ const SORT_LABEL: Record<string, string> = {
 
 @ApiTags('ranking')
 @Controller('api/v1/ranking')
+@UseGuards(AgeGateGuard)
 export class RankingController {
   constructor(private readonly rankingService: RankingService) {}
 

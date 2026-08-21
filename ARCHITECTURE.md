@@ -377,6 +377,28 @@ The repository is an agentic workspace with a working application build. Command
 - **Legal review tasks incomplete** (5 external tasks marked `agent: none`): Finnish legal opinion, tax counsel validation, compliance review.
 - **Classification rules subject to legislative change** (e.g., 1 September 2024 joint-liability change) require versioned, dated rule sets.
 - **Deposit-return system status per product/packaging is tri-state** (`boolean | null`); null means ESTIMATED — the container-duty engine flags uncertain exemptions, never silently assumes.
+- **Small-brewery relief (pienpanimoalennus) UNAVAILABLE:** The official vero.fi scheme is a progressive 10–50 % discount by annual production volume (ceiling 15 000 000 l/year, HE 106/2024). The current rule evaluator cannot express production-volume tiers, so only the general beer rate is shipped. Small-brewery treatment is documented as `UNAVAILABLE` pending Phase 2 evaluator support. See vero.fi pienpanimoalennus guidance; rationale in `docs/phase-0-1-verification-fix-plan.md` §3 C1.
+- **GDPR integration tests require `TEST_DATABASE_URL`:** `packages/application-api/src/accounts/__tests__/gdpr-integration.test.ts` runs against a real PostgreSQL instance. There is no always-on Postgres harness in CI; these tests are skipped unless `TEST_DATABASE_URL` is set.
+- **HTTP-level load testing not implemented:** `artillery` sits unused in devDependencies. The in-process benchmark (`pnpm test:load`) exercises CPU-bound calculation throughput but does not test HTTP latency, connection handling, or rate-limiting under concurrent requests. See `docs/staging-verification.md` §"HTTP-level load testing".
+- **E2E suite relies on decorator-metadata transform + single-instance pin:** `vitest.config.e2e.ts` uses a custom TypeScript transpile plugin to emit `emitDecoratorMetadata` and pins `@nestjs/core` to a single physical path. Root cause: pnpm instantiates `@nestjs/core` twice (two peer-set variants), giving two `Reflector`/class identities and breaking NestJS DI. A durable fix would resolve the dependency-side duplication; the current workaround is functional but fragile.
+- **Idempotency controller ordering follow-up:** `CalculatorController` calls `getCacheKey(input)` before `findActiveVersionLabels()`, but `hashInput()` now includes dataset versions in the hash. Since the versions are fetched after the key is computed, the caller must populate `datasetVersions` on the input object before calling `getCacheKey`. Currently the versions are only passed to `lookup()` as `currentVersions`, so the hash key does not reflect dataset versions — the lookup-time version comparison serves as defence in depth, but the cache key itself is version-blind. See task 5.5 follow-up.
+- **Transport layer retains local `EXACT` reliability type:** The canonical `ReliabilityStatus` union (`VERIFIED | STALE | UNAVAILABLE | ESTIMATED`) no longer includes `EXACT`, but `TransportOffer.reliabilityStatus` and `BasketShippingResult.reliability` still use local `'EXACT' | 'ESTIMATED'` string-literal types. The `LandedCostCalculatorService` maps `EXACT → VERIFIED` at the transport-cost boundary. A full unification would change the transport layer to use `ReliabilityStatus` with `'VERIFIED'` and remove the mapping adapter. `DataReliability` is retained as a deprecated type alias (`= ReliabilityStatus`) in `core-domain/src/index.ts` for backward compatibility.
+
+### 15.1 Schema source-of-truth decision
+
+> **Decision recorded by task 6.2; implemented by task 6.3.**
+
+**Context:** The database schema is defined in two places — the Drizzle ORM file `packages/data-platform/src/schema.ts` and a hand-written DDL file `infra/staging-data/schema.sql`. No Drizzle-generated migrations exist. These files can drift: `schema.ts` drives the type system, repository queries, and seed-data structures; `schema.sql` is applied directly to the staging database via `psql`. Any change to one without the other produces a schema mismatch.
+
+**Decision:** Drizzle `packages/data-platform/src/schema.ts` is the **single source of truth** for the database schema. Committed Drizzle migrations are generated from it (`drizzle-kit generate`). `infra/staging-data/schema.sql` is removed from the deploy path.
+
+**Consequences:**
+
+- All schema changes flow through `schema.ts` → `drizzle-kit generate` → committed migration files.
+- The staging deploy applies generated migrations instead of a hand-written SQL file.
+- `schema.ts` is the authoritative reference for repositories, seed data, and type inference — no parallel maintenance burden.
+- Generated SQL remains reviewable in git (migration files are plain SQL).
+- `infra/staging-data/schema.sql` is deleted once the migration path is wired into the staging deploy pipeline.
 
 ## 16. Future Considerations
 

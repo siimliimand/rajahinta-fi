@@ -5,13 +5,15 @@
  * data and database so that `normaliseCategory()` always produces a key
  * that the repository can resolve.
  *
- * Finnish Tax Administration categories (Verohallinto, 2024):
- *   - beer:             beer (includes small-brewery variant as sub-category)
- *   - wine_still:       still wine (≤15 %ABV → €3.40/l, 15–18 %ABV → €4.55/l)
- *   - wine_sparkling:   sparkling wine / champagne (>1.2 %ABV → €3.73/l)
- *   - spirits:          distilled spirits (€29.50/l of pure alcohol)
- *   - intermediate_products: port, sherry, vermouth (≤15 % → €3.40/l, >15 % → €4.55/l)
- *   - other_fermented:  cider, RTD, sake, mead, etc. (≤2.8 %ABV exempt, >2.8 % → €3.40/l)
+ * Finnish Tax Administration official 2024 bands (Verohallinto):
+ *   - beer:             beer — 0 / 28.35 / 36.20 snt per cl ethanol
+ *                        (≤0.5 %ABV exempt; ≤8.0 %ABV reduced; >8.0 %ABV standard;
+ *                         includes small-brewery progressive relief as sub-category)
+ *   - wine_still:       still wine — six ABV bands: 0 / 0.36 / 1.98 / 3.08 / 4.56 / 4.56 €/l
+ *   - wine_sparkling:   sparkling wine / champagne — same band structure as wine_still
+ *   - spirits:          distilled spirits — 0 / 30.90 / 54.80 €/l of pure alcohol
+ *   - intermediate_products: port, sherry, vermouth — 5.68 / 8.63 €/l of product
+ *   - other_fermented:  cider, RTD, sake, mead, etc. — wine band structure per litre of product
  *
  * Container duty (`container_duty` / `all_beverages`) is a separate tax type
  * handled by the ContainerDutyService — it is NOT an alcohol excise category.

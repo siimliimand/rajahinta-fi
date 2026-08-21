@@ -2,8 +2,12 @@
 # =============================================================================
 # setup.sh — Load staging data into a Rajahinta.fi staging Postgres instance
 # =============================================================================
-# Idempotent: drops and recreates the staging schema, then applies schema.sql
-# and seed.sql. Safe to re-run at any time.
+# Idempotent: applies Drizzle-generated migrations (from schema.ts), then the
+# infra-only staging_reviews table, then seed.sql.  Safe to re-run at any time.
+#
+# NOTE: schema.ts (Drizzle ORM) is the single source of truth per
+# ARCHITECTURE.md §15.1.  The hand-written schema.sql is retained for
+# documentation only — the deploy path uses Drizzle migrations.
 #
 # Usage:
 #   ./setup.sh                          # uses defaults from staging.yaml
@@ -28,7 +32,9 @@ DB_USER="${STAGING_DB_USER:-rajinta_app}"
 CI_MODE=false
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCHEMA_FILE="${SCRIPT_DIR}/schema.sql"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+MIGRATIONS_DIR="${PROJECT_ROOT}/packages/data-platform/drizzle"
+STAGING_REVIEWS_FILE="${SCRIPT_DIR}/staging-reviews.sql"
 SEED_FILE="${SCRIPT_DIR}/seed.sql"
 
 # ---- Parse args ------------------------------------------------------------
@@ -59,8 +65,9 @@ export PGPASSWORD="$PASSWORD"
 PSQL_CMD="psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME}"
 
 # ---- Validate files --------------------------------------------------------
-if [[ ! -f "$SCHEMA_FILE" ]]; then
-    echo "FATAL: schema.sql not found at ${SCHEMA_FILE}" >&2
+if [[ ! -d "$MIGRATIONS_DIR" ]]; then
+    echo "FATAL: Drizzle migrations directory not found at ${MIGRATIONS_DIR}" >&2
+    echo "  Generate migrations first: pnpm --filter @rajahinta/data-platform exec drizzle-kit generate" >&2
     exit 1
 fi
 if [[ ! -f "$SEED_FILE" ]]; then
@@ -68,7 +75,7 @@ if [[ ! -f "$SEED_FILE" ]]; then
     exit 1
 fi
 
-# ---- Drop and recreate schema ----------------------------------------------
+# ---- Drop existing tables --------------------------------------------------
 echo "=== Dropping existing staging tables ==="
 ${PSQL_CMD} -c "
     DROP TABLE IF EXISTS staging_reviews CASCADE;
@@ -77,11 +84,34 @@ ${PSQL_CMD} -c "
     DROP TABLE IF EXISTS retail_offers CASCADE;
     DROP TABLE IF EXISTS tax_rules CASCADE;
     DROP TABLE IF EXISTS product_master CASCADE;
+    DROP TABLE IF EXISTS accounts CASCADE;
+    DROP TABLE IF EXISTS saved_baskets CASCADE;
 "
 
-# ---- Apply schema ----------------------------------------------------------
-echo "=== Creating staging schema ==="
-${PSQL_CMD} -f "$SCHEMA_FILE"
+# ---- Apply Drizzle migrations ----------------------------------------------
+echo "=== Applying Drizzle migrations ==="
+export DATABASE_URL="postgresql://${DB_USER}:${PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+
+# Apply migration SQL files in journal order (psql direct apply)
+if [[ -f "${MIGRATIONS_DIR}/meta/_journal.json" ]]; then
+    for tag in $(grep -o '"tag": *"[^"]*"' "${MIGRATIONS_DIR}/meta/_journal.json" | sed 's/"tag": *"//;s/"//'); do
+        sql_file="${MIGRATIONS_DIR}/${tag}.sql"
+        if [[ -f "$sql_file" ]]; then
+            echo "  Applying ${tag}.sql..."
+            sed 's/^--> statement-breakpoint$//' "$sql_file" | ${PSQL_CMD} > /dev/null 2>&1
+        fi
+    done
+else
+    echo "WARN: No _journal.json found in ${MIGRATIONS_DIR}" >&2
+fi
+
+# ---- Create infra-only staging_reviews table -------------------------------
+echo "=== Creating staging_reviews table ==="
+if [[ -f "$STAGING_REVIEWS_FILE" ]]; then
+    ${PSQL_CMD} -f "$STAGING_REVIEWS_FILE"
+else
+    echo "WARN: staging-reviews.sql not found — skipping staging_reviews table"
+fi
 
 # ---- Load seed data --------------------------------------------------------
 echo "=== Loading seed data ==="
@@ -100,6 +130,7 @@ echo ""
 echo "=== Staging data load complete ==="
 echo "  Tables: product_master, retail_offers, tax_rules,"
 echo "          transport_offers, calculation_records, staging_reviews"
+echo "          accounts, saved_baskets (from Drizzle schema)"
 echo "  Golden dataset: 12 pre-calculated scenarios (golden-001 to golden-012)"
 echo "  Rate versions: 2024-01, 2025-01, 2026-PROPOSAL (pending review)"
 echo "  Merchants: HelsinkiPremium Oy, SuomiLogistiikka, PohjolanTuonti,"

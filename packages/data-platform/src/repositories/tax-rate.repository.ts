@@ -8,8 +8,13 @@
  * @module DrizzleTaxRateRepository
  */
 import { Injectable, Inject } from '@nestjs/common';
-import { eq, and, lte, or, isNull, gt, desc } from 'drizzle-orm';
+import { eq, and, lte, or, isNull, gte, desc } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDatabase } from '../db/drizzle.provider';
+import { validateEffectiveRanges, type EffectiveRangeInput } from './effective-range-validator';
+
+// Re-exported for API stability — the pure helper moved to its own module to
+// avoid a seed <-> repository import cycle.
+export { validateEffectiveRanges, type EffectiveRangeInput } from './effective-range-validator';
 import {
   TaxRateRepository,
 } from '../abstracts';
@@ -21,6 +26,10 @@ import type {
   TaxRuleRecordPort,
   AbvTierConditions,
 } from '@rajahinta/core-domain';
+
+// ---------------------------------------------------------------------------
+// Pure helper — gap/overlap validation for effective date ranges
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Drizzle repository (extends abstract class)
@@ -44,7 +53,7 @@ export class DrizzleTaxRateRepository extends TaxRateRepository {
       .where(
         and(
           lte(taxRules.effectiveFrom, asOf),
-          or(isNull(taxRules.effectiveTo), gt(taxRules.effectiveTo, asOf)),
+          or(isNull(taxRules.effectiveTo), gte(taxRules.effectiveTo, asOf)),
         ),
       )
       .orderBy(desc(taxRules.effectiveFrom))
@@ -81,11 +90,68 @@ export class DrizzleTaxRateRepository extends TaxRateRepository {
           lte(taxRules.effectiveFrom, toDate),
           or(
             isNull(taxRules.effectiveTo),
-            gt(taxRules.effectiveTo, fromDate),
+            gte(taxRules.effectiveTo, fromDate),
           ),
         ),
       )
       .orderBy(taxRules.effectiveFrom);
+  }
+
+  /**
+   * Validate that effective-date ranges for a given (taxType, productCategory)
+   * are non-overlapping and gapless, including optional candidate rows that
+   * have not yet been persisted.
+   *
+   * Adjacent ranges (e.g. prev ends 31.3., next starts 1.4.) are permitted.
+   *
+   * @throws {Error} with a descriptive message if gaps or overlaps are found.
+   */
+  async validateEffectiveRanges(
+    taxType: string,
+    productCategory: string,
+    candidates?: EffectiveRangeInput[],
+  ): Promise<void> {
+    const existing = await this.db
+      .select({
+        effectiveFrom: taxRules.effectiveFrom,
+        effectiveTo: taxRules.effectiveTo,
+        band: taxRules.exemptionConditions,
+      })
+      .from(taxRules)
+      .where(
+        and(
+          eq(taxRules.taxType, taxType),
+          eq(taxRules.productCategory, productCategory),
+        ),
+      );
+
+    // A category carries one CONCURRENT timeline per ABV band (e.g. wine
+    // has six); ranges are contiguous within a band, not across bands.
+    const byBand = new Map<string, EffectiveRangeInput[]>();
+    const bandKey = (band: unknown): string => (band == null ? 'none' : JSON.stringify(band));
+    for (const row of existing) {
+      const key = bandKey(row.band);
+      if (!byBand.has(key)) byBand.set(key, []);
+      byBand.get(key)!.push(row);
+    }
+    if (candidates) {
+      // Candidate rows without band context validate as one timeline.
+      byBand.set('__candidates__', candidates);
+    }
+
+    const allErrors: string[] = [];
+    for (const [key, rows] of byBand) {
+      for (const err of validateEffectiveRanges(rows)) {
+        allErrors.push(`[${taxType}:${productCategory} band=${key}] ${err}`);
+      }
+    }
+    const errors = allErrors;
+
+    if (errors.length > 0) {
+      throw new Error(
+        `Invalid effective ranges for taxType="${taxType}" productCategory="${productCategory}": ${errors.join('; ')}`,
+      );
+    }
   }
 }
 
@@ -144,7 +210,7 @@ export class TaxRuleRepositoryAdapter implements ITaxRuleRepositoryPort {
           lte(taxRules.effectiveFrom, asOf),
           or(
             isNull(taxRules.effectiveTo),
-            gt(taxRules.effectiveTo, asOf),
+            gte(taxRules.effectiveTo, asOf),
           ),
         ),
       )
@@ -170,7 +236,7 @@ export class TaxRuleRepositoryAdapter implements ITaxRuleRepositoryPort {
           lte(taxRules.effectiveFrom, toDate),
           or(
             isNull(taxRules.effectiveTo),
-            gt(taxRules.effectiveTo, fromDate),
+            gte(taxRules.effectiveTo, fromDate),
           ),
         ),
       )
@@ -188,7 +254,7 @@ export class TaxRuleRepositoryAdapter implements ITaxRuleRepositoryPort {
       .where(
         and(
           lte(taxRules.effectiveFrom, now),
-          or(isNull(taxRules.effectiveTo), gt(taxRules.effectiveTo, now)),
+          or(isNull(taxRules.effectiveTo), gte(taxRules.effectiveTo, now)),
         ),
       )
       .groupBy(taxRules.versionLabel);
@@ -219,7 +285,7 @@ export class TaxRuleRepositoryAdapter implements ITaxRuleRepositoryPort {
           lte(taxRules.effectiveFrom, asOf),
           or(
             isNull(taxRules.effectiveTo),
-            gt(taxRules.effectiveTo, asOf),
+            gte(taxRules.effectiveTo, asOf),
           ),
         ),
       )

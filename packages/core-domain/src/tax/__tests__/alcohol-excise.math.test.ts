@@ -15,6 +15,7 @@ import {
   FORMULA_PER_LITRE_OF_PRODUCT,
   FORMULA_PER_LITRE_OF_ALCOHOL,
   FORMULA_PER_DEGREE_PLATO,
+  FORMULA_PER_CENTILITRE_ETHANOL,
 } from '../services/alcohol-excise.math';
 
 // ---------------------------------------------------------------------------
@@ -87,46 +88,46 @@ describe('calcPerLitreOfAlcohol', () => {
 
 describe('calcPerDegreePlato', () => {
   it('returns 0 for 0 ABV (alcohol-free beer)', () => {
-    const result = calcPerDegreePlato(33.0, 0, 0.33);
+    const result = calcPerDegreePlato(36.20, 0, 0.33);
     expect(result).toBe(0);
   });
 
   it('returns 0 for 0 volume', () => {
-    expect(calcPerDegreePlato(33.0, 0.047, 0)).toBe(0);
+    expect(calcPerDegreePlato(36.20, 0.047, 0)).toBe(0);
   });
 
-  it('calculates 0.33L at 4.7% ABV: 33.00 × 0.047 × 0.33 = 0.51183 → 51 cents', () => {
-    // 33.00 * 0.047 * 0.33 = 0.51183 → round → 51
-    const result = calcPerDegreePlato(33.0, 0.047, 0.33);
-    expect(result).toBe(51);
+  it('calculates 0.33L at 4.7% ABV: 36.20 × 0.047 × 0.33 = 0.561... → 56 cents', () => {
+    // 36.20 * 0.047 * 0.33 = 0.561... → round → 56
+    const result = calcPerDegreePlato(36.20, 0.047, 0.33);
+    expect(result).toBe(56);
   });
 
-  it('calculates 1L at 4.7% ABV: 33.00 × 0.047 × 1.0 = 1.551 → 155 cents', () => {
-    expect(calcPerDegreePlato(33.0, 0.047, 1.0)).toBe(155);
+  it('calculates 1L at 4.7% ABV: 36.20 × 0.047 × 1.0 = 1.7014 → 170 cents', () => {
+    expect(calcPerDegreePlato(36.20, 0.047, 1.0)).toBe(170);
   });
 
-  it('calculates 0.5L at 8.0% ABV: 33.00 × 0.080 × 0.5 = 1.32 → 132 cents', () => {
-    expect(calcPerDegreePlato(33.0, 0.08, 0.5)).toBe(132);
+  it('calculates 0.5L at 8.0% ABV: 36.20 × 0.080 × 0.5 = 1.448 → 145 cents', () => {
+    expect(calcPerDegreePlato(36.20, 0.08, 0.5)).toBe(145);
   });
 
-  it('handles small-brewery reduced rate: 16.50 × 0.047 × 0.33 = 0.2559 → 26 cents', () => {
+  it('handles small-brewery hypothetical rate: 16.50 × 0.047 × 0.33 = 0.2559 → 26 cents', () => {
     expect(calcPerDegreePlato(16.5, 0.047, 0.33)).toBe(26);
   });
 
   it('throws on ABV > 1', () => {
-    expect(() => calcPerDegreePlato(33.0, 1.1, 0.33)).toThrow(RangeError);
+    expect(() => calcPerDegreePlato(36.20, 1.1, 0.33)).toThrow(RangeError);
   });
 
   it('throws on negative ABV', () => {
-    expect(() => calcPerDegreePlato(33.0, -0.1, 0.33)).toThrow(RangeError);
+    expect(() => calcPerDegreePlato(36.20, -0.1, 0.33)).toThrow(RangeError);
   });
 
   it('throws on negative volume', () => {
-    expect(() => calcPerDegreePlato(33.0, 0.047, -1)).toThrow(RangeError);
+    expect(() => calcPerDegreePlato(36.20, 0.047, -1)).toThrow(RangeError);
   });
 
-  it('handles high ABV near the limit: 0.99 × 33.00 × 0.33 = 10.7811 → 1078 cents', () => {
-    expect(calcPerDegreePlato(33.0, 0.99, 0.33)).toBe(1078);
+  it('handles high ABV near the limit: 0.99 × 36.20 × 0.33 = 11.826... → 1183 cents', () => {
+    expect(calcPerDegreePlato(36.20, 0.99, 0.33)).toBe(1183);
   });
 });
 
@@ -159,16 +160,16 @@ describe('calculateAlcoholExcise', () => {
     expect(result.rateApplied).toBeCloseTo(0.565 * 0.40, 3);
   });
 
-  it('PER_DEGREE_PLATO: 0.33L beer at 4.7% ABV → 51 cents, rate 1.551', () => {
+  it('PER_DEGREE_PLATO: 0.33L beer at 4.7% ABV with 36.20 rate → 56 cents, rate 1.7014', () => {
     const result = calculateAlcoholExcise(
       FORMULA_PER_DEGREE_PLATO,
-      33.0,
+      36.20,
       0.047,
       0.33,
       'beer',
     );
-    expect(result.taxCents).toBe(51);
-    expect(result.rateApplied).toBeCloseTo(33.0 * 0.047, 3);
+    expect(result.taxCents).toBe(56);
+    expect(result.rateApplied).toBeCloseTo(36.20 * 0.047, 3);
   });
 
   it('intermediate: 0.75L at €0.710/L → 53 cents', () => {
@@ -183,17 +184,17 @@ describe('calculateAlcoholExcise', () => {
     expect(result.rateApplied).toBeCloseTo(0.710);
   });
 
-  it('RTD (ready-to-drink): 0.33L at 5.5% ABV, €0.565/L alcohol → 1 cent', () => {
+  it('other_fermented (RTD/ready-to-drink): 0.33L at 5.5% ABV uses PER_LITRE_OF_PRODUCT — 0.565 × 0.33 = 19 cents', () => {
     const result = calculateAlcoholExcise(
-      FORMULA_PER_LITRE_OF_ALCOHOL,
+      FORMULA_PER_LITRE_OF_PRODUCT,
       0.565,
       0.055,
       0.33,
       'other_fermented',
     );
-    // 0.565 * 0.055 * 0.33 = 0.01025475 → round → 1
-    expect(result.taxCents).toBe(1);
-    expect(result.rateApplied).toBeCloseTo(0.565 * 0.055);
+    // 0.565 * 0.33 = 0.18645 → round → 19
+    expect(result.taxCents).toBe(19);
+    expect(result.rateApplied).toBeCloseTo(0.565);
   });
 
   it('"other_fermented" category defaults to per-litre-of-product wine rate', () => {
@@ -225,6 +226,30 @@ describe('calculateAlcoholExcise', () => {
     expect(calculateAlcoholExcise(FORMULA_PER_LITRE_OF_PRODUCT, 0.355, 0.12, 0, 'wine_still').taxCents).toBe(0);
     expect(calculateAlcoholExcise(FORMULA_PER_LITRE_OF_ALCOHOL, 0.565, 0.40, 0, 'spirits').taxCents).toBe(0);
     expect(calculateAlcoholExcise(FORMULA_PER_DEGREE_PLATO, 33.0, 0.047, 0, 'beer').taxCents).toBe(0);
+  });
+
+  // -----------------------------------------------------------------------
+  // Dispatch compatibility — both the old DB-stored string and the new
+  // constant must route identically through calculateAlcoholExcise.
+  // -----------------------------------------------------------------------
+
+  it('PER_CENTILITRE_ETHANOL gives same result as the deprecated alias for beer', () => {
+    const result = calculateAlcoholExcise(
+      FORMULA_PER_CENTILITRE_ETHANOL,
+      36.20,
+      0.047,
+      0.33,
+      'beer',
+    );
+    expect(result.taxCents).toBe(56);
+    expect(result.rateApplied).toBeCloseTo(36.20 * 0.047, 3);
+  });
+
+  it('legacy string "PER_DEGREE_PLATO" routes through the same math as PER_CENTILITRE_ETHANOL', () => {
+    const legacy = calculateAlcoholExcise('PER_DEGREE_PLATO', 36.20, 0.047, 0.33, 'beer');
+    const modern = calculateAlcoholExcise(FORMULA_PER_CENTILITRE_ETHANOL, 36.20, 0.047, 0.33, 'beer');
+    expect(legacy.taxCents).toBe(modern.taxCents);
+    expect(legacy.rateApplied).toBe(modern.rateApplied);
   });
 });
 
@@ -285,23 +310,23 @@ describe('resolveOtherFermentedFormula', () => {
     expect(resolveOtherFermentedFormula('CIDER')).toBe(FORMULA_PER_LITRE_OF_PRODUCT);
   });
 
-  it('returns PER_LITRE_OF_ALCOHOL for "rtd"', () => {
-    expect(resolveOtherFermentedFormula('rtd')).toBe(FORMULA_PER_LITRE_OF_ALCOHOL);
+  it('returns PER_LITRE_OF_PRODUCT for "rtd"', () => {
+    expect(resolveOtherFermentedFormula('rtd')).toBe(FORMULA_PER_LITRE_OF_PRODUCT);
   });
 
-  it('returns PER_LITRE_OF_ALCOHOL for "lonkero" (fi)', () => {
-    expect(resolveOtherFermentedFormula('lonkero')).toBe(FORMULA_PER_LITRE_OF_ALCOHOL);
+  it('returns PER_LITRE_OF_PRODUCT for "lonkero" (fi)', () => {
+    expect(resolveOtherFermentedFormula('lonkero')).toBe(FORMULA_PER_LITRE_OF_PRODUCT);
   });
 
-  it('returns PER_LITRE_OF_ALCOHOL for "ready-to-drink"', () => {
-    expect(resolveOtherFermentedFormula('ready-to-drink')).toBe(FORMULA_PER_LITRE_OF_ALCOHOL);
+  it('returns PER_LITRE_OF_PRODUCT for "ready-to-drink"', () => {
+    expect(resolveOtherFermentedFormula('ready-to-drink')).toBe(FORMULA_PER_LITRE_OF_PRODUCT);
   });
 
-  it('returns PER_LITRE_OF_ALCOHOL for canonical "other_fermented"', () => {
-    expect(resolveOtherFermentedFormula('other_fermented')).toBe(FORMULA_PER_LITRE_OF_ALCOHOL);
+  it('returns PER_LITRE_OF_PRODUCT for canonical "other_fermented"', () => {
+    expect(resolveOtherFermentedFormula('other_fermented')).toBe(FORMULA_PER_LITRE_OF_PRODUCT);
   });
 
-  it('returns PER_LITRE_OF_ALCOHOL for unknown sub-type', () => {
-    expect(resolveOtherFermentedFormula('sake')).toBe(FORMULA_PER_LITRE_OF_ALCOHOL);
+  it('returns PER_LITRE_OF_PRODUCT for unknown sub-type', () => {
+    expect(resolveOtherFermentedFormula('sake')).toBe(FORMULA_PER_LITRE_OF_PRODUCT);
   });
 });

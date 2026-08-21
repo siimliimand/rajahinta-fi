@@ -11,7 +11,7 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-echo "=== Golden-dataset regression tests (v1.0) ==="
+echo "=== Golden-dataset regression tests (v2.0) ==="
 
 pnpm vitest run \
   --config tests/golden/vitest.config.ts \

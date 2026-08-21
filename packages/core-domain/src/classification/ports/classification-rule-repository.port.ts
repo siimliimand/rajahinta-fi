@@ -72,4 +72,13 @@ export interface IClassificationRuleRepositoryPort {
    * List all known rule set versions, ordered by effectiveFrom ascending.
    */
   listVersions(): Promise<ClassificationRuleSetRecord[]>;
+
+  /**
+   * Persist a new rule set version.
+   *
+   * Implementations should enforce that versionLabel is unique.
+   *
+   * @param record The rule set record to persist.
+   */
+  saveRuleSet(record: ClassificationRuleSetRecord): Promise<void>;
 }

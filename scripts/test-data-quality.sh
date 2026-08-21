@@ -17,12 +17,36 @@ else
 fi
 
 if [ "$PSQL_AVAILABLE" = true ]; then
-  # Seed the database first so tables exist
-  SCHEMA_PATH="${GOLDEN_DATASET_PATH:-./infra/staging-data}/schema.sql"
+  # Apply Drizzle-generated migrations instead of hand-written schema.sql
+  # (ARCHITECTURE.md §15.1: schema.ts is the single source of truth).
+  MIGRATIONS_DIR="packages/data-platform/drizzle"
+  STAGING_REVIEWS_FILE="./infra/staging-data/staging-reviews.sql"
   SEED_PATH="${GOLDEN_DATASET_PATH:-./infra/staging-data}/seed.sql"
-  if [ -f "$SCHEMA_PATH" ]; then
-    echo "Loading schema from $SCHEMA_PATH..."
-    psql "$DB_URL" -f "$SCHEMA_PATH" > /dev/null 2>&1
+  if [ -d "$MIGRATIONS_DIR" ]; then
+    echo "Applying Drizzle migrations from $MIGRATIONS_DIR..."
+    # drizzle-kit is a devDependency of @rajahinta/data-platform; run it from
+    # that package so its drizzle.config.ts and ./drizzle out-dir resolve.
+    if ! pnpm --filter @rajahinta/data-platform exec drizzle-kit migrate 2>&1; then
+      echo "WARN: drizzle-kit migrate failed — falling back to psql direct apply"
+      # Fallback: apply migration SQL files in journal order
+      if [ -f "${MIGRATIONS_DIR}/meta/_journal.json" ]; then
+        for tag in $(grep -o '"tag": *"[^"]*"' "${MIGRATIONS_DIR}/meta/_journal.json" | sed 's/"tag": *"//;s/"//'); do
+          sql_file="${MIGRATIONS_DIR}/${tag}.sql"
+          if [ -f "$sql_file" ]; then
+            echo "  Applying ${tag}.sql..."
+            sed 's/^--> statement-breakpoint$//' "$sql_file" | psql "$DB_URL" > /dev/null 2>&1
+          fi
+        done
+      fi
+    fi
+
+    # Create infra-only staging_reviews table (not in Drizzle schema)
+    if [ -f "$STAGING_REVIEWS_FILE" ]; then
+      echo "Creating staging_reviews table..."
+      psql "$DB_URL" -f "$STAGING_REVIEWS_FILE" > /dev/null 2>&1
+    fi
+  else
+    echo "WARN: No drizzle/ directory found — skipping schema migration"
   fi
   if [ -f "$SEED_PATH" ]; then
     echo "Loading seed data from $SEED_PATH..."
