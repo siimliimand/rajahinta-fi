@@ -12,6 +12,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BadRequestException } from '@nestjs/common';
 import { AnalyticsController } from '../analytics.controller';
 import { ClickAnalyticsService } from '../click-analytics.service';
+import type { ClickStats } from '../click-analytics.service';
 
 // ---------------------------------------------------------------------------
 // Mock factory
@@ -38,6 +39,27 @@ function createMockClickService(): ClickAnalyticsService {
           counts[url] = count;
         }
         result[merchantId] = counts;
+      }
+      return result;
+    }),
+    getClickStats: vi.fn((): Record<string, ClickStats> => {
+      const result: Record<string, ClickStats> = {};
+      for (const [merchantId, merchantClicks] of clicks) {
+        const perUrl: Record<string, number> = {};
+        let totalClicks = 0;
+        for (const [url, count] of merchantClicks) {
+          perUrl[url] = count;
+          totalClicks += count;
+        }
+        result[merchantId] = {
+          totalClicks,
+          uniqueUrls: merchantClicks.size,
+          perUrl,
+          purchaseCount: 0,
+          commissionTotalCents: 0,
+          affiliateCommissionCents: 0,
+          transactionCount: 0,
+        };
       }
       return result;
     }),

@@ -8,6 +8,8 @@ export {
   taxRules,
   transportOffers,
   calculationRecords,
+  accounts,
+  savedBaskets,
 } from './schema';
 
 // ---------------------------------------------------------------------------
