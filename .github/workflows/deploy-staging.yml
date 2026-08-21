@@ -8,7 +8,7 @@ on:
 env:
   CI: true
   REGISTRY: ghcr.io
-  IMAGE_NAME: ghcr.io/rajahinta/rajahinta
+  IMAGE_NAME: ghcr.io/siimliimand/rajahinta
 
 jobs:
   deploy:
@@ -42,10 +42,10 @@ jobs:
           docker build -t ${{ env.IMAGE_NAME }}:$SHORT_SHA -t ${{ env.IMAGE_NAME }}:latest .
 
       - name: Log in to GitHub Container Registry
-        # Uses the workflow's GITHUB_TOKEN (granted packages: write above).
-        # Fallback: if the ghcr.io/rajahinta/rajahinta package ACL blocks the
-        # repo token, create a fine-grained PAT with write:packages, store it
-        # as the REGISTRY_TOKEN secret, and revert the password line below.
+        # Uses the workflow's GITHUB_TOKEN (granted packages: write above);
+        # the repo token can push to the repo owner's GHCR namespace.
+        # Fallback: a REGISTRY_TOKEN PAT with write:packages is only needed
+        # if the image ever moves to a separate org namespace.
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}

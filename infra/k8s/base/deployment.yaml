@@ -33,7 +33,7 @@ spec:
       serviceAccountName: rajahinta-backend
       containers:
         - name: backend
-          image: ghcr.io/rajahinta/rajahinta:latest
+          image: ghcr.io/siimliimand/rajahinta:latest
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

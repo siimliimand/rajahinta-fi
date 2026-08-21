@@ -37,7 +37,7 @@ spec:
         fsGroup: 1001
       containers:
         - name: migrate
-          image: ghcr.io/rajahinta/rajahinta:latest
+          image: ghcr.io/siimliimand/rajahinta:latest
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
