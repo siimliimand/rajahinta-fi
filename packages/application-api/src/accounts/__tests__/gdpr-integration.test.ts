@@ -15,9 +15,13 @@
  *   -e POSTGRES_DB=rajahinta_test \
  *   -p 5432:5432 postgres:16
  *
- * # Create tables from the staging schema
- * PGPASSWORD=secret psql -h localhost -U rajahinta -d rajahinta_test \
- *   -f infra/staging-data/schema.sql
+ * # Apply schema via Drizzle migrations (single source of truth)
+ * # Generate migrations first: pnpm --filter @rajahinta/data-platform exec drizzle-kit generate
+ * # Then apply:     pnpm --filter @rajahinta/data-platform exec drizzle-kit migrate
+ * # Or with psql:  for f in packages/data-platform/drizzle/0*.sql; do
+ * #                  sed 's/^--> statement-breakpoint$//' "$f" | \
+ * #                    PGPASSWORD=secret psql -h localhost -U rajahinta -d rajahinta_test
+ * #                done
  *
  * # Run with database
  * TEST_DATABASE_URL=postgres://rajahinta:secret@localhost:5432/rajahinta_test \
@@ -196,7 +200,7 @@ describe('GDPR Integration — export, erasure, retention', () => {
         '      -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=rajahinta_test \\\n' +
         '      -p 5432:5432 postgres:16\n' +
         '    PGPASSWORD=secret psql -h localhost -U rajahinta -d rajahinta_test \\\n' +
-        '      -f infra/staging-data/schema.sql\n' +
+        '      -f packages/data-platform/drizzle/0000_rapid_albert_cleary.sql \\\n' +
         '    TEST_DATABASE_URL=postgres://rajahinta:secret@localhost:5432/rajahinta_test \\\n' +
         '      pnpm --filter @rajahinta/application-api test\n',
     );
