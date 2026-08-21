@@ -1,7 +1,7 @@
 # ---------------------------------------------------------------------------
 # Load Tests — Landed-Cost Calculator Performance
 # ---------------------------------------------------------------------------
-# Runs the calculator load/performance test suite on every PR to `main`.
+# Runs the calculator load/performance test suite on every PR to `master`.
 # The test simulates 50 concurrent requests, measures p50/p95/p99 latency,
 # and asserts p95 < 500 ms (adjustable threshold in the test file).
 # ---------------------------------------------------------------------------

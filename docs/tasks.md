@@ -155,7 +155,7 @@
 
 - [x] **T1.70** Write unit tests for every tax/duty formula, classification rule, and confidence-computation function → `alcohol-excise.math.test.ts`, `container-duty.math.test.ts`, `deposit-checker.test.ts`, `confidence-framework.service.test.ts`, `transaction-classification.service.test.ts`, `classification-rule-engine.service.test.ts`, `ranking.service.test.ts`.
 - [x] **T1.71** Build golden-dataset regression tests → `tests/golden/golden-dataset.test.ts`, `tests/golden/per-category.test.ts` — fixed product/transport/tax inputs with manually verified expected outputs, using real engine implementations (no vi.fn() mocks).
-- [x] **T1.72** Write compliance tests: automated checks that no ranking result correlates with any commercial/payment signal and that banned promotional vocabulary does not appear in generated product copy. (billing-ranking-isolation.test.ts covers source-level isolation; vocabulary lint not yet implemented; ranking-lockstep.test.ts added.)
+- [x] **T1.72** Write compliance tests: automated checks that no ranking result correlates with any commercial/payment signal and that banned promotional vocabulary does not appear in generated product copy. (billing-ranking-isolation.test.ts covers source-level isolation; vocabulary lint lives in `content-lint.service.ts` (ingestion-side) plus the frontend content-policy CI job; ranking-lockstep.test.ts added.)
 - [ ] **T1.73** Write load/performance tests on the Landed-Cost Calculation endpoint specifically. *Note: HTTP Artillery suite wired in deploy-staging.yml (non-blocking post-deploy step) as of 2026-08-21; T1.73 to be checked only after first successful staging run per D5.*
 
 ---
