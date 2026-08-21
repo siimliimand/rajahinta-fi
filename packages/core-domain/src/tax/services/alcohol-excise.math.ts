@@ -77,7 +77,7 @@ export const DEFAULT_RATES: Record<
   wine_sparkling: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
   spirits: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
   intermediate_products: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
-  other_fermented: { formula: FORMULA_PER_LITRE_OF_ALCOHOL, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
+  other_fermented: { formula: FORMULA_PER_LITRE_OF_PRODUCT, rate: 0, note: 'NO_FALLBACK — rate 0, reliability ESTIMATED' },
 };
 
 // ---------------------------------------------------------------------------
@@ -148,36 +148,33 @@ export function normaliseCategory(raw: string): AlcoholExciseCategory {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-type formula resolution for other_fermented (cider vs RTD)
+// Sub-type formula resolution for other_fermented — all variants use
+// per-litre-of-product (Finnish excise taxes fermented beverages per litre
+// of product, not per litre of alcohol).  Spirit-based RTDs are mapped to
+// the spirits category at data-ingestion time per D2 in the
+// phase0-1-verification-fix design.
 // ---------------------------------------------------------------------------
 
 /**
- * Determine the correct calculation formula for an `other_fermented` product
- * based on its original (pre-normalisation) category string.
+ * Determine the correct calculation formula for an `other_fermented` product.
  *
- * Finnish excise rules distinguish:
- *   - **Cider** (cider, siideri): per litre of **product** at flat rate (€3.40/l),
- *     like wine.
- *   - **RTD / long-drink** (rtd, ready-to-drink, lonkero): per litre of **alcohol**
- *     (€3.40/l of pure alcohol), like spirits.
+ * Finnish excise rules tax ALL fermented beverages per litre of product
+ * (like wine) using the wine band structure.  Spirit-based RTDs (lonkero,
+ * ready-to-drink) are classified as spirits at data-mapping time and do
+ * not reach this function.
  *
- * The default (any unrecognised `other_fermented` sub-type, or a canonical
- * `other_fermented` passed directly) defaults to per-litre-of-alcohol as the
- * more conservative (higher-tax) option for estimation.
+ * The function exists as a conceptual hook for future sub-type distinctions
+ * if Finnish tax law changes; currently it always returns
+ * `PER_LITRE_OF_PRODUCT`.
  *
- * @param rawCategory — The original category string (pre-normalisation).
- * @returns The formula reference constant for the correct formula type.
+ * @param _rawCategory — The original category string (pre-normalisation).
+ *        Ignored — all fermented beverages use PER_LITRE_OF_PRODUCT.
+ * @returns Always `PER_LITRE_OF_PRODUCT`.
  */
 export function resolveOtherFermentedFormula(
-  rawCategory: string,
-): 'PER_LITRE_OF_PRODUCT' | 'PER_LITRE_OF_ALCOHOL' {
-  const lower = rawCategory.toLowerCase().trim();
-  if (lower === 'cider' || lower === 'siideri') {
-    return 'PER_LITRE_OF_PRODUCT';
-  }
-  // RTD, lonkero, ready-to-drink, unknown, or canonical 'other_fermented'
-  // Default: per-litre-of-alcohol (like spirits, conservative estimate)
-  return 'PER_LITRE_OF_ALCOHOL';
+  _rawCategory: string,
+): 'PER_LITRE_OF_PRODUCT' {
+  return 'PER_LITRE_OF_PRODUCT';
 }
 
 // ---------------------------------------------------------------------------
