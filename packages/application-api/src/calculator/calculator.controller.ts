@@ -103,6 +103,7 @@ export class CalculatorController {
       quantity: dto.quantity,
       destination: dto.destination,
       transportMethod: dto.transportMethod,
+      transportArrangement: dto.transportArrangement,
       sessionId: dto.sessionId,
     };
 
@@ -195,6 +196,14 @@ export class CalculatorController {
     }
     if (dto.transportMethod !== undefined && typeof dto.transportMethod !== 'string') {
       errors.push('transportMethod must be a string when provided');
+    }
+    if (
+      dto.transportArrangement !== undefined &&
+      !['SELLER_ARRANGED', 'INDEPENDENT_CARRIER', 'PERSONAL'].includes(dto.transportArrangement)
+    ) {
+      errors.push(
+        'transportArrangement must be one of: SELLER_ARRANGED, INDEPENDENT_CARRIER, PERSONAL',
+      );
     }
     if (dto.sessionId !== undefined && typeof dto.sessionId !== 'string') {
       errors.push('sessionId must be a string when provided');

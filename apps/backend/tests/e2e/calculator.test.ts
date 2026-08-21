@@ -343,6 +343,15 @@ const BEER_DTO = {
   transportMethod: 'carrierA',
 };
 
+/** POST body for personal (traveller) transport — buyer carries goods. */
+const PERSONAL_BEER_DTO = {
+  productId: 1,
+  quantity: 1,
+  destination: 'FI',
+  transportMethod: 'carrierA',
+  transportArrangement: 'PERSONAL' as const,
+};
+
 /** Standard POST body for beer with quantity 2. */
 const BEER_DTO_QTY_2 = {
   productId: 1,
@@ -522,6 +531,41 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
         expect(result.classification).toHaveProperty('classification');
         expect(result.classification).toHaveProperty('confidence');
         expect(result.classification.confidence).toBe('HIGH');
+      });
+
+      it('classifies as TravellerImport when transportArrangement is PERSONAL', async () => {
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/calculator')
+          .set('x-age-confirmed', 'test-token')
+          .send(PERSONAL_BEER_DTO)
+          .expect(200);
+
+        const result = res.body;
+
+        // --- Classification assertion ---
+        expect(result.classification).toHaveProperty('classification');
+        expect(result.classification.classification).toBe('TravellerImport');
+        expect(result.classification).toHaveProperty('confidence');
+        expect(result.classification.confidence).toBe('HIGH');
+
+        // --- Evidence contains the personal-import allowance message ---
+        expect(result.classification).toHaveProperty('evidence');
+        expect(Array.isArray(result.classification.evidence)).toBe(true);
+        const personalAllowanceEvidence = result.classification.evidence.find(
+          (e: { observation: string }) =>
+            e.observation ===
+            'Personal import allowance applies — excluded from landed-cost calculator',
+        );
+        expect(personalAllowanceEvidence).toBeDefined();
+        expect(personalAllowanceEvidence.source).toBe('buyerIsTravelling');
+
+        // --- Result still computed (calculator does not short-circuit) ---
+        expect(result).toHaveProperty('totalCents');
+        expect(typeof result.totalCents).toBe('number');
+        expect(result.totalCents).toBeGreaterThan(0);
+        expect(result).toHaveProperty('itemizedCosts');
+        expect(result.itemizedCosts).toBeInstanceOf(Array);
+        expect(result.itemizedCosts.length).toBeGreaterThanOrEqual(4);
       });
 
       it('includes metadata with product info', async () => {
