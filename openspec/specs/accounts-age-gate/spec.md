@@ -106,3 +106,17 @@ The minimal account system SHALL expose saved baskets, calculation history, and 
 - **WHEN** a user queries their subscription
 - **THEN** the API SHALL return the current tier and status
 
+### Requirement: Account persistence to PostgreSQL
+
+The account system (saved baskets, calculation history, subscription status) SHALL be persisted to PostgreSQL using Drizzle ORM, replacing the Phase 1 in-memory Map implementation. The `AccountService` port interface SHALL remain unchanged; only the repository implementation changes.
+
+#### Scenario: Account data survives restart
+
+- **WHEN** the backend process restarts
+- **THEN** all account data (baskets, history, subscription status) SHALL be preserved and queryable
+
+#### Scenario: Same interface, new backend
+
+- **WHEN** the account repository is swapped from in-memory to PostgreSQL
+- **THEN** existing consumers (AccountController, DataExportService, AccountRetentionService) SHALL continue to function without code changes
+
