@@ -2,7 +2,7 @@
   "name": "rajahinta",
   "private": true,
   "version": "0.1.0",
-  "description": "Rajahinta.fi — Finnish cross-border beverage price index and landed-cost intelligence platform",
+  "description": "Rajahinta.fi \u2014 Finnish cross-border beverage price index and landed-cost intelligence platform",
   "scripts": {
     "dev": "pnpm --parallel -r dev",
     "build": "pnpm -r build",
@@ -16,7 +16,8 @@
     "test:e2e": "vitest run --config vitest.config.e2e.ts",
     "test:load": "vitest run --config tests/load/vitest.config.ts",
     "clean": "pnpm -r clean",
-    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\""
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
+    "dev:up": "bash scripts/dev-up.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
