@@ -18,6 +18,7 @@
  */
 
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { AuditService } from '@rajahinta/core-domain';
 import type { Account, Basket, BasketItem } from './account.types';
 import { AccountRepository, SavedBasketRepository, accounts, savedBaskets } from '@rajahinta/data-platform';
 
@@ -31,7 +32,27 @@ export class AccountService {
   constructor(
     @Optional() private readonly accountRepository?: AccountRepository,
     @Optional() private readonly savedBasketRepository?: SavedBasketRepository,
-  ) {}
+    @Optional() private readonly auditService?: AuditService,
+  ) {
+    // Fail-fast: outside test environments, repositories must be injected
+    // to prevent silent data loss via the in-memory fallback.
+    const isTestEnv =
+      process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
+    if (!isTestEnv) {
+      const missing: string[] = [];
+      if (!this.accountRepository) missing.push('AccountRepository');
+      if (!this.savedBasketRepository) missing.push('SavedBasketRepository');
+      if (missing.length > 0) {
+        throw new Error(
+          `AccountService requires repository injection outside test environments. ` +
+          `Missing: ${missing.join(', ')}. ` +
+          `The in-memory fallback is test-only and would result in data loss ` +
+          `if used in production (restart volatility, no retention enforcement, ` +
+          `no GDPR export/erasure).`,
+        );
+      }
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Mapping helpers
@@ -264,19 +285,34 @@ export class AccountService {
    * Anonymize an account — replace identifying fields while retaining
    * non-personal data (saved baskets, calculation history).
    *
-   * Phase 1: in-memory only. A database implementation would use an
-   * UPDATE query to replace email and userId fields.
+   * In DB mode: delegates to {@link AccountRepository.anonymize} which
+   * performs a transactional UPDATE (irreversible pseudonymization) +
+   * cascade delete of saved baskets, then records an audit event.
+   *
+   * In-memory (test-only fallback): replaces userId and email with
+   * anonymized values in the local Map.
    */
   async anonymizeAccount(userId: string): Promise<void> {
     if (this.accountRepository) {
-      this.logger.warn(
-        `anonymizeAccount called for userId="${userId}" in DB mode — ` +
-          'not yet implemented. Use AccountRepository methods directly.',
-      );
+      await this.accountRepository.anonymize(userId);
+      this.logger.debug(`Account "${userId}" anonymized via repository`);
+
+      // Record audit event when AuditService is available.
+      if (this.auditService) {
+        await this.auditService.logChange({
+          entityType: 'account',
+          entityId: userId,
+          action: 'deleted',
+          author: 'system',
+          reason: 'GDPR anonymization requested',
+        });
+        this.logger.debug(`Audit event recorded for anonymization of "${userId}"`);
+      }
+
       return;
     }
 
-    // In-memory fallback
+    // In-memory fallback (test-only — see constructor fail-fast)
     const account = await this.getAccount(userId);
     const mutable = account as Account & { email: string; userId: string };
     const anonId = `anon-${userId}`;

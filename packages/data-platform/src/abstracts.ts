@@ -135,6 +135,16 @@ export abstract class AccountRepository {
 
   /** Return all known user IDs — used by retention-policy scans. */
   abstract findAllUserIds(): Promise<string[]>;
+
+  /**
+   * Irreversibly anonymize an account — replaces identifiers with
+   * non-reversible pseudonyms, cascades to saved baskets, and retains
+   * the anonymized skeleton row for referential integrity.
+   *
+   * The pseudonym is a fresh random UUID, NOT derived from the original
+   * identifier, so the operation cannot be reversed.
+   */
+  abstract anonymize(userId: string): Promise<void>;
 }
 
 @Injectable()

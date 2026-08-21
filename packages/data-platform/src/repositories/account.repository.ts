@@ -9,9 +9,10 @@
  */
 import { Injectable, Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { DRIZZLE, type DrizzleDatabase } from '../db/drizzle.provider';
 import { AccountRepository } from '../abstracts';
-import { accounts } from '../schema';
+import { accounts, savedBaskets } from '../schema';
 
 @Injectable()
 export class DrizzleAccountRepository extends AccountRepository {
@@ -77,5 +78,30 @@ export class DrizzleAccountRepository extends AccountRepository {
       .select({ userId: accounts.userId })
       .from(accounts);
     return rows.map((r) => r.userId);
+  }
+
+  /** @inheritdoc */
+  async anonymize(userId: string): Promise<void> {
+    const account = await this.findByUserId(userId);
+    if (!account) {
+      throw new Error(`Cannot anonymize: account not found for userId="${userId}"`);
+    }
+
+    // Irreversible pseudonyms — fresh random UUID, NOT derivable from original.
+    const anonUserId = `anon_${randomUUID()}`;
+    const anonEmail = `anonymized+${randomUUID()}@deleted.invalid`;
+
+    await this.db.transaction(async (tx) => {
+      // Cascade: delete saved baskets for this account.
+      await tx
+        .delete(savedBaskets)
+        .where(eq(savedBaskets.accountId, account.id));
+
+      // Irreversibly overwrite identifiers; keep skeleton row (tier, timestamps).
+      await tx
+        .update(accounts)
+        .set({ userId: anonUserId, email: anonEmail })
+        .where(eq(accounts.userId, userId));
+    });
   }
 }
