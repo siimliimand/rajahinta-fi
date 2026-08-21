@@ -10,7 +10,9 @@
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
