@@ -67,7 +67,7 @@ const DATABASE_URL =
   'postgresql://rajahinta:rajahinta@localhost:5432/rajahinta_test';
 
 /** Path to the Drizzle migrations folder. */
-const MIGRATIONS_FOLDER = path.resolve(
+const _MIGRATIONS_FOLDER = path.resolve(
   __dirname,
   '..',
   '..',

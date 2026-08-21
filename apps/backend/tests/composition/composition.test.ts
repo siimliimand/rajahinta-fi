@@ -41,7 +41,6 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   LandedCostCalculatorService,
-  AlcoholExciseService,
   CoreDomainModule,
   PRODUCT_DATA_PORT,
   CALCULATION_RECORD_PORT,
