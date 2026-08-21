@@ -39,7 +39,7 @@ describe('TransactionClassificationService', () => {
       const result = await service.classify(input);
       expect(result.classification).toBe('TravellerImport');
       expect(result.confidence).toBe('HIGH');
-      expect(result.evidence).toHaveLength(1);
+      expect(result.evidence).toHaveLength(2);
       expect(result.evidence[0].observation).toContain('physically carrying');
     });
 

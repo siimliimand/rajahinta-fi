@@ -31,6 +31,18 @@ export interface Disclaimer {
 // ---------------------------------------------------------------------------
 
 /**
+ * How transport is arranged for a cross-border purchase.
+ *
+ * - `SELLER_ARRANGED`:    The seller arranges and pays for transport (default).
+ * - `INDEPENDENT_CARRIER`: The buyer arranges transport via a third-party carrier.
+ * - `PERSONAL`:           The buyer physically carries goods across the border.
+ */
+export type TransportArrangement =
+  | 'SELLER_ARRANGED'
+  | 'INDEPENDENT_CARRIER'
+  | 'PERSONAL';
+
+/**
  * Input to a landed-cost calculation.
  */
 export interface CalculatorInput {
@@ -49,6 +61,12 @@ export interface CalculatorInput {
    * from the product's retail-offer context.
    */
   readonly transportMethod?: string;
+
+  /**
+   * How transport is arranged. Defaults to SELLER_ARRANGED when absent.
+   * Set to PERSONAL for buyer-physically-carries (traveller import) semantics.
+   */
+  readonly transportArrangement?: TransportArrangement;
 
   /** Optional session identifier for grouping calculations in audit trail. */
   readonly sessionId?: string;
@@ -83,7 +101,7 @@ export interface CalculatorRetailOfferData {
   readonly priceCents: number;
   readonly merchant: string;
   readonly country: string;
-  readonly reliabilityStatus: string;
+  readonly reliabilityStatus: ReliabilityStatus;
 }
 
 // ---------------------------------------------------------------------------

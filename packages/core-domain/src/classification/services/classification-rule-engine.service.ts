@@ -63,6 +63,11 @@ export function createDefaultRuleSet(): ClassificationRuleSet {
               supportingData: `destination: ${input.sellerCountry}, buyer country: ${input.buyerCountry}`,
               source: 'buyerIsTravelling',
             },
+            {
+              observation: 'Personal import allowance applies — excluded from landed-cost calculator',
+              supportingData: 'transport arrangement: personal transport',
+              source: 'buyerIsTravelling',
+            },
           ];
           return {
             classification: 'TravellerImport',

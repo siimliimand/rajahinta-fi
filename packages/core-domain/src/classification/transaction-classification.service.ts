@@ -108,6 +108,11 @@ export class TransactionClassificationService {
           supportingData: `destination: ${params.sellerCountry}, buyer country: ${params.buyerCountry}`,
           source: 'buyerIsTravelling',
         },
+        {
+          observation: 'Personal import allowance applies — excluded from landed-cost calculator',
+          supportingData: 'transport arrangement: personal transport',
+          source: 'buyerIsTravelling',
+        },
       ];
       return {
         classification: 'TravellerImport',

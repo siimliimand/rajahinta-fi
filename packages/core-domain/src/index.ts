@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import type { Disclaimer } from './calculator/calculator.types';
+import type { ReliabilityStatus } from './reliability/reliability.types';
 import { TaxModule } from './tax/tax.module';
 import { NormalizationModule } from './normalization/normalization.module';
 import { SourceGovernanceModule } from './governance/governance.module';
@@ -22,7 +23,7 @@ export type ExciseCategory = 'beer' | 'wine' | 'spirits' | 'intermediate' | 'oth
 export type ContainerType = 'glass' | 'plastic' | 'metal' | 'carton' | 'other';
 
 /** Reliability status for externally sourced facts. */
-export type DataReliability = 'EXACT' | 'ESTIMATED' | 'STALE' | 'UNAVAILABLE';
+export type DataReliability = ReliabilityStatus;
 
 /** Transaction classification per Finnish distance-selling rules. */
 export type TransactionClass = 'distance-selling' | 'distance-buying' | 'traveller-import';
@@ -279,6 +280,7 @@ export type {
   ItemizedCost,
   CreateCalculationRecordInput,
   Disclaimer,
+  TransportArrangement,
   IProductDataPort,
   ICalculationRecordPort,
 } from './calculator/calculator.types';

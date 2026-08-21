@@ -300,7 +300,8 @@ describe('ClassificationRuleEngine', () => {
       expect(result.evidence[0].observation).toContain('physically carrying');
       expect(result.evidence[0].supportingData).toContain('EE');
       expect(result.evidence[0].source).toBe('buyerIsTravelling');
-      expect(result.evidence).toHaveLength(1);
+      expect(result.evidence).toHaveLength(2);
+      expect(result.evidence[1].observation).toContain('Personal import allowance');
     });
 
     it('DistanceSelling evidence mentions direct delivery and carrier', () => {

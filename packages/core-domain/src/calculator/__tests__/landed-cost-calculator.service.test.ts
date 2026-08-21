@@ -56,7 +56,7 @@ const DEFAULT_OFFERS: CalculatorRetailOfferData[] = [
     priceCents: 200,
     merchant: 'test-merchant-de',
     country: 'DE',
-    reliabilityStatus: 'EXACT',
+    reliabilityStatus: 'VERIFIED',
   },
 ];
 
@@ -290,9 +290,9 @@ describe('LandedCostCalculatorService', () => {
 
     it('selects the lowest-price offer', async () => {
       const offers: CalculatorRetailOfferData[] = [
-        { id: 1, priceCents: 300, merchant: 'shop-a', country: 'DE', reliabilityStatus: 'EXACT' },
-        { id: 2, priceCents: 200, merchant: 'shop-b', country: 'DE', reliabilityStatus: 'EXACT' },
-        { id: 3, priceCents: 250, merchant: 'shop-c', country: 'DE', reliabilityStatus: 'EXACT' },
+        { id: 1, priceCents: 300, merchant: 'shop-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 2, priceCents: 200, merchant: 'shop-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 3, priceCents: 250, merchant: 'shop-c', country: 'DE', reliabilityStatus: 'VERIFIED' },
       ];
 
       const productData = createMockProductDataPort({
@@ -426,6 +426,29 @@ describe('LandedCostCalculatorService', () => {
 
       // When seller is involved in transport, classification should be DistanceSelling
       expect(result.classification.classification).toBe('DistanceSelling');
+    });
+
+    it('classifies as TravellerImport when transportArrangement is PERSONAL', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate({
+        ...DEFAULT_INPUT,
+        transportArrangement: 'PERSONAL',
+      });
+
+      expect(result.classification.classification).toBe('TravellerImport');
+      expect(result.classification.confidence).toBe('HIGH');
+      expect(result.classification.evidence).toHaveLength(2);
+      expect(result.classification.evidence[1].observation).toContain('excluded');
+    });
+
+    it('defaults to SELLER_ARRANGED when transportArrangement is absent', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      // Default SELLER_ARRANGED → buyerIsTravelling: false → not TravellerImport
+      expect(result.classification.classification).not.toBe('TravellerImport');
     });
   });
 

@@ -45,12 +45,7 @@ import {
 import type { ReliabilityStatus } from '../reliability/reliability.types';
 import type { ClassificationInput } from '../classification/classification.types';
 
-/** Map transport estimation reliability to the canonical ReliabilityStatus. */
-function transportReliabilityToStatus(
-  r: 'EXACT' | 'ESTIMATED',
-): ReliabilityStatus {
-  return r === 'EXACT' ? 'VERIFIED' : 'ESTIMATED';
-}
+/** Map transport estimation reliability status to canonical ReliabilityStatus. */
 
 @Injectable()
 export class LandedCostCalculatorService {
@@ -134,9 +129,8 @@ export class LandedCostCalculatorService {
     if (transportResult !== null) {
       transportCostCents = transportResult.offer.priceCents;
       transportOfferId = transportResult.offer.id;
-      transportStatus = transportReliabilityToStatus(
-        transportResult.reliabilityStatus,
-      );
+      transportStatus =
+        transportResult.reliabilityStatus === 'EXACT' ? 'VERIFIED' : 'ESTIMATED';
     }
 
     // -----------------------------------------------------------------------
@@ -169,14 +163,16 @@ export class LandedCostCalculatorService {
     const carrierId = input.transportMethod ?? bestOffer.merchant;
     const sellerCountry = bestOffer.country;
 
-    const classificationInput: ClassificationInput = {
-      sellerInvolvementIndicator,
-      carrierId,
-      sellerCountry,
-      buyerCountry: input.destination,
-      buyerIsTravelling: false,
-      sellerId: bestOffer.merchant,
-    };
+const transportArrangement = input.transportArrangement ?? 'SELLER_ARRANGED';
+
+const classificationInput: ClassificationInput = {
+  sellerInvolvementIndicator,
+  carrierId,
+  sellerCountry,
+  buyerCountry: input.destination,
+  buyerIsTravelling: transportArrangement === 'PERSONAL',
+  sellerId: bestOffer.merchant,
+};
 
     const classificationResult =
       await this.transactionClassification.classify(classificationInput);
@@ -396,7 +392,7 @@ export class LandedCostCalculatorService {
     offer: CalculatorRetailOfferData,
   ): ReliabilityStatus {
     const raw = offer.reliabilityStatus?.toUpperCase() ?? 'ESTIMATED';
-    if (raw === 'EXACT' || raw === 'VERIFIED') return 'VERIFIED';
+    if (raw === 'VERIFIED') return 'VERIFIED';
     if (raw === 'STALE') return 'STALE';
     if (raw === 'UNAVAILABLE') return 'UNAVAILABLE';
     return 'ESTIMATED';
