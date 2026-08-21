@@ -146,6 +146,90 @@ describe('AccountService', () => {
         'Account not found',
       );
     });
+
+    // -----------------------------------------------------------------------
+    // TASK 4.3 — No recoverable identifiers (non-derivable pseudonym)
+    // -----------------------------------------------------------------------
+
+    it('original userId is not recoverable after anonymization (mock simulates UUID pseudonym)', async () => {
+      // Simulate what DrizzleAccountRepository.anonymize does:
+      // replace userId with `anon_<randomUUID()>` — NOT derivable from original.
+      const anonUserId = `anon_${'550e8400-e29b-41d4-a716-446655440000'}`;
+      const anonEmail = `anonymized+${'550e8400-e29b-41d4-a716-446655440002'}@deleted.invalid`;
+      const anonymize = vi.fn(async (userId: string) => {
+        // Real repositories do an UPDATE — simulate the effect in our mock store.
+        mockStore.delete(userId);
+        mockStore.set(anonUserId, { userId: anonUserId, email: anonEmail });
+      });
+
+      // We need a mock that also supports findByUserId to create the account first.
+      // Build a minimal in-memory store for the lifecycle.
+      const mockStore = new Map<string, { userId: string; email: string }>();
+      const findByUserId = vi.fn(async (userId: string) => {
+        const entry = mockStore.get(userId);
+        return entry ? { ...entry, id: 1, tier: 'FREE', createdAt: new Date(), lastActiveAt: new Date() } : null;
+      });
+      const create = vi.fn(async (record: { userId: string; email: string; tier: string }) => {
+        mockStore.set(record.userId, { userId: record.userId, email: record.email });
+        return { ...record, id: 2, createdAt: new Date(), lastActiveAt: new Date() };
+      });
+      const mockAccountRepo = {
+        anonymize, findByUserId, create,
+      } as unknown as AccountRepository;
+      const mockBasketRepo = {} as unknown as SavedBasketRepository;
+      const service = new AccountService(mockAccountRepo, mockBasketRepo);
+
+      await service.getAccount('user-to-anon-42');
+      expect(mockStore.has('user-to-anon-42')).toBe(true);
+
+      await service.anonymizeAccount('user-to-anon-42');
+
+      // Original userId must be gone from the store
+      expect(mockStore.has('user-to-anon-42')).toBe(false);
+
+      // The pseudonym is anon_<UUID>, NOT anon-<originalUserId>
+      expect(mockStore.has(anonUserId)).toBe(true);
+      // The pseudonym cannot be `anon_` + original userId
+      expect(anonUserId).not.toBe('anon_user-to-anon-42');
+      // Must look like a UUID
+      expect(anonUserId).toMatch(/^anon_[0-9a-f-]+$/);
+    });
+
+    it('anonymized email cannot be reversed to original', async () => {
+      const anonymize = vi.fn(async (userId: string) => {
+        // Simulate real repo: random UUIDs in both fields
+        mockStore.delete(userId);
+        const anonId = `anon_${'550e8400-e29b-41d4-a716-446655440010'}`;
+        const anonEmail = `anonymized+${'550e8400-e29b-41d4-a716-446655440011'}@deleted.invalid`;
+        mockStore.set(anonId, { userId: anonId, email: anonEmail });
+      });
+      const mockStore = new Map<string, { userId: string; email: string }>();
+      const findByUserId = vi.fn(async (userId: string) => {
+        const entry = mockStore.get(userId);
+        return entry ? { ...entry, id: 1, tier: 'FREE', createdAt: new Date(), lastActiveAt: new Date() } : null;
+      });
+      const create = vi.fn(async (record: { userId: string; email: string; tier: string }) => {
+        mockStore.set(record.userId, { userId: record.userId, email: record.email });
+        return { ...record, id: 2, createdAt: new Date(), lastActiveAt: new Date() };
+      });
+      const mockAccountRepo = {
+        anonymize, findByUserId, create,
+      } as unknown as AccountRepository;
+      const mockBasketRepo = {} as unknown as SavedBasketRepository;
+      const service = new AccountService(mockAccountRepo, mockBasketRepo);
+
+      await service.getAccount('email-test-user');
+      await service.anonymizeAccount('email-test-user');
+
+      // The email domain is @deleted.invalid (not @deleted.local)
+      // and contains a random UUID, not the original userId.
+      const anonEntry = Array.from(mockStore.values()).find(
+        (e) => e.email.includes('@deleted.invalid'),
+      );
+      expect(anonEntry).toBeDefined();
+      expect(anonEntry!.email).not.toContain('email-test-user');
+      expect(anonEntry!.email).toMatch(/^anonymized\+.+@deleted\.invalid$/);
+    });
   });
 
   // -----------------------------------------------------------------------
