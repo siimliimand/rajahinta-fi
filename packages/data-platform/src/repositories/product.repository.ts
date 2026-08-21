@@ -48,6 +48,18 @@ export class DrizzleProductRepository extends ProductRepository {
   }
 
   /** @inheritdoc */
+  async findRetailOfferById(
+    id: number,
+  ): Promise<typeof retailOffers.$inferSelect | null> {
+    const [row] = await this.db
+      .select()
+      .from(retailOffers)
+      .where(eq(retailOffers.id, id))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** @inheritdoc */
   async create(
     record: typeof productMaster.$inferInsert,
   ): Promise<typeof productMaster.$inferSelect> {

@@ -4,6 +4,7 @@ import type { MerchantConfig } from '../config/merchants.config';
 import type { SourceGovernanceService, PermissionCheckResult } from '@rajahinta/core-domain';
 import { DataQualityService } from '../services/data-quality.service';
 import { ReliabilityService } from '@rajahinta/core-domain';
+import { ContentLintService } from '../content/content-lint.service';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -78,12 +79,17 @@ function createService(
 
   const qualityMock = new DataQualityService(new ReliabilityService());
 
+  const contentLintMock = {
+    lintProductContent: vi.fn().mockReturnValue({ violations: [] }),
+  } as unknown as ContentLintService;
+
   return new PipelineOrchestratorService(
     feedMock,
     mappingMock,
     qualityMock,
     upsertMock,
     governanceMock,
+    contentLintMock,
   );
 }
 
@@ -101,6 +107,7 @@ describe('PipelineOrchestratorService', () => {
       expect(report.recordsAdded).toBe(0);
       expect(report.errors).toEqual([]);
       expect(report.gateResult).toBeUndefined();
+      expect(report.contentViolations).toEqual([]);
     });
 
     it('skips merchant with PENDING permission status', async () => {
@@ -122,6 +129,7 @@ describe('PipelineOrchestratorService', () => {
       expect(report.gateResult!.permitted).toBe(false);
       expect(report.gateResult!.status).toBe('PENDING');
       expect(report.gateResult!.reason).toContain('PENDING');
+      expect(report.contentViolations).toEqual([]);
     });
 
     it('skips merchant with REVOKED permission status', async () => {
@@ -218,6 +226,7 @@ describe('PipelineOrchestratorService', () => {
       expect(report.durationMs).toBeGreaterThanOrEqual(0);
       expect(report.qualityReport).toBeDefined();
       expect(report.qualityReport!.totalOffers).toBe(1);
+      expect(report.contentViolations).toEqual([]);
     });
 
     it('passes through fetch errors when records are empty', async () => {
@@ -237,6 +246,7 @@ describe('PipelineOrchestratorService', () => {
       expect(report.recordsFetched).toBe(0);
       expect(report.errors).toEqual(['HTTP 503']);
       expect(report.gateResult).toBeUndefined();
+      expect(report.contentViolations).toEqual([]);
     });
   });
 

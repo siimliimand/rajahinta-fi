@@ -107,6 +107,7 @@ import { PipelineOrchestratorService } from './services/pipeline-orchestrator.se
 import { FeedIngestionService } from './services/feed-ingestion.service';
 import { DataMappingService } from './services/data-mapping.service';
 import { DataQualityService } from './services/data-quality.service';
+import { ContentLintService } from './content/content-lint.service';
 import { PriceIngestionService } from './abstract/price-ingestion.service';
 import { TransportRateService } from './abstract/transport-rate.service';
 import { TaxDatasetReviewService } from './abstract/tax-dataset-review.service';
@@ -146,6 +147,7 @@ import { InMemoryRateReviewRepository } from './adapters/rate-review-repository.
     FeedIngestionService,
     DataMappingService,
     DataQualityService,
+    ContentLintService,
 
     // Default merchant config — override at app level to provide real URLs
     { provide: MERCHANT_CONFIG_TOKEN, useValue: DEFAULT_MERCHANTS },
@@ -188,6 +190,7 @@ import { InMemoryRateReviewRepository } from './adapters/rate-review-repository.
     FeedIngestionService,
     DataMappingService,
     DataQualityService,
+    ContentLintService,
     PriceIngestionService,
     TransportRateService,
     TaxDatasetReviewService,

@@ -205,3 +205,43 @@ export const calculationRecords = pgTable('calculation_records', {
   /** When calculation was performed. */
   calculatedAt: timestamp('calculated_at').defaultNow().notNull(),
 });
+
+/**
+ * User accounts — one row per registered user.
+ *
+ * Created by the auth/signup flow. Tier controls feature-gate access
+ * via the application-api entitlement service. Calculation history is
+ * stored separately via savedBaskets and calculationRecords FK.
+ */
+export const accounts = pgTable('accounts', {
+  id: serial('id').primaryKey(),
+  /** Stable external identifier (from auth provider). */
+  userId: varchar('user_id', { length: 128 }).unique().notNull(),
+  /** Verified email address — used for account recovery and notifications. */
+  email: varchar('email', { length: 320 }).notNull(),
+  /** Service tier — gates premium features (FREE or PREMIUM). */
+  tier: varchar('tier', { length: 16 }).default('FREE').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  lastActiveAt: timestamp('last_active_at').defaultNow().notNull(),
+});
+
+/**
+ * Saved baskets — user-curated product collections for repeat calculations.
+ *
+ * Each basket belongs to one account (FK to accounts.id). Items are stored
+ * as a JSON array of {productId, productName, quantity} so the basket can
+ * be reconstructed without join queries at list time. Navigation is always
+ * account → basket, so no FK from items back to productMaster is needed.
+ */
+export const savedBaskets = pgTable('saved_baskets', {
+  id: serial('id').primaryKey(),
+  /** FK to accounts — the owning user. */
+  accountId: integer('account_id')
+    .references(() => accounts.id)
+    .notNull(),
+  /** Human-readable basket label (user-supplied). */
+  name: varchar('name', { length: 256 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  /** JSON array of BasketItem: [{productId, productName, quantity}]. */
+  items: jsonb('items').notNull(),
+});

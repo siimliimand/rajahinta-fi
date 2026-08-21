@@ -14,6 +14,8 @@ import {
   taxRules,
   transportOffers,
   calculationRecords,
+  accounts,
+  savedBaskets,
 } from './schema';
 
 // ---------------------------------------------------------------------------
@@ -24,6 +26,7 @@ import {
 export abstract class ProductRepository {
   abstract findById(id: number): Promise<typeof productMaster.$inferSelect | null>;
   abstract findOffers(productId: number): Promise<typeof retailOffers.$inferSelect[]>;
+  abstract findRetailOfferById(id: number): Promise<typeof retailOffers.$inferSelect | null>;
 
   /** Insert a new product master record. */
   abstract create(
@@ -103,4 +106,59 @@ export abstract class AuditRepository {
   abstract recordCalculation(
     entry: typeof calculationRecords.$inferInsert,
   ): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Account repository abstractions
+// ---------------------------------------------------------------------------
+
+@Injectable()
+export abstract class AccountRepository {
+  /** Insert a new account record. */
+  abstract create(
+    record: typeof accounts.$inferInsert,
+  ): Promise<typeof accounts.$inferSelect>;
+
+  /** Look up an account by its primary key (serial id). */
+  abstract findById(id: number): Promise<typeof accounts.$inferSelect | null>;
+
+  /** Look up an account by its external user identifier. */
+  abstract findByUserId(
+    userId: string,
+  ): Promise<typeof accounts.$inferSelect | null>;
+
+  /** Update the lastActiveAt timestamp for a user. */
+  abstract updateLastActive(userId: string): Promise<void>;
+
+  /** Delete an account by its external user identifier. */
+  abstract delete(userId: string): Promise<void>;
+
+  /** Return all known user IDs — used by retention-policy scans. */
+  abstract findAllUserIds(): Promise<string[]>;
+}
+
+@Injectable()
+export abstract class SavedBasketRepository {
+  /** Insert a new saved basket record. */
+  abstract create(
+    record: typeof savedBaskets.$inferInsert,
+  ): Promise<typeof savedBaskets.$inferSelect>;
+
+  /** Look up a basket by its primary key. */
+  abstract findById(
+    id: number,
+  ): Promise<typeof savedBaskets.$inferSelect | null>;
+
+  /** Return all baskets for an account (by account db id). */
+  abstract findByAccountId(
+    accountId: number,
+  ): Promise<typeof savedBaskets.$inferSelect[]>;
+
+  /** Return all baskets for a user (by external userId via join). */
+  abstract findByUserId(
+    userId: string,
+  ): Promise<typeof savedBaskets.$inferSelect[]>;
+
+  /** Delete a basket by its primary key. */
+  abstract delete(id: number): Promise<void>;
 }

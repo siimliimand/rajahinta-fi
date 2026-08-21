@@ -1,0 +1,101 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CI: true
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/rajahinta/rajahinta
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Build Docker image
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          docker build -t ${{ env.IMAGE_NAME }}:$SHORT_SHA -t ${{ env.IMAGE_NAME }}:latest .
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Push Docker image
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          docker push ${{ env.IMAGE_NAME }}:$SHORT_SHA
+          docker push ${{ env.IMAGE_NAME }}:latest
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Install kustomize
+        run: |
+          curl -sLo /tmp/kustomize.tar.gz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz"
+          tar -xzf /tmp/kustomize.tar.gz -C /usr/local/bin/
+          chmod +x /usr/local/bin/kustomize
+
+      - name: Authenticate with cluster
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
+
+      - name: Clean up previous seed Job
+        run: |
+          # Jobs are immutable — delete before re-creating
+          kubectl delete job rajahinta-staging-seed \
+            -n rajahinta \
+            --ignore-not-found \
+            --wait
+        continue-on-error: true
+
+      - name: Deploy to staging
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          cd infra/k8s/overlays/staging
+          kustomize edit set image ${{ env.IMAGE_NAME }}:$SHORT_SHA
+          kustomize build . | kubectl apply -f -
+
+      - name: Seed staging database
+        run: |
+          # Idempotent seed Job — safe to re-run (skips already-seeded rows).
+          # kubectl create is not used because the Job name is fixed and
+          # we want Kustomize to set the correct image tag.
+          kubectl wait job rajahinta-staging-seed \
+            -n rajahinta \
+            --for condition=complete \
+            --timeout=300s
+        continue-on-error: true
+
+      - name: Load test
+        continue-on-error: true
+        run: pnpm test:load
+        env:
+          STAGING_URL: https://staging.rajahinta.fi

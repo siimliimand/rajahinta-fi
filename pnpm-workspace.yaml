@@ -2,7 +2,10 @@ packages:
   - 'apps/*'
   - 'packages/*'
 allowBuilds:
+  '@playwright/browser-chromium': true
   '@scarf/scarf': true
   esbuild: true
   msgpackr-extract: true
+  protobufjs: true
+  unix-dgram: true
   unrs-resolver: true

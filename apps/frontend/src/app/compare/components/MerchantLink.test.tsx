@@ -10,27 +10,30 @@ import { MerchantLink } from './MerchantLink';
 describe('MerchantLink', () => {
   it('renders an anchor element with the label text', () => {
     render(
-      <MerchantLink label="View at Merchant" href="https://example.com/p/1" />,
+      <MerchantLink label="View at Merchant" offerId={42} />,
     );
     const link = screen.getByRole('link', { name: 'View at Merchant' });
     expect(link).toBeInTheDocument();
   });
 
-  it('sets href to the merchant URL', () => {
+  it('sets href to the outbound redirect endpoint', () => {
     render(
-      <MerchantLink label="View" href="https://example.com/p/1" />,
+      <MerchantLink label="View" offerId={99} />,
     );
     const link = screen.getByRole('link');
-    expect(link).toHaveAttribute('href', 'https://example.com/p/1');
+    expect(link).toHaveAttribute(
+      'href',
+      expect.stringContaining('/api/v1/outbound/99'),
+    );
   });
 
-  it('opens in a new tab with noopener noreferrer', () => {
+  it('opens in a new tab with nofollow noopener', () => {
     render(
-      <MerchantLink label="View" href="https://example.com/p/1" />,
+      <MerchantLink label="View" offerId={1} />,
     );
     const link = screen.getByRole('link');
     expect(link).toHaveAttribute('target', '_blank');
-    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(link).toHaveAttribute('rel', 'nofollow noopener');
   });
 
   it('calls onClick when clicked', async () => {
@@ -39,7 +42,7 @@ describe('MerchantLink', () => {
     render(
       <MerchantLink
         label="View"
-        href="https://example.com/p/1"
+        offerId={1}
         onClick={onClick}
       />,
     );
@@ -51,7 +54,7 @@ describe('MerchantLink', () => {
     render(
       <MerchantLink
         label="View"
-        href="https://example.com/p/1"
+        offerId={1}
         className="text-sm text-gray-500"
       />,
     );
@@ -61,7 +64,7 @@ describe('MerchantLink', () => {
 
   it('does not include tracking parameters in the URL', () => {
     render(
-      <MerchantLink label="View" href="https://example.com/p/1" />,
+      <MerchantLink label="View" offerId={1} />,
     );
     const link = screen.getByRole('link');
     const href = link.getAttribute('href')!;

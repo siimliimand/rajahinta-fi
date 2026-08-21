@@ -110,14 +110,14 @@ function ProductColumn({
         ))}
       </div>
 
-      {/* Merchant link — shown when a retail offer URL is available */}
-      {product.offerUrl && product.merchantName && (
+      {/* Merchant link — shown when a retail offer ID is available */}
+      {product.offerId && product.merchantName && (
         <div className="mt-3">
           <MerchantLink
             label={`View at ${product.merchantName}`}
-            href={product.offerUrl}
+            offerId={product.offerId}
             onClick={() => {
-              logClick(product.merchantName!, product.offerUrl!);
+              logClick(product.merchantName!, String(product.offerId!));
             }}
             className="text-xs text-primary-600 hover:text-primary-800"
           />

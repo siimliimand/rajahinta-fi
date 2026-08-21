@@ -322,7 +322,7 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
                 <li key={offer.id}>
                   <MerchantLink
                     label={`View at ${offer.merchant}`}
-                    href={offer.sourceUrl}
+                    offerId={offer.id}
                     onClick={() => {
                       logClick(offer.merchant, offer.sourceUrl!);
                     }}
