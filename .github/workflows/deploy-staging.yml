@@ -131,6 +131,17 @@ jobs:
             -n rajahinta \
             --timeout=120s
 
-      - name: Load test
+      - name: In-process benchmark
         continue-on-error: true
         run: pnpm test:load
+
+      # ── HTTP-level load test ───────────────────────────────────────────
+      # Runs the Artillery HTTP suite (ramp 1→50 / steady 50) against the
+      # deployed staging endpoint.  NON-BLOCKING until a baseline exists
+      # (D5); promote to blocking after the first successful staging run.
+      # ───────────────────────────────────────────────────────────────────
+      - name: HTTP load test (non-blocking until baseline)
+        continue-on-error: true
+        env:
+          TARGET_URL: https://staging.rajahinta.fi
+        run: pnpm load:http
