@@ -14,7 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * `emitDecoratorMetadata: true`.
  */
 const WORKSPACE_SRC =
-  /[\\/](packages)[\\/](core-domain|application-api|data-platform)[\\/].*\.ts$/;
+  /[\\/](packages)[\\/](core-domain|application-api|data-platform|data-acquisition)[\\/].*\.ts$/;
 
 const tsTranspilePlugin = {
   name: 'ts-transpile-workspace',
@@ -58,6 +58,7 @@ export default defineConfig({
       '@rajahinta/frontend': path.resolve(__dirname, 'apps/frontend/src'),
       '@rajahinta/application-api': path.resolve(__dirname, 'packages/application-api/src'),
       '@rajahinta/data-platform': path.resolve(__dirname, 'packages/data-platform/src'),
+      '@rajahinta/data-acquisition': path.resolve(__dirname, 'packages/data-acquisition/src'),
       // pnpm instantiates @nestjs/core twice (two peer-set variants), giving
       // two Reflector/classes and breaking DI across packages. Pin every
       // resolution to one physical instance for the e2e run.

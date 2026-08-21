@@ -24,13 +24,11 @@ if [ "$PSQL_AVAILABLE" = true ]; then
   SEED_PATH="${GOLDEN_DATASET_PATH:-./infra/staging-data}/seed.sql"
   if [ -d "$MIGRATIONS_DIR" ]; then
     echo "Applying Drizzle migrations from $MIGRATIONS_DIR..."
-    # Run drizzle-kit migrate with DATABASE_URL from context; fallback to psql direct apply
-    if command -v npx &> /dev/null && [ -n "${DATABASE_URL:-}" ]; then
-      npx --package=tsx drizzle-kit migrate --config=packages/data-platform/drizzle.config.ts 2>&1 \
-        || echo "WARN: drizzle-kit migrate failed — attempting psql direct apply"
-    else
+    # drizzle-kit is a devDependency of @rajahinta/data-platform; run it from
+    # that package so its drizzle.config.ts and ./drizzle out-dir resolve.
+    if ! pnpm --filter @rajahinta/data-platform exec drizzle-kit migrate 2>&1; then
+      echo "WARN: drizzle-kit migrate failed — falling back to psql direct apply"
       # Fallback: apply migration SQL files in journal order
-      echo "  (fallback: applying SQL migrations directly via psql)"
       if [ -f "${MIGRATIONS_DIR}/meta/_journal.json" ]; then
         for tag in $(grep -o '"tag": *"[^"]*"' "${MIGRATIONS_DIR}/meta/_journal.json" | sed 's/"tag": *"//;s/"//'); do
           sql_file="${MIGRATIONS_DIR}/${tag}.sql"
