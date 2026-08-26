@@ -19,12 +19,12 @@
 
 ## 3. Aggregation and attribution
 
-- [ ] 3.1 Implement the stub `TimeSeriesAggregationWorker` at `packages/application-api/src/jobs/workers/time-series-aggregation.worker.ts` — incremental materialization from a persisted watermark, idempotent upsert of daily and weekly summaries, watermark advances only after successful writes, handles bucketStart/windowMinutes job data <!-- agent: platform-engineer.build, depends_on: [1.3, 1.4], touches: [packages/application-api/src/jobs/workers/time-series-aggregation.worker.ts] -->
+- [x] 3.1 Implement the stub `TimeSeriesAggregationWorker` at `packages/application-api/src/jobs/workers/time-series-aggregation.worker.ts` — incremental materialization from a persisted watermark, idempotent upsert of daily and weekly summaries, watermark advances only after successful writes, handles bucketStart/windowMinutes job data <!-- agent: platform-engineer.build, depends_on: [1.3, 1.4], touches: [packages/application-api/src/jobs/workers/time-series-aggregation.worker.ts] -->
 - [x] 3.2 Create `TaxChangeAttributionService` at `packages/core-domain/src/history/services/` — pure classification of consecutive-observation steps into TAX_RULE_CHANGE / MERCHANT_PRICE_CHANGE / TRANSPORT_CHANGE / MIXED by joining against tax-rule effective windows; returns evidence (moved inputs, bounding versionLabels) <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [packages/core-domain/src/history/**] -->
 
 ## 4. Historical data API
 
-- [ ] 4.1 Create `HistoricalDataController` + module at `packages/application-api/src/historical/` — `GET /api/v1/products/:id/price-history` with metric (price|landed-cost), granularity (day|week), from/to capped at 365 days, optional merchant filter; reads summaries only; rate-limited via the existing `RateLimitGuard`; gated by `enable_historical_price_intelligence`; response carries series points, per-point reliability, attribution, and earliest available observation date <!-- agent: platform-engineer.build, depends_on: [1.4, 3.2], touches: [packages/application-api/src/historical/**] -->
+- [x] 4.1 Create `HistoricalDataController` + module at `packages/application-api/src/historical/` — `GET /api/v1/products/:id/price-history` with metric (price|landed-cost), granularity (day|week), from/to capped at 365 days, optional merchant filter; reads summaries only; rate-limited via the existing `RateLimitGuard`; gated by `enable_historical_price_intelligence`; response carries series points, per-point reliability, attribution, and earliest available observation date <!-- agent: platform-engineer.build, depends_on: [1.4, 3.2], touches: [packages/application-api/src/historical/**] -->
 
 ## 5. Frontend
 
