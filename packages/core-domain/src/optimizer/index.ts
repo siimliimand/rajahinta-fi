@@ -13,6 +13,12 @@ export {
   MAX_CANDIDATE_MERCHANTS_PER_ITEM,
 } from './optimizer.types';
 
+// Error types
+export {
+  BasketValidationError,
+  BasketClassificationGateError,
+} from './optimizer.types';
+
 // Types
 export type {
   BasketInputItem,
@@ -29,6 +35,9 @@ export type {
 // Ports
 export type { IMerchantTermsPort, MerchantTerms } from './ports/merchant-terms.port';
 export { MERCHANT_TERMS_PORT } from './ports/merchant-terms.port';
+
+// Services
+export { BasketOptimizerService } from './services/basket-optimizer.service';
 
 // Module
 export { OptimizerModule } from './optimizer.module';

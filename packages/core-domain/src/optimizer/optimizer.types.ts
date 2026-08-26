@@ -28,6 +28,37 @@ import type { ConfidenceDetail } from '../reliability/confidence-framework.types
 import type { ReliabilityStatus } from '../reliability/reliability.types';
 
 // ---------------------------------------------------------------------------
+// Domain errors
+// ---------------------------------------------------------------------------
+
+/**
+ * Base error for basket optimizer validation failures.
+ */
+export class BasketValidationError extends Error {
+  readonly code: string;
+
+  constructor(message: string, code = 'BASKET_VALIDATION_ERROR') {
+    super(message);
+    this.name = 'BasketValidationError';
+    this.code = code;
+  }
+}
+
+/**
+ * Thrown when a product in the basket is rejected by the classification gate.
+ * Carries the productId so the API layer can map to 422 with context.
+ */
+export class BasketClassificationGateError extends Error {
+  readonly productId: number;
+
+  constructor(productId: number, reason: string) {
+    super(`Basket item product ${productId} rejected by classification gate: ${reason}`);
+    this.name = 'BasketClassificationGateError';
+    this.productId = productId;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Caps — validated before any computation
 // ---------------------------------------------------------------------------
 
