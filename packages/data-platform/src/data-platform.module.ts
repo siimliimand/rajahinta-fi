@@ -30,6 +30,8 @@ import {
   PriceObservationRepository,
   PriceHistorySummaryRepository,
   AggregationWatermarkRepository,
+  MerchantTermsRepository,
+  BasketCalculationRecordRepository,
 } from './abstracts';
 import { DrizzleProductRepository } from './repositories/product.repository';
 import { DrizzleTaxRateRepository } from './repositories/tax-rate.repository';
@@ -42,6 +44,8 @@ import { DrizzleSavedBasketRepository } from './repositories/saved-basket.reposi
 import { DrizzlePriceObservationRepository } from './repositories/price-observation.repository';
 import { DrizzlePriceHistorySummaryRepository } from './repositories/price-history-summary.repository';
 import { DrizzleAggregationWatermarkRepository } from './repositories/aggregation-watermark.repository';
+import { DrizzleMerchantTermsRepository } from './repositories/merchant-terms.repository';
+import { DrizzleBasketCalculationRecordRepository } from './repositories/basket-calculation-record.repository';
 
 @Module({
   imports: [DrizzleModule],
@@ -105,6 +109,17 @@ import { DrizzleAggregationWatermarkRepository } from './repositories/aggregatio
       provide: AggregationWatermarkRepository,
       useClass: DrizzleAggregationWatermarkRepository,
     },
+    // Merchant terms — store-level minimum order thresholds with
+    // reliability and timestamp provenance.
+    {
+      provide: MerchantTermsRepository,
+      useClass: DrizzleMerchantTermsRepository,
+    },
+    // Basket calculation records — multi-product optimizer results.
+    {
+      provide: BasketCalculationRecordRepository,
+      useClass: DrizzleBasketCalculationRecordRepository,
+    },
     // Also register the concrete classes directly (they are @Injectable)
     DrizzleProductRepository,
     DrizzleTaxRateRepository,
@@ -117,6 +132,8 @@ import { DrizzleAggregationWatermarkRepository } from './repositories/aggregatio
     DrizzlePriceObservationRepository,
     DrizzlePriceHistorySummaryRepository,
     DrizzleAggregationWatermarkRepository,
+    DrizzleMerchantTermsRepository,
+    DrizzleBasketCalculationRecordRepository,
   ],
   exports: [
     // Abstract class tokens — inject by abstract class for loose coupling
@@ -128,7 +145,9 @@ import { DrizzleAggregationWatermarkRepository } from './repositories/aggregatio
     SavedBasketRepository,
     PriceObservationRepository,
     PriceHistorySummaryRepository,
-    AggregationWatermarkRepository,
+AggregationWatermarkRepository,
+    MerchantTermsRepository,
+    BasketCalculationRecordRepository,
     // Domain-port adapter tokens
     TAX_RULE_REPOSITORY_PORT,
     CORRECTION_REPOSITORY_PORT,
@@ -144,6 +163,8 @@ import { DrizzleAggregationWatermarkRepository } from './repositories/aggregatio
     DrizzlePriceObservationRepository,
     DrizzlePriceHistorySummaryRepository,
     DrizzleAggregationWatermarkRepository,
+    DrizzleMerchantTermsRepository,
+    DrizzleBasketCalculationRecordRepository,
   ],
 })
 export class DataPlatformModule {}

@@ -43,6 +43,13 @@
       "when": 1787757514976,
       "tag": "0005_kind_smasher",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787766232964,
+      "tag": "0006_fast_mephistopheles",
+      "breakpoints": true
     }
   ]
 }
