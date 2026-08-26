@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { ITransportOfferQuery } from '../transport-offer-query.interface';
 import type { TransportOffer } from '../transport-offer.type';
 import { BasketShippingCalculator } from '../basket-shipping-calculator.service';
+import { TransportEstimationService } from '../transport-estimation.service';
 import type {
   BasketItem,
   BasketShippingThresholdCheck,
@@ -295,6 +296,186 @@ describe('BasketShippingCalculator', () => {
       );
 
       expect(result.weightTier).toBe('5–10 kg');
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Single-line equivalence (Decision 4)
+  // -----------------------------------------------------------------------
+
+  describe('single-line equivalence with estimate()', () => {
+    it('exact bracket match: single-line basket matches estimate cost and offer', async () => {
+      const offers = [
+        makeOffer({
+          id: 1,
+          carrier: 'posti',
+          originCountry: 'DE',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 0, maxKg: 10 },
+          priceCents: 2000,
+        }),
+        makeOffer({
+          id: 2,
+          carrier: 'posti',
+          originCountry: 'DE',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 10, maxKg: 30 },
+          priceCents: 3500,
+        }),
+      ];
+      const query = new StubQuery(offers);
+      const calc = new BasketShippingCalculator(query);
+      const estimate = new TransportEstimationService(query);
+
+      const basketResult = await calc.calculateBasket(
+        [{ weightKg: 5, packageType: 'parcel' }],
+        'FI',
+        'posti',
+      );
+      const estimateResult = await estimate.estimate('posti', 'DE', 'FI', 5, 'parcel');
+
+      expect(basketResult.totalCents).toBe(estimateResult.offer.priceCents);
+      expect(basketResult.totalCents).toBe(2000);
+      expect(basketResult.reliability).toBe('EXACT');
+    });
+
+    it('fallback: single-line closest-midpoint used instead of cheapest', async () => {
+      // Cheapest offer (300¢ for 0–5kg) is far from 12kg weight.
+      // Closest-midpoint is the 15–25 bracket (midpoint 20, distance 8)
+      // vs 0–5 (midpoint 2.5, distance 9.5).
+      // The multi-line fallback would pick cheapest (300¢ → 0–5 bracket).
+      // The unified single-line path picks closest-midpoint (3500¢ → 15–25 bracket).
+      const offers = [
+        makeOffer({
+          id: 1,
+          carrier: 'posti',
+          originCountry: 'DE',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 0, maxKg: 5 },   // gap before 15
+          priceCents: 300, // cheapest, but far midpoint
+        }),
+        makeOffer({
+          id: 2,
+          carrier: 'posti',
+          originCountry: 'DE',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 15, maxKg: 25 },  // gap after 5
+          priceCents: 3500, // closer midpoint to 12kg
+        }),
+      ];
+      const query = new StubQuery(offers);
+      const calc = new BasketShippingCalculator(query);
+      const estimate = new TransportEstimationService(query);
+
+      const basketResult = await calc.calculateBasket(
+        [{ weightKg: 12, packageType: 'parcel' }],
+        'FI',
+        'posti',
+      );
+      const estimateResult = await estimate.estimate('posti', 'DE', 'FI', 12, 'parcel');
+
+      // Single-line should pick closest-midpoint (15–25 bracket, 3500¢),
+      // matching the estimate path.
+      expect(basketResult.totalCents).toBe(estimateResult.offer.priceCents);
+      expect(basketResult.totalCents).toBe(3500);
+      expect(basketResult.reliability).toBe('ESTIMATED');
+    });
+
+    it('multi-line still uses cheapest fallback (divergence preserved for multi-item)', async () => {
+      // Same divergence scenario as above but with 2 items →
+      // multi-line path keeps cheapest fallback.
+      const offers = [
+        makeOffer({
+          id: 1,
+          carrier: 'posti',
+          originCountry: 'DE',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 0, maxKg: 5 },
+          priceCents: 300, // cheapest
+        }),
+        makeOffer({
+          id: 2,
+          carrier: 'posti',
+          originCountry: 'DE',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 15, maxKg: 25 },
+          priceCents: 3500, // closer midpoint
+        }),
+      ];
+      const calc = new BasketShippingCalculator(new StubQuery(offers));
+
+      // Two items = 24kg total, no exact bracket match (24 > 5, 24 < 15 no, 24 < 25 yes — wait 24 IS in 15–25!)
+      // Give each item 22kg → total 44kg which falls outside both brackets
+      const result = await calc.calculateBasket(
+        [
+          { weightKg: 22, packageType: 'parcel' },
+          { weightKg: 22, packageType: 'parcel' },
+        ],
+        'FI',
+        'posti',
+      );
+
+      // Multi-line picks cheapest (300¢) not closest-midpoint (3500¢)
+      // Closest-midpoint for 44kg: [0,5] midpoint 2.5 distance 41.5, [15,25] midpoint 20 distance 24
+      // So closest IS [15,25] with 3500¢. But cheapest is [0,5] with 300¢.
+      expect(result.totalCents).toBe(300);
+      expect(result.reliability).toBe('ESTIMATED');
+    });
+
+    it('no-offer degradation: single-line returns PARTIAL (same as multi-line)', async () => {
+      const calc = new BasketShippingCalculator(new StubQuery([]));
+
+      const result = await calc.calculateBasket(
+        [{ weightKg: 5, packageType: 'parcel' }],
+        'FI',
+        'posti',
+      );
+
+      expect(result.totalCents).toBe(0);
+      expect(result.reliability).toBe('PARTIAL');
+    });
+
+    it('reliability mapping: single-line EXACT matches estimate VERIFIED, single-line ESTIMATED matches estimate ESTIMATED', async () => {
+      const offers = [
+        makeOffer({
+          id: 1,
+          carrier: 'posti',
+          originCountry: 'DE',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 0, maxKg: 10 },
+          priceCents: 2000,
+        }),
+      ];
+      const query = new StubQuery(offers);
+      const calc = new BasketShippingCalculator(query);
+      const estimate = new TransportEstimationService(query);
+
+      // Exact match → basket EXACT ↔ estimate VERIFIED
+      const exactBasket = await calc.calculateBasket(
+        [{ weightKg: 5, packageType: 'parcel' }],
+        'FI',
+        'posti',
+      );
+      const exactEstimate = await estimate.estimate('posti', 'DE', 'FI', 5, 'parcel');
+      expect(exactBasket.reliability).toBe('EXACT');
+      expect(exactEstimate.reliabilityStatus).toBe('VERIFIED');
+
+      // No exact match possible (12kg outside 0–10 bracket) → both ESTIMATED
+      const estBasket = await calc.calculateBasket(
+        [{ weightKg: 12, packageType: 'parcel' }],
+        'FI',
+        'posti',
+      );
+      const estEstimate = await estimate.estimate('posti', 'DE', 'FI', 12, 'parcel');
+      expect(estBasket.reliability).toBe('ESTIMATED');
+      expect(estEstimate.reliabilityStatus).toBe('ESTIMATED');
     });
   });
 

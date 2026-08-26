@@ -1,5 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ITransportOfferQuery, TRANSPORT_OFFER_QUERY } from './transport-offer-query.interface';
+import { inBracket, selectBestBracketOffer } from './bracket-selection';
 import type { TransportOffer } from './transport-offer.type';
 import type {
   BasketItem,
@@ -31,14 +32,6 @@ function dominantPackageType(items: readonly BasketItem[]): string {
   }
 
   return bestType;
-}
-
-/** Check whether `weightKg` falls within the bracket. */
-function inBracket(offer: TransportOffer, weightKg: number): boolean {
-  const { minKg, maxKg } = offer.weightBracket;
-  if (minKg !== null && weightKg < minKg) return false;
-  if (maxKg !== null && weightKg > maxKg) return false;
-  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,18 +95,33 @@ export class BasketShippingCalculator {
       };
     }
 
-    // Try exact weight match; fall back to cheapest available bracket
-    const exact = candidates.find((o) => inBracket(o, totalWeight));
-    const best = exact ?? candidates.reduce((a, b) =>
-      a.priceCents < b.priceCents ? a : b,
-    );
+    // -----------------------------------------------------------------------
+    // Unified single-line selection (Decision 4): same bracket-matching that
+    // TransportEstimationService.estimate uses, so a single-product-line
+    // shipment resolves identically.
+    // -----------------------------------------------------------------------
 
-    const reliability: 'EXACT' | 'ESTIMATED' | 'PARTIAL' =
-      exact
+    let best: TransportOffer;
+    let reliability: 'EXACT' | 'ESTIMATED' | 'PARTIAL';
+
+    if (items.length === 1) {
+      // Single-line → unified bracket selection (exact-match-first,
+      // closest-midpoint fallback), identical to estimate()'s logic.
+      const selection = selectBestBracketOffer(candidates, totalWeight)!;
+      best = selection.offer;
+      reliability = selection.reliability;
+    } else {
+      // Multi-line → exact bracket match, cheapest fallback
+      const exact = candidates.find((o) => inBracket(o, totalWeight));
+      best = exact ?? candidates.reduce((a, b) =>
+        a.priceCents < b.priceCents ? a : b,
+      );
+      reliability = exact
         ? 'EXACT'
         : totalWeight > 0
           ? 'ESTIMATED'
           : 'PARTIAL';
+    }
 
     const weightTier = best.weightBracket.minKg !== null || best.weightBracket.maxKg !== null
       ? `${best.weightBracket.minKg ?? 0}–${best.weightBracket.maxKg ?? '∞'} kg`
