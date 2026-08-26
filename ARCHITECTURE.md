@@ -39,10 +39,11 @@ rajahinta/
 │   │       ├── correction/            # CorrectionService, CorrectionModule
 │   │       ├── entitlement/           # EntitlementService (free/premium gating)
 │   │       ├── audit/                 # AuditService, AuditModule
-│   │       └── governance/            # SourceGovernanceService (merchant permission gating)
+│   │       ├── governance/            # SourceGovernanceService (merchant permission gating)
+│   │       └── history/               # PriceObservationRecorderService, TaxChangeAttributionService
 │   ├── data-platform/                 # Drizzle ORM repositories, schema, seed data
 │   │   └── src/
-│   │       ├── schema.ts              # Canonical Drizzle schema (productMaster, retailOffers, taxRules, transportOffers, calculationRecords)
+│   │       ├── schema.ts              # Canonical Drizzle schema (productMaster, retailOffers, taxRules, transportOffers, calculationRecords, priceObservations, priceHistorySummaries, aggregationWatermarks)
 │   │       ├── abstracts.ts           # Abstract repository classes (ProductRepository, TaxRateRepository, etc.)
 │   │       ├── db/
 │   │       │   ├── drizzle.provider.ts  # DRIZZLE token, pg.Pool + Drizzle factory (DATABASE_URL)
@@ -51,6 +52,9 @@ rajahinta/
 │   │       │   ├── product.repository.ts
 │   │       │   ├── tax-rate.repository.ts  # Includes TaxRuleRepositoryAdapter
 │   │       │   ├── transport-offer.repository.ts
+│   │       │   ├── price-observation.repository.ts    # Append-only observation log (IPriceObservationPort adapter)
+│   │       │   ├── price-history-summary.repository.ts # Idempotent summary upsert + range reads
+│   │       │   ├── aggregation-watermark.repository.ts # Aggregation watermark persistence
 │   │       │   └── calculation-record.repository.ts
 │   │       ├── data-platform.module.ts # DataPlatformModule — registers concrete repos + TAX_RULE_REPOSITORY_PORT
 │   │       └── seed/tax-rules.seed.ts # Versioned Finnish excise duty rates (v1.0-2024 … v3.0-2026)
@@ -76,6 +80,7 @@ rajahinta/
 │           ├── entitlement/           # EntitlementGuard
 │           ├── billing/               # BillingService, BillingModule
 │           ├── accounts/              # AccountService, DataExportService, AccountRetentionService
+│           ├── historical/            # HistoricalDataController — GET /api/v1/products/:id/price-history (flag-gated)
 │           ├── jobs/                  # BullMQ workers: price-ingestion, transport-rate-refresh, tax-dataset-review, time-series-aggregation
 │           ├── audit/                 # AuditRepositoryAdapter (bridges to core-domain)
 │           └── observability/         # KpiService, OpsDashboardController, CostAttributionService, InstrumentationService
@@ -159,10 +164,10 @@ The application is a **NestJS modular monolith** with four bounded layers:
 
 | Package                     | Responsibility                                                                                                                                        | Key modules / files                                                                                                                                                          |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core-domain`      | Domain logic — tax engines, classification, ranking, calculator orchestrator, confidence framework, correction, entitlement, audit, source governance | `tax/`, `classification/`, `normalization/`, `transport/`, `calculator/`, `reliability/`, `ranking/`, `declaration/`, `correction/`, `entitlement/`, `audit/`, `governance/` |
+| `packages/core-domain`      | Domain logic — tax engines, classification, ranking, calculator orchestrator, confidence framework, correction, entitlement, audit, source governance, price-history recording and attribution | `tax/`, `classification/`, `normalization/`, `transport/`, `calculator/`, `reliability/`, `ranking/`, `declaration/`, `correction/`, `entitlement/`, `audit/`, `governance/`, `history/` |
 | `packages/data-platform`    | Drizzle ORM schema, concrete repositories, connection provider, seed data                                                                             | `schema.ts`, `abstracts.ts`, `repositories/`, `db/drizzle.provider.ts`, `data-platform.module.ts`, `seed/tax-rules.seed.ts`                                                  |
 | `packages/data-acquisition` | Merchant feed ingestion pipeline, data-quality checks, rate-review scheduler                                                                          | `adapters/systembolaget.adapter.ts`, `services/`, `config/merchants.config.ts`                                                                                               |
-| `packages/application-api`  | API controllers, DTOs, guards (rate limiting, idempotency, age gate, entitlement, launch gate), background job workers, observability                 | `calculator/`, `search/`, `ranking/`, `declaration/`, `feature-flags/`, `rate-limiting/`, `age-gate/`, `jobs/`, `observability/`                                                         |
+| `packages/application-api`  | API controllers, DTOs, guards (rate limiting, idempotency, age gate, entitlement, launch gate), background job workers, observability                 | `calculator/`, `search/`, `ranking/`, `declaration/`, `historical/`, `feature-flags/`, `rate-limiting/`, `age-gate/`, `jobs/`, `observability/`                                         |
 | `apps/backend`              | Composition root — AppModule wires all packages and provides domain-port adapters                                                                     | `app.module.ts`, `adapters/product-data.adapter.ts`, `adapters/calculation-record.adapter.ts`                                                                                |
 
 **Connection provider**: `DRIZZLE` token in `packages/data-platform/src/db/drizzle.provider.ts` creates a `pg.Pool` from `DATABASE_URL` and returns a fully-typed Drizzle ORM instance. The `DrizzleModule` is `@Global()`, making the connection available application-wide.
@@ -354,6 +359,7 @@ The repository is an agentic workspace with a working application build. Command
 | End-to-end API tests       | Implemented | `apps/backend/tests/e2e/calculator.test.ts` via `vitest.config.e2e.ts` — full NestJS app with real engines, official-rate expectations, TravellerImport case |
 | Data acquisition tests     | Implemented | `packages/data-acquisition/src/__tests__/feed-ingestion.service.test.ts`, `data-mapping.service.test.ts`, `data-quality.service.test.ts`, `pipeline-orchestrator.service.test.ts` |
 | API-layer tests            | Implemented | `packages/application-api/src/__tests__/rate-limiting.service.test.ts`, `age-gate.service.test.ts`, `idempotency.service.test.ts`, `launch-gate.service.test.ts`                  |
+| Historical-price flow tests | Implemented | `tests/integration/historical-price-flow.test.ts` — observation append → aggregation → API response with attribution, real engines + in-memory ports (`pnpm test:integration`); unit tests in `core-domain/src/history/__tests__/`, `application-api/src/jobs/__tests__/`, `data-platform/src/repositories/__tests__/` |
 
 **Testing principle**: golden-dataset tests use real engine implementations (plain classes implementing ports), not `vi.fn()` mocks. This ensures the tested behavior matches production behavior exactly.
 
