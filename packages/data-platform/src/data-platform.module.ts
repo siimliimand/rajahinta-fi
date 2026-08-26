@@ -28,6 +28,7 @@ import {
   AccountRepository,
   SavedBasketRepository,
   PriceObservationRepository,
+  PriceHistorySummaryRepository,
 } from './abstracts';
 import { DrizzleProductRepository } from './repositories/product.repository';
 import { DrizzleTaxRateRepository } from './repositories/tax-rate.repository';
@@ -38,6 +39,7 @@ import { DrizzleCorrectionRepository } from './repositories/correction.repositor
 import { DrizzleAccountRepository } from './repositories/account.repository';
 import { DrizzleSavedBasketRepository } from './repositories/saved-basket.repository';
 import { DrizzlePriceObservationRepository } from './repositories/price-observation.repository';
+import { DrizzlePriceHistorySummaryRepository } from './repositories/price-history-summary.repository';
 
 @Module({
   imports: [DrizzleModule],
@@ -85,6 +87,14 @@ import { DrizzlePriceObservationRepository } from './repositories/price-observat
       provide: PriceObservationRepository,
       useClass: DrizzlePriceObservationRepository,
     },
+    // Materialized daily/weekly chart aggregates — written by the
+    // time-series aggregation worker (task 3.1), read by the
+    // historical-data API (task 4.1) of change
+    // 2026-08-26-phase2-historical-price-intelligence.
+    {
+      provide: PriceHistorySummaryRepository,
+      useClass: DrizzlePriceHistorySummaryRepository,
+    },
     // Also register the concrete classes directly (they are @Injectable)
     DrizzleProductRepository,
     DrizzleTaxRateRepository,
@@ -95,6 +105,7 @@ import { DrizzlePriceObservationRepository } from './repositories/price-observat
     DrizzleAccountRepository,
     DrizzleSavedBasketRepository,
     DrizzlePriceObservationRepository,
+    DrizzlePriceHistorySummaryRepository,
   ],
   exports: [
     // Abstract class tokens — inject by abstract class for loose coupling
@@ -105,6 +116,7 @@ import { DrizzlePriceObservationRepository } from './repositories/price-observat
     AccountRepository,
     SavedBasketRepository,
     PriceObservationRepository,
+    PriceHistorySummaryRepository,
     // Domain-port adapter tokens
     TAX_RULE_REPOSITORY_PORT,
     CORRECTION_REPOSITORY_PORT,
@@ -118,6 +130,7 @@ import { DrizzlePriceObservationRepository } from './repositories/price-observat
     DrizzleAccountRepository,
     DrizzleSavedBasketRepository,
     DrizzlePriceObservationRepository,
+    DrizzlePriceHistorySummaryRepository,
   ],
 })
 export class DataPlatformModule {}
