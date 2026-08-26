@@ -8,6 +8,7 @@
  * @module RepositoryAbstractions
  */
 import { Injectable } from '@nestjs/common';
+import type { PriceObservation } from '@rajahinta/core-domain';
 import {
   productMaster,
   retailOffers,
@@ -16,7 +17,19 @@ import {
   calculationRecords,
   accounts,
   savedBaskets,
+  priceObservations,
+  priceHistorySummaries,
 } from './schema';
+
+/**
+ * Persisted price-observation row (raw schema shape).
+ *
+ * Read model for the append-only observation log. Carries rule-version
+ * FK ids but NOT the domain `versionLabel`: the aggregation worker does
+ * not need labels, and the attribution service resolves them through its
+ * own tax-rule queries, so range reads stay join-free and index-only.
+ */
+export type PriceObservationRecord = typeof priceObservations.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // Repository abstractions
@@ -179,4 +192,211 @@ export abstract class SavedBasketRepository {
 
   /** Delete a basket by its primary key. */
   abstract delete(id: number): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Price-observation repository abstraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Price-observation repository — the append-only analytical log.
+ *
+ * The append contract mirrors the core-domain {@link IPriceObservationPort}
+ * exactly (insert-only, returns the assigned row id); the concrete Drizzle
+ * adapter therefore satisfies that port without a separate mapper. The
+ * range-read methods are consumed by the time-series aggregation worker
+ * and the tax-change attribution service.
+ *
+ * Append-only invariant: there are deliberately NO update or delete
+ * operations — observation rows are immutable once written, and
+ * corrections append new observations rather than editing history.
+ *
+ * Range semantics: all range reads are half-open intervals
+ * {@code [from, to)} on observedAt, matching the aggregation bucket
+ * convention (bucketStart inclusive, bucketStart + window exclusive) so a
+ * boundary-instant observation is never counted in two buckets.
+ */
+@Injectable()
+export abstract class PriceObservationRepository {
+  /**
+   * Append one observation row (insert only — never update or delete).
+   * Returns the assigned row id.
+   */
+  abstract append(observation: PriceObservation): Promise<{ id: number }>;
+
+  /**
+   * Range read by product over [from, to), optionally filtered by a
+   * single merchant. Ordered by (observedAt, id) ascending so
+   * consecutive-observation consumers see a stable series order.
+   */
+  abstract findByProductRange(
+    productId: number,
+    from: Date,
+    to: Date,
+    merchant?: string | null,
+  ): Promise<PriceObservationRecord[]>;
+
+  /**
+   * Range read by merchant offer (merchant + retailOfferId) over
+   * [from, to). Ordered by (observedAt, id) ascending.
+   */
+  abstract findByMerchantOfferRange(
+    merchant: string,
+    retailOfferId: number,
+    from: Date,
+    to: Date,
+  ): Promise<PriceObservationRecord[]>;
+
+  /**
+   * Range read by merchant + product over [from, to). Ordered by
+   * (observedAt, id) ascending.
+   */
+  abstract findByMerchantProductRange(
+    merchant: string,
+    productId: number,
+    from: Date,
+    to: Date,
+  ): Promise<PriceObservationRecord[]>;
+
+  /**
+   * Earliest observedAt for a product (optionally merchant-filtered), or
+   * null when no observations exist — the API surfaces this as the
+   * "earliest available observation date".
+   */
+  abstract findEarliestObservedAt(
+    productId: number,
+    merchant?: string | null,
+  ): Promise<Date | null>;
+
+  /**
+   * Incremental-scan read for the aggregation worker: every product with
+   * an observation at or after {@code since}, with that product's
+   * earliest and latest observedAt within the scan range. The worker
+   * derives the affected daily/weekly buckets from these spans and its
+   * next watermark from the maximum lastObservedAt. Ordered by productId
+   * ascending for deterministic processing.
+   *
+   * Inclusive lower bound: observations at exactly {@code since} are
+   * returned again — upserts are idempotent, so re-scanning the boundary
+   * instant is safe, while skipping it could miss rows appended late
+   * with the same observedAt.
+   */
+  abstract findProductActivitySince(
+    since: Date,
+  ): Promise<ProductActivitySince[]>;
+}
+
+/**
+ * Per-product observation span within an incremental scan range.
+ */
+export interface ProductActivitySince {
+  productId: number;
+  /** Earliest observedAt for the product within the scan range. */
+  firstObservedAt: Date;
+  /** Latest observedAt for the product within the scan range. */
+  lastObservedAt: Date;
+}
+
+// ---------------------------------------------------------------------------
+// Price-history-summary repository abstraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Persisted price-history-summary row (raw schema shape).
+ *
+ * Read model for the materialized daily/weekly buckets. Serves chart
+ * requests so raw observations are never aggregated on the request path.
+ */
+export type PriceHistorySummaryRecord = typeof priceHistorySummaries.$inferSelect;
+
+/**
+ * Upsert input — one fully computed bucket. The aggregation worker
+ * computes open/close/min/max/avg for price and landed cost, the
+ * observation count, and the strictest reliability before calling
+ * {@link PriceHistorySummaryRepository.upsertBucket}.
+ */
+export type PriceHistorySummaryUpsertInput = typeof priceHistorySummaries.$inferInsert;
+
+/**
+ * Price-history-summary repository — materialized daily/weekly aggregates.
+ *
+ * Written by the time-series aggregation background job (idempotent
+ * upsert), read by the historical-data API.
+ *
+ * ## Upsert idempotency
+ *
+ * {@link upsertBucket} converges on the bucket unique key
+ * {@code (granularity, period_start, product_id, merchant)} — re-running
+ * the aggregation job over the same period overwrites the bucket's
+ * aggregate columns (last write wins) instead of duplicating rows. The
+ * constraint is {@code UNIQUE NULLS NOT DISTINCT}, so the product-wide
+ * row (merchant NULL) is matched by the plain column conflict target.
+ *
+ * ## Range semantics
+ *
+ * Unlike the observation log's half-open timestamp ranges, summary reads
+ * are CLOSED {@code [from, to]} intervals on the date column
+ * {@code period_start}: period anchors are whole days, and a chart
+ * requested through its last day must include that day's bucket.
+ *
+ * Merchant filter semantics are binary, never "all rows": omitted (or
+ * null) reads ONLY the product-wide rows (merchant IS NULL); a given
+ * merchant reads only that merchant's rows. Mixing the two would put
+ * multiple points in one period on a single chart series.
+ */
+@Injectable()
+export abstract class PriceHistorySummaryRepository {
+  /**
+   * Insert or overwrite one bucket row keyed by
+   * (granularity, periodStart, productId, merchant). Returns the row id
+   * (existing id on conflict — the key columns never change).
+   */
+  abstract upsertBucket(
+    summary: PriceHistorySummaryUpsertInput,
+  ): Promise<{ id: number }>;
+
+  /**
+   * Range read of one product's summary series at one granularity over
+   * the closed [from, to] period-start range (ISO date strings,
+   * 'YYYY-MM-DD'). Omitting `merchant` (or passing null) reads the
+   * product-wide rows; passing a merchant reads that merchant's rows.
+   * Ordered by periodStart ascending, matching the
+   * (granularity, product_id, period_start) index.
+   */
+  abstract findByProductRange(
+    productId: number,
+    granularity: string,
+    from: string,
+    to: string,
+    merchant?: string | null,
+  ): Promise<PriceHistorySummaryRecord[]>;
+}
+
+// ---------------------------------------------------------------------------
+// Aggregation-watermark repository abstraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Aggregation-watermark repository — persisted cursors for incremental
+ * materialization jobs.
+ *
+ * The time-series aggregation worker reads its watermark before each scan
+ * and saves the advanced watermark only after every summary write of the
+ * scan succeeded (write-then-advance; a failed run leaves the cursor
+ * untouched so the retry re-scans the same range and the idempotent
+ * summary upserts converge).
+ */
+@Injectable()
+export abstract class AggregationWatermarkRepository {
+  /**
+   * Current watermark for a job, or null when the job has never
+   * completed a scan (callers start from the epoch on first run).
+   */
+  abstract find(jobName: string): Promise<Date | null>;
+
+  /**
+   * Persist the watermark for a job (insert or overwrite by job name).
+   * Callers must only ever advance the value — never regress it.
+   */
+  abstract save(jobName: string, watermark: Date): Promise<void>;
 }

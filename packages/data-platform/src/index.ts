@@ -10,6 +10,9 @@ export {
   calculationRecords,
   accounts,
   savedBaskets,
+  priceObservations,
+  priceHistorySummaries,
+  aggregationWatermarks,
 } from './schema';
 
 // ---------------------------------------------------------------------------
@@ -23,6 +26,15 @@ export {
   CalculationRecordRepository,
   AccountRepository,
   SavedBasketRepository,
+  PriceObservationRepository,
+  PriceHistorySummaryRepository,
+  AggregationWatermarkRepository,
+} from './abstracts';
+export type {
+  PriceObservationRecord,
+  PriceHistorySummaryRecord,
+  PriceHistorySummaryUpsertInput,
+  ProductActivitySince,
 } from './abstracts';
 
 // ---------------------------------------------------------------------------
@@ -36,6 +48,9 @@ export { DrizzleCalculationRecordRepository } from './repositories/calculation-r
 export { DrizzleCorrectionRepository } from './repositories/correction.repository';
 export { DrizzleAccountRepository } from './repositories/account.repository';
 export { DrizzleSavedBasketRepository } from './repositories/saved-basket.repository';
+export { DrizzlePriceObservationRepository } from './repositories/price-observation.repository';
+export { DrizzlePriceHistorySummaryRepository } from './repositories/price-history-summary.repository';
+export { DrizzleAggregationWatermarkRepository } from './repositories/aggregation-watermark.repository';
 
 // ---------------------------------------------------------------------------
 // Module boundary — pure interfaces for cross-layer contracts

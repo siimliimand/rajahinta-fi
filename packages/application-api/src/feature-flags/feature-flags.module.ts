@@ -1,6 +1,7 @@
 import { Module, Global } from '@nestjs/common';
 import { FeatureFlagService } from './feature-flag.service';
 import { FeatureFlagGuard } from './feature-flags.guard';
+import { FeatureFlagsController } from './feature-flags.controller';
 import { LaunchGateService } from './launch-gate.service';
 import { LaunchGateGuard } from './launch-gate.guard';
 
@@ -10,6 +11,7 @@ import { LaunchGateGuard } from './launch-gate.guard';
  */
 @Global()
 @Module({
+  controllers: [FeatureFlagsController],
   providers: [
     FeatureFlagService,
     FeatureFlagGuard,

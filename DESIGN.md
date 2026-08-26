@@ -49,6 +49,8 @@ The UI is built around **transparency, neutrality, and explainability**. Every c
 | `ProductSelector.tsx` | `/calculator` | Product selection from results |
 | `QuantitySelector.tsx` | `/calculator` | Quantity input for calculation |
 | `CalculatorResult.tsx` | `/calculator` | Itemized landed-cost result display |
+| `HistoryChart.tsx` | `/calculator`, `/compare` | Pure-SVG historical price/landed-cost chart with tax-change markers and reliability badges (flag-gated) |
+| `ProductHistoryPanel.tsx` | `/calculator`, `/compare` | Flag-guarded chart panel — skips fetch when flag off; metric and merchant filters; "data available from" notice |
 | `DisclaimerBanner.tsx` | `/calculator` | Structural disclaimer rendered on every result |
 | `CorrectionFlagPanel.tsx` | `/calculator/result/[recordId]` | "Flag a problem" affordance posting correction feedback to `POST /api/v1/corrections` |
 | `ComparisonView.tsx` | `/compare` | Side-by-side product comparison |

@@ -79,8 +79,14 @@ export { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
 
 export { SystembolagetFeedAdapter } from './adapters/systembolaget.adapter';
 
-export type { IUpsertRepository, UpsertProductInput, UpsertOfferInput, UpsertResult } from './interfaces/upsert-port.interface';
+export type { IUpsertRepository, UpsertProductInput, UpsertOfferInput, UpsertResult, UpsertOfferResult } from './interfaces/upsert-port.interface';
 export { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
+
+// Offer-change hook — invoked by the pipeline once per changed offer; the
+// composition root binds the price-observation recorder to it (change
+// 2026-08-26-phase2-historical-price-intelligence, task 2.2).
+export type { IOfferChangeHook, ChangedOfferEvent } from './interfaces/offer-change-hook.interface';
+export { OFFER_CHANGE_HOOK_TOKEN } from './interfaces/offer-change-hook.interface';
 
 export { DrizzleUpsertRepository } from './adapters/upsert-port.adapter';
 

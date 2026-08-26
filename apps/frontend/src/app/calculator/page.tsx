@@ -7,6 +7,7 @@ import ProductSearch from './components/ProductSearch';
 import ProductSelector from './components/ProductSelector';
 import QuantitySelector from './components/QuantitySelector';
 import CalculatorResultView from './components/CalculatorResult';
+import ProductHistoryPanel from './components/ProductHistoryPanel';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -215,6 +216,14 @@ export default function CalculatorPage() {
       {result && (
         <section>
           <CalculatorResultView result={result} />
+          {/* Historical charts — hidden and unfetched while the
+              enable_historical_price_intelligence flag is off. */}
+          <div className="mt-6">
+            <ProductHistoryPanel
+              productId={result.metadata.input.productId}
+              showMerchantFilter
+            />
+          </div>
         </section>
       )}
     </main>

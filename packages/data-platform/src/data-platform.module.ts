@@ -27,6 +27,9 @@ import {
   CalculationRecordRepository,
   AccountRepository,
   SavedBasketRepository,
+  PriceObservationRepository,
+  PriceHistorySummaryRepository,
+  AggregationWatermarkRepository,
 } from './abstracts';
 import { DrizzleProductRepository } from './repositories/product.repository';
 import { DrizzleTaxRateRepository } from './repositories/tax-rate.repository';
@@ -36,6 +39,9 @@ import { TaxRuleRepositoryAdapter } from './repositories/tax-rate.repository';
 import { DrizzleCorrectionRepository } from './repositories/correction.repository';
 import { DrizzleAccountRepository } from './repositories/account.repository';
 import { DrizzleSavedBasketRepository } from './repositories/saved-basket.repository';
+import { DrizzlePriceObservationRepository } from './repositories/price-observation.repository';
+import { DrizzlePriceHistorySummaryRepository } from './repositories/price-history-summary.repository';
+import { DrizzleAggregationWatermarkRepository } from './repositories/aggregation-watermark.repository';
 
 @Module({
   imports: [DrizzleModule],
@@ -76,6 +82,29 @@ import { DrizzleSavedBasketRepository } from './repositories/saved-basket.reposi
       provide: SavedBasketRepository,
       useClass: DrizzleSavedBasketRepository,
     },
+    // Append-only price-observation log. NOT registered under the domain
+    // PRICE_OBSERVATION_PORT here — that wiring belongs to the composition
+    // root (change 2026-08-26-phase2-historical-price-intelligence, task 2.2).
+    {
+      provide: PriceObservationRepository,
+      useClass: DrizzlePriceObservationRepository,
+    },
+    // Materialized daily/weekly chart aggregates — written by the
+    // time-series aggregation worker (task 3.1), read by the
+    // historical-data API (task 4.1) of change
+    // 2026-08-26-phase2-historical-price-intelligence.
+    {
+      provide: PriceHistorySummaryRepository,
+      useClass: DrizzlePriceHistorySummaryRepository,
+    },
+    // Persisted incremental-scan cursors — written by the time-series
+    // aggregation worker (task 3.1 of change
+    // 2026-08-26-phase2-historical-price-intelligence) after successful
+    // summary writes.
+    {
+      provide: AggregationWatermarkRepository,
+      useClass: DrizzleAggregationWatermarkRepository,
+    },
     // Also register the concrete classes directly (they are @Injectable)
     DrizzleProductRepository,
     DrizzleTaxRateRepository,
@@ -85,8 +114,11 @@ import { DrizzleSavedBasketRepository } from './repositories/saved-basket.reposi
     DrizzleCorrectionRepository,
     DrizzleAccountRepository,
     DrizzleSavedBasketRepository,
+    DrizzlePriceObservationRepository,
+    DrizzlePriceHistorySummaryRepository,
+    DrizzleAggregationWatermarkRepository,
   ],
-exports: [
+  exports: [
     // Abstract class tokens — inject by abstract class for loose coupling
     ProductRepository,
     TaxRateRepository,
@@ -94,6 +126,9 @@ exports: [
     CalculationRecordRepository,
     AccountRepository,
     SavedBasketRepository,
+    PriceObservationRepository,
+    PriceHistorySummaryRepository,
+    AggregationWatermarkRepository,
     // Domain-port adapter tokens
     TAX_RULE_REPOSITORY_PORT,
     CORRECTION_REPOSITORY_PORT,
@@ -106,6 +141,9 @@ exports: [
     DrizzleCorrectionRepository,
     DrizzleAccountRepository,
     DrizzleSavedBasketRepository,
+    DrizzlePriceObservationRepository,
+    DrizzlePriceHistorySummaryRepository,
+    DrizzleAggregationWatermarkRepository,
   ],
 })
 export class DataPlatformModule {}

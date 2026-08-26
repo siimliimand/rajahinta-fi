@@ -17,13 +17,16 @@
  *
  * **Offer upsert** inserts every observation as a new row.  Price history is
  * append-only; deduplication by (merchantId, productId, observedAt) window
- * is handled by a separate data-quality step after ingestion if needed.
+ * is handled by a separate data-quality step after ingestion if needed.  The
+ * result additionally reports whether the offer CHANGED versus the latest
+ * prior row for the same (merchant, product) — first sighting or price move —
+ * which drives the one-observation-per-changed-offer guardrail.
  *
  * @module DrizzleUpsertRepository
  */
 
 import { Injectable, Inject } from '@nestjs/common';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import {
   DRIZZLE,
   type DrizzleDatabase,
@@ -35,6 +38,7 @@ import type {
   UpsertProductInput,
   UpsertOfferInput,
   UpsertResult,
+  UpsertOfferResult,
 } from '../interfaces/upsert-port.interface';
 
 @Injectable()
@@ -133,7 +137,28 @@ export class DrizzleUpsertRepository implements IUpsertRepository {
   // upsertOffer
   // --------------------------------------------------------------------------
 
-  async upsertOffer(input: UpsertOfferInput): Promise<number> {
+  async upsertOffer(input: UpsertOfferInput): Promise<UpsertOfferResult> {
+    // ---- Change detection: latest prior row for (merchant, product) ------
+    // An offer is "changed" when it is the first sighting or the price
+    // moved. Availability-only flips are not changes — the observation log
+    // driven by this flag is a price series and carries no availability.
+    // (observedAt, id) descending resolves the latest row deterministically
+    // even when scrapes share a timestamp.
+    const [previous] = await this.db
+      .select({ priceCents: retailOffers.priceCents })
+      .from(retailOffers)
+      .where(
+        and(
+          eq(retailOffers.merchant, input.merchant),
+          eq(retailOffers.productId, input.productId),
+        ),
+      )
+      .orderBy(desc(retailOffers.observedAt), desc(retailOffers.id))
+      .limit(1);
+
+    const changed =
+      previous === undefined || previous.priceCents !== input.priceCents;
+
     const [row] = await this.db
       .insert(retailOffers)
       .values({
@@ -149,6 +174,6 @@ export class DrizzleUpsertRepository implements IUpsertRepository {
       })
       .returning({ id: retailOffers.id });
 
-    return row.id;
+    return { offerId: row.id, changed };
   }
 }

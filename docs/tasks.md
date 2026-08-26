@@ -164,11 +164,11 @@
 
 ### 2A: Historical Price Intelligence
 
-- [ ] **T2.1** Build the Historical Price Intelligence Module: persist time series per canonical product (and per merchant offer) covering foreign retail price, transport cost, applicable tax rate, and resulting landed cost at each observation.
-- [ ] **T2.2** Design as an append-only event/observation log feeding into periodically materialized aggregates (daily/weekly summaries) for chart rendering — avoid recomputing full history on every request.
-- [ ] **T2.3** Make tax-driven price changes identifiable in the series (a change attributable to a new tax-rule version vs. a genuine merchant price change) by joining the observation log against the versioned tax-rule history.
-- [ ] **T2.4** Implement the Historical Data API endpoint for chart rendering.
-- [ ] **T2.5** Build historical price charts and historical landed-cost charts in the presentation layer.
+- [x] **T2.1** Build the Historical Price Intelligence Module: persist time series per canonical product (and per merchant offer) covering foreign retail price, transport cost, applicable tax rate, and resulting landed cost at each observation. → `price_observations` append-only table + `PriceObservationRecorderService` records quantity=1 baseline observations (foreign retail price, transport cost, applicable tax-rule version, landed cost) through the real calculator engine paths at ingestion time. *(completed via openspec/changes/2026-08-26-phase2-historical-price-intelligence — change tasks 1.1, 1.3, 2.1, 2.2)*
+- [x] **T2.2** Design as an append-only event/observation log feeding into periodically materialized aggregates (daily/weekly summaries) for chart rendering — avoid recomputing full history on every request. → `price_history_summaries` materialized aggregates + watermark-driven incremental `TimeSeriesAggregationWorker`; chart requests read summaries only, never raw history. *(completed via openspec/changes/2026-08-26-phase2-historical-price-intelligence — change tasks 1.2, 1.4, 3.1)*
+- [x] **T2.3** Make tax-driven price changes identifiable in the series (a change attributable to a new tax-rule version vs. a genuine merchant price change) by joining the observation log against the versioned tax-rule history. → `TaxChangeAttributionService`: pure, read-time classification with human-readable evidence, joining `price_observations` against the versioned `taxRules` history. *(completed via openspec/changes/2026-08-26-phase2-historical-price-intelligence — change task 3.2)*
+- [x] **T2.4** Implement the Historical Data API endpoint for chart rendering. → `GET /api/v1/products/:id/price-history`: summaries-only, 365-day cap, rate-limited, gated behind the `enable_historical_price_intelligence` flag. *(completed via openspec/changes/2026-08-26-phase2-historical-price-intelligence — change task 4.1)*
+- [x] **T2.5** Build historical price charts and historical landed-cost charts in the presentation layer. → pure-SVG `HistoryChart` + `ProductHistoryPanel` in the calculator and compare views, behind the default-off `enable_historical_price_intelligence` flag. *(completed via openspec/changes/2026-08-26-phase2-historical-price-intelligence — change tasks 5.1–5.3)*
 
 ### 2B: Basket Optimization
 
@@ -243,4 +243,4 @@ Per the business plan and engineering plan, the following are explicitly deferre
 
 ---
 
-*Last updated: 2026-08-21 — Synced with Phase 0+1 verification-fix branch (task 6.1 resync)*
+*Last updated: 2026-08-26 — T2.1–T2.5 (Phase 2A Historical Price Intelligence) completed via openspec/changes/2026-08-26-phase2-historical-price-intelligence*

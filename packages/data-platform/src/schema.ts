@@ -17,6 +17,9 @@ import {
   jsonb,
   boolean,
   text,
+  index,
+  date,
+  unique,
 } from 'drizzle-orm/pg-core';
 
 /**
@@ -84,7 +87,17 @@ export const retailOffers = pgTable('retail_offers', {
   reliabilityStatus: varchar('reliability_status', { length: 16 })
     .default('ESTIMATED')
     .notNull(),
-});
+  },
+  (table) => [
+    // Serves the changed-offer detection lookup (latest prior row per
+    // merchant+product, ordered by observedAt) run on every ingestion upsert.
+    index('retail_offers_merchant_product_id_observed_at_idx').on(
+      table.merchant,
+      table.productId,
+      table.observedAt,
+    ),
+  ],
+);
 
 /**
  * Versioned tax rules — never overwritten, always appended.
@@ -204,6 +217,179 @@ export const calculationRecords = pgTable('calculation_records', {
   sessionId: varchar('session_id', { length: 64 }),
   /** When calculation was performed. */
   calculatedAt: timestamp('calculated_at').defaultNow().notNull(),
+});
+
+/**
+ * Price observations — append-only analytical series for historical intelligence.
+ *
+ * One row per merchant-offer observation recorded by the price-ingestion
+ * background job at quantity=1 baseline. Each row is self-contained
+ * (price, transport cost, tax rule versions, landed cost, reliability
+ * snapshot) so the aggregation and attribution services consume it
+ * without joins across session-scoped data. Rows are never updated or
+ * deleted by application code — corrections append new observations.
+ */
+export const priceObservations = pgTable(
+  'price_observations',
+  {
+    id: serial('id').primaryKey(),
+    /** FK to product_master — links observation to canonical product. */
+    productId: integer('product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** Merchant identifier — distinguishes sources (matches retail_offers.merchant). */
+    merchant: varchar('merchant', { length: 128 }).notNull(),
+    /** FK to retail_offers — provenance link to the scraped offer this observation was derived from. */
+    retailOfferId: integer('retail_offer_id')
+      .references(() => retailOffers.id)
+      .notNull(),
+    /** When the observation was recorded — series time axis. */
+    observedAt: timestamp('observed_at').defaultNow().notNull(),
+    /** Foreign retail price in smallest currency unit (cents) at observation time. */
+    foreignRetailPriceCents: integer('foreign_retail_price_cents').notNull(),
+    /** Transport cost in cents used in the quantity=1 landed-cost computation. */
+    transportCostCents: integer('transport_cost_cents').notNull(),
+    /** FK to transport_offers — which carrier offer was selected. Null when no
+     *  applicable offer exists (transport cost 0, reliability UNAVAILABLE). */
+    transportOfferId: integer('transport_offer_id').references(
+      () => transportOffers.id,
+    ),
+    /** FK to tax_rules — excise rule version effective at observedAt. Null when
+     *  the engine fell back (zero duty, ESTIMATED) — matches calculationRecords. */
+    exciseRuleVersionId: integer('excise_rule_version_id').references(
+      () => taxRules.id,
+    ),
+    /** FK to tax_rules — container duty rule version effective at observedAt.
+     *  Null when the engine fell back — matches calculationRecords. */
+    containerDutyRuleVersionId: integer('container_duty_rule_version_id').references(
+      () => taxRules.id,
+    ),
+    /** Quantity=1 baseline landed cost in cents. */
+    landedCostCents: integer('landed_cost_cents').notNull(),
+    /** Per-input reliability snapshot keyed by input name (price/transport/classification →
+     *  VERIFIED/ESTIMATED/STALE/UNAVAILABLE — ReliabilityStatus in core-domain). */
+    inputReliability: jsonb('input_reliability').notNull(),
+    /** Result confidence (HIGH/MEDIUM/LOW) — computed by ConfidenceFrameworkService. */
+    confidence: varchar('confidence', { length: 6 }).notNull(),
+  },
+  (table) => [
+    index('price_observations_product_id_observed_at_idx').on(
+      table.productId,
+      table.observedAt,
+    ),
+    index('price_observations_merchant_product_id_observed_at_idx').on(
+      table.merchant,
+      table.productId,
+      table.observedAt,
+    ),
+    // Serves the aggregation worker's watermark scan (findProductActivitySince:
+    // GROUP BY product_id over observed_at >= watermark). Without a leading
+    // observed_at column the 30-minute scan would degrade to a seq scan as
+    // the append-only log grows — this keeps it an index-only scan.
+    index('price_observations_observed_at_idx').on(table.observedAt),
+  ],
+);
+
+/**
+ * Price history summaries — materialized daily/weekly aggregates for charts.
+ *
+ * One row per (granularity, periodStart, productId, merchant) bucket, built
+ * from priceObservations by the time-series aggregation background job.
+ * Serves chart requests so raw observations are never aggregated on the
+ * request path. "Price" columns aggregate foreignRetailPriceCents;
+ * "landed cost" columns aggregate landedCostCents.
+ *
+ * Bucketing: daily periodStart is the UTC calendar date of the bucket;
+ * weekly periodStart is the Monday opening the ISO 8601 week (UTC), per
+ * design decision 3. open = value at the bucket's earliest observation by
+ * observedAt; close = value at the latest. avg is the arithmetic mean of
+ * the bucket's integer-cent values rounded half-up to the nearest cent
+ * (amounts are non-negative, so this equals half-away-from-zero and stays
+ * deterministic across job recomputes).
+ */
+export const priceHistorySummaries = pgTable(
+  'price_history_summaries',
+  {
+    id: serial('id').primaryKey(),
+    /** Bucket granularity discriminator: "daily" or "weekly". */
+    granularity: varchar('granularity', { length: 16 }).notNull(),
+    /** Bucket start anchor (see table docblock for daily/weekly alignment). */
+    periodStart: date('period_start').notNull(),
+    /** FK to product_master — links summary to canonical product. */
+    productId: integer('product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** Merchant identifier (matches price_observations.merchant). NULL means
+     *  the product-wide aggregate across all merchants. */
+    merchant: varchar('merchant', { length: 128 }),
+    /** Foreign retail price (cents) at the bucket's earliest observation. */
+    priceOpenCents: integer('price_open_cents').notNull(),
+    /** Foreign retail price (cents) at the bucket's latest observation. */
+    priceCloseCents: integer('price_close_cents').notNull(),
+    /** Minimum foreign retail price (cents) within the bucket. */
+    priceMinCents: integer('price_min_cents').notNull(),
+    /** Maximum foreign retail price (cents) within the bucket. */
+    priceMaxCents: integer('price_max_cents').notNull(),
+    /** Average foreign retail price (cents) — rounding rule in table docblock. */
+    priceAvgCents: integer('price_avg_cents').notNull(),
+    /** Landed cost (cents) at the bucket's earliest observation. */
+    landedCostOpenCents: integer('landed_cost_open_cents').notNull(),
+    /** Landed cost (cents) at the bucket's latest observation. */
+    landedCostCloseCents: integer('landed_cost_close_cents').notNull(),
+    /** Minimum landed cost (cents) within the bucket. */
+    landedCostMinCents: integer('landed_cost_min_cents').notNull(),
+    /** Maximum landed cost (cents) within the bucket. */
+    landedCostMaxCents: integer('landed_cost_max_cents').notNull(),
+    /** Average landed cost (cents) — rounding rule in table docblock. */
+    landedCostAvgCents: integer('landed_cost_avg_cents').notNull(),
+    /** Number of priceObservations rows aggregated into this bucket. */
+    observationCount: integer('observation_count').notNull(),
+    /** Strictest reliability among the bucket's observations by core-domain
+     *  RELIABILITY_ORDER severity (VERIFIED < ESTIMATED < STALE < UNAVAILABLE,
+     *  packages/core-domain/src/reliability/reliability.types.ts). */
+    strictestReliability: varchar('strictest_reliability', { length: 16 })
+      .notNull(),
+  },
+  (table) => [
+    // Idempotency key for the aggregation job's upsert. Postgres treats NULLs
+    // as distinct in unique keys by default, which would admit duplicate
+    // product-wide rows (merchant NULL) and ON CONFLICT would never match
+    // them. Chosen fix: UNIQUE NULLS NOT DISTINCT (PostgreSQL 15+; this
+    // stack targets 16) via Drizzle's native .nullsNotDistinct() — unlike a
+    // sentinel merchant value it keeps NULL meaning "product-wide" everywhere
+    // (no magic value leaking into queries/APIs), and unlike a
+    // COALESCE(merchant, '') expression index it is matched directly by
+    // ON CONFLICT (granularity, period_start, product_id, merchant).
+    unique('price_history_summaries_bucket_key')
+      .on(table.granularity, table.periodStart, table.productId, table.merchant)
+      .nullsNotDistinct(),
+    index('price_history_summaries_granularity_product_id_period_start_idx').on(
+      table.granularity,
+      table.productId,
+      table.periodStart,
+    ),
+  ],
+);
+
+/**
+ * Aggregation watermarks — persisted incremental-scan cursors for
+ * materialization jobs.
+ *
+ * One row per consuming job (keyed by job name). The time-series
+ * aggregation worker stores the latest observedAt instant whose buckets
+ * were fully written; the next run scans only observations at or after
+ * that instant. Persisted here — never in worker memory — so a restarted
+ * or retried job never re-scans from the beginning and never skips
+ * unprocessed observations.
+ */
+export const aggregationWatermarks = pgTable('aggregation_watermarks', {
+  id: serial('id').primaryKey(),
+  /** Consuming job name (e.g. the BullMQ queue name). */
+  jobName: varchar('job_name', { length: 128 }).unique().notNull(),
+  /** Latest observedAt instant known to be fully materialized. */
+  watermark: timestamp('watermark').notNull(),
+  /** When the watermark last advanced — operational provenance. */
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 /**

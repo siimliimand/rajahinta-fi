@@ -1,0 +1,1 @@
+CREATE INDEX "retail_offers_merchant_product_id_observed_at_idx" ON "retail_offers" USING btree ("merchant","product_id","observed_at");

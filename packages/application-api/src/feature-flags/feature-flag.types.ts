@@ -6,6 +6,13 @@ export enum FeatureFlag {
   NEW_TAX_RULESET = 'NEW_TAX_RULESET',
   /** Gate new UI ranking/sorting behavior. */
   UI_RANKING_V2 = 'UI_RANKING_V2',
+  /**
+   * Gate historical price intelligence (price-history API + UI charts).
+   * Spec/design slug: `enable_historical_price_intelligence`.
+   * Default OFF until product review — instant rollback for the
+   * user-facing historical data presentation.
+   */
+  HISTORICAL_PRICE_INTELLIGENCE = 'HISTORICAL_PRICE_INTELLIGENCE',
 }
 
 /** Runtime feature-flag configuration shape used by the service. */

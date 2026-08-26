@@ -6,6 +6,7 @@ import Link from 'next/link';
 import type { CalculatorResult as CalculatorResultType } from '@/lib/types';
 import { getCalculationResult } from '@/lib/api';
 import CalculatorResultView from '../../components/CalculatorResult';
+import ProductHistoryPanel from '../../components/ProductHistoryPanel';
 import CorrectionFlagPanel from '../../components/CorrectionFlagPanel';
 
 // ---------------------------------------------------------------------------
@@ -125,6 +126,14 @@ export default function CalculationResultPage() {
 
       {/* ── Full result display ── */}
       <CalculatorResultView result={result} />
+
+      {/* ── Historical charts (flag-gated; hidden and unfetched when off) ── */}
+      <div className="mt-6">
+        <ProductHistoryPanel
+          productId={result.metadata.input.productId}
+          showMerchantFilter
+        />
+      </div>
 
       {/* ── Traceable inputs section ── */}
       <section className="mt-8 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
