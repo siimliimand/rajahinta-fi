@@ -282,6 +282,11 @@ export const priceObservations = pgTable(
       table.productId,
       table.observedAt,
     ),
+    // Serves the aggregation worker's watermark scan (findProductActivitySince:
+    // GROUP BY product_id over observed_at >= watermark). Without a leading
+    // observed_at column the 30-minute scan would degrade to a seq scan as
+    // the append-only log grows — this keeps it an index-only scan.
+    index('price_observations_observed_at_idx').on(table.observedAt),
   ],
 );
 
@@ -365,6 +370,27 @@ export const priceHistorySummaries = pgTable(
     ),
   ],
 );
+
+/**
+ * Aggregation watermarks — persisted incremental-scan cursors for
+ * materialization jobs.
+ *
+ * One row per consuming job (keyed by job name). The time-series
+ * aggregation worker stores the latest observedAt instant whose buckets
+ * were fully written; the next run scans only observations at or after
+ * that instant. Persisted here — never in worker memory — so a restarted
+ * or retried job never re-scans from the beginning and never skips
+ * unprocessed observations.
+ */
+export const aggregationWatermarks = pgTable('aggregation_watermarks', {
+  id: serial('id').primaryKey(),
+  /** Consuming job name (e.g. the BullMQ queue name). */
+  jobName: varchar('job_name', { length: 128 }).unique().notNull(),
+  /** Latest observedAt instant known to be fully materialized. */
+  watermark: timestamp('watermark').notNull(),
+  /** When the watermark last advanced — operational provenance. */
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
 
 /**
  * User accounts — one row per registered user.

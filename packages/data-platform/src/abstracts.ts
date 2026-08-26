@@ -267,6 +267,34 @@ export abstract class PriceObservationRepository {
     productId: number,
     merchant?: string | null,
   ): Promise<Date | null>;
+
+  /**
+   * Incremental-scan read for the aggregation worker: every product with
+   * an observation at or after {@code since}, with that product's
+   * earliest and latest observedAt within the scan range. The worker
+   * derives the affected daily/weekly buckets from these spans and its
+   * next watermark from the maximum lastObservedAt. Ordered by productId
+   * ascending for deterministic processing.
+   *
+   * Inclusive lower bound: observations at exactly {@code since} are
+   * returned again — upserts are idempotent, so re-scanning the boundary
+   * instant is safe, while skipping it could miss rows appended late
+   * with the same observedAt.
+   */
+  abstract findProductActivitySince(
+    since: Date,
+  ): Promise<ProductActivitySince[]>;
+}
+
+/**
+ * Per-product observation span within an incremental scan range.
+ */
+export interface ProductActivitySince {
+  productId: number;
+  /** Earliest observedAt for the product within the scan range. */
+  firstObservedAt: Date;
+  /** Latest observedAt for the product within the scan range. */
+  lastObservedAt: Date;
 }
 
 // ---------------------------------------------------------------------------
@@ -342,4 +370,33 @@ export abstract class PriceHistorySummaryRepository {
     to: string,
     merchant?: string | null,
   ): Promise<PriceHistorySummaryRecord[]>;
+}
+
+// ---------------------------------------------------------------------------
+// Aggregation-watermark repository abstraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Aggregation-watermark repository — persisted cursors for incremental
+ * materialization jobs.
+ *
+ * The time-series aggregation worker reads its watermark before each scan
+ * and saves the advanced watermark only after every summary write of the
+ * scan succeeded (write-then-advance; a failed run leaves the cursor
+ * untouched so the retry re-scans the same range and the idempotent
+ * summary upserts converge).
+ */
+@Injectable()
+export abstract class AggregationWatermarkRepository {
+  /**
+   * Current watermark for a job, or null when the job has never
+   * completed a scan (callers start from the epoch on first run).
+   */
+  abstract find(jobName: string): Promise<Date | null>;
+
+  /**
+   * Persist the watermark for a job (insert or overwrite by job name).
+   * Callers must only ever advance the value — never regress it.
+   */
+  abstract save(jobName: string, watermark: Date): Promise<void>;
 }

@@ -288,6 +288,39 @@ function splitQueryCalls(calls: RecordedCall[]): RecordedCall[][] {
 }
 
 // ---------------------------------------------------------------------------
+// Incremental watermark scan — activity per product since a cursor
+// ---------------------------------------------------------------------------
+
+describe('findProductActivitySince', () => {
+  it('groups by product with min/max observedAt over an inclusive lower bound', async () => {
+    const rows = [
+      { productId: 7, firstObservedAt: FROM, lastObservedAt: TO },
+    ];
+    const { repo, calls } = makeRepo(() => rows);
+
+    const result = await repo.findProductActivitySince(FROM);
+
+      expect(result).toBe(rows);
+      const { sql, params } = renderSql(calls);
+      expect(sql).toContain('min("observed_at")');
+      expect(sql).toContain('max("observed_at")');
+    expect(sql).toContain('"price_observations"."observed_at" >= $1');
+    // Inclusive boundary (>=, never >) — the watermark instant is
+    // re-scanned so late same-instant appends cannot be skipped.
+    expect(sql).not.toContain('> $');
+    expect(sql).toContain('group by "price_observations"."product_id"');
+    expect(sql).toContain('order by "price_observations"."product_id" asc');
+    expect(params).toEqual([FROM.toISOString()]);
+  });
+
+  it('returns an empty list when nothing was observed since the cursor', async () => {
+    const { repo } = makeRepo(() => []);
+
+    await expect(repo.findProductActivitySince(FROM)).resolves.toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Earliest observation date
 // ---------------------------------------------------------------------------
 

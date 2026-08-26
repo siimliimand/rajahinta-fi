@@ -24,11 +24,12 @@
  * @module DrizzlePriceObservationRepository
  */
 import { Injectable, Inject } from '@nestjs/common';
-import { and, asc, eq, gte, lt } from 'drizzle-orm';
+import { and, asc, eq, gte, lt, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDatabase } from '../db/drizzle.provider';
 import {
   PriceObservationRepository,
   type PriceObservationRecord,
+  type ProductActivitySince,
 } from '../abstracts';
 import { priceObservations } from '../schema';
 import type {
@@ -156,6 +157,31 @@ export class DrizzlePriceObservationRepository
       .orderBy(asc(priceObservations.observedAt))
       .limit(1);
     return row?.observedAt ?? null;
+  }
+
+  /** @inheritdoc */
+  async findProductActivitySince(
+    since: Date,
+  ): Promise<ProductActivitySince[]> {
+    const rows = await this.db
+      .select({
+        productId: priceObservations.productId,
+        firstObservedAt:
+          sql`min(${priceObservations.observedAt})`.mapWith(
+            priceObservations.observedAt,
+          ),
+        lastObservedAt:
+          sql`max(${priceObservations.observedAt})`.mapWith(
+            priceObservations.observedAt,
+          ),
+      })
+      .from(priceObservations)
+      // Inclusive lower bound (see abstract): the boundary instant is
+      // re-scanned, never skipped. Served by the observed_at index.
+      .where(gte(priceObservations.observedAt, since))
+      .groupBy(priceObservations.productId)
+      .orderBy(asc(priceObservations.productId));
+    return rows;
   }
 
   /**

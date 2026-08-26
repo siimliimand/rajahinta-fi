@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DataAcquisitionModule } from '@rajahinta/data-acquisition';
+import { DataPlatformModule } from '@rajahinta/data-platform';
 import { AccountModule } from '../accounts/account.module';
 import { IdempotencyModule } from '../idempotency';
 import { JobsSchedulerService } from './jobs-scheduler.service';
@@ -16,6 +17,11 @@ import { AccountRetentionWorker } from './workers/account-retention.worker';
     // - Bull queue providers (registered via BullModule.registerQueue)
     // - Abstract service tokens injected by workers (PriceIngestionService, etc.)
     DataAcquisitionModule,
+
+    // DataPlatformModule provides the repository abstracts injected by
+    // the time-series aggregation worker (observation scan reads,
+    // summary upserts, persisted watermark).
+    DataPlatformModule,
 
     // AccountModule provides AccountRetentionService for the retention
     // cron worker.
