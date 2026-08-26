@@ -30,7 +30,7 @@
 
 - [x] 5.1 Add price-history types and fetch client under `apps/frontend/src/lib/` — mirror the API contract including reliability and attribution fields <!-- agent: platform-engineer.build, depends_on: [4.1], touches: [apps/frontend/src/lib/**] -->
 - [x] 5.2 Create `HistoryChart` component under `apps/frontend/src/app/calculator/components/` — pure SVG (no chart library), price and landed-cost series, tax-change markers with version labels, reliability/freshness badges, controlled-vocabulary labels, neutral equal-treatment merchant series <!-- agent: platform-engineer.build, depends_on: [5.1], touches: [apps/frontend/src/app/calculator/components/**] -->
-- [ ] 5.3 Integrate charts into the calculator result view and the compare page — behind the feature flag; hide charts and skip the request when the flag is off; show "data available from" for truncated history <!-- agent: platform-engineer.build, depends_on: [5.2, 6.1], touches: [apps/frontend/src/app/calculator/**, apps/frontend/src/app/compare/**] -->
+- [x] 5.3 Integrate charts into the calculator result view and the compare page — behind the feature flag; hide charts and skip the request when the flag is off; show "data available from" for truncated history <!-- agent: platform-engineer.build, depends_on: [5.2, 6.1], touches: [apps/frontend/src/app/calculator/**, apps/frontend/src/app/compare/**] -->
 
 ## 6. Feature flag, tests, verification
 
