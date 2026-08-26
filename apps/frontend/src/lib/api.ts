@@ -17,6 +17,8 @@ import type {
   RankingMethodology,
   ApiError,
   CorrectionItem,
+  PriceHistoryQuery,
+  PriceHistoryResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -291,4 +293,67 @@ export async function createCorrectionFlag(
     method: 'POST',
     body: JSON.stringify({ targetType, targetId, reason }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Price history
+// ---------------------------------------------------------------------------
+
+/**
+ * Classified failure modes of {@link getPriceHistory} that UI consumers
+ * render distinctly (task 5.3): flag-off hides the chart entirely, rate
+ * limiting shows a retry hint, validation errors surface the message.
+ */
+export type PriceHistoryErrorKind =
+  | 'validation' // 400 — invalid query (including ranges wider than 365 days)
+  | 'forbidden' // 403 — feature flag disabled or age confirmation missing
+  | 'rate-limited' // 429 — HISTORICAL rate limit exceeded
+  | 'not-found' // 404 — product does not exist
+  | 'network' // fetch itself failed (no HTTP response)
+  | 'unknown';
+
+/**
+ * Classify an error thrown by {@link getPriceHistory} into a typed kind.
+ * Never throws and never reduces the error to a bare string — the original
+ * {@link ApiFetchError} (status + parsed body) is carried by the guard for
+ * callers that need the server message.
+ */
+export function classifyPriceHistoryError(
+  err: unknown,
+): { kind: PriceHistoryErrorKind; error: ApiFetchError | null } {
+  if (err instanceof ApiFetchError) {
+    if (err.status === 400) return { kind: 'validation', error: err };
+    if (err.status === 403) return { kind: 'forbidden', error: err };
+    if (err.status === 429) return { kind: 'rate-limited', error: err };
+    if (err.status === 404) return { kind: 'not-found', error: err };
+    return { kind: 'unknown', error: err };
+  }
+  return { kind: 'network', error: null };
+}
+
+/**
+ * Fetch the historical price / landed-cost series for a product.
+ *
+ * metric and granularity default to 'price' and 'day' to mirror the DTO
+ * defaults; merchant is sent only when provided (omit = product-wide
+ * series). from/to are required ISO dates; ranges wider than 365 days are
+ * rejected by the API with a 400, surfaced via
+ * {@link classifyPriceHistoryError}.
+ */
+export async function getPriceHistory(
+  productId: number,
+  query: PriceHistoryQuery,
+): Promise<PriceHistoryResponse> {
+  const params = new URLSearchParams({
+    metric: query.metric ?? 'price',
+    granularity: query.granularity ?? 'day',
+    from: query.from,
+    to: query.to,
+  });
+  if (query.merchant !== undefined) {
+    params.set('merchant', query.merchant);
+  }
+  return request<PriceHistoryResponse>(
+    `/api/v1/products/${productId}/price-history?${params}`,
+  );
 }
