@@ -162,7 +162,6 @@ describe('HistoricalDataController — guard regression', () => {
       class Probe {
         @FeatureFlagDec(FeatureFlag.HISTORICAL_PRICE_INTELLIGENCE)
         @RateLimit('HISTORICAL')
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         handler(): void {
           /* metadata only */
         }
