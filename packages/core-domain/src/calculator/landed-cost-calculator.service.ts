@@ -32,6 +32,8 @@ import type {
   CalculatorProductData,
   CalculatorRetailOfferData,
   ItemizedCost,
+  ComputeItemCostsTransportContext,
+  ComputedItemCostsResult,
   IProductDataPort,
   ICalculationRecordPort,
 } from './calculator.types';
@@ -131,16 +133,141 @@ export class LandedCostCalculatorService {
     }
 
     // -----------------------------------------------------------------------
-    // 4. Tax engines
+    // 4–6. Shared item-cost computation (retail, tax, classification, confidence)
+    // -----------------------------------------------------------------------
+    const transportCtx: ComputeItemCostsTransportContext | null =
+      transportResult !== null
+        ? {
+            transportStatus,
+            sellerInvolvementIndicator:
+              transportResult.offer.sellerInvolvementIndicator,
+            carrierId: input.transportMethod ?? bestOffer.merchant,
+          }
+        : null;
+
+    const computed = await this.computeItemCosts(
+      input,
+      product,
+      bestOffer,
+      transportCtx,
+    );
+
+    // -----------------------------------------------------------------------
+    // 7. Assemble complete itemized costs (inject transport line at position 1)
+    // -----------------------------------------------------------------------
+    const transportItem: ItemizedCost = {
+      label: 'Transport',
+      category: 'transportCost',
+      cents: transportCostCents,
+      reliability: transportStatus,
+    };
+
+    const allItemizedCosts: ItemizedCost[] = [
+      computed.itemizedCosts[0], // Retail price
+      transportItem,
+      ...computed.itemizedCosts.slice(1), // Excise, Container duty, Other charges
+    ];
+
+    const totalCents =
+      computed.retailTotal +
+      transportCostCents +
+      computed.exciseTotal +
+      computed.containerDutyTotal +
+      0; // otherCharges — always zero in Phase 1
+
+    // -----------------------------------------------------------------------
+    // 8. Persist calculation record
     // -----------------------------------------------------------------------
 
-    // Map product category to excise category (lowercase, as the excise engine expects)
-    const exciseCategory = product.category.toLowerCase();
-    const abvDecimal = product.alcoholByVolume; // already decimal fraction
+    const persisted = await this.calculationRecords.create({
+      productMasterId: product.id,
+      retailOfferIds: [bestOffer.id],
+      transportOfferId,
+      exciseRuleVersionId: computed.exciseRuleVersionId,
+      containerDutyRuleVersionId: computed.containerDutyRuleVersionId,
+      totalCents,
+      breakdown: allItemizedCosts,
+      confidence: computed.confidenceOverall,
+      quantity: input.quantity,
+      destination: input.destination,
+      disclaimer: DISCLAIMER_FI,
+      sessionId: input.sessionId ?? null,
+    });
 
+    // -----------------------------------------------------------------------
+    // 9. Return result
+    // -----------------------------------------------------------------------
+
+    return {
+      itemizedCosts: allItemizedCosts,
+      foreignRetailPrice: computed.retailTotal,
+      transportCost: transportCostCents,
+      alcoholExciseEstimate: computed.exciseTotal,
+      containerDutyEstimate: computed.containerDutyTotal,
+      otherCharges: 0,
+      totalCents,
+      currency: 'EUR',
+      confidence: computed.confidenceOverall,
+      confidenceBreakdown: computed.confidenceBreakdown,
+      disclaimer: DISCLAIMER_FI,
+      classification: computed.classificationResult,
+      metadata: {
+        input,
+        calculationTimestamp: new Date().toISOString(),
+        productMasterId: product.id,
+        retailOfferIds: [bestOffer.id],
+        quantity: input.quantity,
+        destination: input.destination,
+        productName: product.normalizedName,
+        volumeLitres: product.volumeLitres,
+        alcoholByVolume: product.alcoholByVolume,
+        category: product.category,
+        datasetVersions: computed.datasetVersions,
+        transportOfferId,
+      },
+      calculationRecordId: persisted.id,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Shared offer-constrained computation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Compute item-level costs (retail, excise, container duty, classification,
+   * confidence) for a given product + retail-offer pair.
+   *
+   * WHY transport is a parameter, not computed here:
+   *   - The single-item calculator resolves transport via
+   *     TransportEstimationService (see #estimateTransport).
+   *   - The basket optimizer computes per-store consolidated shipping via
+   *     BasketShippingCalculator, which may differ from per-item transport.
+   *   - Passing transport context as a parameter lets BOTH paths share every
+   *     other engine step (tax, classification, confidence), guaranteeing
+   *     T2.8 consistency without constraining transport strategy.
+   *
+   * @param input       Calculator input (destination, quantity, transport
+   *                    arrangement).
+   * @param product     Resolved product master data.
+   * @param offer       The retail offer to compute costs for.
+   * @param transportCtx  Transport context for classification and confidence.
+   *                    Pass null when transport is unavailable (confidence
+   *                    degrades gracefully).
+   */
+  async computeItemCosts(
+    input: CalculatorInput,
+    product: CalculatorProductData,
+    offer: CalculatorRetailOfferData,
+    transportCtx: ComputeItemCostsTransportContext | null,
+  ): Promise<ComputedItemCostsResult> {
+    // -----------------------------------------------------------------------
+    // Tax engines
+    // -----------------------------------------------------------------------
+
+    const exciseCategory = product.category.toLowerCase();
     const exciseResult = await this.alcoholExcise.calculate(
       exciseCategory,
-      abvDecimal,
+      product.alcoholByVolume,
       product.volumeLitres,
     );
 
@@ -151,43 +278,47 @@ export class LandedCostCalculatorService {
     );
 
     // -----------------------------------------------------------------------
-    // 5. Transaction classification
+    // Transaction classification
     // -----------------------------------------------------------------------
 
-    // Determine seller-involvement and carrier from transport context
     const sellerInvolvementIndicator =
-      transportResult?.offer.sellerInvolvementIndicator ?? false;
-    const carrierId = input.transportMethod ?? bestOffer.merchant;
-    const sellerCountry = bestOffer.country;
+      transportCtx?.sellerInvolvementIndicator ?? false;
+    const carrierId = transportCtx?.carrierId ?? offer.merchant;
+    const transportArrangement =
+      input.transportArrangement ?? 'SELLER_ARRANGED';
 
-const transportArrangement = input.transportArrangement ?? 'SELLER_ARRANGED';
-
-const classificationInput: ClassificationInput = {
-  sellerInvolvementIndicator,
-  carrierId,
-  sellerCountry,
-  buyerCountry: input.destination,
-  buyerIsTravelling: transportArrangement === 'PERSONAL',
-  sellerId: bestOffer.merchant,
-};
+    const classificationInput: ClassificationInput = {
+      sellerInvolvementIndicator,
+      carrierId,
+      sellerCountry: offer.country,
+      buyerCountry: input.destination,
+      buyerIsTravelling: transportArrangement === 'PERSONAL',
+      sellerId: offer.merchant,
+    };
 
     const classificationResult =
       await this.transactionClassification.classify(classificationInput);
 
     // -----------------------------------------------------------------------
-    // 6. Confidence computation
+    // Per-input reliability statuses
     // -----------------------------------------------------------------------
 
-    const productPriceStatus = this.resolveRetailOfferStatus(bestOffer);
-
+    const retailStatus = this.resolveRetailOfferStatus(offer);
     const exciseStatus: ReliabilityStatus = exciseResult.reliability;
     const containerDutyStatus: ReliabilityStatus =
       containerDutyResult.reliability;
     const classificationStatus: ReliabilityStatus =
       classificationResult.confidence === 'HIGH' ? 'VERIFIED' : 'ESTIMATED';
 
+    const transportStatus: ReliabilityStatus =
+      transportCtx?.transportStatus ?? 'UNAVAILABLE';
+
+    // -----------------------------------------------------------------------
+    // Confidence computation
+    // -----------------------------------------------------------------------
+
     const confidenceReport = this.confidenceFramework.buildReport([
-      { status: productPriceStatus, label: 'productPrice' },
+      { status: retailStatus, label: 'productPrice' },
       { status: transportStatus, label: 'transport' },
       { status: exciseStatus, label: 'excise' },
       { status: containerDutyStatus, label: 'containerDuty' },
@@ -195,40 +326,36 @@ const classificationInput: ClassificationInput = {
     ]);
 
     // -----------------------------------------------------------------------
-    // 7. Assemble itemized costs
+    // Quantities and derived totals
     // -----------------------------------------------------------------------
 
-    const retailCostPerUnit = bestOffer.priceCents;
-    const retailTotal = retailCostPerUnit * input.quantity;
-
+    const retailTotal = offer.priceCents * input.quantity;
     const exciseTotal = exciseResult.taxCents * input.quantity;
     const containerDutyTotal = containerDutyResult.dutyCents * input.quantity;
-    const transportTotal = transportCostCents; // transport is per-shipment
-    const otherChargesTotal = 0; // no other charges in Phase 1
 
-    const totalCents =
-      retailTotal + exciseTotal + containerDutyTotal + transportTotal + otherChargesTotal;
+    const datasetVersions: string[] = [];
+    if (exciseResult.taxDatasetVersion)
+      datasetVersions.push(exciseResult.taxDatasetVersion);
+    if (containerDutyResult.taxDatasetVersion)
+      datasetVersions.push(containerDutyResult.taxDatasetVersion);
 
+    // -----------------------------------------------------------------------
+    // Itemized costs (transport excluded — caller adds it)
+    // -----------------------------------------------------------------------
     const itemizedCosts: ItemizedCost[] = [
       {
         label: 'Retail price',
         category: 'foreignRetailPrice',
         cents: retailTotal,
-        reliability: productPriceStatus,
+        reliability: retailStatus,
         breakdown: [
           {
             label: `Unit price (x${input.quantity})`,
             category: 'foreignRetailPrice' as const,
             cents: retailTotal,
-            reliability: productPriceStatus,
+            reliability: retailStatus,
           },
         ],
-      },
-      {
-        label: 'Transport',
-        category: 'transportCost',
-        cents: transportTotal,
-        reliability: transportStatus,
       },
       {
         label: 'Alcohol excise',
@@ -245,67 +372,26 @@ const classificationInput: ClassificationInput = {
       {
         label: 'Other charges',
         category: 'otherCharges',
-        cents: otherChargesTotal,
+        cents: 0,
         reliability: 'VERIFIED' as const,
       },
     ];
 
-    // Collect dataset versions from tax engines
-    const datasetVersions: string[] = [];
-    if (exciseResult.taxDatasetVersion) datasetVersions.push(exciseResult.taxDatasetVersion);
-    if (containerDutyResult.taxDatasetVersion) datasetVersions.push(containerDutyResult.taxDatasetVersion);
-
-    // -----------------------------------------------------------------------
-    // 8. Persist calculation record
-    // -----------------------------------------------------------------------
-
-    const persisted = await this.calculationRecords.create({
-      productMasterId: product.id,
-      retailOfferIds: [bestOffer.id],
-      transportOfferId,
-      exciseRuleVersionId: exciseResult.ruleId,
-      containerDutyRuleVersionId: containerDutyResult.ruleId,
-      totalCents,
-      breakdown: itemizedCosts,
-      confidence: confidenceReport.overall,
-      quantity: input.quantity,
-      destination: input.destination,
-      disclaimer: DISCLAIMER_FI,
-      sessionId: input.sessionId ?? null,
-    });
-
-    // -----------------------------------------------------------------------
-    // 9. Return result
-    // -----------------------------------------------------------------------
-
     return {
-      itemizedCosts,
-      foreignRetailPrice: retailTotal,
-      transportCost: transportTotal,
-      alcoholExciseEstimate: exciseTotal,
-      containerDutyEstimate: containerDutyTotal,
-      otherCharges: otherChargesTotal,
-      totalCents,
-      currency: 'EUR',
-      confidence: confidenceReport.overall,
+      retailTotal,
+      retailStatus,
+      exciseTotal,
+      exciseStatus,
+      exciseRuleVersionId: exciseResult.ruleId,
+      containerDutyTotal,
+      containerDutyStatus,
+      containerDutyRuleVersionId: containerDutyResult.ruleId,
+      classificationResult,
+      classificationStatus,
+      confidenceOverall: confidenceReport.overall,
       confidenceBreakdown: confidenceReport.breakdown,
-      disclaimer: DISCLAIMER_FI,
-      classification: classificationResult,
-      metadata: {
-        input,
-        calculationTimestamp: new Date().toISOString(),
-        productMasterId: product.id,
-        retailOfferIds: [bestOffer.id],
-        quantity: input.quantity,
-        destination: input.destination,
-        productName: product.normalizedName,
-        volumeLitres: product.volumeLitres,
-        alcoholByVolume: product.alcoholByVolume,
-        category: product.category,
-        datasetVersions,
-        transportOfferId,
-      },
-      calculationRecordId: persisted.id,
+      datasetVersions,
+      itemizedCosts,
     };
   }
 
