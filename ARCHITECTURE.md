@@ -283,7 +283,7 @@ Merchant ingestion is gated by `SourceGovernanceService` — a merchant must hav
 | Feature flags               | Implemented | `FeatureFlagService`, `LaunchGateService`, `LaunchGateGuard` in `application-api/feature-flags/`                                                                                                                                        |
 | Background jobs             | Implemented | BullMQ workers: price-ingestion, transport-rate-refresh, tax-dataset-review, time-series-aggregation                                                                                                                                    |
 
-The promotion path is development → staging → production, with staging carrying its own tax-rule and merchant data copies, and feature flags gating new merchant sources, tax rulesets, and UI ranking behavior.
+The promotion path is development → staging → production, with staging carrying its own tax-rule and merchant data copies, and feature flags gating new merchant sources, tax rulesets, UI ranking behavior, and historical price intelligence (`enable_historical_price_intelligence`, default off).
 
 ## 9. Security Architecture
 
