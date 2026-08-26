@@ -137,6 +137,7 @@ describe('FeatureFlagService', () => {
       expect(service.isEnabled(FeatureFlag.NEW_MERCHANT_SOURCE)).toBe(false);
       expect(service.isEnabled(FeatureFlag.NEW_TAX_RULESET)).toBe(false);
       expect(service.isEnabled(FeatureFlag.UI_RANKING_V2)).toBe(false);
+      expect(service.isEnabled(FeatureFlag.BASKET_OPTIMIZATION)).toBe(false);
     });
   });
 

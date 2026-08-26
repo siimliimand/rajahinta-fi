@@ -55,6 +55,7 @@ describe('FeatureFlagsController', () => {
     expect(flags[FeatureFlag.NEW_MERCHANT_SOURCE]).toBe(false);
     expect(flags[FeatureFlag.NEW_TAX_RULESET]).toBe(false);
     expect(flags[FeatureFlag.UI_RANKING_V2]).toBe(false);
+    expect(flags[FeatureFlag.BASKET_OPTIMIZATION]).toBe(false);
   });
 
   it('exposes booleans only — a partial rollout still reports the global boolean, never a percentage', () => {

@@ -13,6 +13,12 @@ export enum FeatureFlag {
    * user-facing historical data presentation.
    */
   HISTORICAL_PRICE_INTELLIGENCE = 'HISTORICAL_PRICE_INTELLIGENCE',
+  /**
+   * Gate basket optimization API and UI (multi-store split, tiered shipping).
+   * Spec slug: `enable_basket_optimization`.
+   * Default OFF during active development — enabled once integration tests pass.
+   */
+  BASKET_OPTIMIZATION = 'BASKET_OPTIMIZATION',
 }
 
 /** Runtime feature-flag configuration shape used by the service. */
