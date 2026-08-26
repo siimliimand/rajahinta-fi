@@ -12,6 +12,7 @@ import { RankingModule } from './ranking/ranking.module';
 import { CorrectionModule } from './correction/correction.module';
 import { EntitlementModule } from './entitlement/entitlement.module';
 import { HistoryModule, type HistoryModulePorts } from './history/history.module';
+import { OptimizerModule } from './optimizer/optimizer.module';
 
 // ---------------------------------------------------------------------------
 // Domain entities — pure TypeScript, zero framework logic
@@ -414,6 +415,29 @@ export type { IPriceObservationPort } from './history/price-observation.port';
 export { PRICE_OBSERVATION_PORT } from './history/price-observation.port';
 
 // ---------------------------------------------------------------------------
+// Optimizer — multi-item basket optimization against landed costs
+// ---------------------------------------------------------------------------
+
+export { OptimizerModule } from './optimizer/optimizer.module';
+export { MERCHANT_TERMS_PORT } from './optimizer/index';
+export type { IMerchantTermsPort, MerchantTerms } from './optimizer/index';
+export {
+  MAX_BASKET_ITEMS,
+  MAX_CANDIDATE_MERCHANTS_PER_ITEM,
+} from './optimizer/index';
+export type {
+  BasketInputItem,
+  BasketOptimizationInput,
+  ConsolidatedTransportReliability,
+  ConsolidatedTransport,
+  MinimumOrderThresholdCheck,
+  BasketShipment,
+  BasketOptimizationMetadata,
+  BasketOptimizationAlternate,
+  BasketOptimizationResult,
+} from './optimizer/index';
+
+// ---------------------------------------------------------------------------
 // Entitlement — feature-access tier management
 // ---------------------------------------------------------------------------
 
@@ -437,8 +461,8 @@ export type { AuditEntry, AuditAction, AuditQuery } from './audit/audit.types';
 // ---------------------------------------------------------------------------
 
 @Module({
-  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule, HistoryModule],
-  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule, HistoryModule],
+  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule, HistoryModule, OptimizerModule],
+  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule, HistoryModule, OptimizerModule],
 })
 export class CoreDomainModule {}
 
