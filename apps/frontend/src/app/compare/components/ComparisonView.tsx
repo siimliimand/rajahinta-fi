@@ -8,6 +8,7 @@ import type {
 } from '@/lib/types';
 import { logClick } from '@/lib/api';
 import { MerchantLink } from './MerchantLink';
+import ProductHistoryPanel from '../../calculator/components/ProductHistoryPanel';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -108,6 +109,14 @@ function ProductColumn({
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Historical price chart — product-wide series, flag-gated the same
+          way as the calculator result view (hidden and unfetched when the
+          enable_historical_price_intelligence flag is off). Every product
+          column carries an identical panel — equal visual weight. */}
+      <div className="mt-3">
+        <ProductHistoryPanel productId={product.id} />
       </div>
 
       {/* Merchant link — shown when a retail offer ID is available */}

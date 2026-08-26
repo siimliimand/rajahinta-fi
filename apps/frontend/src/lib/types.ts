@@ -281,6 +281,25 @@ export interface PriceHistoryResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Feature flags (GET /api/v1/feature-flags)
+// ---------------------------------------------------------------------------
+
+/**
+ * Public feature-flag states for UI gating. Only the flags the frontend
+ * consumes are declared — the API response is a superset keyed by flag
+ * identifier, and unknown keys are ignored.
+ */
+export interface FeatureFlagsResponse {
+  readonly flags: {
+    /**
+     * enable_historical_price_intelligence — gates the price-history API
+     * and the charts on the calculator result view / compare page.
+     */
+    readonly HISTORICAL_PRICE_INTELLIGENCE: boolean;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // API error response
 // ---------------------------------------------------------------------------
 

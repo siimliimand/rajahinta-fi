@@ -19,6 +19,7 @@ import type {
   CorrectionItem,
   PriceHistoryQuery,
   PriceHistoryResponse,
+  FeatureFlagsResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -293,6 +294,39 @@ export async function createCorrectionFlag(
     method: 'POST',
     body: JSON.stringify({ targetType, targetId, reason }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Feature flags
+// ---------------------------------------------------------------------------
+
+/**
+ * Cached single-flight fetch of the public feature-flag states.
+ *
+ * Flag values are static per deployment (loaded from env at boot), so one
+ * request is shared across every caller on the page — N chart panels issue
+ * a single flag lookup, not N. A failed lookup clears the cache so a later
+ * call retries; callers treat rejection as "flag off" and hide gated UI
+ * rather than erroring the page.
+ */
+let featureFlagsPromise: Promise<FeatureFlagsResponse> | null = null;
+
+/**
+ * Fetch the public feature-flag states used for UI gating.
+ *
+ * Throws {@link ApiFetchError} on non-2xx; resolve callers decide the
+ * degraded presentation (see ProductHistoryPanel).
+ */
+export function getFeatureFlags(): Promise<FeatureFlagsResponse> {
+  if (featureFlagsPromise === null) {
+    featureFlagsPromise = request<FeatureFlagsResponse>(
+      '/api/v1/feature-flags',
+    ).catch((err: unknown) => {
+      featureFlagsPromise = null;
+      throw err;
+    });
+  }
+  return featureFlagsPromise;
 }
 
 // ---------------------------------------------------------------------------
