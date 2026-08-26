@@ -38,6 +38,20 @@ export interface UpsertResult {
   readonly created: boolean;
 }
 
+/**
+ * Result of an offer upsert.
+ *
+ * `changed` is the pipeline's offer-level change detection: true when this
+ * insert is the first offer row for the (merchant, product) pair or its
+ * price differs from the latest prior row. Consumers that append
+ * per-change side effects (price observations) must do so only when
+ * `changed` is true.
+ */
+export interface UpsertOfferResult {
+  readonly offerId: number;
+  readonly changed: boolean;
+}
+
 // --------------------------------------------------------------------------
 // Injection token — concrete implementation wired at composition root
 // --------------------------------------------------------------------------
@@ -59,12 +73,15 @@ export interface IUpsertRepository {
   upsertProduct(input: UpsertProductInput): Promise<UpsertResult>;
 
   /**
-   * Record a retail price observation for a known product.
+   * Append a retail price observation row for a known product.
    *
-   * If an offer with the same (merchantId, productId, observedAt) window
-   * already exists, the existing row is updated with the latest price.
+   * Every call inserts a new row (append-only price history); the result
+   * reports the new row's ID and whether the offer CHANGED relative to the
+   * latest prior row for the same (merchant, product) — first sighting or
+   * price move. Unchanged re-scrapes still append the offer row but report
+   * `changed: false` so downstream per-change side effects are skipped.
    */
-  upsertOffer(input: UpsertOfferInput): Promise<number>;
+  upsertOffer(input: UpsertOfferInput): Promise<UpsertOfferResult>;
 }
 
 /** Injection token for the upsert repository. */

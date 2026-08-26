@@ -96,8 +96,18 @@ export class HistoryModule {
         : { provide: PRODUCT_DATA_PORT, useValue: null },
     );
 
+    // Fresh identity PER CALL, not the shared HistoryConfiguredModule class:
+    // NestJS keys dynamic modules by class identity, so a shared identity
+    // makes two configured instances collapse into one and the
+    // last-registered provider bindings win. In the backend graph the
+    // port-less history instance built inside CoreDomainModule.forRoot would
+    // otherwise overwrite this call's real port adapters with nulls (found
+    // while wiring task 2.2; see CalculatorModule.forRoot for the same
+    // rationale applied to the static-metadata case).
+    const configured = class ConfiguredHistoryModule {};
+
     return {
-      module: HistoryConfiguredModule,
+      module: configured,
       imports: [
         TaxModule.forRoot(ports),
         NormalizationModule,
@@ -111,7 +121,9 @@ export class HistoryModule {
 }
 
 /**
- * Identity of the CONFIGURED history module returned by
- * {@link HistoryModule.forRoot} — deliberately undecorated.
+ * Identity of the CONFIGURED history module returned by the original
+ * (pre-fresh-identity) {@link HistoryModule.forRoot}; retained for backward
+ * references. {@link HistoryModule.forRoot} now mints a fresh undecorated
+ * class per call.
  */
 export class HistoryConfiguredModule {}

@@ -19,7 +19,7 @@
  * @module PipelineOrchestratorService
  */
 
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { SourceGovernanceService } from '@rajahinta/core-domain';
 import type { PermissionCheckResult, PermissionStatus } from '@rajahinta/core-domain';
 import { FeedIngestionService } from './feed-ingestion.service';
@@ -32,6 +32,10 @@ import {
   UPSERT_REPOSITORY_TOKEN,
   type IUpsertRepository,
 } from '../interfaces/upsert-port.interface';
+import {
+  OFFER_CHANGE_HOOK_TOKEN,
+  type IOfferChangeHook,
+} from '../interfaces/offer-change-hook.interface';
 import type { MerchantConfig } from '../config/merchants.config';
 
 /**
@@ -55,6 +59,13 @@ export interface PipelineRunReport {
   readonly recordsFetched: number;
   readonly recordsAdded: number;
   readonly recordsUpdated: number;
+  /**
+   * Offers in this run whose upsert changed the persisted (merchant,
+   * product) price series (first sighting or price move). This is the
+   * per-run cost driver of the observation recorder — the hook fires once
+   * per counted offer.
+   */
+  readonly offersChanged: number;
   readonly errors: string[];
   readonly durationMs: number;
   /**
@@ -91,6 +102,16 @@ export class PipelineOrchestratorService {
     private readonly upsertRepository: IUpsertRepository,
     private readonly governanceService: SourceGovernanceService,
     private readonly contentLint: ContentLintService,
+
+    // Optional by design: hosts that do not register an adapter (tests,
+    // stand-alone application-api usage) run the pipeline unchanged. The
+    // backend composition root binds this to the price-observation
+    // recorder hook (change 2026-08-26-phase2-historical-price-intelligence,
+    // task 2.2) so observations are appended strictly on the background
+    // ingestion path — never from a request handler.
+    @Optional()
+    @Inject(OFFER_CHANGE_HOOK_TOKEN)
+    private readonly offerChangeHook?: IOfferChangeHook,
   ) {}
 
   /**
@@ -114,6 +135,7 @@ export class PipelineOrchestratorService {
         recordsFetched: 0,
         recordsAdded: 0,
         recordsUpdated: 0,
+        offersChanged: 0,
         errors: [],
         durationMs: Date.now() - start,
         contentViolations: [],
@@ -131,6 +153,7 @@ export class PipelineOrchestratorService {
         recordsFetched: 0,
         recordsAdded: 0,
         recordsUpdated: 0,
+        offersChanged: 0,
         errors: [],
         durationMs: Date.now() - start,
         gateResult,
@@ -157,6 +180,7 @@ export class PipelineOrchestratorService {
         recordsFetched: 0,
         recordsAdded: 0,
         recordsUpdated: 0,
+        offersChanged: 0,
         errors: fetchResult.errors,
         durationMs: Date.now() - start,
         contentViolations: [],
@@ -188,6 +212,7 @@ export class PipelineOrchestratorService {
     // -- Step 4: Upsert -------------------------------------------------------
     let recordsAdded = 0;
     let recordsUpdated = 0;
+    let offersChanged = 0;
     const upsertErrors: string[] = [];
 
     // Track upserted offers for the quality check — we build lightweight
@@ -210,7 +235,7 @@ export class PipelineOrchestratorService {
           recordsUpdated++;
         }
 
-        await this.upsertRepository.upsertOffer({
+        const offerResult = await this.upsertRepository.upsertOffer({
           ...pair.offerInput,
           productId: upsertResult.productId,
         });
@@ -221,6 +246,44 @@ export class PipelineOrchestratorService {
           observedAt: pair.offerInput.observedAt,
           reliabilityStatus: pair.offerInput.reliabilityStatus,
         });
+
+        // -- Step 4b: Changed-offer hook -------------------------------------
+        // Fires exactly once per CHANGED offer, after the row is durably
+        // upserted. The backend binds this to the price-observation
+        // recorder, so this is the single point where the observation log
+        // grows — strictly on the background ingestion path. Failure
+        // isolation is mandatory: a recorder error (including expected
+        // classification-gate rejections) is logged and the run continues
+        // with the remaining offers; it must never abort ingestion or
+        // pollute the run's error list.
+        if (offerResult.changed) {
+          offersChanged++;
+
+          if (this.offerChangeHook) {
+            try {
+              await this.offerChangeHook.onOfferChanged({
+                productId: upsertResult.productId,
+                offerId: offerResult.offerId,
+                merchant: config.merchantId,
+                country: pair.offerInput.country,
+                priceCents: pair.offerInput.priceCents,
+                reliabilityStatus: pair.offerInput.reliabilityStatus,
+                observedAt: pair.offerInput.observedAt,
+              });
+            } catch (hookErr) {
+              const message =
+                hookErr instanceof Error
+                  ? hookErr.message
+                  : 'Unknown offer-change hook error';
+              this.logger.error(
+                `Offer-change hook failed for offer ${offerResult.offerId} ` +
+                  `(merchant "${config.merchantId}", product ` +
+                  `${upsertResult.productId}); observation not recorded, ` +
+                  `ingestion continues: ${message}`,
+              );
+            }
+          }
+        }
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Unknown upsert error';
@@ -244,6 +307,7 @@ export class PipelineOrchestratorService {
       `Pipeline run for "${config.merchantId}": `,
       `${fetchResult.records.length} fetched, `,
       `${recordsAdded} added, ${recordsUpdated} updated, `,
+      `${offersChanged} offers changed, `,
       `${allErrors.length} errors, ${durationMs} ms`,
     ];
 
@@ -263,6 +327,7 @@ export class PipelineOrchestratorService {
       recordsFetched: fetchResult.records.length,
       recordsAdded,
       recordsUpdated,
+      offersChanged,
       errors: allErrors,
       durationMs,
       qualityReport,
