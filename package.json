@@ -10,6 +10,7 @@
     "lint:content": "cd apps/frontend && pnpm run lint:content",
     "test": "pnpm -r test",
     "test:golden": "bash scripts/test-golden-dataset.sh",
+    "test:integration": "vitest run --config tests/integration/vitest.config.ts",
     "test:data-quality": "bash scripts/test-data-quality.sh",
     "test:compliance": "bash scripts/test-compliance.sh",
     "typecheck": "pnpm -r typecheck",
