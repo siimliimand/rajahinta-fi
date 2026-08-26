@@ -87,7 +87,17 @@ export const retailOffers = pgTable('retail_offers', {
   reliabilityStatus: varchar('reliability_status', { length: 16 })
     .default('ESTIMATED')
     .notNull(),
-});
+  },
+  (table) => [
+    // Serves the changed-offer detection lookup (latest prior row per
+    // merchant+product, ordered by observedAt) run on every ingestion upsert.
+    index('retail_offers_merchant_product_id_observed_at_idx').on(
+      table.merchant,
+      table.productId,
+      table.observedAt,
+    ),
+  ],
+);
 
 /**
  * Versioned tax rules — never overwritten, always appended.
