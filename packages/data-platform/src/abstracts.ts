@@ -8,6 +8,7 @@
  * @module RepositoryAbstractions
  */
 import { Injectable } from '@nestjs/common';
+import type { PriceObservation } from '@rajahinta/core-domain';
 import {
   productMaster,
   retailOffers,
@@ -16,7 +17,18 @@ import {
   calculationRecords,
   accounts,
   savedBaskets,
+  priceObservations,
 } from './schema';
+
+/**
+ * Persisted price-observation row (raw schema shape).
+ *
+ * Read model for the append-only observation log. Carries rule-version
+ * FK ids but NOT the domain `versionLabel`: the aggregation worker does
+ * not need labels, and the attribution service resolves them through its
+ * own tax-rule queries, so range reads stay join-free and index-only.
+ */
+export type PriceObservationRecord = typeof priceObservations.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // Repository abstractions
@@ -179,4 +191,79 @@ export abstract class SavedBasketRepository {
 
   /** Delete a basket by its primary key. */
   abstract delete(id: number): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Price-observation repository abstraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Price-observation repository — the append-only analytical log.
+ *
+ * The append contract mirrors the core-domain {@link IPriceObservationPort}
+ * exactly (insert-only, returns the assigned row id); the concrete Drizzle
+ * adapter therefore satisfies that port without a separate mapper. The
+ * range-read methods are consumed by the time-series aggregation worker
+ * and the tax-change attribution service.
+ *
+ * Append-only invariant: there are deliberately NO update or delete
+ * operations — observation rows are immutable once written, and
+ * corrections append new observations rather than editing history.
+ *
+ * Range semantics: all range reads are half-open intervals
+ * {@code [from, to)} on observedAt, matching the aggregation bucket
+ * convention (bucketStart inclusive, bucketStart + window exclusive) so a
+ * boundary-instant observation is never counted in two buckets.
+ */
+@Injectable()
+export abstract class PriceObservationRepository {
+  /**
+   * Append one observation row (insert only — never update or delete).
+   * Returns the assigned row id.
+   */
+  abstract append(observation: PriceObservation): Promise<{ id: number }>;
+
+  /**
+   * Range read by product over [from, to), optionally filtered by a
+   * single merchant. Ordered by (observedAt, id) ascending so
+   * consecutive-observation consumers see a stable series order.
+   */
+  abstract findByProductRange(
+    productId: number,
+    from: Date,
+    to: Date,
+    merchant?: string | null,
+  ): Promise<PriceObservationRecord[]>;
+
+  /**
+   * Range read by merchant offer (merchant + retailOfferId) over
+   * [from, to). Ordered by (observedAt, id) ascending.
+   */
+  abstract findByMerchantOfferRange(
+    merchant: string,
+    retailOfferId: number,
+    from: Date,
+    to: Date,
+  ): Promise<PriceObservationRecord[]>;
+
+  /**
+   * Range read by merchant + product over [from, to). Ordered by
+   * (observedAt, id) ascending.
+   */
+  abstract findByMerchantProductRange(
+    merchant: string,
+    productId: number,
+    from: Date,
+    to: Date,
+  ): Promise<PriceObservationRecord[]>;
+
+  /**
+   * Earliest observedAt for a product (optionally merchant-filtered), or
+   * null when no observations exist — the API surfaces this as the
+   * "earliest available observation date".
+   */
+  abstract findEarliestObservedAt(
+    productId: number,
+    merchant?: string | null,
+  ): Promise<Date | null>;
 }

@@ -10,6 +10,7 @@ export {
   calculationRecords,
   accounts,
   savedBaskets,
+  priceObservations,
 } from './schema';
 
 // ---------------------------------------------------------------------------
@@ -23,7 +24,9 @@ export {
   CalculationRecordRepository,
   AccountRepository,
   SavedBasketRepository,
+  PriceObservationRepository,
 } from './abstracts';
+export type { PriceObservationRecord } from './abstracts';
 
 // ---------------------------------------------------------------------------
 // Concrete repository implementations — Drizzle-based
@@ -36,6 +39,7 @@ export { DrizzleCalculationRecordRepository } from './repositories/calculation-r
 export { DrizzleCorrectionRepository } from './repositories/correction.repository';
 export { DrizzleAccountRepository } from './repositories/account.repository';
 export { DrizzleSavedBasketRepository } from './repositories/saved-basket.repository';
+export { DrizzlePriceObservationRepository } from './repositories/price-observation.repository';
 
 // ---------------------------------------------------------------------------
 // Module boundary — pure interfaces for cross-layer contracts
