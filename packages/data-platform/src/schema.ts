@@ -18,6 +18,8 @@ import {
   boolean,
   text,
   index,
+  date,
+  unique,
 } from 'drizzle-orm/pg-core';
 
 /**
@@ -269,6 +271,87 @@ export const priceObservations = pgTable(
       table.merchant,
       table.productId,
       table.observedAt,
+    ),
+  ],
+);
+
+/**
+ * Price history summaries — materialized daily/weekly aggregates for charts.
+ *
+ * One row per (granularity, periodStart, productId, merchant) bucket, built
+ * from priceObservations by the time-series aggregation background job.
+ * Serves chart requests so raw observations are never aggregated on the
+ * request path. "Price" columns aggregate foreignRetailPriceCents;
+ * "landed cost" columns aggregate landedCostCents.
+ *
+ * Bucketing: daily periodStart is the UTC calendar date of the bucket;
+ * weekly periodStart is the Monday opening the ISO 8601 week (UTC), per
+ * design decision 3. open = value at the bucket's earliest observation by
+ * observedAt; close = value at the latest. avg is the arithmetic mean of
+ * the bucket's integer-cent values rounded half-up to the nearest cent
+ * (amounts are non-negative, so this equals half-away-from-zero and stays
+ * deterministic across job recomputes).
+ */
+export const priceHistorySummaries = pgTable(
+  'price_history_summaries',
+  {
+    id: serial('id').primaryKey(),
+    /** Bucket granularity discriminator: "daily" or "weekly". */
+    granularity: varchar('granularity', { length: 16 }).notNull(),
+    /** Bucket start anchor (see table docblock for daily/weekly alignment). */
+    periodStart: date('period_start').notNull(),
+    /** FK to product_master — links summary to canonical product. */
+    productId: integer('product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** Merchant identifier (matches price_observations.merchant). NULL means
+     *  the product-wide aggregate across all merchants. */
+    merchant: varchar('merchant', { length: 128 }),
+    /** Foreign retail price (cents) at the bucket's earliest observation. */
+    priceOpenCents: integer('price_open_cents').notNull(),
+    /** Foreign retail price (cents) at the bucket's latest observation. */
+    priceCloseCents: integer('price_close_cents').notNull(),
+    /** Minimum foreign retail price (cents) within the bucket. */
+    priceMinCents: integer('price_min_cents').notNull(),
+    /** Maximum foreign retail price (cents) within the bucket. */
+    priceMaxCents: integer('price_max_cents').notNull(),
+    /** Average foreign retail price (cents) — rounding rule in table docblock. */
+    priceAvgCents: integer('price_avg_cents').notNull(),
+    /** Landed cost (cents) at the bucket's earliest observation. */
+    landedCostOpenCents: integer('landed_cost_open_cents').notNull(),
+    /** Landed cost (cents) at the bucket's latest observation. */
+    landedCostCloseCents: integer('landed_cost_close_cents').notNull(),
+    /** Minimum landed cost (cents) within the bucket. */
+    landedCostMinCents: integer('landed_cost_min_cents').notNull(),
+    /** Maximum landed cost (cents) within the bucket. */
+    landedCostMaxCents: integer('landed_cost_max_cents').notNull(),
+    /** Average landed cost (cents) — rounding rule in table docblock. */
+    landedCostAvgCents: integer('landed_cost_avg_cents').notNull(),
+    /** Number of priceObservations rows aggregated into this bucket. */
+    observationCount: integer('observation_count').notNull(),
+    /** Strictest reliability among the bucket's observations by core-domain
+     *  RELIABILITY_ORDER severity (VERIFIED < ESTIMATED < STALE < UNAVAILABLE,
+     *  packages/core-domain/src/reliability/reliability.types.ts). */
+    strictestReliability: varchar('strictest_reliability', { length: 16 })
+      .notNull(),
+  },
+  (table) => [
+    // Idempotency key for the aggregation job's upsert. Postgres treats NULLs
+    // as distinct in unique keys by default, which would admit duplicate
+    // product-wide rows (merchant NULL) and ON CONFLICT would never match
+    // them. Chosen fix: UNIQUE NULLS NOT DISTINCT (PostgreSQL 15+; this
+    // stack targets 16) via Drizzle's native .nullsNotDistinct() — unlike a
+    // sentinel merchant value it keeps NULL meaning "product-wide" everywhere
+    // (no magic value leaking into queries/APIs), and unlike a
+    // COALESCE(merchant, '') expression index it is matched directly by
+    // ON CONFLICT (granularity, period_start, product_id, merchant).
+    unique('price_history_summaries_bucket_key')
+      .on(table.granularity, table.periodStart, table.productId, table.merchant)
+      .nullsNotDistinct(),
+    index('price_history_summaries_granularity_product_id_period_start_idx').on(
+      table.granularity,
+      table.productId,
+      table.periodStart,
     ),
   ],
 );
