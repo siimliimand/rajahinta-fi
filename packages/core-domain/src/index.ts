@@ -11,6 +11,7 @@ import { DeclarationModule } from './declaration/declaration.module';
 import { RankingModule } from './ranking/ranking.module';
 import { CorrectionModule } from './correction/correction.module';
 import { EntitlementModule } from './entitlement/entitlement.module';
+import { HistoryModule, type HistoryModulePorts } from './history/history.module';
 
 // ---------------------------------------------------------------------------
 // Domain entities — pure TypeScript, zero framework logic
@@ -382,6 +383,23 @@ export {
 } from './correction/correction.service';
 
 // ---------------------------------------------------------------------------
+// History — append-only price-observation log for historical price intelligence
+// ---------------------------------------------------------------------------
+
+export { HistoryModule } from './history/history.module';
+export type { HistoryModulePorts } from './history/history.module';
+export { PriceObservationRecorderService } from './history/price-observation-recorder.service';
+export type {
+  PriceObservation,
+  RecordedPriceObservation,
+  RecordObservationInput,
+  ObservationInputReliability,
+  TaxRuleVersionSnapshot,
+} from './history/price-observation.types';
+export type { IPriceObservationPort } from './history/price-observation.port';
+export { PRICE_OBSERVATION_PORT } from './history/price-observation.port';
+
+// ---------------------------------------------------------------------------
 // Entitlement — feature-access tier management
 // ---------------------------------------------------------------------------
 
@@ -405,8 +423,8 @@ export type { AuditEntry, AuditAction, AuditQuery } from './audit/audit.types';
 // ---------------------------------------------------------------------------
 
 @Module({
-  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule],
-  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule],
+  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule, HistoryModule],
+  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule, HistoryModule],
 })
 export class CoreDomainModule {}
 
@@ -420,7 +438,7 @@ export class CoreDomainModule {}
  */
 export class CoreDomainConfiguredModule {}
 
-export interface CoreDomainOptions extends CalculatorPorts, TaxModuleOptions {}
+export interface CoreDomainOptions extends CalculatorPorts, TaxModuleOptions, HistoryModulePorts {}
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace CoreDomainModule {
@@ -435,10 +453,19 @@ export namespace CoreDomainModule {
     const domainImports = [SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule];
     const calculator = CalculatorModule.forRoot(options);
     const tax = TaxModule.forRoot(options);
+    // The history module shares the product-data port and tax-rule
+    // repository with the calculator; extraProviders are re-registered in
+    // its scope so its port adapters resolve their own dependencies.
+    const history = HistoryModule.forRoot({
+      taxRuleRepository: options.taxRuleRepository,
+      priceObservationPort: options.priceObservationPort,
+      productDataPort: options.productDataPort,
+      extraProviders: options.extraProviders,
+    });
     return {
       module: CoreDomainConfiguredModule,
-      imports: [...domainImports, calculator, tax],
-      exports: [...domainImports, calculator, tax],
+      imports: [...domainImports, calculator, tax, history],
+      exports: [...domainImports, calculator, tax, history],
     };
   }
 }
