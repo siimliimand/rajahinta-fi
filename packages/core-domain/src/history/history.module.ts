@@ -1,6 +1,7 @@
 /**
- * History Module — registers the price-observation recorder and declares
- * the ports that consuming layers must provide:
+ * History Module — registers the price-observation recorder and the
+ * read-time tax-change attribution service, and declares the ports that
+ * consuming layers must provide:
  *
  * - {@link PRICE_OBSERVATION_PORT} — append-only observation persistence
  *   (Drizzle adapter over `price_observations`, wired in a separate task)
@@ -29,6 +30,7 @@ import { NormalizationModule } from '../normalization/normalization.module';
 import { TransportEstimationModule } from '../transport/transport-estimation.module';
 import { ReliabilityModule } from '../reliability/reliability.module';
 import { PriceObservationRecorderService } from './price-observation-recorder.service';
+import { TaxChangeAttributionService } from './services/tax-change-attribution.service';
 import type { IProductDataPort } from '../calculator/calculator.types';
 import { PRODUCT_DATA_PORT } from '../calculator/calculator.types';
 import { PRICE_OBSERVATION_PORT, type IPriceObservationPort } from './price-observation.port';
@@ -56,10 +58,11 @@ export interface HistoryModulePorts extends TaxModuleOptions {
   ],
   providers: [
     PriceObservationRecorderService,
+    TaxChangeAttributionService,
     { provide: PRICE_OBSERVATION_PORT, useValue: null },
     { provide: PRODUCT_DATA_PORT, useValue: null },
   ],
-  exports: [PriceObservationRecorderService, PRICE_OBSERVATION_PORT, PRODUCT_DATA_PORT],
+  exports: [PriceObservationRecorderService, TaxChangeAttributionService, PRICE_OBSERVATION_PORT, PRODUCT_DATA_PORT],
 })
 export class HistoryModule {
   /**
@@ -79,6 +82,7 @@ export class HistoryModule {
   static forRoot(ports: HistoryModulePorts) {
     const providers: Provider[] = [
       PriceObservationRecorderService,
+      TaxChangeAttributionService,
       ...(ports.extraProviders ?? []),
     ];
     providers.push(
@@ -101,7 +105,7 @@ export class HistoryModule {
         ReliabilityModule,
       ],
       providers,
-      exports: [PriceObservationRecorderService, PRICE_OBSERVATION_PORT, PRODUCT_DATA_PORT],
+      exports: [PriceObservationRecorderService, TaxChangeAttributionService, PRICE_OBSERVATION_PORT, PRODUCT_DATA_PORT],
     };
   }
 }

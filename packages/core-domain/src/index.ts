@@ -389,6 +389,16 @@ export {
 export { HistoryModule } from './history/history.module';
 export type { HistoryModulePorts } from './history/history.module';
 export { PriceObservationRecorderService } from './history/price-observation-recorder.service';
+export { TaxChangeAttributionService } from './history/services/tax-change-attribution.service';
+export type {
+  StepClassification,
+  TaxRuleEffectiveWindow,
+  TaxChangeAttributionInput,
+  AttributionMovedInputs,
+  RuleVersionBoundary,
+  AttributedStep,
+} from './history/services/tax-change-attribution.service';
+export { AttributionInputError } from './history/services/tax-change-attribution.service';
 export type {
   PriceObservation,
   RecordedPriceObservation,
