@@ -38,7 +38,7 @@
 - [x] 6.2 Write unit tests — recorder (tax-version resolution at observedAt, engine reuse, reliability snapshot), attribution service (all four classifications plus evidence fields), aggregation worker (incremental, idempotent, watermark on failure), both repositories <!-- agent: platform-engineer.build, depends_on: [2.1, 2.2, 3.1, 3.2], touches: [packages/core-domain/src/history/__tests__/**, packages/application-api/src/__tests__/**] -->
 - [x] 6.3 Write the integration test at `tests/integration/` — observation append through aggregation run through API response with attribution, using real engine implementations and no mocks, per the golden-dataset convention <!-- agent: platform-engineer.build, depends_on: [4.1, 3.1], touches: [tests/integration/**] -->
 - [x] 6.4 Run typecheck, lint, unit tests, and golden-dataset regression tests; fix fallout <!-- agent: platform-engineer.fast, depends_on: [5.3, 6.2, 6.3], touches: [] -->
-- [ ] 6.5 Update `docs/tasks.md` — mark T2.1 through T2.5 with completion notes referencing this change <!-- agent: platform-engineer.fast, depends_on: [6.4], touches: [docs/tasks.md] -->
+- [x] 6.5 Update `docs/tasks.md` — mark T2.1 through T2.5 with completion notes referencing this change <!-- agent: platform-engineer.fast, depends_on: [6.4], touches: [docs/tasks.md] -->
 
 ---
 

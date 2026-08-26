@@ -233,7 +233,7 @@ The implemented primary user journey:
 | -------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | PostgreSQL 16  | Primary structured data store — products, retail offers, transport offers, versioned tax rules, calculation records | `docker-compose.yml` (postgres:16-alpine), Drizzle ORM via `DRIZZLE` token |
 | Redis 7        | Caching, BullMQ job queues, session store                                                                           | `docker-compose.yml` (redis:7-alpine)                                      |
-| Drizzle schema | Canonical table definitions — `productMaster`, `retailOffers`, `taxRules`, `transportOffers`, `calculationRecords`  | `packages/data-platform/src/schema.ts`                                     |
+| Drizzle schema | Canonical table definitions — `productMaster`, `retailOffers`, `taxRules`, `transportOffers`, `calculationRecords`, `priceObservations`, `priceHistorySummaries`, `aggregationWatermarks` | `packages/data-platform/src/schema.ts`                                     |
 
 Schema design principles applied:
 
