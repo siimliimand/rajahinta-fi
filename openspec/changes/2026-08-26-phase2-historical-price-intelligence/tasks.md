@@ -28,15 +28,15 @@
 
 ## 5. Frontend
 
-- [ ] 5.1 Add price-history types and fetch client under `apps/frontend/src/lib/` — mirror the API contract including reliability and attribution fields <!-- agent: platform-engineer.build, depends_on: [4.1], touches: [apps/frontend/src/lib/**] -->
+- [x] 5.1 Add price-history types and fetch client under `apps/frontend/src/lib/` — mirror the API contract including reliability and attribution fields <!-- agent: platform-engineer.build, depends_on: [4.1], touches: [apps/frontend/src/lib/**] -->
 - [ ] 5.2 Create `HistoryChart` component under `apps/frontend/src/app/calculator/components/` — pure SVG (no chart library), price and landed-cost series, tax-change markers with version labels, reliability/freshness badges, controlled-vocabulary labels, neutral equal-treatment merchant series <!-- agent: platform-engineer.build, depends_on: [5.1], touches: [apps/frontend/src/app/calculator/components/**] -->
 - [ ] 5.3 Integrate charts into the calculator result view and the compare page — behind the feature flag; hide charts and skip the request when the flag is off; show "data available from" for truncated history <!-- agent: platform-engineer.build, depends_on: [5.2, 6.1], touches: [apps/frontend/src/app/calculator/**, apps/frontend/src/app/compare/**] -->
 
 ## 6. Feature flag, tests, verification
 
 - [x] 6.1 Add the `enable_historical_price_intelligence` feature flag to the existing `FeatureFlagService`/`LaunchGate` infrastructure — default off; gates the API route and the UI <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/feature-flags/**] -->
-- [ ] 6.2 Write unit tests — recorder (tax-version resolution at observedAt, engine reuse, reliability snapshot), attribution service (all four classifications plus evidence fields), aggregation worker (incremental, idempotent, watermark on failure), both repositories <!-- agent: platform-engineer.build, depends_on: [2.1, 2.2, 3.1, 3.2], touches: [packages/core-domain/src/history/__tests__/**, packages/application-api/src/__tests__/**] -->
-- [ ] 6.3 Write the integration test at `tests/integration/` — observation append through aggregation run through API response with attribution, using real engine implementations and no mocks, per the golden-dataset convention <!-- agent: platform-engineer.build, depends_on: [4.1, 3.1], touches: [tests/integration/**] -->
+- [x] 6.2 Write unit tests — recorder (tax-version resolution at observedAt, engine reuse, reliability snapshot), attribution service (all four classifications plus evidence fields), aggregation worker (incremental, idempotent, watermark on failure), both repositories <!-- agent: platform-engineer.build, depends_on: [2.1, 2.2, 3.1, 3.2], touches: [packages/core-domain/src/history/__tests__/**, packages/application-api/src/__tests__/**] -->
+- [x] 6.3 Write the integration test at `tests/integration/` — observation append through aggregation run through API response with attribution, using real engine implementations and no mocks, per the golden-dataset convention <!-- agent: platform-engineer.build, depends_on: [4.1, 3.1], touches: [tests/integration/**] -->
 - [ ] 6.4 Run typecheck, lint, unit tests, and golden-dataset regression tests; fix fallout <!-- agent: platform-engineer.fast, depends_on: [5.3, 6.2, 6.3], touches: [] -->
 - [ ] 6.5 Update `docs/tasks.md` — mark T2.1 through T2.5 with completion notes referencing this change <!-- agent: platform-engineer.fast, depends_on: [6.4], touches: [docs/tasks.md] -->
 
