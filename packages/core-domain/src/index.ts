@@ -108,6 +108,10 @@ export type { ExciseResult, ContainerDutyResult } from './tax/index';
 // Tax-type constants — canonical vocabulary used across seed, engine, tests
 export { TAX_TYPES } from './tax/index';
 export type { TaxType } from './tax/index';
+// Category canonicalisation — read-side consumers (e.g. historical-data
+// attribution windows) must query rules with the same normalised category
+// the engines resolved observations against.
+export { normaliseCategory } from './tax/index';
 
 // ---------------------------------------------------------------------------
 // Documentation section markers

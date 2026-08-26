@@ -40,6 +40,7 @@ import { AccountModule } from './accounts';
 import { CalculatorController } from './calculator';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
+import { HistoricalDataModule } from './historical';
 import { AnalyticsModule, OutboundRedirectController } from './analytics';
 import { CorrectionModule } from './correction';
 import { RankingModule as ApplicationRankingModule } from './ranking';
@@ -183,11 +184,14 @@ imports: [
     AnalyticsModule,
     RedisModule,
     CoreDomainModule,
-    RankingModule,
-    DeclarationModule,
-    DataPlatformModule,
+  RankingModule,
+  DeclarationModule,
+  DataPlatformModule,
 CorrectionModule,
     ApplicationRankingModule,
+    // Price-history API — declares its own controller behind the
+    // enable_historical_price_intelligence feature flag (task 4.1).
+    HistoricalDataModule,
   ],
   providers: [
     TaxCalculationEngineAdapter,
@@ -264,6 +268,7 @@ export namespace ApplicationApiModule {
         CorrectionModule,
         ApplicationRankingModule,
         coreDomain, // brings the CONFIGURED CalculatorModule (ports injected)
+        HistoricalDataModule,
       ],
       providers: [
         TaxCalculationEngineAdapter,
@@ -356,6 +361,21 @@ export type { SearchProductsQuery, ProductSearchResult, ProductSearchItem, Produ
 
 export { DeclarationController } from './declaration';
 export type { DeclarationSummaryResponse } from './declaration';
+
+// ---------------------------------------------------------------------------
+// Historical — price-history API (feature-flagged, default off)
+// ---------------------------------------------------------------------------
+
+export { HistoricalDataModule, HistoricalDataController } from './historical';
+export type {
+  PriceHistoryMetric,
+  PriceHistoryGranularity,
+  PriceHistoryPoint,
+  PriceHistoryMovedInputs,
+  PriceHistoryRuleBoundary,
+  PriceHistoryAttribution,
+  PriceHistoryResponse,
+} from './historical';
 
 // ---------------------------------------------------------------------------
 // Correction — correction flagging API

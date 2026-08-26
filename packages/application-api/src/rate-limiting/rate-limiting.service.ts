@@ -69,6 +69,8 @@ export const RATE_LIMIT_PROFILES = {
   SEARCH: { limit: 30, windowMs: 60_000 },
   /** Declaration: 20 requests/min. */
   DECLARATION: { limit: 20, windowMs: 60_000 },
+  /** Historical price series: 30 requests/min (cheap materialized-summary reads). */
+  HISTORICAL: { limit: 30, windowMs: 60_000 },
 } as const;
 
 export type RateLimitProfileName = keyof typeof RATE_LIMIT_PROFILES;
