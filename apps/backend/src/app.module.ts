@@ -5,6 +5,7 @@ import { ApplicationApiModule } from '@rajahinta/application-api';
 import { ProductDataAdapter } from './adapters/product-data.adapter';
 import { CalculationRecordAdapter } from './adapters/calculation-record.adapter';
 import { HistoryRecordingModule } from './history-recording.module';
+import { OptimizerWiringModule } from './optimizer-wiring.module';
 
 /**
  * Composition root. The calculator port adapters (product data lookup,
@@ -23,6 +24,7 @@ import { HistoryRecordingModule } from './history-recording.module';
     DataAcquisitionModule,
     DataPlatformModule,
     HistoryRecordingModule,
+    OptimizerWiringModule,
     ApplicationApiModule.forRoot({
       productDataPort: ProductDataAdapter,
       calculationRecordPort: CalculationRecordAdapter,
