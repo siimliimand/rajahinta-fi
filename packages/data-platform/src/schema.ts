@@ -17,6 +17,7 @@ import {
   jsonb,
   boolean,
   text,
+  index,
 } from 'drizzle-orm/pg-core';
 
 /**
@@ -205,6 +206,72 @@ export const calculationRecords = pgTable('calculation_records', {
   /** When calculation was performed. */
   calculatedAt: timestamp('calculated_at').defaultNow().notNull(),
 });
+
+/**
+ * Price observations — append-only analytical series for historical intelligence.
+ *
+ * One row per merchant-offer observation recorded by the price-ingestion
+ * background job at quantity=1 baseline. Each row is self-contained
+ * (price, transport cost, tax rule versions, landed cost, reliability
+ * snapshot) so the aggregation and attribution services consume it
+ * without joins across session-scoped data. Rows are never updated or
+ * deleted by application code — corrections append new observations.
+ */
+export const priceObservations = pgTable(
+  'price_observations',
+  {
+    id: serial('id').primaryKey(),
+    /** FK to product_master — links observation to canonical product. */
+    productId: integer('product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** Merchant identifier — distinguishes sources (matches retail_offers.merchant). */
+    merchant: varchar('merchant', { length: 128 }).notNull(),
+    /** FK to retail_offers — provenance link to the scraped offer this observation was derived from. */
+    retailOfferId: integer('retail_offer_id')
+      .references(() => retailOffers.id)
+      .notNull(),
+    /** When the observation was recorded — series time axis. */
+    observedAt: timestamp('observed_at').defaultNow().notNull(),
+    /** Foreign retail price in smallest currency unit (cents) at observation time. */
+    foreignRetailPriceCents: integer('foreign_retail_price_cents').notNull(),
+    /** Transport cost in cents used in the quantity=1 landed-cost computation. */
+    transportCostCents: integer('transport_cost_cents').notNull(),
+    /** FK to transport_offers — which carrier offer was selected. Null when no
+     *  applicable offer exists (transport cost 0, reliability UNAVAILABLE). */
+    transportOfferId: integer('transport_offer_id').references(
+      () => transportOffers.id,
+    ),
+    /** FK to tax_rules — excise rule version effective at observedAt. Null when
+     *  the engine fell back (zero duty, ESTIMATED) — matches calculationRecords. */
+    exciseRuleVersionId: integer('excise_rule_version_id').references(
+      () => taxRules.id,
+    ),
+    /** FK to tax_rules — container duty rule version effective at observedAt.
+     *  Null when the engine fell back — matches calculationRecords. */
+    containerDutyRuleVersionId: integer('container_duty_rule_version_id').references(
+      () => taxRules.id,
+    ),
+    /** Quantity=1 baseline landed cost in cents. */
+    landedCostCents: integer('landed_cost_cents').notNull(),
+    /** Per-input reliability snapshot keyed by input name (price/transport/classification →
+     *  VERIFIED/ESTIMATED/STALE/UNAVAILABLE — ReliabilityStatus in core-domain). */
+    inputReliability: jsonb('input_reliability').notNull(),
+    /** Result confidence (HIGH/MEDIUM/LOW) — computed by ConfidenceFrameworkService. */
+    confidence: varchar('confidence', { length: 6 }).notNull(),
+  },
+  (table) => [
+    index('price_observations_product_id_observed_at_idx').on(
+      table.productId,
+      table.observedAt,
+    ),
+    index('price_observations_merchant_product_id_observed_at_idx').on(
+      table.merchant,
+      table.productId,
+      table.observedAt,
+    ),
+  ],
+);
 
 /**
  * User accounts — one row per registered user.

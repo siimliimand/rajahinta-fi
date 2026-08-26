@@ -15,6 +15,13 @@
       "when": 1787333956120,
       "tag": "0001_tax_type_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787754171083,
+      "tag": "0002_grey_forge",
+      "breakpoints": true
     }
   ]
 }
