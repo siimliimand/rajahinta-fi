@@ -26,6 +26,11 @@ import {
   ClassificationGateRejectionError,
   ProductNotFoundError,
 } from '../../calculator/calculator.types';
+import type {
+  ITaxRuleRepositoryPort,
+  TaxRuleRecordPort,
+} from '../../tax/ports/tax-rule-repository.port';
+import { FORMULA_PER_LITRE_OF_PRODUCT } from '../../tax/services/alcohol-excise.math';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -151,6 +156,153 @@ function createRecorder(options?: {
 }
 
 // ---------------------------------------------------------------------------
+// Real-engine harness (task 6.2)
+//
+// The mocked-engine tests above pin orchestration; the tests below pin the
+// tax-version RESOLUTION contract by running the real engine classes the
+// calculator uses, against a plain in-memory ITaxRuleRepositoryPort with
+// real window semantics (effectiveFrom <= T < effectiveTo).
+// ---------------------------------------------------------------------------
+
+/** Plain in-memory tax-rule port — real filtering, no recorded mocks. */
+class InMemoryTaxRulePort implements ITaxRuleRepositoryPort {
+  constructor(private readonly rules: TaxRuleRecordPort[]) {}
+
+  private covering(asOf: Date): TaxRuleRecordPort[] {
+    return this.rules
+      .filter(
+        (rule) =>
+          rule.effectiveFrom.getTime() <= asOf.getTime() &&
+          (rule.effectiveTo === null || rule.effectiveTo.getTime() > asOf.getTime()),
+      )
+      .sort(
+        (a, b) => b.effectiveFrom.getTime() - a.effectiveFrom.getTime(),
+      );
+  }
+
+  async findApplicable(
+    taxType: string,
+    productCategory: string,
+    asOf: Date,
+  ): Promise<TaxRuleRecordPort | null> {
+    return (
+      this.covering(asOf).find(
+        (rule) =>
+          rule.taxType === taxType && rule.productCategory === productCategory,
+      ) ?? null
+    );
+  }
+
+  async findAllApplicable(
+    taxType: string,
+    productCategory: string,
+    asOf: Date,
+  ): Promise<TaxRuleRecordPort[]> {
+    return this.covering(asOf).filter(
+      (rule) => rule.taxType === taxType && rule.productCategory === productCategory,
+    );
+  }
+
+  async findHistoryRates(): Promise<TaxRuleRecordPort[]> {
+    return [...this.rules].sort(
+      (a, b) => a.effectiveFrom.getTime() - b.effectiveFrom.getTime(),
+    );
+  }
+
+  async findActiveVersionLabels(): Promise<readonly string[]> {
+    return [...new Set(this.covering(new Date()).map((rule) => rule.versionLabel))];
+  }
+}
+
+function taxRule(overrides?: Partial<TaxRuleRecordPort>): TaxRuleRecordPort {
+  return {
+    id: 1,
+    taxType: 'excise',
+    productCategory: 'beer',
+    rate: '0.40',
+    effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+    effectiveTo: null,
+    calculationFormulaReference: FORMULA_PER_LITRE_OF_PRODUCT,
+    officialSource: 'Finnish Tax Administration',
+    verificationDate: new Date('2026-01-15T00:00:00.000Z'),
+    versionLabel: '2026.1',
+    exemptionConditions: null,
+    ...overrides,
+  };
+}
+
+/** Version boundary shared by both rule types: v1 ends (exclusive) exactly when v2 starts (inclusive). */
+const RULE_BOUNDARY = new Date('2026-08-20T00:00:00.000Z');
+
+const EXCISE_V1 = taxRule({
+  id: 11,
+  versionLabel: 'excise-2026.1',
+  effectiveTo: RULE_BOUNDARY,
+});
+const EXCISE_V2 = taxRule({
+  id: 12,
+  versionLabel: 'excise-2026.2',
+  rate: '0.50',
+  effectiveFrom: RULE_BOUNDARY,
+});
+const DUTY_V1 = taxRule({
+  id: 21,
+  taxType: 'container_duty',
+  productCategory: 'all_beverages',
+  rate: '0.51',
+  versionLabel: 'duty-2026.1',
+  effectiveTo: RULE_BOUNDARY,
+});
+const DUTY_V2 = taxRule({
+  id: 22,
+  taxType: 'container_duty',
+  productCategory: 'all_beverages',
+  rate: '0.55',
+  versionLabel: 'duty-2026.2',
+  effectiveFrom: RULE_BOUNDARY,
+});
+
+/**
+ * Recorder wired with the REAL gate, confidence framework, and tax engines
+ * over the in-memory rule port — the same engine instances the calculator
+ * would receive. Transport stays a stub (its selection is covered above) and
+ * depositSystemStatus is false so the container-duty engine performs a rule
+ * lookup instead of short-circuiting on the deposit exemption.
+ */
+function createRecorderWithRealEngines(rules: TaxRuleRecordPort[]): {
+  service: PriceObservationRecorderService;
+  excise: AlcoholExciseService;
+  containerDuty: ContainerDutyService;
+} {
+  const taxRules = new InMemoryTaxRulePort(rules);
+  const excise = new AlcoholExciseService(taxRules);
+  const containerDuty = new ContainerDutyService(taxRules);
+
+  const service = new PriceObservationRecorderService(
+    new ClassificationGateService(),
+    excise,
+    containerDuty,
+    {
+      estimate: vi.fn().mockResolvedValue({
+        offer: { id: 300, priceCents: 150, sellerInvolvementIndicator: false },
+        matchedWeightBracket: { minKg: 0, maxKg: 1 },
+        reliabilityStatus: 'VERIFIED' as const,
+      }),
+    } as unknown as TransportEstimationService,
+    new ConfidenceFrameworkService(new ReliabilityService()),
+    createMockProductDataPort({
+      findProductById: vi.fn().mockResolvedValue({
+        ...DEFAULT_PRODUCT,
+        depositSystemStatus: false,
+      }),
+    }),
+    createMockObservationPort(),
+  );
+
+  return { service, excise, containerDuty };
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -251,6 +403,99 @@ describe('PriceObservationRecorderService', () => {
     });
   });
 
+  describe('tax-version resolution at boundary instants (real engines)', () => {
+    it('snapshots the successor version at the exact effectiveFrom instant (inclusive)', async () => {
+      const { service } = createRecorderWithRealEngines([
+        EXCISE_V1,
+        EXCISE_V2,
+        DUTY_V1,
+        DUTY_V2,
+      ]);
+
+      // observedAt === v2.effectiveFrom === v1.effectiveTo — the boundary
+      // itself belongs to the successor.
+      const result = await service.record({
+        productId: 7,
+        offer: DEFAULT_OFFER,
+        observedAt: RULE_BOUNDARY,
+      });
+
+      expect(result.exciseRuleVersion).toEqual({
+        ruleId: 12,
+        versionLabel: 'excise-2026.2',
+      });
+      expect(result.containerDutyRuleVersion).toEqual({
+        ruleId: 22,
+        versionLabel: 'duty-2026.2',
+      });
+    });
+
+    it('snapshots the predecessor version one instant before the boundary (effectiveTo exclusive)', async () => {
+      const { service } = createRecorderWithRealEngines([
+        EXCISE_V1,
+        EXCISE_V2,
+        DUTY_V1,
+        DUTY_V2,
+      ]);
+
+      const result = await service.record({
+        productId: 7,
+        offer: DEFAULT_OFFER,
+        observedAt: new Date(RULE_BOUNDARY.getTime() - 1),
+      });
+
+      expect(result.exciseRuleVersion).toEqual({
+        ruleId: 11,
+        versionLabel: 'excise-2026.1',
+      });
+      expect(result.containerDutyRuleVersion).toEqual({
+        ruleId: 21,
+        versionLabel: 'duty-2026.1',
+      });
+    });
+  });
+
+  describe('engine reuse — real engines, calculator composition', () => {
+    it('records exactly retail + engines\' tax + transport for the same inputs', async () => {
+      const { service, excise, containerDuty } = createRecorderWithRealEngines([
+        EXCISE_V1,
+        EXCISE_V2,
+        DUTY_V1,
+        DUTY_V2,
+      ]);
+      const observedAt = RULE_BOUNDARY;
+
+      const result = await service.record({
+        productId: 7,
+        offer: DEFAULT_OFFER,
+        observedAt,
+      });
+
+      // Invoke the very engines the calculator path uses, with the same
+      // inputs and asOf — the recorded composition must equal theirs.
+      const exciseResult = await excise.calculate('beer', 0.05, 0.5, observedAt);
+      const dutyResult = await containerDuty.calculate(0.5, 'can', false, observedAt);
+
+      // Quantity=1 composition: retail + excise + duty per unit, transport
+      // per shipment — exactly what LandedCostCalculatorService totals.
+      expect(result.landedCostCents).toBe(
+        DEFAULT_OFFER.priceCents +
+          exciseResult.taxCents +
+          dutyResult.dutyCents +
+          150, // stubbed transport offer price
+      );
+      // Snapshots are the versions the engines actually applied.
+      expect(result.exciseRuleVersion).toEqual({
+        ruleId: exciseResult.ruleId,
+        versionLabel: exciseResult.taxDatasetVersion,
+      });
+      expect(result.containerDutyRuleVersion).toEqual({
+        ruleId: dutyResult.ruleId,
+        versionLabel: dutyResult.taxDatasetVersion,
+      });
+    });
+  });
+
   describe('transport offer selection', () => {
     it('selects the current offer for merchant route to FI with product attributes', async () => {
       const { service, mocks } = createRecorder();
@@ -334,6 +579,32 @@ describe('PriceObservationRecorderService', () => {
 
       expect(result.inputReliability.retailPrice).toBe('ESTIMATED');
       expect(result.confidence).toBe('MEDIUM');
+    });
+
+    it('snapshots each of the four inputs with its own distinct status', async () => {
+      // One observation, four different statuses: retail STALE, transport
+      // UNAVAILABLE (no offer matched), excise ESTIMATED (unverified rule),
+      // container duty VERIFIED. Completeness means every input carries its
+      // own status — never a blended or dropped value.
+      const { service } = createRecorder({
+        exciseResult: { reliability: 'ESTIMATED' },
+        transportEstimate: vi.fn().mockRejectedValue(new Error('No transport offers')),
+      });
+
+      const result = await service.record({
+        productId: 7,
+        offer: { ...DEFAULT_OFFER, reliabilityStatus: 'STALE' },
+        observedAt: OBSERVED_AT,
+      });
+
+      expect(result.inputReliability).toEqual({
+        retailPrice: 'STALE',
+        transport: 'UNAVAILABLE',
+        exciseRule: 'ESTIMATED',
+        containerDutyRule: 'VERIFIED',
+      });
+      // STALE + UNAVAILABLE inputs force LOW confidence — never overstated.
+      expect(result.confidence).toBe('LOW');
     });
   });
 

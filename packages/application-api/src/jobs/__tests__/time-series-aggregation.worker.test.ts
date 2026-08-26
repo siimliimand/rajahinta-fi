@@ -555,6 +555,103 @@ describe('TimeSeriesAggregationWorker', () => {
     );
   });
 
+  it('leaves the watermark untouched when a LATER product fails after earlier products fully wrote', async () => {
+    // Product 1 (scanned first) writes 7 buckets: Mon daily ×2, Wed daily
+    // ×2, weekly ×3. The 8th upsert is product 2's first write.
+    summaries.failOnUpsert = 8;
+
+    await expect(worker.process(makeJob({}))).rejects.toThrow(
+      'simulated summary write failure',
+    );
+
+    // Product 1's buckets all persisted, yet write-then-advance means no
+    // watermark — the advance waits for EVERY write of the scan.
+    expect(summaries.buckets.size).toBe(7);
+    expect(watermarks.store.size).toBe(0);
+
+    summaries.failOnUpsert = null;
+    await worker.process(makeJob({}));
+
+    // The retry re-scanned from the epoch and converged — no duplicates.
+    expect(summaries.buckets.size).toBe(11);
+    expect(watermarks.store.get('time-series-aggregation')?.getTime()).toBe(
+      T.wed10.getTime(),
+    );
+  });
+
+  // -----------------------------------------------------------------
+  // Bucket alignment — boundary instants land in exactly one bucket
+  // -----------------------------------------------------------------
+
+  it('counts an observation at exact UTC midnight in the later daily bucket only', async () => {
+    observations.rows.push(
+      observation({
+        productId: 3,
+        merchant: 'alko',
+        observedAt: new Date('2026-08-26T00:00:00.000Z'), // exactly Wednesday midnight
+        foreignRetailPriceCents: 300,
+        landedCostCents: 400,
+      }),
+    );
+    await worker.process(makeJob({}));
+
+    // Half-open daily buckets: midnight belongs to Wednesday...
+    const wed = summaries.buckets.get(keyOf('daily', '2026-08-26', 3, 'alko'))!;
+    expect(wed.observationCount).toBe(1);
+    expect(wed.priceOpenCents).toBe(300);
+    // ...and never to Tuesday.
+    expect(summaries.buckets.has(keyOf('daily', '2026-08-25', 3, 'alko'))).toBe(false);
+  });
+
+  it('anchors an observation at exact ISO-week Monday midnight on the new week', async () => {
+    observations.rows.push(
+      observation({
+        productId: 3,
+        merchant: 'alko',
+        observedAt: new Date('2026-08-24T00:00:00.000Z'), // exactly Monday midnight
+        foreignRetailPriceCents: 300,
+        landedCostCents: 400,
+      }),
+    );
+    await worker.process(makeJob({}));
+
+    expect(summaries.buckets.has(keyOf('weekly', '2026-08-24', 3, 'alko'))).toBe(true);
+    expect(summaries.buckets.has(keyOf('weekly', '2026-08-17', 3, 'alko'))).toBe(false);
+  });
+
+  it('recomputes an earlier daily bucket when a late observation is backfilled below the watermark', async () => {
+    await worker.process(makeJob({}));
+
+    // A late append into Monday — strictly below the watermark (Wed 10:00).
+    observations.rows.push(
+      observation({
+        productId: 1,
+        merchant: 'systembolaget',
+        observedAt: new Date('2026-08-24T18:00:00.000Z'),
+        foreignRetailPriceCents: 1005,
+        landedCostCents: 1505,
+      }),
+    );
+
+    // The explicit bucketStart window lowers the scan origin below the
+    // watermark; the full bucket is recomputed from ALL its observations.
+    await worker.process(
+      makeJob({ bucketStart: '2026-08-24T00:00:00Z', windowMinutes: 1440 }),
+    );
+
+    const monday = summaries.buckets.get(keyOf('daily', '2026-08-24', 1, 'systembolaget'))!;
+    expect(monday.observationCount).toBe(3);
+    // (1000 + 1005 + 1010) / 3 = 1005; open/close keep series order.
+    expect(monday.priceAvgCents).toBe(1005);
+    expect(monday.priceOpenCents).toBe(1000);
+    expect(monday.priceCloseCents).toBe(1010);
+    expect(monday.landedCostAvgCents).toBe(1505);
+    // The re-scan did not regress the watermark.
+    expect(watermarks.store.get('time-series-aggregation')?.getTime()).toBe(
+      T.wed10.getTime(),
+    );
+  });
+
   // -----------------------------------------------------------------
   // Payload handling — bucketStart/windowMinutes
   // -----------------------------------------------------------------

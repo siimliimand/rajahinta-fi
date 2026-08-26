@@ -173,6 +173,39 @@ describe('DrizzlePriceObservationRepository.append', () => {
     expect((repo as unknown as Record<string, unknown>)['update']).toBeUndefined();
     expect((repo as unknown as Record<string, unknown>)['delete']).toBeUndefined();
   });
+
+  it('is append-only at compile time — update/delete do not exist on the type', () => {
+    const { repo } = makeRepo(() => []);
+    // If a mutator is ever added, the property access type-checks, the
+    // suppression directive below goes unused, and `tsc --noEmit` (package
+    // typecheck) fails — the append-only invariant is compiler-enforced.
+    // (Avoid writing the directive name mid-comment: TypeScript treats any
+    // comment line starting with it as an active directive.)
+    // @ts-expect-error — append-only repository: no update method may exist
+    void repo.update;
+    // @ts-expect-error — append-only repository: no delete method may exist
+    void repo.delete;
+    expect(true).toBe(true); // assertions live at the type level
+  });
+
+  it('implements exactly the append + range-read surface — no other mutators', () => {
+    const { repo } = makeRepo(() => []);
+    const surface = Object.getOwnPropertyNames(Object.getPrototypeOf(repo))
+      .filter((name) => name !== 'constructor')
+      .sort();
+    // Exact-set assertion: ANY added method (update, delete, patch, ...)
+    // changes the surface and fails this test. seriesOrder is the private
+    // ordering helper — also part of the pinned surface.
+    expect(surface).toEqual([
+      'append',
+      'findByMerchantOfferRange',
+      'findByMerchantProductRange',
+      'findByProductRange',
+      'findEarliestObservedAt',
+      'findProductActivitySince',
+      'seriesOrder',
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
