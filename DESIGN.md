@@ -54,6 +54,9 @@ The UI is built around **transparency, neutrality, and explainability**. Every c
 | `DisclaimerBanner.tsx` | `/calculator` | Structural disclaimer rendered on every result |
 | `CorrectionFlagPanel.tsx` | `/calculator/result/[recordId]` | "Flag a problem" affordance posting correction feedback to `POST /api/v1/corrections` |
 | `ComparisonView.tsx` | `/compare` | Side-by-side product comparison |
+| `BasketComparisonSection.tsx` | `/compare` | Flag-gated store-grouped multi-store comparison view |
+| `BasketBuilder.tsx` | `/basket` | Basket construction — product search, quantities, destination, transport arrangement |
+| `BasketResults.tsx` | `/basket` | Recommended basket combination plus neutral cost-ordered alternatives with per-store breakdowns, reliability badges, structural disclaimer |
 | `MerchantLink.tsx` | `/compare` | Neutral merchant link with outbound-disclosure |
 | `SortSelector.tsx` | `/compare` | Sort-order control for comparison view |
 
@@ -64,7 +67,8 @@ The UI is built around **transparency, neutrality, and explainability**. Every c
 | `/` | Home page with navigation to all sections |
 | `/calculator` | Landed-cost calculator with product search, selection, quantity, result |
 | `/calculator/result/[recordId]` | Individual calculation result page |
-| `/compare` | Product comparison with multiple sort orders |
+| `/compare` | Product comparison with multiple sort orders; flag-gated multi-store comparison |
+| `/basket` | Basket builder and optimization results (hidden when `enable_basket_optimization` is off) |
 | `/ranking` | Explanation of ranking methodology and neutrality enforcement |
 | `/account` | Account management page (anonymous session, calculation history, data export) |
 | `/account/create` | Anonymous account creation confirmation |
@@ -88,4 +92,4 @@ The platform is positioned as a trustworthy, explainable financial/tax-intellige
 - Consider shadcn/ui or similar component library if component count grows significantly
 - Evaluate dark-mode support (not implemented)
 
-<!-- Last updated: 2026-08-21 -->
+<!-- Last updated: 2026-08-27 -->
