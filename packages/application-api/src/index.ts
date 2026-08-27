@@ -15,6 +15,7 @@ import {
   LandedCostResult,
   CoreDomainModule,
   type CalculatorPorts,
+  type OptimizerModulePorts,
   RankingModule,
   DeclarationModule,
 } from '@rajahinta/core-domain';
@@ -22,8 +23,14 @@ import {
   DataPlatformModule,
   ProductRepository,
   CalculationRecordRepository,
+  MerchantTermsRepository,
+  BasketCalculationRecordRepository,
+  TransportOfferRepository,
   DrizzleProductRepository,
   DrizzleCalculationRecordRepository,
+  DrizzleMerchantTermsRepository,
+  DrizzleBasketCalculationRecordRepository,
+  DrizzleTransportOfferRepository,
   TaxRuleRepositoryAdapter,
 } from '@rajahinta/data-platform';
 import { ObservabilityModule } from './observability';
@@ -38,7 +45,7 @@ import { AgeGateModule } from './age-gate';
 import { AgeGateGuard } from './age-gate';
 import { AccountModule } from './accounts';
 import { CalculatorController } from './calculator';
-import { BasketModule, BasketOptimizerController } from './basket';
+import { BasketOptimizerController } from './basket';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
 import { HistoricalDataModule } from './historical';
@@ -193,7 +200,6 @@ imports: [
     // Price-history API — declares its own controller behind the
     // enable_historical_price_intelligence feature flag (task 4.1).
     HistoricalDataModule,
-    BasketModule,
   ],
   providers: [
     TaxCalculationEngineAdapter,
@@ -236,7 +242,7 @@ export namespace ApplicationApiModule {
    * threaded into CoreDomainModule.forRoot so they are visible to
    * LandedCostCalculatorService inside its own module scope.
    */
-  export function forRoot(ports: CalculatorPorts) {
+  export function forRoot(ports: CalculatorPorts & Partial<OptimizerModulePorts>) {
     const coreDomain = CoreDomainModule.forRoot({
       ...ports,
       // The real tax-rule repository for AlcoholExciseService — without
@@ -249,6 +255,9 @@ export namespace ApplicationApiModule {
       extraProviders: [
         { provide: ProductRepository, useClass: DrizzleProductRepository },
         { provide: CalculationRecordRepository, useClass: DrizzleCalculationRecordRepository },
+        { provide: MerchantTermsRepository, useClass: DrizzleMerchantTermsRepository },
+        { provide: BasketCalculationRecordRepository, useClass: DrizzleBasketCalculationRecordRepository },
+        { provide: TransportOfferRepository, useClass: DrizzleTransportOfferRepository },
       ],
     });
     return {
@@ -272,7 +281,6 @@ export namespace ApplicationApiModule {
         ApplicationRankingModule,
         coreDomain, // brings the CONFIGURED CalculatorModule (ports injected)
         HistoricalDataModule,
-        BasketModule,
       ],
       providers: [
         TaxCalculationEngineAdapter,
@@ -426,5 +434,5 @@ export type { RankingMethodology, SortOrderDescription } from './ranking';
 // Basket — basket optimization API
 // ---------------------------------------------------------------------------
 
-export { BasketModule, BasketOptimizerController } from './basket';
+export { BasketOptimizerController } from './basket';
 export type { BasketOptimizeRequest, BasketItemInput } from './basket';

@@ -12,7 +12,7 @@ import { RankingModule } from './ranking/ranking.module';
 import { CorrectionModule } from './correction/correction.module';
 import { EntitlementModule } from './entitlement/entitlement.module';
 import { HistoryModule, type HistoryModulePorts } from './history/history.module';
-import { OptimizerModule } from './optimizer/optimizer.module';
+import { OptimizerModule, type OptimizerModulePorts } from './optimizer/optimizer.module';
 
 // ---------------------------------------------------------------------------
 // Domain entities — pure TypeScript, zero framework logic
@@ -419,6 +419,7 @@ export { PRICE_OBSERVATION_PORT } from './history/price-observation.port';
 // ---------------------------------------------------------------------------
 
 export { OptimizerModule } from './optimizer/optimizer.module';
+export type { OptimizerModulePorts } from './optimizer/optimizer.module';
 export { MERCHANT_TERMS_PORT, BASKET_CALCULATION_RECORD_PORT } from './optimizer/index';
 export type { IMerchantTermsPort, MerchantTerms } from './optimizer/index';
 export type { IBasketCalculationRecordPort, CreateBasketCalculationRecordInput } from './optimizer/index';
@@ -480,7 +481,8 @@ export class CoreDomainModule {}
  */
 export class CoreDomainConfiguredModule {}
 
-export interface CoreDomainOptions extends CalculatorPorts, TaxModuleOptions, HistoryModulePorts {}
+export interface CoreDomainOptions
+  extends CalculatorPorts, TaxModuleOptions, HistoryModulePorts, OptimizerModulePorts {}
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace CoreDomainModule {
@@ -504,10 +506,23 @@ export namespace CoreDomainModule {
       productDataPort: options.productDataPort,
       extraProviders: options.extraProviders,
     });
+    // The optimizer shares the product-data port with the calculator and
+    // adds its own merchant-terms and basket-record ports; extraProviders
+    // are re-registered in its scope so its port adapters resolve their own
+    // dependencies.
+    const optimizer = OptimizerModule.forRoot({
+      productDataPort: options.productDataPort,
+      calculationRecordPort: options.calculationRecordPort,
+      taxRuleRepository: options.taxRuleRepository,
+      merchantTermsPort: options.merchantTermsPort,
+      basketCalculationRecordPort: options.basketCalculationRecordPort,
+      transportOfferQuery: options.transportOfferQuery,
+      extraProviders: options.extraProviders,
+    });
     return {
       module: CoreDomainConfiguredModule,
-      imports: [...domainImports, calculator, tax, history],
-      exports: [...domainImports, calculator, tax, history],
+      imports: [...domainImports, calculator, tax, history, optimizer],
+      exports: [...domainImports, calculator, tax, history, optimizer],
     };
   }
 }
