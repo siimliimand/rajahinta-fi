@@ -25,7 +25,7 @@ import { ContainerDutyService } from '../tax/services/container-duty.service';
 import { TransactionClassificationService } from '../classification/transaction-classification.service';
 import { ConfidenceFrameworkService } from '../reliability/confidence-framework.service';
 import { TransportEstimationService } from '../transport/transport-estimation.service';
-import { DISCLAIMER_FI } from '../index';
+import { DISCLAIMER_FI } from '../disclaimer';
 import type {
   CalculatorInput,
   CalculatorResult,

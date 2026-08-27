@@ -119,20 +119,12 @@ export { normaliseCategory } from './tax/index';
 // ---------------------------------------------------------------------------
 
 // Disclaimer — structural part of every calculation result
-// Re-exported from calculator types for use across the domain.
+// Re-exported from the dedicated leaf module; the constants previously
+// lived here, which created a barrel import cycle from the calculator and
+// optimizer services.
 // ---------------------------------------------------------------------------
 
-export const DISCLAIMER_FI: Disclaimer = {
-  text: 'Arvioitu kokonaiskustannus Suomessa. Ei ole lopullinen verovelvollisuuden määrä. Lopullinen verovelvollisuus määräytyy Tullin ja Verohallinnon vahvistamien verokantojen ja säännösten mukaan.',
-  language: 'fi',
-  version: '1.0',
-};
-
-export const DISCLAIMER_EN: Disclaimer = {
-  text: 'Estimated total cost in Finland. Not final legal tax liability. Final tax liability is determined by the tax rates and regulations established by Finnish Customs and the Tax Administration.',
-  language: 'en',
-  version: '1.0',
-};
+export { DISCLAIMER_FI, DISCLAIMER_EN } from './disclaimer';
 
 // ---------------------------------------------------------------------------
 // Landed-cost aggregate — top-level result object

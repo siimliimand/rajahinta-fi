@@ -25,7 +25,7 @@ import { ClassificationGateService } from '../../normalization/classification-ga
 import { LandedCostCalculatorService } from '../../calculator/landed-cost-calculator.service';
 import { BasketShippingCalculator } from '../../transport/basket-shipping-calculator.service';
 import { ConfidenceFrameworkService } from '../../reliability/confidence-framework.service';
-import { DISCLAIMER_FI } from '../../index';
+import { DISCLAIMER_FI } from '../../disclaimer';
 import { PRODUCT_DATA_PORT } from '../../calculator/calculator.types';
 import { MERCHANT_TERMS_PORT } from '../ports/merchant-terms.port';
 import { BASKET_CALCULATION_RECORD_PORT } from '../ports/basket-calculation-record.port';
