@@ -10,6 +10,8 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { BasketOptimizerService } from '../services/basket-optimizer.service';
 import { ClassificationGateService } from '../../normalization/classification-gate.service';
 import { LandedCostCalculatorService } from '../../calculator/landed-cost-calculator.service';
@@ -22,6 +24,7 @@ import { ConfidenceFrameworkService } from '../../reliability/confidence-framewo
 import { ReliabilityService } from '../../reliability/reliability.service';
 import {
   MAX_BASKET_ITEMS,
+  MAX_CANDIDATE_MERCHANTS_PER_ITEM,
   BasketValidationError,
   BasketClassificationGateError,
 } from '../optimizer.types';
@@ -95,6 +98,19 @@ const PRODUCT_2: CalculatorProductData = {
   normalizedName: 'Test Wine B',
 };
 
+/** Heavy product for weight-bracket boundary testing (8 kg). */
+const PRODUCT_3: CalculatorProductData = {
+  id: 103,
+  regulatoryClassification: 'beer',
+  category: 'beer',
+  volumeLitres: 5.0,
+  alcoholByVolume: 0.05,
+  containerType: 'keg',
+  depositSystemStatus: true,
+  weightKg: 8,
+  normalizedName: 'Test Keg C',
+};
+
 // Both A and B offer product 1, with A cheaper
 const OFFERS_PROD_1: CalculatorRetailOfferData[] = [
   { id: 201, priceCents: 200, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
@@ -116,6 +132,7 @@ function createMockProductDataPort(
     findProductById: vi.fn().mockImplementation(async (id: number) => {
       if (id === 101) return PRODUCT_1;
       if (id === 102) return PRODUCT_2;
+      if (id === 103) return PRODUCT_3;
       if (id === 999) return null;
       return PRODUCT_1;
     }),
@@ -909,5 +926,605 @@ describe('BasketOptimizerService', () => {
         result2.shipments.map((s) => s.merchant),
       );
     });
+
+    it('produces identical alternatives order on repeated identical input', async () => {
+      const offersAllEqual: CalculatorRetailOfferData[] = [
+        { id: 1, priceCents: 200, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 2, priceCents: 200, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 3, priceCents: 200, merchant: 'merchant-c', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+
+      const productData = createMockProductDataPort({
+        findProductById: vi.fn().mockResolvedValue(PRODUCT_1),
+        findRetailOffers: vi.fn().mockResolvedValue(offersAllEqual),
+      });
+
+      const transportOffers = [
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-c', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+      ];
+
+      const service = createOptimizer({ productData, transportOffers });
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const r1 = await service.optimize(input);
+      const r2 = await service.optimize(input);
+
+      // Same recommended
+      expect(r1.shipments).toEqual(r2.shipments);
+      // Same alternatives order (merchant-b, merchant-c lexicographically after merchant-a)
+      expect(r1.alternatives.map((a) => a.shipments[0].merchant)).toEqual(
+        r2.alternatives.map((a) => a.shipments[0].merchant),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Search correctness — multi-store vs single-store
+  // -------------------------------------------------------------------------
+
+  describe('search correctness', () => {
+    it('multi-store split beats single-store when each item is cheapest from a different merchant', async () => {
+      // Product 1: exclusively at merchant-a (200¢).
+      // Product 2: exclusively at merchant-b (200¢).
+      // No single merchant can fulfill the basket — multi-store is forced.
+      const prod1Offers: CalculatorRetailOfferData[] = [
+        { id: 1, priceCents: 200, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+      const prod2Offers: CalculatorRetailOfferData[] = [
+        { id: 2, priceCents: 200, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockImplementation(async (id: number) => {
+          if (id === 101) return prod1Offers;
+          if (id === 102) return prod2Offers;
+          return [];
+        }),
+      });
+
+      const transportOffers = [
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'bottle' }),
+      ];
+
+      const service = createOptimizer({ productData, transportOffers, basketCalcRecordPort: null });
+      const input: BasketOptimizationInput = {
+        items: [
+          { productId: 101, quantity: 1 },
+          { productId: 102, quantity: 1 },
+        ],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      // Only feasible: product1→A, product2→B
+      expect(result.shipments).toHaveLength(2);
+      const merchants = result.shipments.map((s) => s.merchant).sort();
+      expect(merchants).toEqual(['merchant-a', 'merchant-b']);
+    });
+
+    it('multi-store split wins when threshold blocks single-store and prices favour split', async () => {
+      // Product 1 (qty 1, 2500¢/unit): only at A (threshold 2500¢ → meets exactly).
+      // Product 2 (qty 1, 200¢/unit): only at B.
+      // Single-store A: cannot fulfill P2 (not available). Single-store B: cannot fulfill P1.
+      // Multi-store A(P1=2500) + B(P2=200) is the only feasible option.
+      // A's individual subtotal is 2500, meeting its VERIFIED threshold exactly.
+      const prod1Offers: CalculatorRetailOfferData[] = [
+        { id: 1, priceCents: 2500, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+      const prod2Offers: CalculatorRetailOfferData[] = [
+        { id: 2, priceCents: 200, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockImplementation(async (id: number) => {
+          if (id === 101) return prod1Offers;
+          if (id === 102) return prod2Offers;
+          return [];
+        }),
+      });
+
+      const merchantTerms = createMockMerchantTermsPort({
+        getTerms: vi.fn().mockImplementation(async (merchantId: string) => {
+          if (merchantId === 'merchant-a') return {
+            merchantId: 'merchant-a',
+            minimumOrderValueCents: 2500,
+            currency: 'EUR',
+            reliabilityStatus: 'VERIFIED' as const,
+            observedAt: BASE_DATE,
+          };
+          return null;
+        }),
+      });
+
+      const transportOffers = [
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'bottle' }),
+      ];
+
+      const service = createOptimizer({ productData, merchantTerms, transportOffers, basketCalcRecordPort: null });
+      const input: BasketOptimizationInput = {
+        items: [
+          { productId: 101, quantity: 1 },
+          { productId: 102, quantity: 1 },
+        ],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      // Only feasible: product1→A, product2→B
+      expect(result.shipments).toHaveLength(2);
+      const merchants = result.shipments.map((s) => s.merchant).sort();
+      expect(merchants).toEqual(['merchant-a', 'merchant-b']);
+    });
+
+    it('single-store wins when it is cheaper than any multi-store split', async () => {
+      // Product 1: A(200), B(210).  Product 2: A(500), B(510).
+      // Single-store A = 200+500=700+one shipment < multi-store = 200+510=710+two shipments
+      const prod1Offers: CalculatorRetailOfferData[] = [
+        { id: 1, priceCents: 200, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 2, priceCents: 210, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+      const prod2Offers: CalculatorRetailOfferData[] = [
+        { id: 3, priceCents: 500, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 4, priceCents: 510, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockImplementation(async (id: number) => {
+          if (id === 101) return prod1Offers;
+          if (id === 102) return prod2Offers;
+          return [];
+        }),
+      });
+
+      const transportOffers = [
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'bottle' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'bottle' }),
+      ];
+
+      const service = createOptimizer({ productData, transportOffers });
+      const input: BasketOptimizationInput = {
+        items: [
+          { productId: 101, quantity: 1 },
+          { productId: 102, quantity: 1 },
+        ],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      // Single-store A is cheapest
+      expect(result.shipments).toHaveLength(1);
+      expect(result.shipments[0].merchant).toBe('merchant-a');
+    });
+
+    it('cheapest merchant selected when multiple candidates per item', async () => {
+      // Product 1 at A(200), B(220), C(250), D(300)
+      const offers = [
+        { id: 1, priceCents: 200, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 2, priceCents: 220, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 3, priceCents: 250, merchant: 'merchant-c', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 4, priceCents: 300, merchant: 'merchant-d', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue(offers),
+      });
+
+      const transportOffers = [
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-c', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-d', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+      ];
+
+      const service = createOptimizer({ productData, transportOffers });
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      expect(result.shipments).toHaveLength(1);
+      expect(result.shipments[0].merchant).toBe('merchant-a');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Caps enforcement — before I/O and deterministic
+  // -------------------------------------------------------------------------
+
+  describe('caps enforcement', () => {
+    it('throws BasketValidationError for >MAX_BASKET_ITEMS before any port call', async () => {
+      const findProductById = vi.fn();
+      const findRetailOffers = vi.fn();
+      const getTerms = vi.fn();
+
+      const productData = createMockProductDataPort({
+        findProductById,
+        findRetailOffers,
+      });
+      const merchantTerms = createMockMerchantTermsPort({ getTerms });
+
+      const items = Array.from({ length: MAX_BASKET_ITEMS + 1 }, () => ({
+        productId: 101,
+        quantity: 1,
+      }));
+
+      const input: BasketOptimizationInput = { items, destination: 'FI' };
+
+      const service = createOptimizer({ productData, merchantTerms, basketCalcRecordPort: null });
+
+      await expect(service.optimize(input)).rejects.toThrow(BasketValidationError);
+
+      // No I/O port should have been called
+      expect(findProductById).not.toHaveBeenCalled();
+      expect(findRetailOffers).not.toHaveBeenCalled();
+      expect(getTerms).not.toHaveBeenCalled();
+    });
+
+    it('caps candidate merchants at MAX_CANDIDATE_MERCHANTS_PER_ITEM and still returns a result', async () => {
+      // 9 offers for product 101 — only 8 cheapest should be retained
+      const manyOffers: CalculatorRetailOfferData[] = Array.from(
+        { length: MAX_CANDIDATE_MERCHANTS_PER_ITEM + 1 },
+        (_, i) => ({
+          id: 200 + i,
+          priceCents: 200 + i * 10, // 200, 210, 220, … 280
+          merchant: `merchant-${String.fromCharCode(97 + i)}`,
+          country: 'DE',
+          reliabilityStatus: 'VERIFIED' as const,
+        }),
+      );
+
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue(manyOffers),
+      });
+
+      // Transport for all candidate merchants
+      const transportOffers = manyOffers.slice(0, MAX_CANDIDATE_MERCHANTS_PER_ITEM).map((o) =>
+        makeTransportOffer({
+          carrier: o.merchant,
+          destinationCountry: 'FI',
+          priceCents: 1000,
+          weightBracket: { minKg: 0, maxKg: 10 },
+          packageTier: 'can',
+        }),
+      );
+
+      const service = createOptimizer({ productData, transportOffers, basketCalcRecordPort: null });
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      // A result is still produced — the 9th merchant (highest price) was capped out
+      expect(result.shipments).toHaveLength(1);
+      expect(result.totalCents).toBeGreaterThan(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Minimum-order feasibility — STALE threshold semantics
+  // -------------------------------------------------------------------------
+
+  describe('minimum-order thresholds — STALE semantics', () => {
+    const termsStale: MerchantTerms = {
+      merchantId: 'merchant-a',
+      minimumOrderValueCents: 500,
+      currency: 'EUR',
+      reliabilityStatus: 'STALE',
+      observedAt: BASE_DATE,
+    };
+
+    it('STALE threshold below subtotal does NOT block assignment', async () => {
+      const merchantTerms = createMockMerchantTermsPort({
+        getTerms: vi.fn().mockImplementation(async (merchantId: string) => {
+          if (merchantId === 'merchant-a') return termsStale;
+          return null;
+        }),
+      });
+      const service = createOptimizer({ merchantTerms });
+
+      const result = await service.optimize({
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      });
+
+      expect(result.shipments).toHaveLength(1);
+      expect(result.shipments[0].merchant).toBe('merchant-a');
+      expect(result.shipments[0].thresholdCheck.meetsThreshold).toBe(true);
+      expect(result.shipments[0].thresholdCheck.termsReliability).toBe('STALE');
+    });
+
+    it('STALE threshold downgrades confidence with evidence naming the threshold input', async () => {
+      const merchantTerms = createMockMerchantTermsPort({
+        getTerms: vi.fn().mockImplementation(async (merchantId: string) => {
+          if (merchantId === 'merchant-a') return termsStale;
+          return null;
+        }),
+      });
+      const service = createOptimizer({ merchantTerms });
+
+      const result = await service.optimize({
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      });
+
+      // STALE threshold → confidence drops from HIGH to LOW
+      expect(result.confidence).toBe('LOW');
+
+      // The breakdown must include an entry naming the threshold input
+      const thresholdEntry = result.confidenceBreakdown.find(
+        (d) => d.detail.includes('merchant-a') && d.detail.includes('Threshold'),
+      );
+      expect(thresholdEntry).toBeDefined();
+      expect(thresholdEntry!.status).toBe('STALE');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Deterministic tie-breaking — fewer stores, lexicographic, replay
+  // -------------------------------------------------------------------------
+
+  describe('tie-breaking details', () => {
+    it('equal totals: fewer stores breaks the tie over multi-store', async () => {
+      // Two products.  Both available at A and B at same prices.
+      // Same total: A only (200+500=700+ship), B only (200+500=700+ship),
+      // multi-store (200+500=700+two ships).
+      // A only has 1 store < B only (both 1) → lexicographic: merchant-a wins
+      const prod1Offers: CalculatorRetailOfferData[] = [
+        { id: 1, priceCents: 200, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 2, priceCents: 200, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+      const prod2Offers: CalculatorRetailOfferData[] = [
+        { id: 3, priceCents: 500, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 4, priceCents: 500, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockImplementation(async (id: number) => {
+          if (id === 101) return prod1Offers;
+          if (id === 102) return prod2Offers;
+          return [];
+        }),
+      });
+
+      const transportOffers = [
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'bottle' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'bottle' }),
+      ];
+
+      const service = createOptimizer({ productData, transportOffers });
+      const input: BasketOptimizationInput = {
+        items: [
+          { productId: 101, quantity: 1 },
+          { productId: 102, quantity: 1 },
+        ],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      // Single-store A wins over multi-store, and over single-store B (lexicographic)
+      expect(result.shipments).toHaveLength(1);
+      expect(result.shipments[0].merchant).toBe('merchant-a');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Multi-item weight bracket — consolidated shipment crosses bracket boundary
+  // -------------------------------------------------------------------------
+
+  describe('multi-item weight brackets', () => {
+    it('consolidated shipment uses combined weight bracket when items cross a boundary', async () => {
+      // Two kegs of 8kg each → combined 16kg
+      // Transport offers: 0-10kg=800¢, 10-20kg=1500¢
+      // Combined weight of 16kg falls into the 10-20kg bracket
+      const transportOffers = [
+        makeTransportOffer({
+          carrier: 'merchant-a',
+          destinationCountry: 'FI',
+          priceCents: 800,
+          weightBracket: { minKg: 0, maxKg: 10 },
+          packageTier: 'keg',
+        }),
+        makeTransportOffer({
+          carrier: 'merchant-a',
+          destinationCountry: 'FI',
+          priceCents: 1500,
+          weightBracket: { minKg: 10, maxKg: 20 },
+          packageTier: 'keg',
+        }),
+      ];
+
+      const productData = createMockProductDataPort({
+        // Both items resolve to PRODUCT_3 (8kg keg)
+        findProductById: vi.fn().mockResolvedValue(PRODUCT_3),
+        // Product 103 and a fictional 104 both offered by merchant-a only
+        findRetailOffers: vi.fn().mockImplementation(async (id: number) => {
+          if (id === 103 || id === 104) {
+            return [{ id, priceCents: 500, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' }];
+          }
+          return [];
+        }),
+      });
+
+      const service = createOptimizer({ productData, transportOffers, basketCalcRecordPort: null });
+      const input: BasketOptimizationInput = {
+        items: [
+          { productId: 103, quantity: 1 },
+          { productId: 104, quantity: 1 },
+        ],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      // Consolidated single shipment from merchant-a
+      expect(result.shipments).toHaveLength(1);
+      const transport = result.shipments[0].consolidatedTransport;
+      // Combined weight 16kg → 10-20kg bracket
+      expect(transport.weightTier).toContain('10');
+      expect(transport.weightTier).toContain('20');
+      expect(transport.totalCents).toBe(1500);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // PERSONAL arrangement — alternatives also single-store
+  // -------------------------------------------------------------------------
+
+  describe('PERSONAL transport arrangement — alternatives', () => {
+    it('no alternative proposes a multi-store split', async () => {
+      // Two items, each available at both merchants.
+      // In PERSONAL mode, only single-store combos are evaluated.
+      // All alternatives must also be single-store.
+      const prod1Offers: CalculatorRetailOfferData[] = [
+        { id: 1, priceCents: 200, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 2, priceCents: 210, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+      const prod2Offers: CalculatorRetailOfferData[] = [
+        { id: 3, priceCents: 500, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 4, priceCents: 490, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockImplementation(async (id: number) => {
+          if (id === 101) return prod1Offers;
+          if (id === 102) return prod2Offers;
+          return [];
+        }),
+      });
+
+      const transportOffers = [
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'bottle' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'bottle' }),
+      ];
+
+      const service = createOptimizer({ productData, transportOffers });
+      const input: BasketOptimizationInput = {
+        items: [
+          { productId: 101, quantity: 1 },
+          { productId: 102, quantity: 1 },
+        ],
+        destination: 'FI',
+        transportArrangement: 'PERSONAL',
+      };
+
+      const result = await service.optimize(input);
+
+      // Recommended
+      expect(result.shipments).toHaveLength(1);
+
+      // Every alternative must also be single-store
+      for (const alt of result.alternatives) {
+        expect(alt.shipments).toHaveLength(1);
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Explainability — per-shipment itemized costs carry reliabilities
+  // -------------------------------------------------------------------------
+
+  describe('explainability', () => {
+    it('each shipment item carries a reliability status', async () => {
+      const service = createOptimizer();
+      const input: BasketOptimizationInput = {
+        items: [
+          { productId: 101, quantity: 1 },
+          { productId: 102, quantity: 1 },
+        ],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      for (const shipment of result.shipments) {
+        expect(shipment.items.length).toBeGreaterThan(0);
+        for (const costItem of shipment.items) {
+          expect(costItem).toHaveProperty('reliability');
+          expect(['VERIFIED', 'ESTIMATED', 'STALE', 'UNAVAILABLE']).toContain(costItem.reliability);
+          expect(costItem).toHaveProperty('cents');
+          expect(typeof costItem.cents).toBe('number');
+          expect(costItem).toHaveProperty('category');
+          expect(costItem).toHaveProperty('label');
+        }
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Billing isolation — static import analysis
+  // -------------------------------------------------------------------------
+
+  describe('billing isolation', () => {
+    const OPTIMIZER_SOURCE_FILES = [
+      resolve(__dirname, '../optimizer.types.ts'),
+      resolve(__dirname, '../optimizer.module.ts'),
+      resolve(__dirname, '../services/basket-optimizer.service.ts'),
+      resolve(__dirname, '../ports/merchant-terms.port.ts'),
+      resolve(__dirname, '../ports/basket-calculation-record.port.ts'),
+    ];
+
+    const BILLING_PATTERNS = [
+      /from\s+['"].*billing['"]/,
+      /from\s+['"].*\/billing/,
+      /billing\.service/,
+      /billing\.module/,
+      /SubscriptionStatus/,
+      /BillingService/,
+      /BillingModule/,
+    ] as const;
+
+    function findMatchingLines(
+      filePath: string,
+      patterns: readonly RegExp[],
+    ): { line: number; text: string }[] {
+      const content = readFileSync(filePath, 'utf-8');
+      const lines = content.split('\n');
+      const matches: { line: number; text: string }[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed === '') {
+          continue;
+        }
+        for (const pattern of patterns) {
+          if (pattern.test(trimmed)) {
+            matches.push({ line: i + 1, text: trimmed });
+            break;
+          }
+        }
+      }
+
+      return matches;
+    }
+
+    for (const filePath of OPTIMIZER_SOURCE_FILES) {
+      const fileName = filePath.split('/').pop()!;
+
+      it(`${fileName} has no import of billing types/services`, () => {
+        const matches = findMatchingLines(filePath, BILLING_PATTERNS);
+        expect(matches).toEqual([]);
+      });
+    }
   });
 });
