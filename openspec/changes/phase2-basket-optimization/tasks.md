@@ -21,7 +21,7 @@
 ## 3. Composition root and API
 
 - [x] 3.1 Register adapters in the `apps/backend` composition root — merchant-terms port adapter over the repository, optimizer module wiring <!-- agent: platform-engineer.build, depends_on: [2.1, 1.1, 1.2], touches: [apps/backend/src/**] -->
-- [ ] 3.2 Create `BasketOptimizerController` + module at `packages/application-api/src/basket/` — `POST /api/v1/basket/optimize`; DTO validation (item cap, quantity bounds, destination format); `RateLimitGuard`; `enable_basket_optimization` gate; version-aware idempotency keyed on the basket input; error mapping (404 unknown product, 422 no covering offers or classification-gated item, 400 over-cap or invalid input); register the basket-record persistence port adapter in the composition root (port defined in 2.4) <!-- agent: platform-engineer.build, depends_on: [2.4, 3.1, 5.1], touches: [packages/application-api/src/basket/**, apps/backend/src/**] -->
+- [x] 3.2 Create `BasketOptimizerController` + module at `packages/application-api/src/basket/` — `POST /api/v1/basket/optimize`; DTO validation (item cap, quantity bounds, destination format); `RateLimitGuard`; `enable_basket_optimization` gate; version-aware idempotency keyed on the basket input; error mapping (404 unknown product, 422 no covering offers or classification-gated item, 400 over-cap or invalid input); register the basket-record persistence port adapter in the composition root (port defined in 2.4) <!-- agent: platform-engineer.build, depends_on: [2.4, 3.1, 5.1], touches: [packages/application-api/src/basket/**, apps/backend/src/**] -->
 
 ## 4. Frontend
 
@@ -32,7 +32,7 @@
 ## 5. Feature flag and tests
 
 - [x] 5.1 Add the `enable_basket_optimization` feature flag to the existing `FeatureFlagService`/`LaunchGate` infrastructure — default off; gates the API route and the UI <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/feature-flags/**] -->
-- [ ] 5.2 Write optimizer unit tests — search correctness (cheapest selection incl. multi-store splits), caps enforcement, minimum-order feasibility (verified blocks, unverified downgrades), deterministic tie-breaking, multi-item weight-bracket handling, billing-type isolation (source-level, per the ranking isolation convention) <!-- agent: platform-engineer.build, depends_on: [2.4], touches: [packages/core-domain/src/optimizer/__tests__/**] -->
+- [x] 5.2 Write optimizer unit tests — search correctness (cheapest selection incl. multi-store splits), caps enforcement, minimum-order feasibility (verified blocks, unverified downgrades), deterministic tie-breaking, multi-item weight-bracket handling, billing-type isolation (source-level, per the ranking isolation convention) <!-- agent: platform-engineer.build, depends_on: [2.4], touches: [packages/core-domain/src/optimizer/__tests__/**] -->
 - [ ] 5.3 Write the calculator-consistency regression test at `tests/integration/` — single-item single-store optimizer result equals the calculator result for identical inputs and dataset versions, using real engine implementations and no mocks <!-- agent: platform-engineer.build, depends_on: [2.4, 2.3], touches: [tests/integration/**] -->
 - [ ] 5.4 Write API integration tests at `tests/integration/` — flag-off 403, validation errors (caps, quantities), idempotent replay, rate limiting on the optimize endpoint <!-- agent: platform-engineer.build, depends_on: [3.2], touches: [tests/integration/**] -->
 
