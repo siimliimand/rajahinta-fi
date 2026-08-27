@@ -5,6 +5,8 @@
  *   - Delegation to ExciseDeclarationService (happy path)
  *   - Error handling (CalculationRecordNotFoundError → 404, unknown errors → 500)
  *   - EntitlementGuard enforcement (feature check, tier denial)
+ *   - ADVANCED_FEATURES gating of the guidance field (flag on: passthrough,
+ *     flag off: field omitted entirely)
  *
  * Follows the project pattern — direct instantiation with manual mocks
  * (no @nestjs/testing).
@@ -26,6 +28,7 @@ import {
   EntitlementService,
 } from '@rajahinta/core-domain';
 import { DeclarationController } from '../declaration.controller';
+import { FeatureFlagService, FeatureFlag } from '../../feature-flags';
 import {
   EntitlementGuard,
   REQUIRE_FEATURE_KEY,
@@ -70,6 +73,50 @@ const MOCK_SUMMARY: DeclarationSummary = {
     language: 'en',
     version: '1.0.0',
   },
+  guidance: {
+    derivation: {
+      category: 'beer',
+      abvPercent: 4.7,
+      volumePerUnitLitres: 0.33,
+      quantity: 6,
+      totalVolumeLitres: 1.98,
+      appliedRates: [
+        {
+          kind: 'alcoholExcise',
+          amountCents: 1550,
+          ratePerUnit: 38.77,
+          rateUnit: 'cents per litre of beverage',
+          ruleVersionLabel: '2025.1',
+          formulaReference: 'PER_LITRE_OF_PRODUCT',
+          formulaExpression: '€0.3877/litre × 1.98 litres = €0.77',
+        },
+        {
+          kind: 'containerDuty',
+          amountCents: 0,
+          ratePerUnit: null,
+          rateUnit: null,
+          ruleVersionLabel: null,
+          formulaReference: null,
+          formulaExpression: null,
+        },
+      ],
+    },
+    deadline: {
+      required: false,
+      deadlineDays: null,
+      calculatedFrom: '2026-08-21T10:00:00.000Z',
+      dueDate: null,
+    },
+    checklist: ['Log in to MyTax', 'Open the alcohol excise declaration'],
+    caveats: [],
+    officialSources: [
+      {
+        title: 'Alcohol excise duty (vero.fi)',
+        url: 'https://www.vero.fi/yritykset-ja-yhteisot/verot-ja-maksut/valmisterverot/alkoholi/',
+        description: 'Official excise duty guidance from the Finnish Tax Administration',
+      },
+    ],
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -87,6 +134,17 @@ function createMockDeclarationService(): ExciseDeclarationService {
     noSubmissionGuarantee:
       'This module never submits data to any external service',
   } as unknown as ExciseDeclarationService;
+}
+
+function createMockFeatureFlagService(
+  advancedFeaturesEnabled: boolean,
+): FeatureFlagService {
+  return {
+    isEnabled: vi.fn(
+      (flag: FeatureFlag) => flag === FeatureFlag.ADVANCED_FEATURES && advancedFeaturesEnabled,
+    ),
+    isEnabledForEntity: vi.fn(() => false),
+  } as unknown as FeatureFlagService;
 }
 
 function createMockEntitlementService(): EntitlementService {
@@ -126,7 +184,12 @@ describe('DeclarationController — prepareDeclaration', () => {
 
   beforeEach(() => {
     mockService = createMockDeclarationService();
-    controller = new DeclarationController(mockService);
+    // Flag on by default — happy path expects the full summary including
+    // guidance; the flag-off behaviour is covered in its own block below.
+    controller = new DeclarationController(
+      mockService,
+      createMockFeatureFlagService(true),
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -143,6 +206,37 @@ describe('DeclarationController — prepareDeclaration', () => {
       await controller.prepareDeclaration(42);
       expect(mockService.prepareDeclaration).toHaveBeenCalledWith(42);
       expect(mockService.prepareDeclaration).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // ADVANCED_FEATURES gating of the guidance field (design D5)
+  // ---------------------------------------------------------------------------
+
+  describe('when ADVANCED_FEATURES is enabled', () => {
+    it('passes the guidance object through', async () => {
+      const result = await controller.prepareDeclaration(42);
+      expect(result.guidance).toEqual(MOCK_SUMMARY.guidance);
+    });
+  });
+
+  describe('when ADVANCED_FEATURES is disabled', () => {
+    it('omits the guidance field entirely (byte-compatible with pre-guidance responses)', async () => {
+      const flags = createMockFeatureFlagService(false);
+      const flagOffController = new DeclarationController(mockService, flags);
+      const result = await flagOffController.prepareDeclaration(42);
+
+      expect(Object.keys(result)).not.toContain('guidance');
+      expect(result.guidance).toBeUndefined();
+      const { guidance: _stripped, ...expected } = MOCK_SUMMARY;
+      expect(result).toEqual(expected);
+    });
+
+    it('consults the ADVANCED_FEATURES flag', async () => {
+      const flags = createMockFeatureFlagService(false);
+      const flagOffController = new DeclarationController(mockService, flags);
+      await flagOffController.prepareDeclaration(42);
+      expect(flags.isEnabled).toHaveBeenCalledWith(FeatureFlag.ADVANCED_FEATURES);
     });
   });
 
