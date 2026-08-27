@@ -1,6 +1,8 @@
 /**
  * BasketOptimizerService tests — enumeration logic, input validation,
- * classification gate, threshold semantics, tie-break determinism.
+ * classification gate, threshold semantics, tie-break determinism,
+ * confidence aggregation, PERSONAL restriction, disclaimer, dataset
+ * versions, and persistence.
  *
  * All I/O is stubbed via port interfaces; pure-logic sub-services
  * (ClassificationGateService, BasketShippingCalculator with stub
@@ -26,6 +28,7 @@ import {
 import type {
   BasketOptimizationInput,
 } from '../optimizer.types';
+import { DISCLAIMER_FI } from '../../index';
 import type {
   IProductDataPort,
   CalculatorProductData,
@@ -33,6 +36,7 @@ import type {
   ICalculationRecordPort,
 } from '../../calculator/calculator.types';
 import type { IMerchantTermsPort, MerchantTerms } from '../ports/merchant-terms.port';
+import type { IBasketCalculationRecordPort } from '../ports/basket-calculation-record.port';
 import type { ITransportOfferQuery } from '../../transport/transport-offer-query.interface';
 import type { TransportOffer } from '../../transport/transport-offer.type';
 
@@ -139,6 +143,12 @@ function createMockCalculationRecordPort(): ICalculationRecordPort {
   };
 }
 
+function createMockBasketCalcRecordPort(): IBasketCalculationRecordPort {
+  return {
+    create: vi.fn().mockResolvedValue({ id: 99 }),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Service factory
 // ---------------------------------------------------------------------------
@@ -147,7 +157,7 @@ function createOptimizer(options?: {
   productData?: IProductDataPort;
   merchantTerms?: IMerchantTermsPort;
   transportOffers?: TransportOffer[];
-  country?: string;
+  basketCalcRecordPort?: IBasketCalculationRecordPort | null;
 }): BasketOptimizerService {
   // Real pure-logic services
   const gate = new ClassificationGateService();
@@ -197,14 +207,26 @@ function createOptimizer(options?: {
 
   // Basket shipping with transport offers
   const transportOffers = options?.transportOffers ?? [
-    makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 } }),
-    makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1500, weightBracket: { minKg: 0, maxKg: 20 } }),
+    makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+    makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1500, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'can' }),
+    makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1600, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'bottle' }),
   ];
   const shippingCalc = new BasketShippingCalculator(new StubTransportQuery(transportOffers));
 
   const merchantTerms = options?.merchantTerms ?? createMockMerchantTermsPort();
+  const basketCalcRecordPort = options?.basketCalcRecordPort !== undefined
+    ? options.basketCalcRecordPort
+    : createMockBasketCalcRecordPort();
 
-  return new BasketOptimizerService(gate, calcService, shippingCalc, productData, merchantTerms);
+  return new BasketOptimizerService(
+    gate,
+    calcService,
+    shippingCalc,
+    productData,
+    merchantTerms,
+    basketCalcRecordPort,
+    confidence,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -387,8 +409,8 @@ describe('BasketOptimizerService', () => {
 
       // Both merchants have same shipping cost
       const transportOffers = [
-        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 } }),
-        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 } }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
       ];
 
       const service = createOptimizer({ productData, transportOffers });
@@ -513,6 +535,354 @@ describe('BasketOptimizerService', () => {
       expect(result.shipments[0].merchant).toBe('merchant-a');
       expect(result.shipments[0].thresholdCheck.meetsThreshold).toBe(true);
       expect(result.shipments[0].thresholdCheck.termsReliability).toBe('ESTIMATED');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Confidence aggregation — task 2.4
+  // -------------------------------------------------------------------------
+
+  describe('confidence aggregation', () => {
+    it('returns HIGH confidence when all inputs are VERIFIED', async () => {
+      const service = createOptimizer();
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      expect(result.confidence).toBe('HIGH');
+    });
+
+    it('confidence is MEDIUM when one input is ESTIMATED', async () => {
+      // Only merchant-a has product 1, with an ESTIMATED retail price
+      const offersEstimated = [
+        { id: 201, priceCents: 200, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'ESTIMATED' },
+      ];
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue(offersEstimated),
+      });
+      const service = createOptimizer({ productData });
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      expect(result.confidence).toBe('MEDIUM');
+      expect(result.confidenceBreakdown).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ status: 'ESTIMATED' }),
+        ]),
+      );
+    });
+
+    it('confidence is LOW when transport is PARTIAL (no offers)', async () => {
+      const service = createOptimizer({ transportOffers: [] });
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      expect(result.confidence).toBe('LOW');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Confidence downgrade on non-VERIFIED terms — task 2.4 requirement
+  // -------------------------------------------------------------------------
+
+  describe('confidence downgrade from non-VERIFIED terms', () => {
+    const termsEstimated: MerchantTerms = {
+      merchantId: 'merchant-a',
+      minimumOrderValueCents: 500,
+      currency: 'EUR',
+      reliabilityStatus: 'ESTIMATED',
+      observedAt: BASE_DATE,
+    };
+
+    it('downgrades confidence when the winning merchant has ESTIMATED terms', async () => {
+      const merchantTerms = createMockMerchantTermsPort({
+        getTerms: vi.fn().mockImplementation(async (merchantId: string) => {
+          if (merchantId === 'merchant-a') return termsEstimated;
+          return null;
+        }),
+      });
+      const service = createOptimizer({ merchantTerms });
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      // merchant-a is the cheapest and only option, but terms are ESTIMATED
+      expect(result.shipments[0].merchant).toBe('merchant-a');
+      // Confidence should be MEDIUM (retail is VERIFIED, but terms are ESTIMATED)
+      expect(result.confidence).toBe('MEDIUM');
+
+      // The breakdown should include the terms reliability
+      const termsEntry = result.confidenceBreakdown.find(
+        (d) => d.detail.includes('Threshold terms') || d.detail.includes('merchant-a'),
+      );
+      expect(termsEntry).toBeDefined();
+      expect(termsEntry!.status).toBe('ESTIMATED');
+    });
+
+    it('downgrades confidence when shipping transport is PARTIAL', async () => {
+      // Single merchant with no transport offers → transport is PARTIAL → LOW confidence
+      const service = createOptimizer({ transportOffers: [] });
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      expect(result.confidence).toBe('LOW');
+      const transportEntry = result.confidenceBreakdown.find(
+        (d) => d.detail.includes('Transport') || d.status === 'UNAVAILABLE',
+      );
+      expect(transportEntry).toBeDefined();
+    });
+
+    it('terms with VERIFIED status do NOT downgrade confidence', async () => {
+      const termsVerified: MerchantTerms = {
+        merchantId: 'merchant-a',
+        minimumOrderValueCents: 100,
+        currency: 'EUR',
+        reliabilityStatus: 'VERIFIED',
+        observedAt: BASE_DATE,
+      };
+      const merchantTerms = createMockMerchantTermsPort({
+        getTerms: vi.fn().mockImplementation(async (merchantId: string) => {
+          if (merchantId === 'merchant-a') return termsVerified;
+          return null;
+        }),
+      });
+      const service = createOptimizer({ merchantTerms });
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      // All inputs VERIFIED + terms VERIFIED → HIGH
+      expect(result.confidence).toBe('HIGH');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // PERSONAL transport arrangement — single-store only — task 2.4
+  // -------------------------------------------------------------------------
+
+  describe('PERSONAL transport arrangement', () => {
+    it('evaluates only single-store combinations', async () => {
+      const service = createOptimizer();
+      const input: BasketOptimizationInput = {
+        items: [
+          { productId: 101, quantity: 1 },
+          { productId: 102, quantity: 1 },
+        ],
+        destination: 'FI',
+        transportArrangement: 'PERSONAL',
+      };
+
+      const result = await service.optimize(input);
+
+      // Both items must come from the same store
+      expect(result.shipments).toHaveLength(1);
+      // The cheapest single-store option is merchant-b (offers both products)
+      expect(result.shipments[0].merchant).toBe('merchant-b');
+    });
+
+    it('rejects multi-store assignments even if cheaper', async () => {
+      // With PERSONAL, product1→A and product2→B (two stores) is not allowed
+      // Only merchant-b covers both items, so the result must be single-store B
+      const service = createOptimizer();
+      const input: BasketOptimizationInput = {
+        items: [
+          { productId: 101, quantity: 1 },
+          { productId: 102, quantity: 1 },
+        ],
+        destination: 'FI',
+        transportArrangement: 'PERSONAL',
+      };
+
+      const result = await service.optimize(input);
+
+      expect(result.shipments).toHaveLength(1);
+      expect(result.shipments[0].merchant).toBe('merchant-b');
+    });
+
+    it('defaults to SELLER_ARRANGED when transportArrangement is not set', async () => {
+      // Without PERSONAL, multi-store splits are allowed
+      const service = createOptimizer();
+      const input: BasketOptimizationInput = {
+        items: [
+          { productId: 101, quantity: 1 },
+          { productId: 102, quantity: 1 },
+        ],
+        destination: 'FI',
+        // No transportArrangement → SELLER_ARRANGED
+      };
+
+      const result = await service.optimize(input);
+
+      // Multi-store split may appear when it's cheaper
+      // (product1→A cheaper per unit, product2→B only option)
+      expect(result.shipments.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Disclaimer — task 2.4 requirement
+  // -------------------------------------------------------------------------
+
+  describe('disclaimer', () => {
+    it('is present and matches DISCLAIMER_FI in the main result', async () => {
+      const service = createOptimizer();
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      expect(result.disclaimer).toBeDefined();
+      expect(result.disclaimer.text).toBe(DISCLAIMER_FI.text);
+      expect(result.disclaimer.language).toBe('fi');
+      expect(result.disclaimer.version).toBe('1.0');
+    });
+
+    it('is present in each alternative', async () => {
+      const offersAllEqual: CalculatorRetailOfferData[] = [
+        { id: 1, priceCents: 200, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 2, priceCents: 200, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+      const productData = createMockProductDataPort({
+        findProductById: vi.fn().mockResolvedValue(PRODUCT_1),
+        findRetailOffers: vi.fn().mockResolvedValue(offersAllEqual),
+      });
+      const transportOffers = [
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+      ];
+      const service = createOptimizer({ productData, transportOffers });
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      expect(result.alternatives.length).toBeGreaterThan(0);
+      for (const alt of result.alternatives) {
+        expect(alt.disclaimer).toBeDefined();
+        expect(alt.disclaimer.text).toBe(DISCLAIMER_FI.text);
+        expect(alt.disclaimer.language).toBe('fi');
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // DatasetVersions collection — task 2.4 requirement
+  // -------------------------------------------------------------------------
+
+  describe('datasetVersions collection', () => {
+    it('collects dataset versions from computed item costs', async () => {
+      const service = createOptimizer();
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      // All tax engines return taxDatasetVersion: 'v1'
+      expect(result.metadata.datasetVersions.length).toBeGreaterThan(0);
+      expect(result.metadata.datasetVersions).toContain('v1');
+    });
+
+    it('de-duplicates identical versions across multiple items', async () => {
+      const service = createOptimizer();
+      const input: BasketOptimizationInput = {
+        items: [
+          { productId: 101, quantity: 1 },
+          { productId: 102, quantity: 1 },
+        ],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      // Both items use the same v1 — should be deduplicated
+      const v1Count = result.metadata.datasetVersions.filter((v) => v === 'v1').length;
+      expect(v1Count).toBe(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Persistence call — task 2.4 requirement
+  // -------------------------------------------------------------------------
+
+  describe('persistence', () => {
+    it('calls the persistence port when configured and returns record id', async () => {
+      const mockPort = createMockBasketCalcRecordPort();
+      const service = createOptimizer({ basketCalcRecordPort: mockPort });
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      expect(mockPort.create).toHaveBeenCalledOnce();
+      expect(mockPort.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: null,
+          destination: 'FI',
+          totalCents: result.totalCents,
+          inputBasket: [{ productId: 101, quantity: 1 }],
+        }),
+      );
+      expect(result.metadata.calculationRecordId).toBe(99);
+    });
+
+    it('does not call persistence port when null (not configured)', async () => {
+      const service = createOptimizer({ basketCalcRecordPort: null });
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      // Should not crash and return null record id
+      expect(result.metadata.calculationRecordId).toBeNull();
+    });
+
+    it('passes sessionId to the persistence port when provided', async () => {
+      const mockPort = createMockBasketCalcRecordPort();
+      const service = createOptimizer({ basketCalcRecordPort: mockPort });
+      const input: BasketOptimizationInput = {
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+        sessionId: 'test-session-1',
+      };
+
+      await service.optimize(input);
+
+      expect(mockPort.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'test-session-1',
+        }),
+      );
     });
   });
 

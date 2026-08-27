@@ -35,6 +35,8 @@ export type {
 // Ports
 export type { IMerchantTermsPort, MerchantTerms } from './ports/merchant-terms.port';
 export { MERCHANT_TERMS_PORT } from './ports/merchant-terms.port';
+export type { IBasketCalculationRecordPort, CreateBasketCalculationRecordInput } from './ports/basket-calculation-record.port';
+export { BASKET_CALCULATION_RECORD_PORT } from './ports/basket-calculation-record.port';
 
 // Services
 export { BasketOptimizerService } from './services/basket-optimizer.service';

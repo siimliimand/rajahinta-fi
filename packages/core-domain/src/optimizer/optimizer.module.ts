@@ -20,22 +20,27 @@ import { Module } from '@nestjs/common';
 import { NormalizationModule } from '../normalization/normalization.module';
 import { CalculatorModule } from '../calculator/calculator.module';
 import { TransportEstimationModule } from '../transport/transport-estimation.module';
+import { ReliabilityModule } from '../reliability/reliability.module';
 import { BasketOptimizerService } from './services/basket-optimizer.service';
 import { MERCHANT_TERMS_PORT } from './ports/merchant-terms.port';
+import { BASKET_CALCULATION_RECORD_PORT } from './ports/basket-calculation-record.port';
 
 @Module({
   imports: [
     NormalizationModule,
     CalculatorModule,
     TransportEstimationModule,
+    ReliabilityModule,
   ],
   providers: [
     BasketOptimizerService,
     { provide: MERCHANT_TERMS_PORT, useValue: null },
+    { provide: BASKET_CALCULATION_RECORD_PORT, useValue: null },
   ],
   exports: [
     BasketOptimizerService,
     MERCHANT_TERMS_PORT,
+    BASKET_CALCULATION_RECORD_PORT,
   ],
 })
 export class OptimizerModule {}

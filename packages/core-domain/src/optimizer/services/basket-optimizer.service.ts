@@ -14,16 +14,21 @@
  *   exclude a store assignment.  Non-VERIFIED data (ESTIMATED, STALE,
  *   UNAVAILABLE) keeps the store eligible and passes the reliability to
  *   the thresholdCheck for downstream confidence aggregation (task 2.4).
+ * - PERSONAL transport arrangement: only single-store combinations are
+ *   evaluated (multi-store splits skipped).
  *
  * @module BasketOptimizerService
  */
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ClassificationGateService } from '../../normalization/classification-gate.service';
 import { LandedCostCalculatorService } from '../../calculator/landed-cost-calculator.service';
 import { BasketShippingCalculator } from '../../transport/basket-shipping-calculator.service';
+import { ConfidenceFrameworkService } from '../../reliability/confidence-framework.service';
+import { DISCLAIMER_FI } from '../../index';
 import { PRODUCT_DATA_PORT } from '../../calculator/calculator.types';
 import { MERCHANT_TERMS_PORT } from '../ports/merchant-terms.port';
+import { BASKET_CALCULATION_RECORD_PORT } from '../ports/basket-calculation-record.port';
 import {
   MAX_BASKET_ITEMS,
   MAX_CANDIDATE_MERCHANTS_PER_ITEM,
@@ -49,7 +54,9 @@ import type {
   CalculatorInput,
 } from '../../calculator/calculator.types';
 import type { IMerchantTermsPort, MerchantTerms } from '../ports/merchant-terms.port';
+import type { IBasketCalculationRecordPort } from '../ports/basket-calculation-record.port';
 import type { BasketItem } from '../../transport/basket-shipping.types';
+import type { ReliabilityStatus } from '../../reliability/reliability.types';
 
 // ---------------------------------------------------------------------------
 // Internal types — alive only during a single optimize() call
@@ -87,6 +94,17 @@ function shippingKey(merchant: string, itemIndices: readonly number[]): string {
   return `${merchant}|${[...itemIndices].sort((a, b) => a - b).join(',')}`;
 }
 
+/**
+ * Reliability ordering from best to worst.
+ * Used by {@link isStricter} to determine the worst status across a set.
+ */
+const RELIABILITY_ORDER: readonly ReliabilityStatus[] = [
+  'VERIFIED',
+  'ESTIMATED',
+  'STALE',
+  'UNAVAILABLE',
+];
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -103,6 +121,12 @@ export class BasketOptimizerService {
 
     @Inject(MERCHANT_TERMS_PORT)
     private readonly merchantTerms: IMerchantTermsPort,
+
+    @Optional()
+    @Inject(BASKET_CALCULATION_RECORD_PORT)
+    private readonly calculationRecordPort: IBasketCalculationRecordPort | null,
+
+    private readonly confidenceFramework: ConfidenceFrameworkService,
   ) {}
 
   /**
@@ -145,8 +169,6 @@ export class BasketOptimizerService {
 
     // 2e. Prefetch consolidated shipping for all possible store groups
     const shippingMemo = new Map<string, ConsolidatedTransport>();
-    // Build all possible (merchant, itemIndices) pairs by examining the
-    // power-set of items each merchant can serve.
     for (const merchant of allMerchants) {
       const coverableIndices: number[] = [];
       for (let i = 0; i < candidatesPerItem.length; i++) {
@@ -156,7 +178,6 @@ export class BasketOptimizerService {
       }
       if (coverableIndices.length === 0) continue;
 
-      // Generate all non-empty subsets of coverableIndices via bitmask
       const n = coverableIndices.length;
       for (let mask = 1; mask < 1 << n; mask++) {
         const indices: number[] = [];
@@ -188,7 +209,7 @@ export class BasketOptimizerService {
     // =======================================================================
 
     const assignments: AssignmentResult[] = [];
-    const currentAssignment: number[] = []; // for each item, selected candidate index
+    const currentAssignment: number[] = [];
 
     this.dfsEnumerate(
       0,
@@ -200,6 +221,7 @@ export class BasketOptimizerService {
       shippingMemo,
       currentAssignment,
       assignments,
+      transportArrangement ?? 'SELLER_ARRANGED',
     );
 
     // =======================================================================
@@ -207,11 +229,6 @@ export class BasketOptimizerService {
     // =======================================================================
 
     if (assignments.length === 0) {
-      // No feasible assignments — the specification requires at least the
-      // recommended result, but every item has at least one candidate merchant
-      // and non-VERIFIED thresholds never exclude, so this path should not
-      // be reachable under normal circumstances.
-      // (The callers will make this a 404 analogue in the API layer.)
       throw new BasketValidationError(
         'No feasible merchant assignment found for the basket',
         'NO_FEASIBLE_ASSIGNMENT',
@@ -225,17 +242,67 @@ export class BasketOptimizerService {
     // =======================================================================
 
     const best = assignments[0];
-    const alternatives = assignments.slice(1, 4).map((a) =>
-      this.toAlternate(a, input),
+
+    // 5a. Aggregate confidence across ALL inputs across all shipments
+    const allConfidenceInputs = this.collectConfidenceInputs(
+      best, termsMap, candidatesPerItem, itemCostMap,
     );
+    const confidenceReport = this.confidenceFramework.buildReport(allConfidenceInputs);
+
+    // 5b. Collect dataset versions from all item-cost records used
+    const allVersions = this.collectDatasetVersions(best, candidatesPerItem, itemCostMap);
+    const datasetVersions = [...new Set(allVersions)].sort();
+
+    // 5c. Build alternatives (same disclaimer, per-alternative confidence)
+    const alternatives: BasketOptimizationAlternate[] = assignments.slice(1, 4).map((a) => {
+      const altInputs = this.collectConfidenceInputs(a, termsMap, candidatesPerItem, itemCostMap);
+      const altReport = this.confidenceFramework.buildReport(altInputs);
+      return {
+        shipments: a.shipments,
+        totalCents: a.totalCents,
+        itemizedTotals: a.itemizedTotals,
+        confidence: altReport.overall,
+        confidenceBreakdown: altReport.breakdown,
+        disclaimer: DISCLAIMER_FI,
+        metadata: {
+          input: {
+            items: [...input.items],
+            destination: input.destination,
+            transportArrangement: input.transportArrangement,
+            transportMethod: input.transportMethod,
+            sessionId: input.sessionId,
+          },
+          calculationTimestamp: new Date().toISOString(),
+          datasetVersions: [],
+          calculationRecordId: null,
+        },
+      };
+    });
+
+    // 5d. Persist the recommended combination
+    const confidence = confidenceReport.overall;
+    let calculationRecordId: number | null = null;
+    if (this.calculationRecordPort) {
+      const persisted = await this.calculationRecordPort.create({
+        sessionId: sessionId ?? null,
+        destination,
+        transportArrangement: transportArrangement ?? 'SELLER_ARRANGED',
+        inputBasket: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+        shipmentBreakdown: best.shipments,
+        totalCents: best.totalCents,
+        confidence,
+        disclaimer: DISCLAIMER_FI.text,
+      });
+      calculationRecordId = persisted.id;
+    }
 
     return {
       shipments: best.shipments,
       totalCents: best.totalCents,
       itemizedTotals: best.itemizedTotals,
-      confidence: 'MEDIUM' as const,   // placeholder — task 2.4 aggregates properly
-      confidenceBreakdown: [],          // placeholder — task 2.4
-      disclaimer: { text: '', language: 'fi' as const, version: '1.0' }, // placeholder — task 2.4
+      confidence: confidenceReport.overall,
+      confidenceBreakdown: confidenceReport.breakdown,
+      disclaimer: DISCLAIMER_FI,
       alternatives,
       metadata: {
         input: {
@@ -246,7 +313,8 @@ export class BasketOptimizerService {
           sessionId,
         },
         calculationTimestamp: new Date().toISOString(),
-        datasetVersions: [], // placeholder — aggregated from itemCostMap entries
+        datasetVersions,
+        calculationRecordId,
       },
     };
   }
@@ -276,11 +344,6 @@ export class BasketOptimizerService {
   // Private: prefetch helpers
   // ---------------------------------------------------------------------------
 
-  /**
-   * Resolve each distinct productId: look up product data, apply the
-   * classification gate, fetch retail offers.  Collection-izes the
-   * single-product-data-port semantics.
-   */
   private async resolveItems(
     items: readonly BasketInputItem[],
   ): Promise<ResolvedItem[]> {
@@ -294,7 +357,6 @@ export class BasketOptimizerService {
         );
       }
 
-      // Apply the classification gate — identical to what the calculator would do
       const gateResult = this.classificationGate.checkProductGate({
         regulatoryClassification: product.regulatoryClassification,
       });
@@ -318,11 +380,6 @@ export class BasketOptimizerService {
     return resolved;
   }
 
-  /**
-   * Build the candidate-merchant list for each item.
-   * Deterministic order: lowest unit price first, then merchant id lexicographic.
-   * Capped at MAX_CANDIDATE_MERCHANTS_PER_ITEM.
-   */
   private buildCandidates(
     resolved: readonly ResolvedItem[],
   ): ItemCandidate[][] {
@@ -331,7 +388,6 @@ export class BasketOptimizerService {
         merchant: o.merchant,
         offer: o,
       }));
-      // Sort: lowest priceCents asc, merchant asc
       candidates.sort((a, b) => {
         if (a.offer.priceCents !== b.offer.priceCents) {
           return a.offer.priceCents - b.offer.priceCents;
@@ -342,7 +398,6 @@ export class BasketOptimizerService {
     });
   }
 
-  /** Collect the set of all candidate merchants across all items. */
   private collectMerchants(
     candidates: readonly ItemCandidate[][],
   ): string[] {
@@ -353,7 +408,6 @@ export class BasketOptimizerService {
     return [...set].sort();
   }
 
-  /** Fetch merchant terms for every candidate merchant. */
   private async fetchTerms(
     merchants: readonly string[],
   ): Promise<Map<string, MerchantTerms | null>> {
@@ -364,10 +418,6 @@ export class BasketOptimizerService {
     return map;
   }
 
-  /**
-   * Compute per-(item, merchant) costs by calling computeItemCosts with
-   * transportCtx = null (transport is handled per-store-group consolidation).
-   */
   private async computeItemCosts(
     items: readonly BasketInputItem[],
     resolvedItems: readonly ResolvedItem[],
@@ -384,7 +434,7 @@ export class BasketOptimizerService {
       const resolved = resolvedItems[itemIdx];
       for (const candidate of candidatesPerItem[itemIdx]) {
         const key = `${item.productId}|${candidate.merchant}`;
-        if (map.has(key)) continue; // deduplicate — same (product, merchant)
+        if (map.has(key)) continue;
 
         const calcInput: CalculatorInput = {
           productId: item.productId,
@@ -402,10 +452,6 @@ export class BasketOptimizerService {
           null as unknown as ComputeItemCostsTransportContext,
         );
 
-        // The itemizedCosts from computeItemCosts excludes transport
-        // (per its contract).  The optimizer reuses the same list as
-        // the optimizer's BasketShipment.items; transport is added
-        // separately at the store-group level.
         map.set(key, { computed, itemizedCosts: computed.itemizedCosts });
       }
     }
@@ -416,11 +462,6 @@ export class BasketOptimizerService {
   // Private: enumeration (DFS)
   // ---------------------------------------------------------------------------
 
-  /**
-   * Depth-first enumeration over item→candidate-merchant assignments.
-   *
-   * Pure synchronous — no I/O.  All precomputed maps are passed in.
-   */
   private dfsEnumerate(
     itemIdx: number,
     items: readonly BasketInputItem[],
@@ -431,9 +472,9 @@ export class BasketOptimizerService {
     shippingMemo: ReadonlyMap<string, ConsolidatedTransport>,
     currentAssignment: number[],
     assignments: AssignmentResult[],
+    transportArrangement: string,
   ): void {
     if (itemIdx === items.length) {
-      // Complete assignment — build store groups and evaluate
       const assignment = this.evaluateAssignment(
         items,
         resolvedItems,
@@ -442,6 +483,7 @@ export class BasketOptimizerService {
         itemCostMap,
         shippingMemo,
         currentAssignment,
+        transportArrangement,
       );
       if (assignment !== null) {
         assignments.push(assignment);
@@ -461,20 +503,12 @@ export class BasketOptimizerService {
         shippingMemo,
         currentAssignment,
         assignments,
+        transportArrangement,
       );
       currentAssignment.pop();
     }
   }
 
-  /**
-   * Evaluate one complete item→merchant assignment.
-   *
-   * Groups items by merchant, checks minimum-order thresholds (only VERIFIED
-   * may block), looks up consolidated shipping, and computes totals.
-   *
-   * Returns null when a VERIFIED threshold is not met (the assignment is
-   * infeasible for that merchant).
-   */
   private evaluateAssignment(
     items: readonly BasketInputItem[],
     _resolvedItems: readonly ResolvedItem[],
@@ -483,8 +517,8 @@ export class BasketOptimizerService {
     itemCostMap: ReadonlyMap<string, ItemCostRecord>,
     shippingMemo: ReadonlyMap<string, ConsolidatedTransport>,
     assignment: readonly number[],
+    transportArrangement: string,
   ): AssignmentResult | null {
-    // --- Group items by merchant ---
     const merchantToIndices = new Map<string, number[]>();
     for (let i = 0; i < assignment.length; i++) {
       const merchant = candidatesPerItem[i][assignment[i]].merchant;
@@ -496,18 +530,20 @@ export class BasketOptimizerService {
       indices.push(i);
     }
 
-    // --- Build each store group ---
+    // PERSONAL: only single-store combinations
+    if (transportArrangement === 'PERSONAL' && merchantToIndices.size > 1) {
+      return null;
+    }
+
     const shipments: BasketShipment[] = [];
     let grandTotal = 0;
     let itemizedTotals = 0;
 
     for (const [merchant, indices] of merchantToIndices) {
-      // Sort indices for deterministic behaviour
       indices.sort((a, b) => a - b);
 
       const country = candidatesPerItem[indices[0]][assignment[indices[0]]].offer.country;
 
-      // Gather item costs for this merchant
       const storeItems: ItemCostRecord[] = [];
       let retailSubtotalCents = 0;
 
@@ -520,19 +556,15 @@ export class BasketOptimizerService {
         retailSubtotalCents += record.computed.retailTotal;
       }
 
-      // --- Minimum-order threshold check ---
       const terms = termsMap.get(merchant) ?? null;
       const thresholdCheck = this.checkThreshold(terms, retailSubtotalCents);
-      // Only VERIFIED thresholds can block
       if (!thresholdCheck.meetsThreshold) {
         return null;
       }
 
-      // --- Consolidated shipping lookup ---
       const shipKey = shippingKey(merchant, indices);
       const transport = shippingMemo.get(shipKey)!;
 
-      // --- Build shipment ---
       const shipmentItems: ItemizedCost[] = storeItems.flatMap((r) => [...r.itemizedCosts]);
 
       const shipment: BasketShipment = {
@@ -545,7 +577,6 @@ export class BasketOptimizerService {
       };
       shipments.push(shipment);
 
-      // Accumulate totals
       const shipmentTotal = retailSubtotalCents + transport.totalCents +
         storeItems.reduce((s, r) => s + r.computed.exciseTotal + r.computed.containerDutyTotal, 0);
       grandTotal += shipmentTotal;
@@ -553,22 +584,10 @@ export class BasketOptimizerService {
         storeItems.reduce((s, r) => s + r.computed.exciseTotal + r.computed.containerDutyTotal, 0);
     }
 
-    // Deterministic tie-breaking key: merchant names sorted, joined
     const storeKeys = [...merchantToIndices.keys()].sort().join('|');
-
     return { shipments, totalCents: grandTotal, itemizedTotals, storeKeys };
   }
 
-  /**
-   * Check minimum-order threshold per Decision 3 semantics.
-   *
-   * - Missing terms row → no threshold (eligible, no confidence effect).
-   * - Non-VERIFIED (ESTIMATED/STALE/UNAVAILABLE) → eligible even if
-   *   subtotal is below the value; the thresholdCheck carries the
-   *   reliability for downstream confidence aggregation.
-   * - VERIFIED and subtotal >= threshold → eligible.
-   * - VERIFIED and subtotal < threshold → blocked (returns meetsThreshold: false).
-   */
   private checkThreshold(
     terms: MerchantTerms | null,
     retailSubtotalCents: number,
@@ -584,7 +603,6 @@ export class BasketOptimizerService {
     const meets = retailSubtotalCents >= terms.minimumOrderValueCents;
 
     if (terms.reliabilityStatus === 'VERIFIED' && !meets) {
-      // Verified threshold not met — this store is infeasible
       return {
         minimumOrderValueCents: terms.minimumOrderValueCents,
         meetsThreshold: false,
@@ -592,7 +610,6 @@ export class BasketOptimizerService {
       };
     }
 
-    // Non-VERIFIED or meets the threshold — eligible
     return {
       minimumOrderValueCents: terms.minimumOrderValueCents,
       meetsThreshold: true,
@@ -604,12 +621,6 @@ export class BasketOptimizerService {
   // Private: selection
   // ---------------------------------------------------------------------------
 
-  /**
-   * Sort assignments deterministically:
-   *   1. totalCents ascending
-   *   2. fewer stores (shipments.length) ascending
-   *   3. lexicographic merchant set (storeKeys)
-   */
   private sortAssignments(assignments: AssignmentResult[]): void {
     assignments.sort((a, b) => {
       if (a.totalCents !== b.totalCents) return a.totalCents - b.totalCents;
@@ -621,31 +632,144 @@ export class BasketOptimizerService {
   }
 
   // ---------------------------------------------------------------------------
-  // Private: result assembly
+  // Private: confidence aggregation
   // ---------------------------------------------------------------------------
 
-  private toAlternate(
+  /**
+   * Collect every reliability status from the winning assignment and terms
+   * data into an array that ConfidenceFrameworkService.buildReport can consume.
+   *
+   * Gathers across ALL shipments:
+   * - Per-item retail/excise/container-duty/classification statuses
+   *   (worst per category across all items)
+   * - Per-shipment transport reliability
+   * - Per-shipment threshold terms reliability (non-VERIFIED values
+   *   included for confidence downgrade)
+   */
+  private collectConfidenceInputs(
     assignment: AssignmentResult,
-    input: BasketOptimizationInput,
-  ): BasketOptimizationAlternate {
-    return {
-      shipments: assignment.shipments,
-      totalCents: assignment.totalCents,
-      itemizedTotals: assignment.itemizedTotals,
-      confidence: 'MEDIUM' as const,
-      confidenceBreakdown: [],
-      disclaimer: { text: '', language: 'fi' as const, version: '1.0' },
-      metadata: {
-        input: {
-          items: [...input.items],
-          destination: input.destination,
-          transportArrangement: input.transportArrangement,
-          transportMethod: input.transportMethod,
-          sessionId: input.sessionId,
-        },
-        calculationTimestamp: new Date().toISOString(),
-        datasetVersions: [],
-      },
+    _termsMap: ReadonlyMap<string, MerchantTerms | null>,
+    _candidatesPerItem: readonly ItemCandidate[][],
+    itemCostMap: ReadonlyMap<string, ItemCostRecord>,
+  ): Array<{ status: ReliabilityStatus; label: string }> {
+    const inputs: Array<{ status: ReliabilityStatus; label: string }> = [];
+
+    // Collect per-component reliability statuses from the precomputed
+    // item-cost records used by this assignment.
+    const worstPerCategory = new Map<string, ReliabilityStatus>();
+
+    // Transport reliability per shipment
+    for (const shipment of assignment.shipments) {
+      const transportRel = this.mapTransportReliability(shipment.consolidatedTransport.reliability);
+      const existingTrans = worstPerCategory.get('transport');
+      if (!existingTrans || this.isStricter(transportRel, existingTrans)) {
+        worstPerCategory.set('transport', transportRel);
+      }
+    }
+
+    // Per-component statuses from computed records
+    for (const [, record] of itemCostMap) {
+      const statusPairs: Array<{ cat: string; status: ReliabilityStatus }> = [
+        { cat: 'foreignRetailPrice', status: record.computed.retailStatus },
+        { cat: 'alcoholExciseEstimate', status: record.computed.exciseStatus },
+        { cat: 'containerDutyEstimate', status: record.computed.containerDutyStatus },
+      ];
+      for (const { cat, status } of statusPairs) {
+        const existing = worstPerCategory.get(cat);
+        if (!existing || this.isStricter(status, existing)) {
+          worstPerCategory.set(cat, status);
+        }
+      }
+
+      // Classification status
+      const existingClass = worstPerCategory.get('classification');
+      if (!existingClass || this.isStricter(record.computed.classificationStatus, existingClass)) {
+        worstPerCategory.set('classification', record.computed.classificationStatus);
+      }
+    }
+
+    // Map categories to human-readable labels
+    const categoryLabels: Record<string, string> = {
+      foreignRetailPrice: 'Price',
+      transport: 'Transport',
+      alcoholExciseEstimate: 'Excise',
+      containerDutyEstimate: 'Container duty',
+      classification: 'Classification',
     };
+
+    for (const [cat, status] of worstPerCategory) {
+      const label = categoryLabels[cat] ?? cat;
+      inputs.push({ status, label });
+    }
+
+    // Threshold terms reliability per shipment
+    const seenMerchants = new Set<string>();
+    for (const shipment of assignment.shipments) {
+      const tc = shipment.thresholdCheck;
+      if (tc.termsReliability === null) continue;
+      if (!seenMerchants.has(shipment.merchant)) {
+        seenMerchants.add(shipment.merchant);
+        inputs.push({
+          status: tc.termsReliability,
+          label: `Threshold terms (${shipment.merchant})`,
+        });
+      }
+    }
+
+    return inputs;
+  }
+
+  /**
+   * Whether `candidate` is stricter (worse) than `current`.
+   * Higher index in RELIABILITY_ORDER = stricter = worse.
+   */
+  private isStricter(candidate: ReliabilityStatus, current: ReliabilityStatus): boolean {
+    return RELIABILITY_ORDER.indexOf(candidate) > RELIABILITY_ORDER.indexOf(current);
+  }
+
+  /**
+   * Map ConsolidatedTransportReliability to the domain ReliabilityStatus.
+   */
+  private mapTransportReliability(
+    rel: 'EXACT' | 'ESTIMATED' | 'PARTIAL',
+  ): ReliabilityStatus {
+    switch (rel) {
+      case 'EXACT': return 'VERIFIED';
+      case 'ESTIMATED': return 'ESTIMATED';
+      case 'PARTIAL': return 'UNAVAILABLE';
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private: dataset versions
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Collect all dataset version strings from the ItemCostRecords referenced
+   * by the winning assignment.
+   *
+   * Collects from the entire itemCostMap (union of all computed results that
+   * could be used) — since the map is already deduplicated to one entry per
+   * (product, merchant) pair, this covers exactly the set of tax/duty rule
+   * versions that were involved.  Duplicates are removed via Set.
+   */
+  private collectDatasetVersions(
+    _assignment: AssignmentResult,
+    _candidatesPerItem: readonly ItemCandidate[][],
+    itemCostMap: ReadonlyMap<string, ItemCostRecord>,
+  ): string[] {
+    const versions: string[] = [];
+    const seen = new Set<string>();
+
+    for (const [, record] of itemCostMap) {
+      for (const v of record.computed.datasetVersions) {
+        if (!seen.has(v)) {
+          seen.add(v);
+          versions.push(v);
+        }
+      }
+    }
+
+    return versions;
   }
 }

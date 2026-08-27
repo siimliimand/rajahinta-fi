@@ -216,6 +216,14 @@ export interface BasketOptimizationMetadata {
 
   /** Dataset version identifiers that contributed to this result. */
   readonly datasetVersions: readonly string[];
+
+  /**
+   * ID of the persisted basket calculation record, or null when the
+   * persistence port is not configured.
+   *
+   * Used by the correction mechanism to reference a specific result.
+   */
+  readonly calculationRecordId: number | null;
 }
 
 /**
