@@ -1,5 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ITransportOfferQuery, TRANSPORT_OFFER_QUERY } from './transport-offer-query.interface';
+import { inBracket, selectBestBracketOffer } from './bracket-selection';
 import type { TransportOffer } from './transport-offer.type';
 import type {
   BasketItem,
@@ -33,14 +34,6 @@ function dominantPackageType(items: readonly BasketItem[]): string {
   return bestType;
 }
 
-/** Check whether `weightKg` falls within the bracket. */
-function inBracket(offer: TransportOffer, weightKg: number): boolean {
-  const { minKg, maxKg } = offer.weightBracket;
-  if (minKg !== null && weightKg < minKg) return false;
-  if (maxKg !== null && weightKg > maxKg) return false;
-  return true;
-}
-
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -62,15 +55,26 @@ export class BasketShippingCalculator {
   /**
    * Estimate shipping cost for a basket of items shipped together.
    *
-   * @param items         Items in the basket.
-   * @param destination   Destination country code (ISO 3166-1 alpha-2).
-   * @param transportMethod Optional carrier or method identifier. When
-   *                        omitted the service queries all active offers.
+   * When transportMethod is provided, candidates are filtered by carrier AND
+   * optional originCountry (matching TransportEstimationService.estimate()'s
+   * behaviour).  When both originCountry and transportMethod are omitted,
+   * all active offers for the destination + package tier are considered,
+   * which may select a different carrier than the merchant's — callers
+   * SHOULD always pass originCountry when the merchant's country is known.
+   *
+   * @param items            Items in the basket.
+   * @param destination      Destination country code (ISO 3166-1 alpha-2).
+   * @param transportMethod  Optional carrier or method identifier. When
+   *                         omitted the service queries all active offers.
+   * @param originCountry    Optional origin country code. When provided,
+   *                         candidates are filtered to offers from this
+   *                         origin, matching estimate()'s behaviour.
    */
   async calculateBasket(
     items: readonly BasketItem[],
     destination: string,
     transportMethod?: string,
+    originCountry?: string,
   ): Promise<BasketShippingResult> {
     const totalWeight = items.reduce((sum, i) => sum + i.weightKg, 0);
     const pkgTier = dominantPackageType(items);
@@ -82,7 +86,8 @@ export class BasketShippingCalculator {
     const candidates = offers.filter(
       (o) =>
         o.destinationCountry === destination &&
-        o.packageTier === pkgTier,
+        o.packageTier === pkgTier &&
+        (originCountry === undefined || o.originCountry === originCountry),
     );
 
     if (candidates.length === 0) {
@@ -102,18 +107,33 @@ export class BasketShippingCalculator {
       };
     }
 
-    // Try exact weight match; fall back to cheapest available bracket
-    const exact = candidates.find((o) => inBracket(o, totalWeight));
-    const best = exact ?? candidates.reduce((a, b) =>
-      a.priceCents < b.priceCents ? a : b,
-    );
+    // -----------------------------------------------------------------------
+    // Unified single-line selection (Decision 4): same bracket-matching that
+    // TransportEstimationService.estimate uses, so a single-product-line
+    // shipment resolves identically.
+    // -----------------------------------------------------------------------
 
-    const reliability: 'EXACT' | 'ESTIMATED' | 'PARTIAL' =
-      exact
+    let best: TransportOffer;
+    let reliability: 'EXACT' | 'ESTIMATED' | 'PARTIAL';
+
+    if (items.length === 1) {
+      // Single-line → unified bracket selection (exact-match-first,
+      // closest-midpoint fallback), identical to estimate()'s logic.
+      const selection = selectBestBracketOffer(candidates, totalWeight)!;
+      best = selection.offer;
+      reliability = selection.reliability;
+    } else {
+      // Multi-line → exact bracket match, cheapest fallback
+      const exact = candidates.find((o) => inBracket(o, totalWeight));
+      best = exact ?? candidates.reduce((a, b) =>
+        a.priceCents < b.priceCents ? a : b,
+      );
+      reliability = exact
         ? 'EXACT'
         : totalWeight > 0
           ? 'ESTIMATED'
           : 'PARTIAL';
+    }
 
     const weightTier = best.weightBracket.minKg !== null || best.weightBracket.maxKg !== null
       ? `${best.weightBracket.minKg ?? 0}–${best.weightBracket.maxKg ?? '∞'} kg`

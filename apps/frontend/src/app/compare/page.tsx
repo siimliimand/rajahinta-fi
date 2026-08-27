@@ -6,6 +6,7 @@ import type { SortOrder, ComparisonProduct, ProductSearchItem } from '@/lib/type
 import { searchProducts, calculateLandedCost } from '@/lib/api';
 import SortSelector from './components/SortSelector';
 import ComparisonView from './components/ComparisonView';
+import BasketComparisonSection from './components/BasketComparisonSection';
 import ProductSearch from '../calculator/components/ProductSearch';
 import ProductSelector from '../calculator/components/ProductSelector';
 
@@ -232,6 +233,9 @@ export default function ComparePage() {
           </p>
         </section>
       )}
+
+      {/* ── Multi-store basket comparison — gated behind BASKET_OPTIMIZATION flag ── */}
+      <BasketComparisonSection />
     </main>
   );
 }

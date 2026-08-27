@@ -28,7 +28,7 @@ import type Redis from 'ioredis';
       inject: [REDIS_CLIENT],
     },
   ],
-  exports: [IdempotencyService],
+  exports: [IdempotencyService, IDEMPOTENCY_CACHE],
 })
 export class IdempotencyModule {}
 

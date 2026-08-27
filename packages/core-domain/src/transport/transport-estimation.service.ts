@@ -1,63 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ITransportOfferQuery, TRANSPORT_OFFER_QUERY } from './transport-offer-query.interface';
+import { selectBestBracketOffer } from './bracket-selection';
 import type { TransportEstimate, TransportOffer } from './transport-offer.type';
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Check whether `weightKg` falls within the bracket defined by the offer.
- * A `null` bound means the bracket is open-ended on that side.
- */
-function weightInBracket(offer: TransportOffer, weightKg: number): boolean {
-  const { minKg, maxKg } = offer.weightBracket;
-
-  if (minKg !== null && weightKg < minKg) return false;
-  if (maxKg !== null && weightKg > maxKg) return false;
-
-  return true;
-}
-
-/**
- * Select the "best" bracket for a given weight when no exact match exists.
- * Strategy: prefer the bracket whose midpoint is closest to the target weight.
- * If a bracket has an open end, use the known bound as the midpoint proxy.
- */
-function closestBracket(
-  offers: TransportOffer[],
-  weightKg: number,
-): TransportOffer {
-  let best: TransportOffer | null = null;
-  let bestDistance = Infinity;
-
-  for (const offer of offers) {
-    const { minKg, maxKg } = offer.weightBracket;
-    let mid: number;
-
-    if (minKg !== null && maxKg !== null) {
-      mid = (minKg + maxKg) / 2;
-    } else if (minKg !== null) {
-      // open-ended upward — use min as anchor
-      mid = minKg;
-    } else if (maxKg !== null) {
-      // open-ended downward — use max as anchor
-      mid = maxKg;
-    } else {
-      // completely open bracket — distance is 0
-      mid = weightKg;
-    }
-
-    const distance = Math.abs(weightKg - mid);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = offer;
-    }
-  }
-
-  /* istanbul ignore next: offers array is guaranteed non-empty by caller */
-  return best!;
-}
 
 // ---------------------------------------------------------------------------
 // Service
@@ -103,22 +47,12 @@ export class TransportEstimationService {
       throw new NotFoundError(carrier, origin, destination, packageType);
     }
 
-    // Try exact weight match first
-    const exact = candidates.find((o) => weightInBracket(o, weightKg));
-    if (exact) {
-      return {
-        offer: exact,
-        matchedWeightBracket: exact.weightBracket,
-        reliabilityStatus: 'VERIFIED',
-      };
-    }
+    const selection = selectBestBracketOffer(candidates, weightKg)!;
 
-    // Fall back to closest bracket → ESTIMATED
-    const closest = closestBracket(candidates, weightKg);
     return {
-      offer: closest,
-      matchedWeightBracket: closest.weightBracket,
-      reliabilityStatus: 'ESTIMATED',
+      offer: selection.offer,
+      matchedWeightBracket: selection.offer.weightBracket,
+      reliabilityStatus: selection.reliability === 'EXACT' ? 'VERIFIED' : 'ESTIMATED',
     };
   }
 

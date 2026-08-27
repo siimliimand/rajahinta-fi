@@ -80,6 +80,15 @@ export interface CacheKeyInput {
   readonly destination: string;
   readonly transportMethod?: string;
   /**
+   * Basket items — present only for basket optimization requests.
+   *
+   * When set, `productId` and `quantity` are ignored (the basket items
+   * replace the single product dimension).  This field lets
+   * `hashInput` produce a deterministic key for multi-item basket inputs
+   * without breaking existing calculator-only callers who never set it.
+   */
+  readonly items?: readonly { productId: number; quantity: number }[];
+  /**
    * Resolved dataset version labels (tax + transport) at the time of request.
    *
    * Tax: returned by `ITaxRuleRepositoryPort.findActiveVersionLabels()` —
@@ -110,10 +119,23 @@ export interface CacheKeyInput {
  */
 export function hashInput(input: CacheKeyInput): string {
   const h = createHash('sha256');
-  h.update(String(input.productId));
-  h.update('|');
-  h.update(String(input.quantity));
-  h.update('|');
+
+  // When basket items are provided, hash each item instead of the single
+  // productId/quantity (basket replaces the single-product dimension).
+  if (input.items !== undefined && input.items.length > 0) {
+    for (const item of input.items) {
+      h.update(String(item.productId));
+      h.update('|');
+      h.update(String(item.quantity));
+      h.update('|');
+    }
+  } else {
+    h.update(String(input.productId));
+    h.update('|');
+    h.update(String(input.quantity));
+    h.update('|');
+  }
+
   h.update(input.destination.toUpperCase());
   h.update('|');
   h.update(input.transportMethod ?? '__NONE__');

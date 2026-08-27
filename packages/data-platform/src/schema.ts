@@ -431,3 +431,64 @@ export const savedBaskets = pgTable('saved_baskets', {
   /** JSON array of BasketItem: [{productId, productName, quantity}]. */
   items: jsonb('items').notNull(),
 });
+
+/**
+ * Merchant terms — store-level commercial conditions.
+ *
+ * One row per merchant carrying minimum-order thresholds and other
+ * store-level commercial terms. A missing row means no known threshold
+ * (the store is eligible regardless of subtotal). Non-VERIFIED reliability
+ * downgrades the basket-optimizer confidence but does not exclude the store.
+ *
+ * @see design.md Decision 3 — minimum-order threshold as externally sourced data.
+ */
+export const merchantTerms = pgTable('merchant_terms', {
+  id: serial('id').primaryKey(),
+  /** Merchant identifier — matches retail_offers.merchant (e.g. "alko", "systembolaget"). */
+  merchantId: text('merchant_id').unique().notNull(),
+  /** Minimum order value in cents to qualify for purchase. Null means no known threshold. */
+  minimumOrderValueCents: integer('minimum_order_value_cents'),
+  /** Currency of the threshold value (e.g. 'EUR'). */
+  currency: text('currency').notNull(),
+  /** Link to the page where this term was sourced. */
+  sourceUrl: text('source_url'),
+  /** Data freshness indicator (VERIFIED/ESTIMATED/STALE/UNAVAILABLE) — same value set as retail_offers. */
+  reliabilityStatus: varchar('reliability_status', { length: 16 })
+    .default('ESTIMATED')
+    .notNull(),
+  /** When the threshold was observed from the source. */
+  observedAt: timestamp('observed_at').defaultNow().notNull(),
+});
+
+/**
+ * Basket calculation records — every basket-optimization result shown to a user.
+ *
+ * Immutable once written. Mirrors calculationRecords but stores the full
+ * multi-product input (inputBasket JSON) and the per-shipment itemized
+ * breakdown (shipmentBreakdown JSON) that the single-product table cannot
+ * represent. Enables auditability, correction, and confidence-based ranking
+ * for the basket-optimizer path.
+ *
+ * @see design.md Decision 5 — basketCalculationRecords persistence.
+ */
+export const basketCalculationRecords = pgTable('basket_calculation_records', {
+  id: serial('id').primaryKey(),
+  /** Session identifier — groups calculations by user session for audit trail. Same domain as calculationRecords.sessionId. */
+  sessionId: varchar('session_id', { length: 64 }),
+  /** Destination country code (ISO 3166-1 alpha-2). */
+  destination: text('destination').notNull(),
+  /** Transport arrangement identifier (e.g. "delivery", "pickup"). */
+  transportArrangement: text('transport_arrangement').notNull(),
+  /** Input basket snapshot: JSON array of {productId, quantity}. */
+  inputBasket: jsonb('input_basket').notNull(),
+  /** Per-shipment itemized breakdown: JSON array of shipment objects with costs. */
+  shipmentBreakdown: jsonb('shipment_breakdown').notNull(),
+  /** Total estimated landed cost in cents across all shipments. */
+  totalCents: integer('total_cents').notNull(),
+  /** Confidence level (HIGH/MEDIUM/LOW) — computed by confidence framework. */
+  confidence: varchar('confidence', { length: 6 }).notNull(),
+  /** Structural disclaimer text — required by architecture rule: not a UI-only string. */
+  disclaimer: text('disclaimer').notNull(),
+  /** When the calculation was performed. */
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});

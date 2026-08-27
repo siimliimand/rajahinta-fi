@@ -12,6 +12,7 @@ import { RankingModule } from './ranking/ranking.module';
 import { CorrectionModule } from './correction/correction.module';
 import { EntitlementModule } from './entitlement/entitlement.module';
 import { HistoryModule, type HistoryModulePorts } from './history/history.module';
+import { OptimizerModule, type OptimizerModulePorts } from './optimizer/optimizer.module';
 
 // ---------------------------------------------------------------------------
 // Domain entities — pure TypeScript, zero framework logic
@@ -118,20 +119,12 @@ export { normaliseCategory } from './tax/index';
 // ---------------------------------------------------------------------------
 
 // Disclaimer — structural part of every calculation result
-// Re-exported from calculator types for use across the domain.
+// Re-exported from the dedicated leaf module; the constants previously
+// lived here, which created a barrel import cycle from the calculator and
+// optimizer services.
 // ---------------------------------------------------------------------------
 
-export const DISCLAIMER_FI: Disclaimer = {
-  text: 'Arvioitu kokonaiskustannus Suomessa. Ei ole lopullinen verovelvollisuuden määrä. Lopullinen verovelvollisuus määräytyy Tullin ja Verohallinnon vahvistamien verokantojen ja säännösten mukaan.',
-  language: 'fi',
-  version: '1.0',
-};
-
-export const DISCLAIMER_EN: Disclaimer = {
-  text: 'Estimated total cost in Finland. Not final legal tax liability. Final tax liability is determined by the tax rates and regulations established by Finnish Customs and the Tax Administration.',
-  language: 'en',
-  version: '1.0',
-};
+export { DISCLAIMER_FI, DISCLAIMER_EN } from './disclaimer';
 
 // ---------------------------------------------------------------------------
 // Landed-cost aggregate — top-level result object
@@ -414,6 +407,34 @@ export type { IPriceObservationPort } from './history/price-observation.port';
 export { PRICE_OBSERVATION_PORT } from './history/price-observation.port';
 
 // ---------------------------------------------------------------------------
+// Optimizer — multi-item basket optimization against landed costs
+// ---------------------------------------------------------------------------
+
+export { OptimizerModule } from './optimizer/optimizer.module';
+export type { OptimizerModulePorts } from './optimizer/optimizer.module';
+export { MERCHANT_TERMS_PORT, BASKET_CALCULATION_RECORD_PORT } from './optimizer/index';
+export type { IMerchantTermsPort, MerchantTerms } from './optimizer/index';
+export type { IBasketCalculationRecordPort, CreateBasketCalculationRecordInput } from './optimizer/index';
+export {
+  MAX_BASKET_ITEMS,
+  MAX_CANDIDATE_MERCHANTS_PER_ITEM,
+  BasketOptimizerService,
+  BasketValidationError,
+  BasketClassificationGateError,
+} from './optimizer/index';
+export type {
+  BasketInputItem,
+  BasketOptimizationInput,
+  ConsolidatedTransportReliability,
+  ConsolidatedTransport,
+  MinimumOrderThresholdCheck,
+  BasketShipment,
+  BasketOptimizationMetadata,
+  BasketOptimizationAlternate,
+  BasketOptimizationResult,
+} from './optimizer/index';
+
+// ---------------------------------------------------------------------------
 // Entitlement — feature-access tier management
 // ---------------------------------------------------------------------------
 
@@ -437,8 +458,8 @@ export type { AuditEntry, AuditAction, AuditQuery } from './audit/audit.types';
 // ---------------------------------------------------------------------------
 
 @Module({
-  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule, HistoryModule],
-  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule, HistoryModule],
+  imports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule, HistoryModule, OptimizerModule],
+  exports: [TaxModule, SourceGovernanceModule, ClassificationModule, NormalizationModule, ReliabilityModule, CalculatorModule, DeclarationModule, RankingModule, CorrectionModule, EntitlementModule, HistoryModule, OptimizerModule],
 })
 export class CoreDomainModule {}
 
@@ -452,7 +473,8 @@ export class CoreDomainModule {}
  */
 export class CoreDomainConfiguredModule {}
 
-export interface CoreDomainOptions extends CalculatorPorts, TaxModuleOptions, HistoryModulePorts {}
+export interface CoreDomainOptions
+  extends CalculatorPorts, TaxModuleOptions, HistoryModulePorts, OptimizerModulePorts {}
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace CoreDomainModule {
@@ -476,10 +498,23 @@ export namespace CoreDomainModule {
       productDataPort: options.productDataPort,
       extraProviders: options.extraProviders,
     });
+    // The optimizer shares the product-data port with the calculator and
+    // adds its own merchant-terms and basket-record ports; extraProviders
+    // are re-registered in its scope so its port adapters resolve their own
+    // dependencies.
+    const optimizer = OptimizerModule.forRoot({
+      productDataPort: options.productDataPort,
+      calculationRecordPort: options.calculationRecordPort,
+      taxRuleRepository: options.taxRuleRepository,
+      merchantTermsPort: options.merchantTermsPort,
+      basketCalculationRecordPort: options.basketCalculationRecordPort,
+      transportOfferQuery: options.transportOfferQuery,
+      extraProviders: options.extraProviders,
+    });
     return {
       module: CoreDomainConfiguredModule,
-      imports: [...domainImports, calculator, tax, history],
-      exports: [...domainImports, calculator, tax, history],
+      imports: [...domainImports, calculator, tax, history, optimizer],
+      exports: [...domainImports, calculator, tax, history, optimizer],
     };
   }
 }

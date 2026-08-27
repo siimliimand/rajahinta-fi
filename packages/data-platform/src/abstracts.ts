@@ -19,6 +19,8 @@ import {
   savedBaskets,
   priceObservations,
   priceHistorySummaries,
+  merchantTerms,
+  basketCalculationRecords,
 } from './schema';
 
 /**
@@ -399,4 +401,86 @@ export abstract class AggregationWatermarkRepository {
    * Callers must only ever advance the value — never regress it.
    */
   abstract save(jobName: string, watermark: Date): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Merchant-terms repository abstraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Persisted merchant-terms row (raw schema shape).
+ *
+ * Carries minimum-order threshold data for a merchant. A missing row means
+ * no known threshold — never defaulted to zero.
+ */
+export type MerchantTermsRecord = typeof merchantTerms.$inferSelect;
+
+/**
+ * Merchant-terms repository — store-level commercial conditions.
+ *
+ * Minimum-order thresholds are externally sourced facts that always carry
+ * reliability and timestamp provenance. A missing row means no known
+ * threshold, not a zero threshold.
+ *
+ * @see design.md Decision 3 — minimum-order threshold as externally sourced data.
+ */
+@Injectable()
+export abstract class MerchantTermsRepository {
+  /**
+   * Look up merchant terms by merchant identifier.
+   * Returns null when no terms are known for this merchant (no threshold
+   * information available — caller should treat as eligible).
+   */
+  abstract findByMerchant(
+    merchantId: string,
+  ): Promise<MerchantTermsRecord | null>;
+
+  /**
+   * Insert or update merchant terms keyed by merchantId (unique).
+   * Returns the upserted row.
+   */
+  abstract upsert(
+    record: typeof merchantTerms.$inferInsert,
+  ): Promise<MerchantTermsRecord>;
+}
+
+// ---------------------------------------------------------------------------
+// Basket-calculation-record repository abstraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Persisted basket-calculation-record row (raw schema shape).
+ *
+ * Mirrors calculationRecords but stores the full multi-product input
+ * (inputBasket JSON) and per-shipment itemized breakdown that the
+ * single-product calculationRecords table cannot represent.
+ */
+export type BasketCalculationRecord = typeof basketCalculationRecords.$inferSelect;
+
+/**
+ * Basket-calculation-record repository — every basket-optimization result
+ * shown to a user.
+ *
+ * Write-once, read-many. Enables auditability, correction, and
+ * confidence-based ranking for the basket-optimizer path.
+ *
+ * @see design.md Decision 5 — basketCalculationRecords persistence.
+ */
+@Injectable()
+export abstract class BasketCalculationRecordRepository {
+  /**
+   * Persist one basket calculation result (insert only — never update or
+   * delete). Returns the full persisted row.
+   */
+  abstract create(
+    record: typeof basketCalculationRecords.$inferInsert,
+  ): Promise<BasketCalculationRecord>;
+
+  /**
+   * Look up a basket calculation record by its primary key.
+   * Returns null when no record exists for this id.
+   */
+  abstract findById(
+    id: number,
+  ): Promise<BasketCalculationRecord | null>;
 }

@@ -65,6 +65,8 @@ export const RATE_LIMIT_PROFILES = {
   DEFAULT: { limit: 60, windowMs: 60_000 },
   /** Calculator: 10 requests/min (higher cost per request). */
   CALCULATOR: { limit: 10, windowMs: 60_000 },
+  /** Basket optimization: 10 requests/min (computationally expensive). */
+  BASKET: { limit: 10, windowMs: 60_000 },
   /** Search: 30 requests/min. */
   SEARCH: { limit: 30, windowMs: 60_000 },
   /** Declaration: 20 requests/min. */

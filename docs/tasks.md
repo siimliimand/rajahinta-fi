@@ -172,10 +172,10 @@
 
 ### 2B: Basket Optimization
 
-- [ ] **T2.6** Build the Basket Optimization Module: given a multi-item basket, evaluate single-store purchase, multi-store splits, minimum-order thresholds, weight brackets, package limits, and shipping increments, and return the combination with the lowest total estimated landed cost.
-- [ ] **T2.7** Implement as a search/optimization problem over a bounded combinatorial space (candidate store subsets × shipping tiers) — straightforward exhaustive search across a small number of candidate merchants is acceptable for initial launch.
-- [ ] **T2.8** Reuse the same Tax & Duty and Transport Estimation modules as the single-item calculator so optimizer results and simple calculator results are never inconsistent for the same inputs.
-- [ ] **T2.9** Build multi-store comparison UI and basket-optimization UI in the presentation layer.
+- [x] **T2.6** Build the Basket Optimization Module: given a multi-item basket, evaluate single-store purchase, multi-store splits, minimum-order thresholds, weight brackets, package limits, and shipping increments, and return the combination with the lowest total estimated landed cost. → `BasketOptimizerService` in `core-domain/optimizer/`, `merchantTerms` table for per-merchant threshold and bracket data.
+- [x] **T2.7** Implement as a search/optimization problem over a bounded combinatorial space (candidate store subsets × shipping tiers) — straightforward exhaustive search across a small number of candidate merchants is acceptable for initial launch. → exhaustive bounded search (caps: 10 items / 8 candidates per item) in `services/basket-optimizer.service.ts`.
+- [x] **T2.8** Reuse the same Tax & Duty and Transport Estimation modules as the single-item calculator so optimizer results and simple calculator results are never inconsistent for the same inputs. → shared `computeItemCosts` core in `LandedCostCalculatorService` + unified bracket selection `transport/bracket-selection.ts` + consistency regression `tests/integration/basket-calculator-consistency.test.ts`.
+- [x] **T2.9** Build multi-store comparison UI and basket-optimization UI in the presentation layer. → `apps/frontend/src/app/basket/` page + `BasketComparisonSection` on compare page, behind `enable_basket_optimization` flag (default off).
 
 ### 2C: Advanced Features
 
@@ -243,4 +243,4 @@ Per the business plan and engineering plan, the following are explicitly deferre
 
 ---
 
-*Last updated: 2026-08-26 — T2.1–T2.5 (Phase 2A Historical Price Intelligence) completed via openspec/changes/2026-08-26-phase2-historical-price-intelligence*
+*Last updated: 2026-08-27 — T2.6–T2.9 (Phase 2B Basket Optimization) completed*

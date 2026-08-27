@@ -42,6 +42,72 @@ export type TransportArrangement =
   | 'INDEPENDENT_CARRIER'
   | 'PERSONAL';
 
+// ---------------------------------------------------------------------------
+// Shared offer-constrained computation types
+// ---------------------------------------------------------------------------
+
+/**
+ * Transport-related context for the shared item-cost computation.
+ *
+ * WHY separate from the core:
+ *   - The single-item calculator resolves transport via TransportEstimationService.
+ *   - The basket optimizer computes per-store consolidated shipping via
+ *     BasketShippingCalculator, which may differ from per-item transport.
+ *   - Passing transport context as a parameter lets BOTH paths share every other
+ *     engine step (tax, classification, confidence), guaranteeing structural
+ *     consistency (T2.8) without constraining transport strategy.
+ *
+ * When null (transport unavailable), classification defaults and confidence
+ * degrades gracefully.
+ */
+export interface ComputeItemCostsTransportContext {
+  /** Reliability of the transport cost estimate. */
+  readonly transportStatus: ReliabilityStatus;
+  /** Whether the seller is involved in transport arrangements. */
+  readonly sellerInvolvementIndicator: boolean;
+  /** Carrier identifier (defaults to offer.merchant when absent). */
+  readonly carrierId: string;
+}
+
+/**
+ * Result of the shared offer-constrained item-cost computation.
+ *
+ * Contains everything tax/classification/confidence-derived for a given
+ * product + retail-offer pair, excluding transport. The caller (single-item
+ * calculator or basket optimizer) adds transport-specific costs, assembles
+ * the full itemized list, and persists.
+ */
+export interface ComputedItemCostsResult {
+  readonly retailTotal: number;
+  readonly retailStatus: ReliabilityStatus;
+
+  readonly exciseTotal: number;
+  readonly exciseStatus: ReliabilityStatus;
+  readonly exciseRuleVersionId: number | null;
+
+  readonly containerDutyTotal: number;
+  readonly containerDutyStatus: ReliabilityStatus;
+  readonly containerDutyRuleVersionId: number | null;
+
+  readonly classificationResult: ClassificationResult;
+  readonly classificationStatus: ReliabilityStatus;
+
+  readonly confidenceOverall: ConfidenceLevel;
+  readonly confidenceBreakdown: readonly ConfidenceDetail[];
+
+  readonly datasetVersions: readonly string[];
+
+  /**
+   * Itemized costs excluding transport: [retail, excise, container duty, other].
+   * The caller splices in the transport line at position 1.
+   */
+  readonly itemizedCosts: readonly ItemizedCost[];
+}
+
+// ---------------------------------------------------------------------------
+// Input
+// ---------------------------------------------------------------------------
+
 /**
  * Input to a landed-cost calculation.
  */

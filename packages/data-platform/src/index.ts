@@ -13,6 +13,8 @@ export {
   priceObservations,
   priceHistorySummaries,
   aggregationWatermarks,
+  merchantTerms,
+  basketCalculationRecords,
 } from './schema';
 
 // ---------------------------------------------------------------------------
@@ -29,12 +31,16 @@ export {
   PriceObservationRepository,
   PriceHistorySummaryRepository,
   AggregationWatermarkRepository,
+  MerchantTermsRepository,
+  BasketCalculationRecordRepository,
 } from './abstracts';
 export type {
   PriceObservationRecord,
   PriceHistorySummaryRecord,
   PriceHistorySummaryUpsertInput,
   ProductActivitySince,
+  MerchantTermsRecord,
+  BasketCalculationRecord,
 } from './abstracts';
 
 // ---------------------------------------------------------------------------
@@ -51,6 +57,8 @@ export { DrizzleSavedBasketRepository } from './repositories/saved-basket.reposi
 export { DrizzlePriceObservationRepository } from './repositories/price-observation.repository';
 export { DrizzlePriceHistorySummaryRepository } from './repositories/price-history-summary.repository';
 export { DrizzleAggregationWatermarkRepository } from './repositories/aggregation-watermark.repository';
+export { DrizzleMerchantTermsRepository } from './repositories/merchant-terms.repository';
+export { DrizzleBasketCalculationRecordRepository } from './repositories/basket-calculation-record.repository';
 
 // ---------------------------------------------------------------------------
 // Module boundary — pure interfaces for cross-layer contracts
