@@ -383,8 +383,9 @@ export class AccountService {
   /**
    * Remove an account from the store.
    *
-   * Phase 1: when a database repository is present, cascading deletion
-   * of saved baskets and calculation records is a future concern.
+   * Database path: deleting the account row cascades to saved scenarios at
+   * the database level (saved_scenarios.account_id FK ON DELETE CASCADE),
+   * so erasure cannot leave orphaned scenarios behind.
    */
   async deleteAccount(userId: string): Promise<void> {
     if (this.accountRepository) {
@@ -393,8 +394,11 @@ export class AccountService {
       return;
     }
 
-    // In-memory fallback
+    // In-memory fallback — scenarios live in a separate map keyed by the
+    // (now retired) userId, so they need an explicit delete to mirror the
+    // DB-level cascade.
     this.accounts.delete(userId);
+    this.scenarios.delete(userId);
     this.logger.debug(`Account "${userId}" deleted`);
   }
 
@@ -430,29 +434,32 @@ export class AccountService {
   }
 
   /**
-   * Anonymize an account — replace identifying fields while retaining
-   * non-personal data (saved baskets, calculation history).
+   * Anonymize an account — irreversibly replace identifying fields while
+   * retaining the non-personal account skeleton (tier, timestamps).
    *
    * In DB mode: delegates to {@link AccountRepository.anonymize} which
    * performs a transactional UPDATE (irreversible pseudonymization) +
-   * cascade delete of saved baskets, then records an audit event.
+   * cascade delete of saved baskets and saved scenarios, then records an
+   * audit event.
    *
    * In-memory (test-only fallback): replaces userId and email with
-   * anonymized values in the local Map.
+   * anonymized values in the local Map and drops the user's scenarios.
    */
   async anonymizeAccount(userId: string): Promise<void> {
     if (this.accountRepository) {
       await this.accountRepository.anonymize(userId);
       this.logger.debug(`Account "${userId}" anonymized via repository`);
 
-      // Record audit event when AuditService is available.
+      // Record audit event when AuditService is available. Lifecycle-level
+      // event (matching the existing account-data convention — no per-CRUD
+      // events); the reason records that the cascade covered scenarios.
       if (this.auditService) {
         await this.auditService.logChange({
           entityType: 'account',
           entityId: userId,
           action: 'deleted',
           author: 'system',
-          reason: 'GDPR anonymization requested',
+          reason: 'GDPR anonymization requested; saved baskets and saved scenarios deleted',
         });
         this.logger.debug(`Audit event recorded for anonymization of "${userId}"`);
       }
@@ -468,6 +475,9 @@ export class AccountService {
     mutable.userId = anonId;
     this.accounts.delete(userId);
     this.accounts.set(anonId, account);
+    // Scenarios are keyed by the retired userId — drop them so the
+    // fallback mirrors the repository cascade (no orphaned scenario data).
+    this.scenarios.delete(userId);
     this.logger.debug(`Account "${userId}" anonymized -> "${anonId}"`);
   }
 }

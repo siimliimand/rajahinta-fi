@@ -51,6 +51,9 @@ describe('DataExportService', () => {
     // Verify saved baskets (empty by default)
     expect(exportData.savedBaskets).toEqual([]);
 
+    // Verify saved scenarios (empty by default)
+    expect(exportData.savedScenarios).toEqual([]);
+
     // Verify subscription
     expect(exportData.subscription.userId).toBe(testUserId);
     expect(exportData.subscription.plan).toBe('FREE');
@@ -70,6 +73,31 @@ describe('DataExportService', () => {
     expect(exportData.savedBaskets).toHaveLength(1);
     expect(exportData.savedBaskets[0].id).toBe('basket-1');
     expect(exportData.savedBaskets[0].items).toHaveLength(1);
+  });
+
+  it('includes saved scenarios in the export (saved-scenarios spec: scenarios are account data)', async () => {
+    const inputs = {
+      productId: 12,
+      quantity: 6,
+      destination: 'FI',
+      transportArrangement: 'PERSONAL' as const,
+    };
+    await accountService.saveScenario(testUserId, 'Weekend run', inputs);
+    await accountService.saveScenario(testUserId, 'Other name', {
+      ...inputs,
+      quantity: 24,
+    });
+
+    const exportData = await exportService.exportUserData(testUserId);
+
+    expect(exportData.savedScenarios).toHaveLength(2);
+    const exported = exportData.savedScenarios.find(
+      (s) => s.name === 'Weekend run',
+    );
+    expect(exported).toBeDefined();
+    expect(exported!.inputs).toEqual(inputs);
+    expect(exported!.createdAt).toBeDefined();
+    expect(exported!.updatedAt).toBeDefined();
   });
 
   it('returns a calculation history entry per record ID', async () => {

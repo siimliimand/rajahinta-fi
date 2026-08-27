@@ -125,7 +125,7 @@ describe('AccountService', () => {
         entityId: 'user-123',
         action: 'deleted',
         author: 'system',
-        reason: 'GDPR anonymization requested',
+        reason: 'GDPR anonymization requested; saved baskets and saved scenarios deleted',
       });
     });
 
@@ -264,6 +264,42 @@ describe('AccountService', () => {
       const service = new AccountService();
       // getAccount auto-creates — so even a ghost user works in-memory mode
       await expect(service.anonymizeAccount('ghost-inmem')).resolves.toBeUndefined();
+    });
+
+    it('cascades erasure to saved scenarios (in-memory path)', async () => {
+      const service = new AccountService();
+      const userId = 'anon-with-scenarios';
+
+      await service.saveScenario(userId, 'Weekend run', {
+        productId: 12,
+        quantity: 6,
+        destination: 'FI',
+      });
+      await service.anonymizeAccount(userId);
+
+      // The retired identity must not resurface its scenarios.
+      await expect(service.getScenarios(userId)).resolves.toEqual([]);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Task 3.2 — deleteAccount cascades to scenarios (in-memory path mirrors
+  // the saved_scenarios FK ON DELETE CASCADE of the DB path)
+  // -----------------------------------------------------------------------
+
+  describe('deleteAccount (in-memory path) — Task 3.2', () => {
+    it('removes the user’s saved scenarios along with the account', async () => {
+      const service = new AccountService();
+      const userId = 'delete-with-scenarios';
+
+      await service.saveScenario(userId, 'Weekend run', {
+        productId: 12,
+        quantity: 6,
+        destination: 'FI',
+      });
+      await service.deleteAccount(userId);
+
+      await expect(service.getScenarios(userId)).resolves.toEqual([]);
     });
   });
 });

@@ -55,6 +55,10 @@ export class DataExportService {
         quantity: 1,
       }));
 
+    // Saved scenarios are account data (saved-scenarios spec) and follow
+    // the same export lifecycle as saved baskets.
+    const savedScenarios = await this.accountService.getScenarios(userId);
+
     const exportData: DataExport = {
       userId: account.userId,
       exportDate: new Date().toISOString(),
@@ -66,6 +70,7 @@ export class DataExportService {
         lastActiveAt: account.lastActiveAt.toISOString(),
       },
       savedBaskets: account.savedBaskets,
+      savedScenarios,
       calculationHistory,
       subscription: account.subscription,
     };
@@ -73,6 +78,7 @@ export class DataExportService {
     this.logger.debug(
       `Data export generated for userId="${userId}" ` +
         `(${exportData.savedBaskets.length} baskets, ` +
+        `${exportData.savedScenarios.length} scenarios, ` +
         `${exportData.calculationHistory.length} calculations)`,
     );
 
