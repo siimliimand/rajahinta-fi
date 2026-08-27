@@ -46,6 +46,10 @@ import { DrizzlePriceHistorySummaryRepository } from './repositories/price-histo
 import { DrizzleAggregationWatermarkRepository } from './repositories/aggregation-watermark.repository';
 import { DrizzleMerchantTermsRepository } from './repositories/merchant-terms.repository';
 import { DrizzleBasketCalculationRecordRepository } from './repositories/basket-calculation-record.repository';
+import {
+  MerchantReliabilityRepository,
+  DrizzleMerchantReliabilityRepository,
+} from './repositories/merchant-reliability.repository';
 
 @Module({
   imports: [DrizzleModule],
@@ -120,6 +124,13 @@ import { DrizzleBasketCalculationRecordRepository } from './repositories/basket-
       provide: BasketCalculationRecordRepository,
       useClass: DrizzleBasketCalculationRecordRepository,
     },
+    // Merchant reliability aggregates — factual per-merchant counts over
+    // current retail offers, consumed by the reliability score service
+    // and API of change phase2-advanced-features (tasks 2.1/3.4).
+    {
+      provide: MerchantReliabilityRepository,
+      useClass: DrizzleMerchantReliabilityRepository,
+    },
     // Also register the concrete classes directly (they are @Injectable)
     DrizzleProductRepository,
     DrizzleTaxRateRepository,
@@ -134,6 +145,7 @@ import { DrizzleBasketCalculationRecordRepository } from './repositories/basket-
     DrizzleAggregationWatermarkRepository,
     DrizzleMerchantTermsRepository,
     DrizzleBasketCalculationRecordRepository,
+    DrizzleMerchantReliabilityRepository,
   ],
   exports: [
     // Abstract class tokens — inject by abstract class for loose coupling
@@ -148,6 +160,7 @@ import { DrizzleBasketCalculationRecordRepository } from './repositories/basket-
 AggregationWatermarkRepository,
     MerchantTermsRepository,
     BasketCalculationRecordRepository,
+    MerchantReliabilityRepository,
     // Domain-port adapter tokens
     TAX_RULE_REPOSITORY_PORT,
     CORRECTION_REPOSITORY_PORT,
@@ -165,6 +178,7 @@ AggregationWatermarkRepository,
     DrizzleAggregationWatermarkRepository,
     DrizzleMerchantTermsRepository,
     DrizzleBasketCalculationRecordRepository,
+    DrizzleMerchantReliabilityRepository,
   ],
 })
 export class DataPlatformModule {}
