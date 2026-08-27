@@ -95,6 +95,13 @@ export default defineConfig({
           paths: [path.resolve(REPO_ROOT, 'apps/backend')],
         }),
       ),
+      // @nestjs/common — needed for runtime imports of guards and exceptions
+      // when tests import from this package directly (not through application-api).
+      '@nestjs/common': path.dirname(
+        createRequire(import.meta.url).resolve('@nestjs/common/package.json', {
+          paths: [path.resolve(REPO_ROOT, 'apps/backend')],
+        }),
+      ),
     },
     // Include data-platform's node_modules so `pg`, `drizzle-orm`, etc.
     // (which are data-platform dependencies, not root dependencies) are

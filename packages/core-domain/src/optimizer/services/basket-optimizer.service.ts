@@ -178,6 +178,12 @@ export class BasketOptimizerService {
       }
       if (coverableIndices.length === 0) continue;
 
+      // Resolve origin country from the first offer for this merchant
+      const firstOffer = candidatesPerItem[coverableIndices[0]].find(
+        (c) => c.merchant === merchant,
+      );
+      const originCountry = firstOffer?.offer.country;
+
       const n = coverableIndices.length;
       for (let mask = 1; mask < 1 << n; mask++) {
         const indices: number[] = [];
@@ -194,6 +200,7 @@ export class BasketOptimizerService {
           basketItems,
           destination,
           transportMethod,
+          originCountry,
         );
         shippingMemo.set(key, {
           totalCents: shippingResult.totalCents,

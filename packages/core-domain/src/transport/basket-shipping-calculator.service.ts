@@ -55,15 +55,26 @@ export class BasketShippingCalculator {
   /**
    * Estimate shipping cost for a basket of items shipped together.
    *
-   * @param items         Items in the basket.
-   * @param destination   Destination country code (ISO 3166-1 alpha-2).
-   * @param transportMethod Optional carrier or method identifier. When
-   *                        omitted the service queries all active offers.
+   * When transportMethod is provided, candidates are filtered by carrier AND
+   * optional originCountry (matching TransportEstimationService.estimate()'s
+   * behaviour).  When both originCountry and transportMethod are omitted,
+   * all active offers for the destination + package tier are considered,
+   * which may select a different carrier than the merchant's — callers
+   * SHOULD always pass originCountry when the merchant's country is known.
+   *
+   * @param items            Items in the basket.
+   * @param destination      Destination country code (ISO 3166-1 alpha-2).
+   * @param transportMethod  Optional carrier or method identifier. When
+   *                         omitted the service queries all active offers.
+   * @param originCountry    Optional origin country code. When provided,
+   *                         candidates are filtered to offers from this
+   *                         origin, matching estimate()'s behaviour.
    */
   async calculateBasket(
     items: readonly BasketItem[],
     destination: string,
     transportMethod?: string,
+    originCountry?: string,
   ): Promise<BasketShippingResult> {
     const totalWeight = items.reduce((sum, i) => sum + i.weightKg, 0);
     const pkgTier = dominantPackageType(items);
@@ -75,7 +86,8 @@ export class BasketShippingCalculator {
     const candidates = offers.filter(
       (o) =>
         o.destinationCountry === destination &&
-        o.packageTier === pkgTier,
+        o.packageTier === pkgTier &&
+        (originCountry === undefined || o.originCountry === originCountry),
     );
 
     if (candidates.length === 0) {
