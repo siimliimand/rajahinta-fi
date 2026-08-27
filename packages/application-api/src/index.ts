@@ -38,6 +38,7 @@ import { AgeGateModule } from './age-gate';
 import { AgeGateGuard } from './age-gate';
 import { AccountModule } from './accounts';
 import { CalculatorController } from './calculator';
+import { BasketModule, BasketOptimizerController } from './basket';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
 import { HistoricalDataModule } from './historical';
@@ -184,14 +185,15 @@ imports: [
     AnalyticsModule,
     RedisModule,
     CoreDomainModule,
-  RankingModule,
-  DeclarationModule,
-  DataPlatformModule,
-CorrectionModule,
+   RankingModule,
+   DeclarationModule,
+   DataPlatformModule,
+   CorrectionModule,
     ApplicationRankingModule,
     // Price-history API — declares its own controller behind the
     // enable_historical_price_intelligence feature flag (task 4.1).
     HistoricalDataModule,
+    BasketModule,
   ],
   providers: [
     TaxCalculationEngineAdapter,
@@ -211,6 +213,7 @@ CorrectionModule,
     SearchController,
     DeclarationController,
     OutboundRedirectController,
+    BasketOptimizerController,
   ],
   exports: [FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule, RedisModule],
 })
@@ -269,6 +272,7 @@ export namespace ApplicationApiModule {
         ApplicationRankingModule,
         coreDomain, // brings the CONFIGURED CalculatorModule (ports injected)
         HistoricalDataModule,
+        BasketModule,
       ],
       providers: [
         TaxCalculationEngineAdapter,
@@ -285,6 +289,7 @@ export namespace ApplicationApiModule {
         SearchController,
         DeclarationController,
         OutboundRedirectController,
+        BasketOptimizerController,
       ],
       exports: [FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule, RedisModule],
     };
@@ -416,3 +421,10 @@ export { AnalyticsModule, ClickAnalyticsService } from './analytics';
 
 export { RankingModule, RankingController } from './ranking';
 export type { RankingMethodology, SortOrderDescription } from './ranking';
+
+// ---------------------------------------------------------------------------
+// Basket — basket optimization API
+// ---------------------------------------------------------------------------
+
+export { BasketModule, BasketOptimizerController } from './basket';
+export type { BasketOptimizeRequest, BasketItemInput } from './basket';

@@ -419,11 +419,15 @@ export { PRICE_OBSERVATION_PORT } from './history/price-observation.port';
 // ---------------------------------------------------------------------------
 
 export { OptimizerModule } from './optimizer/optimizer.module';
-export { MERCHANT_TERMS_PORT } from './optimizer/index';
+export { MERCHANT_TERMS_PORT, BASKET_CALCULATION_RECORD_PORT } from './optimizer/index';
 export type { IMerchantTermsPort, MerchantTerms } from './optimizer/index';
+export type { IBasketCalculationRecordPort, CreateBasketCalculationRecordInput } from './optimizer/index';
 export {
   MAX_BASKET_ITEMS,
   MAX_CANDIDATE_MERCHANTS_PER_ITEM,
+  BasketOptimizerService,
+  BasketValidationError,
+  BasketClassificationGateError,
 } from './optimizer/index';
 export type {
   BasketInputItem,
