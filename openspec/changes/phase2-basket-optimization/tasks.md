@@ -25,7 +25,7 @@
 
 ## 4. Frontend
 
-- [ ] 4.1 Add basket types and fetch client under `apps/frontend/src/lib/` — mirror the API contract including per-shipment reliability, confidence, and alternatives <!-- agent: platform-engineer.build, depends_on: [3.2], touches: [apps/frontend/src/lib/**] -->
+- [x] 4.1 Add basket types and fetch client under `apps/frontend/src/lib/` — mirror the API contract including per-shipment reliability, confidence, and alternatives <!-- agent: platform-engineer.build, depends_on: [3.2], touches: [apps/frontend/src/lib/**] -->
 - [ ] 4.2 Create the basket page under `apps/frontend/src/app/basket/` — multi-item builder with quantities (reusing the `ProductSelector` pattern), destination and transport arrangement inputs, recommended combination plus neutral alternatives, per-store cards with per-item breakdowns, freshness badges, structural disclaimer, controlled vocabulary; hidden when the flag is off <!-- agent: platform-engineer.build, depends_on: [4.1], touches: [apps/frontend/src/app/basket/**] -->
 - [ ] 4.3 Add the multi-store comparison view to the compare page — store-grouped costs with per-item figures and reliability statuses, objective ordering, behind the same feature flag <!-- agent: platform-engineer.build, depends_on: [4.2], touches: [apps/frontend/src/app/compare/**] -->
 
@@ -33,8 +33,8 @@
 
 - [x] 5.1 Add the `enable_basket_optimization` feature flag to the existing `FeatureFlagService`/`LaunchGate` infrastructure — default off; gates the API route and the UI <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/feature-flags/**] -->
 - [x] 5.2 Write optimizer unit tests — search correctness (cheapest selection incl. multi-store splits), caps enforcement, minimum-order feasibility (verified blocks, unverified downgrades), deterministic tie-breaking, multi-item weight-bracket handling, billing-type isolation (source-level, per the ranking isolation convention) <!-- agent: platform-engineer.build, depends_on: [2.4], touches: [packages/core-domain/src/optimizer/__tests__/**] -->
-- [ ] 5.3 Write the calculator-consistency regression test at `tests/integration/` — single-item single-store optimizer result equals the calculator result for identical inputs and dataset versions, using real engine implementations and no mocks <!-- agent: platform-engineer.build, depends_on: [2.4, 2.3], touches: [tests/integration/**] -->
-- [ ] 5.4 Write API integration tests at `tests/integration/` — flag-off 403, validation errors (caps, quantities), idempotent replay, rate limiting on the optimize endpoint <!-- agent: platform-engineer.build, depends_on: [3.2], touches: [tests/integration/**] -->
+- [x] 5.3 Write the calculator-consistency regression test at `tests/integration/` — single-item single-store optimizer result equals the calculator result for identical inputs and dataset versions, using real engine implementations and no mocks <!-- agent: platform-engineer.build, depends_on: [2.4, 2.3], touches: [tests/integration/**] -->
+- [x] 5.4 Write API integration tests at `tests/integration/` — flag-off 403, validation errors (caps, quantities), idempotent replay, rate limiting on the optimize endpoint <!-- agent: platform-engineer.build, depends_on: [3.2], touches: [tests/integration/**] -->
 
 ## 6. Verification
 
