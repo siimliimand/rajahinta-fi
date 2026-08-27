@@ -157,6 +157,58 @@ describe('guidance.derivation', () => {
     expect(excise.rateUnit).toBeNull();
     expect(excise.formulaExpression).toBeNull();
   });
+
+  it('maps the PER_LITRE_OF_PRODUCT formula reference to its unit and expression', async () => {
+    const result = await createService(
+      createRecord({ ...FULL_PROVENANCE, exciseFormulaReference: 'PER_LITRE_OF_PRODUCT' }),
+    ).prepareDeclaration(1);
+
+    const [excise] = result.guidance.derivation.appliedRates;
+    expect(excise.rateUnit).toBe('litre of product');
+    expect(excise.formulaExpression).toBe('excise = rate × litres of product');
+  });
+
+  it('maps the PER_LITRE_OF_ALCOHOL formula reference to its unit and expression', async () => {
+    const result = await createService(
+      createRecord({ ...FULL_PROVENANCE, exciseFormulaReference: 'PER_LITRE_OF_ALCOHOL' }),
+    ).prepareDeclaration(1);
+
+    const [excise] = result.guidance.derivation.appliedRates;
+    expect(excise.rateUnit).toBe('litre of pure alcohol');
+    expect(excise.formulaExpression).toBe(
+      'excise = rate × volume × ABV (litres of pure alcohol)',
+    );
+  });
+
+  it('treats explicitly-null provenance fields identically to absent ones', async () => {
+    // Adapters that SELECT the new columns on pre-guidance rows persist
+    // SQL NULLs, not missing keys — the degradation must be identical.
+    const result = await createService(
+      createRecord({
+        ...FULL_PROVENANCE,
+        alcoholExciseRatePerUnit: null,
+        containerDutyRatePerLitre: null,
+        exciseRuleVersionLabel: null,
+        containerDutyRuleVersionLabel: null,
+        exciseFormulaReference: null,
+      }),
+    ).prepareDeclaration(1);
+
+    const [excise, containerDuty] = result.guidance.derivation.appliedRates;
+
+    expect(excise.ratePerUnit).toBeNull();
+    expect(excise.rateUnit).toBeNull();
+    expect(excise.ruleVersionLabel).toBeNull();
+    expect(excise.formulaReference).toBeNull();
+    expect(excise.formulaExpression).toBeNull();
+
+    expect(containerDuty.ratePerUnit).toBeNull();
+    expect(containerDuty.ruleVersionLabel).toBeNull();
+
+    expect(result.guidance.caveats.join(' | ')).toContain(
+      'does not persist every applied rate',
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -182,6 +234,28 @@ describe('guidance.deadline', () => {
     ).prepareDeclaration(1);
 
     expect(result.guidance.deadline.dueDate).toBe('2026-09-03');
+  });
+
+  it('rolls the due date across a year boundary', async () => {
+    const result = await createService(
+      createRecord({
+        calculationTimestamp: '2026-12-30T23:00:00.000Z',
+        ...FULL_PROVENANCE,
+      }),
+    ).prepareDeclaration(1);
+
+    expect(result.guidance.deadline.dueDate).toBe('2027-01-03');
+  });
+
+  it('rolls the due date across a leap-year February (2028-02-27 → 2028-03-02)', async () => {
+    const result = await createService(
+      createRecord({
+        calculationTimestamp: '2028-02-27T00:00:00.000Z',
+        ...FULL_PROVENANCE,
+      }),
+    ).prepareDeclaration(1);
+
+    expect(result.guidance.deadline.dueDate).toBe('2028-03-02');
   });
 
   it('returns a null due date when notice is not required (DistanceSelling)', async () => {
@@ -260,6 +334,37 @@ describe('guidance.caveats', () => {
     expect(result.guidance.caveats.join(' | ')).toContain(
       'engine fallback dataset',
     );
+  });
+
+  it('fires exactly one missing-provenance caveat when only container-duty provenance is absent', async () => {
+    // Excise provenance fully populated; the container-duty columns are
+    // missing — the record is partially provenanced, not clean.
+    const result = await createService(
+      createRecord({
+        alcoholExciseRatePerUnit: 38.05,
+        exciseRuleVersionLabel: '2025.1',
+        exciseFormulaReference: 'PER_CENTILITRE_ETHANOL',
+      }),
+    ).prepareDeclaration(1);
+
+    expect(result.guidance.caveats).toHaveLength(1);
+    expect(result.guidance.caveats[0]).toContain(
+      'does not persist every applied rate',
+    );
+
+    // The populated excise line still carries its full provenance.
+    const [excise, containerDuty] = result.guidance.derivation.appliedRates;
+    expect(excise.ratePerUnit).toBe(38.05);
+    expect(excise.ruleVersionLabel).toBe('2025.1');
+    expect(containerDuty.ratePerUnit).toBeNull();
+  });
+
+  it('does not surface the LOW-confidence caveat for MEDIUM confidence', async () => {
+    const result = await createService(
+      createRecord({ ...FULL_PROVENANCE, confidence: 'MEDIUM' as ConfidenceLevel }),
+    ).prepareDeclaration(1);
+
+    expect(result.guidance.caveats).toEqual([]);
   });
 
   it('accumulates independent caveats without duplicates', async () => {
