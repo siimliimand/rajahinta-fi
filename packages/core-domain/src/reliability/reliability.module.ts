@@ -12,9 +12,10 @@
 import { Module } from '@nestjs/common';
 import { ReliabilityService } from './reliability.service';
 import { ConfidenceFrameworkService } from './confidence-framework.service';
+import { MerchantReliabilityScoreService } from './merchant-reliability-score.service';
 
 @Module({
-  providers: [ReliabilityService, ConfidenceFrameworkService],
-  exports: [ReliabilityService, ConfidenceFrameworkService],
+  providers: [ReliabilityService, ConfidenceFrameworkService, MerchantReliabilityScoreService],
+  exports: [ReliabilityService, ConfidenceFrameworkService, MerchantReliabilityScoreService],
 })
 export class ReliabilityModule {}
