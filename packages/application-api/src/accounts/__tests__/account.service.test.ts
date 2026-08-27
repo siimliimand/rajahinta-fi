@@ -18,7 +18,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { AccountService } from '../account.service';
 import { AuditService } from '@rajahinta/core-domain';
-import type { AccountRepository, SavedBasketRepository } from '@rajahinta/data-platform';
+import type { AccountRepository, SavedBasketRepository, SavedScenarioRepository } from '@rajahinta/data-platform';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -85,7 +85,10 @@ describe('AccountService', () => {
       simulateProductionEnv();
       const mockAccountRepo = { anonymize: vi.fn() } as unknown as AccountRepository;
       const mockBasketRepo = {} as unknown as SavedBasketRepository;
-      expect(() => new AccountService(mockAccountRepo, mockBasketRepo)).not.toThrow();
+      const mockScenarioRepo = {} as unknown as SavedScenarioRepository;
+      expect(() =>
+        new AccountService(mockAccountRepo, mockBasketRepo, undefined, mockScenarioRepo),
+      ).not.toThrow();
     });
   });
 

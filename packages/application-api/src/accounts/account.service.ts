@@ -2,10 +2,10 @@
  * AccountService — minimal account management.
  *
  * Phase 1: supports both database-backed and in-memory operation.
- * When {@link AccountRepository} and {@link SavedBasketRepository} are
- * injected via NestJS DI, all reads and writes go through the Drizzle
- * repositories. When not injected (e.g. in unit tests), a fallback
- * in-memory Map is used.
+ * When {@link AccountRepository}, {@link SavedBasketRepository}, and
+ * {@link SavedScenarioRepository} are injected via NestJS DI, all reads and
+ * writes go through the Drizzle repositories. When not injected (e.g. in
+ * unit tests), a fallback in-memory Map is used.
  *
  * ## Usage
  *
@@ -17,10 +17,19 @@
  * @module AccountService
  */
 
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { AuditService } from '@rajahinta/core-domain';
-import type { Account, Basket, BasketItem } from './account.types';
-import { AccountRepository, SavedBasketRepository, accounts, savedBaskets } from '@rajahinta/data-platform';
+import type { Account, Basket, BasketItem, SavedScenario } from './account.types';
+import {
+  AccountRepository,
+  SavedBasketRepository,
+  SavedScenarioRepository,
+  accounts,
+  savedBaskets,
+  savedScenarios,
+  type SavedScenarioInputs,
+  type SavedScenarioRecord,
+} from '@rajahinta/data-platform';
 
 @Injectable()
 export class AccountService {
@@ -29,10 +38,19 @@ export class AccountService {
   /** Fallback in-memory account store when repositories are not injected. */
   private readonly accounts = new Map<string, Account>();
 
+  /** Fallback in-memory scenario store (per external userId) — test-only. */
+  private readonly scenarios = new Map<string, SavedScenario[]>();
+
+  /** Monotonic id source for in-memory fallback scenarios. */
+  private scenarioIdSeq = 0;
+
   constructor(
     @Optional() private readonly accountRepository?: AccountRepository,
     @Optional() private readonly savedBasketRepository?: SavedBasketRepository,
     @Optional() private readonly auditService?: AuditService,
+    // Appended last so positional constructions in existing tests keep
+    // their (accountRepository, savedBasketRepository, auditService) shape.
+    @Optional() private readonly savedScenarioRepository?: SavedScenarioRepository,
   ) {
     // Fail-fast: outside test environments, repositories must be injected
     // to prevent silent data loss via the in-memory fallback.
@@ -42,6 +60,7 @@ export class AccountService {
       const missing: string[] = [];
       if (!this.accountRepository) missing.push('AccountRepository');
       if (!this.savedBasketRepository) missing.push('SavedBasketRepository');
+      if (!this.savedScenarioRepository) missing.push('SavedScenarioRepository');
       if (missing.length > 0) {
         throw new Error(
           `AccountService requires repository injection outside test environments. ` +
@@ -93,6 +112,19 @@ export class AccountService {
       name: row.name,
       createdAt: row.createdAt,
       items: row.items as unknown as BasketItem[],
+    };
+  }
+
+  /**
+   * Map a DB saved-scenario row to the application-layer SavedScenario type.
+   */
+  private rowToScenario(row: SavedScenarioRecord): SavedScenario {
+    return {
+      id: row.id,
+      name: row.name,
+      inputs: row.inputs as unknown as SavedScenarioInputs,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     };
   }
 
@@ -178,6 +210,122 @@ export class AccountService {
     const account = await this.getAccount(userId);
     account.savedBaskets.push(basket);
     this.logger.debug(`Basket "${basket.id}" saved for userId="${userId}"`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Saved scenarios (Phase 2 — advanced features)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Return the saved scenarios for the given user, newest activity first
+   * (repository order).
+   */
+  async getScenarios(userId: string): Promise<SavedScenario[]> {
+    // Database path
+    if (this.savedScenarioRepository) {
+      const rows = await this.savedScenarioRepository.findByUserId(userId);
+      return rows.map((r) => this.rowToScenario(r));
+    }
+
+    // In-memory fallback
+    return [...(this.scenarios.get(userId) ?? [])];
+  }
+
+  /**
+   * Insert or replace the scenario named {@code name} for the user —
+   * the (account, name) pair is the identity, inputs and updatedAt are
+   * refreshed. Returns the persisted scenario.
+   */
+  async saveScenario(
+    userId: string,
+    name: string,
+    inputs: SavedScenarioInputs,
+  ): Promise<SavedScenario> {
+    // Database path
+    if (this.accountRepository && this.savedScenarioRepository) {
+      let row = await this.accountRepository.findByUserId(userId);
+      if (!row) {
+        this.logger.debug(`Creating default account for userId="${userId}"`);
+        row = await this.accountRepository.create({
+          userId,
+          email: `${userId}@placeholder.local`,
+          tier: 'FREE',
+        });
+      }
+      const saved = await this.savedScenarioRepository.upsert({
+        accountId: row.id,
+        name,
+        inputs: inputs as unknown as typeof savedScenarios.$inferInsert['inputs'],
+      });
+      this.logger.debug(`Scenario "${name}" saved for userId="${userId}"`);
+      return this.rowToScenario(saved);
+    }
+
+    // In-memory fallback
+    const list = this.scenarios.get(userId) ?? [];
+    const now = new Date();
+    const existingIndex = list.findIndex((s) => s.name === name);
+    if (existingIndex !== -1) {
+      const updated: SavedScenario = {
+        ...list[existingIndex]!,
+        inputs,
+        updatedAt: now,
+      };
+      list[existingIndex] = updated;
+      this.scenarios.set(userId, list);
+      return updated;
+    }
+    const scenario: SavedScenario = {
+      id: ++this.scenarioIdSeq,
+      name,
+      inputs,
+      createdAt: now,
+      updatedAt: now,
+    };
+    list.push(scenario);
+    this.scenarios.set(userId, list);
+    this.logger.debug(`Scenario "${name}" saved for userId="${userId}"`);
+    return scenario;
+  }
+
+  /**
+   * Delete a scenario for the given user.
+   *
+   * Account-scoped semantics: a scenario id that belongs to another account
+   * is indistinguishable from a missing one and yields a NotFoundException —
+   * never a cross-account delete.
+   */
+  async deleteScenario(userId: string, scenarioId: number): Promise<void> {
+    // Database path
+    if (this.accountRepository && this.savedScenarioRepository) {
+      const accountRow = await this.accountRepository.findByUserId(userId);
+      const owned = accountRow
+        ? await this.savedScenarioRepository.findByAccountId(accountRow.id)
+        : [];
+      if (!accountRow || !owned.some((s) => s.id === scenarioId)) {
+        throw new NotFoundException({
+          statusCode: 404,
+          message: `Scenario "${scenarioId}" not found`,
+          error: 'ScenarioNotFound',
+        });
+      }
+      await this.savedScenarioRepository.delete(accountRow.id, scenarioId);
+      this.logger.debug(`Scenario "${scenarioId}" deleted for userId="${userId}"`);
+      return;
+    }
+
+    // In-memory fallback
+    const list = this.scenarios.get(userId) ?? [];
+    const index = list.findIndex((s) => s.id === scenarioId);
+    if (index === -1) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: `Scenario "${scenarioId}" not found`,
+        error: 'ScenarioNotFound',
+      });
+    }
+    list.splice(index, 1);
+    this.logger.debug(`Scenario "${scenarioId}" deleted for userId="${userId}"`);
   }
 
   /**
