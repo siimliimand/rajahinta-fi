@@ -431,10 +431,6 @@ export default function BasketComparisonSection() {
     };
   }, []);
 
-  // ── Hidden states ──
-  if (flag === 'checking') return null;
-  if (flag === 'disabled') return null;
-
   // ── Search handler ──
   const handleSearch = useCallback(async (q: string) => {
     const trimmed = q.trim();
@@ -538,6 +534,11 @@ export default function BasketComparisonSection() {
       optimizeInFlight.current = false;
     }
   }, [items, destination, transportArrangement]);
+
+  // ── Hidden states (after all hooks — early returns above them break
+  // React's hook-order invariant) ──
+  if (flag === 'checking') return null;
+  if (flag === 'disabled') return null;
 
   const atCapacity = items.length >= MAX_ITEMS;
   const canOptimize = items.length > 0 && !optimizing;
