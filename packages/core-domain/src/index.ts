@@ -332,6 +332,12 @@ export {
 
 export { ReliabilityModule } from './reliability/reliability.module';
 export { ReliabilityService } from './reliability/reliability.service';
+export { MerchantReliabilityScoreService } from './reliability/merchant-reliability-score.service';
+export type {
+  MerchantReliabilityScore,
+  MerchantReliabilityScoreInput,
+} from './reliability/merchant-reliability-score.types';
+export { MerchantReliabilityInputError } from './reliability/merchant-reliability-score.types';
 export type { ReliabilityStatus, ReliabilityDomain, Duration } from './reliability/reliability.types';
 export {
   RELIABILITY_ORDER,
