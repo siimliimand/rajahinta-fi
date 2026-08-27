@@ -27,7 +27,7 @@
 
 - [x] 4.1 Add basket types and fetch client under `apps/frontend/src/lib/` — mirror the API contract including per-shipment reliability, confidence, and alternatives <!-- agent: platform-engineer.build, depends_on: [3.2], touches: [apps/frontend/src/lib/**] -->
 - [x] 4.2 Create the basket page under `apps/frontend/src/app/basket/` — multi-item builder with quantities (reusing the `ProductSelector` pattern), destination and transport arrangement inputs, recommended combination plus neutral alternatives, per-store cards with per-item breakdowns, freshness badges, structural disclaimer, controlled vocabulary; hidden when the flag is off <!-- agent: platform-engineer.build, depends_on: [4.1], touches: [apps/frontend/src/app/basket/**] -->
-- [ ] 4.3 Add the multi-store comparison view to the compare page — store-grouped costs with per-item figures and reliability statuses, objective ordering, behind the same feature flag <!-- agent: platform-engineer.build, depends_on: [4.2], touches: [apps/frontend/src/app/compare/**] -->
+- [x] 4.3 Add the multi-store comparison view to the compare page — store-grouped costs with per-item figures and reliability statuses, objective ordering, behind the same feature flag <!-- agent: platform-engineer.build, depends_on: [4.2], touches: [apps/frontend/src/app/compare/**] -->
 
 ## 5. Feature flag and tests
 
