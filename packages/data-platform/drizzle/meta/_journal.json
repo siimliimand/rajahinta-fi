@@ -50,6 +50,13 @@
       "when": 1787766232964,
       "tag": "0006_fast_mephistopheles",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787851668257,
+      "tag": "0007_exotic_cassandra_nova",
+      "breakpoints": true
     }
   ]
 }
