@@ -38,7 +38,7 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Run typecheck, lint, unit tests, and golden-dataset regression tests; fix fallout <!-- agent: platform-engineer.fast, depends_on: [4.3, 5.2, 5.3, 5.4], touches: [] -->
+- [x] 6.1 Run typecheck, lint, unit tests, and golden-dataset regression tests; fix fallout <!-- agent: platform-engineer.fast, depends_on: [4.3, 5.2, 5.3, 5.4], touches: [] -->
 - [ ] 6.2 Update `docs/tasks.md` — mark T2.6 through T2.9 with completion notes referencing this change <!-- agent: platform-engineer.fast, depends_on: [6.1], touches: [docs/tasks.md] -->
 
 ---
