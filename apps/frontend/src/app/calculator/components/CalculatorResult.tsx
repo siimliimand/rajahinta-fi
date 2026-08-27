@@ -11,6 +11,7 @@ import type {
 import { logClick } from '@/lib/api';
 import { MerchantLink } from '../../compare/components/MerchantLink';
 import DisclaimerBanner from './DisclaimerBanner';
+import ReportExportActions from './ReportExportActions';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -358,6 +359,10 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
           </div>
         </dl>
       </div>
+
+      {/* ── Report export actions — hidden and unfetched while the
+          enable_advanced_features flag is off ── */}
+      <ReportExportActions recordId={result.calculationRecordId} />
 
       {/* ── Disclaimer ── */}
       <DisclaimerBanner disclaimer={result.disclaimer} />

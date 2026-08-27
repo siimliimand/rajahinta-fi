@@ -8,6 +8,7 @@ import { getCalculationResult } from '@/lib/api';
 import CalculatorResultView from '../../components/CalculatorResult';
 import ProductHistoryPanel from '../../components/ProductHistoryPanel';
 import CorrectionFlagPanel from '../../components/CorrectionFlagPanel';
+import DeclarationGuidancePanel from '../../components/DeclarationGuidancePanel';
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -134,6 +135,10 @@ export default function CalculationResultPage() {
           showMerchantFilter
         />
       </div>
+
+      {/* ── Declaration guidance (flag-gated; hidden and unfetched when
+          off) — informational, read-only ── */}
+      <DeclarationGuidancePanel recordId={result.calculationRecordId} />
 
       {/* ── Traceable inputs section ── */}
       <section className="mt-8 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">

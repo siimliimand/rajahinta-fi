@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import type { SortOrder, ComparisonProduct, ProductSearchItem } from '@/lib/types';
-import { searchProducts, calculateLandedCost } from '@/lib/api';
+import { searchProducts, calculateLandedCost, getProductDetail } from '@/lib/api';
 import SortSelector from './components/SortSelector';
 import ComparisonView from './components/ComparisonView';
 import BasketComparisonSection from './components/BasketComparisonSection';
@@ -85,11 +85,23 @@ export default function ComparePage() {
       setCalcError(null);
 
       try {
-        const result = await calculateLandedCost({
-          productId: item.id,
-          quantity: 1,
-          destination: DEFAULT_DESTINATION,
-        });
+        // The product detail resolves the offering merchants in parallel
+        // with the calculation; it feeds the factual data-freshness
+        // display only and never affects ordering. A failed detail fetch
+        // degrades to no freshness rows for this column.
+        const [result, detail] = await Promise.all([
+          calculateLandedCost({
+            productId: item.id,
+            quantity: 1,
+            destination: DEFAULT_DESTINATION,
+          }),
+          getProductDetail(item.id).catch(() => null),
+        ]);
+
+        const merchants =
+          detail !== null
+            ? [...new Set(detail.offers.map((o) => o.merchant))].sort()
+            : [];
 
         const comparisonProduct: ComparisonProduct = {
           id: item.id,
@@ -104,6 +116,7 @@ export default function ComparePage() {
           reliability: result.itemizedCosts.length > 0
             ? result.itemizedCosts[0].reliability
             : 'UNAVAILABLE',
+          merchants,
         };
 
         setProducts((prev) => [...prev, comparisonProduct]);

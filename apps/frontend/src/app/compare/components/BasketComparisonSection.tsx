@@ -419,9 +419,7 @@ export default function BasketComparisonSection() {
     getFeatureFlags()
       .then((res) => {
         if (cancelled) return;
-        const enabled =
-          (res.flags as Record<string, boolean>).BASKET_OPTIMIZATION ?? false;
-        setFlag(enabled ? 'enabled' : 'disabled');
+        setFlag(res.flags.BASKET_OPTIMIZATION ? 'enabled' : 'disabled');
       })
       .catch(() => {
         if (!cancelled) setFlag('disabled');
