@@ -19,7 +19,7 @@
  */
 
 import { useState, useCallback, useRef } from 'react';
-import type { ProductSearchItem, ProductSearchResult } from '@/lib/types';
+import type { ProductSearchItem } from '@/lib/types';
 import { searchProducts } from '@/lib/api';
 import type { TransportArrangement } from '@/lib/basket.types';
 import QuantitySelector from '../../calculator/components/QuantitySelector';

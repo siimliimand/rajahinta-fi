@@ -11,22 +11,17 @@
  *
  * @module BasketOptimizerApiIntegrationTest
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   BadRequestException,
   NotFoundException,
   UnprocessableEntityException,
   ForbiddenException,
 } from '@nestjs/common';
-import type { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
-import request from 'supertest';
 import { Reflector } from '@nestjs/core';
 
 // --- core-domain ---
 import {
-  TAX_RULE_REPOSITORY_PORT,
-  type ITaxRuleRepositoryPort,
   type ITransportOfferQuery,
   type TransportOffer,
   type IProductDataPort,
@@ -34,9 +29,6 @@ import {
   type CalculatorProductData,
   type CalculatorRetailOfferData,
   BasketOptimizerService,
-  BasketValidationError,
-  BasketClassificationGateError,
-  MAX_BASKET_ITEMS,
 } from '@rajahinta/core-domain';
 import { ClassificationGateService } from '@rajahinta/core-domain/normalization/classification-gate.service';
 import { AlcoholExciseService } from '@rajahinta/core-domain/tax/services/alcohol-excise.service';
@@ -48,30 +40,18 @@ import { ReliabilityService } from '@rajahinta/core-domain/reliability/reliabili
 import { TransactionClassificationService } from '@rajahinta/core-domain';
 import { TransportClassificationService } from '@rajahinta/core-domain';
 import { LandedCostCalculatorService } from '@rajahinta/core-domain/calculator/landed-cost-calculator.service';
-import { PRODUCT_DATA_PORT, CALCULATION_RECORD_PORT } from '@rajahinta/core-domain/calculator/calculator.types';
-import { TRANSPORT_OFFER_QUERY } from '@rajahinta/core-domain/transport/transport-offer-query.interface';
-import {
-  MERCHANT_TERMS_PORT,
-  BASKET_CALCULATION_RECORD_PORT,
-} from '@rajahinta/core-domain/optimizer/optimizer.types';
-import type { IMerchantTermsPort } from '@rajahinta/core-domain/optimizer/ports/merchant-terms.port';
 import type { IBasketCalculationRecordPort } from '@rajahinta/core-domain/optimizer/ports/basket-calculation-record.port';
-import type { BasketOptimizationInput, BasketOptimizationResult } from '@rajahinta/core-domain/optimizer/optimizer.types';
+import type { IMerchantTermsPort } from '@rajahinta/core-domain/optimizer/ports/merchant-terms.port';
 
 // --- application-api ---
 import {
-  FeatureFlagsModule,
   FeatureFlagService,
   FeatureFlagGuard,
   FeatureFlag,
-  RateLimitingModule,
-  RateLimitGuard,
-  RATE_LIMITER,
 } from '@rajahinta/application-api';
 import { BasketOptimizerController } from '@rajahinta/application-api/basket/basket-optimizer.controller';
 import type { BasketOptimizeRequest } from '@rajahinta/application-api/basket/basket.dto';
-import { IdempotencyService, InMemoryIdempotencyCache, IDEMPOTENCY_CACHE } from '@rajahinta/application-api/idempotency/idempotency.service';
-import type { IIdempotencyCache } from '@rajahinta/application-api/idempotency';
+import { IdempotencyService, InMemoryIdempotencyCache } from '@rajahinta/application-api/idempotency/idempotency.service';
 
 import { InMemoryTaxRuleRepository } from '../golden/helpers/in-memory-tax-rule.repository';
 import {
@@ -124,29 +104,6 @@ const TRANSPORT_VINOS_ES: TransportOffer = {
 };
 
 const ALL_TRANSPORT_OFFERS = [TRANSPORT_BEVERAGE_DE, TRANSPORT_VINOS_ES];
-
-const MOCK_RESULT: BasketOptimizationResult = {
-  shipments: [{
-    merchant: 'beverage-de',
-    country: 'DE',
-    items: [],
-    consolidatedTransport: { totalCents: 150, weightTier: '0–10 kg', packageTier: 'can', reliability: 'EXACT' },
-    retailSubtotalCents: 200,
-    thresholdCheck: { minimumOrderValueCents: null, meetsThreshold: true, termsReliability: null },
-  }],
-  totalCents: 441,
-  itemizedTotals: 291,
-  confidence: 'MEDIUM' as const,
-  confidenceBreakdown: [],
-  disclaimer: { text: 'Test', language: 'fi' as const, version: '1.0' },
-  alternatives: [],
-  metadata: {
-    input: { items: [{ productId: 1, quantity: 1 }], destination: 'FI' },
-    calculationTimestamp: new Date().toISOString(),
-    datasetVersions: ['v1.0-2024'],
-    calculationRecordId: null,
-  },
-};
 
 // ---------------------------------------------------------------------------
 // In-memory port implementations

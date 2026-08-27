@@ -21,7 +21,6 @@
 
 import type {
   BasketOptimizationResult,
-  BasketOptimizationAlternate,
   BasketShipment,
   ConsolidatedTransport,
   ConsolidatedTransportReliability,
@@ -81,12 +80,6 @@ const TRANSPORT_RELIABILITY_BADGE: Record<
   EXACT: { bg: 'bg-green-50', text: 'text-green-700' },
   ESTIMATED: { bg: 'bg-amber-50', text: 'text-amber-700' },
   PARTIAL: { bg: 'bg-red-50', text: 'text-red-700' },
-};
-
-const TRANSPORT_RELIABILITY_DOT: Record<ConsolidatedTransportReliability, string> = {
-  EXACT: 'bg-green-400',
-  ESTIMATED: 'bg-amber-400',
-  PARTIAL: 'bg-red-400',
 };
 
 /** Confidence indicator colours (matches CalculatorResult). */

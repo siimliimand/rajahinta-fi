@@ -14,7 +14,6 @@ import type {
   BasketOptimizeRequest,
   BasketOptimizationResult,
 } from './basket.types';
-import type { ApiError } from './types';
 
 // ---------------------------------------------------------------------------
 // Error classification

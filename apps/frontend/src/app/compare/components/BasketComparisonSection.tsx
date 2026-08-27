@@ -97,12 +97,6 @@ const TRANSPORT_RELIABILITY_BADGE: Record<
   PARTIAL: { bg: 'bg-red-50', text: 'text-red-700' },
 };
 
-const TRANSPORT_RELIABILITY_DOT: Record<ConsolidatedTransportReliability, string> = {
-  EXACT: 'bg-green-400',
-  ESTIMATED: 'bg-amber-400',
-  PARTIAL: 'bg-red-400',
-};
-
 const CONFIDENCE_META: Record<
   ConfidenceLevel,
   { bg: string; text: string; dot: string; label: string }
@@ -403,8 +397,6 @@ export default function BasketComparisonSection() {
   const [searchResults, setSearchResults] = useState<ProductSearchItem[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [showSearch, setShowSearch] = useState(true);
-
   // ── Basket builder state ──
   const [items, setItems] = useState<
     { productId: number; productName: string; quantity: number }[]
