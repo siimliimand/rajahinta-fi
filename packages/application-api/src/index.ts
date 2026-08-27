@@ -49,6 +49,7 @@ import { BasketOptimizerController } from './basket';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
 import { HistoricalDataModule } from './historical';
+import { ReportsModule } from './reports';
 import { AnalyticsModule, OutboundRedirectController } from './analytics';
 import { CorrectionModule } from './correction';
 import { RankingModule as ApplicationRankingModule } from './ranking';
@@ -200,6 +201,10 @@ imports: [
     // Price-history API — declares its own controller behind the
     // enable_historical_price_intelligence feature flag (task 4.1).
     HistoricalDataModule,
+    // Report export API — declares its own controller behind the
+    // ADVANCED_FEATURES feature flag + calculation:export entitlement
+    // (task 3.3, change phase2-advanced-features).
+    ReportsModule,
   ],
   providers: [
     TaxCalculationEngineAdapter,
@@ -281,6 +286,7 @@ export namespace ApplicationApiModule {
         ApplicationRankingModule,
         coreDomain, // brings the CONFIGURED CalculatorModule (ports injected)
         HistoricalDataModule,
+        ReportsModule,
       ],
       providers: [
         TaxCalculationEngineAdapter,
@@ -389,6 +395,13 @@ export type {
   PriceHistoryAttribution,
   PriceHistoryResponse,
 } from './historical';
+
+// ---------------------------------------------------------------------------
+// Reports — calculation export API (feature-flagged + entitlement-gated)
+// ---------------------------------------------------------------------------
+
+export { ReportsModule, ReportsController, ReportExportService } from './reports';
+export type { ReportFormat, JsonReport, ReportsModulePorts } from './reports';
 
 // ---------------------------------------------------------------------------
 // Correction — correction flagging API
