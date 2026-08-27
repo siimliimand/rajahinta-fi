@@ -27,6 +27,7 @@ import {
   CalculationRecordRepository,
   AccountRepository,
   SavedBasketRepository,
+  SavedScenarioRepository,
   PriceObservationRepository,
   PriceHistorySummaryRepository,
   AggregationWatermarkRepository,
@@ -41,6 +42,7 @@ import { TaxRuleRepositoryAdapter } from './repositories/tax-rate.repository';
 import { DrizzleCorrectionRepository } from './repositories/correction.repository';
 import { DrizzleAccountRepository } from './repositories/account.repository';
 import { DrizzleSavedBasketRepository } from './repositories/saved-basket.repository';
+import { DrizzleSavedScenarioRepository } from './repositories/saved-scenario.repository';
 import { DrizzlePriceObservationRepository } from './repositories/price-observation.repository';
 import { DrizzlePriceHistorySummaryRepository } from './repositories/price-history-summary.repository';
 import { DrizzleAggregationWatermarkRepository } from './repositories/aggregation-watermark.repository';
@@ -89,6 +91,13 @@ import {
     {
       provide: SavedBasketRepository,
       useClass: DrizzleSavedBasketRepository,
+    },
+    // Saved scenarios — named calculator input sets (upsert-by-name),
+    // consumed by the scenario endpoints of change phase2-advanced-features
+    // (task 3.1).
+    {
+      provide: SavedScenarioRepository,
+      useClass: DrizzleSavedScenarioRepository,
     },
     // Append-only price-observation log. NOT registered under the domain
     // PRICE_OBSERVATION_PORT here — that wiring belongs to the composition
@@ -140,6 +149,7 @@ import {
     DrizzleCorrectionRepository,
     DrizzleAccountRepository,
     DrizzleSavedBasketRepository,
+    DrizzleSavedScenarioRepository,
     DrizzlePriceObservationRepository,
     DrizzlePriceHistorySummaryRepository,
     DrizzleAggregationWatermarkRepository,
@@ -155,6 +165,7 @@ import {
     CalculationRecordRepository,
     AccountRepository,
     SavedBasketRepository,
+    SavedScenarioRepository,
     PriceObservationRepository,
     PriceHistorySummaryRepository,
 AggregationWatermarkRepository,
@@ -173,6 +184,7 @@ AggregationWatermarkRepository,
     DrizzleCorrectionRepository,
     DrizzleAccountRepository,
     DrizzleSavedBasketRepository,
+    DrizzleSavedScenarioRepository,
     DrizzlePriceObservationRepository,
     DrizzlePriceHistorySummaryRepository,
     DrizzleAggregationWatermarkRepository,

@@ -8,7 +8,7 @@
  * @module RepositoryAbstractions
  */
 import { Injectable } from '@nestjs/common';
-import type { PriceObservation } from '@rajahinta/core-domain';
+import type { PriceObservation, TransportArrangement } from '@rajahinta/core-domain';
 import {
   productMaster,
   retailOffers,
@@ -17,6 +17,7 @@ import {
   calculationRecords,
   accounts,
   savedBaskets,
+  savedScenarios,
   priceObservations,
   priceHistorySummaries,
   merchantTerms,
@@ -194,6 +195,70 @@ export abstract class SavedBasketRepository {
 
   /** Delete a basket by its primary key. */
   abstract delete(id: number): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Saved-scenario repository abstraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Calculator inputs persisted in saved_scenarios.inputs.
+ *
+ * Mirrors the calculator request minus sessionId — a scenario captures
+ * only the input state needed to re-run a calculation against current
+ * data; it is never a cached result.
+ */
+export interface SavedScenarioInputs {
+  /** Product master ID the calculation ran against. */
+  readonly productId: number;
+  /** Quantity of units. */
+  readonly quantity: number;
+  /** Destination country ISO 3166-1 alpha-2 (e.g. "FI"). */
+  readonly destination: string;
+  /** Optional carrier override for transport estimation. */
+  readonly transportMethod?: string;
+  /** How transport is arranged (defaults to SELLER_ARRANGED when absent). */
+  readonly transportArrangement?: TransportArrangement;
+}
+
+/** Persisted saved-scenario row (raw schema shape). */
+export type SavedScenarioRecord = typeof savedScenarios.$inferSelect;
+
+/**
+ * Saved scenarios — named calculator input sets scoped to an account.
+ *
+ * The only write path is upsert-by-name: saving with an existing
+ * (accountId, name) replaces the inputs — one row per chosen name, no
+ * edit history (data minimization). Reads return scenarios with their
+ * inputs so the client can repopulate the calculator; any displayed
+ * result comes from re-running the calculation against current data.
+ *
+ * @see design.md Decision 1 — scenarios are a separate table, upsert-by-name.
+ */
+@Injectable()
+export abstract class SavedScenarioRepository {
+  /** Return all scenarios for an account (by account db id). */
+  abstract findByAccountId(
+    accountId: number,
+  ): Promise<SavedScenarioRecord[]>;
+
+  /** Return all scenarios for a user (by external userId via join). */
+  abstract findByUserId(
+    userId: string,
+  ): Promise<SavedScenarioRecord[]>;
+
+  /**
+   * Insert or replace the inputs of the scenario named {@code name} for
+   * the account — conflict target is the (account_id, name) unique
+   * constraint; inputs and updatedAt are refreshed, identity columns
+   * are not. Returns the upserted row.
+   */
+  abstract upsert(
+    record: typeof savedScenarios.$inferInsert,
+  ): Promise<SavedScenarioRecord>;
+
+  /** Delete a scenario by its primary key, scoped to the owning account. */
+  abstract delete(accountId: number, id: number): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
