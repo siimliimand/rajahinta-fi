@@ -41,7 +41,7 @@
 - [x] 6.2 Write API-layer and lifecycle tests — scenario CRUD round-trip incl. upsert-by-name and flag-off 403; reports (all three formats, disclaimer presence, CSV escaping, entitlement 403 for FREE tier, flag-off 403, rate limiting); reliability endpoint shape; GDPR export includes scenarios and erasure cascades to them; real engines and repositories, no `vi.fn()` mocks, per the golden-dataset convention <!-- agent: platform-engineer.build, depends_on: [3.1, 3.2, 3.3, 3.4], touches: [packages/application-api/src/**/__tests__/**, tests/integration/**] -->
 - [x] 6.3 Write the neutrality lockstep test at `packages/core-domain/src/ranking/__tests__/` — `RankingService.rank()` rejects a score-carrying input object, and the score output type shares no import path into the ranking module (mirrors the billing-isolation convention) <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [packages/core-domain/src/ranking/__tests__/**] -->
 - [x] 6.4 Run typecheck, lint, unit tests, and golden-dataset regression tests; fix fallout <!-- agent: platform-engineer.fast, depends_on: [4.1, 4.2, 4.3, 4.4, 6.1, 6.2, 6.3], touches: [] -->
-- [ ] 6.5 Update `docs/tasks.md` — mark T2.10 through T2.13 with completion notes referencing this change <!-- agent: platform-engineer.fast, depends_on: [6.4], touches: [docs/tasks.md] -->
+- [x] 6.5 Update `docs/tasks.md` — mark T2.10 through T2.13 with completion notes referencing this change <!-- agent: platform-engineer.fast, depends_on: [6.4], touches: [docs/tasks.md] -->
 
 ---
 
