@@ -19,6 +19,14 @@ export enum FeatureFlag {
    * Default OFF during active development — enabled once integration tests pass.
    */
   BASKET_OPTIMIZATION = 'BASKET_OPTIMIZATION',
+  /**
+   * Gate advanced Phase 2 surfaces: scenario (endpoints + UI), report
+   * (endpoint + export buttons), reliability (endpoint + embedded scores),
+   * and declaration guidance (field + panel).
+   * Spec/design slug: `enable_advanced_features`.
+   * Default OFF for instant rollback of all four surfaces together.
+   */
+  ADVANCED_FEATURES = 'ADVANCED_FEATURES',
 }
 
 /** Runtime feature-flag configuration shape used by the service. */
