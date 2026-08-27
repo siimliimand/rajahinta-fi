@@ -151,6 +151,13 @@ class MockSavedBasketRepositoryImpl {
   baskets = new Map<number, MockBasketRow>();
   nextBasketId = 1;
 
+  /**
+   * Resolves userId → account → baskets, mirroring the Drizzle join the
+   * concrete repository performs (same shape as FakeSavedBasketRepository
+   * in gdpr-scenario-lifecycle.test.ts).
+   */
+  constructor(private readonly accountRepo: MockAccountRepositoryImpl) {}
+
   create = vi.fn(
     async (
       record: Parameters<SavedBasketRepository['create']>[0],
@@ -168,13 +175,14 @@ class MockSavedBasketRepositoryImpl {
   );
 
   findByUserId = vi.fn(
-    async (_userId: string): Promise<MockBasketRow[]> => {
-      // Find the account to get the account ID
-      // In a real scenario, we'd join — here we track by accountId internally
-      // and need to find which account belongs to this userId.
-      // We don't have direct access to the account repo, so we return empty
-      // and let the test use the accountRepo mock directly.
-      return [];
+    async (userId: string): Promise<MockBasketRow[]> => {
+      const account = this.accountRepo.accounts.get(userId);
+      if (!account) {
+        return [];
+      }
+      return Array.from(this.baskets.values()).filter(
+        (b) => b.accountId === account.id,
+      );
     },
   );
 
@@ -215,7 +223,7 @@ describe('GDPR Integration — export, erasure, retention', () => {
   describe('T4.3 — export on persisted data', () => {
     it('generates full export for an account created via repository', async () => {
       const mockAccountRepo = new MockAccountRepositoryImpl();
-      const mockBasketRepo = new MockSavedBasketRepositoryImpl();
+      const mockBasketRepo = new MockSavedBasketRepositoryImpl(mockAccountRepo);
       const service = new AccountService(
         mockAccountRepo as unknown as AccountRepository,
         mockBasketRepo as unknown as SavedBasketRepository,
@@ -256,7 +264,7 @@ describe('GDPR Integration — export, erasure, retention', () => {
   describe('T4.3 — erasure (anonymize) on persisted data', () => {
     it('removes original userId and email after anonymization', async () => {
       const mockAccountRepo = new MockAccountRepositoryImpl();
-      const mockBasketRepo = new MockSavedBasketRepositoryImpl();
+      const mockBasketRepo = new MockSavedBasketRepositoryImpl(mockAccountRepo);
       const mockAudit = { logChange: vi.fn().mockResolvedValue(undefined) };
       const service = new AccountService(
         mockAccountRepo as unknown as AccountRepository,
@@ -298,7 +306,7 @@ describe('GDPR Integration — export, erasure, retention', () => {
 
     it('produces non-derivable pseudonym (random UUID, not hash of userId)', async () => {
       const mockAccountRepo = new MockAccountRepositoryImpl();
-      const mockBasketRepo = new MockSavedBasketRepositoryImpl();
+      const mockBasketRepo = new MockSavedBasketRepositoryImpl(mockAccountRepo);
       const service = new AccountService(
         mockAccountRepo as unknown as AccountRepository,
         mockBasketRepo as unknown as SavedBasketRepository,
@@ -336,7 +344,7 @@ describe('GDPR Integration — export, erasure, retention', () => {
   describe('T4.3 — retention worker path on persisted data', () => {
     it('purgeExpiredAccounts operates through repository when injected', async () => {
       const mockAccountRepo = new MockAccountRepositoryImpl();
-      const mockBasketRepo = new MockSavedBasketRepositoryImpl();
+      const mockBasketRepo = new MockSavedBasketRepositoryImpl(mockAccountRepo);
       const service = new AccountService(
         mockAccountRepo as unknown as AccountRepository,
         mockBasketRepo as unknown as SavedBasketRepository,
@@ -377,7 +385,7 @@ describe('GDPR Integration — export, erasure, retention', () => {
 
     it('anonymizeInactiveAccounts operates through repository path', async () => {
       const mockAccountRepo = new MockAccountRepositoryImpl();
-      const mockBasketRepo = new MockSavedBasketRepositoryImpl();
+      const mockBasketRepo = new MockSavedBasketRepositoryImpl(mockAccountRepo);
       const service = new AccountService(
         mockAccountRepo as unknown as AccountRepository,
         mockBasketRepo as unknown as SavedBasketRepository,

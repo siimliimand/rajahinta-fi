@@ -119,7 +119,10 @@ describe('ScenarioControls', () => {
     );
 
     const picker = await screen.findByTestId('scenario-picker');
-    expect(picker).toHaveTextContent('Summer trip');
+    // The list loads asynchronously after the flag flips — waitFor, or the
+    // sync assertion can observe the pre-fetch "No saved scenarios" render
+    // under full-suite load (flaky otherwise).
+    await waitFor(() => expect(picker).toHaveTextContent('Summer trip'));
     expect(mockedListScenarios).toHaveBeenCalledTimes(1);
   });
 
