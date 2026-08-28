@@ -14,11 +14,11 @@
  * @module BasketPage
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import type { BasketOptimizationResult, BasketItemInput } from '@/lib/basket.types';
 import { optimizeBasket, classifyBasketError } from '@/lib/basket.client';
-import { getFeatureFlags } from '@/lib/api';
+import { useFeatureFlags } from '@/lib/feature-flags';
 import type { TransportArrangement } from '@/lib/basket.types';
 import BasketBuilder from './components/BasketBuilder';
 import BasketResults from './components/BasketResults';
@@ -37,12 +37,6 @@ const DEFAULT_DESTINATION = 'FI';
 const MIN_QUERY_LENGTH = 2;
 
 // ---------------------------------------------------------------------------
-// Feature-flag state
-// ---------------------------------------------------------------------------
-
-type FlagState = 'checking' | 'enabled' | 'disabled';
-
-// ---------------------------------------------------------------------------
 // Page component
 // ---------------------------------------------------------------------------
 
@@ -52,7 +46,9 @@ type FlagState = 'checking' | 'enabled' | 'disabled';
  *
  * Behaviour:
  *  - `enable_basket_optimization` off ⇒ renders nothing (same as
- *    ProductHistoryPanel's hidden treatment).
+ *    ProductHistoryPanel's hidden treatment). The flag state is inlined
+ *    with the initial HTML, so the page is hidden or visible from the
+ *    first render — no late appearance.
  *  - Builder allows adding up to 10 products with quantities.
  *  - Submit calls {@link optimizeBasket} and renders the result with
  *    per-store breakdowns, confidence, disclaimer, and alternatives.
@@ -60,8 +56,9 @@ type FlagState = 'checking' | 'enabled' | 'disabled';
 export default function BasketPage() {
   const t = useTranslations('BasketPage');
 
-  // ── Feature flag ──
-  const [flag, setFlag] = useState<FlagState>('checking');
+  // ── Feature flag (inlined with the initial HTML payload) ──
+  const flags = useFeatureFlags();
+  const flagEnabled = flags.flags.BASKET_OPTIMIZATION;
 
   // ── Basket builder state ──
   const [items, setItems] = useState<
@@ -78,25 +75,6 @@ export default function BasketPage() {
 
   // Guard against duplicate submits
   const optimizeInFlight = useRef(false);
-
-  // ── Feature flag check ──
-  useEffect(() => {
-    let cancelled = false;
-    getFeatureFlags()
-      .then((res) => {
-        if (cancelled) return;
-        const enabled =
-          (res.flags as Record<string, boolean>).BASKET_OPTIMIZATION ?? false;
-        setFlag(enabled ? 'enabled' : 'disabled');
-      })
-      .catch(() => {
-        // Degrade to hidden — same as ProductHistoryPanel's fallback.
-        if (!cancelled) setFlag('disabled');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // ── Handlers ──
 
@@ -172,12 +150,8 @@ export default function BasketPage() {
     }
   }, [items, destination, transportArrangement, t]);
 
-  // ── Hidden states ──
-  if (flag === 'checking') {
-    return null;
-  }
-
-  if (flag === 'disabled') {
+  // ── Hidden state: flag off in the inlined payload ──
+  if (!flagEnabled) {
     return null;
   }
 

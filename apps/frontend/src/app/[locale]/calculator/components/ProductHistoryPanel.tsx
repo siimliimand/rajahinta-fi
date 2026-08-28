@@ -33,10 +33,10 @@ import type {
 } from '@/lib/types';
 import {
   classifyPriceHistoryError,
-  getFeatureFlags,
   getPriceHistory,
   getProductDetail,
 } from '@/lib/api';
+import { useFeatureFlags } from '@/lib/feature-flags';
 import HistoryChart from './HistoryChart';
 
 // ---------------------------------------------------------------------------
@@ -96,8 +96,6 @@ interface ProductHistoryPanelProps {
   readonly showMerchantFilter?: boolean;
 }
 
-type FlagState = 'checking' | 'enabled' | 'disabled';
-
 /** Retryable failures get a retry affordance; hidden failures render nothing. */
 type FailureState = 'retryable' | 'hidden' | null;
 
@@ -107,7 +105,9 @@ export default function ProductHistoryPanel({
 }: ProductHistoryPanelProps) {
   const t = useTranslations('ProductHistoryPanel');
   const tCommon = useTranslations('Common');
-  const [flag, setFlag] = useState<FlagState>('checking');
+  // Flag state is inlined with the initial HTML payload (task 9.4).
+  const flags = useFeatureFlags();
+  const flagEnabled = flags.flags.HISTORICAL_PRICE_INTELLIGENCE;
   const [metric, setMetric] = useState<PriceHistoryMetric>('price');
   const [merchant, setMerchant] = useState<string | null>(null);
   const [merchants, setMerchants] = useState<readonly string[]>([]);
@@ -116,28 +116,9 @@ export default function ProductHistoryPanel({
   const [failure, setFailure] = useState<FailureState>(null);
   const [retryNonce, setRetryNonce] = useState(0);
 
-  // ── Feature flag: hide and skip the request when off ──
-  useEffect(() => {
-    let cancelled = false;
-    getFeatureFlags()
-      .then((res) => {
-        if (cancelled) return;
-        setFlag(
-          res.flags.HISTORICAL_PRICE_INTELLIGENCE ? 'enabled' : 'disabled',
-        );
-      })
-      .catch(() => {
-        // Flag state unreachable — degrade as if disabled.
-        if (!cancelled) setFlag('disabled');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   // ── Merchant filter options (result view only, after the flag is on) ──
   useEffect(() => {
-    if (flag !== 'enabled' || !showMerchantFilter) return;
+    if (!flagEnabled || !showMerchantFilter) return;
     let cancelled = false;
     getProductDetail(productId)
       .then((detail) => {
@@ -151,13 +132,13 @@ export default function ProductHistoryPanel({
     return () => {
       cancelled = true;
     };
-  }, [flag, productId, showMerchantFilter]);
+  }, [flagEnabled, productId, showMerchantFilter]);
 
   // ── History fetch — guarded by the flag, never fired when disabled ──
   useEffect(() => {
-    // 'checking' and 'disabled' both return before any request (design
-    // decision 7: the UI skips the fetch, not just the rendering).
-    if (flag !== 'enabled') return;
+    // Disabled returns before any request (design decision 7: the UI
+    // skips the fetch, not just the rendering).
+    if (!flagEnabled) return;
 
     let cancelled = false;
     setLoading(true);
@@ -192,10 +173,10 @@ export default function ProductHistoryPanel({
     return () => {
       cancelled = true;
     };
-  }, [flag, productId, metric, merchant, retryNonce]);
+  }, [flagEnabled, productId, metric, merchant, retryNonce]);
 
-  // ── Hidden states: flag off, still checking, or hidden failure ──
-  if (flag !== 'enabled' || failure === 'hidden') {
+  // ── Hidden states: flag off in the inlined payload, or hidden failure ──
+  if (!flagEnabled || failure === 'hidden') {
     return null;
   }
 

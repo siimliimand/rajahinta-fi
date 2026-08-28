@@ -7,7 +7,8 @@
  * Behaviour:
  *  - `enable_advanced_features` off ⇒ the actions render nothing and no
  *    report request is fired (same guard-before-fetch pattern as
- *    ProductHistoryPanel). A failed flag lookup also degrades to hidden.
+ *    ProductHistoryPanel). The flag state arrives with the initial HTML
+ *    payload, so the actions' visibility is correct on the first render.
  *  - PREMIUM entitlement failures (403 error 'InsufficientEntitlement')
  *    surface a controlled-vocabulary message — never a crash and never
  *    promotional wording.
@@ -17,20 +18,18 @@
  * @module ReportExportActions
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import {
   classifyReportError,
   downloadReport,
-  getFeatureFlags,
   openPrintableReport,
 } from '@/lib/api';
+import { useFeatureFlags } from '@/lib/feature-flags';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-type FlagState = 'checking' | 'enabled' | 'disabled';
 
 type BusyFormat = 'json' | 'csv' | 'print' | null;
 
@@ -50,29 +49,14 @@ export default function ReportExportActions({
   compact = false,
 }: ReportExportActionsProps) {
   const t = useTranslations('ReportExport');
-  const [flag, setFlag] = useState<FlagState>('checking');
+  // Flag state is inlined with the initial HTML payload (task 9.4).
+  const flags = useFeatureFlags();
+  const flagEnabled = flags.flags.ADVANCED_FEATURES;
   const [busy, setBusy] = useState<BusyFormat>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Feature flag: hide and skip the report requests when off ──
-  useEffect(() => {
-    let cancelled = false;
-    getFeatureFlags()
-      .then((res) => {
-        if (cancelled) return;
-        setFlag(res.flags.ADVANCED_FEATURES ? 'enabled' : 'disabled');
-      })
-      .catch(() => {
-        // Flag state unreachable — degrade as if disabled.
-        if (!cancelled) setFlag('disabled');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // ── Hidden states: flag off or still checking ──
-  if (flag !== 'enabled') {
+  // ── Hidden state: flag off in the inlined payload ──
+  if (!flagEnabled) {
     return null;
   }
 

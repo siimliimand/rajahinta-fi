@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
-import { getSessionUserId, request, getCalculationResult } from '../../../lib/api';
-import type { CalculatorResult } from '@/lib/types';
+import { ensureSession, request, getCalculationResult } from '../../../lib/api';
+import type { CalculatorResult, SessionStatus } from '@/lib/types';
 import SavedScenariosSection from './components/SavedScenariosSection';
 import ReportExportActions from '../calculator/components/ReportExportActions';
 
@@ -12,8 +12,9 @@ import ReportExportActions from '../calculator/components/ReportExportActions';
  * Account overview page.
  *
  * Phase 1: shows the current session state and a list of account features.
- * The session is created automatically on first visit. Anonymous-only
- * design — no email or personal data collection.
+ * The anonymous session is issued server-side on the first account-touch
+ * (the ensureSession probe); the token lives in an httpOnly cookie the page
+ * never reads. Anonymous-only design — no email or personal data collection.
  *
  * @module AccountPage
  */
@@ -21,7 +22,7 @@ export default function AccountPage() {
   const t = useTranslations('Account');
   const tCommon = useTranslations('Common');
 
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [session, setSession] = useState<SessionStatus | null>(null);
 
   // ── Calculation history state ──
   const [historyResults, setHistoryResults] = useState<CalculatorResult[]>([]);
@@ -32,14 +33,25 @@ export default function AccountPage() {
   const [exportSuccess, setExportSuccess] = useState(false);
 
   useEffect(() => {
-    // getSessionUserId creates the cookie if absent, so by the time this
-    // component mounts the anonymous session always exists.
-    setSessionId(getSessionUserId());
+    let cancelled = false;
+    // ensureSession resolves only once a server-issued session exists (the
+    // request wrapper mints one on the first 401); the userId shown in the
+    // UI is the server-derived identity, never a client-generated value.
+    ensureSession()
+      .then((s) => {
+        if (!cancelled) setSession(s);
+      })
+      .catch(() => {
+        // Backend unreachable — the anonymous panel renders instead.
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // ── Fetch calculation history ──
   useEffect(() => {
-    if (!sessionId) return;
+    if (!session) return;
 
     let cancelled = false;
 
@@ -72,7 +84,7 @@ export default function AccountPage() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [session]);
 
   // ── Data export handler ──
   const handleExport = useCallback(async () => {
@@ -89,7 +101,7 @@ export default function AccountPage() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `rajahinta-export-${(sessionId ?? 'unknown').slice(0, 8)}.json`;
+      anchor.download = `rajahinta-export-${(session?.userId ?? 'unknown').slice(0, 8)}.json`;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
@@ -101,7 +113,7 @@ export default function AccountPage() {
     } finally {
       setExporting(false);
     }
-  }, [sessionId]);
+  }, [session]);
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
@@ -110,7 +122,7 @@ export default function AccountPage() {
 
       {/* ── Session status ── */}
       <section className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        {sessionId ? (
+        {session ? (
           <>
             <h2 className="text-lg font-semibold text-gray-900">
               {t('welcomeBack')}
@@ -131,7 +143,7 @@ export default function AccountPage() {
               </Link>
             </div>
             <p className="mt-3 text-xs text-gray-400">
-              {tCommon('sessionId', { id: sessionId.slice(0, 8) })}
+              {tCommon('sessionId', { id: session.userId.slice(0, 8) })}
               &nbsp;&middot;&nbsp; {t('anonymous')}
             </p>
           </>

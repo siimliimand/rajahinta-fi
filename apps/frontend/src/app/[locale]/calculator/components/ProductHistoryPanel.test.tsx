@@ -2,9 +2,10 @@
  * ProductHistoryPanel integration tests (task 5.3).
  *
  * Verifies the flag-gated integration contract:
- *   1. Flag off  → the panel renders nothing and NEVER fires the
- *      price-history (or product-detail) request — the guard runs before
- *      the fetch, not as error-handling after.
+ *   1. Flag off in the inlined payload → the panel renders nothing on the
+ *      FIRST render and NEVER fires the price-history (or product-detail)
+ *      request — the guard runs before the fetch, not as error-handling
+ *      after.
  *   2. Flag on   → fetches the product-wide daily series with the default
  *      90-day range and renders the chart.
  *   3. Truncated history → the chart states "Data available from <date>"
@@ -24,13 +25,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductHistoryPanel, {
   defaultHistoryRange,
 } from './ProductHistoryPanel';
-import {
-  ApiFetchError,
-  getFeatureFlags,
-  getPriceHistory,
-  getProductDetail,
-} from '@/lib/api';
-import { renderWithIntl } from '@/lib/testing/test-intl';
+import { ApiFetchError, getPriceHistory, getProductDetail } from '@/lib/api';
+import { ALL_FLAGS_OFF, renderWithIntl } from '@/lib/testing/test-intl';
 import type { PriceHistoryResponse } from '@/lib/types';
 
 // Real classifyPriceHistoryError/ApiFetchError are kept; only the network
@@ -39,14 +35,12 @@ vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
-    getFeatureFlags: vi.fn(),
     getPriceHistory: vi.fn(),
     getProductDetail: vi.fn(),
   };
 });
 
 const mockedGetPriceHistory = vi.mocked(getPriceHistory);
-const mockedGetFeatureFlags = vi.mocked(getFeatureFlags);
 const mockedGetProductDetail = vi.mocked(getProductDetail);
 
 // ---------------------------------------------------------------------------
@@ -123,13 +117,6 @@ function detailWithMerchants(...merchants: string[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedGetFeatureFlags.mockResolvedValue({
-    flags: {
-      HISTORICAL_PRICE_INTELLIGENCE: true,
-      BASKET_OPTIMIZATION: false,
-      ADVANCED_FEATURES: false,
-    },
-  });
   mockedGetPriceHistory.mockResolvedValue(historyResponse());
 });
 
@@ -138,36 +125,21 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('ProductHistoryPanel', () => {
-  it('hides the section and never fetches history when the flag is off', async () => {
-    mockedGetFeatureFlags.mockResolvedValue({
-      flags: {
-        HISTORICAL_PRICE_INTELLIGENCE: false,
-        BASKET_OPTIMIZATION: false,
-        ADVANCED_FEATURES: false,
-      },
-    });
-
+  it('hides the section on the first render and never fetches history when the flag is off', () => {
     const { container } = renderWithIntl(
       <ProductHistoryPanel productId={42} showMerchantFilter />,
+      { featureFlags: ALL_FLAGS_OFF },
     );
-    // Let the flag promise resolve and its state update flush.
-    await waitFor(() => expect(mockedGetFeatureFlags).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(container.firstChild).toBeNull());
+
+    // Synchronous first-render assertion: the inlined flag state hides the
+    // panel with no client-side flag round-trip (task 9.4).
+    expect(container.firstChild).toBeNull();
 
     expect(mockedGetPriceHistory).not.toHaveBeenCalled();
     expect(mockedGetProductDetail).not.toHaveBeenCalled();
     expect(
       screen.queryByTestId('product-history-panel'),
     ).not.toBeInTheDocument();
-  });
-
-  it('treats an unreachable flag endpoint as disabled (no history fetch)', async () => {
-    mockedGetFeatureFlags.mockRejectedValue(new Error('network down'));
-
-    const { container } = renderWithIntl(<ProductHistoryPanel productId={42} />);
-    await waitFor(() => expect(container.firstChild).toBeNull());
-
-    expect(mockedGetPriceHistory).not.toHaveBeenCalled();
   });
 
   it('fetches the product-wide daily 90-day series and renders the chart when the flag is on', async () => {

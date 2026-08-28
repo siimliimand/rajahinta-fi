@@ -482,5 +482,25 @@
   "ContentSafetyBadge": {
     "promotional": "Mainoskieltä havaittu: \"{pattern}\" ({language})",
     "violations": "{count, plural, one {# sisältöpolitiikan loukkaus} other {# sisältöpolitiikan loukkausta}}"
+  },
+  "ProductPage": {
+    "metaTitle": "{name} — hintatiedot",
+    "metaDescription": "{name} ({details}) — kerättyjä myyntihintoja eri myyjiltä ja kokonaiskustannuslaskuri Suomeen.",
+    "metaDescriptionFallback": "Tuotteen hintatiedot ja kokonaiskustannuslaskuri.",
+    "notFoundTitle": "Tuotetta ei löytynyt",
+    "masterTitle": "Tuotetiedot",
+    "brandLabel": "Tuotemerkki",
+    "categoryLabel": "Kategoria",
+    "volumeLabel": "Pakkauskoko",
+    "containerLabel": "Pakkaustyyppi",
+    "eanLabel": "EAN-koodi",
+    "offersTitle": "Myyntihinnat",
+    "merchantHeader": "Myyjä",
+    "priceHeader": "Myyntihinta",
+    "countryHeader": "Maa",
+    "observedHeader": "Havaittu",
+    "noOffers": "Ei aktiivisia hintahavaintoja.",
+    "dataNote": "Hinnat ovat kerättyjä havaintoja, eivät myyjien tarjouksia.",
+    "landingNote": "Kokonaiskustannus Suomeen sisältää hinnan lisäksi verot, tullit ja kuljetuksen — laske se laskurissa."
   }
 }

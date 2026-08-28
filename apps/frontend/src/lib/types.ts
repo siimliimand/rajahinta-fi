@@ -477,6 +477,19 @@ export interface FeatureFlagsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Session (POST /api/v1/account/session — identity derived server-side)
+// ---------------------------------------------------------------------------
+
+/**
+ * Identity of the active anonymous session as derived by the server from
+ * the httpOnly `rajahinta_session` cookie. The client never holds the
+ * token itself.
+ */
+export interface SessionStatus {
+  readonly userId: string;
+}
+
+// ---------------------------------------------------------------------------
 // API error response
 // ---------------------------------------------------------------------------
 

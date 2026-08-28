@@ -2,7 +2,8 @@
  * ReportExportActions tests (task 4.2).
  *
  * Verifies the flag-gated export contract:
- *   1. Flag off → the actions render nothing and no report request fires.
+ *   1. Flag off in the inlined payload → the actions render nothing on the
+ *      FIRST render and no report request fires.
  *   2. Flag on → JSON/CSV downloads and the print action delegate to the
  *      report client with the record ID.
  *   3. Entitlement failure (403 InsufficientEntitlement) → a
@@ -18,13 +19,8 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ReportExportActions from './ReportExportActions';
-import { renderWithIntl } from '@/lib/testing/test-intl';
-import {
-  ApiFetchError,
-  downloadReport,
-  getFeatureFlags,
-  openPrintableReport,
-} from '@/lib/api';
+import { ALL_FLAGS_OFF, renderWithIntl } from '@/lib/testing/test-intl';
+import { ApiFetchError, downloadReport, openPrintableReport } from '@/lib/api';
 
 // Real classifyReportError/ApiFetchError are kept; only the network
 // functions are mocked.
@@ -32,31 +28,13 @@ vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
-    getFeatureFlags: vi.fn(),
     downloadReport: vi.fn(),
     openPrintableReport: vi.fn(),
   };
 });
 
-const mockedGetFeatureFlags = vi.mocked(getFeatureFlags);
 const mockedDownloadReport = vi.mocked(downloadReport);
 const mockedOpenPrintableReport = vi.mocked(openPrintableReport);
-
-const FLAG_ON = {
-  flags: {
-    HISTORICAL_PRICE_INTELLIGENCE: false,
-    BASKET_OPTIMIZATION: false,
-    ADVANCED_FEATURES: true,
-  },
-};
-
-const FLAG_OFF = {
-  flags: {
-    HISTORICAL_PRICE_INTELLIGENCE: false,
-    BASKET_OPTIMIZATION: false,
-    ADVANCED_FEATURES: false,
-  },
-};
 
 function apiError(
   status: number,
@@ -74,7 +52,6 @@ function apiError(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedGetFeatureFlags.mockResolvedValue(FLAG_ON);
   mockedDownloadReport.mockResolvedValue(undefined);
   mockedOpenPrintableReport.mockResolvedValue(undefined);
 });
@@ -84,19 +61,29 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('ReportExportActions', () => {
-  it('hides the actions and never fires a report request when the flag is off', async () => {
-    mockedGetFeatureFlags.mockResolvedValue(FLAG_OFF);
+  it('hides the actions on the first render and never fires a report request when the flag is off', () => {
+    const { container } = renderWithIntl(<ReportExportActions recordId={55} />, {
+      featureFlags: ALL_FLAGS_OFF,
+    });
 
-    const { container } = renderWithIntl(<ReportExportActions recordId={55} />);
-
-    await waitFor(() => expect(mockedGetFeatureFlags).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(container.firstChild).toBeNull());
+    // Synchronous first-render assertion: the inlined flag state hides the
+    // actions with no client-side flag round-trip (task 9.4).
+    expect(container.firstChild).toBeNull();
 
     expect(mockedDownloadReport).not.toHaveBeenCalled();
     expect(mockedOpenPrintableReport).not.toHaveBeenCalled();
     expect(
       screen.queryByTestId('report-export-actions'),
     ).not.toBeInTheDocument();
+  });
+
+  it('shows the actions on the first render when the flag is on in the inlined payload', () => {
+    const { container } = renderWithIntl(<ReportExportActions recordId={55} />);
+
+    // No flag round-trip to wait for — visibility matches the inlined
+    // state immediately (task 9.4: no late gated-UI appearance).
+    expect(container.firstChild).not.toBeNull();
+    expect(screen.getByTestId('report-export-actions')).toBeInTheDocument();
   });
 
   it('downloads JSON and CSV via the report client when the flag is on', async () => {

@@ -3,14 +3,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
-import { getSessionUserId, request } from '@/lib/api';
+import { request } from '@/lib/api';
 import type { Basket } from '@/lib/types';
 
 /**
  * Saved baskets page.
  *
- * Lists the current session's saved baskets with delete support.
- * Uses the anonymous session ID (x-user-id header) to identify the user.
+ * Lists the current session's saved baskets with delete support. The
+ * request() wrapper authenticates via the httpOnly session cookie and
+ * mints the session on this first account-touch when none exists.
  *
  * @module SavedBasketsPage
  */
@@ -26,9 +27,6 @@ export default function SavedBasketsPage() {
   const fetchBaskets = useCallback(async () => {
     setError(null);
     try {
-      // getSessionUserId ensures the session cookie exists so the
-      // x-user-id header injected by request() will be recognised
-      getSessionUserId();
       const data = await request<Basket[]>('/api/v1/account/baskets');
       setBaskets(data);
     } catch (err) {

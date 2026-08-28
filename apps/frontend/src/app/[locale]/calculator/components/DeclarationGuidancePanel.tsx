@@ -7,7 +7,8 @@
  * Behaviour:
  *  - `enable_advanced_features` off ⇒ the panel renders nothing and the
  *    declaration request is never fired (guard-before-fetch, same pattern
- *    as ProductHistoryPanel). A failed flag lookup also degrades to hidden.
+ *    as ProductHistoryPanel). The flag state arrives with the initial HTML
+ *    payload, so the panel's visibility is correct on the first render.
  *  - Fed by GET /api/v1/declaration/:recordId. A response without the
  *    `guidance` field (flag flipped off server-side) renders nothing.
  *  - Checklist and caveat strings are rendered verbatim — the observed
@@ -31,15 +32,13 @@ import {
   ApiFetchError,
   classifyReportError,
   getDeclarationSummary,
-  getFeatureFlags,
 } from '@/lib/api';
+import { useFeatureFlags } from '@/lib/feature-flags';
 import DisclaimerBanner from './DisclaimerBanner';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-type FlagState = 'checking' | 'enabled' | 'disabled';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -117,32 +116,17 @@ export default function DeclarationGuidancePanel({
 }: DeclarationGuidancePanelProps) {
   const t = useTranslations('DeclarationGuidance');
   const tCommon = useTranslations('Common');
-  const [flag, setFlag] = useState<FlagState>('checking');
+  // Flag state is inlined with the initial HTML payload (task 9.4).
+  const flags = useFeatureFlags();
+  const flagEnabled = flags.flags.ADVANCED_FEATURES;
   const [summary, setSummary] = useState<DeclarationSummaryResponse | null>(
     null,
   );
   const [needsSubscription, setNeedsSubscription] = useState(false);
 
-  // ── Feature flag: hide and skip the declaration request when off ──
-  useEffect(() => {
-    let cancelled = false;
-    getFeatureFlags()
-      .then((res) => {
-        if (cancelled) return;
-        setFlag(res.flags.ADVANCED_FEATURES ? 'enabled' : 'disabled');
-      })
-      .catch(() => {
-        // Flag state unreachable — degrade as if disabled.
-        if (!cancelled) setFlag('disabled');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   // ── Declaration fetch — guarded by the flag, never fired when disabled ──
   useEffect(() => {
-    if (flag !== 'enabled') return;
+    if (!flagEnabled) return;
     let cancelled = false;
 
     getDeclarationSummary(recordId)
@@ -164,10 +148,10 @@ export default function DeclarationGuidancePanel({
     return () => {
       cancelled = true;
     };
-  }, [flag, recordId]);
+  }, [flagEnabled, recordId]);
 
-  // ── Hidden states: flag off/checking, hidden failures, or no guidance ──
-  if (flag !== 'enabled') {
+  // ── Hidden states: flag off in the inlined payload, hidden failures ──
+  if (!flagEnabled) {
     return null;
   }
 

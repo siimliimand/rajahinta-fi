@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import type {
   ProductSearchItem,
@@ -14,6 +14,7 @@ import {
   saveScenario,
   request,
 } from '@/lib/api';
+import { useDebouncedCallback } from '@/lib/use-debounced-callback';
 import ProductSearch from './components/ProductSearch';
 import ProductSelector from './components/ProductSelector';
 import QuantitySelector from './components/QuantitySelector';
@@ -27,6 +28,12 @@ import ScenarioControls from './components/ScenarioControls';
 
 /** Minimum query length before we fire a search. */
 const MIN_QUERY_LENGTH = 2;
+
+/**
+ * Keystroke-to-search debounce: rapid typing reschedules one shared
+ * timer, so one request fires per settled query (task 5.2).
+ */
+const SEARCH_DEBOUNCE_MS = 300;
 
 /** Default destination country (Finland). */
 const DEFAULT_DESTINATION = 'FI';
@@ -65,34 +72,81 @@ export default function CalculatorPage() {
   const [result, setResult] = useState<CalculatorResult | null>(null);
   const [calcError, setCalcError] = useState<string | null>(null);
 
-  // Guard against duplicate submissions
-  const searchInFlight = useRef(false);
+  // Cancels the in-flight search when a newer one supersedes it, so a
+  // slow stale response can never overwrite a newer one's results.
+  const searchAbortRef = useRef<AbortController | null>(null);
 
-  // ── Search handler ──
-  const handleSearch = useCallback(async (q: string) => {
-    const trimmed = q.trim();
-    if (trimmed.length < MIN_QUERY_LENGTH || searchInFlight.current) return;
+  // Abort an in-flight search on unmount — a late response has no page
+  // to update.
+  useEffect(
+    () => () => {
+      searchAbortRef.current?.abort();
+    },
+    [],
+  );
 
-    searchInFlight.current = true;
-    setSearchLoading(true);
-    setSearchError(null);
-    setHasSearched(true);
-    setSelectedProduct(null);
-    setResult(null);
+  // ── Search execution (shared by the debounced keystroke path and the
+  //     immediate submit path) ──
+  const runSearch = useCallback(
+    async (q: string) => {
+      const trimmed = q.trim();
+      if (trimmed.length < MIN_QUERY_LENGTH) return;
 
-    try {
-      const res = await searchProducts(trimmed);
-      setSearchResults(res.items);
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : t('searchFailed');
-      setSearchError(message);
-      setSearchResults([]);
-    } finally {
-      setSearchLoading(false);
-      searchInFlight.current = false;
-    }
-  }, [t]);
+      searchAbortRef.current?.abort();
+      const controller = new AbortController();
+      searchAbortRef.current = controller;
+
+      setSearchLoading(true);
+      setSearchError(null);
+      setHasSearched(true);
+      setSelectedProduct(null);
+      setResult(null);
+
+      try {
+        const res = await searchProducts(
+          trimmed,
+          'ALPHABETICAL',
+          1,
+          20,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        setSearchResults(res.items);
+      } catch (err: unknown) {
+        // Superseded searches leave the newer one's state untouched.
+        if (controller.signal.aborted) return;
+        const message =
+          err instanceof Error ? err.message : t('searchFailed');
+        setSearchError(message);
+        setSearchResults([]);
+      } finally {
+        if (searchAbortRef.current === controller) {
+          setSearchLoading(false);
+        }
+      }
+    },
+    [t],
+  );
+
+  // ── Debounced keystroke path (task 5.2) ──
+  const debouncedSearch = useDebouncedCallback(runSearch, SEARCH_DEBOUNCE_MS);
+
+  const handleQueryChange = useCallback(
+    (q: string) => {
+      setQuery(q);
+      debouncedSearch.run(q);
+    },
+    [debouncedSearch],
+  );
+
+  // ── Immediate submit path (Enter / search button) ──
+  const handleSearch = useCallback(
+    (q: string) => {
+      debouncedSearch.cancel();
+      runSearch(q);
+    },
+    [debouncedSearch, runSearch],
+  );
 
   // ── Select handler ──
   const handleSelect = useCallback((product: ProductSearchItem) => {
@@ -118,8 +172,9 @@ export default function CalculatorPage() {
       setResult(res);
 
       // Fire-and-forget: record this calculation in the user's history.
-      // The `request()` helper auto-injects `x-user-id` for account-scoped
-      // paths.  History recording is non-critical — silently ignore failures.
+      // Authentication rides the httpOnly session cookie; request() mints
+      // one on the first account-touch when none exists yet.  History
+      // recording is non-critical — silently ignore failures.
       request<{ success: boolean }>('/api/v1/account/history', {
         method: 'POST',
         body: JSON.stringify({ recordId: res.calculationRecordId }),
@@ -226,7 +281,7 @@ export default function CalculatorPage() {
       <section className="mb-6">
         <ProductSearch
           value={query}
-          onChange={setQuery}
+          onChange={handleQueryChange}
           onSubmit={handleSearch}
           loading={searchLoading}
           error={searchError}

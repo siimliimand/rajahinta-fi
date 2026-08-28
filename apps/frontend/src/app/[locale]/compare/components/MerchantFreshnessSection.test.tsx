@@ -2,8 +2,8 @@
  * MerchantFreshnessSection tests (task 4.3).
  *
  * Verifies the flag-gated, informational-only contract:
- *   1. Flag off → the section renders nothing and NEVER fires the
- *      reliability request.
+ *   1. Flag off in the inlined payload → the section renders nothing on
+ *      the FIRST render and NEVER fires the reliability request.
  *   2. Flag on → renders the factual per-merchant summary (offer count,
  *      per-status shares as percentages, freshest observation, governance
  *      status) with identical rows per merchant.
@@ -18,41 +18,23 @@ import React from 'react';
 import { screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MerchantFreshnessSection from './MerchantFreshnessSection';
-import { renderWithIntl } from '@/lib/testing/test-intl';
-import { getFeatureFlags, getMerchantReliability } from '@/lib/api';
+import { ALL_FLAGS_OFF, renderWithIntl } from '@/lib/testing/test-intl';
+import { getMerchantReliability } from '@/lib/api';
 import type { MerchantReliabilityScore } from '@/lib/types';
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
-    getFeatureFlags: vi.fn(),
     getMerchantReliability: vi.fn(),
   };
 });
 
-const mockedGetFeatureFlags = vi.mocked(getFeatureFlags);
 const mockedGetMerchantReliability = vi.mocked(getMerchantReliability);
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
-
-const FLAG_ON = {
-  flags: {
-    HISTORICAL_PRICE_INTELLIGENCE: false,
-    BASKET_OPTIMIZATION: false,
-    ADVANCED_FEATURES: true,
-  },
-};
-
-const FLAG_OFF = {
-  flags: {
-    HISTORICAL_PRICE_INTELLIGENCE: false,
-    BASKET_OPTIMIZATION: false,
-    ADVANCED_FEATURES: false,
-  },
-};
 
 function score(
   merchant: string,
@@ -78,7 +60,6 @@ function score(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedGetFeatureFlags.mockResolvedValue(FLAG_ON);
   mockedGetMerchantReliability.mockResolvedValue({
     merchants: [score('merchant-a'), score('merchant-b')],
   });
@@ -89,15 +70,15 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('MerchantFreshnessSection', () => {
-  it('hides the display and never fetches reliability when the flag is off', async () => {
-    mockedGetFeatureFlags.mockResolvedValue(FLAG_OFF);
-
+  it('hides the display on the first render and never fetches reliability when the flag is off', () => {
     const { container } = renderWithIntl(
       <MerchantFreshnessSection merchants={['merchant-a']} />,
+      { featureFlags: ALL_FLAGS_OFF },
     );
 
-    await waitFor(() => expect(mockedGetFeatureFlags).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(container.firstChild).toBeNull());
+    // Synchronous first-render assertion: the inlined flag state hides the
+    // section with no client-side flag round-trip (task 9.4).
+    expect(container.firstChild).toBeNull();
 
     expect(mockedGetMerchantReliability).not.toHaveBeenCalled();
     expect(screen.queryByTestId('merchant-freshness')).not.toBeInTheDocument();
@@ -140,11 +121,12 @@ describe('MerchantFreshnessSection', () => {
     expect(rows[0]).not.toHaveTextContent('merchant-z');
   });
 
-  it('renders nothing when the merchant list is empty (even with the flag on)', async () => {
-    const { container } = renderWithIntl(<MerchantFreshnessSection merchants={[]} />);
+  it('renders nothing when the merchant list is empty (even with the flag on)', () => {
+    const { container } = renderWithIntl(
+      <MerchantFreshnessSection merchants={[]} />,
+    );
 
-    await waitFor(() => expect(mockedGetFeatureFlags).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(container.firstChild).toBeNull());
+    expect(container.firstChild).toBeNull();
     expect(mockedGetMerchantReliability).not.toHaveBeenCalled();
   });
 

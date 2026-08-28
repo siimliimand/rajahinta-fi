@@ -6,8 +6,9 @@
  *
  * Behaviour:
  *  - `enable_advanced_features` off ⇒ the section renders nothing and the
- *    scenario list request is never fired. A failed flag lookup also
- *    degrades to hidden.
+ *    scenario list request is never fired. The flag state arrives with
+ *    the initial HTML payload, so the section's visibility is correct on
+ *    the first render — no late appearance.
  *  - Scenarios are listed factually: name, resolved product (name or ID),
  *    quantity, destination, and last-updated timestamp. Loading happens on
  *    the calculator page, so no load action is offered here.
@@ -22,9 +23,8 @@ import React, { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import type { SavedScenario } from '@/lib/types';
-import { fetchProductsByIds, getFeatureFlags, listScenarios } from '@/lib/api';
-
-type FlagState = 'checking' | 'enabled' | 'disabled';
+import { fetchProductsByIds, listScenarios } from '@/lib/api';
+import { useFeatureFlags } from '@/lib/feature-flags';
 
 /** Render an ISO timestamp with the fi-FI locale conventions used elsewhere. */
 function formatTimestamp(iso: string): string {
@@ -42,32 +42,17 @@ function formatTimestamp(iso: string): string {
 
 export default function SavedScenariosSection() {
   const t = useTranslations('SavedScenarios');
-  const [flag, setFlag] = useState<FlagState>('checking');
+  // Flag state is inlined with the initial HTML payload (task 9.4).
+  const flags = useFeatureFlags();
+  const flagEnabled = flags.flags.ADVANCED_FEATURES;
   const [scenarios, setScenarios] = useState<readonly SavedScenario[]>([]);
   const [productNames, setProductNames] = useState<
     Readonly<Record<number, string>>
   >({});
 
-  // ── Feature flag: hide and skip the list request when off ──
+  // ── Load the scenario list when the flag is on ──
   useEffect(() => {
-    let cancelled = false;
-    getFeatureFlags()
-      .then((res) => {
-        if (cancelled) return;
-        setFlag(res.flags.ADVANCED_FEATURES ? 'enabled' : 'disabled');
-      })
-      .catch(() => {
-        // Flag state unreachable — degrade as if disabled.
-        if (!cancelled) setFlag('disabled');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // ── Load the scenario list once the flag is on ──
-  useEffect(() => {
-    if (flag !== 'enabled') return;
+    if (!flagEnabled) return;
     let cancelled = false;
 
     (async () => {
@@ -96,10 +81,10 @@ export default function SavedScenariosSection() {
     return () => {
       cancelled = true;
     };
-  }, [flag]);
+  }, [flagEnabled]);
 
-  // ── Hidden states: flag off or still checking ──
-  if (flag !== 'enabled') {
+  // ── Hidden state: flag off in the inlined payload ──
+  if (!flagEnabled) {
     return null;
   }
 

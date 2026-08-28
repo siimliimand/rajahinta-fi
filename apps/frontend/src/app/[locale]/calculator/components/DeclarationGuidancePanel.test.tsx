@@ -2,8 +2,8 @@
  * DeclarationGuidancePanel tests (task 4.4).
  *
  * Verifies the flag-gated guidance contract:
- *   1. Flag off → the panel renders nothing and NEVER fires the
- *      declaration request.
+ *   1. Flag off in the inlined payload → the panel renders nothing on the
+ *      FIRST render and NEVER fires the declaration request.
  *   2. Response without `guidance` (flag flipped off server-side) →
  *      renders nothing.
  *   3. With guidance → renders the derivation (facts + applied rates
@@ -20,8 +20,8 @@ import React from 'react';
 import { screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import DeclarationGuidancePanel from './DeclarationGuidancePanel';
-import { renderWithIntl } from '@/lib/testing/test-intl';
-import { ApiFetchError, getDeclarationSummary, getFeatureFlags } from '@/lib/api';
+import { ALL_FLAGS_OFF, renderWithIntl } from '@/lib/testing/test-intl';
+import { ApiFetchError, getDeclarationSummary } from '@/lib/api';
 import type { DeclarationSummaryResponse } from '@/lib/types';
 
 // Real classifyReportError/ApiFetchError are kept; only the network
@@ -30,33 +30,15 @@ vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
-    getFeatureFlags: vi.fn(),
     getDeclarationSummary: vi.fn(),
   };
 });
 
-const mockedGetFeatureFlags = vi.mocked(getFeatureFlags);
 const mockedGetDeclarationSummary = vi.mocked(getDeclarationSummary);
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
-
-const FLAG_ON = {
-  flags: {
-    HISTORICAL_PRICE_INTELLIGENCE: false,
-    BASKET_OPTIMIZATION: false,
-    ADVANCED_FEATURES: true,
-  },
-};
-
-const FLAG_OFF = {
-  flags: {
-    HISTORICAL_PRICE_INTELLIGENCE: false,
-    BASKET_OPTIMIZATION: false,
-    ADVANCED_FEATURES: false,
-  },
-};
 
 function summaryFixture(
   overrides: Partial<DeclarationSummaryResponse> = {},
@@ -141,7 +123,6 @@ function summaryFixture(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedGetFeatureFlags.mockResolvedValue(FLAG_ON);
   mockedGetDeclarationSummary.mockResolvedValue(summaryFixture());
 });
 
@@ -150,13 +131,15 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('DeclarationGuidancePanel', () => {
-  it('hides the panel and never fetches the declaration when the flag is off', async () => {
-    mockedGetFeatureFlags.mockResolvedValue(FLAG_OFF);
+  it('hides the panel on the first render and never fetches the declaration when the flag is off', () => {
+    const { container } = renderWithIntl(
+      <DeclarationGuidancePanel recordId={55} />,
+      { featureFlags: ALL_FLAGS_OFF },
+    );
 
-    const { container } = renderWithIntl(<DeclarationGuidancePanel recordId={55} />);
-
-    await waitFor(() => expect(mockedGetFeatureFlags).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(container.firstChild).toBeNull());
+    // Synchronous first-render assertion: the inlined flag state hides the
+    // panel with no client-side flag round-trip (task 9.4).
+    expect(container.firstChild).toBeNull();
 
     expect(mockedGetDeclarationSummary).not.toHaveBeenCalled();
   });

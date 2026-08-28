@@ -3,8 +3,9 @@
 /**
  * BasketComparisonSection — store-grouped multi-store comparison view.
  *
- * Gated behind the BASKET_OPTIMIZATION feature flag (three-state: checking,
- * disabled, enabled).  When hidden, renders nothing.  When visible, provides
+ * Gated behind the BASKET_OPTIMIZATION feature flag, whose state arrives
+ * inlined with the initial HTML payload.  When hidden, renders nothing —
+ * at the correct visibility from the first render.  When visible, provides
  * a product-search → basket-builder → optimize → store-grouped-results flow
  * that mirrors the basket page's patterns but is integrated into the compare
  * page context.
@@ -19,7 +20,7 @@
  * @module BasketComparisonSection
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import type { ProductSearchItem } from '@/lib/types';
 import type {
@@ -32,7 +33,8 @@ import type {
   MinimumOrderThresholdCheck,
 } from '@/lib/basket.types';
 import type { ConfidenceLevel, ReliabilityStatus } from '@/lib/types';
-import { searchProducts, getFeatureFlags } from '@/lib/api';
+import { searchProducts } from '@/lib/api';
+import { useFeatureFlags } from '@/lib/feature-flags';
 import { optimizeBasket, classifyBasketError } from '@/lib/basket.client';
 import ProductSearch from '../../calculator/components/ProductSearch';
 import ProductSelector from '../../calculator/components/ProductSelector';
@@ -70,8 +72,6 @@ const TRANSPORT_VALUES: readonly TransportArrangement[] = [
   'INDEPENDENT_CARRIER',
   'PERSONAL',
 ];
-
-type FlagState = 'checking' | 'enabled' | 'disabled';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -386,8 +386,9 @@ export default function BasketComparisonSection() {
   const tResults = useTranslations('BasketResults');
   const tCalc = useTranslations('Calculator');
 
-  // ── Feature flag ──
-  const [flag, setFlag] = useState<FlagState>('checking');
+  // ── Feature flag (inlined with the initial HTML payload) ──
+  const flags = useFeatureFlags();
+  const flagEnabled = flags.flags.BASKET_OPTIMIZATION;
 
   // ── Search state ──
   const [query, setQuery] = useState('');
@@ -409,22 +410,6 @@ export default function BasketComparisonSection() {
 
   const searchInFlight = useRef(false);
   const optimizeInFlight = useRef(false);
-
-  // ── Feature flag check — same three-state pattern as BasketPage ──
-  useEffect(() => {
-    let cancelled = false;
-    getFeatureFlags()
-      .then((res) => {
-        if (cancelled) return;
-        setFlag(res.flags.BASKET_OPTIMIZATION ? 'enabled' : 'disabled');
-      })
-      .catch(() => {
-        if (!cancelled) setFlag('disabled');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // ── Search handler ──
   const handleSearch = useCallback(async (q: string) => {
@@ -532,8 +517,7 @@ export default function BasketComparisonSection() {
 
   // ── Hidden states (after all hooks — early returns above them break
   // React's hook-order invariant) ──
-  if (flag === 'checking') return null;
-  if (flag === 'disabled') return null;
+  if (!flagEnabled) return null;
 
   const atCapacity = items.length >= MAX_ITEMS;
   const canOptimize = items.length > 0 && !optimizing;

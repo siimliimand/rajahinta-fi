@@ -7,8 +7,9 @@
  * Behaviour:
  *  - `enable_advanced_features` off ⇒ the section renders nothing and the
  *    scenario list request is never fired (guard runs before the fetch,
- *    same pattern as ProductHistoryPanel). A failed flag lookup also
- *    degrades to hidden.
+ *    same pattern as ProductHistoryPanel). The flag state arrives with the
+ *    initial HTML payload, so the section's visibility is correct on the
+ *    first render — no late appearance.
  *  - Saving delegates to the page via `onSaveScenario` (the page owns the
  *    current calculator inputs); the component owns the name field,
  *    pending state, and the result message. A successful save refreshes
@@ -22,7 +23,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { SavedScenario } from '@/lib/types';
-import { getFeatureFlags, listScenarios } from '@/lib/api';
+import { listScenarios } from '@/lib/api';
+import { useFeatureFlags } from '@/lib/feature-flags';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -30,8 +32,6 @@ import { getFeatureFlags, listScenarios } from '@/lib/api';
 
 /** Maximum scenario-name length accepted by the input (controlled length). */
 const MAX_NAME_LENGTH = 60;
-
-type FlagState = 'checking' | 'enabled' | 'disabled';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -59,29 +59,14 @@ export default function ScenarioControls({
   onLoadScenario,
 }: ScenarioControlsProps) {
   const t = useTranslations('ScenarioControls');
-  const [flag, setFlag] = useState<FlagState>('checking');
+  // Flag state is inlined with the initial HTML payload (task 9.4).
+  const flags = useFeatureFlags();
+  const flagEnabled = flags.flags.ADVANCED_FEATURES;
   const [scenarios, setScenarios] = useState<readonly SavedScenario[]>([]);
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // ── Feature flag: hide and skip the list request when off ──
-  useEffect(() => {
-    let cancelled = false;
-    getFeatureFlags()
-      .then((res) => {
-        if (cancelled) return;
-        setFlag(res.flags.ADVANCED_FEATURES ? 'enabled' : 'disabled');
-      })
-      .catch(() => {
-        // Flag state unreachable — degrade as if disabled.
-        if (!cancelled) setFlag('disabled');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const refreshScenarios = useCallback(async (): Promise<void> => {
     try {
@@ -92,14 +77,14 @@ export default function ScenarioControls({
     }
   }, []);
 
-  // ── Load the scenario list once the flag is on ──
+  // ── Load the scenario list when the flag is on ──
   useEffect(() => {
-    if (flag !== 'enabled') return;
+    if (!flagEnabled) return;
     refreshScenarios();
-  }, [flag, refreshScenarios]);
+  }, [flagEnabled, refreshScenarios]);
 
-  // ── Hidden states: flag off or still checking ──
-  if (flag !== 'enabled') {
+  // ── Hidden state: flag off in the inlined payload ──
+  if (!flagEnabled) {
     return null;
   }
 

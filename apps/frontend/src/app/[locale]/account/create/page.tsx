@@ -3,24 +3,36 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
-import { getSessionUserId } from '@/lib/api';
+import { ensureSession } from '@/lib/api';
+import type { SessionStatus } from '@/lib/types';
 
 /**
  * Account creation confirmation page.
  *
- * Phase 1: anonymous-only. The session is created automatically on first
- * visit (by getSessionUserId), so this page serves as a confirmation that
- * the anonymous account is ready. No email or personal data is collected.
+ * Phase 1: anonymous-only. The session is issued server-side on this first
+ * account-touch (ensureSession); the token is an httpOnly cookie the page
+ * never reads, and the identifier shown is the server-derived identity.
+ * No email or personal data is collected.
  *
  * @module AccountCreatePage
  */
 export default function AccountCreatePage() {
   const t = useTranslations('AccountCreate');
   const tCommon = useTranslations('Common');
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [session, setSession] = useState<SessionStatus | null>(null);
 
   useEffect(() => {
-    setSessionId(getSessionUserId());
+    let cancelled = false;
+    ensureSession()
+      .then((s) => {
+        if (!cancelled) setSession(s);
+      })
+      .catch(() => {
+        // Backend unreachable — the confirmation renders without the id line.
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -45,9 +57,9 @@ export default function AccountCreatePage() {
         <h1 className="text-xl font-bold text-gray-900">{t('title')}</h1>
         <p className="mt-2 text-sm text-gray-600">{t('body')}</p>
 
-        {sessionId && (
+        {session && (
           <p className="mt-3 text-xs text-gray-400">
-            {tCommon('sessionId', { id: sessionId.slice(0, 8) })}
+            {tCommon('sessionId', { id: session.userId.slice(0, 8) })}
           </p>
         )}
 

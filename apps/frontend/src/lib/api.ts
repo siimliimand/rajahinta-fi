@@ -1,15 +1,19 @@
 /**
  * API client for the rajahinta.fi backend.
  *
- * All fetch calls go through this module so the base URL and headers
- * are configured in one place.  Every function returns typed responses
- * or throws an {@link ApiFetchError} on non-2xx status.
+ * All fetch calls go through this module so the base URL, credentials, and
+ * headers are configured in one place.  Every function returns typed
+ * responses or throws an {@link ApiFetchError} on non-2xx status.
+ *
+ * Authentication is exclusively the server-issued httpOnly
+ * `rajahinta_session` cookie; the client keeps no identity of its own.
  *
  * @module ApiClient
  */
 
 import type {
   ProductSearchResult,
+  ProductSearchItem,
   ProductDetailResponse,
   CalculateRequest,
   CalculatorResult,
@@ -24,6 +28,7 @@ import type {
   SaveScenarioRequest,
   MerchantReliabilityListResponse,
   DeclarationSummaryResponse,
+  SessionStatus,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -79,50 +84,26 @@ function getCookie(name: string): string | undefined {
 }
 
 /**
- * Set a browser cookie with the given name, value, and attributes.
+ * Account-scoped paths authenticate with the server-issued
+ * `rajahinta_session` cookie. The session lifecycle endpoints are excluded:
+ * issuing a session needs no session, and re-issuing on a 401 from
+ * rotate/revoke would corrupt their semantics.
  */
-function setCookie(
-  name: string,
-  value: string,
-  attributes: string = 'path=/; max-age=31536000; SameSite=Lax',
-): void {
-  if (typeof document === 'undefined') return;
-  document.cookie = `${name}=${encodeURIComponent(value)}; ${attributes}`;
-}
+const ACCOUNT_SCOPE_PREFIX = '/api/v1/account/';
+const SESSION_ENDPOINT_PREFIX = '/api/v1/account/session';
 
-const SESSION_COOKIE = 'session_id';
-const ACCOUNT_SCOPE_PREFIXES = ['/api/v1/account/', '/api/v1/analytics/'];
-
-/**
- * Get or create the anonymous session identifier.
- *
- * Reads the `session_id` cookie; if absent, generates a UUID v4, persists it
- * as a cookie (1-year expiry, SameSite=Lax), and returns the value.
- */
-function getSessionId(): string {
-  const existing = getCookie(SESSION_COOKIE);
-  if (existing) return existing;
-
-  const id = crypto.randomUUID();
-  setCookie(SESSION_COOKIE, id);
-  return id;
-}
-
-/**
- * Returns the current anonymous session user ID.
- *
- * Exported so components can read the stable identifier without calling the
- * API.  The value matches the `x-user-id` header sent on account-scoped
- * requests.
- */
-export function getSessionUserId(): string {
-  return getSessionId();
+function isAccountScoped(path: string): boolean {
+  return (
+    path.startsWith(ACCOUNT_SCOPE_PREFIX) &&
+    !path.startsWith(SESSION_ENDPOINT_PREFIX)
+  );
 }
 
 /**
  * Assemble the default headers for an API request: JSON content type,
- * caller-provided overrides, the age-confirmation header when the cookie
- * is present, and the anonymous session ID on account-scoped paths.
+ * caller-provided overrides, and the age-confirmation header when the
+ * cookie is present. Identity is never attached — the backend derives it
+ * exclusively from the httpOnly session cookie.
  */
 function buildHeaders(path: string, init?: RequestInit): Record<string, string> {
   const headers: Record<string, string> = {
@@ -136,22 +117,26 @@ function buildHeaders(path: string, init?: RequestInit): Record<string, string> 
     headers['x-age-confirmed'] = ageToken;
   }
 
-  // Inject anonymous session ID on account-scoped requests.
-  if (ACCOUNT_SCOPE_PREFIXES.some((prefix) => path.startsWith(prefix))) {
-    headers['x-user-id'] = getSessionId();
-  }
   return headers;
 }
 
-export async function request<T>(
+/**
+ * Perform one HTTP exchange and translate non-2xx into {@link ApiFetchError}.
+ */
+async function executeRequest<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
   const url = `${BASE_URL}${path}`;
   const headers = buildHeaders(path, init);
 
+  // The session cookie is httpOnly, so it only travels when credentials are
+  // sent. Same-origin deployments work as-is; a cross-domain API origin must
+  // answer CORS with an explicit origin (never "*") and `credentials: true`
+  // or the browser drops the cookie.
   const res = await fetch(url, {
     ...init,
+    credentials: 'include',
     headers,
   });
 
@@ -168,6 +153,99 @@ export async function request<T>(
   return res.json() as Promise<T>;
 }
 
+/**
+ * Account-scoped request wrapper.
+ *
+ * On the first account-touch without a session (fresh visitor, or an
+ * expired anonymous session — its data is disposable by design) a session is
+ * minted server-side and the original request replayed exactly once. The
+ * single-flight promise collapses concurrent 401s into one issuance.
+ */
+export async function request<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  try {
+    return await executeRequest<T>(path, init);
+  } catch (err) {
+    if (
+      !(err instanceof ApiFetchError) ||
+      err.status !== 401 ||
+      !isAccountScoped(path)
+    ) {
+      throw err;
+    }
+    await issueSessionOnce();
+    return executeRequest<T>(path, init);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Session lifecycle (server-issued httpOnly cookie)
+// ---------------------------------------------------------------------------
+
+/** Response of POST /api/v1/account/session (issue and rotate). */
+export interface SessionInfo {
+  readonly userId: string;
+  readonly expiresAt: string;
+  readonly verified: boolean;
+}
+
+/**
+ * Issue a fresh anonymous session. Always mints a NEW account — call only
+ * where abandoning the current one is intended; the token arrives as an
+ * httpOnly `rajahinta_session` cookie and never in readable state.
+ */
+export async function issueSession(): Promise<SessionInfo> {
+  return executeRequest<SessionInfo>('/api/v1/account/session', {
+    method: 'POST',
+  });
+}
+
+/** Single-flight issuance shared by concurrent first-touch 401s. */
+let sessionIssuePromise: Promise<SessionInfo> | null = null;
+
+function issueSessionOnce(): Promise<SessionInfo> {
+  if (sessionIssuePromise === null) {
+    // Cleared on completion so a later 401 can re-issue; while in flight,
+    // every caller shares the same issuance.
+    sessionIssuePromise = issueSession().finally(() => {
+      sessionIssuePromise = null;
+    });
+  }
+  return sessionIssuePromise;
+}
+
+/**
+ * Atomically replace the presented session token. The old token stops
+ * authenticating immediately; the account and its data are unchanged.
+ */
+export async function rotateSession(): Promise<SessionInfo> {
+  return executeRequest<SessionInfo>('/api/v1/account/session/rotate', {
+    method: 'POST',
+  });
+}
+
+/** Revoke the session (logout) and clear the session cookie. */
+export async function revokeSession(): Promise<{ revoked: true }> {
+  return executeRequest<{ revoked: true }>('/api/v1/account/session', {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Ensure an authenticated session exists and return its server-derived
+ * identity. The subscription probe is the cheapest auth-required read that
+ * also returns the userId; the request() wrapper mints the session on the
+ * first account-touch, so callers need no issuance logic of their own.
+ */
+export async function ensureSession(): Promise<SessionStatus> {
+  const sub = await request<{ userId: string; plan: string; active: boolean }>(
+    '/api/v1/account/subscription',
+  );
+  return { userId: sub.userId };
+}
+
 // ---------------------------------------------------------------------------
 // Products
 // ---------------------------------------------------------------------------
@@ -175,19 +253,24 @@ export async function request<T>(
 /**
  * Search products by free-text query.
  *
- * @param q     Search term
- * @param sort  Sort order (default: ALPHABETICAL)
- * @param page  Page number (1-indexed, default: 1)
- * @param limit Results per page (default: 20, max: 100)
+ * @param q      Search term
+ * @param sort   Sort order (default: ALPHABETICAL)
+ * @param page   Page number (1-indexed, default: 1)
+ * @param limit  Results per page (default: 20, max: 100)
+ * @param signal Aborts the in-flight request so a superseded search never
+ *               overwrites the results of a newer one
  */
 export async function searchProducts(
   q: string,
   sort: string = 'ALPHABETICAL',
   page: number = 1,
   limit: number = 20,
+  signal?: AbortSignal,
 ): Promise<ProductSearchResult> {
   const params = new URLSearchParams({ q, sort, page: String(page), limit: String(limit) });
-  return request<ProductSearchResult>(`/api/v1/products?${params}`);
+  return request<ProductSearchResult>(`/api/v1/products?${params}`, {
+    signal,
+  });
 }
 
 /**
@@ -341,6 +424,95 @@ export function getFeatureFlags(): Promise<FeatureFlagsResponse> {
 }
 
 // ---------------------------------------------------------------------------
+// Server-side reads (RSC / route handlers only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical public origin of the frontend — used for sitemap, robots, and
+ * metadataBase URLs. Configurable per deployment; the production domain is
+ * the default.
+ */
+export const SITE_URL: string =
+  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rajahinta.fi';
+
+/**
+ * Every flag the frontend consumes, off. Used as the fallback when the
+ * backend cannot be reached at render time — gated UI stays hidden, the
+ * same degradation the client-side fetch path uses.
+ */
+export const DEFAULT_FEATURE_FLAGS: FeatureFlagsResponse = {
+  flags: {
+    HISTORICAL_PRICE_INTELLIGENCE: false,
+    BASKET_OPTIMIZATION: false,
+    ADVANCED_FEATURES: false,
+  },
+};
+
+/**
+ * Resolve feature-flag states on the server so they can be inlined into
+ * the initial HTML payload (no late gated-UI flash). Values are static per
+ * deployment; the short revalidate bounds staleness after a backend flip
+ * without turning every render into an API round-trip.
+ */
+export async function getServerFeatureFlags(): Promise<FeatureFlagsResponse> {
+  try {
+    return await request<FeatureFlagsResponse>('/api/v1/feature-flags', {
+      next: { revalidate: 60 },
+    });
+  } catch {
+    return DEFAULT_FEATURE_FLAGS;
+  }
+}
+
+/**
+ * Fixed age-confirmation token for first-party server-side rendering.
+ *
+ * The catalog endpoints are age-gated, but crawlers cannot click a gate —
+ * and the Phase 1 gate is explicit self-attestation (any non-empty token
+ * passes by design). This token only ever reads public catalog data
+ * server-side for metadata and the sitemap; it grants no session and no
+ * account-scoped access.
+ */
+const SERVER_AGE_CONFIRMATION_TOKEN = 'server-prerender';
+
+/**
+ * Fetch a product with its offers on the server, or null when unavailable
+ * (unknown id, launch gates closed, backend unreachable) so callers can
+ * degrade to generic metadata instead of erroring the page.
+ */
+export async function getServerProductDetail(
+  id: number,
+): Promise<ProductDetailResponse | null> {
+  try {
+    return await request<ProductDetailResponse>(`/api/v1/products/${id}`, {
+      headers: { 'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN },
+      next: { revalidate: 900 },
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * List products on the server for the sitemap. The listing endpoint caps
+ * at 100 rows; a failure degrades to an empty list (static routes only).
+ */
+export async function getServerProductListing(): Promise<ProductSearchItem[]> {
+  try {
+    const res = await request<ProductSearchResult>(
+      '/api/v1/products?sort=ALPHABETICAL&page=1&limit=100',
+      {
+        headers: { 'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN },
+        next: { revalidate: 900 },
+      },
+    );
+    return res.items;
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Price history
 // ---------------------------------------------------------------------------
 
@@ -410,8 +582,8 @@ export async function getPriceHistory(
 /**
  * List the current session's saved scenarios with their full inputs.
  *
- * The request() helper injects the `x-user-id` header for account-scoped
- * paths, so no explicit identity is needed here.
+ * Authentication rides the httpOnly session cookie injected by request();
+ * no explicit identity is needed — or accepted — here.
  */
 export async function listScenarios(): Promise<SavedScenario[]> {
   return request<SavedScenario[]>('/api/v1/account/scenarios');
@@ -539,6 +711,7 @@ async function fetchReportBlob(
 ): Promise<{ blob: Blob; filename: string }> {
   const path = `/api/v1/reports/${recordId}?format=${format}`;
   const res = await fetch(`${BASE_URL}${path}`, {
+    credentials: 'include',
     headers: buildHeaders(path),
   });
 

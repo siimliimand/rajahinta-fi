@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, getTranslations, setRequestLocale } from 'next-intl/server';
 import { routing } from '@/i18n/routing';
+import { getServerFeatureFlags, SITE_URL } from '@/lib/api';
+import { FeatureFlagsProvider } from '@/lib/feature-flags';
 import { AgeGate } from './components/AgeGate';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
@@ -13,6 +15,12 @@ import '../globals.css';
  * locale instead of a hardcoded value; Finnish serves from the unprefixed
  * paths, English from `/en`.
  */
+
+// ISR window for the inlined flag states: a failed build-time flag fetch
+// must not bake stale states into fully-static pages — they re-render at
+// most this far behind the backend's actual flag configuration.
+export const revalidate = 60;
+
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
 }
@@ -26,6 +34,7 @@ export async function generateMetadata({
   const t = await getTranslations({ locale, namespace: 'Metadata' });
 
   return {
+    metadataBase: new URL(SITE_URL),
     title: t('title'),
     description: t('description'),
   };
@@ -47,6 +56,10 @@ export default async function RootLayout({
   // Messages are inherited by every client component below the provider.
   const messages = await getMessages();
 
+  // Flag states are resolved server-side and inlined with the page payload
+  // so flag-gated UI renders at the correct visibility on the first paint.
+  const flags = await getServerFeatureFlags();
+
   return (
     <html lang={locale}>
       <body>
@@ -56,7 +69,9 @@ export default async function RootLayout({
           <div className="flex min-h-screen flex-col">
             <SiteHeader />
             <div className="flex-1">
-              <AgeGate>{children}</AgeGate>
+              <FeatureFlagsProvider flags={flags}>
+                <AgeGate>{children}</AgeGate>
+              </FeatureFlagsProvider>
             </div>
             <SiteFooter />
           </div>

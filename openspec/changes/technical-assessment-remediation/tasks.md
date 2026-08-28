@@ -19,7 +19,7 @@
 
 - [x] 2.1 Server-issued opaque session tokens — `sessions` table with tokens hashed at rest, repository, rotation support; backend derives account from token <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/data-platform/src/repositories/**, packages/application-api/src/accounts/**] -->
 - [x] 2.2 Migrate authentication off `x-user-id` — auth guard resolves the session token (httpOnly cookie), account controller + GDPR paths moved over, legacy header rejected outright <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [packages/application-api/src/accounts/**, packages/application-api/src/index.ts] -->
-- [ ] 2.3 Frontend session handling — server-set httpOnly cookie, drop the client-generated UUID cookie from `apps/frontend/src/lib/api.ts` <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [apps/frontend/src/lib/api.ts, apps/frontend/src/app/account/**] -->
+- [x] 2.3 Frontend session handling — server-set httpOnly cookie, drop the client-generated UUID cookie from `apps/frontend/src/lib/api.ts` <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [apps/frontend/src/lib/api.ts, apps/frontend/src/app/account/**] -->
 - [x] 2.4 Email verification groundwork (D5) — use the existing verified-email column, anonymous-upgrade path, account data documented disposable until verified <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [packages/application-api/src/accounts/**] -->
 - [ ] 2.5 Session tests — token forge/guess denied, cross-account access denied, rotation invalidates the old token atomically <!-- agent: platform-engineer.build, depends_on: [2.2, 2.3], touches: [packages/application-api/src/accounts/__tests__/**] -->
 
@@ -42,7 +42,7 @@
 ## 5. Search (finding 8; low: debounce)
 
 - [ ] 5.1 Implement the `q` parameter — `pg_trgm` similarity or tsvector over name, brand, manufacturer; deterministic ranking; existing pagination and sort orders preserved <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/search/**, packages/data-platform/drizzle/**] -->
-- [ ] 5.2 Add a 300 ms debounce to the frontend search input <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/frontend/src/app/calculator/page.tsx] -->
+- [x] 5.2 Add a 300 ms debounce to the frontend search input <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/frontend/src/app/calculator/page.tsx] -->
 - [ ] 5.3 Search tests — "karhu" matches, deterministic order, pagination interplay, blank query passthrough <!-- agent: platform-engineer.build, depends_on: [5.1], touches: [packages/application-api/src/search/__tests__/**] -->
 
 ## 6. Health + observability (finding 15, add 5, add 9)
@@ -72,8 +72,8 @@
 - [x] 9.1 Age gate hardening — neutral in-house redirect page, SSR placeholder with gating after mount (or a server-readable cookie), document Phase 1 as self-attestation <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/app/components/AgeGate.tsx, apps/frontend/src/app/**] -->
 - [x] 9.2 Introduce next-intl — Finnish default, English secondary, copy moved into message catalogs, content-policy lint covers both locales, `lang` follows the active locale <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/**] -->
 - [x] 9.3 Add the layout-level header (calculator, compare, basket, account, ranking) and footer (disclaimer, methodology); remove per-page back-links <!-- agent: platform-engineer.build, depends_on: [9.2], touches: [apps/frontend/src/app/**] -->
-- [ ] 9.4 Inline feature-flag states in the initial HTML payload so gated UI does not appear late <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/**] -->
-- [ ] 9.5 SEO surface — sitemap, robots, per-product pages with metadata <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/app/**] -->
+- [x] 9.4 Inline feature-flag states in the initial HTML payload so gated UI does not appear late <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/**] -->
+- [x] 9.5 SEO surface — sitemap, robots, per-product pages with metadata <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/app/**] -->
 - [ ] 9.6 Frontend tests — navigation on all pages, age gate leaks nothing in SSR output, flag no-flash, catalog completeness in both locales <!-- agent: platform-engineer.build, depends_on: [9.1, 9.3, 9.4], touches: [apps/frontend/src/**/__tests__/**] -->
 
 ## 10. Entitlements, optimizer, dead contract (findings 14, 20; low: otherCharges)

@@ -27,7 +27,8 @@ import type {
   MerchantReliabilityScore,
   ReliabilityStatus,
 } from '@/lib/types';
-import { getFeatureFlags, getMerchantReliability } from '@/lib/api';
+import { getMerchantReliability } from '@/lib/api';
+import { useFeatureFlags } from '@/lib/feature-flags';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -40,8 +41,6 @@ const STATUS_ORDER: readonly ReliabilityStatus[] = [
   'STALE',
   'UNAVAILABLE',
 ];
-
-type FlagState = 'checking' | 'enabled' | 'disabled';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -80,31 +79,16 @@ export default function MerchantFreshnessSection({
 }: MerchantFreshnessSectionProps) {
   const t = useTranslations('MerchantFreshness');
   const tCommon = useTranslations('Common');
-  const [flag, setFlag] = useState<FlagState>('checking');
+  // Flag state is inlined with the initial HTML payload (task 9.4).
+  const flags = useFeatureFlags();
+  const flagEnabled = flags.flags.ADVANCED_FEATURES;
   const [scores, setScores] = useState<
     Readonly<Record<string, MerchantReliabilityScore>>
   >({});
 
-  // ── Feature flag: hide and skip the reliability request when off ──
-  useEffect(() => {
-    let cancelled = false;
-    getFeatureFlags()
-      .then((res) => {
-        if (cancelled) return;
-        setFlag(res.flags.ADVANCED_FEATURES ? 'enabled' : 'disabled');
-      })
-      .catch(() => {
-        // Flag state unreachable — degrade as if disabled.
-        if (!cancelled) setFlag('disabled');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   // ── Reliability fetch — guarded by the flag and a non-empty list ──
   useEffect(() => {
-    if (flag !== 'enabled' || merchants.length === 0) return;
+    if (!flagEnabled || merchants.length === 0) return;
     let cancelled = false;
 
     getMerchantReliability()
@@ -123,10 +107,10 @@ export default function MerchantFreshnessSection({
     return () => {
       cancelled = true;
     };
-  }, [flag, merchants]);
+  }, [flagEnabled, merchants]);
 
-  // ── Hidden states: flag off/checking, no merchants, or no data ──
-  if (flag !== 'enabled' || merchants.length === 0) {
+  // ── Hidden states: flag off in the inlined payload, no merchants/data ──
+  if (!flagEnabled || merchants.length === 0) {
     return null;
   }
   const visible = merchants.filter((m) => scores[m] !== undefined);

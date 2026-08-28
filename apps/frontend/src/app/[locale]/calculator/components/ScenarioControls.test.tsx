@@ -2,9 +2,10 @@
  * ScenarioControls tests (task 4.1).
  *
  * Verifies the flag-gated contract:
- *   1. Flag off → the section renders nothing and NEVER fires the
- *      scenario list request.
- *   2. Flag on → loads the list and renders the picker options.
+ *   1. Flag off in the inlined payload → the section renders nothing on
+ *      the FIRST render and NEVER fires the scenario list request.
+ *   2. Flag on → the section is visible on the first render, loads the
+ *      list, and renders the picker options.
  *   3. Saving → delegates to onSaveScenario, shows a saved status, and
  *      refreshes the list.
  *   4. Save failure → controlled error message.
@@ -19,20 +20,22 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ScenarioControls from './ScenarioControls';
-import { renderWithIntl } from '@/lib/testing/test-intl';
-import { getFeatureFlags, listScenarios } from '@/lib/api';
+import {
+  ALL_FLAGS_OFF,
+  ALL_FLAGS_ON,
+  renderWithIntl,
+} from '@/lib/testing/test-intl';
+import { listScenarios } from '@/lib/api';
 import type { SavedScenario } from '@/lib/types';
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
-    getFeatureFlags: vi.fn(),
     listScenarios: vi.fn(),
   };
 });
 
-const mockedGetFeatureFlags = vi.mocked(getFeatureFlags);
 const mockedListScenarios = vi.mocked(listScenarios);
 
 // ---------------------------------------------------------------------------
@@ -50,25 +53,8 @@ function scenarioRow(overrides: Partial<SavedScenario> = {}): SavedScenario {
   };
 }
 
-const FLAG_ON = {
-  flags: {
-    HISTORICAL_PRICE_INTELLIGENCE: false,
-    BASKET_OPTIMIZATION: false,
-    ADVANCED_FEATURES: true,
-  },
-};
-
-const FLAG_OFF = {
-  flags: {
-    HISTORICAL_PRICE_INTELLIGENCE: false,
-    BASKET_OPTIMIZATION: false,
-    ADVANCED_FEATURES: false,
-  },
-};
-
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedGetFeatureFlags.mockResolvedValue(FLAG_ON);
   mockedListScenarios.mockResolvedValue([scenarioRow()]);
 });
 
@@ -77,42 +63,45 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('ScenarioControls', () => {
-  it('hides the section and never fetches scenarios when the flag is off', async () => {
-    mockedGetFeatureFlags.mockResolvedValue(FLAG_OFF);
-
+  it('hides the section on the first render and never fetches scenarios when the flag is off', () => {
     const { container } = renderWithIntl(
-<ScenarioControls
+      <ScenarioControls
         canSave
         onSaveScenario={vi.fn()}
         onLoadScenario={vi.fn()}
       />,
+      { featureFlags: { ...ALL_FLAGS_OFF } },
     );
 
-    await waitFor(() => expect(mockedGetFeatureFlags).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(container.firstChild).toBeNull());
-
-    expect(mockedListScenarios).not.toHaveBeenCalled();
+    // Synchronous first-render assertion: the inlined flag state hides the
+    // section with no client-side fetch round-trip (task 9.4).
+    expect(container.firstChild).toBeNull();
     expect(screen.queryByTestId('scenario-controls')).not.toBeInTheDocument();
+    expect(mockedListScenarios).not.toHaveBeenCalled();
   });
 
-  it('treats an unreachable flag endpoint as disabled (no list fetch)', async () => {
-    mockedGetFeatureFlags.mockRejectedValue(new Error('network down'));
+  it('shows the section on the first render when the flag is on in the inlined payload', () => {
+    // The list request never settles: visibility must not depend on it.
+    mockedListScenarios.mockReturnValue(new Promise(() => {}));
 
     const { container } = renderWithIntl(
-<ScenarioControls
+      <ScenarioControls
         canSave
         onSaveScenario={vi.fn()}
         onLoadScenario={vi.fn()}
       />,
+      { featureFlags: ALL_FLAGS_ON },
     );
 
-    await waitFor(() => expect(container.firstChild).toBeNull());
-    expect(mockedListScenarios).not.toHaveBeenCalled();
+    // No flag round-trip to wait for — visibility matches the inlined
+    // state immediately (task 9.4: no late gated-UI appearance).
+    expect(container.firstChild).not.toBeNull();
+    expect(screen.getByTestId('scenario-controls')).toBeInTheDocument();
   });
 
   it('loads the scenario list and renders the picker when the flag is on', async () => {
     renderWithIntl(
-<ScenarioControls
+      <ScenarioControls
         canSave
         onSaveScenario={vi.fn()}
         onLoadScenario={vi.fn()}
@@ -120,7 +109,7 @@ describe('ScenarioControls', () => {
     );
 
     const picker = await screen.findByTestId('scenario-picker');
-    // The list loads asynchronously after the flag flips — waitFor, or the
+    // The list loads asynchronously after mount — waitFor, or the
     // sync assertion can observe the pre-fetch "No saved scenarios" render
     // under full-suite load (flaky otherwise).
     await waitFor(() => expect(picker).toHaveTextContent('Summer trip'));
@@ -131,7 +120,7 @@ describe('ScenarioControls', () => {
     const user = userEvent.setup();
     const onSaveScenario = vi.fn().mockResolvedValue(undefined);
     renderWithIntl(
-<ScenarioControls
+      <ScenarioControls
         canSave
         onSaveScenario={onSaveScenario}
         onLoadScenario={vi.fn()}
@@ -157,7 +146,7 @@ describe('ScenarioControls', () => {
     const user = userEvent.setup();
     const onSaveScenario = vi.fn().mockRejectedValue(new Error('boom'));
     renderWithIntl(
-<ScenarioControls
+      <ScenarioControls
         canSave
         onSaveScenario={onSaveScenario}
         onLoadScenario={vi.fn()}
@@ -178,7 +167,7 @@ describe('ScenarioControls', () => {
     const user = userEvent.setup();
     const onLoadScenario = vi.fn();
     renderWithIntl(
-<ScenarioControls
+      <ScenarioControls
         canSave
         onSaveScenario={vi.fn()}
         onLoadScenario={onLoadScenario}

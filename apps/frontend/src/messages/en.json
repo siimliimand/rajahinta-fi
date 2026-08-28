@@ -482,5 +482,25 @@
   "ContentSafetyBadge": {
     "promotional": "Promotional language detected: \"{pattern}\" ({language})",
     "violations": "{count, plural, one {# content-policy violation found} other {# content-policy violations found}}"
+  },
+  "ProductPage": {
+    "metaTitle": "{name} — price information",
+    "metaDescription": "{name} ({details}) — collected retail prices across merchants and a landed-cost calculator for Finland.",
+    "metaDescriptionFallback": "Product price information and landed-cost calculator.",
+    "notFoundTitle": "Product not found",
+    "masterTitle": "Product details",
+    "brandLabel": "Brand",
+    "categoryLabel": "Category",
+    "volumeLabel": "Package size",
+    "containerLabel": "Container type",
+    "eanLabel": "EAN code",
+    "offersTitle": "Retail prices",
+    "merchantHeader": "Merchant",
+    "priceHeader": "Retail price",
+    "countryHeader": "Country",
+    "observedHeader": "Observed",
+    "noOffers": "No active price observations.",
+    "dataNote": "Prices are collected observations, not merchant offers.",
+    "landingNote": "The landed cost for Finland includes the price plus taxes, duties, and transport — calculate it in the calculator."
   }
 }

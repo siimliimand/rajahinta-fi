@@ -27,8 +27,9 @@ interface ProductSearchProps {
 /**
  * Product search input.
  *
- * A controlled input that fires `onSubmit` on Enter and `onChange` on every
- * keystroke (so the parent can debounce or react immediately).
+ * A controlled input: every keystroke reports to `onChange` (the parent
+ * debounces the actual search, task 5.2) and Enter or the search button
+ * fires `onSubmit` for an immediate search.
  */
 export default function ProductSearch({
   value,
