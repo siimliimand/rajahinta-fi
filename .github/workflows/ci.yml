@@ -355,7 +355,10 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        # TimescaleDB image: the migrations create the timescaledb extension
+        # and convert price_observations to a hypertable (task 8.2). The
+        # image ships the extension and the required shared_preload_libraries.
+        image: timescale/timescaledb:2.16.1-pg16
         env:
           POSTGRES_USER: rajahinta
           POSTGRES_PASSWORD: rajahinta
@@ -367,6 +370,16 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
 
     steps:
       - uses: actions/checkout@v4
@@ -392,6 +405,7 @@ jobs:
         run: pnpm vitest run --config tests/integration/vitest.config.ts
         env:
           DATABASE_URL: postgresql://rajahinta:rajahinta@localhost:5432/rajahinta_test
+          TEST_REDIS_URL: redis://localhost:6379
 
   # --------------------------------------------------------------------------
   # Compose smoke — builds the production image through docker-compose, boots

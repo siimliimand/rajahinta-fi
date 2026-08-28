@@ -4,8 +4,12 @@
  *
  * Scans all .tsx source files under src/ for string literals containing
  * forbidden adjectives or promotional language (e.g. "best", "amazing",
- * "premium").  Comments are stripped before scanning because they don't
+ * "premium"). Comments are stripped before scanning because they don't
  * become rendered user-facing text.
+ *
+ * Scans the message catalogs under src/messages/{fi,en}.json as well —
+ * user-visible copy lives there now, so both locales are policed with the
+ * same vocabulary (Finnish and English).
  *
  * Each violation is printed on stderr in the format:
  *   FILE:LINE:COL — violation "WORD" — context
@@ -27,6 +31,9 @@ import { checkContent, type ContentViolation } from '../src/lib/content-policy';
 // --------------------------------------------------------------------------
 
 const SRC_DIR = resolve(import.meta.dirname, '../src');
+
+/** Message catalogs — every string value is user-visible copy. */
+const MESSAGES_DIR = resolve(SRC_DIR, 'messages');
 
 /**
  * Files that define or test the content policy — excluded from lint.
@@ -86,6 +93,36 @@ function collectTsxFiles(dir: string): string[] {
   return results;
 }
 
+/** Collect the locale message catalogs (fi.json, en.json, …). */
+function collectCatalogFiles(dir: string): string[] {
+  try {
+    return readdirSync(dir)
+      .filter((entry) => entry.endsWith('.json'))
+      .map((entry) => join(dir, entry));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Flatten a parsed JSON catalog into dotted key → string-value pairs.
+ * Only string leaves are collected; nested objects are recursed into.
+ */
+function flattenCatalog(
+  value: unknown,
+  prefix = '',
+): Array<{ key: string; text: string }> {
+  if (typeof value === 'string') {
+    return [{ key: prefix, text: value }];
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).flatMap(
+      ([key, child]) => flattenCatalog(child, prefix ? `${prefix}.${key}` : key),
+    );
+  }
+  return [];
+}
+
 /**
  * Compute 1-based line and column numbers for a position within text.
  */
@@ -95,27 +132,50 @@ function getLineCol(text: string, pos: number): { line: number; col: number } {
   return { line: lines.length, col: lines[lines.length - 1].length + 1 };
 }
 
+function reportViolations(
+  relPath: string,
+  location: string,
+  violations: ContentViolation[],
+): number {
+  for (const v of violations) {
+    console.error(
+      `${relPath}:${location} — violation "${v.word}" — ${v.context}`,
+    );
+    if (v.suggestion) {
+      console.error(`  suggestion: ${v.suggestion}`);
+    }
+  }
+  if (violations.length > 0) {
+    console.error(`  → ${violations.length} violation(s) in ${relPath}`);
+  }
+  return violations.length;
+}
+
 // --------------------------------------------------------------------------
 // Main
 // --------------------------------------------------------------------------
 
 function main(): number {
   const files = collectTsxFiles(SRC_DIR);
+  const catalogs = collectCatalogFiles(MESSAGES_DIR);
 
   if (files.length === 0) {
     console.error('content-policy: no .tsx files found under src/');
     return 1;
   }
+  if (catalogs.length === 0) {
+    console.error('content-policy: no message catalogs found under src/messages/');
+    return 1;
+  }
 
   let totalViolations = 0;
-  let fileViolations = 0;
 
   for (const filePath of files) {
     const raw = readFileSync(filePath, 'utf-8');
     const code = stripComments(raw);
 
     let match: RegExpExecArray | null;
-    fileViolations = 0;
+    let fileViolations = 0;
 
     while ((match = STRING_LITERAL_RE.exec(code)) !== null) {
       const strStart = match.index;
@@ -127,21 +187,29 @@ function main(): number {
       if (violations.length > 0) {
         const { line, col } = getLineCol(code, strStart);
         const relPath = relative(SRC_DIR, filePath);
-
-        for (const v of violations) {
-          console.error(
-            `${relPath}:${line}:${col} — violation "${v.word}" — ${v.context}`,
-          );
-          if (v.suggestion) {
-            console.error(`  suggestion: ${v.suggestion}`);
-          }
-        }
-        fileViolations += violations.length;
+        fileViolations += reportViolations(relPath, `${line}:${col}`, violations);
       }
     }
 
-    if (fileViolations > 0) {
-      console.error(`  → ${fileViolations} violation(s) in ${relative(SRC_DIR, filePath)}`);
+    totalViolations += fileViolations;
+  }
+
+  // Message catalogs: every string value is user-visible copy in that
+  // locale, so both fi and en catalogs are checked directly.
+  for (const catalogPath of catalogs) {
+    const relPath = relative(SRC_DIR, catalogPath);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(catalogPath, 'utf-8'));
+    } catch (err) {
+      console.error(`content-policy: ${relPath} is not valid JSON: ${err}`);
+      totalViolations += 1;
+      continue;
+    }
+
+    let fileViolations = 0;
+    for (const { key, text } of flattenCatalog(parsed)) {
+      fileViolations += reportViolations(relPath, key, checkContent(text));
     }
     totalViolations += fileViolations;
   }

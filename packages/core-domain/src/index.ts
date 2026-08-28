@@ -93,6 +93,23 @@ export interface ContainerDutyCalculation {
 export { TAX_RULE_REPOSITORY_PORT } from './tax/index';
 export type { ITaxRuleRepositoryPort, TaxRuleRecordPort, AbvTierConditions } from './tax/index';
 
+// ---------------------------------------------------------------------------
+// FX rate datasets — versioned, manually-confirmed conversion-rate datasets
+// ---------------------------------------------------------------------------
+
+export { FX_RATE_DATASET_REPOSITORY_PORT } from './fx/index';
+export type { IFxRateDatasetRepositoryPort } from './fx/index';
+export { FxRateDatasetService } from './fx/index';
+export type {
+  FxDatasetStatus,
+  FxDatasetVersion,
+  FxRateEntry,
+  NewFxDataset,
+  ResolvedFxDatasetRate,
+} from './fx/index';
+export { FX_DATASET_STATUSES } from './fx/index';
+export { FxModule, type FxModuleOptions } from './fx/index';
+
 // Tax formula reference constants — values stored in taxRules.calculationFormulaReference
 export {
   FORMULA_PER_LITRE_OF_PRODUCT,
@@ -107,8 +124,8 @@ export { AlcoholExciseService, ContainerDutyService } from './tax/index';
 export type { ExciseResult, ContainerDutyResult } from './tax/index';
 
 // Tax-type constants — canonical vocabulary used across seed, engine, tests
-export { TAX_TYPES } from './tax/index';
-export type { TaxType } from './tax/index';
+export { TAX_TYPES, TAX_CATEGORY_KEYS } from './tax/index';
+export type { TaxType, TaxCategory } from './tax/index';
 // Category canonicalisation — read-side consumers (e.g. historical-data
 // attribution windows) must query rules with the same normalised category
 // the engines resolved observations against.
@@ -250,6 +267,20 @@ export type {
   VolumeUnit,
 } from './normalization/normalization.types';
 
+// Classification vocabulary + source-category normalization (task 7.1) —
+// the classification gate and the ingestion adapters share these.
+export {
+  CANONICAL_CATEGORY_KEYS,
+  KNOWN_REGULATORY_CLASSIFICATIONS,
+  REGULATORY_CLASSIFICATION_PLACEHOLDER,
+} from './normalization/normalization.types';
+export {
+  mapSourceCategory,
+  isKnownTaxCategory,
+  SWEDISH_SOURCE_CATEGORY_MAP,
+} from './normalization/source-category.mapper';
+export type { SourceCategoryMapping } from './normalization/source-category.mapper';
+
 // -- Product matching / deduplication --
 
 export { ProductMatcherModule } from './normalization/product-matcher.module';
@@ -288,6 +319,9 @@ export type {
   CalculatorRetailOfferData,
   CostCategory,
   ItemizedCost,
+  OfferExclusion,
+  OfferExclusionReason,
+  OriginalPrice,
   CreateCalculationRecordInput,
   Disclaimer,
   TransportArrangement,
@@ -297,6 +331,7 @@ export type {
 export {
   PRODUCT_DATA_PORT,
   CALCULATION_RECORD_PORT,
+  hasValidEurConversion,
   ClassificationGateRejectionError,
   ProductNotFoundError,
   NoRetailOffersError,
@@ -424,9 +459,11 @@ export type { IBasketCalculationRecordPort, CreateBasketCalculationRecordInput }
 export {
   MAX_BASKET_ITEMS,
   MAX_CANDIDATE_MERCHANTS_PER_ITEM,
+  MAX_TOTAL_COMBINATIONS,
   BasketOptimizerService,
   BasketValidationError,
   BasketClassificationGateError,
+  BasketCombinationLimitError,
 } from './optimizer/index';
 export type {
   BasketInputItem,
@@ -446,8 +483,19 @@ export type {
 
 export { EntitlementModule } from './entitlement/entitlement.module';
 export { EntitlementService } from './entitlement/entitlement.service';
-export type { Entitlement, EntitlementTier, FeatureId } from './entitlement/entitlement.types';
-export { FEATURE_TIER_MAP, isTierSufficient } from './entitlement/entitlement.types';
+export type {
+  AccountContext,
+  Entitlement,
+  EntitlementTier,
+  FeatureId,
+  TierTransition,
+  TierTransitionSource,
+} from './entitlement/entitlement.types';
+export {
+  FEATURE_TIER_MAP,
+  isTierSufficient,
+  isTierTransitionWellFormed,
+} from './entitlement/entitlement.types';
 
 // ---------------------------------------------------------------------------
 // Audit — immutable audit log for high-liability domain changes

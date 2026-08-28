@@ -9,9 +9,13 @@ import {
 /**
  * In-memory KPI metric buffer with a flush-to-log mechanism.
  *
- * Metrics are accumulated in-memory and flushed as structured JSON log lines
- * on demand or periodically. This avoids blocking the request path while
- * still making KPI data available for log ingestion pipelines.
+ * Production note: the in-memory sampler is RETIRED from production
+ * paths — it is neither multi-replica coherent nor durable, and
+ * structured request logging (pino, apps/backend main.ts) is the
+ * production observability channel. The buffer stays active in
+ * non-production environments (and behind `KPI_SAMPLER_ENABLED=true`
+ * for explicit operator opt-in) so the ops dashboard and tests keep
+ * working against it.
  */
 @Injectable()
 export class KpiService {
@@ -25,8 +29,16 @@ export class KpiService {
   /** Maximum buffered metrics before an automatic flush is forced. */
   private static readonly MAX_BUFFER_SIZE = 500;
 
+  /** Whether in-memory sampling is active for this process. */
+  private readonly enabled: boolean;
+
   constructor() {
-    this.startAutoFlush(KpiService.DEFAULT_FLUSH_MS);
+    this.enabled =
+      process.env.NODE_ENV !== 'production' ||
+      process.env.KPI_SAMPLER_ENABLED === 'true';
+    if (this.enabled) {
+      this.startAutoFlush(KpiService.DEFAULT_FLUSH_MS);
+    }
   }
 
   /**
@@ -45,6 +57,8 @@ export class KpiService {
     tags?: MetricTags,
     metricType: MetricType = MetricType.COUNTER,
   ): void {
+    if (!this.enabled) return;
+
     this.buffer.push({
       timestamp: new Date().toISOString(),
       category,

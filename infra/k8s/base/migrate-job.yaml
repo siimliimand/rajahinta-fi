@@ -37,7 +37,10 @@ spec:
         fsGroup: 1001
       containers:
         - name: migrate
-          image: ghcr.io/siimliimand/rajahinta:latest
+          # Immutable-tag discipline (task 11.1): never ":latest"; the
+          # deploy pipeline pins the commit SHA for all three workloads
+          # with one `kustomize edit set image`.
+          image: ghcr.io/siimliimand/rajahinta:set-by-deploy-pipeline
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh

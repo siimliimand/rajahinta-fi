@@ -11,3 +11,10 @@ resources:
   - service.yaml
   - ingress.yaml
   - migrate-job.yaml
+  - prometheusrule.yaml
+  # Task 11.1: HPA + PDB now that per-replica state is durable (4.1-4.3
+  # landed). The Deployment sets no spec.replicas — the HPA owns scale.
+  - hpa.yaml
+  - pdb.yaml
+  # FIX-M item 4: scrape wiring for the internal /metrics port.
+  - servicemonitor.yaml

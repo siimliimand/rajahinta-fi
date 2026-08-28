@@ -27,6 +27,15 @@ export enum FeatureFlag {
    * Default OFF for instant rollback of all four surfaces together.
    */
   ADVANCED_FEATURES = 'ADVANCED_FEATURES',
+  /**
+   * Gate the operator console — the authenticated UI + API at
+   * `/ops/console/**` for governance permission grants, tax-rate/FX
+   * dataset-version confirmation, and the correction queue
+   * (task 12.1, change technical-assessment-remediation).
+   * Default OFF per the compliance rule (new UI ships flag-off); the
+   * bearer+allowlist guard stays on regardless of the flag.
+   */
+  OPERATOR_CONSOLE = 'OPERATOR_CONSOLE',
 }
 
 /** Runtime feature-flag configuration shape used by the service. */

@@ -5,9 +5,11 @@
  * that can be downloaded by the user.  Supports the right of access
  * (Article 15 GDPR) and data portability (Article 20 GDPR).
  *
- * Phase 1: operates on the in-memory AccountService store. Calculation
- * history is simulated from the record ID list.  A production implementation
- * would query the calculation_records table and include full cost breakdowns.
+ * Phase 1: JSON format (CSV planned for Phase 2). Calculation history
+ * is sourced through {@link AccountService}: on the repository path it is
+ * the account's claimed calculation records (real timestamps, totals,
+ * product names); the in-memory fallback synthesizes stubs from the
+ * record ID list.
  *
  * ## Usage
  *
@@ -44,16 +46,12 @@ export class DataExportService {
       throw new NotFoundException(`User "${userId}" not found`);
     }
 
-    // Build calculation history from the ID list
+    // Calculation history comes from the claimed calculation records on
+    // the DB path (real timestamps, totals, product names) and from the
+    // account's ID list on the in-memory fallback — sourced through the
+    // service either way, same lifecycle as saved baskets/scenarios.
     const calculationHistory: CalculationExportRecord[] =
-      account.calculationHistory.map((id, index) => ({
-        calculationId: id,
-        // Phase 1: synthetic timestamp — production would query the record table
-        timestamp: new Date(Date.now() - index * 86400000),
-        totalCents: 0,
-        productName: `calculation-${id}`,
-        quantity: 1,
-      }));
+      await this.accountService.getCalculationHistoryForExport(userId);
 
     // Saved baskets are loaded separately from the account row on the
     // repository path (rowToAccount never populates them), so source them

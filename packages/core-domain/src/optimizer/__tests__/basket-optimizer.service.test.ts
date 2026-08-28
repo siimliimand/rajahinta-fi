@@ -25,8 +25,10 @@ import { ReliabilityService } from '../../reliability/reliability.service';
 import {
   MAX_BASKET_ITEMS,
   MAX_CANDIDATE_MERCHANTS_PER_ITEM,
+  MAX_TOTAL_COMBINATIONS,
   BasketValidationError,
   BasketClassificationGateError,
+  BasketCombinationLimitError,
 } from '../optimizer.types';
 import type {
   BasketOptimizationInput,
@@ -1213,6 +1215,124 @@ describe('BasketOptimizerService', () => {
       // A result is still produced — the 9th merchant (highest price) was capped out
       expect(result.shipments).toHaveLength(1);
       expect(result.totalCents).toBeGreaterThan(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Caps pin — a cap change is a deliberate, visible act, not silent drift
+  // (basket-optimization spec: input caps pinned by test)
+  // -------------------------------------------------------------------------
+
+  describe('input caps pinned', () => {
+    it('pins the exact cap values — update this pin in the same commit as any deliberate change', () => {
+      expect(MAX_BASKET_ITEMS).toBe(10);
+      expect(MAX_CANDIDATE_MERCHANTS_PER_ITEM).toBe(8);
+      expect(MAX_TOTAL_COMBINATIONS).toBe(100_000);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Total-combinations guard — reject before enumeration, clean typed error
+  // (basket-optimization spec: oversized request rejected)
+  // -------------------------------------------------------------------------
+
+  describe('total-combinations guard', () => {
+    const MERCHANTS_PER_ITEM = 8;
+
+    function eightMerchantOffers(): CalculatorRetailOfferData[] {
+      return Array.from({ length: MERCHANTS_PER_ITEM }, (_, i) => ({
+        id: 400 + i,
+        priceCents: 200 + i * 10,
+        merchant: `merchant-${i}`,
+        country: 'DE',
+        reliabilityStatus: 'VERIFIED' as const,
+      }));
+    }
+
+    function guardTestOptimizer() {
+      const getTerms = vi.fn();
+      const productData = createMockProductDataPort({
+        findProductById: vi.fn().mockImplementation(async () => PRODUCT_1),
+        findRetailOffers: vi.fn().mockResolvedValue(eightMerchantOffers()),
+      });
+      const merchantTerms = createMockMerchantTermsPort({ getTerms });
+      const basketCalcRecordPort = createMockBasketCalcRecordPort();
+      const service = createOptimizer({ productData, merchantTerms, basketCalcRecordPort });
+      return { service, getTerms, basketCalcRecordPort };
+    }
+
+    it('throws BasketCombinationLimitError when the Cartesian product exceeds the limit', async () => {
+      const { service, getTerms, basketCalcRecordPort } = guardTestOptimizer();
+
+      // 6 items × 8 merchants = 262,144 > 100,000
+      const items = Array.from({ length: 6 }, (_, i) => ({
+        productId: 500 + i,
+        quantity: 1,
+      }));
+      const input: BasketOptimizationInput = { items, destination: 'FI' };
+
+      const error = await service.optimize(input).then(
+        () => { throw new Error('expected BasketCombinationLimitError'); },
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(BasketCombinationLimitError);
+      const limitError = error as BasketCombinationLimitError;
+      expect(limitError.totalCombinations).toBe(8 ** 6);
+      expect(limitError.limit).toBe(MAX_TOTAL_COMBINATIONS);
+      expect(limitError.message).toContain(String(8 ** 6));
+      expect(limitError.message).toContain(String(MAX_TOTAL_COMBINATIONS));
+      expect(limitError.name).toBe('BasketCombinationLimitError');
+
+      // The guard fires after offer resolution (needed to count combinations)
+      // but before merchant-terms fetch and any persistence — no enumeration.
+      expect(getTerms).not.toHaveBeenCalled();
+      expect(basketCalcRecordPort.create).not.toHaveBeenCalled();
+    });
+
+    it('applies regardless of transport arrangement (PERSONAL still enumerates the same tree)', async () => {
+      const { service } = guardTestOptimizer();
+
+      const items = Array.from({ length: 6 }, (_, i) => ({
+        productId: 500 + i,
+        quantity: 1,
+      }));
+      const input: BasketOptimizationInput = {
+        items,
+        destination: 'FI',
+        transportArrangement: 'PERSONAL',
+      };
+
+      await expect(service.optimize(input)).rejects.toThrow(BasketCombinationLimitError);
+    });
+
+    it('still optimizes a basket at the worst caps-respecting size under the limit', async () => {
+      // 5 items × 8 merchants = 32,768 ≤ 100,000 — legitimate request, must pass.
+      const offers = eightMerchantOffers();
+      const productData = createMockProductDataPort({
+        findProductById: vi.fn().mockImplementation(async () => PRODUCT_1),
+        findRetailOffers: vi.fn().mockResolvedValue(offers),
+      });
+      const transportOffers = offers.map((o) =>
+        makeTransportOffer({
+          carrier: o.merchant,
+          destinationCountry: 'FI',
+          priceCents: 1000,
+          weightBracket: { minKg: 0, maxKg: 10 },
+          packageTier: 'can',
+        }),
+      );
+      const service = createOptimizer({ productData, transportOffers, basketCalcRecordPort: null });
+
+      const items = Array.from({ length: 5 }, (_, i) => ({
+        productId: 600 + i,
+        quantity: 1,
+      }));
+      const input: BasketOptimizationInput = { items, destination: 'FI' };
+
+      const result = await service.optimize(input);
+      expect(result.totalCents).toBeGreaterThan(0);
+      expect(result.shipments.length).toBeGreaterThanOrEqual(1);
     });
   });
 

@@ -2,8 +2,17 @@
  * OutboundRedirectController — merchant-link redirect endpoint.
  *
  * GET /api/v1/outbound/:offerId looks up a retail offer by its ID,
- * records a click via ClickAnalyticsService, then issues a 302 redirect
- * to the merchant's source URL.
+ * records a click via the durable Redis-backed click counters, then issues
+ * a 302 redirect to the merchant's source URL.
+ *
+ * ## Durable analytics (task 4.3, design D8)
+ *
+ * - Clicks are counted in Redis so counters survive rollouts and are shared
+ *   across replicas. The in-memory ClickAnalyticsService remains bound in
+ *   the module for tests only.
+ * - `recordClick` is fire-and-forget by contract (it never throws), and the
+ *   redirect deliberately does NOT await it — click accounting must never
+ *   add Redis latency (or an outage) to the redirect hot path.
  *
  * ## Phase 1 constraints
  *
@@ -26,7 +35,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ProductRepository } from '@rajahinta/data-platform';
-import { ClickAnalyticsService } from './click-analytics.service';
+import { RedisClickAnalyticsService } from '../audit/redis-click-analytics.service';
 import { RateLimitGuard, RateLimit } from '../rate-limiting';
 
 @ApiTags('outbound')
@@ -35,7 +44,7 @@ import { RateLimitGuard, RateLimit } from '../rate-limiting';
 export class OutboundRedirectController {
   constructor(
     private readonly productRepo: ProductRepository,
-    private readonly clickAnalytics: ClickAnalyticsService,
+    private readonly clickAnalytics: RedisClickAnalyticsService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -75,7 +84,9 @@ export class OutboundRedirectController {
       );
     }
 
-    this.clickAnalytics.recordClick(offer.merchant, offer.sourceUrl);
+    // Fire-and-forget: never awaited on the redirect hot path. The service
+    // swallows its own errors — lost analytics must not break a redirect.
+    void this.clickAnalytics.recordClick(offer.merchant, offer.sourceUrl);
 
     return { url: offer.sourceUrl, statusCode: HttpStatus.FOUND };
   }

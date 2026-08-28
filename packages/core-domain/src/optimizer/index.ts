@@ -11,12 +11,14 @@
 export {
   MAX_BASKET_ITEMS,
   MAX_CANDIDATE_MERCHANTS_PER_ITEM,
+  MAX_TOTAL_COMBINATIONS,
 } from './optimizer.types';
 
 // Error types
 export {
   BasketValidationError,
   BasketClassificationGateError,
+  BasketCombinationLimitError,
 } from './optimizer.types';
 
 // Types

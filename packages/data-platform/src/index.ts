@@ -16,6 +16,12 @@ export {
   aggregationWatermarks,
   merchantTerms,
   basketCalculationRecords,
+  fxRateDatasets,
+  fxRates,
+  sessions,
+  auditEvents,
+  clickCounterSnapshots,
+  merchantRegistry,
 } from './schema';
 
 // ---------------------------------------------------------------------------
@@ -35,6 +41,10 @@ export {
   AggregationWatermarkRepository,
   MerchantTermsRepository,
   BasketCalculationRecordRepository,
+  FxRateRepository,
+  SessionRepository,
+  MerchantRegistryRepository,
+  ClickCounterSnapshotRepository,
 } from './abstracts';
 export type {
   PriceObservationRecord,
@@ -45,6 +55,13 @@ export type {
   BasketCalculationRecord,
   SavedScenarioInputs,
   SavedScenarioRecord,
+  FxRateDatasetRecord,
+  FxRateRow,
+  ResolvedFxRate,
+  SessionRecord,
+  MerchantRegistryRecord,
+  ClickCounterSnapshotRecord,
+  CalculationHistoryEntry,
 } from './abstracts';
 
 // ---------------------------------------------------------------------------
@@ -64,6 +81,27 @@ export { DrizzlePriceHistorySummaryRepository } from './repositories/price-histo
 export { DrizzleAggregationWatermarkRepository } from './repositories/aggregation-watermark.repository';
 export { DrizzleMerchantTermsRepository } from './repositories/merchant-terms.repository';
 export { DrizzleBasketCalculationRecordRepository } from './repositories/basket-calculation-record.repository';
+export { DrizzleFxRateRepository } from './repositories/fx-rate.repository';
+export { FxRateDatasetRepositoryAdapter } from './repositories/fx-rate-port.adapter';
+export { DrizzleSessionRepository } from './repositories/session.repository';
+export { DrizzleAuditEventRepository } from './repositories/audit-event.repository';
+export { DrizzleMerchantRegistryRepository } from './repositories/merchant-registry.repository';
+export { DrizzleClickCounterSnapshotRepository } from './repositories/click-counter-snapshot.repository';
+
+// ---------------------------------------------------------------------------
+// Repository-boundary decimal coercion for pg numeric columns (task 3.5)
+// ---------------------------------------------------------------------------
+
+export { pgNumericToNumber, requirePgNumeric } from './db/pg-numeric';
+
+// ---------------------------------------------------------------------------
+// Retention — monthly-partition maintenance and anonymous-row pruning
+// ---------------------------------------------------------------------------
+
+export {
+  CalculationRecordRetentionService,
+  type RetentionRunResult,
+} from './maintenance/calculation-record-retention.service';
 
 // ---------------------------------------------------------------------------
 // Merchant reliability — abstract token + aggregate type are co-located with
@@ -103,6 +141,16 @@ export { seedStagingDatabase } from './seed/staging-seed';
 // ---------------------------------------------------------------------------
 
 export { seedTaxRules } from './seed/tax-rules.seed';
+
+// ---------------------------------------------------------------------------
+// Merchant registry seed — idempotent bootstrap of the initial merchant set
+// (task 7.2; replaces the static merchants.config.ts data)
+// ---------------------------------------------------------------------------
+
+export {
+  seedMerchantRegistry,
+  type MerchantRegistrySeedRow,
+} from './seed/merchant-registry.seed';
 
 // ---------------------------------------------------------------------------
 // Drizzle connection provider

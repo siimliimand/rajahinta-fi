@@ -1,18 +1,23 @@
 /**
  * OutboundRedirectController tests.
  *
- * Tests the offer redirect endpoint with mocked ProductRepository and
- * ClickAnalyticsService, following the same pattern as sibling tests
- * (no @nestjs/testing — direct instantiation with manual mocks).
+ * Tests the offer redirect endpoint with a mocked ProductRepository and a
+ * real RedisClickAnalyticsService over an in-memory Redis double, following
+ * the same pattern as sibling tests (no @nestjs/testing — direct
+ * instantiation with manual doubles).
+ *
+ * The redirect must NOT await click recording (fire-and-forget hot path), so
+ * the click-recording assertions give the micro-task queue a chance to drain
+ * before asserting.
  *
  * @module OutboundRedirectControllerTest
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, type MockInstance } from 'vitest';
 import { NotFoundException } from '@nestjs/common';
+import type Redis from 'ioredis';
 import { OutboundRedirectController } from '../outbound-redirect.controller';
-import { ClickAnalyticsService } from '../click-analytics.service';
-import type { ClickStats } from '../click-analytics.service';
+import { RedisClickAnalyticsService } from '../../audit/redis-click-analytics.service';
 import type { ProductRepository } from '@rajahinta/data-platform';
 
 // ---------------------------------------------------------------------------
@@ -25,6 +30,61 @@ interface MockRetailOffer {
   readonly merchant: string;
   readonly sourceUrl: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// In-memory Redis double — implements the small command surface the click
+// services use (multi/hincrby/hset/exec, hgetall, scan).
+// ---------------------------------------------------------------------------
+
+function createFakeRedis() {
+  const hashes = new Map<string, Map<string, string>>();
+
+  const hash = (key: string): Map<string, string> => {
+    let entry = hashes.get(key);
+    if (!entry) {
+      entry = new Map();
+      hashes.set(key, entry);
+    }
+    return entry;
+  };
+
+  return {
+    hgetall: async (key: string): Promise<Record<string, string>> =>
+      Object.fromEntries(hash(key)),
+    scan: async (
+      _cursor: string,
+      _mode: 'MATCH',
+      pattern: string,
+    ): Promise<[string, string[]]> => {
+      const prefix = pattern.slice(0, -1); // strip trailing '*'
+      return ['0', [...hashes.keys()].filter((k) => k.startsWith(prefix))];
+    },
+    multi() {
+      const ops: Array<() => void> = [];
+      const chain = {
+        hincrby(key: string, field: string, inc: number) {
+          ops.push(() => {
+            const entry = hash(key);
+            entry.set(field, String(Number(entry.get(field) ?? 0) + inc));
+          });
+          return chain;
+        },
+        hset(key: string, field: string, value: string) {
+          ops.push(() => hash(key).set(field, value));
+          return chain;
+        },
+        async exec() {
+          for (const op of ops) op();
+          return [];
+        },
+      };
+      return chain;
+    },
+  };
+}
+
+/** Let pending micro-tasks (the fire-and-forget recordClick) settle. */
+const flushMicrotasks = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -59,57 +119,6 @@ function createMockProductRepo(): ProductRepository {
   } as unknown as ProductRepository;
 }
 
-function createMockClickService(): ClickAnalyticsService {
-  const clicks = new Map<string, Map<string, number>>();
-
-  return {
-    recordClick: vi.fn((merchantId: string, url: string): void => {
-      let merchantClicks = clicks.get(merchantId);
-      if (!merchantClicks) {
-        merchantClicks = new Map<string, number>();
-        clicks.set(merchantId, merchantClicks);
-      }
-      const current = merchantClicks.get(url) ?? 0;
-      merchantClicks.set(url, current + 1);
-    }),
-    getClickCounts: vi.fn((): Record<string, Record<string, number>> => {
-      const result: Record<string, Record<string, number>> = {};
-      for (const [merchantId, merchantClicks] of clicks) {
-        const counts: Record<string, number> = {};
-        for (const [url, count] of merchantClicks) {
-          counts[url] = count;
-        }
-        result[merchantId] = counts;
-      }
-      return result;
-    }),
-    getClickStats: vi.fn((): Record<string, ClickStats> => {
-      const result: Record<string, ClickStats> = {};
-      for (const [merchantId, merchantClicks] of clicks) {
-        const perUrl: Record<string, number> = {};
-        let totalClicks = 0;
-        for (const [url, count] of merchantClicks) {
-          perUrl[url] = count;
-          totalClicks += count;
-        }
-        result[merchantId] = {
-          totalClicks,
-          uniqueUrls: merchantClicks.size,
-          perUrl,
-          purchaseCount: 0,
-          commissionTotalCents: 0,
-          affiliateCommissionCents: 0,
-          transactionCount: 0,
-        };
-      }
-      return result;
-    }),
-    reset: vi.fn((): void => {
-      clicks.clear();
-    }),
-  } as unknown as ClickAnalyticsService;
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -117,12 +126,18 @@ function createMockClickService(): ClickAnalyticsService {
 describe('OutboundRedirectController — GET /api/v1/outbound/:offerId', () => {
   let controller: OutboundRedirectController;
   let mockProductRepo: ProductRepository;
-  let mockClickService: ClickAnalyticsService;
+  let clickService: RedisClickAnalyticsService;
+  let recordClickSpy: MockInstance<
+    (merchantId: string, url: string) => Promise<void>
+  >;
 
   beforeEach(() => {
     mockProductRepo = createMockProductRepo();
-    mockClickService = createMockClickService();
-    controller = new OutboundRedirectController(mockProductRepo, mockClickService);
+    clickService = new RedisClickAnalyticsService(
+      createFakeRedis() as unknown as Redis,
+    );
+    recordClickSpy = vi.spyOn(clickService, 'recordClick');
+    controller = new OutboundRedirectController(mockProductRepo, clickService);
   });
 
   // ---------------------------------------------------------------------------
@@ -139,21 +154,25 @@ describe('OutboundRedirectController — GET /api/v1/outbound/:offerId', () => {
       });
     });
 
-    it('records a click via ClickAnalyticsService', async () => {
+    it('records a click via the durable click service (fire-and-forget)', async () => {
       await controller.redirect(1);
+      await flushMicrotasks();
 
-      expect(mockClickService.recordClick).toHaveBeenCalledWith(
+      expect(recordClickSpy).toHaveBeenCalledWith(
         'alko',
         'https://www.alko.fi/tuotteet/olut',
       );
     });
 
-    it('increments click count on repeated redirects', async () => {
+    it('counts repeated redirects', async () => {
       await controller.redirect(1);
       await controller.redirect(1);
       await controller.redirect(1);
+      await flushMicrotasks();
 
-      expect(mockClickService.recordClick).toHaveBeenCalledTimes(3);
+      expect(recordClickSpy).toHaveBeenCalledTimes(3);
+      const counts = await clickService.getClickCounts();
+      expect(counts.alko['https://www.alko.fi/tuotteet/olut']).toBe(3);
     });
   });
 
@@ -172,7 +191,8 @@ describe('OutboundRedirectController — GET /api/v1/outbound/:offerId', () => {
       } catch {
         // expected
       }
-      expect(mockClickService.recordClick).not.toHaveBeenCalled();
+      await flushMicrotasks();
+      expect(recordClickSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -191,7 +211,8 @@ describe('OutboundRedirectController — GET /api/v1/outbound/:offerId', () => {
       } catch {
         // expected
       }
-      expect(mockClickService.recordClick).not.toHaveBeenCalled();
+      await flushMicrotasks();
+      expect(recordClickSpy).not.toHaveBeenCalled();
     });
   });
 });

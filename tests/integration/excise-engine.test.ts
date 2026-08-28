@@ -62,7 +62,11 @@ const { drizzle } = require(dpResolve('drizzle-orm/node-postgres')) as typeof im
 // Constants
 // ---------------------------------------------------------------------------
 
+// Same gate as every other integration file and global-setup: TEST_DATABASE_URL
+// first, plain DATABASE_URL as fallback. Gating on DATABASE_URL alone made this
+// suite pass vacuously when the harness was wired via TEST_DATABASE_URL only.
 const DATABASE_URL =
+  process.env.TEST_DATABASE_URL ??
   process.env.DATABASE_URL ??
   'postgresql://rajahinta:rajahinta@localhost:5432/rajahinta_test';
 
@@ -160,8 +164,8 @@ describe('Real-stack: AlcoholExciseService through DrizzleTaxRateRepository', ()
   // =======================================================================
 
   describe('2024 beer 5 % ABV, 0.5 L', () => {
-    it('returns 91 snt total excise (2024 vintage)', async () => {
-      if (!dbAvailable) return;
+    it('returns 91 snt total excise (2024 vintage)', async ({ skip }) => {
+      if (!dbAvailable) skip(); // honest skip — a bare return would pass vacuously
       const result = await excise.calculate('beer', 0.05, 0.5, new Date('2024-06-15'));
 
       // PER_CENTILITRE_ETHANOL formula:
@@ -173,8 +177,8 @@ describe('Real-stack: AlcoholExciseService through DrizzleTaxRateRepository', ()
       expect(result.ruleId).not.toBeNull();
     });
 
-    it('returns VERIFIED with a real rule reference, not FALLBACK', async () => {
-      if (!dbAvailable) return;
+    it('returns VERIFIED with a real rule reference, not FALLBACK', async ({ skip }) => {
+      if (!dbAvailable) skip();
       const result = await excise.calculate('beer', 0.05, 0.5, new Date('2024-06-15'));
 
       // Must not be the FALLBACK fallback — proves the seed is queried
@@ -188,8 +192,8 @@ describe('Real-stack: AlcoholExciseService through DrizzleTaxRateRepository', ()
   // =======================================================================
 
   describe('wine still >1.2–2.8 % ABV — intra-year split 1.4.2026', () => {
-    it('resolves 36 snt/l before 1.4.2026', async () => {
-      if (!dbAvailable) return;
+    it('resolves 36 snt/l before 1.4.2026', async ({ skip }) => {
+      if (!dbAvailable) skip();
       const result = await excise.calculate(
         'wine_still',
         0.02, // 2 % ABV (inside >1.2–2.8 band)
@@ -204,8 +208,8 @@ describe('Real-stack: AlcoholExciseService through DrizzleTaxRateRepository', ()
       expect(result.reliability).toBe('VERIFIED');
     });
 
-    it('resolves 50 snt/l on or after 1.4.2026', async () => {
-      if (!dbAvailable) return;
+    it('resolves 50 snt/l on or after 1.4.2026', async ({ skip }) => {
+      if (!dbAvailable) skip();
       const result = await excise.calculate(
         'wine_still',
         0.02,
@@ -225,8 +229,8 @@ describe('Real-stack: AlcoholExciseService through DrizzleTaxRateRepository', ()
   // =======================================================================
 
   describe('2026 spirits >10 % ABV', () => {
-    it('returns 56.28 snt/cl rate via correct taxCents for 40% ABV / 0.7 L', async () => {
-      if (!dbAvailable) return;
+    it('returns 56.28 snt/cl rate via correct taxCents for 40% ABV / 0.7 L', async ({ skip }) => {
+      if (!dbAvailable) skip();
       const result = await excise.calculate(
         'spirits',
         0.40,
@@ -246,8 +250,8 @@ describe('Real-stack: AlcoholExciseService through DrizzleTaxRateRepository', ()
       expect(result.ruleId).not.toBeNull();
     });
 
-    it('uses the >10 % ABV tier (not the 2.8–10 tier)', async () => {
-      if (!dbAvailable) return;
+    it('uses the >10 % ABV tier (not the 2.8–10 tier)', async ({ skip }) => {
+      if (!dbAvailable) skip();
       const result = await excise.calculate(
         'spirits',
         0.11, // 11 % ABV — clearly above 10 %, unambiguous >10 tier match

@@ -59,6 +59,14 @@ export interface DataQualityReport {
   flaggedIssues: string[];
 }
 
+/**
+ * Gauge hook (FIX-M, deployment-observability metric contract): receiver
+ * of every quality report, fed by the application-api Prometheus exporter
+ * (`rajahinta_data_quality_stale_price_share_ratio` and the per-status
+ * counters — see infra/monitoring/README.md).
+ */
+export type QualityReportHook = (report: DataQualityReport) => void;
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -66,6 +74,20 @@ export interface DataQualityReport {
 @Injectable()
 export class DataQualityService {
   private readonly logger = new Logger(DataQualityService.name);
+
+  /**
+   * Static because data-acquisition sits below application-api in the
+   * layer graph — the exporter there cannot inject a token this package
+   * does not export from its index. Set once at composition time by
+   * PrometheusMetricsService; unbound hosts (tests, stand-alone usage)
+   * run unchanged.
+   */
+  private static qualityReportHook: QualityReportHook | null = null;
+
+  /** Register (or clear) the report receiver — see {@link QualityReportHook}. */
+  static setQualityReportHook(hook: QualityReportHook | null): void {
+    DataQualityService.qualityReportHook = hook;
+  }
 
   constructor(private readonly reliability: ReliabilityService) {}
 
@@ -137,6 +159,10 @@ export class DataQualityService {
         `${report.estimatedCount} estimated, ${report.unavailableCount} unavailable, ` +
         `${report.flaggedIssues.length} issues flagged`,
     );
+
+    // Feed the /metrics gauges (FIX-M metric contract). No-op when no
+    // exporter registered the hook.
+    DataQualityService.qualityReportHook?.(report);
 
     return report;
   }

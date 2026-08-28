@@ -2,8 +2,9 @@
  * SearchController — product search and discovery endpoints.
  *
  * Groups all product discovery operations under `/api/v1/products`.
- * Full-text search is a Phase 2 enhancement; Phase 1 uses basic filtering
- * by product properties.
+ * Free-text queries (`q`) match name, brand, and manufacturer with
+ * pg_trgm similarity ranking (task 5.1); blank queries list products
+ * alphabetically as before.
  *
  * @module SearchController
  */
@@ -54,6 +55,16 @@ function compareByName(a: ProductSearchItem, b: ProductSearchItem): number {
   return a.name.localeCompare(b.name, 'fi');
 }
 
+/**
+ * Alphabetical comparison with a product-id tiebreaker — the deterministic
+ * ordering for a query-filtered result set (spec: product-search,
+ * "Pagination composes"). Identical names would otherwise rely on the
+ * fetch order, which is not contractual.
+ */
+function compareByNameThenId(a: ProductSearchItem, b: ProductSearchItem): number {
+  return compareByName(a, b) || a.id - b.id;
+}
+
 @UseGuards(LaunchGateGuard, AgeGateGuard)
 @LaunchGate(LaunchGateType.PRICE_DATA)
 @ApiTags('products')
@@ -75,12 +86,14 @@ export class SearchController {
   @ApiOperation({
     summary: 'Search products with ranking and pagination',
     description:
-      'List or search products. Supports optional category filtering and ' +
-      'objective sort orders (lowest landed cost, per litre, alphabetical, etc.). ' +
-      'Full-text search is pending a dedicated search index in Phase 2.',
+      'List or search products. Free-text queries match name, brand, and ' +
+      'manufacturer via pg_trgm similarity ranking with a product-id ' +
+      'tiebreaker; an explicit sort is honored over the filtered set. ' +
+      'Blank queries behave exactly as the unfiltered list. Supports ' +
+      'optional objective sort orders (alphabetical in Phase 1).',
   })
   @ApiQuery({ name: 'ids', required: false, description: 'Comma-separated product IDs to fetch' })
-  @ApiQuery({ name: 'q', required: false, description: 'Free-text search term (Phase 2 — placeholder)' })
+  @ApiQuery({ name: 'q', required: false, description: 'Free-text search over name, brand, and manufacturer (pg_trgm similarity ranking)' })
   @ApiQuery({ name: 'category', required: false, description: 'Filter by product category (Phase 2)' })
   @ApiQuery({ name: 'sort', required: false, description: 'Sort order', enum: ['LOWEST_LANDED_COST', 'LOWEST_PER_LITRE', 'LOWEST_PER_UNIT', 'ALPHABETICAL', 'ALCOHOL_PERCENTAGE', 'PRODUCT_CATEGORY'] })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (1-indexed)' })
@@ -88,7 +101,7 @@ export class SearchController {
   @ApiResponse({ status: 200, description: 'Paginated product list' })
   async search(
     @Query('ids') ids?: string,
-    @Query('q') _q?: string,
+    @Query('q') q?: string,
     @Query('category') _category?: string,
     @Query('sort') sort?: SortOrder,
     @Query('page') page?: string,
@@ -106,12 +119,11 @@ export class SearchController {
 
     try {
       let items: ProductSearchItem[] = [];
+      const query = q !== undefined ? q.trim() : '';
 
-      // Phase 1: fetch products by comma-separated IDs when provided;
-      // otherwise search by name (case-insensitive substring) or list the
-      // first page alphabetically. The Phase 2 full-text index will
-      // replace the substring search.
       if (ids !== undefined && ids.trim().length > 0) {
+        // ID lookup takes precedence over free-text search (unchanged
+        // Phase 1 behaviour) — the ids path ignores q.
         const productIds = ids
           .split(',')
           .map((s) => parseInt(s.trim(), 10))
@@ -124,17 +136,31 @@ export class SearchController {
         items = products
           .filter((p): p is NonNullable<typeof p> => p !== null)
           .map((p) => this.toSearchItem(p));
-      } else {
-        const products = await this.productRepo.searchByName(
-          _q ?? null,
+        items.sort(compareByName);
+      } else if (query.length > 0) {
+        // Ranked search (task 5.1): PostgreSQL filters (ILIKE recall over
+        // name/brand/manufacturer) and ranks (pg_trgm similarity DESC,
+        // id ASC) — the result order is the relevance order unless an
+        // explicit sort was requested, which is then honored over the
+        // filtered set (spec scenario "Pagination composes").
+        const products = await this.productRepo.searchRanked(
+          query,
           MAX_PAGE_SIZE,
         );
         items = products.map((p) => this.toSearchItem(p));
+        if (sort !== undefined) {
+          items.sort(compareByNameThenId);
+        }
+      } else {
+        // Blank or absent q — exactly the previous behaviour: the
+        // repository lists products alphabetically.
+        const products = await this.productRepo.searchByName(
+          q ?? null,
+          MAX_PAGE_SIZE,
+        );
+        items = products.map((p) => this.toSearchItem(p));
+        items.sort(compareByName);
       }
-
-      // Apply alphabetical sort (Phase 1: only ALPHABETICAL is supported;
-      // other SortOrder values are rejected above).
-      items.sort(compareByName);
 
       // Paginate
       const start = (pageNum - 1) * limitNum;

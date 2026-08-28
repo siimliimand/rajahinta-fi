@@ -77,7 +77,6 @@ const COST_CATEGORIES: readonly CostCategory[] = [
   'transportCost',
   'alcoholExciseEstimate',
   'containerDutyEstimate',
-  'otherCharges',
 ];
 
 const CONFIDENCE_LEVELS: readonly ConfidenceLevel[] = ['HIGH', 'MEDIUM', 'LOW'];
@@ -124,11 +123,13 @@ function toItemizedCost(raw: unknown): ItemizedCost | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const entry = raw as Record<string, unknown>;
 
-  // Category outside the vocabulary still carries a figure — attribute it
-  // to otherCharges rather than dropping a persisted amount.
-  const category: CostCategory = isCostCategory(entry.category)
-    ? entry.category
-    : 'otherCharges';
+  // Lines outside the vocabulary cannot be represented in the live
+  // shape (task 10.3 removed otherCharges, the former catch-all), so
+  // they are dropped from itemizedCosts. totalCents stays verbatim from
+  // the record — the headline figure never lies, and post-10.3 the
+  // orchestrator only persists vocabulary categories anyway (legacy
+  // otherCharges lines were hardcoded zeros).
+  if (!isCostCategory(entry.category)) return null;
 
   // Reliability outside the vocabulary degrades to UNAVAILABLE — never
   // overstated (mirrors ProductDataAdapter's legacy-value handling).
@@ -151,7 +152,7 @@ function toItemizedCost(raw: unknown): ItemizedCost | null {
 
   return {
     label: typeof entry.label === 'string' ? entry.label : '',
-    category,
+    category: entry.category,
     cents,
     reliability,
     ...(nested !== undefined && nested.length > 0 ? { breakdown: nested } : {}),
@@ -244,7 +245,13 @@ export function mapCalculationRecordToResult(
     transportCost: sumCategory(itemizedCosts, 'transportCost'),
     alcoholExciseEstimate: sumCategory(itemizedCosts, 'alcoholExciseEstimate'),
     containerDutyEstimate: sumCategory(itemizedCosts, 'containerDutyEstimate'),
-    otherCharges: sumCategory(itemizedCosts, 'otherCharges'),
+    // Offer exclusions are computed on the live path (task 1.5) but not
+    // persisted with the record — the reconstructed result reports none.
+    // Empty is the representable "nothing to surface" state; the result
+    // page hides the section, the same degradation as confidenceBreakdown.
+    excludedOffers: [],
+    // The selected offer's pre-conversion price is likewise live-only;
+    // absence renders as EUR-native (optional in the frontend contract).
     totalCents: record.totalCents,
     currency: 'EUR',
     confidence: toConfidenceLevel(record.confidence),

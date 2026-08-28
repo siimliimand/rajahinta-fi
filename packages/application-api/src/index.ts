@@ -2,16 +2,13 @@ import {
   Module,
   Controller,
   Get,
-  Post,
-  Body,
   Injectable,
-  HttpCode,
   HttpStatus,
-  UseGuards,
+  Res,
 } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
-  TaxCalculationEngine,
   LandedCostResult,
   CoreDomainModule,
   type CalculatorPorts,
@@ -42,7 +39,6 @@ import { BillingModule } from './billing';
 import { AuditModule } from './audit';
 import { RedisModule } from './redis';
 import { AgeGateModule } from './age-gate';
-import { AgeGateGuard } from './age-gate';
 import { AccountModule } from './accounts';
 import { CalculatorController } from './calculator';
 import { BasketOptimizerController } from './basket';
@@ -53,8 +49,11 @@ import { ReportsModule } from './reports';
 import { MerchantsModule } from './merchants';
 import { AnalyticsModule, OutboundRedirectController } from './analytics';
 import { CorrectionModule } from './correction';
+import { OpsModule } from './ops';
 import { RankingModule as ApplicationRankingModule } from './ranking';
-import { TaxCalculationEngineAdapter } from './adapters/tax-calculation-engine.adapter';
+import { CalculationController, CalculateLandedCostDto } from './calculations';
+import { ReadinessService, type ReadinessResponse } from './observability';
+import { ApiErrorFilter } from './common/api-error.filter';
 
 // ---------------------------------------------------------------------------
 // Module boundary — pure DTO interfaces for cross-layer contracts
@@ -68,98 +67,55 @@ export type {
 } from './interfaces';
 
 // ---------------------------------------------------------------------------
-// NestJS DTOs (legacy — replace with interfaces above over time)
+// NestJS DTOs (legacy endpoints — validation lives in the controller,
+// following the project-wide imperative-validation pattern)
 // ---------------------------------------------------------------------------
 
-export class CalculateExciseDto {
-  category!: 'beer' | 'wine' | 'spirits' | 'intermediate' | 'other';
-  volumeLitres!: number;
-  alcoholByVolume!: number;
-}
-
-export class CalculateLandedCostDto {
-  retailPriceCents!: number;
-  transportCostCents!: number;
-  exciseBase!: CalculateExciseDto | null;
-  containerType!: string | null;
-  containerVolumeLitres!: number | null;
-  depositSystemVerified!: boolean;
-  transactionClass!: 'distance-selling' | 'distance-buying' | 'traveller-import';
-}
+export { CalculationController, CalculateExciseDto, CalculateLandedCostDto } from './calculations';
 
 export class HealthCheckResponse {
   status!: 'ok';
   timestamp!: string;
-  version!: string;
-}
-
-// ---------------------------------------------------------------------------
-// Controller
-// ---------------------------------------------------------------------------
-
-@ApiTags('calculations')
-@Controller('api/v1/calculations')
-@UseGuards(AgeGateGuard)
-export class CalculationController {
-  constructor(private readonly engine: TaxCalculationEngine) {}
-
-  @Post('excise')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Calculate alcohol excise duty' })
-  @ApiResponse({
-    status: 200,
-    description: 'Excise calculation result with provenance evidence',
-  })
-  async calculateExcise(@Body() dto: CalculateExciseDto) {
-    return this.engine.calculateExcise({
-      category: dto.category,
-      volumeLitres: dto.volumeLitres,
-      alcoholByVolume: dto.alcoholByVolume,
-    });
-  }
-
-  @Post('landed-cost')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Calculate full landed cost for a basket line' })
-  @ApiResponse({
-    status: 200,
-    description: 'Complete landed-cost result with disclaimer',
-  })
-  async calculateLandedCost(
-    @Body() dto: CalculateLandedCostDto,
-  ): Promise<LandedCostResult> {
-    return this.engine.calculateLandedCost({
-      retailPriceCents: dto.retailPriceCents,
-      transportCostCents: dto.transportCostCents,
-      exciseBase: dto.exciseBase ?? null,
-      containerDutyRequest: dto.containerType
-        ? {
-            containerType: dto.containerType as any,
-            volumeLitres: dto.containerVolumeLitres ?? 0,
-            depositSystemVerified: dto.depositSystemVerified,
-          }
-        : null,
-      transactionClass: dto.transactionClass,
-    });
-  }
 }
 
 // ---------------------------------------------------------------------------
 // Health controller
 // ---------------------------------------------------------------------------
 
+/**
+ * Liveness (`GET /api/v1/health`) is deliberately process-only — no
+ * dependency network calls — so an orchestrator never restarts a pod whose
+ * database is briefly down. Readiness (`GET /api/v1/health/ready`) verifies
+ * PostgreSQL and Redis with short timeouts and fails (503) when either is
+ * unreachable, so a pod with a dead dependency stops receiving traffic.
+ */
 @ApiTags('health')
 @Controller('api/v1/health')
 export class HealthController {
+  constructor(private readonly readiness: ReadinessService) {}
+
   @Get()
-  @ApiOperation({ summary: 'Service health check' })
-  @ApiResponse({ status: 200, description: 'Healthy' })
+  @ApiOperation({ summary: 'Liveness probe — process is up (no dependency checks)' })
+  @ApiResponse({ status: 200, description: 'Process alive' })
   check(): HealthCheckResponse {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '0.1.0',
     };
+  }
+
+  @Get('ready')
+  @ApiOperation({ summary: 'Readiness probe — PostgreSQL SELECT 1 and Redis ping with short timeouts' })
+  @ApiResponse({ status: 200, description: 'All dependencies reachable' })
+  @ApiResponse({ status: 503, description: 'At least one dependency is down — body reports which' })
+  async ready(
+    @Res({ passthrough: true }) res: { status: (code: number) => void },
+  ): Promise<ReadinessResponse> {
+    const result = await this.readiness.check();
+    if (result.status !== 'ok') {
+      res.status(HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    return result;
   }
 }
 
@@ -211,14 +167,21 @@ imports: [
     // (task 3.4, change phase2-advanced-features); also exports the
     // score pipeline used by the search module's detail-response embed.
     MerchantsModule,
+    // Operator console API (task 12.1, change
+    // technical-assessment-remediation) — governance permission grants,
+    // tax-rate/FX dataset-version confirmation, and the correction queue
+    // at /ops/console/** behind OpsAccessGuard (bearer + allowlist,
+    // fail-closed) and the OPERATOR_CONSOLE flag (default OFF).
+    OpsModule,
   ],
   providers: [
-    TaxCalculationEngineAdapter,
+    // Unified ApiErrorResponse envelope on every error, legacy controllers
+    // included (task 3.4).
+    { provide: APP_FILTER, useClass: ApiErrorFilter },
     // Concrete repository implementations — wire SearchController and
     // CalculatorController to Drizzle-backed data access
     { provide: ProductRepository, useClass: DrizzleProductRepository },
     { provide: CalculationRecordRepository, useClass: DrizzleCalculationRecordRepository },
-    { provide: TaxCalculationEngine, useClass: TaxCalculationEngineAdapter },
     // Register concrete classes so NestJS can resolve their constructor deps
     DrizzleProductRepository,
     DrizzleCalculationRecordRepository,
@@ -294,12 +257,13 @@ export namespace ApplicationApiModule {
         HistoricalDataModule,
         ReportsModule,
         MerchantsModule,
+        // Operator console API (task 12.1) — see the static-module comment.
+        OpsModule,
       ],
       providers: [
-        TaxCalculationEngineAdapter,
+        { provide: APP_FILTER, useClass: ApiErrorFilter },
         { provide: ProductRepository, useClass: DrizzleProductRepository },
         { provide: CalculationRecordRepository, useClass: DrizzleCalculationRecordRepository },
-        { provide: TaxCalculationEngine, useClass: TaxCalculationEngineAdapter },
         DrizzleProductRepository,
         DrizzleCalculationRecordRepository,
       ],
@@ -324,6 +288,12 @@ export namespace ApplicationApiModule {
 export { FeatureFlag, FeatureFlagService, FeatureFlagGuard, FeatureFlagDec as FeatureFlagDecorator } from './feature-flags';
 export type { FeatureFlagConfig } from './feature-flags';
 export { FeatureFlagsModule } from './feature-flags';
+
+// ---------------------------------------------------------------------------
+// Common — unified ApiErrorResponse envelope (task 3.4)
+// ---------------------------------------------------------------------------
+
+export { ApiErrorFilter } from './common';
 
 // ---------------------------------------------------------------------------
 // Observability re-exports for consumers outside the layer
@@ -357,7 +327,7 @@ export { RedisModule, REDIS_CLIENT } from './redis';
 // Rate Limiting re-exports for consumers outside the layer
 // ---------------------------------------------------------------------------
 
-export { RateLimitingModule, RateLimitingService, InMemoryRateLimiter, RATE_LIMITER, RateLimitGuard, RateLimit, RATE_LIMIT_PROFILES } from './rate-limiting';
+export { RateLimitingModule, RateLimitingService, InMemoryRateLimiter, RedisRateLimiter, RATE_LIMITER, RateLimitGuard, RateLimit, RATE_LIMIT_PROFILES } from './rate-limiting';
 export type { RateLimitProfileName, IRateLimiter } from './rate-limiting';
 
 // ---------------------------------------------------------------------------
@@ -443,10 +413,29 @@ export type { IVerificationProvider, VerificationResult } from './age-gate';
 
 // ---------------------------------------------------------------------------
 // Accounts — minimal account system (saved baskets, history, subscription)
+// plus server-issued session authentication (task 2.2, design D3) and the
+// email-verification groundwork (task 2.4, D5)
 // ---------------------------------------------------------------------------
 
 export { AccountModule, AccountService, AccountRetentionService, DataExportService } from './accounts';
 export type { Account, Basket, BasketItem, PurgeResult, AnonymizeResult, DataExport, CalculationExportRecord } from './accounts';
+export {
+  SessionTokenService,
+  SessionController,
+  SessionAuthGuard,
+  CurrentUser,
+  SESSION_COOKIE_NAME,
+  SESSION_TOKEN_REQUEST_KEY,
+  extractSessionToken,
+  buildSessionCookie,
+  buildSessionCookieClear,
+  setSessionCookie,
+  VerifiedEmailStore,
+  UnboundVerifiedEmailStore,
+  isAccountVerified,
+  isValidEmailFormat,
+} from './accounts';
+export type { IssuedSession, SessionResponse, AuthenticatedAccount } from './accounts';
 
 // ---------------------------------------------------------------------------
 // Analytics — click analytics (Phase 1: in-memory, no purchase tracking)
@@ -467,3 +456,38 @@ export type { RankingMethodology, SortOrderDescription } from './ranking';
 
 export { BasketOptimizerController } from './basket';
 export type { BasketOptimizeRequest, BasketItemInput } from './basket';
+
+// ---------------------------------------------------------------------------
+// Ops — operator console API (governance grants, dataset-version
+// confirmation, correction queue; bearer+allowlist realm, flag-gated)
+// ---------------------------------------------------------------------------
+
+export {
+  OpsModule,
+  OpsGovernanceController,
+  OpsGovernanceService,
+  InMemorySourceGovernanceRepository,
+  OpsDatasetConfirmationController,
+  OpsDatasetConfirmationService,
+  InMemoryRateReviewRepository,
+  OpsCorrectionQueueController,
+  OpsCorrectionQueueService,
+  OpsAuditTrailController,
+  OpsAuditTrailService,
+} from './ops';
+export type {
+  OperatorActionDto,
+  GrantGovernanceDto,
+  RevokeGovernanceDto,
+  OpsGovernanceMerchant,
+  OpsGovernanceListResponse,
+  OpsGovernanceMutationResponse,
+  OpsPendingFxDataset,
+  OpsPendingTaxReview,
+  OpsConfirmationListResponse,
+  OpsFxDatasetConfirmedResponse,
+  OpsTaxReviewResolvedResponse,
+  OpsCreateCorrectionDto,
+  OpsAuditEntry,
+  OpsAuditListResponse,
+} from './ops';

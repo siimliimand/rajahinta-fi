@@ -1,8 +1,10 @@
 /**
- * RateLimitingService — sliding-window in-memory rate limiter.
+ * RateLimitingService — named-profile facade over a pluggable rate limiter.
  *
- * Implements {@link IRateLimiter} for Phase 1.  Swap the provider
- * binding to Redis or a distributed store in production.
+ * Backends implementing {@link IRateLimiter}: {@link InMemoryRateLimiter}
+ * (tests / Redis-less deployments) and {@link RedisRateLimiter} (production —
+ * sliding window via Redis sorted sets, shared across replicas). The
+ * module selects the backend from Redis availability.
  *
  * @module RateLimitingService
  */
@@ -31,6 +33,9 @@ export const RATE_LIMITER = 'RATE_LIMITER';
 
 /**
  * Pluggable rate-limiter backend.
+ *
+ * Methods are async because the production backend is Redis; the
+ * in-memory implementation (kept for tests) resolves immediately.
  */
 export interface IRateLimiter {
   /**
@@ -39,18 +44,18 @@ export interface IRateLimiter {
    *
    * @returns `true` if allowed, `false` if rate-limited.
    */
-  check(key: string, limit: number, windowMs: number): boolean;
+  check(key: string, limit: number, windowMs: number): Promise<boolean>;
 
   /**
    * Return the number of remaining requests for this key within the
    * current window.
    */
-  remaining(key: string, limit: number, windowMs: number): number;
+  remaining(key: string, limit: number, windowMs: number): Promise<number>;
 
   /**
    * Return the Unix timestamp (ms) when the current window resets.
    */
-  resetAt(key: string, windowMs: number): number;
+  resetAt(key: string, windowMs: number): Promise<number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -86,6 +91,8 @@ export type RateLimitProfileName = keyof typeof RATE_LIMIT_PROFILES;
  *
  * Tracks request timestamps per key.  On each check, prunes timestamps
  * outside the current window, then rejects if the count exceeds the limit.
+ * Kept for tests and for deployments without Redis — limits are
+ * per-process and NOT shared across replicas.
  */
 @Injectable()
 export class InMemoryRateLimiter implements IRateLimiter {
@@ -101,7 +108,7 @@ export class InMemoryRateLimiter implements IRateLimiter {
     this.cleanupTimer.unref();
   }
 
-  check(key: string, limit: number, windowMs: number): boolean {
+  async check(key: string, limit: number, windowMs: number): Promise<boolean> {
     const now = Date.now();
     let entries = this.windows.get(key);
 
@@ -124,7 +131,7 @@ export class InMemoryRateLimiter implements IRateLimiter {
     return true;
   }
 
-  remaining(key: string, limit: number, windowMs: number): number {
+  async remaining(key: string, limit: number, windowMs: number): Promise<number> {
     const now = Date.now();
     const cutoff = now - windowMs;
     const entries = this.windows.get(key) ?? [];
@@ -132,7 +139,7 @@ export class InMemoryRateLimiter implements IRateLimiter {
     return Math.max(0, limit - active.length);
   }
 
-  resetAt(key: string, windowMs: number): number {
+  async resetAt(key: string, windowMs: number): Promise<number> {
     const entries = this.windows.get(key);
     if (entries === undefined || entries.length === 0) return Date.now() + windowMs;
     const oldest = entries[0].timestamp;
@@ -164,44 +171,71 @@ export class RateLimitingService {
   constructor(@Inject(RATE_LIMITER) private readonly limiter: IRateLimiter) {}
 
   /**
+   * Window key for a (client, profile) pair.
+   *
+   * Profiles are separate limit pools by design (a cheap search and an
+   * expensive calculation are not the same budget). Namespacing the
+   * client key with the profile keeps each backend's window per profile
+   * — without it every DEFAULT-profile request would consume a
+   * CALCULATOR slot once the shared window filled, throttling routes
+   * far below their configured limits.
+   */
+  private windowKey(key: string, profile: RateLimitProfileName): string {
+    return `${profile}:${key}`;
+  }
+
+  /**
    * Check if a request from `key` (IP / user ID) is allowed.
    *
    * @param key — client identifier (IP address, user ID, or API key)
    * @param profile — named limit profile, or `'DEFAULT'`
    * @returns `true` if allowed
    */
-  isAllowed(key: string, profile: RateLimitProfileName = 'DEFAULT'): boolean {
+  async isAllowed(key: string, profile: RateLimitProfileName = 'DEFAULT'): Promise<boolean> {
     const { limit, windowMs } = RATE_LIMIT_PROFILES[profile];
-    return this.limiter.check(key, limit, windowMs);
+    return this.limiter.check(this.windowKey(key, profile), limit, windowMs);
   }
 
   /**
    * Return the number of remaining requests for `key` within the
    * current window of the given profile.
    */
-  getRemaining(key: string, profile: RateLimitProfileName = 'DEFAULT'): number {
+  async getRemaining(key: string, profile: RateLimitProfileName = 'DEFAULT'): Promise<number> {
     const { limit, windowMs } = RATE_LIMIT_PROFILES[profile];
-    return this.limiter.remaining(key, limit, windowMs);
+    return this.limiter.remaining(this.windowKey(key, profile), limit, windowMs);
   }
 
   /**
    * Return the Unix timestamp (ms) when the rate-limit window resets.
    */
-  getResetAt(key: string, profile: RateLimitProfileName = 'DEFAULT'): number {
+  async getResetAt(key: string, profile: RateLimitProfileName = 'DEFAULT'): Promise<number> {
     const { windowMs } = RATE_LIMIT_PROFILES[profile];
-    return this.limiter.resetAt(key, windowMs);
+    return this.limiter.resetAt(this.windowKey(key, profile), windowMs);
   }
 
-  /** Extract a client key from the request context. */
+  /**
+   * Extract a client key from the request context.
+   *
+   * `X-Forwarded-For` is trusted ONLY when the deployment is explicitly
+   * configured behind a known proxy (`RATE_LIMIT_TRUST_PROXY=true`).
+   * At an origin that is not so configured the header is client-controlled
+   * — honouring it would let anyone bypass limits by rotating the header.
+   */
   extractKey(request: { ip?: string; headers?: Record<string, string | string[] | undefined> }): string {
-    // Prefer X-Forwarded-For header, fall back to connection IP
-    const forwarded = request.headers?.['x-forwarded-for'];
-    if (typeof forwarded === 'string' && forwarded.length > 0) {
-      return forwarded.split(',')[0].trim();
+    if (trustForwardedFor()) {
+      const forwarded = request.headers?.['x-forwarded-for'];
+      if (typeof forwarded === 'string' && forwarded.length > 0) {
+        return forwarded.split(',')[0].trim();
+      }
     }
     return request.ip ?? 'unknown';
   }
 
   /** Configure rate-limit parameters — for testing. */
   readonly profiles = RATE_LIMIT_PROFILES;
+}
+
+/** Whether X-Forwarded-For may be trusted for client identification. */
+function trustForwardedFor(): boolean {
+  return process.env.RATE_LIMIT_TRUST_PROXY === 'true';
 }

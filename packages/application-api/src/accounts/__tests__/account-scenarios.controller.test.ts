@@ -12,7 +12,8 @@
  *
  * Also covers, at the metadata + guard-unit level (same convention as
  * historical-guard-regression.test.ts): the ADVANCED_FEATURES flag gate on
- * all three handlers (403 while off) and the x-user-id requirement (400).
+ * all three handlers (403 while off) and the SessionAuthGuard on the class
+ * (token-derived identity, task 2.2).
  *
  * @module AccountScenariosControllerTest
  */
@@ -38,6 +39,8 @@ import {
 import { AccountService } from '../account.service';
 import { DataExportService } from '../data-export.service';
 import { AccountController } from '../account.controller';
+import { SessionAuthGuard } from '../session-auth.guard';
+import type { AuthenticatedAccount } from '../current-user.decorator';
 import type { SaveScenarioRequest } from '../account.types';
 import {
   FeatureFlagGuard,
@@ -88,6 +91,9 @@ class InMemoryAccountRows extends AccountRepository {
     const row = await this.findByUserId(userId);
     if (row) row.lastActiveAt = new Date();
   }
+
+  // FIX-E: email-verification write — unused in these tests, satisfies the contract.
+  async setVerifiedEmail(_userId: string, _email: string): Promise<void> {}
 
   async delete(userId: string): Promise<void> {
     const index = this.rows.findIndex((r) => r.userId === userId);
@@ -244,6 +250,11 @@ function createHarness(seed?: SavedScenarioRecord[]): Harness {
 const USER_ID = 'scenario-user-1';
 const OTHER_USER_ID = 'scenario-user-2';
 
+/** AuthenticatedAccount the SessionAuthGuard would attach for a userId. */
+function user(userId: string): AuthenticatedAccount {
+  return { accountId: 1, userId, tier: 'FREE', verified: false };
+}
+
 const VALID_BODY: SaveScenarioRequest = {
   name: 'Weekend run',
   inputs: { productId: 12, quantity: 6, destination: 'FI' },
@@ -258,15 +269,15 @@ describe('AccountController scenarios — CRUD round-trip (repository path)', ()
     const { controller } = createHarness();
 
     // 1. Empty list for a fresh user.
-    await expect(controller.listScenarios(USER_ID)).resolves.toEqual([]);
+    await expect(controller.listScenarios(user(USER_ID))).resolves.toEqual([]);
 
     // 2. First save inserts.
-    const saved = await controller.saveScenario(VALID_BODY, USER_ID);
+    const saved = await controller.saveScenario(VALID_BODY, user(USER_ID));
     expect(saved.name).toBe('Weekend run');
     expect(saved.inputs).toEqual(VALID_BODY.inputs);
     expect(saved.id).toBeGreaterThan(0);
 
-    let list = await controller.listScenarios(USER_ID);
+    let list = await controller.listScenarios(user(USER_ID));
     expect(list).toHaveLength(1);
     expect(list[0].name).toBe('Weekend run');
 
@@ -280,10 +291,10 @@ describe('AccountController scenarios — CRUD round-trip (repository path)', ()
     };
     const upserted = await controller.saveScenario(
       { name: 'Weekend run', inputs: replacementInputs },
-      USER_ID,
+      user(USER_ID),
     );
 
-    list = await controller.listScenarios(USER_ID);
+    list = await controller.listScenarios(user(USER_ID));
     expect(list).toHaveLength(1); // no duplicate
     expect(list[0].inputs).toEqual(replacementInputs); // inputs replaced
     expect(list[0].id).toBe(saved.id); // identity kept
@@ -295,20 +306,20 @@ describe('AccountController scenarios — CRUD round-trip (repository path)', ()
     // 4. A different name inserts a second row.
     await controller.saveScenario(
       { name: 'Big party', inputs: VALID_BODY.inputs },
-      USER_ID,
+      user(USER_ID),
     );
-    list = await controller.listScenarios(USER_ID);
+    list = await controller.listScenarios(user(USER_ID));
     expect(list).toHaveLength(2);
 
     // 5. Delete removes exactly the targeted scenario.
-    await controller.deleteScenario(saved.id, USER_ID);
-    list = await controller.listScenarios(USER_ID);
+    await controller.deleteScenario(saved.id, user(USER_ID));
+    list = await controller.listScenarios(user(USER_ID));
     expect(list).toHaveLength(1);
     expect(list[0].name).toBe('Big party');
 
     // 6. Final delete empties the list.
-    await controller.deleteScenario(list[0].id, USER_ID);
-    await expect(controller.listScenarios(USER_ID)).resolves.toEqual([]);
+    await controller.deleteScenario(list[0].id, user(USER_ID));
+    await expect(controller.listScenarios(user(USER_ID))).resolves.toEqual([]);
   });
 
   it('upsert refreshes updatedAt on a pre-existing row with a stale timestamp', async () => {
@@ -331,7 +342,7 @@ describe('AccountController scenarios — CRUD round-trip (repository path)', ()
 
     const result = await controller.saveScenario(
       { name: 'Stale scenario', inputs: { productId: 9, quantity: 2, destination: 'EE' } },
-      USER_ID,
+      user(USER_ID),
     );
 
     expect(result.id).toBe(1);
@@ -342,13 +353,13 @@ describe('AccountController scenarios — CRUD round-trip (repository path)', ()
   it('keeps scenarios isolated between accounts', async () => {
     const { controller } = createHarness();
 
-    await controller.saveScenario(VALID_BODY, USER_ID);
-    await expect(controller.listScenarios(OTHER_USER_ID)).resolves.toEqual([]);
+    await controller.saveScenario(VALID_BODY, user(USER_ID));
+    await expect(controller.listScenarios(user(OTHER_USER_ID))).resolves.toEqual([]);
 
     // The other user saving the same name gets their own row.
-    const other = await controller.saveScenario(VALID_BODY, OTHER_USER_ID);
-    const mine = await controller.listScenarios(USER_ID);
-    const theirs = await controller.listScenarios(OTHER_USER_ID);
+    const other = await controller.saveScenario(VALID_BODY, user(OTHER_USER_ID));
+    const mine = await controller.listScenarios(user(USER_ID));
+    const theirs = await controller.listScenarios(user(OTHER_USER_ID));
     expect(mine).toHaveLength(1);
     expect(theirs).toHaveLength(1);
     expect(theirs[0].id).not.toBe(mine[0].id);
@@ -357,7 +368,7 @@ describe('AccountController scenarios — CRUD round-trip (repository path)', ()
 
   it('saving under a user without an account auto-creates the account', async () => {
     const { controller, accountRows } = createHarness();
-    await controller.saveScenario(VALID_BODY, 'brand-new-user');
+    await controller.saveScenario(VALID_BODY, user('brand-new-user'));
     expect(
       accountRows.rows.find((r) => r.userId === 'brand-new-user'),
     ).toBeDefined();
@@ -371,7 +382,7 @@ describe('AccountController scenarios — CRUD round-trip (repository path)', ()
 describe('AccountController scenarios — delete scoping', () => {
   it('throws NotFoundException for an absent scenario id', async () => {
     const { controller } = createHarness();
-    await expect(controller.deleteScenario(999, USER_ID)).rejects.toThrow(
+    await expect(controller.deleteScenario(999, user(USER_ID))).rejects.toThrow(
       NotFoundException,
     );
   });
@@ -379,7 +390,7 @@ describe('AccountController scenarios — delete scoping', () => {
   it('throws NotFoundException with the ScenarioNotFound error shape', async () => {
     const { controller } = createHarness();
     try {
-      await controller.deleteScenario(4242, USER_ID);
+      await controller.deleteScenario(4242, user(USER_ID));
       expect.unreachable('Expected NotFoundException');
     } catch (err) {
       expect(err).toBeInstanceOf(NotFoundException);
@@ -392,15 +403,15 @@ describe('AccountController scenarios — delete scoping', () => {
 
   it('reports a foreign scenario id as not found — never deletes cross-account', async () => {
     const { controller } = createHarness();
-    const saved = await controller.saveScenario(VALID_BODY, USER_ID);
+    const saved = await controller.saveScenario(VALID_BODY, user(USER_ID));
 
     // OTHER_USER has no access to USER's scenario id.
     await expect(
-      controller.deleteScenario(saved.id, OTHER_USER_ID),
+      controller.deleteScenario(saved.id, user(OTHER_USER_ID)),
     ).rejects.toThrow(NotFoundException);
 
     // The row survives.
-    const list = await controller.listScenarios(USER_ID);
+    const list = await controller.listScenarios(user(USER_ID));
     expect(list).toHaveLength(1);
   });
 });
@@ -457,7 +468,7 @@ describe('AccountController scenarios — body validation', () => {
     it(`rejects 400 when ${label}`, async () => {
       const { controller } = createHarness();
       await expect(
-        controller.saveScenario(body as SaveScenarioRequest, USER_ID),
+        controller.saveScenario(body as SaveScenarioRequest, user(USER_ID)),
       ).rejects.toThrow(BadRequestException);
     });
   }
@@ -465,7 +476,7 @@ describe('AccountController scenarios — body validation', () => {
   it('rejection carries the InvalidScenarioRequest error shape', async () => {
     const { controller } = createHarness();
     try {
-      await controller.saveScenario({ name: '' } as SaveScenarioRequest, USER_ID);
+      await controller.saveScenario({ name: '' } as SaveScenarioRequest, user(USER_ID));
       expect.unreachable('Expected BadRequestException');
     } catch (err) {
       expect(err).toBeInstanceOf(BadRequestException);
@@ -489,7 +500,7 @@ describe('AccountController scenarios — body validation', () => {
           transportArrangement: 'INDEPENDENT_CARRIER',
         },
       },
-      USER_ID,
+      user(USER_ID),
     );
     expect(result.inputs.transportMethod).toBe('beverage-de');
     expect(result.inputs.transportArrangement).toBe('INDEPENDENT_CARRIER');
@@ -497,33 +508,16 @@ describe('AccountController scenarios — body validation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests — x-user-id requirement (400)
+// Tests — session authentication (task 2.2)
 // ---------------------------------------------------------------------------
 
-describe('AccountController scenarios — x-user-id required', () => {
-  it('rejects all three endpoints with the MissingUserId shape when absent', async () => {
-    const { controller } = createHarness();
-
-    const asserts: Array<Promise<unknown>> = [
-      controller.listScenarios(undefined),
-      controller.saveScenario(VALID_BODY, undefined),
-      controller.deleteScenario(1, undefined),
-    ];
-
-    for (const promise of asserts) {
-      await expect(promise).rejects.toThrow(BadRequestException);
-    }
-
-    try {
-      await controller.listScenarios(undefined);
-      expect.unreachable('Expected BadRequestException');
-    } catch (err) {
-      expect((err as BadRequestException).getResponse()).toMatchObject({
-        statusCode: 400,
-        message: 'x-user-id header is required',
-        error: 'MissingUserId',
-      });
-    }
+describe('AccountController scenarios — session authentication', () => {
+  it('class carries SessionAuthGuard so identity is token-derived', () => {
+    const guards = Reflect.getMetadata(
+      '__guards__',
+      AccountController,
+    ) as unknown[];
+    expect(guards).toContain(SessionAuthGuard);
   });
 });
 

@@ -561,7 +561,7 @@ describe('LandedCostCalculatorService', () => {
       expect(result.calculationRecordId).toBe(42);
     });
 
-    it('includes five itemized cost lines with categories', async () => {
+    it('includes four itemized cost lines with categories (otherCharges removed, task 10.3)', async () => {
       const { service } = createService();
 
       const result = await service.calculate(DEFAULT_INPUT);
@@ -576,19 +576,19 @@ describe('LandedCostCalculatorService', () => {
       expect(byLabel.get('Container duty')!.category).toBe(
         'containerDutyEstimate',
       );
-      expect(byLabel.get('Other charges')!.category).toBe('otherCharges');
 
-      // Every top-level line item carries one of the canonical categories
+      // Every top-level line item carries one of the canonical categories;
+      // no line resurrects the removed dead contract.
       const canonical = new Set([
         'foreignRetailPrice',
         'transportCost',
         'alcoholExciseEstimate',
         'containerDutyEstimate',
-        'otherCharges',
       ]);
       for (const cost of result.itemizedCosts) {
         expect(canonical.has(cost.category)).toBe(true);
       }
+      expect(byLabel.has('Other charges')).toBe(false);
     });
 
     it('exposes flat breakdown fields that sum to the total', async () => {
@@ -600,14 +600,23 @@ describe('LandedCostCalculatorService', () => {
       expect(result.transportCost).toBe(150);
       expect(result.alcoholExciseEstimate).toBe(30);
       expect(result.containerDutyEstimate).toBe(26);
-      expect(result.otherCharges).toBe(0);
       expect(result.totalCents).toBe(
         result.foreignRetailPrice +
           result.transportCost +
           result.alcoholExciseEstimate +
-          result.containerDutyEstimate +
-          result.otherCharges,
+          result.containerDutyEstimate,
       );
+    });
+
+    it('does not contain an otherCharges key anywhere in the serialized result (task 10.3, D3)', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(JSON.parse(JSON.stringify(result))).not.toHaveProperty(
+        'otherCharges',
+      );
+      expect(result.itemizedCosts.some((c) => c.category === ('otherCharges' as never))).toBe(false);
     });
 
     it('includes calculation-status metadata', async () => {
@@ -669,6 +678,258 @@ describe('LandedCostCalculatorService', () => {
       expect(result.classification.confidence).toBeDefined();
       expect(result.classification.evidence).toBeDefined();
       expect(result.classification.evidenceSummary).toBeDefined();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Single-currency totals (task 1.5) — EUR-converted cents only
+  // ---------------------------------------------------------------------------
+
+  describe('single-currency totals (task 1.5)', () => {
+    it('excludes an offer whose canonical currency is not EUR, with a visible reason', async () => {
+      // SEK-currency offer is cheaper — it must NOT win the price race.
+      const offers: CalculatorRetailOfferData[] = [
+        {
+          id: 1,
+          priceCents: 50,
+          currency: 'SEK',
+          merchant: 'shop-se',
+          country: 'SE',
+          reliabilityStatus: 'VERIFIED',
+          originalPriceCents: 500,
+          originalCurrency: 'SEK',
+        },
+        {
+          id: 2,
+          priceCents: 200,
+          currency: 'EUR',
+          merchant: 'shop-de',
+          country: 'DE',
+          reliabilityStatus: 'VERIFIED',
+        },
+      ];
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue(offers),
+      });
+      const { service } = createService({ productData });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      // The EUR offer was summed; the SEK offer never entered the total.
+      expect(result.metadata.retailOfferIds).toContain(2);
+      expect(result.foreignRetailPrice).toBe(200);
+      expect(result.excludedOffers).toHaveLength(1);
+      expect(result.excludedOffers[0]).toEqual({
+        offerId: 1,
+        merchant: 'shop-se',
+        country: 'SE',
+        reason: 'NO_VALID_EUR_CONVERSION',
+        detail: expect.stringContaining('lacks a valid EUR conversion'),
+        originalPriceCents: 500,
+        originalCurrency: 'SEK',
+      });
+    });
+
+    it('excludes a foreign-original offer with no recorded FX conversion', async () => {
+      // Claims EUR cents but the SEK→EUR conversion is unattributed —
+      // unrecorded conversions are not trustworthy (design D2).
+      const offers: CalculatorRetailOfferData[] = [
+        {
+          id: 1,
+          priceCents: 100,
+          merchant: 'shop-se',
+          country: 'SE',
+          reliabilityStatus: 'VERIFIED',
+          originalPriceCents: 1130,
+          originalCurrency: 'SEK',
+          // fxDatasetVersion absent
+        },
+        {
+          id: 2,
+          priceCents: 180,
+          merchant: 'shop-se-2',
+          country: 'SE',
+          reliabilityStatus: 'VERIFIED',
+          originalPriceCents: 2030,
+          originalCurrency: 'SEK',
+          fxDatasetVersion: 'ecb-2026-08-27.1',
+        },
+      ];
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue(offers),
+      });
+      const { service } = createService({ productData });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      // Only the attributed conversion entered the total.
+      expect(result.metadata.retailOfferIds).toContain(2);
+      expect(result.excludedOffers).toHaveLength(1);
+      expect(result.excludedOffers[0].offerId).toBe(1);
+      expect(result.excludedOffers[0].reason).toBe('NO_VALID_EUR_CONVERSION');
+      expect(result.excludedOffers[0].originalCurrency).toBe('SEK');
+    });
+
+    it('sums a converted offer and surfaces its original amount for display', async () => {
+      const offers: CalculatorRetailOfferData[] = [
+        {
+          id: 1,
+          priceCents: 141,
+          currency: 'EUR',
+          merchant: 'systembolaget',
+          country: 'SE',
+          reliabilityStatus: 'VERIFIED',
+          originalPriceCents: 1590,
+          originalCurrency: 'SEK',
+          fxDatasetVersion: 'ecb-2026-08-27.1',
+        },
+        {
+          id: 2,
+          priceCents: 200,
+          currency: 'EUR',
+          merchant: 'shop-de',
+          country: 'DE',
+          reliabilityStatus: 'VERIFIED',
+        },
+      ];
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue(offers),
+      });
+      const { service } = createService({ productData });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      // Converted SEK offer won on price and was summed as EUR cents.
+      expect(result.metadata.retailOfferIds).toContain(1);
+      expect(result.foreignRetailPrice).toBe(141);
+      expect(result.excludedOffers).toEqual([]);
+      // Original amount/currency surfaced for display (task 1.5).
+      expect(result.originalRetailPrice).toEqual({
+        priceCents: 1590,
+        currency: 'SEK',
+      });
+      // Total is a truthful EUR sum: 141 retail + 150 transport + 30 excise + 26 duty.
+      expect(result.totalCents).toBe(347);
+      expect(result.currency).toBe('EUR');
+    });
+
+    it('omits originalRetailPrice for EUR-native offers carrying no original', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.originalRetailPrice).toBeUndefined();
+    });
+
+    it('treats offers without currency fields as EUR (legacy read models)', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.excludedOffers).toEqual([]);
+      expect(result.foreignRetailPrice).toBe(200);
+    });
+
+    it('throws NoRetailOffersError when every offer lacks a valid conversion', async () => {
+      const offers: CalculatorRetailOfferData[] = [
+        {
+          id: 1,
+          priceCents: 100,
+          currency: 'SEK',
+          merchant: 'shop-se',
+          country: 'SE',
+          reliabilityStatus: 'VERIFIED',
+        },
+        {
+          id: 2,
+          priceCents: 150,
+          currency: 'NOK',
+          merchant: 'shop-no',
+          country: 'NO',
+          reliabilityStatus: 'VERIFIED',
+        },
+      ];
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue(offers),
+      });
+      const { service } = createService({ productData });
+
+      // An honest failure beats a mixed-currency total pretending to be EUR.
+      await expect(service.calculate(DEFAULT_INPUT)).rejects.toThrow(
+        NoRetailOffersError,
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // FX dataset version → datasetVersions (task 1.6 — cache invalidation chain)
+  // ---------------------------------------------------------------------------
+
+  describe('FX dataset version in datasetVersions (task 1.6)', () => {
+    function convertedOffer(fxDatasetVersion: string): CalculatorRetailOfferData {
+      return {
+        id: 1,
+        priceCents: 141,
+        currency: 'EUR',
+        merchant: 'systembolaget',
+        country: 'SE',
+        reliabilityStatus: 'VERIFIED',
+        originalPriceCents: 1590,
+        originalCurrency: 'SEK',
+        fxDatasetVersion,
+      };
+    }
+
+    function serviceWithOffer(offer: CalculatorRetailOfferData) {
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue([offer]),
+      });
+      return createService({ productData });
+    }
+
+    it("includes the selected offer's FX dataset version in metadata.datasetVersions", async () => {
+      const { service } = serviceWithOffer(convertedOffer('ecb-2026-08-27.1'));
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      // Offer → fxDatasetVersion → datasetVersions: the provenance chain
+      // idempotency/cache keys consume (hashInput includes datasetVersions).
+      expect(result.metadata.datasetVersions).toContain('ecb-2026-08-27.1');
+    });
+
+    it('does not fabricate an FX version for EUR-native offers', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(
+        result.metadata.datasetVersions.every((v) => !v.startsWith('ecb-')),
+      ).toBe(true);
+    });
+
+    it('changes datasetVersions when the FX dataset version changes — version-keyed caches invalidate', async () => {
+      const before = await serviceWithOffer(
+        convertedOffer('ecb-2026-08-27.1'),
+      ).service.calculate(DEFAULT_INPUT);
+      const after = await serviceWithOffer(
+        convertedOffer('ecb-2026-08-28.1'),
+      ).service.calculate(DEFAULT_INPUT);
+
+      const sorted = (versions: readonly string[]) => [...versions].sort();
+      expect(sorted(before.metadata.datasetVersions)).not.toEqual(
+        sorted(after.metadata.datasetVersions),
+      );
+      // Pin the convention precisely: identical inputs, only the FX
+      // version moved — a hash over (input, datasetVersions) must differ.
+      const keyBefore = JSON.stringify({
+        ...before.metadata.input,
+        datasetVersions: sorted(before.metadata.datasetVersions),
+      });
+      const keyAfter = JSON.stringify({
+        ...after.metadata.input,
+        datasetVersions: sorted(after.metadata.datasetVersions),
+      });
+      expect(keyBefore).not.toEqual(keyAfter);
     });
   });
 });

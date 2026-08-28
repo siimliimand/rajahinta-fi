@@ -66,7 +66,6 @@ const PERSISTED_BREAKDOWN: ItemizedCost[] = [
   { label: 'Transport', category: 'transportCost', cents: 1490, reliability: 'ESTIMATED' },
   { label: 'Alcohol excise', category: 'alcoholExciseEstimate', cents: 1160, reliability: 'VERIFIED' },
   { label: 'Container duty', category: 'containerDutyEstimate', cents: 34, reliability: 'VERIFIED' },
-  { label: 'Other charges', category: 'otherCharges', cents: 0, reliability: 'VERIFIED' },
 ];
 
 const DISCLAIMER = {
@@ -161,6 +160,14 @@ class InMemoryCalculationRecordRepository extends CalculationRecordRepository {
   }
 
   override async findBySession(): Promise<never[]> {
+    throw new Error('not used by getResult');
+  }
+
+  override async linkSession(): Promise<boolean> {
+    throw new Error('not used by getResult');
+  }
+
+  override async findHistoryEntriesBySession(): Promise<never[]> {
     throw new Error('not used by getResult');
   }
 
@@ -272,8 +279,15 @@ describe('mapCalculationRecordToResult', () => {
     expect(result.transportCost).toBe(1490);
     expect(result.alcoholExciseEstimate).toBe(1160);
     expect(result.containerDutyEstimate).toBe(34);
-    expect(result.otherCharges).toBe(0);
+    // Task 10.3 removed the category — the reconstructed shape must not
+    // carry the dead key at all.
+    expect('otherCharges' in result).toBe(false);
     expect(result.currency).toBe('EUR');
+
+    // -- Live-only fields degrade factually (not persisted with the
+    //    record): no exclusions to surface, no pre-conversion price --
+    expect(result.excludedOffers).toEqual([]);
+    expect(result.originalRetailPrice).toBeUndefined();
 
     // -- Metadata: product facts joined from the master --
     expect(result.metadata.productName).toBe('Koff III 0.33L');
@@ -353,14 +367,16 @@ describe('mapCalculationRecordToResult', () => {
     expect('sessionId' in result.metadata.input).toBe(false);
   });
 
-  it('degrades malformed breakdown entries without dropping figures', () => {
+  it('degrades malformed breakdown entries without inventing figures', () => {
     const result = mapCalculationRecordToResult({
       record: makeRecord({
         breakdown: [
           // Legacy reliability value — never overstated.
           { label: 'Retail price', category: 'foreignRetailPrice', cents: 1000, reliability: 'EXACT' },
-          // Unknown category still carries a figure.
+          // Unknown categories (incl. legacy otherCharges) are dropped
+          // from itemizedCosts — no valid bucket exists post-10.3.
           { label: 'Mystery fee', category: 'customsFee', cents: 99, reliability: 'VERIFIED' },
+          { label: 'Other charges', category: 'otherCharges', cents: 0, reliability: 'VERIFIED' },
           // Non-object entries are dropped.
           'garbage',
           null,
@@ -373,10 +389,11 @@ describe('mapCalculationRecordToResult', () => {
 
     expect(result.itemizedCosts).toEqual([
       { label: 'Retail price', category: 'foreignRetailPrice', cents: 1000, reliability: 'UNAVAILABLE' },
-      { label: 'Mystery fee', category: 'otherCharges', cents: 99, reliability: 'VERIFIED' },
     ]);
     expect(result.foreignRetailPrice).toBe(1000);
-    expect(result.otherCharges).toBe(99);
+    // totalCents stays verbatim from the record — the headline figure
+    // never lies even when lines are unrepresentable.
+    expect(result.totalCents).toBe(5144);
   });
 
   it('renders non-JSON disclaimer text verbatim with unknown version', () => {

@@ -379,8 +379,14 @@ describe('Composition smoke — forRoot chain (CoreDomain.forRoot)', () => {
       expect(result.transportCost).toBe(150);
       expect(result.alcoholExciseEstimate).toBe(91);
       expect(result.containerDutyEstimate).toBe(0);
-      expect(result.otherCharges).toBe(0);
+      // Task 10.3 removed otherCharges from the result shape — the key
+      // must be absent, not zero.
+      expect('otherCharges' in result).toBe(false);
       expect(result.totalCents).toBe(441);
+
+      // New live-path fields (task 1.5) — EUR-only offers: no exclusions.
+      expect(result.excludedOffers).toEqual([]);
+      expect(result.originalRetailPrice).toBeUndefined();
 
       // Structure assertions
       expect(result.currency).toBe('EUR');

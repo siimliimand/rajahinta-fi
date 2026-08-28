@@ -20,6 +20,8 @@ import {
   index,
   date,
   unique,
+  primaryKey,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
 /**
@@ -71,10 +73,27 @@ export const retailOffers = pgTable('retail_offers', {
   productId: integer('product_id')
     .references(() => productMaster.id)
     .notNull(),
-  /** Retail price in smallest currency unit (cents). */
+  /**
+   * Retail price in EUR cents — the canonical stored amount. Non-EUR feed
+   * prices are converted at ingestion (design D2); a foreign-currency
+   * amount never enters this column.
+   */
   priceCents: integer('price_cents').notNull(),
-  /** Price currency — default EUR for Finnish market. */
+  /** Canonical price currency — always 'EUR' after ingestion conversion. */
   currency: varchar('currency', { length: 3 }).default('EUR').notNull(),
+  /**
+   * Original list price in the source currency's smallest unit, kept for
+   * display. Null on rows written before conversion provenance existed
+   * (EUR-native feeds may also omit it).
+   */
+  originalPriceCents: integer('original_price_cents'),
+  /** Source-market currency of original_price_cents (ISO 4217). */
+  originalCurrency: varchar('original_currency', { length: 3 }),
+  /**
+   * FX dataset version (fx_rate_datasets.version_label) that produced the
+   * conversion — present exactly when the original currency was not EUR.
+   */
+  fxDatasetVersion: varchar('fx_dataset_version', { length: 64 }),
   /** Stock status — filters out-of-stock offers from price comparisons. */
   availability: varchar('availability', { length: 16 })
     .default('unknown')
@@ -131,6 +150,8 @@ export const taxRules = pgTable('tax_rules', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+
+
 /**
  * Carrier transport offers.
  *
@@ -179,45 +200,63 @@ export const transportOffers = pgTable('transport_offers', {
  * confidence-based ranking. FK references normalised to separate tables
  * (not flat JSON snapshots) for query flexibility.
  *
+ * Monthly range-partitioned on calculatedAt (task 8.1, change
+ * technical-assessment-remediation): anonymous-session rows are pruned
+ * after the configured window and whole partitions drop once fully
+ * inside the retention horizon. The primary key therefore includes the
+ * partition key — (id, calculatedAt).
+ *
  * Migration note: replaces the former `calculation_audit` table
  * (removed in this version). The old table had a flat input/output
  * snapshot pattern. The new schema normalises FK references and
  * stores a structured breakdown.
  */
-export const calculationRecords = pgTable('calculation_records', {
-  id: serial('id').primaryKey(),
-  /** FK to product_master — the product this calculation is for. */
-  productMasterId: integer('product_master_id')
-    .references(() => productMaster.id)
-    .notNull(),
-  /** JSON array of retail_offer_ids — basket may reference multiple offers. */
-  retailOfferIds: jsonb('retail_offer_ids'),
-  /** FK to transport_offers — the shipping option used. */
-  transportOfferId: integer('transport_offer_id')
-    .references(() => transportOffers.id),
-  /** FK to tax_rules — excise rule version applied (traceability). */
-  exciseRuleVersionId: integer('excise_rule_version_id')
-    .references(() => taxRules.id),
-  /** FK to tax_rules — container duty rule version applied (traceability). */
-  containerDutyRuleVersionId: integer('container_duty_rule_version_id')
-    .references(() => taxRules.id),
-  /** Final landed cost in cents. */
-  totalCents: integer('total_cents').notNull(),
-  /** Structured cost breakdown (excise, duty, transport components) — "every number is explainable". */
-  breakdown: jsonb('breakdown').notNull(),
-  /** Confidence level (HIGH/MEDIUM/LOW) — used by ranking/sorting system. */
-  confidence: varchar('confidence', { length: 6 }).notNull(),
-  /** Number of units in the calculation. */
-  quantity: integer('quantity').notNull(),
-  /** Destination country code (ISO 3166-1 alpha-2). */
-  destination: varchar('destination', { length: 4 }).notNull(),
-  /** Structural disclaimer text — required by architecture rule: not a UI-only string. */
-  disclaimer: text('disclaimer').notNull(),
-  /** Session identifier — groups calculations by user session for audit trail. */
-  sessionId: varchar('session_id', { length: 64 }),
-  /** When calculation was performed. */
-  calculatedAt: timestamp('calculated_at').defaultNow().notNull(),
-});
+export const calculationRecords = pgTable(
+  'calculation_records',
+  {
+    id: serial('id').notNull(),
+    /** FK to product_master — the product this calculation is for. */
+    productMasterId: integer('product_master_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** JSON array of retail_offer_ids — basket may reference multiple offers. */
+    retailOfferIds: jsonb('retail_offer_ids'),
+    /** FK to transport_offers — the shipping option used. */
+    transportOfferId: integer('transport_offer_id')
+      .references(() => transportOffers.id),
+    /** FK to tax_rules — excise rule version applied (traceability). */
+    exciseRuleVersionId: integer('excise_rule_version_id')
+      .references(() => taxRules.id),
+    /** FK to tax_rules — container duty rule version applied (traceability). */
+    containerDutyRuleVersionId: integer('container_duty_rule_version_id')
+      .references(() => taxRules.id),
+    /** Final landed cost in cents. */
+    totalCents: integer('total_cents').notNull(),
+    /** Structured cost breakdown (excise, duty, transport components) — "every number is explainable". */
+    breakdown: jsonb('breakdown').notNull(),
+    /** Confidence level (HIGH/MEDIUM/LOW) — used by ranking/sorting system. */
+    confidence: varchar('confidence', { length: 6 }).notNull(),
+    /** Number of units in the calculation. */
+    quantity: integer('quantity').notNull(),
+    /** Destination country code (ISO 3166-1 alpha-2). */
+    destination: varchar('destination', { length: 4 }).notNull(),
+    /** Structural disclaimer text — required by architecture rule: not a UI-only string. */
+    disclaimer: text('disclaimer').notNull(),
+    /** Session identifier — groups calculations by user session for audit trail. */
+    sessionId: varchar('session_id', { length: 64 }),
+    /** When calculation was performed — the partition key. */
+    calculatedAt: timestamp('calculated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    // Partitioned-table PK must include the partition key.
+    primaryKey({ columns: [table.id, table.calculatedAt] }),
+    // findBySession lookup order.
+    index('calculation_records_session_id_calculated_at_idx').on(
+      table.sessionId,
+      table.calculatedAt,
+    ),
+  ],
+);
 
 /**
  * Price observations — append-only analytical series for historical intelligence.
@@ -228,11 +267,16 @@ export const calculationRecords = pgTable('calculation_records', {
  * snapshot) so the aggregation and attribution services consume it
  * without joins across session-scoped data. Rows are never updated or
  * deleted by application code — corrections append new observations.
+ *
+ * TimescaleDB hypertable partitioned on observedAt (design D4, change
+ * technical-assessment-remediation): the append-only, time-indexed,
+ * watermark-scanned access pattern is exactly the hypertable model.
+ * The primary key includes the partition key — (id, observedAt).
  */
 export const priceObservations = pgTable(
   'price_observations',
   {
-    id: serial('id').primaryKey(),
+    id: serial('id').notNull(),
     /** FK to product_master — links observation to canonical product. */
     productId: integer('product_id')
       .references(() => productMaster.id)
@@ -273,6 +317,8 @@ export const priceObservations = pgTable(
     confidence: varchar('confidence', { length: 6 }).notNull(),
   },
   (table) => [
+    // Hypertable PK must include the partition key (observedAt).
+    primaryKey({ columns: [table.id, table.observedAt] }),
     index('price_observations_product_id_observed_at_idx').on(
       table.productId,
       table.observedAt,
@@ -411,6 +457,7 @@ export const accounts = pgTable('accounts', {
   lastActiveAt: timestamp('last_active_at').defaultNow().notNull(),
 });
 
+
 /**
  * Saved baskets — user-curated product collections for repeat calculations.
  *
@@ -510,26 +557,252 @@ export const merchantTerms = pgTable('merchant_terms', {
  * represent. Enables auditability, correction, and confidence-based ranking
  * for the basket-optimizer path.
  *
+ * Monthly range-partitioned on createdAt alongside calculationRecords
+ * (task 8.1) — the primary key therefore includes the partition key,
+ * (id, createdAt).
+ *
  * @see design.md Decision 5 — basketCalculationRecords persistence.
  */
-export const basketCalculationRecords = pgTable('basket_calculation_records', {
+export const basketCalculationRecords = pgTable(
+  'basket_calculation_records',
+  {
+    id: serial('id').notNull(),
+    /** Session identifier — groups calculations by user session for audit trail. Same domain as calculationRecords.sessionId. */
+    sessionId: varchar('session_id', { length: 64 }),
+    /** Destination country code (ISO 3166-1 alpha-2). */
+    destination: text('destination').notNull(),
+    /** Transport arrangement identifier (e.g. "delivery", "pickup"). */
+    transportArrangement: text('transport_arrangement').notNull(),
+    /** Input basket snapshot: JSON array of {productId, quantity}. */
+    inputBasket: jsonb('input_basket').notNull(),
+    /** Per-shipment itemized breakdown: JSON array of shipment objects with costs. */
+    shipmentBreakdown: jsonb('shipment_breakdown').notNull(),
+    /** Total estimated landed cost in cents across all shipments. */
+    totalCents: integer('total_cents').notNull(),
+    /** Confidence level (HIGH/MEDIUM/LOW) — computed by confidence framework. */
+    confidence: varchar('confidence', { length: 6 }).notNull(),
+    /** Structural disclaimer text — required by architecture rule: not a UI-only string. */
+    disclaimer: text('disclaimer').notNull(),
+    /** When the calculation was performed — the partition key. */
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    // Partitioned-table PK must include the partition key.
+    primaryKey({ columns: [table.id, table.createdAt] }),
+  ],
+);
+
+
+/**
+ * Versioned FX rate datasets — never overwritten, always appended.
+ *
+ * Mirrors the tax-rules governance treatment (design D2, change
+ * technical-assessment-remediation): each dataset is dated, versioned,
+ * and carries source provenance plus an effective window. A dataset is
+ * created in PENDING_CONFIRMATION status and only becomes effective
+ * through the explicit publishDataset repository call performed by a
+ * human operator — never automatically. Historical versions remain
+ * queryable after a new version is published.
+ */
+export const fxRateDatasets = pgTable('fx_rate_datasets', {
   id: serial('id').primaryKey(),
-  /** Session identifier — groups calculations by user session for audit trail. Same domain as calculationRecords.sessionId. */
-  sessionId: varchar('session_id', { length: 64 }),
-  /** Destination country code (ISO 3166-1 alpha-2). */
-  destination: text('destination').notNull(),
-  /** Transport arrangement identifier (e.g. "delivery", "pickup"). */
-  transportArrangement: text('transport_arrangement').notNull(),
-  /** Input basket snapshot: JSON array of {productId, quantity}. */
-  inputBasket: jsonb('input_basket').notNull(),
-  /** Per-shipment itemized breakdown: JSON array of shipment objects with costs. */
-  shipmentBreakdown: jsonb('shipment_breakdown').notNull(),
-  /** Total estimated landed cost in cents across all shipments. */
-  totalCents: integer('total_cents').notNull(),
-  /** Confidence level (HIGH/MEDIUM/LOW) — computed by confidence framework. */
-  confidence: varchar('confidence', { length: 6 }).notNull(),
-  /** Structural disclaimer text — required by architecture rule: not a UI-only string. */
-  disclaimer: text('disclaimer').notNull(),
-  /** When the calculation was performed. */
+  /** Human-readable version label (e.g. "ecb-2026-08-28.1") — unique dataset identity for cache invalidation and provenance. */
+  versionLabel: varchar('version_label', { length: 64 }).unique().notNull(),
+  /** Provenance: source adapter that fetched the payload (e.g. "ecb-reference-rates"). */
+  sourceName: varchar('source_name', { length: 128 }).notNull(),
+  /** Provenance: link to the source publication the rates were taken from. */
+  sourceUrl: varchar('source_url', { length: 512 }),
+  /** Date the source published these rates — the "as of" date of the payload. */
+  referenceDate: date('reference_date').notNull(),
+  /** Lifecycle: PENDING_CONFIRMATION until a human publishes; PUBLISHED is terminal. */
+  status: varchar('status', { length: 32 }).default('PENDING_CONFIRMATION').notNull(),
+  /** Start of the effective window (inclusive) — conversion uses the dataset effective on the observation date. */
+  effectiveFrom: timestamp('effective_from').notNull(),
+  /** End of the effective window (exclusive, null = current/active dataset). */
+  effectiveTo: timestamp('effective_to'),
+  /** Operator who published the dataset — null while unconfirmed (auditability of the manual step). */
+  confirmedBy: varchar('confirmed_by', { length: 128 }),
+  /** When the dataset was published — null while unconfirmed. */
+  confirmedAt: timestamp('confirmed_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+/**
+ * FX rates — the per-currency-pair rows of a versioned dataset.
+ *
+ * Append-only alongside its dataset: once the dataset is published the
+ * rows are immutable, so a conversion ever made is reproducible. Rates
+ * are stored in the source's direction (ECB: base EUR, quote foreign);
+ * inversion is a domain-policy decision, never a storage-level one.
+ */
+export const fxRates = pgTable(
+  'fx_rates',
+  {
+    id: serial('id').primaryKey(),
+    /** FK to fx_rate_datasets — the version this rate belongs to. */
+    datasetId: integer('dataset_id')
+      .references(() => fxRateDatasets.id)
+      .notNull(),
+    /** Base currency (ISO 4217) — 1 unit of base = rate units of quote. */
+    baseCurrency: varchar('base_currency', { length: 3 }).notNull(),
+    /** Quote currency (ISO 4217). */
+    quoteCurrency: varchar('quote_currency', { length: 3 }).notNull(),
+    /** Exchange rate: units of quote currency per 1 unit of base. */
+    rate: numeric('rate', { precision: 24, scale: 12 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    // One row per currency pair per dataset version — appending the same
+    // pair twice for a version is a fetch bug, not a new rate.
+    unique('fx_rates_dataset_pair_unique').on(
+      table.datasetId,
+      table.baseCurrency,
+      table.quoteCurrency,
+    ),
+  ],
+);
+/**
+ * Sessions — server-issued opaque session tokens (design D3, change
+ * technical-assessment-remediation).
+ *
+ * Only the SHA-256 hash of the token is stored; the raw value exists
+ * solely in the httpOnly cookie handed to the client. The backend
+ * derives the account from the token hash — client-supplied identity
+ * headers are never consulted. Rotation replaces the row's validity in
+ * one transaction: the old hash is revoked and a successor row links
+ * back via rotatedFromId. Data minimization: no IP or user-agent —
+ * nothing here is needed to authenticate, and GDPR erasure cascades
+ * from the account row.
+ */
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: serial('id').primaryKey(),
+    /** SHA-256 hex digest of the opaque token — lookup key for authentication. */
+    tokenHash: varchar('token_hash', { length: 64 }).unique().notNull(),
+    /** FK to accounts — the identity this session authenticates. */
+    accountId: integer('account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** Predecessor session on rotation — audit chain of token replacement. */
+    rotatedFromId: integer('rotated_from_id').references(
+      (): AnyPgColumn => sessions.id,
+      { onDelete: 'set null' },
+    ),
+    /** When the session was issued. */
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    /** When the session stops authenticating, regardless of activity. */
+    expiresAt: timestamp('expires_at').notNull(),
+    /** When the session was invalidated (rotation or logout) — null = still revocable. */
+    revokedAt: timestamp('revoked_at'),
+  },
+  (table) => [
+    // Session-listing and expiry housekeeping scans filter by account
+    // first; without this index both degrade to full scans.
+    index('sessions_account_id_idx').on(table.accountId),
+  ],
+);
+/**
+ * Audit events — append-only PostgreSQL audit log (task 4.2, change
+ * technical-assessment-remediation).
+ *
+ * One row per domain AuditEntry: every change to tax-rule datasets,
+ * FX datasets, classification rules, or governance state lands here.
+ * The domain entry id (UUID) is the primary key — rows are never
+ * updated or deleted by application code; there is deliberately no
+ * retention path, matching the in-memory contract the tests rely on.
+ */
+export const auditEvents = pgTable(
+  'audit_events',
+  {
+    /** Domain AuditEntry id (UUID) — identity is assigned at emission, not by storage. */
+    id: varchar('id', { length: 64 }).primaryKey(),
+    /** High-liability entity type (e.g. 'tax_rule', 'fx_rate_dataset', 'account'). */
+    entityType: varchar('entity_type', { length: 64 }).notNull(),
+    /** Entity-specific identifier (rule id, version label, user id). */
+    entityId: varchar('entity_id', { length: 128 }).notNull(),
+    /** What happened: created / updated / deleted / confirmed. */
+    action: varchar('action', { length: 16 }).notNull(),
+    /** Who performed the change (user id or system actor). */
+    author: varchar('author', { length: 128 }).notNull(),
+    /** Free-text reason for the change. */
+    reason: text('reason').notNull(),
+    /** When the change occurred — domain timestamp, not insert time. */
+    occurredAt: timestamp('occurred_at').notNull(),
+    /** Snapshot before the change (JSON), when provided. */
+    previousValue: jsonb('previous_value'),
+    /** Snapshot after the change (JSON), when provided. */
+    newValue: jsonb('new_value'),
+  },
+  (table) => [
+    // getHistory(entityType, entityId) — the dominant lookup shape.
+    index('audit_events_entity_type_entity_id_occurred_at_idx').on(
+      table.entityType,
+      table.entityId,
+      table.occurredAt,
+    ),
+    // Date-range filters of the audit query API.
+    index('audit_events_occurred_at_idx').on(table.occurredAt),
+  ],
+);
+/**
+ * Click-counter snapshots — periodic durable captures of the Redis
+ * click counters (task 4.3, change technical-assessment-remediation).
+ *
+ * Redis holds the live counters (surviving app restarts and shared
+ * across replicas); this table is the periodic archive that survives
+ * Redis data loss. One row per (merchant, url, capture run) holding
+ * the cumulative count at capture time. Data minimization: merchant,
+ * link, count, instant — no user or session data.
+ */
+export const clickCounterSnapshots = pgTable(
+  'click_counter_snapshots',
+  {
+    id: serial('id').primaryKey(),
+    /** Merchant identifier — matches retail_offers.merchant. */
+    merchantId: varchar('merchant_id', { length: 128 }).notNull(),
+    /** The outbound link URL the counter aggregates. */
+    url: varchar('url', { length: 1024 }).notNull(),
+    /** Cumulative click count for the (merchant, url) at capture time. */
+    clickCount: integer('click_count').notNull(),
+    /** When the snapshot run captured this row. */
+    capturedAt: timestamp('captured_at').defaultNow().notNull(),
+  },
+  (table) => [
+    // Idempotency key for a snapshot run: re-running the capture for the
+    // same instant overwrites instead of duplicating rows.
+    unique('click_counter_snapshots_merchant_url_captured_at_unique').on(
+      table.merchantId,
+      table.url,
+      table.capturedAt,
+    ),
+  ],
+);
+/**
+ * Merchant registry — database-backed merchant feed configuration
+ * (design D7, task 7.2, change technical-assessment-remediation).
+ *
+ * Replaces the static merchants.config.ts as the source of the ingestion
+ * source list: onboarding or changing a permitted merchant becomes a
+ * row upsert, not a deploy. Aligned with the governance records by the
+ * shared merchantId key — permission state itself stays in governance
+ * (never duplicated here); consumers join registry rows with
+ * SourceGovernanceService permission checks before ingesting.
+ */
+export const merchantRegistry = pgTable('merchant_registry', {
+  id: serial('id').primaryKey(),
+  /** Stable merchant identifier — join key for retail_offers.merchant, merchant_terms.merchant_id, and governance records. */
+  merchantId: varchar('merchant_id', { length: 128 }).unique().notNull(),
+  /** Human-readable merchant name. */
+  name: varchar('name', { length: 256 }).notNull(),
+  /** Merchant market (ISO 3166-1 alpha-2). */
+  country: varchar('country', { length: 4 }).notNull(),
+  /** Base URL of the merchant's feed or API endpoint — empty means the adapter is not implemented yet (pipeline skips). */
+  feedUrl: text('feed_url').notNull(),
+  /** Expected payload format. */
+  feedFormat: varchar('feed_format', { length: 8 }).notNull(),
+  /** How often to poll for new data (milliseconds). */
+  pollingIntervalMs: integer('polling_interval_ms').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  /** When the registry row last changed — onboarding audit trail. */
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

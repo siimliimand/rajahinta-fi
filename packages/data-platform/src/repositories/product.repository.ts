@@ -7,7 +7,7 @@
  * @module DrizzleProductRepository
  */
 import { Injectable, Inject } from '@nestjs/common';
-import { eq, ilike, asc } from 'drizzle-orm';
+import { eq, ilike, or, asc, desc, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDatabase } from '../db/drizzle.provider';
 import {
   ProductRepository,
@@ -41,6 +41,40 @@ export class DrizzleProductRepository extends ProductRepository {
     // Simple substring match — the Phase 2 full-text index will replace
     // this, but ILIKE over the product master is correct for Phase 1.
     return base.where(ilike(productMaster.name, `%${query.trim()}%`));
+  }
+
+  /** @inheritdoc */
+  override async searchRanked(
+    query: string,
+    limit: number,
+  ): Promise<(typeof productMaster.$inferSelect)[]> {
+    const trimmed = query.trim();
+    const pattern = `%${trimmed}%`;
+
+    // Best per-field similarity — GREATEST keeps a strong brand match on
+    // a weak name competitive instead of averaging fields together.
+    // similarity() is a pure function of its inputs, so unchanged data
+    // always yields the same scores; the id tiebreaker pins the order.
+    const relevance = sql`GREATEST(
+      similarity(${productMaster.name}, ${trimmed}),
+      similarity(${productMaster.brand}, ${trimmed}),
+      similarity(${productMaster.manufacturer}, ${trimmed})
+    )`;
+
+    // Recall via ILIKE (accelerated by the gin_trgm_ops indexes) keeps
+    // short queries working — 1–2 characters are too few for trigrams.
+    return this.db
+      .select()
+      .from(productMaster)
+      .where(
+        or(
+          ilike(productMaster.name, pattern),
+          ilike(productMaster.brand, pattern),
+          ilike(productMaster.manufacturer, pattern),
+        ),
+      )
+      .orderBy(desc(relevance), asc(productMaster.id))
+      .limit(limit);
   }
 
   /** @inheritdoc */

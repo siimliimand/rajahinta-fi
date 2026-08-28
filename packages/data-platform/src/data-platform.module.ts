@@ -18,7 +18,11 @@
  * @module DataPlatformModule
  */
 import { Module } from '@nestjs/common';
-import { TAX_RULE_REPOSITORY_PORT, CORRECTION_REPOSITORY_PORT } from '@rajahinta/core-domain';
+import {
+  TAX_RULE_REPOSITORY_PORT,
+  CORRECTION_REPOSITORY_PORT,
+  FX_RATE_DATASET_REPOSITORY_PORT,
+} from '@rajahinta/core-domain';
 import { DrizzleModule } from './db/drizzle.module';
 import {
   ProductRepository,
@@ -33,6 +37,10 @@ import {
   AggregationWatermarkRepository,
   MerchantTermsRepository,
   BasketCalculationRecordRepository,
+  FxRateRepository,
+  SessionRepository,
+  MerchantRegistryRepository,
+  ClickCounterSnapshotRepository,
 } from './abstracts';
 import { DrizzleProductRepository } from './repositories/product.repository';
 import { DrizzleTaxRateRepository } from './repositories/tax-rate.repository';
@@ -48,6 +56,13 @@ import { DrizzlePriceHistorySummaryRepository } from './repositories/price-histo
 import { DrizzleAggregationWatermarkRepository } from './repositories/aggregation-watermark.repository';
 import { DrizzleMerchantTermsRepository } from './repositories/merchant-terms.repository';
 import { DrizzleBasketCalculationRecordRepository } from './repositories/basket-calculation-record.repository';
+import { DrizzleFxRateRepository } from './repositories/fx-rate.repository';
+import { FxRateDatasetRepositoryAdapter } from './repositories/fx-rate-port.adapter';
+import { DrizzleSessionRepository } from './repositories/session.repository';
+import { DrizzleAuditEventRepository } from './repositories/audit-event.repository';
+import { DrizzleMerchantRegistryRepository } from './repositories/merchant-registry.repository';
+import { DrizzleClickCounterSnapshotRepository } from './repositories/click-counter-snapshot.repository';
+import { CalculationRecordRetentionService } from './maintenance/calculation-record-retention.service';
 import {
   MerchantReliabilityRepository,
   DrizzleMerchantReliabilityRepository,
@@ -140,6 +155,48 @@ import {
       provide: MerchantReliabilityRepository,
       useClass: DrizzleMerchantReliabilityRepository,
     },
+    // Versioned FX rate datasets (task 1.1, change
+    // technical-assessment-remediation) — append-only, manual-confirm
+    // publication; consumed by the FX domain service (task 1.2).
+    {
+      provide: FxRateRepository,
+      useClass: DrizzleFxRateRepository,
+    },
+    // Domain-port adapter for FX-rate datasets (task 1.3) — binds the
+    // Drizzle repository onto the core-domain FX port following the
+    // TAX_RULE_REPOSITORY_PORT precedent above. Consumers (the FX
+    // ingestion job, the Systembolaget conversion at ingestion) inject
+    // FX_RATE_DATASET_REPOSITORY_PORT / FxRateDatasetService via this
+    // export.
+    {
+      provide: FX_RATE_DATASET_REPOSITORY_PORT,
+      useClass: FxRateDatasetRepositoryAdapter,
+    },
+    // Server-issued opaque session tokens, hashed at rest (task 2.1) —
+    // consumed by SessionTokenService in application-api/accounts; the
+    // auth-guard migration itself is task 2.2.
+    {
+      provide: SessionRepository,
+      useClass: DrizzleSessionRepository,
+    },
+    // Durable append-only audit log (task 4.2) — bound to the
+    // AUDIT_REPOSITORY_PORT by the application-api AuditModule.
+    DrizzleAuditEventRepository,
+    // Database-backed merchant feed registry (task 7.2) — the scheduler
+    // reads it per-merchant in task 7.3.
+    {
+      provide: MerchantRegistryRepository,
+      useClass: DrizzleMerchantRegistryRepository,
+    },
+    // Durable archive of the Redis click counters (task 4.3) — written
+    // by the periodic snapshot service in application-api/audit.
+    {
+      provide: ClickCounterSnapshotRepository,
+      useClass: DrizzleClickCounterSnapshotRepository,
+    },
+    // Monthly-partition maintenance + anonymous-record retention
+    // (task 8.1) — driven by the retention cron worker in jobs.
+    CalculationRecordRetentionService,
     // Also register the concrete classes directly (they are @Injectable)
     DrizzleProductRepository,
     DrizzleTaxRateRepository,
@@ -156,6 +213,11 @@ import {
     DrizzleMerchantTermsRepository,
     DrizzleBasketCalculationRecordRepository,
     DrizzleMerchantReliabilityRepository,
+    DrizzleFxRateRepository,
+    FxRateDatasetRepositoryAdapter,
+    DrizzleSessionRepository,
+    DrizzleMerchantRegistryRepository,
+    DrizzleClickCounterSnapshotRepository,
   ],
   exports: [
     // Abstract class tokens — inject by abstract class for loose coupling
@@ -172,9 +234,16 @@ AggregationWatermarkRepository,
     MerchantTermsRepository,
     BasketCalculationRecordRepository,
     MerchantReliabilityRepository,
+    FxRateRepository,
+    SessionRepository,
+    MerchantRegistryRepository,
+    ClickCounterSnapshotRepository,
+    DrizzleAuditEventRepository,
+    CalculationRecordRetentionService,
     // Domain-port adapter tokens
     TAX_RULE_REPOSITORY_PORT,
     CORRECTION_REPOSITORY_PORT,
+    FX_RATE_DATASET_REPOSITORY_PORT,
     // Concrete implementations — inject directly when needed
     DrizzleProductRepository,
     DrizzleTaxRateRepository,
@@ -191,6 +260,11 @@ AggregationWatermarkRepository,
     DrizzleMerchantTermsRepository,
     DrizzleBasketCalculationRecordRepository,
     DrizzleMerchantReliabilityRepository,
+    DrizzleFxRateRepository,
+    FxRateDatasetRepositoryAdapter,
+    DrizzleSessionRepository,
+    DrizzleMerchantRegistryRepository,
+    DrizzleClickCounterSnapshotRepository,
   ],
 })
 export class DataPlatformModule {}

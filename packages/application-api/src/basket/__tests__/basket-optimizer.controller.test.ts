@@ -20,6 +20,8 @@ import {
   type BasketOptimizationResult,
   BasketValidationError,
   BasketClassificationGateError,
+  BasketCombinationLimitError,
+  MAX_TOTAL_COMBINATIONS,
   MAX_BASKET_ITEMS,
 } from '@rajahinta/core-domain';
 import { BasketOptimizerController } from '../basket-optimizer.controller';
@@ -368,6 +370,29 @@ describe('BasketOptimizerController', () => {
         const ue = err as UnprocessableEntityException;
         const body = ue.getResponse() as Record<string, unknown>;
         expect(body.productId).toBe(7);
+      }
+    });
+
+    it('maps BasketCombinationLimitError to 422 with totalCombinations and limit', async () => {
+      const optimizer = createMockOptimizer({
+        optimize: vi.fn().mockRejectedValue(
+          new BasketCombinationLimitError(11_000_000, MAX_TOTAL_COMBINATIONS),
+        ),
+      });
+      const ctrl = createController(optimizer);
+
+      try {
+        await ctrl.optimize(VALID_REQUEST);
+        expect.unreachable('Expected UnprocessableEntityException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(UnprocessableEntityException);
+        const ue = err as UnprocessableEntityException;
+        const body = ue.getResponse() as Record<string, unknown>;
+        expect(body.statusCode).toBe(422);
+        expect(body.error).toBe('BasketCombinationLimitExceeded');
+        expect(body.totalCombinations).toBe(11_000_000);
+        expect(body.limit).toBe(MAX_TOTAL_COMBINATIONS);
+        expect(typeof body.message).toBe('string');
       }
     });
 

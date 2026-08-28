@@ -7,6 +7,10 @@
  *
  * - Caps: MAX_BASKET_ITEMS (10) items, MAX_CANDIDATE_MERCHANTS_PER_ITEM (8)
  *   candidates per item.  Exceeding either throws BasketValidationError.
+ * - Total-combinations guard: the Cartesian product of per-item candidates
+ *   is capped at MAX_TOTAL_COMBINATIONS; exceeding it throws
+ *   BasketCombinationLimitError (the API layer maps it to HTTP 422)
+ *   before prefetch or enumeration runs.
  * - All I/O happens in a single prefetch phase before enumeration starts.
  * - The enumeration (DFS) is pure synchronous and uses precomputed maps for
  *   both item-level costs and store-group shipping.
@@ -32,8 +36,10 @@ import { BASKET_CALCULATION_RECORD_PORT } from '../ports/basket-calculation-reco
 import {
   MAX_BASKET_ITEMS,
   MAX_CANDIDATE_MERCHANTS_PER_ITEM,
+  MAX_TOTAL_COMBINATIONS,
   BasketValidationError,
   BasketClassificationGateError,
+  BasketCombinationLimitError,
 } from '../optimizer.types';
 import type {
   BasketOptimizationInput,
@@ -138,6 +144,9 @@ export class BasketOptimizerService {
    * @throws {BasketClassificationGateError} a product fails the classification
    *                                         gate (same check the calculator
    *                                         would apply).
+   * @throws {BasketCombinationLimitError}   the total combinations (product of
+   *                                         per-item candidate counts) exceed
+   *                                         MAX_TOTAL_COMBINATIONS.
    */
   async optimize(input: BasketOptimizationInput): Promise<BasketOptimizationResult> {
     // =======================================================================
@@ -157,17 +166,21 @@ export class BasketOptimizerService {
     // 2b. Build candidate merchant lists for each item (deterministic order)
     const candidatesPerItem: ItemCandidate[][] = this.buildCandidates(resolvedItems);
 
-    // 2c. Collect all distinct merchants and fetch their terms
+    // 2c. Guard the enumeration size before any further prefetch or DFS —
+    // the input caps alone leave the Cartesian product unbounded (8^10).
+    this.guardCombinationCount(candidatesPerItem);
+
+    // 2d. Collect all distinct merchants and fetch their terms
     const allMerchants = this.collectMerchants(candidatesPerItem);
     const termsMap = await this.fetchTerms(allMerchants);
 
-    // 2d. Compute per-(item, merchant) costs
+    // 2e. Compute per-(item, merchant) costs
     const itemCostMap = await this.computeItemCosts(
       items, resolvedItems, candidatesPerItem,
       destination, transportArrangement, transportMethod, sessionId,
     );
 
-    // 2e. Prefetch consolidated shipping for all possible store groups
+    // 2f. Prefetch consolidated shipping for all possible store groups
     const shippingMemo = new Map<string, ConsolidatedTransport>();
     for (const merchant of allMerchants) {
       const coverableIndices: number[] = [];
@@ -344,6 +357,27 @@ export class BasketOptimizerService {
           'INVALID_QUANTITY',
         );
       }
+    }
+  }
+
+  /**
+   * Reject baskets whose Cartesian product of per-item candidate merchants
+   * exceeds MAX_TOTAL_COMBINATIONS, before terms fetch, cost computation,
+   * shipping prefetch, or enumeration run.
+   *
+   * Each factor is at most MAX_CANDIDATE_MERCHANTS_PER_ITEM and there are at
+   * most MAX_BASKET_ITEMS of them, so the product stays far below
+   * Number.MAX_SAFE_INTEGER — plain multiplication needs no overflow care.
+   */
+  private guardCombinationCount(
+    candidatesPerItem: readonly (readonly ItemCandidate[])[],
+  ): void {
+    let total = 1;
+    for (const candidates of candidatesPerItem) {
+      total *= candidates.length;
+    }
+    if (total > MAX_TOTAL_COMBINATIONS) {
+      throw new BasketCombinationLimitError(total, MAX_TOTAL_COMBINATIONS);
     }
   }
 

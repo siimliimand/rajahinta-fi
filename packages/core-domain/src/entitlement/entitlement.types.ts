@@ -85,3 +85,56 @@ export function isTierSufficient(
 ): boolean {
   return TIER_ORDER.indexOf(userTier) >= TIER_ORDER.indexOf(requiredTier);
 }
+
+// ---------------------------------------------------------------------------
+// Account context — tier source of truth for entitlement resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * The account context EntitlementService resolves tiers from.
+ *
+ * `tier` mirrors the `accounts.tier` column; the API layer populates it from
+ * the account record when it derives identity for a request.
+ */
+export interface AccountContext {
+  /** The account's identifier. */
+  readonly userId: string;
+  /** Tier as stored on the account record (`accounts.tier`). */
+  readonly tier: EntitlementTier;
+}
+
+// ---------------------------------------------------------------------------
+// Tier transitions — groundwork for subscription billing
+// ---------------------------------------------------------------------------
+
+/** Who initiated a tier transition. Billing is the expected future driver. */
+export type TierTransitionSource = 'billing' | 'support' | 'manual';
+
+/**
+ * A request to move an account between tiers.
+ *
+ * Groundwork only: subscription billing is not implemented, so nothing in
+ * core-domain produces transitions yet. The shape exists so the billing
+ * integration lands against a stable contract instead of inventing one.
+ */
+export interface TierTransition {
+  readonly accountId: string;
+  readonly fromTier: EntitlementTier;
+  readonly toTier: EntitlementTier;
+  /** ISO 8601 timestamp from which the target tier applies. */
+  readonly effectiveAt: string;
+  readonly source: TierTransitionSource;
+}
+
+/**
+ * Well-formedness check for a tier transition: both tiers must be known and
+ * differ. A no-op transition is a caller bug, never a billable event.
+ */
+export function isTierTransitionWellFormed(transition: TierTransition): boolean {
+  const known = new Set<string>(TIER_ORDER);
+  return (
+    known.has(transition.fromTier) &&
+    known.has(transition.toTier) &&
+    transition.fromTier !== transition.toTier
+  );
+}

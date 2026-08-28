@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { PipelineOrchestratorService } from '../services/pipeline-orchestrator.service';
-import type { MerchantConfig } from '../config/merchants.config';
+import type { MerchantConfig } from '../interfaces/merchant-config.interface';
 import type { SourceGovernanceService, PermissionCheckResult } from '@rajahinta/core-domain';
 import { DataQualityService } from '../services/data-quality.service';
 import { ReliabilityService } from '@rajahinta/core-domain';

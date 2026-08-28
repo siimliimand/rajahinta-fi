@@ -239,12 +239,17 @@ export interface CalculateRequest {
   readonly sessionId?: string;
 }
 
+/**
+ * Machine-readable category for each itemized cost line.
+ *
+ * `otherCharges` was removed (task 10.3, mirroring core-domain): it was
+ * a hardcoded zero and a dead contract.
+ */
 export type CostCategory =
   | 'foreignRetailPrice'
   | 'transportCost'
   | 'alcoholExciseEstimate'
-  | 'containerDutyEstimate'
-  | 'otherCharges';
+  | 'containerDutyEstimate';
 
 export type ReliabilityStatus = 'VERIFIED' | 'ESTIMATED' | 'STALE' | 'UNAVAILABLE';
 
@@ -286,13 +291,44 @@ export interface Disclaimer {
   readonly version: string;
 }
 
+/** Machine-readable reason an offer was excluded from a calculation. */
+export type OfferExclusionReason = 'NO_VALID_EUR_CONVERSION';
+
+/**
+ * An offer excluded from the calculation because it lacked a valid EUR
+ * conversion (mirrors core-domain, task 1.5) — stays visible with its
+ * reason and original amount so a mixed-currency total can never
+ * masquerade as EUR.
+ */
+export interface OfferExclusion {
+  readonly offerId: number;
+  readonly merchant: string;
+  readonly country: string;
+  readonly reason: OfferExclusionReason;
+  readonly detail: string;
+  readonly originalPriceCents: number | null;
+  readonly originalCurrency: string | null;
+}
+
+/**
+ * A pre-conversion price in its source currency — display-only data
+ * carried alongside the EUR amounts (design D2).
+ */
+export interface OriginalPrice {
+  readonly priceCents: number;
+  readonly currency: string;
+}
+
 export interface CalculatorResult {
   readonly itemizedCosts: readonly ItemizedCost[];
+  /** Offers excluded for lacking a valid EUR conversion (task 1.5). */
+  readonly excludedOffers: readonly OfferExclusion[];
+  /** Original (pre-conversion) price of the selected offer, when any. */
+  readonly originalRetailPrice?: OriginalPrice;
   readonly foreignRetailPrice: number;
   readonly transportCost: number;
   readonly alcoholExciseEstimate: number;
   readonly containerDutyEstimate: number;
-  readonly otherCharges: number;
   readonly totalCents: number;
   readonly currency: 'EUR';
   readonly confidence: ConfidenceLevel;
@@ -344,6 +380,12 @@ export interface CorrectionItem {
   readonly resolvedAt: string | null;
   /** Resolution notes recorded when the flag was closed, null while open. */
   readonly resolution: string | null;
+}
+
+/** Correction-flag list response (GET /api/v1/corrections, /ops/console/corrections). */
+export interface CorrectionListResponse {
+  readonly items: CorrectionItem[];
+  readonly total: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -473,7 +515,120 @@ export interface FeatureFlagsResponse {
      * declaration guidance panel.
      */
     readonly ADVANCED_FEATURES: boolean;
+    /**
+     * enable_operator_console — gates the operator console UI + API
+     * (task 12.1). Optional in the client type: the degrade-to-hidden
+     * default predates it, and an absent key must render the console
+     * hidden (compliance rule: flag-off by default).
+     */
+    readonly OPERATOR_CONSOLE?: boolean;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Operator console API (/ops/console/** — bearer-token realm)
+// ---------------------------------------------------------------------------
+
+/** Aggregated governance state of one registry merchant (console worklist). */
+export interface OpsGovernanceMerchant {
+  readonly merchantId: string;
+  readonly name: string;
+  readonly country: string;
+  readonly feedUrl: string;
+  readonly permissionStatus: 'GRANTED' | 'PENDING' | 'REVOKED' | 'EXPIRED';
+  readonly sourceCount: number;
+  readonly hasWarnings: boolean;
+}
+
+/** GET /ops/console/governance response. */
+export interface OpsGovernanceListResponse {
+  readonly items: OpsGovernanceMerchant[];
+  readonly total: number;
+}
+
+/** Grant/revoke mutation result. */
+export interface OpsGovernanceMutationResponse {
+  readonly merchantId: string;
+  readonly permissionStatus: 'GRANTED' | 'PENDING' | 'REVOKED' | 'EXPIRED';
+  readonly updatedSources: number;
+  readonly changed: boolean;
+}
+
+/** A pending FX dataset awaiting operator confirmation. */
+export interface OpsPendingFxDataset {
+  readonly id: number;
+  readonly versionLabel: string;
+  readonly status: 'PENDING_CONFIRMATION';
+  readonly sourceName: string;
+  readonly sourceUrl: string | null;
+  readonly referenceDate: string;
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string | null;
+  readonly rates: readonly { baseCurrency: string; quoteCurrency: string; rate: number }[];
+}
+
+/** A pending tax rate-review entry. */
+export interface OpsPendingTaxReview {
+  readonly id: string;
+  readonly createdAt: string;
+  readonly description: string;
+  readonly source: string;
+  readonly versionLabel: string | null;
+  readonly confirmedBy: string | null;
+  readonly confirmedRole: string | null;
+}
+
+/** GET /ops/console/confirmations response. */
+export interface OpsConfirmationListResponse {
+  readonly fx: OpsPendingFxDataset[];
+  readonly taxReviews: OpsPendingTaxReview[];
+}
+
+/** FX confirmation response. */
+export interface OpsFxDatasetConfirmedResponse {
+  readonly id: number;
+  readonly versionLabel: string;
+  readonly status: 'PUBLISHED';
+  readonly confirmedAt: string;
+  readonly invalidatedVersion: string | null;
+}
+
+/** Tax review approval/rejection response. */
+export interface OpsTaxReviewResolvedResponse {
+  readonly id: string;
+  readonly status: 'resolved';
+  readonly resolution: 'approve' | 'reject';
+  readonly resolvedAt: string;
+}
+
+/** One durable audit entry as surfaced in the console trail. */
+export interface OpsAuditEntry {
+  readonly id: string;
+  readonly entityType: string;
+  readonly entityId: string;
+  readonly action: string;
+  readonly author: string;
+  readonly reason: string;
+  readonly timestamp: string;
+}
+
+/** GET /ops/console/audit response. */
+export interface OpsAuditListResponse {
+  readonly items: OpsAuditEntry[];
+  readonly total: number;
+}
+
+// ---------------------------------------------------------------------------
+// Session (POST /api/v1/account/session — identity derived server-side)
+// ---------------------------------------------------------------------------
+
+/**
+ * Identity of the active anonymous session as derived by the server from
+ * the httpOnly `rajahinta_session` cookie. The client never holds the
+ * token itself.
+ */
+export interface SessionStatus {
+  readonly userId: string;
 }
 
 // ---------------------------------------------------------------------------

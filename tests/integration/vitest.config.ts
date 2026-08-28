@@ -64,6 +64,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['tests/integration/**/*.test.ts'],
+    // Schema once, before any file — see tests/integration/global-setup.ts
+    // (Vitest 3 schedules data-lifecycle/durability-restart ahead of the
+    // file that used to migrate in beforeAll).
+    globalSetup: [path.resolve(__dirname, 'global-setup.ts')],
     root: REPO_ROOT,
     passWithNoTests: false,
     testTimeout: 30_000, // includes DB migration overhead
@@ -101,6 +105,16 @@ export default defineConfig({
         createRequire(import.meta.url).resolve('@nestjs/common/package.json', {
           paths: [path.resolve(REPO_ROOT, 'apps/backend')],
         }),
+      ),
+      // drizzle-orm is a data-platform dependency, not a root one — tests
+      // under tests/integration import it directly (sql/eq helpers) and
+      // pnpm does not hoist it to the root node_modules. Pin to the
+      // data-platform copy, the same instance its repositories use.
+      // (Direct path: drizzle-orm's exports map blocks ./package.json
+      // subpath resolution.)
+      'drizzle-orm': path.resolve(
+        REPO_ROOT,
+        'packages/data-platform/node_modules/drizzle-orm',
       ),
     },
     // Include data-platform's node_modules so `pg`, `drizzle-orm`, etc.

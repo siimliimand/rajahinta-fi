@@ -58,6 +58,27 @@ export class BasketClassificationGateError extends Error {
   }
 }
 
+/**
+ * Thrown when the total number of merchant-assignment combinations exceeds
+ * {@link MAX_TOTAL_COMBINATIONS}, before any enumeration work begins.
+ * Carries the exact counts so the API layer can map to a clean 422 with
+ * an explanatory message.
+ */
+export class BasketCombinationLimitError extends Error {
+  readonly totalCombinations: number;
+  readonly limit: number;
+
+  constructor(totalCombinations: number, limit: number) {
+    super(
+      `Basket requires ${totalCombinations} merchant combinations, which exceeds the ` +
+        `maximum of ${limit}. Reduce the number of items or the number of merchants per item.`,
+    );
+    this.name = 'BasketCombinationLimitError';
+    this.totalCombinations = totalCombinations;
+    this.limit = limit;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Caps — validated before any computation
 // ---------------------------------------------------------------------------
@@ -67,6 +88,17 @@ export const MAX_BASKET_ITEMS = 10;
 
 /** Maximum candidate merchants per item. */
 export const MAX_CANDIDATE_MERCHANTS_PER_ITEM = 8;
+
+/**
+ * Maximum total merchant-assignment combinations (Cartesian product of the
+ * per-item candidate lists) the optimizer will enumerate.
+ *
+ * The input caps alone do not bound the search: 10 items at the full
+ * 8-merchant cap reach 8^10 ≈ 1.07e9 leaves, far beyond the deployment
+ * limits (256m CPU / 512Mi). This bound keeps DFS time sub-second and the
+ * in-memory assignment list within the container budget.
+ */
+export const MAX_TOTAL_COMBINATIONS = 100_000;
 
 // ---------------------------------------------------------------------------
 // Input

@@ -81,6 +81,20 @@ export class DrizzleAccountRepository extends AccountRepository {
   }
 
   /** @inheritdoc */
+  async setVerifiedEmail(userId: string, email: string): Promise<void> {
+    const [row] = await this.db
+      .update(accounts)
+      .set({ email })
+      .where(eq(accounts.userId, userId))
+      .returning({ id: accounts.id });
+    if (!row) {
+      throw new Error(
+        `Cannot set verified email: account not found for userId="${userId}"`,
+      );
+    }
+  }
+
+  /** @inheritdoc */
   async anonymize(userId: string): Promise<void> {
     const account = await this.findByUserId(userId);
     if (!account) {

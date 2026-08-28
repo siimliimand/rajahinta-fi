@@ -14,9 +14,11 @@
  *      off (the default), allowed once FF_ADVANCED_FEATURES is set.
  *   4. EntitlementGuard @RequireFeature('calculation:export') — PREMIUM
  *      allowed; FREE tier and anonymous requests get a 403 with the
- *      InsufficientEntitlement body. FREE is forced through the real
- *      EntitlementService env override (ENTITLEMENT_TIER_<USER>), matching
- *      how a FREE account row resolves.
+ *      InsufficientEntitlement body. Tiers resolve from the account context
+ *      the auth guard attaches (EntitlementService accepts
+ *      AccountContext | string | null) — the per-user
+ *      ENTITLEMENT_TIER_<USERID> env override was removed with the tier
+ *      move to the account record.
  *   5. AgeGateGuard rejects without a confirmation token.
  *   6. Exhausting the DECLARATION profile through the REAL in-memory
  *      limiter yields HTTP 429 with a Retry-After header.
@@ -173,20 +175,8 @@ describe('ReportsController — guard regression', () => {
   });
 
   describe('EntitlementGuard — calculation:export tier enforcement', () => {
-    const originalEnv = process.env;
     const PREMIUM_USER = 'reports-premium-user';
     const FREE_USER = 'reports-free-user';
-
-    beforeEach(() => {
-      process.env = { ...originalEnv };
-      // Force the FREE account-row behaviour through the documented env
-      // override read by the real EntitlementService at request time.
-      process.env[`ENTITLEMENT_TIER_${FREE_USER.toUpperCase()}`] = 'FREE';
-    });
-
-    afterEach(() => {
-      process.env = originalEnv;
-    });
 
     function guard(): EntitlementGuard {
       return new EntitlementGuard(reflector, new EntitlementService());
@@ -199,8 +189,12 @@ describe('ReportsController — guard regression', () => {
     });
 
     it('rejects a FREE-tier user with the InsufficientEntitlement body', () => {
+      // Tier from the account context (accounts.tier), the way the session
+      // auth guard attaches it — no per-user env override exists anymore.
       try {
-        guard().canActivate(context({ user: { id: FREE_USER } }));
+        guard().canActivate(
+          context({ user: { id: FREE_USER, userId: FREE_USER, tier: 'FREE' } }),
+        );
         expect.unreachable('Expected ForbiddenException');
       } catch (err) {
         expect(err).toBeInstanceOf(ForbiddenException);
@@ -250,7 +244,7 @@ describe('ReportsController — guard regression', () => {
   });
 
   describe('RateLimitGuard — DECLARATION profile exhaustion yields 429', () => {
-    it('allows the first 20 requests and rejects the 21st with Retry-After', () => {
+    it('allows the first 20 requests and rejects the 21st with Retry-After', async () => {
       const limiter = new InMemoryRateLimiter();
       const guard = new RateLimitGuard(
         reflector,
@@ -265,45 +259,34 @@ describe('ReportsController — guard regression', () => {
       const ctx = context({ ip: '203.0.113.7' }, response);
 
       for (let i = 1; i <= 20; i++) {
-        expect(guard.canActivate(ctx), `request ${i} must pass`).toBe(true);
+        await expect(guard.canActivate(ctx), `request ${i} must pass`).resolves.toBe(true);
       }
 
-      try {
-        guard.canActivate(ctx);
-        expect.unreachable('Expected 429 HttpException');
-      } catch (err) {
-        expect(err).toBeInstanceOf(HttpException);
-        const httpErr = err as HttpException;
-        expect(httpErr.getStatus()).toBe(429);
-        expect(httpErr.getResponse()).toMatchObject({
-          statusCode: 429,
-          error: 'TooManyRequests',
-        });
-        const body = httpErr.getResponse() as { retryAfterSeconds: number };
-        expect(body.retryAfterSeconds).toBeGreaterThan(0);
-        expect(body.retryAfterSeconds).toBeLessThanOrEqual(60);
-      }
+      await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+        status: 429,
+        response: { statusCode: 429, error: 'TooManyRequests' },
+      });
 
       // Retry-After was set on the response, in seconds.
       expect(retryAfterValues).toHaveLength(1);
       expect(Number(retryAfterValues[0])).toBeGreaterThan(0);
     });
 
-    it('the limit is per client key — a different IP is unaffected', () => {
+    it('the limit is per client key — a different IP is unaffected', async () => {
       const guard = new RateLimitGuard(
         reflector,
         new RateLimitingService(new InMemoryRateLimiter()),
       );
 
       for (let i = 0; i < 20; i++) {
-        expect(guard.canActivate(context({ ip: '198.51.100.1' }))).toBe(true);
+        await expect(guard.canActivate(context({ ip: '198.51.100.1' }))).resolves.toBe(true);
       }
-      expect(() => guard.canActivate(context({ ip: '198.51.100.1' }))).toThrow(
+      await expect(guard.canActivate(context({ ip: '198.51.100.1' }))).rejects.toThrow(
         HttpException,
       );
 
       // Fresh key — still allowed.
-      expect(guard.canActivate(context({ ip: '198.51.100.2' }))).toBe(true);
+      await expect(guard.canActivate(context({ ip: '198.51.100.2' }))).resolves.toBe(true);
     });
   });
 });

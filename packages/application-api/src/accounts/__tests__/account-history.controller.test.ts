@@ -14,12 +14,18 @@ import { AccountController } from '../account.controller';
 import type { AccountService } from '../account.service';
 import type { DataExportService } from '../data-export.service';
 import type { Account } from '../account.types';
+import type { AuthenticatedAccount } from '../current-user.decorator';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const USER_ID = 'history-test-user';
+
+/** AuthenticatedAccount the SessionAuthGuard would attach for a userId. */
+function user(userId: string): AuthenticatedAccount {
+  return { accountId: 1, userId, tier: 'FREE', verified: false };
+}
 
 // ---------------------------------------------------------------------------
 // Mock factory helpers
@@ -43,6 +49,9 @@ function createMockAccountService(): Partial<AccountService> {
       async (_userId: string, recordId: number): Promise<void> => {
         calculationHistory.push(recordId);
       },
+    ),
+    getCalculationHistory: vi.fn(
+      async (_userId: string): Promise<number[]> => calculationHistory,
     ),
   };
 }
@@ -73,7 +82,7 @@ describe('AccountController — POST /history — addHistory', () => {
 
   describe('valid payload', () => {
     it('appends a calculation record and returns success', async () => {
-      const result = await controller.addHistory({ recordId: 123 }, USER_ID);
+      const result = await controller.addHistory({ recordId: 123 }, user(USER_ID));
 
       expect(result).toEqual({ success: true, recordId: 123 });
       expect(mockAccountService.addCalculationToHistory).toHaveBeenCalledWith(
@@ -84,23 +93,23 @@ describe('AccountController — POST /history — addHistory', () => {
 
     it('preserves existing history when appending', async () => {
       // Verify initial state
-      const before = await controller.getHistory(USER_ID);
+      const before = await controller.getHistory(user(USER_ID));
       expect(before).toEqual([1001, 1002]);
 
       // Append
-      await controller.addHistory({ recordId: 456 }, USER_ID);
+      await controller.addHistory({ recordId: 456 }, user(USER_ID));
 
       // Verify appended state
-      const after = await controller.getHistory(USER_ID);
+      const after = await controller.getHistory(user(USER_ID));
       expect(after).toEqual([1001, 1002, 456]);
     });
 
     it('appends multiple recordIds sequentially', async () => {
-      await controller.addHistory({ recordId: 10 }, USER_ID);
-      await controller.addHistory({ recordId: 20 }, USER_ID);
-      await controller.addHistory({ recordId: 30 }, USER_ID);
+      await controller.addHistory({ recordId: 10 }, user(USER_ID));
+      await controller.addHistory({ recordId: 20 }, user(USER_ID));
+      await controller.addHistory({ recordId: 30 }, user(USER_ID));
 
-      const history = await controller.getHistory(USER_ID);
+      const history = await controller.getHistory(user(USER_ID));
       expect(history).toEqual([1001, 1002, 10, 20, 30]);
       expect(mockAccountService.addCalculationToHistory).toHaveBeenCalledTimes(
         3,
@@ -111,48 +120,11 @@ describe('AccountController — POST /history — addHistory', () => {
       // The method returns { success: true, recordId } — the @ApiResponse
       // decorator marks this as 201, which is framework-managed. We verify
       // the response shape is correct for the happy path.
-      const result = await controller.addHistory({ recordId: 789 }, USER_ID);
+      const result = await controller.addHistory({ recordId: 789 }, user(USER_ID));
       expect(result).toMatchObject({
         success: true,
         recordId: 789,
       });
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // Missing x-user-id header
-  // -----------------------------------------------------------------------
-
-  describe('missing x-user-id header', () => {
-    it('throws BadRequestException when userId is undefined', async () => {
-      await expect(
-        controller.addHistory({ recordId: 123 }, undefined),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('throws BadRequestException with correct error shape', async () => {
-      try {
-        await controller.addHistory({ recordId: 123 }, undefined);
-        expect.unreachable('Expected BadRequestException');
-      } catch (err) {
-        expect(err).toBeInstanceOf(BadRequestException);
-        expect((err as BadRequestException).getResponse()).toMatchObject({
-          statusCode: 400,
-          message: 'x-user-id header is required',
-          error: 'MissingUserId',
-        });
-      }
-    });
-
-    it('does not call service when userId is missing', async () => {
-      try {
-        await controller.addHistory({ recordId: 123 }, undefined);
-      } catch {
-        // expected
-      }
-      expect(
-        mockAccountService.addCalculationToHistory,
-      ).not.toHaveBeenCalled();
     });
   });
 
@@ -163,19 +135,19 @@ describe('AccountController — POST /history — addHistory', () => {
   describe('invalid recordId', () => {
     it('throws BadRequestException when recordId is a float', async () => {
       await expect(
-        controller.addHistory({ recordId: 3.14 }, USER_ID),
+        controller.addHistory({ recordId: 3.14 }, user(USER_ID)),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('throws BadRequestException when recordId is zero', async () => {
       await expect(
-        controller.addHistory({ recordId: 0 }, USER_ID),
+        controller.addHistory({ recordId: 0 }, user(USER_ID)),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('throws BadRequestException when recordId is negative', async () => {
       await expect(
-        controller.addHistory({ recordId: -1 }, USER_ID),
+        controller.addHistory({ recordId: -1 }, user(USER_ID)),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -188,7 +160,7 @@ describe('AccountController — POST /history — addHistory', () => {
 
       for (const body of cases) {
         try {
-          await controller.addHistory(body, USER_ID);
+          await controller.addHistory(body, user(USER_ID));
           expect.unreachable(
             `Expected BadRequestException for recordId=${body.recordId}`,
           );
@@ -207,7 +179,7 @@ describe('AccountController — POST /history — addHistory', () => {
 
     it('does not call service when recordId is invalid', async () => {
       try {
-        await controller.addHistory({ recordId: -1 }, USER_ID);
+        await controller.addHistory({ recordId: -1 }, user(USER_ID));
       } catch {
         // expected
       }

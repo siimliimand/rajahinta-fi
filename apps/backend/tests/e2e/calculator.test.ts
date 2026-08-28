@@ -104,6 +104,17 @@ class InMemoryCalculationRecordRepository extends CalculationRecordRepository {
   ): Promise<typeof calculationRecords.$inferSelect[]> {
     return [];
   }
+
+  override async linkSession(
+    _recordId: number,
+    _sessionId: string,
+  ): Promise<boolean> {
+    return false;
+  }
+
+  override async findHistoryEntriesBySession(): Promise<never[]> {
+    return [];
+  }
 }
 
 // -------------------------------------------------------------------
@@ -572,7 +583,11 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
         expect(result).toHaveProperty('transportCost');
         expect(result).toHaveProperty('alcoholExciseEstimate');
         expect(result).toHaveProperty('containerDutyEstimate');
-        expect(result).toHaveProperty('otherCharges');
+        // Task 10.3 removed otherCharges from the result shape — the key
+        // must be absent (task 5.3-era contract), and the task-1.5
+        // exclusion fields are part of the live response.
+        expect(result).not.toHaveProperty('otherCharges');
+        expect(result).toHaveProperty('excludedOffers');
 
         // --- Itemized costs ---
         expect(result.itemizedCosts).toBeInstanceOf(Array);
@@ -606,7 +621,12 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
         expect(result.transportCost).toBe(150);
         expect(result.alcoholExciseEstimate).toBe(91);
         expect(result.containerDutyEstimate).toBe(0);
-        expect(result.otherCharges).toBe(0);
+        // Task 10.3: otherCharges no longer exists — key absent, not zero.
+        expect('otherCharges' in result).toBe(false);
+        // The seeded offer is a legacy EUR read model (no conversion
+        // fields) — validly summable, so no exclusions (task 1.5).
+        expect(result.excludedOffers).toEqual([]);
+        expect(result.originalRetailPrice).toBeUndefined();
         expect(result.totalCents).toBe(441);
       });
 

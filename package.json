@@ -15,6 +15,7 @@
     "test:compliance": "bash scripts/test-compliance.sh",
     "typecheck": "pnpm -r typecheck",
     "test:e2e": "vitest run --config vitest.config.e2e.ts",
+    "test:e2e-browser": "playwright test -c tests/e2e-browser/playwright.config.ts",
     "test:load": "vitest run --config tests/load/vitest.config.ts",
     "load:http": "bash tests/load/artillery/run.sh",
     "clean": "pnpm -r clean",
@@ -23,17 +24,18 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
-    "@vitest/coverage-v8": "^2.1.0",
+    "@playwright/test": "^1.62.1",
+    "@vitest/coverage-v8": "^3.2.0",
     "artillery": "^2.0.34",
     "eslint": "^9.0.0",
     "globals": "^15.0.0",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.0.0",
     "vite-tsconfig-paths": "^6.1.1",
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.0"
   },
   "engines": {
     "node": ">=22.0.0 <23.0.0",
-    "pnpm": ">=9.0.0"
+    "pnpm": ">=9 <10"
   }
 }

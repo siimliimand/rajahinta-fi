@@ -5,7 +5,9 @@ import tseslint from 'typescript-eslint';
 import globals from 'globals';
 
 export default tseslint.config(
-  { ignores: ['**/dist/', '**/.next/', '**/node_modules/', '*.d.ts', '*.config.*', '.opencode/'] },
+  // *.d.ts at any depth is generated (e.g. next-env.d.ts, which Next 15
+  // regenerates with a path triple-slash reference to .next/types).
+  { ignores: ['**/dist/', '**/.next/', '**/node_modules/', '**/*.d.ts', '*.config.*', '.opencode/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

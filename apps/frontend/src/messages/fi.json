@@ -1,0 +1,557 @@
+{
+  "Metadata": {
+    "title": "Rajahinta.fi",
+    "description": "Rajat ylittävien juomien hintaindeksi ja kokonaiskustannuslaskuri"
+  },
+  "Common": {
+    "reliability": {
+      "VERIFIED": "Vahvistettu",
+      "ESTIMATED": "Arvioitu",
+      "STALE": "Vanhentunut",
+      "UNAVAILABLE": "Ei saatavilla"
+    },
+    "confidence": {
+      "HIGH": "Korkea luotettavuus",
+      "MEDIUM": "Kohtalainen luotettavuus",
+      "LOW": "Matala luotettavuus"
+    },
+    "calculatedAt": "Laskettu",
+    "datasetVersions": "Aineistoversiot",
+    "recordId": "Tietuetunnus",
+    "dataReliability": "Tietojen luotettavuus",
+    "transport": "Kuljetus",
+    "quantity": "Määrä",
+    "merchant": "Myyjä",
+    "cancel": "Peruuta",
+    "remove": "Poista",
+    "dismiss": "Sulje",
+    "retry": "Yritä uudelleen",
+    "tryAgain": "Yritä uudelleen",
+    "sessionId": "Istuntotunnus: {id}…",
+    "abvLabel": "Alkoholipitoisuus",
+    "abvValue": "{value} til-%",
+    "unitCount": "{count} kpl",
+    "offerCount": "{count, plural, one {# tarjous} other {# tarjousta}}",
+    "countries": {
+      "FI": "Suomi",
+      "EE": "Viro",
+      "LV": "Latvia",
+      "LT": "Liettua",
+      "DE": "Saksa",
+      "SE": "Ruotsi",
+      "DK": "Tanska",
+      "PL": "Puola",
+      "NL": "Alankomaat",
+      "BE": "Belgia",
+      "FR": "Ranska",
+      "ES": "Espanja",
+      "IT": "Italia",
+      "AT": "Itävalta",
+      "CZ": "Tšekki"
+    }
+  },
+  "Nav": {
+    "backToCalculator": "← Takaisin laskuriin",
+    "openCalculator": "Avaa laskuri",
+    "compareProducts": "Vertaile tuotteita",
+    "howRankingWorks": "Miten järjestäminen toimii",
+    "myAccount": "Oma tili",
+    "calculateAnother": "Laske toinen tuote"
+  },
+  "SiteHeader": {
+    "navLabel": "Päävalikko",
+    "calculator": "Laskuri",
+    "compare": "Vertailu",
+    "basket": "Ostoskori",
+    "account": "Oma tili",
+    "ranking": "Miten järjestäminen toimii"
+  },
+  "SiteFooter": {
+    "disclaimer": "Rajahinta.fi on riippumaton hintavertailu- ja kokonaiskustannuslaskuri. Kaikki hinnat, verot ja maksut ovat arvioita eivätkä virallisia tietoja. Palvelu ei tarjoa vero- tai tullineuvontaa. Tarkista ajantasaiset tiedot aina viranomaislähteistä.",
+    "methodology": "Miten järjestäminen toimii"
+  },
+  "Home": {
+    "subtitle": "Rajat ylittävien juomien kokonaiskustannuslaskuri Suomeen"
+  },
+  "AgeGate": {
+    "title": "Ikätarkistus",
+    "body": "Tämä sivusto sisältää alkoholiin liittyvää sisältöä. Oletko vähintään 18-vuotias?",
+    "confirm": "Olen 18 vuotta täyttänyt",
+    "deny": "En",
+    "note": "Henkilötietoja ei kerätä. Vahvistus tallennetaan selaimeesi paikallisena merkintänä."
+  },
+  "AgeGatePage": {
+    "title": "Tervetuloa",
+    "body": "Ikäsi on vahvistettu. Voit nyt selata sivustoa.",
+    "goHome": "Siirry etusivulle"
+  },
+  "AgeGateDeclined": {
+    "title": "Pääsy rajattu",
+    "body": "Ilmoitit, ettet ole vähintään 18-vuotias. Tämä palvelu on tarkoitettu vain täysi-ikäisille, joten palvelun sisältö ei ole käytettävissä."
+  },
+  "NotFound": {
+    "title": "Sivua ei löytynyt",
+    "body": "Pyydettyä sivua ei ole olemassa.",
+    "goHome": "Siirry etusivulle"
+  },
+  "Calculator": {
+    "title": "Kokonaiskustannuslaskuri",
+    "subtitle": "Hae tuote, valitse määrä ja saat eritellyn kokonaiskustannusarvion Suomeen.",
+    "searchResults": "Hakutulokset",
+    "selectedProduct": "Valittu tuote",
+    "change": "Vaihda",
+    "calculate": "Laske kokonaiskustannus",
+    "calculating": "Lasketaan…",
+    "searchFailed": "Haku epäonnistui. Yritä uudelleen.",
+    "calculationFailed": "Laskenta epäonnistui. Yritä uudelleen.",
+    "selectProductFirst": "Valitse tuote ennen skenaarion tallentamista."
+  },
+  "ProductSearch": {
+    "placeholder": "Hae tuotteita…",
+    "search": "Hae",
+    "searching": "Haetaan…"
+  },
+  "ProductSelector": {
+    "typeToSearch": "Kirjoita tuotteen nimi aloittaaksesi haun.",
+    "noResults": "Tuotteita ei löytynyt haulla \"{query}\"."
+  },
+  "QuantitySelector": {
+    "label": "Määrä",
+    "decrease": "Vähennä määrää",
+    "increase": "Lisää määrää",
+    "range": "(1–{max})"
+  },
+  "CalculatorResult": {
+    "unitsTimesDestination": "{count} kpl × {destination}",
+    "costBreakdown": "Kustannuserittely",
+    "total": "Yhteensä",
+    "dataFreshness": "Tietojen tuoreus",
+    "noFreshnessData": "Tuoreustietoja ei ole saatavilla.",
+    "taxRateDataset": "Verokanta-aineisto: {versions}",
+    "transactionClassification": "Rajatapahtuman luokittelu",
+    "notStored": "Ei tallennettu tämän tietueen yhteyteen",
+    "availableAt": "Saatavilla:",
+    "viewAt": "Katso myyjältä {merchant}",
+    "category": {
+      "foreignRetailPrice": "Ulkomainen vähittäishinta",
+      "transportCost": "Kuljetuskustannus",
+      "alcoholExciseEstimate": "Arvio alkoholin valmisteverosta",
+      "containerDutyEstimate": "Arvio pakkausverosta"
+    }
+  },
+  "DisclaimerBanner": {
+    "languageName": {
+      "fi": "suomi",
+      "en": "englanti"
+    }
+  },
+  "CorrectionFlag": {
+    "trigger": "Ilmoita virheestä",
+    "calculation": "Laskenta",
+    "describeIssue": "Kuvaile ongelma",
+    "placeholder": "Esim. alkoholin valmistevero näyttää virheelliseltä tälle tuotekategorialle.",
+    "submit": "Lähetä",
+    "submitting": "Lähetetään…",
+    "cancel": "Peruuta",
+    "retry": "Yritä uudelleen",
+    "dismiss": "Sulje",
+    "errorTitle": "Virhe",
+    "successTitle": "Kiitos palautteestasi",
+    "successBody": "Tarkistamme ilmoitetun laskennan ja päivitämme sen tarvittaessa.",
+    "submitFailed": "Lähettäminen epäonnistui. Yritä uudelleen."
+  },
+  "DeclarationGuidance": {
+    "title": "Tulli-ilmoitusohje",
+    "locked": "Tulli-ilmoitusohje vaatii laajennetun tilauksen.",
+    "derivationTitle": "Miten arvio laskettiin",
+    "category": "Kategoria",
+    "volumePerUnit": "Tilavuus per yksikkö",
+    "totalVolume": "Kokonaistilavuus",
+    "unitCount": "{count, plural, one {# yksikkö} other {# yksikköä}}",
+    "rateKind": {
+      "alcoholExcise": "Alkoholin valmistevero",
+      "containerDuty": "Pakkausvero"
+    },
+    "ruleVersion": "Sääntöversio {version}",
+    "ratePerUnit": "€{rate} / {unit}",
+    "deadlineTitle": "Ennakkailmoituksen määräaika",
+    "deadlineRequired": "Tämä luokittelu edellyttää ennakkailmoitusta tullille.",
+    "deadlineNotRequired": "Tämä luokittelu ei edellytä ennakkailmoitusta.",
+    "dueDate": "Määräaika {date}",
+    "dueDateUnknown": "Määräaikaa ei voitu määrittää laskenta-ajankohdasta.",
+    "deadlineDays": " — {days} päivää hetkestä {from}",
+    "checklist": "Tarkistuslista",
+    "caveats": "Huomioitavaa",
+    "officialSources": "Viralliset lähteet"
+  },
+  "HistoryChart": {
+    "metric": {
+      "price": "Ulkomainen vähittäishinta",
+      "landed-cost": "Kokonaiskustannus"
+    },
+    "granularity": {
+      "day": "Päiväkohtainen",
+      "week": "Viikkoittain"
+    },
+    "chartHeading": "{metric} · historia",
+    "chartTitle": "Historiakaavio: {metric}",
+    "chartDesc": "Sarjoja: {seriesCount}. Aikaväli {from}–{to}. Verosääntömuutokset: {markerCount}.",
+    "bucketsLine": "{granularity} · {observations, plural, one {# havainto} other {# havaintoa}} · {from} – {to}",
+    "classification": {
+      "TAX_RULE_CHANGE": "Verosääntömuutos",
+      "MERCHANT_PRICE_CHANGE": "Myyjän hinnanmuutos",
+      "TRANSPORT_CHANGE": "Kuljetuskustannuksen muutos",
+      "MIXED": "Useita muutoksia",
+      "UNCHANGED": "Ei muutosta"
+    },
+    "allMerchants": "Kaikki myyjät",
+    "noData": "Historiatietoja ei ole saatavilla valitulle aikavälille.",
+    "dataAvailableFrom": "Tietoja saatavilla alkaen {date}",
+    "latest": "Viimeisin {date}",
+    "markerTitle": "{merchant}: {classification} {date}",
+    "markerSr": "{merchant}: {classification} {date}",
+    "markerSrLabel": ", {label}",
+    "seriesTitle": "{name} — {metric}"
+  },
+  "ProductHistoryPanel": {
+    "ariaLabel": "Hintahistoria",
+    "metricGroup": "Historian mittari",
+    "metricPrice": "Ulkomainen vähittäishinta",
+    "metricLandedCost": "Kokonaiskustannus",
+    "allMerchants": "Kaikki myyjät",
+    "unavailable": "Historiatiedot ovat tilapäisesti poissa käytöstä.",
+    "tryAgain": "Yritä uudelleen"
+  },
+  "ReportExport": {
+    "title": "Vie raportti",
+    "downloadJson": "Lataa JSON",
+    "downloadCsv": "Lataa CSV",
+    "print": "Tulosta raportti",
+    "downloading": "Ladataan…",
+    "preparing": "Valmistellaan…",
+    "errors": {
+      "entitlement": "Raporttien vieminen vaatii laajennetun tilauksen.",
+      "rate-limited": "Raportin vienti on tilapäisesti poissa käytöstä. Yritä myöhemmin uudelleen.",
+      "unknown": "Raportin vienti epäonnistui. Yritä uudelleen.",
+      "network": "Raportin vienti epäonnistui. Yritä uudelleen."
+    }
+  },
+  "ScenarioControls": {
+    "ariaLabel": "Skenaariot",
+    "title": "Skenaariot",
+    "nameLabel": "Skenaarion nimi",
+    "namePlaceholder": "Skenaarion nimi",
+    "save": "Tallenna skenaario",
+    "saving": "Tallennetaan…",
+    "selectToEnable": "Valitse tuote ottaaksesi tallennuksen käyttöön.",
+    "loadLabel": "Lataa tallennettu skenaario",
+    "noScenarios": "Ei tallennettuja skenaarioita",
+    "selectPlaceholder": "Valitse skenaario…",
+    "saved": "Skenaario \"{name}\" tallennettu.",
+    "loaded": "Skenaario \"{name}\" ladattu — laskenta suoritettu uudelleen.",
+    "saveFailed": "Skenaarion tallentaminen epäonnistui. Yritä uudelleen."
+  },
+  "SortOrders": {
+    "LOWEST_LANDED_COST": {
+      "label": "Matalin kokonaiskustannus",
+      "description": "Tuotteet on järjestetty arvioidun kokonaiskustannuksen mukaan pienimmästä suurimpaan. Kokonaisuuteen sisältyy ulkomainen vähittäishinta, kuljetuskustannukset, alkoholin valmistevero ja pakkausvero."
+    },
+    "LOWEST_PER_LITRE": {
+      "label": "Matalin litrahinta",
+      "description": "Tuotteet on järjestetty litrahinnan mukaan pienimmästä suurimpaan. Litrahinta lasketaan kokonaiskustannuksena jaettuna tuotteen tilavuudella."
+    },
+    "LOWEST_PER_UNIT": {
+      "label": "Matalin yksikköhinta",
+      "description": "Tuotteet on järjestetty yksikköhinnan mukaan pienimmästä suurimpaan. Yksikköhinta lasketaan kokonaiskustannuksena jaettuna määrällä."
+    },
+    "ALPHABETICAL": {
+      "label": "Aakkosjärjestys (A–Ö)",
+      "description": "Tuotteet on järjestetty aakkosittain nimen mukaan A:sta Ö:hön suomen kielen järjestyssäännöillä."
+    },
+    "ALCOHOL_PERCENTAGE": {
+      "label": "Alkoholipitoisuus (suurin ensin)",
+      "description": "Tuotteet on järjestetty alkoholipitoisuuden (til-%) mukaan suurimmasta pienimpään."
+    },
+    "PRODUCT_CATEGORY": {
+      "label": "Kategoria",
+      "description": "Tuotteet on ryhmitelty kategorioittain ja järjestetty aakkosittain kunkin kategorian sisällä. Kategoriat on järjestetty aakkosittain suomen kielen järjestyssäännöillä."
+    }
+  },
+  "Compare": {
+    "title": "Tuotevertailu",
+    "subtitle": "Vertaile juomien kokonaiskustannuksia rinnakkain. Kaikki järjestäminen on objektiivista ja neutraalia.",
+    "addProduct": "Lisää tuote",
+    "addProductTitle": "Lisää tuote",
+    "aboutTitle": "Tästä vertailusta",
+    "aboutBody": "Kaikki kokonaiskustannusarviot on laskettu Suomeen (FI) oletuskuljetuksella. Tuotteet on järjestetty: {sort}. Mikään tuotteen asema ei perustu kaupallisiin tekijöihin — jokainen tuote saa saman visuaalisen painon. Lisätietoja: <link>miten järjestäminen toimii</link>.",
+    "sortedBy": "Järjestetty: {sort}",
+    "productsCompared": "{count, plural, one {# tuote} other {# tuotetta}} vertailussa",
+    "empty": "Vertailuun ei ole vielä lisätty tuotteita.",
+    "totalLandedCost": "Kokonaiskustannus yhteensä",
+    "dataConfidence": "Tietojen luotettavuus",
+    "viewAt": "Katso myyjältä {merchant}"
+  },
+  "SortSelector": {
+    "label": "Järjestä:"
+  },
+  "MerchantFreshness": {
+    "title": "Myyjien tietojen tuoreus",
+    "freshest": "Tuorein havainto {date}",
+    "governanceLabel": "Hallintatila: {status}",
+    "governance": {
+      "GRANTED": "Myönnetty",
+      "PENDING": "Vireillä",
+      "REVOKED": "Peruutettu",
+      "EXPIRED": "Vanhentunut"
+    },
+    "computed": "Laskettu {date}"
+  },
+  "BasketCommon": {
+    "addProducts": "Lisää tuotteita",
+    "basketFull": "Ostoskori on täynnä (enintään {max} tuotetta). Poista tuote lisätäksesi toisen.",
+    "basketTitle": "Ostoskori ({count}/{max})",
+    "emptyBasket": "Tuotteita ei ole vielä lisätty. Käytä yllä olevaa hakua tuotteiden lisäämiseen.",
+    "maxReached": "Enimmäismäärä {max} tuotetta saavutettu. Poista tuote lisätäksesi toisen.",
+    "removeAria": "Poista {name}",
+    "destination": "Määrämaa",
+    "transportTitle": "Kuljetusjärjestely",
+    "transport": {
+      "SELLER_ARRANGED": "Myyjän järjestämä",
+      "INDEPENDENT_CARRIER": "Riippumaton kuljetuspalvelu",
+      "PERSONAL": "Oma kuljetus (tuodaan itse rajan yli)"
+    },
+    "personalNote": "(vain yhden myyjän yhdistelmiä)",
+    "minimumOrder": "Vähimmäistilaus: {value}",
+    "thresholdUnknown": "Vähimmäistilausraja: tuntematon",
+    "met": "Täytetty",
+    "notMet": "Ei täytetty",
+    "transportReliability": {
+      "EXACT": "Tarkka",
+      "PARTIAL": "Osittainen"
+    }
+  },
+  "BasketPage": {
+    "title": "Ostoskorin optimointi",
+    "subtitle": "Lisää useita tuotteita ja näe optimaalinen myyjäyhdistelmä sekä kokonaiskustannusarvio Suomeen.",
+    "optimize": "Optimoi ostoskori",
+    "optimizing": "Optimoidaan…",
+    "errors": {
+      "validation": "Tarkista syöttämäsi tiedot. Ostoskorissa voi olla enintään 10 tuotetta, ja kunkin määrän tulee olla 1–99.",
+      "not-found": "Tuotetta ei löytynyt. Tarkista hakusanasi ja yritä uudelleen.",
+      "gate-rejected": "Yhtä tai useampaa tuotetta ei voida tällä hetkellä käsitellä. Kokeile toista tuotetta.",
+      "rate-limited": "Palvelu on tilapäisesti ruuhkautunut. Odota hetki ja yritä uudelleen.",
+      "network": "Yhteys palvelimeen epäonnistui. Tarkista verkkoyhteytesi ja yritä uudelleen.",
+      "unknown": "Odottamaton virhe. Yritä uudelleen tai ota yhteyttä tukeen."
+    }
+  },
+  "BasketResults": {
+    "recommended": "Suositeltu yhdistelmä",
+    "alternatives": "Vaihtoehdot",
+    "alternative": "Vaihtoehto {index}",
+    "dataReliability": "Tietojen luotettavuus"
+  },
+  "BasketComparison": {
+    "title": "Usean myyjän ostoskorivertailu",
+    "subtitle": "Vertaa, miten monituoteisen ostoskorin kustannukset jakautuvat myyjien kesken. Kaikki järjestäminen on objektiivista ja neutraalia.",
+    "comparisonTitle": "Ostoskorivertailu",
+    "compareButton": "Vertaa ostoskoria myyjien kesken",
+    "alternativesTitle": "Vaihtoehtoiset myyjäryhmitykset"
+  },
+  "ResultPage": {
+    "notFoundTitle": "Laskentaa ei löytynyt",
+    "invalidId": "Virheellinen laskentatietueen tunniste.",
+    "loadFailed": "Laskentatuloksen lataaminen epäonnistui.",
+    "title": "Laskennan tulos",
+    "recordMeta": "Tietue #{id} · {date}",
+    "traceableInputs": "Jäljitettävät syötteet",
+    "product": "Tuote",
+    "productId": "Tuotetunnus",
+    "name": "Nimi",
+    "volume": "Tilavuus",
+    "volumeValue": "{value} L",
+    "retailOffers": "Vähittäismyynnin tarjoukset",
+    "offersReferenced": "{count, plural, one {# viitattu tarjous} other {# viitattua tarjousta}}",
+    "noOffers": "Vähittäistorjouksia ei käytetty",
+    "offerIds": "Tarjoustunnukset: {ids}",
+    "transportOffer": "Kuljetustarjous #{id}",
+    "transportEstimated": "Arvioitu (kuljetustarjousta ei valittu)",
+    "calculationInputs": "Laskennan syötteet",
+    "destination": "Määrämaa",
+    "transportMethod": "Kuljetustapa",
+    "defaultMethod": "Oletus",
+    "session": "Istunto",
+    "rateDatasetVersions": "Verokanta-aineistoversiot"
+  },
+  "Account": {
+    "title": "Oma tili",
+    "subtitle": "Hallinnoi tallennettuja ostoskoreja, laskentahistoriaa ja tilaustasi.",
+    "welcomeBack": "Tervetuloa takaisin",
+    "signedInBody": "Olet kirjautuneena anonyyminä käyttäjänä. Istuntosi on aktiivinen, ja tilin ominaisuudet ovat alla.",
+    "continue": "Jatka →",
+    "createNewSession": "Luo uusi istunto",
+    "anonymous": "Anonyymi tili",
+    "anonymousBody": "Luo anonyymi tili tallentaaksesi ostoskoreja, nähdäksesi laskentahistoriasi ja hallitaksesi asetuksiasi. Sähköpostia tai henkilötietoja ei vaadita.",
+    "createAccount": "Luo tili",
+    "featuresTitle": "Tilin ominaisuudet",
+    "savedBaskets": "Tallennetut ostoskorit",
+    "savedBasketsDesc": "Tallenna tuotevalikoimat nopeaa uudelleenlaskentaa varten.",
+    "browseSavedBaskets": "Selaa tallennettuja ostoskoreja →",
+    "historyFeature": "Laskentahistoria",
+    "historyFeatureDesc": "Näytä ja suorita uudelleen aiemmat kokonaiskustannuslaskennat.",
+    "viewHistory": "Näytä historia →",
+    "subscription": "Tilaus",
+    "subscriptionDesc": "Hallinnoi tilaustasi ja laskutustietojasi.",
+    "comingSoon": "Tulossa pian",
+    "dataExport": "Tietojen vienti",
+    "dataExportDesc": "Vie tietosi JSON-muodossa.",
+    "exportButton": "Vie tietoni",
+    "exporting": "Viedään…",
+    "downloadStarted": "Lataus aloitettu — tarkista latauskansiosi.",
+    "historyTitle": "Laskentahistoria",
+    "historyDesc": "Viimeisimmät kokonaiskustannuslaskentasi, uusin ensin.",
+    "loadingHistory": "Ladataan historiaa…",
+    "noCalculations": "Ei vielä laskentoja",
+    "noCalculationsDesc": "Siirry <link>kokonaiskustannuslaskuriin</link> suorittaaksesi ensimmäisen laskennan.",
+    "reRun": "Suorita uudelleen",
+    "historyEntry": "{date} · {quantity} × €{total}",
+    "retentionTitle": "Tietojen säilytys",
+    "retentionBody": "Tietojasi säilytetään vain niin kauan kuin palvelun toiminta edellyttää. Seuraavat käytännöt ovat automaattisesti voimassa:",
+    "inactiveAccountsLabel": "Passiiviset tilit",
+    "inactiveAccountsValue": "Poistettu <strong>12 kuukauden</strong> toimettomuuden jälkeen",
+    "anonymizationLabel": "Passiivisen tilin anonymisointi",
+    "anonymizationValue": "Anonymisoitu <strong>6 kuukauden</strong> toimettomuuden jälkeen",
+    "historyRetentionLabel": "Laskentahistoria",
+    "historyRetentionValue": "Poistettu <strong>24 kuukauden</strong> jälkeen",
+    "analyticsLabel": "Analytiikka ja telemetria",
+    "analyticsValue": "Anonymisoitu <strong>12 kuukauden</strong> jälkeen",
+    "retentionNote": "Säilytys toteutuu automaattisesti. Sinun ei tarvitse tehdä mitään."
+  },
+  "AccountCreate": {
+    "title": "Anonyymi tilisi on valmis",
+    "body": "Sähköpostia tai henkilötietoja ei vaadittu. Istuntosi on nyt aktiivinen.",
+    "goToAccount": "Siirry omalle tilille",
+    "startBrowsing": "Aloita selaaminen"
+  },
+  "SavedBaskets": {
+    "title": "Tallennetut ostoskorit",
+    "subtitle": "Tallenna tuotevalintoja kokonaiskustannuslaskentoiden nopeaa uudelleen suorittamista varten.",
+    "loadFailed": "Tallennettujen ostoskorien lataaminen epäonnistui",
+    "deleteFailed": "Ostoskorin poistaminen epäonnistui",
+    "loading": "Ladataan tallennettuja ostoskoreja…",
+    "emptyTitle": "Ei vielä tallennettuja ostoskoreja",
+    "emptyBody": "Käytä laskuria tuotevalintojen tallentamiseen. Tallennetut ostoskorit näkyvät tässä nopeaa uudelleenlaskentaa varten.",
+    "goToCalculator": "Siirry laskuriin",
+    "created": "Luotu {date}",
+    "itemCount": "{count, plural, one {# tuote} other {# tuotetta}}",
+    "delete": "Poista",
+    "deleting": "Poistetaan…"
+  },
+  "SavedScenarios": {
+    "title": "Tallennetut skenaariot",
+    "body": "Tallennetut laskurin syötteet. Lataaminen laskurissa suorittaa laskennan uudelleen ajantasaisilla tiedoilla.",
+    "emptyTitle": "Ei vielä tallennettuja skenaarioita",
+    "emptyBody": "Tallenna laskurin syötteet nimellä <link>laskurissa</link>.",
+    "product": "Tuote #{id}",
+    "unitCount": "{count, plural, one {# yksikkö} other {# yksikköä}}",
+    "updated": "Päivitetty {date}"
+  },
+  "Ranking": {
+    "title": "Miten järjestäminen toimii",
+    "subtitle": "Objektiivinen, avoin ja kaupallisista intresseistä vapaa.",
+    "neutralityTitle": "Neutraaliuslupaus",
+    "neutralityStatement": "Rajahinta käyttää tuotteiden järjestämiseen vain objektiivisia, ei-kaupallisia tekijöitä. Mikään myyjän maksu, mainoslippu tai manuaalinen korostus voi vaikuttaa tuotteen sijaintiin.",
+    "tiebreakerTitle": "Tasapisteet ja determinismi",
+    "tiebreakerStatement": "Kaikki järjestykset käyttävät tuotenimeä tasapisteen ratkaisemiseen, kun ensisijaiset lajitteluarvot ovat yhtä suuret. Järjestäminen on determinististä: samat tiedot tuottavat aina saman järjestyksen.",
+    "deterministic": "Deterministinen: {value}",
+    "yes": "Kyllä",
+    "no": "Ei",
+    "sortOrdersTitle": "Käytettävissä olevat järjestykset",
+    "enforcementTitle": "Miten neutraaliutta valvotaan",
+    "enforcementP1": "Järjestysmoduuli hyväksyy vain tiukan syötetyypin <code>NeutralSortInput</code>, jossa ei ole kenttää maksulliselle sijoittelulle, mainoskorostukselle, myyjäpisteytykselle eikä manuaaliselle kuratoinnille.",
+    "enforcementP2": "Neutraaliutta valvovat kolme kerrosta:",
+    "layer1Name": "Tyyppijärjestelmän raja",
+    "layer1Desc": " — lajittelufunktio hyväksyy vain tyypin <code>NeutralSortInput</code>, tiukan rajapinnan, jossa on vain lajitteluun tarvittavat kentät.",
+    "layer2Name": "Käännösaikainen varmistus",
+    "layer2Desc": " — tyyppitason testi todistaa, että kohdetta, jossa on <code>paidBoost</code>-kenttä, ei voi sijoittaa tyyppiin NeutralSortInput.",
+    "layer3Name": "Ajonaikainen tarkistus",
+    "layer3Desc": " — lajittelufunktio hylkää syötteen, jossa on NeutralSortInputin ulkopuolisia ominaisuuksia, ja paljastaa näin tahattoman tietovuodon ajonaikaisesti.",
+    "spotTitle": "Huomasitko ongelman?",
+    "spotBody": "Jos arvioit, että tuotteen sijoitus, laskenta tai tieto on virheellinen, voit ilmoittaa siitä tarkistettavaksi <link>laskurin tulossivulta</link>. Jokaisessa tuloksessa on \\\"Ilmoita virheestä\\\"-toiminto, joka välittää palautteesi suoraan katselmointitiimillemme."
+  },
+  "ContentSafetyBadge": {
+    "promotional": "Mainoskieltä havaittu: \"{pattern}\" ({language})",
+    "violations": "{count, plural, one {# sisältöpolitiikan loukkaus} other {# sisältöpolitiikan loukkausta}}"
+  },
+  "ProductPage": {
+    "metaTitle": "{name} — hintatiedot",
+    "metaDescription": "{name} ({details}) — kerättyjä myyntihintoja eri myyjiltä ja kokonaiskustannuslaskuri Suomeen.",
+    "metaDescriptionFallback": "Tuotteen hintatiedot ja kokonaiskustannuslaskuri.",
+    "notFoundTitle": "Tuotetta ei löytynyt",
+    "masterTitle": "Tuotetiedot",
+    "brandLabel": "Tuotemerkki",
+    "categoryLabel": "Kategoria",
+    "volumeLabel": "Pakkauskoko",
+    "containerLabel": "Pakkaustyyppi",
+    "eanLabel": "EAN-koodi",
+    "offersTitle": "Myyntihinnat",
+    "merchantHeader": "Myyjä",
+    "priceHeader": "Myyntihinta",
+    "countryHeader": "Maa",
+    "observedHeader": "Havaittu",
+    "noOffers": "Ei aktiivisia hintahavaintoja.",
+    "dataNote": "Hinnat ovat kerättyjä havaintoja, eivät myyjien tarjouksia.",
+    "landingNote": "Kokonaiskustannus Suomeen sisältää hinnan lisäksi verot, tullit ja kuljetuksen — laske se laskurissa."
+  },
+  "OperatorConsole": {
+    "title": "Operaattorin konsoli",
+    "intro": "Hallinnoi tietolähteiden käyttöoikeuksia, vahvista verokanta- ja valuuttakurssijulkaisuja ja käsittele korjausjono. Jokainen toimeen kirjataan auditointilokiin.",
+    "disabled": "Konsoli ei ole käytössä. Ota se käyttöön ENABLE_OPERATOR_CONSOLE-ominaisuuslipulla.",
+    "credentials": "Tunnistautuminen",
+    "credentialsNote": "Vaihe 1: syötä operaattorin tunnus ja konsolin pääsytoken. Tokenia ei tallenneta selaimeen — se lähetetään vain pyyntöjen Authorization-otsikkona. Vuorovaikutteinen kirjautuminen on tulevan työn aihe.",
+    "operatorName": "Operaattorin tunnus",
+    "token": "Pääsytoken",
+    "load": "Lataa konsoli",
+    "loading": "Ladataan…",
+    "loadFailed": "Konsolin tietojen lataus epäonnistui. Tarkista token ja yritä uudelleen.",
+    "actionFailed": "Toiminto epäonnistui.",
+    "actionRecorded": "Toiminto suoritettu ja kirjattu auditointilokiin: {action}",
+    "governanceTitle": "Tietolähteiden käyttöoikeudet",
+    "governanceIntro": "Myönnä tai peruuta kauppiaskohtaiset hankintaoikeudet. Myönnetty lähde käynnistää kyseisen kauppiaan sisäänoton hallintaportin läpi; peruutus pysäyttää sen.",
+    "acquisitionMethod": "Hankintatapa",
+    "sourceUrl": "Lähteen osoite",
+    "noteOrReason": "Kirjaus tai syy (pakollinen peruutukselle)",
+    "merchant": "Kauppias",
+    "permissionStatus": "Oikeuden tila",
+    "sourceCount": "Lähteitä",
+    "actions": "Toiminnot",
+    "grant": "Myönnä",
+    "revoke": "Peruuta",
+    "noMerchants": "Rekisterissä ei ole kauppiaita.",
+    "grantRecorded": "Oikeus myönnetty: {merchant}",
+    "revokeRecorded": "Oikeus peruttu: {merchant}",
+    "confirmationsTitle": "Aineistoversioiden vahvistus",
+    "confirmationsIntro": "Vahvistusta odottavat valuuttakurssiaineistot ja verokannan muutosmääritykset. Vahvistettu versio tulee voimaan; hylätty muutos säilyttää edellisen version voimassa.",
+    "note": "Kirjaus",
+    "fxDatasets": "Valuuttakurssiaineistot",
+    "ratesCount": "{count} kurssia",
+    "confirm": "Vahvista ja julkaise",
+    "noFxDatasets": "Ei vahvistusta odottavia valuuttakurssiaineistoja.",
+    "fxConfirmed": "Valuuttakurssiaineisto julkaistu: {version}",
+    "taxReviews": "Verokannan muutosmääritykset",
+    "approve": "Hyväksy",
+    "reject": "Hylkää",
+    "noTaxReviews": "Ei avoimia verokannan muutosmäärityksiä.",
+    "taxApproved": "Verokannan muutos hyväksytty: {version}",
+    "taxRejected": "Verokannan muutos hylätty: {version} — edellinen versio pysyy voimassa",
+    "correctionsTitle": "Korjausjono",
+    "correctionsIntro": "Käyttäjien ilmoittamat korjaukset näytetään todisteineen. Ratkaisu kirjataan operaattorin tunnuksella ja aikaleimalla.",
+    "resolutionNote": "Ratkaisun kirjaus (pakollinen)",
+    "correctionTarget": "{type} #{id}",
+    "resolve": "Ratkaise",
+    "noCorrections": "Jono on tyhjä.",
+    "correctionResolved": "Korjaus ratkaistu: #{id}",
+    "auditTitle": "Auditointiloki",
+    "auditIntro": "Konsolin toimeen liittyvät viimeisimmät kestävät auditointitapahtumat, uusin ensin.",
+    "noAuditEntries": "Ei auditointitapahtumia."
+  }
+}

@@ -10,6 +10,8 @@ infra/
     dev.yaml       # local development
     staging.yaml   # pre-production validation
     prod.yaml      # production hardened
+  k8s/             # Kustomize base + staging/production overlays
+  monitoring/      # freshness alerting rules + metric contract (README)
   README.md
 ```
 

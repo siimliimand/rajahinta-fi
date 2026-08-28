@@ -7,13 +7,15 @@
  * @module DrizzleCalculationRecordRepository
  */
 import { Injectable, Inject } from '@nestjs/common';
-import { eq, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDatabase } from '../db/drizzle.provider';
 import {
   CalculationRecordRepository,
+  type CalculationHistoryEntry,
 } from '../abstracts';
 import {
   calculationRecords,
+  productMaster,
 } from '../schema';
 
 @Injectable()
@@ -54,6 +56,42 @@ export class DrizzleCalculationRecordRepository extends CalculationRecordReposit
     return this.db
       .select()
       .from(calculationRecords)
+      .where(eq(calculationRecords.sessionId, sessionId))
+      .orderBy(calculationRecords.calculatedAt);
+  }
+
+  /** @inheritdoc */
+  async linkSession(recordId: number, sessionId: string): Promise<boolean> {
+    const rows = await this.db
+      .update(calculationRecords)
+      .set({ sessionId })
+      .where(
+        and(
+          eq(calculationRecords.id, recordId),
+          isNull(calculationRecords.sessionId),
+        ),
+      )
+      .returning({ id: calculationRecords.id });
+    return rows.length > 0;
+  }
+
+  /** @inheritdoc */
+  async findHistoryEntriesBySession(
+    sessionId: string,
+  ): Promise<CalculationHistoryEntry[]> {
+    return this.db
+      .select({
+        calculationId: calculationRecords.id,
+        calculatedAt: calculationRecords.calculatedAt,
+        totalCents: calculationRecords.totalCents,
+        quantity: calculationRecords.quantity,
+        productName: productMaster.name,
+      })
+      .from(calculationRecords)
+      .innerJoin(
+        productMaster,
+        eq(calculationRecords.productMasterId, productMaster.id),
+      )
       .where(eq(calculationRecords.sessionId, sessionId))
       .orderBy(calculationRecords.calculatedAt);
   }

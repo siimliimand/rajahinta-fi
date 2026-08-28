@@ -7,15 +7,36 @@ namespace: rajahinta
 resources:
   - ../../base
 
+# Immutable image tag pin (task 11.1): the deploy workflow overwrites
+# newTag with the commit SHA (`kustomize edit set image`) before
+# `kustomize build`, and the images transformer rewrites every workload
+# carrying this image name (backend Deployment, migrate Job). The
+# committed placeholder keeps ad-hoc renders off mutable ":latest".
+images:
+  - name: ghcr.io/siimliimand/rajahinta
+    newTag: set-by-deploy-pipeline
+
 patches:
-  # ── replica count ──
+  # ── autoscaling envelope (task 11.1): production 3-6, disruption
+  # budget of 2 — the base files carry the staging envelope (2-4 / 1).
+  # No Deployment spec.replicas patch: the HPA owns the replica count. ──
   - target:
-      kind: Deployment
+      kind: HorizontalPodAutoscaler
       name: rajahinta-backend
     patch: |
       - op: replace
-        path: /spec/replicas
+        path: /spec/minReplicas
         value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 6
+  - target:
+      kind: PodDisruptionBudget
+      name: rajahinta-backend
+    patch: |
+      - op: replace
+        path: /spec/minAvailable
+        value: 2
 
   # ── resource limits (production: higher headroom) ──
   - target:

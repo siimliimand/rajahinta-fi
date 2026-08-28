@@ -1,0 +1,32 @@
+---
+# Prometheus scrape wiring for the internal /metrics endpoint (FIX-M,
+# item 4 of the metric contract in infra/monitoring/README.md).
+#
+# Selects the rajahinta-backend Service's `metrics` port (9464) — a
+# ClusterIP port with no Ingress route, so the freshness gauges stay
+# cluster-internal. Requires the Prometheus Operator
+# (monitoring.coreos.com/v1 ServiceMonitor CRD) and a Prometheus instance
+# whose serviceMonitorSelector matches the `release: prometheus` label —
+# the same contract prometheusrule.yaml already relies on for rules.
+# Verify that selector against the actual cluster Prometheus when one is
+# provisioned (staging cluster is deferred — ARCHITECTURE.md §15.2).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rajahinta-backend
+  namespace: rajahinta
+  labels:
+    app.kubernetes.io/name: rajahinta
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: rajahinta
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rajahinta
+      app.kubernetes.io/component: backend
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

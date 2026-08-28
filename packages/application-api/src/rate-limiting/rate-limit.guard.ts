@@ -62,7 +62,7 @@ export class RateLimitGuard implements CanActivate {
     private readonly rateLimiter: RateLimitingService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const profile =
       this.reflector.getAllAndOverride<RateLimitProfileName>(
         RATE_LIMIT_KEY,
@@ -72,9 +72,9 @@ export class RateLimitGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const key = this.rateLimiter.extractKey(request);
 
-    if (!this.rateLimiter.isAllowed(key, profile)) {
+    if (!(await this.rateLimiter.isAllowed(key, profile))) {
       const retryAfter = Math.ceil(
-        (this.rateLimiter.getResetAt(key, profile) - Date.now()) / 1000,
+        (await this.rateLimiter.getResetAt(key, profile) - Date.now()) / 1000,
       );
 
       // Set Retry-After header on the response

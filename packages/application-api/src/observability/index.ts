@@ -11,9 +11,14 @@ export type {
   DashboardSnapshot,
 } from './ops-dashboard.service';
 export { OpsDashboardController } from './ops-dashboard.controller';
+export { OpsAccessGuard } from './ops-access.guard';
+export type { OpsAccessConfig } from './ops-access.guard';
+export { ReadinessService } from './readiness.service';
+export type { ReadinessResponse, DependencyCheck } from './readiness.service';
 export { CostAttributionService } from './cost-attribution.service';
 export type {
   CostSummary,
   CostBreakdown,
 } from './cost-attribution.service';
+export { PrometheusMetricsService } from './metrics.service';
 export { ObservabilityModule } from './observability.module';
