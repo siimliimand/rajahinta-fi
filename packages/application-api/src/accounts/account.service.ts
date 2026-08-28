@@ -31,6 +31,11 @@ import {
   type SavedScenarioRecord,
 } from '@rajahinta/data-platform';
 
+/** Postgres unique-constraint violation (SQLSTATE 23505). */
+function isUniqueViolation(err: unknown): boolean {
+  return (err as { code?: string }).code === '23505';
+}
+
 @Injectable()
 export class AccountService {
   private readonly logger = new Logger(AccountService.name);
@@ -40,6 +45,37 @@ export class AccountService {
 
   /** Fallback in-memory scenario store (per external userId) — test-only. */
   private readonly scenarios = new Map<string, SavedScenario[]>();
+
+  /**
+   * Find-or-create the account row for {@code userId}, safe against
+   * concurrent callers racing the INSERT: on a unique violation the row
+   * already exists, so re-read it instead of failing the request.
+   */
+  private async ensureAccountRow(
+    userId: string,
+  ): Promise<NonNullable<Awaited<ReturnType<AccountRepository['findByUserId']>>>> {
+    const existing = await this.accountRepository!.findByUserId(userId);
+    if (existing) {
+      return existing;
+    }
+
+    this.logger.debug(`Creating default account for userId="${userId}"`);
+    try {
+      return await this.accountRepository!.create({
+        userId,
+        email: `${userId}@placeholder.local`,
+        tier: 'FREE',
+      });
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        const raced = await this.accountRepository!.findByUserId(userId);
+        if (raced) {
+          return raced;
+        }
+      }
+      throw err;
+    }
+  }
 
   /** Monotonic id source for in-memory fallback scenarios. */
   private scenarioIdSeq = 0;
@@ -142,18 +178,8 @@ export class AccountService {
   async getAccount(userId: string): Promise<Account> {
     // Database path
     if (this.accountRepository) {
-      const row = await this.accountRepository.findByUserId(userId);
-      if (row) {
-        return this.rowToAccount(row);
-      }
-
-      this.logger.debug(`Creating default account for userId="${userId}"`);
-      const created = await this.accountRepository.create({
-        userId,
-        email: `${userId}@placeholder.local`,
-        tier: 'FREE',
-      });
-      return this.rowToAccount(created);
+      const row = await this.ensureAccountRow(userId);
+      return this.rowToAccount(row);
     }
 
     // In-memory fallback
@@ -189,14 +215,7 @@ export class AccountService {
   async saveBasket(userId: string, basket: Basket): Promise<void> {
     // Database path
     if (this.accountRepository && this.savedBasketRepository) {
-      let row = await this.accountRepository.findByUserId(userId);
-      if (!row) {
-        row = await this.accountRepository.create({
-          userId,
-          email: `${userId}@placeholder.local`,
-          tier: 'FREE',
-        });
-      }
+      const row = await this.ensureAccountRow(userId);
       await this.savedBasketRepository.create({
         accountId: row.id,
         name: basket.name,
@@ -243,15 +262,7 @@ export class AccountService {
   ): Promise<SavedScenario> {
     // Database path
     if (this.accountRepository && this.savedScenarioRepository) {
-      let row = await this.accountRepository.findByUserId(userId);
-      if (!row) {
-        this.logger.debug(`Creating default account for userId="${userId}"`);
-        row = await this.accountRepository.create({
-          userId,
-          email: `${userId}@placeholder.local`,
-          tier: 'FREE',
-        });
-      }
+      const row = await this.ensureAccountRow(userId);
       const saved = await this.savedScenarioRepository.upsert({
         accountId: row.id,
         name,
