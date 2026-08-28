@@ -49,6 +49,7 @@ import { ReportsModule } from './reports';
 import { MerchantsModule } from './merchants';
 import { AnalyticsModule, OutboundRedirectController } from './analytics';
 import { CorrectionModule } from './correction';
+import { OpsModule } from './ops';
 import { RankingModule as ApplicationRankingModule } from './ranking';
 import { CalculationController, CalculateLandedCostDto } from './calculations';
 import { ReadinessService, type ReadinessResponse } from './observability';
@@ -166,6 +167,12 @@ imports: [
     // (task 3.4, change phase2-advanced-features); also exports the
     // score pipeline used by the search module's detail-response embed.
     MerchantsModule,
+    // Operator console API (task 12.1, change
+    // technical-assessment-remediation) — governance permission grants,
+    // tax-rate/FX dataset-version confirmation, and the correction queue
+    // at /ops/console/** behind OpsAccessGuard (bearer + allowlist,
+    // fail-closed) and the OPERATOR_CONSOLE flag (default OFF).
+    OpsModule,
   ],
   providers: [
     // Unified ApiErrorResponse envelope on every error, legacy controllers
@@ -250,6 +257,8 @@ export namespace ApplicationApiModule {
         HistoricalDataModule,
         ReportsModule,
         MerchantsModule,
+        // Operator console API (task 12.1) — see the static-module comment.
+        OpsModule,
       ],
       providers: [
         { provide: APP_FILTER, useClass: ApiErrorFilter },
@@ -447,3 +456,38 @@ export type { RankingMethodology, SortOrderDescription } from './ranking';
 
 export { BasketOptimizerController } from './basket';
 export type { BasketOptimizeRequest, BasketItemInput } from './basket';
+
+// ---------------------------------------------------------------------------
+// Ops — operator console API (governance grants, dataset-version
+// confirmation, correction queue; bearer+allowlist realm, flag-gated)
+// ---------------------------------------------------------------------------
+
+export {
+  OpsModule,
+  OpsGovernanceController,
+  OpsGovernanceService,
+  InMemorySourceGovernanceRepository,
+  OpsDatasetConfirmationController,
+  OpsDatasetConfirmationService,
+  InMemoryRateReviewRepository,
+  OpsCorrectionQueueController,
+  OpsCorrectionQueueService,
+  OpsAuditTrailController,
+  OpsAuditTrailService,
+} from './ops';
+export type {
+  OperatorActionDto,
+  GrantGovernanceDto,
+  RevokeGovernanceDto,
+  OpsGovernanceMerchant,
+  OpsGovernanceListResponse,
+  OpsGovernanceMutationResponse,
+  OpsPendingFxDataset,
+  OpsPendingTaxReview,
+  OpsConfirmationListResponse,
+  OpsFxDatasetConfirmedResponse,
+  OpsTaxReviewResolvedResponse,
+  OpsCreateCorrectionDto,
+  OpsAuditEntry,
+  OpsAuditListResponse,
+} from './ops';
