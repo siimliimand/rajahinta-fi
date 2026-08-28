@@ -104,6 +104,17 @@ class InMemoryCalculationRecordRepository extends CalculationRecordRepository {
   ): Promise<typeof calculationRecords.$inferSelect[]> {
     return [];
   }
+
+  override async linkSession(
+    _recordId: number,
+    _sessionId: string,
+  ): Promise<boolean> {
+    return false;
+  }
+
+  override async findHistoryEntriesBySession(): Promise<never[]> {
+    return [];
+  }
 }
 
 // -------------------------------------------------------------------
