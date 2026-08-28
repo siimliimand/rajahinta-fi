@@ -10,6 +10,8 @@ import type {
   PriceHistoryStepClassification,
   ReliabilityStatus,
 } from '@/lib/types';
+import { RELIABILITY_STATUS_META } from '@/lib/design/status';
+import { Card, ReliabilityBadge } from '@/components/ui';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -65,21 +67,15 @@ const SERIES_STROKE_WIDTH = 2;
 const GAP_TOLERANCE = 1.5;
 
 // ---------------------------------------------------------------------------
-// Badge colour coding (labels come from the message catalogs)
+// Badge conventions (canonical status module; labels from message catalogs)
 // ---------------------------------------------------------------------------
 
 /**
- * Reliability badge colours per DESIGN.md: green VERIFIED, amber STALE,
- * gray UNAVAILABLE, blue ESTIMATED. Badges render as visible pills next to
- * each series — never hidden in tooltips.
+ * Reliability badges per legend row come from the canonical status module
+ * (`@/lib/design/status`, D1/D2 hue ladder) via the ui primitive — never
+ * from a private colour map. Badges render as visible pills next to each
+ * series — never hidden in tooltips.
  */
-const RELIABILITY_BADGE: Record<ReliabilityStatus, { bg: string; text: string }> =
-  {
-    VERIFIED: { bg: 'bg-green-100', text: 'text-green-800' },
-    STALE: { bg: 'bg-amber-100', text: 'text-amber-800' },
-    UNAVAILABLE: { bg: 'bg-gray-100', text: 'text-gray-700' },
-    ESTIMATED: { bg: 'bg-blue-100', text: 'text-blue-800' },
-  };
 
 /**
  * Strictest-wins ordering mirroring RELIABILITY_ORDER from core-domain
@@ -306,7 +302,7 @@ export default function HistoryChart({
   earliestAvailableObservationDate = null,
 }: HistoryChartProps) {
   const t = useTranslations('HistoryChart');
-  const tCommon = useTranslations('Common');
+  const tAll = useTranslations();
   const titleId = useId();
   const descId = useId();
 
@@ -314,10 +310,7 @@ export default function HistoryChart({
 
   if (plottable.length === 0) {
     return (
-      <div
-        className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
-        data-testid="history-chart-empty"
-      >
+      <Card data-testid="history-chart-empty">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
           {t('chartHeading', { metric: t(`metric.${metric}`) })}
         </h3>
@@ -329,7 +322,7 @@ export default function HistoryChart({
             })}
           </p>
         )}
-      </div>
+      </Card>
     );
   }
 
@@ -406,10 +399,7 @@ export default function HistoryChart({
   const metricLabel = t(`metric.${metric}`);
 
   return (
-    <div
-      className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
-      data-testid="history-chart"
-    >
+    <Card data-testid="history-chart">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
         {t('chartHeading', { metric: metricLabel })}
       </h3>
@@ -578,7 +568,6 @@ export default function HistoryChart({
         {ordered.map((s, si) => {
           const color = SERIES_COLORS[si % SERIES_COLORS.length];
           const status = strictestReliability(s.points);
-          const badge = RELIABILITY_BADGE[status];
           const latestMs = Math.max(
             ...s.points.map((p) => parseDateMs(p.periodStart)),
           );
@@ -594,11 +583,9 @@ export default function HistoryChart({
                 className={`inline-block h-1 w-4 rounded-full ${color.bg}`}
               />
               <span className="text-sm text-gray-700">{name}</span>
-              <span
-                className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase leading-tight ${badge.bg} ${badge.text}`}
-              >
-                {tCommon(`reliability.${status}`)}
-              </span>
+              <ReliabilityBadge status={status}>
+                {tAll(RELIABILITY_STATUS_META[status].labelKey)}
+              </ReliabilityBadge>
               <span className="text-xs text-gray-400">
                 {t('latest', { date: formatFullDate(latestMs) })}
               </span>
@@ -630,6 +617,6 @@ export default function HistoryChart({
           })}
         </p>
       )}
-    </div>
+    </Card>
   );
 }

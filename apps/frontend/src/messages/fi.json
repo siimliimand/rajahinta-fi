@@ -71,7 +71,13 @@
     "methodology": "Miten järjestäminen toimii"
   },
   "Home": {
-    "subtitle": "Rajat ylittävien juomien kokonaiskustannuslaskuri Suomeen"
+    "subtitle": "Rajat ylittävien juomien kokonaiskustannuslaskuri Suomeen",
+    "heroValueProp": "Laske alkoholijuomien tuonnin kokonaiskustannus Ruotsista Suomeen: ulkomainen vähittäishinta, kuljetus sekä arviot alkoholin valmisteverosta ja pakkausverosta."
+  },
+  "GateClosed": {
+    "title": "Laskuri ei ole vielä käytössä",
+    "body": "Kokonaiskustannuslaskenta ei ole vielä julkisesti käytettävissä. Palvelua valmistellaan käyttöönottoon: oikeudellinen lausunto, verolähteiden kartoitus ja korjausmekanismi vahvistetaan ennen julkaisua.",
+    "availableAtLaunch": "Käyttöönoton jälkeen laskuri näyttää tuotteen kokonaiskustannuksen Suomeen: ulkomaisen vähittäishinnan, kuljetuskustannuksen, arvioidun alkoholin valmisteveron ja pakkausveron."
   },
   "AgeGate": {
     "title": "Ikätarkistus",

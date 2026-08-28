@@ -3,6 +3,7 @@
 import React, { useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { createCorrectionFlag } from '@/lib/api';
+import { Button } from '@/components/ui';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -85,13 +86,13 @@ export default function CorrectionFlagPanel({
   // ── Success ──
   if (phase === 'success') {
     return (
-      <div className="mt-8 rounded-lg border border-green-200 bg-green-50 p-5 text-center">
-        <p className="text-sm font-medium text-green-800">{t('successTitle')}</p>
-        <p className="mt-1 text-xs text-green-600">{t('successBody')}</p>
+      <div className="mt-8 rounded-lg border border-status-verified-border bg-status-verified-bg p-5 text-center">
+        <p className="text-sm font-medium text-status-verified-fg">{t('successTitle')}</p>
+        <p className="mt-1 text-xs text-status-verified">{t('successBody')}</p>
         <button
           type="button"
           onClick={cancel}
-          className="mt-3 text-xs text-green-700 underline hover:text-green-800"
+          className="mt-3 text-xs text-status-verified underline hover:text-status-verified-fg"
         >
           {t('dismiss')}
         </button>
@@ -102,18 +103,18 @@ export default function CorrectionFlagPanel({
   // ── Error ──
   if (phase === 'error') {
     return (
-      <div className="mt-8 rounded-lg border border-red-200 bg-red-50 p-5">
-        <p className="text-sm font-medium text-red-800">{t('errorTitle')}</p>
-        <p className="mt-1 text-xs text-red-600">{errorMessage}</p>
+      <div className="mt-8 rounded-lg border border-error-border bg-error-bg p-5">
+        <p className="text-sm font-medium text-error-fg">{t('errorTitle')}</p>
+        <p className="mt-1 text-xs text-error">{errorMessage}</p>
         <div className="mt-3 flex gap-3">
-          <button
-            type="button"
+          <Button
+            variant="destructive"
+            size="sm"
             onClick={submit}
             disabled={!reason.trim()}
-            className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
           >
             {t('retry')}
-          </button>
+          </Button>
           <button
             type="button"
             onClick={cancel}
@@ -128,8 +129,8 @@ export default function CorrectionFlagPanel({
 
   // ── Open / submitting form ──
   return (
-    <div className="mt-8 rounded-lg border border-amber-200 bg-amber-50 p-5">
-      <p className="mb-3 text-sm font-medium text-amber-800">{t('trigger')}</p>
+    <div className="mt-8 rounded-lg border border-status-stale-border bg-status-stale-bg p-5">
+      <p className="mb-3 text-sm font-medium text-status-stale-fg">{t('trigger')}</p>
 
       {/* Read-only context */}
       <div className="mb-3 rounded bg-white px-3 py-2 text-xs text-gray-600">
@@ -152,14 +153,13 @@ export default function CorrectionFlagPanel({
 
       {/* Actions */}
       <div className="mt-3 flex gap-3">
-        <button
-          type="button"
+        <Button
+          size="sm"
           onClick={submit}
           disabled={!reason.trim() || phase === 'submitting'}
-          className="rounded-md bg-primary-600 px-4 py-2 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
         >
           {phase === 'submitting' ? t('submitting') : t('submit')}
-        </button>
+        </Button>
         <button
           type="button"
           onClick={cancel}

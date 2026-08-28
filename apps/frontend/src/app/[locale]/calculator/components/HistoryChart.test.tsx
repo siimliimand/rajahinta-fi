@@ -252,11 +252,13 @@ describe('HistoryChart', () => {
   });
 
   it('uses the DESIGN.md colour coding for every reliability status', () => {
+    // Canonical token classes from @/lib/design/status (D1/D2 ladder),
+    // rendered by the ReliabilityBadge primitive.
     const cases: ReadonlyArray<readonly [ReliabilityStatus, string, string]> = [
-      ['VERIFIED', 'Vahvistettu', 'bg-green-100'],
-      ['ESTIMATED', 'Arvioitu', 'bg-blue-100'],
-      ['STALE', 'Vanhentunut', 'bg-amber-100'],
-      ['UNAVAILABLE', 'Ei saatavilla', 'bg-gray-100'],
+      ['VERIFIED', 'Vahvistettu', 'bg-status-verified-bg'],
+      ['ESTIMATED', 'Arvioitu', 'bg-status-estimated-bg'],
+      ['STALE', 'Vanhentunut', 'bg-status-stale-bg'],
+      ['UNAVAILABLE', 'Ei saatavilla', 'bg-status-unavailable-bg'],
     ];
 
     for (const [status, label, bg] of cases) {

@@ -71,7 +71,13 @@
     "methodology": "How ranking works"
   },
   "Home": {
-    "subtitle": "Finnish cross-border beverage landed-cost calculator"
+    "subtitle": "Finnish cross-border beverage landed-cost calculator",
+    "heroValueProp": "Calculate the total cost of importing alcoholic beverages from Sweden to Finland: the foreign retail price, transport, and estimates of alcohol excise duty and container duty."
+  },
+  "GateClosed": {
+    "title": "The calculator is not yet available",
+    "body": "Landed-cost calculation is not yet publicly available. The service is being prepared for launch: the legal opinion, the tax-source mapping, and the correction mechanism are confirmed before publication.",
+    "availableAtLaunch": "Once launched, the calculator shows a product's total cost of importing to Finland: the foreign retail price, the transport cost, the estimated alcohol excise duty, and the estimated container duty."
   },
   "AgeGate": {
     "title": "Age verification",

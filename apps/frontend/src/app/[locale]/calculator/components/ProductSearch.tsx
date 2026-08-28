@@ -2,6 +2,7 @@
 
 import { useRef } from 'react';
 import { useTranslations } from 'next-intl';
+import { Button, Input } from '@/components/ui';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -49,24 +50,24 @@ export default function ProductSearch({
   return (
     <div className="space-y-1">
       <form onSubmit={handleSubmit} className="flex gap-2">
-        <input
-          ref={inputRef}
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={t('placeholder')}
-          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm placeholder:text-gray-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-          autoComplete="off"
-        />
-        <button
-          type="submit"
-          disabled={loading || value.trim().length === 0}
-          className="inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        {/* The Input wrapper is a block div, so it needs a flex child that
+            stretches — without flex-1 the shrink-to-fit wrapper would
+            collapse the field instead of filling the row. */}
+        <div className="min-w-0 flex-1">
+          <Input
+            ref={inputRef}
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={t('placeholder')}
+            autoComplete="off"
+          />
+        </div>
+        <Button type="submit" disabled={loading || value.trim().length === 0}>
           {loading ? t('searching') : t('search')}
-        </button>
+        </Button>
       </form>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-error">{error}</p>}
     </div>
   );
 }

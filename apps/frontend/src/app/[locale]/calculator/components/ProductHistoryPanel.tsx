@@ -37,6 +37,7 @@ import {
   getProductDetail,
 } from '@/lib/api';
 import { useFeatureFlags } from '@/lib/feature-flags';
+import { Button, Card } from '@/components/ui';
 import HistoryChart from './HistoryChart';
 
 // ---------------------------------------------------------------------------
@@ -242,19 +243,17 @@ export default function ProductHistoryPanel({
 
       {/* ── Neutral retry affordance for rate-limit / network failures ── */}
       {!loading && failure === 'retryable' && (
-        <div
-          className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
-          data-testid="history-retry"
-        >
+        <Card data-testid="history-retry">
           <p className="text-sm text-gray-500">{t('unavailable')}</p>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-2"
             onClick={() => setRetryNonce((n) => n + 1)}
-            className="mt-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:border-gray-400"
           >
             {t('tryAgain')}
-          </button>
-        </div>
+          </Button>
+        </Card>
       )}
 
       {/* ── Chart: response values are authoritative (echoed metric etc.) ── */}
