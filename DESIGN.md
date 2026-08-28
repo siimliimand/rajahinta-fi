@@ -59,6 +59,11 @@ The UI is built around **transparency, neutrality, and explainability**. Every c
 | `BasketResults.tsx` | `/basket` | Recommended basket combination plus neutral cost-ordered alternatives with per-store breakdowns, reliability badges, structural disclaimer |
 | `MerchantLink.tsx` | `/compare` | Neutral merchant link with outbound-disclosure |
 | `SortSelector.tsx` | `/compare` | Sort-order control for comparison view |
+| `ScenarioControls.tsx` | `/calculator` | Save/load named calculator input scenarios (flag-gated) |
+| `ReportExportActions.tsx` | `/calculator`, `/account` | Report export affordance — JSON/CSV lossless, printable HTML via browser print (flag-gated, premium entitlement) |
+| `DeclarationGuidancePanel.tsx` | `/calculator/result/[recordId]` | Collapsible advanced declaration guidance — excise derivation, advance-notice deadline, MyTax checklist, confidence caveats, official vero.fi links (flag-gated) |
+| `MerchantFreshnessSection.tsx` | `/compare` | Per-merchant data-freshness/reliability display — informational only, never affects ranking (flag-gated) |
+| `SavedScenariosSection.tsx` | `/account` | Saved scenarios list with load affordance (flag-gated) |
 
 ### Routes
 
@@ -70,7 +75,7 @@ The UI is built around **transparency, neutrality, and explainability**. Every c
 | `/compare` | Product comparison with multiple sort orders; flag-gated multi-store comparison |
 | `/basket` | Basket builder and optimization results (hidden when `enable_basket_optimization` is off) |
 | `/ranking` | Explanation of ranking methodology and neutrality enforcement |
-| `/account` | Account management page (anonymous session, calculation history, data export) |
+| `/account` | Account management page (anonymous session, calculation history, data export, saved scenarios) |
 | `/account/create` | Anonymous account creation confirmation |
 | `/account/saved-baskets` | User's saved calculation baskets |
 | `/age-gate` | Age verification page |
@@ -92,4 +97,4 @@ The platform is positioned as a trustworthy, explainable financial/tax-intellige
 - Consider shadcn/ui or similar component library if component count grows significantly
 - Evaluate dark-mode support (not implemented)
 
-<!-- Last updated: 2026-08-27 -->
+<!-- Last updated: 2026-08-28 -->
