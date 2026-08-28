@@ -34,7 +34,7 @@ rajahinta/
 │   │       ├── transport/             # TransportEstimationService, BasketShippingCalculator, bracket-selection
 │   │       ├── calculator/            # LandedCostCalculatorService (orchestrator, shared offer-constrained core)
 │   │       ├── optimizer/             # BasketOptimizerService — bounded exhaustive multi-store search (ports: merchant-terms, basket-calculation-record)
-│   │       ├── reliability/           # ConfidenceFrameworkService, ReliabilityService
+    │       │       ├── reliability/           # ConfidenceFrameworkService, ReliabilityService, MerchantReliabilityScoreService
 │   │       ├── ranking/               # RankingService (neutrality-enforced sorting)
 │   │       ├── declaration/           # ExciseDeclarationService (read-only, never submits)
 │   │       ├── correction/            # CorrectionService, CorrectionModule
@@ -44,7 +44,7 @@ rajahinta/
 │   │       └── history/               # PriceObservationRecorderService, TaxChangeAttributionService
 │   ├── data-platform/                 # Drizzle ORM repositories, schema, seed data
 │   │   └── src/
-│   │       ├── schema.ts              # Canonical Drizzle schema (productMaster, retailOffers, taxRules, transportOffers, calculationRecords, priceObservations, priceHistorySummaries, aggregationWatermarks, merchantTerms, basketCalculationRecords)
+    │       │       ├── schema.ts              # Canonical Drizzle schema (productMaster, retailOffers, taxRules, transportOffers, calculationRecords, priceObservations, priceHistorySummaries, aggregationWatermarks, merchantTerms, basketCalculationRecords, savedScenarios)
 │   │       ├── abstracts.ts           # Abstract repository classes (ProductRepository, TaxRateRepository, etc.)
 │   │       ├── db/
 │   │       │   ├── drizzle.provider.ts  # DRIZZLE token, pg.Pool + Drizzle factory (DATABASE_URL)
@@ -58,7 +58,9 @@ rajahinta/
 │   │       │   ├── aggregation-watermark.repository.ts # Aggregation watermark persistence
 │   │       │   ├── calculation-record.repository.ts
 │   │       │   ├── merchant-terms.repository.ts        # Minimum-order thresholds with provenance (IMerchantTermsPort adapter)
-│   │       │   └── basket-calculation-record.repository.ts # Optimizer result persistence (IBasketCalculationRecordPort adapter)
+    │       │       │   ├── basket-calculation-record.repository.ts # Optimizer result persistence (IBasketCalculationRecordPort adapter)
+    │       │       │   ├── saved-scenario.repository.ts        # Named calculator input sets per account
+    │       │       │   └── merchant-reliability.repository.ts  # Merchant data-reliability aggregation reads
 │   │       ├── data-platform.module.ts # DataPlatformModule — registers concrete repos + TAX_RULE_REPOSITORY_PORT
 │   │       └── seed/tax-rules.seed.ts # Versioned Finnish excise duty rates (v1.0-2024 … v3.0-2026)
 │   ├── data-acquisition/              # Merchant feed ingestion pipeline
@@ -76,6 +78,8 @@ rajahinta/
 │           ├── basket/                # BasketOptimizerController, basket DTOs (POST /api/v1/basket/optimize)
 │           ├── search/                # SearchController
 │           ├── declaration/           # DeclarationController (read-only)
+│           ├── reports/               # ReportsController, ReportExportService — GET /api/v1/reports/:recordId?format=json|csv|html (flag-gated, premium)
+│           ├── merchants/             # MerchantsController, MerchantReliabilityService — GET /api/v1/merchants/reliability (flag-gated)
 │           ├── adapters/              # TaxCalculationEngineAdapter (wires LandedCostCalculatorService)
 │           ├── feature-flags/         # FeatureFlagService, LaunchGateService, LaunchGateGuard
 │           ├── rate-limiting/         # RateLimitGuard, RateLimitingService
@@ -83,7 +87,7 @@ rajahinta/
 │           ├── age-gate/              # AgeGateService, SimpleConfirmationProvider
 │           ├── entitlement/           # EntitlementGuard
 │           ├── billing/               # BillingService, BillingModule
-│           ├── accounts/              # AccountService, DataExportService, AccountRetentionService
+│           ├── accounts/              # AccountService, DataExportService, AccountRetentionService, scenario endpoints (/api/v1/account/scenarios)
 │           ├── historical/            # HistoricalDataController — GET /api/v1/products/:id/price-history (flag-gated)
 │           ├── jobs/                  # BullMQ workers: price-ingestion, transport-rate-refresh, tax-dataset-review, time-series-aggregation
 │           ├── audit/                 # AuditRepositoryAdapter (bridges to core-domain)
@@ -168,7 +172,7 @@ The application is a **NestJS modular monolith** with four bounded layers:
 
 | Package                     | Responsibility                                                                                                                                        | Key modules / files                                                                                                                                                          |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core-domain`      | Domain logic — tax engines, classification, ranking, calculator orchestrator, basket optimizer, confidence framework, correction, entitlement, audit, source governance, price-history recording and attribution | `tax/`, `classification/`, `normalization/`, `transport/`, `calculator/`, `optimizer/`, `reliability/`, `ranking/`, `declaration/`, `correction/`, `entitlement/`, `audit/`, `governance/`, `history/` |
+| `packages/core-domain`      | Domain logic — tax engines, classification, ranking, calculator orchestrator, basket optimizer, confidence framework, merchant reliability scoring, correction, entitlement, audit, source governance, price-history recording and attribution | `tax/`, `classification/`, `normalization/`, `transport/`, `calculator/`, `optimizer/`, `reliability/`, `ranking/`, `declaration/`, `correction/`, `entitlement/`, `audit/`, `governance/`, `history/` |
 | `packages/data-platform`    | Drizzle ORM schema, concrete repositories, connection provider, seed data                                                                             | `schema.ts`, `abstracts.ts`, `repositories/`, `db/drizzle.provider.ts`, `data-platform.module.ts`, `seed/tax-rules.seed.ts`                                                  |
 | `packages/data-acquisition` | Merchant feed ingestion pipeline, data-quality checks, rate-review scheduler                                                                          | `adapters/systembolaget.adapter.ts`, `services/`, `config/merchants.config.ts`                                                                                               |
 | `packages/application-api`  | API controllers, DTOs, guards (rate limiting, idempotency, age gate, entitlement, launch gate), background job workers, observability                 | `calculator/`, `basket/`, `search/`, `ranking/`, `declaration/`, `historical/`, `feature-flags/`, `rate-limiting/`, `age-gate/`, `jobs/`, `observability/`                                         |
@@ -243,7 +247,7 @@ The implemented primary user journey:
 | -------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | PostgreSQL 16  | Primary structured data store — products, retail offers, transport offers, versioned tax rules, calculation records | `docker-compose.yml` (postgres:16-alpine), Drizzle ORM via `DRIZZLE` token |
 | Redis 7        | Caching, BullMQ job queues, session store                                                                           | `docker-compose.yml` (redis:7-alpine)                                      |
-| Drizzle schema | Canonical table definitions — `productMaster`, `retailOffers`, `taxRules`, `transportOffers`, `calculationRecords`, `priceObservations`, `priceHistorySummaries`, `aggregationWatermarks`, `merchantTerms`, `basketCalculationRecords` | `packages/data-platform/src/schema.ts`                                     |
+| Drizzle schema | Canonical table definitions — `productMaster`, `retailOffers`, `taxRules`, `transportOffers`, `calculationRecords`, `priceObservations`, `priceHistorySummaries`, `aggregationWatermarks`, `merchantTerms`, `basketCalculationRecords`, `savedScenarios` | `packages/data-platform/src/schema.ts`                                     |
 
 Schema design principles applied:
 
@@ -293,7 +297,7 @@ Merchant ingestion is gated by `SourceGovernanceService` — a merchant must hav
 | Feature flags               | Implemented | `FeatureFlagService`, `LaunchGateService`, `LaunchGateGuard` in `application-api/feature-flags/`                                                                                                                                        |
 | Background jobs             | Implemented | BullMQ workers: price-ingestion, transport-rate-refresh, tax-dataset-review, time-series-aggregation                                                                                                                                    |
 
-The promotion path is development → staging → production, with staging carrying its own tax-rule and merchant data copies, and feature flags gating new merchant sources, tax rulesets, UI ranking behavior, historical price intelligence (`enable_historical_price_intelligence`, default off), and basket optimization (`enable_basket_optimization`, default off).
+The promotion path is development → staging → production, with staging carrying its own tax-rule and merchant data copies, and feature flags gating new merchant sources, tax rulesets, UI ranking behavior, historical price intelligence (`enable_historical_price_intelligence`, default off), basket optimization (`enable_basket_optimization`, default off), and advanced features (`enable_advanced_features` — saved scenarios, report exports, merchant freshness, declaration guidance; default off).
 
 ## 9. Security Architecture
 
@@ -366,6 +370,7 @@ The repository is an agentic workspace with a working application build. Command
 | API-layer tests            | Implemented | `packages/application-api/src/__tests__/rate-limiting.service.test.ts`, `age-gate.service.test.ts`, `idempotency.service.test.ts`, `launch-gate.service.test.ts`                  |
 | Historical-price flow tests | Implemented | `tests/integration/historical-price-flow.test.ts` — observation append → aggregation → API response with attribution, real engines + in-memory ports (`pnpm test:integration`); unit tests in `core-domain/src/history/__tests__/`, `application-api/src/jobs/__tests__/`, `data-platform/src/repositories/__tests__/` |
 | Basket optimizer tests | Implemented | `packages/core-domain/src/optimizer/__tests__/basket-optimizer.service.test.ts` (search, thresholds, tie-breaking, neutrality), `packages/application-api/src/basket/__tests__/basket-optimizer.controller.test.ts`, `tests/integration/basket-optimizer-api.test.ts`, `tests/integration/basket-calculator-consistency.test.ts` (optimizer/calculator equivalence for identical inputs) |
+| Advanced-features tests | Implemented | `packages/core-domain/src/reliability/__tests__/merchant-reliability-score.service.test.ts`, `packages/core-domain/src/ranking/__tests__/reliability-ranking-isolation.test.ts` (ranking accepts no score input), `packages/core-domain/src/declaration/__tests__/excise-declaration-guidance.test.ts`, `packages/application-api/src/reports/__tests__/`, `packages/application-api/src/merchants/__tests__/`, `packages/application-api/src/accounts/__tests__/account-scenarios.controller.test.ts` + `gdpr-scenario-lifecycle.test.ts`, `packages/data-platform/src/repositories/__tests__/saved-scenario-repository.test.ts`, `tests/integration/reports-api.test.ts` |
 
 **Testing principle**: golden-dataset tests use real engine implementations (plain classes implementing ports), not `vi.fn()` mocks. This ensures the tested behavior matches production behavior exactly.
 
@@ -466,4 +471,4 @@ Per the implementation plan's delivery phases:
 | MyTax            | Finnish Tax Administration's online tax service                                                                    |
 | ABV              | Alcohol by volume                                                                                                  |
 
-<!-- Last updated: 2026-08-27 — Phase 2B basket optimization (optimizer module, merchant terms, basket API + UI) -->
+<!-- Last updated: 2026-08-28 — Phase 2 advanced features (saved scenarios, report exports, merchant reliability scoring, declaration guidance; ADVANCED_FEATURES flag) -->
