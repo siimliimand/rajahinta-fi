@@ -10,6 +10,15 @@
  * Items whose category has no mapping are reported as per-item errors —
  * flagged for the correction queue, never silently assigned a fallback.
  *
+ * Currency conversion happens here, at ingestion (task 1.4, design
+ * D2): SEK prices are converted to EUR cents through the FX rate
+ * effective on the observation date (the fetch instant — the feed is a
+ * live snapshot), the original SEK amount stays on the record for
+ * display, and the FX dataset version is recorded as provenance. An
+ * offer with no effective SEK/EUR rate is rejected per-item with a
+ * recorded reason — the same errors surface as unmappable categories —
+ * never stored as a foreign amount pretending to be EUR.
+ *
  * The adapter handles pagination (if present) and reports per-item mapping
  * errors via the returned errors array — it never throws for recoverable
  * failures.
@@ -17,7 +26,12 @@
  * @module SystembolagetFeedAdapter
  */
 
-import { mapSourceCategory } from '@rajahinta/core-domain';
+import { Injectable, Optional } from '@nestjs/common';
+import {
+  FxRateDatasetService,
+  mapSourceCategory,
+  type ResolvedFxDatasetRate,
+} from '@rajahinta/core-domain';
 import type { IFeedAdapter, RawFeedRecord } from '../interfaces/feed-adapter.interface';
 
 // ---------------------------------------------------------------------------
@@ -50,12 +64,28 @@ interface SystembolagetProduct {
   apk?: string;
 }
 
+/** The Systembolaget list currency — the pair every conversion resolves. */
+const SOURCE_CURRENCY = 'SEK';
+
 // ---------------------------------------------------------------------------
 // Adapter
 // ---------------------------------------------------------------------------
 
+@Injectable()
 export class SystembolagetFeedAdapter implements IFeedAdapter {
   readonly merchantId = 'systembolaget';
+
+  constructor(
+    /**
+     * FX domain service used for the SEK→EUR conversion at ingestion.
+     * Optional only so the class can be constructed bare in tests that
+     * pin non-currency behaviour — with no service every priced offer
+     * is rejected as unconvertible (fail-closed, design D2). The
+     * module registration provides the real service.
+     */
+    @Optional()
+    private readonly fx?: FxRateDatasetService,
+  ) {}
 
   /**
    * Fetch the latest assortment from Systembolaget's JSON API.
@@ -94,9 +124,15 @@ export class SystembolagetFeedAdapter implements IFeedAdapter {
         return { records, errors };
       }
 
+      // One rate per fetch: the observation date is the fetch instant
+      // (live snapshot), so every offer in the batch converts at the
+      // same rate and shares one dataset-version provenance.
+      const observedAt = new Date();
+      const rate = await this.resolveSekEurRate(observedAt, errors);
+
       for (const item of products) {
         try {
-          records.push(this.mapToRecord(item));
+          records.push(this.mapToRecord(item, rate, observedAt));
         } catch (mapErr) {
           errors.push(
             `Failed to map product ${item.productId ?? '(unknown)'}: ${
@@ -120,13 +156,41 @@ export class SystembolagetFeedAdapter implements IFeedAdapter {
   // Private helpers
   // ---------------------------------------------------------------------------
 
+  /** Resolve the SEK→EUR rate effective on the observation date (or null). */
+  private async resolveSekEurRate(
+    observedAt: Date,
+    errors: string[],
+  ): Promise<ResolvedFxDatasetRate | null> {
+    if (this.fx === undefined) {
+      errors.push(
+        'No FX rate dataset service available — SEK offers cannot be converted',
+      );
+      return null;
+    }
+    try {
+      return await this.fx.resolveRate(SOURCE_CURRENCY, 'EUR', observedAt);
+    } catch (err) {
+      errors.push(
+        `FX rate resolution failed: ${
+          err instanceof Error ? err.message : 'Unknown error'
+        }`,
+      );
+      return null;
+    }
+  }
+
   /**
    * Map a single Systembolaget product to the canonical {@link RawFeedRecord}.
    *
-   * @throws when the source category has no canonical mapping — the
-   * per-item catch upstream reports it for the correction queue.
+   * @throws when the source category has no canonical mapping or the
+   * SEK price has no effective conversion — the per-item catch upstream
+   * reports it for the correction queue / rejection record.
    */
-  private mapToRecord(item: SystembolagetProduct): RawFeedRecord {
+  private mapToRecord(
+    item: SystembolagetProduct,
+    rate: ResolvedFxDatasetRate | null,
+    observedAt: Date,
+  ): RawFeedRecord {
     // SE→canonical normalization at ingestion (task 7.1). The tax-rule
     // category key is what the classification gate validates against and
     // the excise engine keys on — no placeholder, no fallback guess.
@@ -135,6 +199,19 @@ export class SystembolagetFeedAdapter implements IFeedAdapter {
       throw new Error(
         `Swedish category "${item.category}" has no canonical mapping — ` +
           'flagged for the correction queue',
+      );
+    }
+
+    // Conversion at ingestion (task 1.4, design D2). The original SEK
+    // amount stays on the record for display; the stored amount is EUR
+    // cents produced by a recorded conversion, or the offer is rejected.
+    const originalPriceCents =
+      item.price != null ? Math.round(item.price * 100) : 0;
+    if (item.price != null && rate === null) {
+      throw new Error(
+        `SEK price ${item.price} has no effective ${SOURCE_CURRENCY}/EUR rate on ` +
+          `${observedAt.toISOString().slice(0, 10)} — offer rejected ` +
+          '(unconvertible currency, design D2)',
       );
     }
 
@@ -152,8 +229,14 @@ export class SystembolagetFeedAdapter implements IFeedAdapter {
       regulatoryClassification: mapping.taxCategory,
       depositSystem: false,
       ean: null, // Systembolaget JSON API does not expose EAN
-      priceCents: item.price != null ? Math.round(item.price * 100) : 0,
-      currency: 'SEK',
+      priceCents:
+        item.price != null
+          ? Math.round(item.price * rate!.rate * 100)
+          : 0,
+      currency: 'EUR',
+      originalPriceCents,
+      originalCurrency: SOURCE_CURRENCY,
+      ...(item.price != null ? { fxDatasetVersion: rate!.dataset.versionLabel } : {}),
       availability: 'in_stock',
       sourceUrl: null,
     };

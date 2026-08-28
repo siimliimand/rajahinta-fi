@@ -5,18 +5,23 @@
  * abstract class that delegates to {@link PipelineOrchestratorService}
  * for the actual fetch-map-upsert-quality pipeline.
  *
- * The merchant config is looked up from the registered merchant set;
- * if none is found a minimal config is built from the provided URL
- * so the pipeline can still execute the governance gate and ingestion.
+ * Merchant configuration comes from the database-backed merchant
+ * registry (task 7.3 / task 7.2 leftover, design D7): the registry row
+ * IS the merchant's config. A merchant absent from the registry is not
+ * onboarded — the run fails closed with a per-merchant error instead
+ * of fabricating a config from thin air. The registry is re-read at
+ * run time, so a registry edit takes effect on the next job without a
+ * deploy; the sourceUrl on the job data is log context from enqueue
+ * time, not an override.
  *
  * @module PipelinePriceIngestionAdapter
  */
 
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { MerchantRegistryRepository } from '@rajahinta/data-platform';
 import { PriceIngestionService } from '../abstract/price-ingestion.service';
 import { PipelineOrchestratorService } from '../services/pipeline-orchestrator.service';
-import { MERCHANT_CONFIG_TOKEN } from '../config/merchants.config';
-import type { MerchantConfig } from '../config/merchants.config';
+import { merchantConfigFromRegistry } from '../interfaces/merchant-config.interface';
 
 @Injectable()
 export class PipelinePriceIngestionAdapter extends PriceIngestionService {
@@ -24,8 +29,7 @@ export class PipelinePriceIngestionAdapter extends PriceIngestionService {
 
   constructor(
     private readonly pipeline: PipelineOrchestratorService,
-    @Inject(MERCHANT_CONFIG_TOKEN)
-    private readonly merchantConfigs: MerchantConfig[],
+    private readonly merchantRegistry: MerchantRegistryRepository,
   ) {
     super();
   }
@@ -33,18 +37,32 @@ export class PipelinePriceIngestionAdapter extends PriceIngestionService {
   /**
    * Ingest prices for a merchant by running the full pipeline.
    *
-   * Looks up the merchant config by ID and delegates to
-   * {@link PipelineOrchestratorService.runForMerchant}.  If the merchant
-   * is not in the configured set, a minimal config is constructed so the
-   * pipeline can still execute (the governance gate will reject unknown
-   * merchants unless a governance record exists).
+   * Resolves the merchant's configuration from the registry and
+   * delegates to {@link PipelineOrchestratorService.runForMerchant}.
+   * The governance gate still applies inside the pipeline — registry
+   * presence makes a merchant KNOWN, permission comes from governance
+   * records (fail-closed).
    */
   async ingestMerchantPrices(
     merchantId: string,
-    sourceUrl: string,
+    _sourceUrl: string,
   ): Promise<{ productsIngested: number; errors: string[] }> {
-    const config = this.findConfig(merchantId, sourceUrl);
-    const report = await this.pipeline.runForMerchant(config);
+    const row = await this.merchantRegistry.findByMerchantId(merchantId);
+    if (row === null) {
+      const message =
+        `Merchant "${merchantId}" is not in the merchant registry — ` +
+          'onboard it (registry row + governance grant) before ingestion (D7)';
+      this.logger.error(message);
+      return { productsIngested: 0, errors: [message] };
+    }
+
+    const derived = merchantConfigFromRegistry(row);
+    if ('error' in derived) {
+      this.logger.error(derived.error);
+      return { productsIngested: 0, errors: [derived.error] };
+    }
+
+    const report = await this.pipeline.runForMerchant(derived.config);
 
     return {
       productsIngested: report.recordsAdded + report.recordsUpdated,
@@ -55,40 +73,15 @@ export class PipelinePriceIngestionAdapter extends PriceIngestionService {
   /**
    * Schedule a recurring price refresh.
    *
-   * Phase 1: scheduling is managed by the external BullMQ job queue
-   * and the {@link JobsSchedulerService}.  This method logs the request
-   * and is a no-op — the worker framework drives the schedule.
+   * Scheduling is managed by the external BullMQ job queue and the
+   * {@code JobsSchedulerService} (per-merchant jobs from the registry,
+   * task 7.3). This method logs the request and is a no-op.
    */
   scheduleRefresh(_merchantId: string, _cronExpression: string): void {
     this.logger.warn(
-      `scheduleRefresh is a no-op in Phase 1; ` +
-        `scheduling is managed externally via BullMQ. ` +
+      `scheduleRefresh is a no-op; scheduling is managed externally via ` +
+        `BullMQ per-merchant jobs driven by the merchant registry. ` +
         `Called for merchant="${_merchantId}" with cron="${_cronExpression}"`,
     );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Private helpers
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Find the merchant config for the given ID, or build a minimal one
-   * from the provided source URL.
-   */
-  private findConfig(merchantId: string, sourceUrl: string): MerchantConfig {
-    const existing = this.merchantConfigs.find(
-      (c) => c.merchantId === merchantId,
-    );
-    if (existing) {
-      return { ...existing, feedUrl: sourceUrl || existing.feedUrl };
-    }
-    return {
-      merchantId,
-      name: merchantId,
-      country: 'FI',
-      feedUrl: sourceUrl,
-      feedFormat: 'json',
-      pollingIntervalMs: 3_600_000,
-    };
   }
 }

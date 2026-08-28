@@ -166,6 +166,15 @@ export abstract class AccountRepository {
   abstract findAllUserIds(): Promise<string[]>;
 
   /**
+   * Persist a verified email on an account (task 2.4 / FIX-E, change
+   * technical-assessment-remediation) — the anonymous-upgrade write that
+   * replaces the placeholder address on the documented verified-email
+   * column. Throws when no account exists for the userId: a silent
+   * no-op would lose the verification.
+   */
+  abstract setVerifiedEmail(userId: string, email: string): Promise<void>;
+
+  /**
    * Irreversibly anonymize an account — replaces identifiers with
    * non-reversible pseudonyms, cascades to saved baskets, and retains
    * the anonymized skeleton row for referential integrity.
@@ -366,6 +375,12 @@ export abstract class FxRateRepository {
   abstract findDatasetByVersionLabel(
     versionLabel: string,
   ): Promise<FxRateDatasetRecord | null>;
+
+  /**
+   * Versions still awaiting operator confirmation (the review queue) —
+   * oldest first so review tooling surfaces the oldest pending dataset.
+   */
+  abstract findPendingDatasets(): Promise<FxRateDatasetRecord[]>;
 
   /** The PUBLISHED dataset whose effective window covers {@code asOf} (most recent wins). */
   abstract findPublishedDatasetEffectiveOn(

@@ -94,6 +94,8 @@ class UnusedAccountRepository implements AccountRepository {
     return null;
   }
   async updateLastActive() {}
+  // FIX-E: email-verification write — unused in these tests, satisfies the contract.
+  async setVerifiedEmail(_userId: string, _email: string): Promise<void> {}
   async delete() {}
   async findAllUserIds(): Promise<string[]> {
     return [];

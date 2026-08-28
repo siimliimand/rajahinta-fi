@@ -145,6 +145,9 @@ class FakeAccountRepository extends AccountRepository {
     if (row) row.lastActiveAt = new Date();
   }
 
+  // FIX-E: email-verification write — unused in these tests, satisfies the contract.
+  async setVerifiedEmail(_userId: string, _email: string): Promise<void> {}
+
   async delete(userId: string): Promise<void> {
     this.db.deleteAccount(userId);
   }

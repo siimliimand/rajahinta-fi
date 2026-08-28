@@ -18,7 +18,11 @@
  * @module DataPlatformModule
  */
 import { Module } from '@nestjs/common';
-import { TAX_RULE_REPOSITORY_PORT, CORRECTION_REPOSITORY_PORT } from '@rajahinta/core-domain';
+import {
+  TAX_RULE_REPOSITORY_PORT,
+  CORRECTION_REPOSITORY_PORT,
+  FX_RATE_DATASET_REPOSITORY_PORT,
+} from '@rajahinta/core-domain';
 import { DrizzleModule } from './db/drizzle.module';
 import {
   ProductRepository,
@@ -53,6 +57,7 @@ import { DrizzleAggregationWatermarkRepository } from './repositories/aggregatio
 import { DrizzleMerchantTermsRepository } from './repositories/merchant-terms.repository';
 import { DrizzleBasketCalculationRecordRepository } from './repositories/basket-calculation-record.repository';
 import { DrizzleFxRateRepository } from './repositories/fx-rate.repository';
+import { FxRateDatasetRepositoryAdapter } from './repositories/fx-rate-port.adapter';
 import { DrizzleSessionRepository } from './repositories/session.repository';
 import { DrizzleAuditEventRepository } from './repositories/audit-event.repository';
 import { DrizzleMerchantRegistryRepository } from './repositories/merchant-registry.repository';
@@ -157,6 +162,16 @@ import {
       provide: FxRateRepository,
       useClass: DrizzleFxRateRepository,
     },
+    // Domain-port adapter for FX-rate datasets (task 1.3) — binds the
+    // Drizzle repository onto the core-domain FX port following the
+    // TAX_RULE_REPOSITORY_PORT precedent above. Consumers (the FX
+    // ingestion job, the Systembolaget conversion at ingestion) inject
+    // FX_RATE_DATASET_REPOSITORY_PORT / FxRateDatasetService via this
+    // export.
+    {
+      provide: FX_RATE_DATASET_REPOSITORY_PORT,
+      useClass: FxRateDatasetRepositoryAdapter,
+    },
     // Server-issued opaque session tokens, hashed at rest (task 2.1) —
     // consumed by SessionTokenService in application-api/accounts; the
     // auth-guard migration itself is task 2.2.
@@ -199,6 +214,7 @@ import {
     DrizzleBasketCalculationRecordRepository,
     DrizzleMerchantReliabilityRepository,
     DrizzleFxRateRepository,
+    FxRateDatasetRepositoryAdapter,
     DrizzleSessionRepository,
     DrizzleMerchantRegistryRepository,
     DrizzleClickCounterSnapshotRepository,
@@ -227,6 +243,7 @@ AggregationWatermarkRepository,
     // Domain-port adapter tokens
     TAX_RULE_REPOSITORY_PORT,
     CORRECTION_REPOSITORY_PORT,
+    FX_RATE_DATASET_REPOSITORY_PORT,
     // Concrete implementations — inject directly when needed
     DrizzleProductRepository,
     DrizzleTaxRateRepository,
@@ -244,6 +261,7 @@ AggregationWatermarkRepository,
     DrizzleBasketCalculationRecordRepository,
     DrizzleMerchantReliabilityRepository,
     DrizzleFxRateRepository,
+    FxRateDatasetRepositoryAdapter,
     DrizzleSessionRepository,
     DrizzleMerchantRegistryRepository,
     DrizzleClickCounterSnapshotRepository,

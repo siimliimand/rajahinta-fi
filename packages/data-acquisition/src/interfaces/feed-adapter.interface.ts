@@ -30,9 +30,28 @@ export interface RawFeedRecord {
   readonly regulatoryClassification: string;
   readonly depositSystem: boolean;
   readonly ean: string | null;
-  /** Retail price in the smallest currency unit (cents). */
+  /**
+   * Retail price in EUR cents — the canonical stored amount. Non-EUR
+   * feed prices MUST be converted at ingestion (task 1.4, design D2):
+   * a foreign-currency amount never enters this field.
+   */
   readonly priceCents: number;
-  readonly currency: string;
+  /** Canonical price currency — always 'EUR' after ingestion conversion. */
+  readonly currency: 'EUR';
+  /**
+   * Original list price in the source currency's smallest unit, kept
+   * for display (task 1.4, design D2). Equal to {@link priceCents}
+   * for EUR-native feeds; the pre-conversion amount otherwise.
+   */
+  readonly originalPriceCents: number;
+  /** Source-market currency of {@link originalPriceCents} (ISO 4217). */
+  readonly originalCurrency: string;
+  /**
+   * FX dataset version used for the conversion — present exactly when
+   * the original currency was not EUR; absent means no conversion
+   * happened (provenance per the fx-rate-dataset spec).
+   */
+  readonly fxDatasetVersion?: string;
   readonly availability: string;
   /** Direct URL to the product page. */
   readonly sourceUrl: string | null;

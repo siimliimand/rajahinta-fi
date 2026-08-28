@@ -81,6 +81,7 @@ export { DrizzleAggregationWatermarkRepository } from './repositories/aggregatio
 export { DrizzleMerchantTermsRepository } from './repositories/merchant-terms.repository';
 export { DrizzleBasketCalculationRecordRepository } from './repositories/basket-calculation-record.repository';
 export { DrizzleFxRateRepository } from './repositories/fx-rate.repository';
+export { FxRateDatasetRepositoryAdapter } from './repositories/fx-rate-port.adapter';
 export { DrizzleSessionRepository } from './repositories/session.repository';
 export { DrizzleAuditEventRepository } from './repositories/audit-event.repository';
 export { DrizzleMerchantRegistryRepository } from './repositories/merchant-registry.repository';

@@ -52,6 +52,8 @@ class InMemoryAccountRows implements AccountRepository {
     return this.rows.find((r) => r.userId === userId) ?? null;
   }
   async updateLastActive() {}
+  // FIX-E: email-verification write — unused in these tests, satisfies the contract.
+  async setVerifiedEmail(_userId: string, _email: string): Promise<void> {}
   async delete() {}
   async findAllUserIds() {
     return this.rows.map((r) => r.userId);

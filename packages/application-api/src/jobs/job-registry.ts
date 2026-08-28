@@ -65,6 +65,17 @@ export const JOB_REGISTRY: Record<QueueName, QueueConfig> = {
     },
     concurrency: 1,
   },
+
+  [QUEUES.FX_DATASET_REVIEW]: {
+    name: QUEUES.FX_DATASET_REVIEW,
+    defaultJobOptions: {
+      attempts: 2,
+      backoff: { type: 'fixed', delay: 120_000 },
+      removeOnComplete: { age: 604_800 },   // keep longer for audit trail
+      removeOnFail: { age: 2_592_000 },     // 30 days
+    },
+    concurrency: 1,
+  },
 } as const;
 
 /** Convenience: get config for a named queue. */

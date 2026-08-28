@@ -36,7 +36,7 @@ import {
   OFFER_CHANGE_HOOK_TOKEN,
   type IOfferChangeHook,
 } from '../interfaces/offer-change-hook.interface';
-import type { MerchantConfig } from '../config/merchants.config';
+import type { MerchantConfig } from '../interfaces/merchant-config.interface';
 
 /**
  * Result of the governance permission gate check.
@@ -188,9 +188,12 @@ export class PipelineOrchestratorService {
     }
 
     // -- Step 2: Map ----------------------------------------------------------
+    // The registry row's market flows onto the offer (replacing the
+    // Phase 1 'DE' placeholder) — task 7.3's registry consumption.
     const mapped = this.dataMapping.mapBatch(
       fetchResult.records,
       config.merchantId,
+      config.country,
     );
 
     // -- Step 3: Lint ---------------------------------------------------------

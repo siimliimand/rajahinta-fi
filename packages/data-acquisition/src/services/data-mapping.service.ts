@@ -26,12 +26,21 @@ export class DataMappingService {
   /**
    * Map a single raw feed record to upsert-ready product + offer inputs.
    *
-   * @param record     Normalised feed record from the merchant adapter.
+   * @param record     Normalised feed record from the merchant adapter
+   *                   (currency already converted to EUR at ingestion,
+   *                   task 1.4 — the original amount stays on the record
+   *                   for display consumers).
    * @param merchantId Merchant identifier to stamp on the retail offer.
+   * @param country    Merchant market (ISO 3166-1 alpha-2) from the
+   *                   merchant registry row driving this run — what the
+   *                   offer's country field records. Optional only for
+   *                   backward compatibility with direct unit callers;
+   *                   the pipeline always passes it.
    */
   mapToProductAndOffer(
     record: RawFeedRecord,
     merchantId: string,
+    country?: string,
   ): MappedPair {
     // Category + regulatory classification come from the feed adapter's
     // source-category normalization (task 7.1) — the adapter maps the
@@ -56,7 +65,9 @@ export class DataMappingService {
 
     const offerInput: Omit<UpsertOfferInput, 'productId'> = {
       merchant: merchantId,
-      country: 'DE', // placeholder — derived from merchant config
+      // Registry-backed merchant market; the Finnish market default
+      // matches the schema's own documented default for direct callers.
+      country: country ?? 'FI',
       priceCents: record.priceCents,
       currency: record.currency,
       availability: 'in_stock',
@@ -74,7 +85,8 @@ export class DataMappingService {
   mapBatch(
     records: RawFeedRecord[],
     merchantId: string,
+    country?: string,
   ): MappedPair[] {
-    return records.map((r) => this.mapToProductAndOffer(r, merchantId));
+    return records.map((r) => this.mapToProductAndOffer(r, merchantId, country));
   }
 }

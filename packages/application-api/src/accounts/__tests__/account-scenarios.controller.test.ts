@@ -92,6 +92,9 @@ class InMemoryAccountRows extends AccountRepository {
     if (row) row.lastActiveAt = new Date();
   }
 
+  // FIX-E: email-verification write — unused in these tests, satisfies the contract.
+  async setVerifiedEmail(_userId: string, _email: string): Promise<void> {}
+
   async delete(userId: string): Promise<void> {
     const index = this.rows.findIndex((r) => r.userId === userId);
     if (index !== -1) this.rows.splice(index, 1);

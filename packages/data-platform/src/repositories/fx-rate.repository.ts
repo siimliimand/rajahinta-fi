@@ -74,6 +74,15 @@ export class DrizzleFxRateRepository extends FxRateRepository {
   }
 
   /** @inheritdoc */
+  async findPendingDatasets(): Promise<FxRateDatasetRecord[]> {
+    return this.db
+      .select()
+      .from(fxRateDatasets)
+      .where(eq(fxRateDatasets.status, 'PENDING_CONFIRMATION'))
+      .orderBy(asc(fxRateDatasets.createdAt));
+  }
+
+  /** @inheritdoc */
   async findPublishedDatasetEffectiveOn(
     asOf: Date,
   ): Promise<FxRateDatasetRecord | null> {

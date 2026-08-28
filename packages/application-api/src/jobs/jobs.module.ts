@@ -9,6 +9,7 @@ import { PriceIngestionWorker } from './workers/price-ingestion.worker';
 import { TransportRateRefreshWorker } from './workers/transport-rate-refresh.worker';
 import { TaxDatasetReviewWorker } from './workers/tax-dataset-review.worker';
 import { TimeSeriesAggregationWorker } from './workers/time-series-aggregation.worker';
+import { FxDatasetReviewWorker } from './workers/fx-dataset-review.worker';
 import { AccountRetentionWorker } from './workers/account-retention.worker';
 import { CalculationRecordRetentionWorker } from './workers/calculation-record-retention.worker';
 
@@ -42,6 +43,13 @@ import { CalculationRecordRetentionWorker } from './workers/calculation-record-r
     TransportRateRefreshWorker,
     TaxDatasetReviewWorker,
     TimeSeriesAggregationWorker,
+
+    // FX dataset review (task 1.3, change
+    // technical-assessment-remediation) — recurring ECB reference-rate
+    // check that creates PENDING_CONFIRMATION datasets; resolution and
+    // persistence come from DataAcquisitionModule +
+    // DataPlatformModule's FX port adapter. Never publishes.
+    FxDatasetReviewWorker,
 
     // Cron-only workers — direct @Cron() decorator (no Bull queue)
     AccountRetentionWorker,
