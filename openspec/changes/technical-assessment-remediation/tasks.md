@@ -93,7 +93,7 @@
 ## 12. Additions: console, browser e2e, upgrades (add 4, add 6; replace: dependency generations)
 
 - [x] 12.1 Operator console — authenticated UI + API for governance permission grants, tax-rate version confirmation, and the correction queue, every action audited <!-- agent: platform-engineer.build, depends_on: [7.2], touches: [apps/frontend/src/app/ops/**, packages/application-api/src/**] -->
-- [ ] 12.2 Playwright browser e2e — age gate, calculator flow, compare sorting, account export journeys in CI <!-- agent: platform-engineer.build, depends_on: [9.1, 9.3], touches: [tests/e2e-browser/**] -->
+- [x] 12.2 Playwright browser e2e — age gate, calculator flow, compare sorting, account export journeys in CI <!-- agent: platform-engineer.build, depends_on: [9.1, 9.3], touches: [tests/e2e-browser/**] -->
 - [ ] 12.3 Dependency upgrades — Next.js 14 to 15, React 18 to 19, Vitest 2 to 3; run e2e and load suites after <!-- agent: platform-engineer.build, depends_on: [12.2], touches: [package.json, apps/frontend/package.json, apps/frontend/**] -->
 
 ## 13. Verification

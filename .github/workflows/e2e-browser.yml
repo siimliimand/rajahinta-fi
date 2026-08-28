@@ -1,0 +1,91 @@
+# =============================================================================
+# E2E browser — Playwright journeys against the real composed stack
+#
+# Boots the full stack (PostgreSQL 16 + TimescaleDB, Redis 7, Drizzle
+# migrations, staging seed + fixture correction, NestJS backend, Next.js
+# frontend, CORS shim) via tests/e2e-browser/boot-stack.sh — the same
+# script used locally — then runs the four browser journeys: age gate,
+# calculator flow, compare sorting, account export.
+#
+# Nothing is skipped: the suite runs against real docker-compose services
+# (postgres+timescaledb, redis) and real dev servers, exactly as locally.
+# The CORS shim (tests/e2e-browser/cors-shim.mjs) is a documented
+# workaround for a reported backend defect — see the file header.
+# =============================================================================
+
+name: E2E browser
+
+on:
+  push:
+    branches: [master, 'feature/*']
+  pull_request:
+    branches: [master]
+
+env:
+  CI: true
+  NODE_VERSION: '22'
+  PNPM_VERSION: '9'
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  browser-e2e:
+    name: Browser E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Boot full stack (timescaledb, redis, migrations, seed, backend, frontend)
+        run: bash tests/e2e-browser/boot-stack.sh
+
+      - name: Run browser E2E suite
+        run: pnpm run test:e2e-browser
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e-report
+          path: |
+            tests/e2e-browser/playwright-report/
+            tests/e2e-browser/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Dump stack logs
+        if: failure()
+        run: |
+          for f in /tmp/rajahinta-e2e-browser/backend.log \
+                   /tmp/rajahinta-e2e-browser/frontend.log \
+                   /tmp/rajahinta-e2e-browser/shim.log; do
+            echo "===== $f (tail 100) ====="
+            tail -n 100 "$f" || true
+          done
+
+      - name: Tear down stack
+        if: always()
+        run: bash tests/e2e-browser/boot-stack.sh --down
