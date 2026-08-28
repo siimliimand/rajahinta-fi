@@ -50,10 +50,22 @@ export interface RetailOfferRecord {
   readonly country: string;
   /** FK to product_master. */
   readonly productId: number;
-  /** Retail price in smallest currency unit (cents). */
+  /** Retail price in EUR cents — the canonical stored amount (design D2). */
   readonly priceCents: number;
-  /** Price currency — default EUR. */
+  /** Canonical price currency — always 'EUR' after ingestion conversion. */
   readonly currency: string;
+  /**
+   * Original list price in the source currency's smallest unit, kept for
+   * display. Null when the row carries no conversion provenance.
+   */
+  readonly originalPriceCents: number | null;
+  /** Source-market currency of originalPriceCents (ISO 4217). */
+  readonly originalCurrency: string | null;
+  /**
+   * FX dataset version that produced the conversion — present exactly
+   * when the original currency was not EUR.
+   */
+  readonly fxDatasetVersion: string | null;
   /** Stock status — filters out-of-stock from comparisons. */
   readonly availability: string;
   /** Provenance link to source product page. */

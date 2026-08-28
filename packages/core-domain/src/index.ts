@@ -319,6 +319,9 @@ export type {
   CalculatorRetailOfferData,
   CostCategory,
   ItemizedCost,
+  OfferExclusion,
+  OfferExclusionReason,
+  OriginalPrice,
   CreateCalculationRecordInput,
   Disclaimer,
   TransportArrangement,
@@ -328,6 +331,7 @@ export type {
 export {
   PRODUCT_DATA_PORT,
   CALCULATION_RECORD_PORT,
+  hasValidEurConversion,
   ClassificationGateRejectionError,
   ProductNotFoundError,
   NoRetailOffersError,

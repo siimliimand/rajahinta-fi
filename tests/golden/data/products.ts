@@ -6,6 +6,10 @@
  * should never change without a version bump and a corresponding update
  * to every test assertion in golden-dataset.test.ts.
  *
+ * @version 2.1
+ *   2026-08-28: mixed-currency case added (task 1.5/1.6, design D2) —
+ *   SEK-converted, EUR-native, and unconvertible offers for product 13.
+ *   otherCharges removed from every expectation (task 10.3, design D3).
  * @version 2.0
  *   Updated 2024-08-26: rates aligned with v1.0-2024 seed
  *   (packages/data-platform/src/seed/tax-rules.seed.ts).
@@ -28,7 +32,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 /** Bump this when adding scenarios or changing expected values. */
-export const GOLDEN_DATASET_VERSION = '2.0' as const;
+export const GOLDEN_DATASET_VERSION = '2.1' as const;
 
 // ---------------------------------------------------------------------------
 // Product definitions
@@ -327,6 +331,67 @@ export const OFFER_NULL_DEPOSIT: CalculatorRetailOfferData = {
   reliabilityStatus: 'EXACT',
 };
 
+/**
+ * Product 13 — Beer profile for the mixed-currency case (task 1.5/1.6,
+ * design D2): identical tax shape to product 1, offered across
+ * currencies. Same excise (91 ¢) and container duty (0 ¢) expectations
+ * as Case 1 apply per unit.
+ */
+export const PRODUCT_BEER_SEK: CalculatorProductData = {
+  id: 13,
+  regulatoryClassification: 'beer',
+  category: 'beer',
+  volumeLitres: 0.5,
+  alcoholByVolume: 0.05,
+  containerType: 'can',
+  depositSystemStatus: true,
+  weightKg: 0.55,
+  normalizedName: 'Svensk Exportöl 5%',
+};
+
+/**
+ * SEK offer converted at ingestion: 22.64 SEK at ECB EUR/SEK 11.32
+ * → exactly 2.00 EUR → 200 cents. Original amount and FX dataset
+ * version ride along as provenance (fx-rate-dataset spec delta).
+ */
+export const OFFER_BEER_SEK_CONVERTED: CalculatorRetailOfferData = {
+  id: 112,
+  priceCents: 200,
+  currency: 'EUR',
+  merchant: 'systembolaget',
+  country: 'SE',
+  reliabilityStatus: 'VERIFIED',
+  originalPriceCents: 2264,
+  originalCurrency: 'SEK',
+  fxDatasetVersion: 'ecb-2026-08-27.1',
+};
+
+/** EUR-native reference offer for the same product — pricier, honest. */
+export const OFFER_BEER_EUR_NATIVE: CalculatorRetailOfferData = {
+  id: 113,
+  priceCents: 260,
+  currency: 'EUR',
+  merchant: 'beverage-de',
+  country: 'DE',
+  reliabilityStatus: 'VERIFIED',
+};
+
+/**
+ * Unconvertible offer: a raw SEK amount that leaked through as if it
+ * were cents. Cheapest of the three — the exact trap task 1.5 exists to
+ * close. Must be excluded with a visible reason, never summed.
+ */
+export const OFFER_BEER_UNCONVERTIBLE_SEK: CalculatorRetailOfferData = {
+  id: 114,
+  priceCents: 90,
+  currency: 'SEK',
+  merchant: 'shop-se-rogue',
+  country: 'SE',
+  reliabilityStatus: 'ESTIMATED',
+  originalPriceCents: 900,
+  originalCurrency: 'SEK',
+};
+
 // ---------------------------------------------------------------------------
 // Lookup helpers
 // ---------------------------------------------------------------------------
@@ -345,6 +410,7 @@ export const PRODUCT_BY_ID: Record<number, CalculatorProductData> = {
   [PRODUCT_NO_DEPOSIT.id]: PRODUCT_NO_DEPOSIT,
   [PRODUCT_ZERO_ABV.id]: PRODUCT_ZERO_ABV,
   [PRODUCT_NULL_DEPOSIT.id]: PRODUCT_NULL_DEPOSIT,
+  [PRODUCT_BEER_SEK.id]: PRODUCT_BEER_SEK,
 };
 
 /** Map product ID to its retail offers. */
@@ -361,4 +427,9 @@ export const OFFERS_BY_PRODUCT_ID: Record<number, CalculatorRetailOfferData[]> =
   [PRODUCT_NO_DEPOSIT.id]: [OFFER_NO_DEPOSIT],
   [PRODUCT_ZERO_ABV.id]: [OFFER_ZERO_ABV],
   [PRODUCT_NULL_DEPOSIT.id]: [OFFER_NULL_DEPOSIT],
+  [PRODUCT_BEER_SEK.id]: [
+    OFFER_BEER_SEK_CONVERTED,
+    OFFER_BEER_EUR_NATIVE,
+    OFFER_BEER_UNCONVERTIBLE_SEK,
+  ],
 };

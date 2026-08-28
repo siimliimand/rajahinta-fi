@@ -12,8 +12,8 @@
 - [x] 1.2 Create FX dataset domain service at `packages/core-domain/src/fx/` — version lifecycle, manual-confirmation publication flow (never auto-publish), rate resolution by effective date <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [packages/core-domain/src/fx/**] -->
 - [x] 1.3 Add FX ingestion job + review workflow — recurring check creates a confirmation task per the governance pattern; configurable source, ECB reference rates default (D2) <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [packages/application-api/src/jobs/**, packages/data-acquisition/src/**] -->
 - [x] 1.4 Convert at ingestion in the Systembolaget adapter — SEK to EUR cents via the rate effective on the observation date, dataset version recorded as provenance, original amount/currency kept for display, unconvertible offers rejected with reason <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [packages/data-acquisition/src/adapters/systembolaget.adapter.ts] -->
-- [ ] 1.5 Calculator sums only converted EUR cents — unconvertible offers excluded with a visible reason on the result; original currency surfaced for display <!-- agent: platform-engineer.build, depends_on: [1.4], touches: [packages/core-domain/src/calculator/**] -->
-- [ ] 1.6 FX tests — provenance traceability, unconvertible rejection, mixed-currency golden case, cache invalidation on FX dataset version change <!-- agent: platform-engineer.build, depends_on: [1.4, 1.5], touches: [packages/core-domain/src/fx/__tests__/**, packages/data-acquisition/src/adapters/__tests__/**] -->
+- [x] 1.5 Calculator sums only converted EUR cents — unconvertible offers excluded with a visible reason on the result; original currency surfaced for display <!-- agent: platform-engineer.build, depends_on: [1.4], touches: [packages/core-domain/src/calculator/**] -->
+- [x] 1.6 FX tests — provenance traceability, unconvertible rejection, mixed-currency golden case, cache invalidation on FX dataset version change <!-- agent: platform-engineer.build, depends_on: [1.4, 1.5], touches: [packages/core-domain/src/fx/__tests__/**, packages/data-acquisition/src/adapters/__tests__/**] -->
 
 ## 2. Session integrity (finding 2, add 1)
 
@@ -59,7 +59,7 @@
 - [x] 7.3 Scheduler enqueues one job per permitted merchant from the registry with per-merchant dedupe keys, backoff, and monitoring; remove the catch-all `*` job <!-- agent: platform-engineer.build, depends_on: [7.2], touches: [packages/application-api/src/jobs/**] -->
 - [x] 7.4 Implement a real carrier transport source (Posti first, D6) through the governance-gated pipeline replacing the no-op adapter; alert when the newest transport offer exceeds the 7-day threshold <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-acquisition/src/adapters/pipeline-transport-rate.adapter.ts, packages/application-api/src/jobs/**] -->
 - [x] 7.5 Add the Alko adapter (D7) — domestic reference feed through the governance gate with a golden dataset <!-- agent: platform-engineer.build, depends_on: [7.2], touches: [packages/data-acquisition/src/adapters/**] -->
-- [ ] 7.6 Ingestion tests — gate rejection of placeholder classifications, SE category mapping, per-merchant scheduling, carrier fixtures, Alko golden dataset <!-- agent: platform-engineer.build, depends_on: [7.1, 7.3, 7.4, 7.5], touches: [packages/data-acquisition/src/**/__tests__/**] -->
+- [x] 7.6 Ingestion tests — gate rejection of placeholder classifications, SE category mapping, per-merchant scheduling, carrier fixtures, Alko golden dataset <!-- agent: platform-engineer.build, depends_on: [7.1, 7.3, 7.4, 7.5], touches: [packages/data-acquisition/src/**/__tests__/**] -->
 
 ## 8. Data lifecycle (findings 17, 18)
 
@@ -80,7 +80,7 @@
 
 - [x] 10.1 Resolve tier from the `accounts.tier` column; env vars demoted to a global test override; tier-transition groundwork for billing <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/core-domain/src/entitlement/entitlement.service.ts] -->
 - [x] 10.2 Basket optimizer — test pinning the input caps plus a total-combinations guard returning a clean 422 when exceeded <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/core-domain/src/optimizer/services/basket-optimizer.service.ts] -->
-- [ ] 10.3 Remove the `otherCharges` dead field from the API shape (D3) <!-- agent: platform-engineer.fast, depends_on: [1.5], touches: [packages/core-domain/src/calculator/landed-cost-calculator.service.ts] -->
+- [x] 10.3 Remove the `otherCharges` dead field from the API shape (D3) <!-- agent: platform-engineer.fast, depends_on: [1.5], touches: [packages/core-domain/src/calculator/landed-cost-calculator.service.ts] -->
 
 ## 11. Infra + repo hygiene (finding 19; low items)
 

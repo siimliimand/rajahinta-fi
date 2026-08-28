@@ -326,3 +326,99 @@ describe('FxRateDatasetService.listPendingDatasets', () => {
     expect(pending.map((d) => d.versionLabel)).toEqual(['b']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Provenance traceability (task 1.6): an offer converted at ingestion
+// records the dataset version label; that label must resolve back to the
+// exact dataset record that produced the rate — offer → version label →
+// dataset row, no gaps.
+// ---------------------------------------------------------------------------
+
+describe('FxRateDatasetService — provenance traceability', () => {
+  it('a resolved rate names a dataset version that resolves back to the same record', async () => {
+    const { service } = createService();
+    const created = await service.createPendingDataset(
+      payload({ rates: cleanRates() }),
+    );
+    await service.confirmPublication(created.id, 'operator@rajahinta.fi');
+
+    const resolved = await service.resolveRate(
+      'SEK',
+      'EUR',
+      new Date('2026-08-28T12:00:00Z'),
+    );
+    expect(resolved).not.toBeNull();
+
+    // The label carried on converted offers resolves to the dataset row.
+    const traced = await service.getDatasetByVersion(
+      resolved!.dataset.versionLabel,
+    );
+    expect(traced).not.toBeNull();
+    expect(traced!.id).toBe(resolved!.dataset.id);
+    expect(traced!.versionLabel).toBe('ecb-2026-08-27.1');
+    expect(traced!.status).toBe('PUBLISHED');
+    expect(traced!.sourceName).toBe('ecb-reference-rates');
+    expect(traced!.confirmedBy).toBe('operator@rajahinta.fi');
+  });
+
+  it('the rate entries of the traced version reproduce the conversion', async () => {
+    const { repo, service } = createService();
+    const created = await service.createPendingDataset(
+      payload({ rates: cleanRates() }),
+    );
+    await service.confirmPublication(created.id, 'op');
+
+    const resolved = await service.resolveRate(
+      'SEK',
+      'EUR',
+      new Date('2026-08-28T12:00:00Z'),
+    );
+    const entries = await repo.findRatesForDataset(resolved!.dataset.id);
+
+    // The stored EUR/SEK entry inverted reproduces the SEK→EUR rate the
+    // offer converted with — the audit trail recomputes the number.
+    const eurSek = entries.find(
+      (e) => e.baseCurrency === 'EUR' && e.quoteCurrency === 'SEK',
+    );
+    expect(eurSek).toBeDefined();
+    expect(1 / eurSek!.rate).toBeCloseTo(resolved!.rate, 12);
+  });
+
+  it('historical versions stay traceable after a newer version is published', async () => {
+    const { service } = createService();
+    const jan = await service.createPendingDataset(
+      payload({
+        versionLabel: 'ecb-2026-01-01.1',
+        referenceDate: '2026-01-01',
+        effectiveFrom: new Date('2026-01-01T16:00:00Z'),
+        effectiveTo: new Date('2026-02-01T16:00:00Z'),
+        rates: [{ baseCurrency: 'EUR', quoteCurrency: 'SEK', rate: 11.0 }],
+      }),
+    );
+    await service.confirmPublication(jan.id, 'op');
+    const janResolved = await service.resolveRate(
+      'SEK',
+      'EUR',
+      new Date('2026-01-15T12:00:00Z'),
+    );
+
+    const feb = await service.createPendingDataset(
+      payload({
+        versionLabel: 'ecb-2026-02-01.1',
+        referenceDate: '2026-02-01',
+        effectiveFrom: new Date('2026-02-01T16:00:00Z'),
+        effectiveTo: null,
+        rates: [{ baseCurrency: 'EUR', quoteCurrency: 'SEK', rate: 11.5 }],
+      }),
+    );
+    await service.confirmPublication(feb.id, 'op');
+
+    // The January provenance still resolves after February went live —
+    // a past observation's conversion stays explainable.
+    const traced = await service.getDatasetByVersion(
+      janResolved!.dataset.versionLabel,
+    );
+    expect(traced!.id).toBe(jan.id);
+    expect(traced!.effectiveTo).not.toBeNull();
+  });
+});

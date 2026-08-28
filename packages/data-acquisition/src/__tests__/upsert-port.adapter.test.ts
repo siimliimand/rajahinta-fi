@@ -15,8 +15,13 @@ import type { DrizzleDatabase } from '@rajahinta/data-platform';
 /**
  * Chainable db stub: every builder method returns the stub; awaiting it
  * resolves the next queued value (select result first, insert result second).
+ * `onValues` captures the payload handed to `.values()` so tests can pin
+ * what the adapter actually persists.
  */
-function createDbStub(awaitedResults: unknown[]): DrizzleDatabase {
+function createDbStub(
+  awaitedResults: unknown[],
+  onValues?: (payload: unknown) => void,
+): DrizzleDatabase {
   let idx = 0;
   const stub: unknown = new Proxy(
     {},
@@ -27,6 +32,12 @@ function createDbStub(awaitedResults: unknown[]): DrizzleDatabase {
           idx++;
           return (resolve: unknown, reject: unknown) =>
             Promise.resolve(value).then(resolve as never, reject as never);
+        }
+        if (prop === 'values') {
+          return (payload: unknown) => {
+            onValues?.(payload);
+            return stub;
+          };
         }
         if (typeof prop !== 'string') return undefined;
         return () => stub;
@@ -43,6 +54,9 @@ function offerInput(overrides: Partial<UpsertOfferInput> = {}): UpsertOfferInput
     productId: 7,
     priceCents: 1499,
     currency: 'EUR',
+    originalPriceCents: 16900,
+    originalCurrency: 'SEK',
+    fxDatasetVersion: 'ecb-2026-08-27.1',
     availability: 'in_stock',
     sourceUrl: 'https://example.com/p7',
     observedAt: new Date('2026-08-26T10:00:00Z'),
@@ -80,5 +94,48 @@ describe('DrizzleUpsertRepository.upsertOffer — offer-level change detection',
     const result = await repo.upsertOffer(offerInput({ priceCents: 1499 }));
 
     expect(result).toEqual({ offerId: 902, changed: false });
+  });
+
+  it('persists the conversion-provenance columns alongside the EUR cents (FIX-F)', async () => {
+    const inserted: unknown[] = [];
+    const repo = new DrizzleUpsertRepository(
+      createDbStub([[], [{ id: 903 }]], (payload) => inserted.push(payload)),
+    );
+
+    await repo.upsertOffer(offerInput());
+
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toEqual(
+      expect.objectContaining({
+        priceCents: 1499,
+        currency: 'EUR',
+        originalPriceCents: 16900,
+        originalCurrency: 'SEK',
+        fxDatasetVersion: 'ecb-2026-08-27.1',
+      }),
+    );
+  });
+
+  it('inserts null provenance for EUR-native offers — columns exist, values absent', async () => {
+    const inserted: unknown[] = [];
+    const repo = new DrizzleUpsertRepository(
+      createDbStub([[], [{ id: 904 }]], (payload) => inserted.push(payload)),
+    );
+
+    await repo.upsertOffer(
+      offerInput({
+        originalPriceCents: 1499,
+        originalCurrency: 'EUR',
+        fxDatasetVersion: null,
+      }),
+    );
+
+    expect(inserted[0]).toEqual(
+      expect.objectContaining({
+        originalPriceCents: 1499,
+        originalCurrency: 'EUR',
+        fxDatasetVersion: null,
+      }),
+    );
   });
 });

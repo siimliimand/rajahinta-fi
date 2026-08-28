@@ -51,6 +51,10 @@ import {
   OFFER_SPIRITS,
   PRODUCT_UNCLASSIFIED,
   OFFER_UNCLASSIFIED,
+  PRODUCT_BEER_SEK,
+  OFFER_BEER_SEK_CONVERTED,
+  OFFER_BEER_EUR_NATIVE,
+  OFFER_BEER_UNCONVERTIBLE_SEK,
 } from './data/products';
 
 import { InMemoryTaxRuleRepository } from './helpers/in-memory-tax-rule.repository';
@@ -170,6 +174,22 @@ const OFFER_CARRIER_B: TransportOffer = {
   reliabilityStatus: 'EXACT',
 };
 
+/** Offer for carrierSE: SE → FI, can/parcel up to 1 kg, seller involved. */
+const OFFER_CARRIER_SE: TransportOffer = {
+  id: 902,
+  carrier: 'carrierSE',
+  originCountry: 'SE',
+  destinationCountry: 'FI',
+  weightBracket: { minKg: 0, maxKg: 1 },
+  packageTier: 'can',
+  priceCents: 150,
+  currency: 'EUR',
+  sellerInvolvementIndicator: true,
+  observedAt: NOW,
+  refreshedAt: NOW,
+  reliabilityStatus: 'EXACT',
+};
+
 // ---------------------------------------------------------------------------
 // Expected value computation reference (v2.0, seeded rates v1.0-2024):
 //
@@ -218,7 +238,7 @@ const OFFER_CARRIER_B: TransportOffer = {
 
 describe('Golden dataset', () => {
   it(`has dataset version ${GOLDEN_DATASET_VERSION}`, () => {
-    expect(GOLDEN_DATASET_VERSION).toBe('2.0');
+    expect(GOLDEN_DATASET_VERSION).toBe('2.1');
   });
 
   // -----------------------------------------------------------------------
@@ -241,7 +261,7 @@ describe('Golden dataset', () => {
 
     it('returns correct total cost', async () => {
       const result = await service.calculate(INPUT);
-      // retail(200) + transport(150) + excise(91) + container(0) + other(0)
+      // retail(200) + transport(150) + excise(91) + container(0)
       expect(result.totalCents).toBe(441);
     });
 
@@ -251,7 +271,11 @@ describe('Golden dataset', () => {
       expect(result.transportCost).toBe(150);
       expect(result.alcoholExciseEstimate).toBe(91);
       expect(result.containerDutyEstimate).toBe(0);
-      expect(result.otherCharges).toBe(0);
+      // otherCharges was removed from the API shape (task 10.3, design
+      // D3) — the serialized payload must not carry the dead contract.
+      expect(JSON.parse(JSON.stringify(result))).not.toHaveProperty(
+        'otherCharges',
+      );
     });
 
     it('classifies as DistanceSelling (retailer-arranged)', async () => {
@@ -408,6 +432,93 @@ describe('Golden dataset', () => {
         expect(gateError.productId).toBe(4);
         expect(gateError.reason).toContain('classification');
       }
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Case 5: Mixed-currency offers (task 1.5/1.6, design D2)
+  //
+  // Product 13 (beer, same tax shape as Case 1) is offered three ways:
+  //   - SEK-converted: 22.64 SEK at ECB EUR/SEK 11.32 → 200 EUR cents,
+  //     provenance = fx dataset 'ecb-2026-08-27.1'
+  //   - EUR-native: 260 cents
+  //   - Unconvertible: raw 90 "cents" that are actually SEK — cheapest,
+  //     and precisely therefore excluded
+  //
+  // Expected: the converted SEK offer wins the price race among summable
+  //   offers; the unconvertible offer is excluded with a visible reason;
+  //   every amount in the total is EUR cents produced by a recorded
+  //   conversion.
+  //   Total: 200(retail) + 150(transport SE→FI) + 91(excise) + 0 = 441
+  // -----------------------------------------------------------------------
+
+  describe('Case 5 — Mixed-currency offers (SEK + EUR, one unconvertible)', () => {
+    const INPUT: CalculatorInput = {
+      productId: 13,
+      quantity: 1,
+      destination: 'FI',
+      transportMethod: 'carrierSE',
+    };
+
+    const service = createGoldenService({
+      product: PRODUCT_BEER_SEK,
+      offers: [
+        OFFER_BEER_UNCONVERTIBLE_SEK, // cheapest — must lose
+        OFFER_BEER_SEK_CONVERTED,
+        OFFER_BEER_EUR_NATIVE,
+      ],
+      transportOffers: [OFFER_CARRIER_SE],
+    });
+
+    it('sums only the EUR-converted offers — total reproducible from recorded provenance', async () => {
+      const result = await service.calculate(INPUT);
+
+      expect(result.metadata.retailOfferIds).toEqual([112]); // converted SEK offer
+      expect(result.foreignRetailPrice).toBe(200);
+      expect(result.totalCents).toBe(441);
+      expect(result.currency).toBe('EUR');
+    });
+
+    it('excludes the unconvertible offer with a visible reason, never silently', async () => {
+      const result = await service.calculate(INPUT);
+
+      expect(result.excludedOffers).toHaveLength(1);
+      expect(result.excludedOffers[0]).toEqual({
+        offerId: 114,
+        merchant: 'shop-se-rogue',
+        country: 'SE',
+        reason: 'NO_VALID_EUR_CONVERSION',
+        detail: expect.stringContaining('lacks a valid EUR conversion'),
+        originalPriceCents: 900,
+        originalCurrency: 'SEK',
+      });
+      // The rogue 90-cent amount never entered the total: 441 is fully
+      // explained by 200 + 150 + 91 + 0.
+      expect(result.totalCents).toBe(441);
+    });
+
+    it('surfaces the original SEK amount of the selected offer for display', async () => {
+      const result = await service.calculate(INPUT);
+
+      expect(result.originalRetailPrice).toEqual({
+        priceCents: 2264,
+        currency: 'SEK',
+      });
+    });
+
+    it('records the FX dataset version in datasetVersions (provenance chain)', async () => {
+      const result = await service.calculate(INPUT);
+
+      // offer → fxDatasetVersion → datasetVersions: traceable, and the
+      // input idempotency caches key on (cache-invalidation chain).
+      expect(result.metadata.datasetVersions).toContain('ecb-2026-08-27.1');
+    });
+
+    it('classifies as DistanceSelling (SE-origin, seller-arranged)', async () => {
+      const result = await service.calculate(INPUT);
+
+      expect(result.classification.classification).toBe('DistanceSelling');
+      expect(result.confidence).toBe('HIGH');
     });
   });
 });

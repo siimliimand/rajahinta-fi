@@ -70,6 +70,12 @@ export class DataMappingService {
       country: country ?? 'FI',
       priceCents: record.priceCents,
       currency: record.currency,
+      // Conversion provenance (task 1.4, design D2): the original
+      // amount/currency stay next to the converted EUR cents, and the
+      // FX dataset version records which governed dataset produced them.
+      originalPriceCents: record.originalPriceCents,
+      originalCurrency: record.originalCurrency,
+      fxDatasetVersion: record.fxDatasetVersion ?? null,
       availability: 'in_stock',
       sourceUrl: record.sourceUrl,
       observedAt: new Date(),

@@ -34,12 +34,15 @@ import type {
   ItemizedCost,
   ComputeItemCostsTransportContext,
   ComputedItemCostsResult,
+  OfferExclusion,
+  OriginalPrice,
   IProductDataPort,
   ICalculationRecordPort,
 } from './calculator.types';
 import {
   PRODUCT_DATA_PORT,
   CALCULATION_RECORD_PORT,
+  hasValidEurConversion,
   ClassificationGateRejectionError,
   ProductNotFoundError,
   NoRetailOffersError,
@@ -105,13 +108,21 @@ export class LandedCostCalculatorService {
     }
 
     // -----------------------------------------------------------------------
-    // 2. Retail offers — pick the best (lowest price)
+    // 2. Retail offers — keep only validly-converted EUR amounts, then
+    //    pick the best (lowest price). Offers without a valid conversion
+    //    are excluded with a visible reason, never summed (task 1.5).
     // -----------------------------------------------------------------------
     const offers = await this.productData.findRetailOffers(input.productId);
     if (offers.length === 0) {
       throw new NoRetailOffersError(input.productId);
     }
-    const bestOffer = this.selectBestOffer(offers);
+    const { usable, exclusions } = this.partitionOffersByConversion(offers);
+    if (usable.length === 0) {
+      // Every offer lacked a valid EUR conversion — an honest failure
+      // beats a mixed-currency total pretending to be EUR.
+      throw new NoRetailOffersError(input.productId);
+    }
+    const bestOffer = this.selectBestOffer(usable);
 
     // -----------------------------------------------------------------------
     // 3. Transport estimation
@@ -165,15 +176,25 @@ export class LandedCostCalculatorService {
     const allItemizedCosts: ItemizedCost[] = [
       computed.itemizedCosts[0], // Retail price
       transportItem,
-      ...computed.itemizedCosts.slice(1), // Excise, Container duty, Other charges
+      ...computed.itemizedCosts.slice(1), // Excise, Container duty
     ];
 
     const totalCents =
       computed.retailTotal +
       transportCostCents +
       computed.exciseTotal +
-      computed.containerDutyTotal +
-      0; // otherCharges — always zero in Phase 1
+      computed.containerDutyTotal;
+
+    // Original (pre-conversion) price of the selected offer — display-only
+    // data surfaced next to the EUR amounts (task 1.5, design D2).
+    const originalRetailPrice: OriginalPrice | undefined =
+      bestOffer.originalCurrency !== undefined &&
+      bestOffer.originalPriceCents !== undefined
+        ? {
+            priceCents: bestOffer.originalPriceCents,
+            currency: bestOffer.originalCurrency,
+          }
+        : undefined;
 
     // -----------------------------------------------------------------------
     // 8. Persist calculation record
@@ -200,11 +221,12 @@ export class LandedCostCalculatorService {
 
     return {
       itemizedCosts: allItemizedCosts,
+      excludedOffers: exclusions,
+      ...(originalRetailPrice !== undefined ? { originalRetailPrice } : {}),
       foreignRetailPrice: computed.retailTotal,
       transportCost: transportCostCents,
       alcoholExciseEstimate: computed.exciseTotal,
       containerDutyEstimate: computed.containerDutyTotal,
-      otherCharges: 0,
       totalCents,
       currency: 'EUR',
       confidence: computed.confidenceOverall,
@@ -338,6 +360,10 @@ export class LandedCostCalculatorService {
       datasetVersions.push(exciseResult.taxDatasetVersion);
     if (containerDutyResult.taxDatasetVersion)
       datasetVersions.push(containerDutyResult.taxDatasetVersion);
+    // FX provenance of the converted offer (task 1.5): consumers keying
+    // caches on datasetVersions (idempotency convention) invalidate when
+    // the effective FX dataset version changes.
+    if (offer.fxDatasetVersion) datasetVersions.push(offer.fxDatasetVersion);
 
     // -----------------------------------------------------------------------
     // Itemized costs (transport excluded — caller adds it)
@@ -368,12 +394,6 @@ export class LandedCostCalculatorService {
         category: 'containerDutyEstimate',
         cents: containerDutyTotal,
         reliability: containerDutyStatus,
-      },
-      {
-        label: 'Other charges',
-        category: 'otherCharges',
-        cents: 0,
-        reliability: 'VERIFIED' as const,
       },
     ];
 
@@ -411,6 +431,45 @@ export class LandedCostCalculatorService {
       throw new ProductNotFoundError(input.productId);
     }
     return product;
+  }
+
+  /**
+   * Split offers into summable (validly-converted EUR) and excluded with
+   * a visible per-offer reason (task 1.5, spec: landed-cost-calculator
+   * "Single-currency totals"). Excluded offers keep their original
+   * amount/currency on the exclusion entry for display.
+   */
+  private partitionOffersByConversion(offers: CalculatorRetailOfferData[]): {
+    usable: CalculatorRetailOfferData[];
+    exclusions: OfferExclusion[];
+  } {
+    const usable: CalculatorRetailOfferData[] = [];
+    const exclusions: OfferExclusion[] = [];
+
+    for (const offer of offers) {
+      if (hasValidEurConversion(offer)) {
+        usable.push(offer);
+        continue;
+      }
+
+      exclusions.push({
+        offerId: offer.id,
+        merchant: offer.merchant,
+        country: offer.country,
+        reason: 'NO_VALID_EUR_CONVERSION',
+        detail:
+          `Offer ${offer.id} (${offer.merchant}) lacks a valid EUR conversion — ` +
+          `canonical currency ${offer.currency ?? 'EUR (assumed)'}, ` +
+          `original ${offer.originalCurrency ?? 'n/a'}` +
+          (offer.fxDatasetVersion
+            ? `, FX dataset version ${offer.fxDatasetVersion}`
+            : ', no recorded FX conversion'),
+        originalPriceCents: offer.originalPriceCents ?? null,
+        originalCurrency: offer.originalCurrency ?? null,
+      });
+    }
+
+    return { usable, exclusions };
   }
 
   /**

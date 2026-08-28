@@ -73,10 +73,27 @@ export const retailOffers = pgTable('retail_offers', {
   productId: integer('product_id')
     .references(() => productMaster.id)
     .notNull(),
-  /** Retail price in smallest currency unit (cents). */
+  /**
+   * Retail price in EUR cents — the canonical stored amount. Non-EUR feed
+   * prices are converted at ingestion (design D2); a foreign-currency
+   * amount never enters this column.
+   */
   priceCents: integer('price_cents').notNull(),
-  /** Price currency — default EUR for Finnish market. */
+  /** Canonical price currency — always 'EUR' after ingestion conversion. */
   currency: varchar('currency', { length: 3 }).default('EUR').notNull(),
+  /**
+   * Original list price in the source currency's smallest unit, kept for
+   * display. Null on rows written before conversion provenance existed
+   * (EUR-native feeds may also omit it).
+   */
+  originalPriceCents: integer('original_price_cents'),
+  /** Source-market currency of original_price_cents (ISO 4217). */
+  originalCurrency: varchar('original_currency', { length: 3 }),
+  /**
+   * FX dataset version (fx_rate_datasets.version_label) that produced the
+   * conversion — present exactly when the original currency was not EUR.
+   */
+  fxDatasetVersion: varchar('fx_dataset_version', { length: 64 }),
   /** Stock status — filters out-of-stock offers from price comparisons. */
   availability: varchar('availability', { length: 16 })
     .default('unknown')
