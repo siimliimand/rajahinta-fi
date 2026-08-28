@@ -28,6 +28,7 @@ import {
   type BasketOptimizationInput,
   BasketValidationError,
   BasketClassificationGateError,
+  BasketCombinationLimitError,
   type ITaxRuleRepositoryPort,
   TAX_RULE_REPOSITORY_PORT,
   MAX_BASKET_ITEMS,
@@ -88,7 +89,7 @@ export class BasketOptimizerController {
   @ApiResponse({ status: 400, description: 'Invalid input parameters' })
   @ApiResponse({ status: 403, description: 'Feature not available' })
   @ApiResponse({ status: 404, description: 'Product not found' })
-  @ApiResponse({ status: 422, description: 'Product rejected by classification gate or no covering offers' })
+  @ApiResponse({ status: 422, description: 'Product rejected by classification gate, no covering offers, or the merchant-assignment combinations exceed the maximum' })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded' })
   async optimize(
     @Body() dto: BasketOptimizeRequest,
@@ -156,6 +157,15 @@ export class BasketOptimizerController {
           message: err.message,
           error: 'BasketClassificationGateRejection',
           productId: err.productId,
+        });
+      }
+      if (err instanceof BasketCombinationLimitError) {
+        throw new UnprocessableEntityException({
+          statusCode: 422,
+          message: err.message,
+          error: 'BasketCombinationLimitExceeded',
+          totalCombinations: err.totalCombinations,
+          limit: err.limit,
         });
       }
       throw new InternalServerErrorException(

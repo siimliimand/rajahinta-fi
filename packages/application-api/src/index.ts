@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Res,
 } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
   LandedCostResult,
@@ -51,6 +52,7 @@ import { CorrectionModule } from './correction';
 import { RankingModule as ApplicationRankingModule } from './ranking';
 import { CalculationController, CalculateLandedCostDto } from './calculations';
 import { ReadinessService, type ReadinessResponse } from './observability';
+import { ApiErrorFilter } from './common/api-error.filter';
 
 // ---------------------------------------------------------------------------
 // Module boundary — pure DTO interfaces for cross-layer contracts
@@ -166,6 +168,9 @@ imports: [
     MerchantsModule,
   ],
   providers: [
+    // Unified ApiErrorResponse envelope on every error, legacy controllers
+    // included (task 3.4).
+    { provide: APP_FILTER, useClass: ApiErrorFilter },
     // Concrete repository implementations — wire SearchController and
     // CalculatorController to Drizzle-backed data access
     { provide: ProductRepository, useClass: DrizzleProductRepository },
@@ -247,6 +252,7 @@ export namespace ApplicationApiModule {
         MerchantsModule,
       ],
       providers: [
+        { provide: APP_FILTER, useClass: ApiErrorFilter },
         { provide: ProductRepository, useClass: DrizzleProductRepository },
         { provide: CalculationRecordRepository, useClass: DrizzleCalculationRecordRepository },
         DrizzleProductRepository,
@@ -273,6 +279,12 @@ export namespace ApplicationApiModule {
 export { FeatureFlag, FeatureFlagService, FeatureFlagGuard, FeatureFlagDec as FeatureFlagDecorator } from './feature-flags';
 export type { FeatureFlagConfig } from './feature-flags';
 export { FeatureFlagsModule } from './feature-flags';
+
+// ---------------------------------------------------------------------------
+// Common — unified ApiErrorResponse envelope (task 3.4)
+// ---------------------------------------------------------------------------
+
+export { ApiErrorFilter } from './common';
 
 // ---------------------------------------------------------------------------
 // Observability re-exports for consumers outside the layer
@@ -392,10 +404,29 @@ export type { IVerificationProvider, VerificationResult } from './age-gate';
 
 // ---------------------------------------------------------------------------
 // Accounts — minimal account system (saved baskets, history, subscription)
+// plus server-issued session authentication (task 2.2, design D3) and the
+// email-verification groundwork (task 2.4, D5)
 // ---------------------------------------------------------------------------
 
 export { AccountModule, AccountService, AccountRetentionService, DataExportService } from './accounts';
 export type { Account, Basket, BasketItem, PurgeResult, AnonymizeResult, DataExport, CalculationExportRecord } from './accounts';
+export {
+  SessionTokenService,
+  SessionController,
+  SessionAuthGuard,
+  CurrentUser,
+  SESSION_COOKIE_NAME,
+  SESSION_TOKEN_REQUEST_KEY,
+  extractSessionToken,
+  buildSessionCookie,
+  buildSessionCookieClear,
+  setSessionCookie,
+  VerifiedEmailStore,
+  UnboundVerifiedEmailStore,
+  isAccountVerified,
+  isValidEmailFormat,
+} from './accounts';
+export type { IssuedSession, SessionResponse, AuthenticatedAccount } from './accounts';
 
 // ---------------------------------------------------------------------------
 // Analytics — click analytics (Phase 1: in-memory, no purchase tracking)

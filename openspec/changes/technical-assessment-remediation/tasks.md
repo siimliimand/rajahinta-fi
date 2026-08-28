@@ -18,9 +18,9 @@
 ## 2. Session integrity (finding 2, add 1)
 
 - [x] 2.1 Server-issued opaque session tokens — `sessions` table with tokens hashed at rest, repository, rotation support; backend derives account from token <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/data-platform/src/repositories/**, packages/application-api/src/accounts/**] -->
-- [ ] 2.2 Migrate authentication off `x-user-id` — auth guard resolves the session token (httpOnly cookie), account controller + GDPR paths moved over, legacy header rejected outright <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [packages/application-api/src/accounts/**, packages/application-api/src/index.ts] -->
+- [x] 2.2 Migrate authentication off `x-user-id` — auth guard resolves the session token (httpOnly cookie), account controller + GDPR paths moved over, legacy header rejected outright <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [packages/application-api/src/accounts/**, packages/application-api/src/index.ts] -->
 - [ ] 2.3 Frontend session handling — server-set httpOnly cookie, drop the client-generated UUID cookie from `apps/frontend/src/lib/api.ts` <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [apps/frontend/src/lib/api.ts, apps/frontend/src/app/account/**] -->
-- [ ] 2.4 Email verification groundwork (D5) — use the existing verified-email column, anonymous-upgrade path, account data documented disposable until verified <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [packages/application-api/src/accounts/**] -->
+- [x] 2.4 Email verification groundwork (D5) — use the existing verified-email column, anonymous-upgrade path, account data documented disposable until verified <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [packages/application-api/src/accounts/**] -->
 - [ ] 2.5 Session tests — token forge/guess denied, cross-account access denied, rotation invalidates the old token atomically <!-- agent: platform-engineer.build, depends_on: [2.2, 2.3], touches: [packages/application-api/src/accounts/__tests__/**] -->
 
 ## 3. API correctness (findings 3, 4, 16; low: error envelopes, decimal coercion)
@@ -28,7 +28,7 @@
 - [x] 3.1 Implement `POST /api/v1/calculations/excise` and `/calculations/landed-cost` against `AlcoholExciseService` and `ContainerDutyService` honoring the request body (D1); delete the broken adapter path <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/adapters/tax-calculation-engine.adapter.ts, packages/application-api/src/calculations/**] -->
 - [x] 3.2 Put the ops dashboard behind an auth guard plus IP allowlist configuration <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/observability/ops-dashboard.controller.ts] -->
 - [x] 3.3 Gate Swagger to non-production or an env flag; strip the version string from the health body <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/backend/src/main.ts, packages/application-api/src/index.ts] -->
-- [ ] 3.4 Unify error envelopes on the documented `ApiErrorResponse` across legacy and current controllers <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/**] -->
+- [x] 3.4 Unify error envelopes on the documented `ApiErrorResponse` across legacy and current controllers <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/**] -->
 - [x] 3.5 Centralize decimal coercion for pg `numeric` at the repository boundary; remove per-consumer `parseDecimal` duplication <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/**] -->
 - [ ] 3.6 API correctness tests — legacy endpoints honor the body, ops route denies outside the allowlist, envelope conformance suite <!-- agent: platform-engineer.build, depends_on: [3.1, 3.2, 3.4], touches: [packages/application-api/src/**/__tests__/**] -->
 

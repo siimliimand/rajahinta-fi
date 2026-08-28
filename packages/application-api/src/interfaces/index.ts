@@ -41,11 +41,10 @@ export interface CalculateLandedCostRequest {
 // Response DTOs
 // --------------------------------------------------------------------------
 
-/** GET /api/v1/health */
+/** GET /api/v1/health — version-less since task 3.3 (the body reports process liveness only). */
 export interface HealthCheckResponse {
   readonly status: 'ok';
   readonly timestamp: string;
-  readonly version: string;
 }
 
 /** Standard error body returned by the API. */

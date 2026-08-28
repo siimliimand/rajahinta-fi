@@ -22,7 +22,11 @@ import {
   SetMetadata,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { EntitlementService, FeatureId } from '@rajahinta/core-domain';
+import {
+  EntitlementService,
+  type AccountContext,
+  type FeatureId,
+} from '@rajahinta/core-domain';
 
 // ---------------------------------------------------------------------------
 // Metadata key and decorator
@@ -51,9 +55,12 @@ export const RequireFeature = (feature: FeatureId) =>
  * Entitlement guard that checks feature access before allowing a
  * request to proceed.
  *
- * Extracts user ID from `request.user?.id` (set by an auth middleware
- * or passport strategy).  When no user is present, `userId` is `null`
- * and the FREE tier applies.
+ * Reads the account context from `request.user` (attached by the auth
+ * guard — `SessionAuthGuard` on session-authenticated routes). A user
+ * object carrying `tier` is passed through as an {@link AccountContext}
+ * so tiers resolve from the account record; a bare `{ id }` legacy shape
+ * degrades to the userId string (Phase 1 PREMIUM default), and no user
+ * means anonymous (FREE tier).
  */
 @Injectable()
 export class EntitlementGuard implements CanActivate {
@@ -74,9 +81,11 @@ export class EntitlementGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest();
-    const userId: string | null = (request as any).user?.id ?? null;
+    const user: unknown = (request as { user?: unknown }).user;
 
-    const result = this.entitlement.checkAccess(userId, feature);
+    const account = this.toAccountContext(user);
+
+    const result = this.entitlement.checkAccess(account, feature);
 
     if (result.allowed) {
       return true;
@@ -89,5 +98,28 @@ export class EntitlementGuard implements CanActivate {
       requiredTier: feature,
       currentTier: result.tier,
     });
+  }
+
+  /**
+   * Normalize the attached auth context to what EntitlementService accepts:
+   * a tier-bearing object becomes an AccountContext (tier from the account
+   * record), a legacy `{ id }` shape stays a bare userId string, anything
+   * else is anonymous.
+   */
+  private toAccountContext(user: unknown): AccountContext | string | null {
+    if (user === null || user === undefined) return null;
+    if (typeof user === 'string') return user;
+
+    const candidate = user as { id?: unknown; userId?: unknown; tier?: unknown };
+    const hasTier = typeof candidate.tier === 'string' && candidate.tier.length > 0;
+    if (!hasTier) {
+      return typeof candidate.id === 'string' ? candidate.id : null;
+    }
+
+    const userId =
+      typeof candidate.userId === 'string' ? candidate.userId : candidate.id;
+    return typeof userId === 'string'
+      ? { userId, tier: candidate.tier as AccountContext['tier'] }
+      : null;
   }
 }

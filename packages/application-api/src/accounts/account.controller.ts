@@ -7,9 +7,11 @@
  * CRUD (named calculator input sets), gated behind the ADVANCED_FEATURES
  * feature flag — the pre-existing endpoints are deliberately NOT gated.
  *
- * Phase 1: in-memory simulation.  All endpoints require a `userId`
- * header (no auth middleware yet).  When authentication is added,
- * the `userId` param will be derived from the auth context.
+ * Session authentication (task 2.2, design D3): every route is guarded by
+ * `SessionAuthGuard`, which derives the account from the opaque token in
+ * the httpOnly `rajahinta_session` cookie and rejects the retired
+ * `x-user-id` header outright. Handlers receive the server-derived
+ * identity via `@CurrentUser()` — identity is never client-supplied.
  *
  * @module AccountController
  */
@@ -22,7 +24,6 @@ import {
   Post,
   Delete,
   Body,
-  Headers,
   Param,
   ParseUUIDPipe,
   ParseIntPipe,
@@ -31,11 +32,14 @@ import {
   InternalServerErrorException,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { DataExportService } from './data-export.service';
 import { AccountService } from './account.service';
 import type { DataExport } from './data-export.types';
 import type { Basket, BasketItem, SavedScenario, SaveScenarioRequest } from './account.types';
+import { SessionAuthGuard } from './session-auth.guard';
+import { CurrentUser, type AuthenticatedAccount } from './current-user.decorator';
+import { isValidEmailFormat } from './email-verification';
 import { FeatureFlagGuard, FeatureFlagDec, FeatureFlag } from '../feature-flags';
 
 /** Allowed values of `inputs.transportArrangement` (core-domain TransportArrangement). */
@@ -46,27 +50,14 @@ const TRANSPORT_ARRANGEMENTS: readonly string[] = [
 ];
 
 @ApiTags('account')
+@ApiBearerAuth()
 @Controller('api/v1/account')
+@UseGuards(SessionAuthGuard)
 export class AccountController {
   constructor(
     private readonly dataExportService: DataExportService,
     private readonly accountService: AccountService,
   ) {}
-
-  // ---------------------------------------------------------------------------
-  // Required-header guard
-  // ---------------------------------------------------------------------------
-
-  private requireUserId(userId: string | undefined): string {
-    if (!userId) {
-      throw new BadRequestException({
-        statusCode: 400,
-        message: 'x-user-id header is required',
-        error: 'MissingUserId',
-      });
-    }
-    return userId;
-  }
 
   // ---------------------------------------------------------------------------
   // GET /api/v1/account/export — GDPR data portability export
@@ -89,10 +80,14 @@ export class AccountController {
     status: 404,
     description: 'User not found',
   })
+  @ApiResponse({
+    status: 401,
+    description: 'No/invalid session cookie, or a legacy x-user-id header was presented',
+  })
   async exportData(
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser() user: AuthenticatedAccount,
   ): Promise<DataExport> {
-    const uid = this.requireUserId(userId);
+    const uid = user.userId;
 
     try {
       return await this.dataExportService.exportUserData(uid);
@@ -113,12 +108,11 @@ export class AccountController {
   @Get('baskets')
   @ApiOperation({ summary: 'List saved baskets for the authenticated user' })
   @ApiResponse({ status: 200, description: 'Array of saved baskets' })
-  @ApiResponse({ status: 400, description: 'x-user-id header is required' })
+  @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
   async listBaskets(
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser() user: AuthenticatedAccount,
   ): Promise<Basket[]> {
-    const uid = this.requireUserId(userId);
-    return this.accountService.getSavedBaskets(uid);
+    return this.accountService.getSavedBaskets(user.userId);
   }
 
   // ---------------------------------------------------------------------------
@@ -128,12 +122,12 @@ export class AccountController {
   @Post('baskets')
   @ApiOperation({ summary: 'Save a new basket for the authenticated user' })
   @ApiResponse({ status: 201, description: 'Basket saved' })
-  @ApiResponse({ status: 400, description: 'x-user-id header is required' })
+  @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
   async saveBasket(
     @Body() body: { name: string; items: BasketItem[] },
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser() user: AuthenticatedAccount,
   ): Promise<void> {
-    const uid = this.requireUserId(userId);
+    const uid = user.userId;
 
     const basket: Basket = {
       id: randomUUID(),
@@ -152,13 +146,13 @@ export class AccountController {
   @Delete('baskets/:basketId')
   @ApiOperation({ summary: 'Delete a saved basket by ID' })
   @ApiResponse({ status: 200, description: 'Basket deleted' })
-  @ApiResponse({ status: 400, description: 'x-user-id header is required' })
+  @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
   @ApiResponse({ status: 404, description: 'Basket not found' })
   async deleteBasket(
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser() user: AuthenticatedAccount,
     @Param('basketId', ParseUUIDPipe) basketId?: string,
   ): Promise<void> {
-    const uid = this.requireUserId(userId);
+    const uid = user.userId;
 
     const account = await this.accountService.getAccount(uid);
     const mutable = account as { savedBaskets: Basket[] };
@@ -191,13 +185,12 @@ export class AccountController {
       'Gated by the ADVANCED_FEATURES feature flag.',
   })
   @ApiResponse({ status: 200, description: 'Array of saved scenarios' })
-  @ApiResponse({ status: 400, description: 'x-user-id header is required' })
+  @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
   @ApiResponse({ status: 403, description: 'ADVANCED_FEATURES flag is disabled' })
   async listScenarios(
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser() user: AuthenticatedAccount,
   ): Promise<SavedScenario[]> {
-    const uid = this.requireUserId(userId);
-    return this.accountService.getScenarios(uid);
+    return this.accountService.getScenarios(user.userId);
   }
 
   // ---------------------------------------------------------------------------
@@ -215,13 +208,14 @@ export class AccountController {
       'the persisted scenario. Gated by the ADVANCED_FEATURES feature flag.',
   })
   @ApiResponse({ status: 201, description: 'Scenario saved (inserted or replaced)' })
-  @ApiResponse({ status: 400, description: 'x-user-id header or body validation failed' })
+  @ApiResponse({ status: 400, description: 'Body validation failed' })
+  @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
   @ApiResponse({ status: 403, description: 'ADVANCED_FEATURES flag is disabled' })
   async saveScenario(
     @Body() body: SaveScenarioRequest,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser() user: AuthenticatedAccount,
   ): Promise<SavedScenario> {
-    const uid = this.requireUserId(userId);
+    const uid = user.userId;
 
     this.validateScenarioBody(body);
     return this.accountService.saveScenario(uid, body.name, body.inputs);
@@ -242,14 +236,15 @@ export class AccountController {
       'the ADVANCED_FEATURES feature flag.',
   })
   @ApiResponse({ status: 200, description: 'Scenario deleted' })
-  @ApiResponse({ status: 400, description: 'x-user-id header is required or id is not an integer' })
+  @ApiResponse({ status: 400, description: 'id is not an integer' })
+  @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
   @ApiResponse({ status: 403, description: 'ADVANCED_FEATURES flag is disabled' })
   @ApiResponse({ status: 404, description: 'Scenario not found for this account' })
   async deleteScenario(
     @Param('id', ParseIntPipe) scenarioId: number,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser() user: AuthenticatedAccount,
   ): Promise<void> {
-    const uid = this.requireUserId(userId);
+    const uid = user.userId;
 
     // NotFoundException for a foreign or absent id comes from the service,
     // which owns the account-scoped existence check.
@@ -321,12 +316,11 @@ export class AccountController {
   @Get('history')
   @ApiOperation({ summary: 'Return calculation history IDs for the user' })
   @ApiResponse({ status: 200, description: 'Array of calculation record IDs' })
-  @ApiResponse({ status: 400, description: 'x-user-id header is required' })
+  @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
   async getHistory(
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser() user: AuthenticatedAccount,
   ): Promise<number[]> {
-    const uid = this.requireUserId(userId);
-    const account = await this.accountService.getAccount(uid);
+    const account = await this.accountService.getAccount(user.userId);
     return account.calculationHistory;
   }
 
@@ -337,12 +331,13 @@ export class AccountController {
   @Post('history')
   @ApiOperation({ summary: 'Append a calculation record ID to history' })
   @ApiResponse({ status: 201, description: 'Calculation record appended' })
-  @ApiResponse({ status: 400, description: 'x-user-id header or valid recordId required' })
+  @ApiResponse({ status: 400, description: 'Valid recordId required' })
+  @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
   async addHistory(
     @Body() body: { recordId: number },
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser() user: AuthenticatedAccount,
   ): Promise<{ success: boolean; recordId: number }> {
-    const uid = this.requireUserId(userId);
+    const uid = user.userId;
 
     if (!Number.isInteger(body.recordId) || body.recordId <= 0) {
       throw new BadRequestException({
@@ -363,12 +358,45 @@ export class AccountController {
   @Get('subscription')
   @ApiOperation({ summary: 'Return the subscription status for the user' })
   @ApiResponse({ status: 200, description: 'Subscription status object' })
-  @ApiResponse({ status: 400, description: 'x-user-id header is required' })
+  @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
   async getSubscription(
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser() user: AuthenticatedAccount,
   ): Promise<{ userId: string; plan: string; active: boolean }> {
-    const uid = this.requireUserId(userId);
-    const account = await this.accountService.getAccount(uid);
+    const account = await this.accountService.getAccount(user.userId);
     return account.subscription;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 2.4 — POST /api/v1/account/verify-email — anonymous → verified upgrade
+  // ---------------------------------------------------------------------------
+
+  @Post('verify-email')
+  @ApiOperation({
+    summary: 'Verify an email on the authenticated account (groundwork)',
+    description:
+      'Upgrades an anonymous account to a verified one by persisting the ' +
+      'verified email on the account row (the existing verified-email ' +
+      'column). The current session keeps authenticating the account ' +
+      'unchanged. Until verification, account data is DISPOSABLE and not ' +
+      'protected by identity guarantees. Groundwork only: real email ' +
+      'delivery/provider round-trip is out of scope for this change.',
+  })
+  @ApiResponse({ status: 200, description: 'Account upgraded; the same session continues to authenticate it' })
+  @ApiResponse({ status: 400, description: 'email missing or malformed' })
+  @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
+  async verifyEmail(
+    @Body() body: { email: string },
+    @CurrentUser() user: AuthenticatedAccount,
+  ): Promise<{ verified: true; email: string }> {
+    if (typeof body?.email !== 'string' || !isValidEmailFormat(body.email)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: '"email" is required and must be a valid email address',
+        error: 'InvalidEmail',
+      });
+    }
+
+    await this.accountService.verifyEmail(user.userId, body.email);
+    return { verified: true, email: body.email };
   }
 }

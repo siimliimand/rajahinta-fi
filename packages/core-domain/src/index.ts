@@ -455,9 +455,11 @@ export type { IBasketCalculationRecordPort, CreateBasketCalculationRecordInput }
 export {
   MAX_BASKET_ITEMS,
   MAX_CANDIDATE_MERCHANTS_PER_ITEM,
+  MAX_TOTAL_COMBINATIONS,
   BasketOptimizerService,
   BasketValidationError,
   BasketClassificationGateError,
+  BasketCombinationLimitError,
 } from './optimizer/index';
 export type {
   BasketInputItem,
@@ -477,8 +479,19 @@ export type {
 
 export { EntitlementModule } from './entitlement/entitlement.module';
 export { EntitlementService } from './entitlement/entitlement.service';
-export type { Entitlement, EntitlementTier, FeatureId } from './entitlement/entitlement.types';
-export { FEATURE_TIER_MAP, isTierSufficient } from './entitlement/entitlement.types';
+export type {
+  AccountContext,
+  Entitlement,
+  EntitlementTier,
+  FeatureId,
+  TierTransition,
+  TierTransitionSource,
+} from './entitlement/entitlement.types';
+export {
+  FEATURE_TIER_MAP,
+  isTierSufficient,
+  isTierTransitionWellFormed,
+} from './entitlement/entitlement.types';
 
 // ---------------------------------------------------------------------------
 // Audit — immutable audit log for high-liability domain changes

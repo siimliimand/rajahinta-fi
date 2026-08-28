@@ -30,6 +30,7 @@ import {
   type SavedScenarioInputs,
   type SavedScenarioRecord,
 } from '@rajahinta/data-platform';
+import type { VerifiedEmailStore } from './verified-email.store';
 
 /** Postgres unique-constraint violation (SQLSTATE 23505). */
 function isUniqueViolation(err: unknown): boolean {
@@ -87,6 +88,7 @@ export class AccountService {
     // Appended last so positional constructions in existing tests keep
     // their (accountRepository, savedBasketRepository, auditService) shape.
     @Optional() private readonly savedScenarioRepository?: SavedScenarioRepository,
+    @Optional() private readonly verifiedEmailStore?: VerifiedEmailStore,
   ) {
     // Fail-fast: outside test environments, repositories must be injected
     // to prevent silent data loss via the in-memory fallback.
@@ -192,6 +194,25 @@ export class AccountService {
     }
 
     return account;
+  }
+
+  /**
+   * Ensure an account row exists for a SERVER-GENERATED anonymous identity
+   * and return the raw row — session issuance links the token to the row's
+   * numeric id (task 2.2). The userId must originate from the session
+   * controller's randomUUID(), never from client input. Throws when no
+   * account repository is bound: sessions are a persisted construct and the
+   * in-memory fallback cannot mint them.
+   */
+  async ensureAccountForSession(
+    userId: string,
+  ): Promise<NonNullable<Awaited<ReturnType<AccountRepository['findByUserId']>>>> {
+    if (!this.accountRepository) {
+      throw new Error(
+        'Session issuance requires the account repository (in-memory fallback cannot link sessions)',
+      );
+    }
+    return this.ensureAccountRow(userId);
   }
 
   /**
@@ -490,5 +511,46 @@ export class AccountService {
     // fallback mirrors the repository cascade (no orphaned scenario data).
     this.scenarios.delete(userId);
     this.logger.debug(`Account "${userId}" anonymized -> "${anonId}"`);
+  }
+
+  /**
+   * Upgrade an anonymous account to a verified one by persisting the
+   * verified email on the account row (task 2.4, design D5). The same
+   * session keeps authenticating the account — sessions link to the row,
+   * not to the email — and from this point the account's data is protected
+   * by identity guarantees instead of disposable.
+   *
+   * Groundwork: real email delivery/provider round-trip is out of scope;
+   * callers are expected to have validated the address format.
+   */
+  async verifyEmail(userId: string, email: string): Promise<void> {
+    // In-memory fallback (test-only — see constructor fail-fast)
+    if (!this.verifiedEmailStore && !this.accountRepository) {
+      const account = await this.getAccount(userId);
+      (account as Account & { email: string }).email = email;
+      this.logger.debug(`Email verified for userId="${userId}" (in-memory fallback)`);
+      return;
+    }
+
+    if (!this.verifiedEmailStore) {
+      // Repository-bound but no verification store — explicit failure beats
+      // a silent no-op that would claim verification it did not persist.
+      throw new Error(
+        'AccountService.verifyEmail requires a VerifiedEmailStore binding',
+      );
+    }
+
+    await this.verifiedEmailStore.setVerifiedEmail(userId, email);
+    this.logger.debug(`Email verified for userId="${userId}"`);
+
+    if (this.auditService) {
+      await this.auditService.logChange({
+        entityType: 'account',
+        entityId: userId,
+        action: 'updated',
+        author: 'system',
+        reason: 'Email verification: anonymous account upgraded to verified (task 2.4, D5)',
+      });
+    }
   }
 }

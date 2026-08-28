@@ -10,8 +10,8 @@
  *     and the structural disclaimer (CSV escaping round-trips through a
  *     quote-aware parser — the fixture disclaimer contains a comma, double
  *     quotes, and a CRLF)
- *   - entitlement 403 for FREE tier (forced via the real EntitlementService
- *     env override), anonymous 403, age-gate 403
+ *   - entitlement 403 for FREE tier (forced via the account context the
+ *     auth stand-in attaches from x-test-tier), anonymous 403, age-gate 403
  *   - flag-off 403 on a second app booted with FF_ADVANCED_FEATURES unset
  *   - 400 for an unsupported format, 404 for an unknown record
  *   - rate limiting: exhausting the real in-memory DECLARATION limiter
@@ -38,6 +38,7 @@ import {
   AgeGateModule,
   ReportsModule,
   RATE_LIMITER,
+  InMemoryRateLimiter,
 } from '@rajahinta/application-api';
 
 // ---------------------------------------------------------------------------
@@ -83,20 +84,29 @@ class InMemoryCalculationRecordQueryPort implements ICalculationRecordQueryPort 
   }
 }
 
-/** Permissive rate limiter — never throttles (e2e convention). */
+/** Permissive rate limiter — never throttles (e2e convention; async per IRateLimiter). */
 const NEVER_RATE_LIMIT = {
-  check: () => true,
-  remaining: () => 999,
-  resetAt: () => Date.now() + 60_000,
+  check: async () => true,
+  remaining: async () => 999,
+  resetAt: async () => Date.now() + 60_000,
 };
 
-/** Auth stand-in: production derives request.user from the auth context. */
+/**
+ * Auth stand-in: production derives request.user from the session auth
+ * guard. The optional x-test-tier header mirrors the tier field the real
+ * guard attaches from the account record (EntitlementService accepts
+ * AccountContext | string | null).
+ */
 function applyAuthStandIn(app: INestApplication): void {
   app.use((req: unknown, _res: unknown, next: () => void) => {
     const headers = (req as { headers?: Record<string, string> }).headers;
     const id = headers?.['x-test-user'];
+    const tier = headers?.['x-test-tier'];
     if (typeof id === 'string' && id.length > 0) {
-      (req as { user?: { id: string } }).user = { id };
+      (req as { user?: { id: string; userId?: string; tier?: string } }).user =
+        typeof tier === 'string' && tier.length > 0
+          ? { id, userId: id, tier }
+          : { id };
     }
     next();
   });
@@ -105,7 +115,7 @@ function applyAuthStandIn(app: INestApplication): void {
 interface AppOptions {
   /** FF_ADVANCED_FEATURES state at FeatureFlagService construction time. */
   flagOn: boolean;
-  /** Keep the real in-memory limiter (rate-limit describe only). */
+  /** Keep a real (in-memory) limiter backend (rate-limit describe only). */
   realRateLimiter?: boolean;
 }
 
@@ -127,6 +137,11 @@ async function createApp(options: AppOptions): Promise<INestApplication> {
 
   if (!options.realRateLimiter) {
     builder.overrideProvider(RATE_LIMITER).useValue(NEVER_RATE_LIMIT);
+  } else {
+    // The un-overridden backend selects Redis when the shared client is
+    // registered, which this suite never wants — pin the real in-memory
+    // implementation explicitly (async IRateLimiter, per-process windows).
+    builder.overrideProvider(RATE_LIMITER).useValue(new InMemoryRateLimiter());
   }
 
   const moduleRef = await builder.compile();
@@ -287,18 +302,14 @@ describe('GET /api/v1/reports/:recordId — flag on', () => {
   describe('entitlement enforcement (calculation:export)', () => {
     const FREE_USER = 'report_free_user';
 
-    afterAll(() => {
-      delete process.env.ENTITLEMENT_TIER_REPORT_FREE_USER;
-    });
-
     it('returns 403 InsufficientEntitlement for a FREE-tier user', async () => {
-      // Tier resolved through the real EntitlementService env override —
-      // read at request time, mirroring a FREE account row.
-      process.env.ENTITLEMENT_TIER_REPORT_FREE_USER = 'FREE';
-
+      // Tier resolves from the account context the auth stand-in attaches
+      // from x-test-tier — mirroring a FREE account row (the per-user
+      // ENTITLEMENT_TIER_<USERID> env override no longer exists).
       const res = await get(`/api/v1/reports/${RECORD_ID}`, {
         ...PREMIUM_HEADERS,
         'x-test-user': FREE_USER,
+        'x-test-tier': 'FREE',
       }).expect(403);
 
       expect(res.body).toMatchObject({
@@ -391,6 +402,10 @@ describe('GET /api/v1/reports/:recordId — DECLARATION rate limit (real limiter
   const originalEnv = process.env;
 
   beforeAll(async () => {
+    // X-Forwarded-For derives the client key only behind a configured
+    // proxy (RATE_LIMIT_TRUST_PROXY); supertest sockets all share one IP,
+    // so enable the flag for this describe to exercise per-key isolation.
+    process.env = { ...originalEnv, RATE_LIMIT_TRUST_PROXY: 'true' };
     rateLimitApp = await createApp({ flagOn: true, realRateLimiter: true });
   });
 

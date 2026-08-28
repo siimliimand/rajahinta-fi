@@ -4,16 +4,20 @@
  * Tests the controller directly with mocked AccountService and
  * DataExportService, following the same pattern as sibling tests
  * (no @nestjs/testing — direct instantiation with manual mocks).
+ * Handlers receive the server-derived AuthenticatedAccount (task 2.2) —
+ * the guard-level cases (missing cookie, legacy header) live in
+ * session-auth.guard.test.ts.
  *
  * @module AccountControllerTest
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { AccountController } from '../account.controller';
 import type { AccountService } from '../account.service';
 import type { DataExportService } from '../data-export.service';
 import type { Account, Basket, BasketItem, SavedScenario, SubscriptionStatus } from '../account.types';
+import type { AuthenticatedAccount } from '../current-user.decorator';
 import type { DataExport } from '../data-export.types';
 
 // ---------------------------------------------------------------------------
@@ -22,6 +26,11 @@ import type { DataExport } from '../data-export.types';
 
 const USER_ID = 'test-user-123';
 const ANOTHER_USER_ID = 'other-user-456';
+
+/** AuthenticatedAccount the SessionAuthGuard would attach for a userId. */
+function user(userId: string): AuthenticatedAccount {
+  return { accountId: 1, userId, tier: 'FREE', verified: false };
+}
 
 const mockBasket: Basket = {
   id: 'basket-1',
@@ -157,8 +166,8 @@ describe('AccountController', () => {
   // -----------------------------------------------------------------------
 
   describe('GET /baskets — listBaskets', () => {
-    it('returns saved baskets for a valid userId', async () => {
-      const result = await controller.listBaskets(USER_ID);
+    it('returns saved baskets for the authenticated user', async () => {
+      const result = await controller.listBaskets(user(USER_ID));
 
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('basket-1');
@@ -167,27 +176,17 @@ describe('AccountController', () => {
     });
 
     it('returns empty array for a user with no baskets', async () => {
-      const result = await controller.listBaskets(ANOTHER_USER_ID);
+      const result = await controller.listBaskets(user(ANOTHER_USER_ID));
 
       expect(result).toEqual([]);
     });
 
-    it('throws BadRequestException when userId is missing', async () => {
-      await expect(controller.listBaskets(undefined)).rejects.toThrow(BadRequestException);
-    });
-
-    it('throws BadRequestException with correct error shape', async () => {
-      try {
-        await controller.listBaskets(undefined);
-        expect.unreachable('Expected BadRequestException');
-      } catch (err) {
-        expect(err).toBeInstanceOf(BadRequestException);
-        expect((err as BadRequestException).getResponse()).toMatchObject({
-          statusCode: 400,
-          message: 'x-user-id header is required',
-          error: 'MissingUserId',
-        });
-      }
+    it('scopes reads to the authenticated identity only', async () => {
+      // The userId comes from the guard-attached context — a request
+      // authenticated as ANOTHER_USER can never read USER_ID's baskets.
+      const result = await controller.listBaskets(user(ANOTHER_USER_ID));
+      expect(result).toEqual([]);
+      expect(mockAccountService.getSavedBaskets).toHaveBeenCalledWith(ANOTHER_USER_ID);
     });
   });
 
@@ -201,19 +200,16 @@ describe('AccountController', () => {
       items: [{ productId: 2, productName: 'Wine', quantity: 3 }] as BasketItem[],
     };
 
-    it('saves a basket for a valid userId and body', async () => {
-      await controller.saveBasket(validBody, USER_ID);
+    it('saves a basket for the authenticated user and body', async () => {
+      await controller.saveBasket(validBody, user(USER_ID));
 
       expect(mockAccountService.saveBasket).toHaveBeenCalledTimes(1);
-      const [, savedBasket] = (mockAccountService.saveBasket as ReturnType<typeof vi.fn>).mock.calls[0];
+      const [savedFor, savedBasket] = (mockAccountService.saveBasket as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(savedFor).toBe(USER_ID);
       expect(savedBasket.name).toBe('New Basket');
       expect(savedBasket.items).toEqual(validBody.items);
       expect(savedBasket.id).toBeDefined();
       expect(savedBasket.createdAt).toBeInstanceOf(Date);
-    });
-
-    it('throws BadRequestException when userId is missing', async () => {
-      await expect(controller.saveBasket(validBody, undefined)).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -223,24 +219,22 @@ describe('AccountController', () => {
 
   describe('DELETE /baskets/:basketId — deleteBasket', () => {
     it('deletes an existing basket', async () => {
-      await controller.deleteBasket(USER_ID, 'basket-1');
+      await controller.deleteBasket(user(USER_ID), 'basket-1');
 
       // Verify basket is no longer in the account
       const account = await mockAccountService.getAccount!(USER_ID);
       expect(account.savedBaskets.find((b) => b.id === 'basket-1')).toBeUndefined();
     });
 
-    it('throws BadRequestException when userId is missing', async () => {
-      await expect(controller.deleteBasket(undefined, 'basket-1')).rejects.toThrow(BadRequestException);
-    });
-
     it('throws NotFoundException when basket does not exist', async () => {
-      await expect(controller.deleteBasket(USER_ID, 'nonexistent-basket')).rejects.toThrow(NotFoundException);
+      await expect(
+        controller.deleteBasket(user(USER_ID), 'nonexistent-basket'),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('throws NotFoundException with correct error shape', async () => {
       try {
-        await controller.deleteBasket(USER_ID, 'ghost-basket');
+        await controller.deleteBasket(user(USER_ID), 'ghost-basket');
         expect.unreachable('Expected NotFoundException');
       } catch (err) {
         expect(err).toBeInstanceOf(NotFoundException);
@@ -258,18 +252,14 @@ describe('AccountController', () => {
   // -----------------------------------------------------------------------
 
   describe('GET /history — getHistory', () => {
-    it('returns calculation history IDs for a valid userId', async () => {
-      const result = await controller.getHistory(USER_ID);
+    it('returns calculation history IDs for the authenticated user', async () => {
+      const result = await controller.getHistory(user(USER_ID));
 
       expect(result).toEqual([1001, 1002]);
     });
 
-    it('throws BadRequestException when userId is missing', async () => {
-      await expect(controller.getHistory(undefined)).rejects.toThrow(BadRequestException);
-    });
-
     it('returns empty array for a user with no history', async () => {
-      const result = await controller.getHistory(ANOTHER_USER_ID);
+      const result = await controller.getHistory(user(ANOTHER_USER_ID));
 
       expect(result).toEqual([]);
     });
@@ -280,20 +270,16 @@ describe('AccountController', () => {
   // -----------------------------------------------------------------------
 
   describe('GET /subscription — getSubscription', () => {
-    it('returns subscription for a valid userId', async () => {
-      const result = await controller.getSubscription(USER_ID);
+    it('returns subscription for the authenticated user', async () => {
+      const result = await controller.getSubscription(user(USER_ID));
 
       expect(result.userId).toBe(USER_ID);
       expect(result.plan).toBe('FREE');
       expect(result.active).toBe(true);
     });
 
-    it('throws BadRequestException when userId is missing', async () => {
-      await expect(controller.getSubscription(undefined)).rejects.toThrow(BadRequestException);
-    });
-
     it('returns default subscription for a new user', async () => {
-      const result = await controller.getSubscription(ANOTHER_USER_ID);
+      const result = await controller.getSubscription(user(ANOTHER_USER_ID));
 
       expect(result.plan).toBe('FREE');
       expect(result.active).toBe(true);
@@ -305,8 +291,8 @@ describe('AccountController', () => {
   // -----------------------------------------------------------------------
 
   describe('GET /export — exportData', () => {
-    it('returns data export for a valid userId', async () => {
-      const result = await controller.exportData(USER_ID);
+    it('returns data export for the authenticated user', async () => {
+      const result = await controller.exportData(user(USER_ID));
 
       expect(result.userId).toBe(USER_ID);
       expect(result.account.email).toBe(`${USER_ID}@placeholder.local`);
@@ -314,10 +300,6 @@ describe('AccountController', () => {
       expect(result.calculationHistory).toHaveLength(2);
       expect(result.subscription.plan).toBe('FREE');
       expect(mockDataExportService.exportUserData).toHaveBeenCalledWith(USER_ID);
-    });
-
-    it('throws BadRequestException when userId is missing', async () => {
-      await expect(controller.exportData(undefined)).rejects.toThrow(BadRequestException);
     });
 
     it('re-throws NotFoundException from DataExportService', async () => {
@@ -328,7 +310,7 @@ describe('AccountController', () => {
         new NotFoundException('User "ghost" not found'),
       );
 
-      await expect(controller.exportData('ghost')).rejects.toThrow(NotFoundException);
+      await expect(controller.exportData(user('ghost'))).rejects.toThrow(NotFoundException);
     });
 
     it('wraps unknown errors in InternalServerErrorException', async () => {
@@ -336,9 +318,52 @@ describe('AccountController', () => {
         new Error('DB connection lost'),
       );
 
-      await expect(controller.exportData(USER_ID)).rejects.toThrow(
-        'DB connection lost',
+      await expect(controller.exportData(user(USER_ID))).rejects.toThrow(
+        InternalServerErrorException,
       );
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /verify-email — anonymous → verified upgrade (task 2.4)
+  // -----------------------------------------------------------------------
+
+  describe('POST /verify-email — verifyEmail', () => {
+    it('persists a valid email and confirms the upgrade', async () => {
+      const verifyEmail = vi.fn(async (): Promise<void> => undefined);
+      (mockAccountService as { verifyEmail?: unknown }).verifyEmail = verifyEmail;
+
+      const result = await controller.verifyEmail(
+        { email: 'user@example.com' },
+        user(USER_ID),
+      );
+
+      expect(result).toEqual({ verified: true, email: 'user@example.com' });
+      expect(verifyEmail).toHaveBeenCalledWith(USER_ID, 'user@example.com');
+    });
+
+    it('rejects a malformed email with BadRequestException', async () => {
+      await expect(
+        controller.verifyEmail({ email: 'not-an-email' }, user(USER_ID)),
+      ).rejects.toThrow('email');
+    });
+
+    it('rejects a missing email with BadRequestException', async () => {
+      await expect(
+        controller.verifyEmail({} as { email: string }, user(USER_ID)),
+      ).rejects.toThrow('email');
+    });
+
+    it('scopes the upgrade to the authenticated identity', async () => {
+      const verifyEmail = vi.fn(async (): Promise<void> => undefined);
+      (mockAccountService as { verifyEmail?: unknown }).verifyEmail = verifyEmail;
+
+      await controller.verifyEmail(
+        { email: 'other@example.com' },
+        user(ANOTHER_USER_ID),
+      );
+
+      expect(verifyEmail).toHaveBeenCalledWith(ANOTHER_USER_ID, 'other@example.com');
     });
   });
 });
