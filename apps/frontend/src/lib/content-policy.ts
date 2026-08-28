@@ -20,9 +20,15 @@ export interface ContentViolation {
 /**
  * Forbidden adjectives and promotional phrases.
  * Checked case-insensitively against word boundaries.
+ *
+ * English vocabulary covers the UI chrome and the English message catalog;
+ * the Finnish vocabulary mirrors the backend ContentLintService banned
+ * patterns (see src/lib/content-lint.ts) so the Finnish catalog is policed
+ * with equivalent strictness.
  */
 export const FORBIDDEN_ADJECTIVES: ReadonlyMap<string, string | undefined> =
   new Map([
+    // English
     ['best', undefined],
     ['amazing', undefined],
     ['top bargain', undefined],
@@ -74,6 +80,15 @@ export const FORBIDDEN_ADJECTIVES: ReadonlyMap<string, string | undefined> =
     ['top', undefined],
     ['lowest price', 'use "lowest landed cost" for total comparison'],
     ['lowest cost', undefined],
+    // Finnish (mirrors the backend ContentLintService vocabulary)
+    ['paras', 'käytä neutraalia kuvausta tai jätä arvio pois'],
+    ['edullisin', 'käytä "matalin kokonaiskustannus" tai "matalin hinta"'],
+    ['laadukas', 'käytä todellista tuotteen tasoa tai jätä kuvaus pois'],
+    ['ensiluokkainen', undefined],
+    ['ainutlaatuinen', undefined],
+    ['täydellinen', undefined],
+    ['haitaton', 'alcohol is not harmless; state facts only'],
+    ['turvallisin', undefined],
   ]);
 
 const CONTEXT_CHARS = 40;

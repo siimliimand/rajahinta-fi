@@ -1,0 +1,472 @@
+{
+  "Metadata": {
+    "title": "Rajahinta.fi",
+    "description": "Finnish cross-border beverage price index and landed-cost intelligence platform"
+  },
+  "Common": {
+    "reliability": {
+      "VERIFIED": "Verified",
+      "ESTIMATED": "Estimated",
+      "STALE": "Stale",
+      "UNAVAILABLE": "Unavailable"
+    },
+    "confidence": {
+      "HIGH": "High confidence",
+      "MEDIUM": "Medium confidence",
+      "LOW": "Low confidence"
+    },
+    "calculatedAt": "Calculated at",
+    "datasetVersions": "Dataset versions",
+    "recordId": "Record ID",
+    "dataReliability": "Data reliability",
+    "transport": "Transport",
+    "quantity": "Quantity",
+    "merchant": "Merchant",
+    "cancel": "Cancel",
+    "remove": "Remove",
+    "dismiss": "Dismiss",
+    "retry": "Retry",
+    "tryAgain": "Try again",
+    "sessionId": "Session ID: {id}…",
+    "abvLabel": "Alcohol by volume",
+    "abvValue": "{value}% ABV",
+    "unitCount": "{count, plural, one {# unit} other {# units}}",
+    "offerCount": "{count, plural, one {# offer} other {# offers}}",
+    "countries": {
+      "FI": "Finland",
+      "EE": "Estonia",
+      "LV": "Latvia",
+      "LT": "Lithuania",
+      "DE": "Germany",
+      "SE": "Sweden",
+      "DK": "Denmark",
+      "PL": "Poland",
+      "NL": "Netherlands",
+      "BE": "Belgium",
+      "FR": "France",
+      "ES": "Spain",
+      "IT": "Italy",
+      "AT": "Austria",
+      "CZ": "Czech Republic"
+    }
+  },
+  "Nav": {
+    "backHome": "← Home",
+    "backToCalculator": "← Back to calculator",
+    "backToAccount": "← My account",
+    "openCalculator": "Open calculator",
+    "compareProducts": "Compare products",
+    "howRankingWorks": "How ranking works",
+    "myAccount": "My account",
+    "calculateAnother": "Calculate another product"
+  },
+  "Home": {
+    "subtitle": "Finnish cross-border beverage landed-cost calculator"
+  },
+  "AgeGate": {
+    "title": "Age verification",
+    "body": "This site contains alcohol-related content. Are you 18 or older?",
+    "confirm": "Yes, I am 18+",
+    "deny": "No",
+    "note": "No personal data is collected. A local flag is stored in your browser."
+  },
+  "AgeGatePage": {
+    "title": "Welcome",
+    "body": "You have been verified. You can now browse the site.",
+    "goHome": "Go to home page"
+  },
+  "NotFound": {
+    "title": "Page not found",
+    "body": "The requested page does not exist.",
+    "goHome": "Go to home page"
+  },
+  "Calculator": {
+    "title": "Landed-cost calculator",
+    "subtitle": "Search for a product, select a quantity, and get an itemized landed-cost estimate for Finland.",
+    "searchResults": "Search results",
+    "selectedProduct": "Selected product",
+    "change": "Change",
+    "calculate": "Calculate landed cost",
+    "calculating": "Calculating…",
+    "searchFailed": "Search failed. Please try again.",
+    "calculationFailed": "Calculation failed. Please try again.",
+    "selectProductFirst": "Select a product before saving a scenario."
+  },
+  "ProductSearch": {
+    "placeholder": "Search products…",
+    "search": "Search",
+    "searching": "Searching…"
+  },
+  "ProductSelector": {
+    "typeToSearch": "Type a product name to start searching.",
+    "noResults": "No products found for \"{query}\"."
+  },
+  "QuantitySelector": {
+    "label": "Quantity",
+    "decrease": "Decrease quantity",
+    "increase": "Increase quantity",
+    "range": "(1–{max})"
+  },
+  "CalculatorResult": {
+    "unitsTimesDestination": "{count, plural, one {# unit} other {# units}} × {destination}",
+    "costBreakdown": "Cost breakdown",
+    "total": "Total",
+    "dataFreshness": "Data freshness",
+    "noFreshnessData": "No freshness data available.",
+    "taxRateDataset": "Tax rate dataset: {versions}",
+    "transactionClassification": "Transaction classification",
+    "notStored": "Not stored with this record",
+    "availableAt": "Available at",
+    "viewAt": "View at {merchant}",
+    "category": {
+      "foreignRetailPrice": "Foreign retail price",
+      "transportCost": "Transport cost",
+      "alcoholExciseEstimate": "Alcohol excise estimate",
+      "containerDutyEstimate": "Container duty estimate",
+      "otherCharges": "Other charges"
+    }
+  },
+  "DisclaimerBanner": {
+    "languageName": {
+      "fi": "Finnish",
+      "en": "English"
+    }
+  },
+  "CorrectionFlag": {
+    "trigger": "Flag a problem",
+    "calculation": "Calculation",
+    "describeIssue": "Describe the issue",
+    "placeholder": "E.g. the alcohol tax rate seems incorrect for this product category.",
+    "submit": "Submit",
+    "submitting": "Submitting…",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "dismiss": "Dismiss",
+    "errorTitle": "Error",
+    "successTitle": "Thank you for your feedback",
+    "successBody": "We will review the flagged calculation and update it if needed.",
+    "submitFailed": "Failed to submit. Please try again."
+  },
+  "DeclarationGuidance": {
+    "title": "Declaration guidance",
+    "locked": "Declaration guidance requires an upgraded subscription.",
+    "derivationTitle": "How the estimate was derived",
+    "category": "Category",
+    "volumePerUnit": "Volume per unit",
+    "totalVolume": "Total volume",
+    "unitCount": "{count, plural, one {# unit} other {# units}}",
+    "rateKind": {
+      "alcoholExcise": "Alcohol excise",
+      "containerDuty": "Container duty"
+    },
+    "ruleVersion": "Rule version {version}",
+    "ratePerUnit": "€{rate} per {unit}",
+    "deadlineTitle": "Advance-notice deadline",
+    "deadlineRequired": "Advance notice to customs is required for this classification.",
+    "deadlineNotRequired": "Advance notice is not required for this classification.",
+    "dueDate": "Due {date}",
+    "dueDateUnknown": "Due date could not be determined from the calculation timestamp.",
+    "deadlineDays": " — {days} days from {from}",
+    "checklist": "Checklist",
+    "caveats": "Caveats",
+    "officialSources": "Official sources"
+  },
+  "HistoryChart": {
+    "metric": {
+      "price": "Foreign retail price",
+      "landed-cost": "Landed cost"
+    },
+    "granularity": {
+      "day": "Daily",
+      "week": "Weekly"
+    },
+    "chartHeading": "{metric} · history",
+    "chartTitle": "{metric} history chart",
+    "chartDesc": "{seriesCount} series from {from} to {to}. {markerCount} tax rule change markers.",
+    "bucketsLine": "{granularity} buckets · {observations, plural, one {# observation} other {# observations}} · {from} – {to}",
+    "classification": {
+      "TAX_RULE_CHANGE": "Tax rule change",
+      "MERCHANT_PRICE_CHANGE": "Merchant price change",
+      "TRANSPORT_CHANGE": "Transport cost change",
+      "MIXED": "Multiple changes",
+      "UNCHANGED": "No change"
+    },
+    "allMerchants": "All merchants",
+    "noData": "No history data available for the selected range.",
+    "dataAvailableFrom": "Data available from {date}",
+    "latest": "Latest {date}",
+    "markerTitle": "{merchant}: {classification} {date}",
+    "markerSr": "{merchant}: {classification} {date}",
+    "markerSrLabel": ", {label}",
+    "seriesTitle": "{name} — {metric}"
+  },
+  "ProductHistoryPanel": {
+    "ariaLabel": "Price history",
+    "metricGroup": "History metric",
+    "metricPrice": "Foreign retail price",
+    "metricLandedCost": "Landed cost",
+    "allMerchants": "All merchants",
+    "unavailable": "Historical data is temporarily unavailable.",
+    "tryAgain": "Try again"
+  },
+  "ReportExport": {
+    "title": "Export",
+    "downloadJson": "Download JSON",
+    "downloadCsv": "Download CSV",
+    "print": "Print report",
+    "downloading": "Downloading…",
+    "preparing": "Preparing…",
+    "errors": {
+      "entitlement": "Exporting reports requires an upgraded subscription.",
+      "rate-limited": "Report export is temporarily unavailable. Please try again later.",
+      "unknown": "Report export failed. Please try again.",
+      "network": "Report export failed. Please try again."
+    }
+  },
+  "ScenarioControls": {
+    "ariaLabel": "Scenarios",
+    "title": "Scenarios",
+    "nameLabel": "Scenario name",
+    "namePlaceholder": "Scenario name",
+    "save": "Save scenario",
+    "saving": "Saving…",
+    "selectToEnable": "Select a product to enable saving.",
+    "loadLabel": "Load a saved scenario",
+    "noScenarios": "No saved scenarios",
+    "selectPlaceholder": "Select a scenario…",
+    "saved": "Scenario \"{name}\" saved.",
+    "loaded": "Scenario \"{name}\" loaded — calculation re-run.",
+    "saveFailed": "Saving the scenario failed. Please try again."
+  },
+  "SortOrders": {
+    "LOWEST_LANDED_COST": {
+      "label": "Lowest landed cost",
+      "description": "Products are sorted by total estimated landed cost from lowest to highest. The total includes foreign retail price, transport costs, alcohol excise duty, and container duty."
+    },
+    "LOWEST_PER_LITRE": {
+      "label": "Lowest per litre",
+      "description": "Products are sorted by cost per litre from lowest to highest. The cost per litre is calculated as total landed cost divided by product volume."
+    },
+    "LOWEST_PER_UNIT": {
+      "label": "Lowest per unit",
+      "description": "Products are sorted by cost per unit from lowest to highest. The cost per unit is calculated as total landed cost divided by quantity."
+    },
+    "ALPHABETICAL": {
+      "label": "Alphabetical (A–Z)",
+      "description": "Products are sorted alphabetically by name from A to Z using Finnish locale rules."
+    },
+    "ALCOHOL_PERCENTAGE": {
+      "label": "Alcohol percentage (highest first)",
+      "description": "Products are sorted by alcohol by volume (ABV) from highest to lowest."
+    },
+    "PRODUCT_CATEGORY": {
+      "label": "Category",
+      "description": "Products are grouped by category and sorted alphabetically within each category. Categories are ordered alphabetically using Finnish locale rules."
+    }
+  },
+  "Compare": {
+    "title": "Product comparison",
+    "subtitle": "Compare landed costs of beverage products side by side. All rankings are objective and neutral.",
+    "addProduct": "Add product",
+    "addProductTitle": "Add a product",
+    "aboutTitle": "About this comparison",
+    "aboutBody": "All landed-cost estimates are calculated for Finland (FI) with default transport. Products are sorted by {sort}. No product position is influenced by commercial factors — every product has equal visual weight. See <link>how ranking works</link>.",
+    "sortedBy": "Sorted by {sort}",
+    "productsCompared": "{count, plural, one {# product} other {# products}} compared",
+    "empty": "No products added to comparison yet.",
+    "totalLandedCost": "Total landed cost",
+    "dataConfidence": "Data confidence",
+    "viewAt": "View at {merchant}"
+  },
+  "SortSelector": {
+    "label": "Sort by"
+  },
+  "MerchantFreshness": {
+    "title": "Merchant data freshness",
+    "freshest": "Freshest observation {date}",
+    "governanceLabel": "Governance status: {status}",
+    "governance": {
+      "GRANTED": "Granted",
+      "PENDING": "Pending",
+      "REVOKED": "Revoked",
+      "EXPIRED": "Expired"
+    },
+    "computed": "Computed {date}"
+  },
+  "BasketCommon": {
+    "addProducts": "Add products",
+    "basketFull": "Basket is full ({max} items maximum). Remove an item to add another.",
+    "basketTitle": "Basket ({count}/{max})",
+    "emptyBasket": "No products added yet. Use the search above to add products.",
+    "maxReached": "Maximum {max} items reached. Remove an item to add another.",
+    "removeAria": "Remove {name}",
+    "destination": "Destination country",
+    "transportTitle": "Transport arrangement",
+    "transport": {
+      "SELLER_ARRANGED": "Seller-arranged",
+      "INDEPENDENT_CARRIER": "Independent carrier",
+      "PERSONAL": "Personal (carry across border)"
+    },
+    "personalNote": "(single-store combinations only)",
+    "minimumOrder": "Minimum order: {value}",
+    "thresholdUnknown": "Minimum order threshold: unknown",
+    "met": "Met",
+    "notMet": "Not met",
+    "transportReliability": {
+      "EXACT": "Exact",
+      "PARTIAL": "Partial"
+    }
+  },
+  "BasketPage": {
+    "title": "Basket optimization",
+    "subtitle": "Add multiple products to find the optimal store combination and landed-cost estimate for Finland.",
+    "optimize": "Optimize basket",
+    "optimizing": "Optimizing…",
+    "errors": {
+      "validation": "Check the entered details. A basket can hold at most 10 products, and each quantity must be 1–99.",
+      "not-found": "The product was not found. Check your search terms and try again.",
+      "gate-rejected": "One or more products cannot currently be processed. Try another product.",
+      "rate-limited": "The service is temporarily busy. Wait a moment and try again.",
+      "network": "Connection to the server failed. Check your network connection and try again.",
+      "unknown": "An unexpected error occurred. Try again or contact support."
+    }
+  },
+  "BasketResults": {
+    "recommended": "Recommended combination",
+    "alternatives": "Alternatives",
+    "alternative": "Alternative {index}",
+    "dataReliability": "Data reliability"
+  },
+  "BasketComparison": {
+    "title": "Multi-store basket comparison",
+    "subtitle": "Compare how the costs of a multi-item basket are distributed across stores. All rankings are objective and neutral.",
+    "comparisonTitle": "Basket comparison",
+    "compareButton": "Compare basket across stores",
+    "alternativesTitle": "Alternative store groupings"
+  },
+  "ResultPage": {
+    "notFoundTitle": "Calculation not found",
+    "invalidId": "Invalid calculation record ID.",
+    "loadFailed": "Failed to load calculation result.",
+    "title": "Calculation result",
+    "recordMeta": "Record #{id} · {date}",
+    "traceableInputs": "Traceable inputs",
+    "product": "Product",
+    "productId": "Product ID",
+    "name": "Name",
+    "volume": "Volume",
+    "volumeValue": "{value} L",
+    "retailOffers": "Retail offers",
+    "offersReferenced": "{count, plural, one {# offer referenced} other {# offers referenced}}",
+    "noOffers": "No retail offers used",
+    "offerIds": "Offer IDs: {ids}",
+    "transportOffer": "Transport offer #{id}",
+    "transportEstimated": "Estimated (no transport offer selected)",
+    "calculationInputs": "Calculation inputs",
+    "destination": "Destination",
+    "transportMethod": "Transport method",
+    "defaultMethod": "Default",
+    "session": "Session",
+    "rateDatasetVersions": "Rate dataset versions"
+  },
+  "Account": {
+    "title": "My account",
+    "subtitle": "Manage your saved baskets, calculation history, and subscription.",
+    "welcomeBack": "Welcome back",
+    "signedInBody": "You are signed in as an anonymous user. Your session is active, and account features are available below.",
+    "continue": "Continue →",
+    "createNewSession": "Create new session",
+    "anonymous": "Anonymous account",
+    "anonymousBody": "Create an anonymous account to save baskets, view your calculation history, and manage your preferences. No email or personal data required.",
+    "createAccount": "Create account",
+    "featuresTitle": "Account features",
+    "savedBaskets": "Saved baskets",
+    "savedBasketsDesc": "Save product selections for quick re-calculation.",
+    "browseSavedBaskets": "Browse saved baskets →",
+    "historyFeature": "Calculation history",
+    "historyFeatureDesc": "View and re-run past landed-cost calculations.",
+    "viewHistory": "View history →",
+    "subscription": "Subscription",
+    "subscriptionDesc": "Manage your plan and billing details.",
+    "comingSoon": "Coming soon",
+    "dataExport": "Data export",
+    "dataExportDesc": "Export your data in JSON format.",
+    "exportButton": "Export my data",
+    "exporting": "Exporting…",
+    "downloadStarted": "Download started — check your downloads folder.",
+    "historyTitle": "Calculation history",
+    "historyDesc": "Your recent landed-cost calculations, newest first.",
+    "loadingHistory": "Loading history…",
+    "noCalculations": "No calculations yet",
+    "noCalculationsDesc": "Visit the <link>landed-cost calculator</link> to run your first calculation.",
+    "reRun": "Re-run",
+    "historyEntry": "{date} · {quantity} × €{total}",
+    "retentionTitle": "Data retention",
+    "retentionBody": "Your data is retained only as long as necessary for the service to function. The following policies apply automatically:",
+    "inactiveAccountsLabel": "Inactive accounts",
+    "inactiveAccountsValue": "Deleted after <strong>12 months</strong> of inactivity",
+    "anonymizationLabel": "Inactive account anonymization",
+    "anonymizationValue": "Anonymized after <strong>6 months</strong> of inactivity",
+    "historyRetentionLabel": "Calculation history",
+    "historyRetentionValue": "Deleted after <strong>24 months</strong>",
+    "analyticsLabel": "Analytics & telemetry",
+    "analyticsValue": "Anonymized after <strong>12 months</strong>",
+    "retentionNote": "Retention is enforced automatically. No action is needed on your part."
+  },
+  "AccountCreate": {
+    "title": "Your anonymous account is ready",
+    "body": "No email or personal data was required. Your session is now active.",
+    "goToAccount": "Go to my account",
+    "startBrowsing": "Start browsing"
+  },
+  "SavedBaskets": {
+    "title": "Saved baskets",
+    "subtitle": "Save product selections to quickly re-run landed-cost calculations.",
+    "loadFailed": "Failed to load saved baskets",
+    "deleteFailed": "Failed to delete basket",
+    "loading": "Loading saved baskets…",
+    "emptyTitle": "No saved baskets yet",
+    "emptyBody": "Use the calculator to save product selections. Saved baskets appear here for quick re-calculation.",
+    "goToCalculator": "Go to calculator",
+    "created": "Created {date}",
+    "itemCount": "{count, plural, one {# item} other {# items}}",
+    "delete": "Delete",
+    "deleting": "Deleting…"
+  },
+  "SavedScenarios": {
+    "title": "Saved scenarios",
+    "body": "Your saved calculator input sets. Loading one on the calculator re-runs the calculation against current data.",
+    "emptyTitle": "No saved scenarios yet",
+    "emptyBody": "Save calculator inputs under a name from the <link>calculator</link>.",
+    "product": "Product #{id}",
+    "unitCount": "{count, plural, one {# unit} other {# units}}",
+    "updated": "Updated {date}"
+  },
+  "Ranking": {
+    "title": "How ranking works",
+    "subtitle": "Objective, transparent, and free of commercial influence.",
+    "neutralityTitle": "Neutrality guarantee",
+    "neutralityStatement": "Rajahinta uses only objective, non-commercial factors to sort products. No merchant payment, promotional flag, or manual boost can affect the position of any product.",
+    "tiebreakerTitle": "Tiebreaker & determinism",
+    "tiebreakerStatement": "All sort orders use the product name as a tiebreaker when the primary sort values are equal. Rankings are deterministic: the same data always produces the same order.",
+    "deterministic": "Deterministic: {value}",
+    "yes": "Yes",
+    "no": "No",
+    "sortOrdersTitle": "Available sort orders",
+    "enforcementTitle": "How neutrality is enforced",
+    "enforcementP1": "The ranking module accepts only a tight input type called <code>NeutralSortInput</code> which contains no field for paid placement, promotional boost, merchant scoring, or any form of manual curation.",
+    "enforcementP2": "Three enforcement layers protect this guarantee:",
+    "layer1Name": "Type-system boundary",
+    "layer1Desc": " — the sort function only accepts <code>NeutralSortInput</code>, a tight interface with only the fields needed for sorting.",
+    "layer2Name": "Compile-time assertion",
+    "layer2Desc": " — a type-level test proves that an object with a <code>paidBoost</code> field is not assignable to NeutralSortInput.",
+    "layer3Name": "Runtime guard",
+    "layer3Desc": " — the sort function rejects any input object with properties not declared on NeutralSortInput, catching accidental data leakage at runtime.",
+    "spotTitle": "Spot a problem?",
+    "spotBody": "If you believe a product ranking, calculation, or data point is incorrect, you can flag it for review from the <link>calculator result page</link>. Each result includes a \"Flag a problem\" affordance that sends your feedback directly to our review team."
+  },
+  "ContentSafetyBadge": {
+    "promotional": "Promotional language detected: \"{pattern}\" ({language})",
+    "violations": "{count, plural, one {# content-policy violation found} other {# content-policy violations found}}"
+  }
+}

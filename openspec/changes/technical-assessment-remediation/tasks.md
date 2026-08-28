@@ -70,7 +70,7 @@
 ## 9. Frontend UX + i18n (findings 11, 12, 13; add 7, add 8)
 
 - [ ] 9.1 Age gate hardening — neutral in-house redirect page, SSR placeholder with gating after mount (or a server-readable cookie), document Phase 1 as self-attestation <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/app/components/AgeGate.tsx, apps/frontend/src/app/**] -->
-- [ ] 9.2 Introduce next-intl — Finnish default, English secondary, copy moved into message catalogs, content-policy lint covers both locales, `lang` follows the active locale <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/**] -->
+- [x] 9.2 Introduce next-intl — Finnish default, English secondary, copy moved into message catalogs, content-policy lint covers both locales, `lang` follows the active locale <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/**] -->
 - [ ] 9.3 Add the layout-level header (calculator, compare, basket, account, ranking) and footer (disclaimer, methodology); remove per-page back-links <!-- agent: platform-engineer.build, depends_on: [9.2], touches: [apps/frontend/src/app/**] -->
 - [ ] 9.4 Inline feature-flag states in the initial HTML payload so gated UI does not appear late <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/**] -->
 - [ ] 9.5 SEO surface — sitemap, robots, per-product pages with metadata <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/app/**] -->

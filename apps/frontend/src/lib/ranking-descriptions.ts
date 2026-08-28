@@ -1,14 +1,15 @@
 /**
- * Shared ranking descriptions — single source of truth for sort-order
- * display text in the frontend.
+ * Shared ranking descriptions — the English reference copy for sort-order
+ * display text, kept in lockstep with `RankingService.describeSortOrder()`
+ * in `packages/core-domain/src/ranking/ranking.service.ts`.
  *
- * These strings must stay in lockstep with
- * `RankingService.describeSortOrder()` in
- * `packages/core-domain/src/ranking/ranking.service.ts`.
- * Change both files together when adding or updating sort orders.
- *
- * A compliance test in `tests/compliance/ranking-lockstep.test.ts`
- * asserts the lockstep automatically in CI.
+ * The rendered UI copy now lives in the message catalogs
+ * (`src/messages/en.json` under `SortOrders.*.description`). The English
+ * catalog values must equal these strings exactly; the catalog parity test
+ * (`src/__tests__/messages.test.ts`) asserts that chain, and the compliance
+ * test (`tests/compliance/ranking-lockstep.test.ts`) pins these strings to
+ * the backend service. Change all three places together when adding or
+ * updating sort orders.
  */
 
 import type { SortOrder } from '@/lib/types';
@@ -41,16 +42,4 @@ export const SORT_ORDER_DESCRIPTIONS: Record<SortOrder, string> = {
     'Products are grouped by category and sorted alphabetically ' +
     'within each category. Categories are ordered alphabetically ' +
     'using Finnish locale rules.',
-};
-
-/**
- * Human-readable label for each sort order.
- */
-export const SORT_LABEL: Record<SortOrder, string> = {
-  LOWEST_LANDED_COST: 'Lowest landed cost',
-  LOWEST_PER_LITRE: 'Lowest per litre',
-  LOWEST_PER_UNIT: 'Lowest per unit',
-  ALPHABETICAL: 'Alphabetical (A–Z)',
-  ALCOHOL_PERCENTAGE: 'Alcohol percentage (highest first)',
-  PRODUCT_CATEGORY: 'Category',
 };
