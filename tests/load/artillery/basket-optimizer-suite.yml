@@ -1,0 +1,115 @@
+# ──────────────────────────────────────────────────────────────────────
+# Artillery HTTP load suite — rajahinta.fi basket optimizer endpoint
+# (task 11.2, change technical-assessment-remediation)
+#
+# Ramp 1→10 concurrent over 60 s, then steady 10 for 120 s.
+# Two payload profiles: 2-item and 4-item baskets over the seeded
+# golden-dataset products (1=beer, 2=wine, 3=spirits).
+#
+# ⚠ Feature flag: POST /api/v1/basket/optimize is guarded by
+# @FeatureFlagDec(FeatureFlag.BASKET_OPTIMIZATION) and answers 403 while
+# the flag is off. Enable it ON THE TARGET before running this suite:
+#   - k8s: add `FF_BASKET_OPTIMIZATION: "true"` to the rajahinta-config
+#     ConfigMap (infra/k8s/base/configmap.yaml or the overlay patch)
+#     and roll the deployment, or
+#   - local/docker: export FF_BASKET_OPTIMIZATION=true for the backend
+#     process (FeatureFlagService reads FF_<FLAG> env vars).
+# A 403 flood in the results means the flag was not enabled.
+#
+# Thresholds:
+#   p95 latency     < 5000 ms   (provisional: service-level measurement
+#                                under the 256m/512Mi staging limits puts
+#                                a 4-item × 4-merchant basket at p95
+#                                ≈ 700 ms server-side; HTTP layer adds
+#                                guards + serialization. Re-baseline after
+#                                the first staging run.)
+#   error rate      < 1 %       (non-2xx, excluding 429 rate-limit
+#                                responses from the BASKET bucket)
+#
+# Idempotency: request bodies carry a random sessionId so identical
+# baskets do not collide on the derived cache key — the suite measures
+# optimizer compute (X-Cache: MISS), not cache hits.
+#
+# Usage:
+#   npx artillery run   tests/load/artillery/basket-optimizer-suite.yml \
+#     --target https://staging.rajahinta.fi
+#
+# Target default (when --target omitted) can be set via $TARGET_URL env.
+# ──────────────────────────────────────────────────────────────────────
+
+config:
+  # Target URL — override with --target CLI flag or TARGET_URL env var.
+  # Default points to staging; swap for localhost:3000 when running locally.
+  target: "https://staging.rajahinta.fi"
+
+  phases:
+    # Basket optimization is enumeration-heavy (service-level p95 under
+    # the 256m/512Mi k8s limits: ~0.7 s per 4-item basket, ~4 s per
+    # 10-item worst case) — the ramp is deliberately gentler than the
+    # calculator suite's 1→50.
+    - duration: 60
+      arrivalRate: 1
+      rampTo: 10
+      name: "Ramp up 1→10 concurrent"
+    - duration: 120
+      arrivalRate: 10
+      name: "Steady 10 concurrent"
+
+  # ── Thresholds ──────────────────────────────────────────────────────
+  ensure:
+    p95: 5000
+    max: 30000
+    conditions:
+      # Non-2xx responses < 1 % of 2xx responses. 429s from the BASKET
+      # rate-limit bucket count as errors here — if the steady phase
+      # trips the limiter, tune the bucket, not this condition.
+      - expression: "http.response_status.{code:4xx}.count + http.response_status.{code:5xx}.count < 0.01 * http.response_status.{code:2xx}.count"
+
+  plugins:
+    ensure: {}
+
+  http:
+    timeout: 60
+    # Retry on connection errors so transient network issues don't
+    # pollute the error-rate metric. 429s and 5xx are still counted.
+    pool: 10
+
+scenarios:
+  # ── Profile 1: Two-item basket — the common interactive shape ──────
+  - name: "basket-two-item"
+    weight: 6
+    flow:
+      - post:
+          url: "/api/v1/basket/optimize"
+          json:
+            items:
+              - productId: 1
+                quantity: 6
+              - productId: 3
+                quantity: 2
+            destination: "FI"
+            transportArrangement: "SELLER_ARRANGED"
+            sessionId: "load-{{ $randomString() }}"
+
+  # ── Profile 2: Four-item basket — heavier enumeration ──────────────
+  # Mirrors the service-level "typical" scenario in
+  # tests/load/basket-optimizer-load.test.ts (4 items, multi-merchant
+  # candidate space over the seeded offers).
+  - name: "basket-four-item"
+    weight: 4
+    flow:
+      - post:
+          url: "/api/v1/basket/optimize"
+          json:
+            items:
+              - productId: 1
+                quantity: 6
+              - productId: 2
+                quantity: 3
+              - productId: 3
+                quantity: 2
+              - productId: 2
+                quantity: 1
+            destination: "FI"
+            transportArrangement: "SELLER_ARRANGED"
+            sessionId: "load-{{ $randomString() }}"
