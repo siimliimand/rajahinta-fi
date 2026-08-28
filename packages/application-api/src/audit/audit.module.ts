@@ -26,7 +26,6 @@ import {
   ClickCounterSnapshotRepository,
   DrizzleClickCounterSnapshotRepository,
 } from '@rajahinta/data-platform';
-import { InMemoryAuditRepository } from './in-memory-audit.repository';
 import { RedisClickAnalyticsService } from './redis-click-analytics.service';
 import { ClickAnalyticsSnapshotService } from './click-analytics-snapshot.service';
 
@@ -47,8 +46,6 @@ import { ClickAnalyticsSnapshotService } from './click-analytics-snapshot.servic
     AuditService,
     RedisClickAnalyticsService,
     ClickAnalyticsSnapshotService,
-    // Test-only in-memory audit store — imported by name in test setups.
-    InMemoryAuditRepository,
   ],
 })
 export class AuditModule {}
