@@ -104,3 +104,16 @@ The Drizzle schema SHALL include a `basketCalculationRecords` table persisting e
 - **WHEN** a user flags a basket result as incorrect
 - **THEN** staff SHALL be able to reconstruct the result from the recorded basket input, per-shipment breakdown, and dataset versions
 
+### Requirement: Price observations as a TimescaleDB hypertable
+
+`price_observations` SHALL be converted to a TimescaleDB hypertable with the TimescaleDB extension enabled in migrations and the compose file. Aggregation and watermark scans SHALL continue to work with unchanged semantics on the hypertable.
+
+#### Scenario: Extension present
+
+- **WHEN** the database is provisioned through migrations
+- **THEN** the TimescaleDB extension SHALL be installed and `price_observations` SHALL be registered as a hypertable
+
+#### Scenario: Watermark scan unchanged
+
+- **WHEN** the aggregation job scans for observations past the watermark
+- **THEN** results SHALL be identical to the pre-conversion behavior
