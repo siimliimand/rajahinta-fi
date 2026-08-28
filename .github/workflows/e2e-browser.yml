@@ -57,6 +57,13 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 
+      # boot-stack.sh runs the backend and seed from source, which resolve
+      # workspace packages through their dist/ entry points — build them
+      # first (locally these persist between runs, in CI the runner is
+      # fresh).
+      - name: Build workspace packages
+        run: pnpm --filter "./packages/**" build
+
       - name: Boot full stack (timescaledb, redis, migrations, seed, backend, frontend)
         run: bash tests/e2e-browser/boot-stack.sh
 
