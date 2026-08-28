@@ -64,6 +64,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['tests/integration/**/*.test.ts'],
+    // Schema once, before any file — see tests/integration/global-setup.ts
+    // (Vitest 3 schedules data-lifecycle/durability-restart ahead of the
+    // file that used to migrate in beforeAll).
+    globalSetup: [path.resolve(__dirname, 'global-setup.ts')],
     root: REPO_ROOT,
     passWithNoTests: false,
     testTimeout: 30_000, // includes DB migration overhead
