@@ -1,3 +1,4 @@
+import React from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { NextIntlClientProvider } from 'next-intl';
@@ -63,7 +64,9 @@ export default async function RootLayout({
   return (
     <html lang={locale}>
       <body>
-        <NextIntlClientProvider messages={messages}>
+        {/* Explicit locale: the provider must not depend on the RSC
+            request store to know which catalog it carries. */}
+        <NextIntlClientProvider locale={locale} messages={messages}>
           {/* Header and footer stay outside the gate: navigation chrome is
               not restricted content and belongs in the SSR payload. */}
           <div className="flex min-h-screen flex-col">

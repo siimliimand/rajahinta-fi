@@ -21,7 +21,7 @@
 - [x] 2.2 Migrate authentication off `x-user-id` — auth guard resolves the session token (httpOnly cookie), account controller + GDPR paths moved over, legacy header rejected outright <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [packages/application-api/src/accounts/**, packages/application-api/src/index.ts] -->
 - [x] 2.3 Frontend session handling — server-set httpOnly cookie, drop the client-generated UUID cookie from `apps/frontend/src/lib/api.ts` <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [apps/frontend/src/lib/api.ts, apps/frontend/src/app/account/**] -->
 - [x] 2.4 Email verification groundwork (D5) — use the existing verified-email column, anonymous-upgrade path, account data documented disposable until verified <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [packages/application-api/src/accounts/**] -->
-- [ ] 2.5 Session tests — token forge/guess denied, cross-account access denied, rotation invalidates the old token atomically <!-- agent: platform-engineer.build, depends_on: [2.2, 2.3], touches: [packages/application-api/src/accounts/__tests__/**] -->
+- [x] 2.5 Session tests — token forge/guess denied, cross-account access denied, rotation invalidates the old token atomically <!-- agent: platform-engineer.build, depends_on: [2.2, 2.3], touches: [packages/application-api/src/accounts/__tests__/**] -->
 
 ## 3. API correctness (findings 3, 4, 16; low: error envelopes, decimal coercion)
 
@@ -30,7 +30,7 @@
 - [x] 3.3 Gate Swagger to non-production or an env flag; strip the version string from the health body <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/backend/src/main.ts, packages/application-api/src/index.ts] -->
 - [x] 3.4 Unify error envelopes on the documented `ApiErrorResponse` across legacy and current controllers <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/**] -->
 - [x] 3.5 Centralize decimal coercion for pg `numeric` at the repository boundary; remove per-consumer `parseDecimal` duplication <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/**] -->
-- [ ] 3.6 API correctness tests — legacy endpoints honor the body, ops route denies outside the allowlist, envelope conformance suite <!-- agent: platform-engineer.build, depends_on: [3.1, 3.2, 3.4], touches: [packages/application-api/src/**/__tests__/**] -->
+- [x] 3.6 API correctness tests — legacy endpoints honor the body, ops route denies outside the allowlist, envelope conformance suite <!-- agent: platform-engineer.build, depends_on: [3.1, 3.2, 3.4], touches: [packages/application-api/src/**/__tests__/**] -->
 
 ## 4. Rate limiting + durable state (findings 5, 9)
 
@@ -74,7 +74,7 @@
 - [x] 9.3 Add the layout-level header (calculator, compare, basket, account, ranking) and footer (disclaimer, methodology); remove per-page back-links <!-- agent: platform-engineer.build, depends_on: [9.2], touches: [apps/frontend/src/app/**] -->
 - [x] 9.4 Inline feature-flag states in the initial HTML payload so gated UI does not appear late <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/**] -->
 - [x] 9.5 SEO surface — sitemap, robots, per-product pages with metadata <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/frontend/src/app/**] -->
-- [ ] 9.6 Frontend tests — navigation on all pages, age gate leaks nothing in SSR output, flag no-flash, catalog completeness in both locales <!-- agent: platform-engineer.build, depends_on: [9.1, 9.3, 9.4], touches: [apps/frontend/src/**/__tests__/**] -->
+- [x] 9.6 Frontend tests — navigation on all pages, age gate leaks nothing in SSR output, flag no-flash, catalog completeness in both locales <!-- agent: platform-engineer.build, depends_on: [9.1, 9.3, 9.4], touches: [apps/frontend/src/**/__tests__/**] -->
 
 ## 10. Entitlements, optimizer, dead contract (findings 14, 20; low: otherCharges)
 

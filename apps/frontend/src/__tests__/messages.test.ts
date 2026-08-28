@@ -96,3 +96,79 @@ describe('sort-order description lockstep (catalog ↔ reference)', () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Layout and navigation completeness (task 9.6 — extends the global parity
+// tests above with the key SETS the shared chrome, the age gate, and the
+// page navigation depend on, plus a translated-not-copied check per key).
+// ---------------------------------------------------------------------------
+
+describe('layout and navigation catalog completeness', () => {
+  type Catalog = Record<string, Record<string, string>>;
+  const fiTop = fi as unknown as Catalog;
+  const enTop = en as unknown as Catalog;
+
+  /** Assert a namespace exists in both locales with exactly `keys`. */
+  function expectNamespaceKeys(namespace: string, keys: readonly string[]): void {
+    expect(Object.keys(fiTop[namespace] ?? {}).sort()).toEqual([...keys].sort());
+    expect(Object.keys(enTop[namespace] ?? {}).sort()).toEqual([...keys].sort());
+  }
+
+  /** Every key in the namespace is non-empty and genuinely translated. */
+  function expectTranslated(namespace: string, allowSame: readonly string[] = []): void {
+    for (const key of Object.keys(fiTop[namespace] ?? {})) {
+      const fiText = fiKeys.get(`${namespace}.${key}`);
+      const enText = enKeys.get(`${namespace}.${key}`);
+      expect(typeof fiText).toBe('string');
+      expect(fiText!.trim().length).toBeGreaterThan(0);
+      expect(typeof enText).toBe('string');
+      expect(enText!.trim().length).toBeGreaterThan(0);
+      if (!allowSame.includes(key)) {
+        // A copied string means one locale would render the other's
+        // language — the translation is missing in practice.
+        expect(enText).not.toBe(fiText);
+      }
+    }
+  }
+
+  it('SiteHeader carries exactly the five destinations plus the nav label', () => {
+    expectNamespaceKeys('SiteHeader', [
+      'navLabel',
+      'calculator',
+      'compare',
+      'basket',
+      'account',
+      'ranking',
+    ]);
+    expectTranslated('SiteHeader');
+  });
+
+  it('SiteFooter carries the disclaimer and methodology link copy', () => {
+    expectNamespaceKeys('SiteFooter', ['disclaimer', 'methodology']);
+    expectTranslated('SiteFooter');
+  });
+
+  it('AgeGate carries the full dialog copy in both locales', () => {
+    expectNamespaceKeys('AgeGate', ['title', 'body', 'confirm', 'deny', 'note']);
+    expectTranslated('AgeGate');
+  });
+
+  it('the Nav namespace used by pages keeps its key set and stays translated', () => {
+    expectNamespaceKeys('Nav', [
+      'backToCalculator',
+      'openCalculator',
+      'compareProducts',
+      'howRankingWorks',
+      'myAccount',
+      'calculateAnother',
+    ]);
+    expectTranslated('Nav');
+  });
+
+  it('default-document Metadata exists in both locales (title may match)', () => {
+    expectNamespaceKeys('Metadata', ['title', 'description']);
+    expectTranslated('Metadata', ['title']);
+    // Finnish is the default locale's catalog — its description must exist.
+    expect(fiKeys.get('Metadata.description')!.length).toBeGreaterThan(0);
+  });
+});
