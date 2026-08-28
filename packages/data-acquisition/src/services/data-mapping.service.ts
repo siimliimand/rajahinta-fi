@@ -33,12 +33,16 @@ export class DataMappingService {
     record: RawFeedRecord,
     merchantId: string,
   ): MappedPair {
+    // Category + regulatory classification come from the feed adapter's
+    // source-category normalization (task 7.1) — the adapter maps the
+    // source-market string to the canonical tax-rule key. Placeholders
+    // here would be rejected by the classification gate downstream.
     const product: UpsertProductInput = {
       id: 0, // placeholder; the upsert adapter resolves the canonical ID
       name: record.productName,
       manufacturer: record.brand, // placeholder — feed adapter may provide actual manufacturer
       brand: record.brand,
-      category: 'other', // placeholder — will be refined by normalization
+      category: record.category,
       containerType: record.containerType,
       unitVolume: String(record.volumeMl),
       alcoholByVolume:
@@ -46,7 +50,7 @@ export class DataMappingService {
           ? String(record.alcoholByVolume)
           : null,
       ean: record.ean,
-      regulatoryClassification: 'unknown',
+      regulatoryClassification: record.regulatoryClassification,
       depositSystemStatus: false,
     };
 

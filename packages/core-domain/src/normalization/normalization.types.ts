@@ -8,6 +8,8 @@
  * @module NormalizationTypes
  */
 
+import { TAX_CATEGORY_KEYS } from '../tax/tax-categories';
+
 // ---------------------------------------------------------------------------
 // Canonical enums
 // ---------------------------------------------------------------------------
@@ -31,6 +33,63 @@ export type CanonicalCategory =
   | 'sake'
   | 'non-alcoholic'
   | 'other';
+
+/**
+ * Runtime list of every canonical category value.
+ *
+ * The type above is compile-time only; this constant is what validation
+ * and iteration code checks against (same convention as the tax
+ * module's TAX_CATEGORY_KEYS).
+ */
+export const CANONICAL_CATEGORY_KEYS = [
+  'beer',
+  'cider',
+  'wine',
+  'sparkling-wine',
+  'fortified-wine',
+  'spirits',
+  'liqueur',
+  'long-drink',
+  'sake',
+  'non-alcoholic',
+  'other',
+] as const satisfies readonly CanonicalCategory[];
+
+/**
+ * The known `regulatoryClassification` vocabulary the classification gate
+ * validates against (task 7.1, change technical-assessment-remediation).
+ *
+ * A value passes the gate iff it is a member of one of the platform's
+ * known category vocabularies — each maps deterministically into the
+ * excise engine, so gate-passing data is tax-meaningful:
+ *
+ * - the normalization layer's canonical categories
+ *   ({@link CANONICAL_CATEGORY_KEYS}),
+ * - the tax rules' own category keys (TAX_CATEGORY_KEYS — what ingestion
+ *   writes after source-category normalization),
+ * - the broad legacy regulatory classes ('wine', 'intermediate', 'other')
+ *   present in seeded product-master data before the canonical taxonomy
+ *   existed.
+ *
+ * Everything else is a placeholder or garbage — most notably the literal
+ * 'unknown' that feed adapters historically stamped — and is rejected.
+ * Non-emptiness alone has never been a classification.
+ */
+export const KNOWN_REGULATORY_CLASSIFICATIONS: ReadonlySet<string> = new Set<string>([
+  ...CANONICAL_CATEGORY_KEYS,
+  ...TAX_CATEGORY_KEYS,
+  // Legacy broad classes in seeded product data (ExciseCategory members
+  // that predate the canonical vocabulary).
+  'wine',
+  'intermediate',
+  'other',
+]);
+
+/**
+ * Placeholder classification values that adapters historically wrote when
+ * the feed carried no usable category. Always rejected by the gate.
+ */
+export const REGULATORY_CLASSIFICATION_PLACEHOLDER = 'unknown';
 
 /**
  * Canonical container/packaging types.

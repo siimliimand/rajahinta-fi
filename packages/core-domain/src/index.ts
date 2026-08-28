@@ -93,6 +93,23 @@ export interface ContainerDutyCalculation {
 export { TAX_RULE_REPOSITORY_PORT } from './tax/index';
 export type { ITaxRuleRepositoryPort, TaxRuleRecordPort, AbvTierConditions } from './tax/index';
 
+// ---------------------------------------------------------------------------
+// FX rate datasets — versioned, manually-confirmed conversion-rate datasets
+// ---------------------------------------------------------------------------
+
+export { FX_RATE_DATASET_REPOSITORY_PORT } from './fx/index';
+export type { IFxRateDatasetRepositoryPort } from './fx/index';
+export { FxRateDatasetService } from './fx/index';
+export type {
+  FxDatasetStatus,
+  FxDatasetVersion,
+  FxRateEntry,
+  NewFxDataset,
+  ResolvedFxDatasetRate,
+} from './fx/index';
+export { FX_DATASET_STATUSES } from './fx/index';
+export { FxModule, type FxModuleOptions } from './fx/index';
+
 // Tax formula reference constants — values stored in taxRules.calculationFormulaReference
 export {
   FORMULA_PER_LITRE_OF_PRODUCT,
@@ -107,8 +124,8 @@ export { AlcoholExciseService, ContainerDutyService } from './tax/index';
 export type { ExciseResult, ContainerDutyResult } from './tax/index';
 
 // Tax-type constants — canonical vocabulary used across seed, engine, tests
-export { TAX_TYPES } from './tax/index';
-export type { TaxType } from './tax/index';
+export { TAX_TYPES, TAX_CATEGORY_KEYS } from './tax/index';
+export type { TaxType, TaxCategory } from './tax/index';
 // Category canonicalisation — read-side consumers (e.g. historical-data
 // attribution windows) must query rules with the same normalised category
 // the engines resolved observations against.
@@ -249,6 +266,20 @@ export type {
   RawProductInput,
   VolumeUnit,
 } from './normalization/normalization.types';
+
+// Classification vocabulary + source-category normalization (task 7.1) —
+// the classification gate and the ingestion adapters share these.
+export {
+  CANONICAL_CATEGORY_KEYS,
+  KNOWN_REGULATORY_CLASSIFICATIONS,
+  REGULATORY_CLASSIFICATION_PLACEHOLDER,
+} from './normalization/normalization.types';
+export {
+  mapSourceCategory,
+  isKnownTaxCategory,
+  SWEDISH_SOURCE_CATEGORY_MAP,
+} from './normalization/source-category.mapper';
+export type { SourceCategoryMapping } from './normalization/source-category.mapper';
 
 // -- Product matching / deduplication --
 

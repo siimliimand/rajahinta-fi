@@ -4,6 +4,12 @@
  * Fetches the Systembolaget product assortment JSON API and maps items
  * to the canonical {@link RawFeedRecord} format consumed by the pipeline.
  *
+ * Source categories are normalized at ingestion (task 7.1): the Swedish
+ * assortment group ("Öl", "Vin", …) is mapped to the canonical tax-rule
+ * category key, so downstream data is gate-valid and tax-meaningful.
+ * Items whose category has no mapping are reported as per-item errors —
+ * flagged for the correction queue, never silently assigned a fallback.
+ *
  * The adapter handles pagination (if present) and reports per-item mapping
  * errors via the returned errors array — it never throws for recoverable
  * failures.
@@ -11,6 +17,7 @@
  * @module SystembolagetFeedAdapter
  */
 
+import { mapSourceCategory } from '@rajahinta/core-domain';
 import type { IFeedAdapter, RawFeedRecord } from '../interfaces/feed-adapter.interface';
 
 // ---------------------------------------------------------------------------
@@ -115,20 +122,34 @@ export class SystembolagetFeedAdapter implements IFeedAdapter {
 
   /**
    * Map a single Systembolaget product to the canonical {@link RawFeedRecord}.
+   *
+   * @throws when the source category has no canonical mapping — the
+   * per-item catch upstream reports it for the correction queue.
    */
   private mapToRecord(item: SystembolagetProduct): RawFeedRecord {
+    // SE→canonical normalization at ingestion (task 7.1). The tax-rule
+    // category key is what the classification gate validates against and
+    // the excise engine keys on — no placeholder, no fallback guess.
+    const mapping = mapSourceCategory(item.category ?? '');
+    if (mapping === null) {
+      throw new Error(
+        `Swedish category "${item.category}" has no canonical mapping — ` +
+          'flagged for the correction queue',
+      );
+    }
+
     return {
       productId: item.productId,
       productName: item.productNameBold,
       manufacturer: item.productNameThin ?? item.productNameBold,
       brand: item.productNameBold,
-      category: item.category ?? 'other',
+      category: mapping.taxCategory,
       // API returns percentage (e.g. 5.2) — convert to decimal fraction
       alcoholByVolume:
         item.alcoholPercentage != null ? item.alcoholPercentage / 100 : null,
       volumeMl: item.bottleVolume ?? 0,
       containerType: item.apk ?? item.bottleText ?? 'unknown',
-      regulatoryClassification: 'unknown',
+      regulatoryClassification: mapping.taxCategory,
       depositSystem: false,
       ean: null, // Systembolaget JSON API does not expose EAN
       priceCents: item.price != null ? Math.round(item.price * 100) : 0,

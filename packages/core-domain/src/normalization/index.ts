@@ -16,6 +16,21 @@ export type {
   VolumeUnit,
 } from './normalization.types';
 
+// Classification vocabulary (task 7.1 — gate validates against this set)
+export {
+  CANONICAL_CATEGORY_KEYS,
+  KNOWN_REGULATORY_CLASSIFICATIONS,
+  REGULATORY_CLASSIFICATION_PLACEHOLDER,
+} from './normalization.types';
+
+// Source-category normalization (task 7.1 — SE → canonical at ingestion)
+export {
+  mapSourceCategory,
+  isKnownTaxCategory,
+  SWEDISH_SOURCE_CATEGORY_MAP,
+} from './source-category.mapper';
+export type { SourceCategoryMapping } from './source-category.mapper';
+
 // Matcher types
 export type {
   MatchConfidence,

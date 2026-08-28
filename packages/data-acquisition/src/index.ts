@@ -31,6 +31,7 @@ export { PriceIngestionService } from './abstract/price-ingestion.service';
  * @deprecated Use {@link PipelineOrchestratorService} instead.
  */
 export { TransportRateService } from './abstract/transport-rate.service';
+export type { TransportRateRefreshResult } from './abstract/transport-rate.service';
 
 /**
  * Checks for newly published official tax rate changes.
@@ -91,6 +92,32 @@ export { OFFER_CHANGE_HOOK_TOKEN } from './interfaces/offer-change-hook.interfac
 export { DrizzleUpsertRepository } from './adapters/upsert-port.adapter';
 
 // ---------------------------------------------------------------------------
+// Transport-rate refresh — real carrier sources through the governance
+// gate (task 7.4, design D6 — Posti first)
+// ---------------------------------------------------------------------------
+
+export type {
+  ICarrierRateSource,
+  CarrierRateOffer,
+} from './interfaces/carrier-rate-source.port';
+export { CARRIER_RATE_SOURCES_TOKEN, POSTI_RATE_FEED_URL } from './interfaces/carrier-rate-source.port';
+
+export type {
+  ITransportOfferWritePort,
+  TransportOfferWrite,
+  TransportReliabilityStatus,
+} from './interfaces/transport-offer-write.port';
+export { TRANSPORT_OFFER_WRITE_PORT } from './interfaces/transport-offer-write.port';
+
+export {
+  PostiCarrierRateSource,
+  parsePostiRates,
+} from './adapters/posti-rate.source';
+export type { RateFeedFetcher } from './adapters/posti-rate.source';
+
+export { DrizzleTransportOfferWriteAdapter } from './adapters/transport-offer-write.adapter';
+
+// ---------------------------------------------------------------------------
 // Rate review — scheduled checks, manual confirmation entries
 // ---------------------------------------------------------------------------
 
@@ -130,6 +157,11 @@ import { PipelinePriceIngestionAdapter } from './adapters/pipeline-price-ingesti
 import { PipelineTransportRateAdapter } from './adapters/pipeline-transport-rate.adapter';
 import { PipelineTaxDatasetReviewAdapter } from './adapters/pipeline-tax-dataset-review.adapter';
 import { InMemoryRateReviewRepository } from './adapters/rate-review-repository.adapter';
+import { PostiCarrierRateSource } from './adapters/posti-rate.source';
+import { DrizzleTransportOfferWriteAdapter } from './adapters/transport-offer-write.adapter';
+import { CARRIER_RATE_SOURCES_TOKEN } from './interfaces/carrier-rate-source.port';
+import { TRANSPORT_OFFER_WRITE_PORT } from './interfaces/transport-offer-write.port';
+import type { ICarrierRateSource } from './interfaces/carrier-rate-source.port';
 
 // ---------------------------------------------------------------------------
 // NestJS module — registers Bull queues, exposes pipeline services
@@ -182,6 +214,23 @@ import { InMemoryRateReviewRepository } from './adapters/rate-review-repository.
     DrizzleUpsertRepository,
     { provide: UPSERT_REPOSITORY_TOKEN, useClass: DrizzleUpsertRepository },
 
+    // Transport-rate refresh (task 7.4) — carrier sources keyed by
+    // carrierId (Posti first, design D6), the transport-offer write
+    // port, and the governance-gated refresh service behind the
+    // TransportRateService slot.
+    PostiCarrierRateSource,
+    {
+      provide: CARRIER_RATE_SOURCES_TOKEN,
+      useFactory: (posti: PostiCarrierRateSource): Map<string, ICarrierRateSource> => {
+        const map = new Map<string, ICarrierRateSource>();
+        map.set(posti.carrierId, posti);
+        return map;
+      },
+      inject: [PostiCarrierRateSource],
+    },
+    DrizzleTransportOfferWriteAdapter,
+    { provide: TRANSPORT_OFFER_WRITE_PORT, useClass: DrizzleTransportOfferWriteAdapter },
+
     // Rate-review repository port — in-memory adapter for Phase 1
     { provide: RATE_REVIEW_REPOSITORY_PORT, useClass: InMemoryRateReviewRepository },
 
@@ -204,6 +253,8 @@ import { InMemoryRateReviewRepository } from './adapters/rate-review-repository.
     RATE_REVIEW_CONFIG_TOKEN,
     MERCHANT_CONFIG_TOKEN,
     FEED_ADAPTERS_TOKEN,
+    CARRIER_RATE_SOURCES_TOKEN,
+    TRANSPORT_OFFER_WRITE_PORT,
   ],
 })
 export class DataAcquisitionModule {}

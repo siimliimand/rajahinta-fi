@@ -2,10 +2,13 @@
  * ClassificationGateService — ensures a product carries a regulatory
  * classification before it enters the landed-cost pipeline.
  *
- * Every canonical product must have a non-null `regulatoryClassification`
- * assigned before it can appear in a landed-cost calculation. This gate
- * enforces that invariant. Unclassified products are excluded — never
- * shown with a guessed classification.
+ * Every canonical product must carry a `regulatoryClassification` that is
+ * a member of the known classification vocabulary
+ * ({@link KNOWN_REGULATORY_CLASSIFICATIONS}) before it can appear in a
+ * landed-cost calculation. Non-emptiness alone does not pass: the
+ * placeholder 'unknown' that feed adapters historically stamped, and any
+ * other non-member value, is rejected. Unclassified products are
+ * excluded — never shown with a guessed classification.
  *
  * The gate is a pure check: it does not assign classifications, nor does
  * it know how classifications are determined. That is the responsibility
@@ -16,6 +19,10 @@
  */
 
 import { Injectable } from '@nestjs/common';
+import {
+  KNOWN_REGULATORY_CLASSIFICATIONS,
+  REGULATORY_CLASSIFICATION_PLACEHOLDER,
+} from './normalization.types';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,20 +59,44 @@ export class ClassificationGateService {
   /**
    * Check whether a product passes the classification gate.
    *
-   * A product passes iff its `regulatoryClassification` is a non-null,
-   * non-empty string.
+   * A product passes iff its `regulatoryClassification` is a non-empty,
+   * case-insensitive member of the known classification vocabulary.
+   * The placeholder value 'unknown' and every other non-member are
+   * rejected with a distinct reason.
    *
    * This is a pure synchronous function — no I/O, no side effects.
    */
   checkProductGate(product: GateProduct): GateResult {
     if (
       product.regulatoryClassification === null ||
-      product.regulatoryClassification === undefined ||
-      product.regulatoryClassification.trim() === ''
+      product.regulatoryClassification === undefined
     ) {
       return {
         passed: false,
         reason: 'Product lacks regulatory classification',
+      };
+    }
+
+    const trimmed = product.regulatoryClassification.trim();
+    if (trimmed === '') {
+      return {
+        passed: false,
+        reason: 'Product lacks regulatory classification',
+      };
+    }
+
+    const normalized = trimmed.toLowerCase();
+    if (normalized === REGULATORY_CLASSIFICATION_PLACEHOLDER) {
+      return {
+        passed: false,
+        reason: 'regulatoryClassification "unknown" is a placeholder, not a classification',
+      };
+    }
+
+    if (!KNOWN_REGULATORY_CLASSIFICATIONS.has(normalized)) {
+      return {
+        passed: false,
+        reason: `regulatoryClassification "${trimmed}" is not a member of the known classification enum`,
       };
     }
 
