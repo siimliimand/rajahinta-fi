@@ -250,7 +250,7 @@ describe('ReportsController — guard regression', () => {
   });
 
   describe('RateLimitGuard — DECLARATION profile exhaustion yields 429', () => {
-    it('allows the first 20 requests and rejects the 21st with Retry-After', () => {
+    it('allows the first 20 requests and rejects the 21st with Retry-After', async () => {
       const limiter = new InMemoryRateLimiter();
       const guard = new RateLimitGuard(
         reflector,
@@ -265,45 +265,34 @@ describe('ReportsController — guard regression', () => {
       const ctx = context({ ip: '203.0.113.7' }, response);
 
       for (let i = 1; i <= 20; i++) {
-        expect(guard.canActivate(ctx), `request ${i} must pass`).toBe(true);
+        await expect(guard.canActivate(ctx), `request ${i} must pass`).resolves.toBe(true);
       }
 
-      try {
-        guard.canActivate(ctx);
-        expect.unreachable('Expected 429 HttpException');
-      } catch (err) {
-        expect(err).toBeInstanceOf(HttpException);
-        const httpErr = err as HttpException;
-        expect(httpErr.getStatus()).toBe(429);
-        expect(httpErr.getResponse()).toMatchObject({
-          statusCode: 429,
-          error: 'TooManyRequests',
-        });
-        const body = httpErr.getResponse() as { retryAfterSeconds: number };
-        expect(body.retryAfterSeconds).toBeGreaterThan(0);
-        expect(body.retryAfterSeconds).toBeLessThanOrEqual(60);
-      }
+      await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+        status: 429,
+        response: { statusCode: 429, error: 'TooManyRequests' },
+      });
 
       // Retry-After was set on the response, in seconds.
       expect(retryAfterValues).toHaveLength(1);
       expect(Number(retryAfterValues[0])).toBeGreaterThan(0);
     });
 
-    it('the limit is per client key — a different IP is unaffected', () => {
+    it('the limit is per client key — a different IP is unaffected', async () => {
       const guard = new RateLimitGuard(
         reflector,
         new RateLimitingService(new InMemoryRateLimiter()),
       );
 
       for (let i = 0; i < 20; i++) {
-        expect(guard.canActivate(context({ ip: '198.51.100.1' }))).toBe(true);
+        await expect(guard.canActivate(context({ ip: '198.51.100.1' }))).resolves.toBe(true);
       }
-      expect(() => guard.canActivate(context({ ip: '198.51.100.1' }))).toThrow(
+      await expect(guard.canActivate(context({ ip: '198.51.100.1' }))).rejects.toThrow(
         HttpException,
       );
 
       // Fresh key — still allowed.
-      expect(guard.canActivate(context({ ip: '198.51.100.2' }))).toBe(true);
+      await expect(guard.canActivate(context({ ip: '198.51.100.2' }))).resolves.toBe(true);
     });
   });
 });

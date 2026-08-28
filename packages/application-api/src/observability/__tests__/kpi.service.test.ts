@@ -373,4 +373,50 @@ describe('KpiService', () => {
       expect(logSpy).not.toHaveBeenCalled();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Production retirement — the in-memory sampler must not run on
+  // production paths (structured pino request logging replaces it);
+  // it stays available for tests and explicit operator opt-in.
+  // ---------------------------------------------------------------------------
+
+  describe('production retirement', () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousOptIn = process.env.KPI_SAMPLER_ENABLED;
+
+    afterEach(() => {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+      if (previousOptIn === undefined) delete process.env.KPI_SAMPLER_ENABLED;
+      else process.env.KPI_SAMPLER_ENABLED = previousOptIn;
+    });
+
+    it('does not buffer metrics in production', () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.KPI_SAMPLER_ENABLED;
+      const prodService = new TestKpiService();
+
+      prodService.record(KpiCategory.PRODUCT, 'prod.metric', 1);
+
+      expect(prodService.getMetrics()).toHaveLength(0);
+    });
+
+    it('does not start the auto-flush timer in production', () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.KPI_SAMPLER_ENABLED;
+      const prodService = new TestKpiService();
+
+      expect(prodService.flushTimerIsActive).toBe(false);
+    });
+
+    it('opts back in behind KPI_SAMPLER_ENABLED=true in production', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.KPI_SAMPLER_ENABLED = 'true';
+      const prodService = new TestKpiService();
+
+      prodService.record(KpiCategory.PRODUCT, 'optin.metric', 1);
+
+      expect(prodService.getMetrics()).toHaveLength(1);
+    });
+  });
 });
