@@ -51,14 +51,24 @@
     }
   },
   "Nav": {
-    "backHome": "← Etusivu",
     "backToCalculator": "← Takaisin laskuriin",
-    "backToAccount": "← Oma tili",
     "openCalculator": "Avaa laskuri",
     "compareProducts": "Vertaile tuotteita",
     "howRankingWorks": "Miten järjestäminen toimii",
     "myAccount": "Oma tili",
     "calculateAnother": "Laske toinen tuote"
+  },
+  "SiteHeader": {
+    "navLabel": "Päävalikko",
+    "calculator": "Laskuri",
+    "compare": "Vertailu",
+    "basket": "Ostoskori",
+    "account": "Oma tili",
+    "ranking": "Miten järjestäminen toimii"
+  },
+  "SiteFooter": {
+    "disclaimer": "Rajahinta.fi on riippumaton hintavertailu- ja kokonaiskustannuslaskuri. Kaikki hinnat, verot ja maksut ovat arvioita eivätkä virallisia tietoja. Palvelu ei tarjoa vero- tai tullineuvontaa. Tarkista ajantasaiset tiedot aina viranomaislähteistä.",
+    "methodology": "Miten järjestäminen toimii"
   },
   "Home": {
     "subtitle": "Rajat ylittävien juomien kokonaiskustannuslaskuri Suomeen"
@@ -74,6 +84,10 @@
     "title": "Tervetuloa",
     "body": "Ikäsi on vahvistettu. Voit nyt selata sivustoa.",
     "goHome": "Siirry etusivulle"
+  },
+  "AgeGateDeclined": {
+    "title": "Pääsy rajattu",
+    "body": "Ilmoitit, ettet ole vähintään 18-vuotias. Tämä palvelu on tarkoitettu vain täysi-ikäisille, joten palvelun sisältö ei ole käytettävissä."
   },
   "NotFound": {
     "title": "Sivua ei löytynyt",

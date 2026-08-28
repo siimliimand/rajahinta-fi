@@ -33,7 +33,6 @@ const DEFAULT_DESTINATION = 'FI';
 export default function ComparePage() {
   const t = useTranslations('Compare');
   const tCalc = useTranslations('Calculator');
-  const tNav = useTranslations('Nav');
   const tCommon = useTranslations('Common');
   const tSorts = useTranslations('SortOrders');
 
@@ -146,16 +145,6 @@ export default function ComparePage() {
   // ── Render ──
   return (
     <main className="mx-auto min-h-screen max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* ── Header ── */}
-      <nav className="mb-6">
-        <Link
-          href="/"
-          className="text-sm text-primary-600 hover:text-primary-800"
-        >
-          {tNav('backHome')}
-        </Link>
-      </nav>
-
       <h1 className="mb-1 text-2xl font-bold text-primary-700">{t('title')}</h1>
       <p className="mb-8 text-sm text-gray-500">{t('subtitle')}</p>
 

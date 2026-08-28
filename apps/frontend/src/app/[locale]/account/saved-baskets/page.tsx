@@ -16,7 +16,6 @@ import type { Basket } from '@/lib/types';
  */
 export default function SavedBasketsPage() {
   const t = useTranslations('SavedBaskets');
-  const tNav = useTranslations('Nav');
   const tCommon = useTranslations('Common');
 
   const [baskets, setBaskets] = useState<Basket[]>([]);
@@ -72,15 +71,6 @@ export default function SavedBasketsPage() {
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
-      <nav className="mb-6">
-        <Link
-          href="/account"
-          className="text-sm text-primary-600 hover:text-primary-800"
-        >
-          {tNav('backToAccount')}
-        </Link>
-      </nav>
-
       <h1 className="mb-1 text-2xl font-bold text-primary-700">{t('title')}</h1>
       <p className="mb-8 text-sm text-gray-500">{t('subtitle')}</p>
 

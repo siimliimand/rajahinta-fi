@@ -51,14 +51,24 @@
     }
   },
   "Nav": {
-    "backHome": "← Home",
     "backToCalculator": "← Back to calculator",
-    "backToAccount": "← My account",
     "openCalculator": "Open calculator",
     "compareProducts": "Compare products",
     "howRankingWorks": "How ranking works",
     "myAccount": "My account",
     "calculateAnother": "Calculate another product"
+  },
+  "SiteHeader": {
+    "navLabel": "Main navigation",
+    "calculator": "Calculator",
+    "compare": "Compare",
+    "basket": "Basket",
+    "account": "My account",
+    "ranking": "How ranking works"
+  },
+  "SiteFooter": {
+    "disclaimer": "Rajahinta.fi is an independent price comparison and landed-cost calculator. All prices, taxes, and duties are estimates rather than official figures. The service does not provide tax or customs advice. Always verify current details with official sources.",
+    "methodology": "How ranking works"
   },
   "Home": {
     "subtitle": "Finnish cross-border beverage landed-cost calculator"
@@ -74,6 +84,10 @@
     "title": "Welcome",
     "body": "You have been verified. You can now browse the site.",
     "goHome": "Go to home page"
+  },
+  "AgeGateDeclined": {
+    "title": "Access restricted",
+    "body": "You indicated that you are under 18. This service is intended for adults only, so its content is not available."
   },
   "NotFound": {
     "title": "Page not found",

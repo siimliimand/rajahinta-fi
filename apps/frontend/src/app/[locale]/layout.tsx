@@ -4,6 +4,8 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, getTranslations, setRequestLocale } from 'next-intl/server';
 import { routing } from '@/i18n/routing';
 import { AgeGate } from './components/AgeGate';
+import SiteHeader from './components/SiteHeader';
+import SiteFooter from './components/SiteFooter';
 import '../globals.css';
 
 /**
@@ -49,7 +51,15 @@ export default async function RootLayout({
     <html lang={locale}>
       <body>
         <NextIntlClientProvider messages={messages}>
-          <AgeGate>{children}</AgeGate>
+          {/* Header and footer stay outside the gate: navigation chrome is
+              not restricted content and belongs in the SSR payload. */}
+          <div className="flex min-h-screen flex-col">
+            <SiteHeader />
+            <div className="flex-1">
+              <AgeGate>{children}</AgeGate>
+            </div>
+            <SiteFooter />
+          </div>
         </NextIntlClientProvider>
       </body>
     </html>

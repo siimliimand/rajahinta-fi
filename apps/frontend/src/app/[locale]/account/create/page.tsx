@@ -16,7 +16,6 @@ import { getSessionUserId } from '@/lib/api';
  */
 export default function AccountCreatePage() {
   const t = useTranslations('AccountCreate');
-  const tNav = useTranslations('Nav');
   const tCommon = useTranslations('Common');
   const [sessionId, setSessionId] = useState<string | null>(null);
 
@@ -26,15 +25,6 @@ export default function AccountCreatePage() {
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
-      <nav className="mb-6">
-        <Link
-          href="/account"
-          className="text-sm text-primary-600 hover:text-primary-800"
-        >
-          {tNav('backToAccount')}
-        </Link>
-      </nav>
-
       <div className="rounded-lg border border-gray-200 bg-white p-8 shadow-sm text-center">
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary-100">
           <svg

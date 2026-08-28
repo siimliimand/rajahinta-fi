@@ -69,16 +69,6 @@ export default function RankingPage() {
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* ── Navigation ── */}
-      <nav className="mb-6">
-        <Link
-          href="/"
-          className="text-sm text-primary-600 hover:text-primary-800"
-        >
-          {tNav('backHome')}
-        </Link>
-      </nav>
-
       {/* ── Title ── */}
       <h1 className="mb-2 text-2xl font-bold text-primary-700">{t('title')}</h1>
       <p className="mb-8 text-sm text-gray-500">{t('subtitle')}</p>
