@@ -1,5 +1,9 @@
 'use client';
 
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import type {
@@ -13,8 +17,10 @@ import {
   getProductDetail,
   saveScenario,
   request,
+  ApiFetchError,
 } from '@/lib/api';
 import { useDebouncedCallback } from '@/lib/use-debounced-callback';
+import { EmptyState, ErrorState } from '@/components/ui';
 import ProductSearch from './components/ProductSearch';
 import ProductSelector from './components/ProductSelector';
 import QuantitySelector from './components/QuantitySelector';
@@ -42,6 +48,50 @@ const SEARCH_DEBOUNCE_MS = 300;
 const DEFAULT_DESTINATION = 'FI';
 
 // ---------------------------------------------------------------------------
+// Calculation error classification (task 5.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * A calculation failure surfaced through the designed ErrorState. The
+ * rate-limit case carries the server's `Retry-After` (seconds) from the
+ * 429 body so the state can say when a retry will succeed.
+ */
+interface CalculationError {
+  /** Server-provided or fallback message; unused for rate-limited renders. */
+  readonly message: string;
+  /** True when the calculation was rejected by the rate limiter (429). */
+  readonly rateLimited: boolean;
+  /** Seconds until a retry is allowed, when the 429 response carried it. */
+  readonly retryAfterSeconds: number | null;
+}
+
+/**
+ * Classify a calculation failure for the error state. Rate-limited
+ * rejections keep the structured `retryAfterSeconds`; everything else
+ * keeps the server message (or the localized fallback).
+ */
+function toCalculationError(
+  err: unknown,
+  fallbackMessage: string,
+): CalculationError {
+  if (err instanceof ApiFetchError && err.status === 429) {
+    return {
+      message: fallbackMessage,
+      rateLimited: true,
+      retryAfterSeconds:
+        typeof err.body?.retryAfterSeconds === 'number'
+          ? err.body.retryAfterSeconds
+          : null,
+    };
+  }
+  return {
+    message: err instanceof Error ? err.message : fallbackMessage,
+    rateLimited: false,
+    retryAfterSeconds: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Page component
 // ---------------------------------------------------------------------------
 
@@ -54,6 +104,7 @@ const DEFAULT_DESTINATION = 'FI';
  */
 export default function CalculatorPage() {
   const t = useTranslations('Calculator');
+  const tCommon = useTranslations('Common');
 
   // ── Search state ──
   const [query, setQuery] = useState('');
@@ -73,7 +124,7 @@ export default function CalculatorPage() {
   // ── Calculation state ──
   const [calculating, setCalculating] = useState(false);
   const [result, setResult] = useState<CalculatorResult | null>(null);
-  const [calcError, setCalcError] = useState<string | null>(null);
+  const [calcError, setCalcError] = useState<CalculationError | null>(null);
 
   // ── Launch-gate state (read from the guarded endpoints' own 403s) ──
   // True once a search or calculation is rejected because the production
@@ -200,9 +251,7 @@ export default function CalculatorPage() {
         setGateClosed(true);
         return;
       }
-      const message =
-        err instanceof Error ? err.message : t('calculationFailed');
-      setCalcError(message);
+      setCalcError(toCalculationError(err, t('calculationFailed')));
     } finally {
       setCalculating(false);
     }
@@ -271,9 +320,7 @@ export default function CalculatorPage() {
         }).catch(() => { /* noop */ });
       } catch (err: unknown) {
         setSelectedProduct(null);
-        const message =
-          err instanceof Error ? err.message : t('calculationFailed');
-        setCalcError(message);
+        setCalcError(toCalculationError(err, t('calculationFailed')));
       } finally {
         setCalculating(false);
       }
@@ -290,6 +337,16 @@ export default function CalculatorPage() {
 
   // ── Render ──
   const canCalculate = selectedProduct !== null && !calculating;
+
+  // A settled search that returned nothing renders the designed empty
+  // state instead of the selector's inline note. A failed search
+  // (searchError) keeps the existing inline error line, and a cleared
+  // query keeps the selector's type-to-search guidance.
+  const searchSettledEmpty =
+    !searchLoading &&
+    searchError === null &&
+    searchResults.length === 0 &&
+    query.trim().length >= MIN_QUERY_LENGTH;
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
@@ -321,13 +378,22 @@ export default function CalculatorPage() {
               <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
                 {selectedProduct ? t('selectedProduct') : t('searchResults')}
               </h2>
-              <ProductSelector
-                items={searchResults}
-                selectedId={selectedProduct?.id ?? null}
-                onSelect={handleSelect}
-                loading={searchLoading}
-                query={query}
-              />
+              {searchSettledEmpty ? (
+                <EmptyState
+                  title={t('searchNoResultsTitle')}
+                  description={t('searchNoResultsDescription', {
+                    query: query.trim(),
+                  })}
+                />
+              ) : (
+                <ProductSelector
+                  items={searchResults}
+                  selectedId={selectedProduct?.id ?? null}
+                  onSelect={handleSelect}
+                  loading={searchLoading}
+                  query={query}
+                />
+              )}
             </section>
           )}
 
@@ -372,7 +438,32 @@ export default function CalculatorPage() {
               </button>
 
               {calcError && (
-                <p className="mt-2 text-sm text-red-600">{calcError}</p>
+                <div className="mt-3">
+                  {/* Designed error state (task 5.3): the rate-limited
+                      case replaces the raw server message with localized
+                      copy and surfaces the 429 Retry-After wait. */}
+                  <ErrorState
+                    title={t('calculationErrorTitle')}
+                    description={
+                      calcError.rateLimited
+                        ? t('rateLimitedDescription')
+                        : calcError.message
+                    }
+                    onRetry={handleCalculate}
+                    retryLabel={tCommon('retry')}
+                  >
+                    {calcError.retryAfterSeconds !== null ? (
+                      <p
+                        data-testid="calc-retry-after"
+                        className="text-sm text-gray-600"
+                      >
+                        {t('rateLimitRetryAfter', {
+                          seconds: calcError.retryAfterSeconds,
+                        })}
+                      </p>
+                    ) : null}
+                  </ErrorState>
+                </div>
               )}
             </section>
           )}

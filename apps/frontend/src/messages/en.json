@@ -72,7 +72,14 @@
   },
   "Home": {
     "subtitle": "Finnish cross-border beverage landed-cost calculator",
-    "heroValueProp": "Calculate the total cost of importing alcoholic beverages from Sweden to Finland: the foreign retail price, transport, and estimates of alcohol excise duty and container duty."
+    "heroValueProp": "Calculate the total cost of importing alcoholic beverages from Sweden to Finland: the foreign retail price, transport, and estimates of alcohol excise duty and container duty.",
+    "trustHeading": "Data sources and reliability",
+    "trustSourcesTitle": "Data sources",
+    "trustSourcesBody": "Product prices are based on the dataset published by Systembolaget. Taxes and duties are calculated from the Finnish Tax Administration's official rate datasets.",
+    "trustReliabilityTitle": "Reliability statuses",
+    "trustReliabilityBody": "Every number shown carries a reliability status and a timestamp, so the certainty and age of the data are always visible.",
+    "trustMethodologyTitle": "Methodology",
+    "trustMethodologyBody": "The calculation model, the tax sources in use, and the ranking criteria are documented openly."
   },
   "GateClosed": {
     "title": "The calculator is not yet available",
@@ -110,7 +117,12 @@
     "calculating": "Calculating…",
     "searchFailed": "Search failed. Please try again.",
     "calculationFailed": "Calculation failed. Please try again.",
-    "selectProductFirst": "Select a product before saving a scenario."
+    "selectProductFirst": "Select a product before saving a scenario.",
+    "searchNoResultsTitle": "No search results",
+    "searchNoResultsDescription": "No products found for \"{query}\". Check the spelling or try another product name.",
+    "calculationErrorTitle": "Calculation failed",
+    "rateLimitedDescription": "The number of calculations is temporarily limited.",
+    "rateLimitRetryAfter": "Wait {seconds, plural, one {# second} other {# seconds}} and try again."
   },
   "ProductSearch": {
     "placeholder": "Search products…",
@@ -365,8 +377,10 @@
   },
   "ResultPage": {
     "notFoundTitle": "Calculation not found",
+    "notFoundBody": "The calculation record does not exist or is no longer available. The link may be out of date.",
     "invalidId": "Invalid calculation record ID.",
     "loadFailed": "Failed to load calculation result.",
+    "loadFailedTitle": "Failed to load",
     "title": "Calculation result",
     "recordMeta": "Record #{id} · {date}",
     "traceableInputs": "Traceable inputs",

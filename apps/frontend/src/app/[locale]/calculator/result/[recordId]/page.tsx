@@ -1,15 +1,34 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { Link } from '@/i18n/navigation';
 import type { CalculatorResult as CalculatorResultType } from '@/lib/types';
-import { getCalculationResult } from '@/lib/api';
+import { ApiFetchError, getCalculationResult } from '@/lib/api';
+import { EmptyState, ErrorState } from '@/components/ui';
 import CalculatorResultView from '../../components/CalculatorResult';
 import ProductHistoryPanel from '../../components/ProductHistoryPanel';
 import CorrectionFlagPanel from '../../components/CorrectionFlagPanel';
 import DeclarationGuidancePanel from '../../components/DeclarationGuidancePanel';
+
+// ---------------------------------------------------------------------------
+// Load-failure classification (task 5.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * A failed record load classified for the designed states: a missing
+ * record (404 or a malformed ID) is an empty/not-found situation and
+ * renders the EmptyState; anything else is a retryable error.
+ */
+interface ResultLoadError {
+  readonly message: string;
+  readonly notFound: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -31,42 +50,63 @@ export default function CalculationResultPage() {
 
   const [result, setResult] = useState<CalculatorResultType | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ResultLoadError | null>(null);
 
-  useEffect(() => {
+  // Cancellation token for the in-flight load: each run mints a token, and
+  // a superseded or unmounted load's state writes are dropped. (The effect
+  // cleanup swaps tokens on recordId/locale change; a ref outlives both.)
+  const loadTokenRef = useRef<object | null>(null);
+
+  /**
+   * Load the record and classify failures for the designed states. Runs
+   * on mount, on record change, and again from the error state's retry.
+   */
+  const runLoad = useCallback(() => {
     if (!Number.isFinite(recordId)) {
-      setError(t('invalidId'));
+      setError({ message: t('invalidId'), notFound: true });
       setLoading(false);
       return;
     }
 
-    let cancelled = false;
+    const token = {};
+    loadTokenRef.current = token;
+    setLoading(true);
+    setError(null);
 
-    async function fetchResult() {
-      try {
-        const data = await getCalculationResult(recordId);
-        if (!cancelled) {
-          setResult(data);
-          setLoading(false);
+    getCalculationResult(recordId)
+      .then((data) => {
+        if (loadTokenRef.current !== token) return;
+        setResult(data);
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (loadTokenRef.current !== token) return;
+        if (err instanceof ApiFetchError && err.status === 404) {
+          // A missing record is an absence, not a failure — the
+          // EmptyState explains it and points back to the calculator.
+          setError({ message: t('notFoundBody'), notFound: true });
+        } else {
+          setError({
+            message: err instanceof Error ? err.message : t('loadFailed'),
+            notFound: false,
+          });
         }
-      } catch (err: unknown) {
-        if (!cancelled) {
-          const message =
-            err instanceof Error ? err.message : t('loadFailed');
-          setError(message);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    fetchResult();
-    return () => {
-      cancelled = true;
-    };
+        setLoading(false);
+      });
   }, [recordId, t]);
+
+  useEffect(() => {
+    runLoad();
+    // Drop in-flight state writes from the load this effect owned.
+    return () => {
+      loadTokenRef.current = null;
+    };
+  }, [runLoad]);
+
+  /** Re-run the record fetch from the error state's retry action. */
+  function handleRetry() {
+    runLoad();
+  }
 
   // ── Loading state ──
   if (loading) {
@@ -81,22 +121,36 @@ export default function CalculationResultPage() {
     );
   }
 
-  // ── Error state ──
+  // ── Error / not-found states (task 5.3) ──
   if (error !== null) {
     return (
       <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
-          <h1 className="mb-2 text-lg font-semibold text-red-800">
-            {t('notFoundTitle')}
-          </h1>
-          <p className="mb-4 text-sm text-red-600">{error}</p>
-          <Link
-            href="/calculator"
-            className="inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
-          >
-            {tNav('backToCalculator')}
-          </Link>
-        </div>
+        {error.notFound ? (
+          // A missing record is an absence: calm, explanatory, with a
+          // route back to the calculator. role="status" (EmptyState)
+          // announces it politely instead of asserting an error.
+          <EmptyState
+            title={t('notFoundTitle')}
+            description={error.message}
+            className="rounded-lg border border-gray-200 bg-white shadow-sm"
+            action={
+              <Link
+                href="/calculator"
+                className="inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+              >
+                {tNav('backToCalculator')}
+              </Link>
+            }
+          />
+        ) : (
+          // Any other load failure is retryable: re-run the fetch.
+          <ErrorState
+            title={t('loadFailedTitle')}
+            description={error.message}
+            onRetry={handleRetry}
+            retryLabel={tCommon('retry')}
+          />
+        )}
       </main>
     );
   }
