@@ -13,7 +13,11 @@ import type { MerchantReliabilityMap } from '../merchants/merchants.dto';
 
 /** GET /api/v1/products — query parameters for product search. */
 export interface SearchProductsQuery {
-  /** Free-text search term (basic substring matching). */
+  /**
+   * Free-text search term — matched over name, brand, and manufacturer
+   * with pg_trgm similarity ranking (task 5.1). Blank/absent passes
+   * through to the unfiltered alphabetical listing.
+   */
   readonly q?: string;
   /** Optional category filter. */
   readonly category?: string;

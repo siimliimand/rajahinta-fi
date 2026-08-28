@@ -41,9 +41,9 @@
 
 ## 5. Search (finding 8; low: debounce)
 
-- [ ] 5.1 Implement the `q` parameter — `pg_trgm` similarity or tsvector over name, brand, manufacturer; deterministic ranking; existing pagination and sort orders preserved <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/search/**, packages/data-platform/drizzle/**] -->
+- [x] 5.1 Implement the `q` parameter — `pg_trgm` similarity or tsvector over name, brand, manufacturer; deterministic ranking; existing pagination and sort orders preserved <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/search/**, packages/data-platform/drizzle/**] -->
 - [x] 5.2 Add a 300 ms debounce to the frontend search input <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/frontend/src/app/calculator/page.tsx] -->
-- [ ] 5.3 Search tests — "karhu" matches, deterministic order, pagination interplay, blank query passthrough <!-- agent: platform-engineer.build, depends_on: [5.1], touches: [packages/application-api/src/search/__tests__/**] -->
+- [x] 5.3 Search tests — "karhu" matches, deterministic order, pagination interplay, blank query passthrough <!-- agent: platform-engineer.build, depends_on: [5.1], touches: [packages/application-api/src/search/__tests__/**] -->
 
 ## 6. Health + observability (finding 15, add 5, add 9)
 

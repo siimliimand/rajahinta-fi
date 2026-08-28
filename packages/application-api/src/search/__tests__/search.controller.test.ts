@@ -1,21 +1,27 @@
 /**
- * SearchController sort behavior + reliability-embed tests.
+ * SearchController tests — q-parameter ranked search (task 5.1), sort
+ * behavior, and the flag-gated merchantReliability embed (task 3.4,
+ * change phase2-advanced-features).
  *
- * Tests that the controller correctly validates SortOrder, defaults to
- * ALPHABETICAL, sorts by name, and that the optional merchantReliability
- * embed on product detail is flag-gated (task 3.4, change
- * phase2-advanced-features): absent when the flag is off, present for the
- * offers' merchants when on, omitted (not thrown) on computation failure.
+ * The `q` path delegates to ProductRepository.searchRanked (pg_trgm
+ * similarity over name/brand/manufacturer, SQL-side filtering and
+ * ranking); unit tests stub the repository with rank-ordered fixtures
+ * and pin the controller contract — relevance order preserved, explicit
+ * sort honored over the filtered set, pagination composing after
+ * filtering, blank query passing through to the unfiltered listing.
+ * The SQL semantics themselves (matching + similarity ranking) are
+ * covered by the TEST_DATABASE_URL-gated product-search.db.test.ts.
  *
  * Follows the same pattern as sibling tests (direct instantiation with
  * manual mocks — no @nestjs/testing).
  *
- * @module SearchControllerSortTest
+ * @module SearchControllerTest
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BadRequestException } from '@nestjs/common';
 import { ProductRepository } from '@rajahinta/data-platform';
+import type { retailOffers } from '@rajahinta/data-platform';
 import { FeatureFlagService } from '../../feature-flags';
 import { MerchantReliabilityService } from '../../merchants';
 import type { MerchantReliabilityMap } from '../../merchants';
@@ -25,7 +31,7 @@ import type {
 } from '../search.dto';
 
 // ---------------------------------------------------------------------------
-// Fixtures — two products in reverse-alphabetical order
+// Fixtures — products in reverse-alphabetical order
 // ---------------------------------------------------------------------------
 
 const PROD_Z = {
@@ -60,6 +66,44 @@ const PROD_A = {
   updatedAt: new Date('2026-01-01'),
 };
 
+// Karhu fixtures (task 5.3) — one name match, one brand-only match. Both
+// are returned by the ranked query for "karhu"; the order below is the
+// relevance order the stubbed DB delivers (similarity DESC, id ASC).
+const PROD_KARHU_NAME = {
+  id: 30,
+  name: 'Karhu III',
+  manufacturer: 'Hartwall',
+  brand: 'Karhu',
+  category: 'beer',
+  alcoholByVolume: '0.045',
+  unitVolume: '0.33',
+  containerType: 'can',
+  regulatoryClassification: 'beer',
+  depositSystemStatus: true,
+  ean: '0641000111111',
+  createdAt: new Date('2026-01-01'),
+  updatedAt: new Date('2026-01-01'),
+};
+
+const PROD_KARHU_BRAND = {
+  id: 31,
+  name: 'Tumma Lager',
+  manufacturer: 'Hartwall',
+  brand: 'Karhu',
+  category: 'beer',
+  alcoholByVolume: '0.045',
+  unitVolume: '0.33',
+  containerType: 'can',
+  regulatoryClassification: 'beer',
+  depositSystemStatus: true,
+  ean: '0641000222222',
+  createdAt: new Date('2026-01-01'),
+  updatedAt: new Date('2026-01-01'),
+};
+
+/** Rank-ordered rows the stubbed ranked search returns for "karhu". */
+const KARHU_RANKED = [PROD_KARHU_NAME, PROD_KARHU_BRAND];
+
 // Make sure the return type matches `typeof productMaster.$inferSelect`
 type MockProduct = typeof PROD_A;
 
@@ -74,6 +118,9 @@ const OFFER_ALKO = {
   productId: PROD_A.id,
   priceCents: 249,
   currency: 'EUR',
+  originalPriceCents: null,
+  originalCurrency: null,
+  fxDatasetVersion: null,
   availability: 'in_stock',
   sourceUrl: 'https://example.com/alko/oltermanni',
   observedAt: new Date('2026-08-20T10:00:00Z'),
@@ -85,15 +132,22 @@ const OFFER_SYSTEMBOLAGET = {
   merchant: 'systembolaget',
   country: 'SE',
   productId: PROD_A.id,
-  priceCents: 229,
-  currency: 'SEK',
+  // Ingestion-side conversion (design D2): canonical amount is EUR cents
+  // with the SEK original and FX dataset version as provenance.
+  priceCents: 199,
+  currency: 'EUR',
+  originalPriceCents: 2290,
+  originalCurrency: 'SEK',
+  fxDatasetVersion: 'fx-ecb-2026-08-19',
   availability: 'in_stock',
   sourceUrl: 'https://example.com/systembolaget/oltermanni',
   observedAt: new Date('2026-08-19T10:00:00Z'),
   reliabilityStatus: 'ESTIMATED',
 };
 
-type MockOffer = typeof OFFER_ALKO;
+// Offer mocks must satisfy the retail_offers row type, including the
+// conversion-provenance columns added in migration 0015 (FIX-H).
+type MockOffer = typeof retailOffers.$inferSelect;
 
 /** ISO-string score DTO fixture mirroring the merchants module shape. */
 const SCORE_ALKO = {
@@ -113,7 +167,7 @@ const SCORE_ALKO = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// Mock factory
+// Mock factories
 // ---------------------------------------------------------------------------
 
 function createMockProductRepository(): Partial<ProductRepository> {
@@ -143,6 +197,10 @@ function createMockProductRepository(): Partial<ProductRepository> {
         );
       },
     ),
+    // Ranked search (task 5.1) — returns the rows passed in, in the
+    // given (rank) order, simulating what PostgreSQL delivers for the
+    // pg_trgm query. Call arguments stay assertable via the mock.
+    searchRanked: vi.fn(async (): Promise<MockProduct[]> => KARHU_RANKED),
   };
 }
 
@@ -303,19 +361,145 @@ describe('SearchController — sort behavior', () => {
       expect(result.items).toHaveLength(2);
       expect(result.total).toBe(2);
     });
+  });
 
-    it('searches by name when q is provided', async () => {
+  // -----------------------------------------------------------------------
+  // q parameter — ranked search (task 5.1 / spec product-search)
+  // -----------------------------------------------------------------------
+
+  describe('q parameter — ranked search', () => {
+    it('"karhu" returns the ranked matches in relevance order when no sort is requested', async () => {
+      // The stubbed repository delivers the rank order PostgreSQL
+      // produces for "karhu": the name match ahead of the brand-only
+      // match.
       const result: ProductSearchResult = await controller.search(
         undefined,
-        'Aino',
+        'karhu',
         undefined,
         undefined,
         undefined,
         undefined,
       );
 
-      expect(mockRepo.searchByName).toHaveBeenCalledWith('Aino', 100);
-      expect(result.items.every((i) => i.name.toLowerCase().includes('aino'))).toBe(true);
+      expect(result.total).toBe(2);
+      expect(result.items.map((i) => i.id)).toEqual([
+        PROD_KARHU_NAME.id,
+        PROD_KARHU_BRAND.id,
+      ]);
+      // Every hit is a Karhu product (name or brand) — matches only.
+      expect(
+        result.items.every(
+          (i) => i.name === 'Karhu III' || i.brand === 'Karhu',
+        ),
+      ).toBe(true);
+      // The ranked path bypasses the substring listing entirely.
+      expect(mockRepo.searchByName).not.toHaveBeenCalled();
+      expect(mockRepo.searchRanked).toHaveBeenCalledWith('karhu', 100);
+    });
+
+    it('issues the same query deterministically — identical order across repeated calls', async () => {
+      const first = await controller.search(
+        undefined, 'karhu', undefined, undefined, undefined, undefined,
+      );
+      const second = await controller.search(
+        undefined, 'karhu', undefined, undefined, undefined, undefined,
+      );
+
+      expect(first.items.map((i) => i.id)).toEqual(second.items.map((i) => i.id));
+    });
+
+    it('honors an explicit ALPHABETICAL sort over the filtered set', async () => {
+      const result: ProductSearchResult = await controller.search(
+        undefined,
+        'karhu',
+        undefined,
+        'ALPHABETICAL',
+        undefined,
+        undefined,
+      );
+
+      // Filtered set re-sorted alphabetically ("Karhu III" < "Tumma
+      // Lager"), regardless of the relevance order the DB returned.
+      expect(result.items.map((i) => i.name)).toEqual([
+        'Karhu III',
+        'Tumma Lager',
+      ]);
+    });
+
+    it('rejects an unsupported sort order even when q is provided', async () => {
+      await expect(
+        controller.search(
+          undefined, 'karhu', undefined, 'LOWEST_LANDED_COST', undefined, undefined,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('paginates the filtered set — filtering applies before pagination', async () => {
+      // Page 1, one per page over the two karhu matches.
+      const page1 = await controller.search(
+        undefined, 'karhu', undefined, undefined, '1', '1',
+      );
+      expect(page1.items.map((i) => i.id)).toEqual([PROD_KARHU_NAME.id]);
+      expect(page1.total).toBe(2);
+      expect(page1.totalPages).toBe(2);
+
+      // Page 2 — the second ranked match, not a re-query.
+      const page2 = await controller.search(
+        undefined, 'karhu', undefined, undefined, '2', '1',
+      );
+      expect(page2.items.map((i) => i.id)).toEqual([PROD_KARHU_BRAND.id]);
+
+      // Composes with an explicit sort too: alphabetical order is
+      // established over the filtered set, then sliced.
+      const alphaPage2 = await controller.search(
+        undefined, 'karhu', undefined, 'ALPHABETICAL', '2', '1',
+      );
+      expect(alphaPage2.items.map((i) => i.name)).toEqual(['Tumma Lager']);
+    });
+
+    it('ignores q when ids are provided — id lookup takes precedence', async () => {
+      const result: ProductSearchResult = await controller.search(
+        `${PROD_A.id}`,
+        'karhu',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
+
+      expect(result.items.map((i) => i.id)).toEqual([PROD_A.id]);
+      expect(mockRepo.searchRanked).not.toHaveBeenCalled();
+    });
+
+    it('blank and whitespace-only queries pass through to the unfiltered listing', async () => {
+      for (const blank of ['', '   ']) {
+        const result: ProductSearchResult = await controller.search(
+          undefined,
+          blank,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+        );
+
+        // Exactly the pre-q behaviour: repository listing, alphabetical.
+        expect(mockRepo.searchByName).toHaveBeenCalledWith(blank, 100);
+        expect(result.items.map((i) => i.name)).toEqual([
+          PROD_A.name,
+          PROD_Z.name,
+        ]);
+        expect(mockRepo.searchRanked).not.toHaveBeenCalled();
+      }
+    });
+
+    it('absent q passes through to the unfiltered listing', async () => {
+      const result: ProductSearchResult = await controller.search(
+        undefined, undefined, undefined, undefined, undefined, undefined,
+      );
+
+      expect(mockRepo.searchByName).toHaveBeenCalledWith(null, 100);
+      expect(result.total).toBe(2);
+      expect(mockRepo.searchRanked).not.toHaveBeenCalled();
     });
   });
 });

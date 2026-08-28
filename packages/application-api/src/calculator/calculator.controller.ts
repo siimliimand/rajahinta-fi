@@ -115,8 +115,20 @@ export class CalculatorController {
     };
 
     // ---- Idempotency check ----
-    const cacheKey = idempotencyKey ?? this.idempotency.getCacheKey(input);
+    // Resolve the active dataset versions FIRST so the derived cache key
+    // is version-aware (ARCHITECTURE.md §15 known issue: hashing the
+    // input before the versions made the key version-blind). A version
+    // bump now produces a different key → guaranteed fresh calculation.
+    // Client-supplied idempotency keys stay verbatim by contract; for
+    // those, and as defense in depth for derived keys, the lookup-time
+    // version comparison below still rejects stale entries.
     const currentVersions = await this.taxRepo.findActiveVersionLabels();
+    const cacheKey =
+      idempotencyKey ??
+      this.idempotency.getCacheKey({
+        ...input,
+        datasetVersions: currentVersions,
+      });
     const cached = await this.idempotency.lookup(cacheKey, currentVersions);
     if (cached !== null) {
       const contentHash = this.idempotency.getContentHash(cached);

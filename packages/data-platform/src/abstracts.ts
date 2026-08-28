@@ -53,6 +53,26 @@ export abstract class ProductRepository {
     query: string | null,
     limit: number,
   ): Promise<(typeof productMaster.$inferSelect)[]>;
+
+  /**
+   * Ranked search over name, brand, and manufacturer (task 5.1, change
+   * technical-assessment-remediation) — pg_trgm similarity ranking with
+   * a product-id tiebreaker, backed by the gin_trgm_ops indexes of
+   * migration 0016_product_search_pg_trgm.
+   *
+   * Concrete (not abstract) with a loud default so the many in-memory
+   * test doubles extending this class keep compiling; only the Drizzle
+   * implementation supports it, matching every real wiring.
+   */
+  searchRanked(
+    _query: string,
+    _limit: number,
+  ): Promise<(typeof productMaster.$inferSelect)[]> {
+    return Promise.reject(
+      new Error('searchRanked is not implemented by this repository'),
+    );
+  }
+
   abstract findById(id: number): Promise<typeof productMaster.$inferSelect | null>;
   abstract findOffers(productId: number): Promise<typeof retailOffers.$inferSelect[]>;
   abstract findRetailOfferById(id: number): Promise<typeof retailOffers.$inferSelect | null>;

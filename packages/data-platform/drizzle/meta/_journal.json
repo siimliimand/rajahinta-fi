@@ -113,6 +113,13 @@
       "when": 1787920697010,
       "tag": "0015_glorious_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1787924297010,
+      "tag": "0016_product_search_pg_trgm",
+      "breakpoints": true
     }
   ]
 }

@@ -239,12 +239,17 @@ export interface CalculateRequest {
   readonly sessionId?: string;
 }
 
+/**
+ * Machine-readable category for each itemized cost line.
+ *
+ * `otherCharges` was removed (task 10.3, mirroring core-domain): it was
+ * a hardcoded zero and a dead contract.
+ */
 export type CostCategory =
   | 'foreignRetailPrice'
   | 'transportCost'
   | 'alcoholExciseEstimate'
-  | 'containerDutyEstimate'
-  | 'otherCharges';
+  | 'containerDutyEstimate';
 
 export type ReliabilityStatus = 'VERIFIED' | 'ESTIMATED' | 'STALE' | 'UNAVAILABLE';
 
@@ -286,13 +291,44 @@ export interface Disclaimer {
   readonly version: string;
 }
 
+/** Machine-readable reason an offer was excluded from a calculation. */
+export type OfferExclusionReason = 'NO_VALID_EUR_CONVERSION';
+
+/**
+ * An offer excluded from the calculation because it lacked a valid EUR
+ * conversion (mirrors core-domain, task 1.5) — stays visible with its
+ * reason and original amount so a mixed-currency total can never
+ * masquerade as EUR.
+ */
+export interface OfferExclusion {
+  readonly offerId: number;
+  readonly merchant: string;
+  readonly country: string;
+  readonly reason: OfferExclusionReason;
+  readonly detail: string;
+  readonly originalPriceCents: number | null;
+  readonly originalCurrency: string | null;
+}
+
+/**
+ * A pre-conversion price in its source currency — display-only data
+ * carried alongside the EUR amounts (design D2).
+ */
+export interface OriginalPrice {
+  readonly priceCents: number;
+  readonly currency: string;
+}
+
 export interface CalculatorResult {
   readonly itemizedCosts: readonly ItemizedCost[];
+  /** Offers excluded for lacking a valid EUR conversion (task 1.5). */
+  readonly excludedOffers: readonly OfferExclusion[];
+  /** Original (pre-conversion) price of the selected offer, when any. */
+  readonly originalRetailPrice?: OriginalPrice;
   readonly foreignRetailPrice: number;
   readonly transportCost: number;
   readonly alcoholExciseEstimate: number;
   readonly containerDutyEstimate: number;
-  readonly otherCharges: number;
   readonly totalCents: number;
   readonly currency: 'EUR';
   readonly confidence: ConfidenceLevel;

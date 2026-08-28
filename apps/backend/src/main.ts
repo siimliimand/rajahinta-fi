@@ -1,3 +1,7 @@
+// Tracing must be imported FIRST — the OTel instrumentations patch module
+// loading at evaluation time; AppModule pulls in bullmq/express further
+// down this list. See ./tracing.ts.
+import { shutdownTracing } from './tracing';
 import { NestFactory } from '@nestjs/core';
 import { INestApplication } from '@nestjs/common';
 import { AppModule } from './app.module';
@@ -100,6 +104,28 @@ async function bootstrap(): Promise<void> {
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   logger.info(`Rajahinta backend listening on http://localhost:${port}`);
+  installShutdownHandlers(app);
+}
+
+/**
+ * Best-effort graceful shutdown: close the HTTP listeners (which also runs
+ * Nest lifecycle hooks — the internal metrics endpoint among them), then
+ * flush the OTel batch span processor before exiting. Signal handlers
+ * replace the default immediate-exit behaviour, so exit(0) is explicit.
+ */
+function installShutdownHandlers(app: INestApplication): void {
+  const shutdown = async (signal: string): Promise<void> => {
+    logger.info(`${signal} received — shutting down`);
+    try {
+      await app.close();
+    } catch (err) {
+      logger.error({ err }, 'app.close() during shutdown failed');
+    }
+    await shutdownTracing();
+    process.exit(0);
+  };
+  process.once('SIGTERM', () => void shutdown('SIGTERM'));
+  process.once('SIGINT', () => void shutdown('SIGINT'));
 }
 
 bootstrap();

@@ -136,8 +136,7 @@
       "foreignRetailPrice": "Ulkomainen vähittäishinta",
       "transportCost": "Kuljetuskustannus",
       "alcoholExciseEstimate": "Arvio alkoholin valmisteverosta",
-      "containerDutyEstimate": "Arvio pakkausverosta",
-      "otherCharges": "Muut maksut"
+      "containerDutyEstimate": "Arvio pakkausverosta"
     }
   },
   "DisclaimerBanner": {

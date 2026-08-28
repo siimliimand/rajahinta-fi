@@ -136,8 +136,7 @@
       "foreignRetailPrice": "Foreign retail price",
       "transportCost": "Transport cost",
       "alcoholExciseEstimate": "Alcohol excise estimate",
-      "containerDutyEstimate": "Container duty estimate",
-      "otherCharges": "Other charges"
+      "containerDutyEstimate": "Container duty estimate"
     }
   },
   "DisclaimerBanner": {
