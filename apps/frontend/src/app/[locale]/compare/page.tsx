@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import type { SortOrder, ComparisonProduct, ProductSearchItem } from '@/lib/types';
@@ -10,6 +10,7 @@ import ComparisonView from './components/ComparisonView';
 import BasketComparisonSection from './components/BasketComparisonSection';
 import ProductSearch from '../calculator/components/ProductSearch';
 import ProductSelector from '../calculator/components/ProductSelector';
+import { sortComparisonProducts } from './sort-products';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -142,6 +143,13 @@ export default function ComparePage() {
     setSortBy(sort);
   }, []);
 
+  // ── Column order follows the selected sort (deterministic, neutral —
+  // the same comparator semantics as the backend RankingService) ──
+  const sortedProducts = useMemo(
+    () => sortComparisonProducts(products, sortBy),
+    [products, sortBy],
+  );
+
   // ── Render ──
   return (
     <main className="mx-auto min-h-screen max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
@@ -207,7 +215,7 @@ export default function ComparePage() {
 
       {/* ── Comparison view ── */}
       <ComparisonView
-        products={products}
+        products={sortedProducts}
         sortBy={sortBy}
         loading={calcLoading}
         onAddProduct={handleAddProduct}

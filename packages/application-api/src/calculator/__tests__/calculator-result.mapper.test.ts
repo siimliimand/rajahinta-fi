@@ -163,6 +163,14 @@ class InMemoryCalculationRecordRepository extends CalculationRecordRepository {
     throw new Error('not used by getResult');
   }
 
+  override async linkSession(): Promise<boolean> {
+    throw new Error('not used by getResult');
+  }
+
+  override async findHistoryEntriesBySession(): Promise<never[]> {
+    throw new Error('not used by getResult');
+  }
+
   override async findCalculationRecordIdsByEntity(): Promise<never[]> {
     throw new Error('not used by getResult');
   }

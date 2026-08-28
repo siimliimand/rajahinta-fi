@@ -320,8 +320,10 @@ export class AccountController {
   async getHistory(
     @CurrentUser() user: AuthenticatedAccount,
   ): Promise<number[]> {
-    const account = await this.accountService.getAccount(user.userId);
-    return account.calculationHistory;
+    // DB path reads the calculation records claimed by the account
+    // (session_id = userId) — the in-memory account object's list is
+    // always empty there.
+    return this.accountService.getCalculationHistory(user.userId);
   }
 
   // ---------------------------------------------------------------------------

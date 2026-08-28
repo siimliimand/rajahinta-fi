@@ -61,6 +61,7 @@ export type {
   SessionRecord,
   MerchantRegistryRecord,
   ClickCounterSnapshotRecord,
+  CalculationHistoryEntry,
 } from './abstracts';
 
 // ---------------------------------------------------------------------------

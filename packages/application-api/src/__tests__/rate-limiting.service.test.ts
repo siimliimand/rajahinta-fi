@@ -126,6 +126,18 @@ describe('RateLimitingService', () => {
     // ip-b should still be allowed
     expect(await service.isAllowed('ip-b', 'CALCULATOR')).toBe(true);
   });
+
+  it('keeps profile windows separate — DEFAULT traffic never consumes CALCULATOR slots', async () => {
+    // Regression (browser-e2e wave): the window was keyed by client only,
+    // so DEFAULT-profile requests (searches, product reads) filled the
+    // shared window and throttled the calculator far below its own
+    // limit. Each profile is its own pool per client.
+    for (let i = 0; i < 15; i++) {
+      expect(await service.isAllowed('shared-user', 'DEFAULT')).toBe(true);
+    }
+    expect(await service.isAllowed('shared-user', 'CALCULATOR')).toBe(true);
+    expect(await service.isAllowed('shared-user', 'SEARCH')).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

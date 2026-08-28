@@ -69,6 +69,10 @@ function ProductColumn({
 }) {
   const t = useTranslations('Compare');
   const tCommon = useTranslations('Common');
+  // Same source of truth as the calculator result view: cost categories map
+  // to localized labels (fi catalog primary) — the API's own itemized
+  // `label` strings are English and never rendered directly.
+  const tResult = useTranslations('CalculatorResult');
 
   return (
     <div className="flex flex-col rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -103,7 +107,9 @@ function ProductColumn({
             key={`${cost.category}-${i}`}
             className="flex items-center justify-between text-xs"
           >
-            <span className="text-gray-500">{cost.label}</span>
+            <span className="text-gray-500">
+              {tResult(`category.${cost.category}`)}
+            </span>
             <div className="flex items-center gap-1">
               <span className="tabular-nums text-gray-700">
                 {formatEur(cost.cents)}

@@ -140,6 +140,28 @@ export abstract class CalculationRecordRepository {
   ): Promise<typeof calculationRecords.$inferSelect[]>;
 
   /**
+   * Claim an anonymous calculation record for a session account: stamp
+   * `session_id` on the record, first claim wins. Returns false when the
+   * record does not exist or is already linked to another session — an
+   * idempotent no-op for the caller, never a re-assignment.
+   */
+  abstract linkSession(
+    recordId: number,
+    sessionId: string,
+  ): Promise<boolean>;
+
+  /**
+   * Return the session's calculation history as the minimal GDPR-export
+   * projection (record identity, timestamp, total, quantity, product
+   * name) — chronological by calculatedAt, product name joined from the
+   * product master. No breakdown or input data: the export carries only
+   * what its consumers render.
+   */
+  abstract findHistoryEntriesBySession(
+    sessionId: string,
+  ): Promise<CalculationHistoryEntry[]>;
+
+  /**
    * Return the IDs of calculation records that reference a given entity.
    *
    * Supported entity types: 'product', 'retailOffer', 'transportOffer', 'taxRule'.
@@ -148,6 +170,15 @@ export abstract class CalculationRecordRepository {
     entityType: string,
     entityId: number,
   ): Promise<number[]>;
+}
+
+/** Minimal per-calculation entry for the account history / GDPR export. */
+export interface CalculationHistoryEntry {
+  readonly calculationId: number;
+  readonly calculatedAt: Date;
+  readonly totalCents: number;
+  readonly quantity: number;
+  readonly productName: string;
 }
 
 @Injectable()

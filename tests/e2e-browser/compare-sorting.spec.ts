@@ -2,28 +2,18 @@
  * Journey 3 — compare sorting.
  *
  * Open the compare view, add the two seeded products, and exercise the
- * sort selector.
+ * sort selector: the selected order drives the actual column ordering.
  *
- * DEFECT (reported, apps/frontend out of scope for this task): the
- * compare page's handleSortChange only updates the displayed label —
- * the products array is passed to ComparisonView in raw insertion
- * order, so the sort selector never reorders the columns. The full
- * reorder contract is therefore carried as a test.fixme below and the
- * green test asserts the contract parts that are actually implemented
- * (selector default, label tracking, deterministic column order).
- *
- * Determinism for the reorder contract comes from the staging seed: the
- * beer (4.7 % vol, offers from €1.49) has a lower landed cost and a
- * lower ABV than the wine (12 % vol, offers from €5.99), while
- * "TEST Beer…" sorts before "TEST Wine…" alphabetically. So:
+ * Determinism comes from the staging seed: the beer (4.7 % vol, offers
+ * from €1.49) has a lower landed cost and a lower ABV than the wine
+ * (12 % vol, offers from €5.99), while "TEST Beer…" sorts before
+ * "TEST Wine…" alphabetically. So:
  *   LOWEST_LANDED_COST  → beer, wine
  *   ALPHABETICAL        → beer, wine
  *   ALCOHOL_PERCENTAGE  → wine, beer (the order flips)
  *
- * Note: the compare columns render the API's own (English) itemized
- * labels verbatim — unlike the calculator result, which maps cost
- * categories to translated labels. Assertions assert what the shipped
- * UI shows (reported as an i18n inconsistency).
+ * The compare columns map itemized cost categories through the message
+ * catalogs (fi source of truth), the same as the calculator result view.
  *
  * @module CompareSortingJourney
  */
@@ -98,10 +88,7 @@ test.describe('compare sorting journey', () => {
     ).toBeVisible();
   });
 
-  // The full reorder contract — remove the fixme once the compare page
-  // actually sorts its columns (reported defect: handleSortChange only
-  // sets the label state; ComparisonView receives insertion order).
-  test.fixme('changing the sort order deterministically reorders the columns', async ({
+  test('changing the sort order deterministically reorders the columns', async ({
     page,
   }) => {
     await page.goto('/compare');
@@ -143,17 +130,17 @@ test.describe('compare sorting journey', () => {
     await addCompareProduct(page, SEED.beer.name);
 
     // The column shows the primary metric and the itemized cost lines
-    // that back the sort. NOTE: compare renders the API's own itemized
-    // labels ("Retail price", "Transport") verbatim — the shipped UI
-    // contract this suite must assert (see module doc).
+    // that back the sort. Itemized labels come from the message catalogs
+    // (fi), mapped by cost category — the same source of truth as the
+    // calculator result view.
     await expect(
       page.getByText('Kokonaiskustannus yhteensä', { exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByText('Retail price', { exact: true }).first(),
+      page.getByText(COPY.foreignRetailPrice, { exact: true }).first(),
     ).toBeVisible();
     await expect(
-      page.getByText('Transport', { exact: true }).first(),
+      page.getByText(COPY.transportCost, { exact: true }).first(),
     ).toBeVisible();
   });
 });

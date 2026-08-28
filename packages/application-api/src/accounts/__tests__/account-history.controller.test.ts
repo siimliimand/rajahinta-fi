@@ -50,6 +50,9 @@ function createMockAccountService(): Partial<AccountService> {
         calculationHistory.push(recordId);
       },
     ),
+    getCalculationHistory: vi.fn(
+      async (_userId: string): Promise<number[]> => calculationHistory,
+    ),
   };
 }
 

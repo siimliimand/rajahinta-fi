@@ -99,6 +99,12 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: process.env.CORS_ORIGIN ?? 'http://localhost:3001',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    // The session cookie is httpOnly and travels only on credentialed
+    // requests (`credentials: 'include'` in apps/frontend/src/lib/api.ts).
+    // Without Allow-Credentials the browser drops the cookie on every
+    // cross-origin API call — an explicit origin (never "*") is required
+    // for this flag, which the env-driven origin above already provides.
+    credentials: true,
   });
 
   const port = process.env.PORT ?? 3000;

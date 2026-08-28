@@ -48,6 +48,11 @@ coverage/
 # Symlinked/cached skills from .agents/skills/ — derived state.
 .claude/
 
+# ==== Browser E2E (Playwright, tests/e2e-browser) ====
+# Run artifacts: traces, screenshots, videos, and the HTML report.
+tests/e2e-browser/test-results/
+tests/e2e-browser/playwright-report/
+
 # ==== AgentMemory ====
 # Local agent-memory state, if persisted to disk.
 .agentmemory/

@@ -128,6 +128,10 @@ function createMockAccountService(): Partial<AccountService> {
       if (userId === USER_ID) return savedBaskets;
       return [];
     }),
+    getCalculationHistory: vi.fn(async (userId: string): Promise<number[]> => {
+      if (userId === USER_ID) return calculationHistory;
+      return [];
+    }),
     saveBasket: vi.fn(async (_userId: string, _basket: Basket): Promise<void> => {
       savedBaskets.push(_basket);
     }),

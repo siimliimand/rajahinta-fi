@@ -171,6 +171,20 @@ export class RateLimitingService {
   constructor(@Inject(RATE_LIMITER) private readonly limiter: IRateLimiter) {}
 
   /**
+   * Window key for a (client, profile) pair.
+   *
+   * Profiles are separate limit pools by design (a cheap search and an
+   * expensive calculation are not the same budget). Namespacing the
+   * client key with the profile keeps each backend's window per profile
+   * — without it every DEFAULT-profile request would consume a
+   * CALCULATOR slot once the shared window filled, throttling routes
+   * far below their configured limits.
+   */
+  private windowKey(key: string, profile: RateLimitProfileName): string {
+    return `${profile}:${key}`;
+  }
+
+  /**
    * Check if a request from `key` (IP / user ID) is allowed.
    *
    * @param key — client identifier (IP address, user ID, or API key)
@@ -179,7 +193,7 @@ export class RateLimitingService {
    */
   async isAllowed(key: string, profile: RateLimitProfileName = 'DEFAULT'): Promise<boolean> {
     const { limit, windowMs } = RATE_LIMIT_PROFILES[profile];
-    return this.limiter.check(key, limit, windowMs);
+    return this.limiter.check(this.windowKey(key, profile), limit, windowMs);
   }
 
   /**
@@ -188,7 +202,7 @@ export class RateLimitingService {
    */
   async getRemaining(key: string, profile: RateLimitProfileName = 'DEFAULT'): Promise<number> {
     const { limit, windowMs } = RATE_LIMIT_PROFILES[profile];
-    return this.limiter.remaining(key, limit, windowMs);
+    return this.limiter.remaining(this.windowKey(key, profile), limit, windowMs);
   }
 
   /**
@@ -196,7 +210,7 @@ export class RateLimitingService {
    */
   async getResetAt(key: string, profile: RateLimitProfileName = 'DEFAULT'): Promise<number> {
     const { windowMs } = RATE_LIMIT_PROFILES[profile];
-    return this.limiter.resetAt(key, windowMs);
+    return this.limiter.resetAt(this.windowKey(key, profile), windowMs);
   }
 
   /**

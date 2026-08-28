@@ -11,7 +11,7 @@
  * @module Seed
  */
 
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import {
   FORMULA_PER_LITRE_OF_PRODUCT,
@@ -52,7 +52,10 @@ const STAGING_BEER: StagingProductSeed = {
   alcoholByVolume: '0.047',
   unitVolume: '0.500',
   containerType: 'glass',
-  regulatoryClassification: 'BEER_STANDARD',
+  // Canonical, gate-known vocabulary (KNOWN_REGULATORY_CLASSIFICATIONS,
+  // core-domain) — the classification gate lowercases and membership-checks
+  // this value; anything else 422s the product in the calculator.
+  regulatoryClassification: 'beer',
   depositSystemStatus: true,
   ean: '000000000001',
 };
@@ -65,12 +68,12 @@ const STAGING_WINE: StagingProductSeed = {
   alcoholByVolume: '0.120',
   unitVolume: '0.750',
   containerType: 'glass',
-  regulatoryClassification: 'WINE_STILL',
+  regulatoryClassification: 'wine_still',
   depositSystemStatus: false,
   ean: '000000000002',
 };
 
-const STAGING_PRODUCTS = [STAGING_BEER, STAGING_WINE] as const;
+export const STAGING_PRODUCTS = [STAGING_BEER, STAGING_WINE] as const;
 
 // ---------------------------------------------------------------------------
 // Tax rule seed data — clearly fake placeholder rates
@@ -278,6 +281,24 @@ export async function seedStagingDatabase(
 
   for (const p of productsToInsert) {
     await db.insert(productMaster).values(p);
+  }
+
+  // Self-heal volumes seeded before the classification vocabulary was
+  // canonicalized: an existing row whose regulatoryClassification is not
+  // the seed's (gate-known) value is aligned in place, so a long-lived
+  // staging database becomes calculator-usable again on the next seed run
+  // without a volume wipe.
+  for (const p of STAGING_PRODUCTS) {
+    if (!knownEans.has(p.ean)) continue;
+    await db
+      .update(productMaster)
+      .set({ regulatoryClassification: p.regulatoryClassification })
+      .where(
+        and(
+          eq(productMaster.ean, p.ean),
+          ne(productMaster.regulatoryClassification, p.regulatoryClassification),
+        ),
+      );
   }
 
   // -----------------------------------------------------------------------
