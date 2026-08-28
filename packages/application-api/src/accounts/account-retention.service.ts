@@ -144,8 +144,11 @@ export class AccountRetentionService {
    * the deletion threshold (12 months).
    *
    * Anonymization replaces identifiable fields (email, userId) with
-   * anonymized values while retaining non-personal data (saved baskets,
-   * calculation history) for analytics.
+   * anonymized values. Saved account data — baskets and scenarios —
+   * is deleted by the anonymize cascade (see
+   * {@link AccountService.anonymizeAccount}); only the non-personal
+   * account skeleton is retained. Retention therefore covers saved
+   * scenarios through this path with no scenario-specific logic here.
    */
   async anonymizeInactiveAccounts(): Promise<AnonymizeResult> {
     const deleteCutoff = new Date(Date.now() - RETENTION_CONFIG.accountInactivityDeleteMs);

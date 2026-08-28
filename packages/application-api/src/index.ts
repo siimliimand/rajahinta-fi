@@ -49,6 +49,8 @@ import { BasketOptimizerController } from './basket';
 import { SearchController } from './search';
 import { DeclarationController } from './declaration';
 import { HistoricalDataModule } from './historical';
+import { ReportsModule } from './reports';
+import { MerchantsModule } from './merchants';
 import { AnalyticsModule, OutboundRedirectController } from './analytics';
 import { CorrectionModule } from './correction';
 import { RankingModule as ApplicationRankingModule } from './ranking';
@@ -200,6 +202,15 @@ imports: [
     // Price-history API — declares its own controller behind the
     // enable_historical_price_intelligence feature flag (task 4.1).
     HistoricalDataModule,
+    // Report export API — declares its own controller behind the
+    // ADVANCED_FEATURES feature flag + calculation:export entitlement
+    // (task 3.3, change phase2-advanced-features).
+    ReportsModule,
+    // Merchant reliability API — declares its own controller behind the
+    // ADVANCED_FEATURES feature flag + PRICE_DATA launch gate + age gate
+    // (task 3.4, change phase2-advanced-features); also exports the
+    // score pipeline used by the search module's detail-response embed.
+    MerchantsModule,
   ],
   providers: [
     TaxCalculationEngineAdapter,
@@ -281,6 +292,8 @@ export namespace ApplicationApiModule {
         ApplicationRankingModule,
         coreDomain, // brings the CONFIGURED CalculatorModule (ports injected)
         HistoricalDataModule,
+        ReportsModule,
+        MerchantsModule,
       ],
       providers: [
         TaxCalculationEngineAdapter,
@@ -359,7 +372,11 @@ export type { SubscriptionStatus } from './billing';
 // ---------------------------------------------------------------------------
 
 export { CalculatorController } from './calculator';
-export type { CalculateRequest, CalculationRecordResponse } from './calculator';
+export type {
+  CalculateRequest,
+  CalculationResultResponse,
+  UnpersistedClassification,
+} from './calculator';
 
 // ---------------------------------------------------------------------------
 // Search — product search and discovery API
@@ -389,6 +406,20 @@ export type {
   PriceHistoryAttribution,
   PriceHistoryResponse,
 } from './historical';
+
+// ---------------------------------------------------------------------------
+// Reports — calculation export API (feature-flagged + entitlement-gated)
+// ---------------------------------------------------------------------------
+
+export { ReportsModule, ReportsController, ReportExportService } from './reports';
+export type { ReportFormat, JsonReport, ReportsModulePorts } from './reports';
+
+// ---------------------------------------------------------------------------
+// Merchants — merchant reliability API (feature-flagged, default off)
+// ---------------------------------------------------------------------------
+
+export { MerchantsModule, MerchantReliabilityController, MerchantReliabilityService } from './merchants';
+export type { MerchantReliabilityScoreDto, MerchantReliabilityMap, MerchantReliabilityListResponse } from './merchants';
 
 // ---------------------------------------------------------------------------
 // Correction — correction flagging API

@@ -10,6 +10,7 @@ export {
   calculationRecords,
   accounts,
   savedBaskets,
+  savedScenarios,
   priceObservations,
   priceHistorySummaries,
   aggregationWatermarks,
@@ -28,6 +29,7 @@ export {
   CalculationRecordRepository,
   AccountRepository,
   SavedBasketRepository,
+  SavedScenarioRepository,
   PriceObservationRepository,
   PriceHistorySummaryRepository,
   AggregationWatermarkRepository,
@@ -41,6 +43,8 @@ export type {
   ProductActivitySince,
   MerchantTermsRecord,
   BasketCalculationRecord,
+  SavedScenarioInputs,
+  SavedScenarioRecord,
 } from './abstracts';
 
 // ---------------------------------------------------------------------------
@@ -54,11 +58,20 @@ export { DrizzleCalculationRecordRepository } from './repositories/calculation-r
 export { DrizzleCorrectionRepository } from './repositories/correction.repository';
 export { DrizzleAccountRepository } from './repositories/account.repository';
 export { DrizzleSavedBasketRepository } from './repositories/saved-basket.repository';
+export { DrizzleSavedScenarioRepository } from './repositories/saved-scenario.repository';
 export { DrizzlePriceObservationRepository } from './repositories/price-observation.repository';
 export { DrizzlePriceHistorySummaryRepository } from './repositories/price-history-summary.repository';
 export { DrizzleAggregationWatermarkRepository } from './repositories/aggregation-watermark.repository';
 export { DrizzleMerchantTermsRepository } from './repositories/merchant-terms.repository';
 export { DrizzleBasketCalculationRecordRepository } from './repositories/basket-calculation-record.repository';
+
+// ---------------------------------------------------------------------------
+// Merchant reliability — abstract token + aggregate type are co-located with
+// the concrete implementation (repositories/merchant-reliability.repository.ts)
+// ---------------------------------------------------------------------------
+
+export { MerchantReliabilityRepository } from './repositories/merchant-reliability.repository';
+export type { MerchantReliabilityAggregate } from './repositories/merchant-reliability.repository';
 
 // ---------------------------------------------------------------------------
 // Module boundary — pure interfaces for cross-layer contracts

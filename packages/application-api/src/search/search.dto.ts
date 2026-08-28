@@ -5,6 +5,7 @@
  */
 
 import type { SortOrder } from '@rajahinta/core-domain';
+import type { MerchantReliabilityMap } from '../merchants/merchants.dto';
 
 // ---------------------------------------------------------------------------
 // Query parameters
@@ -79,4 +80,12 @@ export interface ProductDetailResponse {
     readonly ean: string | null;
   };
   readonly offers: OfferItem[];
+  /**
+   * Per-merchant reliability scores for the offers' merchants — present
+   * only when the ADVANCED_FEATURES flag is enabled (task 3.4, change
+   * phase2-advanced-features). Flag off → field absent, payload
+   * byte-compatible with the flag-less shape. Informational only — never
+   * a ranking or ordering input.
+   */
+  readonly merchantReliability?: MerchantReliabilityMap;
 }

@@ -20,6 +20,10 @@ import type {
   PriceHistoryQuery,
   PriceHistoryResponse,
   FeatureFlagsResponse,
+  SavedScenario,
+  SaveScenarioRequest,
+  MerchantReliabilityListResponse,
+  DeclarationSummaryResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -115,14 +119,12 @@ export function getSessionUserId(): string {
   return getSessionId();
 }
 
-export async function request<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
-  const url = `${BASE_URL}${path}`;
-
-  // Merge default Content-Type with caller-provided headers and
-  // inject the age-confirmation header when the cookie is present.
+/**
+ * Assemble the default headers for an API request: JSON content type,
+ * caller-provided overrides, the age-confirmation header when the cookie
+ * is present, and the anonymous session ID on account-scoped paths.
+ */
+function buildHeaders(path: string, init?: RequestInit): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...Object.fromEntries(
@@ -138,6 +140,15 @@ export async function request<T>(
   if (ACCOUNT_SCOPE_PREFIXES.some((prefix) => path.startsWith(prefix))) {
     headers['x-user-id'] = getSessionId();
   }
+  return headers;
+}
+
+export async function request<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const url = `${BASE_URL}${path}`;
+  const headers = buildHeaders(path, init);
 
   const res = await fetch(url, {
     ...init,
@@ -390,4 +401,209 @@ export async function getPriceHistory(
   return request<PriceHistoryResponse>(
     `/api/v1/products/${productId}/price-history?${params}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Saved scenarios (GET/POST/DELETE /api/v1/account/scenarios)
+// ---------------------------------------------------------------------------
+
+/**
+ * List the current session's saved scenarios with their full inputs.
+ *
+ * The request() helper injects the `x-user-id` header for account-scoped
+ * paths, so no explicit identity is needed here.
+ */
+export async function listScenarios(): Promise<SavedScenario[]> {
+  return request<SavedScenario[]>('/api/v1/account/scenarios');
+}
+
+/**
+ * Save (upsert by name) the given calculator inputs as a scenario.
+ * Saving under an existing name replaces that scenario's inputs.
+ */
+export async function saveScenario(
+  input: SaveScenarioRequest,
+): Promise<SavedScenario> {
+  return request<SavedScenario>('/api/v1/account/scenarios', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+/** Delete a saved scenario by ID (account-scoped). */
+export async function deleteScenario(scenarioId: number): Promise<void> {
+  return request<void>(`/api/v1/account/scenarios/${scenarioId}`, {
+    method: 'DELETE',
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Merchant reliability (GET /api/v1/merchants/reliability)
+// ---------------------------------------------------------------------------
+
+/**
+ * Cached single-flight fetch of the per-merchant reliability scores.
+ *
+ * Every compare product column needs the same list; the cache means N
+ * columns share one request per page load. A failed lookup clears the
+ * cache so a later call retries. Callers gate on the ADVANCED_FEATURES
+ * flag before calling — the fetch is never made for a hidden surface.
+ */
+let merchantReliabilityPromise: Promise<MerchantReliabilityListResponse> | null =
+  null;
+
+/** Fetch the factual reliability score for every merchant with offers. */
+export function getMerchantReliability(): Promise<MerchantReliabilityListResponse> {
+  if (merchantReliabilityPromise === null) {
+    merchantReliabilityPromise = request<MerchantReliabilityListResponse>(
+      '/api/v1/merchants/reliability',
+    ).catch((err: unknown) => {
+      merchantReliabilityPromise = null;
+      throw err;
+    });
+  }
+  return merchantReliabilityPromise;
+}
+
+// ---------------------------------------------------------------------------
+// Declaration summary (GET /api/v1/declaration/:recordId)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the declaration summary for a persisted calculation.
+ *
+ * The response includes the advanced `guidance` object only while the
+ * enable_advanced_features flag is on server-side; callers treat its
+ * absence as "panel hidden".
+ */
+export async function getDeclarationSummary(
+  recordId: number,
+): Promise<DeclarationSummaryResponse> {
+  return request<DeclarationSummaryResponse>(
+    `/api/v1/declaration/${recordId}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Calculation reports (GET /api/v1/reports/:recordId?format=json|csv|html)
+// ---------------------------------------------------------------------------
+
+/** Report export formats offered by the API. */
+export type ReportFormat = 'json' | 'csv' | 'html';
+
+/**
+ * Classified failure modes of the report export that UI consumers render
+ * distinctly: a PREMIUM entitlement failure gets a controlled-vocabulary
+ * upsell message, never a crash.
+ */
+export type ReportErrorKind =
+  | 'entitlement' // 403 with error 'InsufficientEntitlement' — tier too low
+  | 'forbidden' // 403 otherwise (flag off server-side, age confirmation missing)
+  | 'rate-limited' // 429
+  | 'not-found' // 404 — calculation record does not exist
+  | 'network' // fetch itself failed (no HTTP response)
+  | 'unknown';
+
+/**
+ * Classify an error thrown by {@link downloadReport} /
+ * {@link openPrintableReport} into a typed kind. Never throws; the
+ * original {@link ApiFetchError} is carried for callers that need the
+ * server message.
+ */
+export function classifyReportError(
+  err: unknown,
+): { kind: ReportErrorKind; error: ApiFetchError | null } {
+  if (err instanceof ApiFetchError) {
+    if (err.status === 403) {
+      return err.body?.error === 'InsufficientEntitlement'
+        ? { kind: 'entitlement', error: err }
+        : { kind: 'forbidden', error: err };
+    }
+    if (err.status === 429) return { kind: 'rate-limited', error: err };
+    if (err.status === 404) return { kind: 'not-found', error: err };
+    return { kind: 'unknown', error: err };
+  }
+  return { kind: 'network', error: null };
+}
+
+/**
+ * Fetch a report as a Blob.
+ *
+ * The report route needs the age-confirmation header, which a plain
+ * anchor navigation cannot attach cross-origin — so every report action
+ * (download or print) goes through fetch → blob → object URL.
+ */
+async function fetchReportBlob(
+  recordId: number,
+  format: ReportFormat,
+): Promise<{ blob: Blob; filename: string }> {
+  const path = `/api/v1/reports/${recordId}?format=${format}`;
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: buildHeaders(path),
+  });
+
+  if (!res.ok) {
+    let body: ApiError | null = null;
+    try {
+      body = (await res.json()) as ApiError;
+    } catch {
+      // ignore parse failure
+    }
+    throw new ApiFetchError(res.status, body);
+  }
+
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  const extension = format === 'json' ? 'json' : format;
+  const filename =
+    match?.[1] ?? `rajahinta-calculation-${recordId}.${extension}`;
+
+  return { blob: await res.blob(), filename };
+}
+
+/**
+ * Trigger a browser download of a report file (JSON or CSV).
+ *
+ * Mirrors the account data-export flow: blob → object URL → temporary
+ * anchor click → revoke.
+ */
+export async function downloadReport(
+  recordId: number,
+  format: 'json' | 'csv',
+): Promise<void> {
+  const { blob, filename } = await fetchReportBlob(recordId, format);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Open the printable HTML report in a new tab and invoke the print
+ * dialog.  Falls back to a file download when the popup is blocked so
+ * the action always produces the report.
+ */
+export async function openPrintableReport(recordId: number): Promise<void> {
+  const { blob } = await fetchReportBlob(recordId, 'html');
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, '_blank');
+  if (opened !== null) {
+    opened.addEventListener('load', () => {
+      opened.print();
+    });
+    return;
+  }
+
+  // Popup blocked — degrade to a download of the same HTML report.
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `rajahinta-calculation-${recordId}.html`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
 }

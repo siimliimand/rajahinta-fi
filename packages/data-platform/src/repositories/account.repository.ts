@@ -12,7 +12,7 @@ import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { DRIZZLE, type DrizzleDatabase } from '../db/drizzle.provider';
 import { AccountRepository } from '../abstracts';
-import { accounts, savedBaskets } from '../schema';
+import { accounts, savedBaskets, savedScenarios } from '../schema';
 
 @Injectable()
 export class DrizzleAccountRepository extends AccountRepository {
@@ -92,10 +92,18 @@ export class DrizzleAccountRepository extends AccountRepository {
     const anonEmail = `anonymized+${randomUUID()}@deleted.invalid`;
 
     await this.db.transaction(async (tx) => {
-      // Cascade: delete saved baskets for this account.
+      // Cascade: delete saved baskets for this account. Scenarios are
+      // deleted here too (not via the savedScenarios FK cascade) because
+      // the account row survives anonymization — the FK only fires on
+      // account-row deletion. Kept in the same transaction as the
+      // identifier overwrite so erasure is atomic.
       await tx
         .delete(savedBaskets)
         .where(eq(savedBaskets.accountId, account.id));
+
+      await tx
+        .delete(savedScenarios)
+        .where(eq(savedScenarios.accountId, account.id));
 
       // Irreversibly overwrite identifiers; keep skeleton row (tier, timestamps).
       await tx

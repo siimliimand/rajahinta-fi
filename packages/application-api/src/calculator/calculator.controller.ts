@@ -37,9 +37,11 @@ import {
 } from '@rajahinta/core-domain';
 import {
   CalculationRecordRepository,
-  CalculationRecord,
+  ProductRepository,
+  TaxRateRepository,
 } from '@rajahinta/data-platform';
-import type { CalculateRequest } from './calculator.dto';
+import type { CalculateRequest, CalculationResultResponse } from './calculator.dto';
+import { mapCalculationRecordToResult } from './calculation-result.mapper';
 import { IdempotencyService } from '../idempotency';
 import { RateLimitGuard, RateLimit } from '../rate-limiting';
 import { LaunchGateGuard, LaunchGate, LaunchGateType } from '../feature-flags';
@@ -56,6 +58,11 @@ export class CalculatorController {
     private readonly idempotency: IdempotencyService,
     @Inject(TAX_RULE_REPOSITORY_PORT)
     private readonly taxRepo: ITaxRuleRepositoryPort,
+    // Read-side dependencies for GET /result — product facts (joined from
+    // the product master) and tax-rule version labels (resolved by rule ID).
+    // Both tokens are exported by DataPlatformModule.
+    private readonly productRepo: ProductRepository,
+    private readonly taxRateRepo: TaxRateRepository,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -157,20 +164,41 @@ export class CalculatorController {
   @ApiOperation({
     summary: 'Retrieve a previous calculation result by record ID',
     description:
-      'Returns the persisted calculation record including cost breakdown, ' +
-      'confidence level, and metadata.',
+      'Returns the persisted calculation reconstructed into the LIVE response ' +
+      'shape of POST /api/v1/calculator (metadata, itemized costs, disclaimer, ' +
+      'dataset versions). Figures are verbatim from the record — nothing is ' +
+      'recomputed. Product facts are joined from the product master; fields ' +
+      'the record does not persist (per-point confidence breakdown, ' +
+      'classification, transportMethod) degrade factually.',
   })
-  @ApiResponse({ status: 200, description: 'Calculation record' })
+  @ApiResponse({ status: 200, description: 'Itemized landed-cost result in the live calculation shape' })
   @ApiResponse({ status: 403, description: 'Feature not available' })
   @ApiResponse({ status: 404, description: 'Record not found' })
   async getResult(
     @Param('recordId', ParseIntPipe) recordId: number,
-  ): Promise<CalculationRecord> {
+  ): Promise<CalculationResultResponse> {
     const record = await this.recordRepo.findById(recordId);
     if (record === null) {
       throw new NotFoundException(`Calculation record ${recordId} not found`);
     }
-    return record;
+
+    // Read-side joins only — no engine runs, no price/tax recomputation.
+    const [product, exciseRule, containerRule] = await Promise.all([
+      this.productRepo.findById(record.productMasterId),
+      record.exciseRuleVersionId !== null
+        ? this.taxRateRepo.findVersionById(record.exciseRuleVersionId)
+        : Promise.resolve(null),
+      record.containerDutyRuleVersionId !== null
+        ? this.taxRateRepo.findVersionById(record.containerDutyRuleVersionId)
+        : Promise.resolve(null),
+    ]);
+
+    return mapCalculationRecordToResult({
+      record,
+      product,
+      exciseVersionLabel: exciseRule?.versionLabel ?? null,
+      containerVersionLabel: containerRule?.versionLabel ?? null,
+    });
   }
 
   // ---------------------------------------------------------------------------

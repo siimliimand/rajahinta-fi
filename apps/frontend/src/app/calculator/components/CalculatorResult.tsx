@@ -11,6 +11,7 @@ import type {
 import { logClick } from '@/lib/api';
 import { MerchantLink } from '../../compare/components/MerchantLink';
 import DisclaimerBanner from './DisclaimerBanner';
+import ReportExportActions from './ReportExportActions';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -303,7 +304,9 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
           Transaction classification
         </h3>
         <p className="text-sm font-medium text-gray-800">
-          {result.classification.classification}
+          {result.classification.classification === 'NotPersisted'
+            ? 'Not stored with this record'
+            : result.classification.classification}
         </p>
         <p className="mt-0.5 text-xs text-gray-500">
           {result.classification.evidenceSummary}
@@ -358,6 +361,10 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
           </div>
         </dl>
       </div>
+
+      {/* ── Report export actions — hidden and unfetched while the
+          enable_advanced_features flag is off ── */}
+      <ReportExportActions recordId={result.calculationRecordId} />
 
       {/* ── Disclaimer ── */}
       <DisclaimerBanner disclaimer={result.disclaimer} />

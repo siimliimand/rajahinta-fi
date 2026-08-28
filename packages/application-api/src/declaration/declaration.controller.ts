@@ -23,6 +23,8 @@ import {
 } from '@rajahinta/core-domain';
 import { EntitlementGuard, RequireFeature } from '../entitlement';
 import { AgeGateGuard } from '../age-gate';
+import { FeatureFlag, FeatureFlagService } from '../feature-flags';
+import type { DeclarationSummaryResponse } from './declaration.dto';
 
 @ApiTags('declaration')
 @Controller('api/v1/declaration')
@@ -30,6 +32,7 @@ import { AgeGateGuard } from '../age-gate';
 export class DeclarationController {
   constructor(
     private readonly declarationService: ExciseDeclarationService,
+    private readonly featureFlags: FeatureFlagService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -48,14 +51,28 @@ export class DeclarationController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Structured declaration summary with excise breakdown and advance-notice info',
+    description:
+      'Structured declaration summary with excise breakdown and advance-notice info; ' +
+      'includes the guidance object only when the ADVANCED_FEATURES flag is enabled',
   })
   @ApiResponse({ status: 404, description: 'Calculation record not found' })
   async prepareDeclaration(
     @Param('recordId', ParseIntPipe) recordId: number,
-  ): Promise<DeclarationSummary> {
+  ): Promise<DeclarationSummaryResponse> {
     try {
-      return await this.declarationService.prepareDeclaration(recordId);
+      const summary: DeclarationSummary =
+        await this.declarationService.prepareDeclaration(recordId);
+
+      // Design D5 — the guidance FIELD is gated by ADVANCED_FEATURES while
+      // the route stays entitled as before. Flag off: strip guidance so the
+      // key is absent (undefined, not null) and the response stays
+      // byte-compatible with pre-guidance payloads.
+      if (!this.featureFlags.isEnabled(FeatureFlag.ADVANCED_FEATURES)) {
+        const { guidance: _gatedOff, ...withoutGuidance } = summary;
+        return withoutGuidance;
+      }
+
+      return summary;
     } catch (err) {
       if (err instanceof CalculationRecordNotFoundError) {
         throw new NotFoundException(err.message);

@@ -11,6 +11,7 @@
  */
 
 import type { EntitlementTier } from '@rajahinta/core-domain';
+import type { SavedScenarioInputs } from '@rajahinta/data-platform';
 
 // ---------------------------------------------------------------------------
 // Basket
@@ -29,6 +30,30 @@ export interface Basket {
   readonly name: string;
   readonly createdAt: Date;
   readonly items: BasketItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Saved scenario (Phase 2 — advanced features, flag-gated)
+// ---------------------------------------------------------------------------
+
+/**
+ * A saved scenario as served by the account API — a named calculator input
+ * set. The inputs are exactly what is needed to re-run a calculation against
+ * current data; a scenario never stores a cached result (data-platform
+ * design Decision 1 — scenarios are upsert-by-name input sets).
+ */
+export interface SavedScenario {
+  readonly id: number;
+  readonly name: string;
+  readonly inputs: SavedScenarioInputs;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+/** POST /api/v1/account/scenarios request body — upsert by name. */
+export interface SaveScenarioRequest {
+  readonly name: string;
+  readonly inputs: SavedScenarioInputs;
 }
 
 // ---------------------------------------------------------------------------

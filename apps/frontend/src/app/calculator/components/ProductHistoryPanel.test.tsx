@@ -123,7 +123,11 @@ function detailWithMerchants(...merchants: string[]) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockedGetFeatureFlags.mockResolvedValue({
-    flags: { HISTORICAL_PRICE_INTELLIGENCE: true },
+    flags: {
+      HISTORICAL_PRICE_INTELLIGENCE: true,
+      BASKET_OPTIMIZATION: false,
+      ADVANCED_FEATURES: false,
+    },
   });
   mockedGetPriceHistory.mockResolvedValue(historyResponse());
 });
@@ -135,7 +139,11 @@ beforeEach(() => {
 describe('ProductHistoryPanel', () => {
   it('hides the section and never fetches history when the flag is off', async () => {
     mockedGetFeatureFlags.mockResolvedValue({
-      flags: { HISTORICAL_PRICE_INTELLIGENCE: false },
+      flags: {
+        HISTORICAL_PRICE_INTELLIGENCE: false,
+        BASKET_OPTIMIZATION: false,
+        ADVANCED_FEATURES: false,
+      },
     });
 
     const { container } = render(

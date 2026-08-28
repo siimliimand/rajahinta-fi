@@ -7,16 +7,16 @@
  * ## Privacy notice
  *
  * The export contains all personal data the system holds for the user
- * (email address, saved baskets, calculation history).  This is the
- * user's own data — the export exists to support the user's right of
- * access under GDPR Article 15.
+ * (email address, saved baskets, saved scenarios, calculation history).
+ * This is the user's own data — the export exists to support the user's
+ * right of access under GDPR Article 15.
  *
  * No other user's data is included in the export.
  *
  * @module DataExport
  */
 
-import type { Basket, SubscriptionStatus } from './account.types';
+import type { Basket, SavedScenario, SubscriptionStatus } from './account.types';
 
 /**
  * A single calculation from the user's history.
@@ -54,6 +54,8 @@ export interface DataExport {
   };
   /** Saved baskets. */
   readonly savedBaskets: Basket[];
+  /** Saved scenarios — account data per the saved-scenarios spec lifecycle. */
+  readonly savedScenarios: SavedScenario[];
   /** Calculation history. */
   readonly calculationHistory: CalculationExportRecord[];
   /** Current subscription status. */

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { getSessionUserId, request, getCalculationResult } from '../../lib/api';
 import type { CalculatorResult } from '@/lib/types';
+import SavedScenariosSection from './components/SavedScenariosSection';
+import ReportExportActions from '../calculator/components/ReportExportActions';
 
 /**
  * Account overview page.
@@ -277,7 +279,7 @@ export default function AccountPage() {
               return (
                 <li
                   key={calc.calculationRecordId}
-                  className="flex items-center justify-between py-3"
+                  className="flex flex-wrap items-center justify-between gap-2 py-3"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-gray-900">
@@ -289,18 +291,29 @@ export default function AccountPage() {
                       &euro;{(calc.totalCents / 100).toFixed(2)}
                     </p>
                   </div>
-                  <Link
-                    href="/calculator"
-                    className="ml-4 shrink-0 text-xs font-medium text-primary-600 hover:text-primary-800"
-                  >
-                    Re-run
-                  </Link>
+                  <div className="flex shrink-0 flex-wrap items-center gap-3">
+                    <Link
+                      href="/calculator"
+                      className="text-xs font-medium text-primary-600 hover:text-primary-800"
+                    >
+                      Re-run
+                    </Link>
+                    {/* Report export — hidden and unfetched while the
+                        enable_advanced_features flag is off */}
+                    <ReportExportActions
+                      recordId={calc.calculationRecordId}
+                      compact
+                    />
+                  </div>
                 </li>
               );
             })}
           </ul>
         )}
       </section>
+
+      {/* ── Saved scenarios (flag-gated; hidden and unfetched when off) ── */}
+      <SavedScenariosSection />
 
       {/* ── Data retention ── */}
       <section className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">

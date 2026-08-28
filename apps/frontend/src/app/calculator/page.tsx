@@ -1,13 +1,24 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import type { ProductSearchItem, CalculatorResult } from '@/lib/types';
-import { searchProducts, calculateLandedCost, request } from '@/lib/api';
+import type {
+  ProductSearchItem,
+  CalculatorResult,
+  SavedScenario,
+} from '@/lib/types';
+import {
+  searchProducts,
+  calculateLandedCost,
+  getProductDetail,
+  saveScenario,
+  request,
+} from '@/lib/api';
 import ProductSearch from './components/ProductSearch';
 import ProductSelector from './components/ProductSelector';
 import QuantitySelector from './components/QuantitySelector';
 import CalculatorResultView from './components/CalculatorResult';
 import ProductHistoryPanel from './components/ProductHistoryPanel';
+import ScenarioControls from './components/ScenarioControls';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -42,6 +53,9 @@ export default function CalculatorPage() {
   const [selectedProduct, setSelectedProduct] =
     useState<ProductSearchItem | null>(null);
   const [quantity, setQuantity] = useState(1);
+  // Destination is Finland-scoped by default; a loaded scenario can
+  // repopulate it from its stored inputs.
+  const [destination, setDestination] = useState(DEFAULT_DESTINATION);
 
   // ── Calculation state ──
   const [calculating, setCalculating] = useState(false);
@@ -96,7 +110,7 @@ export default function CalculatorPage() {
       const res = await calculateLandedCost({
         productId: selectedProduct.id,
         quantity,
-        destination: DEFAULT_DESTINATION,
+        destination,
       });
       setResult(res);
 
@@ -116,13 +130,88 @@ export default function CalculatorPage() {
     } finally {
       setCalculating(false);
     }
-  }, [selectedProduct, quantity]);
+  }, [selectedProduct, quantity, destination]);
+
+  // ── Save-scenario handler (scenario controls, flag-gated by the child) ──
+  const handleSaveScenario = useCallback(
+    async (name: string) => {
+      if (!selectedProduct) {
+        throw new Error('Select a product before saving a scenario.');
+      }
+      await saveScenario({
+        name,
+        inputs: {
+          productId: selectedProduct.id,
+          quantity,
+          destination,
+        },
+      });
+    },
+    [selectedProduct, quantity, destination],
+  );
+
+  // ── Load-scenario handler: repopulate inputs and re-run the calculation
+  // against current data. A vanished product surfaces the normal not-found
+  // error path — scenario data never serves as a cached result. ──
+  const handleLoadScenario = useCallback((scenario: SavedScenario) => {
+    const { inputs } = scenario;
+
+    setQuantity(inputs.quantity);
+    setDestination(inputs.destination);
+    setResult(null);
+    setCalcError(null);
+    setCalculating(true);
+
+    (async () => {
+      try {
+        // Re-resolve the product so the UI shows current master data; a
+        // 404 here (product removed) lands in the shared error path below.
+        const detail = await getProductDetail(inputs.productId);
+        setSelectedProduct({
+          id: detail.product.id,
+          name: detail.product.name,
+          brand: detail.product.brand,
+          category: detail.product.category,
+          alcoholByVolume: detail.product.alcoholByVolume,
+          unitVolume: detail.product.unitVolume,
+          containerType: detail.product.containerType,
+          lowestPriceCents: null,
+          merchantCount: detail.offers.length,
+        });
+
+        const res = await calculateLandedCost({
+          productId: inputs.productId,
+          quantity: inputs.quantity,
+          destination: inputs.destination,
+          ...(inputs.transportMethod !== undefined
+            ? { transportMethod: inputs.transportMethod }
+            : {}),
+        });
+        setResult(res);
+
+        request<{ success: boolean }>('/api/v1/account/history', {
+          method: 'POST',
+          body: JSON.stringify({ recordId: res.calculationRecordId }),
+        }).catch(() => { /* noop */ });
+      } catch (err: unknown) {
+        setSelectedProduct(null);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Calculation failed. Please try again.';
+        setCalcError(message);
+      } finally {
+        setCalculating(false);
+      }
+    })();
+  }, []);
 
   // ── Reset handler ──
   const handleReset = useCallback(() => {
     setSelectedProduct(null);
     setResult(null);
     setCalcError(null);
+    setDestination(DEFAULT_DESTINATION);
   }, []);
 
   // ── Render ──
@@ -211,6 +300,16 @@ export default function CalculatorPage() {
           )}
         </section>
       )}
+
+      {/* ── Scenario controls — hidden and unfetched while the
+          enable_advanced_features flag is off ── */}
+      <div className="mb-6">
+        <ScenarioControls
+          canSave={selectedProduct !== null}
+          onSaveScenario={handleSaveScenario}
+          onLoadScenario={handleLoadScenario}
+        />
+      </div>
 
       {/* ── Calculation result ── */}
       {result && (

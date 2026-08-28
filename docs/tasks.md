@@ -179,10 +179,10 @@
 
 ### 2C: Advanced Features
 
-- [ ] **T2.10** Implement saved scenarios: users can save and reload named calculation scenarios.
-- [ ] **T2.11** Implement exportable calculation reports.
-- [ ] **T2.12** Implement merchant/source reliability scoring surfaced in comparison results.
-- [ ] **T2.13** Enhance the Excise Declaration Assistant with advanced guidance (still read-only — never submits on the user's behalf).
+- [x] **T2.10** Implement saved scenarios: users can save and reload named calculation scenarios. → `savedScenarios` table + `SavedScenarioRepository` (upsert by account+name), scenario CRUD under `/api/v1/account/scenarios`, scenarios included in the GDPR export and erasure cascade, save/load controls on the calculator page and a scenario list on the account page — behind the `enable_advanced_features` flag (default off, instant rollback). *(completed via openspec/changes/phase2-advanced-features — change tasks 1.1, 1.2, 3.1, 3.2, 4.1)*
+- [x] **T2.11** Implement exportable calculation reports. → `ReportExportService` + `GET /api/v1/reports/:recordId?format=json|csv|html` serialize the persisted calculation record (never recomputed): lossless JSON, escaped flat CSV, printable HTML; structural disclaimer and per-line reliability/dataset-version/timestamp in every format; `calculation:export` PREMIUM entitlement + rate limiting; export actions on the calculator result view and account history — behind the default-off `enable_advanced_features` flag. *(completed via openspec/changes/phase2-advanced-features — change tasks 3.3, 4.2)*
+- [x] **T2.12** Implement merchant/source reliability scoring surfaced in comparison results. → `MerchantReliabilityScoreService` in `core-domain/reliability/` aggregates a merchant's current offer statuses into a factual score (per-status counts/shares, strictest status, freshest observedAt, governance status) — no letter grades or subjective labels; served via `GET /api/v1/merchants/reliability` and embedded where offers are surfaced; data-freshness display in compare columns; ranking-lockstep test proves scores never alter sort order — behind the default-off `enable_advanced_features` flag. *(completed via openspec/changes/phase2-advanced-features — change tasks 1.3, 2.1, 3.4, 4.3)*
+- [x] **T2.13** Enhance the Excise Declaration Assistant with advanced guidance (still read-only — never submits on the user's behalf). → additive `guidance` object on `DeclarationSummary`: excise derivation with applied rates, rule version labels, and formula reference; computed advance-notice deadline; MyTax entry checklist; confidence-driven caveats; official vero.fi links — read-only type proofs unchanged and the no-submission safety test extended; collapsible guidance panel on the calculator result page — behind the default-off `enable_advanced_features` flag. *(completed via openspec/changes/phase2-advanced-features — change tasks 2.2, 3.5, 4.4)*
 
 ### 2D: External / Partner API
 
@@ -243,4 +243,4 @@ Per the business plan and engineering plan, the following are explicitly deferre
 
 ---
 
-*Last updated: 2026-08-27 — T2.6–T2.9 (Phase 2B Basket Optimization) completed*
+*Last updated: 2026-08-27 — T2.10–T2.13 (Phase 2C Advanced Features) completed*

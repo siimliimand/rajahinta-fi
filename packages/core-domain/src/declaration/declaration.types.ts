@@ -42,6 +42,53 @@ export interface CalculationRecordData {
   readonly disclaimerLanguage: 'fi' | 'en';
   readonly disclaimerVersion: string;
   readonly calculationTimestamp: string;
+
+  // -------------------------------------------------------------------------
+  // Guidance provenance (Phase 2C) — optional, additive.
+  //
+  // These fields carry the applied-rate details the declaration guidance
+  // walkthrough needs.  They are optional because the persisted record and
+  // its adapter predate the guidance feature; absence is a real state, not a
+  // "for later" placeholder — the guidance degrades factually (marks figures
+  // unavailable and emits a caveat) instead of reconstructing them.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Applied alcohol-excise rate per formula unit, exactly as persisted from
+   * the tax engine's `rateApplied`.  The unit is defined by
+   * {@link exciseFormulaReference}.  Absent/null when the record does not
+   * persist it.
+   */
+  readonly alcoholExciseRatePerUnit?: number | null;
+
+  /**
+   * Applied container-duty rate per litre of product, as persisted from the
+   * container-duty engine's `ratePerLitre`.  Absent/null when the record
+   * does not persist it.
+   */
+  readonly containerDutyRatePerLitre?: number | null;
+
+  /**
+   * Alcohol-excise rule version label applied at calculation time (the tax
+   * engine's `taxDatasetVersion`, e.g. '2025.1', or 'FALLBACK' when the
+   * engine applied default rates because no rule matched).  Absent/null when
+   * not persisted.
+   */
+  readonly exciseRuleVersionLabel?: string | null;
+
+  /**
+   * Container-duty rule version label applied at calculation time
+   * ('2025.1', 'FALLBACK', or 'EXEMPTED' for deposit-system exemptions).
+   * Absent/null when not persisted.
+   */
+  readonly containerDutyRuleVersionLabel?: string | null;
+
+  /**
+   * Formula reference constant the applied excise rule specifies (the tax
+   * engine's `calculationFormulaReference`, e.g. 'PER_LITRE_OF_ALCOHOL').
+   * Absent/null when not persisted.
+   */
+  readonly exciseFormulaReference?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +167,110 @@ export interface DeclarationAdvanceNoticeInfo {
   readonly deadlineDays?: number;
 }
 
+// ---------------------------------------------------------------------------
+// Guidance — Phase 2C advanced declaration guidance (informational, read-only)
+// ---------------------------------------------------------------------------
+
+/**
+ * One applied-duty line of the derivation walkthrough.
+ *
+ * Every figure comes from the persisted calculation record.  Fields the
+ * record does not carry are `null` — never reconstructed — so consumers can
+ * show what is unknown instead of an invented number.
+ */
+export interface DeclarationAppliedRateDetail {
+  /** Which component of the estimate this line explains. */
+  readonly kind: 'alcoholExcise' | 'containerDuty';
+  /** Recorded amount for this component in euro-cents. */
+  readonly amountCents: number;
+  /**
+   * Applied rate per {@link rateUnit} exactly as persisted, or `null` when
+   * the record does not carry it.
+   */
+  readonly ratePerUnit: number | null;
+  /**
+   * Unit the rate is expressed in (derived from the formula reference), or
+   * `null` when the formula reference is unknown.
+   */
+  readonly rateUnit: string | null;
+  /**
+   * Rule version label applied at calculation time (e.g. '2025.1',
+   * 'FALLBACK'), or `null` when not persisted.
+   */
+  readonly ruleVersionLabel: string | null;
+  /**
+   * Formula reference constant from the applied tax rule (e.g.
+   * 'PER_LITRE_OF_ALCOHOL'), or `null` when not persisted.
+   */
+  readonly formulaReference: string | null;
+  /**
+   * Human-readable formula expression, or `null` when the formula reference
+   * is unknown or unrecognised.
+   */
+  readonly formulaExpression: string | null;
+}
+
+/**
+ * Derivation walkthrough of the excise estimate — the product facts and
+ * applied rates behind the recorded cents totals.
+ */
+export interface DeclarationDerivation {
+  /** Product category as persisted (e.g. 'Beer'). */
+  readonly category: string;
+  /** Alcohol by volume in percent, as persisted (e.g. 4.5). */
+  readonly abvPercent: number;
+  /** Volume of a single container in litres. */
+  readonly volumePerUnitLitres: number;
+  /** Number of units in the calculation. */
+  readonly quantity: number;
+  /** volumePerUnitLitres × quantity — total litres across all units. */
+  readonly totalVolumeLitres: number;
+  /** Applied-duty lines, alcohol excise first, container duty second. */
+  readonly appliedRates: readonly DeclarationAppliedRateDetail[];
+}
+
+/**
+ * Advance-notice deadline information computed from the calculation
+ * timestamp.  Informational only — the assistant never files the notice.
+ */
+export interface DeclarationGuidanceDeadline {
+  /** Whether this classification requires advance notice to customs. */
+  readonly required: boolean;
+  /** Notice window in days when required, else `null`. */
+  readonly deadlineDays: number | null;
+  /** Calculation timestamp (ISO 8601) the due date was computed from. */
+  readonly calculatedFrom: string;
+  /**
+   * Advance-notice due date as an ISO calendar date (yyyy-mm-dd, UTC), or
+   * `null` when notice is not required or the timestamp cannot be parsed.
+   */
+  readonly dueDate: string | null;
+}
+
+/** A link to an official guidance source. */
+export interface OfficialSourceLink {
+  readonly title: string;
+  readonly url: string;
+  readonly description: string;
+}
+
+/**
+ * Advanced declaration guidance (Phase 2C).
+ *
+ * Informational only: derivation walkthrough, computed advance-notice
+ * deadline, an ordered MyTax entry checklist phrased as observed patterns
+ * (never imperative legal conclusions), confidence-driven caveats, and
+ * official vero.fi guidance sources.  Adds no submission or pre-fill
+ * capability — the no-submission guarantee is unchanged.
+ */
+export interface DeclarationGuidance {
+  readonly derivation: DeclarationDerivation;
+  readonly deadline: DeclarationGuidanceDeadline;
+  readonly checklist: readonly string[];
+  readonly caveats: readonly string[];
+  readonly officialSources: readonly OfficialSourceLink[];
+}
+
 /**
  * Structured declaration summary produced by the ExciseDeclarationService.
  *
@@ -137,6 +288,8 @@ export interface DeclarationSummary {
   readonly myTaxLink: string;
   readonly declarationDate: string;
   readonly disclaimer: Disclaimer;
+  /** Advanced guidance (Phase 2C) — informational, read-only. */
+  readonly guidance: DeclarationGuidance;
 }
 
 // ---------------------------------------------------------------------------

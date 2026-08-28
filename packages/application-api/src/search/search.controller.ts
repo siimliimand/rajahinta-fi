@@ -18,6 +18,7 @@ import {
   NotFoundException,
   InternalServerErrorException,
   UseGuards,
+  Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import type { SortOrder } from '@rajahinta/core-domain';
@@ -28,7 +29,15 @@ import type {
   ProductDetailResponse,
   OfferItem,
 } from './search.dto';
-import { LaunchGateGuard, LaunchGate, LaunchGateType } from '../feature-flags';
+import type { MerchantReliabilityMap } from '../merchants/merchants.dto';
+import { MerchantReliabilityService } from '../merchants';
+import {
+  FeatureFlag,
+  FeatureFlagService,
+  LaunchGateGuard,
+  LaunchGate,
+  LaunchGateType,
+} from '../feature-flags';
 import { AgeGateGuard } from '../age-gate';
 
 /** Default page size for product listing. */
@@ -50,8 +59,12 @@ function compareByName(a: ProductSearchItem, b: ProductSearchItem): number {
 @ApiTags('products')
 @Controller('api/v1/products')
 export class SearchController {
+  private readonly logger = new Logger(SearchController.name);
+
   constructor(
     private readonly productRepo: ProductRepository,
+    private readonly featureFlags: FeatureFlagService,
+    private readonly merchantReliability: MerchantReliabilityService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -165,7 +178,7 @@ export class SearchController {
 
       const offers = await this.productRepo.findOffers(id);
 
-      return {
+      const response: ProductDetailResponse = {
         product: {
           id: product.id,
           name: product.name,
@@ -199,6 +212,22 @@ export class SearchController {
           }),
         ),
       };
+
+      // Informational per-merchant scores — computed only while the flag
+      // is on so the un-gated path pays nothing; flag off leaves the
+      // field absent and the payload byte-identical to the flag-less
+      // shape. The embed never reorders or re-ranks the offers.
+      if (
+        response.offers.length > 0 &&
+        this.featureFlags.isEnabled(FeatureFlag.ADVANCED_FEATURES)
+      ) {
+        const embed = await this.computeReliabilityEmbed(response.offers);
+        if (embed !== undefined) {
+          return { ...response, merchantReliability: embed };
+        }
+      }
+
+      return response;
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
       throw new InternalServerErrorException(
@@ -210,6 +239,26 @@ export class SearchController {
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
+
+  /**
+   * Scores for the offers' merchants, or undefined when the computation
+   * fails — the embed is informational, so it is omitted rather than
+   * failing the product detail response.
+   */
+  private async computeReliabilityEmbed(
+    offers: readonly OfferItem[],
+  ): Promise<MerchantReliabilityMap | undefined> {
+    try {
+      const merchants = new Set(offers.map((o) => o.merchant));
+      return await this.merchantReliability.getReliabilityScoreMap(merchants);
+    } catch (err) {
+      this.logger.warn(
+        'Merchant reliability embed failed — omitting merchantReliability: ' +
+          (err instanceof Error ? err.message : 'unknown error'),
+      );
+      return undefined;
+    }
+  }
 
   private parsePositiveInt(raw: string | undefined, fallback: number): number {
     if (raw === undefined || raw === '') return fallback;

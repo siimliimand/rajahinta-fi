@@ -18,7 +18,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { AccountService } from '../account.service';
 import { AuditService } from '@rajahinta/core-domain';
-import type { AccountRepository, SavedBasketRepository } from '@rajahinta/data-platform';
+import type { AccountRepository, SavedBasketRepository, SavedScenarioRepository } from '@rajahinta/data-platform';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -85,7 +85,10 @@ describe('AccountService', () => {
       simulateProductionEnv();
       const mockAccountRepo = { anonymize: vi.fn() } as unknown as AccountRepository;
       const mockBasketRepo = {} as unknown as SavedBasketRepository;
-      expect(() => new AccountService(mockAccountRepo, mockBasketRepo)).not.toThrow();
+      const mockScenarioRepo = {} as unknown as SavedScenarioRepository;
+      expect(() =>
+        new AccountService(mockAccountRepo, mockBasketRepo, undefined, mockScenarioRepo),
+      ).not.toThrow();
     });
   });
 
@@ -122,7 +125,7 @@ describe('AccountService', () => {
         entityId: 'user-123',
         action: 'deleted',
         author: 'system',
-        reason: 'GDPR anonymization requested',
+        reason: 'GDPR anonymization requested; saved baskets and saved scenarios deleted',
       });
     });
 
@@ -261,6 +264,140 @@ describe('AccountService', () => {
       const service = new AccountService();
       // getAccount auto-creates — so even a ghost user works in-memory mode
       await expect(service.anonymizeAccount('ghost-inmem')).resolves.toBeUndefined();
+    });
+
+    it('cascades erasure to saved scenarios (in-memory path)', async () => {
+      const service = new AccountService();
+      const userId = 'anon-with-scenarios';
+
+      await service.saveScenario(userId, 'Weekend run', {
+        productId: 12,
+        quantity: 6,
+        destination: 'FI',
+      });
+      await service.anonymizeAccount(userId);
+
+      // The retired identity must not resurface its scenarios.
+      await expect(service.getScenarios(userId)).resolves.toEqual([]);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Task 3.2 — deleteAccount cascades to scenarios (in-memory path mirrors
+  // the saved_scenarios FK ON DELETE CASCADE of the DB path)
+  // -----------------------------------------------------------------------
+
+  describe('deleteAccount (in-memory path) — Task 3.2', () => {
+    it('removes the user’s saved scenarios along with the account', async () => {
+      const service = new AccountService();
+      const userId = 'delete-with-scenarios';
+
+      await service.saveScenario(userId, 'Weekend run', {
+        productId: 12,
+        quantity: 6,
+        destination: 'FI',
+      });
+      await service.deleteAccount(userId);
+
+      await expect(service.getScenarios(userId)).resolves.toEqual([]);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // find-or-create race — concurrent callers converging on one account row
+  // -----------------------------------------------------------------------
+
+  describe('ensureAccountRow unique-violation race', () => {
+    /**
+     * Plain fake mirroring the DB contract that produced the race: reads are
+     * slow enough for two callers to interleave, and the second INSERT fails
+     * with a Postgres unique-violation shape (SQLSTATE 23505) exactly like
+     * accounts_user_id_unique does.
+     */
+    class RacingAccountRepository {
+      private readonly rows = new Map<
+        string,
+        { id: number; userId: string; email: string; tier: string; lastActiveAt: Date }
+      >();
+      private nextId = 1;
+
+      async findByUserId(userId: string) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return this.rows.get(userId) ?? null;
+      }
+
+      async create(record: { userId: string; email: string; tier: string }) {
+        if (this.rows.has(record.userId)) {
+          const err = new Error(
+            'duplicate key value violates unique constraint "accounts_user_id_unique"',
+          );
+          (err as { code?: string }).code = '23505';
+          throw err;
+        }
+        const row = { id: this.nextId++, lastActiveAt: new Date(), ...record };
+        this.rows.set(record.userId, row);
+        return row;
+      }
+
+      get size(): number {
+        return this.rows.size;
+      }
+    }
+
+    class RecordingScenarioRepository {
+      readonly upserts: Array<{ accountId: number; name: string }> = [];
+
+      async upsert(record: { accountId: number; name: string }) {
+        this.upserts.push({ accountId: record.accountId, name: record.name });
+        return {
+          id: this.upserts.length,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          accountId: record.accountId,
+          name: record.name,
+          inputs: {},
+        };
+      }
+    }
+
+    it('concurrent saveScenario calls converge on one account row instead of failing', async () => {
+      const accountRepo = new RacingAccountRepository();
+      const scenarioRepo = new RecordingScenarioRepository();
+      const service = new AccountService(
+        accountRepo as unknown as AccountRepository,
+        undefined,
+        undefined,
+        scenarioRepo as unknown as SavedScenarioRepository,
+      );
+
+      const inputs = { productId: 1, quantity: 2, destination: 'FI' };
+      await Promise.all([
+        service.saveScenario('race-user', 'Scenario A', inputs),
+        service.saveScenario('race-user', 'Scenario B', inputs),
+      ]);
+
+      expect(accountRepo.size).toBe(1);
+      expect(scenarioRepo.upserts.map((u) => u.accountId)).toEqual([1, 1]);
+    });
+
+    it('non-unique create failures still surface', async () => {
+      const accountRepo = {
+        findByUserId: async () => null,
+        create: async () => {
+          throw new Error('connection refused');
+        },
+      };
+      const scenarioRepo = new RecordingScenarioRepository();
+      const service = new AccountService(
+        accountRepo as unknown as AccountRepository,
+        undefined,
+        undefined,
+        scenarioRepo as unknown as SavedScenarioRepository,
+      );
+
+      await expect(
+        service.saveScenario('down-user', 'S', { productId: 1, quantity: 1, destination: 'FI' }),
+      ).rejects.toThrow('connection refused');
     });
   });
 });

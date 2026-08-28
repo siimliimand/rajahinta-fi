@@ -55,6 +55,15 @@ export class DataExportService {
         quantity: 1,
       }));
 
+    // Saved baskets are loaded separately from the account row on the
+    // repository path (rowToAccount never populates them), so source them
+    // through the service — same lifecycle as saved scenarios.
+    const savedBaskets = await this.accountService.getSavedBaskets(userId);
+
+    // Saved scenarios are account data (saved-scenarios spec) and follow
+    // the same export lifecycle as saved baskets.
+    const savedScenarios = await this.accountService.getScenarios(userId);
+
     const exportData: DataExport = {
       userId: account.userId,
       exportDate: new Date().toISOString(),
@@ -65,7 +74,8 @@ export class DataExportService {
         createdAt: account.createdAt.toISOString(),
         lastActiveAt: account.lastActiveAt.toISOString(),
       },
-      savedBaskets: account.savedBaskets,
+      savedBaskets,
+      savedScenarios,
       calculationHistory,
       subscription: account.subscription,
     };
@@ -73,6 +83,7 @@ export class DataExportService {
     this.logger.debug(
       `Data export generated for userId="${userId}" ` +
         `(${exportData.savedBaskets.length} baskets, ` +
+        `${exportData.savedScenarios.length} scenarios, ` +
         `${exportData.calculationHistory.length} calculations)`,
     );
 

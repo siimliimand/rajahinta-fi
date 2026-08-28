@@ -8,6 +8,7 @@ import type {
 } from '@/lib/types';
 import { logClick } from '@/lib/api';
 import { MerchantLink } from './MerchantLink';
+import MerchantFreshnessSection from './MerchantFreshnessSection';
 import ProductHistoryPanel from '../../calculator/components/ProductHistoryPanel';
 
 // ---------------------------------------------------------------------------
@@ -109,6 +110,14 @@ function ProductColumn({
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Merchant data-freshness display — factual per-merchant summary
+          from the reliability endpoint, flag-gated (hidden and unfetched
+          when the enable_advanced_features flag is off). Informational
+          only: identical styling per merchant, no ranking alteration. */}
+      <div className="mt-3">
+        <MerchantFreshnessSection merchants={product.merchants ?? []} />
       </div>
 
       {/* Historical price chart — product-wide series, flag-gated the same

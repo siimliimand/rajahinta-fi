@@ -433,6 +433,47 @@ export const savedBaskets = pgTable('saved_baskets', {
 });
 
 /**
+ * Saved scenarios — named calculator input sets for repeat runs.
+ *
+ * Each scenario belongs to one account (FK to accounts.id). Unlike
+ * savedBaskets (product selections for basket shipping), a scenario stores
+ * calculator inputs only: loading one repopulates the calculator and
+ * re-runs the calculation against current data — scenario data never
+ * serves as a cached result. Data minimization: no personal data beyond
+ * the account FK. Deleting an account cascades to its scenarios at the
+ * database level (savedBaskets cascades in repository code instead), so
+ * the GDPR erasure path cannot leave orphaned scenarios behind even if
+ * the repository layer is bypassed.
+ *
+ * @see design.md Decision 1 — scenarios are a separate table, upsert-by-name.
+ */
+export const savedScenarios = pgTable(
+  'saved_scenarios',
+  {
+    id: serial('id').primaryKey(),
+    /** FK to accounts — the owning user; cascade delete implements the erasure path. */
+    accountId: integer('account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** Human-readable scenario label (user-supplied, unique per account). */
+    name: varchar('name', { length: 256 }).notNull(),
+    /** JSON object of calculator inputs: {productId, quantity, destination, transportMethod?, transportArrangement?}. */
+    inputs: jsonb('inputs').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    /** When the scenario inputs were last replaced (upsert-by-name refreshes it). */
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    // Upsert-by-name idempotency key: saving with an existing name targets
+    // this constraint's ON CONFLICT (account_id, name) and replaces inputs.
+    unique('saved_scenarios_account_id_name_unique').on(
+      table.accountId,
+      table.name,
+    ),
+  ],
+);
+
+/**
  * Merchant terms — store-level commercial conditions.
  *
  * One row per merchant carrying minimum-order thresholds and other

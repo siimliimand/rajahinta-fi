@@ -13,7 +13,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AccountController } from '../account.controller';
 import type { AccountService } from '../account.service';
 import type { DataExportService } from '../data-export.service';
-import type { Account, Basket, BasketItem, SubscriptionStatus } from '../account.types';
+import type { Account, Basket, BasketItem, SavedScenario, SubscriptionStatus } from '../account.types';
 import type { DataExport } from '../data-export.types';
 
 // ---------------------------------------------------------------------------
@@ -47,6 +47,14 @@ const mockAccount: Account = {
   lastActiveAt: new Date('2026-06-01'),
 };
 
+const mockScenario: SavedScenario = {
+  id: 1,
+  name: 'Weekend run',
+  inputs: { productId: 1, quantity: 6, destination: 'FI' },
+  createdAt: new Date('2026-06-01'),
+  updatedAt: new Date('2026-06-10'),
+};
+
 const mockDataExport: DataExport = {
   userId: USER_ID,
   exportDate: '2026-06-15T12:00:00.000Z',
@@ -58,6 +66,7 @@ const mockDataExport: DataExport = {
     lastActiveAt: '2026-06-01T00:00:00.000Z',
   },
   savedBaskets: [mockBasket],
+  savedScenarios: [mockScenario],
   calculationHistory: [
     {
       calculationId: 1001,

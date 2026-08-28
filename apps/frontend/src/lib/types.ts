@@ -64,6 +64,167 @@ export interface RetailOffer {
 export interface ProductDetailResponse {
   readonly product: ProductDetail;
   readonly offers: RetailOffer[];
+  /**
+   * Factual per-merchant reliability scores for the offers' merchants.
+   * Embedded by the API only while the enable_advanced_features flag is
+   * on; absent otherwise (never null). Informational only — the offers'
+   * order is never affected.
+   */
+  readonly merchantReliability?: Readonly<
+    Record<string, MerchantReliabilityScore>
+  >;
+}
+
+// ---------------------------------------------------------------------------
+// Saved scenarios (GET/POST/DELETE /api/v1/account/scenarios)
+// Mirrors SavedScenario/SavedScenarioInputs from the application-api and
+// data-platform packages with Date fields as ISO strings. A scenario stores
+// calculator inputs only — displaying a result always requires re-running
+// the calculation against current data.
+// ---------------------------------------------------------------------------
+
+/** How transport is arranged (same union as TransportArrangement in basket.types). */
+export type ScenarioTransportArrangement =
+  | 'SELLER_ARRANGED'
+  | 'INDEPENDENT_CARRIER'
+  | 'PERSONAL';
+
+/** Stored calculator inputs — exactly what is needed to re-run a calculation. */
+export interface ScenarioInputs {
+  readonly productId: number;
+  readonly quantity: number;
+  readonly destination: string;
+  readonly transportMethod?: string;
+  readonly transportArrangement?: ScenarioTransportArrangement;
+}
+
+/** A saved scenario row as served by the account API (ISO timestamps). */
+export interface SavedScenario {
+  readonly id: number;
+  readonly name: string;
+  readonly inputs: ScenarioInputs;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** POST /api/v1/account/scenarios body — upsert by (account, name). */
+export interface SaveScenarioRequest {
+  readonly name: string;
+  readonly inputs: ScenarioInputs;
+}
+
+// ---------------------------------------------------------------------------
+// Merchant reliability (GET /api/v1/merchants/reliability)
+// Mirrors merchants.dto.ts — factual fields only: counts, shares, statuses,
+// timestamps. No grade, weighting, or endorsement; informational only.
+// ---------------------------------------------------------------------------
+
+/** Governance permission status of a merchant's data sources. */
+export type PermissionStatus = 'GRANTED' | 'PENDING' | 'REVOKED' | 'EXPIRED';
+
+/** Factual reliability score for one merchant (ISO-string mirror of the DTO). */
+export interface MerchantReliabilityScore {
+  readonly merchant: string;
+  readonly offerCount: number;
+  readonly statusCounts: Readonly<Record<ReliabilityStatus, number>>;
+  readonly statusShares: Readonly<Record<ReliabilityStatus, number>>;
+  readonly strictestStatus: ReliabilityStatus;
+  readonly freshestObservedAt: string | null;
+  readonly governancePermissionStatus: PermissionStatus;
+  readonly computedAt: string;
+}
+
+/** GET /api/v1/merchants/reliability — one score per merchant with offers. */
+export interface MerchantReliabilityListResponse {
+  readonly merchants: readonly MerchantReliabilityScore[];
+}
+
+// ---------------------------------------------------------------------------
+// Declaration guidance (GET /api/v1/declaration/:recordId)
+// Mirrors declaration.dto.ts. The guidance field is present only while the
+// enable_advanced_features flag is on (omitted, never null, otherwise).
+// ---------------------------------------------------------------------------
+
+/** One applied-duty line of the derivation walkthrough. */
+export interface DeclarationAppliedRateDetail {
+  readonly kind: 'alcoholExcise' | 'containerDuty';
+  readonly amountCents: number;
+  readonly ratePerUnit: number | null;
+  readonly rateUnit: string | null;
+  readonly ruleVersionLabel: string | null;
+  readonly formulaReference: string | null;
+  readonly formulaExpression: string | null;
+}
+
+/** Derivation walkthrough — product facts and applied rates behind the totals. */
+export interface DeclarationDerivation {
+  readonly category: string;
+  readonly abvPercent: number;
+  readonly volumePerUnitLitres: number;
+  readonly quantity: number;
+  readonly totalVolumeLitres: number;
+  readonly appliedRates: readonly DeclarationAppliedRateDetail[];
+}
+
+/** Advance-notice deadline computed from the calculation timestamp. */
+export interface DeclarationDeadline {
+  readonly required: boolean;
+  readonly deadlineDays: number | null;
+  readonly calculatedFrom: string;
+  readonly dueDate: string | null;
+}
+
+/** A link to an official guidance source. */
+export interface DeclarationOfficialSourceLink {
+  readonly title: string;
+  readonly url: string;
+  readonly description: string;
+}
+
+/** Advanced declaration guidance — informational, read-only. */
+export interface DeclarationGuidance {
+  readonly derivation: DeclarationDerivation;
+  readonly deadline: DeclarationDeadline;
+  readonly checklist: readonly string[];
+  readonly caveats: readonly string[];
+  readonly officialSources: readonly DeclarationOfficialSourceLink[];
+}
+
+/** GET /api/v1/declaration/:recordId — response wrapper. */
+export interface DeclarationSummaryResponse {
+  readonly product: {
+    readonly name: string;
+    readonly brand: string | null;
+    readonly category: string;
+    readonly abv: number;
+    readonly volumeLitres: number;
+  };
+  readonly units: number;
+  readonly container: {
+    readonly type: string;
+    readonly volumeLitres: number;
+    readonly depositSystemStatus: boolean | null;
+  };
+  readonly transport: {
+    readonly carrier: string | null;
+    readonly origin: string | null;
+    readonly destination: string | null;
+  };
+  readonly estimatedExcise: {
+    readonly alcoholExciseCents: number;
+    readonly containerDutyCents: number;
+    readonly totalCents: number;
+    readonly confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  };
+  readonly advanceNoticeInfo: {
+    readonly required: boolean;
+    readonly deadlineDays?: number;
+  };
+  readonly myTaxLink: string;
+  readonly declarationDate: string;
+  readonly disclaimer: Disclaimer;
+  /** Present only while the enable_advanced_features flag is on. */
+  readonly guidance?: DeclarationGuidance;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,7 +265,12 @@ export interface ConfidenceDetail {
 }
 
 export interface ClassificationResult {
-  readonly classification: 'DistanceSelling' | 'DistanceBuying' | 'TravellerImport';
+  /** 'NotPersisted' — older records were stored without the classification. */
+  readonly classification:
+    | 'DistanceSelling'
+    | 'DistanceBuying'
+    | 'TravellerImport'
+    | 'NotPersisted';
   readonly confidence: ConfidenceLevel;
   readonly evidence: Array<{
     readonly observation: string;
@@ -296,6 +462,17 @@ export interface FeatureFlagsResponse {
      * and the charts on the calculator result view / compare page.
      */
     readonly HISTORICAL_PRICE_INTELLIGENCE: boolean;
+    /**
+     * enable_basket_optimization — gates the multi-item basket
+     * optimization API and the compare page's basket section.
+     */
+    readonly BASKET_OPTIMIZATION: boolean;
+    /**
+     * enable_advanced_features — Phase 2 rollout flag: gates the scenario
+     * endpoints/UI, report exports, merchant reliability display, and the
+     * declaration guidance panel.
+     */
+    readonly ADVANCED_FEATURES: boolean;
   };
 }
 
@@ -370,6 +547,11 @@ export interface ComparisonProduct {
   readonly offerId?: number;
   /** Optional merchant display name (shown as the link label) */
   readonly merchantName?: string;
+  /**
+   * Merchant names with current offers for this product (sorted, unique).
+   * Feeds the factual data-freshness display; never affects ordering.
+   */
+  readonly merchants?: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
