@@ -304,7 +304,9 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
           Transaction classification
         </h3>
         <p className="text-sm font-medium text-gray-800">
-          {result.classification.classification}
+          {result.classification.classification === 'NotPersisted'
+            ? 'Not stored with this record'
+            : result.classification.classification}
         </p>
         <p className="mt-0.5 text-xs text-gray-500">
           {result.classification.evidenceSummary}

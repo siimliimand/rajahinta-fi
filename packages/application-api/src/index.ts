@@ -372,7 +372,11 @@ export type { SubscriptionStatus } from './billing';
 // ---------------------------------------------------------------------------
 
 export { CalculatorController } from './calculator';
-export type { CalculateRequest, CalculationRecordResponse } from './calculator';
+export type {
+  CalculateRequest,
+  CalculationResultResponse,
+  UnpersistedClassification,
+} from './calculator';
 
 // ---------------------------------------------------------------------------
 // Search — product search and discovery API

@@ -265,7 +265,12 @@ export interface ConfidenceDetail {
 }
 
 export interface ClassificationResult {
-  readonly classification: 'DistanceSelling' | 'DistanceBuying' | 'TravellerImport';
+  /** 'NotPersisted' — older records were stored without the classification. */
+  readonly classification:
+    | 'DistanceSelling'
+    | 'DistanceBuying'
+    | 'TravellerImport'
+    | 'NotPersisted';
   readonly confidence: ConfidenceLevel;
   readonly evidence: Array<{
     readonly observation: string;

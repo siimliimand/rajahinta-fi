@@ -39,7 +39,11 @@ import {
 import { TRANSPORT_OFFER_QUERY } from '@rajahinta/core-domain';
 import {
   CalculationRecordRepository,
+  ProductRepository,
+  TaxRateRepository,
   calculationRecords,
+  productMaster,
+  taxRules,
 } from '@rajahinta/data-platform';
 import {
   CalculatorController,
@@ -99,6 +103,89 @@ class InMemoryCalculationRecordRepository extends CalculationRecordRepository {
     _sessionId: string,
   ): Promise<typeof calculationRecords.$inferSelect[]> {
     return [];
+  }
+}
+
+// -------------------------------------------------------------------
+// In-memory product master + tax-rate repositories (GET /result joins)
+// -------------------------------------------------------------------
+
+/** Product-master row mirroring PRODUCT_BEER_DATA. */
+const PRODUCT_MASTER_ROW: typeof productMaster.$inferSelect = {
+  id: 1,
+  name: 'Premium Lager 5%',
+  manufacturer: 'Test Brewery',
+  brand: 'Test',
+  category: 'beer',
+  alcoholByVolume: '0.050',
+  unitVolume: '0.5000',
+  containerType: 'can',
+  regulatoryClassification: 'beer',
+  depositSystemStatus: true,
+  ean: null,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
+class InMemoryProductRepository extends ProductRepository {
+  override async findById(
+    id: number,
+  ): Promise<typeof productMaster.$inferSelect | null> {
+    return id === PRODUCT_MASTER_ROW.id ? PRODUCT_MASTER_ROW : null;
+  }
+
+  override async searchByName(): Promise<never> {
+    throw new Error('not used in this test');
+  }
+  override async findOffers(): Promise<never> {
+    throw new Error('not used in this test');
+  }
+  override async findRetailOfferById(): Promise<never> {
+    throw new Error('not used in this test');
+  }
+  override async create(): Promise<never> {
+    throw new Error('not used in this test');
+  }
+  override async upsertByEan(): Promise<never> {
+    throw new Error('not used in this test');
+  }
+}
+
+/** Rule-ID → version-label lookup used by GET /result (labels only). */
+class InMemoryTaxRateRepository extends TaxRateRepository {
+  private readonly labels = new Map<number, string>([
+    [1, VERSION],
+    [2, VERSION],
+    [3, VERSION],
+    [4, VERSION],
+  ]);
+
+  override async findVersionById(
+    id: number,
+  ): Promise<typeof taxRules.$inferSelect | null> {
+    const label = this.labels.get(id);
+    if (label === undefined) return null;
+    return {
+      id,
+      taxType: 'excise',
+      productCategory: 'beer',
+      rate: '0.00',
+      effectiveFrom: EFFECTIVE_FROM,
+      effectiveTo: null,
+      exemptionConditions: null,
+      calculationFormulaReference: 'PER_DEGREE_PLATO',
+      officialSource: SOURCE,
+      verificationDate: VERIFIED_DATE,
+      versionLabel: label,
+      createdAt: NOW,
+    };
+  }
+
+  override async findEffectiveVersion(): Promise<never> {
+    throw new Error('not used in this test');
+  }
+  override async findHistoryRates(): Promise<never> {
+    throw new Error('not used in this test');
   }
 }
 
@@ -405,6 +492,8 @@ async function buildTestModule(gatesOpen: boolean): Promise<{
     controllers: [CalculatorController],
     providers: [
       { provide: CalculationRecordRepository, useValue: calcRecordRepo },
+      { provide: ProductRepository, useValue: new InMemoryProductRepository() },
+      { provide: TaxRateRepository, useValue: new InMemoryTaxRateRepository() },
     ],
   })
     .overrideProvider(PRODUCT_DATA_PORT)
@@ -694,9 +783,18 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
           .set('x-age-confirmed', 'test-token')
           .expect(200);
 
-        expect(res.body).toHaveProperty('id', seeded.id);
+        // Live response shape — the same contract as POST /calculator.
+        expect(res.body).toHaveProperty('calculationRecordId', seeded.id);
         expect(res.body).toHaveProperty('totalCents', 372);
-        expect(res.body).toHaveProperty('productMasterId', 1);
+        expect(res.body.metadata).toMatchObject({
+          productMasterId: 1,
+          productName: 'Premium Lager 5%',
+          quantity: 1,
+          destination: 'FI',
+        });
+        expect(res.body.metadata.input).toMatchObject({ productId: 1 });
+        expect(res.body.disclaimer.text).toBe('Test disclaimer');
+        expect(res.body.classification.classification).toBe('NotPersisted');
       });
 
       it('returns 404 for a non-existent record', async () => {

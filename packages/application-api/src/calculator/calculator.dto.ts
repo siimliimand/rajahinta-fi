@@ -7,7 +7,11 @@
  * @module CalculatorDto
  */
 
-import type { TransportArrangement } from '@rajahinta/core-domain';
+import type {
+  CalculatorResult,
+  ClassificationResult,
+  TransportArrangement,
+} from '@rajahinta/core-domain';
 
 // ---------------------------------------------------------------------------
 // Request DTOs
@@ -38,17 +42,32 @@ export interface CalculateRequest {
 // Response DTOs
 // ---------------------------------------------------------------------------
 
-/** GET /api/v1/calculator/result/:recordId — previous calculation record. */
-export interface CalculationRecordResponse {
-  readonly id: number;
-  readonly productMasterId: number;
-  readonly totalCents: number;
-  readonly breakdown: unknown;
-  readonly confidence: string;
-  readonly quantity: number;
-  readonly destination: string;
-  readonly disclaimer: string;
-  readonly sessionId: string | null;
-  readonly calculatedAt: string;
-  readonly productName: string | null;
+/**
+ * Classification degradation for GET result responses: the transaction
+ * classification is not persisted with the calculation record, so the
+ * endpoint returns a factual marker instead of deriving a label.  The
+ * shared DTO's ClassificationLabel union cannot express absence — this
+ * variant can.  Consumers treat it as "unknown for a past result".
+ */
+export interface UnpersistedClassification {
+  readonly classification: 'NotPersisted';
+  readonly confidence: 'LOW';
+  readonly evidence: [];
+  readonly evidenceSummary: string;
 }
+
+/**
+ * GET /api/v1/calculator/result/:recordId — a previous calculation,
+ * reconstructed into the LIVE response shape of POST /api/v1/calculator.
+ *
+ * Identical to the core-domain CalculatorResult the frontend type mirrors,
+ * except `classification`, which may carry the {@link UnpersistedClassification}
+ * marker because calculation_records does not persist the classification
+ * decision.
+ */
+export type CalculationResultResponse = Omit<
+  CalculatorResult,
+  'classification'
+> & {
+  readonly classification: ClassificationResult | UnpersistedClassification;
+};
