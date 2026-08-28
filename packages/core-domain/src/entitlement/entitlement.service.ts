@@ -1,18 +1,20 @@
 /**
  * EntitlementService — feature-access entitlement checks.
  *
- * In-memory for Phase 1.  Replace with a subscription-management
- * backend or API-key service in production.
- *
- * Default: anonymous users (userId === null) are FREE tier.
- * Premium features require a non-null userId with an override
- * environment variable for development.
+ * Tier resolution (technical-assessment finding 14):
+ * - The tier comes from the account record (`accounts.tier`), passed in as
+ *   an {@link AccountContext} by the API layer.
+ * - `ENTITLEMENT_DEFAULT_TIER` remains ONLY as a global testing override:
+ *   honored in non-production environments and applied uniformly to every
+ *   account. Per-user env-var overrides are removed — tier state belongs to
+ *   the account record, not the process environment.
  *
  * @module EntitlementService
  */
 
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  AccountContext,
   Entitlement,
   EntitlementTier,
   FeatureId,
@@ -20,21 +22,31 @@ import {
   isTierSufficient,
 } from './entitlement.types';
 
+/** Environment variable holding the global, test-only tier override. */
+const GLOBAL_TEST_TIER_OVERRIDE_ENV = 'ENTITLEMENT_DEFAULT_TIER';
+
 @Injectable()
 export class EntitlementService {
   private readonly logger = new Logger(EntitlementService.name);
 
   /**
-   * Check whether a user has access to the given feature.
+   * Check whether the caller has access to the given feature.
    *
-   * @param userId — the user's identifier, or `null` for anonymous requests
+   * @param account — the account context carrying the tier from
+   *                  `accounts.tier`. A bare userId string is accepted from
+   *                  callers that have not fetched the account record yet;
+   *                  it resolves to the Phase 1 PREMIUM default until the
+   *                  session wiring passes full contexts. `null` = anonymous.
    * @param feature — the feature being requested
    */
-  checkAccess(userId: string | null, feature: FeatureId): Entitlement {
+  checkAccess(
+    account: AccountContext | string | null,
+    feature: FeatureId,
+  ): Entitlement {
     const requiredTier = FEATURE_TIER_MAP[feature];
 
-    // Anonymous users default to FREE tier
-    if (userId === null) {
+    // Anonymous requests are FREE tier
+    if (account === null) {
       const allowed = requiredTier === 'FREE';
       return {
         allowed,
@@ -45,9 +57,7 @@ export class EntitlementService {
       };
     }
 
-    // Phase 1: all authenticated users are PREMIUM tier by default.
-    // Override via ENTITLEMENT_TIER env var for testing.
-    const userTier = this.resolveUserTier(userId);
+    const userTier = this.resolveTier(account);
 
     const allowed = isTierSufficient(userTier, requiredTier);
     return {
@@ -60,29 +70,35 @@ export class EntitlementService {
   }
 
   /**
-   * Resolve the tier for a known user.
+   * Resolve the tier for a known account.
    *
-   * Phase 1: all authenticated users get PREMIUM tier, overridable
-   * per-user via `ENTITLEMENT_TIER_<userId>` env var, or globally
-   * via `ENTITLEMENT_DEFAULT_TIER`.
+   * Precedence: global test override (non-production only, uniform), then
+   * the account record's tier. Legacy bare-userId callers keep the Phase 1
+   * PREMIUM default until every caller passes an {@link AccountContext}.
    */
-  private resolveUserTier(userId: string): EntitlementTier {
-    // Per-user override
-    const perUserVar = `ENTITLEMENT_TIER_${userId.toUpperCase()}`;
-    const perUserOverride = process.env[perUserVar];
-    if (perUserOverride !== undefined) {
-      const tier = this.parseTier(perUserOverride);
-      if (tier !== null) return tier;
-    }
+  private resolveTier(account: AccountContext | string): EntitlementTier {
+    const override = this.globalTestOverride();
+    if (override !== null) return override;
 
-    // Global default for authenticated users
-    const globalDefault = process.env['ENTITLEMENT_DEFAULT_TIER'];
-    if (globalDefault !== undefined) {
-      const tier = this.parseTier(globalDefault);
-      if (tier !== null) return tier;
+    if (typeof account === 'string') {
+      return 'PREMIUM';
     }
+    return account.tier;
+  }
 
-    return 'PREMIUM';
+  /**
+   * Global test override from `ENTITLEMENT_DEFAULT_TIER`.
+   *
+   * Refused in production so a stray env var can never rewrite real tiers;
+   * applied uniformly (never keyed on user identifiers) per the
+   * subscription-billing spec.
+   */
+  private globalTestOverride(): EntitlementTier | null {
+    if (process.env.NODE_ENV === 'production') return null;
+
+    const raw = process.env[GLOBAL_TEST_TIER_OVERRIDE_ENV];
+    if (raw === undefined) return null;
+    return this.parseTier(raw);
   }
 
   /**
@@ -93,7 +109,9 @@ export class EntitlementService {
     if (upper === 'PREMIUM') return 'PREMIUM';
     if (upper === 'PROFESSIONAL') return 'PROFESSIONAL';
     if (upper === 'FREE') return 'FREE';
-    this.logger.warn(`Invalid entitlement tier in env: "${raw}"`);
+    this.logger.warn(
+      `Invalid entitlement tier in env ${GLOBAL_TEST_TIER_OVERRIDE_ENV}: "${raw}"`,
+    );
     return null;
   }
 }

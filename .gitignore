@@ -41,6 +41,9 @@ out/
 coverage/
 *.log
 
+# TypeScript incremental-build state (regenerated on every compile).
+*.tsbuildinfo
+
 # ==== Claude Code tooling ====
 # Symlinked/cached skills from .agents/skills/ — derived state.
 .claude/

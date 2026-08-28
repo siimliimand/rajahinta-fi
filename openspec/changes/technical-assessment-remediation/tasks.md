@@ -50,7 +50,7 @@
 - [ ] 6.1 Readiness checks `SELECT 1` + Redis ping with short timeouts and dependency status in the body; liveness stays cheap process-only; re-point probes <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/index.ts, packages/application-api/src/observability/**] -->
 - [ ] 6.2 Structured request logging with pino — request IDs, redaction; retire the in-memory KPI sampler on production paths <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/backend/src/main.ts, packages/application-api/src/observability/**] -->
 - [ ] 6.3 OpenTelemetry traces exported to the Grafana Cloud stack via env-configured exporter <!-- agent: devops-engineer.build, depends_on: [6.2], touches: [apps/backend/src/**, infra/**] -->
-- [ ] 6.4 Alerting rules on the freshness invariants the data-quality service computes (stale price share, transport age) <!-- agent: devops-engineer.build, depends_on: [], touches: [infra/**] -->
+- [x] 6.4 Alerting rules on the freshness invariants the data-quality service computes (stale price share, transport age) <!-- agent: devops-engineer.build, depends_on: [], touches: [infra/**] -->
 
 ## 7. Trustworthy live data (findings 6, 7, 10; replace merchant config; add 3)
 
@@ -78,17 +78,17 @@
 
 ## 10. Entitlements, optimizer, dead contract (findings 14, 20; low: otherCharges)
 
-- [ ] 10.1 Resolve tier from the `accounts.tier` column; env vars demoted to a global test override; tier-transition groundwork for billing <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/core-domain/src/entitlement/entitlement.service.ts] -->
-- [ ] 10.2 Basket optimizer — test pinning the input caps plus a total-combinations guard returning a clean 422 when exceeded <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/core-domain/src/optimizer/services/basket-optimizer.service.ts] -->
+- [x] 10.1 Resolve tier from the `accounts.tier` column; env vars demoted to a global test override; tier-transition groundwork for billing <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/core-domain/src/entitlement/entitlement.service.ts] -->
+- [x] 10.2 Basket optimizer — test pinning the input caps plus a total-combinations guard returning a clean 422 when exceeded <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/core-domain/src/optimizer/services/basket-optimizer.service.ts] -->
 - [ ] 10.3 Remove the `otherCharges` dead field from the API shape (D3) <!-- agent: platform-engineer.fast, depends_on: [1.5], touches: [packages/core-domain/src/calculator/landed-cost-calculator.service.ts] -->
 
 ## 11. Infra + repo hygiene (finding 19; low items)
 
 - [ ] 11.1 k8s — immutable SHA image tags from the deploy pipeline; add HPA and PDB once state is durable (after 4.x) <!-- agent: devops-engineer.build, depends_on: [4.1, 4.2, 4.3], touches: [infra/k8s/**, .github/workflows/**] -->
-- [ ] 11.2 Load-test the basket optimizer under the current 256m/512Mi limits; document or adjust <!-- agent: devops-engineer.build, depends_on: [], touches: [tests/load/**, infra/k8s/**] -->
+- [x] 11.2 Load-test the basket optimizer under the current 256m/512Mi limits; document or adjust <!-- agent: devops-engineer.build, depends_on: [], touches: [tests/load/**, infra/k8s/**] -->
 - [ ] 11.3 Remove the obsolete `version:` key from `docker-compose.yml` <!-- agent: devops-engineer.fast, depends_on: [8.2], touches: [docker-compose.yml] -->
-- [ ] 11.4 `dev-up.sh` — move `tsx` to the data-platform (or root) toolchain; print a loud warning when `LAUNCH_GATES_OVERRIDE=true` <!-- agent: platform-engineer.fast, depends_on: [], touches: [scripts/dev-up.sh, packages/data-platform/package.json] -->
-- [ ] 11.5 Repo polish — ignore `*.tsbuildinfo`, add a LICENSE file <!-- agent: platform-engineer.fast, depends_on: [], touches: [.gitignore, apps/frontend/.gitignore, LICENSE] -->
+- [x] 11.4 `dev-up.sh` — move `tsx` to the data-platform (or root) toolchain; print a loud warning when `LAUNCH_GATES_OVERRIDE=true` <!-- agent: platform-engineer.fast, depends_on: [], touches: [scripts/dev-up.sh, packages/data-platform/package.json] -->
+- [x] 11.5 Repo polish — ignore `*.tsbuildinfo`, add a LICENSE file <!-- agent: platform-engineer.fast, depends_on: [], touches: [.gitignore, apps/frontend/.gitignore, LICENSE] -->
 
 ## 12. Additions: console, browser e2e, upgrades (add 4, add 6; replace: dependency generations)
 
