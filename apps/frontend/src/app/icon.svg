@@ -1,0 +1,18 @@
+<!--
+  App icon (favicon): the Logo mark — the initial on a primary-700
+  square — as a standalone asset. Colors are hardcoded to the token
+  values from globals.css (primary-700 #1d4ed8) because the favicon
+  renders outside the app's CSS variable scope.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="3" fill="#1d4ed8" />
+  <text
+    x="16"
+    y="23"
+    font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"
+    font-size="19"
+    font-weight="700"
+    text-anchor="middle"
+    fill="#ffffff"
+  >R</text>
+</svg>
