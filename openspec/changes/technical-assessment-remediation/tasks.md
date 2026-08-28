@@ -37,7 +37,7 @@
 - [x] 4.1 Implement the Redis `IRateLimiter` backend (sliding window via sorted sets) using the existing `RedisModule` client; make `extractKey` trust `X-Forwarded-For` only behind a configured proxy <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/rate-limiting/**] -->
 - [x] 4.2 Persist audit events to an append-only PostgreSQL table + repository; in-memory audit repository kept for tests only <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/application-api/src/audit/**] -->
 - [x] 4.3 Move click analytics to Redis counters with periodic snapshotting; in-memory version kept for tests only <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/audit/**] -->
-- [ ] 4.4 Durability tests — limits shared across two app instances, audit and analytics survive restart <!-- agent: platform-engineer.build, depends_on: [4.1, 4.2, 4.3], touches: [tests/integration/**] -->
+- [x] 4.4 Durability tests — limits shared across two app instances, audit and analytics survive restart <!-- agent: platform-engineer.build, depends_on: [4.1, 4.2, 4.3], touches: [tests/integration/**] -->
 
 ## 5. Search (finding 8; low: debounce)
 
@@ -65,7 +65,7 @@
 
 - [x] 8.1 Calculation-record retention — monthly partitions for `calculation_records` and `basket_calculation_records`, prune anonymous-session partitions after the configured window, retention job <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/**, packages/application-api/src/jobs/**] -->
 - [x] 8.2 Enable TimescaleDB (D4) — extension in migrations and compose, convert `price_observations` to a hypertable, aggregation and watermark semantics unchanged <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/data-platform/drizzle/**, docker-compose.yml] -->
-- [ ] 8.3 Lifecycle tests — partition pruning correctness, hypertable query parity, watermark scan <!-- agent: platform-engineer.build, depends_on: [8.1, 8.2], touches: [tests/integration/**] -->
+- [x] 8.3 Lifecycle tests — partition pruning correctness, hypertable query parity, watermark scan <!-- agent: platform-engineer.build, depends_on: [8.1, 8.2], touches: [tests/integration/**] -->
 
 ## 9. Frontend UX + i18n (findings 11, 12, 13; add 7, add 8)
 
@@ -92,7 +92,7 @@
 
 ## 12. Additions: console, browser e2e, upgrades (add 4, add 6; replace: dependency generations)
 
-- [ ] 12.1 Operator console — authenticated UI + API for governance permission grants, tax-rate version confirmation, and the correction queue, every action audited <!-- agent: platform-engineer.build, depends_on: [7.2], touches: [apps/frontend/src/app/ops/**, packages/application-api/src/**] -->
+- [x] 12.1 Operator console — authenticated UI + API for governance permission grants, tax-rate version confirmation, and the correction queue, every action audited <!-- agent: platform-engineer.build, depends_on: [7.2], touches: [apps/frontend/src/app/ops/**, packages/application-api/src/**] -->
 - [ ] 12.2 Playwright browser e2e — age gate, calculator flow, compare sorting, account export journeys in CI <!-- agent: platform-engineer.build, depends_on: [9.1, 9.3], touches: [tests/e2e-browser/**] -->
 - [ ] 12.3 Dependency upgrades — Next.js 14 to 15, React 18 to 19, Vitest 2 to 3; run e2e and load suites after <!-- agent: platform-engineer.build, depends_on: [12.2], touches: [package.json, apps/frontend/package.json, apps/frontend/**] -->
 
