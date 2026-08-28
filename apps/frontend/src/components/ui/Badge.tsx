@@ -1,5 +1,9 @@
-import type { ReactNode } from 'react';
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
 import type { ConfidenceLevel, ReliabilityStatus } from '@/lib/types';
+import { CONFIDENCE_LEVEL_META, RELIABILITY_STATUS_META } from '@/lib/design/status';
 
 /**
  * Badge primitives (OpenSpec: design-system-foundation, D1/D2/D5).
@@ -15,9 +19,11 @@ import type { ConfidenceLevel, ReliabilityStatus } from '@/lib/types';
  * bar-count meter, so the meaning survives grayscale and color-blindness.
  * Icons are aria-hidden; the visible text label is the accessible name.
  *
- * Confidence tones mirror the pre-existing per-component CONFIDENCE_META
- * maps (green/amber/red for HIGH/MEDIUM/LOW) using the closest token
- * groups: verified (green), stale (amber), error (red).
+ * Status→tone mappings are not repeated here — ReliabilityBadge and
+ * ConfidenceBadge read them straight from the canonical status module
+ * (`@/lib/design/status`, task 2.2), which mirrors the pre-existing
+ * per-component CONFIDENCE_META maps using the closest token groups:
+ * verified (green), stale (amber), error (red).
  */
 
 export type BadgeTone =
@@ -34,7 +40,7 @@ export interface BadgeProps {
   tone?: BadgeTone;
   size?: BadgeSize;
   className?: string;
-  children: ReactNode;
+  children: React.ReactNode;
 }
 
 const TONE_CLASSES: Record<BadgeTone, string> = {
@@ -129,13 +135,6 @@ function ReliabilityIcon({ status }: { status: ReliabilityStatus }) {
   }
 }
 
-const RELIABILITY_TONE: Record<ReliabilityStatus, BadgeTone> = {
-  VERIFIED: 'verified',
-  ESTIMATED: 'estimated',
-  STALE: 'stale',
-  UNAVAILABLE: 'unavailable',
-};
-
 export interface ReliabilityBadgeProps {
   status: ReliabilityStatus;
   size?: BadgeSize;
@@ -144,7 +143,7 @@ export interface ReliabilityBadgeProps {
    * Localized label (e.g. from next-intl `Common.reliability.<status>`).
    * Falls back to the raw status string so the badge is never unlabeled.
    */
-  children?: ReactNode;
+  children?: React.ReactNode;
 }
 
 /** Reliability status badge using the D1/D2 hue ladder. */
@@ -155,7 +154,11 @@ export function ReliabilityBadge({
   children,
 }: ReliabilityBadgeProps) {
   return (
-    <Badge tone={RELIABILITY_TONE[status]} size={size} className={className}>
+    <Badge
+      tone={RELIABILITY_STATUS_META[status].tone}
+      size={size}
+      className={className}
+    >
       <ReliabilityIcon status={status} />
       {children ?? status}
     </Badge>
@@ -165,12 +168,6 @@ export function ReliabilityBadge({
 // ---------------------------------------------------------------------------
 // Confidence badges
 // ---------------------------------------------------------------------------
-
-const CONFIDENCE_TONE: Record<ConfidenceLevel, BadgeTone> = {
-  HIGH: 'verified',
-  MEDIUM: 'stale',
-  LOW: 'error',
-};
 
 const CONFIDENCE_FILLED_BARS: Record<ConfidenceLevel, number> = {
   HIGH: 3,
@@ -207,7 +204,7 @@ export interface ConfidenceBadgeProps {
    * Localized label (e.g. from next-intl `Common.confidence.<level>`).
    * Falls back to the raw level string so the badge is never unlabeled.
    */
-  children?: ReactNode;
+  children?: React.ReactNode;
 }
 
 /** Confidence level badge (HIGH/MEDIUM/LOW), pill-shaped like the existing inline badges. */
@@ -222,7 +219,7 @@ export function ConfidenceBadge({
       data-level={level}
       className={[
         'inline-flex items-center gap-1.5 rounded-full border font-medium leading-tight',
-        TONE_CLASSES[CONFIDENCE_TONE[level]],
+        TONE_CLASSES[CONFIDENCE_LEVEL_META[level].tone],
         SIZE_CLASSES[size],
         className,
       ]

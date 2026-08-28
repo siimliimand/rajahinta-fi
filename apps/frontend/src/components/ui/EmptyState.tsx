@@ -1,4 +1,7 @@
-import type { HTMLAttributes, ReactNode } from 'react';
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
 
 /**
  * EmptyState primitive (OpenSpec: design-system-foundation, task 5.1).
@@ -23,15 +26,16 @@ import type { HTMLAttributes, ReactNode } from 'react';
 
 // HTMLAttributes carries the native `title` tooltip (string); our visible
 // `title` prop is a ReactNode heading, so it shadows the attribute.
-export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
+export interface EmptyStateProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> {
   /** Decorative icon/illustration slot; muted gray, hidden from AT. */
-  icon?: ReactNode;
+  icon?: React.ReactNode;
   /** Primary line, e.g. localized "No results". */
-  title: ReactNode;
+  title: React.ReactNode;
   /** Secondary explanation: what this means and what to do. */
-  description?: ReactNode;
+  description?: React.ReactNode;
   /** Action row content, typically a `Button`. */
-  action?: ReactNode;
+  action?: React.ReactNode;
 }
 
 export function EmptyState({

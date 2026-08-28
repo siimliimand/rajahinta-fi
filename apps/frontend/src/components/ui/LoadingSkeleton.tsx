@@ -1,4 +1,7 @@
-import type { HTMLAttributes } from 'react';
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
 
 /**
  * LoadingSkeleton primitive (OpenSpec: design-system-foundation, task 5.1).
@@ -26,7 +29,7 @@ import type { HTMLAttributes } from 'react';
 
 export type SkeletonVariant = 'text' | 'box' | 'card';
 
-export interface LoadingSkeletonProps extends HTMLAttributes<HTMLDivElement> {
+export interface LoadingSkeletonProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Block composition; defaults to plain text lines. */
   variant?: SkeletonVariant;
   /** How many blocks to render; defaults to 1, clamped to >= 1. */

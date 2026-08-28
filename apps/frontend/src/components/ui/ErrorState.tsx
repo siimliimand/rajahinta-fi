@@ -1,4 +1,7 @@
-import type { HTMLAttributes, ReactNode } from 'react';
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
 import { Button } from './Button';
 
 /**
@@ -23,11 +26,12 @@ import { Button } from './Button';
 
 // HTMLAttributes carries the native `title` tooltip (string); our visible
 // `title` prop is a ReactNode heading, so it shadows the attribute.
-interface ErrorStateBaseProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
+interface ErrorStateBaseProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> {
   /** Primary line, e.g. localized "Calculation failed". */
-  title: ReactNode;
+  title: React.ReactNode;
   /** What happened and what to do next, in plain language. */
-  description?: ReactNode;
+  description?: React.ReactNode;
 }
 
 /** `retryLabel` is required exactly when `onRetry` is provided. */

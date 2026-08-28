@@ -1,5 +1,7 @@
-import { forwardRef } from 'react';
-import type { HTMLAttributes } from 'react';
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
 
 /**
  * Card primitive (OpenSpec: design-system-foundation, D5).
@@ -14,7 +16,7 @@ export type CardPadding = 'none' | 'sm' | 'md' | 'lg';
 export type CardShadow = 'none' | 'sm' | 'md';
 export type CardElement = 'div' | 'section' | 'article' | 'aside';
 
-export interface CardProps extends HTMLAttributes<HTMLDivElement> {
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   /** none removes padding for cards that manage their own inner layout. */
   padding?: CardPadding;
   shadow?: CardShadow;
@@ -37,7 +39,7 @@ const SHADOW_CLASSES: Record<CardShadow, string> = {
   md: 'shadow-md',
 };
 
-export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
+export const Card = React.forwardRef<HTMLDivElement, CardProps>(function Card(
   {
     padding = 'md',
     shadow = 'sm',

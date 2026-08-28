@@ -1,4 +1,7 @@
-import { forwardRef } from 'react';
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
 import type { ButtonHTMLAttributes } from 'react';
 
 /**
@@ -43,7 +46,7 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
   lg: 'px-6 py-3 text-sm',
 };
 
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   function Button(
     {
       variant = 'primary',

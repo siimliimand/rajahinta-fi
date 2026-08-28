@@ -1,5 +1,8 @@
-import { forwardRef } from 'react';
-import type { InputHTMLAttributes, ReactNode } from 'react';
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
+import type { InputHTMLAttributes } from 'react';
 
 /**
  * Input primitive (OpenSpec: design-system-foundation, D5).
@@ -15,7 +18,7 @@ import type { InputHTMLAttributes, ReactNode } from 'react';
 
 interface InputExtras {
   /** Visible, associated label. Requires `id`. */
-  label?: ReactNode;
+  label?: React.ReactNode;
   /** Secondary explanation text, announced via aria-describedby. */
   hint?: string;
   /** Error message; its presence switches the control into the error state. */
@@ -24,7 +27,7 @@ interface InputExtras {
 
 export type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> &
   InputExtras &
-  ({ id: string; label?: ReactNode } | { id?: string; label?: undefined });
+  ({ id: string; label?: React.ReactNode } | { id?: string; label?: undefined });
 
 const BASE_CLASSES = [
   'block w-full rounded-md border bg-white px-3 py-2 text-sm text-gray-700 shadow-sm',
@@ -37,7 +40,7 @@ const STATE_CLASSES = {
   error: 'border-error focus:border-error focus:ring-error',
 } as const;
 
-export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
+export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Input(
   { id, label, hint, error, className = '', ...rest },
   ref,
 ) {
