@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import { notFound } from 'next/navigation';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, getTranslations, setRequestLocale } from 'next-intl/server';
@@ -10,6 +11,18 @@ import { AgeGate } from './components/AgeGate';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
 import '../globals.css';
+
+/**
+ * Inter via next/font (D3): self-hosted at build time, full Finnish
+ * glyph coverage (latin + latin-ext subsets), and metric-adjusted
+ * fallbacks so there is no layout shift while it loads. Exposed as the
+ * --font-inter variable consumed by the base typography in globals.css.
+ */
+const inter = Inter({
+  subsets: ['latin', 'latin-ext'],
+  display: 'swap',
+  variable: '--font-inter',
+});
 
 /**
  * Root layout for every locale. The `lang` attribute follows the active
@@ -62,7 +75,7 @@ export default async function RootLayout({
   const flags = await getServerFeatureFlags();
 
   return (
-    <html lang={locale}>
+    <html lang={locale} className={inter.variable}>
       <body>
         {/* Explicit locale: the provider must not depend on the RSC
             request store to know which catalog it carries. */}

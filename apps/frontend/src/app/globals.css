@@ -1,3 +1,133 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Semantic design tokens (OpenSpec: design-system-foundation, D1/D2/D4).
+ *
+ * Every theme value Tailwind exposes lives here as a CSS variable and is
+ * referenced from tailwind.config.ts, so a future dark theme is a variable
+ * override on :root, not a component sweep (D4).
+ *
+ * Status hue ladder (D1/D2):
+ *   VERIFIED → green, ESTIMATED → blue, STALE → amber, UNAVAILABLE → gray.
+ * Red sits outside the ladder, reserved for errors and destructive
+ * affordances — a red badge always means "something is wrong", never
+ * "we don't know".
+ *
+ * Each status exposes four roles (same shape for error red):
+ *   --status-<name>         solid hue: dots, icons, text on white (700 step)
+ *   --status-<name>-fg      text on the tinted badge background (800 step)
+ *   --status-<name>-bg      tinted badge background (100 step)
+ *   --status-<name>-border  tinted badge border (200 step)
+ *
+ * Contrast (WCAG 2.1): every <name> on white and every <name>-fg on
+ * <name>-bg clears AA at >= 4.5:1. Tightest pairs, measured:
+ *   green-700/white 5.0:1   green-800/green-100 6.5:1
+ *   blue-700/white 6.7:1    blue-800/blue-100 7.1:1
+ *   amber-700/white 5.0:1   amber-800/amber-100 6.4:1
+ *   gray-700/white 10.3:1   gray-800/gray-100 13.3:1
+ *   red-700/white 6.5:1     red-800/red-100 6.8:1
+ */
+:root {
+  /* Neutral gray scale — Tailwind gray values behind variables so the
+     whole neutral ramp is swappable in one place. */
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --gray-800: #1f2937;
+  --gray-900: #111827;
+  --gray-950: #030712;
+
+  /* VERIFIED — observed data */
+  --status-verified: #15803d; /* green-700 */
+  --status-verified-fg: #166534; /* green-800 */
+  --status-verified-bg: #dcfce7; /* green-100 */
+  --status-verified-border: #bbf7d0; /* green-200 */
+
+  /* ESTIMATED — derived from incomplete data; informational, not warning */
+  --status-estimated: #1d4ed8; /* blue-700 */
+  --status-estimated-fg: #1e40af; /* blue-800 */
+  --status-estimated-bg: #dbeafe; /* blue-100 */
+  --status-estimated-border: #bfdbfe; /* blue-200 */
+
+  /* STALE — past freshness threshold; amber belongs to staleness only */
+  --status-stale: #b45309; /* amber-700 */
+  --status-stale-fg: #92400e; /* amber-800 */
+  --status-stale-bg: #fef3c7; /* amber-100 */
+  --status-stale-border: #fde68a; /* amber-200 */
+
+  /* UNAVAILABLE — no data exists: absence, not danger (D1). Chained to the
+     neutral ramp so it stays neutral across any future theme. */
+  --status-unavailable: var(--gray-700);
+  --status-unavailable-fg: var(--gray-800);
+  --status-unavailable-bg: var(--gray-100);
+  --status-unavailable-border: var(--gray-200);
+
+  /* Error red — errors and destructive affordances only */
+  --error: #b91c1c; /* red-700 */
+  --error-fg: #991b1b; /* red-800 */
+  --error-bg: #fee2e2; /* red-100 */
+  --error-border: #fecaca; /* red-200 */
+
+  /* Radii — Tailwind defaults, tunable per theme. */
+  --radius-sm: 0.125rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+
+  /* Elevation — quiet surfaces; deeper shadows are not part of the tone. */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+@layer base {
+  /*
+   * Inter is attached by next/font in the root layout as --font-inter
+   * (D3): full Finnish glyph coverage (latin + latin-ext) and
+   * metric-adjusted fallbacks, so there is no layout shift while the
+   * font loads. The stack below is the fallback if the variable is
+   * unavailable.
+   */
+  html {
+    font-family:
+      var(--font-inter),
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      Roboto,
+      Arial,
+      sans-serif;
+  }
+
+  body {
+    @apply bg-white text-gray-900 antialiased;
+  }
+
+  /* Keyboard focus is always visible; pointer interactions are not. This
+     is a floor: component focus utilities in the utilities layer win. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-gray-900 ring-offset-2;
+  }
+
+  /* Restrained selection tint from the primary ramp. */
+  ::selection {
+    @apply bg-primary-100 text-primary-900;
+  }
+}
+
+@layer utilities {
+  /*
+   * Euro amounts render with tabular numerals so digits occupy stable
+   * widths — money columns and totals stay aligned (D3). Apply to any
+   * element that renders a monetary value.
+   */
+  .tabular-money {
+    font-variant-numeric: tabular-nums;
+  }
+}
