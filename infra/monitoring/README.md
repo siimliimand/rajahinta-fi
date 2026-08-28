@@ -60,35 +60,37 @@ Optional (recommended for debugging, not required by the rules):
 counters from the same quality report, letting the share be derived
 independently in PromQL.
 
-## Metric exposure gap (application-side, outstanding)
+## Metric exposure (application-side, landed — FIX-M)
 
-Today these invariants are **computed but not exported**:
+The gauges are exported by `PrometheusMetricsService`
+(`packages/application-api/src/observability/metrics.service.ts`):
 
-- `DataQualityService.runQualityCheck` returns counts that are only
-  written to the NestJS logger — nothing feeds `KpiService`/
-  `InstrumentationService`, and there is no Prometheus `/metrics`
-  endpoint anywhere in the repo (`prom-client` is not a dependency).
-- `InstrumentationService` already has suitable semantic hooks
-  (`recordStaleness(source, lagMs)`, `recordFreshnessCheck`) but they
-  write to the in-memory `KpiService` buffer flushed as `[KPI]` log
-  lines — not scrapeable.
-
-**Required application-side work (owned by the lead / platform
-engineer, out of infra scope):**
-
-1. Add `prom-client` and expose `/metrics` on the backend (internal port
-   or the ops-auth path per the authenticated-ops-dashboard work).
-2. After each `runQualityCheck`, set
+1. `prom-client` serves `/metrics` on a dedicated **internal port**
+   (`METRICS_PORT`, manifest/recommended value `9464`), separate from the
+   public API port — the public rate limiter never applies, and the ops
+   bearer-token/allowlist guard is not coupled to scraping. The listener
+   is opt-in: it starts only when `METRICS_PORT` is set (tests and
+   minimal module boots stay silent).
+2. After each `runQualityCheck`, the service sets
    `rajahinta_data_quality_stale_price_share_ratio` from the report
-   (`staleCount / totalOffers`, 0 when `totalOffers === 0`).
-3. After each transport-rate refresh (and/or on a schedule), set
-   `rajahinta_transport_newest_offer_age_seconds` from
-   `now - max(observedAt)` over active transport offers.
-4. Wire a ServiceMonitor (or static scrape job) for the endpoint.
+   (`staleCount / totalOffers`, 0 when `totalOffers === 0`) plus the
+   optional `rajahinta_data_quality_offers_total{status}` counters, via a
+   static gauge hook on `DataQualityService` (data-acquisition sits below
+   application-api in the layer graph).
+3. After each transport-rate refresh, the worker sets
+   `rajahinta_transport_newest_offer_age_seconds`
+   (`now - max(observedAt)`; `+Inf` when no offers exist).
+4. Scrape wiring: `infra/k8s/base/servicemonitor.yaml` selects the
+   Service's `metrics` port (9464, cluster-internal only — no Ingress
+   route); the Deployment exposes the matching containerPort and the
+   ConfigMap sets `METRICS_PORT`. Requires the Prometheus Operator with
+   a `serviceMonitorSelector` matching `release: prometheus` — verify
+   against the real cluster Prometheus when one is provisioned (§15.2
+   staging deferral).
 
-Until (1)–(3) land, `RajahintaFreshnessMetricsAbsent` will fire by
-design — it is the canary for exactly this gap. Deploy the rules
-together with the export work, or expect that one warning alert.
+`RajahintaFreshnessMetricsAbsent` now fires only when the export path
+itself breaks (endpoint down, ServiceMonitor unmatched, or a deploy
+without `METRICS_PORT`).
 
 ## Neutrality
 

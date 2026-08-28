@@ -9,7 +9,8 @@ metadata:
     app.kubernetes.io/component: backend
     app.kubernetes.io/part-of: rajahinta
 spec:
-  replicas: 1  # default; overridden per environment via Kustomize patches
+  # No spec.replicas: the HPA (hpa.yaml) owns the replica count. Setting
+  # it here would be reset by every kubectl apply and fight the autoscaler.
   selector:
     matchLabels:
       app.kubernetes.io/name: rajahinta
@@ -33,11 +34,22 @@ spec:
       serviceAccountName: rajahinta-backend
       containers:
         - name: backend
-          image: ghcr.io/siimliimand/rajahinta:latest
+          # Placeholder tag — never a mutable ":latest". The deploy
+          # pipeline overwrites it with the immutable commit-SHA tag via
+          # `kustomize edit set image` (task 11.1); overlays carry the
+          # last-deployed pin so rendered manifests always resolve an
+          # immutable tag.
+          image: ghcr.io/siimliimand/rajahinta:set-by-deploy-pipeline
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 3000
+              protocol: TCP
+            # Internal-only Prometheus scrape endpoint (FIX-M) — see
+            # service.yaml and servicemonitor.yaml; not routed by the
+            # Ingress.
+            - name: metrics
+              containerPort: 9464
               protocol: TCP
           envFrom:
             - configMapRef:

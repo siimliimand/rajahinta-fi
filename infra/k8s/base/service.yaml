@@ -15,6 +15,12 @@ spec:
       port: 3000
       targetPort: http
       protocol: TCP
+    # Internal Prometheus scrape port (FIX-M). Cluster-internal only:
+    # no Ingress route exists for it; consumed by servicemonitor.yaml.
+    - name: metrics
+      port: 9464
+      targetPort: metrics
+      protocol: TCP
   selector:
     app.kubernetes.io/name: rajahinta
     app.kubernetes.io/component: backend

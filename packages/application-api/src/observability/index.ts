@@ -20,4 +20,5 @@ export type {
   CostSummary,
   CostBreakdown,
 } from './cost-attribution.service';
+export { PrometheusMetricsService } from './metrics.service';
 export { ObservabilityModule } from './observability.module';

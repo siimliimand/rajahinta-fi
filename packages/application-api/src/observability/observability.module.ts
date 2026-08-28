@@ -6,11 +6,13 @@ import { OpsDashboardController } from './ops-dashboard.controller';
 import { OpsAccessGuard } from './ops-access.guard';
 import { ReadinessService } from './readiness.service';
 import { CostAttributionService } from './cost-attribution.service';
+import { PrometheusMetricsService } from './metrics.service';
 
 /**
  * Observability module — registers KPI metric services, ops dashboard,
- * readiness checks, and cost attribution as application-wide singletons
- * so any module can inject them without re-importing.
+ * readiness checks, cost attribution, and the Prometheus exporter as
+ * application-wide singletons so any module can inject them without
+ * re-importing.
  *
  * Marked @Global() so controllers and services throughout the
  * application-api layer can inject these services directly.
@@ -25,6 +27,7 @@ import { CostAttributionService } from './cost-attribution.service';
     OpsAccessGuard,
     ReadinessService,
     CostAttributionService,
+    PrometheusMetricsService,
   ],
   exports: [
     KpiService,
@@ -33,6 +36,7 @@ import { CostAttributionService } from './cost-attribution.service';
     OpsAccessGuard,
     ReadinessService,
     CostAttributionService,
+    PrometheusMetricsService,
   ],
 })
 export class ObservabilityModule {}

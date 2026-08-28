@@ -115,9 +115,10 @@ spec:
 
         # ── Exposure-path canary ──
         # A dead or unwired metric export path must page, not silently
-        # show fresh zeros. NOTE: fires until the backend-side /metrics
-        # export of the two gauges above lands (see the exposure gap in
-        # infra/monitoring/README.md) — deploy together with that change.
+        # show fresh zeros. The exporter is PrometheusMetricsService
+        # (internal /metrics port — see infra/monitoring/README.md):
+        # this fires when the endpoint, the ServiceMonitor wiring, or
+        # METRICS_PORT is broken in a deployed environment.
         - alert: RajahintaFreshnessMetricsAbsent
           expr: absent(rajahinta_transport_newest_offer_age_seconds) or absent(rajahinta_data_quality_stale_price_share_ratio)
           for: 30m
@@ -132,4 +133,4 @@ spec:
               absent for 30 minutes. Either the backend metrics endpoint
               is down or the export wiring is missing — freshness
               alerting is blind until this is resolved.
-            runbook: infra/monitoring/README.md#metric-exposure-gap
+            runbook: infra/monitoring/README.md#metric-exposure-application-side-landed-fix-m

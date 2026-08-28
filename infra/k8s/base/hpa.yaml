@@ -1,0 +1,50 @@
+---
+# Horizontal Pod Autoscaler (task 11.1, deployment-observability spec:
+# "Reproducible deploys" — HPA + PDB are enabled now that per-replica
+# state is durable: rate-limiting and idempotency are Redis-backed, audit
+# and account data are PostgreSQL-backed, so replicas are interchangeable).
+#
+# Sizing defaults here are the STAGING envelope (min 2 / max 4); the
+# production overlay patches min/max to 3/6. The Deployment deliberately
+# sets no spec.replicas — the HPA owns the replica count, and an apply-time
+# replicas field would fight the autoscaler.
+#
+# Requires metrics-server on the cluster (CPU utilization source).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rajahinta-backend
+  namespace: rajahinta
+  labels:
+    app.kubernetes.io/name: rajahinta
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: rajahinta
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rajahinta-backend
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    # Scale down slowly — a quiet 5-minute window should not shed capacity
+    # that the next ingestion/calculation burst still needs.
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60

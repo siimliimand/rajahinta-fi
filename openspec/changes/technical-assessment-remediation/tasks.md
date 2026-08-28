@@ -49,7 +49,7 @@
 
 - [x] 6.1 Readiness checks `SELECT 1` + Redis ping with short timeouts and dependency status in the body; liveness stays cheap process-only; re-point probes <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/index.ts, packages/application-api/src/observability/**] -->
 - [x] 6.2 Structured request logging with pino — request IDs, redaction; retire the in-memory KPI sampler on production paths <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/backend/src/main.ts, packages/application-api/src/observability/**] -->
-- [ ] 6.3 OpenTelemetry traces exported to the Grafana Cloud stack via env-configured exporter <!-- agent: devops-engineer.build, depends_on: [6.2], touches: [apps/backend/src/**, infra/**] -->
+- [x] 6.3 OpenTelemetry traces exported to the Grafana Cloud stack via env-configured exporter <!-- agent: devops-engineer.build, depends_on: [6.2], touches: [apps/backend/src/**, infra/**] -->
 - [x] 6.4 Alerting rules on the freshness invariants the data-quality service computes (stale price share, transport age) <!-- agent: devops-engineer.build, depends_on: [], touches: [infra/**] -->
 
 ## 7. Trustworthy live data (findings 6, 7, 10; replace merchant config; add 3)
@@ -84,9 +84,9 @@
 
 ## 11. Infra + repo hygiene (finding 19; low items)
 
-- [ ] 11.1 k8s — immutable SHA image tags from the deploy pipeline; add HPA and PDB once state is durable (after 4.x) <!-- agent: devops-engineer.build, depends_on: [4.1, 4.2, 4.3], touches: [infra/k8s/**, .github/workflows/**] -->
+- [x] 11.1 k8s — immutable SHA image tags from the deploy pipeline; add HPA and PDB once state is durable (after 4.x) <!-- agent: devops-engineer.build, depends_on: [4.1, 4.2, 4.3], touches: [infra/k8s/**, .github/workflows/**] -->
 - [x] 11.2 Load-test the basket optimizer under the current 256m/512Mi limits; document or adjust <!-- agent: devops-engineer.build, depends_on: [], touches: [tests/load/**, infra/k8s/**] -->
-- [ ] 11.3 Remove the obsolete `version:` key from `docker-compose.yml` <!-- agent: devops-engineer.fast, depends_on: [8.2], touches: [docker-compose.yml] -->
+- [x] 11.3 Remove the obsolete `version:` key from `docker-compose.yml` <!-- agent: devops-engineer.fast, depends_on: [8.2], touches: [docker-compose.yml] -->
 - [x] 11.4 `dev-up.sh` — move `tsx` to the data-platform (or root) toolchain; print a loud warning when `LAUNCH_GATES_OVERRIDE=true` <!-- agent: platform-engineer.fast, depends_on: [], touches: [scripts/dev-up.sh, packages/data-platform/package.json] -->
 - [x] 11.5 Repo polish — ignore `*.tsbuildinfo`, add a LICENSE file <!-- agent: platform-engineer.fast, depends_on: [], touches: [.gitignore, apps/frontend/.gitignore, LICENSE] -->
 

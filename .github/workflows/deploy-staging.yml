@@ -39,9 +39,10 @@ jobs:
         run: pnpm build
 
       - name: Build Docker image
+        # Immutable tagging (task 11.1): the full commit SHA only — no
+        # mutable :latest is built or pushed anywhere in the pipeline.
         run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          docker build -t ${{ env.IMAGE_NAME }}:$SHORT_SHA -t ${{ env.IMAGE_NAME }}:latest .
+          docker build -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
 
       - name: Log in to GitHub Container Registry
         # Uses the workflow's GITHUB_TOKEN (granted packages: write above);
@@ -56,9 +57,7 @@ jobs:
 
       - name: Push Docker image
         run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          docker push ${{ env.IMAGE_NAME }}:$SHORT_SHA
-          docker push ${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
@@ -77,10 +76,13 @@ jobs:
           echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
 
       - name: Set image tag
+        # Pins the overlay's committed images entry to this build's SHA.
+        # The images transformer rewrites every workload carrying the
+        # image name (backend Deployment, migrate + seed Jobs), so the
+        # rendered manifests resolve immutable tags only (task 11.1).
         run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           cd infra/k8s/overlays/staging
-          kustomize edit set image ${{ env.IMAGE_NAME }}:$SHORT_SHA
+          kustomize edit set image ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Clean up previous migrate Job
         run: |

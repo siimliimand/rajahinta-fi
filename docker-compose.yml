@@ -1,5 +1,3 @@
-version: "3.8"
-
 # =============================================================================
 # Rajahinta.fi — local full-stack environment
 #
@@ -68,11 +66,21 @@ services:
     container_name: rajahinta-app
     ports:
       - "3000:3000"
+      # Internal Prometheus endpoint (FIX-M) — localhost-only diagnostics
+      # for the freshness gauges; matches the k8s manifest port.
+      - "9464:9464"
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://rajahinta:rajahinta@postgres:5432/rajahinta
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      METRICS_PORT: "9464"
+      # Distributed tracing (task 6.3) — opt-in; unset endpoint = tracing
+      # cleanly disabled. To point at Grafana Cloud, set e.g.:
+      #   OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-<host>.grafana.net/otlp
+      #   OTEL_EXPORTER_OTLP_HEADERS=authorization=Basic <base64 instance:token>
+      # (pass credentials via the environment / an env_file, never commit them)
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
     depends_on:
       postgres:
         condition: service_healthy
