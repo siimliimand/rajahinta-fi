@@ -68,6 +68,20 @@ vi.mock('next-intl/server', () => ({
   setRequestLocale: () => undefined,
 }));
 
+// next/font/google is a Next build-time transform with no runtime under
+// vitest — stub the loader with the shape layout.tsx consumes: calling
+// Inter() returns the font object whose `.variable` is a class string.
+vi.mock('next/font/google', () => ({
+  Inter: () => Object.assign(() => null, { variable: '__variable_mock_inter' }),
+}));
+
+// The ui primitives (Button, Card) ship Next-automatic JSX — no `import
+// React` — while vitest's esbuild transform still emits classic
+// `React.createElement` calls for them (tsconfig jsx: preserve). Classic
+// JSX resolves React from the global scope at render time, so exposing
+// it here lets the REAL chrome components render instead of mocks.
+(globalThis as { React?: typeof React }).React = React;
+
 vi.mock('@/lib/api', () => ({
   SITE_URL: 'https://rajahinta.test',
   getServerFeatureFlags: async () => {
