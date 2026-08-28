@@ -16,11 +16,18 @@ version: "3.8"
 
 services:
   # ---------------------------------------------------------------------------
-  # PostgreSQL 16 — primary data store
+  # PostgreSQL 16 + TimescaleDB — primary data store
+  #
+  # TimescaleDB image (task 8.2, change technical-assessment-remediation):
+  # price_observations is a hypertable, so the extension must be preloaded
+  # before migrations can run CREATE EXTENSION / create_hypertable.
   # ---------------------------------------------------------------------------
   postgres:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:2.16.1-pg16
     container_name: rajahinta-postgres
+    # The image preloads the extension by default; the explicit flag keeps
+    # that guarantee even if the image's bundled config changes.
+    command: ["postgres", "-c", "shared_preload_libraries=timescaledb"]
     ports:
       - "5432:5432"
     environment:

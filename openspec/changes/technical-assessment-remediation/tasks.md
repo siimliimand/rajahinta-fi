@@ -8,7 +8,7 @@
 
 ## 1. Currency integrity (finding 1, add 2)
 
-- [ ] 1.1 Add `fx_rate_datasets` and `fx_rates` tables to `packages/data-platform/src/schema.ts` — dated, versioned, provenance, effective window, currency pair; repository + Drizzle migration <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/data-platform/drizzle/**, packages/data-platform/src/repositories/**] -->
+- [x] 1.1 Add `fx_rate_datasets` and `fx_rates` tables to `packages/data-platform/src/schema.ts` — dated, versioned, provenance, effective window, currency pair; repository + Drizzle migration <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/data-platform/drizzle/**, packages/data-platform/src/repositories/**] -->
 - [ ] 1.2 Create FX dataset domain service at `packages/core-domain/src/fx/` — version lifecycle, manual-confirmation publication flow (never auto-publish), rate resolution by effective date <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [packages/core-domain/src/fx/**] -->
 - [ ] 1.3 Add FX ingestion job + review workflow — recurring check creates a confirmation task per the governance pattern; configurable source, ECB reference rates default (D2) <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [packages/application-api/src/jobs/**, packages/data-acquisition/src/**] -->
 - [ ] 1.4 Convert at ingestion in the Systembolaget adapter — SEK to EUR cents via the rate effective on the observation date, dataset version recorded as provenance, original amount/currency kept for display, unconvertible offers rejected with reason <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [packages/data-acquisition/src/adapters/systembolaget.adapter.ts] -->
@@ -17,7 +17,7 @@
 
 ## 2. Session integrity (finding 2, add 1)
 
-- [ ] 2.1 Server-issued opaque session tokens — `sessions` table with tokens hashed at rest, repository, rotation support; backend derives account from token <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/data-platform/src/repositories/**, packages/application-api/src/accounts/**] -->
+- [x] 2.1 Server-issued opaque session tokens — `sessions` table with tokens hashed at rest, repository, rotation support; backend derives account from token <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/data-platform/src/repositories/**, packages/application-api/src/accounts/**] -->
 - [ ] 2.2 Migrate authentication off `x-user-id` — auth guard resolves the session token (httpOnly cookie), account controller + GDPR paths moved over, legacy header rejected outright <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [packages/application-api/src/accounts/**, packages/application-api/src/index.ts] -->
 - [ ] 2.3 Frontend session handling — server-set httpOnly cookie, drop the client-generated UUID cookie from `apps/frontend/src/lib/api.ts` <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [apps/frontend/src/lib/api.ts, apps/frontend/src/app/account/**] -->
 - [ ] 2.4 Email verification groundwork (D5) — use the existing verified-email column, anonymous-upgrade path, account data documented disposable until verified <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [packages/application-api/src/accounts/**] -->
@@ -25,18 +25,18 @@
 
 ## 3. API correctness (findings 3, 4, 16; low: error envelopes, decimal coercion)
 
-- [ ] 3.1 Implement `POST /api/v1/calculations/excise` and `/calculations/landed-cost` against `AlcoholExciseService` and `ContainerDutyService` honoring the request body (D1); delete the broken adapter path <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/adapters/tax-calculation-engine.adapter.ts, packages/application-api/src/calculations/**] -->
-- [ ] 3.2 Put the ops dashboard behind an auth guard plus IP allowlist configuration <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/observability/ops-dashboard.controller.ts] -->
-- [ ] 3.3 Gate Swagger to non-production or an env flag; strip the version string from the health body <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/backend/src/main.ts, packages/application-api/src/index.ts] -->
+- [x] 3.1 Implement `POST /api/v1/calculations/excise` and `/calculations/landed-cost` against `AlcoholExciseService` and `ContainerDutyService` honoring the request body (D1); delete the broken adapter path <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/adapters/tax-calculation-engine.adapter.ts, packages/application-api/src/calculations/**] -->
+- [x] 3.2 Put the ops dashboard behind an auth guard plus IP allowlist configuration <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/observability/ops-dashboard.controller.ts] -->
+- [x] 3.3 Gate Swagger to non-production or an env flag; strip the version string from the health body <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/backend/src/main.ts, packages/application-api/src/index.ts] -->
 - [ ] 3.4 Unify error envelopes on the documented `ApiErrorResponse` across legacy and current controllers <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/**] -->
-- [ ] 3.5 Centralize decimal coercion for pg `numeric` at the repository boundary; remove per-consumer `parseDecimal` duplication <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/**] -->
+- [x] 3.5 Centralize decimal coercion for pg `numeric` at the repository boundary; remove per-consumer `parseDecimal` duplication <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/**] -->
 - [ ] 3.6 API correctness tests — legacy endpoints honor the body, ops route denies outside the allowlist, envelope conformance suite <!-- agent: platform-engineer.build, depends_on: [3.1, 3.2, 3.4], touches: [packages/application-api/src/**/__tests__/**] -->
 
 ## 4. Rate limiting + durable state (findings 5, 9)
 
-- [ ] 4.1 Implement the Redis `IRateLimiter` backend (sliding window via sorted sets) using the existing `RedisModule` client; make `extractKey` trust `X-Forwarded-For` only behind a configured proxy <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/rate-limiting/**] -->
-- [ ] 4.2 Persist audit events to an append-only PostgreSQL table + repository; in-memory audit repository kept for tests only <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/application-api/src/audit/**] -->
-- [ ] 4.3 Move click analytics to Redis counters with periodic snapshotting; in-memory version kept for tests only <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/audit/**] -->
+- [x] 4.1 Implement the Redis `IRateLimiter` backend (sliding window via sorted sets) using the existing `RedisModule` client; make `extractKey` trust `X-Forwarded-For` only behind a configured proxy <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/rate-limiting/**] -->
+- [x] 4.2 Persist audit events to an append-only PostgreSQL table + repository; in-memory audit repository kept for tests only <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/application-api/src/audit/**] -->
+- [x] 4.3 Move click analytics to Redis counters with periodic snapshotting; in-memory version kept for tests only <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/audit/**] -->
 - [ ] 4.4 Durability tests — limits shared across two app instances, audit and analytics survive restart <!-- agent: platform-engineer.build, depends_on: [4.1, 4.2, 4.3], touches: [tests/integration/**] -->
 
 ## 5. Search (finding 8; low: debounce)
@@ -47,15 +47,15 @@
 
 ## 6. Health + observability (finding 15, add 5, add 9)
 
-- [ ] 6.1 Readiness checks `SELECT 1` + Redis ping with short timeouts and dependency status in the body; liveness stays cheap process-only; re-point probes <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/index.ts, packages/application-api/src/observability/**] -->
-- [ ] 6.2 Structured request logging with pino — request IDs, redaction; retire the in-memory KPI sampler on production paths <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/backend/src/main.ts, packages/application-api/src/observability/**] -->
+- [x] 6.1 Readiness checks `SELECT 1` + Redis ping with short timeouts and dependency status in the body; liveness stays cheap process-only; re-point probes <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/application-api/src/index.ts, packages/application-api/src/observability/**] -->
+- [x] 6.2 Structured request logging with pino — request IDs, redaction; retire the in-memory KPI sampler on production paths <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/backend/src/main.ts, packages/application-api/src/observability/**] -->
 - [ ] 6.3 OpenTelemetry traces exported to the Grafana Cloud stack via env-configured exporter <!-- agent: devops-engineer.build, depends_on: [6.2], touches: [apps/backend/src/**, infra/**] -->
 - [x] 6.4 Alerting rules on the freshness invariants the data-quality service computes (stale price share, transport age) <!-- agent: devops-engineer.build, depends_on: [], touches: [infra/**] -->
 
 ## 7. Trustworthy live data (findings 6, 7, 10; replace merchant config; add 3)
 
 - [ ] 7.1 Classification gate validates against the known classification enum (literal "unknown" rejected); add SE-to-canonical category normalization at ingestion <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/core-domain/src/normalization/**, packages/data-acquisition/src/adapters/systembolaget.adapter.ts] -->
-- [ ] 7.2 Replace static `merchants.config.ts` with a database-backed merchant registry aligned with governance records <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/data-acquisition/src/**] -->
+- [x] 7.2 Replace static `merchants.config.ts` with a database-backed merchant registry aligned with governance records <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/data-acquisition/src/**] -->
 - [ ] 7.3 Scheduler enqueues one job per permitted merchant from the registry with per-merchant dedupe keys, backoff, and monitoring; remove the catch-all `*` job <!-- agent: platform-engineer.build, depends_on: [7.2], touches: [packages/application-api/src/jobs/**] -->
 - [ ] 7.4 Implement a real carrier transport source (Posti first, D6) through the governance-gated pipeline replacing the no-op adapter; alert when the newest transport offer exceeds the 7-day threshold <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-acquisition/src/adapters/pipeline-transport-rate.adapter.ts, packages/application-api/src/jobs/**] -->
 - [ ] 7.5 Add the Alko adapter (D7) — domestic reference feed through the governance gate with a golden dataset <!-- agent: platform-engineer.build, depends_on: [7.2], touches: [packages/data-acquisition/src/adapters/**] -->
@@ -63,8 +63,8 @@
 
 ## 8. Data lifecycle (findings 17, 18)
 
-- [ ] 8.1 Calculation-record retention — monthly partitions for `calculation_records` and `basket_calculation_records`, prune anonymous-session partitions after the configured window, retention job <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/**, packages/application-api/src/jobs/**] -->
-- [ ] 8.2 Enable TimescaleDB (D4) — extension in migrations and compose, convert `price_observations` to a hypertable, aggregation and watermark semantics unchanged <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/data-platform/drizzle/**, docker-compose.yml] -->
+- [x] 8.1 Calculation-record retention — monthly partitions for `calculation_records` and `basket_calculation_records`, prune anonymous-session partitions after the configured window, retention job <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/**, packages/application-api/src/jobs/**] -->
+- [x] 8.2 Enable TimescaleDB (D4) — extension in migrations and compose, convert `price_observations` to a hypertable, aggregation and watermark semantics unchanged <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/schema.ts, packages/data-platform/drizzle/**, docker-compose.yml] -->
 - [ ] 8.3 Lifecycle tests — partition pruning correctness, hypertable query parity, watermark scan <!-- agent: platform-engineer.build, depends_on: [8.1, 8.2], touches: [tests/integration/**] -->
 
 ## 9. Frontend UX + i18n (findings 11, 12, 13; add 7, add 8)
