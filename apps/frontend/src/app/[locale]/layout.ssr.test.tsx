@@ -7,9 +7,11 @@
  *
  *   1. Chrome components — the REAL SiteHeader and SiteFooter render the
  *      five destinations, the disclaimer, and the methodology link from
- *      each locale's catalog. They are async server components, so they
- *      are awaited before stringification (exactly what Next's RSC
- *      runtime does for the layout).
+ *      each locale's catalog. SiteFooter is an async server component,
+ *      awaited before stringification (exactly what Next's RSC runtime
+ *      does); SiteHeader is a client component and renders inside the
+ *      real NextIntlClientProvider with the locale's catalog — the same
+ *      context the [locale] layout provides in the app.
  *   2. Layout composition — the REAL [locale] layout renders with the
  *      chrome replaced by markers (async components cannot pass through
  *      renderToString), pinning that every route's initial HTML carries
@@ -23,6 +25,7 @@
 
 import React from 'react';
 import { renderToString } from 'react-dom/server';
+import { NextIntlClientProvider } from 'next-intl';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -37,6 +40,9 @@ import type { FeatureFlagsResponse } from '@/lib/types';
 
 const state = vi.hoisted(() => ({
   locale: 'fi' as string,
+  // Steers the mocked usePathname — SiteHeader marks the active
+  // destination from it.
+  pathname: '/' as string,
   flags: {
     flags: {
       HISTORICAL_PRICE_INTELLIGENCE: true,
@@ -71,7 +77,8 @@ vi.mock('@/lib/api', () => ({
 }));
 
 // Link applies the routing config's localePrefix: 'as-needed' — Finnish
-// serves bare paths, English gets the /en prefix.
+// serves bare paths, English gets the /en prefix. usePathname follows
+// state.pathname (locale-stripped, like the real next-intl hook).
 vi.mock('@/i18n/navigation', () => ({
   Link: (props: { href?: unknown; children?: React.ReactNode } & Record<string, unknown>) => {
     const { href, children, ...rest } = props;
@@ -80,7 +87,7 @@ vi.mock('@/i18n/navigation', () => ({
       state.locale === 'en' && target.startsWith('/') ? `/en${target}` : target;
     return React.createElement('a', { ...rest, href: prefixed }, children);
   },
-  usePathname: () => '/',
+  usePathname: () => state.pathname,
   useRouter: () => ({ replace: () => undefined }),
 }));
 
@@ -129,6 +136,7 @@ async function renderLayout(
   children: React.ReactNode = <div data-testid="page-body">PAGE-BODY-MARKER</div>,
 ): Promise<string> {
   state.locale = locale;
+  state.pathname = '/';
   return renderToString(
     await RootLayout({ children, params: Promise.resolve({ locale }) }),
   );
@@ -147,12 +155,24 @@ function FlagGatedProbe() {
 // ---------------------------------------------------------------------------
 
 describe('SiteHeader SSR — five destinations, both locales', () => {
-  it.each(['fi', 'en'] as const)('renders the five localized destinations (%s)', async (locale) => {
+  /** Render the real header the way the layout does: inside the
+      client-intl context for the steered locale and pathname. */
+  async function renderHeaderHtml(locale: 'fi' | 'en'): Promise<string> {
     state.locale = locale;
     const { default: SiteHeader } = await vi.importActual<
       typeof import('./components/SiteHeader')
     >('./components/SiteHeader');
-    const html = renderToString(await SiteHeader());
+    const messages = (await import(`@/messages/${locale}.json`)).default;
+    return renderToString(
+      <NextIntlClientProvider locale={locale} messages={messages}>
+        <SiteHeader />
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it.each(['fi', 'en'] as const)('renders the five localized destinations (%s)', async (locale) => {
+    state.pathname = '/';
+    const html = await renderHeaderHtml(locale);
 
     expect(html).toContain('<header');
     expect(html).not.toContain('__MISSING_');
@@ -163,13 +183,40 @@ describe('SiteHeader SSR — five destinations, both locales', () => {
     }
   });
 
-  it('the nav landmark is labelled from the catalog', async () => {
-    state.locale = 'fi';
-    const { default: SiteHeader } = await vi.importActual<
-      typeof import('./components/SiteHeader')
-    >('./components/SiteHeader');
-    const html = renderToString(await SiteHeader());
+  it('the nav landmarks are labelled from the catalog', async () => {
+    state.pathname = '/';
+    const html = await renderHeaderHtml('fi');
     expect(html).toContain('Päävalikko');
+  });
+
+  it('the mobile menu toggle is wired to a panel that is closed by default', async () => {
+    state.pathname = '/';
+    const html = await renderHeaderHtml('fi');
+
+    // Disclosure wiring: the toggle names the panel it controls and
+    // reports its closed state. The closed panel is display:none in the
+    // server payload, so its links cannot take focus (no focus trap).
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('aria-controls="site-header-mobile-nav"');
+    expect(html).toContain('id="site-header-mobile-nav"');
+  });
+
+  it('exactly the active destination carries aria-current, in both navs', async () => {
+    // Desktop row and mobile panel both mark the current page: one
+    // destination, marked twice.
+    state.pathname = '/calculator';
+    const html = await renderHeaderHtml('fi');
+    expect((html.match(/aria-current="page"/g) ?? []).length).toBe(2);
+
+    // A deeper segment marks its root destination and nothing else.
+    state.pathname = '/account/saved-baskets';
+    const segmentHtml = await renderHeaderHtml('fi');
+    expect((segmentHtml.match(/aria-current="page"/g) ?? []).length).toBe(2);
+
+    // The home route is not one of the five destinations: no indicator.
+    state.pathname = '/';
+    const homeHtml = await renderHeaderHtml('fi');
+    expect(homeHtml).not.toContain('aria-current="page"');
   });
 });
 
