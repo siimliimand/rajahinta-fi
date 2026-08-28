@@ -10,6 +10,7 @@ import { TransportRateRefreshWorker } from './workers/transport-rate-refresh.wor
 import { TaxDatasetReviewWorker } from './workers/tax-dataset-review.worker';
 import { TimeSeriesAggregationWorker } from './workers/time-series-aggregation.worker';
 import { AccountRetentionWorker } from './workers/account-retention.worker';
+import { CalculationRecordRetentionWorker } from './workers/calculation-record-retention.worker';
 
 @Module({
   imports: [
@@ -44,6 +45,12 @@ import { AccountRetentionWorker } from './workers/account-retention.worker';
 
     // Cron-only workers — direct @Cron() decorator (no Bull queue)
     AccountRetentionWorker,
+
+    // Calculation-record retention (task 8.1, change
+    // technical-assessment-remediation): monthly partitions + anonymous
+    // pruning. Resolves CalculationRecordRetentionService from
+    // DataPlatformModule.
+    CalculationRecordRetentionWorker,
 
     // Scheduled job enqueuer
     JobsSchedulerService,

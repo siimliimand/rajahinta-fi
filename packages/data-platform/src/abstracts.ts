@@ -22,6 +22,11 @@ import {
   priceHistorySummaries,
   merchantTerms,
   basketCalculationRecords,
+  fxRateDatasets,
+  fxRates,
+  sessions,
+  clickCounterSnapshots,
+  merchantRegistry,
 } from './schema';
 
 /**
@@ -198,6 +203,53 @@ export abstract class SavedBasketRepository {
 }
 
 // ---------------------------------------------------------------------------
+// Session repository abstraction
+// ---------------------------------------------------------------------------
+
+/** Persisted session row (raw schema shape — tokenHash only, never a token). */
+export type SessionRecord = typeof sessions.$inferSelect;
+
+/**
+ * Session repository — server-issued opaque tokens hashed at rest (D3).
+ *
+ * Stores and resolves SHA-256 token hashes; raw token values never
+ * reach this layer. "Active" means unrevoked and unexpired — an active
+ * row is the only thing that authenticates, and account identity is
+ * always derived from the row (accountId), never asserted by callers.
+ */
+@Injectable()
+export abstract class SessionRepository {
+  /** Insert a session for an account from its token hash. */
+  abstract create(
+    record: typeof sessions.$inferInsert,
+  ): Promise<SessionRecord>;
+
+  /** The active (unrevoked, unexpired) session for a token hash, or null. */
+  abstract findActiveByTokenHash(
+    tokenHash: string,
+  ): Promise<SessionRecord | null>;
+
+  /**
+   * Atomically replace one session's credential: insert a successor
+   * session and revoke the presented one in a single transaction.
+   * Returns null when the presented hash has no active session — a
+   * rotated or unknown token never mints a new one. The successor
+   * carries rotatedFromId linking to the revoked predecessor.
+   */
+  abstract rotate(
+    tokenHash: string,
+    newTokenHash: string,
+    expiresAt: Date,
+  ): Promise<SessionRecord | null>;
+
+  /** Revoke the active session for a token hash. Returns false when none exists. */
+  abstract revokeByTokenHash(tokenHash: string): Promise<boolean>;
+
+  /** Delete sessions that expired before the cutoff — data-minimization housekeeping. */
+  abstract deleteExpiredBefore(cutoff: Date): Promise<number>;
+}
+
+// ---------------------------------------------------------------------------
 // Saved-scenario repository abstraction
 // ---------------------------------------------------------------------------
 
@@ -259,6 +311,92 @@ export abstract class SavedScenarioRepository {
 
   /** Delete a scenario by its primary key, scoped to the owning account. */
   abstract delete(accountId: number, id: number): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// FX-rate repository abstraction
+// ---------------------------------------------------------------------------
+
+/** Persisted FX-rate-dataset row (raw schema shape). */
+export type FxRateDatasetRecord = typeof fxRateDatasets.$inferSelect;
+
+/** Persisted FX-rate row (raw schema shape — rate is still the pg numeric string). */
+export type FxRateRow = typeof fxRates.$inferSelect;
+
+/**
+ * A rate resolved for conversion — dataset version plus the coerced rate.
+ *
+ * `rate` is a number: the repository boundary is where pg numeric
+ * strings become numbers for domain consumers (task 3.5).
+ */
+export interface ResolvedFxRate {
+  /** The published dataset version the rate belongs to (provenance). */
+  readonly dataset: FxRateDatasetRecord;
+  readonly baseCurrency: string;
+  readonly quoteCurrency: string;
+  /** Units of quote per 1 base, coerced from the stored numeric. */
+  readonly rate: number;
+}
+
+/**
+ * FX-rate repository — versioned, append-only rate datasets (design D2).
+ *
+ * Lifecycle: datasets are created PENDING_CONFIRMATION by ingestion and
+ * become effective ONLY through {@link publishDataset} — a human-only
+ * transition; nothing in this repository auto-publishes. Rates are
+ * appendable only while the dataset is unconfirmed; a published version
+ * is immutable so past conversions stay reproducible.
+ *
+ * Rate direction: rows are stored in the source's direction (ECB: base
+ * EUR). Resolution matches the exact (base, quote) pair — inversion is
+ * domain policy, never performed implicitly here.
+ */
+@Injectable()
+export abstract class FxRateRepository {
+  /** Insert a new dataset version (PENDING_CONFIRMATION) with its rates. */
+  abstract createDataset(
+    record: typeof fxRateDatasets.$inferInsert,
+    rates: Omit<typeof fxRates.$inferInsert, 'datasetId'>[],
+  ): Promise<FxRateDatasetRecord>;
+
+  abstract findDatasetById(
+    id: number,
+  ): Promise<FxRateDatasetRecord | null>;
+
+  abstract findDatasetByVersionLabel(
+    versionLabel: string,
+  ): Promise<FxRateDatasetRecord | null>;
+
+  /** The PUBLISHED dataset whose effective window covers {@code asOf} (most recent wins). */
+  abstract findPublishedDatasetEffectiveOn(
+    asOf: Date,
+  ): Promise<FxRateDatasetRecord | null>;
+
+  /**
+   * Publish a dataset — the only PENDING_CONFIRMATION → PUBLISHED
+   * transition, recording who confirmed it. Returns null when the
+   * dataset does not exist or is already published.
+   */
+  abstract publishDataset(
+    id: number,
+    confirmedBy: string,
+  ): Promise<FxRateDatasetRecord | null>;
+
+  /** Rates of a dataset version, ordered by (base, quote). */
+  abstract findRatesForDataset(
+    datasetId: number,
+  ): Promise<FxRateRow[]>;
+
+  /**
+   * Resolve the conversion rate for a pair from the PUBLISHED dataset
+   * effective on {@code asOf}. Null when no published dataset covers
+   * the date or the pair is absent — callers reject, never assume 1:1.
+   */
+  abstract resolveRate(
+    baseCurrency: string,
+    quoteCurrency: string,
+    asOf: Date,
+  ): Promise<ResolvedFxRate | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -507,6 +645,65 @@ export abstract class MerchantTermsRepository {
   abstract upsert(
     record: typeof merchantTerms.$inferInsert,
   ): Promise<MerchantTermsRecord>;
+}
+
+// ---------------------------------------------------------------------------
+// Merchant-registry repository abstraction
+// ---------------------------------------------------------------------------
+
+/** Persisted merchant-registry row (raw schema shape). */
+export type MerchantRegistryRecord = typeof merchantRegistry.$inferSelect;
+
+/**
+ * Merchant registry — database-backed merchant feed configuration (D7).
+ *
+ * The ingestion source list comes from these rows; permission state
+ * does NOT live here — consumers join with governance permission
+ * checks (SourceGovernanceService) keyed by the same merchantId before
+ * treating a registry row as permitted. The only write path is upsert
+ * by merchantId: onboarding or changing a merchant must not require a
+ * deployment.
+ */
+@Injectable()
+export abstract class MerchantRegistryRepository {
+  /** All registry rows, ordered by merchantId for deterministic scheduling. */
+  abstract list(): Promise<MerchantRegistryRecord[]>;
+
+  abstract findByMerchantId(
+    merchantId: string,
+  ): Promise<MerchantRegistryRecord | null>;
+
+  /** Insert or update the registry row for a merchant (unique merchantId). */
+  abstract upsert(
+    record: typeof merchantRegistry.$inferInsert,
+  ): Promise<MerchantRegistryRecord>;
+}
+
+// ---------------------------------------------------------------------------
+// Click-counter-snapshot repository abstraction
+// ---------------------------------------------------------------------------
+
+/** Persisted click-counter-snapshot row (raw schema shape). */
+export type ClickCounterSnapshotRecord = typeof clickCounterSnapshots.$inferSelect;
+
+/**
+ * Click-counter snapshots — the durable archive of the Redis click
+ * counters (task 4.3).
+ *
+ * Written periodically by the snapshot service (one row per merchant
+ * URL per run, cumulative count), upserted on the
+ * (merchantId, url, capturedAt) key so a re-run of the same capture
+ * instant converges instead of duplicating.
+ */
+@Injectable()
+export abstract class ClickCounterSnapshotRepository {
+  /**
+   * Upsert one batch of snapshot rows sharing a capture instant.
+   * Returns the number of rows written.
+   */
+  abstract appendBatch(
+    rows: Omit<typeof clickCounterSnapshots.$inferInsert, 'id'>[],
+  ): Promise<number>;
 }
 
 // ---------------------------------------------------------------------------
