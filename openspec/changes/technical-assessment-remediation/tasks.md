@@ -98,7 +98,7 @@
 
 ## 13. Verification
 
-- [ ] 13.1 Full gate — typecheck, lint, unit, golden-dataset, compliance, integration, e2e, browser e2e, load; fix fallout <!-- agent: platform-engineer.fast, depends_on: [1.6, 2.5, 3.6, 4.4, 5.3, 6.4, 7.6, 8.3, 9.6, 10.2, 11.5, 12.3], touches: [] -->
+- [x] 13.1 Full gate — typecheck, lint, unit, golden-dataset, compliance, integration, e2e, browser e2e, load; fix fallout <!-- agent: platform-engineer.fast, depends_on: [1.6, 2.5, 3.6, 4.4, 5.3, 6.4, 7.6, 8.3, 9.6, 10.2, 11.5, 12.3], touches: [] -->
 - [ ] 13.2 Update `docs/TECHNICAL-ASSESSMENT.md` with completion notes and `ARCHITECTURE.md` for sessions, FX dataset, merchant registry, and the hypertable <!-- agent: platform-engineer.fast, depends_on: [13.1], touches: [docs/**] -->
 
 ---

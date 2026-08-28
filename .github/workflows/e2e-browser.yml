@@ -3,14 +3,12 @@
 #
 # Boots the full stack (PostgreSQL 16 + TimescaleDB, Redis 7, Drizzle
 # migrations, staging seed + fixture correction, NestJS backend, Next.js
-# frontend, CORS shim) via tests/e2e-browser/boot-stack.sh — the same
+# frontend) via tests/e2e-browser/boot-stack.sh — the same
 # script used locally — then runs the four browser journeys: age gate,
 # calculator flow, compare sorting, account export.
 #
 # Nothing is skipped: the suite runs against real docker-compose services
 # (postgres+timescaledb, redis) and real dev servers, exactly as locally.
-# The CORS shim (tests/e2e-browser/cors-shim.mjs) is a documented
-# workaround for a reported backend defect — see the file header.
 # =============================================================================
 
 name: E2E browser
@@ -80,8 +78,7 @@ jobs:
         if: failure()
         run: |
           for f in /tmp/rajahinta-e2e-browser/backend.log \
-                   /tmp/rajahinta-e2e-browser/frontend.log \
-                   /tmp/rajahinta-e2e-browser/shim.log; do
+                   /tmp/rajahinta-e2e-browser/frontend.log; do
             echo "===== $f (tail 100) ====="
             tail -n 100 "$f" || true
           done
