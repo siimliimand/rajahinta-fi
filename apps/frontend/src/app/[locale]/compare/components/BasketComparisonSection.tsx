@@ -36,6 +36,18 @@ import type { ConfidenceLevel, ReliabilityStatus } from '@/lib/types';
 import { searchProducts } from '@/lib/api';
 import { useFeatureFlags } from '@/lib/feature-flags';
 import { optimizeBasket, classifyBasketError } from '@/lib/basket.client';
+import {
+  CONFIDENCE_LEVEL_META,
+  RELIABILITY_STATUS_META,
+} from '@/lib/design/status';
+import {
+  Badge,
+  Button,
+  Card,
+  ConfidenceBadge,
+  ReliabilityBadge,
+} from '@/components/ui';
+import type { BadgeTone } from '@/components/ui';
 import ProductSearch from '../../calculator/components/ProductSearch';
 import ProductSelector from '../../calculator/components/ProductSelector';
 import QuantitySelector from '../../calculator/components/QuantitySelector';
@@ -86,36 +98,19 @@ function formatEur(cents: number): string {
 // Badge/label conventions — matches BasketResults and CalculatorResult
 // ---------------------------------------------------------------------------
 
-const RELIABILITY_BADGE: Record<ReliabilityStatus, { bg: string; text: string }> = {
-  VERIFIED: { bg: 'bg-green-50', text: 'text-green-700' },
-  ESTIMATED: { bg: 'bg-amber-50', text: 'text-amber-700' },
-  STALE: { bg: 'bg-orange-50', text: 'text-orange-700' },
-  UNAVAILABLE: { bg: 'bg-red-50', text: 'text-red-700' },
-};
-
-const RELIABILITY_DOT: Record<ReliabilityStatus, string> = {
-  VERIFIED: 'bg-green-400',
-  ESTIMATED: 'bg-amber-400',
-  STALE: 'bg-orange-400',
-  UNAVAILABLE: 'bg-red-400',
-};
-
-const TRANSPORT_RELIABILITY_BADGE: Record<
+/**
+ * Transport reliability is a domain enum the shared status module does not
+ * key, so it maps onto the canonical ladder tones (EXACT → verified green,
+ * ESTIMATED → estimated blue, PARTIAL → error red); every colour class
+ * itself comes from the shared module via the Badge primitive.
+ */
+const TRANSPORT_RELIABILITY_TONE: Record<
   ConsolidatedTransportReliability,
-  { bg: string; text: string }
+  BadgeTone
 > = {
-  EXACT: { bg: 'bg-green-50', text: 'text-green-700' },
-  ESTIMATED: { bg: 'bg-amber-50', text: 'text-amber-700' },
-  PARTIAL: { bg: 'bg-red-50', text: 'text-red-700' },
-};
-
-const CONFIDENCE_META: Record<
-  ConfidenceLevel,
-  { bg: string; text: string; dot: string }
-> = {
-  HIGH: { bg: 'bg-green-50', text: 'text-green-800', dot: 'bg-green-500' },
-  MEDIUM: { bg: 'bg-amber-50', text: 'text-amber-800', dot: 'bg-amber-500' },
-  LOW: { bg: 'bg-red-50', text: 'text-red-800', dot: 'bg-red-500' },
+  EXACT: 'verified',
+  ESTIMATED: 'estimated',
+  PARTIAL: 'error',
 };
 
 // ---------------------------------------------------------------------------
@@ -123,15 +118,12 @@ const CONFIDENCE_META: Record<
 // ---------------------------------------------------------------------------
 
 /** Reliability badge matching BasketResults/CalculatorResult. */
-function ReliabilityBadge({ status }: { status: ReliabilityStatus }) {
-  const tCommon = useTranslations('Common');
-  const badge = RELIABILITY_BADGE[status];
+function LocalizedReliabilityBadge({ status }: { status: ReliabilityStatus }) {
+  const tAll = useTranslations();
   return (
-    <span
-      className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase leading-tight ${badge.bg} ${badge.text}`}
-    >
-      {tCommon(`reliability.${status}`)}
-    </span>
+    <ReliabilityBadge status={status}>
+      {tAll(RELIABILITY_STATUS_META[status].labelKey)}
+    </ReliabilityBadge>
   );
 }
 
@@ -143,29 +135,22 @@ function TransportReliabilityBadge({
 }) {
   const tCommon = useTranslations('Common');
   const tBasket = useTranslations('BasketCommon');
-  const badge = TRANSPORT_RELIABILITY_BADGE[reliability];
   return (
-    <span
-      className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase leading-tight ${badge.bg} ${badge.text}`}
-    >
+    <Badge tone={TRANSPORT_RELIABILITY_TONE[reliability]} size="sm">
       {reliability === 'ESTIMATED'
         ? tCommon('reliability.ESTIMATED')
         : tBasket(`transportReliability.${reliability}`)}
-    </span>
+    </Badge>
   );
 }
 
 /** Confidence badge. */
-function ConfidenceBadge({ level }: { level: ConfidenceLevel }) {
-  const tCommon = useTranslations('Common');
-  const meta = CONFIDENCE_META[level];
+function LocalizedConfidenceBadge({ level }: { level: ConfidenceLevel }) {
+  const tAll = useTranslations();
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${meta.bg} ${meta.text}`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
-      {tCommon(`confidence.${level}`)}
-    </span>
+    <ConfidenceBadge level={level}>
+      {tAll(CONFIDENCE_LEVEL_META[level].labelKey)}
+    </ConfidenceBadge>
   );
 }
 
@@ -238,12 +223,12 @@ function ShipmentItemCost({
   cents: number;
   reliability: ReliabilityStatus;
 }) {
-  const dot = RELIABILITY_DOT[reliability];
+  const dot = RELIABILITY_STATUS_META[reliability].dot;
   return (
     <div className="flex items-center justify-between py-1.5">
       <div className="flex items-center gap-2">
         <span
-          className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${dot}`}
+          className={`inline-block h-1.5 w-1.5 shrink-0 ${dot}`}
         />
         <span className="text-sm text-gray-700">{label}</span>
       </div>
@@ -251,7 +236,7 @@ function ShipmentItemCost({
         <span className="text-sm tabular-nums text-gray-600">
           {formatEur(cents)}
         </span>
-        <ReliabilityBadge status={reliability} />
+        <LocalizedReliabilityBadge status={reliability} />
       </div>
     </div>
   );
@@ -260,7 +245,7 @@ function ShipmentItemCost({
 /** One shipment card — identical visual weight per store. */
 function ShipmentCard({ shipment }: { shipment: BasketShipment }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+    <Card padding="sm">
       {/* Merchant header */}
       <div className="mb-3 flex items-start justify-between">
         <div>
@@ -293,7 +278,7 @@ function ShipmentCard({ shipment }: { shipment: BasketShipment }) {
       <div className="mt-2">
         <ThresholdCheckLine thresholdCheck={shipment.thresholdCheck} />
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -318,7 +303,7 @@ function ConfidenceBreakdown({
         {breakdown.map((detail, i) => (
           <li key={i} className="flex items-start gap-2 text-xs">
             <span
-              className={`mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${RELIABILITY_DOT[detail.status]}`}
+              className={`mt-0.5 inline-block h-1.5 w-1.5 shrink-0 ${RELIABILITY_STATUS_META[detail.status].dot}`}
             />
             <span className="text-gray-600">{detail.detail}</span>
           </li>
@@ -531,7 +516,7 @@ export default function BasketComparisonSection() {
       </div>
 
       {/* ── Product search ── */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <Card padding="sm">
         <h3 className="mb-3 text-sm font-semibold text-gray-700">
           {tBasket('addProducts')}
         </h3>
@@ -563,10 +548,10 @@ export default function BasketComparisonSection() {
             )}
           </>
         )}
-      </div>
+      </Card>
 
       {/* ── Current basket items ── */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <Card padding="sm">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-700">
             {tBasket('basketTitle', { count: items.length, max: MAX_ITEMS })}
@@ -612,13 +597,13 @@ export default function BasketComparisonSection() {
                   </div>
                 </li>
               ))}
-            </ul>
+             </ul>
           </>
         )}
-      </div>
+      </Card>
 
       {/* ── Destination ── */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <Card padding="sm">
         <label
           htmlFor="basket-comparison-destination"
           className="mb-1 block text-sm font-medium text-gray-700"
@@ -637,10 +622,10 @@ export default function BasketComparisonSection() {
             </option>
           ))}
         </select>
-      </div>
+      </Card>
 
       {/* ── Transport arrangement ── */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <Card padding="sm">
         <fieldset>
           <legend className="mb-2 text-sm font-medium text-gray-700">
             {tBasket('transportTitle')}
@@ -669,21 +654,16 @@ export default function BasketComparisonSection() {
             ))}
           </div>
         </fieldset>
-      </div>
+      </Card>
 
       {/* ── Optimize button ── */}
       <div>
-        <button
-          type="button"
-          onClick={handleOptimize}
-          disabled={!canOptimize}
-          className="inline-flex w-full items-center justify-center rounded-md bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button size="lg" fullWidth onClick={handleOptimize} disabled={!canOptimize}>
           {optimizing ? tPage('optimizing') : t('compareButton')}
-        </button>
+        </Button>
 
         {optimizeError && (
-          <p className="mt-2 text-sm text-red-600">{optimizeError}</p>
+          <p className="mt-2 text-sm text-error">{optimizeError}</p>
         )}
       </div>
 
@@ -701,7 +681,7 @@ export default function BasketComparisonSection() {
                   {formatEur(result.totalCents)}
                 </p>
               </div>
-              <ConfidenceBadge level={result.confidence} />
+              <LocalizedConfidenceBadge level={result.confidence} />
             </div>
 
             {/* Store-grouped cards */}
@@ -740,7 +720,7 @@ export default function BasketComparisonSection() {
                             {formatEur(alt.totalCents)}
                           </p>
                         </div>
-                        <ConfidenceBadge level={alt.confidence} />
+                        <LocalizedConfidenceBadge level={alt.confidence} />
                       </div>
 
                       {alt.shipments.map((shipment) => (

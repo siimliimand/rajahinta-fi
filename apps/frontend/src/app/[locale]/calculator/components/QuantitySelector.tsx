@@ -1,5 +1,9 @@
 'use client';
 
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
 import { useTranslations } from 'next-intl';
 
 // ---------------------------------------------------------------------------

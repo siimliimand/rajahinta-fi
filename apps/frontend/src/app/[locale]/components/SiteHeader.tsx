@@ -1,48 +1,148 @@
-import React from 'react';
-import { getTranslations } from 'next-intl/server';
-import { Link } from '@/i18n/navigation';
+'use client';
+
+import React, { useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
+import { Link, usePathname } from '@/i18n/navigation';
+import Logo from './Logo';
+import { Button } from '@/components/ui';
 
 /**
  * Layout-level header: the five primary destinations on every page.
- * Server-rendered and placed outside the age gate so navigation exists
- * in the SSR payload — per-page back-links were removed in its favour.
+ * Placed outside the age gate so navigation exists in the SSR payload —
+ * per-page back-links were removed in its favour.
+ *
+ * A client component (the smallest one in the chrome) because the active
+ * destination and the mobile disclosure need pathname and toggle state.
+ * Everything else stays server-friendly: the links are real anchors in
+ * both navs, so the closed mobile menu is `display: none` — present in
+ * the server HTML, never a focus trap. One nav is exposed per viewport
+ * (desktop row, mobile panel); they never render side by side.
  */
-export default async function SiteHeader() {
-  const t = await getTranslations('SiteHeader');
 
-  const linkClassName =
-    'text-sm font-medium text-gray-600 hover:text-primary-700';
+/** The five primary destinations (web-application spec: shared navigation). */
+const NAV_ITEMS = [
+  { href: '/calculator', messageKey: 'calculator' },
+  { href: '/compare', messageKey: 'compare' },
+  { href: '/basket', messageKey: 'basket' },
+  { href: '/account', messageKey: 'account' },
+  { href: '/ranking', messageKey: 'ranking' },
+] as const;
+
+const MOBILE_NAV_ID = 'site-header-mobile-nav';
+
+/**
+ * Exact match or a deeper segment: /account marks "Oma tili" active on
+ * /account/saved-baskets too. The boundary keeps /calculatorx from
+ * matching /calculator.
+ */
+function isRouteActive(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export default function SiteHeader() {
+  const t = useTranslations('SiteHeader');
+  const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+
+  // Following a nav link must close the menu — otherwise the panel stays
+  // open over the page the visitor just navigated to.
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape' && menuOpen) {
+      setMenuOpen(false);
+      toggleRef.current?.focus();
+    }
+  };
+
+  const renderNavLink = (item: (typeof NAV_ITEMS)[number], mobile: boolean) => {
+    const active = isRouteActive(pathname, item.href);
+    // The active state is never carried by color alone: the desktop row
+    // underlines the link (2px border) and the mobile panel keeps a
+    // visible left bar; aria-current states it for assistive tech.
+    const className = mobile
+      ? [
+          'block border-l-4 px-3 py-2 text-sm font-medium',
+          active
+            ? 'border-primary-700 bg-primary-50 text-gray-900'
+            : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-primary-700',
+        ].join(' ')
+      : [
+          'border-b-2 py-1 text-sm',
+          active
+            ? 'border-primary-700 font-semibold text-gray-900'
+            : 'border-transparent font-medium text-gray-600 hover:text-primary-700',
+        ].join(' ');
+
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        {...(active ? { 'aria-current': 'page' as const } : {})}
+        className={className}
+      >
+        {t(item.messageKey)}
+      </Link>
+    );
+  };
 
   return (
-    <header className="border-b border-gray-200 bg-white">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:px-6 lg:px-8">
+    <header className="border-b border-gray-200 bg-white" onKeyDown={handleKeyDown}>
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-x-4 px-4 py-3 sm:px-6 lg:px-8">
         <Link
           href="/"
-          className="text-lg font-bold text-primary-700 hover:text-primary-800"
+          className="inline-flex items-center text-lg transition-opacity hover:opacity-80"
         >
-          Rajahinta.fi
+          <Logo />
         </Link>
+
+        {/* Desktop row — always visible from md up. */}
         <nav
           aria-label={t('navLabel')}
-          className="flex flex-wrap items-center gap-x-5 gap-y-1"
+          className="hidden flex-wrap items-center gap-x-5 gap-y-1 md:flex"
         >
-          <Link href="/calculator" className={linkClassName}>
-            {t('calculator')}
-          </Link>
-          <Link href="/compare" className={linkClassName}>
-            {t('compare')}
-          </Link>
-          <Link href="/basket" className={linkClassName}>
-            {t('basket')}
-          </Link>
-          <Link href="/account" className={linkClassName}>
-            {t('account')}
-          </Link>
-          <Link href="/ranking" className={linkClassName}>
-            {t('ranking')}
-          </Link>
+          {NAV_ITEMS.map((item) => renderNavLink(item, false))}
         </nav>
+
+        {/* Mobile disclosure toggle; native button semantics give
+            Enter/Space activation for free. */}
+        <Button
+          ref={toggleRef}
+          variant="ghost"
+          size="sm"
+          className="md:hidden"
+          aria-label={t('navLabel')}
+          aria-expanded={menuOpen}
+          aria-controls={MOBILE_NAV_ID}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <svg
+            aria-hidden="true"
+            focusable="false"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            className="h-5 w-5"
+          >
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </Button>
       </div>
+
+      {/* Mobile panel: closed means display:none — removed from the tab
+          order and the accessibility tree, so focus is never trapped. */}
+      <nav
+        id={MOBILE_NAV_ID}
+        aria-label={t('navLabel')}
+        className={`${menuOpen ? 'flex' : 'hidden'} flex-col gap-1 border-t border-gray-200 px-4 pb-3 pt-2 md:hidden`}
+      >
+        {NAV_ITEMS.map((item) => renderNavLink(item, true))}
+      </nav>
     </header>
   );
 }

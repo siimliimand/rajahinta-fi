@@ -726,4 +726,10 @@ export interface ApiError {
   readonly error: string;
   readonly timestamp: string;
   readonly path: string;
+  /**
+   * Seconds until a retry is allowed. Present on 429 rate-limit
+   * responses, mirroring the `Retry-After` response header the
+   * rate-limit guard sets.
+   */
+  readonly retryAfterSeconds?: number;
 }

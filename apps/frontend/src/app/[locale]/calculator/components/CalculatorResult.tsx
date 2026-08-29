@@ -3,13 +3,17 @@
 import { useTranslations } from 'next-intl';
 import type {
   CalculatorResult as CalculatorResultType,
-  ConfidenceLevel,
   CostCategory,
   ReliabilityStatus,
   DataFreshnessEntry,
   RetailOffer,
 } from '@/lib/types';
 import { logClick } from '@/lib/api';
+import {
+  CONFIDENCE_LEVEL_META,
+  RELIABILITY_STATUS_META,
+} from '@/lib/design/status';
+import { ConfidenceBadge, ReliabilityBadge } from '@/components/ui';
 import { MerchantLink } from '../../compare/components/MerchantLink';
 import DisclaimerBanner from './DisclaimerBanner';
 import ReportExportActions from './ReportExportActions';
@@ -23,31 +27,20 @@ function formatEur(cents: number): string {
   return `€${(cents / 100).toFixed(2)}`;
 }
 
-/** Icon and colour config for each confidence level. */
-const CONFIDENCE_META: Record<ConfidenceLevel, { bg: string; text: string }> = {
-  HIGH: { bg: 'bg-green-100', text: 'text-green-800' },
-  MEDIUM: { bg: 'bg-amber-100', text: 'text-amber-800' },
-  LOW: { bg: 'bg-red-100', text: 'text-red-800' },
-};
-
-/** Colour coding for reliability status badges. */
-const RELIABILITY_BADGE: Record<
-  ReliabilityStatus,
-  { bg: string; text: string }
-> = {
-  VERIFIED: { bg: 'bg-green-50', text: 'text-green-700' },
-  ESTIMATED: { bg: 'bg-amber-50', text: 'text-amber-700' },
-  STALE: { bg: 'bg-orange-50', text: 'text-orange-700' },
-  UNAVAILABLE: { bg: 'bg-red-50', text: 'text-red-700' },
-};
-
-/** Dot colour for each reliability status. */
-const RELIABILITY_DOT: Record<ReliabilityStatus, string> = {
-  VERIFIED: 'bg-green-400',
-  ESTIMATED: 'bg-amber-400',
-  STALE: 'bg-orange-400',
-  UNAVAILABLE: 'bg-red-400',
-};
+/**
+ * Reliability badge composed from the canonical status module: label key
+ * from `@/lib/design/status`, rendering from the ui primitive. This is the
+ * adoption pattern for every component that used to keep its own
+ * RELIABILITY_BADGE map.
+ */
+function LocalizedReliabilityBadge({ status }: { status: ReliabilityStatus }) {
+  const t = useTranslations();
+  return (
+    <ReliabilityBadge status={status}>
+      {t(RELIABILITY_STATUS_META[status].labelKey)}
+    </ReliabilityBadge>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -64,7 +57,6 @@ function CostLine({
   reliability: ReliabilityStatus;
 }) {
   const t = useTranslations('CalculatorResult');
-  const badge = RELIABILITY_BADGE[reliability];
   return (
     <div className="flex items-center justify-between py-1.5">
       <span className="text-sm text-gray-700">
@@ -74,35 +66,9 @@ function CostLine({
         <span className="text-sm tabular-nums text-gray-600">
           {formatEur(cents)}
         </span>
-        <span
-          className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase leading-tight ${badge.bg} ${badge.text}`}
-        >
-          {reliability}
-        </span>
+        <LocalizedReliabilityBadge status={reliability} />
       </div>
     </div>
-  );
-}
-
-/** Confidence badge with label. */
-function ConfidenceBadge({ level }: { level: ConfidenceLevel }) {
-  const tCommon = useTranslations('Common');
-  const meta = CONFIDENCE_META[level];
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${meta.bg} ${meta.text}`}
-    >
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${
-          level === 'HIGH'
-            ? 'bg-green-500'
-            : level === 'MEDIUM'
-              ? 'bg-amber-500'
-              : 'bg-red-500'
-        }`}
-      />
-      {tCommon(`confidence.${level}`)}
-    </span>
   );
 }
 
@@ -113,13 +79,11 @@ function FreshnessLine({
   timestamp,
   detail,
 }: DataFreshnessEntry) {
-  const tCommon = useTranslations('Common');
-  const badge = RELIABILITY_BADGE[status];
-  const dot = RELIABILITY_DOT[status];
+  const dot = RELIABILITY_STATUS_META[status].dot;
   return (
     <div className="flex items-center justify-between py-1.5">
       <div className="flex items-center gap-2">
-        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dot}`} />
+        <span className={`inline-block h-2 w-2 shrink-0 ${dot}`} />
         <span className="text-sm text-gray-700">{label}</span>
       </div>
       <div className="flex items-center gap-2">
@@ -128,11 +92,7 @@ function FreshnessLine({
             {new Date(timestamp).toLocaleString('fi-FI')}
           </span>
         )}
-        <span
-          className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase leading-tight ${badge.bg} ${badge.text}`}
-        >
-          {tCommon(`reliability.${status}`)}
-        </span>
+        <LocalizedReliabilityBadge status={status} />
         {detail && (
           <span className="hidden text-xs text-gray-400 sm:inline">{detail}</span>
         )}
@@ -188,6 +148,7 @@ interface CalculatorResultProps {
  */
 export default function CalculatorResult({ result, offers }: CalculatorResultProps) {
   const t = useTranslations('CalculatorResult');
+  const tAll = useTranslations();
   const tCommon = useTranslations('Common');
   const meta = result.metadata;
   const freshnessEntries = useFreshnessEntries(result);
@@ -207,7 +168,9 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
             })}
           </p>
         </div>
-        <ConfidenceBadge level={result.confidence} />
+        <ConfidenceBadge level={result.confidence}>
+          {tAll(CONFIDENCE_LEVEL_META[result.confidence].labelKey)}
+        </ConfidenceBadge>
       </div>
 
       {/* ── Itemized costs ── */}
@@ -246,7 +209,7 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
             {result.confidenceBreakdown.map((detail, i) => (
               <li key={i} className="flex items-start gap-2 text-xs">
                 <span
-                  className={`mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${RELIABILITY_DOT[detail.status]}`}
+                  className={`mt-0.5 inline-block h-1.5 w-1.5 shrink-0 ${RELIABILITY_STATUS_META[detail.status].dot}`}
                 />
                 <span className="text-gray-600">{detail.detail}</span>
               </li>

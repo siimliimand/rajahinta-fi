@@ -3,10 +3,13 @@
 import { useTranslations } from 'next-intl';
 import type {
   ComparisonProduct,
-  ConfidenceLevel,
-  ReliabilityStatus,
   SortOrder,
 } from '@/lib/types';
+import {
+  CONFIDENCE_LEVEL_META,
+  RELIABILITY_STATUS_META,
+} from '@/lib/design/status';
+import { Button, Card } from '@/components/ui';
 import { logClick } from '@/lib/api';
 import { MerchantLink } from './MerchantLink';
 import MerchantFreshnessSection from './MerchantFreshnessSection';
@@ -20,21 +23,6 @@ import ProductHistoryPanel from '../../calculator/components/ProductHistoryPanel
 function formatEur(cents: number): string {
   return `€${(cents / 100).toFixed(2)}`;
 }
-
-/** Dot colour for confidence levels. */
-const CONFIDENCE_DOT: Record<ConfidenceLevel, string> = {
-  HIGH: 'bg-green-400',
-  MEDIUM: 'bg-amber-400',
-  LOW: 'bg-red-400',
-};
-
-/** Dot colour for reliability. */
-const RELIABILITY_DOT: Record<ReliabilityStatus, string> = {
-  VERIFIED: 'bg-green-400',
-  ESTIMATED: 'bg-amber-400',
-  STALE: 'bg-orange-400',
-  UNAVAILABLE: 'bg-red-400',
-};
 
 // ---------------------------------------------------------------------------
 // Props
@@ -75,7 +63,7 @@ function ProductColumn({
   const tResult = useTranslations('CalculatorResult');
 
   return (
-    <div className="flex flex-col rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+    <Card padding="sm" className="flex flex-col">
       {/* Product info — every column looks the same */}
       <h3 className="text-sm font-semibold text-gray-900">{product.name}</h3>
       <p className="mt-0.5 text-xs text-gray-500">
@@ -114,8 +102,10 @@ function ProductColumn({
               <span className="tabular-nums text-gray-700">
                 {formatEur(cost.cents)}
               </span>
+              {/* Dot classes come from the canonical status module: shape
+                  AND hue, so no competing rounded-* utility here. */}
               <span
-                className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${RELIABILITY_DOT[cost.reliability]}`}
+                className={`inline-block h-1.5 w-1.5 shrink-0 ${RELIABILITY_STATUS_META[cost.reliability].dot}`}
               />
             </div>
           </div>
@@ -158,11 +148,11 @@ function ProductColumn({
       {/* Confidence indicator — no label/rank, just a visual cue */}
       <div className="mt-auto flex items-center gap-1.5">
         <span
-          className={`inline-block h-2 w-2 rounded-full ${CONFIDENCE_DOT[product.confidence]}`}
+          className={`inline-block h-2 w-2 rounded-full ${CONFIDENCE_LEVEL_META[product.confidence].solid}`}
         />
         <span className="text-xs text-gray-400">{t('dataConfidence')}</span>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -194,13 +184,9 @@ export default function ComparisonView({
     return (
       <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8 text-center">
         <p className="text-sm text-gray-500">{t('empty')}</p>
-        <button
-          type="button"
-          onClick={onAddProduct}
-          className="mt-3 inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
-        >
+        <Button className="mt-3" onClick={onAddProduct}>
           {t('addProductTitle')}
-        </button>
+        </Button>
       </div>
     );
   }

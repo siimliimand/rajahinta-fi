@@ -29,6 +29,7 @@ import type {
 } from '@/lib/types';
 import { getMerchantReliability } from '@/lib/api';
 import { useFeatureFlags } from '@/lib/feature-flags';
+import { RELIABILITY_STATUS_META } from '@/lib/design/status';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -78,6 +79,7 @@ export default function MerchantFreshnessSection({
   merchants,
 }: MerchantFreshnessSectionProps) {
   const t = useTranslations('MerchantFreshness');
+  const tAll = useTranslations();
   const tCommon = useTranslations('Common');
   // Flag state is inlined with the initial HTML payload (task 9.4).
   const flags = useFeatureFlags();
@@ -132,7 +134,10 @@ export default function MerchantFreshnessSection({
           const shares = STATUS_ORDER.filter(
             (s) => score.statusCounts[s] > 0,
           ).map(
-            (s) => `${tCommon(`reliability.${s}`)} ${formatShare(score.statusShares[s])}`,
+            (s) =>
+              // Status labels resolve through the canonical status module's
+              // labelKeys, the same source every other status badge uses.
+              `${tAll(RELIABILITY_STATUS_META[s].labelKey)} ${formatShare(score.statusShares[s])}`,
           );
 
           return (

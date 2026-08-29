@@ -71,7 +71,20 @@
     "methodology": "Miten järjestäminen toimii"
   },
   "Home": {
-    "subtitle": "Rajat ylittävien juomien kokonaiskustannuslaskuri Suomeen"
+    "subtitle": "Rajat ylittävien juomien kokonaiskustannuslaskuri Suomeen",
+    "heroValueProp": "Laske alkoholijuomien tuonnin kokonaiskustannus Ruotsista Suomeen: ulkomainen vähittäishinta, kuljetus sekä arviot alkoholin valmisteverosta ja pakkausverosta.",
+    "trustHeading": "Tietolähteet ja luotettavuus",
+    "trustSourcesTitle": "Aineistolähteet",
+    "trustSourcesBody": "Tuotteiden hinnat perustuvat Systembolagetin julkaisemaan aineistoon. Verot ja maksut lasketaan Verohallinnon virallisiin verokanta-aineistoihin perustuen.",
+    "trustReliabilityTitle": "Luotettavuusmerkinnät",
+    "trustReliabilityBody": "Jokainen näytetty luku kantaa luotettavuusmerkinnän ja aikaleiman, joten tiedon varmuus ja ikä ovat aina näkyvissä.",
+    "trustMethodologyTitle": "Menetelmä",
+    "trustMethodologyBody": "Laskentamalli, käytetyt verolähteet ja järjestämisen perusteet on dokumentoitu avoimesti."
+  },
+  "GateClosed": {
+    "title": "Laskuri ei ole vielä käytössä",
+    "body": "Kokonaiskustannuslaskenta ei ole vielä julkisesti käytettävissä. Palvelua valmistellaan käyttöönottoon: oikeudellinen lausunto, verolähteiden kartoitus ja korjausmekanismi vahvistetaan ennen julkaisua.",
+    "availableAtLaunch": "Käyttöönoton jälkeen laskuri näyttää tuotteen kokonaiskustannuksen Suomeen: ulkomaisen vähittäishinnan, kuljetuskustannuksen, arvioidun alkoholin valmisteveron ja pakkausveron."
   },
   "AgeGate": {
     "title": "Ikätarkistus",
@@ -104,7 +117,12 @@
     "calculating": "Lasketaan…",
     "searchFailed": "Haku epäonnistui. Yritä uudelleen.",
     "calculationFailed": "Laskenta epäonnistui. Yritä uudelleen.",
-    "selectProductFirst": "Valitse tuote ennen skenaarion tallentamista."
+    "selectProductFirst": "Valitse tuote ennen skenaarion tallentamista.",
+    "searchNoResultsTitle": "Ei hakutuloksia",
+    "searchNoResultsDescription": "Tuotteita ei löytynyt haulla \"{query}\". Tarkista kirjoitusasu tai kokeile toista tuotenimeä.",
+    "calculationErrorTitle": "Laskenta epäonnistui",
+    "rateLimitedDescription": "Laskentojen määrää on rajoitettu väliaikaisesti.",
+    "rateLimitRetryAfter": "Odota {seconds, plural, one {# sekunti} other {# sekuntia}} ja yritä sitten uudelleen."
   },
   "ProductSearch": {
     "placeholder": "Hae tuotteita…",
@@ -359,8 +377,10 @@
   },
   "ResultPage": {
     "notFoundTitle": "Laskentaa ei löytynyt",
+    "notFoundBody": "Laskentatietuetta ei ole olemassa tai se ei ole enää saatavilla. Linkki voi olla vanhentunut.",
     "invalidId": "Virheellinen laskentatietueen tunniste.",
     "loadFailed": "Laskentatuloksen lataaminen epäonnistui.",
+    "loadFailedTitle": "Lataaminen epäonnistui",
     "title": "Laskennan tulos",
     "recordMeta": "Tietue #{id} · {date}",
     "traceableInputs": "Jäljitettävät syötteet",

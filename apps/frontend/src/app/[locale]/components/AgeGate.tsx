@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import { usePathname, useRouter } from '@/i18n/navigation';
+import { Button } from '@/components/ui';
 
 const STORAGE_KEY = 'age_confirmed';
 const COOKIE_NAME = 'age_confirmed';
@@ -95,18 +96,12 @@ export function AgeGate({ children }: { children: React.ReactNode }) {
           <h2 className="text-xl font-semibold text-gray-900">{t('title')}</h2>
           <p className="mt-3 text-gray-600">{t('body')}</p>
           <div className="mt-6 flex justify-center gap-4">
-            <button
-              onClick={handleConfirm}
-              className="rounded-md bg-primary-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-            >
+            <Button size="lg" onClick={handleConfirm}>
               {t('confirm')}
-            </button>
-            <button
-              onClick={handleDeny}
-              className="rounded-md border border-gray-300 bg-white px-6 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-            >
+            </Button>
+            <Button variant="secondary" size="lg" onClick={handleDeny}>
               {t('deny')}
-            </button>
+            </Button>
           </div>
           <p className="mt-4 text-xs text-gray-400">{t('note')}</p>
         </div>

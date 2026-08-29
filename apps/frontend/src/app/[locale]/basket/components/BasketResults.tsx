@@ -12,9 +12,9 @@
  *  - Up to three alternatives with identical styling — zero visual preference
  *    cues beyond objective cost ordering.
  *
- * All badge/freshness conventions match the existing calculator result view
- * (see CalculatorResult.tsx): color-coded reliability badges (green = VERIFIED,
- * amber = ESTIMATED, orange = STALE, red = UNAVAILABLE), confidence dot indicators.
+ * All badge/freshness conventions come from the canonical status module
+ * (`@/lib/design/status`) and the ui primitives, matching CalculatorResult:
+ * green VERIFIED, blue ESTIMATED, amber STALE, gray UNAVAILABLE (D1/D2).
  *
  * @module BasketResults
  */
@@ -31,6 +31,17 @@ import type {
   ConfidenceLevel,
   ReliabilityStatus,
 } from '@/lib/types';
+import {
+  CONFIDENCE_LEVEL_META,
+  RELIABILITY_STATUS_META,
+} from '@/lib/design/status';
+import {
+  Badge,
+  Card,
+  ConfidenceBadge,
+  ReliabilityBadge,
+} from '@/components/ui';
+import type { BadgeTone } from '@/components/ui';
 import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
 
 // ---------------------------------------------------------------------------
@@ -42,40 +53,19 @@ function formatEur(cents: number): string {
   return `€${(cents / 100).toFixed(2)}`;
 }
 
-/** Colour coding for reliability status badges (matches CalculatorResult). */
-const RELIABILITY_BADGE: Record<ReliabilityStatus, { bg: string; text: string }> = {
-  VERIFIED: { bg: 'bg-green-50', text: 'text-green-700' },
-  ESTIMATED: { bg: 'bg-amber-50', text: 'text-amber-700' },
-  STALE: { bg: 'bg-orange-50', text: 'text-orange-700' },
-  UNAVAILABLE: { bg: 'bg-red-50', text: 'text-red-700' },
-};
-
-/** Colour for reliability dot indicators (matches CalculatorResult). */
-const RELIABILITY_DOT: Record<ReliabilityStatus, string> = {
-  VERIFIED: 'bg-green-400',
-  ESTIMATED: 'bg-amber-400',
-  STALE: 'bg-orange-400',
-  UNAVAILABLE: 'bg-red-400',
-};
-
-/** Transport reliability badge colours. */
-const TRANSPORT_RELIABILITY_BADGE: Record<
+/**
+ * Transport reliability is a domain enum the shared status module does not
+ * key, so it maps onto the canonical ladder tones (EXACT → verified green,
+ * ESTIMATED → estimated blue, PARTIAL → error red); every colour class
+ * itself comes from the shared module via the Badge primitive.
+ */
+const TRANSPORT_RELIABILITY_TONE: Record<
   ConsolidatedTransportReliability,
-  { bg: string; text: string }
+  BadgeTone
 > = {
-  EXACT: { bg: 'bg-green-50', text: 'text-green-700' },
-  ESTIMATED: { bg: 'bg-amber-50', text: 'text-amber-700' },
-  PARTIAL: { bg: 'bg-red-50', text: 'text-red-700' },
-};
-
-/** Confidence indicator colours (matches CalculatorResult). */
-const CONFIDENCE_META: Record<
-  ConfidenceLevel,
-  { bg: string; text: string; dot: string }
-> = {
-  HIGH: { bg: 'bg-green-50', text: 'text-green-800', dot: 'bg-green-500' },
-  MEDIUM: { bg: 'bg-amber-50', text: 'text-amber-800', dot: 'bg-amber-500' },
-  LOW: { bg: 'bg-red-50', text: 'text-red-800', dot: 'bg-red-500' },
+  EXACT: 'verified',
+  ESTIMATED: 'estimated',
+  PARTIAL: 'error',
 };
 
 // ---------------------------------------------------------------------------
@@ -83,15 +73,12 @@ const CONFIDENCE_META: Record<
 // ---------------------------------------------------------------------------
 
 /** Reliability badge reusing the calculator's visual convention. */
-function ReliabilityBadge({ status }: { status: ReliabilityStatus }) {
-  const tCommon = useTranslations('Common');
-  const badge = RELIABILITY_BADGE[status];
+function LocalizedReliabilityBadge({ status }: { status: ReliabilityStatus }) {
+  const tAll = useTranslations();
   return (
-    <span
-      className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase leading-tight ${badge.bg} ${badge.text}`}
-    >
-      {tCommon(`reliability.${status}`)}
-    </span>
+    <ReliabilityBadge status={status}>
+      {tAll(RELIABILITY_STATUS_META[status].labelKey)}
+    </ReliabilityBadge>
   );
 }
 
@@ -103,29 +90,22 @@ function TransportReliabilityBadge({
 }) {
   const tCommon = useTranslations('Common');
   const tBasket = useTranslations('BasketCommon');
-  const badge = TRANSPORT_RELIABILITY_BADGE[reliability];
   return (
-    <span
-      className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase leading-tight ${badge.bg} ${badge.text}`}
-    >
+    <Badge tone={TRANSPORT_RELIABILITY_TONE[reliability]} size="sm">
       {reliability === 'ESTIMATED'
         ? tCommon('reliability.ESTIMATED')
         : tBasket(`transportReliability.${reliability}`)}
-    </span>
+    </Badge>
   );
 }
 
 /** Confidence badge matching the calculator's ConfidenceBadge component. */
-function ConfidenceBadge({ level }: { level: ConfidenceLevel }) {
-  const tCommon = useTranslations('Common');
-  const meta = CONFIDENCE_META[level];
+function LocalizedConfidenceBadge({ level }: { level: ConfidenceLevel }) {
+  const tAll = useTranslations();
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${meta.bg} ${meta.text}`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
-      {tCommon(`confidence.${level}`)}
-    </span>
+    <ConfidenceBadge level={level}>
+      {tAll(CONFIDENCE_LEVEL_META[level].labelKey)}
+    </ConfidenceBadge>
   );
 }
 
@@ -202,12 +182,12 @@ function ShipmentItemCost({
   cents: number;
   reliability: ReliabilityStatus;
 }) {
-  const dot = RELIABILITY_DOT[reliability];
+  const dot = RELIABILITY_STATUS_META[reliability].dot;
   return (
     <div className="flex items-center justify-between py-1.5">
       <div className="flex items-center gap-2">
         <span
-          className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${dot}`}
+          className={`inline-block h-1.5 w-1.5 shrink-0 ${dot}`}
         />
         <span className="text-sm text-gray-700">{label}</span>
       </div>
@@ -215,7 +195,7 @@ function ShipmentItemCost({
         <span className="text-sm tabular-nums text-gray-600">
           {formatEur(cents)}
         </span>
-        <ReliabilityBadge status={reliability} />
+        <LocalizedReliabilityBadge status={reliability} />
       </div>
     </div>
   );
@@ -224,7 +204,7 @@ function ShipmentItemCost({
 /** One shipment card (per merchant/store). */
 function ShipmentCard({ shipment }: { shipment: BasketShipment }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+    <Card padding="sm">
       {/* Merchant header */}
       <div className="mb-3 flex items-start justify-between">
         <div>
@@ -259,7 +239,7 @@ function ShipmentCard({ shipment }: { shipment: BasketShipment }) {
       <div className="mt-2">
         <ThresholdCheckLine thresholdCheck={shipment.thresholdCheck} />
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -284,7 +264,7 @@ function ConfidenceBreakdown({
         {breakdown.map((detail, i) => (
           <li key={i} className="flex items-start gap-2 text-xs">
             <span
-              className={`mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${RELIABILITY_DOT[detail.status]}`}
+              className={`mt-0.5 inline-block h-1.5 w-1.5 shrink-0 ${RELIABILITY_STATUS_META[detail.status].dot}`}
             />
             <span className="text-gray-600">{detail.detail}</span>
           </li>
@@ -373,7 +353,7 @@ function OptimizationCombination({
             {formatEur(totalCents)}
           </p>
         </div>
-        <ConfidenceBadge level={confidence} />
+        <LocalizedConfidenceBadge level={confidence} />
       </div>
 
       {/* Shipment cards */}
