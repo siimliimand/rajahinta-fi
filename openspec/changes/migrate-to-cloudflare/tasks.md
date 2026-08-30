@@ -5,7 +5,7 @@
 - [x] 1.1 G1 capacity spike: project price-observation and calculation-record volumes from ingestion forecasts against D1 limits (10 GB database, row-write ceilings); write verdict with headroom math and an R2-fallback recommendation if headroom < 2× <!-- agent: platform-engineer.fast, depends_on: [], touches: [openspec/changes/migrate-to-cloudflare/spikes/g1-sizing.md] -->
 - [x] 1.2 G2 search parity spike: seed a local D1 with product fixtures, implement the FTS5 + LIKE candidate query, run the golden-fixture search queries, and record top-k overlap results <!-- agent: platform-engineer.build, depends_on: [], touches: [scripts/spikes/cloudflare/**, openspec/changes/migrate-to-cloudflare/spikes/g2-search-parity.md] -->
 - [x] 1.3 G3 vertical slice spike: calculator endpoint end-to-end in a scratch Worker (Hono skeleton + translated schema subset + D1 + DO rate limit), load-tested against the current K8s baseline with a p95 ratio and correctness diff <!-- agent: platform-engineer.build, depends_on: [], touches: [scripts/spikes/cloudflare/**, openspec/changes/migrate-to-cloudflare/spikes/g3-vertical-slice.md] -->
-- [ ] 1.4 Gate review: resolve G1–G3 go/no-go, record the final Hono-vs-Nest-adapter decision and any design amendments (incl. D4 R2 fallback if G1 fails) <!-- agent: platform-engineer.fast, depends_on: [1.1, 1.2, 1.3], touches: [openspec/changes/migrate-to-cloudflare/design.md] -->
+- [x] 1.4 Gate review: resolve G1–G3 go/no-go, record the final Hono-vs-Nest-adapter decision and any design amendments (incl. D4 R2 fallback if G1 fails) <!-- agent: platform-engineer.fast, depends_on: [1.1, 1.2, 1.3], touches: [openspec/changes/migrate-to-cloudflare/design.md] -->
 
 ## 2. Data platform on D1 (Phase 1)
 

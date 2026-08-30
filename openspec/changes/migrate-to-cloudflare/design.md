@@ -33,9 +33,11 @@ The load-bearing discovery: `packages/core-domain` is framework-free TypeScript 
 
 ## Decisions
 
-### D1 — HTTP layer: Hono on Workers (default), Nest adapter only if G3 demands
+### D1 — HTTP layer: Hono on Workers (ratified by G3)
 
-Re-hosting the HTTP layer on Hono preserves the contracts that matter — DTO shapes (zod), guard semantics, the unified error envelope, route paths — while the Nest DI plumbing is rewritten once. Running Nest on Workers via a community adapter is the fallback: it fights the runtime permanently (no second metrics port, no long-running anything, adapter breakage risk on Nest minors). Spike G3 decides with data; the default is Hono. Either way the NestJS app stays buildable until cutover (dual-run).
+Re-hosting the HTTP layer on Hono preserves the contracts that matter — DTO shapes (zod), guard semantics, the unified error envelope, route paths — while the Nest DI plumbing is rewritten once. Running Nest on Workers via a community adapter was the fallback: it fights the runtime permanently (no second metrics port, no long-running anything, adapter breakage risk on Nest minors). G3 ratified the default with data: real core-domain engines ran in a Worker with 5/5 golden correctness (`spikes/g3-vertical-slice.md`). The NestJS app stays buildable until cutover (dual-run).
+
+Bundle note for phases 2–3 (G3 finding): importing core-domain into a Worker bundle drags the `@nestjs/common` barrel (Node built-ins, rxjs, class-validator) in with it. The validated approach is a bundler alias of `@nestjs/common` to a minimal no-op decorator shim for the Workers build; `nodejs_compat` is the fallback.
 
 ### D2 — D1 schema translation rules
 
@@ -47,9 +49,11 @@ Re-hosting the HTTP layer on Hono preserves the contracts that matter — DTO sh
 
 FTS5 external-content virtual table over `productMaster` names, kept in sync by triggers. Query strategy: FTS5 MATCH with prefix queries first; `LIKE '%q%'` fallback over the (small, ~10⁴-row) product set for substring matches trigram search used to catch. Golden-fixture queries (e.g. "karhu") must produce the expected product in top-k — G2 turns this from hope into a build gate.
 
-### D4 — Time-series: append-only table + watermark, no hypertable
+### D4 — Time-series: append-only R2 log + watermark, no hypertable
 
-`priceObservations` becomes a single append-only D1 table with a composite `(productId, observedAt)` index. The 7-day-chunk hypertable partitioning is replaced by `WHERE observedAt >= …` range scans; the watermark scan pattern survives unchanged. Summaries aggregate with `strftime` bucketing. Retention (calculation records, anonymous sessions) becomes scheduled batch `DELETE` via Cron — simpler than today's `DROP PARTITION` choreography. G1 validates capacity: if projected row/byte volume leaves <2× headroom against D1 limits (10 GB database size, row-write ceilings), observations move to R2 (JSONL, batch-queried) while the relational core stays D1 — still fully Cloudflare.
+Amended by gate review G1 (NO-GO for D1-only storage, see Gate review outcomes): `priceObservations` moves to R2 as append-only JSONL objects partitioned by date, batch-read for aggregation, while the relational core (offers, current prices, summaries, calculation records) stays in D1. The 7-day-chunk hypertable partitioning is replaced by range scans over the date-partitioned log; the watermark scan pattern applies to R2 objects unchanged. Summaries still materialize into D1 with `strftime` bucketing and remain the long-term analytical record.
+
+Retention is amended with the same review: all calculation records are age-capped by configuration (default 180 days) — anonymous rows keep the existing 30-day window, and the cap replaces "session-bearing rows are never pruned". Retention becomes scheduled batch `DELETE` via Cron — simpler than today's `DROP PARTITION` choreography. With observations in R2 and the age cap in place, the ≥2× byte headroom G1 requires is restored.
 
 ### D5 — Durable Objects replace Redis
 
@@ -88,9 +92,27 @@ One-time ETL: Postgres dump → transform (types, epoch → ISO-8601) → `wrang
 
 | Risk | Mitigation |
 |---|---|
-| D1 write/size ceilings invalidate the plan | Gate G1 first; R2 fallback keeps the plan viable either way |
+| D1 write/size ceilings invalidate the plan | Resolved by G1: observations move to R2 (D4 amended) and calculation records are age-capped, restoring ≥2× byte headroom — see Gate review outcomes |
 | FTS5 ≠ trigram quality on real queries | Gate G2 against golden fixtures before any port work starts |
 | Hono port misses guard semantics | Guards ported as middleware with parity tests; G3 vertical slice proves the pattern on one endpoint before the rest |
 | e2e-browser suite depends on docker-compose stack | Rewired to Workers previews/staging (task 5.4) |
 | Compliance/neutrality regressions during rehost | Domain package untouched; compliance suite runs unchanged; dual-run parity adds an output-level net |
 | Data residency drift | EU placement hints are explicit config reviewed in task 6.5 |
+
+## Gate review outcomes (G1–G3)
+
+Task 1.4 resolves the three go/no-go gates against their spike reports.
+
+| Gate | Verdict | Evidence |
+|---|---|---|
+| G1 — D1 capacity | **NO-GO** for D1-only storage → R2 fallback triggers (D4 amended) | `spikes/g1-sizing.md` — bytes headroom 0.42× (≈24 GB projected vs 10 GB D1 limit at 10× growth); writes 4.5× and reads ~82× pass |
+| G2 — search parity | **GO** | `spikes/g2-search-parity.md` — 13/13 golden queries within top-5 on FTS5+LIKE; `remove_diacritics=0` pinned for parity; LIKE merge covers mid-token recall; Finnish collation stays app-side |
+| G3 — vertical slice | **GO** | `spikes/g3-vertical-slice.md` — real core-domain engines in a Worker, 5/5 golden correctness, 0 mismatches, p95 567 ms (local wrangler dev + local D1); RateLimiterDO engaged (429s under burst) |
+
+Recorded decisions:
+
+1. **D1 ratified**: Hono on Workers; G3 is the evidence. The Nest adapter fallback is retired.
+2. **D4 amended**: `priceObservations` → R2, structured as append-only JSONL objects partitioned by date and batch-read for aggregation; summaries still materialize into D1; the watermark pattern applies to R2 objects.
+3. **Age-capped calculation records** (new): all calculation records get a config-driven age cap, default 180 days — anonymous rows keep the existing 30-day window; the cap replaces "session-bearing rows are never pruned". `priceHistorySummaries` remains the long-term analytical record.
+4. **`@nestjs/common` bundle handling** (G3 finding): bundler-alias `@nestjs/common` to a minimal no-op decorator shim for the Workers build; `nodejs_compat` is the fallback. This is the approach for phases 2–3.
+5. **Baseline comparison method** (resolves G3's deferred comparison; no runnable K8s baseline exists in-repo, so G3 records absolute numbers): finalized at task 3.9 — run the existing artillery/load profile against the Worker on staging and compare against the K8s stack during dual-run (task 6.6), using the G3 absolute numbers as the local reference.
