@@ -59,3 +59,41 @@ export type { IPriceObservationPort } from '../../../../packages/core-domain/src
 export type { PriceObservation } from '../../../../packages/core-domain/src/history/price-observation.types';
 export type { ITransportOfferQuery } from '../../../../packages/core-domain/src/transport/transport-offer-query.interface';
 export type { TransportOffer } from '../../../../packages/core-domain/src/transport/transport-offer.type';
+
+// ---------------------------------------------------------------------------
+// Calculator / optimizer composition (route ports, tasks 3.5–3.6)
+// ---------------------------------------------------------------------------
+
+export { LandedCostCalculatorService } from '../../../../packages/core-domain/src/calculator/landed-cost-calculator.service';
+export { TransactionClassificationService } from '../../../../packages/core-domain/src/classification/transaction-classification.service';
+export { TransportClassificationService } from '../../../../packages/core-domain/src/transport/transport-classification.service';
+export { MerchantReliabilityScoreService } from '../../../../packages/core-domain/src/reliability/merchant-reliability-score.service';
+export { BasketOptimizerService } from '../../../../packages/core-domain/src/optimizer/services/basket-optimizer.service';
+export { BasketShippingCalculator } from '../../../../packages/core-domain/src/transport/basket-shipping-calculator.service';
+export { TaxChangeAttributionService } from '../../../../packages/core-domain/src/history/services/tax-change-attribution.service';
+
+// Domain errors + constants the route handlers map onto HTTP responses.
+export {
+  ProductNotFoundError,
+  NoRetailOffersError,
+  ClassificationGateRejectionError,
+} from '../../../../packages/core-domain/src/calculator/calculator.types';
+export {
+  BasketValidationError,
+  BasketClassificationGateError,
+  BasketCombinationLimitError,
+  MAX_BASKET_ITEMS,
+} from '../../../../packages/core-domain/src/optimizer/optimizer.types';
+export { CalculationRecordNotFoundError, CALCULATION_RECORD_QUERY_PORT } from '../../../../packages/core-domain/src/declaration/declaration.types';
+export { DISCLAIMER_FI } from '../../../../packages/core-domain/src/disclaimer';
+export { TAX_TYPES } from '../../../../packages/core-domain/src/tax/tax-categories';
+export { normaliseCategory } from '../../../../packages/core-domain/src/tax/services/alcohol-excise.math';
+
+// ---------------------------------------------------------------------------
+// Declaration + attribution services (route ports, tasks 3.5–3.6)
+// ---------------------------------------------------------------------------
+
+export { ExciseDeclarationService } from '../../../../packages/core-domain/src/declaration/excise-declaration.service';
+
+// History — TaxChangeAttributionService is registered above with the other
+// route-port services.

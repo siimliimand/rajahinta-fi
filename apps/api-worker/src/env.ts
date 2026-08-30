@@ -25,12 +25,35 @@ export interface Env {
    */
   readonly INGESTION_QUEUE?: Queue<IngestionMessageBody>;
   /**
+   * Price-ingestion Workflow — task 4.2 (design D6). The Queue consumer
+   * creates one instance per message; the instance id IS the message's
+   * dedupe key, making the handoff idempotent under at-least-once
+   * delivery. Class exported from src/workflows/ (the lead re-exports
+   * it from src/index.ts — see src/workflows/index.ts).
+   */
+  readonly INGESTION_WORKFLOW?: Workflow;
+  /**
    * R2 observation log — task 4.1/4.3 (design D4 as amended by G1).
    * Append-only JSONL objects (`observations/YYYY-MM-DD.jsonl`); written
    * by the ingestion pipeline's offer-change hook, batch-read by the
    * time-series aggregation cron handler.
    */
   readonly OBSERVATION_LOG?: R2Bucket;
+  /**
+   * R2 rate-snapshot bucket — task 4.4 (design D6/D9). Holds the
+   * official rate-snapshot object the tax-dataset review hashes
+   * (SHA-256 against the last-reviewed entry). Deliberately a separate
+   * bucket from OBSERVATION_LOG: an append-only event log and a
+   * config snapshot have different write patterns and lifecycles.
+   */
+  readonly RATE_SNAPSHOTS?: R2Bucket;
+  /**
+   * Object key of the rate snapshot inside RATE_SNAPSHOTS (per-env
+   * config, design D9; wrangler vars per environment). Default when
+   * unset: config/rate-snapshot.json (the same relative path the
+   * file-based source resolved in the backend).
+   */
+  readonly RATE_SNAPSHOT_OBJECT_KEY?: string;
   /** Override for the ECB reference-rate source URL (FX review cron). */
   readonly FX_RATE_SOURCE_URL?: string;
   /**

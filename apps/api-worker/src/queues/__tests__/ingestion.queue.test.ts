@@ -67,7 +67,7 @@ function fakeBatch(
 }
 
 describe('processIngestionMessage — idempotent skip over the DO job-claim namespace', () => {
-  it('claims, runs, and completes on first delivery', async () => {
+  it('claims and runs on first delivery (completion is the runner’s business — the workflow finalize step, task 4.2)', async () => {
     const env = fakeIdempotencyEnv();
     const run = vi.fn().mockResolvedValue({ productsIngested: 3, errors: [] });
 
@@ -75,10 +75,12 @@ describe('processIngestionMessage — idempotent skip over the DO job-claim name
 
     expect(result).toEqual({ processed: true, skipped: false });
     expect(run).toHaveBeenCalledWith(
-      { merchantId: 'alko', sourceUrl: 'https://alko.example/api' },
+      { merchantId: 'alko', sourceUrl: 'https://alko.example/api', dedupeKey: messageBody().dedupeKey },
       expect.objectContaining({ env }),
     );
-    // The marker is completed — a duplicate delivery skips below.
+    // The consumer no longer completes the claim — a duplicate delivery
+    // below skips as in-flight until the runner (workflow finalize)
+    // completes it.
   });
 
   it('skips a duplicate delivery of the same dedupe key (processed exactly once)', async () => {

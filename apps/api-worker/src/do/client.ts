@@ -180,6 +180,38 @@ export async function idempotencyInvalidateVersions(
   return deleted;
 }
 
+/**
+ * Look up a cached result by RAW key — the verbatim client-supplied
+ * idempotency-key path (and the basket optimizer's namespaced keyspace).
+ * The DO hashes the key into storage; the entry shape matches
+ * {@link idempotencyGet}.
+ */
+export async function idempotencyGetByKey(
+  env: Env,
+  key: string,
+): Promise<IdempotencyEntry | null> {
+  const { found, entry } = await callIdempotency<{ found: boolean; entry?: IdempotencyEntry }>(
+    env,
+    { op: 'getByKey', key },
+  );
+  return found && entry !== undefined ? entry : null;
+}
+
+/** Store a cached result under a RAW key (overwrites any live entry). */
+export async function idempotencyPutByKey(
+  env: Env,
+  key: string,
+  result: unknown,
+  options?: { datasetVersions?: readonly string[]; ttlSeconds?: number },
+): Promise<void> {
+  await callIdempotency(env, {
+    op: 'putByKey',
+    key,
+    result,
+    ...options,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Job claims — background-job dedupe keys (task 4.1, design D6)
 // ---------------------------------------------------------------------------

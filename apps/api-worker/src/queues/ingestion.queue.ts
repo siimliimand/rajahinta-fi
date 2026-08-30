@@ -1,6 +1,7 @@
 /**
  * Price-ingestion Queue consumer (task 4.1, design D6) — the BullMQ
- * `PriceIngestionWorker` port with idempotent skip.
+ * `PriceIngestionWorker` port with idempotent skip; task 4.2 moves the
+ * pipeline invocation into a Cloudflare Workflow handoff.
  *
  * ## Idempotent skip (the dedupe-key carry-over)
  *
@@ -13,28 +14,35 @@
  *    `already-completed` / `in-flight` ack the delivery with no work
  *    (duplicate schedule ⇒ exactly one ingestion, the spec scenario);
  *    a stale `processing` claim (dead attempt) is reclaimed.
- * 2. run the pipeline; on success mark the key completed (TTL 25 h —
- *   hourly keys, BullMQ removeOnComplete age was one day).
- * 3. on failure RELEASE the claim and retry the message — a failed run
- *    must never leave a marker that suppresses its own retry
- *    (at-least-once completion, BullMQ attempts: 5 parity via
- *    `max_retries` in wrangler.jsonc).
+ * 2. hand the message to the ingestion Workflow — the instance id IS
+ *    the dedupe key, so at-least-once delivery collapses onto one
+ *    instance (see src/workflows/handoff.ts).
+ * 3. on handoff failure RELEASE the claim and retry the message — a
+ *    failed handoff must never leave a marker that suppresses its own
+ *    retry (at-least-once completion).
+ *
+ * ## Claim ownership (task 4.2 pick, documented)
+ *
+ * The consumer only CLAIMS and RELEASES-on-failure. Completion moved
+ * INTO the workflow: its `complete-job-claim` step marks the key
+ * completed on success and its `release-job-claim` step releases on
+ * terminal instance failure (see src/workflows/ingestion-steps.ts).
+ * While the instance runs, duplicate deliveries skip as `in-flight`.
  *
  * ## Pipeline invocation
  *
- * {@link runIngestion} is the narrow invocation interface task 4.2's
- * Workflow re-hosts: re-read the registry row at run time (registry
- * edits take effect on the next job without a deploy; the message's
- * sourceUrl is enqueue-time log context only), derive the MerchantConfig,
- * and run the composed pipeline (see pipeline.ts) — the governance gate
- * applies again inside the pipeline before any fetch or persistence.
+ * {@link runIngestionViaWorkflow} (default) creates the Workflow
+ * instance; {@link runIngestion} remains the direct in-consumer runner
+ * (registry re-read at run time → derived MerchantConfig → composed
+ * pipeline, governance gate applied inside) for tests and as the
+ * pre-Workflow fallback. Both re-read the registry so an operator edit
+ * wins over the message without a deploy.
  *
  * @module IngestionQueue
  */
 
 import {
   claimJob,
-  completeJob,
   releaseJob,
 } from '../do/client';
 import { createLogger, type Logger } from '../logger';
@@ -46,10 +54,24 @@ import {
 } from './pipeline';
 import { merchantConfigFromRegistry } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
 import type { MerchantConfig } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
+import { ensureWorkflowInstance } from '../workflows/handoff';
 
 /**
- * Run one merchant's ingestion end to end — the narrow interface task
- * 4.2 keeps when the pipeline becomes a Workflow.
+ * Outcome of one consumer invocation (run or handoff). `handedOff`
+ * marks the Workflow path — the product count becomes known only when
+ * the instance finishes, so the consumer logs the handoff, not a count.
+ */
+export interface IngestionRunOutcome {
+  readonly productsIngested: number;
+  readonly errors: string[];
+  /** True when the run was handed to a durable Workflow instance. */
+  readonly handedOff?: boolean;
+}
+
+/**
+ * Run one merchant's ingestion end to end — the direct in-consumer
+ * runner (pre-4.2 default). Kept as the test/fallback seam; production
+ * hands off to the Workflow via {@link runIngestionViaWorkflow}.
  *
  * `merchant.sourceUrl` is log context from enqueue time; the registry
  * row is re-read so an operator edit wins over the message.
@@ -57,7 +79,7 @@ import type { MerchantConfig } from '../../../../packages/data-acquisition/src/i
 export async function runIngestion(
   merchant: { merchantId: string; sourceUrl?: string },
   ctx: { env: Env; log: Logger },
-): Promise<{ productsIngested: number; errors: string[] }> {
+): Promise<IngestionRunOutcome> {
   const registry = composeMerchantRegistry(ctx.env);
   const row = await registry.findByMerchantId(merchant.merchantId);
   if (row === null) {
@@ -85,22 +107,55 @@ export async function runIngestion(
 }
 
 /**
- * Process one Queue batch: claim → run → complete (or release + retry).
+ * Hand one message to the ingestion Workflow (task 4.2 default seam).
  *
- * `run` is a test seam defaulting to {@link runIngestion}; `deps` lets
- * tests inject the job-claim client. A claim/complete DO failure counts
- * as message failure (retry) — the marker is the correctness mechanism
- * and must not degrade silently.
+ * The instance id IS the dedupe key — the idempotent handoff: a
+ * duplicate delivery resolves to the SAME instance (no duplicate
+ * ingestion) and the durable instance carries the per-step retries that
+ * BullMQ realized as job-level attempts. The product count is unknowable
+ * at handoff time; the instance reports it through its own completion.
+ */
+export async function runIngestionViaWorkflow(
+  merchant: { merchantId: string; sourceUrl?: string; dedupeKey?: string },
+  ctx: { env: Env; log: Logger },
+): Promise<IngestionRunOutcome> {
+  if (!merchant.dedupeKey) {
+    throw new Error(
+      'Workflow handoff requires the message dedupeKey — it is the idempotent instance id',
+    );
+  }
+  const workflow = ctx.env.INGESTION_WORKFLOW;
+  if (!workflow) {
+    throw new Error('INGESTION_WORKFLOW Workflow binding is not configured');
+  }
+  await ensureWorkflowInstance(workflow, merchant.dedupeKey, {
+    dedupeKey: merchant.dedupeKey,
+    merchantId: merchant.merchantId,
+    sourceUrl: merchant.sourceUrl ?? '',
+  });
+  return { productsIngested: 0, errors: [], handedOff: true };
+}
+
+/**
+ * Process one Queue batch message: claim → run/handoff → (completion is
+ * the runner's business now) — or release + retry on failure.
+ *
+ * `run` is a test seam defaulting to {@link runIngestionViaWorkflow};
+ * `deps` lets tests inject the job-claim client. A claim/release DO
+ * failure counts as message failure (retry) — the marker is the
+ * correctness mechanism and must not degrade silently.
  */
 export async function processIngestionMessage(
   body: IngestionMessageBody,
   env: Env,
   deps: {
     log?: Logger;
-    run?: typeof runIngestion;
+    run?: (
+      merchant: { merchantId: string; sourceUrl?: string; dedupeKey?: string },
+      ctx: { env: Env; log: Logger },
+    ) => Promise<IngestionRunOutcome>;
     claims?: {
       claim: typeof claimJob;
-      complete: typeof completeJob;
       release: typeof releaseJob;
     };
   } = {},
@@ -108,10 +163,9 @@ export async function processIngestionMessage(
   const log = deps.log ?? createLogger(env.LOG_LEVEL);
   const claims = deps.claims ?? {
     claim: claimJob,
-    complete: completeJob,
     release: releaseJob,
   };
-  const run = deps.run ?? runIngestion;
+  const run = deps.run ?? runIngestionViaWorkflow;
 
   if (
     typeof body?.dedupeKey !== 'string' ||
@@ -149,21 +203,28 @@ export async function processIngestionMessage(
 
   try {
     const result = await run(
-      { merchantId: body.merchantId, sourceUrl: body.sourceUrl },
+      { merchantId: body.merchantId, sourceUrl: body.sourceUrl, dedupeKey: body.dedupeKey },
       { env, log },
     );
-    await claims.complete(env, body.dedupeKey);
-    log.info({
-      message: `Ingested ${result.productsIngested} products for merchant ${body.merchantId}`,
-      merchantId: body.merchantId,
-      productsIngested: result.productsIngested,
-      errorCount: result.errors.length,
-    });
-    if (result.errors.length > 0) {
-      log.warn({
-        message: `Ingestion completed with ${result.errors.length} errors for merchant ${body.merchantId}`,
+    if (result.handedOff === true) {
+      log.info({
+        message: `Handed off ingestion ${body.dedupeKey} to Workflow instance ${body.dedupeKey} — durable per-step retries; the instance completes the claim`,
         merchantId: body.merchantId,
+        dedupeKey: body.dedupeKey,
       });
+    } else {
+      log.info({
+        message: `Ingested ${result.productsIngested} products for merchant ${body.merchantId}`,
+        merchantId: body.merchantId,
+        productsIngested: result.productsIngested,
+        errorCount: result.errors.length,
+      });
+      if (result.errors.length > 0) {
+        log.warn({
+          message: `Ingestion completed with ${result.errors.length} errors for merchant ${body.merchantId}`,
+          merchantId: body.merchantId,
+        });
+      }
     }
     return { processed: true, skipped: false };
   } catch (err) {

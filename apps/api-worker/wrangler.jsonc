@@ -46,6 +46,17 @@
     {
       "binding": "OBSERVATION_LOG",
       "bucket_name": "rajahinta-observations-dev"
+    },
+    // Rate-snapshot bucket (task 4.4, design D6/D9): holds the official
+    // rate-snapshot object the tax-dataset review hashes. Separate from
+    // OBSERVATION_LOG on purpose — append-only event log vs config
+    // snapshot (different write patterns and lifecycles). The object key
+    // is per-env config: RATE_SNAPSHOT_OBJECT_KEY (vars below; code
+    // default config/rate-snapshot.json — the path the file-based
+    // ConfigBackedRateChangeSource resolved in the backend).
+    {
+      "binding": "RATE_SNAPSHOTS",
+      "bucket_name": "rajahinta-rate-snapshots-dev"
     }
   ],
   // Price-ingestion Queue (task 4.1; design D6). The scheduled producer
@@ -72,6 +83,24 @@
       }
     ]
   },
+  // Price-ingestion Workflow (task 4.2, design D6): the pipeline stages
+  // (resolve → gate → fetch → map → upsert → quality) run as durable
+  // steps, each with retries mirroring the BullMQ attempts: 5 / 30 s
+  // exponential backoff. The Queue consumer hands every message to ONE
+  // instance whose id is the message's dedupe key (idempotent handoff);
+  // the instance's final step completes the IdempotencyDO job claim.
+  // Top-level binding like the durable_objects above (the class is
+  // env-independent; per-env workflow naming follows the deploy target).
+  // The IngestionWorkflow class must be exported from the worker entry
+  // — src/index.ts re-exports it from src/workflows (lead follow-up
+  // recorded in src/workflows/index.ts).
+  "workflows": [
+    {
+      "binding": "INGESTION_WORKFLOW",
+      "name": "rajahinta-price-ingestion",
+      "class_name": "IngestionWorkflow"
+    }
+  ],
   // Durable Objects (tasks 3.3–3.4): classes are exported from the worker
   // entry and created by the v1/v2 migrations below (SQLite storage
   // backend). The migration `tag` must be unique and never reordered once
@@ -138,8 +167,15 @@
         }
       ],
       "r2_buckets": [
-        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-dev" }
+        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-dev" },
+        { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-dev" }
       ],
+      // Per-env snapshot object key (task 4.4, design D9). Code default
+      // (config/rate-snapshot.json) matches; the var makes the override
+      // point explicit per environment.
+      "vars": {
+        "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json"
+      },
       "queues": {
         "producers": [
           { "binding": "INGESTION_QUEUE", "queue": "rajahinta-price-ingestion-dev" }
@@ -165,8 +201,12 @@
         }
       ],
       "r2_buckets": [
-        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-staging" }
+        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-staging" },
+        { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-staging" }
       ],
+      "vars": {
+        "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json"
+      },
       "queues": {
         "producers": [
           { "binding": "INGESTION_QUEUE", "queue": "rajahinta-price-ingestion-staging" }
@@ -192,8 +232,12 @@
         }
       ],
       "r2_buckets": [
-        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-production" }
+        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-production" },
+        { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-production" }
       ],
+      "vars": {
+        "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json"
+      },
       "queues": {
         "producers": [
           { "binding": "INGESTION_QUEUE", "queue": "rajahinta-price-ingestion-production" }

@@ -178,6 +178,22 @@ export type IdempotencyRequest =
       nowMs?: number;
     }
   | { op: 'invalidateVersions'; versions: string[]; nowMs?: number }
+  /**
+   * Raw-key ops (task 3.5): client-supplied idempotency keys travel
+   * verbatim by contract, and the basket optimizer addresses entries by a
+   * namespaced string key — neither is a CacheKeyInput. The key is
+   * domain-separated (`raw-key:` prefix) before hashing into the same
+   * `e:` entry namespace, so derived and raw keyspaces can never collide.
+   */
+  | { op: 'getByKey'; key: string; nowMs?: number }
+  | {
+      op: 'putByKey';
+      key: string;
+      result: unknown;
+      datasetVersions?: readonly string[];
+      ttlSeconds?: number;
+      nowMs?: number;
+    }
   | { op: 'size'; nowMs?: number }
   | { op: 'clear'; nowMs?: number }
   | {
@@ -257,6 +273,17 @@ export class IdempotencyDO {
           return Response.json({
             deleted: await this.invalidateVersions(body.versions, body.nowMs),
           });
+        case 'getByKey':
+          return Response.json(await this.getByKey(body.key, body.nowMs));
+        case 'putByKey':
+          await this.putByKey(
+            body.key,
+            body.result,
+            body.datasetVersions,
+            body.ttlSeconds,
+            body.nowMs,
+          );
+          return Response.json({ stored: true });
         case 'size':
           return Response.json({ size: await this.size(body.nowMs) });
         case 'clear':
@@ -387,6 +414,46 @@ export class IdempotencyDO {
       }
     }
     return deleted;
+  }
+
+  /**
+   * Raw-key get — the client-supplied-key path of the Nest
+   * IdempotencyService.lookup (the key travels verbatim; hashing only
+   * namespaces it into storage). Same lazy-TTL semantics as `get`.
+   */
+  private async getByKey(
+    key: string,
+    nowMs?: number,
+  ): Promise<{ found: boolean; entry?: IdempotencyEntry }> {
+    const now = nowMs ?? Date.now();
+    const storageKey = entryStorageKey(await hashRawKey(key));
+    const stored = await this.state.storage.get<StoredEntry>(storageKey);
+
+    if (stored === undefined) {
+      return { found: false };
+    }
+    if (stored.expiresAt <= now) {
+      await this.state.storage.delete(storageKey);
+      return { found: false };
+    }
+    return { found: true, entry: stored };
+  }
+
+  /** Raw-key put — the cache-store path for verbatim/namespaced keys. */
+  private async putByKey(
+    key: string,
+    result: unknown,
+    datasetVersions: readonly string[] | undefined,
+    ttlSeconds: number | undefined,
+    nowMs?: number,
+  ): Promise<void> {
+    const now = nowMs ?? Date.now();
+    const ttl = assertTtl(ttlSeconds);
+    const storageKey = entryStorageKey(await hashRawKey(key));
+    const entry = buildEntry(result, datasetVersions, ttl, now);
+
+    await this.state.storage.put(storageKey, entry);
+    await this.scheduleSweep(entry.expiresAt);
   }
 
   /** Live (non-expired, without sweeping) entry count. */
@@ -590,4 +657,15 @@ function assertTtl(ttlSeconds: number | undefined): number {
     throw new RangeError('ttlSeconds must be a finite number >= 1');
   }
   return ttl;
+}
+
+/** SHA-256 hex of a raw entry key, domain-separated from input-derived keys. */
+async function hashRawKey(key: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`raw-key:${key}`),
+  );
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }

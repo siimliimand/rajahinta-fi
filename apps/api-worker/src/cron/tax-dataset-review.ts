@@ -15,21 +15,39 @@
  * module-scope `path.join(__dirname, …)` for the file snapshot default)
  * cannot evaluate on Workers.
  *
- * The SNAPSHOT SOURCE therefore stays behind the `RateChangeSourcePort`
- * interface — which is exactly the swap point for task 4.4 ("rate
- * snapshot source reading from R2"). Until then the bound
- * {@link DisabledRateChangeSource} degrades to no-change, the documented
- * ConfigBacked behavior with no snapshot path. Detection NEVER
- * auto-publishes: a detection maps to `requiresConfirmation` (the
- * manual-review task) and, per the BullMQ worker, invalidates the
- * idempotency cache entries carrying the replaced dataset versions so
- * subsequent calculations re-compute with fresh data.
+ * ## Snapshot source (task 4.4 swap, design D6)
+ *
+ * {@link composeRateChangeSource} is the swap point 4.3 left behind.
+ * With the RATE_SNAPSHOTS R2 binding present, detection runs through the
+ * {@link R2RateSnapshotSource} — the R2 counterpart of
+ * ConfigBackedRateChangeSource (same SHA-256-vs-last-reviewed-entry
+ * semantics, hash parity pinned by tests; missing object = no-change +
+ * warning, fail-safe). Without the binding the disabled placeholder
+ * below degrades to no-change, the documented ConfigBacked behavior with
+ * no source configured.
+ *
+ * Repository note: detection reads the last-reviewed hash through
+ * `IRateReviewRepository`. No D1 rate-review table exists in the schema
+ * yet (the same Phase-1 state as the backend), so the composition binds
+ * the in-memory store: per-isolate memory resets between cron ticks, so
+ * once an operator uploads a snapshot object, each daily pass detects it
+ * (first-check semantics) until a persistent repository records review
+ * hashes. The fail-safe direction is unaffected (missing object ⇒
+ * no-change). Swapping in a D1 repository is a one-argument change here.
+ *
+ * Detection NEVER auto-publishes: a detection maps to
+ * `requiresConfirmation` (the manual-review task) and, per the BullMQ
+ * worker, invalidates the idempotency cache entries carrying the
+ * replaced dataset versions so subsequent calculations re-compute with
+ * fresh data.
  *
  * @module TaxDatasetReviewCron
  */
 
 import type { RateReviewResult } from '../../../../packages/data-acquisition/src/interfaces/rate-review.types';
 import type { RateChangeSourcePort } from '../../../../packages/data-acquisition/src/interfaces/rate-review-repository.port';
+import { R2RateSnapshotSource, DEFAULT_RATE_SNAPSHOT_OBJECT_KEY } from '../../../../packages/data-acquisition/src/adapters/rate-snapshot.r2';
+import { InMemoryRateReviewRepository } from '../../../../packages/data-acquisition/src/adapters/rate-review-repository.adapter';
 import { idempotencyInvalidateVersions } from '../do/client';
 import type { Env } from '../env';
 import type { Logger } from '../logger';
@@ -38,14 +56,32 @@ import type { Logger } from '../logger';
 export const TAX_REVIEW_CRON = '0 2 * * *';
 
 /**
- * Placeholder snapshot source until task 4.4 moves the rate snapshot to
- * R2: reports no change, the documented ConfigBacked semantics with no
- * snapshot path (no source configured — no detection possible).
+ * Placeholder snapshot source when no RATE_SNAPSHOTS binding is
+ * configured: reports no change, the documented ConfigBacked semantics
+ * with no snapshot source (nothing configured — no detection possible).
  */
 export class DisabledRateChangeSource implements RateChangeSourcePort {
   async checkForChanges(): Promise<RateReviewResult> {
     return { checkedAt: new Date().toISOString(), newRatesDetected: false };
   }
+}
+
+/**
+ * Compose the rate-change snapshot source from the Worker bindings
+ * (task 4.4): R2-backed when RATE_SNAPSHOTS is bound, disabled
+ * placeholder otherwise. The object key is per-env config (design D9,
+ * RATE_SNAPSHOT_OBJECT_KEY) with the file-era default as fallback.
+ */
+export function composeRateChangeSource(env: Env, log: Logger): RateChangeSourcePort {
+  const bucket = env.RATE_SNAPSHOTS;
+  if (!bucket) {
+    return new DisabledRateChangeSource();
+  }
+  const objectKey =
+    env.RATE_SNAPSHOT_OBJECT_KEY?.trim() || DEFAULT_RATE_SNAPSHOT_OBJECT_KEY;
+  return new R2RateSnapshotSource(bucket, objectKey, new InMemoryRateReviewRepository(), {
+    logger: log,
+  });
 }
 
 /** The PipelineTaxDatasetReviewAdapter mapping of a check result. */
@@ -84,7 +120,7 @@ export async function handleTaxDatasetReview(
 ): Promise<TaxReviewCheckResult> {
   log.info({ message: 'Checking for newly published official tax rates' });
 
-  const source = deps.rateChangeSource ?? new DisabledRateChangeSource();
+  const source = deps.rateChangeSource ?? composeRateChangeSource(env, log);
   const result = toTaxReviewCheckResult(await source.checkForChanges());
 
   log.info({

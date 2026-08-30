@@ -9,7 +9,7 @@
  * | Controller (route prefix)        | Nest guards                                   | Worker middleware |
  * |----------------------------------|-----------------------------------------------|----------------------------------------------|
  * | CalculatorController (/api/v1/calculator) | class: RateLimit, LaunchGate(CALCULATION), LaunchGateGuard, AgeGateGuard | requireLaunchGate('CALCULATION'), ageGate() |
- * | SearchController (/api/v1/products)       | class: LaunchGate(PRICE_DATA), LaunchGateGuard, AgeGateGuard             | requireLaunchGate('PRICE_DATA'), ageGate() |
+ * | SearchController (/api/v1/products)       | class: LaunchGate(PRICE_DATA), LaunchGateGuard, AgeGateGuard             | requireLaunchGate('PRICE_DATA'), ageGate() — scoped to GET /api/v1/products and GET /api/v1/products/:id |
  * | BasketOptimizerController (/api/v1/basket)| class: RateLimit, FeatureFlagGuard, @FeatureFlag(BASKET_OPTIMIZATION)    | requireFeatureFlag('BASKET_OPTIMIZATION') |
  * | DeclarationController (/api/v1/declaration)| class: AgeGateGuard; GET :recordId: EntitlementGuard + RequireFeature   | ageGate(); requireFeature('declaration:summary') on GET /:recordId |
  * | AccountController (/api/v1/account)       | class: SessionAuthGuard; scenarios: FeatureFlagGuard(ADVANCED_FEATURES)  | sessionAuth() per route; + flag on scenarios |
@@ -139,8 +139,13 @@ export function registerGuardMiddleware(app: Hono<AppEnv>): Hono<AppEnv> {
   // ahead of these at task 3.3).
   app.use('/api/v1/calculator/*', requireLaunchGate('CALCULATION'), ageGate());
 
-  // SearchController — class-level LaunchGate(PRICE_DATA) + AgeGateGuard.
-  app.use('/api/v1/products/*', requireLaunchGate('PRICE_DATA'), ageGate());
+  // SearchController — class-level LaunchGate(PRICE_DATA) + AgeGateGuard,
+  // scoped to the controller's two routes: HistoricalDataController shares
+  // the /api/v1/products URL prefix in Nest, and Nest applies class guards
+  // per CONTROLLER — the historical route must not inherit the search
+  // gates (its own guard set registers with the task-3.6 route port).
+  app.on('GET', '/api/v1/products', requireLaunchGate('PRICE_DATA'), ageGate());
+  app.on('GET', '/api/v1/products/:id', requireLaunchGate('PRICE_DATA'), ageGate());
 
   // BasketOptimizerController — class-level FeatureFlag(BASKET_OPTIMIZATION).
   app.use('/api/v1/basket/*', requireFeatureFlag('BASKET_OPTIMIZATION'));

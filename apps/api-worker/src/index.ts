@@ -28,6 +28,19 @@ import {
 import { errorBoundary } from './middleware/error-boundary';
 import { requestLogging } from './middleware/request-id';
 import { registerGuardMiddleware } from './middleware/guards';
+import { requireRateLimit } from './middleware/rate-limit';
+import {
+  registerCalculatorRoutes,
+} from './routes/calculator.routes';
+import { registerSearchRoutes } from './routes/search.routes';
+import { registerDeclarationRoutes } from './routes/declaration.routes';
+import { registerBasketRoutes } from './routes/basket.routes';
+import { registerHistoricalRoutes } from './routes/historical.routes';
+import { registerReportsRoutes } from './routes/reports.routes';
+import { registerMerchantsRoutes } from './routes/merchants.routes';
+import { registerAccountsRoutes } from './routes/accounts.routes';
+import { registerAnalyticsRoutes } from './routes/analytics.routes';
+import { registerOpsRoutes } from './routes/ops.routes';
 import { dispatchScheduled } from './cron/router';
 import { handleIngestionBatch } from './queues/ingestion.queue';
 import type { IngestionMessageBody } from './queues/ingestion-message';
@@ -41,6 +54,11 @@ export { ApiHttpError } from './errors';
 export { RateLimiterDO } from './do/rate-limiter.do';
 export { IdempotencyDO } from './do/idempotency.do';
 export { ClickCounterDO } from './do/click-counter.do';
+
+// Workflow classes are entry-script exports too (wrangler.jsonc workflows;
+// task 4.2) — the one-liner the workflows module records for the index.ts
+// owner.
+export { IngestionWorkflow } from './workflows';
 
 /**
  * Application factory. Tests (and later phases: per-route modules from
@@ -85,7 +103,29 @@ export function createApp(): Hono<AppEnv> {
   // scoped routes have no handlers yet (route ports are tasks 3.5–3.8);
   // guards run ahead of the 404 fallback until each handler lands, which
   // fails closed on the protected paths.
+  //
+  // Rate limiting (task 3.5) precedes the guard registrations — Nest runs
+  // RateLimitGuard first in every guard list, so a 403 from a later guard
+  // still consumed a token there. Order after this point:
+  // rate limit → class guards (prefixes) → method guards → handlers.
+  app.use('/api/v1/calculator/*', requireRateLimit('CALCULATOR'));
+  app.use('/api/v1/calculations/*', requireRateLimit('CALCULATOR'));
+  app.use('/api/v1/basket/*', requireRateLimit('BASKET'));
+  app.use('/api/v1/products/:id/price-history', requireRateLimit('HISTORICAL'));
+  app.use('/api/v1/reports/*', requireRateLimit('DECLARATION'));
   registerGuardMiddleware(app);
+
+  // Route ports (tasks 3.5–3.8) — handlers appended behind the guards.
+  registerCalculatorRoutes(app);
+  registerSearchRoutes(app);
+  registerDeclarationRoutes(app);
+  registerBasketRoutes(app);
+  registerHistoricalRoutes(app);
+  registerReportsRoutes(app);
+  registerMerchantsRoutes(app);
+  registerAccountsRoutes(app);
+  registerAnalyticsRoutes(app);
+  registerOpsRoutes(app);
 
   return app;
 }

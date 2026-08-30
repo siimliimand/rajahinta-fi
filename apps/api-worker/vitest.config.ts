@@ -13,6 +13,18 @@ export default defineConfig({
         '../../packages/core-domain/src/index.ts',
         import.meta.url,
       ).pathname,
+      // workerd built-ins (task 4.2): the entry script re-exports
+      // IngestionWorkflow for runtime registration, and the Node vitest
+      // pool cannot resolve `cloudflare:*` — the alias lands on the
+      // collection-time stub (src/testing/cloudflare-modules-stub.ts).
+      'cloudflare:workers': new URL(
+        './src/testing/cloudflare-modules-stub.ts',
+        import.meta.url,
+      ).pathname,
+      'cloudflare:workflows': new URL(
+        './src/testing/cloudflare-modules-stub.ts',
+        import.meta.url,
+      ).pathname,
     },
   },
   test: {
