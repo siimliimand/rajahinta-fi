@@ -1,0 +1,5 @@
+# Generated seed artifacts (task 2.6) — deterministic output of
+# packages/data-platform/src/seed/d1/generate.ts. Regenerate with the
+# db:seed:d1:generate script; never edit or commit by hand.
+*
+!.gitignore
