@@ -9,7 +9,7 @@
 
 ## 2. Data platform on D1 (Phase 1)
 
-- [ ] 2.1 Translate the canonical schema: 20 pgTable definitions → sqliteTable under packages/data-platform/src/d1 (INTEGER cents, ISO-8601 TEXT timestamps, CHECK-constrained enums, nullable tri-state deposit status) plus the drizzle-kit SQLite config <!-- agent: platform-engineer.build, depends_on: [1.4], touches: [packages/data-platform/src/d1/schema.ts, packages/data-platform/drizzle.d1.config.ts] -->
+- [x] 2.1 Translate the canonical schema: 20 pgTable definitions → sqliteTable under packages/data-platform/src/d1 (INTEGER cents, ISO-8601 TEXT timestamps, CHECK-constrained enums, nullable tri-state deposit status) plus the drizzle-kit SQLite config <!-- agent: platform-engineer.build, depends_on: [1.4], touches: [packages/data-platform/src/d1/schema.ts, packages/data-platform/drizzle.d1.config.ts] -->
 - [ ] 2.2 FTS5 product search: external-content virtual table over product names with sync triggers, search repository with MATCH + LIKE fallback, proven against the golden fixture queries from 1.2 <!-- agent: platform-engineer.build, depends_on: [1.2, 2.1], touches: [packages/data-platform/src/d1/schema.ts, packages/data-platform/src/repositories/d1/product-search.repository.ts] -->
 - [ ] 2.3 Time-series translation: append-only priceObservations table with composite (productId, observedAt) index, summary materialization via strftime bucketing, watermark-scan queries preserved <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [packages/data-platform/src/d1/schema.ts, packages/data-platform/src/repositories/d1/price-observation.repository.ts, packages/data-platform/src/repositories/d1/price-history-summary.repository.ts] -->
 - [ ] 2.4 D1 connection provider (drizzle-orm/d1) + migrations pipeline wired to `wrangler d1 migrations` <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [packages/data-platform/src/db/d1.provider.ts, packages/data-platform/src/db/d1.module.ts, wrangler.jsonc] -->
@@ -19,7 +19,7 @@
 
 ## 3. API Worker (Phase 2)
 
-- [ ] 3.1 Worker entry + Hono application skeleton: router, unified error envelope middleware, request-ID structured logging, zod DTO layer <!-- agent: platform-engineer.build, depends_on: [1.4], touches: [apps/api-worker/src/index.ts, apps/api-worker/src/middleware/**] -->
+- [x] 3.1 Worker entry + Hono application skeleton: router, unified error envelope middleware, request-ID structured logging, zod DTO layer <!-- agent: platform-engineer.build, depends_on: [1.4], touches: [apps/api-worker/src/index.ts, apps/api-worker/src/middleware/**] -->
 - [ ] 3.2 Port guards as middleware: session auth against D1 sessions, entitlement, launch gate, age gate, ops access with IP allowlist from CF-Connecting-IP, feature flag service with inlined bootstrap parity <!-- agent: platform-engineer.build, depends_on: [3.1, 2.7], touches: [apps/api-worker/src/middleware/**] -->
 - [ ] 3.3 RateLimiterDO (exact sliding window) + IdempotencyDO (version-aware keys) with parity tests against current Redis behavior; remove RATE_LIMIT_TRUST_PROXY semantics <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [apps/api-worker/src/do/**] -->
 - [ ] 3.4 ClickCounterDO with SQLite storage and alarm-driven flush into clickCounterSnapshots (D1) <!-- agent: platform-engineer.build, depends_on: [3.1, 2.5], touches: [apps/api-worker/src/do/**] -->
@@ -40,7 +40,7 @@
 
 - [ ] 5.1 OpenNext Cloudflare adapter: frontend Worker build, wrangler config, per-PR preview URLs <!-- agent: platform-engineer.build, depends_on: [3.9], touches: [apps/frontend/open-next.config.ts, apps/frontend/wrangler.jsonc, package.json] -->
 - [ ] 5.2 Frontend→API connection: same-zone routing or service binding, per-environment cookie domain and API base, secure cookie flags verified on Workers <!-- agent: platform-engineer.build, depends_on: [5.1], touches: [apps/frontend/src/lib/**, apps/frontend/wrangler.jsonc] -->
-- [ ] 5.3 Email Worker: send_email binding, MIME construction, POST /internal/email/send behind a shared-secret header, and the SPF/DKIM domain-verification runbook <!-- agent: platform-engineer.build, depends_on: [1.4], touches: [apps/email-worker/**] -->
+- [x] 5.3 Email Worker: send_email binding, MIME construction, POST /internal/email/send behind a shared-secret header, and the SPF/DKIM domain-verification runbook <!-- agent: platform-engineer.build, depends_on: [1.4], touches: [apps/email-worker/**] -->
 - [ ] 5.4 Playwright browser journeys running against Workers previews/staging instead of the docker-compose stack <!-- agent: platform-engineer.build, depends_on: [5.2], touches: [tests/e2e-browser/**] -->
 
 ## 6. Observability, CI/CD, cutover (Phase 5)
