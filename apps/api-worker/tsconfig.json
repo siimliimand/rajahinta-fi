@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Worker runtime: ESM output resolved the bundler way (wrangler/esbuild),
+    // unlike the Node/commonjs base config.
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": ["@cloudflare/workers-types"],
+    // Decorators exist only for the @nestjs/common shim that core-domain's
+    // engine classes carry (design D1). Metadata emission is off — the shim
+    // decorators are no-ops and reflect-metadata is polyfilled at entry.
+    "emitDecoratorMetadata": false
+  },
+  "include": ["src/**/*.ts"]
+}

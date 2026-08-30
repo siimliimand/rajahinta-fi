@@ -1,0 +1,77 @@
+// Wrangler config — API Worker (migrate-to-cloudflare task 3.1).
+//
+// Environments follow design D9: dev / staging / production, each with its
+// own D1 database (and, in later tasks, KV namespace, R2 bucket, and
+// Queues). Database IDs below are placeholders until `wrangler d1 create`
+// is run per environment (task 2.4); local `wrangler dev` uses the
+// top-level binding and never touches the real IDs.
+//
+// @nestjs/common is bundler-aliased to the no-op decorator shim (design D1,
+// G3 finding): no Nest container exists in a Worker, and aliasing keeps
+// stream/util/url, rxjs, class-validator, and class-transformer OUT of the
+// bundle. `nodejs_compat` is the recorded fallback if a transitive
+// dependency ever needs Node built-ins.
+{
+  "name": "rajahinta-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-05-01",
+  "alias": {
+    "@nestjs/common": "./src/nestjs-compat.ts"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rajahinta-api-dev",
+      "database_id": "placeholder-dev"
+    }
+  ],
+  // Durable Object bindings are placeholders for tasks 3.3/3.4 — bindings
+  // to classes that do not exist yet would fail workerd at boot, so they
+  // are kept commented until the classes land:
+  //
+  // "durable_objects": {
+  //   "bindings": [
+  //     { "name": "RATE_LIMITER", "class_name": "RateLimiterDO" },
+  //     { "name": "IDEMPOTENCY", "class_name": "IdempotencyDO" },
+  //     { "name": "CLICK_COUNTER", "class_name": "ClickCounterDO" }
+  //   ]
+  // },
+  // "migrations": [
+  //   {
+  //     "tag": "v1",
+  //     "new_sqlite_classes": ["RateLimiterDO", "IdempotencyDO", "ClickCounterDO"]
+  //   }
+  // ],
+  "observability": {
+    "enabled": true
+  },
+  "env": {
+    "dev": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "rajahinta-api-dev",
+          "database_id": "placeholder-dev"
+        }
+      ]
+    },
+    "staging": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "rajahinta-api-staging",
+          "database_id": "placeholder-staging"
+        }
+      ]
+    },
+    "production": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "rajahinta-api-production",
+          "database_id": "placeholder-production"
+        }
+      ]
+    }
+  }
+}
