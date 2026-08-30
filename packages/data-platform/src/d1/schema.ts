@@ -90,7 +90,16 @@ export const productMaster = sqliteTable(
     alcoholByVolume: real('alcohol_by_volume'),
     /** Unit volume in litres — required for per-volume tax formulas (€/litre). */
     unitVolume: real('unit_volume').notNull(),
-    /** Container type (glass/plastic/metal/carton) — determines container duty rate. */
+    /**
+     * Container/packaging type — determines container duty treatment.
+     * Authoritative value set = the core-domain ContainerType union
+     * ('glass' | 'plastic' | 'metal' | 'carton' | 'other') plus the
+     * container-duty engine's standard packaging spellings the committed
+     * fixtures and real feeds store ('can', 'bottle' — see
+     * tests/golden/data/products.ts and
+     * core-domain/src/tax/services/container-duty.math.ts). Migration
+     * 0002 widened the CHECK accordingly; keep the two in sync.
+     */
     containerType: text('container_type', { length: 32 }).notNull(),
     /** Regulatory classification from feed — used for tax classification matching. */
     regulatoryClassification: text('regulatory_classification', { length: 64 }).notNull(),
@@ -105,9 +114,14 @@ export const productMaster = sqliteTable(
     updatedAt: text('updated_at').default(ISO_8601_NOW).notNull(),
   },
   (table) => [
+    // Task 2.5 (migrate-to-cloudflare), gate-review addition (a): the
+    // value set is the core-domain ContainerType union ∪ fixture values
+    // (see the containerType column docblock). Migration
+    // 0002_product_container_type_check rebuilt the table with this
+    // CHECK — this declaration mirrors it 1:1.
     check(
       'product_master_container_type_check',
-      sql`${table.containerType} IN ('glass', 'plastic', 'metal', 'carton')`,
+      sql`${table.containerType} IN ('glass', 'plastic', 'metal', 'carton', 'other', 'can', 'bottle')`,
     ),
   ],
 );

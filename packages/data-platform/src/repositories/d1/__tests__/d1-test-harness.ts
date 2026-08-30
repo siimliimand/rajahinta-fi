@@ -66,6 +66,8 @@ function applyMigration(db: DatabaseSync, sql: string): void {
 
 /** Wrap a node:sqlite database in the D1 binding's structural shape. */
 export function createD1Shim(db: DatabaseSync): D1DatabaseLike {
+  /** Set while a batch transaction is open — serializes concurrent batches. */
+  let batchActive = false;
   function prepare(query: string): D1PreparedStatementLike {
     const statement = db.prepare(query);
     let params: unknown[] = [];
@@ -102,5 +104,32 @@ export function createD1Shim(db: DatabaseSync): D1DatabaseLike {
     };
     return bound;
   }
-  return { prepare };
+  return {
+    prepare,
+    // Sequential execution inside one BEGIN/COMMIT pair — the same
+    // all-or-nothing semantics the binding's batch() provides (the
+    // session rotate and FX dataset appends depend on it). Concurrent
+    // batch() calls serialize: D1's single-writer execution gives the
+    // same ordering, and the concurrency tests rely on it.
+    async batch(statements: D1PreparedStatementLike[]): Promise<D1ResultLike[]> {
+      while (batchActive) {
+        await Promise.resolve();
+      }
+      batchActive = true;
+      const results: D1ResultLike[] = [];
+      db.exec('BEGIN');
+      try {
+        for (const statement of statements) {
+          results.push(await statement.run());
+        }
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      } finally {
+        batchActive = false;
+      }
+      return results;
+    },
+  };
 }

@@ -38,4 +38,13 @@ export interface D1PreparedStatementLike {
 /** The subset of the D1 binding the repositories consume. */
 export interface D1DatabaseLike {
   prepare(query: string): D1PreparedStatementLike;
+  /**
+   * Execute the statements sequentially in one implicit transaction —
+   * the binding's `batch()`. Either every statement commits or none
+   * does; the multi-statement invariants that pg expressed with
+   * `db.transaction` (session rotation, FX dataset + rates append)
+   * translate onto this primitive (the same surface
+   * `src/db/d1.provider.ts` declares for the drizzle D1 driver).
+   */
+  batch(statements: D1PreparedStatementLike[]): Promise<D1ResultLike[]>;
 }
