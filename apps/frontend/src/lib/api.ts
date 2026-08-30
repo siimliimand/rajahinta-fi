@@ -8,6 +8,13 @@
  * Authentication is exclusively the server-issued httpOnly
  * `rajahinta_session` cookie; the client keeps no identity of its own.
  *
+ * Connection strategy (migrate-to-cloudflare 5.2): the API base is a plain
+ * URL per environment (same-zone routing — `api.rajahinta.fi`-style custom
+ * domain per env on the same Cloudflare zone). No service binding: browser
+ * fetches cannot traverse a binding, build-time sitemap fetches run outside
+ * any Worker, and a binding/URL split would give SSR and the browser
+ * different cookie origins. See apps/frontend/OPENNEXT.md.
+ *
  * @module ApiClient
  */
 
@@ -36,13 +43,26 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
+ * Resolve the API base from the build-time `NEXT_PUBLIC_API_URL` value.
+ * A pure function so the per-environment resolution is unit-testable;
+ * `process.env.NEXT_PUBLIC_*` is inlined by `next build` (runtime
+ * `wrangler.jsonc` vars cannot change it — OPENNEXT.md).
+ */
+export function resolveApiBaseUrl(raw: string | undefined): string {
+  const trimmed = raw?.trim() ?? '';
+  if (trimmed === '') return 'http://localhost:3000';
+  return trimmed.replace(/\/+$/, '');
+}
+
+/**
  * Base URL for the rajahinta.fi API.
  *
  * NEXT_PUBLIC_API_URL can be set at build-time; defaults to the dev server
- * running on port 3000 (the NestJS backend default).
+ * running on port 3000 (the NestJS backend default). Per-environment
+ * values and the local concurrent-run convention are documented in
+ * OPENNEXT.md.
  */
-const BASE_URL: string =
-  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
+const BASE_URL: string = resolveApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
 /** Exported so other modules can construct full outbound URLs. */
 export { BASE_URL };
@@ -54,16 +74,22 @@ export { BASE_URL };
 /**
  * Thrown when an API call returns a non-2xx status.
  * Carries the parsed {@link ApiError} body when available.
+ *
+ * `requestId` is the API's echoed `x-request-id` (the request-logging
+ * middleware returns it on every response) — surfaced so support and log
+ * correlation never depend on the user reading a network panel.
  */
 export class ApiFetchError extends Error {
   readonly status: number;
   readonly body: ApiError | null;
+  readonly requestId: string | null;
 
-  constructor(status: number, body: ApiError | null) {
+  constructor(status: number, body: ApiError | null, requestId?: string | null) {
     super(body?.message ?? `API returned ${status}`);
     this.name = 'ApiFetchError';
     this.status = status;
     this.body = body;
+    this.requestId = requestId ?? null;
   }
 }
 
@@ -99,11 +125,67 @@ function isAccountScoped(path: string): boolean {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Trace context (migrate-to-cloudflare 6.2 note, src/observability/TRACES.md)
+// ---------------------------------------------------------------------------
+
+/** Lowercase hex string of `n` random bytes (2 chars per byte). */
+function randomHex(nBytes: number): string {
+  const bytes = new Uint8Array(nBytes);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Build a standalone W3C Trace Context `traceparent` header
+ * (`00-<32hex trace id>-<16hex span id>-01`). Version `00`, flags `01`
+ * (sampled); an all-zero span id is invalid, so the id is generated.
+ * Without a RUM SDK this standalone header is what lets the API's span
+ * join a trace at all (TRACES.md, task 6.2).
+ */
+export function buildTraceparent(): string {
+  return `00-${randomHex(16)}-${randomHex(8)}-01`;
+}
+
+const TRACEPARENT_PATTERN = /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/;
+
+/**
+ * Merge the W3C trace-context and request-ID headers onto an outbound
+ * API request: caller-supplied values pass through verbatim (server
+ * routes can forward the inbound request's headers for full
+ * browser→frontend→API waterfalls); otherwise a fresh standalone
+ * `traceparent` and a UUID `x-request-id` (the API echoes it, UUID-only)
+ * are generated per request. Existing header casing is preserved — only
+ * the trace keys are matched case-insensitively.
+ */
+export function withTraceHeaders(existing?: HeadersInit): Record<string, string> {
+  const headers: Record<string, string> = {
+    ...Object.fromEntries(
+      Object.entries(existing ?? {}).map(([k, v]) => [k, String(v)]),
+    ),
+  };
+
+  const traceparentKey =
+    Object.keys(headers).find((k) => k.toLowerCase() === 'traceparent') ?? 'traceparent';
+  if (!TRACEPARENT_PATTERN.test(headers[traceparentKey] ?? '')) {
+    headers[traceparentKey] = buildTraceparent();
+  }
+
+  const requestIdKey =
+    Object.keys(headers).find((k) => k.toLowerCase() === 'x-request-id') ?? 'x-request-id';
+  if (headers[requestIdKey] === undefined || headers[requestIdKey] === '') {
+    headers[requestIdKey] = crypto.randomUUID();
+  }
+
+  return headers;
+}
+
 /**
  * Assemble the default headers for an API request: JSON content type,
  * caller-provided overrides, and the age-confirmation header when the
- * cookie is present. Identity is never attached — the backend derives it
- * exclusively from the httpOnly session cookie.
+ * cookie is present. Trace context is added once by the caller
+ * ({@link apiFetch} / {@link executeRequest}). Identity is never attached —
+ * the backend derives it exclusively from the httpOnly session cookie.
  */
 function buildHeaders(path: string, init?: RequestInit): Record<string, string> {
   const headers: Record<string, string> = {
@@ -121,20 +203,34 @@ function buildHeaders(path: string, init?: RequestInit): Record<string, string> 
 }
 
 /**
+ * The single low-level outbound path for EVERY API fetch in the app:
+ * base-URL assembly plus trace-context/request-ID headers. `request()`
+ * adds credentials and error translation on top; the operator-console
+ * client (`app/[locale]/ops/api.ts`) uses it directly with its bearer
+ * auth, so ops calls carry the same trace context.
+ */
+export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const url = `${BASE_URL}${path}`;
+  return fetch(url, {
+    ...init,
+    headers: withTraceHeaders(init?.headers),
+  });
+}
+
+/**
  * Perform one HTTP exchange and translate non-2xx into {@link ApiFetchError}.
  */
 async function executeRequest<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const url = `${BASE_URL}${path}`;
   const headers = buildHeaders(path, init);
 
   // The session cookie is httpOnly, so it only travels when credentials are
   // sent. Same-origin deployments work as-is; a cross-domain API origin must
   // answer CORS with an explicit origin (never "*") and `credentials: true`
   // or the browser drops the cookie.
-  const res = await fetch(url, {
+  const res = await apiFetch(path, {
     ...init,
     credentials: 'include',
     headers,
@@ -147,7 +243,8 @@ async function executeRequest<T>(
     } catch {
       // ignore parse failure
     }
-    throw new ApiFetchError(res.status, body);
+    const requestId = res.headers?.get?.('x-request-id') ?? null;
+    throw new ApiFetchError(res.status, body, requestId);
   }
 
   return res.json() as Promise<T>;
@@ -710,7 +807,7 @@ async function fetchReportBlob(
   format: ReportFormat,
 ): Promise<{ blob: Blob; filename: string }> {
   const path = `/api/v1/reports/${recordId}?format=${format}`;
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await apiFetch(path, {
     credentials: 'include',
     headers: buildHeaders(path),
   });

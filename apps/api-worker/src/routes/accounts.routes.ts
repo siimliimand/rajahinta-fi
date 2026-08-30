@@ -41,23 +41,35 @@ const SESSION_COOKIE_NAME = 'rajahinta_session';
 /** Session lifetime in hours (30 days by default — SessionTokenService parity). */
 const DEFAULT_SESSION_TTL_HOURS = 24 * 30;
 
-/** Cookie builder parity — Secure only when the deployment is production. */
-function buildSessionCookie(token: string, expiresAt: Date | string, env: AppEnv['Bindings']): string {
+/**
+ * Cookie builder parity — with one Workers-specific correction (task 5.2):
+ * `Secure` is UNCONDITIONAL. Every deployed Workers origin is https-only
+ * (workers.dev and custom-domain routes force TLS), so the old
+ * NODE_ENV-gated flag would never fire — NODE_ENV is not set in
+ * wrangler.jsonc — and staging would ship a non-Secure session cookie.
+ * `wrangler dev` (http://localhost) is a trustworthy origin in
+ * Chromium/Gecko, so local flows still hold the cookie; Safari does not
+ * make that exception (known dev-only caveat).
+ *
+ * No `Domain` attribute — host-only cookie. The frontend never reads the
+ * httpOnly token and the API origin is the cookie's only consumer
+ * (same-zone routing, task 5.2), so a cross-subdomain Domain=.rajahinta.fi
+ * would broaden the cookie for zero benefit.
+ */
+function buildSessionCookie(token: string, expiresAt: Date | string): string {
   const expires = typeof expiresAt === 'string' ? new Date(expiresAt) : expiresAt;
   const maxAgeSeconds = Math.max(0, Math.floor((expires.getTime() - Date.now()) / 1000));
-  const secure = (env as { NODE_ENV?: string }).NODE_ENV === 'production' ? '; Secure' : '';
   return (
-    `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; ` +
-    `Max-Age=${maxAgeSeconds}; Expires=${expires.toUTCString()}${secure}`
+    `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; ` +
+    `Max-Age=${maxAgeSeconds}; Expires=${expires.toUTCString()}`
   );
 }
 
-/** Clear-cookie parity (logout). */
-function buildSessionCookieClear(env: AppEnv['Bindings']): string {
-  const secure = (env as { NODE_ENV?: string }).NODE_ENV === 'production' ? '; Secure' : '';
+/** Clear-cookie parity (logout) — same unconditional `Secure`. */
+function buildSessionCookieClear(): string {
   return (
-    `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; ` +
-    `Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secure}`
+    `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; ` +
+    `Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
   );
 }
 
@@ -117,7 +129,7 @@ async function issue(c: Context<AppEnv>): Promise<Response> {
     expiresAt,
   });
 
-  c.header('Set-Cookie', buildSessionCookie(token, expiresAt, c.env));
+  c.header('Set-Cookie', buildSessionCookie(token, expiresAt));
   return c.json({ userId, expiresAt: expiresAt.toISOString(), verified: false }, 201);
 }
 
@@ -142,7 +154,7 @@ async function rotate(c: Context<AppEnv>): Promise<Response> {
       error: 'InvalidSession',
     });
   }
-  c.header('Set-Cookie', buildSessionCookie(newToken, session.expiresAt, c.env));
+  c.header('Set-Cookie', buildSessionCookie(newToken, session.expiresAt));
   return c.json({
     userId: user.userId,
     expiresAt: new Date(session.expiresAt).toISOString(),
@@ -154,7 +166,7 @@ async function revoke(c: Context<AppEnv>): Promise<Response> {
   const presented = c.get(SESSION_TOKEN_CONTEXT_KEY) ?? '';
   const sessions = new D1SessionRepository(c.env.DB);
   await sessions.revokeByTokenHash(await hashToken(presented));
-  c.header('Set-Cookie', buildSessionCookieClear(c.env));
+  c.header('Set-Cookie', buildSessionCookieClear());
   return c.json({ revoked: true });
 }
 

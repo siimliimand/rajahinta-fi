@@ -85,6 +85,14 @@ export interface Env {
    */
   readonly EMAIL_WORKER_URL?: string;
   /**
+   * CORS origin allowlist (task 5.2) — comma-separated exact origins.
+   * Parity with main.ts (`CORS_ORIGIN ?? 'http://localhost:3001'`):
+   * per-env wrangler var in staging/production, localhost default in dev.
+   * Never `*` — the session cookie is httpOnly and only travels on
+   * credentialed cross-origin requests.
+   */
+  readonly CORS_ORIGIN?: string;
+  /**
    * Shared secret for the email Worker's send contract (header
    * `X-Email-Send-Secret`). A SECRET, never a wrangler var: set per
    * environment with `wrangler secret put EMAIL_SEND_SECRET`; must match

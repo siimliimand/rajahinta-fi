@@ -23,6 +23,25 @@
 // Bucket names are placeholders until `wrangler r2 bucket create` is run
 // per environment (task 6.5 wires CI); local `wrangler dev` simulates the
 // R2 and service bindings locally without touching the real resources.
+//
+// Frontend → API connection (task 5.2): SAME-ZONE ROUTING, no API service
+// binding. The API base is the build-time NEXT_PUBLIC_API_URL (inlined by
+// `next build` — runtime vars CANNOT change it), set per environment in
+// the Workers Builds build variables:
+//
+//   dev:        http://localhost:8788 during concurrent local Workers runs
+//               (API Worker on 8788; this worker owns 8787), or the
+//               default http://localhost:3000 against the legacy backend
+//   staging:    https://rajahinta-api-staging.<subdomain>.workers.dev
+//   production: https://api.rajahinta.fi (custom domain on this zone,
+//               attached in task 6.5)
+//
+// Why no binding and no runtime var: browser fetches cannot traverse a
+// service binding and `next build` sitemap/OG fetches run outside the
+// Worker, so a URL base must exist anyway; a binding-only-SSR split would
+// give SSR and the browser different cookie origins and break the
+// httpOnly session. Full rationale + cookie/CORS/trace contract:
+// OPENNEXT.md ("Frontend → API connection").
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "rajahinta-frontend",
@@ -55,10 +74,20 @@
   // ISR incremental cache (open-next.config.ts). One bucket per
   // environment (design D9); prefix defaults to `incremental-cache`
   // (NEXT_INC_CACHE_R2_PREFIX overrides).
+  //
+  // EU placement (task 6.5, design D9, spec ci-cd-pipeline "EU data
+  // placement"): `jurisdiction: "eu"` pins the cache bucket to the EU —
+  // the one placement key wrangler config carries per current docs. The
+  // bucket must be created to match:
+  // `wrangler r2 bucket create <name> --jurisdiction eu --location weur`.
+  // There are no D1/KV/DO resources on the frontend Worker; the platform
+  // D1/DO/KV placement story lives in apps/api-worker/wrangler.jsonc and
+  // infra/environments/{staging,prod}.yaml.
   "r2_buckets": [
     {
       "binding": "NEXT_INC_CACHE_R2_BUCKET",
-      "bucket_name": "rajahinta-frontend-cache-dev"
+      "bucket_name": "rajahinta-frontend-cache-dev",
+      "jurisdiction": "eu"
     }
   ],
   "env": {
@@ -73,7 +102,8 @@
       "r2_buckets": [
         {
           "binding": "NEXT_INC_CACHE_R2_BUCKET",
-          "bucket_name": "rajahinta-frontend-cache-dev"
+          "bucket_name": "rajahinta-frontend-cache-dev",
+          "jurisdiction": "eu"
         }
       ]
     },
@@ -88,7 +118,8 @@
       "r2_buckets": [
         {
           "binding": "NEXT_INC_CACHE_R2_BUCKET",
-          "bucket_name": "rajahinta-frontend-cache-staging"
+          "bucket_name": "rajahinta-frontend-cache-staging",
+          "jurisdiction": "eu"
         }
       ]
     },
@@ -103,7 +134,8 @@
       "r2_buckets": [
         {
           "binding": "NEXT_INC_CACHE_R2_BUCKET",
-          "bucket_name": "rajahinta-frontend-cache-production"
+          "bucket_name": "rajahinta-frontend-cache-production",
+          "jurisdiction": "eu"
         }
       ]
     }

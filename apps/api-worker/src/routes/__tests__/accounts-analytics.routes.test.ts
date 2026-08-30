@@ -40,6 +40,74 @@ function sessionCookieOf(res: Response): { raw: string; token: string } {
   return { raw, token: match![1]! };
 }
 
+describe('session cookie attributes — Workers deployment (task 5.2)', () => {
+  /**
+   * Every deployed Workers origin is https-only (workers.dev and custom
+   * domains force TLS), so `Secure` must be present in ALL environments —
+   * the legacy NODE_ENV gate never fired (no NODE_ENV var in
+   * wrangler.jsonc) and staging would have shipped a non-Secure cookie.
+   * The cookie stays host-only: the API origin is its only consumer
+   * (frontend never reads the httpOnly token), so no `Domain` attribute.
+   */
+  const EXPECTED_FLAGS = ['Path=/', 'HttpOnly', 'Secure', 'SameSite=Lax'];
+
+  it('issues with Secure, HttpOnly, SameSite=Lax, Path=/ and no Domain attribute', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/account/session', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(201);
+    const { raw } = sessionCookieOf(res);
+    for (const flag of EXPECTED_FLAGS) {
+      expect(raw).toContain(flag);
+    }
+    expect(raw).not.toMatch(/domain=/i);
+  });
+
+  it('keeps the same flags on the rotated cookie', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const issued = await request(app, env, '/api/v1/account/session', { method: 'POST' });
+    const { token } = sessionCookieOf(issued);
+
+    const rotated = await request(app, env, '/api/v1/account/session/rotate', {
+      method: 'POST',
+      headers: { cookie: `rajahinta_session=${token}` },
+    });
+    expect(rotated.status).toBe(200);
+    const { raw } = sessionCookieOf(rotated);
+    for (const flag of EXPECTED_FLAGS) {
+      expect(raw).toContain(flag);
+    }
+    expect(raw).not.toMatch(/domain=/i);
+  });
+
+  it('clears the cookie on logout with the same Secure host-only shape', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const issued = await request(app, env, '/api/v1/account/session', { method: 'POST' });
+    const { token } = sessionCookieOf(issued);
+
+    const logout = await request(app, env, '/api/v1/account/session', {
+      method: 'DELETE',
+      headers: { cookie: `rajahinta_session=${token}` },
+    });
+    expect(logout.status).toBe(200);
+    const cleared = logout.headers.get('Set-Cookie') ?? '';
+    for (const flag of EXPECTED_FLAGS) {
+      expect(cleared).toContain(flag);
+    }
+    expect(cleared).toContain('Max-Age=0');
+    expect(cleared).not.toMatch(/domain=/i);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Sessions (design D3)
 // ---------------------------------------------------------------------------

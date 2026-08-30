@@ -27,6 +27,7 @@ import {
 } from './errors';
 import { errorBoundary } from './middleware/error-boundary';
 import { requestLogging } from './middleware/request-id';
+import { corsMiddleware } from './middleware/cors';
 import { requestMetrics } from './observability/metrics';
 import { registerGuardMiddleware } from './middleware/guards';
 import { requireRateLimit } from './middleware/rate-limit';
@@ -80,6 +81,13 @@ export function createApp(): Hono<AppEnv> {
   // final status is read after onError finalizes. No-op without the
   // METRICS binding (src/observability/metrics.ts).
   app.use(requestMetrics());
+
+  // CORS (task 5.2 review finding): parity port of main.ts enableCors —
+  // explicit origin (CORS_ORIGIN env, default localhost:3001), the four
+  // Nest-configured methods, credentials: true. Registered before the
+  // error boundary so preflights short-circuit ahead of guards, and 404/
+  // error responses still carry the headers.
+  app.use(corsMiddleware());
 
   // Root-level error boundary: every thrown error becomes the unified
   // envelope (ApiErrorFilter parity). Hono delivers Error instances to

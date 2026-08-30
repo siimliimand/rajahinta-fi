@@ -29,6 +29,22 @@
   // package (relative to this config; design D2) — `wrangler d1 migrations
   // apply DB` walks it in filename order and records applied files in the
   // database's d1_migrations table.
+  //
+  // EU placement (task 6.5, design D9, spec ci-cd-pipeline "EU data
+  // placement"): D1 has NO location/jurisdiction key in wrangler config —
+  // per current Cloudflare docs it is fixed at database creation and cannot
+  // be changed later. Each per-env database below MUST be created with the
+  // EU jurisdiction (stronger than a location hint; GDPR-grade residency):
+  //
+  //   wrangler d1 create rajahinta-api-<env> --jurisdiction=eu
+  //
+  // The Durable Objects defined here are SQLite-backed and carry no
+  // per-class config key either; their locality follows the creating
+  // Worker's requests (all DO access originates from this Worker). Any
+  // explicit first-request hint would be code-level
+  // (`env.<DO>.get(id, { locationHint: "weur" })`) — app-source concern,
+  // tracked with the platform engineer. Full placement story:
+  // infra/environments/staging.yaml + prod.yaml.
   "d1_databases": [
     {
       "binding": "DB",
@@ -42,10 +58,15 @@
   // written by the ingestion pipeline's offer-change hook, batch-read by
   // the time-series aggregation cron handler. Layout contract in
   // packages/data-platform/src/d1/observation-log.ts.
+  // EU placement (task 6.5): `jurisdiction: "eu"` pins both buckets to the
+  // EU jurisdiction — the one placement key wrangler config carries per
+  // current docs. Buckets must be created to match:
+  // `wrangler r2 bucket create <name> --jurisdiction eu --location weur`.
   "r2_buckets": [
     {
       "binding": "OBSERVATION_LOG",
-      "bucket_name": "rajahinta-observations-dev"
+      "bucket_name": "rajahinta-observations-dev",
+      "jurisdiction": "eu"
     },
     // Rate-snapshot bucket (task 4.4, design D6/D9): holds the official
     // rate-snapshot object the tax-dataset review hashes. Separate from
@@ -56,7 +77,8 @@
     // ConfigBackedRateChangeSource resolved in the backend).
     {
       "binding": "RATE_SNAPSHOTS",
-      "bucket_name": "rajahinta-rate-snapshots-dev"
+      "bucket_name": "rajahinta-rate-snapshots-dev",
+      "jurisdiction": "eu"
     }
   ],
   // Workers Analytics Engine metrics (task 6.1, design D8): request
@@ -203,6 +225,27 @@
   },
   "env": {
     "dev": {
+      // Per-env names (6.5 finding): without an override, dev/staging/
+      // production all deploy to the top-level `rajahinta-api` and clobber
+      // each other. Frontend/email follow the same pattern.
+      "name": "rajahinta-api-dev",
+      // durable_objects and workflows are NOT inherited from the top level
+      // (wrangler warns; env blocks replace those keys) — re-declared per
+      // env so staged/prod deploys keep their DO bindings (6.5 finding).
+      "durable_objects": {
+        "bindings": [
+          { "name": "RATE_LIMITER", "class_name": "RateLimiterDO" },
+          { "name": "IDEMPOTENCY", "class_name": "IdempotencyDO" },
+          { "name": "CLICK_COUNTER", "class_name": "ClickCounterDO" }
+        ]
+      },
+      "workflows": [
+        {
+          "name": "rajahinta-price-ingestion",
+          "binding": "INGESTION_WORKFLOW",
+          "class_name": "IngestionWorkflow"
+        }
+      ],
       "d1_databases": [
         {
           "binding": "DB",
@@ -212,8 +255,8 @@
         }
       ],
       "r2_buckets": [
-        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-dev" },
-        { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-dev" }
+        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-dev", "jurisdiction": "eu" },
+        { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-dev", "jurisdiction": "eu" }
       ],
       "analytics_engine_datasets": [
         { "binding": "METRICS", "dataset": "rajahinta-api-metrics-dev" }
@@ -231,7 +274,9 @@
       "vars": {
         "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
         "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
-        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com"
+        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
+        // CORS (task 5.2): exact origins, comma-separated; never "*".
+        "CORS_ORIGIN": "http://localhost:3001"
       },
       "queues": {
         "producers": [
@@ -249,6 +294,21 @@
       }
     },
     "staging": {
+      "name": "rajahinta-api-staging",
+      "durable_objects": {
+        "bindings": [
+          { "name": "RATE_LIMITER", "class_name": "RateLimiterDO" },
+          { "name": "IDEMPOTENCY", "class_name": "IdempotencyDO" },
+          { "name": "CLICK_COUNTER", "class_name": "ClickCounterDO" }
+        ]
+      },
+      "workflows": [
+        {
+          "name": "rajahinta-price-ingestion",
+          "binding": "INGESTION_WORKFLOW",
+          "class_name": "IngestionWorkflow"
+        }
+      ],
       "d1_databases": [
         {
           "binding": "DB",
@@ -258,8 +318,8 @@
         }
       ],
       "r2_buckets": [
-        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-staging" },
-        { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-staging" }
+        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-staging", "jurisdiction": "eu" },
+        { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-staging", "jurisdiction": "eu" }
       ],
       "analytics_engine_datasets": [
         { "binding": "METRICS", "dataset": "rajahinta-api-metrics-staging" }
@@ -270,7 +330,9 @@
       "vars": {
         "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
         "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
-        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com"
+        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
+        // CORS (task 5.2): exact origins, comma-separated; never "*".
+        "CORS_ORIGIN": "https://rajahinta.fi"
       },
       "queues": {
         "producers": [
@@ -288,6 +350,21 @@
       }
     },
     "production": {
+      "name": "rajahinta-api-production",
+      "durable_objects": {
+        "bindings": [
+          { "name": "RATE_LIMITER", "class_name": "RateLimiterDO" },
+          { "name": "IDEMPOTENCY", "class_name": "IdempotencyDO" },
+          { "name": "CLICK_COUNTER", "class_name": "ClickCounterDO" }
+        ]
+      },
+      "workflows": [
+        {
+          "name": "rajahinta-price-ingestion",
+          "binding": "INGESTION_WORKFLOW",
+          "class_name": "IngestionWorkflow"
+        }
+      ],
       "d1_databases": [
         {
           "binding": "DB",
@@ -297,8 +374,8 @@
         }
       ],
       "r2_buckets": [
-        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-production" },
-        { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-production" }
+        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-production", "jurisdiction": "eu" },
+        { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-production", "jurisdiction": "eu" }
       ],
       "analytics_engine_datasets": [
         { "binding": "METRICS", "dataset": "rajahinta-api-metrics-production" }
@@ -309,7 +386,9 @@
       "vars": {
         "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
         "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
-        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com"
+        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
+        // CORS (task 5.2): exact origins, comma-separated; never "*".
+        "CORS_ORIGIN": "https://rajahinta.fi"
       },
       "queues": {
         "producers": [
