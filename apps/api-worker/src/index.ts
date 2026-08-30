@@ -15,7 +15,8 @@ import 'reflect-metadata';
 
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import type { AppEnv } from './env';
+import { flushClickCounters } from './analytics/click-counter-flusher';
+import type { AppEnv, Env } from './env';
 import {
   requestPath,
   respondToError,
@@ -23,15 +24,17 @@ import {
 } from './errors';
 import { errorBoundary } from './middleware/error-boundary';
 import { requestLogging } from './middleware/request-id';
+import { createLogger } from './logger';
 
 export type { AppEnv, Env } from './env';
 export { ApiHttpError } from './errors';
 
 // Durable Object classes must be exported from the entry script so the
 // runtime can bind them (wrangler.jsonc migrations + durable_objects;
-// task 3.3). ClickCounterDO follows with task 3.4 / migration tag v2.
+// tasks 3.3–3.4).
 export { RateLimiterDO } from './do/rate-limiter.do';
 export { IdempotencyDO } from './do/idempotency.do';
+export { ClickCounterDO } from './do/click-counter.do';
 
 /**
  * Application factory. Tests (and later phases: per-route modules from
@@ -76,6 +79,35 @@ export function createApp(): Hono<AppEnv> {
 
 const app = createApp();
 
+/**
+ * Cron-triggered flush of the click-counter snapshots into D1 (design
+ * D5, task 3.4; cadence in wrangler.jsonc `triggers.crons`). The DO
+ * alarm produces payloads on its own cadence regardless of traffic;
+ * this handler is only the mover — see
+ * src/analytics/click-counter-flusher.ts for the trigger-path rationale.
+ * Failures are logged, never thrown: a missed flush must not mark the
+ * cron invocation failed and burn retries on a retryable-by-design
+ * window.
+ */
 export default {
   fetch: app.fetch,
+  scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): void {
+    const log = createLogger(env.LOG_LEVEL);
+    ctx.waitUntil(
+      flushClickCounters(env)
+        .then((result) =>
+          log.info({
+            message: 'Click-counter flush complete',
+            snapshotTaken: result.snapshotTaken,
+            rowsWritten: result.rowsWritten,
+          }),
+        )
+        .catch((err: unknown) =>
+          log.error({
+            message: 'Click-counter flush failed',
+            error: err instanceof Error ? err.message : 'unknown error',
+          }),
+        ),
+    );
+  },
 };

@@ -1,12 +1,15 @@
 /**
- * Typed DO clients for the rate limiter and idempotency cache.
+ * Typed DO clients for the rate limiter, idempotency cache, and click
+ * counter.
  *
- * One import away for middleware and route handlers (task 3.3): resolve
- * the stub, send a typed request, get a typed response. The rate limiter
- * uses one DO instance per client key (`idFromName`) so hot clients never
- * serialize against each other; the idempotency cache uses a single
- * instance so put-if-absent and version invalidation are globally exact
- * (sharding is a load-test-gated follow-up, not a behavior change).
+ * One import away for middleware and route handlers (tasks 3.3–3.4):
+ * resolve the stub, send a typed request, get a typed response. The rate
+ * limiter uses one DO instance per client key (`idFromName`) so hot
+ * clients never serialize against each other; the idempotency cache uses
+ * a single instance so put-if-absent and version invalidation are
+ * globally exact; the click counter uses a single instance so per-pair
+ * increments are exact (sharding is a load-test-gated follow-up, not a
+ * behavior change).
  *
  * @module DoClients
  */
@@ -17,6 +20,7 @@ import type {
   RateLimiterRequest,
 } from './rate-limiter.do';
 import type { CacheKeyInput, IdempotencyEntry, IdempotencyRequest } from './idempotency.do';
+import type { ClickCounterSnapshot } from './click-counter.do';
 
 /** Base URL for internal DO fetch requests — host is irrelevant, kept https for realism. */
 const DO_URL = 'https://do.internal/';
@@ -180,6 +184,79 @@ async function callIdempotency<T>(env: Env, request: IdempotencyRequest): Promis
   );
   if (!response.ok) {
     throw new Error(`IdempotencyDO request failed: ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+// ---------------------------------------------------------------------------
+// Click counter
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the (single) ClickCounterDO instance. Counters aggregate every
+ * merchant's outbound links, so one global instance keeps increments
+ * exact; per-pair keys inside the instance isolate the counters.
+ */
+export function clickCounterStub(env: Env): DurableObjectStub {
+  const namespace = env.CLICK_COUNTER;
+  if (!namespace) {
+    throw new Error('CLICK_COUNTER Durable Object binding is not configured');
+  }
+  return namespace.get(namespace.idFromName('click-counter'));
+}
+
+/**
+ * Record a click for a merchant link — the DO counterpart of
+ * RedisClickAnalyticsService.recordClick (exact, persisted increment;
+ * arms the flush alarm). Fire-and-forget belongs to the call site: lost
+ * analytics must never break a redirect.
+ */
+export async function recordClick(
+  env: Env,
+  merchantId: string,
+  url: string,
+  options?: { by?: number; flushIntervalMs?: number },
+): Promise<void> {
+  await callClickCounter(env, { op: 'increment', merchantId, url, ...options });
+}
+
+/**
+ * Cumulative counts per merchant per URL — getClickCounts parity with
+ * the Redis-backed service (same `Record<merchantId, Record<url, n>>`).
+ */
+export async function getClickCounts(
+  env: Env,
+): Promise<Record<string, Record<string, number>>> {
+  const { counts } = await callClickCounter<{
+    counts: Record<string, Record<string, number>>;
+  }>(env, { op: 'counts' });
+  return counts;
+}
+
+/**
+ * Hand the pending snapshot payload to the flusher (harvest + take).
+ * Returns null when nothing was clicked since the last capture.
+ */
+export async function drainClickCounter(
+  env: Env,
+  nowMs?: number,
+): Promise<ClickCounterSnapshot | null> {
+  const { snapshot } = await callClickCounter<{ snapshot: ClickCounterSnapshot | null }>(
+    env,
+    { op: 'drain', nowMs },
+  );
+  return snapshot;
+}
+
+async function callClickCounter<T>(env: Env, request: unknown): Promise<T> {
+  const response = await clickCounterStub(env).fetch(
+    new Request(DO_URL, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+  );
+  if (!response.ok) {
+    throw new Error(`ClickCounterDO request failed: ${response.status}`);
   }
   return (await response.json()) as T;
 }

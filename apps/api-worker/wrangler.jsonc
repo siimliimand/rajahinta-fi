@@ -30,22 +30,33 @@
       "migrations_dir": "../../packages/data-platform/src/d1/migrations"
     }
   ],
-  // Durable Objects (task 3.3): classes are exported from the worker entry
-  // and created by the v1 migration below (SQLite storage backend). The
-  // migration `tag` must be unique and never reordered once deployed;
-  // ClickCounterDO (task 3.4) gets its own later tag.
+  // Durable Objects (tasks 3.3–3.4): classes are exported from the worker
+  // entry and created by the v1/v2 migrations below (SQLite storage
+  // backend). The migration `tag` must be unique and never reordered once
+  // deployed; each class gets exactly one `new_sqlite_classes` entry.
   "durable_objects": {
     "bindings": [
       { "name": "RATE_LIMITER", "class_name": "RateLimiterDO" },
-      { "name": "IDEMPOTENCY", "class_name": "IdempotencyDO" }
+      { "name": "IDEMPOTENCY", "class_name": "IdempotencyDO" },
+      { "name": "CLICK_COUNTER", "class_name": "ClickCounterDO" }
     ]
   },
   "migrations": [
     {
       "tag": "v1",
       "new_sqlite_classes": ["RateLimiterDO", "IdempotencyDO"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["ClickCounterDO"]
     }
   ],
+  // Click-counter snapshot flush (task 3.4): the DO alarm produces the
+  // snapshot payloads; this cron drives the worker-side flusher into D1
+  // on the legacy 6 h cadence (@Cron('0 */6 * * *') parity).
+  "triggers": {
+    "crons": ["0 */6 * * *"]
+  },
   "observability": {
     "enabled": true
   },

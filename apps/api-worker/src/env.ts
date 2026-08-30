@@ -1,8 +1,8 @@
 /**
  * Worker bindings (wrangler.jsonc) and the Hono environment type.
  *
- * D1/DO bindings are placeholders until tasks 2.4 and 3.3/3.4 land —
- * see the commented DO blocks in wrangler.jsonc.
+ * D1/DO bindings are live as of tasks 2.4 and 3.3–3.4 (v1/v2 DO
+ * migrations); route ports start at task 3.5.
  */
 
 export interface Env {
@@ -12,7 +12,7 @@ export interface Env {
   readonly RATE_LIMITER?: DurableObjectNamespace;
   /** IdempotencyDO — task 3.3. */
   readonly IDEMPOTENCY?: DurableObjectNamespace;
-  /** ClickCounterDO — task 3.4. */
+  /** ClickCounterDO — task 3.4 (migration tag v2; alarm-driven flush). */
   readonly CLICK_COUNTER?: DurableObjectNamespace;
   /** Minimum structured-log level (default "info"). */
   readonly LOG_LEVEL?: string;
