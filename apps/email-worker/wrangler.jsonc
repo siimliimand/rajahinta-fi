@@ -1,0 +1,80 @@
+// Wrangler config for the email Worker (migrate-to-cloudflare task 5.3,
+// design D7) — the only sender in the system, on the Cloudflare Email
+// Service `send_email` binding.
+//
+// The verified sending address/domain (SPF/DKIM managed by Cloudflare) is
+// configured when the binding is created — see RUNBOOK.md for the dashboard
+// steps. `destination_address` below is a placeholder: replace it with the
+// verified destination address chosen at binding creation, per environment.
+//
+// EMAIL_SEND_SECRET is deliberately NOT a var here — it is a Worker Secret
+// set per environment with `wrangler secret put EMAIL_SEND_SECRET --env <env>`
+// and must never appear in this file.
+//
+// Environments (design D9): `dev`, `staging`, `production`, each with its own
+// worker name, from-address var, and pinned destination binding. Secrets are
+// per environment (`wrangler secret put EMAIL_SEND_SECRET --env <env>`).
+{
+  "name": "rajahinta-email",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-05-01",
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "destination_address": "ops@rajahinta.fi"
+    }
+  ],
+  "vars": {
+    "EMAIL_FROM": "alerts@rajahinta.fi"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "env": {
+    "dev": {
+      "name": "rajahinta-email-dev",
+      "send_email": [
+        {
+          "name": "EMAIL",
+          "destination_address": "dev-ops@rajahinta.fi"
+        }
+      ],
+      "vars": {
+        "EMAIL_FROM": "dev-alerts@rajahinta.fi"
+      },
+      "observability": {
+        "enabled": true
+      }
+    },
+    "staging": {
+      "name": "rajahinta-email-staging",
+      "send_email": [
+        {
+          "name": "EMAIL",
+          "destination_address": "staging-ops@rajahinta.fi"
+        }
+      ],
+      "vars": {
+        "EMAIL_FROM": "staging-alerts@rajahinta.fi"
+      },
+      "observability": {
+        "enabled": true
+      }
+    },
+    "production": {
+      "name": "rajahinta-email-production",
+      "send_email": [
+        {
+          "name": "EMAIL",
+          "destination_address": "ops@rajahinta.fi"
+        }
+      ],
+      "vars": {
+        "EMAIL_FROM": "alerts@rajahinta.fi"
+      },
+      "observability": {
+        "enabled": true
+      }
+    }
+  }
+}

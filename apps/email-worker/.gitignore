@@ -1,0 +1,3 @@
+# Local wrangler state (dev session data) — never commit.
+.wrangler/
+dist/
