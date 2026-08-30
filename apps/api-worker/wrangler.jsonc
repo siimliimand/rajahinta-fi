@@ -1,10 +1,11 @@
 // Wrangler config — API Worker (migrate-to-cloudflare task 3.1).
 //
 // Environments follow design D9: dev / staging / production, each with its
-// own D1 database (and, in later tasks, KV namespace, R2 bucket, and
-// Queues). Database IDs below are placeholders until `wrangler d1 create`
-// is run per environment (task 2.4); local `wrangler dev` uses the
-// top-level binding and never touches the real IDs.
+// own D1 database, R2 bucket, and Queues. Database IDs below are
+// placeholders until `wrangler d1 create` is run per environment (task
+// 2.4); queue/bucket names follow the same per-env convention and local
+// `wrangler dev` simulates all bindings locally without touching the
+// real resources.
 //
 // @nestjs/common is bundler-aliased to the no-op decorator shim (design D1,
 // G3 finding): no Nest container exists in a Worker, and aliasing keeps
@@ -16,7 +17,13 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-05-01",
   "alias": {
-    "@nestjs/common": "./src/nestjs-compat.ts"
+    "@nestjs/common": "./src/nestjs-compat.ts",
+    // Core-domain bundle bridge (design D1/G3 pattern, task 4.1): package
+    // files import runtime values from the core-domain barrel, and the
+    // barrel drags the audit module's Node built-ins into the bundle.
+    // The alias re-points every such import at an explicit source-subset
+    // re-export — see src/adapters/core-domain-bridge.ts.
+    "@rajahinta/core-domain": "./src/adapters/core-domain-bridge.ts"
   },
   // migrations_dir points at the drizzle-kit output in the data-platform
   // package (relative to this config; design D2) — `wrangler d1 migrations
@@ -30,6 +37,41 @@
       "migrations_dir": "../../packages/data-platform/src/d1/migrations"
     }
   ],
+  // R2 observation log (task 4.1/4.3; design D4 as amended by gate review
+  // G1): append-only JSONL objects `observations/YYYY-MM-DD.jsonl`,
+  // written by the ingestion pipeline's offer-change hook, batch-read by
+  // the time-series aggregation cron handler. Layout contract in
+  // packages/data-platform/src/d1/observation-log.ts.
+  "r2_buckets": [
+    {
+      "binding": "OBSERVATION_LOG",
+      "bucket_name": "rajahinta-observations-dev"
+    }
+  ],
+  // Price-ingestion Queue (task 4.1; design D6). The scheduled producer
+  // (hourly cron, merchant-registry driven) sends via env.INGESTION_QUEUE;
+  // this same worker consumes the queue. max_batch_size 1 = per-merchant
+  // failure isolation (a slow feed delays nobody — BullMQ per-merchant
+  // job parity); max_retries 5 mirrors the BullMQ attempts: 5 with the
+  // exponential 30 s backoff reproduced in the consumer; exhausted
+  // messages land in the DLQ for inspection. There is no server-side
+  // dedupe on Queues — the BullMQ jobId dedupe moved INTO the message
+  // body and the consumer enforces it as an idempotent-skip marker
+  // (IdempotencyDO job-claim namespace).
+  "queues": {
+    "producers": [
+      { "binding": "INGESTION_QUEUE", "queue": "rajahinta-price-ingestion-dev" }
+    ],
+    "consumers": [
+      {
+        "queue": "rajahinta-price-ingestion-dev",
+        "max_batch_size": 1,
+        "max_batch_timeout": 0,
+        "max_retries": 5,
+        "dead_letter_queue": "rajahinta-price-ingestion-dlq-dev"
+      }
+    ]
+  },
   // Durable Objects (tasks 3.3–3.4): classes are exported from the worker
   // entry and created by the v1/v2 migrations below (SQLite storage
   // backend). The migration `tag` must be unique and never reordered once
@@ -51,11 +93,36 @@
       "new_sqlite_classes": ["ClickCounterDO"]
     }
   ],
-  // Click-counter snapshot flush (task 3.4): the DO alarm produces the
-  // snapshot payloads; this cron drives the worker-side flusher into D1
-  // on the legacy 6 h cadence (@Cron('0 */6 * * *') parity).
+  // Cron triggers (tasks 4.1/4.3; design D6) — one array, dispatched by
+  // pattern in src/cron/router.ts. Cadences mirror the BullMQ repeat
+  // schedules documented in packages/application-api/src/jobs/:
+  //
+  //   0 * * * *     price-ingestion producer — hourly (@Cron(EVERY_HOUR));
+  //                 one Queue message per GRANTED merchant
+  //   */30 * * * *  time-series aggregation — every 30 min (EVERY_30_MINUTES)
+  //   0 */6 * * *   transport-rate refresh (EVERY_6_HOURS) AND the task-3.4
+  //                 click-counter snapshot flush (legacy '0 */6 * * *');
+  //                 both handlers fire on this pattern
+  //   0 2 * * *     tax-dataset review — BullMQ fired 02:00 Europe/Helsinki
+  //   0 3 * * *     FX-dataset review — BullMQ fired 03:00 Europe/Helsinki
+  //   30 3 * * *    calculation-record retention sweep — BullMQ 03:30 Helsinki
+  //
+  // TIMEZONE NOTE: wrangler crons are UTC-only, so the three daily jobs
+  // fire at their BullMQ CLOCK HOURS in UTC, i.e. two hours earlier than
+  // the Europe/Helsinki wall clock during EEST (and one hour in EET).
+  // All three are day-grained review/sweep passes where the precise hour
+  // is immaterial; the deviation is deliberate and documented rather
+  // than approximated with a shifted UTC hour (no single UTC time maps
+  // to a fixed Helsinki hour across DST).
   "triggers": {
-    "crons": ["0 */6 * * *"]
+    "crons": [
+      "0 * * * *",
+      "*/30 * * * *",
+      "0 */6 * * *",
+      "0 2 * * *",
+      "0 3 * * *",
+      "30 3 * * *"
+    ]
   },
   "observability": {
     "enabled": true
@@ -69,7 +136,24 @@
           "database_id": "placeholder-dev",
           "migrations_dir": "../../packages/data-platform/src/d1/migrations"
         }
-      ]
+      ],
+      "r2_buckets": [
+        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-dev" }
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "INGESTION_QUEUE", "queue": "rajahinta-price-ingestion-dev" }
+        ],
+        "consumers": [
+          {
+            "queue": "rajahinta-price-ingestion-dev",
+            "max_batch_size": 1,
+            "max_batch_timeout": 0,
+            "max_retries": 5,
+            "dead_letter_queue": "rajahinta-price-ingestion-dlq-dev"
+          }
+        ]
+      }
     },
     "staging": {
       "d1_databases": [
@@ -79,7 +163,24 @@
           "database_id": "placeholder-staging",
           "migrations_dir": "../../packages/data-platform/src/d1/migrations"
         }
-      ]
+      ],
+      "r2_buckets": [
+        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-staging" }
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "INGESTION_QUEUE", "queue": "rajahinta-price-ingestion-staging" }
+        ],
+        "consumers": [
+          {
+            "queue": "rajahinta-price-ingestion-staging",
+            "max_batch_size": 1,
+            "max_batch_timeout": 0,
+            "max_retries": 5,
+            "dead_letter_queue": "rajahinta-price-ingestion-dlq-staging"
+          }
+        ]
+      }
     },
     "production": {
       "d1_databases": [
@@ -89,7 +190,24 @@
           "database_id": "placeholder-production",
           "migrations_dir": "../../packages/data-platform/src/d1/migrations"
         }
-      ]
+      ],
+      "r2_buckets": [
+        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-production" }
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "INGESTION_QUEUE", "queue": "rajahinta-price-ingestion-production" }
+        ],
+        "consumers": [
+          {
+            "queue": "rajahinta-price-ingestion-production",
+            "max_batch_size": 1,
+            "max_batch_timeout": 0,
+            "max_retries": 5,
+            "dead_letter_queue": "rajahinta-price-ingestion-dlq-production"
+          }
+        ]
+      }
     }
   }
 }

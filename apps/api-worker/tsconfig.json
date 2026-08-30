@@ -9,9 +9,18 @@
     "noEmit": true,
     "types": ["@cloudflare/workers-types"],
     // Decorators exist only for the @nestjs/common shim that core-domain's
-    // engine classes carry (design D1). Metadata emission is off — the shim
-    // decorators are no-ops and reflect-metadata is polyfilled at entry.
-    "emitDecoratorMetadata": false
+    // engine classes carry (design D1). Metadata emission is off — the
+    // shim decorators are no-ops and reflect-metadata is polyfilled at entry.
+    "emitDecoratorMetadata": false,
+    // Core-domain resolves to its TypeScript SOURCES (not dist) for every
+    // file this tsconfig compiles — the Worker composes core-domain
+    // classes directly (G3 pattern), and nominal class types (private
+    // fields) must not split between src and dist declarations. The
+    // wrangler bundle re-points the same specifier at the source-subset
+    // bridge (wrangler.jsonc alias → src/adapters/core-domain-bridge.ts).
+    "paths": {
+      "@rajahinta/core-domain": ["../../packages/core-domain/src/index.ts"]
+    }
   },
   "include": ["src/**/*.ts"]
 }

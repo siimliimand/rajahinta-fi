@@ -2,20 +2,90 @@
  * Worker bindings (wrangler.jsonc) and the Hono environment type.
  *
  * D1/DO bindings are live as of tasks 2.4 and 3.3–3.4 (v1/v2 DO
- * migrations); route ports start at task 3.5.
+ * migrations); the Queue + R2 bindings arrive with task 4.1 (design D6,
+ * D4-amended); route ports start at task 3.5.
  */
+
+import type { IngestionMessageBody } from './queues/ingestion-message';
+import type { AuthenticatedAccount } from './auth/authenticated-account';
 
 export interface Env {
   /** D1 database. Binding present; real schemas/providers arrive in task 2.4. */
   readonly DB: D1Database;
   /** RateLimiterDO — task 3.3. */
   readonly RATE_LIMITER?: DurableObjectNamespace;
-  /** IdempotencyDO — task 3.3. */
+  /** IdempotencyDO — task 3.3 (also carries the job-claim namespace, task 4.1). */
   readonly IDEMPOTENCY?: DurableObjectNamespace;
   /** ClickCounterDO — task 3.4 (migration tag v2; alarm-driven flush). */
   readonly CLICK_COUNTER?: DurableObjectNamespace;
+  /**
+   * Price-ingestion Queue — task 4.1 (design D6). Producer: the hourly
+   * cron handler sends one message per permitted merchant. The consumer
+   * side is this worker's `queue()` handler (wrangler queues.consumers).
+   */
+  readonly INGESTION_QUEUE?: Queue<IngestionMessageBody>;
+  /**
+   * R2 observation log — task 4.1/4.3 (design D4 as amended by G1).
+   * Append-only JSONL objects (`observations/YYYY-MM-DD.jsonl`); written
+   * by the ingestion pipeline's offer-change hook, batch-read by the
+   * time-series aggregation cron handler.
+   */
+  readonly OBSERVATION_LOG?: R2Bucket;
+  /** Override for the ECB reference-rate source URL (FX review cron). */
+  readonly FX_RATE_SOURCE_URL?: string;
+  /**
+   * Retention windows (days) for the calculation-record sweep — passed
+   * into the D1 retention service as explicit overrides (the service's
+   * own defaults are the 30-day anonymous window / 180-day age cap).
+   */
+  readonly CALCULATION_RECORD_RETENTION_DAYS?: string;
+  readonly CALCULATION_RECORD_AGE_CAP_DAYS?: string;
   /** Minimum structured-log level (default "info"). */
   readonly LOG_LEVEL?: string;
+
+  // -- Feature flags (task 3.2; names match the Nest FeatureFlagService,
+  //    read from the Worker env instead of process.env) ---------------------
+
+  /** Gate new merchant data sources (scrapers, APIs, partner feeds). */
+  readonly FF_NEW_MERCHANT_SOURCE?: string;
+  /** Gate new tax rule versions before legal confirmation. */
+  readonly FF_NEW_TAX_RULESET?: string;
+  /** Gate new UI ranking/sorting behavior. */
+  readonly FF_UI_RANKING_V2?: string;
+  /** Gate historical price intelligence (price-history API + UI charts). */
+  readonly FF_HISTORICAL_PRICE_INTELLIGENCE?: string;
+  /** Gate basket optimization API and UI. */
+  readonly FF_BASKET_OPTIMIZATION?: string;
+  /** Gate advanced Phase 2 surfaces (scenario, report, reliability, guidance). */
+  readonly FF_ADVANCED_FEATURES?: string;
+  /** Gate the operator console at /ops/console/** (default off; new UI ships flag-off). */
+  readonly FF_OPERATOR_CONSOLE?: string;
+  /** Explicit rollout-percentage override per flag (`FF_ROLLOUT_<FLAG>`). */
+  readonly FF_ROLLOUT_NEW_MERCHANT_SOURCE?: string;
+  readonly FF_ROLLOUT_NEW_TAX_RULESET?: string;
+  readonly FF_ROLLOUT_UI_RANKING_V2?: string;
+  readonly FF_ROLLOUT_HISTORICAL_PRICE_INTELLIGENCE?: string;
+  readonly FF_ROLLOUT_BASKET_OPTIMIZATION?: string;
+  readonly FF_ROLLOUT_ADVANCED_FEATURES?: string;
+  readonly FF_ROLLOUT_OPERATOR_CONSOLE?: string;
+
+  // -- Launch gates (task 3.2; names match the Nest LaunchGateService) ------
+
+  /** Legal opinion on calculator accuracy confirmed. */
+  readonly LAUNCH_GATE_LEGAL_OPINION?: string;
+  /** Tax-source mapping (excise rates, container duty) validated. */
+  readonly LAUNCH_GATE_TAX_SOURCE_MAPPING?: string;
+  /** User-facing correction mechanism in place and tested. */
+  readonly LAUNCH_GATE_CORRECTION_MECHANISM?: string;
+  /** Forces ALL gates open for dev/demo environments. */
+  readonly LAUNCH_GATES_OVERRIDE?: string;
+
+  // -- Ops access (task 3.2; names match the Nest OpsAccessGuard) -----------
+
+  /** Operator bearer token (Authorization: Bearer …); null/absent = off. */
+  readonly OPS_BEARER_TOKEN?: string;
+  /** Comma-separated IPs / IPv4 CIDRs allowed to reach ops routes; absent = off. */
+  readonly OPS_IP_ALLOWLIST?: string;
 }
 
 /** Hono environment: bindings + per-request variables. */
@@ -24,5 +94,9 @@ export type AppEnv = {
   Variables: {
     /** Set by the request-ID middleware; stamped on every log line. */
     requestId: string;
+    /** Set by the session-auth middleware (task 3.2) — server-derived identity. */
+    user?: AuthenticatedAccount;
+    /** Raw presented session token — for rotate/revoke handlers (task 2.2 parity). */
+    sessionToken?: string;
   };
 };

@@ -3,6 +3,10 @@
  * skeleton per design D1: router, unified error envelope, request-ID
  * structured logging, zod DTO layer. Route ports start at task 3.5.
  *
+ * Scheduled work (design D6, tasks 4.1/4.3): one `triggers.crons` array
+ * dispatched by cron pattern (see src/cron/router.ts), and the
+ * price-ingestion Queue consumer (see src/queues/ingestion.queue.ts).
+ *
  * Error semantics mirror packages/application-api/src/common/api-error.filter.ts
  * (see src/errors.ts); logging mirrors the pino bootstrap in
  * apps/backend/src/main.ts, adapted to Workers Logs (see src/logger.ts).
@@ -15,7 +19,6 @@ import 'reflect-metadata';
 
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { flushClickCounters } from './analytics/click-counter-flusher';
 import type { AppEnv, Env } from './env';
 import {
   requestPath,
@@ -24,7 +27,10 @@ import {
 } from './errors';
 import { errorBoundary } from './middleware/error-boundary';
 import { requestLogging } from './middleware/request-id';
-import { createLogger } from './logger';
+import { registerGuardMiddleware } from './middleware/guards';
+import { dispatchScheduled } from './cron/router';
+import { handleIngestionBatch } from './queues/ingestion.queue';
+import type { IngestionMessageBody } from './queues/ingestion-message';
 
 export type { AppEnv, Env } from './env';
 export { ApiHttpError } from './errors';
@@ -74,40 +80,43 @@ export function createApp(): Hono<AppEnv> {
     return c.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
+  // Ported Nest guards (task 3.2) — registered after the health route so
+  // liveness stays unguarded (HealthController is reviewed-safe). Their
+  // scoped routes have no handlers yet (route ports are tasks 3.5–3.8);
+  // guards run ahead of the 404 fallback until each handler lands, which
+  // fails closed on the protected paths.
+  registerGuardMiddleware(app);
+
   return app;
 }
 
 const app = createApp();
 
 /**
- * Cron-triggered flush of the click-counter snapshots into D1 (design
- * D5, task 3.4; cadence in wrangler.jsonc `triggers.crons`). The DO
- * alarm produces payloads on its own cadence regardless of traffic;
- * this handler is only the mover — see
- * src/analytics/click-counter-flusher.ts for the trigger-path rationale.
- * Failures are logged, never thrown: a missed flush must not mark the
- * cron invocation failed and burn retries on a retryable-by-design
- * window.
+ * Cron triggers (design D6, tasks 4.1/4.3) and the price-ingestion Queue
+ * consumer, dispatched from one default export.
+ *
+ * Cron: wrangler fires `scheduled` per `triggers.crons` pattern; the
+ * router maps the pattern to its handler set (the 6-hourly pattern
+ * carries both the transport-rate refresh and the task-3.4 click-counter
+ * flush) and runs each handler in its own waitUntil with per-handler
+ * error isolation — a failing handler must not starve the others on the
+ * same tick.
+ *
+ * Queue: batch size is 1 (per-merchant failure isolation); a message is
+ * acked when its ingestion completes OR its dedupe key was already
+ * processed (idempotent skip), and retried with exponential backoff
+ * otherwise — see src/queues/ingestion.queue.ts.
  */
 export default {
   fetch: app.fetch,
-  scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): void {
-    const log = createLogger(env.LOG_LEVEL);
-    ctx.waitUntil(
-      flushClickCounters(env)
-        .then((result) =>
-          log.info({
-            message: 'Click-counter flush complete',
-            snapshotTaken: result.snapshotTaken,
-            rowsWritten: result.rowsWritten,
-          }),
-        )
-        .catch((err: unknown) =>
-          log.error({
-            message: 'Click-counter flush failed',
-            error: err instanceof Error ? err.message : 'unknown error',
-          }),
-        ),
-    );
+  scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): void {
+    dispatchScheduled(event, env, ctx);
+  },
+  async queue(
+    batch: MessageBatch<IngestionMessageBody>,
+    env: Env,
+  ): Promise<void> {
+    await handleIngestionBatch(batch, env);
   },
 };

@@ -24,6 +24,14 @@
  * input gates hold concurrent requests off while storage awaits are in
  * flight — first writer wins, no duplicate calculation can interleave.
  *
+ * Job-claim namespace (task 4.1): the same storage carries a
+ * strongly-consistent, atomic claim marker for background-job dedupe keys
+ * (`claimJob`/`completeJob`/`releaseJob`, `job:` key prefix). The Queue
+ * consumer uses it to skip ingestion work whose dedupe key was already
+ * processed — the D6 carry-over of the BullMQ jobId semantics. Completed
+ * markers expire lazily (default 25 h; keys are hourly) and are swept by
+ * the shared alarm.
+ *
  * Protocol: POST JSON requests, JSON responses. `nowMs` is optional on
  * every op for deterministic tests; production callers omit it.
  *
@@ -109,6 +117,42 @@ export async function hashCacheKey(input: CacheKeyInput): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// Job-claim namespace (task 4.1 — Queue consumer idempotent skip)
+// ---------------------------------------------------------------------------
+
+/** A background-job claim marker stored under the `job:` prefix. */
+export interface JobClaimRecord {
+  readonly state: 'processing' | 'completed';
+  /** Unix ms — when the current (or last) claim was taken. */
+  readonly claimedAt: number;
+  /** Unix ms — present once the job finished successfully. */
+  readonly completedAt?: number;
+  /** Unix ms — lazy TTL; absent on `processing` records. */
+  readonly expiresAt?: number;
+}
+
+/** Result of an atomic {@link claimJob} attempt. */
+export type JobClaimOutcome =
+  | { readonly status: 'claimed' }
+  | { readonly status: 'already-completed' }
+  | { readonly status: 'in-flight' };
+
+/**
+ * Default expiry of a completed marker — 25 h (BullMQ removeOnComplete
+ * age was 1 day; the keys are hourly buckets so redeliveries land within
+ * minutes, making 25 h a generous bound).
+ */
+export const JOB_CLAIM_TTL_SECONDS = 25 * 3_600;
+
+/**
+ * A `processing` claim older than this is a dead attempt (isolate evicted
+ * mid-run, ack deadline lapse) — reclaim and re-run rather than skip the
+ * job for the rest of the marker's life. One ingestion pass is a single
+ * fetch-map-upsert cycle, so 15 min is far beyond any live run.
+ */
+export const JOB_CLAIM_STALE_MS = 15 * 60_000;
+
+// ---------------------------------------------------------------------------
 // Protocol
 // ---------------------------------------------------------------------------
 
@@ -135,7 +179,17 @@ export type IdempotencyRequest =
     }
   | { op: 'invalidateVersions'; versions: string[]; nowMs?: number }
   | { op: 'size'; nowMs?: number }
-  | { op: 'clear'; nowMs?: number };
+  | { op: 'clear'; nowMs?: number }
+  | {
+      op: 'claimJob';
+      /** Background-job dedupe key (e.g. `price-ingestion-<merchantId>-<hour>`). */
+      key: string;
+      /** A `processing` claim older than this is reclaimed. Default {@link JOB_CLAIM_STALE_MS}. */
+      staleAfterMs?: number;
+      nowMs?: number;
+    }
+  | { op: 'completeJob'; key: string; ttlSeconds?: number; nowMs?: number }
+  | { op: 'releaseJob'; key: string };
 
 // ---------------------------------------------------------------------------
 // Internals
@@ -143,8 +197,15 @@ export type IdempotencyRequest =
 
 const ENTRY_PREFIX = 'e:';
 
+/** Storage-key prefix of the job-claim namespace. */
+const JOB_PREFIX = 'job:';
+
 function entryStorageKey(key: string): string {
   return `${ENTRY_PREFIX}${key}`;
+}
+
+function jobStorageKey(key: string): string {
+  return `${JOB_PREFIX}${key}`;
 }
 
 /** Stored shape (entry + expiry). */
@@ -200,6 +261,16 @@ export class IdempotencyDO {
           return Response.json({ size: await this.size(body.nowMs) });
         case 'clear':
           return Response.json({ deleted: await this.clear() });
+        case 'claimJob':
+          return Response.json({
+            outcome: await this.claimJob(body.key, body.staleAfterMs, body.nowMs),
+          });
+        case 'completeJob':
+          await this.completeJob(body.key, body.ttlSeconds, body.nowMs);
+          return Response.json({ completed: true });
+        case 'releaseJob':
+          await this.releaseJob(body.key);
+          return Response.json({ released: true });
         default:
           return Response.json({ error: 'unknown op' }, { status: 400 });
       }
@@ -212,13 +283,18 @@ export class IdempotencyDO {
   }
 
   /**
-   * Active alarm: sweeps expired entries, then reschedules itself for the
-   * next soonest expiry (Redis active-expiry parity; keeps storage
-   * bounded). workerd clears the alarm before invoking it, so re-arming
-   * here is unconditional.
+   * Active alarm: sweeps expired entries and job markers, then
+   * reschedules itself for the next soonest expiry (Redis active-expiry
+   * parity; keeps storage bounded). workerd clears the alarm before
+   * invoking it, so re-arming here is unconditional.
    */
   async alarm(): Promise<void> {
-    const next = await this.sweepExpired(Date.now());
+    const nextEntry = await this.sweepExpired(Date.now());
+    const nextJob = await this.sweepExpiredJobs(Date.now());
+    const next =
+      nextEntry !== null && nextJob !== null
+        ? Math.min(nextEntry, nextJob)
+        : (nextEntry ?? nextJob);
     if (next !== null) {
       await this.state.storage.setAlarm(next);
     }
@@ -329,6 +405,111 @@ export class IdempotencyDO {
       await this.state.storage.delete(key);
     }
     return entries.size;
+  }
+
+  // -----------------------------------------------------------------------
+  // Job claims (task 4.1 — consumer idempotent skip)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Atomically claim a background-job dedupe key. DO input gates
+   * serialize requests, so no interleaving claimant can slip between the
+   * read and the write.
+   *
+   * Outcomes: `claimed` (caller runs the job), `already-completed` (the
+   * key was processed within its TTL — skip), `in-flight` (another
+   * delivery is actively running the key — skip). A `processing` claim
+   * older than `staleAfterMs` is a dead attempt and is reclaimed.
+   */
+  private async claimJob(
+    key: string,
+    staleAfterMs: number | undefined,
+    nowMs?: number,
+  ): Promise<JobClaimOutcome> {
+    const now = nowMs ?? Date.now();
+    const staleAfter = staleAfterMs ?? JOB_CLAIM_STALE_MS;
+    const storageKey = jobStorageKey(key);
+    const stored = await this.state.storage.get<JobClaimRecord>(storageKey);
+
+    if (stored !== undefined) {
+      const expired = stored.expiresAt !== undefined && stored.expiresAt <= now;
+      if (!expired) {
+        if (stored.state === 'completed') {
+          return { status: 'already-completed' };
+        }
+        if (now - stored.claimedAt <= staleAfter) {
+          return { status: 'in-flight' };
+        }
+        // Dead `processing` claim — fall through and reclaim it.
+      } else {
+        await this.state.storage.delete(storageKey);
+      }
+    }
+
+    await this.state.storage.put(storageKey, {
+      state: 'processing',
+      claimedAt: now,
+    } satisfies JobClaimRecord);
+    return { status: 'claimed' };
+  }
+
+  /**
+   * Mark a claimed key completed. Only meaningful after a `claimed`
+   * outcome; completed markers expire after `ttlSeconds` so hourly keys
+   * do not accumulate.
+   */
+  private async completeJob(
+    key: string,
+    ttlSeconds: number | undefined,
+    nowMs?: number,
+  ): Promise<void> {
+    const now = nowMs ?? Date.now();
+    // Job-claim default TTL (25 h) — NOT the calculation-cache default.
+    const ttl = assertTtl(ttlSeconds ?? JOB_CLAIM_TTL_SECONDS);
+    const storageKey = jobStorageKey(key);
+    const stored = await this.state.storage.get<JobClaimRecord>(storageKey);
+    const claimedAt = stored?.claimedAt ?? now;
+    const expiresAt = now + ttl * 1_000;
+
+    const record: JobClaimRecord = {
+      state: 'completed',
+      claimedAt,
+      completedAt: now,
+      expiresAt,
+    };
+    await this.state.storage.put(storageKey, record);
+    await this.scheduleSweep(expiresAt);
+  }
+
+  /**
+   * Release a claim without marking completion — the job failed and the
+   * Queue will redeliver. The next delivery runs the key again
+   * (at-least-once completion; a failed run never leaves a marker that
+   * would suppress its own retry).
+   */
+  private async releaseJob(key: string): Promise<void> {
+    await this.state.storage.delete(jobStorageKey(key));
+  }
+
+  /** Delete expired job markers; returns the next soonest expiry, if any. */
+  private async sweepExpiredJobs(now: number): Promise<number | null> {
+    let next: number | null = null;
+    for (const [key, record] of await this.listJobClaims()) {
+      if (record.expiresAt !== undefined && record.expiresAt <= now) {
+        await this.state.storage.delete(key);
+      } else if (
+        record.expiresAt !== undefined &&
+        (next === null || record.expiresAt < next)
+      ) {
+        next = record.expiresAt;
+      }
+    }
+    return next;
+  }
+
+  private async listJobClaims(): Promise<Map<string, JobClaimRecord>> {
+    const options: DurableObjectListOptions = { prefix: JOB_PREFIX };
+    return this.state.storage.list<JobClaimRecord>(options);
   }
 
   // -----------------------------------------------------------------------

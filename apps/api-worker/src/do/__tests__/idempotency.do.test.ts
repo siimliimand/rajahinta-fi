@@ -530,3 +530,98 @@ describe('IdempotencyDO — protocol errors', () => {
     ).status).toBe(400);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Job-claim namespace (task 4.1 — Queue consumer idempotent skip)
+// ---------------------------------------------------------------------------
+
+async function claimJob(
+  cache: IdempotencyDO,
+  key: string,
+  options: { staleAfterMs?: number; nowMs?: number } = {},
+): Promise<{ status: 'claimed' | 'already-completed' | 'in-flight' }> {
+  const response = await callDo<{
+    outcome: { status: 'claimed' | 'already-completed' | 'in-flight' };
+  }>(cache, { op: 'claimJob', key, ...options });
+  return response.outcome;
+}
+
+async function completeJob(
+  cache: IdempotencyDO,
+  key: string,
+  options: { ttlSeconds?: number; nowMs?: number } = {},
+): Promise<void> {
+  await callDo(cache, { op: 'completeJob', key, ...options });
+}
+
+async function releaseJob(cache: IdempotencyDO, key: string): Promise<void> {
+  await callDo(cache, { op: 'releaseJob', key });
+}
+
+describe('IdempotencyDO — job claims (claim/complete/release)', () => {
+  it('claims a fresh key, and a completed key reports already-completed', async () => {
+    const { do: cache } = createDo();
+
+    await expect(
+      claimJob(cache, 'price-ingestion-alko-2026-08-30-14', { nowMs: T0 }),
+    ).resolves.toEqual({ status: 'claimed' });
+
+    await completeJob(cache, 'price-ingestion-alko-2026-08-30-14', { nowMs: T0 });
+
+    await expect(
+      claimJob(cache, 'price-ingestion-alko-2026-08-30-14', { nowMs: T0 + 1 }),
+    ).resolves.toEqual({ status: 'already-completed' });
+  });
+
+  it('reports in-flight for a live processing claim, then reclaims it once stale', async () => {
+    const { do: cache } = createDo();
+    const key = 'price-ingestion-systembolaget-2026-08-30-14';
+
+    await expect(claimJob(cache, key, { nowMs: T0 })).resolves.toEqual({ status: 'claimed' });
+    // Concurrent delivery within the stale window → in-flight.
+    await expect(
+      claimJob(cache, key, { nowMs: T0 + 60_000 }),
+    ).resolves.toEqual({ status: 'in-flight' });
+    // Beyond the stale window the claim is a dead attempt → reclaimed.
+    await expect(
+      claimJob(cache, key, { nowMs: T0 + 15 * 60_000 + 1 }),
+    ).resolves.toEqual({ status: 'claimed' });
+  });
+
+  it('released keys can be claimed again (at-least-once completion)', async () => {
+    const { do: cache } = createDo();
+    const key = 'price-ingestion-alko-2026-08-30-15';
+
+    await expect(claimJob(cache, key, { nowMs: T0 })).resolves.toEqual({ status: 'claimed' });
+    await releaseJob(cache, key);
+    await expect(claimJob(cache, key, { nowMs: T0 + 1 })).resolves.toEqual({ status: 'claimed' });
+  });
+
+  it('completed markers expire after their TTL (25 h default) and the key becomes claimable', async () => {
+    const { do: cache } = createDo();
+    const key = 'price-ingestion-alko-2026-08-30-16';
+
+    await claimJob(cache, key, { nowMs: T0 });
+    await completeJob(cache, key, { nowMs: T0 });
+
+    // Still live inside the TTL window (lazy expiry on claim).
+    await expect(
+      claimJob(cache, key, { nowMs: T0 + 25 * 3_600_000 - 1 }),
+    ).resolves.toEqual({ status: 'already-completed' });
+
+    // Past the TTL the expired marker is deleted and the key claims fresh.
+    await expect(
+      claimJob(cache, key, { nowMs: T0 + 25 * 3_600_000 + 1 }),
+    ).resolves.toEqual({ status: 'claimed' });
+  });
+
+  it('rejects a non-positive job-claim TTL with 400 (assertTtl parity)', async () => {
+    const { do: cache } = createDo();
+    const response = await callDoRaw(cache, {
+      op: 'completeJob',
+      key: 'k',
+      ttlSeconds: 0,
+    });
+    expect(response.status).toBe(400);
+  });
+});

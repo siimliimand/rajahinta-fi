@@ -19,7 +19,12 @@ import type {
   RateLimitDecision,
   RateLimiterRequest,
 } from './rate-limiter.do';
-import type { CacheKeyInput, IdempotencyEntry, IdempotencyRequest } from './idempotency.do';
+import type {
+  CacheKeyInput,
+  IdempotencyEntry,
+  IdempotencyRequest,
+  JobClaimOutcome,
+} from './idempotency.do';
 import type { ClickCounterSnapshot } from './click-counter.do';
 
 /** Base URL for internal DO fetch requests — host is irrelevant, kept https for realism. */
@@ -173,6 +178,46 @@ export async function idempotencyInvalidateVersions(
     versions,
   });
   return deleted;
+}
+
+// ---------------------------------------------------------------------------
+// Job claims — background-job dedupe keys (task 4.1, design D6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Atomically claim a background-job dedupe key (e.g.
+ * `price-ingestion-<merchantId>-<hour>`). The Queue consumer runs the job
+ * on `claimed`; `already-completed` and `in-flight` mean skip.
+ */
+export async function claimJob(
+  env: Env,
+  key: string,
+  options?: { staleAfterMs?: number },
+): Promise<JobClaimOutcome> {
+  const { outcome } = await callIdempotency<{ outcome: JobClaimOutcome }>(env, {
+    op: 'claimJob',
+    key,
+    ...options,
+  });
+  return outcome;
+}
+
+/** Mark a claimed key completed — subsequent deliveries skip it. */
+export async function completeJob(
+  env: Env,
+  key: string,
+  options?: { ttlSeconds?: number },
+): Promise<void> {
+  await callIdempotency(env, { op: 'completeJob', key, ...options });
+}
+
+/**
+ * Release a claim after a failed run so the Queue redelivery can process
+ * the key again (a failed run must never leave a marker that suppresses
+ * its own retry).
+ */
+export async function releaseJob(env: Env, key: string): Promise<void> {
+  await callIdempotency(env, { op: 'releaseJob', key });
 }
 
 async function callIdempotency<T>(env: Env, request: IdempotencyRequest): Promise<T> {
