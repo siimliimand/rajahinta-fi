@@ -1,0 +1,16 @@
+{
+  "name": "@rajahinta-spike/search-parity",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "G2 search parity spike (migrate-to-cloudflare task 1.2) — FTS5 + LIKE candidate query checked against the pg_trgm search contract. Throwaway; lives outside the pnpm workspace on purpose.",
+  "scripts": {
+    "spike": "node --experimental-strip-types --no-warnings src/run.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13"
+  }
+}
