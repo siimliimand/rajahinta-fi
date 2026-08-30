@@ -184,27 +184,48 @@ export async function handleTimeSeriesAggregation(
 }
 
 /**
- * Stale-price-share input from the audited scan set: the share of read
- * observation records whose overall reliability is STALE (the strictest
- * of the per-input snapshot statuses). Nothing read → 0, keeping the
- * Prometheus gauge's "renders 0 when nothing audited" contract.
+ * Stale-price-share computation over an audited scan set: the share of
+ * read observation records whose overall reliability is STALE (the
+ * strictest of the per-input snapshot statuses). Nothing read → 0,
+ * keeping the Prometheus gauge's "renders 0 when nothing audited"
+ * contract.
+ *
+ * Exported as the single computation shared by the gauge emission below
+ * and the task-6.3 freshness-alert checker — the alert must measure the
+ * SAME value the dashboard shows, never a re-derivation that can drift.
+ */
+export function stalePriceShareOf(
+  records: readonly ObservationLogRecord[],
+): { stale: number; total: number; share: number } {
+  const stale = records.filter(
+    (record) => observationReliability(record) === 'STALE',
+  ).length;
+  const total = records.length;
+  return { stale, total, share: total > 0 ? stale / total : 0 };
+}
+
+/**
+ * Stale-price-share gauge emission over the audited scan set — the
+ * Prometheus namesake the ingestion quality hook set (same metric
+ * contract: nothing audited → 0). No-op without METRICS; emission must
+ * not gate the aggregation itself.
  */
 function emitStalePriceShare(
   env: Env,
   records: readonly ObservationLogRecord[],
 ): void {
-  const stale = records.filter(
-    (record) => observationReliability(record) === 'STALE',
-  ).length;
-  recordStalePriceShare(env, stale, records.length);
+  const { stale, total } = stalePriceShareOf(records);
+  recordStalePriceShare(env, stale, total);
 }
 
 /**
  * Read the scan partitions whole — bucket recomputes need every line of
  * their partitions, not only post-watermark lines (the caller applies
  * the watermark filter to activity and the advance, never to inputs).
+ * Exported for the task-6.3 freshness-alert checker, which reads the
+ * same audited scan set the gauge is computed over.
  */
-async function readPartitions(
+export async function readPartitions(
   store: ReturnType<typeof observationLogStore>,
   scanKeys: readonly string[],
 ): Promise<ObservationLogRecord[]> {

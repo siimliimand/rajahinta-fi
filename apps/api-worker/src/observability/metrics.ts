@@ -220,10 +220,26 @@ export function recordStalePriceShare(
 }
 
 /**
+ * Transport newest-offer age in seconds — the single age computation the
+ * gauge write and the task-6.3 freshness-alert evaluator share, so the
+ * dashboard value and the alert can never diverge. `null` (no offers at
+ * all) keeps the Prometheus contract: the degenerate case of every offer
+ * being stale — the +Inf sentinel stands in for Infinity (an AE double
+ * cannot carry it) and both alert thresholds still fire.
+ */
+export function transportAgeSeconds(newestOfferObservedAt: Date | null): number {
+  return newestOfferObservedAt === null
+    ? TRANSPORT_AGE_INFINITE
+    : Math.max(
+        0,
+        Math.floor((Date.now() - newestOfferObservedAt.getTime()) / 1000),
+      );
+}
+
+/**
  * Transport newest-offer-age gauge — the cron-callable freshness write.
- * `null` (no offers at all) keeps the Prometheus contract: the degenerate
- * case of every offer being stale — double carries the +Inf sentinel and
- * blob2 the faithful "+Inf" text, so both alert thresholds still fire.
+ * Age comes from {@link transportAgeSeconds}; blob2 keeps the faithful
+ * "+Inf" text for humans when no offers exist.
  */
 export function recordTransportAge(
   env: Env,
@@ -232,10 +248,7 @@ export function recordTransportAge(
   const ageSeconds =
     newestOfferObservedAt === null
       ? null
-      : Math.max(
-          0,
-          Math.floor((Date.now() - newestOfferObservedAt.getTime()) / 1000),
-        );
+      : transportAgeSeconds(newestOfferObservedAt);
   metricsEmitter(env).recordGauge({
     name: TRANSPORT_NEWEST_OFFER_AGE_GAUGE,
     value: ageSeconds ?? TRANSPORT_AGE_INFINITE,

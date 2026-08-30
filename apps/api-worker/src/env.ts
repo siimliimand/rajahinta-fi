@@ -76,6 +76,31 @@ export interface Env {
   /** Minimum structured-log level (default "info"). */
   readonly LOG_LEVEL?: string;
 
+  // -- Freshness alerting (task 6.3, design D7/D8) --------------------------
+
+  /**
+   * Email Worker base URL (per-env wrangler var, design D9) — the
+   * freshness-alert cron POSTs to its internal send contract
+   * (`POST /internal/email/send`, apps/email-worker, task 5.3).
+   */
+  readonly EMAIL_WORKER_URL?: string;
+  /**
+   * Shared secret for the email Worker's send contract (header
+   * `X-Email-Send-Secret`). A SECRET, never a wrangler var: set per
+   * environment with `wrangler secret put EMAIL_SEND_SECRET`; must match
+   * the email Worker's EMAIL_SEND_SECRET.
+   */
+  readonly EMAIL_SEND_SECRET?: string;
+  /** Operator recipient of freshness alert emails. */
+  readonly FRESHNESS_ALERT_EMAIL_TO?: string;
+  /**
+   * Suppression window in seconds — repeats of an already-alerted
+   * violation within the window are not re-emailed (IdempotencyDO
+   * marker). Default 4 h when unset (Alertmanager repeat_interval
+   * parity); invalid values fall back to the default with a warning.
+   */
+  readonly FRESHNESS_ALERT_SUPPRESSION_SECONDS?: string;
+
   // -- Feature flags (task 3.2; names match the Nest FeatureFlagService,
   //    read from the Worker env instead of process.env) ---------------------
 

@@ -3,12 +3,14 @@
  * routed by cron pattern.
  *
  * Wrangler invokes `scheduled` with the exact pattern that fired
- * (`event.cron`); the router maps each pattern to its handler set. The
- * 6-hourly pattern carries TWO handlers — the transport-rate refresh
- * (BullMQ EVERY_6_HOURS parity) and the click-counter snapshot flush of
- * task 3.4 — dispatched independently with per-handler error isolation:
- * one failing handler must not starve the others on the same tick, and
- * a throw inside one waitUntil must not mark the whole invocation dead.
+ * (`event.cron`); the router maps each pattern to its handler set. Two
+ * patterns carry TWO handlers each — the 6-hourly one the transport-rate
+ * refresh (BullMQ EVERY_6_HOURS parity) plus the task-3.4 click-counter
+ * snapshot flush, and the 30-minute one the time-series aggregation plus
+ * the task-6.3 freshness alert — dispatched independently with
+ * per-handler error isolation: one failing handler must not starve the
+ * others on the same tick, and a throw inside one waitUntil must not
+ * mark the whole invocation dead.
  *
  * Cadences mirror the BullMQ repeat schedules where the jobs code
  * documents them (see wrangler.jsonc for the mapping and the UTC-vs-
@@ -30,6 +32,7 @@ import {
   handleTimeSeriesAggregation,
   AGGREGATION_CRON,
 } from './time-series-aggregation';
+import { handleFreshnessAlert } from './freshness-alert';
 import { handleRetentionSweep, RETENTION_CRON } from './retention-sweep';
 import {
   INGESTION_PRODUCER_CRON,
@@ -92,6 +95,14 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   add(AGGREGATION_CRON, {
     name: 'time-series-aggregation',
     run: (env, log) => handleTimeSeriesAggregation(env, log),
+  });
+  // Task 6.3 (design D7/D8) shares the 30-minute tick: the freshness
+  // alert evaluates the stale-price-share invariant over the same cadence
+  // the gauge value is recomputed, replacing the PrometheusRule paging
+  // (threshold port + cadence mapping in src/cron/freshness-alert.ts).
+  add(AGGREGATION_CRON, {
+    name: 'freshness-alert',
+    run: (env, log) => handleFreshnessAlert(env, log),
   });
   add(RETENTION_CRON, {
     name: 'retention-sweep',

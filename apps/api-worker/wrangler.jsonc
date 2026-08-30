@@ -139,6 +139,13 @@
   //   0 * * * *     price-ingestion producer — hourly (@Cron(EVERY_HOUR));
   //                 one Queue message per GRANTED merchant
   //   */30 * * * *  time-series aggregation — every 30 min (EVERY_30_MINUTES)
+  //                 AND the task-6.3 freshness alert (design D7/D8): the
+  //                 cron checker evaluating the stale-price-share and
+  //                 transport-age invariants and emailing the operator
+  //                 through the email Worker — replaces the K8s
+  //                 PrometheusRule paging (infra/k8s/base/prometheusrule.yaml;
+  //                 threshold port + cadence mapping in
+  //                 src/cron/freshness-alert.ts)
   //   0 */6 * * *   transport-rate refresh (EVERY_6_HOURS) AND the task-3.4
   //                 click-counter snapshot flush (legacy '0 */6 * * *');
   //                 both handlers fire on this pattern
@@ -214,8 +221,17 @@
       // Per-env snapshot object key (task 4.4, design D9). Code default
       // (config/rate-snapshot.json) matches; the var makes the override
       // point explicit per environment.
+      //
+      // Freshness alerting (task 6.3, design D7/D8): the cron checker
+      // POSTs alert emails to the email Worker's internal send contract
+      // (POST /internal/email/send). Values below are PLACEHOLDERS — set
+      // the real per-env Worker URL and ops recipient here. The shared
+      // secret is NEVER a var: `wrangler secret put EMAIL_SEND_SECRET
+      // --env <env>` (must match the email Worker's EMAIL_SEND_SECRET).
       "vars": {
-        "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json"
+        "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
+        "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
+        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com"
       },
       "queues": {
         "producers": [
@@ -248,8 +264,13 @@
       "analytics_engine_datasets": [
         { "binding": "METRICS", "dataset": "rajahinta-api-metrics-staging" }
       ],
+      // Freshness alerting (task 6.3, design D7/D8) — PLACEHOLDERS; see the
+      // dev block comment. Secret via `wrangler secret put EMAIL_SEND_SECRET
+      // --env staging`.
       "vars": {
-        "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json"
+        "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
+        "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
+        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com"
       },
       "queues": {
         "producers": [
@@ -282,8 +303,13 @@
       "analytics_engine_datasets": [
         { "binding": "METRICS", "dataset": "rajahinta-api-metrics-production" }
       ],
+      // Freshness alerting (task 6.3, design D7/D8) — PLACEHOLDERS; see the
+      // dev block comment. Secret via `wrangler secret put EMAIL_SEND_SECRET
+      // --env production`.
       "vars": {
-        "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json"
+        "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
+        "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
+        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com"
       },
       "queues": {
         "producers": [
