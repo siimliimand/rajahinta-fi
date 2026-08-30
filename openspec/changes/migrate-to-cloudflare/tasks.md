@@ -38,7 +38,7 @@
 
 ## 5. Frontend + email (Phase 4)
 
-- [ ] 5.1 OpenNext Cloudflare adapter: frontend Worker build, wrangler config, per-PR preview URLs <!-- agent: platform-engineer.build, depends_on: [3.9], touches: [apps/frontend/open-next.config.ts, apps/frontend/wrangler.jsonc, package.json] -->
+- [x] 5.1 OpenNext Cloudflare adapter: frontend Worker build, wrangler config, per-PR preview URLs <!-- agent: platform-engineer.build, depends_on: [3.9], touches: [apps/frontend/open-next.config.ts, apps/frontend/wrangler.jsonc, package.json] -->
 - [ ] 5.2 Frontend→API connection: same-zone routing or service binding, per-environment cookie domain and API base, secure cookie flags verified on Workers <!-- agent: platform-engineer.build, depends_on: [5.1], touches: [apps/frontend/src/lib/**, apps/frontend/wrangler.jsonc] -->
 - [x] 5.3 Email Worker: send_email binding, MIME construction, POST /internal/email/send behind a shared-secret header, and the SPF/DKIM domain-verification runbook <!-- agent: platform-engineer.build, depends_on: [1.4], touches: [apps/email-worker/**] -->
 - [ ] 5.4 Playwright browser journeys running against Workers previews/staging instead of the docker-compose stack <!-- agent: platform-engineer.build, depends_on: [5.2], touches: [tests/e2e-browser/**] -->
@@ -47,7 +47,7 @@
 
 - [x] 6.1 Analytics Engine metrics: request counters by route/status class and freshness gauges via writeDataPoint <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [apps/api-worker/src/observability/**] -->
 - [x] 6.2 OTLP trace export from the Workers to Grafana Cloud via environment configuration <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [apps/api-worker/src/observability/**] -->
-- [ ] 6.3 Freshness Cron checker evaluating stale-price-share and transport-age invariants and alerting through the email Worker (replaces PrometheusRule paging) <!-- agent: platform-engineer.build, depends_on: [4.3, 5.3, 6.1], touches: [apps/api-worker/src/cron/freshness-alert.ts] -->
+- [x] 6.3 Freshness Cron checker evaluating stale-price-share and transport-age invariants and alerting through the email Worker (replaces PrometheusRule paging) <!-- agent: platform-engineer.build, depends_on: [4.3, 5.3, 6.1], touches: [apps/api-worker/src/cron/freshness-alert.ts] -->
 - [x] 6.4 Health endpoints: ready = D1 roundtrip + DO ping with short timeouts and dependency status; liveness cheap and process-only <!-- agent: platform-engineer.build, depends_on: [2.4, 3.3], touches: [apps/api-worker/src/routes/health.ts] -->
 - [ ] 6.5 CI/CD rework: PR checks unchanged; staging wrangler deploy on master (migrate → seed → deploy); production gated deploy with Workers rollback availability; EU placement (D1 primary, DO hint, KV jurisdiction) in committed config <!-- agent: devops-engineer.build, depends_on: [3.9, 4.3, 5.1], touches: [.github/workflows/deploy-staging.yml, .github/workflows/deploy-production.yml, infra/environments/**, wrangler.jsonc] -->
 - [ ] 6.6 Cutover: one-time ETL script (Postgres → D1 transform + wrangler d1 import), dual-run parity harness diffing calculator outputs on sampled traffic, low-TTL DNS cutover and rollback runbook <!-- agent: devops-engineer.build, depends_on: [6.5], touches: [scripts/etl-pg-to-d1.ts, scripts/dual-run-parity.ts, docs/cutover-runbook.md] -->
