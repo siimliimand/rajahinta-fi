@@ -27,7 +27,7 @@
 - [x] 3.6 Port basket optimizer, historical, reports, and merchants endpoints with contract parity tests <!-- agent: platform-engineer.build, depends_on: [3.2, 3.3], touches: [apps/api-worker/src/routes/**] -->
 - [x] 3.7 Port accounts endpoints (sessions, history, scenarios, export/GDPR, subscription/billing) and click analytics endpoints <!-- agent: platform-engineer.build, depends_on: [3.2, 3.4], touches: [apps/api-worker/src/routes/**] -->
 - [x] 3.8 Port ops console API with append-only D1 audit_events writes and OpsAccessGuard semantics <!-- agent: platform-engineer.build, depends_on: [3.2], touches: [apps/api-worker/src/routes/**] -->
-- [ ] 3.9 E2E API suite and golden-dataset suite running against the Worker runtime (vitest-pool-workers or deployed preview) <!-- agent: platform-engineer.build, depends_on: [3.5, 3.6, 3.7, 3.8], touches: [apps/api-worker/tests/**] -->
+- [x] 3.9 E2E API suite and golden-dataset suite running against the Worker runtime (vitest-pool-workers or deployed preview) <!-- agent: platform-engineer.build, depends_on: [3.5, 3.6, 3.7, 3.8], touches: [apps/api-worker/tests/**] -->
 
 ## 4. Background jobs (Phase 3)
 
@@ -45,10 +45,10 @@
 
 ## 6. Observability, CI/CD, cutover (Phase 5)
 
-- [ ] 6.1 Analytics Engine metrics: request counters by route/status class and freshness gauges via writeDataPoint <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [apps/api-worker/src/observability/**] -->
-- [ ] 6.2 OTLP trace export from the Workers to Grafana Cloud via environment configuration <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [apps/api-worker/src/observability/**] -->
+- [x] 6.1 Analytics Engine metrics: request counters by route/status class and freshness gauges via writeDataPoint <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [apps/api-worker/src/observability/**] -->
+- [x] 6.2 OTLP trace export from the Workers to Grafana Cloud via environment configuration <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [apps/api-worker/src/observability/**] -->
 - [ ] 6.3 Freshness Cron checker evaluating stale-price-share and transport-age invariants and alerting through the email Worker (replaces PrometheusRule paging) <!-- agent: platform-engineer.build, depends_on: [4.3, 5.3, 6.1], touches: [apps/api-worker/src/cron/freshness-alert.ts] -->
-- [ ] 6.4 Health endpoints: ready = D1 roundtrip + DO ping with short timeouts and dependency status; liveness cheap and process-only <!-- agent: platform-engineer.build, depends_on: [2.4, 3.3], touches: [apps/api-worker/src/routes/health.ts] -->
+- [x] 6.4 Health endpoints: ready = D1 roundtrip + DO ping with short timeouts and dependency status; liveness cheap and process-only <!-- agent: platform-engineer.build, depends_on: [2.4, 3.3], touches: [apps/api-worker/src/routes/health.ts] -->
 - [ ] 6.5 CI/CD rework: PR checks unchanged; staging wrangler deploy on master (migrate → seed → deploy); production gated deploy with Workers rollback availability; EU placement (D1 primary, DO hint, KV jurisdiction) in committed config <!-- agent: devops-engineer.build, depends_on: [3.9, 4.3, 5.1], touches: [.github/workflows/deploy-staging.yml, .github/workflows/deploy-production.yml, infra/environments/**, wrangler.jsonc] -->
 - [ ] 6.6 Cutover: one-time ETL script (Postgres → D1 transform + wrangler d1 import), dual-run parity harness diffing calculator outputs on sampled traffic, low-TTL DNS cutover and rollback runbook <!-- agent: devops-engineer.build, depends_on: [6.5], touches: [scripts/etl-pg-to-d1.ts, scripts/dual-run-parity.ts, docs/cutover-runbook.md] -->
 - [ ] 6.7 Decommission after the rollback window: delete K8s overlays, production Dockerfile path, migrate Jobs, ServiceMonitor/PrometheusRule; update ARCHITECTURE.md and docs to the Cloudflare architecture <!-- agent: devops-engineer.fast, depends_on: [6.6], touches: [infra/k8s/**, Dockerfile, docker-compose.yml, ARCHITECTURE.md, docs/tech-stack.md] -->
