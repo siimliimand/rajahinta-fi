@@ -20,7 +20,7 @@
 ## 3. API Worker (Phase 2)
 
 - [x] 3.1 Worker entry + Hono application skeleton: router, unified error envelope middleware, request-ID structured logging, zod DTO layer <!-- agent: platform-engineer.build, depends_on: [1.4], touches: [apps/api-worker/src/index.ts, apps/api-worker/src/middleware/**] -->
-- [ ] 3.2 Port guards as middleware: session auth against D1 sessions, entitlement, launch gate, age gate, ops access with IP allowlist from CF-Connecting-IP, feature flag service with inlined bootstrap parity <!-- agent: platform-engineer.build, depends_on: [3.1, 2.7], touches: [apps/api-worker/src/middleware/**] -->
+- [x] 3.2 Port guards as middleware: session auth against D1 sessions, entitlement, launch gate, age gate, ops access with IP allowlist from CF-Connecting-IP, feature flag service with inlined bootstrap parity <!-- agent: platform-engineer.build, depends_on: [3.1, 2.7], touches: [apps/api-worker/src/middleware/**] -->
 - [x] 3.3 RateLimiterDO (exact sliding window) + IdempotencyDO (version-aware keys) with parity tests against current Redis behavior; remove RATE_LIMIT_TRUST_PROXY semantics <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [apps/api-worker/src/do/**] -->
 - [x] 3.4 ClickCounterDO with SQLite storage and alarm-driven flush into clickCounterSnapshots (D1) <!-- agent: platform-engineer.build, depends_on: [3.1, 2.5], touches: [apps/api-worker/src/do/**] -->
 - [ ] 3.5 Port calculator, calculations, search, and declaration endpoints with contract parity tests <!-- agent: platform-engineer.build, depends_on: [3.2, 3.3], touches: [apps/api-worker/src/routes/**] -->
@@ -31,9 +31,9 @@
 
 ## 4. Background jobs (Phase 3)
 
-- [ ] 4.1 Queues: scheduled producer from the merchant registry (one message per permitted merchant, dedupe keys preserved) + consumer with idempotent skip <!-- agent: platform-engineer.build, depends_on: [2.7], touches: [apps/api-worker/src/queues/**, wrangler.jsonc] -->
+- [x] 4.1 Queues: scheduled producer from the merchant registry (one message per permitted merchant, dedupe keys preserved) + consumer with idempotent skip <!-- agent: platform-engineer.build, depends_on: [2.7], touches: [apps/api-worker/src/queues/**, wrangler.jsonc] -->
 - [ ] 4.2 Ingestion pipeline as a Cloudflare Workflow (fetch → data-quality → mapping → upsert, per-step retries) and Workers-fetch compatibility for the data-acquisition adapters <!-- agent: platform-engineer.build, depends_on: [4.1], touches: [apps/api-worker/src/workflows/**, packages/data-acquisition/src/adapters/**] -->
-- [ ] 4.3 Cron Triggers for transport-rate refresh, tax-dataset review, FX-dataset review, time-series aggregation, and retention sweeps replacing BullMQ repeat schedules <!-- agent: platform-engineer.build, depends_on: [2.7], touches: [apps/api-worker/src/cron/**, wrangler.jsonc] -->
+- [x] 4.3 Cron Triggers for transport-rate refresh, tax-dataset review, FX-dataset review, time-series aggregation, and retention sweeps replacing BullMQ repeat schedules <!-- agent: platform-engineer.build, depends_on: [2.7], touches: [apps/api-worker/src/cron/**, wrangler.jsonc] -->
 - [ ] 4.4 Rate-snapshot source reading from R2, replacing the ConfigBackedRateChangeSource file input <!-- agent: platform-engineer.build, depends_on: [4.3], touches: [packages/data-acquisition/src/adapters/rate-snapshot.r2.ts, wrangler.jsonc] -->
 
 ## 5. Frontend + email (Phase 4)
