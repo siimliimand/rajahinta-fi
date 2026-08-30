@@ -28,7 +28,9 @@
  *
  * Protocol: POST JSON requests, JSON responses. `nowMs` is optional on
  * every op so tests can pin window boundaries deterministically;
- * production callers omit it.
+ * production callers omit it. The `ping` op is the readiness probe
+ * (task 6.4): an identity/status call that answers without touching
+ * storage, so a probe never prunes or contends with live windows.
  *
  * @module RateLimiterDO
  */
@@ -73,6 +75,8 @@ export type RateLimiterRequest = {
   profile: string;
   windowMs: number;
   nowMs?: number;
+} | {
+  op: 'ping';
 };
 
 // ---------------------------------------------------------------------------
@@ -121,6 +125,9 @@ export class RateLimiterDO {
           return Response.json({
             resetAtMs: await this.resetAt(body.profile, body.windowMs, body.nowMs),
           });
+        case 'ping':
+          // Identity probe for the readiness endpoint — no storage access.
+          return Response.json({ pong: true });
         default:
           return Response.json({ error: 'unknown op' }, { status: 400 });
       }

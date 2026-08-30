@@ -36,6 +36,7 @@ import {
   BUCKET_WINDOW_MS,
   bucketAnchor,
   buildBucketSummaries,
+  observationReliability,
   startOfIsoWeek,
   type SummaryGranularity,
 } from '../../../../packages/data-platform/src/d1/summary-aggregation';
@@ -48,6 +49,7 @@ import {
 import { D1AggregationWatermarkRepository } from '../../../../packages/data-platform/src/repositories/d1/aggregation-watermark.repository';
 import { D1PriceHistorySummaryRepository } from '../../../../packages/data-platform/src/repositories/d1/price-history-summary.repository';
 import { observationLogStore } from '../adapters/r2-observation-log.store';
+import { recordStalePriceShare } from '../observability/metrics';
 import type { Env } from '../env';
 import type { Logger } from '../logger';
 
@@ -111,6 +113,13 @@ export async function handleTimeSeriesAggregation(
   const readFrom = watermark === null ? null : startOfIsoWeek(watermark);
   const scanKeys = observationKeysToScan(keys, readFrom);
   const allRecords = await readPartitions(store, scanKeys);
+
+  // Task 6.1 (design D8): stale-price-share freshness gauge over the
+  // audited scan set — the Prometheus namesake the ingestion quality hook
+  // set (same metric contract: nothing audited → 0). No-op without
+  // METRICS; emission must not gate the aggregation itself.
+  emitStalePriceShare(env, allRecords);
+
   const activeRecords =
     watermark === null
       ? allRecords
@@ -172,6 +181,22 @@ export async function handleTimeSeriesAggregation(
     bucketsWritten,
     watermark: next.toISOString(),
   };
+}
+
+/**
+ * Stale-price-share input from the audited scan set: the share of read
+ * observation records whose overall reliability is STALE (the strictest
+ * of the per-input snapshot statuses). Nothing read → 0, keeping the
+ * Prometheus gauge's "renders 0 when nothing audited" contract.
+ */
+function emitStalePriceShare(
+  env: Env,
+  records: readonly ObservationLogRecord[],
+): void {
+  const stale = records.filter(
+    (record) => observationReliability(record) === 'STALE',
+  ).length;
+  recordStalePriceShare(env, stale, records.length);
 }
 
 /**

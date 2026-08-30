@@ -92,6 +92,18 @@ export async function rateLimitResetAt(
   return resetAtMs;
 }
 
+/**
+ * Readiness probe (task 6.4) — one cheap identity round trip against a
+ * dedicated RateLimiterDO instance (`health`), whose `ping` op answers
+ * without any storage access. The dedicated instance key keeps probes
+ * entirely off live client windows. Throws when the RATE_LIMITER binding
+ * is unconfigured — the readiness service reports that as a down
+ * dependency (the Nest "Redis not configured" semantic), never a pass.
+ */
+export async function pingRateLimiter(env: Env): Promise<void> {
+  await callRateLimiter<{ pong: true }>(env, 'health', { op: 'ping' });
+}
+
 async function callRateLimiter<T>(
   env: Env,
   clientKey: string,

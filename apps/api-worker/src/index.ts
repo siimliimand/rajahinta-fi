@@ -27,6 +27,7 @@ import {
 } from './errors';
 import { errorBoundary } from './middleware/error-boundary';
 import { requestLogging } from './middleware/request-id';
+import { requestMetrics } from './observability/metrics';
 import { registerGuardMiddleware } from './middleware/guards';
 import { requireRateLimit } from './middleware/rate-limit';
 import {
@@ -41,6 +42,7 @@ import { registerMerchantsRoutes } from './routes/merchants.routes';
 import { registerAccountsRoutes } from './routes/accounts.routes';
 import { registerAnalyticsRoutes } from './routes/analytics.routes';
 import { registerOpsRoutes } from './routes/ops.routes';
+import { registerHealthRoutes } from './routes/health.routes';
 import { dispatchScheduled } from './cron/router';
 import { handleIngestionBatch } from './queues/ingestion.queue';
 import type { IngestionMessageBody } from './queues/ingestion-message';
@@ -72,6 +74,13 @@ export function createApp(): Hono<AppEnv> {
   // logged exactly like successful ones (pino 'finish' semantics).
   app.use(requestLogging());
 
+  // Request counters (task 6.1, design D8): one Analytics Engine data
+  // point per completed request, bucketed by route pattern + status
+  // class. Same outermost placement as the logging middleware — the
+  // final status is read after onError finalizes. No-op without the
+  // METRICS binding (src/observability/metrics.ts).
+  app.use(requestMetrics());
+
   // Root-level error boundary: every thrown error becomes the unified
   // envelope (ApiErrorFilter parity). Hono delivers Error instances to
   // onError at the innermost dispatch frame; the boundary middleware
@@ -89,14 +98,11 @@ export function createApp(): Hono<AppEnv> {
     return c.json(body, status as ContentfulStatusCode);
   });
 
-  // Liveness — deliberately process-only and cheap (no dependency calls),
-  // so an orchestrator never restarts a healthy Worker over a brief
-  // dependency outage; matches HealthController.check in application-api
-  // ({ status: 'ok', timestamp }). Dependency-aware readiness (D1
-  // roundtrip + DO ping) is task 6.4.
-  app.get('/api/v1/health', (c) => {
-    return c.json({ status: 'ok', timestamp: new Date().toISOString() });
-  });
+  // Health endpoints (task 6.4): cheap process-only liveness at
+  // /api/v1/health and dependency-aware readiness (D1 roundtrip + DO
+  // ping, short timeouts, per-dependency status) at /api/v1/health/ready.
+  // Uptime probes key off /ready — see src/routes/health.routes.ts.
+  registerHealthRoutes(app);
 
   // Ported Nest guards (task 3.2) — registered after the health route so
   // liveness stays unguarded (HealthController is reviewed-safe). Their

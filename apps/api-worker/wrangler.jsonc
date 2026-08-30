@@ -59,6 +59,16 @@
       "bucket_name": "rajahinta-rate-snapshots-dev"
     }
   ],
+  // Workers Analytics Engine metrics (task 6.1, design D8): request
+  // counters by route pattern + status class and freshness gauges via
+  // writeDataPoint; one dataset per environment (design D9). Data point
+  // shapes and the Grafana re-point queries (old PromQL → AE SQL) in
+  // src/observability/METRICS.md. AE sampling applies — queries must
+  // weight counts by _sample_interval. The binding is optional in code
+  // (no-op without it), so dev/local runs never require it.
+  "analytics_engine_datasets": [
+    { "binding": "METRICS", "dataset": "rajahinta-api-metrics-dev" }
+  ],
   // Price-ingestion Queue (task 4.1; design D6). The scheduled producer
   // (hourly cron, merchant-registry driven) sends via env.INGESTION_QUEUE;
   // this same worker consumes the queue. max_batch_size 1 = per-merchant
@@ -153,8 +163,36 @@
       "30 3 * * *"
     ]
   },
+  // Observability (task 6.2, design D8): Workers Logs carry the log
+  // stream; `traces` enables the runtime's automatic OTel instrumentation
+  // (fetch/binding/handler spans, no code changes) exported to Grafana
+  // Cloud — "no vendor change for APM". Config keys per the current
+  // Workers docs (developers.cloudflare.com/workers/observability/traces/):
+  //
+  //   observability.traces.enabled          turn tracing on
+  //   observability.traces.destinations     dashboard-destination NAMES
+  //                                         this worker exports to (the
+  //                                         OTLP endpoint + Basic auth
+  //                                         header live in the dashboard
+  //                                         destination, NEVER here —
+  //                                         see src/observability/TRACES.md)
+  //   observability.traces.head_sampling_rate  head sample 0..1
+  //   observability.traces.persist          false = export only, skip
+  //                                         Cloudflare dashboard storage
+  //                                         (Grafana is the sole trace
+  //                                         destination; no double billing)
+  //
+  // 5% head sampling: calculator traffic is high-volume and traces are
+  // for APM diagnosis — counts live in the METRICS dataset above, not in
+  // traces. Raise per-env when diagnosing (e.g. staging at 1.0).
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.05,
+      "persist": false,
+      "destinations": ["rajahinta-grafana-traces"]
+    }
   },
   "env": {
     "dev": {
@@ -169,6 +207,9 @@
       "r2_buckets": [
         { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-dev" },
         { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-dev" }
+      ],
+      "analytics_engine_datasets": [
+        { "binding": "METRICS", "dataset": "rajahinta-api-metrics-dev" }
       ],
       // Per-env snapshot object key (task 4.4, design D9). Code default
       // (config/rate-snapshot.json) matches; the var makes the override
@@ -204,6 +245,9 @@
         { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-staging" },
         { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-staging" }
       ],
+      "analytics_engine_datasets": [
+        { "binding": "METRICS", "dataset": "rajahinta-api-metrics-staging" }
+      ],
       "vars": {
         "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json"
       },
@@ -234,6 +278,9 @@
       "r2_buckets": [
         { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-production" },
         { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-production" }
+      ],
+      "analytics_engine_datasets": [
+        { "binding": "METRICS", "dataset": "rajahinta-api-metrics-production" }
       ],
       "vars": {
         "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json"

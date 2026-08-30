@@ -14,7 +14,8 @@
     "db:seed:d1:staging": "pnpm --filter @rajahinta/data-platform exec tsx ../../scripts/seed-d1.ts --remote --env staging",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint \"src/**/*.ts\"",
+    "test:e2e": "vitest run --config vitest.config.e2e.ts",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "clean": "rm -rf .wrangler"
   },
   "dependencies": {

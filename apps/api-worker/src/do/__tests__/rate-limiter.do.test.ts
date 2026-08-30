@@ -434,3 +434,18 @@ describe('RateLimiterDO — protocol errors', () => {
     expect((await callDoRaw(limiter, { op: 'resetAt', profile: 'P', windowMs: 0 })).status).toBe(400);
   });
 });
+
+describe('RateLimiterDO — ping (readiness probe, task 6.4)', () => {
+  it('answers pong without touching storage', async () => {
+    const storage = createMemoryDoStorage();
+    const limiter = new RateLimiterDO(createMemoryDoState(storage), {});
+
+    const response = await callDoRaw(limiter, { op: 'ping' });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ pong: true });
+    // The probe is a pure identity/status call: no window keys created,
+    // no pruning — it cannot contend with live rate-limit state.
+    expect(storage.size).toBe(0);
+  });
+});

@@ -48,6 +48,16 @@ export interface Env {
    */
   readonly RATE_SNAPSHOTS?: R2Bucket;
   /**
+   * Workers Analytics Engine dataset — task 6.1 (design D8). One dataset
+   * per environment (wrangler.jsonc `analytics_engine_datasets`); carries
+   * the request counters (route pattern + status class) and freshness
+   * gauges via `writeDataPoint`. Optional: dev/local runs without the
+   * binding use the no-op emitter (src/observability/metrics.ts; data
+   * point shapes and Grafana re-point queries in
+   * src/observability/METRICS.md).
+   */
+  readonly METRICS?: AnalyticsEngineDataset;
+  /**
    * Object key of the rate snapshot inside RATE_SNAPSHOTS (per-env
    * config, design D9; wrangler vars per environment). Default when
    * unset: config/rate-snapshot.json (the same relative path the

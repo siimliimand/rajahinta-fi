@@ -20,6 +20,7 @@ import { PostiCarrierRateSource } from '../../../../packages/data-acquisition/sr
 import type { ICarrierRateSource } from '../../../../packages/data-acquisition/src/interfaces/carrier-rate-source.port';
 import { composeGovernanceService } from '../queues/pipeline';
 import { D1TransportOfferWritePort } from '../adapters/d1-domain-ports';
+import { recordTransportAge } from '../observability/metrics';
 import type { Env } from '../env';
 import type { Logger } from '../logger';
 
@@ -78,6 +79,9 @@ export async function handleTransportRateRefresh(
   });
 
   assessFreshness(log, result.newestOfferObservedAt);
+  // Task 6.1 (design D8): the freshness gauge moves to Analytics Engine —
+  // same metric contract (null → +Inf sentinel), no-op without METRICS.
+  recordTransportAge(env, result.newestOfferObservedAt);
   return result;
 }
 

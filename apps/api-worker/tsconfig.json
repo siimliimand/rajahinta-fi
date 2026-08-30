@@ -22,5 +22,11 @@
       "@rajahinta/core-domain": ["../../packages/core-domain/src/index.ts"]
     }
   },
+  // Typecheck scope follows the repo-wide contract (apps/backend parity):
+  // src/ only — tests/ are vitest-transpiled and eslint-covered. Pulling
+  // tests/ into tsc would also drag the vendored tests/golden fixtures
+  // into this project, where their legacy 'EXACT' reliability literals
+  // predate the ReliabilityStatus narrowing (latent, reported; the golden
+  // suite itself is transpile-only).
   "include": ["src/**/*.ts"]
 }
