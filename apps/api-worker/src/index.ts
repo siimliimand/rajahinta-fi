@@ -27,6 +27,12 @@ import { requestLogging } from './middleware/request-id';
 export type { AppEnv, Env } from './env';
 export { ApiHttpError } from './errors';
 
+// Durable Object classes must be exported from the entry script so the
+// runtime can bind them (wrangler.jsonc migrations + durable_objects;
+// task 3.3). ClickCounterDO follows with task 3.4 / migration tag v2.
+export { RateLimiterDO } from './do/rate-limiter.do';
+export { IdempotencyDO } from './do/idempotency.do';
+
 /**
  * Application factory. Tests (and later phases: per-route modules from
  * tasks 3.5–3.8) compose on the returned instance before it is served.

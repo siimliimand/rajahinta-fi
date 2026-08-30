@@ -18,30 +18,34 @@
   "alias": {
     "@nestjs/common": "./src/nestjs-compat.ts"
   },
+  // migrations_dir points at the drizzle-kit output in the data-platform
+  // package (relative to this config; design D2) — `wrangler d1 migrations
+  // apply DB` walks it in filename order and records applied files in the
+  // database's d1_migrations table.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "rajahinta-api-dev",
-      "database_id": "placeholder-dev"
+      "database_id": "placeholder-dev",
+      "migrations_dir": "../../packages/data-platform/src/d1/migrations"
     }
   ],
-  // Durable Object bindings are placeholders for tasks 3.3/3.4 — bindings
-  // to classes that do not exist yet would fail workerd at boot, so they
-  // are kept commented until the classes land:
-  //
-  // "durable_objects": {
-  //   "bindings": [
-  //     { "name": "RATE_LIMITER", "class_name": "RateLimiterDO" },
-  //     { "name": "IDEMPOTENCY", "class_name": "IdempotencyDO" },
-  //     { "name": "CLICK_COUNTER", "class_name": "ClickCounterDO" }
-  //   ]
-  // },
-  // "migrations": [
-  //   {
-  //     "tag": "v1",
-  //     "new_sqlite_classes": ["RateLimiterDO", "IdempotencyDO", "ClickCounterDO"]
-  //   }
-  // ],
+  // Durable Objects (task 3.3): classes are exported from the worker entry
+  // and created by the v1 migration below (SQLite storage backend). The
+  // migration `tag` must be unique and never reordered once deployed;
+  // ClickCounterDO (task 3.4) gets its own later tag.
+  "durable_objects": {
+    "bindings": [
+      { "name": "RATE_LIMITER", "class_name": "RateLimiterDO" },
+      { "name": "IDEMPOTENCY", "class_name": "IdempotencyDO" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RateLimiterDO", "IdempotencyDO"]
+    }
+  ],
   "observability": {
     "enabled": true
   },
@@ -51,7 +55,8 @@
         {
           "binding": "DB",
           "database_name": "rajahinta-api-dev",
-          "database_id": "placeholder-dev"
+          "database_id": "placeholder-dev",
+          "migrations_dir": "../../packages/data-platform/src/d1/migrations"
         }
       ]
     },
@@ -60,7 +65,8 @@
         {
           "binding": "DB",
           "database_name": "rajahinta-api-staging",
-          "database_id": "placeholder-staging"
+          "database_id": "placeholder-staging",
+          "migrations_dir": "../../packages/data-platform/src/d1/migrations"
         }
       ]
     },
@@ -69,7 +75,8 @@
         {
           "binding": "DB",
           "database_name": "rajahinta-api-production",
-          "database_id": "placeholder-production"
+          "database_id": "placeholder-production",
+          "migrations_dir": "../../packages/data-platform/src/d1/migrations"
         }
       ]
     }

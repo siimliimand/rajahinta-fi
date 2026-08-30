@@ -6,6 +6,9 @@
   "description": "Cloudflare Workers API (Hono) — migrate-to-cloudflare phase 2. Replaces the NestJS composition root at cutover while preserving API contracts (design D1).",
   "scripts": {
     "dev": "wrangler dev --port 8787",
+    "db:migrate:d1:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:d1:staging": "wrangler d1 migrations apply DB --remote --env staging",
+    "db:migrate:d1:production": "wrangler d1 migrations apply DB --remote --env production",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint \"src/**/*.ts\"",
