@@ -1,0 +1,111 @@
+// Wrangler config — frontend Worker via @opennextjs/cloudflare
+// (migrate-to-cloudflare task 5.1).
+//
+// `main` and `assets` point at the OpenNext build output and must not
+// change unless the build output layout changes (`pnpm build:worker`
+// produces .open-next/worker.js + .open-next/assets — adapter-documented
+// layout). `open-next.config.ts` (same task) defines the ISR cache
+// components; the bindings those components require are declared here:
+//
+//   NEXT_INC_CACHE_R2_BUCKET  R2 incremental cache (ISR / data cache)
+//   WORKER_SELF_REFERENCE     self service binding — REQUIRED by the
+//                             memory revalidation queue (open-next.config.ts)
+//
+// No Durable Objects on purpose: the DO revalidation queue
+// (DOQueueHandler) would be implemented (exported) by this worker, and
+// Cloudflare does not generate preview URLs for DO-implementing Workers —
+// per-PR previews are a deliverable of this task (runbook: OPENNEXT.md).
+// See open-next.config.ts for the full trade-off and the upgrade path.
+//
+// Environments follow design D9: dev / staging / production, each its own
+// Worker (explicit per-env `name` so the WORKER_SELF_REFERENCE service
+// binding always matches the deployed name) and its own R2 cache bucket.
+// Bucket names are placeholders until `wrangler r2 bucket create` is run
+// per environment (task 6.5 wires CI); local `wrangler dev` simulates the
+// R2 and service bindings locally without touching the real resources.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "rajahinta-frontend",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-05-01",
+  "compatibility_flags": [
+    // Required by the adapter with compatibility_date >= 2024-09-23.
+    "nodejs_compat",
+    // Lets the Worker fetch public URLs (adapter docs).
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  // Version preview URLs for per-PR previews (see OPENNEXT.md). The
+  // workers.dev route stays enabled (default) so previews are reachable
+  // before custom-domain routes are attached in task 6.5.
+  "preview_urls": true,
+  // Workers Logs (design D8 — re-points pino-to-stdout at Workers Logs).
+  "observability": {
+    "enabled": true
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "rajahinta-frontend"
+    }
+  ],
+  // ISR incremental cache (open-next.config.ts). One bucket per
+  // environment (design D9); prefix defaults to `incremental-cache`
+  // (NEXT_INC_CACHE_R2_PREFIX overrides).
+  "r2_buckets": [
+    {
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "rajahinta-frontend-cache-dev"
+    }
+  ],
+  "env": {
+    "dev": {
+      "name": "rajahinta-frontend-dev",
+      "services": [
+        {
+          "binding": "WORKER_SELF_REFERENCE",
+          "service": "rajahinta-frontend-dev"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "NEXT_INC_CACHE_R2_BUCKET",
+          "bucket_name": "rajahinta-frontend-cache-dev"
+        }
+      ]
+    },
+    "staging": {
+      "name": "rajahinta-frontend-staging",
+      "services": [
+        {
+          "binding": "WORKER_SELF_REFERENCE",
+          "service": "rajahinta-frontend-staging"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "NEXT_INC_CACHE_R2_BUCKET",
+          "bucket_name": "rajahinta-frontend-cache-staging"
+        }
+      ]
+    },
+    "production": {
+      "name": "rajahinta-frontend-production",
+      "services": [
+        {
+          "binding": "WORKER_SELF_REFERENCE",
+          "service": "rajahinta-frontend-production"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "NEXT_INC_CACHE_R2_BUCKET",
+          "bucket_name": "rajahinta-frontend-cache-production"
+        }
+      ]
+    }
+  }
+}

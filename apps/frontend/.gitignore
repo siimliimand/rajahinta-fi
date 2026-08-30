@@ -1,6 +1,12 @@
 # Next.js build output
 .next/
 
+# OpenNext Cloudflare Worker build output (task 5.1)
+.open-next/
+
+# Local wrangler state (simulated bindings, .dev.vars parsing cache)
+.wrangler/
+
 # Auto-generated TypeScript declarations
 next-env.d.ts
 
