@@ -78,6 +78,14 @@ jobs:
           NEXT_PUBLIC_API_URL: ${{ vars.STAGING_API_URL }}
         run: pnpm --filter @rajahinta/frontend run build:worker
 
+      # The seed script runs under tsx and imports workspace packages whose
+      # entry points are dist/ output — build them before migrate/seed
+      # (wrangler deploys don't need this; the seed path does).
+      - name: Build workspace packages (seed dependency graph)
+        run: |
+          pnpm --filter @rajahinta/core-domain run build
+          pnpm --filter @rajahinta/data-platform run build
+
       # ── Migrate (before seed and rollout — spec ordering) ─────────────
       # `wrangler d1 migrations apply DB --remote --env staging` over the
       # drizzle-kit migration dir shared by packages/data-platform.
