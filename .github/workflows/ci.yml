@@ -517,12 +517,12 @@ jobs:
 
   # --------------------------------------------------------------------------
   # Summary — aggregates all results into a single required check.
-  # No display-name override: the branch protection on master requires the
-  # commit-status context `CI / ci-pass`, and GitHub derives that context
-  # from the job id (`ci-pass`) only when the job has no `name:`. With
-  # `name: CI passed` the context became `CI / CI passed`, which never
-  # matched the protection rule and blocked every PR.
+  # The branch protection on master requires the check context
+  # `CI / ci-pass`; the display name below must stay exactly that or the
+  # required check never reports and every PR is blocked (a `name:`-less
+  # job reports as bare `ci-pass`, which does not match either).
   ci-pass:
+    name: CI / ci-pass
     runs-on: ubuntu-latest
     needs:
       - lint
