@@ -115,8 +115,9 @@ rollback:
   mechanism: wrangler rollback --env production   # previous Workers Version
   version_listing: wrangler deployments list --env production
   dns_note: >
-    Workers rollback restores the previous Version instantly without DNS
-    changes. DNS (low-TTL switch, design D10) is only the one-time
-    K8s → Workers cutover lever; the K8s cluster stays warm for the agreed
-    rollback window (decommission is task 6.7).
+    HISTORICAL (task 6.7, decommission): the DNS cutover lever and the warm
+    K8s rollback window ended with the cutover of change
+    migrate-to-cloudflare (design D10, docs/cutover-runbook.md). Rollback
+    is Workers-internal only since then — wrangler rollback restores the
+    previous Version instantly, without DNS changes.
   schema_note: D1 migrations are forward-only; rollback does not revert schema

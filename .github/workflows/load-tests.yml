@@ -1,9 +1,23 @@
 # ---------------------------------------------------------------------------
 # Load Tests — Landed-Cost Calculator Performance
 # ---------------------------------------------------------------------------
-# Runs the calculator load/performance test suite on every PR to `master`.
-# The test simulates 50 concurrent requests, measures p50/p95/p99 latency,
-# and asserts p95 < 500 ms (adjustable threshold in the test file).
+# Two layers against the Cloudflare Workers architecture (design D8):
+#
+# 1. `load-test` (every PR to `master`): the in-process vitest suites in
+#    tests/load/ — calculator and basket-optimizer engines under
+#    concurrency with mocked I/O ports. Deterministic and self-contained:
+#    no services, no secrets, no network. Thresholds: p95 < 2 s
+#    (typical), error rate < 1 %.
+#
+# 2. `artillery-staging` (manual dispatch): the HTTP-level Artillery
+#    suites (tests/load/artillery/) against the deployed api-worker
+#    staging URL — the Workers staging URL pattern
+#    (https://rajahinta-api-staging.<account-subdomain>.workers.dev,
+#    or the custom domain after cutover). Target comes from the
+#    STAGING_API_URL repository variable — the same variable the
+#    deploy-staging.yml health gate uses. No secrets. When the variable
+#    is unset the live phase is skipped and the job validates the suite
+#    YAML only, so the workflow stays green by configuration.
 # ---------------------------------------------------------------------------
 
 name: Load Tests
@@ -11,6 +25,7 @@ name: Load Tests
 on:
   pull_request:
     branches: [master]
+  workflow_dispatch:
 
 env:
   NODE_VERSION: '22'
@@ -18,7 +33,7 @@ env:
 
 jobs:
   load-test:
-    name: Load test (calculator)
+    name: Load test (calculator, in-process)
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -57,8 +72,8 @@ jobs:
             const conclusion = '${{ job.status }}';
             const emoji = conclusion === 'success' ? '✅' : '❌';
             const summary = conclusion === 'success'
-              ? 'Load test passed — p95 stayed under 500 ms threshold.'
-              : 'Load test failed — p95 exceeded the 500 ms threshold.';
+              ? 'Load test passed — p95 stayed under the 2000 ms threshold.'
+              : 'Load test failed — p95 exceeded the 2000 ms threshold or the error rate breached 1 %.';
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -66,3 +81,45 @@ jobs:
               repo: context.repo.repo,
               body: `## ${emoji} Calculator Load Test\n\n**Status:** ${conclusion}\n\n${summary}\n\n[View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
             });
+
+  artillery-staging:
+    name: Artillery HTTP suite (Workers staging)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Offline structural validation — always runs, no target needed.
+      - name: Validate artillery suites
+        run: bash tests/load/artillery/run.sh --validate
+
+      # Live run against the deployed api-worker staging URL (repository
+      # variable, no secret). Skipped — not failed — when staging is not
+      # configured, keeping the workflow green by configuration.
+      - name: Run artillery against Workers staging
+        if: vars.STAGING_API_URL != ''
+        run: bash tests/load/artillery/run.sh
+        env:
+          TARGET_URL: ${{ vars.STAGING_API_URL }}
+
+      - name: Report skipped live phase
+        if: vars.STAGING_API_URL == ''
+        run: |
+          echo "STAGING_API_URL repository variable is not set — skipped the live artillery phase."
+          echo "Set it to the deployed api-worker staging base URL (e.g. https://rajahinta-api-staging.<subdomain>.workers.dev) to enable it."

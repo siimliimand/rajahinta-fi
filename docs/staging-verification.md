@@ -1,5 +1,13 @@
 # Staging Environment — Verification Checklist
 
+> **⚠ SUPERSEDED (task 6.7, change `migrate-to-cloudflare`):** the steps
+> below describe the retired K8s staging path (Docker image, `kubectl`,
+> seed Job). Staging is now Workers deployed by `deploy-staging.yml`
+> (D1 migrate → seed → deploy → health gate) and described by
+> `infra/environments/staging.yaml`; the checklist is superseded by that
+> pipeline's health gate plus the soak criteria in
+> `docs/cutover-runbook.md` §0. Kept as a historical record only.
+
 > **Purpose:** Manual verification steps to confirm the staging environment is correctly deployed and functional.  
 > **When to run:** After the `deploy-staging` GitHub Actions workflow has completed successfully (on push to `master`).  
 > **Who:** Any team member with cluster access and the staging URL.

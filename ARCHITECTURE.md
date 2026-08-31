@@ -4,7 +4,7 @@
 
 Rajahinta.fi is a **cross-border beverage price index and Finnish landed-cost intelligence platform**. It is a calculator, not a shop: there is no checkout, no payment collection for alcohol, and no physical-goods order management — the only commercial transaction is a software subscription.
 
-The architecture is a **modular monolith** organized into clearly bounded packages (core-domain, application-api, data-acquisition, data-platform) with a NestJS 11 composition root and a Next.js 15 frontend (Finnish default locale, English secondary, via next-intl). Every module is wired through explicit port/adapter interfaces so any module can later be extracted into a separate service without redesigning domain logic. The technology stack is TypeScript/Node.js with PostgreSQL 16 + TimescaleDB 2.16 (Drizzle ORM), Redis, and BullMQ.
+The architecture is a set of clearly bounded packages (core-domain, application-api, data-acquisition, data-platform) whose logic runs on **Cloudflare Workers** (change `migrate-to-cloudflare`, designs D1–D10): an OpenNext frontend Worker (Next.js 15, Finnish default locale via next-intl), a Hono API Worker preserving the former NestJS contracts (zod DTOs, guard semantics, unified error envelope), an email Worker on the `send_email` binding, and the Cron/Queues/Workflows substrate. Every module is still wired through explicit port/adapter interfaces so any module can later be extracted into a separate service without redesigning domain logic. Data lives in D1 (SQLite, Drizzle ORM), R2 (observation log, rate snapshots), and Durable Objects; observability exports OTLP traces to Grafana Cloud (destination unchanged). The NestJS composition root (`apps/backend`) and the Postgres/Redis path remain in the repository only as test-harness substrate for the legacy pg suites and the legacy browser-E2E harness — they serve no traffic since the cutover (`docs/cutover-runbook.md`), and the K8s/Docker production artifacts were deleted at decommission (task 6.7).
 
 ## 1. Project Structure
 
@@ -13,12 +13,21 @@ rajahinta/
 ├── AGENTS.md                          # Agent operating contract
 ├── ARCHITECTURE.md                    # This document
 ├── DESIGN.md                          # Design-system documentation
-├── Dockerfile                         # Multi-stage production image
-├── docker-compose.yml                 # Local full-stack (TimescaleDB + Redis + backend)
+├── docker-compose.yml                 # Local TimescaleDB + Redis for the legacy pg test suites
 ├── eslint.config.mjs                  # ESLint flat config
 ├── package.json                       # Root workspace (pnpm workspaces)
 ├── apps/
-│   └── backend/                       # NestJS composition root
+│   ├── api-worker/                    # API Worker (Hono) — the production API on Workers
+│   │   └── src/
+│   │       ├── routes/                # Hono routes preserving the NestJS API contracts (design D1)
+│   │       ├── do/                    # RateLimiterDO, IdempotencyDO, ClickCounterDO (design D5)
+│   │       ├── cron/                  # Cron handlers dispatched by pattern (design D6)
+│   │       ├── workflows/             # Price-ingestion Cloudflare Workflow (design D6)
+│   │       ├── observability/         # Analytics Engine metrics + OTLP export (design D8)
+│   │       └── wrangler.jsonc         # dev/staging/production environments + bindings (design D9)
+│   ├── email-worker/                  # Email Worker — send_email binding, MIME builder (design D7)
+│   ├── frontend/                      # Next.js 15 frontend → OpenNext Cloudflare Worker (task 5.1)
+│   └── backend/                       # LEGACY NestJS composition root — test-harness only since cutover
 │       └── src/
 │           ├── app.module.ts          # AppModule — wires all packages + domain port adapters
 │           ├── main.ts                # Bootstrap
@@ -110,18 +119,21 @@ rajahinta/
 │           ├── audit/                 # AuditRepositoryAdapter (bridges to core-domain, durable audit_events store)
 │           └── observability/         # ReadinessService, MetricsService (prom-client /metrics on METRICS_PORT), KpiService, OpsDashboardController + OpsAccessGuard, CostAttributionService, InstrumentationService
 ├── infra/
-│   └── jobs/
-│       ├── docker-compose.jobs.yml    # Dev hot-reload stack
-│       └── Dockerfile.dev             # Dev Dockerfile for job workers
+│   ├── environments/                  # Committed Cloudflare environment descriptions (task 6.5)
+│   │   ├── dev.yaml                   # local development
+│   │   ├── staging.yaml               # pre-production validation (EU data plane)
+│   │   └── prod.yaml                  # production hardened (gated deploys, rollback)
+│   └── staging-data/                  # Test fixture SQL (feeds scripts/test-data-quality.sh)
+├── scripts/                           # Ops/CI tooling: ETL (etl-pg-to-d1.ts), parity harness, seed-d1, test runners
 ├── tests/
 │   ├── golden/                        # Golden-dataset regression tests (real engines, no vi.fn mocks)
 │   │   ├── golden-dataset.test.ts
 │   │   ├── per-category.test.ts
 │   │   └── data/products.ts           # Fixed product/offer fixtures
 │   ├── compliance/                    # Neutrality + ranking-lockstep compliance suite (fails the build on violations)
-│   ├── integration/                   # Real-Postgres suite: durability, data lifecycle, optimizer/calculator parity (TEST_DATABASE_URL)
-│   ├── e2e-browser/                   # Playwright browser journeys (age gate, calculator, compare sorting, account export)
-│   └── load/                          # Optimizer/calculator load tests + artillery HTTP suite
+│   ├── integration/                   # Legacy Postgres suite (TEST_DATABASE_URL) + d1/ suites on the node:sqlite D1 harness
+│   ├── e2e-browser/                   # Playwright journeys (workers config; legacy compose harness kept for CI)
+│   └── load/                          # Optimizer/calculator load tests + artillery HTTP suite (Workers staging target)
 ├── docs/
 │   ├── Rajahinta-FI.docx              # Business plan (Finnish)
 │   ├── rajahinta-fi-implementation-plan.md  # Engineering implementation plan
@@ -273,18 +285,20 @@ The implemented primary user journey:
 
 | Store          | Purpose                                                                                                             | Implementation                                                             |
 | -------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| PostgreSQL 16 + TimescaleDB 2.16 | Primary structured data store: products, retail offers, transport offers, versioned tax rules, FX datasets, calculation records, sessions, audit trail, merchant registry | `docker-compose.yml` (timescale/timescaledb:2.16.1-pg16), Drizzle ORM via `DRIZZLE` token |
-| Redis 7        | Caching, BullMQ job queues, sliding-window rate limiting, idempotency, click analytics counters                      | `docker-compose.yml` (redis:7-alpine)                                      |
-| Drizzle schema | Canonical table definitions: `productMaster`, `retailOffers`, `taxRules`, `transportOffers`, `calculationRecords`, `priceObservations`, `priceHistorySummaries`, `aggregationWatermarks`, `merchantTerms`, `basketCalculationRecords`, `savedScenarios`, `accounts`, `savedBaskets`, `fxRateDatasets`, `fxRates`, `sessions`, `auditEvents`, `clickCounterSnapshots`, `merchantRegistry` | `packages/data-platform/src/schema.ts`                                     |
+| D1 (SQLite)    | Primary relational store: products, retail offers, transport offers, versioned tax rules, FX datasets, calculation records, price-history summaries, sessions, audit trail, merchant registry, click-counter snapshots | `packages/data-platform/src/d1/schema.ts` (sqliteTable, design D2), bound as `DB` in `apps/api-worker/wrangler.jsonc`; 20 tables, FTS5 search (design D3); migrations via `wrangler d1 migrations` in the deploy pipeline (design D2) |
+| R2             | Append-only price-observation log (JSONL objects partitioned by date, batch-read for aggregation — design D4 as amended by G1) + rate-snapshot objects + OpenNext ISR cache | `OBSERVATION_LOG`, `RATE_SNAPSHOTS`, `NEXT_INC_CACHE_R2_BUCKET` bindings; EU jurisdiction (design D9) |
+| Durable Objects | Strongly consistent request-scoped state: `RateLimiterDO` (sliding-window log), `IdempotencyDO` (version-aware cache keys), `ClickCounterDO` (SQLite storage, `alarm()`-flushed snapshots into D1) | `apps/api-worker/src/do/` (design D5) |
+| Legacy Postgres + Redis (test harness) | The former production stores, kept only for the legacy pg suites (golden, data-quality, compliance, integration) and the legacy browser-E2E harness | `docker-compose.yml` (postgres+redis services), `tests/integration/` |
 
-Schema design principles applied:
+Schema design principles applied (unchanged through the migration):
 
 - Data minimization at schema level — no optional fields "for later"
 - Versioned tax rules are append-only (never mutated in place); FX datasets follow the same discipline (`PENDING_CONFIRMATION` → `PUBLISHED` only through explicit operator confirmation)
-- `priceObservations` is a TimescaleDB hypertable partitioned into 7-day chunks (append-only time series, watermark-scanned access pattern); `calculationRecords` and `basketCalculationRecords` are partitioned monthly, with a retention worker pruning anonymous-session partitions after the configured window (30 days)
+- Time-series: `priceObservations` lives in R2 as an append-only JSONL log partitioned by date, scanned by watermark like the former TimescaleDB hypertable chunks (design D4 as amended by gate G1 — D1-only storage failed the ≥2× byte-headroom requirement); `priceHistorySummaries` remains the long-term analytical record, materialized into D1 with `strftime` bucketing
+- Retention: calculation records are **age-capped** by configuration (default 180 days) via a scheduled Cron `DELETE` sweep — anonymous rows keep the 30-day window, and the cap replaces the former "session-bearing rows are never pruned" rule (amended by G1)
 - `sessions` stores server-issued opaque tokens SHA-256 hashed at rest; the plaintext token exists only in the httpOnly cookie
-- `auditEvents` is append-only (durable audit trail); click counters live in Redis with periodic snapshots into `clickCounterSnapshots`
-- `depositSystemStatus` is tri-state (`boolean | null`) — unknown is explicitly represented
+- `auditEvents` is append-only (durable audit trail); click counters live in `ClickCounterDO` with periodic snapshots into `clickCounterSnapshots`
+- `depositSystemStatus` is tri-state (nullable integer in D1) — unknown is explicitly represented
 - Reliability status per data point (`VERIFIED`/`ESTIMATED`/`STALE`/`UNAVAILABLE`)
 - Structural disclaimer text stored on every `calculationRecords` row (not UI-only)
 
@@ -296,7 +310,7 @@ Schema design principles applied:
 | ECB reference rates                    | Default FX source                      | `packages/data-acquisition/src/adapters/ecb-rate.source.ts` → `FxModule` (`packages/core-domain/src/fx/`): dated, versioned datasets; publication requires operator confirmation; redistribution terms are an open legal question (see §15) |
 | Posti carrier rates                    | Source implemented (fixture-pinned)    | `packages/data-acquisition/src/adapters/posti-rate.source.ts`: governance-gated transport pipeline; 7-day freshness alert hook |
 | Alko (Finnish retailer)                | Adapter implemented                    | `packages/data-acquisition/src/adapters/alko.adapter.ts`: domestic reference feed through the governance gate, golden-fixture tested |
-| Finnish Tax Administration rate tables | Seed data (v1.0-2024 … v3.0-2026) + snapshot-based rate review  | `packages/data-platform/src/seed/tax-rules.seed.ts`, `packages/core-domain/src/tax/services/alcohol-excise.math.ts`, `packages/data-acquisition/src/services/rate-review-scheduler.service.ts` — `ConfigBackedRateChangeSource` reads a configured snapshot file, computes a SHA-256 hash, and compares against the last-reviewed entry to detect rate changes; review entries require manual/legal confirmation before promoting dataset versions |
+| Finnish Tax Administration rate tables | Seed data (v1.0-2024 … v3.0-2026) + snapshot-based rate review  | `packages/data-platform/src/seed/tax-rules.seed.ts`, `packages/core-domain/src/tax/services/alcohol-excise.math.ts`, `packages/data-acquisition/src/services/rate-review-scheduler.service.ts` — `ConfigBackedRateChangeSource` reads a configured snapshot object from R2 (the `RATE_SNAPSHOTS` binding; a file before the Cloudflare migration, design D6), computes a SHA-256 hash, and compares against the last-reviewed entry to detect rate changes; review entries require manual/legal confirmation before promoting dataset versions |
 
 Merchant ingestion is driven by the **database-backed merchant registry** (`merchant_registry` table + `MerchantRegistryRepository`): the scheduler enqueues one job per permitted merchant with per-merchant dedupe keys (`price-ingestion-<merchantId>-<hour>`), so onboarding a merchant does not require a deploy. Ingestion is gated by `SourceGovernanceService`: a merchant must have `GRANTED` permission status before the pipeline will fetch or persist its data. New merchants default to `PENDING` (off) until compliance review.
 
@@ -305,19 +319,21 @@ Merchant ingestion is driven by the **database-backed merchant registry** (`merc
 | Technology              | Role                                                                                                |
 | ----------------------- | --------------------------------------------------------------------------------------------------- |
 | TypeScript              | Primary language — all packages and apps                                                            |
-| Node.js                 | Runtime (NestJS framework)                                                                          |
-| NestJS                  | Modular monolith framework — DI, modules, guards, controllers                                       |
-| PostgreSQL 16 + TimescaleDB 2.16 | Primary data store (via `pg` pool); hypertable for the price-observation time series |
-| Drizzle ORM             | Type-safe SQL ORM — schema in `packages/data-platform/src/schema.ts`                                |
-| Redis 7                 | Caching, BullMQ job queues, rate limiting, idempotency, analytics counters                          |
-| BullMQ                  | Background job processing (price ingestion per merchant, transport refresh, tax review, FX review, time-series aggregation, retention sweeps) |
-| Next.js 15 + next-intl 4.14 | Frontend (App Router, `[locale]` routing, Finnish default / English secondary)                 |
+| Cloudflare Workers      | Runtime — API Worker (Hono), email Worker, OpenNext frontend Worker                                  |
+| Hono                    | HTTP framework of the API Worker — preserves the former NestJS contracts (design D1)                 |
+| D1 (SQLite)             | Primary relational store, Drizzle `sqliteTable` schema in `packages/data-platform/src/d1/schema.ts` (design D2) |
+| R2                      | Append-only observation log, rate snapshots, OpenNext ISR cache (design D4)                          |
+| Durable Objects         | Rate limiting, idempotency, click counters (design D5)                                               |
+| Queues / Workflows / Cron Triggers | Background processing: price ingestion queue + durable Workflow, scheduled refresh/review/aggregation/retention (design D6) |
+| Cloudflare Email Service | `send_email` binding behind the email Worker (design D7)                                            |
+| Drizzle ORM             | Type-safe SQL ORM — pg lineage (legacy suites) + D1 driver (design D2)                               |
+| Next.js 15 + next-intl 4.14 | Frontend (App Router, `[locale]` routing, Finnish default / English secondary), deployed via OpenNext |
 | Vitest 3.2 / Playwright | Test runners: unit/golden/integration/e2e and browser-level journeys                               |
-| pino                    | Structured request logging with request IDs (JSON to stdout)                                        |
-| OpenTelemetry           | Trace export to Grafana Cloud (env-configured exporter)                                             |
-| prom-client             | `/metrics` endpoint on `METRICS_PORT` (default 9464) with freshness gauges                          |
+| OpenTelemetry           | Trace export to Grafana Cloud via Workers' OTLP (env-configured exporter — vendor destination unchanged, design D8) |
+| Workers Analytics Engine | Request counters and freshness gauges (`writeDataPoint`), queried via the GraphQL API (design D8)   |
+| Workers Logs            | Structured request logging with request IDs (replaces pino-to-stdout)                                |
+| wrangler                | Cloudflare CLI: environments, D1 migrations, deploys, `--dry-run` config validation in CI            |
 | ESLint                  | Linting (flat config in `eslint.config.mjs`)                                                        |
-| Docker / docker-compose | Local development and production deployment                                                         |
 | OpenCode                | Agent runtime and developer interface                                                               |
 | OpenSpec                | Change/specification management                                                                     |
 | CodeGraph               | Code intelligence / indexing MCP server                                                             |
@@ -327,13 +343,18 @@ Merchant ingestion is driven by the **database-backed merchant registry** (`merc
 
 | Component                   | Status      | Details                                                                                                                                                                                                                                 |
 | --------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Docker Compose (production) | Implemented | `docker-compose.yml`: TimescaleDB 2.16 (pg16), Redis 7, NestJS backend (multi-stage build)                                                                                                                                             |
-| Docker Compose (dev jobs)   | Implemented | `infra/jobs/docker-compose.jobs.yml` + `Dockerfile.dev` — hot-reload for background workers                                                                                                                                             |
-| Dockerfile                  | Implemented | Monorepo-root multi-stage production image                                                                                                                                                                                              |
-| K8s manifests               | Implemented | Kustomize overlays in `infra/k8s/`: base deployment, service, ingress, configmap, secrets, serviceaccount, HPA (2-4 replicas, owns the replica count), PDB, ServiceMonitor, PrometheusRule, migrate job; staging and production overlays with health probes, security context, and rolling update strategy; image tags set to the commit SHA by the deploy pipeline (no `:latest`) |
-| Metrics endpoint            | Implemented | prom-client `/metrics` on `METRICS_PORT` (default 9464, opt-in): request counters, freshness gauges; scraped via ServiceMonitor, alerting via PrometheusRule (stale price share, transport age)                                         |
-| Feature flags               | Implemented | `FeatureFlagService`, `LaunchGateService`, `LaunchGateGuard` in `application-api/feature-flags/`; frontend bootstrap inlines flag states in the initial HTML payload                                                                     |
-| Background jobs             | Implemented | BullMQ workers: price-ingestion (per-merchant, dedupe-keyed), transport-rate-refresh, tax-dataset-review, fx-dataset-review, time-series-aggregation, calculation-record-retention, account-retention                                    |
+| Cloudflare Workers          | Implemented | API Worker (Hono, `apps/api-worker`), email Worker (`apps/email-worker`, `send_email` binding), OpenNext frontend Worker (`apps/frontend`); wrangler environments `dev`/`staging`/`production` (design D9)                                |
+| Deploy pipelines            | Implemented | `deploy-staging.yml` (push to master: D1 migrate → seed → deploy → health gate) and `deploy-production.yml` (manual dispatch gated by `confirm_deploy == 'yes'`: migrate → deploy — **never seeded**; production data arrives via the one-time ETL, `docs/cutover-runbook.md`) |
+| D1 migrations               | Implemented | `wrangler d1 migrations` in the deploy pipeline — staging automatic, production gated — preserving migrate-before-rollout ordering (design D2); forward-only, rollback does not revert schema                                            |
+| EU residency                | Implemented | D1 created with `--jurisdiction=eu`, R2 buckets `jurisdiction: "eu"` (location weur), DO locality follows the EU-placed Worker — deliberate for the legal/tax review (design D9); described in `infra/environments/*.yaml`                 |
+| Metrics                     | Implemented | Workers Analytics Engine `writeDataPoint` request counters + freshness gauges, queried via the GraphQL API; dashboards re-pointed (design D8)                                                                                             |
+| Email                       | Implemented | Email Worker on the `send_email` binding (`POST /internal/email/send` behind a shared-secret header) — first consumer is the ops freshness alert (design D7)                                                                              |
+| Rollback                    | Implemented | `wrangler rollback --env production` (previous Workers Version, no DNS changes); the K8s DNS-revert lever was retired at decommission (task 6.7)                                                                                          |
+| Feature flags               | Implemented | `FF_*` wrangler vars resolved by `apps/api-worker/src/middleware/feature-flags.ts`; frontend bootstrap inlines flag states in the initial HTML payload                                                                                    |
+| Background jobs             | Implemented | Cron Triggers (7 patterns dispatched in `src/cron/router.ts`), Queues (price ingestion + DLQ), and the price-ingestion Workflow with durable per-step retries (design D6)                                                                 |
+| CI                          | Implemented | `ci.yml`: build, lint, unit, golden, data-quality, compliance, e2e, composition smoke, integration, D1 suite, api-worker e2e, OpenNext build + compile check, per-worker `wrangler deploy --dry-run` validation (task 6.5)                 |
+
+The former Docker/K8s production path (root Dockerfile, `docker-compose` app stack, Kustomize overlays in `infra/k8s/`, migrate/seed Jobs, ServiceMonitor/PrometheusRule) was **deleted at decommission** (task 6.7, after the rollback window closed per `docs/cutover-runbook.md` §6). `docker-compose.yml` remains only as the Postgres/Redis provider for the legacy pg test suites.
 
 The promotion path is development → staging → production, with staging carrying its own tax-rule and merchant data copies, and feature flags gating new merchant sources, tax rulesets, UI ranking behavior, historical price intelligence (`enable_historical_price_intelligence`, default off), basket optimization (`enable_basket_optimization`, default off), and advanced features (`enable_advanced_features` — saved scenarios, report exports, merchant freshness, declaration guidance; default off).
 
@@ -342,7 +363,7 @@ The promotion path is development → staging → production, with staging carry
 Implemented measures:
 
 - **Session authentication**: server-issued opaque session tokens (`packages/application-api/src/accounts/session-token.service.ts`, `session.repository.ts`), SHA-256 hashed at rest in the `sessions` table, delivered as the httpOnly `rajahinta_session` cookie. `SessionAuthGuard` derives the account from the token; the legacy `x-user-id` header is rejected outright, and sessions rotate via `POST /api/v1/account/session/rotate`. Email-verification groundwork exists (`POST /api/v1/account/verify-email`); until verification completes, account data is documented as disposable.
-- **Rate limiting**: Redis sliding-window limiter (Lua script) behind `RateLimitGuard` + `RateLimitingService` on public-facing calculation endpoints; shared across replicas. `X-Forwarded-For` is trusted only when `RATE_LIMIT_TRUST_PROXY=true`.
+- **Rate limiting**: sliding-window limiter behind the rate-limit middleware on public-facing calculation endpoints, shared across all requests/instances. On Workers it is `RateLimiterDO` (exact sliding-window log, design D5) reading the trustworthy `CF-Connecting-IP`; the legacy Nest path approximates it with a Redis Lua script plus `RATE_LIMIT_TRUST_PROXY`. The guard semantics (profiles, limits, 429 + Retry-After) are identical on both.
 - **Ops dashboard guard**: `OpsAccessGuard` on the ops endpoints: env-configured operator bearer token plus IP allowlist, fails closed when unconfigured.
 - **Idempotency**: `IdempotencyService` ensures calculation endpoints are idempotent for identical inputs; cache keys are version-aware (tax, transport, and FX dataset versions).
 - **Age gate**: `AgeGateService` with `SimpleConfirmationProvider`: self-attestation, not identity verification (documented as such).
@@ -362,21 +383,20 @@ Agent infrastructure constraints: credentials stay out of logs and committed fil
 
 ## 10. Monitoring & Observability
 
-Implemented in `packages/application-api/src/observability/` and `apps/backend/src/main.ts`:
+The production observability path is the Workers rework (design D8):
 
-| Service                  | Purpose                                                                    |
-| ------------------------ | -------------------------------------------------------------------------- |
-| `ReadinessService`       | `GET /api/v1/health/ready` verifies `SELECT 1` plus a Redis ping with short timeouts and reports dependency status; liveness (`/api/v1/health`) stays cheap and process-only |
-| `MetricsService`         | prom-client `/metrics` endpoint on `METRICS_PORT` (default 9464, opt-in): request counters and freshness gauges (stale price share, transport age) |
-| `pino` (bootstrap)       | Structured JSON request logging with request IDs to stdout (`apps/backend/src/main.ts`) |
-| OpenTelemetry            | Trace export to Grafana Cloud via env-configured exporter (`InstrumentationService`) |
-| `KpiService`             | Tracks four KPI categories (product, commercial, data, compliance metrics) |
-| `OpsDashboardController` | Exposes operational health signals behind `OpsAccessGuard` (bearer + IP allowlist, fails closed) |
-| `CostAttributionService` | Per-calculation cost attribution tied to commercial metrics                |
-
-Alerting: `infra/k8s/base/prometheusrule.yaml` pages on the freshness invariants the data-quality service computes (stale price share, transport age); the Posti carrier pipeline also hooks a 7-day transport-freshness alert.
+| Concern                  | Implementation                                                                    |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| Metrics                  | Workers Analytics Engine `writeDataPoint`: request counters and freshness gauges (stale price share, transport age), queried via the Cloudflare GraphQL API; Grafana dashboards re-pointed (`apps/api-worker/src/observability/`) |
+| Traces                   | Workers' OTLP export keeps **Grafana Cloud as the trace destination** — no APM vendor change; env-configured endpoint |
+| Logs                     | Workers Logs with request-ID fields (replaces pino-to-stdout)                       |
+| Health                   | `GET /api/v1/health/ready` verifies a D1 roundtrip plus a DO ping (dependency-aware, short timeouts); liveness stays process-only and cheap |
+| Alerting                 | A Cron checker (30-min pattern, `apps/api-worker/src/cron/freshness-alert.ts`) evaluates the freshness invariants — stale price share > 10 %/25 %, transport age > 5/7 days, and an absent-signal check — and emails ops through the email Worker (design D7/D8), replacing PrometheusRule paging |
+| Error tracking           | No Sentry-class service yet (unchanged gap)                                         |
 
 Every externally sourced fact carries a reliability status and timestamp surfaced to the user.
+
+The legacy Nest-side observability (`packages/application-api/src/observability/`: prom-client `/metrics` on `METRICS_PORT`, `KpiService`, `OpsDashboardController`, `CostAttributionService`) remains in the repository as part of the test-harness-only Nest composition root; it serves no production traffic since the cutover.
 
 ## 11. Performance & Scalability
 
@@ -392,8 +412,9 @@ The repository is an agentic workspace with a working application build. Command
 
 | Command                     | Purpose                                                                                                                                                                  |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `docker compose up --build` | Full local stack (TimescaleDB + Redis + backend)                                                                                                                          |
-| `pnpm test`                 | Run all Vitest test suites (per package)                                                                                                                                 |
+| `docker compose up -d postgres redis` | Legacy pg-suite data stores (TimescaleDB + Redis) for golden/data-quality/compliance/integration runs; `pnpm dev:up` wraps it with migrations                                    |
+| `pnpm --filter @rajahinta/api-worker dev` | API Worker on `wrangler dev` (:8787/8788 pattern; local D1/DO/R2 simulators)                                                                                      |
+| `pnpm test`                 | Run all Vitest test suites (per package)                                                                                                                                  |
 | `pnpm test:golden`          | Golden-dataset regression suite (real Postgres)                                                                                                                          |
 | `pnpm test:data-quality`   | Data-quality invariants (real Postgres)                                                                                                                                  |
 | `pnpm test:compliance`     | Neutrality and ranking-lockstep compliance (fails the build on violations)                                                                                               |
@@ -429,7 +450,7 @@ The repository is an agentic workspace with a working application build. Command
 | Durability tests | Implemented | `tests/integration/durability-restart.test.ts`: rate limits shared across two app instances, audit and analytics survive restart |
 | Data-lifecycle tests | Implemented | `tests/integration/data-lifecycle.test.ts`: partition pruning, hypertable query parity, watermark scan |
 | Browser e2e tests | Implemented | `tests/e2e-browser/` (Playwright): 8 journeys across age gate (2), calculator flow (2), compare sorting (3), account export incl. session issue (1); CI workflow boots the real stack |
-| Load tests | Implemented | `tests/load/`: optimizer and calculator under the k8s resource limits, artillery HTTP suite (`tests/load/artillery/`); results in `tests/load/basket-load-results.md` |
+| Load tests | Implemented | `tests/load/`: optimizer and calculator under the historical K8s-era resource envelope (kept as the regression reference), artillery HTTP suites (`tests/load/artillery/`) targeting the Workers staging URL via `load-tests.yml` (dispatch, `STAGING_API_URL`); results in `tests/load/basket-load-results.md` |
 
 Suite sizes at the technical-assessment remediation gate (task 13.1): unit 2337, golden 35, compliance 31, data-quality 205, integration 104, e2e 17, browser e2e 8 journeys, load 9, all exit 0 alongside typecheck, lint, and production build. CI runs build, lint, unit, golden, data-quality, compliance, e2e, and composition smoke; the integration suite runs locally against `TEST_DATABASE_URL` (see §15).
 
@@ -461,7 +482,7 @@ Suite sizes at the technical-assessment remediation gate (task 13.1): unit 2337,
 - **Deposit-return system status per product/packaging is tri-state** (`boolean | null`); null means ESTIMATED — the container-duty engine flags uncertain exemptions, never silently assumes.
 - **Small-brewery relief (pienpanimoalennus) UNAVAILABLE:** The official vero.fi scheme is a progressive 10–50 % discount by annual production volume (ceiling 15 000 000 l/year, HE 106/2024). The current rule evaluator cannot express production-volume tiers, so only the general beer rate is shipped. Small-brewery treatment is documented as `UNAVAILABLE` pending Phase 2 evaluator support. See vero.fi pienpanimoalennus guidance; rationale in `docs/phase-0-1-verification-fix-plan.md` §3 C1.
 - **GDPR integration tests require `TEST_DATABASE_URL`:** `packages/application-api/src/accounts/__tests__/gdpr-integration.test.ts` runs against a real PostgreSQL instance. There is no always-on Postgres harness in CI; these tests are skipped unless `TEST_DATABASE_URL` is set.
-- **HTTP-level load test pending baseline:** resolved in the runtime composition fix — `tests/load/artillery/` provides the HTTP suite (ramp 1→50 over 60 s, steady 50 for 120 s, p95 < 2 s, error < 1 %, zero 429s in the steady window) and `deploy-staging.yml` runs it as a non-blocking post-deploy step. Residual: promote to blocking once a staging baseline exists (`docs/staging-verification.md` §5). Staging deploys are deferred (§15.2), so no baseline can exist until the cluster does.
+- **HTTP-level load test pending baseline:** `tests/load/artillery/` provides the HTTP suite (ramp 1→50 over 60 s, steady 50 for 120 s, p95 < 2 s, error < 1 %, zero 429s in the steady window). `load-tests.yml` runs it on manual dispatch against the deployed Workers staging URL (`STAGING_API_URL` repository variable; the in-process vitest load suites gate every PR). Residual: promote to blocking once a staging baseline exists — the G3 absolute numbers (`spikes/g3-vertical-slice.md`) are the local reference per the migration's recorded decision 5.
 - **E2E suite relies on decorator-metadata transform + single-instance pin:** `vitest.config.e2e.ts` uses a custom TypeScript transpile plugin to emit `emitDecoratorMetadata` and pins `@nestjs/core` to a single physical path. Root cause: pnpm instantiates `@nestjs/core` twice (two peer-set variants), giving two `Reflector`/class identities and breaking NestJS DI. A durable fix would resolve the dependency-side duplication; the current workaround is functional but fragile.
 - **Idempotency cache-key version-blindness (resolved):** `CalculatorController` now resolves active dataset versions before deriving the cache key, so the key includes tax, transport, and FX dataset versions; a version bump produces a different key and a guaranteed fresh calculation. Client-supplied idempotency keys stay verbatim by contract, and the lookup-time version comparison remains as defence in depth.
 - **Transport EXACT→VERIFIED bridge removed (resolved, task 4.3):** `TransportEstimationService` now emits canonical `ReliabilityStatus` (`'VERIFIED'` for exact weight match, `'ESTIMATED'` for closest bracket); the ad-hoc `EXACT → VERIFIED` mapping in `LandedCostCalculatorService` is deleted. `BasketShippingResult.reliability` retains a local `'EXACT' | 'ESTIMATED' | 'PARTIAL'` type scoped to basket-level computation (not the canonical reliability union) — acceptable as an internal transport-layer signal. `DataReliability` is retained as a deprecated type alias (`= ReliabilityStatus`) in `core-domain/src/index.ts` for backward compatibility.
@@ -485,6 +506,7 @@ Suite sizes at the technical-assessment remediation gate (task 13.1): unit 2337,
 ### 15.2 Staging cluster deferral decision
 
 > **Decision recorded 2026-08-22, repo owner; delivery work in PRs #22–#25.**
+> **SUPERSEDED by change `migrate-to-cloudflare`:** staging (and production) are now Cloudflare Workers deployed by wrangler pipelines — no cluster, `KUBE_CONFIG`, or GHCR image path exists. The context below is retained as the historical record of why the K8s path was deferred; it was ultimately retired rather than resumed (decommission, task 6.7).
 
 **Context:** The deploy workflows authenticate to the cluster with a `KUBE_CONFIG` secret that was never set — the repo held no secrets at all, so every `Deploy Staging` run on `master` failed at the first `kubectl` step (the auth step `echo`-writes the secret and exits 0 even when it is empty). No staging cluster exists and no kubeconfig for one is available. The registry side works: `deploy-staging.yml` and `deploy-production.yml` push to `ghcr.io/siimliimand/rajahinta` with the workflow-scoped `GITHUB_TOKEN` (verified by a pushed image, run 32529902593).
 
@@ -505,7 +527,7 @@ Per the implementation plan's delivery phases (cross-cutting durable stores, fee
 - **Real authentication:** wire an email/OIDC provider onto the existing session and email-verification groundwork; until then account data stays disposable
 - **Durable governance and rate-review stores:** replace the operator console's in-memory repositories with database tables (actions are already durably audited)
 - **Billing integration:** real third-party billing (Stripe or equivalent) on the stable `BillingService` interface
-- **Production roll-out:** apply `infra/k8s/overlays/production` to a live cluster, wire cert-manager/Let's Encrypt (HPA, PDB, ServiceMonitor, and PrometheusRule are already in the base)
+- **Production roll-out:** done via Cloudflare — `deploy-production.yml` (manual, gated) migrates D1 and deploys the Workers; cutover sequence and decommission gate in `docs/cutover-runbook.md`
 - **Potential module extraction** — Data Acquisition, then Data Platform, into separate services without redesigning domain logic
 
 ## 17. Project Identification
@@ -515,9 +537,9 @@ Per the implementation plan's delivery phases (cross-cutting durable stores, fee
 | **Name**           | Rajahinta.fi                                                                  |
 | **Language**       | TypeScript (ES2022, strict mode)                                              |
 | **Type**           | Cross-border beverage price index + Finnish landed-cost intelligence platform |
-| **Runtime**        | Node.js 22 (backend), Next.js 15 (frontend)                                   |
-| **Database**       | PostgreSQL 16 + TimescaleDB 2.16 (Drizzle ORM)                                |
-| **Cache/Queue**    | Redis 7 (BullMQ)                                                              |
+| **Runtime**        | Cloudflare Workers (Hono API Worker, OpenNext frontend, email Worker); Node.js 22 for the legacy test harness |
+| **Database**       | Cloudflare D1 (SQLite, Drizzle ORM) + R2 (observation log, rate snapshots); Durable Objects for request-scoped state |
+| **Cache/Queue**    | Durable Objects (rate limit, idempotency, click counters); Cloudflare Queues + Workflows + Cron Triggers |
 | **Date of review** | 2026-08-19                                                                    |
 | **Maintainer**     | Not evident from the repository                                               |
 
@@ -534,7 +556,7 @@ Per the implementation plan's delivery phases (cross-cutting durable stores, fee
 | MyTax            | Finnish Tax Administration's online tax service                                                                    |
 | ABV              | Alcohol by volume                                                                                                   |
 | FX dataset       | Dated, versioned set of foreign-exchange rates (default source: ECB reference rates); published only via operator confirmation |
-| Hypertable       | TimescaleDB time-partitioned table; `price_observations` uses 7-day chunks                                          |
+| Hypertable       | TimescaleDB time-partitioned table; the former home of `price_observations` (7-day chunks) — superseded by the R2 date-partitioned JSONL log (design D4); still required by the legacy pg test harness |
 | ECB              | European Central Bank (publisher of the default FX reference rates)                                                 |
 
-<!-- Last updated: 2026-08-28, technical-assessment-remediation (sessions, FX datasets, merchant registry, TimescaleDB hypertable, durable audit/analytics/rate limiting, Next 15/React 19/next-intl, ops console, observability); prior: Phase 2 advanced features -->
+<!-- Last updated: 2026-08-31, migrate-to-cloudflare decommission (task 6.7): Cloudflare Workers/D1/R2/DO/Queues/Workflows/Cron architecture, OpenNext frontend, email Worker, Grafana via OTLP, wrangler CI/CD; K8s/Docker-prod artifacts removed; prior: technical-assessment-remediation (2026-08-28, sessions, FX datasets, merchant registry, TimescaleDB hypertable, durable audit/analytics/rate limiting, Next 15/React 19/next-intl, ops console, observability); prior: Phase 2 advanced features -->

@@ -6,8 +6,11 @@
  * - a violation → one structured plain-text email per invariant through
  *   a FAKE global fetch, naming the invariant, measured value, and
  *   threshold, carrying the shared-secret header;
- * - threshold port fidelity against the literal replaced expressions in
- *   infra/k8s/base/prometheusrule.yaml;
+ * - threshold port fidelity: the ported constants stay pinned to the
+ *   literal replaced PrometheusRule expressions (0.10/0.25 stale-share,
+ *   432000/604800 s transport age); the source rules themselves were
+ *   deleted from the repo with the K8s stack (decommission, task 6.7
+ *   of migrate-to-cloudflare);
  * - email Worker failure → logged, never thrown, claim released so the
  *   next tick re-alerts;
  * - suppression window honored over the REAL IdempotencyDO job-claim
@@ -18,7 +21,6 @@
  */
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { readFileSync } from 'node:fs';
 import {
   DEFAULT_SUPPRESSION_SECONDS,
   FRESHNESS_ALERT_CRON,
@@ -114,34 +116,20 @@ afterEach(() => {
 // Threshold port fidelity — the replaced PrometheusRule expressions
 // ---------------------------------------------------------------------------
 
-describe('threshold port fidelity (infra/k8s/base/prometheusrule.yaml)', () => {
-  // The source of truth being replaced, read from disk: the test fails
-  // if either side drifts without a deliberate one-act change.
-  const ruleFile = readFileSync(
-    new URL('../../../../../infra/k8s/base/prometheusrule.yaml', import.meta.url),
-    'utf8',
-  );
-
+describe('threshold port fidelity (replaced PrometheusRule expressions)', () => {
+  // The replaced rule file (infra/k8s/base/prometheusrule.yaml) was
+  // deleted with the K8s stack at decommission (task 6.7); the literals
+  // below are the exact expressions it carried, pinned here so any
+  // drift on this side is a deliberate one-act change.
   it('pins the ported constants to the replaced rule expressions', () => {
     // RajahintaStalePriceShareWarning / Critical
+    //   expr: rajahinta_data_quality_stale_price_share_ratio > 0.10 / > 0.25
     expect(STALE_PRICE_SHARE_THRESHOLDS.warning.threshold).toBe(0.1);
     expect(STALE_PRICE_SHARE_THRESHOLDS.critical.threshold).toBe(0.25);
     // RajahintaTransportOfferAgeWarning / Critical
+    //   expr: rajahinta_transport_newest_offer_age_seconds > 432000 / > 604800
     expect(TRANSPORT_AGE_THRESHOLDS.warning.thresholdSeconds).toBe(432_000);
     expect(TRANSPORT_AGE_THRESHOLDS.critical.thresholdSeconds).toBe(604_800);
-
-    expect(ruleFile).toContain(
-      'expr: rajahinta_data_quality_stale_price_share_ratio > 0.10',
-    );
-    expect(ruleFile).toContain(
-      'expr: rajahinta_data_quality_stale_price_share_ratio > 0.25',
-    );
-    expect(ruleFile).toContain(
-      'expr: rajahinta_transport_newest_offer_age_seconds > 432000',
-    );
-    expect(ruleFile).toContain(
-      'expr: rajahinta_transport_newest_offer_age_seconds > 604800',
-    );
   });
 
   it('keeps strict-> semantics: a value exactly AT a threshold does not fire that severity', () => {

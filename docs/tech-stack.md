@@ -2,28 +2,35 @@
 
 > Decision record for Rajahinta.fi technology choices.
 > Decided: 2026-08-15
+> **Amended 2026-08-31 (change `migrate-to-cloudflare`, task 6.7):** the
+> deployment/DB/queue rows below now reflect the Cloudflare Workers stack.
+> The original NestJS/Postgres/Redis rationale (§2–§4) is kept as the
+> historical decision record; those components remain only as the legacy
+> test-harness path.
 
 ## 1. Stack Overview
 
 | Layer | Technology | Version | Rationale |
 |---|---|---|---|
-| Backend runtime | Node.js | 22 LTS (22.x) | Long-term support, stable package ecosystem, native TypeScript support via tsx |
-| Backend framework | NestJS | 11.x | Module system maps to five bounded layers, DI container enforces interface boundaries, enterprise-grade for compliance audits |
+| Runtime | Cloudflare Workers | — | Request-scoped edge runtime for API, email, and frontend (OpenNext); no long-running servers to operate |
+| API framework | Hono | 4.x | Lightweight Worker-native router; preserves the former NestJS API contracts (zod DTOs, guards, error envelope) |
 | Language | TypeScript | 5.6+ | Strong typing across stack, catch domain errors at compile time, single language reduces context switching |
-| Database | PostgreSQL | 16+ | ACID compliance for tax calculations, complex query support, versioned data patterns |
-| Database extension | TimescaleDB | 2.16+ | Hypertables for time-series historical rates and price data |
-| ORM | Drizzle | 0.38+ | Type-safe, transparent SQL generation, no hidden N+1 queries, excellent Postgres support |
-| Frontend framework | Next.js (App Router) | 14.2+ | SSR for public pages, server components for calculation results, client components for dashboards |
+| Database | Cloudflare D1 (SQLite) | — | Serverless SQL at the edge; Drizzle `sqliteTable` schema, forward-only migrations, EU jurisdiction |
+| Object storage | Cloudflare R2 | — | Append-only price-observation log (JSONL by date), rate snapshots, OpenNext ISR cache; EU jurisdiction |
+| Request-scoped state | Durable Objects | — | Strongly consistent rate limiting, idempotency, click counters (SQLite-backed storage + alarms) |
+| ORM | Drizzle | 0.38+ | Type-safe, transparent SQL generation, no hidden N+1 queries; pg driver (legacy suites) + D1 driver |
+| Frontend framework | Next.js (App Router) | 15.5 | SSR for public pages, server components for calculation results, client components for dashboards; deployed as a Worker via OpenNext |
 | Frontend styling | Tailwind CSS | 3.4+ | Utility-first, small bundle, consistent design system |
-| Job queue | BullMQ | 5.x | Redis-backed, durable, supports scheduling, retries, and dead-letter queues |
-| Cache / broker | Redis | 7.2+ | Job queue backend, rate-limit state, session cache |
+| Job queue | Cloudflare Queues + Workflows | — | Durable queue with DLQ + per-step-retry Workflow for ingestion; Cron Triggers for schedules |
+| Background schedules | Cron Triggers | — | 7 UTC patterns dispatched in one Worker (ingestion, refresh, reviews, aggregation, retention, freshness alert) |
+| Email | Cloudflare Email Service (`send_email`) | — | Dedicated email Worker is the only sender; SPF/DKIM via domain verification |
 | Package manager | pnpm | 9.x | Fast, disk-efficient, strict dependency isolation for monorepo |
-| Testing | Vitest | 2.x | Fast, TypeScript-native, compatible with NestJS testing utilities |
-| E2E testing | Playwright | 1.47+ | Cross-browser, API testing, visual regression |
-| Observability | OpenTelemetry | JS SDK 0.55+ | Vendor-neutral instrumentation, traces-to-metrics pipeline |
+| Testing | Vitest | 3.x | Fast, TypeScript-native; D1 suites run on the node:sqlite harness |
+| E2E testing | Playwright | 1.62+ | Browser journeys against the Workers stack (local wrangler dev or staging) |
+| Observability | OpenTelemetry (OTLP) + Workers Analytics Engine | — | Traces to Grafana Cloud (destination unchanged); request/freshness metrics via `writeDataPoint` |
 | Frontend RUM | Faro Web SDK | 1.14+ | Session replay, Core Web Vitals, error tracking, correlates to backend traces |
-| Feature flags | Custom service (env + DB) | — | Lightweight, synchronous resolution, LaunchDarkly-ready interface for future migration |
-| CI/CD | GitHub Actions | — | Native GitHub integration, matrix testing, deploy workflows |
+| Feature flags | Custom service (wrangler vars) | — | Synchronous resolution from `FF_*` environment vars; LaunchDarkly-ready interface |
+| CI/CD | GitHub Actions + wrangler | — | Wrangler deploy pipelines, `--dry-run` config validation, D1 migrate → seed → deploy gating |
 
 ## 2. Backend Rationale (NestJS / Node.js / TypeScript)
 
@@ -90,26 +97,27 @@ Go offers raw performance and simpler concurrency, but NestJS on Node.js provide
 
 | Component | Choice | Why |
 |---|---|---|
-| Job queue | BullMQ on Redis | Durable, supports delayed/recurring jobs, monitoring UI available |
-| Feature flags | Custom service | Synchronous resolution (no network call on request path). Interface designed so LaunchDarkly can replace the DB-backed implementation without changing flag consumers |
+| Hosting | Cloudflare Workers | No servers or containers to operate; environments via wrangler (`dev`/`staging`/`production`), rollback via `wrangler rollback` |
+| Job queue | Cloudflare Queues + Workflows | Durable delivery with DLQ; per-step retries for the ingestion pipeline; Cron Triggers for schedules |
+| Data residency | EU jurisdiction (D1/R2) | Deliberate placement for the legal/tax review; set at resource creation |
+| Feature flags | Custom service | Synchronous resolution (no network call on request path). Interface designed so LaunchDarkly can replace the implementation without changing flag consumers |
 | Package manager | pnpm | Strict dependency isolation prevents accidental cross-layer imports. Monorepo-ready for the five-layer structure |
-| CI/CD | GitHub Actions | No additional SaaS. Matrix testing across Node 22, Postgres 16, Redis 7 |
-| Container | Docker | Each environment (dev/staging/prod) runs the same container image. Distroless base for production |
+| CI/CD | GitHub Actions + wrangler | No additional SaaS. `wrangler deploy --dry-run` validates every Worker config on PRs; deploys gated per environment |
+| Containers | none (retired) | The Docker/K8s production path was decommissioned (task 6.7); `docker-compose.yml` remains only to serve Postgres/Redis to the legacy pg test suites |
 
 ## 6. Version Constraints Summary
 
 | Dependency | Min version | Max version | Notes |
 |---|---|---|---|
-| Node.js | 22.0.0 | <23.0.0 | LTS only (22.x). Not 20.x or 21.x |
+| Node.js | 22.0.0 | <23.0.0 | LTS only (22.x) — local tooling and the legacy test harness |
 | TypeScript | 5.6 | — | Track latest stable |
-| PostgreSQL | 16.0 | — | Use native psql 16+ |
-| TimescaleDB | 2.16.0 | — | Matches PG16 support |
-| Redis | 7.2 | — | For BullMQ + caching |
-| NestJS | 11.0 | — | Track latest major |
-| Next.js | 14.2 | — | Track latest stable |
-| React | 18.3 | — | Match Next.js 14.x peer dep |
+| PostgreSQL | 16.0 | — | Legacy test harness only (docker-compose pg suites) |
+| TimescaleDB | 2.16.0 | — | Legacy test harness only |
+| Redis | 7.2 | — | Legacy test harness only |
+| Next.js | 15.5 | — | Track latest stable (OpenNext Worker output) |
+| React | 19.2 | — | Match Next.js 15.x |
 | pnpm | 9.0 | — | Package manager |
-| Docker | 24.0 | — | Container runtime |
+| wrangler | latest | — | Cloudflare CLI; keep current for D1/Workers feature support |
 
 ## 7. Layer-to-Framework Mapping
 

@@ -164,10 +164,10 @@
   //                 AND the task-6.3 freshness alert (design D7/D8): the
   //                 cron checker evaluating the stale-price-share and
   //                 transport-age invariants and emailing the operator
-  //                 through the email Worker — replaces the K8s
-  //                 PrometheusRule paging (infra/k8s/base/prometheusrule.yaml;
-  //                 threshold port + cadence mapping in
-  //                 src/cron/freshness-alert.ts)
+  //                 through the email Worker — replaced the K8s
+  //                 PrometheusRule paging (rule file deleted with the K8s
+  //                 stack at decommission, task 6.7; threshold port +
+  //                 cadence mapping in src/cron/freshness-alert.ts)
   //   0 */6 * * *   transport-rate refresh (EVERY_6_HOURS) AND the task-3.4
   //                 click-counter snapshot flush (legacy '0 */6 * * *');
   //                 both handlers fire on this pattern
