@@ -14,6 +14,13 @@
 // Environments (design D9): `dev`, `staging`, `production`, each with its own
 // worker name, from-address var, and pinned destination binding. Secrets are
 // per environment (`wrangler secret put EMAIL_SEND_SECRET --env <env>`).
+//
+// EU placement (task 6.5, design D9 — placement review): this Worker carries
+// NO data-plane resources (no D1/KV/R2/DO bindings), so it declares no
+// placement keys — the only stateful output is the email itself via the
+// `send_email` binding. The platform data-plane placement (D1 jurisdiction,
+// DO locality, KV/R2 jurisdiction) is declared on the api-worker config and
+// documented in infra/environments/{staging,prod}.yaml.
 {
   "name": "rajahinta-email",
   "main": "src/index.ts",
