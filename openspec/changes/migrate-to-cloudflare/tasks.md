@@ -41,7 +41,7 @@
 - [x] 5.1 OpenNext Cloudflare adapter: frontend Worker build, wrangler config, per-PR preview URLs <!-- agent: platform-engineer.build, depends_on: [3.9], touches: [apps/frontend/open-next.config.ts, apps/frontend/wrangler.jsonc, package.json] -->
 - [x] 5.2 Frontend→API connection: same-zone routing or service binding, per-environment cookie domain and API base, secure cookie flags verified on Workers <!-- agent: platform-engineer.build, depends_on: [5.1], touches: [apps/frontend/src/lib/**, apps/frontend/wrangler.jsonc] -->
 - [x] 5.3 Email Worker: send_email binding, MIME construction, POST /internal/email/send behind a shared-secret header, and the SPF/DKIM domain-verification runbook <!-- agent: platform-engineer.build, depends_on: [1.4], touches: [apps/email-worker/**] -->
-- [ ] 5.4 Playwright browser journeys running against Workers previews/staging instead of the docker-compose stack <!-- agent: platform-engineer.build, depends_on: [5.2], touches: [tests/e2e-browser/**] -->
+- [x] 5.4 Playwright browser journeys running against Workers previews/staging instead of the docker-compose stack <!-- agent: platform-engineer.build, depends_on: [5.2], touches: [tests/e2e-browser/**] -->
 
 ## 6. Observability, CI/CD, cutover (Phase 5)
 
