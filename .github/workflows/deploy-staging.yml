@@ -1,158 +1,128 @@
+# =============================================================================
+# Deploy Staging — Cloudflare Workers (migrate-to-cloudflare task 6.5)
+#
+# A push to `master` produces a green end-to-end staging deploy:
+#   migrate → seed (staging only) → deploy → health gate
+#
+# Spec contract (specs/ci-cd-pipeline): D1 migrations applied to the staging
+# database before seed and rollout; official tax versions seeded; API Worker,
+# email Worker, and frontend Worker deployed via wrangler; readiness verified
+# over HTTP. No Docker/GHCR/kubectl path remains.
+#
+# REQUIRED GitHub secrets (set once in repo settings — names only, values
+# never committed):
+#   CLOUDFLARE_API_TOKEN  — Workers deploy + D1/R2/Queues/Email + secrets
+#                           management for the staging resources
+#   CLOUDFLARE_ACCOUNT_ID — the Cloudflare account the staging Workers live in
+#
+# REQUIRED repository variable:
+#   STAGING_API_URL — deployed api-worker staging base URL
+#                     (e.g. https://rajahinta-api-staging.<subdomain>.workers.dev);
+#                     the health gate curls its /api/v1/health/ready
+# =============================================================================
+
 name: Deploy Staging
 
-# Staging cluster is not provisioned yet (KUBE_CONFIG secret unset), so every
-# deploy run fails at the first kubectl step. Kubernetes is deferred until
-# traffic justifies it. When the cluster exists: set the KUBE_CONFIG secret
-# and restore the push trigger, or run manually via workflow_dispatch.
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
 
 env:
   CI: true
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ghcr.io/siimliimand/rajahinta
+  NODE_VERSION: '22'
+  PNPM_VERSION: '9'
+  # Wrangler reads both natively; never echoed, only passed to the CLI.
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
 
 jobs:
   deploy:
+    name: Staging deploy (migrate → seed → deploy)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
-      packages: write
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: ${{ env.PNPM_VERSION }}
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: pnpm
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm build
+      # ── Build ──────────────────────────────────────────────────────────
+      # The api/email Workers are bundled by wrangler itself at deploy time
+      # (their `main` points at TS sources); OpenNext is the only step that
+      # produces a deploy artifact (apps/frontend/.open-next/).
+      - name: Build frontend (OpenNext)
+        run: pnpm --filter @rajahinta/frontend run build:worker
 
-      - name: Build Docker image
-        # Immutable tagging (task 11.1): the full commit SHA only — no
-        # mutable :latest is built or pushed anywhere in the pipeline.
-        run: |
-          docker build -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
+      # ── Migrate (before seed and rollout — spec ordering) ─────────────
+      # `wrangler d1 migrations apply DB --remote --env staging` over the
+      # drizzle-kit migration dir shared by packages/data-platform.
+      - name: Apply D1 migrations (staging)
+        run: pnpm --filter @rajahinta/api-worker run db:migrate:d1:staging
 
-      - name: Log in to GitHub Container Registry
-        # Uses the workflow's GITHUB_TOKEN (granted packages: write above);
-        # the repo token can push to the repo owner's GHCR namespace.
-        # Fallback: a REGISTRY_TOKEN PAT with write:packages is only needed
-        # if the image ever moves to a separate org namespace.
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      # ── Seed (staging only — production is never auto-seeded) ─────────
+      # scripts/seed-d1.ts --remote --env staging: idempotent (applies
+      # migrations again as a recorded no-op), generates the official tax
+      # versions, executes them into D1, and FAILS LOUDLY on verification
+      # row-count/version mismatches.
+      - name: Seed staging D1 (official tax versions)
+        run: pnpm --filter @rajahinta/api-worker run db:seed:d1:staging
 
-      - name: Push Docker image
-        run: |
-          docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
+      # ── Deploy ─────────────────────────────────────────────────────────
+      - name: Deploy API Worker (staging)
+        run: pnpm --filter @rajahinta/api-worker exec wrangler deploy --env staging
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: latest
+      - name: Deploy email Worker (staging)
+        run: pnpm --filter @rajahinta/email-worker exec wrangler deploy --env staging
 
-      - name: Install kustomize
-        run: |
-          curl -sLo /tmp/kustomize.tar.gz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz"
-          tar -xzf /tmp/kustomize.tar.gz -C /usr/local/bin/
-          chmod +x /usr/local/bin/kustomize
+      - name: Deploy frontend Worker (staging)
+        run: pnpm --filter @rajahinta/frontend exec opennextjs-cloudflare deploy --env staging
 
-      - name: Authenticate with cluster
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
-
-      - name: Set image tag
-        # Pins the overlay's committed images entry to this build's SHA.
-        # The images transformer rewrites every workload carrying the
-        # image name (backend Deployment, migrate + seed Jobs), so the
-        # rendered manifests resolve immutable tags only (task 11.1).
-        run: |
-          cd infra/k8s/overlays/staging
-          kustomize edit set image ${{ env.IMAGE_NAME }}:${{ github.sha }}
-
-      - name: Clean up previous migrate Job
-        run: |
-          # Jobs are immutable — delete before re-creating.
-          kubectl delete job rajahinta-migrate \
-            -n rajahinta \
-            --ignore-not-found \
-            --wait
-
-      - name: Run database migrations
-        run: |
-          # Apply only the migrate Job (identified by component label).
-          # ConfigMap/Secret already exist from previous deploys.
-          kustomize build infra/k8s/overlays/staging \
-            | kubectl apply -f- \
-              --selector='app.kubernetes.io/component=migrate-job'
-          kubectl wait job rajahinta-migrate \
-            -n rajahinta \
-            --for condition=complete \
-            --timeout=300s || {
-            echo "::error::Migration Job rajahinta-migrate failed — fetching logs:"
-            kubectl logs job/rajahinta-migrate -n rajahinta --tail=50 || true
-            exit 1
-          }
-
-      - name: Clean up previous seed Job
-        run: |
-          # Jobs are immutable — delete before re-creating.
-          # --ignore-not-found handles first-run / already-clean cases.
-          kubectl delete job rajahinta-staging-seed \
-            -n rajahinta \
-            --ignore-not-found \
-            --wait
-
-      - name: Deploy workloads
-        run: |
-          # Apply all resources (deployment, seed-job, service, etc.).
-          # The migrate Job already exists — kubectl apply with identical
-          # spec is a server-side no-op.
-          kustomize build infra/k8s/overlays/staging | kubectl apply -f-
-
-      - name: Wait for seed Job completion
-        run: |
-          # Idempotent seed Job — safe to re-run (skips already-seeded rows).
-          kubectl wait job rajahinta-staging-seed \
-            -n rajahinta \
-            --for condition=complete \
-            --timeout=300s || {
-            echo "::error::Seed Job rajahinta-staging-seed failed — fetching logs:"
-            kubectl logs job/rajahinta-staging-seed -n rajahinta --tail=50 || true
-            exit 1
-          }
-
-      - name: Verify rollout
-        run: |
-          kubectl rollout status deployment/rajahinta-backend \
-            -n rajahinta \
-            --timeout=120s
-
-      - name: In-process benchmark
-        continue-on-error: true
-        run: pnpm test:load
-
-      # ── HTTP-level load test ───────────────────────────────────────────
-      # Runs the Artillery HTTP suite (ramp 1→50 / steady 50) against the
-      # deployed staging endpoint.  NON-BLOCKING until a baseline exists
-      # (D5); promote to blocking after the first successful staging run.
-      # ───────────────────────────────────────────────────────────────────
-      - name: HTTP load test (non-blocking until baseline)
-        continue-on-error: true
+      # ── Health gate — the job is green only when staging is ready ──────
+      # GET /api/v1/health/ready does a D1 roundtrip + DO ping inside the
+      # Worker (design D8); a 200 therefore proves the migrated schema, the
+      # seeded data path, and all bindings came up healthy. Bounded: 30
+      # attempts × 10 s ≈ 5 min, then the job fails.
+      - name: Health gate — staging readiness
         env:
-          TARGET_URL: https://staging.rajahinta.fi
-        run: pnpm load:http
+          STAGING_API_URL: ${{ vars.STAGING_API_URL }}
+        run: |
+          if [ -z "$STAGING_API_URL" ]; then
+            echo "::error::Repository variable STAGING_API_URL is not set — configure the deployed api-worker staging base URL (e.g. https://rajahinta-api-staging.<subdomain>.workers.dev)."
+            exit 1
+          fi
+          echo "Gating on $STAGING_API_URL/api/v1/health/ready"
+          attempt=1
+          while [ "$attempt" -le 30 ]; do
+            code=$(curl -s -o /tmp/health.json -w '%{http_code}' \
+              --max-time 10 "$STAGING_API_URL/api/v1/health/ready" || true)
+            if [ "$code" = "200" ]; then
+              echo "Readiness OK on attempt $attempt: $(cat /tmp/health.json)"
+              exit 0
+            fi
+            echo "Attempt $attempt: HTTP ${code:-no-response} — retrying in 10 s"
+            attempt=$((attempt + 1))
+            sleep 10
+          done
+          echo "::error::staging /api/v1/health/ready did not return 200 within the bounded retry window — failing the deploy job."
+          exit 1

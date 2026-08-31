@@ -2,7 +2,13 @@
 # CI — Continuous integration (push to master or feature/*, PR to master)
 #
 # Fast-feedback gating pipeline: lint → build (includes typecheck) → unit →
-# golden → data-quality → compliance → e2e → ci-pass.
+# golden → data-quality → compliance → e2e → d1 → worker checks →
+# wrangler config validation → ci-pass.
+#
+# Cloudflare Workers additions (task 6.5): the D1 suite, the api-worker e2e
+# suite, the OpenNext frontend worker build + compile check, and per-worker
+# `wrangler deploy --dry-run` validation so a broken wrangler.jsonc fails
+# PRs before any deploy workflow can. Independent jobs run in parallel.
 # =============================================================================
 
 name: CI
@@ -444,6 +450,108 @@ jobs:
         run: docker compose down -v
 
   # --------------------------------------------------------------------------
+  # D1 suite (task 2.7) — the real-Postgres integration suites ported onto the
+  # node:sqlite D1 harness (committed migrations applied per suite). Runs from
+  # workspace TypeScript sources via vitest aliases — no Postgres service and
+  # no build artifacts needed, so it runs in parallel with lint/build.
+  # --------------------------------------------------------------------------
+  d1-tests:
+    name: D1 suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run test:d1
+
+  # --------------------------------------------------------------------------
+  # Worker checks — api-worker e2e suite (full createApp() over the fake-D1
+  # harness + in-memory DO namespaces) and the OpenNext frontend worker build
+  # with a wrangler compile check of its output. Source-driven — runs in
+  # parallel with lint/build.
+  # --------------------------------------------------------------------------
+  worker-checks:
+    name: Worker checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: api-worker e2e
+        run: pnpm --filter @rajahinta/api-worker run test:e2e
+
+      - name: Frontend worker build (OpenNext)
+        run: pnpm --filter @rajahinta/frontend run build:worker
+
+      # Compile check of the built worker against a named environment —
+      # bundles .open-next/worker.js + assets with the staging config
+      # (offline: --dry-run performs no API calls).
+      - name: Frontend worker compile check (wrangler dry-run)
+        run: pnpm --filter @rajahinta/frontend exec wrangler deploy --dry-run --env staging --outdir /tmp/frontend-dry-run
+
+  # --------------------------------------------------------------------------
+  # Wrangler config validation — `wrangler deploy --dry-run` per Worker per
+  # named environment so a malformed wrangler.jsonc (bad binding, broken
+  # migrations entry, misplaced key) fails PRs here instead of in a deploy
+  # workflow. Offline: dry-run bundles and validates config without API
+  # calls; placeholder resource IDs are fine. Independent of build — runs in
+  # parallel with lint/build. (The frontend config is validated in
+  # worker-checks, after the OpenNext output it points at exists.)
+  # --------------------------------------------------------------------------
+  wrangler-config:
+    name: Wrangler config validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: api-worker config dry-run (dev)
+        run: pnpm --filter @rajahinta/api-worker exec wrangler deploy --dry-run --env dev --outdir /tmp/api-dry-run-dev
+
+      - name: api-worker config dry-run (staging)
+        run: pnpm --filter @rajahinta/api-worker exec wrangler deploy --dry-run --env staging --outdir /tmp/api-dry-run-staging
+
+      - name: api-worker config dry-run (production)
+        run: pnpm --filter @rajahinta/api-worker exec wrangler deploy --dry-run --env production --outdir /tmp/api-dry-run-production
+
+      - name: email-worker config dry-run (staging)
+        run: pnpm --filter @rajahinta/email-worker exec wrangler deploy --dry-run --env staging --outdir /tmp/email-dry-run-staging
+
+      - name: email-worker config dry-run (production)
+        run: pnpm --filter @rajahinta/email-worker exec wrangler deploy --dry-run --env production --outdir /tmp/email-dry-run-production
+
+  # --------------------------------------------------------------------------
   # Summary — aggregates all results into a single required check
   # --------------------------------------------------------------------------
   ci-pass:
@@ -458,6 +566,9 @@ jobs:
       - data-quality
       - compliance
       - e2e-tests
+      - d1-tests
+      - worker-checks
+      - wrangler-config
       - composition-smoke
       - integration
       - compose-smoke
@@ -474,6 +585,9 @@ jobs:
           echo "data-quality: ${{ needs.data-quality.result }}"
           echo "compliance: ${{ needs.compliance.result }}"
           echo "e2e-tests: ${{ needs.e2e-tests.result }}"
+          echo "d1-tests: ${{ needs.d1-tests.result }}"
+          echo "worker-checks: ${{ needs.worker-checks.result }}"
+          echo "wrangler-config: ${{ needs.wrangler-config.result }}"
           echo "composition-smoke: ${{ needs.composition-smoke.result }}"
           echo "integration: ${{ needs.integration.result }}"
           echo "compose-smoke: ${{ needs.compose-smoke.result }}"
@@ -486,6 +600,9 @@ jobs:
             || [ "${{ needs.data-quality.result }}" = "failure" ] \
             || [ "${{ needs.compliance.result }}" = "failure" ] \
             || [ "${{ needs.e2e-tests.result }}" = "failure" ] \
+            || [ "${{ needs.d1-tests.result }}" = "failure" ] \
+            || [ "${{ needs.worker-checks.result }}" = "failure" ] \
+            || [ "${{ needs.wrangler-config.result }}" = "failure" ] \
             || [ "${{ needs.composition-smoke.result }}" = "failure" ] \
             || [ "${{ needs.integration.result }}" = "failure" ] \
             || [ "${{ needs.compose-smoke.result }}" = "failure" ]; then
