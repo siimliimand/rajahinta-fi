@@ -53,20 +53,6 @@ Free vs. premium feature access SHALL be enforced by a single shared entitlement
 - **WHEN** a free-tier user requests a premium-gated feature
 - **THEN** the shared entitlement module SHALL deny access consistently across all endpoints
 
-### Requirement: Redis-backed version-keyed cache
-
-Calculation caching SHALL be Redis-backed and keyed by input plus tax/transport dataset versions, invalidating on dataset-version change rather than wall-clock TTL alone.
-
-#### Scenario: Cache hit
-
-- **WHEN** an identical calculation arrives under the same dataset versions
-- **THEN** the cached result SHALL be served without recomputation
-
-#### Scenario: Dataset version invalidation
-
-- **WHEN** the tax or transport dataset version changes
-- **THEN** previously cached results for the affected version SHALL be invalidated
-
 ### Requirement: Correct validation responses
 
 Input validation SHALL return correct 4xx statuses: 400 for malformed input and 422 for classification-gate rejection, not a 500-class exception with a status override.
@@ -146,20 +132,6 @@ The backend composition root SHALL inject the concrete calculator port implement
 - **WHEN** a client posts a calculation request for a specific product and quantity
 - **THEN** the response SHALL reflect that product and quantity, produced by the real excise and container-duty math
 
-### Requirement: Redis-backed rate limiting
-
-Rate limiting SHALL use a Redis-backed implementation behind the existing `IRateLimiter` interface so limits are shared across replicas and survive deploys. Client keys derived from `X-Forwarded-For` SHALL be trusted only when the deployment is explicitly configured behind a known proxy; otherwise the direct socket address SHALL be used.
-
-#### Scenario: Limit shared across instances
-
-- **WHEN** traffic for one client hits two API replicas
-- **THEN** the combined traffic SHALL count against a single shared limit
-
-#### Scenario: Forwarded header ignored at origin
-
-- **WHEN** a client sends a spoofed `X-Forwarded-For` to an origin not configured to trust a proxy
-- **THEN** the rate-limit key SHALL be derived from the socket address, not the header
-
 ### Requirement: Durable audit trail
 
 Audit events SHALL persist to an append-only PostgreSQL table. In-memory audit storage SHALL exist only in test environments.
@@ -171,7 +143,7 @@ Audit events SHALL persist to an append-only PostgreSQL table. In-memory audit s
 
 ### Requirement: Durable click analytics
 
-Click analytics counters SHALL persist in Redis with periodic snapshotting so rollouts do not wipe them. In-memory counters SHALL exist only in test environments.
+Click analytics counters SHALL persist in a Durable Object with periodic snapshotting into D1 so rollouts do not wipe them. In-memory counters SHALL exist only in test environments.
 
 #### Scenario: Counters survive rollout
 
@@ -204,3 +176,35 @@ Calculation records SHALL be partitioned by month, and partitions covering anony
 
 - **WHEN** the retention job runs and an anonymous-session partition is older than the retention window
 - **THEN** the partition SHALL be dropped and account-scoped records SHALL be unaffected
+
+### Requirement: Workers runtime API hosting
+
+The API SHALL run as a Cloudflare Worker (`apps/api-worker`) preserving the module-grouped endpoint surface, paths, DTO validation, and the unified error envelope exactly as served today by the NestJS application. The NestJS application SHALL remain buildable and runnable until cutover so dual-run parity can be measured; after cutover the Worker is the only served implementation.
+
+#### Scenario: Contract parity on ported endpoints
+
+- **WHEN** any ported endpoint receives the same request as its NestJS predecessor
+- **THEN** status code, response body shape, and error envelope match
+
+#### Scenario: Dual-run parity
+
+- **WHEN** sampled traffic is replayed against both implementations during the cutover window
+- **THEN** calculator outputs agree on the sampled inputs
+
+### Requirement: Durable Object sliding-window rate limiting
+
+Rate limiting SHALL be enforced by a sliding-window Durable Object (`RateLimiterDO`) keyed by client identity derived from `CF-Connecting-IP`, preserving today's route limits and 429 semantics. `X-Forwarded-For` trust configuration SHALL be removed: Cloudflare's client IP header is authoritative.
+
+#### Scenario: Shared limit across isolates
+
+- **WHEN** requests arrive at different Worker isolates from the same client
+- **THEN** the Durable Object enforces a single shared window for that client
+
+### Requirement: Version-keyed idempotency on a Durable Object
+
+Calculation idempotency SHALL be served by an `IdempotencyDO` preserving version-aware cache keys (tax, transport, and FX dataset versions remain part of the key). Entries SHALL invalidate when a dataset version changes, not on a timer.
+
+#### Scenario: Dataset version change invalidates cache
+
+- **WHEN** a tax dataset version changes
+- **THEN** idempotent lookups for calculations computed under the previous version miss and recompute

@@ -1,22 +1,23 @@
 # deployment-observability Specification
 
 ## Purpose
-TBD - created by archiving change technical-assessment-remediation. Update Purpose after archive.
+
+Observability and operational health for rajahinta.fi on Cloudflare Workers: dependency-aware health endpoints (D1 roundtrip + Durable Object ping), structured request logging and OTLP trace export to Grafana Cloud, request metrics and freshness gauges in Workers Analytics Engine, and freshness alerting delivered as email through the email Worker (replacing the former Prometheus/ServiceMonitor/K8s stack).
+
 ## Requirements
 ### Requirement: Dependency-aware health checks
 
-Readiness SHALL verify its dependencies: a `SELECT 1` against PostgreSQL and a `ping` against Redis, each with short timeouts, with dependency status exposed in the response body. Liveness SHALL remain cheap and process-only. Kubernetes probes and the Docker healthcheck SHALL key off the appropriate endpoint so a pod with a dead dependency is not reported ready.
+Readiness SHALL verify its dependencies: a D1 roundtrip query and a Durable Object ping, each with short timeouts, with dependency status exposed in the response body. Liveness SHALL remain cheap and process-only. Workers routing and any external uptime probes SHALL key off the appropriate endpoint so a Worker with a dead dependency is not reported ready.
 
 #### Scenario: Dead database blocks readiness
 
-- **WHEN** PostgreSQL is unreachable
+- **WHEN** D1 is unreachable
 - **THEN** readiness SHALL fail and report the dependency as down in the response body
 
 #### Scenario: Liveness stays cheap
 
 - **WHEN** liveness is probed
 - **THEN** it SHALL not perform network calls to dependencies
-
 ### Requirement: Ops dashboard is authenticated
 
 The ops dashboard route SHALL be protected by an authentication guard and an IP allowlist (or bound to a separate internal port). Unauthenticated requests SHALL receive no operational data.
@@ -28,31 +29,28 @@ The ops dashboard route SHALL be protected by an authentication guard and an IP 
 
 ### Requirement: Structured request logging
 
-The API SHALL emit structured JSON logs with a request ID on every request, with sensitive values redacted, replacing the in-memory KPI sampler for production paths.
+Request logs SHALL be structured and carry a request ID on every request handled by the API Worker, observable through Workers Logs. Log fields SHALL NOT contain credentials or secrets.
 
-#### Scenario: Request carries ID
+#### Scenario: Request correlation
 
-- **WHEN** any API request completes
-- **THEN** the log entry SHALL include the request ID, route, status, and duration in a structured, machine-parseable form
-
+- **WHEN** any API request is handled
+- **THEN** its log entries are queryable by request ID in Workers Logs
 ### Requirement: Distributed tracing
 
-The API SHALL produce OpenTelemetry traces exportable to the configured Grafana Cloud stack via environment configuration, correlating requests across the request path and background jobs.
+The API Worker SHALL export OpenTelemetry traces to Grafana Cloud via the Workers OTLP export, configured through environment bindings. Trace context SHALL propagate from the frontend Worker to the API Worker where both handle a request.
 
-#### Scenario: Trace exported
+#### Scenario: Trace reaches Grafana
 
-- **WHEN** tracing is configured with valid export credentials
-- **THEN** request spans SHALL arrive at the configured collector
-
+- **WHEN** a calculation request is served
+- **THEN** a trace for the request is exported to the configured Grafana Cloud endpoint
 ### Requirement: Freshness alerting
 
-Alerting rules SHALL exist for the freshness invariants the data-quality service computes, including stale price share and transport offer age, so degradation pages an operator instead of being discovered.
+Freshness invariants (stale price share, transport age) SHALL be evaluated by a scheduled Cron handler in the API Worker. When an invariant is violated, the handler SHALL trigger an operational alert email through the email Worker. Alerting SHALL NOT depend on a Prometheus rule or cluster-side scraper.
 
-#### Scenario: Stale transport alert
+#### Scenario: Stale price data pages the operator
 
-- **WHEN** the newest transport offer exceeds the 7-day threshold
-- **THEN** an alert SHALL fire
-
+- **WHEN** the stale price share exceeds its threshold at the Cron evaluation
+- **THEN** the operator receives an alert email via the email Worker
 ### Requirement: Reproducible deploys
 
 Kubernetes manifests SHALL reference immutable image tags (SHA digests) produced by the deploy pipeline, never mutable tags. Horizontal Pod Autoscaling and a PodDisruptionBudget SHALL be configured once per-replica state is eliminated.
@@ -70,3 +68,12 @@ Swagger UI SHALL NOT be mounted in production unless explicitly enabled by an en
 
 - **WHEN** the API runs in production without the docs flag
 - **THEN** the Swagger UI route SHALL NOT be served
+
+### Requirement: Worker metrics via Analytics Engine
+
+The API Worker SHALL emit request metrics (counts by route and status class) and freshness gauges to Workers Analytics Engine. Metrics SHALL be queryable via the Analytics Engine SQL/GraphQL API so dashboards can reproduce today's request counters and freshness gauges without a Prometheus scraper.
+
+#### Scenario: Dashboard reproduces request counters
+
+- **WHEN** the metrics dashboard queries Analytics Engine for a time window
+- **THEN** per-route request counts and freshness gauges are returned for that window

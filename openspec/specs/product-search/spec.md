@@ -5,24 +5,23 @@ TBD - created by archiving change technical-assessment-remediation. Update Purpo
 ## Requirements
 ### Requirement: Query parameter filters results
 
-`GET /api/v1/products` SHALL implement the documented `q` parameter: matching products over name, brand, and manufacturer using PostgreSQL text matching (`pg_trgm` similarity or tsvector full-text search), ranked deterministically. Existing pagination and sort orders SHALL be preserved and SHALL compose with query filtering.
+Product search SHALL filter and rank results from D1 using an FTS5 virtual table over product names with a `LIKE` substring fallback, replacing the `pg_trgm` implementation while preserving the observed behavior: the same query parameters (including blank-query passthrough and pagination interplay) return deterministic, stably ordered results.
 
-#### Scenario: Query matches by name
+#### Scenario: Ranked search on D1
 
-- **WHEN** a user searches for "karhu"
-- **THEN** products whose name, brand, or manufacturer match the query SHALL be returned in preference to non-matches
+- **WHEN** a search query is submitted that matched under `pg_trgm`
+- **THEN** D1-backed search returns the same products in a deterministic ranked order
 
-#### Scenario: Blank query passes through
+#### Scenario: Blank query passthrough
 
-- **WHEN** `q` is absent, empty, or whitespace
-- **THEN** the endpoint SHALL behave exactly as the unfiltered product list with the existing default ordering
+- **WHEN** a blank query is submitted
+- **THEN** the endpoint behaves as today (passthrough semantics unchanged)
 
-#### Scenario: Deterministic ranking
+### Requirement: Search parity with golden fixtures
 
-- **WHEN** the same query is issued twice against unchanged data
-- **THEN** the result order SHALL be identical, using a deterministic tiebreaker such as product id
+Search SHALL pass a golden parity check: every golden-fixture query (including typo-adjacent and partial-name cases such as "karhu") SHALL return the expected product within the accepted top-k on the D1 implementation. The parity suite SHALL run in CI against the D1-backed search.
 
-#### Scenario: Pagination composes
+#### Scenario: Golden query parity
 
-- **WHEN** a query is combined with page, limit, and sort parameters
-- **THEN** filtering SHALL apply before pagination and the requested sort SHALL be honored over the filtered set
+- **WHEN** the golden search suite runs against D1
+- **THEN** every fixture query finds its expected product within the accepted top-k, and a miss fails the build
