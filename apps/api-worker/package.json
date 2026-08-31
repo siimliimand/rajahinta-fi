@@ -1,0 +1,34 @@
+{
+  "name": "@rajahinta/api-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Workers API (Hono) — migrate-to-cloudflare phase 2. Replaces the NestJS composition root at cutover while preserving API contracts (design D1).",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "db:migrate:d1:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:d1:staging": "wrangler d1 migrations apply DB --remote --env staging",
+    "db:migrate:d1:production": "wrangler d1 migrations apply DB --remote --env production",
+    "db:seed:d1:generate": "pnpm --filter @rajahinta/data-platform exec tsx ../../scripts/seed-d1.ts --emit-sql-only",
+    "db:seed:d1:local": "pnpm --filter @rajahinta/data-platform exec tsx ../../scripts/seed-d1.ts --local",
+    "db:seed:d1:staging": "pnpm --filter @rajahinta/data-platform exec tsx ../../scripts/seed-d1.ts --remote --env staging",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.config.e2e.ts",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "clean": "rm -rf .wrangler"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "hono": "^4.6.0",
+    "reflect-metadata": "^0.2.2",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.0.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.0",
+    "wrangler": "^4.14.0"
+  }
+}

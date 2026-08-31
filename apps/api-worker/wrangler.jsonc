@@ -1,0 +1,409 @@
+// Wrangler config — API Worker (migrate-to-cloudflare task 3.1).
+//
+// Environments follow design D9: dev / staging / production, each with its
+// own D1 database, R2 bucket, and Queues. Database IDs below are
+// placeholders until `wrangler d1 create` is run per environment (task
+// 2.4); queue/bucket names follow the same per-env convention and local
+// `wrangler dev` simulates all bindings locally without touching the
+// real resources.
+//
+// @nestjs/common is bundler-aliased to the no-op decorator shim (design D1,
+// G3 finding): no Nest container exists in a Worker, and aliasing keeps
+// stream/util/url, rxjs, class-validator, and class-transformer OUT of the
+// bundle. `nodejs_compat` is the recorded fallback if a transitive
+// dependency ever needs Node built-ins.
+{
+  "name": "rajahinta-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-05-01",
+  "alias": {
+    "@nestjs/common": "./src/nestjs-compat.ts",
+    // Core-domain bundle bridge (design D1/G3 pattern, task 4.1): package
+    // files import runtime values from the core-domain barrel, and the
+    // barrel drags the audit module's Node built-ins into the bundle.
+    // The alias re-points every such import at an explicit source-subset
+    // re-export — see src/adapters/core-domain-bridge.ts.
+    "@rajahinta/core-domain": "./src/adapters/core-domain-bridge.ts"
+  },
+  // migrations_dir points at the drizzle-kit output in the data-platform
+  // package (relative to this config; design D2) — `wrangler d1 migrations
+  // apply DB` walks it in filename order and records applied files in the
+  // database's d1_migrations table.
+  //
+  // EU placement (task 6.5, design D9, spec ci-cd-pipeline "EU data
+  // placement"): D1 has NO location/jurisdiction key in wrangler config —
+  // per current Cloudflare docs it is fixed at database creation and cannot
+  // be changed later. Each per-env database below MUST be created with the
+  // EU jurisdiction (stronger than a location hint; GDPR-grade residency):
+  //
+  //   wrangler d1 create rajahinta-api-<env> --jurisdiction=eu
+  //
+  // The Durable Objects defined here are SQLite-backed and carry no
+  // per-class config key either; their locality follows the creating
+  // Worker's requests (all DO access originates from this Worker). Any
+  // explicit first-request hint would be code-level
+  // (`env.<DO>.get(id, { locationHint: "weur" })`) — app-source concern,
+  // tracked with the platform engineer. Full placement story:
+  // infra/environments/staging.yaml + prod.yaml.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rajahinta-api-dev",
+      "database_id": "placeholder-dev",
+      "migrations_dir": "../../packages/data-platform/src/d1/migrations"
+    }
+  ],
+  // R2 observation log (task 4.1/4.3; design D4 as amended by gate review
+  // G1): append-only JSONL objects `observations/YYYY-MM-DD.jsonl`,
+  // written by the ingestion pipeline's offer-change hook, batch-read by
+  // the time-series aggregation cron handler. Layout contract in
+  // packages/data-platform/src/d1/observation-log.ts.
+  // EU placement (task 6.5): `jurisdiction: "eu"` pins both buckets to the
+  // EU jurisdiction — the one placement key wrangler config carries per
+  // current docs. Buckets must be created to match:
+  // `wrangler r2 bucket create <name> --jurisdiction eu --location weur`.
+  "r2_buckets": [
+    {
+      "binding": "OBSERVATION_LOG",
+      "bucket_name": "rajahinta-observations-dev",
+      "jurisdiction": "eu"
+    },
+    // Rate-snapshot bucket (task 4.4, design D6/D9): holds the official
+    // rate-snapshot object the tax-dataset review hashes. Separate from
+    // OBSERVATION_LOG on purpose — append-only event log vs config
+    // snapshot (different write patterns and lifecycles). The object key
+    // is per-env config: RATE_SNAPSHOT_OBJECT_KEY (vars below; code
+    // default config/rate-snapshot.json — the path the file-based
+    // ConfigBackedRateChangeSource resolved in the backend).
+    {
+      "binding": "RATE_SNAPSHOTS",
+      "bucket_name": "rajahinta-rate-snapshots-dev",
+      "jurisdiction": "eu"
+    }
+  ],
+  // Workers Analytics Engine metrics (task 6.1, design D8): request
+  // counters by route pattern + status class and freshness gauges via
+  // writeDataPoint; one dataset per environment (design D9). Data point
+  // shapes and the Grafana re-point queries (old PromQL → AE SQL) in
+  // src/observability/METRICS.md. AE sampling applies — queries must
+  // weight counts by _sample_interval. The binding is optional in code
+  // (no-op without it), so dev/local runs never require it.
+  "analytics_engine_datasets": [
+    { "binding": "METRICS", "dataset": "rajahinta-api-metrics-dev" }
+  ],
+  // Price-ingestion Queue (task 4.1; design D6). The scheduled producer
+  // (hourly cron, merchant-registry driven) sends via env.INGESTION_QUEUE;
+  // this same worker consumes the queue. max_batch_size 1 = per-merchant
+  // failure isolation (a slow feed delays nobody — BullMQ per-merchant
+  // job parity); max_retries 5 mirrors the BullMQ attempts: 5 with the
+  // exponential 30 s backoff reproduced in the consumer; exhausted
+  // messages land in the DLQ for inspection. There is no server-side
+  // dedupe on Queues — the BullMQ jobId dedupe moved INTO the message
+  // body and the consumer enforces it as an idempotent-skip marker
+  // (IdempotencyDO job-claim namespace).
+  "queues": {
+    "producers": [
+      { "binding": "INGESTION_QUEUE", "queue": "rajahinta-price-ingestion-dev" }
+    ],
+    "consumers": [
+      {
+        "queue": "rajahinta-price-ingestion-dev",
+        "max_batch_size": 1,
+        "max_batch_timeout": 0,
+        "max_retries": 5,
+        "dead_letter_queue": "rajahinta-price-ingestion-dlq-dev"
+      }
+    ]
+  },
+  // Price-ingestion Workflow (task 4.2, design D6): the pipeline stages
+  // (resolve → gate → fetch → map → upsert → quality) run as durable
+  // steps, each with retries mirroring the BullMQ attempts: 5 / 30 s
+  // exponential backoff. The Queue consumer hands every message to ONE
+  // instance whose id is the message's dedupe key (idempotent handoff);
+  // the instance's final step completes the IdempotencyDO job claim.
+  // Top-level binding like the durable_objects above (the class is
+  // env-independent; per-env workflow naming follows the deploy target).
+  // The IngestionWorkflow class must be exported from the worker entry
+  // — src/index.ts re-exports it from src/workflows (lead follow-up
+  // recorded in src/workflows/index.ts).
+  "workflows": [
+    {
+      "binding": "INGESTION_WORKFLOW",
+      "name": "rajahinta-price-ingestion",
+      "class_name": "IngestionWorkflow"
+    }
+  ],
+  // Durable Objects (tasks 3.3–3.4): classes are exported from the worker
+  // entry and created by the v1/v2 migrations below (SQLite storage
+  // backend). The migration `tag` must be unique and never reordered once
+  // deployed; each class gets exactly one `new_sqlite_classes` entry.
+  "durable_objects": {
+    "bindings": [
+      { "name": "RATE_LIMITER", "class_name": "RateLimiterDO" },
+      { "name": "IDEMPOTENCY", "class_name": "IdempotencyDO" },
+      { "name": "CLICK_COUNTER", "class_name": "ClickCounterDO" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RateLimiterDO", "IdempotencyDO"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["ClickCounterDO"]
+    }
+  ],
+  // Cron triggers (tasks 4.1/4.3; design D6) — one array, dispatched by
+  // pattern in src/cron/router.ts. Cadences mirror the BullMQ repeat
+  // schedules documented in packages/application-api/src/jobs/:
+  //
+  //   0 * * * *     price-ingestion producer — hourly (@Cron(EVERY_HOUR));
+  //                 one Queue message per GRANTED merchant
+  //   */30 * * * *  time-series aggregation — every 30 min (EVERY_30_MINUTES)
+  //                 AND the task-6.3 freshness alert (design D7/D8): the
+  //                 cron checker evaluating the stale-price-share and
+  //                 transport-age invariants and emailing the operator
+  //                 through the email Worker — replaced the K8s
+  //                 PrometheusRule paging (rule file deleted with the K8s
+  //                 stack at decommission, task 6.7; threshold port +
+  //                 cadence mapping in src/cron/freshness-alert.ts)
+  //   0 */6 * * *   transport-rate refresh (EVERY_6_HOURS) AND the task-3.4
+  //                 click-counter snapshot flush (legacy '0 */6 * * *');
+  //                 both handlers fire on this pattern
+  //   0 2 * * *     tax-dataset review — BullMQ fired 02:00 Europe/Helsinki
+  //   0 3 * * *     FX-dataset review — BullMQ fired 03:00 Europe/Helsinki
+  //   30 3 * * *    calculation-record retention sweep — BullMQ 03:30 Helsinki
+  //
+  // TIMEZONE NOTE: wrangler crons are UTC-only, so the three daily jobs
+  // fire at their BullMQ CLOCK HOURS in UTC, i.e. two hours earlier than
+  // the Europe/Helsinki wall clock during EEST (and one hour in EET).
+  // All three are day-grained review/sweep passes where the precise hour
+  // is immaterial; the deviation is deliberate and documented rather
+  // than approximated with a shifted UTC hour (no single UTC time maps
+  // to a fixed Helsinki hour across DST).
+  "triggers": {
+    "crons": [
+      "0 * * * *",
+      "*/30 * * * *",
+      "0 */6 * * *",
+      "0 2 * * *",
+      "0 3 * * *",
+      "30 3 * * *"
+    ]
+  },
+  // Observability (task 6.2, design D8): Workers Logs carry the log
+  // stream; `traces` enables the runtime's automatic OTel instrumentation
+  // (fetch/binding/handler spans, no code changes) exported to Grafana
+  // Cloud — "no vendor change for APM". Config keys per the current
+  // Workers docs (developers.cloudflare.com/workers/observability/traces/):
+  //
+  //   observability.traces.enabled          turn tracing on
+  //   observability.traces.destinations     dashboard-destination NAMES
+  //                                         this worker exports to (the
+  //                                         OTLP endpoint + Basic auth
+  //                                         header live in the dashboard
+  //                                         destination, NEVER here —
+  //                                         see src/observability/TRACES.md)
+  //   observability.traces.head_sampling_rate  head sample 0..1
+  //   observability.traces.persist          false = export only, skip
+  //                                         Cloudflare dashboard storage
+  //                                         (Grafana is the sole trace
+  //                                         destination; no double billing)
+  //
+  // 5% head sampling: calculator traffic is high-volume and traces are
+  // for APM diagnosis — counts live in the METRICS dataset above, not in
+  // traces. Raise per-env when diagnosing (e.g. staging at 1.0).
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.05,
+      "persist": false,
+      "destinations": ["rajahinta-grafana-traces"]
+    }
+  },
+  "env": {
+    "dev": {
+      // Per-env names (6.5 finding): without an override, dev/staging/
+      // production all deploy to the top-level `rajahinta-api` and clobber
+      // each other. Frontend/email follow the same pattern.
+      "name": "rajahinta-api-dev",
+      // durable_objects and workflows are NOT inherited from the top level
+      // (wrangler warns; env blocks replace those keys) — re-declared per
+      // env so staged/prod deploys keep their DO bindings (6.5 finding).
+      "durable_objects": {
+        "bindings": [
+          { "name": "RATE_LIMITER", "class_name": "RateLimiterDO" },
+          { "name": "IDEMPOTENCY", "class_name": "IdempotencyDO" },
+          { "name": "CLICK_COUNTER", "class_name": "ClickCounterDO" }
+        ]
+      },
+      "workflows": [
+        {
+          "name": "rajahinta-price-ingestion",
+          "binding": "INGESTION_WORKFLOW",
+          "class_name": "IngestionWorkflow"
+        }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "rajahinta-api-dev",
+          "database_id": "placeholder-dev",
+          "migrations_dir": "../../packages/data-platform/src/d1/migrations"
+        }
+      ],
+      "r2_buckets": [
+        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-dev", "jurisdiction": "eu" },
+        { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-dev", "jurisdiction": "eu" }
+      ],
+      "analytics_engine_datasets": [
+        { "binding": "METRICS", "dataset": "rajahinta-api-metrics-dev" }
+      ],
+      // Per-env snapshot object key (task 4.4, design D9). Code default
+      // (config/rate-snapshot.json) matches; the var makes the override
+      // point explicit per environment.
+      //
+      // Freshness alerting (task 6.3, design D7/D8): the cron checker
+      // POSTs alert emails to the email Worker's internal send contract
+      // (POST /internal/email/send). Values below are PLACEHOLDERS — set
+      // the real per-env Worker URL and ops recipient here. The shared
+      // secret is NEVER a var: `wrangler secret put EMAIL_SEND_SECRET
+      // --env <env>` (must match the email Worker's EMAIL_SEND_SECRET).
+      "vars": {
+        "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
+        "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
+        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
+        // CORS (task 5.2): exact origins, comma-separated; never "*".
+        "CORS_ORIGIN": "http://localhost:3001"
+      },
+      "queues": {
+        "producers": [
+          { "binding": "INGESTION_QUEUE", "queue": "rajahinta-price-ingestion-dev" }
+        ],
+        "consumers": [
+          {
+            "queue": "rajahinta-price-ingestion-dev",
+            "max_batch_size": 1,
+            "max_batch_timeout": 0,
+            "max_retries": 5,
+            "dead_letter_queue": "rajahinta-price-ingestion-dlq-dev"
+          }
+        ]
+      }
+    },
+    "staging": {
+      "name": "rajahinta-api-staging",
+      "durable_objects": {
+        "bindings": [
+          { "name": "RATE_LIMITER", "class_name": "RateLimiterDO" },
+          { "name": "IDEMPOTENCY", "class_name": "IdempotencyDO" },
+          { "name": "CLICK_COUNTER", "class_name": "ClickCounterDO" }
+        ]
+      },
+      "workflows": [
+        {
+          "name": "rajahinta-price-ingestion",
+          "binding": "INGESTION_WORKFLOW",
+          "class_name": "IngestionWorkflow"
+        }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "rajahinta-api-staging",
+          "database_id": "placeholder-staging",
+          "migrations_dir": "../../packages/data-platform/src/d1/migrations"
+        }
+      ],
+      "r2_buckets": [
+        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-staging", "jurisdiction": "eu" },
+        { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-staging", "jurisdiction": "eu" }
+      ],
+      "analytics_engine_datasets": [
+        { "binding": "METRICS", "dataset": "rajahinta-api-metrics-staging" }
+      ],
+      // Freshness alerting (task 6.3, design D7/D8) — PLACEHOLDERS; see the
+      // dev block comment. Secret via `wrangler secret put EMAIL_SEND_SECRET
+      // --env staging`.
+      "vars": {
+        "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
+        "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
+        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
+        // CORS (task 5.2): exact origins, comma-separated; never "*".
+        "CORS_ORIGIN": "https://rajahinta.fi"
+      },
+      "queues": {
+        "producers": [
+          { "binding": "INGESTION_QUEUE", "queue": "rajahinta-price-ingestion-staging" }
+        ],
+        "consumers": [
+          {
+            "queue": "rajahinta-price-ingestion-staging",
+            "max_batch_size": 1,
+            "max_batch_timeout": 0,
+            "max_retries": 5,
+            "dead_letter_queue": "rajahinta-price-ingestion-dlq-staging"
+          }
+        ]
+      }
+    },
+    "production": {
+      "name": "rajahinta-api-production",
+      "durable_objects": {
+        "bindings": [
+          { "name": "RATE_LIMITER", "class_name": "RateLimiterDO" },
+          { "name": "IDEMPOTENCY", "class_name": "IdempotencyDO" },
+          { "name": "CLICK_COUNTER", "class_name": "ClickCounterDO" }
+        ]
+      },
+      "workflows": [
+        {
+          "name": "rajahinta-price-ingestion",
+          "binding": "INGESTION_WORKFLOW",
+          "class_name": "IngestionWorkflow"
+        }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "rajahinta-api-production",
+          "database_id": "placeholder-production",
+          "migrations_dir": "../../packages/data-platform/src/d1/migrations"
+        }
+      ],
+      "r2_buckets": [
+        { "binding": "OBSERVATION_LOG", "bucket_name": "rajahinta-observations-production", "jurisdiction": "eu" },
+        { "binding": "RATE_SNAPSHOTS", "bucket_name": "rajahinta-rate-snapshots-production", "jurisdiction": "eu" }
+      ],
+      "analytics_engine_datasets": [
+        { "binding": "METRICS", "dataset": "rajahinta-api-metrics-production" }
+      ],
+      // Freshness alerting (task 6.3, design D7/D8) — PLACEHOLDERS; see the
+      // dev block comment. Secret via `wrangler secret put EMAIL_SEND_SECRET
+      // --env production`.
+      "vars": {
+        "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
+        "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
+        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
+        // CORS (task 5.2): exact origins, comma-separated; never "*".
+        "CORS_ORIGIN": "https://rajahinta.fi"
+      },
+      "queues": {
+        "producers": [
+          { "binding": "INGESTION_QUEUE", "queue": "rajahinta-price-ingestion-production" }
+        ],
+        "consumers": [
+          {
+            "queue": "rajahinta-price-ingestion-production",
+            "max_batch_size": 1,
+            "max_batch_timeout": 0,
+            "max_retries": 5,
+            "dead_letter_queue": "rajahinta-price-ingestion-dlq-production"
+          }
+        ]
+      }
+    }
+  }
+}

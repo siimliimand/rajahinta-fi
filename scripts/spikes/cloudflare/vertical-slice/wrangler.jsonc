@@ -1,0 +1,39 @@
+// Wrangler config for the G3 vertical-slice spike (task 1.3).
+// Scratch Worker: local D1 + a Durable Object rate limiter. Throwaway.
+{
+  "name": "vertical-slice-spike",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-05-01",
+  // core-domain keeps its NestJS decorators, but no Nest container exists
+  // in a Worker — every engine is constructed manually. Aliasing the
+  // @nestjs/common barrel to a no-op shim keeps stream/util/url, rxjs,
+  // class-validator, and class-transformer OUT of the bundle. (The
+  // alternative is `nodejs_compat` + installing the optional Nest peers.)
+  "alias": {
+    "@nestjs/common": "./src/nestjs-compat.ts"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "spike-db",
+      "database_id": "spike-local"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RATE_LIMITER",
+        "class_name": "RateLimiterDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RateLimiterDO"]
+    }
+  ],
+  "observability": {
+    "enabled": false
+  }
+}

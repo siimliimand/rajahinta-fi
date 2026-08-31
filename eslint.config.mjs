@@ -7,7 +7,10 @@ import globals from 'globals';
 export default tseslint.config(
   // *.d.ts at any depth is generated (e.g. next-env.d.ts, which Next 15
   // regenerates with a path triple-slash reference to .next/types).
-  { ignores: ['**/dist/', '**/.next/', '**/node_modules/', '**/*.d.ts', '*.config.*', '.opencode/'] },
+  // .wrangler/.open-next are wrangler build/dev artifact dirs — their
+  // bundled JS is minified workerd output, never hand-written code, and
+  // local `wrangler dev` runs recreate them (absent in CI checkouts).
+  { ignores: ['**/dist/', '**/.next/', '**/node_modules/', '**/*.d.ts', '**/.wrangler/', '**/.open-next/', '*.config.*', '.opencode/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

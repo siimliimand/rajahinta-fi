@@ -1,79 +1,123 @@
 # =============================================================================
-# Production environment — hardened, audited
+# Production environment — Cloudflare Workers (hardened, audited)
 # =============================================================================
-# Secrets come from GitHub Environments secrets with manual approval gate.
-# Compliance logging, rate versioning enforcement, and full audit trail.
+# Rewritten for the Cloudflare migration (task 6.5, change
+# migrate-to-cloudflare; design D9). This file is the committed,
+# reviewable description of the production environment: which Workers
+# deploy, which resources they bind, and where the data plane lives. The
+# deploy pipeline is .github/workflows/deploy-production.yml (manual,
+# gated by confirm_deploy == 'yes': migrate → deploy — NEVER seeded).
+#
+# EU RESIDENCY (design D9 — deliberate, for the legal/tax review):
+#   - D1        created with `--jurisdiction=eu` (set at creation ONLY;
+#               cannot be added later — jurisdiction beats location hint)
+#   - R2        `jurisdiction: "eu"` in the committed wrangler configs
+#               (buckets created with `--jurisdiction eu --location weur`)
+#   - DO        no config key exists; locality follows the EU-placed
+#               api-worker's requests (see api-worker wrangler.jsonc note)
+#   - KV        none in use (Durable Objects replaced KV per design D5);
+#               any future namespace MUST be created with
+#               `wrangler kv namespace create <name> --jurisdiction eu`
 # =============================================================================
 
 environment: production
 
-app:
-  host: "0.0.0.0"
-  port: 3000
-  cors:
-    origin: ["https://rajahinta.fi", "https://www.rajahinta.fi"]
-  external_url: "https://rajahinta.fi"
+# ── Deployed Workers (wrangler --env production) ───────────────────────────
+workers:
+  api:
+    # NAME CAVEAT: apps/api-worker/wrangler.jsonc does not override `name`
+    # per environment yet, so `--env production` currently deploys as the
+    # top-level name `rajahinta-api` — the SAME worker the staging env
+    # deploys as. Per-env `name` overrides are a platform-engineer
+    # follow-up (email/frontend Workers already override it).
+    intended_name: rajahinta-api-production
+    deployed_name: rajahinta-api          # current wrangler.jsonc behavior
+    entry: apps/api-worker
+    health_endpoint: /api/v1/health/ready # D1 roundtrip + DO ping (design D8)
+  email:
+    name: rajahinta-email-production
+    entry: apps/email-worker
+  frontend:
+    name: rajahinta-frontend-production
+    entry: apps/frontend
+    build: opennextjs-cloudflare build    # .open-next/worker.js + assets
 
-database:
-  host: db.rajahinta.fi
-  port: 5432
-  name: rajahinta_prod
-  user: rajahinta_app
-  # Password via RAJAHINTA_DB_PASSWORD (GitHub env secret)
-  ssl: verify-full
-  pool:
-    min: 10
-    max: 50
-  migrate_on_start: false       # migrations run separately, reviewed
-  connection_timeout: 10000     # ms
-  statement_timeout: 30000      # ms
+# ── Data plane (EU jurisdiction — see header) ──────────────────────────────
+databases:
+  - binding: DB                            # api-worker D1 (design D2)
+    name: rajahinta-api-production
+    migrations_dir: packages/data-platform/src/d1/migrations
+    # NO wrangler-config key exists — creation command (one-time, immutable):
+    provisioning: wrangler d1 create rajahinta-api-production --jurisdiction=eu
+    migrated_by: pnpm --filter @rajahinta/api-worker run db:migrate:d1:production
+    # Production data arrives via the one-time ETL (Postgres → D1,
+    # task 6.6) — the deploy workflow deliberately has NO seed step.
+    seed: manual-only
 
-redis:
-  host: redis.rajahinta.fi
-  port: 6379
-  # Password via RAJAHINTA_REDIS_PASSWORD (GitHub env secret)
-  db: 1
-  tls: true
-  bullmq:
-    prefix: "bull:prod"
-    default_job_options:
-      attempts: 5
-      backoff:
-        type: exponential
-        delay: 2000
-      remove_on_complete: 100   # keep last 100 completed for audit
-      remove_on_fail: 50        # keep last 50 failed for debugging
+buckets:
+  - binding: OBSERVATION_LOG               # append-only JSONL log (design D4)
+    name: rajahinta-observations-production
+    jurisdiction: eu                       # committed in wrangler.jsonc
+  - binding: RATE_SNAPSHOTS                # official rate-snapshot (task 4.4)
+    name: rajahinta-rate-snapshots-production
+    jurisdiction: eu                       # committed in wrangler.jsonc
+  - binding: NEXT_INC_CACHE_R2_BUCKET      # OpenNext ISR cache (task 5.1)
+    name: rajahinta-frontend-cache-production
+    jurisdiction: eu                       # committed in wrangler.jsonc
 
-log:
-  level: warn
-  format: json
-  otel_enabled: true
-  # Structured audit log for compliance
-  audit:
-    enabled: true
-    log_table: audit_log
-    retention_days: 365
+queues:
+  - name: rajahinta-price-ingestion-production      # per-merchant isolation
+  - name: rajahinta-price-ingestion-dlq-production  # exhausted messages (5 tries)
 
-feature_flags:
-  new_merchant_sources: false
-  experimental_rulesets: false
-  compliance_monitoring: true
-  deposit_system_mock: false
-  rate_auto_publish: false      # NEVER auto-publish — manual/legal confirm
+durable_objects:                           # SQLite-backed (design D5)
+  - RateLimiterDO    # sliding-window rate limiting
+  - IdempotencyDO    # version-aware idempotency keys
+  - ClickCounterDO   # alarm()-flushed click snapshots
 
-background_jobs:
-  price_refresh_interval: 300    # 5 min
-  transport_rate_refresh: 600   # 10 min
-  tax_dataset_review: 21600     # 6 hours
-  rate_change_check: 3600       # 1 hour — check for new official rates
+workflows:
+  - rajahinta-price-ingestion              # fetch→gate→map→upsert→quality
 
-# Compliance and audit
+crons:                                     # UTC (see api-worker wrangler.jsonc)
+  - "0 * * * *"
+  - "*/30 * * * *"
+  - "0 */6 * * *"
+  - "0 2 * * *"
+  - "0 3 * * *"
+  - "30 3 * * *"
+
+# ── Secrets and variables (NAMES ONLY — values live in GitHub/wrangler) ───
+github_secrets:                            # repo settings → Actions secrets
+  - CLOUDFLARE_API_TOKEN                   # deploy + D1/R2/Queues/Email/secrets mgmt
+  - CLOUDFLARE_ACCOUNT_ID
+
+github_variables:                          # repo settings → Actions variables
+  - PRODUCTION_API_URL                     # api-worker production base URL (health gate)
+
+worker_secrets:                            # wrangler secret put --env production
+  - EMAIL_SEND_SECRET                      # api-worker AND email-worker (must match)
+
+worker_vars:                               # committed placeholders in wrangler.jsonc
+  - RATE_SNAPSHOT_OBJECT_KEY               # config/rate-snapshot.json
+  - EMAIL_WORKER_URL                       # real production email-worker URL (placeholder today)
+  - FRESHNESS_ALERT_EMAIL_TO               # real ops recipient (placeholder today)
+
+# ── Compliance posture carried over from the K8s production ───────────────
 compliance:
   rate_versioning: enforce
   calculation_explainability: enforce
-  data_freshness_alerts: true
-  golden_dataset_path: "./test/golden-datasets/prod/"
+  data_freshness_alerts: true              # cron checker → email Worker (task 6.3)
   audit:
-    every_calculation: true
-    rate_change_approval_required: true
-    merchant_source_onboarding_audit: true
+    every_calculation: true                # audit trail preserved in D1
+    rate_change_approval_required: true    # NEVER auto-publish (unchanged)
+
+# ── Rollback (spec: instant, independent of DNS) ──────────────────────────
+rollback:
+  mechanism: wrangler rollback --env production   # previous Workers Version
+  version_listing: wrangler deployments list --env production
+  dns_note: >
+    HISTORICAL (task 6.7, decommission): the DNS cutover lever and the warm
+    K8s rollback window ended with the cutover of change
+    migrate-to-cloudflare (design D10, docs/cutover-runbook.md). Rollback
+    is Workers-internal only since then — wrangler rollback restores the
+    previous Version instantly, without DNS changes.
+  schema_note: D1 migrations are forward-only; rollback does not revert schema

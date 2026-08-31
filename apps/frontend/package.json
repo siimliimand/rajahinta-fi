@@ -6,12 +6,19 @@
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start -p 3001",
+    "build:worker": "opennextjs-cloudflare build",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "dev:worker": "wrangler dev",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "deploy:dev": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env dev",
+    "deploy:staging": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env staging",
+    "deploy:production": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --env production",
     "lint": "next lint",
     "lint:content": "tsx scripts/lint-content-policy.ts",
     "test": "vitest run",
     "test:content-policy": "vitest run src/__tests__/content-policy-lint.test.ts",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf .next dist"
+    "clean": "rm -rf .next dist .open-next .wrangler"
   },
   "dependencies": {
     "next": "^15.5.24",
@@ -20,6 +27,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.4",
@@ -34,6 +42,7 @@
     "tailwindcss": "^3.4.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.0",
+    "wrangler": "^4.14.0"
   }
 }

@@ -1,0 +1,281 @@
+{
+  "generatedAt": "2026-08-30T06:32:48.374Z",
+  "k": 5,
+  "fixtures": 14,
+  "results": [
+    {
+      "id": "Q1",
+      "query": "karhu",
+      "source": "search.controller.test.ts \"karhu\" ranked case — name match (Karhu III) and brand-only match (Tumma Lager)",
+      "expected": [
+        30,
+        31
+      ],
+      "expectFirst": 30,
+      "topKIds": [
+        30,
+        40,
+        31,
+        41
+      ],
+      "ranks": {
+        "30": 1,
+        "31": 3
+      },
+      "hit": true,
+      "firstOk": true
+    },
+    {
+      "id": "Q2",
+      "query": "karh",
+      "source": "product-search.db.test.ts partial-word case — ILIKE recall must still match",
+      "expected": [
+        30,
+        31,
+        40,
+        41
+      ],
+      "expectFirst": null,
+      "topKIds": [
+        30,
+        40,
+        31,
+        41
+      ],
+      "ranks": {
+        "30": 1,
+        "31": 3,
+        "40": 2,
+        "41": 4
+      },
+      "hit": true,
+      "firstOk": true
+    },
+    {
+      "id": "Q3",
+      "query": "KARHU",
+      "source": "ILIKE is case-insensitive on the pg side — unicode61 folding must match",
+      "expected": [
+        30,
+        31,
+        40,
+        41
+      ],
+      "expectFirst": 30,
+      "topKIds": [
+        30,
+        40,
+        31,
+        41
+      ],
+      "ranks": {
+        "30": 1,
+        "31": 3,
+        "40": 2,
+        "41": 4
+      },
+      "hit": true,
+      "firstOk": true
+    },
+    {
+      "id": "Q4",
+      "query": "le coq",
+      "source": "realistic multi-token brand phrase (A. Le Coq Premium)",
+      "expected": [
+        20
+      ],
+      "expectFirst": 20,
+      "topKIds": [
+        20
+      ],
+      "ranks": {
+        "20": 1
+      },
+      "hit": true,
+      "firstOk": true
+    },
+    {
+      "id": "Q5",
+      "query": "koff",
+      "source": "product-search.db.test.ts seed brand (Koff III rows)",
+      "expected": [
+        42,
+        55
+      ],
+      "expectFirst": null,
+      "topKIds": [
+        55,
+        42
+      ],
+      "ranks": {
+        "42": 2,
+        "55": 1
+      },
+      "hit": true,
+      "firstOk": true
+    },
+    {
+      "id": "Q6",
+      "query": "olut",
+      "source": "realistic Finnish generic word inside product names",
+      "expected": [
+        10,
+        55
+      ],
+      "expectFirst": null,
+      "topKIds": [
+        10,
+        55
+      ],
+      "ranks": {
+        "10": 1,
+        "55": 2
+      },
+      "hit": true,
+      "firstOk": true
+    },
+    {
+      "id": "Q7",
+      "query": "lager",
+      "source": "realistic name token (Tumma Lager variants)",
+      "expected": [
+        31,
+        41
+      ],
+      "expectFirst": null,
+      "topKIds": [
+        31,
+        41,
+        54
+      ],
+      "ranks": {
+        "31": 1,
+        "41": 2
+      },
+      "hit": true,
+      "firstOk": true
+    },
+    {
+      "id": "Q8",
+      "query": "sandels",
+      "source": "realistic Finnish brand query",
+      "expected": [
+        50
+      ],
+      "expectFirst": 50,
+      "topKIds": [
+        50
+      ],
+      "ranks": {
+        "50": 1
+      },
+      "hit": true,
+      "firstOk": true
+    },
+    {
+      "id": "Q9",
+      "query": "norrlands",
+      "source": "realistic Swedish brand token",
+      "expected": [
+        51
+      ],
+      "expectFirst": 51,
+      "topKIds": [
+        51
+      ],
+      "ranks": {
+        "51": 1
+      },
+      "hit": true,
+      "firstOk": true
+    },
+    {
+      "id": "Q10",
+      "query": "Öltermanni",
+      "source": "realistic non-ASCII (Ö) product-name query",
+      "expected": [
+        10
+      ],
+      "expectFirst": 10,
+      "topKIds": [
+        10
+      ],
+      "ranks": {
+        "10": 1
+      },
+      "hit": true,
+      "firstOk": true
+    },
+    {
+      "id": "Q11",
+      "query": "öl",
+      "source": "realistic Swedish/Finnish short prefix query",
+      "expected": [
+        10
+      ],
+      "expectFirst": null,
+      "topKIds": [
+        10
+      ],
+      "ranks": {
+        "10": 1
+      },
+      "hit": true,
+      "firstOk": true
+    },
+    {
+      "id": "Q12",
+      "query": "hartwall",
+      "source": "manufacturer-only recall (pg searches manufacturer too)",
+      "expected": [
+        30,
+        31,
+        40,
+        52
+      ],
+      "expectFirst": null,
+      "topKIds": [
+        53,
+        30,
+        31,
+        52,
+        40
+      ],
+      "ranks": {
+        "30": 2,
+        "31": 3,
+        "40": 5,
+        "52": 4
+      },
+      "hit": true,
+      "firstOk": true
+    },
+    {
+      "id": "Q13",
+      "query": "long drink",
+      "source": "realistic two-token Finnish product phrase (Long Drink Original)",
+      "expected": [
+        53
+      ],
+      "expectFirst": 53,
+      "topKIds": [
+        53
+      ],
+      "ranks": {
+        "53": 1
+      },
+      "hit": true,
+      "firstOk": true
+    }
+  ],
+  "checks": {
+    "determinism": true,
+    "limitOk": true,
+    "blank": {
+      "ok": true,
+      "total": 14,
+      "firstId": 20
+    }
+  },
+  "pass": true
+}

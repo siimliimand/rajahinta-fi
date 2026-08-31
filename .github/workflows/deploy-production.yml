@@ -1,3 +1,30 @@
+# =============================================================================
+# Deploy Production — Cloudflare Workers (migrate-to-cloudflare task 6.5)
+#
+# Gated, manual production deploy: migrate → deploy (NEVER seeded — per spec,
+# only staging gets the automatic seed; production seeding is a deliberate
+# manual act via the ETL/seed tooling, task 6.6).
+#
+# Spec contract (specs/ci-cd-pipeline): refuses to run without the
+# confirm_deploy input set to 'yes'; D1 migrations applied to the production
+# database before rollout; readiness verified on production routes. Every
+# wrangler deploy versions the previous Workers scripts, so the prior
+# deployment stays available for instant `wrangler rollback` — independent
+# of DNS (see the rollback job below and infra/environments/prod.yaml).
+#
+# REQUIRED GitHub secrets (set once in repo settings — names only, values
+# never committed):
+#   CLOUDFLARE_API_TOKEN  — Workers deploy + D1/R2/Queues/Email + secrets
+#                           management for the production resources
+#   CLOUDFLARE_ACCOUNT_ID — the Cloudflare account the production Workers
+#                           live in
+#
+# REQUIRED repository variable:
+#   PRODUCTION_API_URL — deployed api-worker production base URL
+#                        (e.g. https://api.rajahinta.fi or the workers.dev URL);
+#                        the health gate curls its /api/v1/health/ready
+# =============================================================================
+
 name: Deploy Production
 
 on:
@@ -10,22 +37,31 @@ on:
 
 env:
   CI: true
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ghcr.io/siimliimand/rajahinta
-  # Secrets consumed by this workflow:
-  #   KUBE_CONFIG — base64-encoded kubeconfig for production cluster
-  # (REGISTRY_TOKEN is an optional fallback — see the GHCR login step.)
+  NODE_VERSION: '22'
+  PNPM_VERSION: '9'
+  # Wrangler reads both natively; never echoed, only passed to the CLI.
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
+    name: Production deploy (gated, migrate → deploy)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
-      packages: write
 
     steps:
       - name: Require confirmation
+        # Fails fast BEFORE checkout/build — nothing deploys unconfirmed.
         if: ${{ github.event.inputs.confirm_deploy != 'yes' }}
         run: |
           echo "::error ::Confirmation required — set confirm_deploy to 'yes'"
@@ -35,99 +71,107 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: ${{ env.PNPM_VERSION }}
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: pnpm
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm build
+      # ── Build ──────────────────────────────────────────────────────────
+      # The api/email Workers are bundled by wrangler itself at deploy time
+      # (their `main` points at TS sources); OpenNext is the only step that
+      # produces a deploy artifact (apps/frontend/.open-next/).
+      - name: Build frontend (OpenNext)
+        run: pnpm --filter @rajahinta/frontend run build:worker
 
-      - name: Build Docker image
-        # Immutable tagging (task 11.1): the full commit SHA only — no
-        # mutable :latest is built or pushed anywhere in the pipeline.
+      # ── Migrate (before rollout — spec ordering; NO seed step here) ────
+      - name: Apply D1 migrations (production)
+        run: pnpm --filter @rajahinta/api-worker run db:migrate:d1:production
+
+      # ── Deploy ─────────────────────────────────────────────────────────
+      - name: Deploy API Worker (production)
+        run: pnpm --filter @rajahinta/api-worker exec wrangler deploy --env production
+
+      - name: Deploy email Worker (production)
+        run: pnpm --filter @rajahinta/email-worker exec wrangler deploy --env production
+
+      - name: Deploy frontend Worker (production)
+        run: pnpm --filter @rajahinta/frontend exec opennextjs-cloudflare deploy --env production
+
+      # ── Health gate — production routes must be ready ──────────────────
+      - name: Health gate — production readiness
+        env:
+          PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
         run: |
-          docker build -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
-
-      - name: Log in to GitHub Container Registry
-        # Uses the workflow's GITHUB_TOKEN (granted packages: write above);
-        # the repo token can push to the repo owner's GHCR namespace.
-        # Fallback: a REGISTRY_TOKEN PAT with write:packages is only needed
-        # if the image ever moves to a separate org namespace.
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Push Docker image
-        run: |
-          docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
-
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: latest
-
-      - name: Install kustomize
-        run: |
-          curl -sLo /tmp/kustomize.tar.gz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz"
-          tar -xzf /tmp/kustomize.tar.gz -C /usr/local/bin/
-          chmod +x /usr/local/bin/kustomize
-
-      - name: Authenticate with cluster
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
-
-      - name: Set image tag
-        # Pins the overlay's committed images entry to this build's SHA.
-        # The images transformer rewrites every workload carrying the
-        # image name (backend Deployment, migrate Job), so the rendered
-        # manifests resolve immutable tags only (task 11.1).
-        run: |
-          cd infra/k8s/overlays/production
-          kustomize edit set image ${{ env.IMAGE_NAME }}:${{ github.sha }}
-
-      - name: Clean up previous migrate Job
-        run: |
-          # Jobs are immutable — delete before re-creating.
-          kubectl delete job rajahinta-migrate \
-            -n rajahinta \
-            --ignore-not-found \
-            --wait
-
-      - name: Run database migrations
-        run: |
-          # Apply only the migrate Job (identified by component label).
-          # ConfigMap/Secret already exist from previous deploys.
-          kustomize build infra/k8s/overlays/production \
-            | kubectl apply -f- \
-              --selector='app.kubernetes.io/component=migrate-job'
-          kubectl wait job rajahinta-migrate \
-            -n rajahinta \
-            --for condition=complete \
-            --timeout=300s || {
-            echo "::error::Migration Job rajahinta-migrate failed — fetching logs:"
-            kubectl logs job/rajahinta-migrate -n rajahinta --tail=50 || true
+          if [ -z "$PRODUCTION_API_URL" ]; then
+            echo "::error::Repository variable PRODUCTION_API_URL is not set — configure the deployed api-worker production base URL (e.g. https://api.rajahinta.fi)."
             exit 1
-          }
+          fi
+          echo "Gating on $PRODUCTION_API_URL/api/v1/health/ready"
+          attempt=1
+          while [ "$attempt" -le 30 ]; do
+            code=$(curl -s -o /tmp/health.json -w '%{http_code}' \
+              --max-time 10 "$PRODUCTION_API_URL/api/v1/health/ready" || true)
+            if [ "$code" = "200" ]; then
+              echo "Readiness OK on attempt $attempt: $(cat /tmp/health.json)"
+              exit 0
+            fi
+            echo "Attempt $attempt: HTTP ${code:-no-response} — retrying in 10 s"
+            attempt=$((attempt + 1))
+            sleep 10
+          done
+          echo "::error::production /api/v1/health/ready did not return 200 within the bounded retry window — failing the deploy job."
+          exit 1
 
-      - name: Deploy workloads
-        run: |
-          # Apply all resources (deployment, service, etc.).
-          # The migrate Job already exists — kubectl apply with identical
-          # spec is a server-side no-op.
-          kustomize build infra/k8s/overlays/production | kubectl apply -f-
+  # ── Rollback availability ──────────────────────────────────────────────
+  # Workers rollback (spec: previous versions available for instant rollback,
+  # independent of DNS). Every `wrangler deploy` above creates a new Version
+  # while the prior deployment stays live and instantly restorable — no
+  # rebuild, no DNS change. This job surfaces the exact commands; it runs
+  # even when the health gate failed (rollback is most needed then).
+  rollback:
+    name: Rollback availability (wrangler rollback)
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: always()
+    permissions:
+      contents: read
 
-      - name: Verify production deployment
+    steps:
+      - name: Rollback runbook (Workers rollback, not DNS)
+        env:
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
         run: |
-          kubectl rollout status deployment/rajahinta-backend \
-            -n rajahinta \
-            --timeout=120s
-          # No seed Job on production — migrations only, no fake data.
+          cat <<'EOF'
+          Every production deploy above created a Workers Version; the previous
+          deployment remains live and instantly restorable per Worker.
+
+          Instant rollback (run from the repo root; uses the same
+          CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID secrets):
+
+            pnpm --filter @rajahinta/api-worker     exec wrangler rollback --env production
+            pnpm --filter @rajahinta/email-worker   exec wrangler rollback --env production
+            pnpm --filter @rajahinta/frontend       exec wrangler rollback --env production
+
+          List deployments/Version IDs (to roll back to a specific version):
+            wrangler deployments list --env production
+
+          Notes:
+          - `wrangler rollback` restores the previous Version's script AND its
+            bindings; it does NOT revert D1 schema changes — migrations are
+            forward-only, so a rollback after a schema change requires the
+            documented migration-down path (task 6.6 runbook).
+          - Rollback is independent of DNS (design D10): DNS cutover is only
+            for the one-time K8s → Workers switch, and stays warm per the
+            rollback window.
+          EOF
+
+          if [ "$DEPLOY_RESULT" != "success" ]; then
+            echo "::error::Deploy job finished as '$DEPLOY_RESULT' — if Workers were partially deployed, use the rollback commands above to restore the prior Versions."
+            exit 1
+          fi
+          echo "Deploy succeeded; previous Versions remain available for instant rollback."

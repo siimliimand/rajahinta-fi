@@ -20,12 +20,13 @@
  *     (3^10 = 59 049 assignments per call) — the documented input-cap
  *     worst case that stays feasible to enumerate.
  *
- * **Thresholds** (explicit; measured against the k8s resource limits —
- * see the run method notes in this header):
+ * **Thresholds** (explicit; measured against the historical K8s-era
+ * resource envelope, kept as the regression reference — see the run
+ * method notes in this header):
  *   - typical: p95 < 2 000 ms, error rate < 1 % (aligns with the
  *     artillery calculator suite's p95 target).
  *   - max-cap: p95 < 20 000 ms, error rate < 1 %. Measured envelope
- *     under the k8s limits (Docker --cpus=0.256 --memory=512m): a
+ *     under that envelope (Docker --cpus=0.256 --memory=512m): a
  *     single max-cap call takes ~4.2 s and 5 concurrent max-cap calls
  *     settle at p95 ≈ 17 s on a quarter-core CPU budget — the suite
  *     pins 20 s as the regression tripwire for that envelope.
@@ -34,18 +35,19 @@
  * guarded by @FeatureFlagDec(FeatureFlag.BASKET_OPTIMIZATION) and
  * returns 403 while the flag is off. The flag is enabled server-side
  * via the `FF_BASKET_OPTIMIZATION=true` environment variable
- * (FeatureFlagService reads `FF_<FLAG>`; e.g. an entry in the k8s
- * rajahinta-config ConfigMap or the process env for local runs). This
+ * (FeatureFlagService reads `FF_<FLAG>`; e.g. a wrangler var on the
+ * Worker environment or the process env for local runs). This
  * service-level suite deliberately bypasses the HTTP guard layer — the
  * flag has no effect here, exactly like calculator-load.test.ts
  * bypasses rate limiting; the HTTP-level flag/rate-limit behaviour is
  * covered by tests/load/artillery/basket-optimizer-suite.yml against a
  * deployed target with the flag enabled.
  *
- * **Resource-limits method (256m CPU / 512Mi mem):** there is no local
- * cluster; to approximate the k8s limits (infra/k8s base deployment:
- * cpu limit 256m, memory limit 512Mi — the values the staging overlay
- * also pins), run this file inside Docker with matching constraints:
+ * **Resource-limits method (256m CPU / 512Mi mem):** the K8s manifests
+ * that pinned these limits were deleted at decommission (task 6.7,
+ * migrate-to-cloudflare); the envelope below remains the historical
+ * reference the thresholds were measured against. To reproduce it, run
+ * this file inside Docker with matching constraints:
  *
  *   docker run --rm --cpus=0.256 --memory=512m \
  *     -v "$PWD":/work -w /work node:22-alpine \

@@ -1,69 +1,113 @@
 # =============================================================================
-# Staging environment — pre-production validation
+# Staging environment — Cloudflare Workers (pre-production validation)
 # =============================================================================
-# Staging carries its own copy of tax-rule and merchant data for realistic
-# review before promotion. Feature flags enable compliance-sensitive paths
-# for manual QA. Secrets come from GitHub Environments secrets.
+# Rewritten for the Cloudflare migration (task 6.5, change
+# migrate-to-cloudflare; design D9). This file is the committed,
+# reviewable description of the staging environment: which Workers deploy,
+# which resources they bind, and where the data plane lives. The deploy
+# pipeline is .github/workflows/deploy-staging.yml (push to master:
+# migrate → seed → deploy → health gate).
+#
+# EU RESIDENCY (design D9 — deliberate, for the legal/tax review):
+#   - D1        created with `--jurisdiction=eu` (set at creation ONLY;
+#               cannot be added later — jurisdiction beats location hint)
+#   - R2        `jurisdiction: "eu"` in the committed wrangler configs
+#               (buckets created with `--jurisdiction eu --location weur`)
+#   - DO        no config key exists; locality follows the EU-placed
+#               api-worker's requests (see api-worker wrangler.jsonc note)
+#   - KV        none in use (Durable Objects replaced KV per design D5);
+#               any future namespace MUST be created with
+#               `wrangler kv namespace create <name> --jurisdiction eu`
 # =============================================================================
 
 environment: staging
 
-app:
-  host: "0.0.0.0"
-  port: 3000
-  cors:
-    origin: ["https://staging.rajahinta.fi"]
-  external_url: "https://staging.rajahinta.fi"
+# ── Deployed Workers (wrangler --env staging) ──────────────────────────────
+workers:
+  api:
+    # NAME CAVEAT: apps/api-worker/wrangler.jsonc does not override `name`
+    # per environment yet, so `--env staging` currently deploys as the
+    # top-level name `rajahinta-api`. Intended per-env names below — the
+    # per-env `name` override is a platform-engineer follow-up (the
+    # email/frontend Workers already override it).
+    intended_name: rajahinta-api-staging
+    deployed_name: rajahinta-api          # current wrangler.jsonc behavior
+    entry: apps/api-worker
+    health_endpoint: /api/v1/health/ready # D1 roundtrip + DO ping (design D8)
+  email:
+    name: rajahinta-email-staging
+    entry: apps/email-worker
+  frontend:
+    name: rajahinta-frontend-staging
+    entry: apps/frontend
+    build: opennextjs-cloudflare build    # .open-next/worker.js + assets
 
-database:
-  host: db.staging.rajahinta.fi
-  port: 5432
-  name: rajahinta_staging
-  user: rajahinta_app
-  # Password via RAJAHINTA_DB_PASSWORD (GitHub env secret)
-  ssl: require
-  pool:
-    min: 5
-    max: 20
-  migrate_on_start: true
-  # Staging carries independent data copy for realistic validation
-  seed:
-    enabled: false  # restored from production snapshot
-    snapshot_source: prod_weekly
+# ── Data plane (EU jurisdiction — see header) ──────────────────────────────
+databases:
+  - binding: DB                            # api-worker D1 (design D2)
+    name: rajahinta-api-staging
+    migrations_dir: packages/data-platform/src/d1/migrations
+    # NO wrangler-config key exists — creation command (one-time, immutable):
+    provisioning: wrangler d1 create rajahinta-api-staging --jurisdiction=eu
+    migrated_by: pnpm --filter @rajahinta/api-worker run db:migrate:d1:staging
+    # Staging is the only environment auto-seeded (official tax versions);
+    # scripts/seed-d1.ts verifies row counts/versions and fails loudly.
+    seeded_by: pnpm --filter @rajahinta/api-worker run db:seed:d1:staging
 
-redis:
-  host: redis.staging.rajahinta.fi
-  port: 6379
-  # Password via RAJAHINTA_REDIS_PASSWORD (GitHub env secret)
-  db: 1
-  bullmq:
-    prefix: "bull:staging"
-    default_job_options:
-      attempts: 3
-      backoff:
-        type: exponential
-        delay: 1000
+buckets:
+  - binding: OBSERVATION_LOG               # append-only JSONL log (design D4)
+    name: rajahinta-observations-staging
+    jurisdiction: eu                       # committed in wrangler.jsonc
+  - binding: RATE_SNAPSHOTS                # official rate-snapshot (task 4.4)
+    name: rajahinta-rate-snapshots-staging
+    jurisdiction: eu                       # committed in wrangler.jsonc
+  - binding: NEXT_INC_CACHE_R2_BUCKET      # OpenNext ISR cache (task 5.1)
+    name: rajahinta-frontend-cache-staging
+    jurisdiction: eu                       # committed in wrangler.jsonc
 
-log:
-  level: info
-  format: json
-  otel_enabled: true
+queues:
+  - name: rajahinta-price-ingestion-staging      # per-merchant isolation
+  - name: rajahinta-price-ingestion-dlq-staging  # exhausted messages (5 tries)
 
-feature_flags:
-  new_merchant_sources: true
-  experimental_rulesets: false
-  compliance_monitoring: true
-  deposit_system_mock: false    # real deposit system integration
-  rate_auto_publish: false      # staging confirms before publishing
+durable_objects:                           # SQLite-backed (design D5)
+  - RateLimiterDO    # sliding-window rate limiting
+  - IdempotencyDO    # version-aware idempotency keys
+  - ClickCounterDO   # alarm()-flushed click snapshots
 
-background_jobs:
-  price_refresh_interval: 1800   # 30 min
-  transport_rate_refresh: 3600   # 1 hour
-  tax_dataset_review: 43200      # 12 hours
+workflows:
+  - rajahinta-price-ingestion              # fetch→gate→map→upsert→quality
 
-# Compliance checks run in staging before prod promotion
+crons:                                     # UTC (see api-worker wrangler.jsonc)
+  - "0 * * * *"
+  - "*/30 * * * *"
+  - "0 */6 * * *"
+  - "0 2 * * *"
+  - "0 3 * * *"
+  - "30 3 * * *"
+
+# ── Secrets and variables (NAMES ONLY — values live in GitHub/wrangler) ───
+github_secrets:                            # repo settings → Actions secrets
+  - CLOUDFLARE_API_TOKEN                   # deploy + D1/R2/Queues/Email/secrets mgmt
+  - CLOUDFLARE_ACCOUNT_ID
+
+github_variables:                          # repo settings → Actions variables
+  - STAGING_API_URL                        # api-worker staging base URL (health gate)
+
+worker_secrets:                            # wrangler secret put --env staging
+  - EMAIL_SEND_SECRET                      # api-worker AND email-worker (must match)
+
+worker_vars:                               # committed placeholders in wrangler.jsonc
+  - RATE_SNAPSHOT_OBJECT_KEY               # config/rate-snapshot.json
+  - EMAIL_WORKER_URL                       # real staging email-worker URL (placeholder today)
+  - FRESHNESS_ALERT_EMAIL_TO               # real ops recipient (placeholder today)
+
+# ── Compliance posture carried over from the K8s staging ──────────────────
 compliance:
   rate_versioning: enforce
   calculation_explainability: enforce
-  data_freshness_alerts: true
-  golden_dataset_path: "./test/golden-datasets/staging/"
+  data_freshness_alerts: true              # cron checker → email Worker (task 6.3)
+
+# ── Rollback ───────────────────────────────────────────────────────────────
+rollback:
+  mechanism: wrangler rollback --env staging   # previous Workers Version, no DNS
+  schema_note: D1 migrations are forward-only; rollback does not revert schema

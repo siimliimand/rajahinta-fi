@@ -10,7 +10,7 @@
  * @module opsApi
  */
 
-import { BASE_URL } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 import type {
   CorrectionListResponse,
   OpsAuditListResponse,
@@ -37,7 +37,9 @@ async function opsFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  // The shared low-level client (base URL + trace context); the bearer
+  // token replaces the consumer session's credentials flow here.
+  const res = await apiFetch(path, {
     ...init,
     headers: {
       'Content-Type': 'application/json',

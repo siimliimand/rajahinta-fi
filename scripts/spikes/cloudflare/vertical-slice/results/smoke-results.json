@@ -1,0 +1,41 @@
+{
+  "generatedAt": "2026-08-30T06:32:48.186Z",
+  "pass": true,
+  "results": [
+    {
+      "name": "Case 1 — Beer qty=1 Distance Selling (total 441)",
+      "pass": true,
+      "diffs": [],
+      "httpStatus": 200
+    },
+    {
+      "name": "Case 2 — Wine qty=3 Distance Buying (total 2126, transport unscaled)",
+      "pass": true,
+      "diffs": [],
+      "httpStatus": 200
+    },
+    {
+      "name": "Case 3 — Spirits qty=1 transport unavailable (total 2034, LOW)",
+      "pass": true,
+      "diffs": [],
+      "httpStatus": 200
+    },
+    {
+      "name": "Case 4 — Unclassified product → 422 gate rejection",
+      "pass": true,
+      "diffs": [],
+      "httpStatus": 422
+    },
+    {
+      "name": "Case 5 — Mixed currency: SEK-converted wins, rogue offer excluded",
+      "pass": true,
+      "diffs": [],
+      "httpStatus": 200
+    },
+    {
+      "name": "Rate limiter engages under burst",
+      "pass": true,
+      "httpStatus": "200×54 429×16"
+    }
+  ]
+}
