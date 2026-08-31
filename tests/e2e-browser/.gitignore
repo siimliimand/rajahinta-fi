@@ -1,0 +1,3 @@
+# Workers-config run artifacts (playwright.workers.config.ts)
+playwright-report-workers/
+test-results-workers/
