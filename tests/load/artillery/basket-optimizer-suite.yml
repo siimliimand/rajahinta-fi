@@ -9,11 +9,9 @@
 # ⚠ Feature flag: POST /api/v1/basket/optimize is guarded by
 # @FeatureFlagDec(FeatureFlag.BASKET_OPTIMIZATION) and answers 403 while
 # the flag is off. Enable it ON THE TARGET before running this suite:
-#   - k8s: add `FF_BASKET_OPTIMIZATION: "true"` to the rajahinta-config
-#     ConfigMap (infra/k8s/base/configmap.yaml or the overlay patch)
-#     and roll the deployment, or
-#   - local/docker: export FF_BASKET_OPTIMIZATION=true for the backend
-#     process (FeatureFlagService reads FF_<FLAG> env vars).
+#   - Workers: set `FF_BASKET_OPTIMIZATION` in the target environment's
+#     wrangler vars (staging/prod environment config; or `wrangler dev
+#     --var "FF_BASKET_OPTIMIZATION:true"` locally).
 # A 403 flood in the results means the flag was not enabled.
 #
 # Thresholds:

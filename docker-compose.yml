@@ -1,15 +1,16 @@
 # =============================================================================
-# Rajahinta.fi — local full-stack environment
+# Rajahinta.fi — local test/dev data stores
 #
-# Starts PostgreSQL, Redis, and the NestJS backend (production build) in a
-# single command.  The build uses the monorepo-root Dockerfile (multi-stage,
-# production image).  For iterative development with hot-reload use the
-# infra/jobs compose stack instead.
+# PostgreSQL 16 + TimescaleDB and Redis 7 for the suites that still exercise
+# the legacy Postgres path (golden, data-quality, compliance, integration,
+# and the legacy browser-E2E harness in tests/e2e-browser/boot-stack.sh;
+# scripts/dev-up.sh drives this file). The production stack itself is
+# Cloudflare Workers (see ARCHITECTURE.md §8 and infra/environments/) —
+# there is no Docker application image anymore.
 #
 # Usage:
-#   docker compose up --build          # Build & start everything
-#   docker compose up -d               # Start existing images in background
-#   docker compose down --volumes      # Tear down + delete DB/redis data
+#   docker compose up -d postgres redis   # start just the data stores
+#   docker compose down --volumes         # tear down + delete DB/redis data
 # =============================================================================
 
 services:
@@ -41,7 +42,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
 
   # ---------------------------------------------------------------------------
-  # Redis 7 — caching, BullMQ job queues, session store
+  # Redis 7 — legacy cache/queue store for the Postgres-path suites
   # ---------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
@@ -55,37 +56,6 @@ services:
       retries: 5
     volumes:
       - redis-data:/data
-
-  # ---------------------------------------------------------------------------
-  # NestJS backend (production build via monorepo-root Dockerfile)
-  # ---------------------------------------------------------------------------
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: rajahinta-app
-    ports:
-      - "3000:3000"
-      # Internal Prometheus endpoint (FIX-M) — localhost-only diagnostics
-      # for the freshness gauges; matches the k8s manifest port.
-      - "9464:9464"
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://rajahinta:rajahinta@postgres:5432/rajahinta
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      METRICS_PORT: "9464"
-      # Distributed tracing (task 6.3) — opt-in; unset endpoint = tracing
-      # cleanly disabled. To point at Grafana Cloud, set e.g.:
-      #   OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-<host>.grafana.net/otlp
-      #   OTEL_EXPORTER_OTLP_HEADERS=authorization=Basic <base64 instance:token>
-      # (pass credentials via the environment / an env_file, never commit them)
-      OTEL_EXPORTER_OTLP_ENDPOINT: ""
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
 
 volumes:
   postgres-data:
