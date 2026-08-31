@@ -43,28 +43,17 @@ The golden-dataset regression tests SHALL be included in the CI workflow and SHA
 
 ### Requirement: Staging deployment workflow
 
-The staging deployment workflow SHALL authenticate to the container registry with a working credential, push the built image, run the migrate Job, run the seed Job, and complete the backend rollout. A push to `master` SHALL produce a green end-to-end staging deploy (image push, migrations applied, seed complete, rollout healthy). The workflow SHALL NOT contain placeholder or echo-only deploy steps.
+The staging deployment workflow SHALL authenticate to Cloudflare, apply D1 migrations to the staging database, run the D1 seed (where configured), and deploy the API Worker, email Worker, and frontend Worker via wrangler. A push to `master` SHALL produce a green end-to-end staging deploy on Cloudflare Workers (migrations applied, seed complete, all Workers healthy on their staging routes). The workflow SHALL NOT contain placeholder or echo-only deploy steps, and the K8s/kustomize deploy path SHALL NOT be used.
 
 #### Scenario: Automated staging deploy
 
 - **WHEN** a push to `master` triggers the staging deploy workflow
-- **THEN** the workflow SHALL log in to GHCR with a valid credential, push the image, and complete migrate, seed, and rollout steps with a green conclusion
-
-#### Scenario: Registry credential failure is fixed, not bypassed
-
-- **WHEN** the registry login step fails
-- **THEN** the deploy SHALL fail (no silent skip), and the credential SHALL be repaired (workflow-scoped `GITHUB_TOKEN` with `packages: write`, or a valid `REGISTRY_TOKEN` PAT) rather than removed
+- **THEN** D1 migrations run against the staging database, seed completes, and all Workers deploy to the staging environment with healthy readiness endpoints
 
 #### Scenario: No placeholder deploy pipelines
 
-- **WHEN** `.github/workflows/` is inspected
-- **THEN** no workflow SHALL contain echo-only "deploy" or "migration" steps or lint bypasses justified by stale comments; the deploy surface SHALL be exactly `ci.yml`, `deploy-staging.yml`, `deploy-production.yml`, and `load-tests.yml`
-
-#### Scenario: Required checks survive workflow deletion
-
-- **WHEN** the legacy `deploy.yml` is deleted
-- **THEN** branch protection on `master` SHALL report no missing required checks and open pull requests SHALL show no stuck check
-
+- **WHEN** the deploy workflows are inspected
+- **THEN** no workflow contains echo-only "deploy" or "migration" steps; the deploy surface is exactly `ci.yml`, `deploy-staging.yml`, `deploy-production.yml`, and `load-tests.yml`
 ### Requirement: CI job completeness
 
 The CI workflow SHALL include lint, typecheck, build, unit tests, golden-dataset regression tests, data-quality tests, compliance tests, content-policy checks, and end-to-end tests, unified under a single `ci-pass` gate job whose status reflects all of them. Removing a job from the workflow SHALL require an explicit spec change, not happen as workflow-file churn.
@@ -81,18 +70,12 @@ The CI workflow SHALL include lint, typecheck, build, unit tests, golden-dataset
 
 ### Requirement: Deploys run schema migrations before seed and rollout
 
-Both the staging and production deploy workflows SHALL apply the committed Drizzle migrations to the target database (short-lived Job using the deployed image) before any seed Job or workload rollout. Sequence per deploy: migrate → seed (staging only) → rollout. A deploy against a fresh, empty database SHALL end with schema present, and on staging additionally the official tax versions seeded.
+Both the staging and production deploy workflows SHALL apply the committed D1 migrations (via `wrangler d1 migrations apply`) to the target database before any seed step or Worker rollout. Sequence per deploy: migrate → seed (staging only) → deploy. A deploy against a fresh, empty D1 database SHALL end with schema present, and on staging additionally with the official tax versions seeded.
 
-#### Scenario: Fresh-database staging deploy succeeds
+#### Scenario: Fresh staging database
 
-- **WHEN** the staging deploy workflow runs against an empty PostgreSQL instance
-- **THEN** migrations SHALL create the schema, the seed Job SHALL insert the official dataset rows, and the backend rollout SHALL become healthy
-
-#### Scenario: Production applies migrations without seeding fake data
-
-- **WHEN** the production deploy workflow runs
-- **THEN** migrations SHALL be applied and no staging placeholder or fake merchant data SHALL be inserted
-
+- **WHEN** staging deploys against an empty D1 database
+- **THEN** schema exists after migrations, official tax versions are seeded, and the deployed Worker passes its readiness check
 ### Requirement: CI gates composition and vocabulary integrity
 
 CI SHALL include the composition-root smoke test and the real-stack integration test as required checks aggregated into the `CI passed` gate, and SHALL not define dead environment variables. The repository SHALL require the `CI passed` check on `master` pull requests.
@@ -107,3 +90,25 @@ CI SHALL include the composition-root smoke test and the real-stack integration 
 - **WHEN** a workflow defines an environment variable consumed by a script
 - **THEN** the script SHALL actually read it (the `GOLDEN_DATASET_PATH` precedent is removed)
 
+### Requirement: Production deployment workflow
+
+The production deployment workflow SHALL require a manual confirmation input, apply D1 migrations to the production database, and deploy all Workers via wrangler. The workflow SHALL NOT deploy from an unconfirmed trigger. The production deploy SHALL leave the previous Workers versions available for instant rollback (Workers rollback) independent of DNS.
+
+#### Scenario: Confirmed production deploy
+
+- **WHEN** the production workflow runs with confirmation set
+- **THEN** migrations apply, all Workers deploy, and readiness checks pass on production routes
+
+#### Scenario: Unconfirmed production deploy
+
+- **WHEN** the production workflow runs without explicit confirmation
+- **THEN** the workflow fails fast without deploying
+
+### Requirement: EU data placement
+
+The production and staging wrangler configurations SHALL place data-plane resources in the EU: D1 primary location, Durable Object location hint, and KV jurisdiction. The configuration SHALL be reviewable as committed config, not dashboard state.
+
+#### Scenario: Placement review
+
+- **WHEN** the wrangler configuration for staging or production is inspected
+- **THEN** D1, DO, and KV resources declare EU placement

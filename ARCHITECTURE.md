@@ -402,7 +402,7 @@ The legacy Nest-side observability (`packages/application-api/src/observability/
 
 Implemented:
 
-- **Background jobs separate from request/response path**: BullMQ workers handle per-merchant price ingestion, transport-rate refresh, tax-dataset review, FX-dataset review, time-series aggregation, and retention sweeps; a slow scrape never blocks a user's calculation.
+- **Background jobs separate from request/response path**: Cloudflare Queues, Workflows, and Cron Triggers handle per-merchant price ingestion, transport-rate refresh, tax-dataset review, FX-dataset review, time-series aggregation, and retention sweeps (formerly BullMQ workers); a slow scrape never blocks a user's calculation.
 - **Basket-level transport estimation**: `BasketShippingCalculator` handles non-linear shipping thresholds for multi-item baskets.
 - **Idempotent calculation endpoints**: results are reproducible and cacheable for identical inputs given the same dataset versions. Cache keys are version-aware: tax, transport, and FX dataset versions are part of the key, so entries invalidate when a dataset version changes, not on a timer. The basket optimizer enforces input caps with a total-combinations guard (clean 422 when exceeded).
 
