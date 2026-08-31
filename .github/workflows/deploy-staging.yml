@@ -72,6 +72,10 @@ jobs:
       # (their `main` points at TS sources); OpenNext is the only step that
       # produces a deploy artifact (apps/frontend/.open-next/).
       - name: Build frontend (OpenNext)
+        env:
+          # Inlined by `next build` (browser → API base); same URL the
+          # health gate verifies below. Required for correct staging builds.
+          NEXT_PUBLIC_API_URL: ${{ vars.STAGING_API_URL }}
         run: pnpm --filter @rajahinta/frontend run build:worker
 
       # ── Migrate (before seed and rollout — spec ordering) ─────────────

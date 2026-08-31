@@ -175,7 +175,7 @@ function runWrangler(args: string[], label: string): void {
 function verifyViaWrangler(modeArgs: string[]): void {
   const result = spawnSync(
     WRANGLER_BIN,
-    ['d1', 'execute', D1_BINDING, ...modeArgs, '--json', '--command', buildVerifySql(), '-y'],
+    ['d1', 'execute', D1_BINDING, ...modeArgs, '--json', '--command', buildVerifySql()],
     { cwd: API_WORKER_DIR, encoding: 'utf8' },
   );
   if (result.status !== 0) {
@@ -214,7 +214,7 @@ function runLocal(options: CliOptions, seedFiles: ReturnType<typeof writeSeedSql
   }
 
   for (const file of seedFiles) {
-    runWrangler(['d1', 'execute', D1_BINDING, ...modeArgs, '--file', file.path, '-y'], `wrangler d1 execute --file ${file.file}`);
+    runWrangler(['d1', 'execute', D1_BINDING, ...modeArgs, '--file', file.path], `wrangler d1 execute --file ${file.file}`);
   }
 
   verifyViaWrangler(modeArgs);
@@ -229,11 +229,11 @@ function runRemote(options: CliOptions, seedFiles: ReturnType<typeof writeSeedSq
   const modeArgs = ['--remote', '--env', env];
 
   if (!options.skipMigrate) {
-    runWrangler(['d1', 'migrations', 'apply', D1_BINDING, ...modeArgs, '-y'], `wrangler d1 migrations apply --remote --env ${env}`);
+    runWrangler(['d1', 'migrations', 'apply', D1_BINDING, ...modeArgs], `wrangler d1 migrations apply --remote --env ${env}`);
   }
 
   for (const file of seedFiles) {
-    runWrangler(['d1', 'execute', D1_BINDING, ...modeArgs, '--file', file.path, '-y'], `wrangler d1 execute --remote --env ${env} --file ${file.file}`);
+    runWrangler(['d1', 'execute', D1_BINDING, ...modeArgs, '--file', file.path], `wrangler d1 execute --remote --env ${env} --file ${file.file}`);
   }
 
   verifyViaWrangler(modeArgs);

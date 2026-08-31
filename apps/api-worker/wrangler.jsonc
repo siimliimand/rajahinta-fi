@@ -1,9 +1,10 @@
 // Wrangler config — API Worker (migrate-to-cloudflare task 3.1).
 //
 // Environments follow design D9: dev / staging / production, each with its
-// own D1 database, R2 bucket, and Queues. Database IDs below are
-// placeholders until `wrangler d1 create` is run per environment (task
-// 2.4); queue/bucket names follow the same per-env convention and local
+// own D1 database, R2 bucket, and Queues. Database IDs were created
+// 2026-08-31 with `wrangler d1 create --jurisdiction eu` (EU residency per
+// task 6.5); buckets and queues were provisioned the same way and are
+// referenced by name. Local
 // `wrangler dev` simulates all bindings locally without touching the
 // real resources.
 //
@@ -49,7 +50,7 @@
     {
       "binding": "DB",
       "database_name": "rajahinta-api-dev",
-      "database_id": "placeholder-dev",
+      "database_id": "b91b27b2-2d5f-4cd8-b46c-a6b6688669b0",
       "migrations_dir": "../../packages/data-platform/src/d1/migrations"
     }
   ],
@@ -250,7 +251,7 @@
         {
           "binding": "DB",
           "database_name": "rajahinta-api-dev",
-          "database_id": "placeholder-dev",
+          "database_id": "b91b27b2-2d5f-4cd8-b46c-a6b6688669b0",
           "migrations_dir": "../../packages/data-platform/src/d1/migrations"
         }
       ],
@@ -313,7 +314,7 @@
         {
           "binding": "DB",
           "database_name": "rajahinta-api-staging",
-          "database_id": "placeholder-staging",
+          "database_id": "da49e685-7a6a-420c-a7fe-f68c1f06321b",
           "migrations_dir": "../../packages/data-platform/src/d1/migrations"
         }
       ],
@@ -369,7 +370,7 @@
         {
           "binding": "DB",
           "database_name": "rajahinta-api-production",
-          "database_id": "placeholder-production",
+          "database_id": "f8f67277-5046-46fc-9144-4342ab7af003",
           "migrations_dir": "../../packages/data-platform/src/d1/migrations"
         }
       ],
