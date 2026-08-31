@@ -28,7 +28,7 @@ const CASES = [
   {
     name: 'Case 1 — Beer qty=1 Distance Selling (total 441)',
     body: { productId: 1, quantity: 1, destination: 'FI', transportMethod: 'carrierA' },
-    expect: (r) => ({
+    expect: (_r) => ({
       totalCents: 441,
       foreignRetailPrice: 200,
       transportCost: 150,
@@ -46,7 +46,7 @@ const CASES = [
   {
     name: 'Case 2 — Wine qty=3 Distance Buying (total 2126, transport unscaled)',
     body: { productId: 2, quantity: 3, destination: 'FI', transportMethod: 'carrierB' },
-    expect: (r) => ({
+    expect: (_r) => ({
       totalCents: 2126,
       foreignRetailPrice: 900,
       transportCost: 200,
@@ -59,7 +59,7 @@ const CASES = [
   {
     name: 'Case 3 — Spirits qty=1 transport unavailable (total 2034, LOW)',
     body: { productId: 3, quantity: 1, destination: 'FI' },
-    expect: (r) => ({
+    expect: (_r) => ({
       totalCents: 2034,
       transportCost: 0,
       alcoholExciseEstimate: 1534,
@@ -73,7 +73,7 @@ const CASES = [
     name: 'Case 4 — Unclassified product → 422 gate rejection',
     body: { productId: 4, quantity: 1, destination: 'FI' },
     status: 422,
-    expect: (r) => ({
+    expect: (_r) => ({
       error: 'ClassificationGateRejection',
       productId: 4,
     }),
@@ -82,7 +82,7 @@ const CASES = [
   {
     name: 'Case 5 — Mixed currency: SEK-converted wins, rogue offer excluded',
     body: { productId: 13, quantity: 1, destination: 'FI', transportMethod: 'carrierSE' },
-    expect: (r) => ({
+    expect: (_r) => ({
       totalCents: 441,
       foreignRetailPrice: 200,
       currency: 'EUR',

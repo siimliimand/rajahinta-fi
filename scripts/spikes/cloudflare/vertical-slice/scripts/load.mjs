@@ -145,7 +145,6 @@ try {
   let correctnessMismatches = 0;
   let mismatchSample = null;
   const deadline = Date.now() + DURATION_S * 1000;
-  let calls = 0;
 
   async function worker(workerId) {
     let i = 0;
@@ -184,7 +183,6 @@ try {
       } catch {
         statusCounts['network_error'] = (statusCounts['network_error'] ?? 0) + 1;
       }
-      calls++;
       i++;
     }
   }

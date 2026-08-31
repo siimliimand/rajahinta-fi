@@ -20,7 +20,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { createSchema } from './schema.ts';
 import { FIXTURES, type ProductFixture } from './fixtures.ts';
-import { searchRanked, listAlphabetical, type ProductRow } from './query.ts';
+import { searchRanked, listAlphabetical } from './query.ts';
 
 // ---------------------------------------------------------------------------
 // Seed

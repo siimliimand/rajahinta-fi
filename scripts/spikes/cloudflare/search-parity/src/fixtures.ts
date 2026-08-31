@@ -34,8 +34,6 @@ export interface ProductFixture {
   readonly ean: string | null;
 }
 
-const CREATED = '2026-01-01T00:00:00.000Z';
-
 /** Search-controller fixtures (provenance 1) — ids match the test file. */
 const CONTROLLER_TEST_FIXTURES: ProductFixture[] = [
   {

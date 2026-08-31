@@ -27,7 +27,6 @@ import {
   calculationRecords,
 } from './schema.ts';
 import {
-  TAX_TYPES,
   type IProductDataPort,
   type ICalculationRecordPort,
   type CalculatorProductData,
