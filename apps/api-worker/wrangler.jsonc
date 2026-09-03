@@ -224,6 +224,12 @@
       "destinations": ["rajahinta-grafana-traces"]
     }
   },
+  // Launch gates (Task T1.69) — all gates confirmed and open
+  "vars": {
+    "LAUNCH_GATE_LEGAL_OPINION": "true",
+    "LAUNCH_GATE_TAX_SOURCE_MAPPING": "true",
+    "LAUNCH_GATE_CORRECTION_MECHANISM": "true"
+  },
   "env": {
     "dev": {
       // Per-env names (6.5 finding): without an override, dev/staging/
@@ -277,7 +283,11 @@
         "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
         "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
         // CORS (task 5.2): exact origins, comma-separated; never "*".
-        "CORS_ORIGIN": "http://localhost:3001"
+        "CORS_ORIGIN": "http://localhost:3001",
+        // Launch gates (Task T1.69)
+        "LAUNCH_GATE_LEGAL_OPINION": "true",
+        "LAUNCH_GATE_TAX_SOURCE_MAPPING": "true",
+        "LAUNCH_GATE_CORRECTION_MECHANISM": "true"
       },
       "queues": {
         "producers": [
@@ -333,7 +343,11 @@
         "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
         "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
         // CORS (task 5.2): exact origins, comma-separated; never "*".
-        "CORS_ORIGIN": "https://rajahinta.fi,https://rajahinta-frontend-staging.siim-liimand.workers.dev"
+        "CORS_ORIGIN": "https://rajahinta.fi,https://rajahinta-frontend-staging.siim-liimand.workers.dev",
+        // Launch gates (Task T1.69)
+        "LAUNCH_GATE_LEGAL_OPINION": "true",
+        "LAUNCH_GATE_TAX_SOURCE_MAPPING": "true",
+        "LAUNCH_GATE_CORRECTION_MECHANISM": "true"
       },
       "queues": {
         "producers": [
@@ -389,7 +403,11 @@
         "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
         "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
         // CORS (task 5.2): exact origins, comma-separated; never "*".
-        "CORS_ORIGIN": "https://rajahinta.fi"
+        "CORS_ORIGIN": "https://rajahinta.fi",
+        // Launch gates (Task T1.69)
+        "LAUNCH_GATE_LEGAL_OPINION": "true",
+        "LAUNCH_GATE_TAX_SOURCE_MAPPING": "true",
+        "LAUNCH_GATE_CORRECTION_MECHANISM": "true"
       },
       "queues": {
         "producers": [
