@@ -72,10 +72,10 @@
   },
   "Home": {
     "subtitle": "Finnish cross-border beverage landed-cost calculator",
-    "heroValueProp": "Calculate the total cost of importing alcoholic beverages from Sweden to Finland: the foreign retail price, transport, and estimates of alcohol excise duty and container duty.",
+    "heroValueProp": "Calculate the total cost of importing alcoholic beverages from Sweden and across Europe to Finland: the foreign retail price, transport, and estimates of alcohol excise duty and container duty.",
     "trustHeading": "Data sources and reliability",
     "trustSourcesTitle": "Data sources",
-    "trustSourcesBody": "Product prices are based on the dataset published by Systembolaget. Taxes and duties are calculated from the Finnish Tax Administration's official rate datasets.",
+    "trustSourcesBody": "Product prices are based on datasets published by Systembolaget and European retailers. Taxes and duties are calculated from the Finnish Tax Administration's official rate datasets.",
     "trustReliabilityTitle": "Reliability statuses",
     "trustReliabilityBody": "Every number shown carries a reliability status and a timestamp, so the certainty and age of the data are always visible.",
     "trustMethodologyTitle": "Methodology",
@@ -193,11 +193,30 @@
     "ruleVersion": "Rule version {version}",
     "ratePerUnit": "€{rate} per {unit}",
     "deadlineTitle": "Advance-notice deadline",
-    "deadlineRequired": "Advance notice to customs is required for this classification.",
-    "deadlineNotRequired": "Advance notice is not required for this classification.",
+    "deadlineRequired": "This classification requires filing an advance notice.",
+    "deadlineNotRequired": "No advance notice is required for this classification.",
     "dueDate": "Due {date}",
     "dueDateUnknown": "Due date could not be determined from the calculation timestamp.",
     "deadlineDays": " — {days} days from {from}",
+    "obligations": {
+      "heading": "Obligations and tax liability",
+      "advanceNoticeLabel": "Advance notice",
+      "distanceSellingLiabilityLabel": "Tax liability and joint liability (from 1 Sep 2024)",
+      "liabilityLabel": "Tax liability",
+      "distanceSelling": {
+        "advanceNotice": "The seller's responsibility, before dispatch.",
+        "liability": "As a rule, the foreign seller is responsible for Finnish excise duties and for filing the advance notice. If the seller has not paid the duties or filed the advance notice, you are liable for the duties jointly as the buyer. Always make sure the seller provides the transport identifier the Tax Administration requires for the shipment."
+      },
+      "distanceBuying": {
+        "advanceNotice": "Mandatory for the buyer.",
+        "liability": "By arranging transport independently, you are solely liable for the excise duties. You must file an advance notice and provide a guarantee in MyTax before the goods are dispatched to Finland. Unnotified goods may be seized by Customs."
+      },
+      "travellerImport": {
+        "advanceNotice": "Not required.",
+        "liability": "No excise duty is payable when the goods are brought in for your personal use within the prescribed traveller import allowances."
+      },
+      "preReformNote": "This calculation predates the joint-liability reform effective 1 Sep 2024, so the obligations shown follow the rules in force at that time."
+    },
     "checklist": "Checklist",
     "caveats": "Caveats",
     "officialSources": "Official sources"

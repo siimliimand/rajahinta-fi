@@ -60,7 +60,7 @@ const guidanceCarryingRecord: CalculationRecordData = {
   containerDutyCents: 31,
   totalCents: 543,
   confidence: 'HIGH',
-  classification: 'TravellerImport',
+  classification: 'DistanceBuying',
   disclaimerText: 'Tämä on laskelma, ei sitova päätös.',
   disclaimerLanguage: 'fi',
   disclaimerVersion: '1.2.0',
@@ -268,8 +268,17 @@ describe('ExciseDeclarationService — no-submission guarantee over guidance pat
     expect(excise.ratePerUnit).toBe(38.05);
     expect(excise.ruleVersionLabel).toBe('2025.1');
     expect(containerDuty.ratePerUnit).toBe(0.51);
+    // Post-reform DistanceBuying: the buyer must file an advance notice,
+    // but the due date stays null — the obligation is tied to dispatch, a
+    // date the record does not carry, so none is invented.
     expect(summary.guidance.deadline.required).toBe(true);
-    expect(summary.guidance.deadline.dueDate).toBe('2026-06-19');
+    expect(summary.guidance.deadline.dueDate).toBeNull();
+    expect(summary.guidance.liabilityNotice).toEqual({
+      classification: 'DistanceBuying',
+      buyerMustFileAdvanceNotice: true,
+      buyerJointlyLiable: false,
+      ruleSetVersion: '2.0-2026.1',
+    });
     expect(summary.guidance.caveats).toEqual([]);
   });
 

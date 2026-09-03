@@ -85,6 +85,17 @@ export interface GuidanceOfficialSourceLink {
 }
 
 /**
+ * Statutory liability flags under the 1 Sep 2024 joint-liability reform.
+ * `null` for records computed before the reform.
+ */
+export interface GuidanceLiabilityNotice {
+  readonly classification: 'DistanceSelling' | 'DistanceBuying' | 'TravellerImport';
+  readonly buyerMustFileAdvanceNotice: boolean;
+  readonly buyerJointlyLiable: boolean;
+  readonly ruleSetVersion: string;
+}
+
+/**
  * Advanced declaration guidance (Phase 2C) — informational only: derivation
  * walkthrough, computed advance-notice deadline, ordered MyTax entry
  * checklist, confidence-driven caveats, and official vero.fi sources. No
@@ -93,6 +104,8 @@ export interface GuidanceOfficialSourceLink {
 export interface DeclarationGuidance {
   readonly derivation: GuidanceDerivation;
   readonly deadline: GuidanceDeadline;
+  /** Joint-liability / buyer-obligation flags, or `null` pre-reform. */
+  readonly liabilityNotice: GuidanceLiabilityNotice | null;
   readonly checklist: readonly string[];
   readonly caveats: readonly string[];
   readonly officialSources: readonly GuidanceOfficialSourceLink[];

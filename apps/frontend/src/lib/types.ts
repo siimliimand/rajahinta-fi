@@ -181,10 +181,23 @@ export interface DeclarationOfficialSourceLink {
   readonly description: string;
 }
 
+/**
+ * Statutory liability flags under the 1 Sep 2024 joint-liability reform.
+ * `null` for records computed before the reform.
+ */
+export interface DeclarationLiabilityNotice {
+  readonly classification: 'DistanceSelling' | 'DistanceBuying' | 'TravellerImport';
+  readonly buyerMustFileAdvanceNotice: boolean;
+  readonly buyerJointlyLiable: boolean;
+  readonly ruleSetVersion: string;
+}
+
 /** Advanced declaration guidance — informational, read-only. */
 export interface DeclarationGuidance {
   readonly derivation: DeclarationDerivation;
   readonly deadline: DeclarationDeadline;
+  /** Joint-liability / buyer-obligation flags, or `null` pre-reform. */
+  readonly liabilityNotice: DeclarationLiabilityNotice | null;
   readonly checklist: readonly string[];
   readonly caveats: readonly string[];
   readonly officialSources: readonly DeclarationOfficialSourceLink[];

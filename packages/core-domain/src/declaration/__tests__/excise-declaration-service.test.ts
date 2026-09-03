@@ -445,7 +445,7 @@ describe('CalculationRecordNotFoundError', () => {
 // ---------------------------------------------------------------------------
 
 describe('advance-notice logic', () => {
-  it('requires advance notice for TravellerImport with 4-day deadline', async () => {
+  it('post-reform: no advance notice for TravellerImport (within allowances)', async () => {
     const record = createRecord({ classification: 'TravellerImport' });
     const { service } = createService(
       createMockQueryPort({
@@ -455,11 +455,27 @@ describe('advance-notice logic', () => {
 
     const result = await service.prepareDeclaration(1);
 
-    expect(result.advanceNoticeInfo.required).toBe(true);
-    expect(result.advanceNoticeInfo.deadlineDays).toBe(4);
+    expect(result.advanceNoticeInfo.required).toBe(false);
+    expect(result.advanceNoticeInfo.deadlineDays).toBeUndefined();
   });
 
-  it('does not require advance notice for DistanceSelling', async () => {
+  it('post-reform: requires advance notice for DistanceBuying (before dispatch)', async () => {
+    const record = createRecord({ classification: 'DistanceBuying' });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1);
+
+    expect(result.advanceNoticeInfo.required).toBe(true);
+    // The obligation is tied to dispatch, a date the record does not
+    // carry — no deadline days may be fabricated from the calculation time.
+    expect(result.advanceNoticeInfo.deadlineDays).toBeUndefined();
+  });
+
+  it('post-reform: buyer files no advance notice for DistanceSelling', async () => {
     const record = createRecord({ classification: 'DistanceSelling' });
     const { service } = createService(
       createMockQueryPort({
@@ -473,8 +489,11 @@ describe('advance-notice logic', () => {
     expect(result.advanceNoticeInfo.deadlineDays).toBeUndefined();
   });
 
-  it('does not require advance notice for DistanceBuying', async () => {
-    const record = createRecord({ classification: 'DistanceBuying' });
+  it('pre-reform record keeps the legacy mapping (TravellerImport 4-day deadline)', async () => {
+    const record = createRecord({
+      classification: 'TravellerImport',
+      calculationTimestamp: '2024-06-15T10:30:00.000Z',
+    });
     const { service } = createService(
       createMockQueryPort({
         findById: vi.fn().mockResolvedValue(record),
@@ -483,8 +502,8 @@ describe('advance-notice logic', () => {
 
     const result = await service.prepareDeclaration(1);
 
-    expect(result.advanceNoticeInfo.required).toBe(false);
-    expect(result.advanceNoticeInfo.deadlineDays).toBeUndefined();
+    expect(result.advanceNoticeInfo.required).toBe(true);
+    expect(result.advanceNoticeInfo.deadlineDays).toBe(4);
   });
 
   it('produces correctly typed DeclarationAdvanceNoticeInfo for all classifications', async () => {
@@ -500,6 +519,98 @@ describe('advance-notice logic', () => {
     // Type-level check: advanceNoticeInfo conforms to DeclarationAdvanceNoticeInfo
     const notice: DeclarationAdvanceNoticeInfo = result.advanceNoticeInfo;
     expect(typeof notice.required).toBe('boolean');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Joint-liability notices (1 Sep 2024 reform)
+// ---------------------------------------------------------------------------
+
+describe('liability notices', () => {
+  it('DistanceSelling post-reform: buyer jointly liable, files no advance notice', async () => {
+    const record = createRecord({ classification: 'DistanceSelling' });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1);
+
+    expect(result.guidance.liabilityNotice).toEqual({
+      classification: 'DistanceSelling',
+      buyerMustFileAdvanceNotice: false,
+      buyerJointlyLiable: true,
+      ruleSetVersion: '2.0-2026.1',
+    });
+  });
+
+  it('DistanceBuying post-reform: buyer must file an advance notice, no joint liability', async () => {
+    const record = createRecord({ classification: 'DistanceBuying' });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1);
+
+    expect(result.guidance.liabilityNotice).toEqual({
+      classification: 'DistanceBuying',
+      buyerMustFileAdvanceNotice: true,
+      buyerJointlyLiable: false,
+      ruleSetVersion: '2.0-2026.1',
+    });
+  });
+
+  it('TravellerImport post-reform: exempt, no buyer obligations flagged', async () => {
+    const record = createRecord({ classification: 'TravellerImport' });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1);
+
+    expect(result.guidance.liabilityNotice).toEqual({
+      classification: 'TravellerImport',
+      buyerMustFileAdvanceNotice: false,
+      buyerJointlyLiable: false,
+      ruleSetVersion: '2.0-2026.1',
+    });
+  });
+
+  it('pre-reform record: liabilityNotice is null', async () => {
+    const record = createRecord({
+      classification: 'DistanceSelling',
+      calculationTimestamp: '2024-06-15T10:30:00.000Z',
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1);
+
+    expect(result.guidance.liabilityNotice).toBeNull();
+  });
+
+  it('unparseable calculation timestamp: liabilityNotice is null (never guessed)', async () => {
+    const record = createRecord({
+      classification: 'DistanceSelling',
+      calculationTimestamp: 'not-a-timestamp',
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1);
+
+    expect(result.guidance.liabilityNotice).toBeNull();
   });
 });
 

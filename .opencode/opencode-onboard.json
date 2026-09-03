@@ -8,9 +8,9 @@
     "repo": "github"
   },
   "models": {
-    "plan": "zai-coding-plan/glm-5.3",
-    "build": "zai-coding-plan/glm-5.3",
-    "fast": "zai-coding-plan/glm-5.3"
+    "plan": "zai-coding-plan/glm-5.3-flash",
+    "build": "zai-coding-plan/glm-5.3-flash",
+    "fast": "zai-coding-plan/glm-5.3-flash"
   },
   "agents": {
     "maxConcurrent": 5

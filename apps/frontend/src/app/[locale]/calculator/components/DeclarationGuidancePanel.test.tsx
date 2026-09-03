@@ -102,6 +102,12 @@ function summaryFixture(
         calculatedFrom: '2026-08-27T10:00:00.000Z',
         dueDate: '2026-09-10',
       },
+      liabilityNotice: {
+        classification: 'DistanceBuying',
+        buyerMustFileAdvanceNotice: true,
+        buyerJointlyLiable: false,
+        ruleSetVersion: '2.0-2026.1',
+      },
       checklist: [
         'Sign in to MyTax with your bank credentials.',
         'Select the alcohol excise declaration form.',
@@ -184,10 +190,21 @@ describe('DeclarationGuidancePanel', () => {
     // Deadline.
     const deadline = screen.getByTestId('guidance-deadline');
     expect(deadline).toHaveTextContent(
-      'Tämä luokittelu edellyttää ennakkailmoitusta tullille',
+      'Tämä luokittelu edellyttää ennakkilmoituksen tekemistä.',
     );
     expect(deadline).toHaveTextContent('Määräaika 2026-09-10');
     expect(deadline).toHaveTextContent('14 päivää hetkestä');
+
+    // Statutory obligations block — counsel-approved wording for the
+    // DistanceBuying classification in the fixture.
+    const obligations = screen.getByTestId('guidance-obligations');
+    expect(obligations).toHaveTextContent('Velvoitteet ja verovastuu');
+    expect(obligations).toHaveTextContent('Ennakkoilmoitus');
+    expect(obligations).toHaveTextContent('Pakollinen ostajalle.');
+    expect(obligations).toHaveTextContent('Verovastuu');
+    expect(obligations).toHaveTextContent(
+      'Järjestäessäsi kuljetuksen itsenäisesti vastaat valmisteveroista yksin.',
+    );
 
     // Checklist and caveats verbatim from the API.
     const checklist = screen.getByTestId('guidance-checklist');
@@ -232,8 +249,54 @@ describe('DeclarationGuidancePanel', () => {
       await screen.findByTestId('declaration-guidance-panel'),
     ).toBeInTheDocument();
     expect(screen.getByTestId('guidance-deadline')).toHaveTextContent(
-      'Tämä luokittelu ei edellytä ennakkailmoitusta.',
+      'Tämä luokittelu ei edellytä ennakkilmoitusta.',
     );
+  });
+
+  it('renders the joint-liability disclosure for DistanceSelling', async () => {
+    const fixture = summaryFixture();
+    mockedGetDeclarationSummary.mockResolvedValue({
+      ...fixture,
+      guidance: {
+        ...fixture.guidance!,
+        liabilityNotice: {
+          classification: 'DistanceSelling',
+          buyerMustFileAdvanceNotice: false,
+          buyerJointlyLiable: true,
+          ruleSetVersion: '2.0-2026.1',
+        },
+      },
+    });
+
+    renderWithIntl(<DeclarationGuidancePanel recordId={55} />);
+
+    const obligations = await screen.findByTestId('guidance-obligations');
+    expect(obligations).toHaveTextContent(
+      'Verovastuu ja yhteisvastuu (1.9.2024 alkaen)',
+    );
+    expect(obligations).toHaveTextContent('Myyjän vastuulla ennen lähetystä.');
+    expect(obligations).toHaveTextContent(
+      'vastaat ostajana veroista yhteisvastuullisesti.',
+    );
+  });
+
+  it('shows the pre-reform note instead of statutory obligations when liabilityNotice is null', async () => {
+    const fixture = summaryFixture();
+    mockedGetDeclarationSummary.mockResolvedValue({
+      ...fixture,
+      guidance: {
+        ...fixture.guidance!,
+        liabilityNotice: null,
+      },
+    });
+
+    renderWithIntl(<DeclarationGuidancePanel recordId={55} />);
+
+    const obligations = await screen.findByTestId('guidance-obligations');
+    expect(obligations).toHaveTextContent(
+      'Tämä laskenta on tehty ennen 1.9.2024 alkanutta yhteisvastuu-uudistusta',
+    );
+    expect(obligations).not.toHaveTextContent('Pakollinen ostajalle.');
   });
 
   it('surfaces a controlled message on an entitlement rejection (no crash)', async () => {

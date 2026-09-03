@@ -72,10 +72,10 @@
   },
   "Home": {
     "subtitle": "Rajat ylittävien juomien kokonaiskustannuslaskuri Suomeen",
-    "heroValueProp": "Laske alkoholijuomien tuonnin kokonaiskustannus Ruotsista Suomeen: ulkomainen vähittäishinta, kuljetus sekä arviot alkoholin valmisteverosta ja pakkausverosta.",
+    "heroValueProp": "Laske alkoholijuomien tuonnin kokonaiskustannus Ruotsista ja muualta Euroopasta Suomeen: ulkomainen vähittäishinta, kuljetus sekä arviot alkoholin valmisteverosta ja pakkausverosta.",
     "trustHeading": "Tietolähteet ja luotettavuus",
     "trustSourcesTitle": "Aineistolähteet",
-    "trustSourcesBody": "Tuotteiden hinnat perustuvat Systembolagetin julkaisemaan aineistoon. Verot ja maksut lasketaan Verohallinnon virallisiin verokanta-aineistoihin perustuen.",
+    "trustSourcesBody": "Tuotteiden hinnat perustuvat Systembolagetin ja muiden eurooppalaisten vähittäismyyjien julkaisemiin aineistoihin. Verot ja maksut lasketaan Verohallinnon virallisiin verokanta-aineistoihin perustuen.",
     "trustReliabilityTitle": "Luotettavuusmerkinnät",
     "trustReliabilityBody": "Jokainen näytetty luku kantaa luotettavuusmerkinnän ja aikaleiman, joten tiedon varmuus ja ikä ovat aina näkyvissä.",
     "trustMethodologyTitle": "Menetelmä",
@@ -193,11 +193,30 @@
     "ruleVersion": "Sääntöversio {version}",
     "ratePerUnit": "€{rate} / {unit}",
     "deadlineTitle": "Ennakkailmoituksen määräaika",
-    "deadlineRequired": "Tämä luokittelu edellyttää ennakkailmoitusta tullille.",
-    "deadlineNotRequired": "Tämä luokittelu ei edellytä ennakkailmoitusta.",
+    "deadlineRequired": "Tämä luokittelu edellyttää ennakkilmoituksen tekemistä.",
+    "deadlineNotRequired": "Tämä luokittelu ei edellytä ennakkilmoitusta.",
     "dueDate": "Määräaika {date}",
     "dueDateUnknown": "Määräaikaa ei voitu määrittää laskenta-ajankohdasta.",
     "deadlineDays": " — {days} päivää hetkestä {from}",
+    "obligations": {
+      "heading": "Velvoitteet ja verovastuu",
+      "advanceNoticeLabel": "Ennakkoilmoitus",
+      "distanceSellingLiabilityLabel": "Verovastuu ja yhteisvastuu (1.9.2024 alkaen)",
+      "liabilityLabel": "Verovastuu",
+      "distanceSelling": {
+        "advanceNotice": "Myyjän vastuulla ennen lähetystä.",
+        "liability": "Pääsääntöisesti ulkomainen myyjä vastaa Suomen valmisteveroista ja ennakkoilmoituksen tekemisestä. Mikäli myyjä ei ole suorittanut veroja tai tehnyt ennakkoilmoitusta, vastaat ostajana veroista yhteisvastuullisesti. Varmista aina, että myyjä toimittaa lähetykselle Verohallinnon edellyttämän kuljetustunnisteen."
+      },
+      "distanceBuying": {
+        "advanceNotice": "Pakollinen ostajalle.",
+        "liability": "Järjestäessäsi kuljetuksen itsenäisesti vastaat valmisteveroista yksin. Sinun on tehtävä ennakkoilmoitus ja annettava vakuus OmaVerossa ennen kuin tuotteet lähetetään Suomeen. Ilmoittamattomat tuotteet voidaan ottaa Tullin haltuun."
+      },
+      "travellerImport": {
+        "advanceNotice": "Ei vaadita.",
+        "liability": "Valmisteveroa ei suoriteta, mikäli tuotteet tuodaan omaan henkilökohtaiseen käyttöön säädettyjen matkustajatuonnin ohjeellisten tasojen puitteissa."
+      },
+      "preReformNote": "Tämä laskenta on tehty ennen 1.9.2024 alkanutta yhteisvastuu-uudistusta, joten velvoitteet on esitetty tuolloin voimassa olleiden sääntöjen mukaan."
+    },
     "checklist": "Tarkistuslista",
     "caveats": "Huomioitavaa",
     "officialSources": "Viralliset lähteet"

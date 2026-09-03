@@ -107,6 +107,12 @@ const MOCK_SUMMARY: DeclarationSummary = {
       calculatedFrom: '2026-08-21T10:00:00.000Z',
       dueDate: null,
     },
+    liabilityNotice: {
+      classification: 'DistanceSelling',
+      buyerMustFileAdvanceNotice: false,
+      buyerJointlyLiable: true,
+      ruleSetVersion: '2.0-2026.1',
+    },
     checklist: ['Log in to MyTax', 'Open the alcohol excise declaration'],
     caveats: [],
     officialSources: [

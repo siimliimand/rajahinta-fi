@@ -26,7 +26,7 @@
     "prune": true,
     "reserved": 10000
   },
-  "model": "openrouter/deepseek/deepseek-v4-flash",
+  "model": "zai-coding-plan/glm-5.3-flash",
   "plugin": [
     "@slkiser/opencode-quota@4.2.0"
   ],

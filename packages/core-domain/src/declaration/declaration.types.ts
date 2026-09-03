@@ -157,14 +157,39 @@ export interface DeclarationEstimatedExcise {
 }
 
 /**
- * Advance-notice information for customs declarations.
+ * Advance-notice information for customs declarations, resolved under the
+ * rules effective on the calculation date.
  *
- * Distance-selling transactions normally do not require advance notice.
- * Traveller imports typically do (4-day deadline).
+ * Post-reform (1 Sep 2024): distance buying requires the buyer to file an
+ * advance notice before dispatch; distance selling places the filing on the
+ * seller (buyer jointly liable — see {@link DeclarationLiabilityNotice});
+ * traveller imports need none within personal-use allowances.
+ *
+ * Pre-reform records keep the earlier mapping (traveller imports carried a
+ * 4-day deadline).
  */
 export interface DeclarationAdvanceNoticeInfo {
   readonly required: boolean;
   readonly deadlineDays?: number;
+}
+
+/**
+ * Statutory liability flags for the 1 Sep 2024 joint-liability reform
+ * (Excise Taxation Act 182/2010 as amended by Act 432/2024).
+ *
+ * Pure facts for the presentation layer to phrase — this module states
+ * who carries which obligation, never legal advice. `null` on records
+ * computed before the reform (they resolve under the v1.0 rule set).
+ */
+export interface DeclarationLiabilityNotice {
+  /** Classification the flags apply to. */
+  readonly classification: ClassificationLabel;
+  /** The buyer must file an advance notice before dispatch. */
+  readonly buyerMustFileAdvanceNotice: boolean;
+  /** The buyer is jointly liable if the seller neglects its obligations. */
+  readonly buyerJointlyLiable: boolean;
+  /** Classification rule-set version the flags resolve under. */
+  readonly ruleSetVersion: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +291,11 @@ export interface OfficialSourceLink {
 export interface DeclarationGuidance {
   readonly derivation: DeclarationDerivation;
   readonly deadline: DeclarationGuidanceDeadline;
+  /**
+   * Joint-liability / buyer-obligation flags under the rule set effective on
+   * the calculation date, or `null` for pre-1.9.2024 records.
+   */
+  readonly liabilityNotice: DeclarationLiabilityNotice | null;
   readonly checklist: readonly string[];
   readonly caveats: readonly string[];
   readonly officialSources: readonly OfficialSourceLink[];

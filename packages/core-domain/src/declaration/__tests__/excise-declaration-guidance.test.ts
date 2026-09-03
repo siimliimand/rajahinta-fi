@@ -10,9 +10,11 @@
  *   - derivation         product facts, volume × quantity, rate lines from
  *                        the persisted record; factual degradation when the
  *                        record carries no rate provenance
- *   - deadline           TravellerImport due date = timestamp + 4 days (UTC);
- *                        distance classifications → null; unparseable
- *                        timestamp → null (never an invented date)
+ *   - deadline           pre-reform TravellerImport due date = timestamp +
+ *                        4 days (UTC); post-reform: traveller → none,
+ *                        distance buying → required with null due date
+ *                        (dispatch date unknown), distance selling → none;
+ *                        unparseable timestamp → null (never an invented date)
  *   - caveats            LOW confidence, unknown deposit status, FALLBACK
  *                        rule-version labels, missing rate provenance;
  *                        clean record → no caveats
@@ -216,46 +218,56 @@ describe('guidance.derivation', () => {
 // ---------------------------------------------------------------------------
 
 describe('guidance.deadline', () => {
-  it('computes the due date as timestamp + 4 days (UTC) for TravellerImport', async () => {
+  it('post-reform TravellerImport: no advance notice within traveller allowances', async () => {
     const result = await createService(createRecord(FULL_PROVENANCE)).prepareDeclaration(1);
+
+    expect(result.guidance.deadline.required).toBe(false);
+    expect(result.guidance.deadline.deadlineDays).toBeNull();
+    expect(result.guidance.deadline.dueDate).toBeNull();
+  });
+
+  it('pre-reform TravellerImport keeps the 4-day deadline arithmetic (UTC)', async () => {
+    const result = await createService(
+      createRecord({ calculationTimestamp: '2024-06-15T10:30:00.000Z', ...FULL_PROVENANCE }),
+    ).prepareDeclaration(1);
 
     expect(result.guidance.deadline.required).toBe(true);
     expect(result.guidance.deadline.deadlineDays).toBe(4);
-    expect(result.guidance.deadline.calculatedFrom).toBe(DEFAULT_TIMESTAMP);
-    expect(result.guidance.deadline.dueDate).toBe('2026-06-19');
+    expect(result.guidance.deadline.calculatedFrom).toBe('2024-06-15T10:30:00.000Z');
+    expect(result.guidance.deadline.dueDate).toBe('2024-06-19');
   });
 
-  it('rolls the due date across a month boundary', async () => {
+  it('rolls the due date across a month boundary (pre-reform)', async () => {
     const result = await createService(
       createRecord({
-        calculationTimestamp: '2026-08-30T23:00:00.000Z',
+        calculationTimestamp: '2024-06-30T23:00:00.000Z',
         ...FULL_PROVENANCE,
       }),
     ).prepareDeclaration(1);
 
-    expect(result.guidance.deadline.dueDate).toBe('2026-09-03');
+    expect(result.guidance.deadline.dueDate).toBe('2024-07-04');
   });
 
-  it('rolls the due date across a year boundary', async () => {
+  it('rolls the due date across a year boundary (pre-reform)', async () => {
     const result = await createService(
       createRecord({
-        calculationTimestamp: '2026-12-30T23:00:00.000Z',
+        calculationTimestamp: '2023-12-30T23:00:00.000Z',
         ...FULL_PROVENANCE,
       }),
     ).prepareDeclaration(1);
 
-    expect(result.guidance.deadline.dueDate).toBe('2027-01-03');
+    expect(result.guidance.deadline.dueDate).toBe('2024-01-03');
   });
 
-  it('rolls the due date across a leap-year February (2028-02-27 → 2028-03-02)', async () => {
+  it('rolls the due date across a leap-year February (2024-02-27 → 2024-03-02)', async () => {
     const result = await createService(
       createRecord({
-        calculationTimestamp: '2028-02-27T00:00:00.000Z',
+        calculationTimestamp: '2024-02-27T00:00:00.000Z',
         ...FULL_PROVENANCE,
       }),
     ).prepareDeclaration(1);
 
-    expect(result.guidance.deadline.dueDate).toBe('2028-03-02');
+    expect(result.guidance.deadline.dueDate).toBe('2024-03-02');
   });
 
   it('returns a null due date when notice is not required (DistanceSelling)', async () => {
@@ -268,12 +280,13 @@ describe('guidance.deadline', () => {
     expect(result.guidance.deadline.dueDate).toBeNull();
   });
 
-  it('returns a null due date when notice is not required (DistanceBuying)', async () => {
+  it('post-reform DistanceBuying: notice required, due date stays null (dispatch date unknown)', async () => {
     const result = await createService(
       createRecord({ classification: 'DistanceBuying', ...FULL_PROVENANCE }),
     ).prepareDeclaration(1);
 
-    expect(result.guidance.deadline.required).toBe(false);
+    expect(result.guidance.deadline.required).toBe(true);
+    expect(result.guidance.deadline.deadlineDays).toBeNull();
     expect(result.guidance.deadline.dueDate).toBeNull();
   });
 

@@ -73,15 +73,15 @@ describe('HomePage trust row (task 4.2, D6)', () => {
     html = renderToString(element);
   });
 
-  it('renders the hero value prop from task 4.1 unchanged', () => {
+  it('renders the hero value prop unchanged', () => {
     expect(html).toContain(
-      'Laske alkoholijuomien tuonnin kokonaiskustannus Ruotsista Suomeen',
+      'Laske alkoholijuomien tuonnin kokonaiskustannus Ruotsista ja muualta Euroopasta Suomeen',
     );
   });
 
   it('names both data sources: the Systembolaget feed and Vero rate datasets', () => {
     expect(html).toContain('Aineistolähteet');
-    expect(html).toContain('Systembolagetin julkaisemaan aineistoon');
+    expect(html).toContain('Systembolagetin ja muiden eurooppalaisten vähittäismyyjien');
     expect(html).toContain('Verohallinnon virallisiin verokanta-aineistoihin');
   });
 

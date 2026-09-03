@@ -171,7 +171,7 @@ export default function DeclarationGuidancePanel({
     return null;
   }
 
-  const { derivation, deadline, checklist, caveats, officialSources } =
+  const { derivation, deadline, liabilityNotice, checklist, caveats, officialSources } =
     summary.guidance;
 
   return (
@@ -253,6 +253,59 @@ export default function DeclarationGuidancePanel({
               </div>
             ) : (
               <p className="text-xs text-gray-500">{t('deadlineNotRequired')}</p>
+            )}
+          </div>
+
+          {/* ── Statutory obligations (1.9.2024 joint-liability reform) ──
+              Wording comes from the message catalogs (counsel-approved
+              formulations); this block only picks the entry matching the
+              classification. Pre-reform records (liabilityNotice === null)
+              get a note instead — they resolve under the older rule set. */}
+          <div data-testid="guidance-obligations">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+              {t('obligations.heading')}
+            </h3>
+            {liabilityNotice === null ? (
+              <p className="text-xs text-gray-500">
+                {t('obligations.preReformNote')}
+              </p>
+            ) : (
+              <dl className="space-y-2 text-xs text-gray-500">
+                <div>
+                  <dt className="font-semibold text-gray-600">
+                    {t('obligations.advanceNoticeLabel')}
+                  </dt>
+                  <dd className="mt-0.5">
+                    {t(
+                      `obligations.${
+                        liabilityNotice.classification === 'DistanceSelling'
+                          ? 'distanceSelling'
+                          : liabilityNotice.classification === 'DistanceBuying'
+                            ? 'distanceBuying'
+                            : 'travellerImport'
+                      }.advanceNotice`,
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-gray-600">
+                    {liabilityNotice.classification === 'DistanceSelling'
+                      ? t('obligations.distanceSellingLiabilityLabel')
+                      : t('obligations.liabilityLabel')}
+                  </dt>
+                  <dd className="mt-0.5">
+                    {t(
+                      `obligations.${
+                        liabilityNotice.classification === 'DistanceSelling'
+                          ? 'distanceSelling'
+                          : liabilityNotice.classification === 'DistanceBuying'
+                            ? 'distanceBuying'
+                            : 'travellerImport'
+                      }.liability`,
+                    )}
+                  </dd>
+                </div>
+              </dl>
             )}
           </div>
 

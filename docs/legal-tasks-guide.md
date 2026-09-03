@@ -54,9 +54,12 @@ displayed, the wording, links, rankings, notifications), not just the branding.
 ### Step-by-step
 
 1. **Select counsel** — a Finnish law firm with Alcohol Act (Alkoholilaki 1102/2017)
-   and alcohol-marketing expertise. If they do not also cover tax, engage separate tax
+   and alcohol-marketing expertise. See [docs/legal-counsel-rfp-template.md](file:///home/sim/www/rajahinta-fi/docs/legal-counsel-rfp-template.md)
+   for candidate firms and ready-to-send email templates. If they do not also cover tax, engage separate tax
    counsel for T1.66 / T1.67.
-2. **Prepare a briefing package** describing the actual product. Include at minimum:
+2. **Prepare a briefing package** describing the actual product. A ready-to-use package has been
+   compiled in [docs/legal-briefing-package.md](file:///home/sim/www/rajahinta-fi/docs/legal-briefing-package.md).
+   It includes:
    - Platform positioning: an independent cross-border **landed-cost calculator**, not a
      shop (no checkout, no alcohol payment, no orders, no transport arrangement).
    - The exact user flow: search → product → quantity → landed-cost breakdown → outbound
@@ -111,7 +114,7 @@ and complete** — including the container-duty engine, not just excise.
 4. **Record the confirmation**: date of check, reviewer name/role, set of URLs verified.
 
 **Deliverable:** confirmed mapping table (rule → official source URL) + sign-off that
-every rule has a live, correct official source.
+every rule has a live, correct official source. See [docs/tax-source-mapping.md](file:///home/sim/www/rajahinta-fi/docs/tax-source-mapping.md) for the complete 86-rule inventory and statutory mapping table.
 
 ---
 
@@ -143,7 +146,7 @@ logic is legally correct.**
 5. **Record the sign-off**: rule-set version validated, by whom, on what date.
 
 **Deliverable:** tax counsel's confirmation that classification rules and user guidance
-are legally accurate for the current rule-set version.
+are legally accurate for the current rule-set version. See [docs/distance-selling-classification-validation.md](file:///home/sim/www/rajahinta-fi/docs/distance-selling-classification-validation.md) for the complete plain-language rule export, representative scenarios, downstream messaging walkthrough, and sign-off form.
 
 ---
 
@@ -222,7 +225,7 @@ are satisfied, then open the gate.
 6. **Keep the opinion and all sign-offs on file** as ongoing evidence.
 
 **Deliverable:** dated launch-authorization record + all three gate env vars set `true`
-in production.
+in production. See [docs/launch-decision-record.md](file:///home/sim/www/rajahinta-fi/docs/launch-decision-record.md) for the complete Critical Launch Conditions audit, production activation procedure, and formal sign-off form.
 
 ---
 

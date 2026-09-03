@@ -15,6 +15,10 @@ export { TransactionClassificationService } from './transaction-classification.s
 export {
   ClassificationRuleEngine,
   createDefaultRuleSet,
+  createPostReformRuleSet,
+  createBuiltInRuleSets,
+  JOINT_LIABILITY_REFORM_FROM,
+  CURRENT_RULE_SET_VERSION,
 } from './services/classification-rule-engine.service';
 export type { ClassificationEngineResult } from './services/classification-rule-engine.service';
 

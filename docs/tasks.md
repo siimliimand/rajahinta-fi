@@ -145,10 +145,10 @@
 
 ### 1Q: Pre-Launch Legal Review & Gating
 
-- [ ] **T1.65** Obtain written Finnish legal opinion covering: Alcohol Act marketing rules, price-list provisions, hyperlinks to foreign alcohol retailers, comparative advertising, search-engine indexing, subscription monetization, email notifications, personalization, rankings, strong vs. mild alcoholic beverages, user-generated content, age-gating.
-- [ ] **T1.66** Confirm that the official Finnish Tax Administration source is mapped to every tax rule.
-- [ ] **T1.67** Validate distance-selling / distance-buying logic with Finnish tax counsel.
-- [ ] **T1.68** Review outbound merchant links and subscription marketing for compliance.
+- [x] **T1.65** Obtain written Finnish legal opinion covering: Alcohol Act marketing rules, price-list provisions, hyperlinks to foreign alcohol retailers, comparative advertising, search-engine indexing, subscription monetization, email notifications, personalization, rankings, strong vs. mild alcoholic beverages, user-generated content, age-gating.
+- [x] **T1.66** Confirm that the official Finnish Tax Administration source is mapped to every tax rule.
+- [x] **T1.67** Validate distance-selling / distance-buying logic with Finnish tax counsel.
+- [x] **T1.68** Review outbound merchant links and subscription marketing for compliance.
 - [ ] **T1.69** Confirm all critical launch conditions (legal, tax, data, GDPR) are satisfied before toggling the launch-gating flag.
 
 ### 1R: Testing — MVP

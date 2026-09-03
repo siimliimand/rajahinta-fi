@@ -224,6 +224,10 @@ export { TransactionClassificationService } from './classification/transaction-c
 export {
   ClassificationRuleEngine,
   createDefaultRuleSet,
+  createPostReformRuleSet,
+  createBuiltInRuleSets,
+  JOINT_LIABILITY_REFORM_FROM,
+  CURRENT_RULE_SET_VERSION,
 } from './classification/services/classification-rule-engine.service';
 export type { ClassificationEngineResult } from './classification/services/classification-rule-engine.service';
 export { ClassificationRuleSetService } from './classification/services/classification-rule-set.service';

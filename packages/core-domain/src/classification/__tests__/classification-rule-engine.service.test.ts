@@ -12,7 +12,11 @@
  * - Error when no rule matches (should not happen with default rules)
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ClassificationRuleEngine, createDefaultRuleSet } from '../services/classification-rule-engine.service';
+import {
+  ClassificationRuleEngine,
+  createDefaultRuleSet,
+  createPostReformRuleSet,
+} from '../services/classification-rule-engine.service';
 import type { ClassificationInput } from '../classification.types';
 import type { IClassificationRuleRepositoryPort, ClassificationRuleSetRecord } from '../ports/classification-rule-repository.port';
 
@@ -112,7 +116,7 @@ describe('ClassificationRuleEngine', () => {
       };
 
       const { ruleSet } = engine.classifySync(input);
-      expect(ruleSet.version).toBe('1.0');
+      expect(ruleSet.version).toBe('2.0-2026.1');
       expect(ruleSet.label).toContain('Finnish');
       expect(ruleSet.effectiveFrom).toBeInstanceOf(Date);
       expect(ruleSet.effectiveTo).toBeNull();
@@ -220,6 +224,32 @@ describe('ClassificationRuleEngine', () => {
 
       const { result, ruleSet } = await fallbackEngine.classify(input);
       expect(result.classification).toBe('DistanceSelling');
+      // No repository record for the current date → the built-in set
+      // effective now (post-reform) applies.
+      expect(ruleSet.version).toBe('2.0-2026.1');
+    });
+
+    it('falls back to the pre-reform built-in set for a pre-reform date', async () => {
+      const emptyRepo: IClassificationRuleRepositoryPort = {
+        findEffective: vi.fn().mockResolvedValue(null),
+        listVersions: vi.fn().mockResolvedValue([]),
+        saveRuleSet: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const fallbackEngine = new ClassificationRuleEngine(emptyRepo);
+      const input: ClassificationInput = {
+        sellerInvolvementIndicator: true,
+        carrierId: 'posti',
+        sellerCountry: 'DE',
+        buyerCountry: 'FI',
+        buyerIsTravelling: false,
+        sellerId: '',
+      };
+
+      const { ruleSet } = await fallbackEngine.classify(
+        input,
+        new Date('2024-06-15'),
+      );
       expect(ruleSet.version).toBe('1.0');
     });
 
@@ -262,7 +292,8 @@ describe('ClassificationRuleEngine', () => {
       expect(ruleSet.rules).toHaveLength(4);
       expect(ruleSet.version).toBe('1.0');
       expect(ruleSet.effectiveFrom).toBeInstanceOf(Date);
-      expect(ruleSet.effectiveTo).toBeNull();
+      // Window closed by the 1 Sep 2024 joint-liability reform set.
+      expect(ruleSet.effectiveTo).toEqual(new Date('2024-08-31T23:59:59.999Z'));
     });
 
     it('has all four expected rules in priority order', () => {
@@ -280,6 +311,83 @@ describe('ClassificationRuleEngine', () => {
       const ruleSet = createDefaultRuleSet();
       for (const rule of ruleSet.rules) {
         expect(rule.description?.length).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  describe('createPostReformRuleSet (v2.0-2026.1)', () => {
+    it('is effective from 1 Sep 2024 with an open window', () => {
+      const ruleSet = createPostReformRuleSet();
+      expect(ruleSet.version).toBe('2.0-2026.1');
+      expect(ruleSet.effectiveFrom).toEqual(new Date('2024-09-01T00:00:00.000Z'));
+      expect(ruleSet.effectiveTo).toBeNull();
+    });
+
+    it('has the same four rule names in priority order (taxonomy unchanged)', () => {
+      const ruleSet = createPostReformRuleSet();
+      const names = ruleSet.rules.map((r) => r.name);
+      expect(names).toEqual([
+        'TravellerImport',
+        'DistanceSelling',
+        'DistanceBuyingKnownCarrier',
+        'DistanceBuyingUnknownTransport',
+      ]);
+    });
+
+    it('encodes the reform in the rule descriptions', () => {
+      const ruleSet = createPostReformRuleSet();
+      const byName = new Map(ruleSet.rules.map((r) => [r.name, r]));
+      expect(byName.get('DistanceSelling')?.description).toContain('jointly liable');
+      expect(byName.get('DistanceBuyingKnownCarrier')?.description).toContain(
+        'advance notice',
+      );
+      expect(byName.get('DistanceBuyingKnownCarrier')?.description).toContain(
+        'guarantee',
+      );
+      expect(byName.get('TravellerImport')?.description).toContain(
+        'No advance notice',
+      );
+    });
+
+    it('classifies identically to v1.0 (only obligations changed, not the taxonomy)', () => {
+      const v1 = createDefaultRuleSet();
+      const v2 = createPostReformRuleSet();
+      const inputs: ClassificationInput[] = [
+        {
+          sellerInvolvementIndicator: true,
+          carrierId: 'posti',
+          sellerCountry: 'DE',
+          buyerCountry: 'FI',
+          buyerIsTravelling: false,
+          sellerId: '',
+        },
+        {
+          sellerInvolvementIndicator: false,
+          carrierId: 'dhl',
+          sellerCountry: 'DE',
+          buyerCountry: 'FI',
+          buyerIsTravelling: false,
+          sellerId: '',
+        },
+        {
+          sellerInvolvementIndicator: false,
+          carrierId: '',
+          sellerCountry: 'EE',
+          buyerCountry: 'FI',
+          buyerIsTravelling: true,
+          sellerId: '',
+        },
+      ];
+      for (const input of inputs) {
+        const run = (set: typeof v1) => {
+          for (const rule of set.rules) {
+            const result = rule.evaluate(input);
+            if (result !== null) return result;
+          }
+          throw new Error('no rule matched');
+        };
+        expect(run(v2).classification).toBe(run(v1).classification);
+        expect(run(v2).confidence).toBe(run(v1).confidence);
       }
     });
   });
@@ -426,23 +534,42 @@ describe('ClassificationRuleEngine', () => {
   // ---------------------------------------------------------------------------
 
   describe('asOf date handling', () => {
-    it('classifySync always uses default rules (no date lookup)', () => {
+    const input: ClassificationInput = {
+      sellerInvolvementIndicator: true,
+      carrierId: 'posti',
+      sellerCountry: 'DE',
+      buyerCountry: 'FI',
+      buyerIsTravelling: false,
+      sellerId: '',
+    };
+
+    it('classifySync uses the pre-reform set before 1 Sep 2024', () => {
       const engine = new ClassificationRuleEngine();
-      const input: ClassificationInput = {
-        sellerInvolvementIndicator: true,
-        carrierId: 'posti',
-        sellerCountry: 'DE',
-        buyerCountry: 'FI',
-        buyerIsTravelling: false,
-        sellerId: '',
-      };
-      const { ruleSet } = engine.classifySync(input);
+      const { ruleSet } = engine.classifySync(input, new Date('2024-08-31T12:00:00.000Z'));
       expect(ruleSet.version).toBe('1.0');
+    });
+
+    it('classifySync uses the reform set from 1 Sep 2024 onward', () => {
+      const engine = new ClassificationRuleEngine();
+      const boundary = engine.classifySync(input, new Date('2024-09-01T00:00:00.000Z'));
+      expect(boundary.ruleSet.version).toBe('2.0-2026.1');
+
+      const current = engine.classifySync(input);
+      expect(current.ruleSet.version).toBe('2.0-2026.1');
+    });
+
+    it('classify (async) selects by effective date without a repository', async () => {
+      const engine = new ClassificationRuleEngine();
+      const pre = await engine.classify(input, new Date('2024-07-01'));
+      expect(pre.ruleSet.version).toBe('1.0');
+
+      const post = await engine.classify(input, new Date('2025-01-01'));
+      expect(post.ruleSet.version).toBe('2.0-2026.1');
     });
 
     it('classify does not require asOf and defaults to now', async () => {
       const engine = new ClassificationRuleEngine();
-      const input: ClassificationInput = {
+      const inputNoCarrier: ClassificationInput = {
         sellerInvolvementIndicator: false,
         carrierId: 'dhl',
         sellerCountry: 'DE',
@@ -450,7 +577,7 @@ describe('ClassificationRuleEngine', () => {
         buyerIsTravelling: false,
         sellerId: 'merchant',
       };
-      const { result } = await engine.classify(input);
+      const { result } = await engine.classify(inputNoCarrier);
       expect(result.classification).toBe('DistanceBuying');
       expect(result.confidence).toBe('HIGH');
     });

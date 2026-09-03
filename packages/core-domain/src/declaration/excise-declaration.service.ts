@@ -12,6 +12,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Disclaimer } from '../calculator/calculator.types';
 import type { ClassificationLabel } from '../classification/classification.types';
+import {
+  CURRENT_RULE_SET_VERSION,
+  JOINT_LIABILITY_REFORM_FROM,
+} from '../classification/services/classification-rule-engine.service';
 import type {
   CalculationRecordData,
   DeclarationSummary,
@@ -20,6 +24,7 @@ import type {
   DeclarationDerivation,
   DeclarationGuidance,
   DeclarationGuidanceDeadline,
+  DeclarationLiabilityNotice,
   OfficialSourceLink,
   ICalculationRecordQueryPort,
 } from './declaration.types';
@@ -35,21 +40,89 @@ import {
 
 /**
  * Determine whether advance notice to customs is required based on the
- * transaction classification.
+ * transaction classification and the rules effective on the calculation
+ * date.
  *
- * - `TravellerImport` — advance notice required (4-day deadline).
- * - `DistanceSelling` / `DistanceBuying` — not required for most personal
- *   import scenarios.
+ * From the 1 Sep 2024 joint-liability reform (Excise Taxation Act 182/2010
+ * as amended by Act 432/2024):
+ *
+ * - `DistanceBuying` — the buyer must file an advance notice (and lodge a
+ *   guarantee) before dispatch. The obligation is tied to dispatch, a date
+ *   the record does not carry, so no `deadlineDays` is offered — the due
+ *   date stays null rather than being fabricated from the calculation time.
+ * - `DistanceSelling` — the seller files; the buyer does not, but carries a
+ *   joint-liability exposure (see {@link buildLiabilityNotice}).
+ * - `TravellerImport` — not required within personal-use allowances.
+ *
+ * Records computed before the reform keep the pre-reform mapping (traveller
+ * imports carried a 4-day advance-notice deadline) so historical guidance
+ * resolves under the rules effective on the record's date.
  */
 function getAdvanceNoticeInfo(
   classification: ClassificationLabel,
+  asOf: Date,
 ): DeclarationAdvanceNoticeInfo {
+  const postReform = asOf.getTime() >= JOINT_LIABILITY_REFORM_FROM.getTime();
+
+  if (!postReform) {
+    // Pre-reform mapping (classification rule set v1.0)
+    switch (classification) {
+      case 'TravellerImport':
+        return { required: true, deadlineDays: 4 };
+      case 'DistanceSelling':
+      case 'DistanceBuying':
+        return { required: false };
+    }
+  }
+
   switch (classification) {
     case 'TravellerImport':
-      return { required: true, deadlineDays: 4 };
-    case 'DistanceSelling':
-    case 'DistanceBuying':
       return { required: false };
+    case 'DistanceBuying':
+      // Buyer must file before dispatch — no derivable calendar due date.
+      return { required: true };
+    case 'DistanceSelling':
+      return { required: false };
+  }
+}
+
+/**
+ * Build the joint-liability / buyer-obligation notice for the guidance
+ * object, or `null` for records computed before the 1 Sep 2024 reform.
+ *
+ * Pure factual flags — the UI renders the statutory wording from its
+ * message catalog; this module never phrases legal conclusions.
+ */
+function buildLiabilityNotice(
+  record: CalculationRecordData,
+): DeclarationLiabilityNotice | null {
+  const asOf = new Date(record.calculationTimestamp);
+  if (Number.isNaN(asOf.getTime()) || asOf < JOINT_LIABILITY_REFORM_FROM) {
+    return null;
+  }
+
+  switch (record.classification) {
+    case 'DistanceSelling':
+      return {
+        classification: 'DistanceSelling',
+        buyerMustFileAdvanceNotice: false,
+        buyerJointlyLiable: true,
+        ruleSetVersion: CURRENT_RULE_SET_VERSION,
+      };
+    case 'DistanceBuying':
+      return {
+        classification: 'DistanceBuying',
+        buyerMustFileAdvanceNotice: true,
+        buyerJointlyLiable: false,
+        ruleSetVersion: CURRENT_RULE_SET_VERSION,
+      };
+    case 'TravellerImport':
+      return {
+        classification: 'TravellerImport',
+        buyerMustFileAdvanceNotice: false,
+        buyerJointlyLiable: false,
+        ruleSetVersion: CURRENT_RULE_SET_VERSION,
+      };
   }
 }
 
@@ -301,6 +374,7 @@ function buildGuidance(
   return {
     derivation: buildDerivation(record),
     deadline: buildDeadline(record.calculationTimestamp, advanceNoticeInfo),
+    liabilityNotice: buildLiabilityNotice(record),
     checklist: MYTAX_ENTRY_CHECKLIST,
     caveats: buildCaveats(record),
     officialSources: OFFICIAL_SOURCES,
@@ -349,7 +423,10 @@ export class ExciseDeclarationService {
   // ---------------------------------------------------------------------------
 
   private assembleSummary(record: CalculationRecordData): DeclarationSummary {
-    const advanceNoticeInfo = getAdvanceNoticeInfo(record.classification);
+    const advanceNoticeInfo = getAdvanceNoticeInfo(
+      record.classification,
+      new Date(record.calculationTimestamp),
+    );
     const totalExciseCents = record.alcoholExciseCents + record.containerDutyCents;
 
     return {
