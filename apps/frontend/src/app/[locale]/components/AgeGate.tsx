@@ -6,45 +6,60 @@ import { useTranslations } from 'next-intl';
 import { usePathname, useRouter } from '@/i18n/navigation';
 import { Button } from '@/components/ui';
 
-const STORAGE_KEY = 'age_confirmed';
 const COOKIE_NAME = 'age_confirmed';
+/** localStorage key the previous dual-store implementation wrote. */
+const LEGACY_STORAGE_KEY = 'age_confirmed';
+const AGE_CONFIRMATION_TTL_DAYS = 90;
 const DECLINED_PATH = '/age-gate/declined';
 
+/**
+ * Read the gate decision from the `age_confirmed` cookie — the same
+ * store the API client presents on every gated request. Same split/trim
+ * parse as getCookie in lib/api.ts; an empty value counts as unconfirmed.
+ */
 function getAgeVerified(): boolean {
-  if (typeof window === 'undefined') return false;
-  return localStorage.getItem(STORAGE_KEY) === 'true';
+  if (typeof document === 'undefined') return false;
+  const match = document.cookie
+    .split(';')
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${COOKIE_NAME}=`));
+  const value = match ? match.slice(COOKIE_NAME.length + 1) : '';
+  return value.length > 0;
 }
 
 function setAgeConfirmedCookie(): void {
-  document.cookie = `${COOKIE_NAME}=true; path=/; SameSite=Lax; max-age=86400`;
+  document.cookie = `${COOKIE_NAME}=true; path=/; SameSite=Lax; max-age=${AGE_CONFIRMATION_TTL_DAYS * 86400}`;
 }
 
 function clearAgeConfirmedCookie(): void {
   document.cookie = `${COOKIE_NAME}=; path=/; SameSite=Lax; max-age=0`;
 }
 
-function setAgeVerified(): void {
-  localStorage.setItem(STORAGE_KEY, 'true');
-}
-
-function clearAgeVerified(): void {
-  localStorage.removeItem(STORAGE_KEY);
+/** Remove the key the old implementation wrote (cleanup, see below). */
+function removeLegacyStorageKey(): void {
+  localStorage.removeItem(LEGACY_STORAGE_KEY);
 }
 
 /**
  * Soft age gate — Phase 1 confirmation is self-attestation.
  *
  * The gate records only the visitor's own claim of being at least 18
- * (localStorage flag mirrored to the `age_confirmed` cookie) and proves
- * nothing beyond that claim. The backend's SimpleConfirmationProvider is
- * the same statement on the server side: it records that a confirmation
- * token was sent, nothing more. Both sides keep their interfaces so a
- * stronger verification can replace them without UI changes.
+ * and proves nothing beyond that claim. The backend's
+ * SimpleConfirmationProvider is the same statement on the server side;
+ * both sides keep their interfaces so a stronger verification can
+ * replace them without UI changes.
  *
- * SSR renders an inert placeholder and the stored decision is applied
- * after mount, so restricted content never appears in server-rendered
- * DOM. Declining clears the stored answer and navigates to the neutral
- * in-house page /age-gate/declined — never an external origin.
+ * The `age_confirmed` cookie is the single source of truth — the same
+ * store the API client authenticates with — with a 90-day TTL. A
+ * previous implementation also kept the answer in localStorage with no
+ * expiry, so once the cookie lapsed the modal never reappeared while
+ * every gated API call kept 403ing; the stale localStorage key is now
+ * removed on mount so old visitors converge on the cookie alone.
+ *
+ * SSR renders an inert placeholder and the cookie is read after mount,
+ * so restricted content never appears in server-rendered DOM.
+ * Declining clears the cookie and navigates to the neutral in-house
+ * page /age-gate/declined — never an external origin.
  */
 export function AgeGate({ children }: { children: React.ReactNode }) {
   const [verified, setVerified] = useState<boolean | null>(null);
@@ -53,19 +68,21 @@ export function AgeGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
+    // Cleanup for visitors still carrying the old dual-store state.
+    removeLegacyStorageKey();
     setVerified(getAgeVerified());
   }, []);
 
   const handleConfirm = () => {
-    setAgeVerified();
     setAgeConfirmedCookie();
     setVerified(true);
   };
 
   const handleDeny = () => {
-    // Keep the stored answer consistent with the denial, then leave via
-    // the in-house page so the redirect cannot look broken or leak a referrer.
-    clearAgeVerified();
+    // Clear the cookie (and any stale legacy key) so the denial sticks,
+    // then leave via the in-house page so the redirect cannot look
+    // broken or leak a referrer.
+    removeLegacyStorageKey();
     clearAgeConfirmedCookie();
     router.replace(DECLINED_PATH);
   };
