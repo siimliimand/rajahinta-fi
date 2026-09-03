@@ -745,4 +745,10 @@ export interface ApiError {
    * rate-limit guard sets.
    */
   readonly retryAfterSeconds?: number;
+  /**
+   * Machine-readable error code for flows that react programmatically.
+   * Present on 403 responses that require age (re)confirmation
+   * (`AGE_GATE_REQUIRED`).
+   */
+  readonly code?: string;
 }

@@ -11,6 +11,9 @@
  *      travels on every request.
  *   4. The unified error envelope passes through intact, carrying the
  *      API's echoed `x-request-id`.
+ *   5. Age-gate recovery (age-gate-recovery task 3.1): a 403 whose body
+ *      carries `code: 'AGE_GATE_REQUIRED'` dispatches exactly one window
+ *      `age-gate:required` event before the throw; other failures do not.
  *
  * @module ApiFetchClientTest
  */
@@ -205,5 +208,81 @@ describe('request() outbound contract', () => {
 
     expect(err).toBeInstanceOf(ApiFetchError);
     expect((err as ApiFetchError).requestId).toBeNull();
+  });
+});
+
+describe('age-gate:required recovery dispatch (age-gate-recovery task 3.1)', () => {
+  const EVENT = 'age-gate:required';
+  let listener: EventListener;
+
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+    listener = vi.fn();
+    window.addEventListener(EVENT, listener);
+  });
+
+  afterEach(() => {
+    window.removeEventListener(EVENT, listener);
+    vi.restoreAllMocks();
+  });
+
+  it('dispatches exactly one age-gate:required on 403 AGE_GATE_REQUIRED and still throws', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse(
+        {
+          statusCode: 403,
+          message: 'Age confirmation required',
+          error: 'Forbidden',
+          code: 'AGE_GATE_REQUIRED',
+        },
+        403,
+      ),
+    );
+
+    const err = await request('/api/v1/calculations/excise').catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiFetchError);
+    expect((err as ApiFetchError).status).toBe(403);
+    expect((err as ApiFetchError).body?.code).toBe('AGE_GATE_REQUIRED');
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not dispatch on a 403 without the AGE_GATE_REQUIRED code', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse(
+        {
+          statusCode: 403,
+          message: 'Insufficient tier',
+          error: 'InsufficientEntitlement',
+        },
+        403,
+      ),
+    );
+
+    const err = await request('/api/v1/reports/1?format=json').catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiFetchError);
+    expect((err as ApiFetchError).status).toBe(403);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('does not dispatch on non-403 failures even with the code present', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      jsonResponse(
+        {
+          statusCode: 404,
+          message: 'Not found',
+          error: 'NotFound',
+          code: 'AGE_GATE_REQUIRED',
+        },
+        404,
+      ),
+    );
+
+    const err = await request('/api/v1/products/999999').catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiFetchError);
+    expect((err as ApiFetchError).status).toBe(404);
+    expect(listener).not.toHaveBeenCalled();
   });
 });

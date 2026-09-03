@@ -97,6 +97,28 @@ export class ApiFetchError extends Error {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/** Window event fired when the API demands age (re)confirmation. */
+const AGE_GATE_REQUIRED_EVENT = 'age-gate:required';
+
+/**
+ * Re-open the AgeGate prompt in place when the API rejects a request with
+ * 403 `AGE_GATE_REQUIRED`. The confirmation cookie can expire while
+ * client-side state still treats the visitor as verified, leaving
+ * age-gated flows without a rendered prompt to recover through; this
+ * window event is the recovery hook the AgeGate modal listens for
+ * (age-gate-recovery). The `window` guard keeps the call SSR-safe —
+ * build-time fetches share this module.
+ */
+function notifyAgeGateRequired(status: number, body: ApiError | null): void {
+  if (
+    status === 403 &&
+    body?.code === 'AGE_GATE_REQUIRED' &&
+    typeof window !== 'undefined'
+  ) {
+    window.dispatchEvent(new CustomEvent(AGE_GATE_REQUIRED_EVENT));
+  }
+}
+
 /**
  * Read a browser cookie by name. Returns the value or undefined.
  */
@@ -243,6 +265,7 @@ async function executeRequest<T>(
     } catch {
       // ignore parse failure
     }
+    notifyAgeGateRequired(res.status, body);
     const requestId = res.headers?.get?.('x-request-id') ?? null;
     throw new ApiFetchError(res.status, body, requestId);
   }
@@ -819,6 +842,7 @@ async function fetchReportBlob(
     } catch {
       // ignore parse failure
     }
+    notifyAgeGateRequired(res.status, body);
     throw new ApiFetchError(res.status, body);
   }
 
