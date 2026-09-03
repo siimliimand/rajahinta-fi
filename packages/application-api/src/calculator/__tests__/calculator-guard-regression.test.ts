@@ -8,7 +8,8 @@
  *      is correctly inherited by the `getResult` handler via NestJS metadata.
  *   2. The class-level `@LaunchGate(LaunchGateType.CALCULATION)` metadata is
  *      correctly inherited by `getResult`.
- *   3. AgeGateGuard rejects `getResult` when no age confirmation token is sent.
+ *   3. AgeGateGuard rejects `getResult` when no age confirmation token is sent,
+ *      with the machine-readable AGE_GATE_REQUIRED code on the rejection body.
  *   4. LaunchGateGuard rejects `getResult` when launch gates are closed.
  *   5. LaunchGateGuard allows `getResult` when the override env var is set.
  *
@@ -165,6 +166,10 @@ describe('CalculatorController — getResult guard regression', () => {
         expect(err).toBeInstanceOf(ForbiddenException);
         const fb = err as ForbiddenException;
         expect(fb.message).toMatch(/age confirmation required/i);
+        // Regression: the rejection body must keep the machine-readable code
+        // the frontend recovery flow dispatches on (age-gate-recovery 1.3).
+        const body = fb.getResponse() as { code?: string };
+        expect(body.code).toBe('AGE_GATE_REQUIRED');
       }
     });
 
