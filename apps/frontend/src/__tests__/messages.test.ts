@@ -149,7 +149,17 @@ describe('layout and navigation catalog completeness', () => {
   });
 
   it('AgeGate carries the full dialog copy in both locales', () => {
-    expectNamespaceKeys('AgeGate', ['title', 'body', 'confirm', 'deny', 'note']);
+    expectNamespaceKeys('AgeGate', [
+      'title',
+      'body',
+      'confirm',
+      'deny',
+      'note',
+      // age-gate-recovery: shown when a gated call is rejected after the
+      // confirmation cookie expired (calculator error surface, 3.3/3.4).
+      'recoveryTitle',
+      'recoveryDescription',
+    ]);
     expectTranslated('AgeGate');
   });
 

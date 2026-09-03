@@ -80,8 +80,10 @@ export function extractConfirmationToken(c: Context<AppEnv>): string | undefined
 
 /**
  * Age-gate middleware. Missing/invalid confirmation is a 403 with the
- * guard's exact messages. The rejection payload carries no DOB or
- * identity-document fields (privacy rule — Phase 1 collects nothing).
+ * guard's exact messages plus a machine-readable `code` for clients
+ * driving the recovery flow (AGE_GATE_REQUIRED / AGE_VERIFICATION_FAILED).
+ * The rejection payload carries no DOB or identity-document fields
+ * (privacy rule — Phase 1 collects nothing).
  */
 export function ageGate(
   provider: IVerificationProvider = simpleConfirmationProvider,
@@ -90,10 +92,14 @@ export function ageGate(
     const token = extractConfirmationToken(c);
 
     if (!token) {
-      throw new ApiHttpError(
-        403,
-        'Age confirmation required. Please confirm your age via the age-gate prompt.',
-      );
+      // Object payload: the message/error mirror the string form byte for
+      // byte, plus the machine-readable code the client recovery flow reads.
+      throw new ApiHttpError(403, {
+        message:
+          'Age confirmation required. Please confirm your age via the age-gate prompt.',
+        error: 'Forbidden',
+        code: 'AGE_GATE_REQUIRED',
+      });
     }
 
     // Use the token as the userId for verification. With
@@ -101,10 +107,11 @@ export function ageGate(
     const result = await provider.verifyAge(token);
 
     if (!result.verified) {
-      throw new ApiHttpError(
-        403,
-        'Age verification failed. Please try confirming your age again.',
-      );
+      throw new ApiHttpError(403, {
+        message: 'Age verification failed. Please try confirming your age again.',
+        error: 'Forbidden',
+        code: 'AGE_VERIFICATION_FAILED',
+      });
     }
 
     await next();

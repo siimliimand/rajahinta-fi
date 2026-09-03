@@ -11,6 +11,9 @@
  *      (spec slug enable_historical_price_intelligence).
  *   4. FeatureFlagGuard rejects (403) while the flag is disabled — the
  *      default — and allows once FF_HISTORICAL_PRICE_INTELLIGENCE is set.
+ *   5. AgeGateGuard rejects getPriceHistory when no age confirmation token
+ *      is sent, with the machine-readable AGE_GATE_REQUIRED code on the
+ *      rejection body.
  *
  * @module HistoricalGuardRegressionTest
  */
@@ -33,6 +36,8 @@ import {
 } from '../../rate-limiting/rate-limit.guard';
 import { RATE_LIMIT_PROFILES } from '../../rate-limiting/rate-limiting.service';
 import { AgeGateGuard } from '../../age-gate/age-gate.guard';
+import { AgeGateService } from '../../age-gate/age-gate.service';
+import { SimpleConfirmationProvider } from '../../age-gate/simple-confirmation.provider';
 
 /** NestJS internal metadata key for guards applied via @UseGuards. */
 const GUARDS_METADATA = '__guards__';
@@ -154,6 +159,35 @@ describe('HistoricalDataController — guard regression', () => {
       );
 
       expect(guard.canActivate(context)).toBe(true);
+    });
+  });
+
+  // ===================================================================
+  // AgeGateGuard rejection for getPriceHistory
+  // ===================================================================
+
+  describe('AgeGateGuard rejects getPriceHistory when age token is missing', () => {
+    it('throws ForbiddenException whose body carries the AGE_GATE_REQUIRED code', async () => {
+      const guard = new AgeGateGuard(
+        new AgeGateService(new SimpleConfirmationProvider()),
+      );
+      const context = contextForMethod(
+        HistoricalDataController.prototype.getPriceHistory,
+        HistoricalDataController,
+      );
+
+      try {
+        await guard.canActivate(context);
+        expect.unreachable('Expected ForbiddenException');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ForbiddenException);
+        const fb = err as ForbiddenException;
+        expect(fb.message).toMatch(/age confirmation required/i);
+        // Regression: the rejection body must keep the machine-readable code
+        // the frontend recovery flow dispatches on (age-gate-recovery 1.3).
+        const body = fb.getResponse() as { code?: string };
+        expect(body.code).toBe('AGE_GATE_REQUIRED');
+      }
     });
   });
 

@@ -57,23 +57,47 @@ const DEFAULT_DESTINATION = 'FI';
  * 429 body so the state can say when a retry will succeed.
  */
 interface CalculationError {
-  /** Server-provided or fallback message; unused for rate-limited renders. */
+  /**
+   * Server-provided or fallback message; unused for rate-limited and
+   * age-gate renders.
+   */
   readonly message: string;
   /** True when the calculation was rejected by the rate limiter (429). */
   readonly rateLimited: boolean;
   /** Seconds until a retry is allowed, when the 429 response carried it. */
   readonly retryAfterSeconds: number | null;
+  /**
+   * True when the API demanded age (re)confirmation (403
+   * `AGE_GATE_REQUIRED`). The AgeGate modal re-opens on top via the
+   * `age-gate:required` window event; the error state only carries the
+   * localized in-context explanation — never the raw backend message.
+   */
+  readonly ageGateRequired: boolean;
 }
 
 /**
  * Classify a calculation failure for the error state. Rate-limited
- * rejections keep the structured `retryAfterSeconds`; everything else
- * keeps the server message (or the localized fallback).
+ * rejections keep the structured `retryAfterSeconds`; age-gate
+ * rejections (403 with body code `AGE_GATE_REQUIRED`) map to the
+ * localized recovery copy; everything else keeps the server message
+ * (or the localized fallback).
  */
 function toCalculationError(
   err: unknown,
   fallbackMessage: string,
 ): CalculationError {
+  if (
+    err instanceof ApiFetchError &&
+    err.status === 403 &&
+    err.body?.code === 'AGE_GATE_REQUIRED'
+  ) {
+    return {
+      message: fallbackMessage,
+      rateLimited: false,
+      retryAfterSeconds: null,
+      ageGateRequired: true,
+    };
+  }
   if (err instanceof ApiFetchError && err.status === 429) {
     return {
       message: fallbackMessage,
@@ -82,12 +106,14 @@ function toCalculationError(
         typeof err.body?.retryAfterSeconds === 'number'
           ? err.body.retryAfterSeconds
           : null,
+      ageGateRequired: false,
     };
   }
   return {
     message: err instanceof Error ? err.message : fallbackMessage,
     rateLimited: false,
     retryAfterSeconds: null,
+    ageGateRequired: false,
   };
 }
 
@@ -105,6 +131,7 @@ function toCalculationError(
 export default function CalculatorPage() {
   const t = useTranslations('Calculator');
   const tCommon = useTranslations('Common');
+  const tAgeGate = useTranslations('AgeGate');
 
   // ── Search state ──
   const [query, setQuery] = useState('');
@@ -441,13 +468,24 @@ export default function CalculatorPage() {
                 <div className="mt-3">
                   {/* Designed error state (task 5.3): the rate-limited
                       case replaces the raw server message with localized
-                      copy and surfaces the 429 Retry-After wait. */}
+                      copy and surfaces the 429 Retry-After wait. The
+                      age-gate case (age-gate-recovery, task 3.4) does the
+                      same with the localized recovery copy — the AgeGate
+                      modal explains the re-confirmation itself, so the
+                      raw backend message never reaches the user. Retry
+                      stays available for both. */}
                   <ErrorState
-                    title={t('calculationErrorTitle')}
+                    title={
+                      calcError.ageGateRequired
+                        ? tAgeGate('recoveryTitle')
+                        : t('calculationErrorTitle')
+                    }
                     description={
-                      calcError.rateLimited
-                        ? t('rateLimitedDescription')
-                        : calcError.message
+                      calcError.ageGateRequired
+                        ? tAgeGate('recoveryDescription')
+                        : calcError.rateLimited
+                          ? t('rateLimitedDescription')
+                          : calcError.message
                     }
                     onRetry={handleCalculate}
                     retryLabel={tCommon('retry')}

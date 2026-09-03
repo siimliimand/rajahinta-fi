@@ -11,6 +11,9 @@
  *      localized rate-limit copy, surfaces the server's Retry-After
  *      wait in seconds, and wires the retry action to re-trigger the
  *      calculation.
+ *   4. An age-gate rejection (403, body code AGE_GATE_REQUIRED) renders
+ *      the localized AgeGate recovery copy instead of the raw backend
+ *      message, with retry still available (age-gate-recovery 3.4).
  *
  * @module CalculatorPageTest
  */
@@ -79,6 +82,18 @@ function rateLimited(): ApiFetchError {
     timestamp: '2026-08-28T12:00:00Z',
     path: '/api/v1/calculator',
     retryAfterSeconds: 30,
+  });
+}
+
+/** The guard's 403 age-gate envelope: body carries the machine code. */
+function ageGateRequired(): ApiFetchError {
+  return new ApiFetchError(403, {
+    statusCode: 403,
+    message: 'Age confirmation is required to use the calculator.',
+    error: 'AgeGateRequired',
+    timestamp: '2026-08-28T12:00:00Z',
+    path: '/api/v1/calculator',
+    code: 'AGE_GATE_REQUIRED',
   });
 }
 
@@ -168,5 +183,51 @@ describe('CalculatorPage rate-limited calculation state (task 5.3)', () => {
     await waitFor(() =>
       expect(mockedCalculateLandedCost).toHaveBeenCalledTimes(2),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Calculation age-gate 403 → ErrorState with localized recovery copy
+// ---------------------------------------------------------------------------
+
+describe('CalculatorPage age-gate recovery state (age-gate-recovery 3.4)', () => {
+  it('maps the age-gate 403 to the localized recovery copy and hides the raw message', async () => {
+    mockedSearchProducts.mockResolvedValue(searchResponse([HIT]));
+    mockedCalculateLandedCost.mockRejectedValue(ageGateRequired());
+    const user = userEvent.setup();
+
+    renderWithIntl(<CalculatorPage />);
+
+    // Search → select the hit.
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    const hit = await screen.findByText('Renat');
+    await user.click(hit.closest('button') as HTMLButtonElement);
+
+    // Calculate → 403 AGE_GATE_REQUIRED.
+    await user.click(
+      screen.getByRole('button', { name: 'Laske kokonaiskustannus' }),
+    );
+
+    // Designed error state carries the localized AgeGate recovery copy
+    // (fi.json catalog) — never the raw backend message.
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveAttribute('data-state', 'error');
+    expect(screen.getByText('Ikävahvistus tarvitaan')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Ikävahvistuksesi on vanhentunut. Vahvista ikäsi jatkaaksesi.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Age confirmation is required to use the calculator.'),
+    ).toBeNull();
+    // The generic failure copy is replaced too, not stacked.
+    expect(screen.queryByText('Laskenta epäonnistui')).toBeNull();
+
+    // Retry stays available so the user can re-run after confirming.
+    expect(
+      screen.getByRole('button', { name: 'Yritä uudelleen' }),
+    ).toBeInTheDocument();
   });
 });

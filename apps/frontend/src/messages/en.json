@@ -91,7 +91,9 @@
     "body": "This site contains alcohol-related content. Are you 18 or older?",
     "confirm": "Yes, I am 18+",
     "deny": "No",
-    "note": "No personal data is collected. A local flag is stored in your browser."
+    "note": "No personal data is collected. A local flag is stored in your browser.",
+    "recoveryTitle": "Age confirmation needed",
+    "recoveryDescription": "Your age confirmation has expired. Please confirm your age again to continue."
   },
   "AgeGatePage": {
     "title": "Welcome",

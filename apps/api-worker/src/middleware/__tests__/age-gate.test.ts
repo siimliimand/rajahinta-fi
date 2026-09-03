@@ -53,9 +53,16 @@ describe('AgeGateMiddleware', () => {
     it('denies with empty headers and cookies', async () => {
       const res = await buildApp().request('/probe');
       expect(res.status).toBe(403);
-      const body = (await res.json()) as { message: string; error: string };
-      expect(body.message).toMatch(/age confirmation required/i);
+      const body = (await res.json()) as {
+        message: string;
+        error: string;
+        code: string;
+      };
+      expect(body.message).toBe(
+        'Age confirmation required. Please confirm your age via the age-gate prompt.',
+      );
       expect(body.error).toBe('Forbidden');
+      expect(body.code).toBe('AGE_GATE_REQUIRED');
     });
 
     it('denies an empty x-age-confirmed header', async () => {
@@ -63,6 +70,8 @@ describe('AgeGateMiddleware', () => {
         headers: { 'x-age-confirmed': '' },
       });
       expect(res.status).toBe(403);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('AGE_GATE_REQUIRED');
     });
 
     it('denies an empty age_confirmed cookie', async () => {
@@ -70,6 +79,8 @@ describe('AgeGateMiddleware', () => {
         headers: { cookie: 'age_confirmed=' },
       });
       expect(res.status).toBe(403);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('AGE_GATE_REQUIRED');
     });
 
     it('carries no DOB or identity-document fields in the rejection payload', async () => {
@@ -139,8 +150,16 @@ describe('AgeGateMiddleware', () => {
       });
 
       expect(res.status).toBe(403);
-      const body = (await res.json()) as { message: string };
-      expect(body.message).toMatch(/age verification failed/i);
+      const body = (await res.json()) as {
+        message: string;
+        error: string;
+        code: string;
+      };
+      expect(body.message).toBe(
+        'Age verification failed. Please try confirming your age again.',
+      );
+      expect(body.error).toBe('Forbidden');
+      expect(body.code).toBe('AGE_VERIFICATION_FAILED');
     });
 
     it('passes the presented token to the provider as the verification subject', async () => {
