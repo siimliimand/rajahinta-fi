@@ -79,10 +79,17 @@ export class AgeGateGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const token = extractConfirmationToken(request);
 
+    // The object body mirrors the Hono Worker port's rejection payload
+    // (message byte-identical, plus a stable `code`) so both surfaces stay
+    // byte-compatible for clients.
     if (!token) {
-      throw new ForbiddenException(
-        'Age confirmation required. Please confirm your age via the age-gate prompt.',
-      );
+      throw new ForbiddenException({
+        statusCode: 403,
+        message:
+          'Age confirmation required. Please confirm your age via the age-gate prompt.',
+        error: 'Forbidden',
+        code: 'AGE_GATE_REQUIRED',
+      });
     }
 
     // Use the token as the userId for verification. With
@@ -90,9 +97,13 @@ export class AgeGateGuard implements CanActivate {
     const result = await this.ageGateService.verifyAge(token);
 
     if (!result.verified) {
-      throw new ForbiddenException(
-        'Age verification failed. Please try confirming your age again.',
-      );
+      throw new ForbiddenException({
+        statusCode: 403,
+        message:
+          'Age verification failed. Please try confirming your age again.',
+        error: 'Forbidden',
+        code: 'AGE_VERIFICATION_FAILED',
+      });
     }
 
     return true;

@@ -108,7 +108,7 @@ describe('AgeGateGuard', () => {
       await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
     });
 
-    it('includes a descriptive message in the ForbiddenException', async () => {
+    it('includes a descriptive message and AGE_GATE_REQUIRED code in the ForbiddenException', async () => {
       const guard = new AgeGateGuard(service);
       const context = mockContext({ headers: {}, cookies: {} });
 
@@ -119,6 +119,21 @@ describe('AgeGateGuard', () => {
         expect(err).toBeInstanceOf(ForbiddenException);
         const fb = err as ForbiddenException;
         expect(fb.message).toMatch(/age confirmation required/i);
+
+        // Nest-parity rejection body — mirrors the Hono Worker port
+        // byte-compatibly (task: age-gate-recovery).
+        const response = fb.getResponse() as {
+          statusCode: number;
+          message: string;
+          error: string;
+          code: string;
+        };
+        expect(response.statusCode).toBe(403);
+        expect(response.message).toBe(
+          'Age confirmation required. Please confirm your age via the age-gate prompt.',
+        );
+        expect(response.error).toBe('Forbidden');
+        expect(response.code).toBe('AGE_GATE_REQUIRED');
       }
     });
   });
@@ -279,7 +294,7 @@ describe('AgeGateGuard', () => {
       await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
     });
 
-    it('error message references verification failure', async () => {
+    it('error message references verification failure with AGE_VERIFICATION_FAILED code', async () => {
       const rejectingService = new AgeGateService({
         verifyAge: async () => ({
           verified: false,
@@ -306,6 +321,21 @@ describe('AgeGateGuard', () => {
         expect(err).toBeInstanceOf(ForbiddenException);
         const fb = err as ForbiddenException;
         expect(fb.message).toMatch(/age verification failed/i);
+
+        // Nest-parity rejection body — mirrors the Hono Worker port
+        // byte-compatibly (task: age-gate-recovery).
+        const response = fb.getResponse() as {
+          statusCode: number;
+          message: string;
+          error: string;
+          code: string;
+        };
+        expect(response.statusCode).toBe(403);
+        expect(response.message).toBe(
+          'Age verification failed. Please try confirming your age again.',
+        );
+        expect(response.error).toBe('Forbidden');
+        expect(response.code).toBe('AGE_VERIFICATION_FAILED');
       }
     });
   });
