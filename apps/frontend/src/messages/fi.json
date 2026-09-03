@@ -91,7 +91,9 @@
     "body": "Tämä sivusto sisältää alkoholiin liittyvää sisältöä. Oletko vähintään 18-vuotias?",
     "confirm": "Olen 18 vuotta täyttänyt",
     "deny": "En",
-    "note": "Henkilötietoja ei kerätä. Vahvistus tallennetaan selaimeesi paikallisena merkintänä."
+    "note": "Henkilötietoja ei kerätä. Vahvistus tallennetaan selaimeesi paikallisena merkintänä.",
+    "recoveryTitle": "Ikävahvistus tarvitaan",
+    "recoveryDescription": "Ikävahvistuksesi on vanhentunut. Vahvista ikäsi jatkaaksesi."
   },
   "AgeGatePage": {
     "title": "Tervetuloa",
