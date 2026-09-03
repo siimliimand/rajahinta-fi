@@ -9,8 +9,11 @@ import { Button } from '@/components/ui';
 const COOKIE_NAME = 'age_confirmed';
 /** localStorage key the previous dual-store implementation wrote. */
 const LEGACY_STORAGE_KEY = 'age_confirmed';
-const AGE_CONFIRMATION_TTL_DAYS = 90;
+/** Exported only so tests can pin the 90-day TTL (jsdom hides max-age). */
+export const AGE_CONFIRMATION_TTL_DAYS = 90;
 const DECLINED_PATH = '/age-gate/declined';
+/** Recovery event dispatched centrally by the api client on a gated 403. */
+const AGE_GATE_REQUIRED_EVENT = 'age-gate:required';
 
 /**
  * Read the gate decision from the `age_confirmed` cookie — the same
@@ -71,6 +74,17 @@ export function AgeGate({ children }: { children: React.ReactNode }) {
     // Cleanup for visitors still carrying the old dual-store state.
     removeLegacyStorageKey();
     setVerified(getAgeVerified());
+
+    // Recovery hook for an expired cookie: when a client request comes
+    // back 403 AGE_GATE_REQUIRED, the api client dispatches this event
+    // and the prompt re-opens in place instead of the visitor being
+    // stuck on silently failing calls. Opening an already-open gate
+    // (verified already false) is a no-op.
+    const handleGateRequired = () => setVerified(false);
+    window.addEventListener(AGE_GATE_REQUIRED_EVENT, handleGateRequired);
+    return () => {
+      window.removeEventListener(AGE_GATE_REQUIRED_EVENT, handleGateRequired);
+    };
   }, []);
 
   const handleConfirm = () => {
