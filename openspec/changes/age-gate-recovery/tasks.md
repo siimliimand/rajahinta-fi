@@ -21,4 +21,4 @@
 ## 4. Verification
 
 - [x] 4.1 Run typecheck, lint, the age-gate and calculator test suites, and the frontend build; fix any fallout <!-- agent: platform-engineer.fast, depends_on: [1.3, 2.2, 3.2, 3.4], touches: [] -->
-- [ ] 4.2 Verify the staging flow end-to-end: confirm the prompt reappears when the cookie is absent (legacy localStorage-only state), force an age-gate 403 mid-session and confirm the modal opens in place, then confirm and retry the search successfully <!-- agent: platform-engineer.fast, depends_on: [4.1], touches: [] -->
+- [x] 4.2 Verify the staging flow end-to-end: confirm the prompt reappears when the cookie is absent (legacy localStorage-only state), force an age-gate 403 mid-session and confirm the modal opens in place, then confirm and retry the search successfully <!-- agent: platform-engineer.fast, depends_on: [4.1], touches: [] -->
