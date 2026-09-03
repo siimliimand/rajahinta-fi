@@ -135,16 +135,16 @@ VALUES
 -- HelsinkiPremium Oy — Large alcohol importer (products 1—10)
 INSERT INTO product_master (name, manufacturer, brand, category, alcohol_by_volume, unit_volume, container_type, regulatory_classification, deposit_system_status, ean)
 VALUES
-    ('Koskenkorva Viina',        'Koskenkorva',   'Koskenkorva',   'spirits', 38.000, 0.700, 'bottle', 'alcoholic_beverage', FALSE, '6410600010101'),
-    ('Koskenkorva Salmiakki',    'Koskenkorva',   'Koskenkorva',   'spirits', 32.000, 0.500, 'bottle', 'alcoholic_beverage', FALSE, '6410600010118'),
-    ('Absolut Vodka',            'Absolut',       'Absolut',       'spirits', 40.000, 0.700, 'bottle', 'alcoholic_beverage', FALSE, '7312040017306'),
-    ('Absolut Original',        'Absolut',       'Absolut',       'spirits', 40.000, 1.000, 'bottle', 'alcoholic_beverage', FALSE, '7312040017313'),
-    ('Jameson Irish Whiskey',    'Jameson',       'Jameson',       'spirits', 40.000, 0.700, 'bottle', 'alcoholic_beverage', FALSE, '5011007000218'),
-    ('Johnnie Walker Black Label', 'Johnnie Walker', 'Johnnie Walker', 'spirits', 40.000, 0.700, 'bottle', 'alcoholic_beverage', FALSE, '5000267015777'),
-    ('Beefeater London Dry Gin', 'Beefeater',     'Beefeater',     'spirits', 40.000, 0.700, 'bottle', 'alcoholic_beverage', FALSE, '5010327104830'),
-    ('Bacardi Carta Blanca',     'Bacardi',       'Bacardi',       'spirits', 37.500, 0.700, 'bottle', 'alcoholic_beverage', FALSE, '5000219000172'),
-    ('Château Margaux 2019',     'Château Margaux','Château Margaux','wine_still', 13.500, 0.750, 'bottle', 'alcoholic_beverage', FALSE, '3350930000197'),
-    ('Moët & Chandon Brut',      'Moët & Chandon','Moët & Chandon','wine_sparkling', 12.000, 0.750, 'bottle', 'alcoholic_beverage', FALSE, '3057640032593');
+    ('Koskenkorva Viina',        'Koskenkorva',   'Koskenkorva',   'spirits', 0.380, 0.700, 'bottle', 'spirits', FALSE, '6410600010101'),
+    ('Koskenkorva Salmiakki',    'Koskenkorva',   'Koskenkorva',   'spirits', 0.320, 0.500, 'bottle', 'spirits', FALSE, '6410600010118'),
+    ('Absolut Vodka',            'Absolut',       'Absolut',       'spirits', 0.400, 0.700, 'bottle', 'spirits', FALSE, '7312040017306'),
+    ('Absolut Original',        'Absolut',       'Absolut',       'spirits', 0.400, 1.000, 'bottle', 'spirits', FALSE, '7312040017313'),
+    ('Jameson Irish Whiskey',    'Jameson',       'Jameson',       'spirits', 0.400, 0.700, 'bottle', 'spirits', FALSE, '5011007000218'),
+    ('Johnnie Walker Black Label', 'Johnnie Walker', 'Johnnie Walker', 'spirits', 0.400, 0.700, 'bottle', 'spirits', FALSE, '5000267015777'),
+    ('Beefeater London Dry Gin', 'Beefeater',     'Beefeater',     'spirits', 0.400, 0.700, 'bottle', 'spirits', FALSE, '5010327104830'),
+    ('Bacardi Carta Blanca',     'Bacardi',       'Bacardi',       'spirits', 0.375, 0.700, 'bottle', 'spirits', FALSE, '5000219000172'),
+    ('Château Margaux 2019',     'Château Margaux','Château Margaux','wine_still', 0.135, 0.750, 'bottle', 'wine_still', FALSE, '3350930000197'),
+    ('Moët & Chandon Brut',      'Moët & Chandon','Moët & Chandon','wine_sparkling', 0.120, 0.750, 'bottle', 'wine_sparkling', FALSE, '3057640032593');
 
 INSERT INTO retail_offers (merchant, country, product_id, price_cents, currency, availability, source_url, reliability_status)
 SELECT 'helsinki_premium', 'EE', id, price, 'EUR', 'in_stock', 'https://helsinkipremium.fi/tuote/' || id, 'EXACT'
@@ -156,15 +156,15 @@ FROM (VALUES
 -- SuomiLogistiikka — Medium general importer (products 11—20)
 INSERT INTO product_master (name, manufacturer, brand, category, alcohol_by_volume, unit_volume, container_type, regulatory_classification, deposit_system_status, ean)
 VALUES
-    ('Sandels Lager 24pk',       'Sandels',       'Sandels',       'beer', 4.700,  0.330, 'can',    'alcoholic_beverage', TRUE,  '6411953111110'),
-    ('Karjala 24pk',             'Karjala',       'Karjala',       'beer', 4.600, 0.330, 'can',    'alcoholic_beverage', TRUE,  '6411953222220'),
-    ('Lapin Kulta 24pk',         'Lapin Kulta',   'Lapin Kulta',   'beer', 4.500, 0.330, 'can',    'alcoholic_beverage', TRUE,  '6411953333330'),
-    ('Olvi 12pk',                'Olvi',          'Olvi',          'beer', 4.500, 0.330, 'can',    'alcoholic_beverage', TRUE,  '6411953444440'),
-    ('Koff 24pk',                'Koff',          'Koff',          'beer', 4.700,  0.330, 'bottle', 'alcoholic_beverage', TRUE,  '6411953555550'),
-    ('Fanta Orange',             'Fanta',         'Fanta',         'non_alcoholic', NULL,  1.500, 'bottle', 'non_alcoholic_beverage', TRUE, '5449000000996'),
-    ('Coca-Cola 24pk',           'Coca-Cola',     'Coca-Cola',     'non_alcoholic', NULL,  0.330, 'can',    'non_alcoholic_beverage', TRUE, '5449000009999'),
+    ('Sandels Lager 24pk',       'Sandels',       'Sandels',       'beer', 0.047 ,  0.330, 'can',    'beer', TRUE,  '6411953111110'),
+    ('Karjala 24pk',             'Karjala',       'Karjala',       'beer', 0.046, 0.330, 'can',    'beer', TRUE,  '6411953222220'),
+    ('Lapin Kulta 24pk',         'Lapin Kulta',   'Lapin Kulta',   'beer', 0.045, 0.330, 'can',    'beer', TRUE,  '6411953333330'),
+    ('Olvi 12pk',                'Olvi',          'Olvi',          'beer', 0.045, 0.330, 'can',    'beer', TRUE,  '6411953444440'),
+    ('Koff 24pk',                'Koff',          'Koff',          'beer', 0.047 ,  0.330, 'bottle', 'beer', TRUE,  '6411953555550'),
+    ('Fanta Orange',             'Fanta',         'Fanta',         'non_alcoholic', NULL,  1.500, 'bottle', 'non-alcoholic', TRUE, '5449000000996'),
+    ('Coca-Cola 24pk',           'Coca-Cola',     'Coca-Cola',     'non_alcoholic', NULL,  0.330, 'can',    'non-alcoholic', TRUE, '5449000009999'),
     ('Bonduelle Herneet',        'Bonduelle',     'Bonduelle',     'non_alcoholic', NULL,  0.400, 'can',    'food_product', TRUE,    '6412400012340'),
-    ('Kevytmaito',               'Valio',         'Valio',         'non_alcoholic', NULL,  1.000, 'carton', 'non_alcoholic_beverage', FALSE, '6410123456780'),
+    ('Kevytmaito',               'Valio',         'Valio',         'non_alcoholic', NULL,  1.000, 'carton', 'non-alcoholic', FALSE, '6410123456780'),
     ('Pirkka Pasta',             'Pirkka',        'Pirkka',        'non_alcoholic', NULL,  0.500, 'pouch',  'food_product', FALSE,   '6412400056789');
 
 INSERT INTO retail_offers (merchant, country, product_id, price_cents, currency, availability, source_url, reliability_status)
@@ -177,14 +177,14 @@ FROM (VALUES
 -- PohjolanTuonti — Small craft-beer specialist (products 21—28)
 INSERT INTO product_master (name, manufacturer, brand, category, alcohol_by_volume, unit_volume, container_type, regulatory_classification, deposit_system_status, ean)
 VALUES
-    ('Põhjala Must Kuld',       'Põhjala',        'Põhjala',        'beer', 10.500, 0.330, 'bottle', 'alcoholic_beverage', TRUE,  '4740079123451'),
-    ('Põhjala Virmalised',      'Põhjala',        'Põhjala',        'beer', 8.000,  0.330, 'bottle', 'alcoholic_beverage', TRUE,  '4740079123468'),
-    ('Sori Brewing Long Dreams','Sori Brewing',   'Sori Brewing',   'beer', 6.500,  0.440, 'can',    'alcoholic_beverage', TRUE,  '4740079222222'),
-    ('Sori Brewing Citra IPA',  'Sori Brewing',   'Sori Brewing',   'beer', 5.500,  0.440, 'can',    'alcoholic_beverage', TRUE,  '4740079222239'),
-    ('Mikkeller Green Gold',    'Mikkeller',      'Mikkeller',      'beer', 8.000,  0.330, 'can',    'alcoholic_beverage', TRUE,  '5711833001234'),
-    ('To Øl Garden of Eden',    'To Øl',          'To Øl',          'beer', 6.800,  0.330, 'can',    'alcoholic_beverage', TRUE,  '5711833002239'),
-    ('Fat Lizard Kama IPA',     'Fat Lizard',     'Fat Lizard',     'beer', 6.500,  0.440, 'can',    'alcoholic_beverage', TRUE,  '6438456000011'),
-    ('Fat Lizard Saison',       'Fat Lizard',     'Fat Lizard',     'beer', 5.500,  0.750, 'bottle', 'alcoholic_beverage', TRUE,  '6438456000028');
+    ('Põhjala Must Kuld',       'Põhjala',        'Põhjala',        'beer', 0.105, 0.330, 'bottle', 'beer', TRUE,  '4740079123451'),
+    ('Põhjala Virmalised',      'Põhjala',        'Põhjala',        'beer', 0.080 ,  0.330, 'bottle', 'beer', TRUE,  '4740079123468'),
+    ('Sori Brewing Long Dreams','Sori Brewing',   'Sori Brewing',   'beer', 0.065 ,  0.440, 'can',    'beer', TRUE,  '4740079222222'),
+    ('Sori Brewing Citra IPA',  'Sori Brewing',   'Sori Brewing',   'beer', 0.055 ,  0.440, 'can',    'beer', TRUE,  '4740079222239'),
+    ('Mikkeller Green Gold',    'Mikkeller',      'Mikkeller',      'beer', 0.080 ,  0.330, 'can',    'beer', TRUE,  '5711833001234'),
+    ('To Øl Garden of Eden',    'To Øl',          'To Øl',          'beer', 0.068 ,  0.330, 'can',    'beer', TRUE,  '5711833002239'),
+    ('Fat Lizard Kama IPA',     'Fat Lizard',     'Fat Lizard',     'beer', 0.065 ,  0.440, 'can',    'beer', TRUE,  '6438456000011'),
+    ('Fat Lizard Saison',       'Fat Lizard',     'Fat Lizard',     'beer', 0.055 ,  0.750, 'bottle', 'beer', TRUE,  '6438456000028');
 
 INSERT INTO retail_offers (merchant, country, product_id, price_cents, currency, availability, source_url, reliability_status)
 SELECT 'pohjolan_tuonti', 'EE', id, price, 'EUR', 'in_stock', 'https://pohjolantuonti.fi/tuote/' || id, 'EXACT'
@@ -196,14 +196,14 @@ FROM (VALUES
 -- ArcticBev — Large beverage importer (products 29—36)
 INSERT INTO product_master (name, manufacturer, brand, category, alcohol_by_volume, unit_volume, container_type, regulatory_classification, deposit_system_status, ean)
 VALUES
-    ('Château Haut-Brion 2018', 'Château Haut-Brion','Château Haut-Brion','wine_still', 14.000, 0.750, 'bottle', 'alcoholic_beverage', FALSE, '3350930000198'),
-    ('Penfolds Grange 2017',    'Penfolds',        'Penfolds',        'wine_still', 14.500, 0.750, 'bottle', 'alcoholic_beverage', FALSE, '9310297009197'),
-    ('Veuve Clicquot Brut',     'Veuve Clicquot',  'Veuve Clicquot',  'wine_sparkling', 12.000, 0.750, 'bottle', 'alcoholic_beverage', FALSE, '3057640050634'),
-    ('Grey Goose Vodka',        'Grey Goose',      'Grey Goose',      'spirits', 40.000, 0.700, 'bottle', 'alcoholic_beverage', FALSE, '3100000000190'),
-    ('Hennessy XO',             'Hennessy',        'Hennessy',        'spirits', 40.000, 0.700, 'bottle', 'alcoholic_beverage', FALSE, '3100000000398'),
-    ('Laphroaig 10 Year Old',   'Laphroaig',       'Laphroaig',       'spirits', 40.000, 0.700, 'bottle', 'alcoholic_beverage', FALSE, '5000213009105'),
-    ('Chablis Premier Cru',     'Domaine Pattes Loup','Domaine Pattes Loup','wine_still', 12.500, 0.750, 'bottle', 'alcoholic_beverage', FALSE, '3760036481234'),
-    ('Perrier-Jouët Belle Epoque','Perrier-Jouët', 'Perrier-Jouët',   'wine_sparkling', 12.500, 0.750, 'bottle', 'alcoholic_beverage', FALSE, '3057640070632');
+    ('Château Haut-Brion 2018', 'Château Haut-Brion','Château Haut-Brion','wine_still', 0.140, 0.750, 'bottle', 'wine_still', FALSE, '3350930000198'),
+    ('Penfolds Grange 2017',    'Penfolds',        'Penfolds',        'wine_still', 0.145, 0.750, 'bottle', 'wine_still', FALSE, '9310297009197'),
+    ('Veuve Clicquot Brut',     'Veuve Clicquot',  'Veuve Clicquot',  'wine_sparkling', 0.120, 0.750, 'bottle', 'wine_sparkling', FALSE, '3057640050634'),
+    ('Grey Goose Vodka',        'Grey Goose',      'Grey Goose',      'spirits', 0.400, 0.700, 'bottle', 'spirits', FALSE, '3100000000190'),
+    ('Hennessy XO',             'Hennessy',        'Hennessy',        'spirits', 0.400, 0.700, 'bottle', 'spirits', FALSE, '3100000000398'),
+    ('Laphroaig 10 Year Old',   'Laphroaig',       'Laphroaig',       'spirits', 0.400, 0.700, 'bottle', 'spirits', FALSE, '5000213009105'),
+    ('Chablis Premier Cru',     'Domaine Pattes Loup','Domaine Pattes Loup','wine_still', 0.125, 0.750, 'bottle', 'wine_still', FALSE, '3760036481234'),
+    ('Perrier-Jouët Belle Epoque','Perrier-Jouët', 'Perrier-Jouët',   'wine_sparkling', 0.125, 0.750, 'bottle', 'wine_sparkling', FALSE, '3057640070632');
 
 INSERT INTO retail_offers (merchant, country, product_id, price_cents, currency, availability, source_url, reliability_status)
 SELECT 'arctic_beverages', 'EE', id, price, 'EUR', 'in_stock', 'https://arcticbev.fi/tuote/' || id, 'EXACT'
@@ -233,7 +233,7 @@ FROM (VALUES
 
 -- Standalone product (product_master_id = 45)
 INSERT INTO product_master (name, manufacturer, brand, category, alcohol_by_volume, unit_volume, container_type, regulatory_classification, deposit_system_status, ean)
-VALUES ('Sample Aperitif', 'Generic', 'Generic', 'intermediate_products', 18.000, 0.750, 'bottle', 'alcoholic_beverage', FALSE, NULL);
+VALUES ('Sample Aperitif', 'Generic', 'Generic', 'intermediate_products', 0.180, 0.750, 'bottle', 'intermediate_products', FALSE, NULL);
 
 -- =============================================================================
 -- 4. STAGING REVIEW RECORDS — track rule-change review sessions
