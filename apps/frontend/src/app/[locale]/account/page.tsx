@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import { ensureSession, request, getCalculationResult } from '../../../lib/api';
 import type { CalculatorResult, SessionStatus } from '@/lib/types';
+import { useFeatureFlags } from '@/lib/feature-flags';
 import SavedScenariosSection from './components/SavedScenariosSection';
 import ReportExportActions from '../calculator/components/ReportExportActions';
 
@@ -21,6 +22,10 @@ import ReportExportActions from '../calculator/components/ReportExportActions';
 export default function AccountPage() {
   const t = useTranslations('Account');
   const tCommon = useTranslations('Common');
+  // Bootstrapped flag state; the alerts card is absent (not hidden) when
+  // the flag is off, so the grid shows no dead entry (design R13).
+  const flags = useFeatureFlags();
+  const alertsEnabled = flags.flags.PRICE_ALERTS === true;
 
   const [session, setSession] = useState<SessionStatus | null>(null);
 
@@ -181,6 +186,26 @@ export default function AccountPage() {
               {t('browseSavedBaskets')}
             </span>
           </Link>
+
+          {/* Price alerts — rendered only while the bootstrapped
+              PRICE_ALERTS flag is on */}
+          {alertsEnabled && (
+            <Link
+              href="/account/alerts"
+              data-testid="account-alerts-card"
+              className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-primary-300 hover:shadow-md"
+            >
+              <h3 className="font-medium text-gray-900">
+                {t('priceAlerts')}
+              </h3>
+              <p className="mt-1 text-xs text-gray-500">
+                {t('priceAlertsDesc')}
+              </p>
+              <span className="mt-2 inline-block text-xs font-medium text-primary-600">
+                {t('browsePriceAlerts')}
+              </span>
+            </Link>
+          )}
 
           <Link
             href="/account#calculation-history"

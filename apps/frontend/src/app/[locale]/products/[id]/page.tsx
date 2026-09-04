@@ -19,6 +19,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getServerProductDetail } from '@/lib/api';
 import type { ProductDetailResponse } from '@/lib/types';
+import ProductAlertAction from './components/ProductAlertAction';
 
 interface ProductPageProps {
   params: Promise<{ locale: string; id: string }>;
@@ -204,6 +205,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
           </table>
         )}
       </section>
+
+      {/* ── Price-alert action — gated client-side on the bootstrapped
+          PRICE_ALERTS flag; renders nothing while the flag is off ── */}
+      <ProductAlertAction productId={productId} />
 
       <p className="text-xs text-gray-400">{t('landingNote')}</p>
     </main>

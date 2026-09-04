@@ -581,7 +581,35 @@ export interface FeatureFlagsResponse {
      * hidden (compliance rule: flag-off by default).
      */
     readonly OPERATOR_CONSOLE?: boolean;
+    /**
+     * PRICE_ALERTS — gates the price-alert watchlist API and UI: the
+     * account alerts management view and the product-page set-alert
+     * action (task 2.4, change product-roadmap-phases-1-4). Optional in
+     * the client type like OPERATOR_CONSOLE: an absent key (payload from
+     * a backend predating the flag) must render the UI hidden.
+     */
+    readonly PRICE_ALERTS?: boolean;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Price alerts (GET/POST/PATCH/DELETE /api/v1/account/alerts)
+// Mirrors the serialization in api-worker alerts.routes.ts — ISO timestamps,
+// accountId omitted (the list is always caller-scoped).
+// ---------------------------------------------------------------------------
+
+/** Alert delivery state: active alerts are evaluated, paused alerts are kept but mute. */
+export type PriceAlertStatus = 'active' | 'paused';
+
+/** A price alert row as served by the account API (ISO timestamps). */
+export interface PriceAlert {
+  readonly id: number;
+  readonly productId: number;
+  /** Alert threshold in integer euro cents (1–1,000,000 — see alerts.routes.ts). */
+  readonly thresholdCents: number;
+  readonly status: PriceAlertStatus;
+  readonly createdAt: string;
+  readonly updatedAt: string;
 }
 
 // ---------------------------------------------------------------------------
