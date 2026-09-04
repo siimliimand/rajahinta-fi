@@ -14,6 +14,7 @@
  * | DeclarationController (/api/v1/declaration)| class: AgeGateGuard; GET :recordId: EntitlementGuard + RequireFeature   | ageGate(); requireFeature('declaration:summary') on GET /:recordId |
  * | AccountController (/api/v1/account)       | class: SessionAuthGuard; scenarios: FeatureFlagGuard(ADVANCED_FEATURES)  | sessionAuth() per route; + flag on scenarios |
  * | SessionController (/api/v1/account)       | POST session: RateLimit only; rotate/revoke: SessionAuthGuard            | rotate + DELETE session: sessionAuth(); POST session stays public |
+ * | PriceAlertsRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/account/alerts) | no Nest counterpart | sessionAuth(), requireFeatureFlag('PRICE_ALERTS'); per-account rate limit registers on the routes (needs the resolved identity) |
  * | OpsDashboardController (/ops/health)      | OpsAccessGuard                                                           | opsAccess() |
  * | Ops console (4 controllers, /ops/console/*)| OpsAccessGuard + FeatureFlagGuard(OPERATOR_CONSOLE)                      | opsAccess(), requireFeatureFlag('OPERATOR_CONSOLE') |
  *
@@ -103,6 +104,25 @@ const GUARDED_ROUTES: readonly GuardedRoute[] = [
     methods: ['DELETE'],
     path: '/api/v1/account/scenarios/:id',
     use: [sessionAuth(), requireFeatureFlag('ADVANCED_FEATURES')],
+  },
+
+  // PriceAlertsRoutes (task 2.3, change product-roadmap-phases-1-4) — NEW
+  // surface, no Nest counterpart. Session first, then the PRICE_ALERTS
+  // flag (the scenarios-route order pinned by route-coverage: an anonymous
+  // caller gets the 401 envelope regardless of flag state, so flag state
+  // never leaks to unauthenticated callers). The per-account rate limit is
+  // NOT listed here — requireAccountRateLimit keys the bucket on the
+  // resolved identity, so it registers on the route handlers themselves,
+  // composing after these guards.
+  {
+    methods: ['GET', 'POST'],
+    path: '/api/v1/account/alerts',
+    use: [sessionAuth(), requireFeatureFlag('PRICE_ALERTS')],
+  },
+  {
+    methods: ['PATCH', 'DELETE'],
+    path: '/api/v1/account/alerts/:alertId',
+    use: [sessionAuth(), requireFeatureFlag('PRICE_ALERTS')],
   },
 
   // SessionController — method-level SessionAuthGuard; POST /session

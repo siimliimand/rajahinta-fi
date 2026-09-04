@@ -69,6 +69,13 @@ export const FeatureFlag = {
    * byte-compatible with the flag-less shape.
    */
   UNIT_PRICE_EUR_PER_GRAM: 'UNIT_PRICE_EUR_PER_GRAM',
+  /**
+   * Gate the price-alert watchlist API + UI (task 2.3, change
+   * product-roadmap-phases-1-4). Spec/design slug: `enable_price_alerts`.
+   * Default OFF — the CRUD surface (and the frontend bootstrap key) stay
+   * absent until the alert evaluation cron + email delivery path are live.
+   */
+  PRICE_ALERTS: 'PRICE_ALERTS',
 } as const;
 
 export type FeatureFlag = (typeof FeatureFlag)[keyof typeof FeatureFlag];

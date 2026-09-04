@@ -41,6 +41,7 @@ import { registerHistoricalRoutes } from './routes/historical.routes';
 import { registerReportsRoutes } from './routes/reports.routes';
 import { registerMerchantsRoutes } from './routes/merchants.routes';
 import { registerAccountsRoutes } from './routes/accounts.routes';
+import { registerAlertsRoutes } from './routes/alerts.routes';
 import { registerAnalyticsRoutes } from './routes/analytics.routes';
 import { registerOpsRoutes } from './routes/ops.routes';
 import { registerHealthRoutes } from './routes/health.routes';
@@ -138,6 +139,7 @@ export function createApp(): Hono<AppEnv> {
   registerReportsRoutes(app);
   registerMerchantsRoutes(app);
   registerAccountsRoutes(app);
+  registerAlertsRoutes(app);
   registerAnalyticsRoutes(app);
   registerOpsRoutes(app);
 

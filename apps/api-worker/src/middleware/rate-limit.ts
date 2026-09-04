@@ -24,11 +24,12 @@
  * @module rate-limit
  */
 
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { ApiHttpError } from '../errors';
 import type { AppEnv } from '../env';
 import { checkRateLimit, type RateLimitParams } from '../do/client';
 import { resolveClientIdentity } from '../do/identity';
+import { USER_CONTEXT_KEY } from '../auth/authenticated-account';
 
 /** Named limits — RATE_LIMIT_PROFILES parity (rate-limiting.service.ts). */
 export const RATE_LIMIT_PROFILES = {
@@ -56,26 +57,66 @@ export function requireRateLimit(
       await next();
       return;
     }
+    await admitOrReject(c, next, profile, resolveClientIdentity(c.req.raw.headers));
+  };
+}
 
-    const { limit, windowMs } = RATE_LIMIT_PROFILES[profile];
-    const params: RateLimitParams = { profile, limit, windowMs };
-    const clientKey = resolveClientIdentity(c.req.raw.headers);
-    const decision = await checkRateLimit(c.env, clientKey, params);
-
-    if (decision.allowed) {
+/**
+ * Account-keyed admission — the same DO sliding window and profile limits,
+ * but the bucket key is the session account instead of the edge IP. The
+ * account-scoped write surfaces (price alerts, task 2.3) rate-limit per
+ * authenticated profile: one IP is many colleagues behind office NAT, and
+ * a per-IP bucket would let one noisy account starve the others. Because
+ * the key IS the identity, this middleware composes AFTER sessionAuth
+ * (a deliberate deviation from the Nest RateLimitGuard-runs-first order,
+ * which keys on IP) and after the feature-flag gate, so a flag-off
+ * deployment never spends limiter traffic or DO round trips on requests
+ * it would reject anyway.
+ */
+export function requireAccountRateLimit(
+  profile: RateLimitProfileName,
+): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    if (!c.env.RATE_LIMITER) {
+      // Same fail-open contract as requireRateLimit (dev harnesses/tests).
       await next();
       return;
     }
-
-    const retryAfter =
-      decision.retryAfterSeconds ??
-      Math.max(0, Math.ceil((decision.resetAtMs - Date.now()) / 1000));
-    c.header('Retry-After', String(retryAfter));
-    throw new ApiHttpError(429, {
-      statusCode: 429,
-      message: `Rate limit exceeded. Try again in ${retryAfter}s.`,
-      error: 'TooManyRequests',
-      retryAfterSeconds: retryAfter,
-    });
+    const user = c.get(USER_CONTEXT_KEY);
+    // sessionAuth always populates the context on the gated routes; the
+    // IP fallback only fires on a mis-registration (missing guard) and
+    // degrades to the shared edge-IP bucket rather than crashing.
+    const clientKey = user
+      ? `account:${user.accountId}`
+      : resolveClientIdentity(c.req.raw.headers);
+    await admitOrReject(c, next, profile, clientKey);
   };
+}
+
+/** Shared admission tail: one DO check, then pass through or throw 429. */
+async function admitOrReject(
+  c: Context<AppEnv>,
+  next: () => Promise<void>,
+  profile: RateLimitProfileName,
+  clientKey: string,
+): Promise<void> {
+  const { limit, windowMs } = RATE_LIMIT_PROFILES[profile];
+  const params: RateLimitParams = { profile, limit, windowMs };
+  const decision = await checkRateLimit(c.env, clientKey, params);
+
+  if (decision.allowed) {
+    await next();
+    return;
+  }
+
+  const retryAfter =
+    decision.retryAfterSeconds ??
+    Math.max(0, Math.ceil((decision.resetAtMs - Date.now()) / 1000));
+  c.header('Retry-After', String(retryAfter));
+  throw new ApiHttpError(429, {
+    statusCode: 429,
+    message: `Rate limit exceeded. Try again in ${retryAfter}s.`,
+    error: 'TooManyRequests',
+    retryAfterSeconds: retryAfter,
+  });
 }
