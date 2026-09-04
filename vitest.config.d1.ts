@@ -28,6 +28,7 @@ import ts from 'typescript';
 const __dirname = import.meta.dirname;
 const REPO_ROOT = path.resolve(__dirname);
 const DATA_PLATFORM_NM = path.resolve(REPO_ROOT, 'packages/data-platform/node_modules');
+const API_WORKER_NM = path.resolve(REPO_ROOT, 'apps/api-worker/node_modules');
 
 /**
  * Workspace sources needing decorator-metadata transpilation — mirrors the
@@ -110,9 +111,25 @@ export default defineConfig({
         REPO_ROOT,
         'packages/data-platform/node_modules/drizzle-orm',
       ),
+      // The api-worker app graph (createApp, cron handlers — price-alerts
+      // d1 suite) imports `cloudflare:workers`/`cloudflare:workflows`
+      // through src/workflows, which the Node vitest pool cannot resolve.
+      // Mirrors tests/integration/vitest.config.ts (this file mirrors that
+      // config by design): same collection-time stub the api-worker's own
+      // vitest config uses.
+      'cloudflare:workers': path.resolve(
+        REPO_ROOT,
+        'apps/api-worker/src/testing/cloudflare-modules-stub.ts',
+      ),
+      'cloudflare:workflows': path.resolve(
+        REPO_ROOT,
+        'apps/api-worker/src/testing/cloudflare-modules-stub.ts',
+      ),
     },
-    // Include data-platform's node_modules so drizzle-orm etc. (which are
-    // data-platform dependencies, not root dependencies) are resolvable.
-    modules: [DATA_PLATFORM_NM, 'node_modules'],
+    // Include apps/api-worker's node_modules so hono/zod/reflect-metadata
+    // (api-worker dependencies, not root ones) resolve for the worker app
+    // graph the price-alerts d1 suite composes. Same reason as
+    // DATA_PLATFORM_NM above.
+    modules: [DATA_PLATFORM_NM, API_WORKER_NM, 'node_modules'],
   },
 });
