@@ -387,6 +387,19 @@ export {
 } from './reliability/reliability.types';
 
 // ---------------------------------------------------------------------------
+// Unit price — cents per gram of pure ethanol (read-time derived, never persisted)
+// ---------------------------------------------------------------------------
+
+export { eurPerGram, ETHANOL_DENSITY_G_PER_L } from './unitprice/eur-per-gram';
+export type {
+  UnitPriceResult,
+  UnitPriceValue,
+  UnitPriceUnavailable,
+  UnitPriceStatus,
+  UnitPriceUnavailableReason,
+} from './unitprice/unitprice.types';
+
+// ---------------------------------------------------------------------------
 // Ranking & Sorting — objective sort orders for beverage price comparison
 // ---------------------------------------------------------------------------
 
