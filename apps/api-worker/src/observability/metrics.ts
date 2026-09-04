@@ -9,7 +9,11 @@
  *   pino 'finish' semantics, same placement as request-id.ts);
  * - freshness gauges (stale price share, transport newest-offer age),
  *   written as discrete data points by the task-4.3 cron handlers via
- *   `recordStalePriceShare` / `recordTransportAge`.
+ *   `recordStalePriceShare` / `recordTransportAge`;
+ * - price-alert evaluation job counters (evaluated / matched / notified
+ *   / failed / cooldown-suppressed), one discrete point per counter per
+ *   run, written by the task-2.2 cron handler via
+ *   `recordPriceAlertEvaluationCounters` (dashboard wiring: task 10.2).
  *
  * Metric names are load-bearing: they match the Prometheus namesakes the
  * dashboards queried (infra/monitoring). The Grafana re-point queries —
@@ -200,6 +204,79 @@ export function requestMetrics(): MiddlewareHandler<AppEnv> {
       }
     }
   };
+}
+
+/**
+ * Price-alert evaluation job counters (task 2.2, design R2) — written
+ * once per run by the 30-min price-alert-evaluation cron handler, one
+ * discrete point per counter. `double1` carries the per-run count, so
+ * `sum(double1 * _sample_interval)` over a window is the running total
+ * (the Prometheus `_total` namesake); the cooldown-suppressed counter
+ * makes rate-limit suppression visible in the job's counters (spec:
+ * notification rate limit). AE datapoint wiring/patterns for dashboards
+ * are task 10.2 — only the module-level counter API lives here.
+ */
+export const PRICE_ALERT_EVALUATED_COUNTER =
+  'rajahinta_price_alerts_evaluated_total';
+export const PRICE_ALERT_MATCHED_COUNTER =
+  'rajahinta_price_alerts_matched_total';
+export const PRICE_ALERT_NOTIFIED_COUNTER =
+  'rajahinta_price_alerts_notified_total';
+export const PRICE_ALERT_FAILED_COUNTER =
+  'rajahinta_price_alerts_failed_total';
+export const PRICE_ALERT_SUPPRESSED_COUNTER =
+  'rajahinta_price_alerts_cooldown_suppressed_total';
+
+/** One evaluation run's counters, in export order. */
+export interface PriceAlertEvaluationCounters {
+  /** Alerts compared against a materialized price. */
+  readonly evaluated: number;
+  /** Alerts whose observed price met the threshold (`<=`). */
+  readonly matched: number;
+  /** Emails dispatched successfully. */
+  readonly notified: number;
+  /** Failed pipelines (dispatch, intent write, unresolvable recipient). */
+  readonly failed: number;
+  /** Matched but withheld by the 24-hour delivered-row cooldown. */
+  readonly suppressed: number;
+}
+
+/** Per-run counter order — stable for dashboard queries. */
+const PRICE_ALERT_COUNTER_POINTS: readonly (keyof PriceAlertEvaluationCounters)[] = [
+  'evaluated',
+  'matched',
+  'notified',
+  'failed',
+  'suppressed',
+];
+
+const PRICE_ALERT_COUNTER_NAMES: Record<
+  keyof PriceAlertEvaluationCounters,
+  string
+> = {
+  evaluated: PRICE_ALERT_EVALUATED_COUNTER,
+  matched: PRICE_ALERT_MATCHED_COUNTER,
+  notified: PRICE_ALERT_NOTIFIED_COUNTER,
+  failed: PRICE_ALERT_FAILED_COUNTER,
+  suppressed: PRICE_ALERT_SUPPRESSED_COUNTER,
+};
+
+/**
+ * Export one run's price-alert counters — one discrete data point per
+ * counter, same gauge write path as the freshness metrics (no-op
+ * without METRICS, best-effort emission).
+ */
+export function recordPriceAlertEvaluationCounters(
+  env: Env,
+  counters: PriceAlertEvaluationCounters,
+): void {
+  const emitter = metricsEmitter(env);
+  for (const key of PRICE_ALERT_COUNTER_POINTS) {
+    emitter.recordGauge({
+      name: PRICE_ALERT_COUNTER_NAMES[key],
+      value: counters[key],
+    });
+  }
 }
 
 /**

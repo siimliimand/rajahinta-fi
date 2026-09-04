@@ -19,10 +19,16 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../../env';
 import {
+  PRICE_ALERT_FAILED_COUNTER,
+  PRICE_ALERT_MATCHED_COUNTER,
+  PRICE_ALERT_NOTIFIED_COUNTER,
+  PRICE_ALERT_EVALUATED_COUNTER,
+  PRICE_ALERT_SUPPRESSED_COUNTER,
   STALE_PRICE_SHARE_GAUGE,
   TRANSPORT_AGE_INFINITE,
   TRANSPORT_NEWEST_OFFER_AGE_GAUGE,
   metricsEmitter,
+  recordPriceAlertEvaluationCounters,
   recordStalePriceShare,
   recordTransportAge,
   requestMetrics,
@@ -261,6 +267,48 @@ describe('freshness gauge writers (fake AE binding)', () => {
       labels: { carrier: '*' },
     });
     expect(ae.points[0].blobs?.[2]).toBe('{"carrier":"*"}');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Price-alert job counter writes (task 2.2)
+// ---------------------------------------------------------------------------
+
+describe('recordPriceAlertEvaluationCounters (fake AE binding)', () => {
+  it('writes one point per counter with the stable name/value pairing', () => {
+    const ae = fakeAnalyticsEngine();
+    recordPriceAlertEvaluationCounters(envWith(ae), {
+      evaluated: 4,
+      matched: 2,
+      notified: 1,
+      failed: 1,
+      suppressed: 1,
+    });
+
+    expect(ae.points).toHaveLength(5);
+    expect(ae.points.map((p) => p.indexes?.[0])).toEqual([
+      PRICE_ALERT_EVALUATED_COUNTER,
+      PRICE_ALERT_MATCHED_COUNTER,
+      PRICE_ALERT_NOTIFIED_COUNTER,
+      PRICE_ALERT_FAILED_COUNTER,
+      PRICE_ALERT_SUPPRESSED_COUNTER,
+    ]);
+    expect(ae.points.map((p) => p.doubles?.[0])).toEqual([4, 2, 1, 1, 1]);
+    // Self-describing blobs (AE convention) carry the name too.
+    expect(ae.points[0].blobs?.[0]).toBe(PRICE_ALERT_EVALUATED_COUNTER);
+    expect(ae.points[0].blobs?.[1]).toBe('4');
+  });
+
+  it('no-ops safely without the METRICS binding', () => {
+    expect(() =>
+      recordPriceAlertEvaluationCounters(envWith(null), {
+        evaluated: 1,
+        matched: 1,
+        notified: 0,
+        failed: 0,
+        suppressed: 0,
+      }),
+    ).not.toThrow();
   });
 });
 

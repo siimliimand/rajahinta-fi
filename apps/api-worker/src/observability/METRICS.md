@@ -63,6 +63,26 @@ Gauges and their producers:
   +Inf sentinel — AE doubles cannot carry Infinity, and the sentinel
   keeps `> threshold` / `max()` alert semantics firing)).
 
+### Price-alert job counters — one discrete write per counter per run
+
+Emitted once per run by the 30-min price-alert-evaluation cron handler
+(task 2.2, design R2) via `recordPriceAlertEvaluationCounters`, using
+the same data point shape as the freshness gauges. Each run writes five
+points; `double1` carries that run's count, so summing
+`double1 * _sample_interval` over a window gives the running totals
+(Prometheus `_total` namesakes):
+
+| `index1` / `blob1` | Meaning |
+|---|---|
+| `rajahinta_price_alerts_evaluated_total` | Alerts compared against a materialized price |
+| `rajahinta_price_alerts_matched_total` | Alerts whose observed price met the threshold (`<=`) |
+| `rajahinta_price_alerts_notified_total` | Emails dispatched successfully |
+| `rajahinta_price_alerts_failed_total` | Failed pipelines (dispatch, intent write, unresolvable recipient) |
+| `rajahinta_price_alerts_cooldown_suppressed_total` | Matched but withheld by the 24-hour delivered-row cooldown (the spec requires suppression be visible in the job's counters) |
+
+Notified should track matched minus suppressed and failed; divergence
+is the first forensics question. Dashboard panel wiring is task 10.2.
+
 ## Querying — the Grafana re-point (task 6.5)
 
 AE SQL API (used by the Grafana Cloudflare/JSON data source or plain
