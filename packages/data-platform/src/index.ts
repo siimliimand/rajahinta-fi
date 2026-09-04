@@ -112,6 +112,33 @@ export { MerchantReliabilityRepository } from './repositories/merchant-reliabili
 export type { MerchantReliabilityAggregate } from './repositories/merchant-reliability.repository';
 
 // ---------------------------------------------------------------------------
+// Price alerts — D1-only tables (task 2.1, change
+// product-roadmap-phases-1-4); abstract + concrete are co-located in the
+// repository files (merchant-reliability precedent; no pg counterpart)
+// ---------------------------------------------------------------------------
+
+export {
+  PriceAlertRepository,
+  D1PriceAlertRepository,
+} from './repositories/d1/price-alert.repository';
+export type {
+  PriceAlertRecord,
+  PriceAlertCreateInput,
+  PriceAlertUpdatePatch,
+  PriceAlertStatus,
+} from './repositories/d1/price-alert.repository';
+export {
+  AlertNotificationRepository,
+  D1AlertNotificationRepository,
+} from './repositories/d1/alert-notification.repository';
+export type {
+  AlertNotificationRecord,
+  AlertNotificationIntentInput,
+  AlertChannel,
+  AlertDeliveryStatus,
+} from './repositories/d1/alert-notification.repository';
+
+// ---------------------------------------------------------------------------
 // Module boundary — pure interfaces for cross-layer contracts
 // ---------------------------------------------------------------------------
 

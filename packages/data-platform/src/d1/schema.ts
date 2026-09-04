@@ -545,6 +545,101 @@ export const savedScenarios = sqliteTable(
 );
 
 /**
+ * Price alerts — per-account watchlist thresholds on a product
+ * (task 2.1, change product-roadmap-phases-1-4).
+ *
+ * One row per (account, product): the UNIQUE constraint makes the
+ * evaluation cooldown's per-alert scope identical to design R2's
+ * per-product-per-account scope — a second alert on the same pair could
+ * only produce duplicate emails. Pausing keeps the configuration while
+ * excluding the row from scheduled evaluation; deleting the account row
+ * cascades here (GDPR erasure, same guarantee as savedScenarios).
+ */
+export const priceAlerts = sqliteTable(
+  'price_alerts',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to accounts — the owning user; cascade delete implements the erasure path. */
+    accountId: integer('account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** FK to product_master — the tracked product. Products are never deleted, so no cascade. */
+    productId: integer('product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** Notify when the product's materialized price falls to or below this (cents). */
+    thresholdCents: integer('threshold_cents').notNull(),
+    /** active = evaluated by the cron; paused = configuration kept, evaluation skipped. */
+    status: text('status', { length: 16 }).default('active').notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+    updatedAt: text('updated_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // Serves list-by-account (leading column) and the create-time
+    // duplicate guard — one alert per (account, product).
+    unique('price_alerts_account_id_product_id_unique').on(
+      table.accountId,
+      table.productId,
+    ),
+    // The post-ingestion evaluation cron scans active alerts; the
+    // (account_id, product_id) unique index cannot serve that filter.
+    index('price_alerts_status_idx').on(table.status),
+    check('price_alerts_threshold_cents_check', sql`${table.thresholdCents} > 0`),
+    check('price_alerts_status_check', sql`${table.status} IN ('active', 'paused')`),
+  ],
+);
+
+/**
+ * Alert notifications — the delivery intent log for price alerts
+ * (task 2.1, change product-roadmap-phases-1-4).
+ *
+ * Written BEFORE dispatch and marked AFTER: the pending row is the
+ * intent, the outcome marking is the completion record. A retried
+ * evaluation run skips a row already marked delivered, so a crash
+ * mid-delivery can never double-send (spec: crash-safe delivery).
+ * The delivery outcome transition (pending → delivered | failed) plus
+ * marked_at is the ONLY update these rows ever receive — the attempt
+ * facts (alert, observed price, channel, createdAt) are immutable, per
+ * the product-data-model spec: "append-only records of delivery
+ * attempts ... never rewritten". Deleting the alert cascades here.
+ */
+export const alertNotifications = sqliteTable(
+  'alert_notifications',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to price_alerts — the alert whose threshold triggered; cascade delete. */
+    alertId: integer('alert_id')
+      .references(() => priceAlerts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** Materialized price (cents) observed when the notification intent was written. */
+    observedPriceCents: integer('observed_price_cents').notNull(),
+    /** Delivery channel — email only for MVP (design R2); no push in this change. */
+    channel: text('channel', { length: 16 }).notNull(),
+    /** Intent-log lifecycle: pending until dispatch resolves (delivered | failed). */
+    deliveryStatus: text('delivery_status', { length: 16 })
+      .default('pending')
+      .notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+    /** When the outcome was marked — null while the intent is still pending. */
+    markedAt: text('marked_at'),
+  },
+  (table) => [
+    // Latest-DELIVERED-notification lookup (alert_id, status) ordered by
+    // createdAt — the 24-hour cooldown's enforcement read.
+    index('alert_notifications_alert_id_delivery_status_created_at_idx').on(
+      table.alertId,
+      table.deliveryStatus,
+      table.createdAt,
+    ),
+    check('alert_notifications_channel_check', sql`${table.channel} IN ('email')`),
+    check(
+      'alert_notifications_delivery_status_check',
+      sql`${table.deliveryStatus} IN ('pending', 'delivered', 'failed')`,
+    ),
+  ],
+);
+
+/**
  * Merchant terms — store-level commercial conditions.
  *
  * One row per merchant carrying minimum-order thresholds and other
@@ -879,6 +974,8 @@ export const d1Schema = {
   accounts,
   savedBaskets,
   savedScenarios,
+  priceAlerts,
+  alertNotifications,
   merchantTerms,
   basketCalculationRecords,
   fxRateDatasets,
