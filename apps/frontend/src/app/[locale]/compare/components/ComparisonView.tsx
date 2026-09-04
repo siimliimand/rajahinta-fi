@@ -3,17 +3,19 @@
 import { useTranslations } from 'next-intl';
 import type {
   ComparisonProduct,
-  SortOrder,
+  CompareSortOrder,
 } from '@/lib/types';
 import {
   CONFIDENCE_LEVEL_META,
   RELIABILITY_STATUS_META,
 } from '@/lib/design/status';
+import { useFeatureFlags } from '@/lib/feature-flags';
 import { Button, Card } from '@/components/ui';
 import { logClick } from '@/lib/api';
 import { MerchantLink } from './MerchantLink';
 import MerchantFreshnessSection from './MerchantFreshnessSection';
 import ProductHistoryPanel from '../../calculator/components/ProductHistoryPanel';
+import UnitPriceCell from './UnitPriceCell';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -32,7 +34,7 @@ interface ComparisonViewProps {
   /** Products being compared. */
   products: readonly ComparisonProduct[];
   /** Currently selected sort order (displayed but not actionable here). */
-  sortBy: SortOrder;
+  sortBy: CompareSortOrder;
   /** Whether a calculation is in progress for new products. */
   loading: boolean;
   /** Called when the user wants to add a product to the comparison. */
@@ -57,6 +59,7 @@ function ProductColumn({
 }) {
   const t = useTranslations('Compare');
   const tCommon = useTranslations('Common');
+  const flags = useFeatureFlags();
   // Same source of truth as the calculator result view: cost categories map
   // to localized labels (fi catalog primary) — the API's own itemized
   // `label` strings are English and never rendered directly.
@@ -87,6 +90,17 @@ function ProductColumn({
           {formatEur(product.totalCents)}
         </p>
       </div>
+
+      {/* €/g ethanol metric — flag-gated (hidden entirely when
+          enable_unit_price_eur_per_gram is off). Every column carries an
+          identical cell; an unavailable metric renders as an explicit
+          dash, never a substituted value. */}
+      {flags.flags.UNIT_PRICE_EUR_PER_GRAM && (
+        <UnitPriceCell
+          metric={product.eurPerGram}
+          tooltipId={`eur-per-gram-tooltip-${product.id}`}
+        />
+      )}
 
       {/* Cost breakdown */}
       <div className="space-y-1">
@@ -178,6 +192,12 @@ export default function ComparisonView({
 }: ComparisonViewProps) {
   const t = useTranslations('Compare');
   const tSorts = useTranslations('SortOrders');
+  const tCompare = useTranslations('Compare');
+
+  const sortLabel =
+    sortBy === 'EUR_PER_GRAM'
+      ? tCompare('eurPerGram.sortOptionLabel')
+      : tSorts(`${sortBy}.label`);
 
   // ── Empty state ──
   if (products.length === 0 && !loading) {
@@ -221,7 +241,7 @@ export default function ComparisonView({
         <p className="text-xs text-gray-400">
           {t('productsCompared', { count: products.length })}{' '}
           &middot;{' '}
-          {t('sortedBy', { sort: tSorts(`${sortBy}.label`) })}
+          {t('sortedBy', { sort: sortLabel })}
         </p>
       </div>
 

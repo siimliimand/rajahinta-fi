@@ -328,7 +328,28 @@
     "empty": "No products added to comparison yet.",
     "totalLandedCost": "Total landed cost",
     "dataConfidence": "Data confidence",
-    "viewAt": "View at {merchant}"
+    "viewAt": "View at {merchant}",
+    "eurPerGram": {
+      "columnHeader": "€/g pure ethanol",
+      "sortOptionLabel": "€/g ethanol (lowest first)",
+      "unit": "¢/g",
+      "noValue": "No value",
+      "reason": {
+        "MISSING_VOLUME": "product volume is missing",
+        "MISSING_ALCOHOL_FRACTION": "product alcohol percentage is missing",
+        "INVALID_VOLUME": "product volume is invalid",
+        "INVALID_ALCOHOL_FRACTION": "product alcohol percentage is invalid",
+        "INVALID_PRICE": "the price is invalid"
+      },
+      "tooltip": {
+        "triggerLabel": "How is €/g calculated?",
+        "title": "€/g pure ethanol",
+        "formula": "Formula: price ÷ (volume in litres × alcohol fraction × 789 g/l).",
+        "density": "The density of pure ethanol is 789 g/l.",
+        "priceReliability": "Price input reliability: {status}.",
+        "unavailableReason": "No value: {reason}."
+      }
+    }
   },
   "SortSelector": {
     "label": "Sort by"

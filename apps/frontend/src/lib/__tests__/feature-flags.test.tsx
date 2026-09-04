@@ -47,6 +47,7 @@ describe('FeatureFlagsProvider', () => {
         HISTORICAL_PRICE_INTELLIGENCE: true,
         BASKET_OPTIMIZATION: true,
         ADVANCED_FEATURES: true,
+        UNIT_PRICE_EUR_PER_GRAM: true,
       }),
     );
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -73,6 +74,7 @@ describe('FeatureFlagsProvider', () => {
           HISTORICAL_PRICE_INTELLIGENCE: true,
           BASKET_OPTIMIZATION: false,
           ADVANCED_FEATURES: false,
+          UNIT_PRICE_EUR_PER_GRAM: false,
         },
       },
     });
@@ -82,6 +84,7 @@ describe('FeatureFlagsProvider', () => {
         HISTORICAL_PRICE_INTELLIGENCE: true,
         BASKET_OPTIMIZATION: false,
         ADVANCED_FEATURES: false,
+        UNIT_PRICE_EUR_PER_GRAM: false,
       }),
     );
   });

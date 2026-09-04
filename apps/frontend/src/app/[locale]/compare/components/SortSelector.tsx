@@ -1,20 +1,13 @@
 'use client';
 
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import type { SortOrder } from '@/lib/types';
-
-// ---------------------------------------------------------------------------
-// Sort order values (labels come from the message catalogs)
-// ---------------------------------------------------------------------------
-
-const SORT_ORDER_VALUES: readonly SortOrder[] = [
-  'LOWEST_LANDED_COST',
-  'LOWEST_PER_LITRE',
-  'LOWEST_PER_UNIT',
-  'ALPHABETICAL',
-  'ALCOHOL_PERCENTAGE',
-  'PRODUCT_CATEGORY',
-];
+import type { CompareSortOrder } from '@/lib/types';
+import { useFeatureFlags } from '@/lib/feature-flags';
+import { compareSortOptions } from '../sort-products';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -22,9 +15,9 @@ const SORT_ORDER_VALUES: readonly SortOrder[] = [
 
 interface SortSelectorProps {
   /** Currently selected sort order. */
-  value: SortOrder;
+  value: CompareSortOrder;
   /** Called when the user selects a new sort order. */
-  onChange: (sort: SortOrder) => void;
+  onChange: (sort: CompareSortOrder) => void;
   /** Whether results are being loaded. */
   disabled?: boolean;
 }
@@ -39,6 +32,10 @@ interface SortSelectorProps {
  * Renders a labelled select with all available objective sort orders.
  * Visually neutral — no "recommended", "popular", or promoted labels.
  * Every option is presented with equal weight.
+ *
+ * The €/g ethanol option is gated by the enable_unit_price_eur_per_gram
+ * flag: flag off removes it from the offered options entirely
+ * (ranking-sorting spec).
  */
 export default function SortSelector({
   value,
@@ -47,6 +44,14 @@ export default function SortSelector({
 }: SortSelectorProps) {
   const t = useTranslations('SortSelector');
   const tSorts = useTranslations('SortOrders');
+  const tCompare = useTranslations('Compare');
+  const flags = useFeatureFlags();
+
+  function label(order: CompareSortOrder): string {
+    return order === 'EUR_PER_GRAM'
+      ? tCompare('eurPerGram.sortOptionLabel')
+      : tSorts(`${order}.label`);
+  }
 
   return (
     <div className="flex items-center gap-2">
@@ -59,15 +64,17 @@ export default function SortSelector({
       <select
         id="sort-order"
         value={value}
-        onChange={(e) => onChange(e.target.value as SortOrder)}
+        onChange={(e) => onChange(e.target.value as CompareSortOrder)}
         disabled={disabled}
         className="block rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {SORT_ORDER_VALUES.map((order) => (
-          <option key={order} value={order}>
-            {tSorts(`${order}.label`)}
-          </option>
-        ))}
+        {compareSortOptions(flags.flags.UNIT_PRICE_EUR_PER_GRAM).map(
+          (order) => (
+            <option key={order} value={order}>
+              {label(order)}
+            </option>
+          ),
+        )}
       </select>
     </div>
   );

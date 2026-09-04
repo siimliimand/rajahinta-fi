@@ -328,7 +328,28 @@
     "empty": "Vertailuun ei ole vielä lisätty tuotteita.",
     "totalLandedCost": "Kokonaiskustannus yhteensä",
     "dataConfidence": "Tietojen luotettavuus",
-    "viewAt": "Katso myyjältä {merchant}"
+    "viewAt": "Katso myyjältä {merchant}",
+    "eurPerGram": {
+      "columnHeader": "€/g puhdasta etanolia",
+      "sortOptionLabel": "Etanoli-€/g (matalin ensin)",
+      "unit": "snt/g",
+      "noValue": "Ei arvoa",
+      "reason": {
+        "MISSING_VOLUME": "tuotteen tilavuus puuttuu",
+        "MISSING_ALCOHOL_FRACTION": "tuotteen alkoholipitoisuus puuttuu",
+        "INVALID_VOLUME": "tuotteen tilavuus on virheellinen",
+        "INVALID_ALCOHOL_FRACTION": "tuotteen alkoholipitoisuus on virheellinen",
+        "INVALID_PRICE": "hinta on virheellinen"
+      },
+      "tooltip": {
+        "triggerLabel": "Miten €/g lasketaan?",
+        "title": "€/g puhdasta etanolia",
+        "formula": "Kaava: hinta ÷ (tilavuus litroissa × alkoholiosuus × 789 g/l).",
+        "density": "Puhtaan etanolin tiheys on 789 g/l.",
+        "priceReliability": "Hintatiedon luotettavuus: {status}.",
+        "unavailableReason": "Arvoa ei ole: {reason}."
+      }
+    }
   },
   "SortSelector": {
     "label": "Järjestä:"

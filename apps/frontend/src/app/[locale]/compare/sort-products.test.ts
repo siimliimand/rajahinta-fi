@@ -5,11 +5,14 @@
  * contract: every order deterministic, name ('fi' locale) as universal
  * tiebreaker, no dependence on insertion order.
  *
+ * The flag-gated EUR_PER_GRAM order is the spec'd exception: metric
+ * value with product id as the tiebreaker (unit-price-metrics spec).
+ *
  * @module CompareSortingTest
  */
 import { describe, it, expect } from 'vitest';
 import type { ComparisonProduct } from '@/lib/types';
-import { sortComparisonProducts } from './sort-products';
+import { sortComparisonProducts, compareSortOptions } from './sort-products';
 
 function product(overrides: Partial<ComparisonProduct>): ComparisonProduct {
   return {
@@ -119,5 +122,93 @@ describe('sortComparisonProducts', () => {
     const first = sortComparisonProducts([wine, beer], 'LOWEST_PER_LITRE');
     const second = sortComparisonProducts([wine, beer], 'LOWEST_PER_LITRE');
     expect(first.map((p) => p.id)).toEqual(second.map((p) => p.id));
+  });
+});
+
+describe('sortComparisonProducts — EUR_PER_GRAM (flag-gated option)', () => {
+  /** Value-bearing €/g metric in euro cents per gram. */
+  const metric = (centsPerGram: number) => ({
+    status: 'computed' as const,
+    centsPerGram,
+    ethanolGrams: 100,
+    priceReliability: 'VERIFIED' as const,
+  });
+
+  const cheap = product({ id: 1, name: 'B Cheap', eurPerGram: metric(3.1) });
+  const pricey = product({ id: 2, name: 'A Pricey', eurPerGram: metric(9.4) });
+
+  it('orders strictly by metric value ascending', () => {
+    expect(
+      sortComparisonProducts([pricey, cheap], 'EUR_PER_GRAM').map((p) => p.id),
+    ).toEqual([1, 2]);
+  });
+
+  it('breaks ties by product id — not by name (spec: value, then product id)', () => {
+    // Names reversed relative to ids: alphabetical order would be [2, 1].
+    const lowId = product({ id: 1, name: 'ZZZ', eurPerGram: metric(5) });
+    const highId = product({ id: 2, name: 'AAA', eurPerGram: metric(5) });
+    expect(
+      sortComparisonProducts([highId, lowId], 'EUR_PER_GRAM').map((p) => p.id),
+    ).toEqual([1, 2]);
+  });
+
+  it('an unavailable metric sorts last and is never a fake 0', () => {
+    const noAbv = product({
+      id: 3,
+      name: 'C No ABV',
+      eurPerGram: {
+        status: 'unavailable',
+        centsPerGram: null,
+        ethanolGrams: null,
+        reason: 'MISSING_ALCOHOL_FRACTION',
+      },
+    });
+    expect(
+      sortComparisonProducts([noAbv, pricey, cheap], 'EUR_PER_GRAM').map(
+        (p) => p.id,
+      ),
+    ).toEqual([1, 2, 3]);
+  });
+
+  it('an absent metric (flag off / unresolved) sorts last', () => {
+    const bare = product({ id: 3, name: 'C Bare' });
+    expect(
+      sortComparisonProducts([bare, cheap], 'EUR_PER_GRAM').map((p) => p.id),
+    ).toEqual([1, 3]);
+  });
+
+  it('reads only the metric value and product id — no other field moves the order', () => {
+    const decorated = {
+      ...pricey,
+      name: 'AAA ZZZ',
+      brand: 'PromoBrand',
+      category: 'sponsored-category',
+      merchantName: 'Featured Merchant',
+    };
+    // All commercial-looking decorations, same metric + id: order unchanged.
+    expect(
+      sortComparisonProducts([decorated, cheap], 'EUR_PER_GRAM').map(
+        (p) => p.id,
+      ),
+    ).toEqual([1, 2]);
+  });
+
+  it('is deterministic across repeated calls', () => {
+    const first = sortComparisonProducts([pricey, cheap], 'EUR_PER_GRAM');
+    const second = sortComparisonProducts([pricey, cheap], 'EUR_PER_GRAM');
+    expect(first.map((p) => p.id)).toEqual(second.map((p) => p.id));
+  });
+});
+
+describe('compareSortOptions — flag gating', () => {
+  it('offers EUR_PER_GRAM when the unit-price flag is on', () => {
+    expect(compareSortOptions(true)).toContain('EUR_PER_GRAM');
+    expect(compareSortOptions(true)).toHaveLength(7);
+  });
+
+  it('removes EUR_PER_GRAM when the flag is off, keeping the six neutral orders', () => {
+    const options = compareSortOptions(false);
+    expect(options).not.toContain('EUR_PER_GRAM');
+    expect(options).toHaveLength(6);
   });
 });

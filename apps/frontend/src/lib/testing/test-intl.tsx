@@ -15,6 +15,7 @@ export const ALL_FLAGS_ON: FeatureFlagsResponse = {
     HISTORICAL_PRICE_INTELLIGENCE: true,
     BASKET_OPTIMIZATION: true,
     ADVANCED_FEATURES: true,
+    UNIT_PRICE_EUR_PER_GRAM: true,
   },
 };
 
@@ -24,6 +25,7 @@ export const ALL_FLAGS_OFF: FeatureFlagsResponse = {
     HISTORICAL_PRICE_INTELLIGENCE: false,
     BASKET_OPTIMIZATION: false,
     ADVANCED_FEATURES: false,
+    UNIT_PRICE_EUR_PER_GRAM: false,
   },
 };
 
