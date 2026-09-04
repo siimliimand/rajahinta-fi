@@ -126,6 +126,8 @@ export interface Env {
   readonly FF_ADVANCED_FEATURES?: string;
   /** Gate the operator console at /ops/console/** (default off; new UI ships flag-off). */
   readonly FF_OPERATOR_CONSOLE?: string;
+  /** Gate the €/g unit-price metric embed on product/offer read responses (default off). */
+  readonly FF_UNIT_PRICE_EUR_PER_GRAM?: string;
   /** Explicit rollout-percentage override per flag (`FF_ROLLOUT_<FLAG>`). */
   readonly FF_ROLLOUT_NEW_MERCHANT_SOURCE?: string;
   readonly FF_ROLLOUT_NEW_TAX_RULESET?: string;
@@ -134,6 +136,7 @@ export interface Env {
   readonly FF_ROLLOUT_BASKET_OPTIMIZATION?: string;
   readonly FF_ROLLOUT_ADVANCED_FEATURES?: string;
   readonly FF_ROLLOUT_OPERATOR_CONSOLE?: string;
+  readonly FF_ROLLOUT_UNIT_PRICE_EUR_PER_GRAM?: string;
 
   // -- Launch gates (task 3.2; names match the Nest LaunchGateService) ------
 

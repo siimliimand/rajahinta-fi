@@ -253,7 +253,9 @@ export function seedProduct(
     product.manufacturer ?? 'Hartwall',
     product.brand ?? 'Hartwall',
     product.category ?? 'beer',
-    product.alcoholByVolume ?? 0.047,
+    // `=== undefined` (not ??) so an explicit null seeds a real NULL
+    // alcohol_by_volume row (the missing-alcohol metric path).
+    product.alcoholByVolume === undefined ? 0.047 : product.alcoholByVolume,
     product.unitVolume ?? 0.33,
     product.containerType ?? 'can',
     product.regulatoryClassification ?? 'beer',
