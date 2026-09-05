@@ -79,7 +79,7 @@
 - [x] 10.1 Declare the nine new `FF_*` variables (default off) in `apps/api-worker/wrangler.jsonc` and the `infra/environments/{dev,staging,prod}.yaml` descriptions; note the promotion expectations per environment <!-- agent: devops-engineer.fast, depends_on: [2.3, 3.3, 4.3, 5.3, 6.3, 7.2, 8.2, 9.3], touches: [apps/api-worker/wrangler.jsonc, infra/environments/**] -->
 - [x] 10.2 Observability for the alert-evaluation job — Analytics Engine data points for evaluated/matched/notified/failed counts, failure gauge threshold, dashboard panel update following the existing freshness-gauge pattern <!-- agent: devops-engineer.build, depends_on: [2.2], touches: [apps/api-worker/src/observability/**] -->
 - [x] 10.3 Update ARCHITECTURE.md (new core-domain modules, tables, cron handler, flags, affiliate-neutrality and accounting-only boundaries, explicit data-immutability statement for history) and docs/tasks.md (roadmap feature completion notes) <!-- agent: platform-engineer.fast, depends_on: [2.5, 3.5, 4.6, 5.5, 6.5, 7.4, 8.4, 9.5], touches: [ARCHITECTURE.md, docs/tasks.md] -->
-- [ ] 10.4 Full verification — typecheck, lint, unit, golden, data-quality, compliance, integration (Postgres + D1 suites), api-worker e2e, frontend build; fix fallout across all packages <!-- agent: platform-engineer.fast, depends_on: [10.1, 10.2, 10.3], touches: [] -->
+- [x] 10.4 Full verification — typecheck, lint, unit, golden, data-quality, compliance, integration (Postgres + D1 suites), api-worker e2e, frontend build; fix fallout across all packages <!-- agent: platform-engineer.fast, depends_on: [10.1, 10.2, 10.3], touches: [] -->
 
 ---
 
