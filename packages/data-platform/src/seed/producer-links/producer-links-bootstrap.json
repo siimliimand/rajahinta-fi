@@ -1,0 +1,458 @@
+{
+  "formatVersion": 1,
+  "bootstrap": true,
+  "reviewer": "bootstrap-seed-import-v1",
+  "reviewedAt": "2026-09-05T00:00:00.000Z",
+  "cases": [
+    {
+      "alkoProductId": 924531,
+      "alkoProductName": "Absolut Vodka",
+      "producerKey": "Absolut",
+      "manufacturer": "Absolut Company",
+      "siblingProductId": 8804,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Absolut Vodka",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/absolut-vodka-8804/"
+    },
+    {
+      "alkoProductId": 901256,
+      "alkoProductName": "Aperol Spritz 4-Pack",
+      "producerKey": "Aperol",
+      "manufacturer": "Davide Campari",
+      "siblingProductId": 8040508,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Aperol",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/aperol-8040508/"
+    },
+    {
+      "alkoProductId": 927547,
+      "alkoProductName": "Ardbeg An Oa Single Malt",
+      "producerKey": "Ardbeg",
+      "manufacturer": "Ardbeg Distillery",
+      "siblingProductId": 51301,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Ardbeg Ten Years",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/ardbeg-51301/"
+    },
+    {
+      "alkoProductId": 116576,
+      "alkoProductName": "Bacardi Carta Blanca muovipullo",
+      "producerKey": "Bacardi",
+      "manufacturer": "Bacardi",
+      "siblingProductId": 7051301,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Bacardi 8 años",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/bacardi-7051301/"
+    },
+    {
+      "alkoProductId": 100115,
+      "alkoProductName": "Baileys Strawberries & Cream",
+      "producerKey": "Baileys",
+      "manufacturer": "R&A Bailey & Co",
+      "siblingProductId": 8188401,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Baileys Strawberries and Cream",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/baileys-8188401/"
+    },
+    {
+      "alkoProductId": 931997,
+      "alkoProductName": "Banfi Brunello di Montalcino 2020",
+      "producerKey": "Banfi",
+      "manufacturer": "Banfi",
+      "siblingProductId": 7702701,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Banfi Brunello di Montalcino, 2019",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/banfi-7702701/"
+    },
+    {
+      "alkoProductId": 902276,
+      "alkoProductName": "Beefeater Zesty Lemon",
+      "producerKey": "Beefeater",
+      "manufacturer": "The Beefeater Distillery",
+      "siblingProductId": 3904,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Beefeater London Dry Gin",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/beefeater-3904/"
+    },
+    {
+      "alkoProductId": 600075,
+      "alkoProductName": "Budvar 0.0%",
+      "producerKey": "Budvar",
+      "manufacturer": "Budějovický Budvar",
+      "siblingProductId": 8289301,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Budvar Budejovicky Original Czech Lager",
+      "sourceUrl": "https://www.systembolaget.se/produkt/ol/budvar-8289301/"
+    },
+    {
+      "alkoProductId": 151136,
+      "alkoProductName": "Campari",
+      "producerKey": "Campari",
+      "manufacturer": "Davide Campari",
+      "siblingProductId": 7399806,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Campari",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/campari-7399806/"
+    },
+    {
+      "alkoProductId": 757736,
+      "alkoProductName": "Carlsberg tölkki",
+      "producerKey": "Carlsberg",
+      "manufacturer": "Sinebrychoff",
+      "siblingProductId": 143501,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Carlsberg Export",
+      "sourceUrl": "https://www.systembolaget.se/produkt/ol/carlsberg-export-143501/"
+    },
+    {
+      "alkoProductId": 903132,
+      "alkoProductName": "Casillero del Diablo Devil's Carnaval Chardonnay 2024 viinipussi",
+      "producerKey": "Casillero del Diablo",
+      "manufacturer": "Concha y Toro",
+      "siblingProductId": 207501,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Casillero del Diablo Chardonnay, 2025",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/casillero-del-diablo-207501/"
+    },
+    {
+      "alkoProductId": 721177,
+      "alkoProductName": "Chimay Première",
+      "producerKey": "Chimay",
+      "manufacturer": "Bieres de Chimay",
+      "siblingProductId": 165703,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Chimay vit",
+      "sourceUrl": "https://www.systembolaget.se/produkt/ol/chimay-vit-165703/"
+    },
+    {
+      "alkoProductId": 529627,
+      "alkoProductName": "Codorníu Ars Collecta Rosé Cava Organic Brut",
+      "producerKey": "Codorníu",
+      "manufacturer": "Codorníu",
+      "siblingProductId": 792702,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Codorníu Ecológica Brut",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/codorniu-ecologica-792702/"
+    },
+    {
+      "alkoProductId": 159221,
+      "alkoProductName": "Cointreau",
+      "producerKey": "Cointreau",
+      "manufacturer": "Rémy Cointreau",
+      "siblingProductId": 7067704,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Cointreau",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/cointreau-7067704/"
+    },
+    {
+      "alkoProductId": 782814,
+      "alkoProductName": "Duvel",
+      "producerKey": "Duvel",
+      "manufacturer": "Duvel Moortgat",
+      "siblingProductId": 1182903,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Duvel Tripel Hop Cashmere",
+      "sourceUrl": "https://www.systembolaget.se/produkt/ol/duvel-tripel-hop-1182903/"
+    },
+    {
+      "alkoProductId": 718576,
+      "alkoProductName": "Erdinger Weissbier tölkki",
+      "producerKey": "Erdinger",
+      "manufacturer": "Erdinger Weissbräu",
+      "siblingProductId": 150501,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Erdinger Weissbier Kristallklar",
+      "sourceUrl": "https://www.systembolaget.se/produkt/ol/erdinger-150501/"
+    },
+    {
+      "alkoProductId": 953977,
+      "alkoProductName": "Freixenet Ice Rosé Cuvée Especial Cava Semi Seco",
+      "producerKey": "Freixenet",
+      "manufacturer": "Freixenet",
+      "siblingProductId": 7273901,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Freixenet Italian Sparkling Rosé Extra Dry",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/freixenet-7273901/"
+    },
+    {
+      "alkoProductId": 6654,
+      "alkoProductName": "Frescobaldi Nipozzano Riserva 2022",
+      "producerKey": "Frescobaldi",
+      "manufacturer": "Frescobaldi",
+      "siblingProductId": 7283401,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Tenuta Frescobaldi di Castiglioni 2023",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/tenuta-frescobaldi-di-castiglioni-7283401/"
+    },
+    {
+      "alkoProductId": 955577,
+      "alkoProductName": "Glenfiddich 18 Year Old Single Malt",
+      "producerKey": "Glenfiddich",
+      "manufacturer": "William Grant & Sons",
+      "siblingProductId": 44002,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Glenfiddich 12 Years",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/glenfiddich-44002/"
+    },
+    {
+      "alkoProductId": 924995,
+      "alkoProductName": "Glenmorangie Quinta Ruban 14 Year Old Single Malt",
+      "producerKey": "Glenmorangie",
+      "manufacturer": "The Glenmorangie Distillery",
+      "siblingProductId": 8491601,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Glenmorangie 14 Years The Quinta Ruban Port Cask Extra Matured",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/glenmorangie-8491601/"
+    },
+    {
+      "alkoProductId": 920346,
+      "alkoProductName": "Guinness Draught Stout tölkki",
+      "producerKey": "Guinness",
+      "manufacturer": "Guinness",
+      "siblingProductId": 8892401,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Guinness West Indies Porter",
+      "sourceUrl": "https://www.systembolaget.se/produkt/ol/guinness-8892401/"
+    },
+    {
+      "alkoProductId": 200037,
+      "alkoProductName": "Havana Club Añejo Especial",
+      "producerKey": "Havana Club",
+      "manufacturer": "Pernod Ricard",
+      "siblingProductId": 32201,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Havana Club Añejo 7 años",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/havana-club-32201/"
+    },
+    {
+      "alkoProductId": 719754,
+      "alkoProductName": "Heineken 0.0 Alcohol Free",
+      "producerKey": "Heineken",
+      "manufacturer": "Heineken",
+      "siblingProductId": 1148403,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Heineken",
+      "sourceUrl": "https://www.systembolaget.se/produkt/ol/heineken-1148403/"
+    },
+    {
+      "alkoProductId": 942956,
+      "alkoProductName": "Highland Park Cask Strength Release No. 5 Single Malt",
+      "producerKey": "Highland Park",
+      "manufacturer": "Highland Park Distillery",
+      "siblingProductId": 43701,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Highland Park 18 Years",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/highland-park-43701/"
+    },
+    {
+      "alkoProductId": 725704,
+      "alkoProductName": "Hoegaarden Witbier",
+      "producerKey": "Hoegaarden",
+      "manufacturer": "InBev",
+      "siblingProductId": 156303,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Hoegaarden Wit-Blanche",
+      "sourceUrl": "https://www.systembolaget.se/produkt/ol/hoegaarden-156303/"
+    },
+    {
+      "alkoProductId": 126447,
+      "alkoProductName": "Jameson Caskmates Stout Edition",
+      "producerKey": "Jameson",
+      "manufacturer": "John Jameson",
+      "siblingProductId": 49804,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Jameson",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/jameson-49804/"
+    },
+    {
+      "alkoProductId": 1436,
+      "alkoProductName": "Johnnie Walker Red Label",
+      "producerKey": "Johnnie Walker",
+      "manufacturer": "John Walker & Sons",
+      "siblingProductId": 8835201,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Johnnie Walker Blue Label",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/johnnie-walker-8835201/"
+    },
+    {
+      "alkoProductId": 904156,
+      "alkoProductName": "Jägermeister",
+      "producerKey": "Jägermeister",
+      "manufacturer": "Mast-Jägermeister",
+      "siblingProductId": 8173301,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Jägermeister Manifest",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/jagermeister-8173301/"
+    },
+    {
+      "alkoProductId": 210746,
+      "alkoProductName": "Kahlúa Coffee Liqueur",
+      "producerKey": "Kahlúa",
+      "manufacturer": "Pernod Ricard EMEA",
+      "siblingProductId": 71401,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Kahlúa",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/kahlua-71401/"
+    },
+    {
+      "alkoProductId": 926768,
+      "alkoProductName": "Laphroaig Select Single Malt",
+      "producerKey": "Laphroaig",
+      "manufacturer": "Laphroaig Distillery",
+      "siblingProductId": 57101,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Laphroaig 10 Years",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/laphroaig-57101/"
+    },
+    {
+      "alkoProductId": 600078,
+      "alkoProductName": "Leffe Blonde 0.0% tölkki",
+      "producerKey": "Leffe",
+      "manufacturer": "Anheuser-Busch InBev",
+      "siblingProductId": 115612,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Leffe Blonde",
+      "sourceUrl": "https://www.systembolaget.se/produkt/ol/leffe-blonde-115612/"
+    },
+    {
+      "alkoProductId": 956376,
+      "alkoProductName": "Próximo by Marques de Riscal 2020",
+      "producerKey": "Marqués de Riscal",
+      "manufacturer": "Marques de Riscal",
+      "siblingProductId": 600102,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Marqués de Riscal Organic, 2025",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/marques-de-riscal-600102/"
+    },
+    {
+      "alkoProductId": 945671,
+      "alkoProductName": "Martini Prosecco Extra Dry",
+      "producerKey": "Martini",
+      "manufacturer": "Martini & Rossi",
+      "siblingProductId": 868001,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Martini Rosso",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/martini-868001/"
+    },
+    {
+      "alkoProductId": 904554,
+      "alkoProductName": "Masi Campofiorin 2022",
+      "producerKey": "Masi",
+      "manufacturer": "Masi Agricola",
+      "siblingProductId": 7001701,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Masi Riserva Costasera Amarone Classico, 2019",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/masi-riserva-costasera-7001701/"
+    },
+    {
+      "alkoProductId": 8179,
+      "alkoProductName": "Moët & Chandon Impérial Mini Champagne Brut",
+      "producerKey": "Moët & Chandon",
+      "manufacturer": "Moët & Chandon",
+      "siblingProductId": 7733801,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Moët &amp; Chandon Ice Impérial Demi-Sec",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/moet-chandon-7733801/"
+    },
+    {
+      "alkoProductId": 720656,
+      "alkoProductName": "Paulaner Hefe-Weissbier tölkki",
+      "producerKey": "Paulaner",
+      "manufacturer": "Paulaner",
+      "siblingProductId": 247012,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Paulaner Münchner Hell",
+      "sourceUrl": "https://www.systembolaget.se/produkt/ol/paulaner-247012/"
+    },
+    {
+      "alkoProductId": 902978,
+      "alkoProductName": "Penfolds Bin 311 Chardonnay 2024",
+      "producerKey": "Penfolds",
+      "manufacturer": "Penfolds",
+      "siblingProductId": 646301,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Penfolds Koonunga Hill Chardonnay, 2025",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/penfolds-koonunga-hill-646301/"
+    },
+    {
+      "alkoProductId": 762326,
+      "alkoProductName": "Pilsner Urquell tölkki",
+      "producerKey": "Pilsner Urquell",
+      "manufacturer": "Plzenský Prazdroj",
+      "siblingProductId": 156603,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Pilsner Urquell",
+      "sourceUrl": "https://www.systembolaget.se/produkt/ol/pilsner-urquell-156603/"
+    },
+    {
+      "alkoProductId": 908183,
+      "alkoProductName": "Ruffino Santedame Chianti Classico Organic 2019",
+      "producerKey": "Ruffino",
+      "manufacturer": "Ruffino",
+      "siblingProductId": 7657801,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Ruffino Chianti Superiore, 2024",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/ruffino-7657801/"
+    },
+    {
+      "alkoProductId": 114263,
+      "alkoProductName": "Talisker 10 Year Old Single Malt",
+      "producerKey": "Talisker",
+      "manufacturer": "Talisker Distillery",
+      "siblingProductId": 8551501,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Talisker Skye",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/talisker-skye-8551501/"
+    },
+    {
+      "alkoProductId": 100099,
+      "alkoProductName": "Tanqueray Negroni Cocktail",
+      "producerKey": "Tanqueray",
+      "manufacturer": "Diageo",
+      "siblingProductId": 8506802,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Tanqueray London Gin",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/tanqueray-8506802/"
+    },
+    {
+      "alkoProductId": 946373,
+      "alkoProductName": "The Macallan Classic Cut 2024 Single Malt",
+      "producerKey": "The Macallan",
+      "manufacturer": "The Macallan Distillery",
+      "siblingProductId": 8582301,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "The Macallan Rare Cask, 2024",
+      "sourceUrl": "https://www.systembolaget.se/produkt/sprit/the-macallan-8582301/"
+    },
+    {
+      "alkoProductId": 940864,
+      "alkoProductName": "Torres Sangre de Toro 2023",
+      "producerKey": "Torres",
+      "manufacturer": "Torres",
+      "siblingProductId": 1269701,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Torres Gran Coronas Cabernet Sauvignon Reserva, 2021",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/torres-gran-coronas-1269701/"
+    },
+    {
+      "alkoProductId": 518907,
+      "alkoProductName": "Veuve Clicquot La Grande Dame Champagne Brut 2015",
+      "producerKey": "Veuve Clicquot",
+      "manufacturer": "Veuve Clicquot",
+      "siblingProductId": 742402,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Veuve Clicquot Brut Gula Änkan",
+      "sourceUrl": "https://www.systembolaget.se/produkt/vin/veuve-clicquot-742402/"
+    },
+    {
+      "alkoProductId": 700247,
+      "alkoProductName": "Weihenstephaner 1516 Kellerbier",
+      "producerKey": "Weihenstephaner",
+      "manufacturer": "Weihenstephan",
+      "siblingProductId": 152601,
+      "siblingMerchant": "systembolaget",
+      "siblingProductName": "Weihenstephaner Hefe Weissbier",
+      "sourceUrl": "https://www.systembolaget.se/produkt/ol/weihenstephaner-152601/"
+    }
+  ]
+}
