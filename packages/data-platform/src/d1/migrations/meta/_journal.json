@@ -71,6 +71,13 @@
       "when": 1789022416147,
       "tag": "0010_producer_links",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789108816147,
+      "tag": "0011_curated_entries",
+      "breakpoints": true
     }
   ]
 }

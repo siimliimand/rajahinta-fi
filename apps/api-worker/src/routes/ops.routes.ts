@@ -8,10 +8,17 @@
  * — the curated sibling-product evidence surface (design R9), exact
  * normalized-key matching only (spec: producer-matching).
  *
- * Guard composition (3.2 route-coverage map): the /ops/console/* prefix
+ * guard composition (3.2 route-coverage map): the /ops/console/* prefix
  * already carries opsAccess() → requireFeatureFlag('OPERATOR_CONSOLE') —
  * deny BEFORE any operational data. Operator identity for the audit trail
  * travels in each mutating request body (`operator`), as in Nest.
+ *
+ * Task 7.1 (change product-roadmap-phases-1-4) adds the curated-entry
+ * CRUD — the public curated lists' audited management surface (design
+ * R10, spec: curated-lists). Unlike the ferry/producer lifecycles,
+ * PUBLISHED is not terminal: the spec mandates entries are created,
+ * updated, AND unpublished through this console so content changes
+ * never require deploys.
  *
  * EVERY mutating action writes an append-only D1 `audit_events` row via
  * the task-2.5 D1AuditEventRepository (WorkerAuditService).
@@ -56,6 +63,10 @@ import {
   D1ProducerLinksRepository,
   ProducerLinkImmutableError,
 } from '../../../../packages/data-platform/src/repositories/d1/producer-links.repository';
+import {
+  D1CuratedEntriesRepository,
+  evidenceLinksSchema,
+} from '../../../../packages/data-platform/src/repositories/d1/curated-entries.repository';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 
 // ---------------------------------------------------------------------------
@@ -863,6 +874,309 @@ async function deleteProducerLink(c: Context<AppEnv>): Promise<Response> {
   return c.json({ id, deleted: true });
 }
 
+// ---------------------------------------------------------------------------
+// Curated list entries — operator-managed list content CRUD (task 7.1, R10)
+// ---------------------------------------------------------------------------
+
+/**
+ * Every response and audit payload carries the COMPLETE editorial
+ * record (slug, target, rationale, evidence links, reviewer, status)
+ * — R10 makes an unevidenced entry unrepresentable at the schema
+ * level, so the console never has a partial-evidence state to hide.
+ * evidenceLinks is parsed by the REPOSITORY's exported zod schema
+ * (single source of truth with the storage guard).
+ */
+const SLUG_MESSAGE =
+  'listSlug must be a kebab-case slug (lowercase letters, digits, hyphens; max 128 chars)';
+const ENTRY_RATIONALE_MESSAGE =
+  'rationale must be a non-empty string (max 2000 chars)';
+const ENTRY_REVIEWER_MESSAGE = 'reviewer must be a non-empty string (max 128 chars)';
+const EXTERNAL_REF_MESSAGE = 'externalRef must be a non-empty string (max 512 chars)';
+const ENTRY_PRODUCT_ID_MESSAGE = 'must be a positive integer';
+
+const curatedEntryBaseSchema = z.object({
+  listSlug: z
+    .string({
+      required_error: SLUG_MESSAGE,
+      invalid_type_error: SLUG_MESSAGE,
+    })
+    .min(1, SLUG_MESSAGE)
+    .max(128, SLUG_MESSAGE)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, SLUG_MESSAGE),
+  productId: z
+    .number({
+      required_error: `productId ${ENTRY_PRODUCT_ID_MESSAGE}`,
+      invalid_type_error: `productId ${ENTRY_PRODUCT_ID_MESSAGE}`,
+    })
+    .int(`productId ${ENTRY_PRODUCT_ID_MESSAGE}`)
+    .positive(`productId ${ENTRY_PRODUCT_ID_MESSAGE}`)
+    .optional(),
+  externalRef: z
+    .string({
+      required_error: EXTERNAL_REF_MESSAGE,
+      invalid_type_error: EXTERNAL_REF_MESSAGE,
+    })
+    .min(1, EXTERNAL_REF_MESSAGE)
+    .max(512, EXTERNAL_REF_MESSAGE)
+    .optional(),
+  rationale: z
+    .string({
+      required_error: ENTRY_RATIONALE_MESSAGE,
+      invalid_type_error: ENTRY_RATIONALE_MESSAGE,
+    })
+    .min(1, ENTRY_RATIONALE_MESSAGE)
+    .max(2000, ENTRY_RATIONALE_MESSAGE),
+  evidenceLinks: evidenceLinksSchema,
+  reviewer: z
+    .string({
+      required_error: ENTRY_REVIEWER_MESSAGE,
+      invalid_type_error: ENTRY_REVIEWER_MESSAGE,
+    })
+    .min(1, ENTRY_REVIEWER_MESSAGE)
+    .max(128, ENTRY_REVIEWER_MESSAGE),
+});
+
+const curatedEntryContentSchema = curatedEntryBaseSchema.refine(
+  (entry) => (entry.productId === undefined) !== (entry.externalRef === undefined),
+  { message: 'exactly one of productId or externalRef is required' },
+);
+
+const curatedEntryUpdateSchema = curatedEntryBaseSchema.partial().refine(
+  // Both targets in one patch is always ambiguous; one alone is
+  // resolved against the stored row in the handler (merged check).
+  (entry) => !(entry.productId !== undefined && entry.externalRef !== undefined),
+  { message: 'exactly one of productId or externalRef is required' },
+);
+
+/** The content fields shared by every curated-entry audit payload. */
+function curatedEntryEvidence(entry: {
+  listSlug: string;
+  productId: number | null;
+  externalRef: string | null;
+  rationale: string;
+  evidenceLinks: readonly { label: string; url: string }[];
+  reviewer: string;
+  status: string;
+}): Record<string, unknown> {
+  return {
+    listSlug: entry.listSlug,
+    productId: entry.productId,
+    externalRef: entry.externalRef,
+    rationale: entry.rationale,
+    evidenceLinks: entry.evidenceLinks,
+    reviewer: entry.reviewer,
+    status: entry.status,
+  };
+}
+
+/** The console response body — the COMPLETE editorial record. */
+function curatedEntryBody(entry: {
+  id: number;
+  listSlug: string;
+  productId: number | null;
+  externalRef: string | null;
+  rationale: string;
+  evidenceLinks: readonly { label: string; url: string }[];
+  reviewer: string;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    id: entry.id,
+    listSlug: entry.listSlug,
+    productId: entry.productId,
+    externalRef: entry.externalRef,
+    rationale: entry.rationale,
+    evidenceLinks: entry.evidenceLinks,
+    reviewer: entry.reviewer,
+    status: entry.status,
+    createdAt: entry.createdAt.toISOString(),
+    updatedAt: entry.updatedAt.toISOString(),
+  };
+}
+
+async function listCuratedEntries(c: Context<AppEnv>): Promise<Response> {
+  const repo = new D1CuratedEntriesRepository(c.env.DB);
+  const slug = c.req.query('slug');
+  const entries = slug !== undefined && slug !== ''
+    ? await repo.listBySlug(slug)
+    : await repo.listAll();
+  return c.json({
+    items: entries.map(curatedEntryBody),
+    total: entries.length,
+  });
+}
+
+async function createCuratedEntry(c: Context<AppEnv>): Promise<Response> {
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const content = parseConsoleContent(curatedEntryContentSchema, dto);
+
+  const created = await new D1CuratedEntriesRepository(c.env.DB).create({
+    listSlug: content.listSlug,
+    // The repository normalizes the slug before persistence — the
+    // stored (and echoed) form is always normalized.
+    productId: content.productId,
+    externalRef: content.externalRef,
+    rationale: content.rationale,
+    evidenceLinks: content.evidenceLinks,
+    reviewer: content.reviewer,
+  });
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'curated_entry',
+    entityId: String(created.id),
+    action: 'created',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Curated entry created via operator console',
+    newValue: curatedEntryEvidence(created),
+  });
+
+  return c.json({
+    id: created.id,
+    listSlug: created.listSlug,
+    status: created.status,
+  });
+}
+
+async function updateCuratedEntry(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const content = parseConsoleContent(curatedEntryUpdateSchema, dto);
+
+  const repo = new D1CuratedEntriesRepository(c.env.DB);
+  const existing = await repo.findById(id);
+  if (existing === null) {
+    throw new ApiHttpError(404, `Curated entry ${id} not found`);
+  }
+
+  // Edits are allowed in ANY status (including PUBLISHED) — the spec's
+  // no-deploy content-update requirement; the audit below is what
+  // keeps the published history explained. A one-sided target patch
+  // IS the target swap (repository contract); both-sides patches were
+  // rejected by the schema above.
+  const updated = await repo.update(id, content);
+  if (updated === null) {
+    throw new ApiHttpError(404, `Curated entry ${id} not found`);
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'curated_entry',
+    entityId: String(id),
+    action: 'updated',
+    author: actor,
+    reason: (dto.note as string | undefined)?.trim() || 'Curated entry updated via operator console',
+    previousValue: curatedEntryEvidence(existing),
+    newValue: curatedEntryEvidence(updated),
+  });
+
+  return c.json(curatedEntryBody(updated));
+}
+
+async function publishCuratedEntry(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+
+  const repo = new D1CuratedEntriesRepository(c.env.DB);
+  const existing = await repo.findById(id);
+  if (existing === null) {
+    throw new ApiHttpError(404, `Curated entry ${id} not found`);
+  }
+
+  // Only a DRAFT flips; already-published is a 409 (ferry parity).
+  const published = await repo.publish(id);
+  if (published === null) {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `Curated entry ${id} is not a draft`,
+      error: 'InvalidTransition',
+    });
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'curated_entry',
+    entityId: String(id),
+    action: 'confirmed',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Curated entry published via operator console',
+    previousValue: { status: 'DRAFT' },
+    newValue: curatedEntryEvidence(published),
+  });
+
+  return c.json({ id: published.id, status: published.status });
+}
+
+async function unpublishCuratedEntry(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+
+  const repo = new D1CuratedEntriesRepository(c.env.DB);
+  const existing = await repo.findById(id);
+  if (existing === null) {
+    throw new ApiHttpError(404, `Curated entry ${id} not found`);
+  }
+
+  // Only a PUBLISHED row flips back (spec "created, updated, and
+  // unpublished"); already-draft is a 409 (publish parity).
+  const unpublished = await repo.unpublish(id);
+  if (unpublished === null) {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `Curated entry ${id} is not published`,
+      error: 'InvalidTransition',
+    });
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'curated_entry',
+    entityId: String(id),
+    action: 'updated',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Curated entry unpublished via operator console',
+    previousValue: curatedEntryEvidence(existing),
+    newValue: curatedEntryEvidence(unpublished),
+  });
+
+  return c.json({ id: unpublished.id, status: unpublished.status });
+}
+
+async function deleteCuratedEntry(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  if (typeof dto.reason !== 'string' || dto.reason.trim() === '') {
+    throw new ApiHttpError(400, 'reason is required for deletion');
+  }
+
+  const repo = new D1CuratedEntriesRepository(c.env.DB);
+  const existing = await repo.findById(id);
+  if (existing === null) {
+    throw new ApiHttpError(404, `Curated entry ${id} not found`);
+  }
+  await repo.remove(id);
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'curated_entry',
+    entityId: String(id),
+    action: 'deleted',
+    author: actor,
+    reason: dto.reason.trim(),
+    previousValue: curatedEntryEvidence(existing),
+  });
+
+  return c.json({ id, deleted: true });
+}
+
 function taxReviewsUnavailable(): never {
   throw new ApiHttpError(503, {
     statusCode: 503,
@@ -1023,6 +1337,19 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.post('/ops/console/producer-links/:id', updateProducerLink);
   app.post('/ops/console/producer-links/:id/publish', publishProducerLink);
   app.post('/ops/console/producer-links/:id/delete', deleteProducerLink);
+
+  // curated list entries (7.1, R10): DRAFT → PUBLISHED via publish,
+  // PUBLISHED → DRAFT via unpublish (spec: entries are created,
+  // updated, and unpublished here — published content is editable, so
+  // content work never needs a deploy). The DELETE is POST :id/delete
+  // so the acting operator + reason travel in the body like every
+  // other console mutation.
+  app.get('/ops/console/curated-entries', listCuratedEntries);
+  app.post('/ops/console/curated-entries', createCuratedEntry);
+  app.post('/ops/console/curated-entries/:id', updateCuratedEntry);
+  app.post('/ops/console/curated-entries/:id/publish', publishCuratedEntry);
+  app.post('/ops/console/curated-entries/:id/unpublish', unpublishCuratedEntry);
+  app.post('/ops/console/curated-entries/:id/delete', deleteCuratedEntry);
 
   app.get('/ops/console/audit', recentAudit);
   return app;

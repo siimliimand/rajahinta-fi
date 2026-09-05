@@ -1496,6 +1496,83 @@ export const producerLinks = sqliteTable(
 );
 
 /**
+ * Curated list entries — operator-managed editorial content behind the
+ * public curated lists (task 7.1, change product-roadmap-phases-1-4,
+ * design R10, spec: curated-lists; first slug "Alkon hylkäämät").
+ *
+ * One row per entry of a list slug. The slug is the 7.2 public lookup
+ * key (bounded, indexed). The target is EITHER a product_master
+ * reference OR an external reference — the exactly-one CHECK makes a
+ * both-null (points at nothing) and a both-present (ambiguous) entry
+ * unrepresentable at rest. rationale, evidence_links (JSON), and
+ * reviewer are NOT NULL and non-empty (CHECKs, the producer_links
+ * evidence discipline); evidence_links additionally carries a
+ * json_valid() CHECK — the STRUCTURE (a non-empty array of labeled
+ * http(s) links) is validated by the repository on every write.
+ *
+ * Status lifecycle deliberately differs from ferry_offers /
+ * producer_links (binding spec): entries are "created, updated, and
+ * unpublished through the audited operator console" and content
+ * changes require no deploys, so a PUBLISHED entry is editable and
+ * can be unpublished (PUBLISHED → DRAFT). Every mutation is audited
+ * at the console layer, so no code change or deploy is ever needed
+ * for content work. updated_at moves on every edit; the product FK
+ * needs no cascade (products are never deleted).
+ */
+export const curatedEntries = sqliteTable(
+  'curated_entries',
+  {
+    id: integer('id').primaryKey(),
+    /** Owning list slug in NORMALIZED form (trim + lowercase — the repository's exported rule); the 7.2 public lookup key. */
+    listSlug: text('list_slug', { length: 128 }).notNull(),
+    /** FK to product_master — the referenced Alko/merchant product (exactly-one target CHECK with externalRef). */
+    productId: integer('product_id').references(() => productMaster.id),
+    /** External reference for entries without a product_master row (exactly-one target CHECK with productId). */
+    externalRef: text('external_ref', { length: 512 }),
+    /** Why this entry qualifies for the list — the mandatory editorial justification. */
+    rationale: text('rationale').notNull(),
+    /** Evidence links (JSON array of {label, url}) — structure validated by the repository on every write. */
+    evidenceLinks: text('evidence_links', { mode: 'json' }).notNull(),
+    /** Operator who reviewed the entry — the curation audit face of R10. */
+    reviewer: text('reviewer', { length: 128 }).notNull(),
+    /** Lifecycle: DRAFT until the audited console publish; NOT terminal — the console can edit and unpublish (spec). */
+    status: text('status', { length: 16 }).default('DRAFT').notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+    /** Moves on every console edit — published content is updatable without deploys (spec). */
+    updatedAt: text('updated_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // The 7.2 public lookup (published rows of one slug) plus — via the
+    // leftmost prefix — the console's per-slug management reads.
+    index('curated_entries_list_slug_status_idx').on(table.listSlug, table.status),
+    check(
+      'curated_entries_status_check',
+      sql`${table.status} IN ('DRAFT', 'PUBLISHED')`,
+    ),
+    // A blank slug/rationale/reviewer is a curation bug, not an entry
+    // (the producer_links non-empty CHECK precedent).
+    check('curated_entries_list_slug_check', sql`${table.listSlug} <> ''`),
+    check('curated_entries_rationale_check', sql`${table.rationale} <> ''`),
+    check('curated_entries_reviewer_check', sql`${table.reviewer} <> ''`),
+    // Parseable JSON at rest; the repository validates the structure.
+    check(
+      'curated_entries_evidence_links_check',
+      sql`${table.evidenceLinks} <> '' AND json_valid(${table.evidenceLinks})`,
+    ),
+    // Exactly one target: a NULL/NULL entry points at nothing, a
+    // value/value entry is ambiguous — both unrepresentable.
+    check(
+      'curated_entries_target_check',
+      sql`(${table.productId} IS NULL) <> (${table.externalRef} IS NULL)`,
+    ),
+    check(
+      'curated_entries_external_ref_check',
+      sql`${table.externalRef} IS NULL OR ${table.externalRef} <> ''`,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -1530,4 +1607,5 @@ export const d1Schema = {
   groupOrderItems,
   ferryOffers,
   producerLinks,
+  curatedEntries,
 };
