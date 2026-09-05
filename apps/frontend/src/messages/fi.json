@@ -884,6 +884,25 @@
     "siblingLink": "Tuotesivu #{id}",
     "sourceLink": "Lähde"
   },
+  "ListsPage": {
+    "metaTitle": "{title} — kuratoitu listaus",
+    "metaDescription": "{title} — jokaisella listauksella toimituksellinen perustelu ja todistelulinkit. Valintakriteerit näkyvät sivulla.",
+    "fallbackMetaTitle": "Listausta ei löytynyt",
+    "fallbackMetaDescription": "Kuratoidut tuotelistaukset perusteluineen ja todistelulinkkeineen.",
+    "criteriaTitle": "Valintakriteerit",
+    "criteriaIntro": "Tuote pääsee listalle vain, jos se täyttää kaikki alla mainitut kriteerit. Kriteerit ovat listan toimituksellinen ohjenuora.",
+    "entriesTitle": "Listaukset",
+    "entriesCount": "Listauksia: {count}",
+    "emptyTitle": "Ei julkaistuja listauksia",
+    "emptyBody": "Listalle ei ole vielä julkaistu yhtään tuotetta. Yllä olevat kriteerit kuvaavat, millaiset tuotteet sinne tulevat.",
+    "rationaleLabel": "Perustelu",
+    "evidenceLabel": "Todistelulinkit",
+    "evidenceNote": "Linkit avautuvat uuteen välilehteen ja osoittavat listauksen taustalla olevaan todisteluun.",
+    "productLinkLabel": "Avaa tuotesivu",
+    "externalRefLabel": "Ulkoinen tunniste",
+    "unavailableTitle": "Listausta ei ole saatavilla",
+    "unavailableBody": "Tämä listaus ei ole nyt luettavissa. Voit yrittää myöhemmin uudelleen."
+  },
   "OperatorConsole": {
     "title": "Operaattorin konsoli",
     "intro": "Hallinnoi tietolähteiden käyttöoikeuksia, vahvista verokanta- ja valuuttakurssijulkaisuja ja käsittele korjausjono. Jokainen toimeen kirjataan auditointilokiin.",

@@ -884,6 +884,25 @@
     "siblingLink": "Product page #{id}",
     "sourceLink": "Source"
   },
+  "ListsPage": {
+    "metaTitle": "{title} — curated list",
+    "metaDescription": "{title} — every entry carries an editorial rationale and evidence links. The curation criteria are shown on the page.",
+    "fallbackMetaTitle": "List not found",
+    "fallbackMetaDescription": "Curated product lists with rationales and evidence links.",
+    "criteriaTitle": "Curation criteria",
+    "criteriaIntro": "A product qualifies for the list only when it meets every criterion below. The criteria are the list's editorial standard.",
+    "entriesTitle": "Entries",
+    "entriesCount": "Entries: {count}",
+    "emptyTitle": "No published entries",
+    "emptyBody": "No products have been published to this list yet. The criteria above describe what will qualify.",
+    "rationaleLabel": "Rationale",
+    "evidenceLabel": "Evidence links",
+    "evidenceNote": "Links open in a new tab and point to the evidence behind each entry.",
+    "productLinkLabel": "Open product page",
+    "externalRefLabel": "External reference",
+    "unavailableTitle": "This list is not available",
+    "unavailableBody": "This list cannot be read right now. Please try again later."
+  },
   "OperatorConsole": {
     "title": "Operator console",
     "intro": "Manage source-governance permissions, confirm tax-rate and exchange-rate dataset publications, and work the correction queue. Every action is recorded in the audit log.",
