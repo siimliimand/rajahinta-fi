@@ -101,6 +101,26 @@ worker_vars:                               # committed placeholders in wrangler.
   - EMAIL_WORKER_URL                       # real staging email-worker URL (placeholder today)
   - FRESHNESS_ALERT_EMAIL_TO               # real ops recipient (placeholder today)
 
+# ── Feature flags (task 10.1, change product-roadmap-phases-1-4) ──────────
+# API-worker vars, committed "false" in wrangler.jsonc (all env blocks).
+# Parsed as FF_<FLAG> by the api-worker feature-flag middleware; optional
+# FF_ROLLOUT_<FLAG> percentage overrides enable gradual rollout (opt-in,
+# never committed on). Compliance rule: gated features ship flag-off —
+# instant rollback is flipping the var back to "false", no code change.
+feature_flags:                             # all default OFF
+  FF_UNIT_PRICE_EUR_PER_GRAM: false        # €/g unit-price metric on product/offer reads
+  FF_PRICE_ALERTS: false                   # price-alert watchlist API + UI
+  FF_PACKING_OPTIMIZER: false              # packing-optimizer section of basket optimize
+  FF_EVENT_CALCULATOR: false               # event calculator API + page
+  FF_TRIP_CALCULATOR: false                # trip feasibility calculator API + page
+  FF_PRODUCER_DUPE_FINDER: false           # producer dupe finder API + product-page panel
+  FF_CURATED_LISTS: false                  # curated editorial lists API + public pages
+  FF_EXCISE_WHAT_IF: false                 # excise what-if simulator (politically sensitive, R11)
+  FF_GROUP_ORDER_LEDGER: false             # group order ledger (shared sessions)
+# PROMOTION EXPECTATION (staging = review tier): enable a flag here for
+# review against the staging data copy (own tax-rule/merchant data —
+# realistic review); promote to production only after that review passes.
+
 # ── Compliance posture carried over from the K8s staging ──────────────────
 compliance:
   rate_versioning: enforce
