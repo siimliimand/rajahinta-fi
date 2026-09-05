@@ -142,6 +142,8 @@ export interface Env {
   readonly FF_EXCISE_WHAT_IF?: string;
   /** Gate the curated editorial lists API + public list page (default off). */
   readonly FF_CURATED_LISTS?: string;
+  /** Gate the group order ledger API + page — sessions, share-link access, ledger compute (default off). */
+  readonly FF_GROUP_ORDER_LEDGER?: string;
   /** Explicit rollout-percentage override per flag (`FF_ROLLOUT_<FLAG>`). */
   readonly FF_ROLLOUT_NEW_MERCHANT_SOURCE?: string;
   readonly FF_ROLLOUT_NEW_TAX_RULESET?: string;
@@ -158,6 +160,7 @@ export interface Env {
   readonly FF_ROLLOUT_PRODUCER_DUPE_FINDER?: string;
   readonly FF_ROLLOUT_EXCISE_WHAT_IF?: string;
   readonly FF_ROLLOUT_CURATED_LISTS?: string;
+  readonly FF_ROLLOUT_GROUP_ORDER_LEDGER?: string;
 
   // -- Launch gates (task 3.2; names match the Nest LaunchGateService) ------
 

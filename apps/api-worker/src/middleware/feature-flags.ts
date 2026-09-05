@@ -133,6 +133,15 @@ export const FeatureFlag = {
    * never advertises list URLs that would not serve.
    */
   CURATED_LISTS: 'CURATED_LISTS',
+  /**
+   * Gate the group order ledger (task 9.3, change
+   * product-roadmap-phases-1-4): session create/join/add-item/ledger API
+   * and the group order page that consumes it (task 9.4). Spec/design
+   * slug: `enable_group_order_ledger`. Default OFF — instant rollback for
+   * the entire shared-session surface (spec: feature gating — session
+   * creation AND share-link access return the feature-disabled error).
+   */
+  GROUP_ORDER_LEDGER: 'GROUP_ORDER_LEDGER',
 } as const;
 
 export type FeatureFlag = (typeof FeatureFlag)[keyof typeof FeatureFlag];

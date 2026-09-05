@@ -15,6 +15,7 @@
  * | AccountController (/api/v1/account)       | class: SessionAuthGuard; scenarios: FeatureFlagGuard(ADVANCED_FEATURES)  | sessionAuth() per route; + flag on scenarios |
  * | SessionController (/api/v1/account)       | POST session: RateLimit only; rotate/revoke: SessionAuthGuard            | rotate + DELETE session: sessionAuth(); POST session stays public |
  * | PriceAlertsRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/account/alerts) | no Nest counterpart | sessionAuth(), requireFeatureFlag('PRICE_ALERTS'); per-account rate limit registers on the routes (needs the resolved identity) |
+ * | GroupOrderRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/group-orders) | no Nest counterpart | POST create only: sessionAuth(), requireFeatureFlag('GROUP_ORDER_LEDGER'); the token-scoped participant routes carry the flag gate on the routes — NO sessionAuth there (the share token is the capability) |
  * | OpsDashboardController (/ops/health)      | OpsAccessGuard                                                           | opsAccess() |
  * | Ops console (4 controllers, /ops/console/*)| OpsAccessGuard + FeatureFlagGuard(OPERATOR_CONSOLE)                      | opsAccess(), requireFeatureFlag('OPERATOR_CONSOLE') |
  *
@@ -123,6 +124,20 @@ const GUARDED_ROUTES: readonly GuardedRoute[] = [
     methods: ['PATCH', 'DELETE'],
     path: '/api/v1/account/alerts/:alertId',
     use: [sessionAuth(), requireFeatureFlag('PRICE_ALERTS')],
+  },
+
+  // GroupOrderRoutes (task 9.3, change product-roadmap-phases-1-4) — only
+  // the session-create route is owner-authenticated (alerts order: an
+  // anonymous caller gets the 401 envelope, so flag state never leaks to
+  // unauthenticated callers). The token-scoped participant routes
+  // (join/items/ledger) deliberately stay OUT of this table: participants
+  // join by share link without an account (the share token IS the
+  // capability, spec: participant joins by link), so they register the
+  // GROUP_ORDER_LEDGER gate directly on their handlers in the routes file.
+  {
+    methods: ['POST'],
+    path: '/api/v1/group-orders',
+    use: [sessionAuth(), requireFeatureFlag('GROUP_ORDER_LEDGER')],
   },
 
   // SessionController — method-level SessionAuthGuard; POST /session
