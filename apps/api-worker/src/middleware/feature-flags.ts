@@ -105,6 +105,24 @@ export const FeatureFlag = {
    * never produce a capped result).
    */
   TRIP_CALCULATOR: 'TRIP_CALCULATOR',
+  /**
+   * Gate the producer dupe finder API (GET /api/v1/products/:id/dupes,
+   * task 6.3, change product-roadmap-phases-1-4) and the product-page
+   * dupe panel that consumes it (task 6.4). Spec/design slug:
+   * `enable_producer_dupe_finder`. Default OFF — instant rollback until
+   * the curated producer-link store has its first published rows (the
+   * endpoint serves only PUBLISHED evidence-backed links).
+   */
+  PRODUCER_DUPE_FINDER: 'PRODUCER_DUPE_FINDER',
+  /**
+   * Gate the excise what-if simulator API (POST /api/v1/what-if/excise,
+   * task 8.2, change product-roadmap-phases-1-4) and the what-if page +
+   * embeddable widget that consume it (task 8.3). Spec/design slug:
+   * `enable_excise_what_if`. Default OFF — instant rollback; the
+   * simulator is politically sensitive (design R11), so it ships
+   * loudly-hypothetical or not at all.
+   */
+  EXCISE_WHAT_IF: 'EXCISE_WHAT_IF',
 } as const;
 
 export type FeatureFlag = (typeof FeatureFlag)[keyof typeof FeatureFlag];

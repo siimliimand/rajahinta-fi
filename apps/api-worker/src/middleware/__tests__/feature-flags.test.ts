@@ -61,6 +61,9 @@ describe('FeatureFlagService', () => {
         'PRICE_ALERTS',
         'PACKING_OPTIMIZER',
         'EVENT_CALCULATOR',
+        'TRIP_CALCULATOR',
+        'PRODUCER_DUPE_FINDER',
+        'EXCISE_WHAT_IF',
       ].sort(),
     );
   });

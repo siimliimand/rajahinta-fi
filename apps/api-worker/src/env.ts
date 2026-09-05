@@ -136,6 +136,10 @@ export interface Env {
   readonly FF_EVENT_CALCULATOR?: string;
   /** Gate the trip feasibility calculator API + trip page (default off). */
   readonly FF_TRIP_CALCULATOR?: string;
+  /** Gate the producer dupe finder API + product-page dupe panel (default off). */
+  readonly FF_PRODUCER_DUPE_FINDER?: string;
+  /** Gate the excise what-if simulator API + page/widget (default off). */
+  readonly FF_EXCISE_WHAT_IF?: string;
   /** Explicit rollout-percentage override per flag (`FF_ROLLOUT_<FLAG>`). */
   readonly FF_ROLLOUT_NEW_MERCHANT_SOURCE?: string;
   readonly FF_ROLLOUT_NEW_TAX_RULESET?: string;
@@ -149,6 +153,8 @@ export interface Env {
   readonly FF_ROLLOUT_PACKING_OPTIMIZER?: string;
   readonly FF_ROLLOUT_EVENT_CALCULATOR?: string;
   readonly FF_ROLLOUT_TRIP_CALCULATOR?: string;
+  readonly FF_ROLLOUT_PRODUCER_DUPE_FINDER?: string;
+  readonly FF_ROLLOUT_EXCISE_WHAT_IF?: string;
 
   // -- Launch gates (task 3.2; names match the Nest LaunchGateService) ------
 
