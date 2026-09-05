@@ -85,6 +85,16 @@ export const FeatureFlag = {
    * packing suggestion rides along on both cache MISS and HIT payloads.
    */
   PACKING_OPTIMIZER: 'PACKING_OPTIMIZER',
+  /**
+   * Gate the event calculator API (POST /api/v1/event-calc, task 4.3,
+   * change product-roadmap-phases-1-4) and the event page that consumes
+   * it (task 4.4). Spec/design slug: `enable_event_calculator`.
+   * Default OFF — instant rollback until the curated norms dataset has
+   * its first published version and the operator confirmation path is
+   * exercised (a calculator without published norms only ever serves the
+   * explicit empty state).
+   */
+  EVENT_CALCULATOR: 'EVENT_CALCULATOR',
 } as const;
 
 export type FeatureFlag = (typeof FeatureFlag)[keyof typeof FeatureFlag];

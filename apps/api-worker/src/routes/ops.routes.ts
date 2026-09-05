@@ -40,6 +40,10 @@ import { FxRateDatasetService } from '../adapters/core-domain-bridge';
 import { D1FxRateDatasetRepositoryAdapter } from '../../../../packages/data-platform/src/repositories/d1/fx-rate-port.adapter';
 import { D1FxRateRepository } from '../../../../packages/data-platform/src/repositories/d1/fx-rate.repository';
 import { D1MerchantRegistryRepository } from '../../../../packages/data-platform/src/repositories/d1/merchant-registry.repository';
+import {
+  D1ConsumptionNormsRepository,
+  MissingNormSourceCitationError,
+} from '../../../../packages/data-platform/src/repositories/d1/consumption-norms.repository';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 
 // ---------------------------------------------------------------------------
@@ -178,7 +182,37 @@ async function listConfirmations(c: Context<AppEnv>): Promise<Response> {
 
   // Tax rate-review entries: the rate-review store has no D1 counterpart
   // (2.5) — the queue reports none rather than fabricating entries.
-  return c.json({ fx, taxReviews: [] });
+  //
+  // Consumption norms (task 4.1, wired 4.3): the pending review queue,
+  // grouped by versionLabel — the FX dataset-confirmation shape mirrored
+  // for the norms dataset (rows carry the citation the publish guard
+  // requires, so the operator verifies provenance before confirming).
+  const pendingNorms = await new D1ConsumptionNormsRepository(
+    c.env.DB,
+  ).findPending();
+  const byNormVersion = new Map<string, typeof pendingNorms>();
+  for (const norm of pendingNorms) {
+    const rows = byNormVersion.get(norm.versionLabel) ?? [];
+    rows.push(norm);
+    byNormVersion.set(norm.versionLabel, rows);
+  }
+  const consumptionNorms = [...byNormVersion.entries()].map(
+    ([versionLabel, rows]) => ({
+      versionLabel,
+      status: 'PENDING_CONFIRMATION',
+      rows: rows.map((row) => ({
+        id: row.id,
+        drinkType: row.drinkType,
+        eventProfile: row.eventProfile,
+        normValuePerGuestPerHour: row.normValuePerGuestPerHour,
+        sourceCitation: row.sourceCitation,
+        effectiveFrom: row.effectiveFrom,
+        effectiveTo: row.effectiveTo,
+      })),
+    }),
+  );
+
+  return c.json({ fx, taxReviews: [], consumptionNorms });
 }
 
 async function confirmFx(c: Context<AppEnv>): Promise<Response> {
@@ -237,6 +271,73 @@ async function confirmFx(c: Context<AppEnv>): Promise<Response> {
     status: 'PUBLISHED',
     confirmedAt,
     invalidatedVersion,
+  });
+}
+
+/**
+ * Consumption-norms confirmation (task 4.3, wiring the task-4.1
+ * repository) — the FX dataset-confirmation path mirrored: read the row
+ * first so unknown (404) and terminal (409, PUBLISHED is final) are
+ * distinct; the blank-citation refusal is the repository's hard
+ * defensive guard surfaced as 409. Deliberately NO idempotency-version
+ * invalidation (unlike confirmFx): event-calc cache entries embed the
+ * norms version in their key, so a publication makes old-version entries
+ * unreachable rather than stale — invalidating basket/calculator entries
+ * (which carry tax/FX versions) with a norms version would corrupt their
+ * version checks.
+ */
+async function confirmConsumptionNorm(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  validateOperator(dto);
+
+  const repo = new D1ConsumptionNormsRepository(c.env.DB);
+  const audit = new WorkerAuditService(c.env.DB);
+
+  const existing = await repo.findById(id);
+  if (existing === null) {
+    throw new ApiHttpError(404, `Consumption norm ${id} not found`);
+  }
+
+  let published: Awaited<ReturnType<D1ConsumptionNormsRepository['publish']>>;
+  try {
+    published = await repo.publish(id, dto.operator as string);
+  } catch (err) {
+    if (err instanceof MissingNormSourceCitationError) {
+      throw new ApiHttpError(409, {
+        statusCode: 409,
+        message: err.message,
+        error: 'MissingNormSourceCitation',
+      });
+    }
+    throw err;
+  }
+  if (published === null) {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `Consumption norm ${id} is not pending confirmation (PUBLISHED is terminal)`,
+      error: 'InvalidTransition',
+    });
+  }
+
+  const confirmedAt = published.confirmedAt?.toISOString() ?? new Date().toISOString();
+  await audit.logChange({
+    entityType: 'consumption_norm',
+    entityId: published.versionLabel,
+    action: 'confirmed',
+    author: dto.operator as string,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Consumption norms publication confirmed via operator console',
+    previousValue: { status: 'PENDING_CONFIRMATION', id: published.id },
+    newValue: { status: 'PUBLISHED', confirmedAt },
+  });
+
+  return c.json({
+    id: published.id,
+    versionLabel: published.versionLabel,
+    status: 'PUBLISHED',
+    confirmedAt,
   });
 }
 
@@ -369,6 +470,10 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
 
   app.get('/ops/console/confirmations', listConfirmations);
   app.post('/ops/console/confirmations/fx/:id/confirm', confirmFx);
+  app.post(
+    '/ops/console/confirmations/consumption-norms/:id/confirm',
+    confirmConsumptionNorm,
+  );
   app.post('/ops/console/confirmations/tax/:id/approve', approveTaxReview);
   app.post('/ops/console/confirmations/tax/:id/reject', rejectTaxReview);
 
