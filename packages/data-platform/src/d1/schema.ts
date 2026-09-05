@@ -1361,6 +1361,61 @@ export const groupOrderItems = sqliteTable(
 );
 
 /**
+ * Ferry offers — the curated affiliate slot behind the trip feasibility
+ * calculator (task 5.3, change product-roadmap-phases-1-4, design R8).
+ *
+ * One row per curated ferry operator link. Columns are exactly the R8
+ * set (operator, route label, url, status) plus the created_at stamp —
+ * data minimization forbids optional fields "for later" (no campaign
+ * fields, no ranking weight, no price data: an affiliate row that could
+ * influence a calculation is unrepresentable by construction, which is
+ * what makes the affiliate-neutrality compliance test structurally
+ * trivial — the trip route reads this table on a data path that never
+ * touches the calculation input).
+ *
+ * Status lifecycle: rows start DRAFT (operator-console work in
+ * progress, invisible to the public trip API) and move to PUBLISHED by
+ * the audited console publish action; PUBLISHED is terminal for the
+ * status — content comes down by deletion, which the audit trail
+ * records. The stored url never leaves the operator console: the
+ * public API returns redirector-ready references and the outbound
+ * redirect controller serves the click (R8: click tracking reuses the
+ * existing redirect controller).
+ */
+export const ferryOffers = sqliteTable(
+  'ferry_offers',
+  {
+    id: integer('id').primaryKey(),
+    /** Ferry operator name as presented on the partner block (e.g. "Viking Line"). */
+    operator: text('operator', { length: 128 }).notNull(),
+    /** Human route label (e.g. "Helsinki–Tallinn"). */
+    routeLabel: text('route_label', { length: 128 }).notNull(),
+    /** Outbound link target — console-only; the public surface sees the redirect reference. */
+    url: text('url').notNull(),
+    /** Lifecycle: DRAFT until the audited console publish action; PUBLISHED is terminal. */
+    status: text('status', { length: 16 }).default('DRAFT').notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // Serves the public block's deterministic (operator, route_label, id)
+    // ordering — affiliate data must not influence anything, including
+    // its own ordering surprises.
+    index('ferry_offers_operator_route_label_idx').on(table.operator, table.routeLabel),
+    // The public block reads published rows; the console queue reads drafts.
+    index('ferry_offers_status_idx').on(table.status),
+    check(
+      'ferry_offers_status_check',
+      sql`${table.status} IN ('DRAFT', 'PUBLISHED')`,
+    ),
+    // A blank operator/route/url is a curation bug, not an offer (the
+    // group_order_sessions share-token check precedent).
+    check('ferry_offers_operator_check', sql`${table.operator} <> ''`),
+    check('ferry_offers_route_label_check', sql`${table.routeLabel} <> ''`),
+    check('ferry_offers_url_check', sql`${table.url} <> ''`),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -1393,4 +1448,5 @@ export const d1Schema = {
   travellerAllowanceLimits,
   groupOrderSessions,
   groupOrderItems,
+  ferryOffers,
 };

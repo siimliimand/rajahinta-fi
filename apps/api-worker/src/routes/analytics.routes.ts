@@ -21,6 +21,7 @@ import { parseIntParam } from './support';
 import { requireRateLimit } from '../middleware/rate-limit';
 import { getClickCounts, recordClick } from '../do/client';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
+import { D1FerryOffersRepository } from '../../../../packages/data-platform/src/repositories/d1/ferry-offers.repository';
 
 /** Fields that are disallowed in Phase 1 click payloads (controller parity). */
 const FORBIDDEN_FIELDS = new Set([
@@ -103,6 +104,36 @@ async function outbound(c: Context<AppEnv>): Promise<Response> {
   return c.redirect(offer.sourceUrl, 302);
 }
 
+// ---------------------------------------------------------------------------
+// GET /api/v1/outbound/ferry/:offerId
+// ---------------------------------------------------------------------------
+
+/**
+ * Ferry-offer outbound redirect (task 5.3, design R8: "click tracking
+ * reuses the existing outbound redirect controller") — the exact
+ * outbound() mechanics over the curated ferry_offers table instead of
+ * retail_offers: resolve → fire-and-forget click (merchant = the ferry
+ * operator) → 302. The stored url never appears in any public API
+ * payload; this handler is its only public reader.
+ */
+async function outboundFerry(c: Context<AppEnv>): Promise<Response> {
+  const offerId = parseIntParam(c, 'offerId');
+  const offer = await new D1FerryOffersRepository(c.env.DB).findById(offerId);
+
+  // PUBLISHED only: a DRAFT offer has no public reference anywhere (the
+  // trip block excludes it), so the redirect must not leak its url
+  // either — 404, same as unknown.
+  if (offer === null || offer.status !== 'PUBLISHED') {
+    throw new ApiHttpError(404, `Ferry offer ${offerId} not found`);
+  }
+
+  // Fire-and-forget — the client never throws; lost analytics must not
+  // break a redirect (outbound() parity).
+  void recordClick(c.env, offer.operator, offer.url);
+
+  return c.redirect(offer.url, 302);
+}
+
 /** Register the analytics handlers (no Nest guards on these routes). */
 export function registerAnalyticsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   // AnalyticsController — no rate limit in Nest.
@@ -110,5 +141,8 @@ export function registerAnalyticsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   // OutboundRedirectController — RateLimitGuard, DEFAULT profile.
   app.on('GET', '/api/v1/outbound/:offerId', requireRateLimit('DEFAULT'));
   app.get('/api/v1/outbound/:offerId', outbound);
+  // Ferry-offer sibling (task 5.3, R8) — same DEFAULT profile and mechanics.
+  app.on('GET', '/api/v1/outbound/ferry/:offerId', requireRateLimit('DEFAULT'));
+  app.get('/api/v1/outbound/ferry/:offerId', outboundFerry);
   return app;
 }

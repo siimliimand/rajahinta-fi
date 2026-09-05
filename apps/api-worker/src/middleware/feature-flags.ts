@@ -95,6 +95,16 @@ export const FeatureFlag = {
    * explicit empty state).
    */
   EVENT_CALCULATOR: 'EVENT_CALCULATOR',
+  /**
+   * Gate the trip feasibility calculator API (POST /api/v1/trip-feasibility,
+   * task 5.3, change product-roadmap-phases-1-4) and the trip page that
+   * consumes it (task 5.4). Spec/design slug: `enable_trip_calculator`.
+   * Default OFF — instant rollback until the curated allowance dataset has
+   * its first published version and the ferry-offer curation path is
+   * exercised (a calculator without a published allowance version can
+   * never produce a capped result).
+   */
+  TRIP_CALCULATOR: 'TRIP_CALCULATOR',
 } as const;
 
 export type FeatureFlag = (typeof FeatureFlag)[keyof typeof FeatureFlag];

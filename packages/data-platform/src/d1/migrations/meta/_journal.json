@@ -57,6 +57,13 @@
       "when": 1788849616147,
       "tag": "0008_group_order_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788936016147,
+      "tag": "0009_ferry_offers",
+      "breakpoints": true
     }
   ]
 }

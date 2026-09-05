@@ -2,7 +2,9 @@
  * Operator-console API port (task 3.8) — Hono re-host of the four ops
  * console controllers (packages/application-api/src/ops/): governance
  * grants, dataset confirmations (incl. FX publish), the correction queue,
- * and the audit trail.
+ * and the audit trail. Task 5.3 (change product-roadmap-phases-1-4)
+ * adds the ferry-offer CRUD — the curated affiliate slot's audited
+ * management surface (design R8).
  *
  * Guard composition (3.2 route-coverage map): the /ops/console/* prefix
  * already carries opsAccess() → requireFeatureFlag('OPERATOR_CONSOLE') —
@@ -44,6 +46,10 @@ import {
   D1ConsumptionNormsRepository,
   MissingNormSourceCitationError,
 } from '../../../../packages/data-platform/src/repositories/d1/consumption-norms.repository';
+import {
+  D1FerryOffersRepository,
+  FerryOfferImmutableError,
+} from '../../../../packages/data-platform/src/repositories/d1/ferry-offers.repository';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 
 // ---------------------------------------------------------------------------
@@ -341,6 +347,236 @@ async function confirmConsumptionNorm(c: Context<AppEnv>): Promise<Response> {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Ferry offers — curated affiliate slot CRUD (task 5.3, design R8)
+// ---------------------------------------------------------------------------
+
+/**
+ * The console DTO's `ferryOperator` is the OFFER's operator (the ferry
+ * company, R8's "operator" column); the acting console operator's
+ * identity stays in the shared `operator` field (validateOperator), so
+ * the two never collide in one body.
+ */
+const FERRY_OPERATOR_MESSAGE = 'ferryOperator must be a non-empty string (max 128 chars)';
+const ROUTE_LABEL_MESSAGE = 'routeLabel must be a non-empty string (max 128 chars)';
+const URL_MESSAGE = 'url must be an http(s) URL (max 2048 chars)';
+
+const ferryOfferContentSchema = z.object({
+  ferryOperator: z
+    .string({
+      required_error: FERRY_OPERATOR_MESSAGE,
+      invalid_type_error: FERRY_OPERATOR_MESSAGE,
+    })
+    .min(1, FERRY_OPERATOR_MESSAGE)
+    .max(128, FERRY_OPERATOR_MESSAGE),
+  routeLabel: z
+    .string({
+      required_error: ROUTE_LABEL_MESSAGE,
+      invalid_type_error: ROUTE_LABEL_MESSAGE,
+    })
+    .min(1, ROUTE_LABEL_MESSAGE)
+    .max(128, ROUTE_LABEL_MESSAGE),
+  url: z
+    .string({
+      required_error: URL_MESSAGE,
+      invalid_type_error: URL_MESSAGE,
+    })
+    .min(1, URL_MESSAGE)
+    .max(2048, URL_MESSAGE)
+    .regex(/^https?:\/\//, URL_MESSAGE),
+});
+
+const ferryOfferUpdateSchema = ferryOfferContentSchema.partial();
+
+/** Parse the shared operator pair (imperative check, controller parity). */
+function requireOperator(dto: Record<string, unknown>): string {
+  validateOperator(dto);
+  return (dto.operator as string).trim();
+}
+
+/** zod-parse offer content, mapping issues to the 400 ValidationError envelope. */
+function parseFerryContent<T>(schema: z.ZodType<T>, body: Record<string, unknown>): T {
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    const message = parsed.error.issues.map((issue) => issue.message).join('; ');
+    throw new ApiHttpError(400, {
+      statusCode: 400,
+      message,
+      error: 'ValidationError',
+    });
+  }
+  return parsed.data;
+}
+
+async function listFerryOffers(c: Context<AppEnv>): Promise<Response> {
+  const offers = await new D1FerryOffersRepository(c.env.DB).listAll();
+  // Console-only data: unlike the public trip API this DOES carry the
+  // raw url — the /ops/console guard prefix is its only door.
+  return c.json({
+    items: offers.map((offer) => ({
+      id: offer.id,
+      ferryOperator: offer.operator,
+      routeLabel: offer.routeLabel,
+      url: offer.url,
+      status: offer.status,
+      createdAt: offer.createdAt.toISOString(),
+    })),
+    total: offers.length,
+  });
+}
+
+async function createFerryOffer(c: Context<AppEnv>): Promise<Response> {
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const content = parseFerryContent(ferryOfferContentSchema, dto);
+
+  const created = await new D1FerryOffersRepository(c.env.DB).create({
+    operator: content.ferryOperator,
+    routeLabel: content.routeLabel,
+    url: content.url,
+  });
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'ferry_offer',
+    entityId: String(created.id),
+    action: 'created',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Ferry offer created via operator console',
+    newValue: { operator: created.operator, routeLabel: created.routeLabel, status: created.status },
+  });
+
+  return c.json({
+    id: created.id,
+    ferryOperator: created.operator,
+    routeLabel: created.routeLabel,
+    status: created.status,
+  });
+}
+
+async function updateFerryOffer(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const content = parseFerryContent(ferryOfferUpdateSchema, dto);
+
+  const repo = new D1FerryOffersRepository(c.env.DB);
+  const existing = await repo.findById(id);
+  if (existing === null) {
+    throw new ApiHttpError(404, `Ferry offer ${id} not found`);
+  }
+
+  let updated: Awaited<ReturnType<D1FerryOffersRepository['update']>>;
+  try {
+    updated = await repo.update(id, {
+      operator: content.ferryOperator,
+      routeLabel: content.routeLabel,
+      url: content.url,
+    });
+  } catch (err) {
+    if (err instanceof FerryOfferImmutableError) {
+      throw new ApiHttpError(409, {
+        statusCode: 409,
+        message: err.message,
+        error: 'ImmutablePublishedOffer',
+      });
+    }
+    throw err;
+  }
+  if (updated === null) {
+    throw new ApiHttpError(404, `Ferry offer ${id} not found`);
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'ferry_offer',
+    entityId: String(id),
+    action: 'updated',
+    author: actor,
+    reason: (dto.note as string | undefined)?.trim() || 'Ferry offer updated via operator console',
+    previousValue: {
+      operator: existing.operator,
+      routeLabel: existing.routeLabel,
+      status: existing.status,
+    },
+    newValue: { operator: updated.operator, routeLabel: updated.routeLabel, status: updated.status },
+  });
+
+  return c.json({
+    id: updated.id,
+    ferryOperator: updated.operator,
+    routeLabel: updated.routeLabel,
+    status: updated.status,
+  });
+}
+
+async function publishFerryOffer(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+
+  const repo = new D1FerryOffersRepository(c.env.DB);
+  const existing = await repo.findById(id);
+  if (existing === null) {
+    throw new ApiHttpError(404, `Ferry offer ${id} not found`);
+  }
+
+  // PUBLISHED is terminal: null ⇒ 409 (consumption-norms confirm parity).
+  const published = await repo.publish(id);
+  if (published === null) {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `Ferry offer ${id} is not a draft (PUBLISHED is terminal)`,
+      error: 'InvalidTransition',
+    });
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'ferry_offer',
+    entityId: String(id),
+    action: 'confirmed',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Ferry offer published via operator console',
+    previousValue: { status: 'DRAFT' },
+    newValue: { status: 'PUBLISHED', operator: published.operator, routeLabel: published.routeLabel },
+  });
+
+  return c.json({ id: published.id, status: 'PUBLISHED' });
+}
+
+async function deleteFerryOffer(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  if (typeof dto.reason !== 'string' || dto.reason.trim() === '') {
+    throw new ApiHttpError(400, 'reason is required for deletion');
+  }
+
+  const repo = new D1FerryOffersRepository(c.env.DB);
+  const existing = await repo.findById(id);
+  if (existing === null) {
+    throw new ApiHttpError(404, `Ferry offer ${id} not found`);
+  }
+  await repo.remove(id);
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'ferry_offer',
+    entityId: String(id),
+    action: 'deleted',
+    author: actor,
+    reason: dto.reason.trim(),
+    previousValue: {
+      operator: existing.operator,
+      routeLabel: existing.routeLabel,
+      status: existing.status,
+    },
+  });
+
+  return c.json({ id, deleted: true });
+}
+
 function taxReviewsUnavailable(): never {
   throw new ApiHttpError(503, {
     statusCode: 503,
@@ -480,6 +716,16 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.get('/ops/console/corrections', listCorrections);
   app.post('/ops/console/corrections', openCorrection);
   app.post('/ops/console/corrections/:id/resolve', resolveCorrection);
+
+  // Ferry offers (task 5.3, R8) — audited CRUD over the curated
+  // affiliate slot. POST-style mutations match the console's confirm
+  // path; the DELETE is POST :id/delete so the acting operator + reason
+  // travel in the body like every other console mutation.
+  app.get('/ops/console/ferry-offers', listFerryOffers);
+  app.post('/ops/console/ferry-offers', createFerryOffer);
+  app.post('/ops/console/ferry-offers/:id', updateFerryOffer);
+  app.post('/ops/console/ferry-offers/:id/publish', publishFerryOffer);
+  app.post('/ops/console/ferry-offers/:id/delete', deleteFerryOffer);
 
   app.get('/ops/console/audit', recentAudit);
   return app;
