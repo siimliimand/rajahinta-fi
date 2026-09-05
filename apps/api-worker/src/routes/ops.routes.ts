@@ -4,7 +4,9 @@
  * grants, dataset confirmations (incl. FX publish), the correction queue,
  * and the audit trail. Task 5.3 (change product-roadmap-phases-1-4)
  * adds the ferry-offer CRUD — the curated affiliate slot's audited
- * management surface (design R8).
+ * management surface (design R8). Task 6.1 adds the producer-link CRUD
+ * — the curated sibling-product evidence surface (design R9), exact
+ * normalized-key matching only (spec: producer-matching).
  *
  * Guard composition (3.2 route-coverage map): the /ops/console/* prefix
  * already carries opsAccess() → requireFeatureFlag('OPERATOR_CONSOLE') —
@@ -50,6 +52,10 @@ import {
   D1FerryOffersRepository,
   FerryOfferImmutableError,
 } from '../../../../packages/data-platform/src/repositories/d1/ferry-offers.repository';
+import {
+  D1ProducerLinksRepository,
+  ProducerLinkImmutableError,
+} from '../../../../packages/data-platform/src/repositories/d1/producer-links.repository';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 
 // ---------------------------------------------------------------------------
@@ -394,8 +400,8 @@ function requireOperator(dto: Record<string, unknown>): string {
   return (dto.operator as string).trim();
 }
 
-/** zod-parse offer content, mapping issues to the 400 ValidationError envelope. */
-function parseFerryContent<T>(schema: z.ZodType<T>, body: Record<string, unknown>): T {
+/** zod-parse curated-content DTOs, mapping issues to the 400 ValidationError envelope. */
+function parseConsoleContent<T>(schema: z.ZodType<T>, body: Record<string, unknown>): T {
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
     const message = parsed.error.issues.map((issue) => issue.message).join('; ');
@@ -428,7 +434,7 @@ async function listFerryOffers(c: Context<AppEnv>): Promise<Response> {
 async function createFerryOffer(c: Context<AppEnv>): Promise<Response> {
   const dto = await readBody(c);
   const actor = requireOperator(dto);
-  const content = parseFerryContent(ferryOfferContentSchema, dto);
+  const content = parseConsoleContent(ferryOfferContentSchema, dto);
 
   const created = await new D1FerryOffersRepository(c.env.DB).create({
     operator: content.ferryOperator,
@@ -459,7 +465,7 @@ async function updateFerryOffer(c: Context<AppEnv>): Promise<Response> {
   const id = parseIntParam(c, 'id');
   const dto = await readBody(c);
   const actor = requireOperator(dto);
-  const content = parseFerryContent(ferryOfferUpdateSchema, dto);
+  const content = parseConsoleContent(ferryOfferUpdateSchema, dto);
 
   const repo = new D1FerryOffersRepository(c.env.DB);
   const existing = await repo.findById(id);
@@ -572,6 +578,286 @@ async function deleteFerryOffer(c: Context<AppEnv>): Promise<Response> {
       routeLabel: existing.routeLabel,
       status: existing.status,
     },
+  });
+
+  return c.json({ id, deleted: true });
+}
+
+// ---------------------------------------------------------------------------
+// Producer links — curated sibling-product evidence CRUD (task 6.1, R9)
+// ---------------------------------------------------------------------------
+
+/**
+ * Every response and audit payload carries the COMPLETE evidence
+ * (producer key, manufacturer, source URL, reviewer, reviewedAt) —
+ * R9 makes an unevidenced row unrepresentable at the schema level, so
+ * the console never has a partial-evidence state to hide. The matching
+ * path behind these rows is an exact normalized-key lookup; no
+ * scoring/similarity field exists in the DTO surface either.
+ */
+const PRODUCER_KEY_MESSAGE = 'producerKey must be a non-empty string (max 256 chars)';
+const MANUFACTURER_MESSAGE = 'manufacturer must be a non-empty string (max 256 chars)';
+const LINK_SOURCE_URL_MESSAGE = 'sourceUrl must be an http(s) URL (max 2048 chars)';
+const REVIEWER_MESSAGE = 'reviewer must be a non-empty string (max 128 chars)';
+const REVIEWED_AT_MESSAGE = 'reviewedAt must be an ISO-8601 timestamp';
+const LINK_PRODUCT_ID_MESSAGE = 'must be a positive integer';
+
+const producerLinkContentSchema = z.object({
+  alkoProductId: z
+    .number({
+      required_error: `alkoProductId ${LINK_PRODUCT_ID_MESSAGE}`,
+      invalid_type_error: `alkoProductId ${LINK_PRODUCT_ID_MESSAGE}`,
+    })
+    .int(`alkoProductId ${LINK_PRODUCT_ID_MESSAGE}`)
+    .positive(`alkoProductId ${LINK_PRODUCT_ID_MESSAGE}`),
+  siblingProductId: z
+    .number({
+      required_error: `siblingProductId ${LINK_PRODUCT_ID_MESSAGE}`,
+      invalid_type_error: `siblingProductId ${LINK_PRODUCT_ID_MESSAGE}`,
+    })
+    .int(`siblingProductId ${LINK_PRODUCT_ID_MESSAGE}`)
+    .positive(`siblingProductId ${LINK_PRODUCT_ID_MESSAGE}`),
+  producerKey: z
+    .string({
+      required_error: PRODUCER_KEY_MESSAGE,
+      invalid_type_error: PRODUCER_KEY_MESSAGE,
+    })
+    .min(1, PRODUCER_KEY_MESSAGE)
+    .max(256, PRODUCER_KEY_MESSAGE),
+  manufacturer: z
+    .string({
+      required_error: MANUFACTURER_MESSAGE,
+      invalid_type_error: MANUFACTURER_MESSAGE,
+    })
+    .min(1, MANUFACTURER_MESSAGE)
+    .max(256, MANUFACTURER_MESSAGE),
+  sourceUrl: z
+    .string({
+      required_error: LINK_SOURCE_URL_MESSAGE,
+      invalid_type_error: LINK_SOURCE_URL_MESSAGE,
+    })
+    .min(1, LINK_SOURCE_URL_MESSAGE)
+    .max(2048, LINK_SOURCE_URL_MESSAGE)
+    .regex(/^https?:\/\//, LINK_SOURCE_URL_MESSAGE),
+  reviewer: z
+    .string({
+      required_error: REVIEWER_MESSAGE,
+      invalid_type_error: REVIEWER_MESSAGE,
+    })
+    .min(1, REVIEWER_MESSAGE)
+    .max(128, REVIEWER_MESSAGE),
+  reviewedAt: z
+    .string({
+      required_error: REVIEWED_AT_MESSAGE,
+      invalid_type_error: REVIEWED_AT_MESSAGE,
+    })
+    .min(1, REVIEWED_AT_MESSAGE)
+    .refine((value) => !Number.isNaN(Date.parse(value)), REVIEWED_AT_MESSAGE),
+});
+
+const producerLinkUpdateSchema = producerLinkContentSchema.partial();
+
+/** The content fields shared by every producer-link audit payload. */
+function producerLinkEvidence(link: {
+  alkoProductId: number;
+  siblingProductId: number;
+  producerKey: string;
+  manufacturer: string;
+  sourceUrl: string;
+  reviewer: string;
+  status: string;
+}): Record<string, unknown> {
+  return {
+    alkoProductId: link.alkoProductId,
+    siblingProductId: link.siblingProductId,
+    producerKey: link.producerKey,
+    manufacturer: link.manufacturer,
+    sourceUrl: link.sourceUrl,
+    reviewer: link.reviewer,
+    status: link.status,
+  };
+}
+
+/** A link pairing a product with itself is a curation bug (schema CHECK too). */
+function requireDistinctProducts(alkoProductId: number, siblingProductId: number): void {
+  if (alkoProductId === siblingProductId) {
+    throw new ApiHttpError(
+      400,
+      'alkoProductId and siblingProductId must differ (a product is its own trivial sibling)',
+    );
+  }
+}
+
+async function listProducerLinks(c: Context<AppEnv>): Promise<Response> {
+  const links = await new D1ProducerLinksRepository(c.env.DB).listAll();
+  return c.json({
+    items: links.map((link) => ({
+      id: link.id,
+      alkoProductId: link.alkoProductId,
+      siblingProductId: link.siblingProductId,
+      producerKey: link.producerKey,
+      manufacturer: link.manufacturer,
+      sourceUrl: link.sourceUrl,
+      reviewer: link.reviewer,
+      reviewedAt: link.reviewedAt.toISOString(),
+      status: link.status,
+      createdAt: link.createdAt.toISOString(),
+    })),
+    total: links.length,
+  });
+}
+
+async function createProducerLink(c: Context<AppEnv>): Promise<Response> {
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const content = parseConsoleContent(producerLinkContentSchema, dto);
+  requireDistinctProducts(content.alkoProductId, content.siblingProductId);
+
+  const created = await new D1ProducerLinksRepository(c.env.DB).create({
+    alkoProductId: content.alkoProductId,
+    siblingProductId: content.siblingProductId,
+    // The repository normalizes the key before persistence — the
+    // stored (and echoed) form is always normalized.
+    producerKey: content.producerKey,
+    manufacturer: content.manufacturer,
+    sourceUrl: content.sourceUrl,
+    reviewer: content.reviewer,
+    reviewedAt: content.reviewedAt,
+  });
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'producer_link',
+    entityId: String(created.id),
+    action: 'created',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Producer link created via operator console',
+    newValue: producerLinkEvidence(created),
+  });
+
+  return c.json({
+    id: created.id,
+    alkoProductId: created.alkoProductId,
+    siblingProductId: created.siblingProductId,
+    producerKey: created.producerKey,
+    status: created.status,
+  });
+}
+
+async function updateProducerLink(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const content = parseConsoleContent(producerLinkUpdateSchema, dto);
+
+  const repo = new D1ProducerLinksRepository(c.env.DB);
+  const existing = await repo.findById(id);
+  if (existing === null) {
+    throw new ApiHttpError(404, `Producer link ${id} not found`);
+  }
+
+  // Self-link check on the MERGED values — a patch pairing the row
+  // with itself is rejected before the repository (and its CHECK) see it.
+  requireDistinctProducts(
+    content.alkoProductId ?? existing.alkoProductId,
+    content.siblingProductId ?? existing.siblingProductId,
+  );
+
+  let updated: Awaited<ReturnType<D1ProducerLinksRepository['update']>>;
+  try {
+    updated = await repo.update(id, content);
+  } catch (err) {
+    if (err instanceof ProducerLinkImmutableError) {
+      throw new ApiHttpError(409, {
+        statusCode: 409,
+        message: err.message,
+        error: 'ImmutablePublishedLink',
+      });
+    }
+    throw err;
+  }
+  if (updated === null) {
+    throw new ApiHttpError(404, `Producer link ${id} not found`);
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'producer_link',
+    entityId: String(id),
+    action: 'updated',
+    author: actor,
+    reason: (dto.note as string | undefined)?.trim() || 'Producer link updated via operator console',
+    previousValue: producerLinkEvidence(existing),
+    newValue: producerLinkEvidence(updated),
+  });
+
+  return c.json({
+    id: updated.id,
+    alkoProductId: updated.alkoProductId,
+    siblingProductId: updated.siblingProductId,
+    producerKey: updated.producerKey,
+    status: updated.status,
+  });
+}
+
+async function publishProducerLink(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+
+  const repo = new D1ProducerLinksRepository(c.env.DB);
+  const existing = await repo.findById(id);
+  if (existing === null) {
+    throw new ApiHttpError(404, `Producer link ${id} not found`);
+  }
+
+  // PUBLISHED is terminal: null ⇒ 409 (ferry-offer parity).
+  const published = await repo.publish(id);
+  if (published === null) {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `Producer link ${id} is not a draft (PUBLISHED is terminal)`,
+      error: 'InvalidTransition',
+    });
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'producer_link',
+    entityId: String(id),
+    action: 'confirmed',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Producer link published via operator console',
+    previousValue: { status: 'DRAFT' },
+    newValue: producerLinkEvidence(published),
+  });
+
+  return c.json({ id: published.id, status: 'PUBLISHED' });
+}
+
+async function deleteProducerLink(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  if (typeof dto.reason !== 'string' || dto.reason.trim() === '') {
+    throw new ApiHttpError(400, 'reason is required for deletion');
+  }
+
+  const repo = new D1ProducerLinksRepository(c.env.DB);
+  const existing = await repo.findById(id);
+  if (existing === null) {
+    throw new ApiHttpError(404, `Producer link ${id} not found`);
+  }
+  await repo.remove(id);
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'producer_link',
+    entityId: String(id),
+    action: 'deleted',
+    author: actor,
+    reason: dto.reason.trim(),
+    previousValue: producerLinkEvidence(existing),
   });
 
   return c.json({ id, deleted: true });
@@ -726,6 +1012,17 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.post('/ops/console/ferry-offers/:id', updateFerryOffer);
   app.post('/ops/console/ferry-offers/:id/publish', publishFerryOffer);
   app.post('/ops/console/ferry-offers/:id/delete', deleteFerryOffer);
+
+  // Producer links (task 6.1, R9) — audited CRUD over the curated
+  // sibling-product evidence. Same POST-style mutation shape as the
+  // ferry offers: the DELETE is POST :id/delete so the acting operator
+  // + reason travel in the body like every other console mutation.
+  // Writes are console-only; the public dupes API (6.3) only reads.
+  app.get('/ops/console/producer-links', listProducerLinks);
+  app.post('/ops/console/producer-links', createProducerLink);
+  app.post('/ops/console/producer-links/:id', updateProducerLink);
+  app.post('/ops/console/producer-links/:id/publish', publishProducerLink);
+  app.post('/ops/console/producer-links/:id/delete', deleteProducerLink);
 
   app.get('/ops/console/audit', recentAudit);
   return app;

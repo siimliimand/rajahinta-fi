@@ -64,6 +64,13 @@
       "when": 1788936016147,
       "tag": "0009_ferry_offers",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789022416147,
+      "tag": "0010_producer_links",
+      "breakpoints": true
     }
   ]
 }

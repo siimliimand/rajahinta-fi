@@ -1416,6 +1416,86 @@ export const ferryOffers = sqliteTable(
 );
 
 /**
+ * Producer links — curated sibling-product evidence for the producer
+ * dupe finder (task 6.1, change product-roadmap-phases-1-4, design
+ * R9, spec: producer-matching).
+ *
+ * One row per (Alko product, foreign-shop sibling) pair, curated only
+ * through the audited operator console or the validated import script.
+ * The R9 evidence columns — producer_key, manufacturer, source_url,
+ * plus reviewer and reviewed_at — are NOT NULL and non-empty (CHECKs):
+ * an unevidenced row is unrepresentable at the schema level.
+ *
+ * Matching is an EXACT lookup on normalized producer keys — plain
+ * indexed equality, no scoring/similarity/fuzzy path exists anywhere
+ * in the module (binding spec requirement; the repository normalizes
+ * keys on write and lookup via its exported pure rule). No ranking
+ * weight, taste profile, or confidence column exists by design — the
+ * 6.5 source-level compliance assertion depends on that absence.
+ *
+ * Status lifecycle follows ferry_offers: DRAFT work in progress →
+ * audited one-way publish → PUBLISHED terminal; public reads see only
+ * PUBLISHED rows. Product FKs need no cascade — products are never
+ * deleted (the priceAlerts precedent) — and a self-link (a product
+ * paired with itself) is a curation bug, unrepresentable at rest.
+ */
+export const producerLinks = sqliteTable(
+  'producer_links',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to product_master — the Alko product the link starts from. */
+    alkoProductId: integer('alko_product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** FK to product_master — the foreign-shop sibling it evidences. */
+    siblingProductId: integer('sibling_product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /**
+     * Producer key in NORMALIZED form (trim + lowercase + whitespace
+     * collapse — the repository's exported rule) — the exact-lookup
+     * matching key; the raw form is never persisted.
+     */
+    producerKey: text('producer_key', { length: 256 }).notNull(),
+    /** Manufacturer behind the link — evidence presented with every sibling. */
+    manufacturer: text('manufacturer', { length: 256 }).notNull(),
+    /** Verifiable source URL for the sibling claim — evidence, not an outbound target. */
+    sourceUrl: text('source_url').notNull(),
+    /** Operator who reviewed the link — the curation audit face of R9. */
+    reviewer: text('reviewer', { length: 128 }).notNull(),
+    /** When the review happened — ISO-8601 TEXT (design D2 timestamp rule). */
+    reviewedAt: text('reviewed_at').notNull(),
+    /** Lifecycle: DRAFT until the audited console publish action; PUBLISHED is terminal. */
+    status: text('status', { length: 16 }).default('DRAFT').notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // The exact lookup's index — equality on the normalized key is the
+    // ONLY matching path (spec: no similarity scoring).
+    index('producer_links_producer_key_idx').on(table.producerKey),
+    // Product-scoped reads (console listing, the dupes endpoint).
+    index('producer_links_alko_product_id_idx').on(table.alkoProductId),
+    check(
+      'producer_links_status_check',
+      sql`${table.status} IN ('DRAFT', 'PUBLISHED')`,
+    ),
+    // A blank evidence/review field is a curation bug, not a link
+    // (R9: unevidenced rows are unrepresentable — the ferry_offers
+    // non-empty CHECK precedent).
+    check('producer_links_producer_key_check', sql`${table.producerKey} <> ''`),
+    check('producer_links_manufacturer_check', sql`${table.manufacturer} <> ''`),
+    check('producer_links_source_url_check', sql`${table.sourceUrl} <> ''`),
+    check('producer_links_reviewer_check', sql`${table.reviewer} <> ''`),
+    check('producer_links_reviewed_at_check', sql`${table.reviewedAt} <> ''`),
+    // A product is its own trivial sibling — never returnable.
+    check(
+      'producer_links_self_link_check',
+      sql`${table.alkoProductId} <> ${table.siblingProductId}`,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -1449,4 +1529,5 @@ export const d1Schema = {
   groupOrderSessions,
   groupOrderItems,
   ferryOffers,
+  producerLinks,
 };
