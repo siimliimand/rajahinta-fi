@@ -455,6 +455,26 @@ export {
 } from './eventcalc/eventcalc.types';
 
 // ---------------------------------------------------------------------------
+// What-if excise simulator — hypothetical rate substitution through the
+// excise math (pure, ephemeral, no persistence; spec excise-what-if-simulator)
+// ---------------------------------------------------------------------------
+
+export { calculateWhatIfExcise } from './whatif/whatif';
+export { WHATIF_DISCLAIMER_FI, WHATIF_DISCLAIMER_EN } from './whatif/whatif.disclaimer';
+export { InvalidWhatIfInputError, MixedTaxDatasetVersionsError } from './whatif/whatif.types';
+export type {
+  WhatIfScenarioInput,
+  WhatIfScenarioResult,
+  WhatIfProductInput,
+  WhatIfBaselineRule,
+  WhatIfProductLine,
+  WhatIfBaselineExcise,
+  WhatIfHypotheticalExcise,
+  WhatIfTotals,
+  WhatIfInputErrorReason,
+} from './whatif/whatif.types';
+
+// ---------------------------------------------------------------------------
 // Ranking & Sorting — objective sort orders for beverage price comparison
 // ---------------------------------------------------------------------------
 
