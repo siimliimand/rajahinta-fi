@@ -43,6 +43,7 @@ import {
 } from '@/components/ui';
 import type { BadgeTone } from '@/components/ui';
 import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
+import BasketPackingPanel from './BasketPackingPanel';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -382,14 +383,20 @@ function OptimizationCombination({
 interface BasketResultsProps {
   /** Full optimization result from the API. */
   readonly result: BasketOptimizationResult;
+  /**
+   * Product names from the basket builder, keyed by product ID — lets the
+   * packing section name excluded products instead of bare IDs.
+   */
+  readonly productNames?: ReadonlyMap<number, string>;
 }
 
 /**
  * Displays the full basket optimization result: recommended combination,
- * per-store breakdowns, confidence, disclaimer, and up to three cost-ordered
- * alternatives with identical neutral styling.
+ * per-store breakdowns, confidence, disclaimer, up to three cost-ordered
+ * alternatives with identical neutral styling, and — when the response
+ * carries the flag-gated packing section — the advisory packing panel.
  */
-export default function BasketResults({ result }: BasketResultsProps) {
+export default function BasketResults({ result, productNames }: BasketResultsProps) {
   const t = useTranslations('BasketResults');
   const hasAlternatives =
     result.alternatives && result.alternatives.length > 0;
@@ -406,6 +413,14 @@ export default function BasketResults({ result }: BasketResultsProps) {
         metadata={result.metadata}
         heading={t('recommended')}
       />
+
+      {/* ── Flag-gated packing section — rendered only when present ── */}
+      {result.packing !== undefined && (
+        <BasketPackingPanel
+          packing={result.packing}
+          productNames={productNames ?? new Map()}
+        />
+      )}
 
       {/* ── Alternatives — neutral, cost-ordered, no visual preference cues ── */}
       {hasAlternatives && (

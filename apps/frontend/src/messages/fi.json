@@ -410,6 +410,30 @@
     "alternative": "Vaihtoehto {index}",
     "dataReliability": "Tietojen luotettavuus"
   },
+  "BasketPacking": {
+    "title": "Pakkausehdotus",
+    "advisory": "Ohjeellinen ehdotus lähetyksen pakkaamiseksi — kuljettaja vahvistaa lopullisen pakkaustavan.",
+    "fillAriaLabel": "Laatikon {boxName} täyttöaste",
+    "warning": {
+      "title": "Materiaalisekoitus ylittää raja-arvot",
+      "figures": "Lasi: {glassUnits} kpl · Tölkki: {canUnits} kpl · Yhteispaino: {combinedWeight}",
+      "triggered": "Ylittyneet raja-arvot: {triggers}",
+      "trigger": {
+        "UNIT_COUNT": "yksikkömäärä",
+        "COMBINED_WEIGHT": "yhteispaino"
+      }
+    },
+    "excluded": {
+      "title": "Pakkaamatta jääneet tuotteet",
+      "item": "{name} · {count} kpl — {reason}",
+      "reason": {
+        "MISSING_DIMENSIONS": "mitat puuttuvat",
+        "INVALID_DIMENSIONS": "virheelliset mitat",
+        "INVALID_QUANTITY": "virheellinen määrä",
+        "NO_FITTING_BOX": "ei sopivaa laatikkoa"
+      }
+    }
+  },
   "BasketComparison": {
     "title": "Usean myyjän ostoskorivertailu",
     "subtitle": "Vertaa, miten monituoteisen ostoskorin kustannukset jakautuvat myyjien kesken. Kaikki järjestäminen on objektiivista ja neutraalia.",

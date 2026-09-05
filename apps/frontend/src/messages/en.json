@@ -410,6 +410,30 @@
     "alternative": "Alternative {index}",
     "dataReliability": "Data reliability"
   },
+  "BasketPacking": {
+    "title": "Packing suggestion",
+    "advisory": "An advisory suggestion for packing the shipment — the carrier determines the final packing method.",
+    "fillAriaLabel": "Fill level of box {boxName}",
+    "warning": {
+      "title": "Mixed materials exceed thresholds",
+      "figures": "Glass: {glassUnits} units · Cans: {canUnits} units · Combined weight: {combinedWeight}",
+      "triggered": "Thresholds exceeded: {triggers}",
+      "trigger": {
+        "UNIT_COUNT": "unit count",
+        "COMBINED_WEIGHT": "combined weight"
+      }
+    },
+    "excluded": {
+      "title": "Products not packed",
+      "item": "{name} · {count, plural, one {# unit} other {# units}} — {reason}",
+      "reason": {
+        "MISSING_DIMENSIONS": "missing dimensions",
+        "INVALID_DIMENSIONS": "invalid dimensions",
+        "INVALID_QUANTITY": "invalid quantity",
+        "NO_FITTING_BOX": "no fitting box"
+      }
+    }
+  },
   "BasketComparison": {
     "title": "Multi-store basket comparison",
     "subtitle": "Compare how the costs of a multi-item basket are distributed across stores. All rankings are objective and neutral.",
