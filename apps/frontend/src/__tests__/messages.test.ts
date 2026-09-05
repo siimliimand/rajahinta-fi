@@ -131,7 +131,7 @@ describe('layout and navigation catalog completeness', () => {
     }
   }
 
-  it('SiteHeader carries the five base destinations, the flag-gated event and trip destinations, and the nav label', () => {
+  it('SiteHeader carries the five base destinations and the flag-gated event, trip, and what-if destinations plus the nav label', () => {
     expectNamespaceKeys('SiteHeader', [
       'navLabel',
       'calculator',
@@ -139,6 +139,7 @@ describe('layout and navigation catalog completeness', () => {
       'basket',
       'event',
       'trip',
+      'whatIf',
       'account',
       'ranking',
     ]);

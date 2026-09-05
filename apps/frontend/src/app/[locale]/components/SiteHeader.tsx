@@ -8,6 +8,7 @@ import Logo from './Logo';
 import { Button } from '@/components/ui';
 import { isEventCalculatorFlagEnabled } from '../event/event-calculator-flag';
 import { isTripCalculatorFlagEnabled } from '../trip/trip-calculator-flag';
+import { isWhatIfFlagEnabled } from '../what-if/what-if-flag';
 
 /**
  * Layout-level header: the five primary destinations on every page.
@@ -33,12 +34,13 @@ const NAV_ITEMS = [
 
 /**
  * The flag-gated destinations, appended after basket when their flags are
- * on — the event entry first, the trip entry after it. Kept out of the
- * base list so flag-off deployments render exactly the original five
- * destinations.
+ * on — the event entry first, the trip entry after it, the what-if entry
+ * after the trip. Kept out of the base list so flag-off deployments render
+ * exactly the original five destinations.
  */
 const EVENT_NAV_ITEM = { href: '/event', messageKey: 'event' } as const;
 const TRIP_NAV_ITEM = { href: '/trip', messageKey: 'trip' } as const;
+const WHATIF_NAV_ITEM = { href: '/what-if', messageKey: 'whatIf' } as const;
 
 const MOBILE_NAV_ID = 'site-header-mobile-nav';
 
@@ -68,9 +70,15 @@ export default function SiteHeader() {
   // The trip entry follows the event entry — or basket when the event
   // feature is off.
   const tripInsertAt = eventOn ? 4 : 3;
-  const navItems = isTripCalculatorFlagEnabled(flags)
+  const withTrip = isTripCalculatorFlagEnabled(flags)
     ? [...withEvent.slice(0, tripInsertAt), TRIP_NAV_ITEM, ...withEvent.slice(tripInsertAt)]
     : withEvent;
+  // The what-if entry closes the gated chain, after the trip entry — or
+  // in the same slot when the trip feature is off.
+  const whatIfInsertAt = isTripCalculatorFlagEnabled(flags) ? tripInsertAt + 1 : tripInsertAt;
+  const navItems = isWhatIfFlagEnabled(flags)
+    ? [...withTrip.slice(0, whatIfInsertAt), WHATIF_NAV_ITEM, ...withTrip.slice(whatIfInsertAt)]
+    : withTrip;
 
   // Following a nav link must close the menu — otherwise the panel stays
   // open over the page the visitor just navigated to.

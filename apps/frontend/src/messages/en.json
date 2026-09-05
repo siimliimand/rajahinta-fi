@@ -65,6 +65,7 @@
     "basket": "Basket",
     "event": "Event calculator",
     "trip": "Trip calculator",
+    "whatIf": "What-if calculator",
     "account": "My account",
     "ranking": "How ranking works"
   },
@@ -621,7 +622,7 @@
       "datasets": "Sources: {versions}",
       "unpriced": "Unpriced (not part of the plan): {types}",
       "budgetMet": "Within budget: {total} of {limit}.",
-      "budgetExceeded": "Budget exceeded: total {total} against a {limit} budget ({overrun} over). The plan is still the complete, cheapest computed option.",
+      "budgetExceeded": "Budget exceeded: total {total} against a {limit} budget ({overrun} over). The plan is still the complete computed option with the lowest total.",
       "packing": {
         "heading": "Packing suggestion for the foreign haul",
         "noBoxes": "Nothing is sourced from abroad — no packing needed.",
@@ -698,6 +699,95 @@
       "rate-limited": "Too many requests. Try again in a moment.",
       "network": "Could not reach the server. Try again.",
       "unknown": "Unexpected error. Try again."
+    }
+  },
+  "WhatIfPage": {
+    "title": "What-if calculator",
+    "subtitle": "Substitute the alcohol excise rate with a value of your choice and compare product totals within a fixed baseline dataset. The calculation is hypothetical.",
+    "recalculating": "Calculating…",
+    "form": {
+      "rateLabel": "Hypothetical excise rate (€ per formula unit)",
+      "rateValue": "{rate} €",
+      "rateHint": "The unit follows each category's calculation formula (e.g. € per centilitre of ethanol or € per litre). Range 0–1000.",
+      "rowsHeading": "Products",
+      "rowCount": "{count}/{max} products",
+      "rowLabel": "Product row {index}",
+      "category": "Category",
+      "abv": "Alcohol by volume (%)",
+      "volume": "Volume (litres)",
+      "alkoPrice": "Domestic reference price (€)",
+      "importPrice": "Import retail price (€)",
+      "addRow": "Add a product row",
+      "removeRowAria": "Remove product row {index}",
+      "recalculate": "Recalculate",
+      "invalidHint": "Fill in every field of every product row. Results update once the inputs are valid."
+    },
+    "category": {
+      "beer": "Beer",
+      "wine_still": "Still wine",
+      "wine_sparkling": "Sparkling wine",
+      "spirits": "Spirits",
+      "intermediate_products": "Intermediate products (e.g. vermouth)",
+      "other_fermented": "Cider and long drink"
+    },
+    "result": {
+      "heading": "Calculation",
+      "scenarioRate": "Hypothetical excise rate: {rate} € per formula unit",
+      "scenarioBaselineVersion": "Baseline rate dataset: {version}",
+      "totalsHeading": "Summary",
+      "totalsBaselineExcise": "Alcohol excise total, current rate",
+      "totalsHypotheticalExcise": "Alcohol excise total, hypothetical rate",
+      "totalsGapBaseline": "Import gap to the reference price, current rate",
+      "totalsGapHypothetical": "Import gap to the reference price, hypothetical rate",
+      "linesHeading": "Per product",
+      "columnProduct": "Product",
+      "columnBaseline": "Current rate",
+      "columnHypothetical": "Hypothetical rate",
+      "columnDelta": "Change",
+      "lineImportTotalBaseline": "Import total, current rate",
+      "lineImportTotalHypothetical": "Import total, hypothetical rate",
+      "lineGapBaseline": "Gap to the reference price, current rate",
+      "lineGapHypothetical": "Gap to the reference price, hypothetical rate",
+      "lineGapDelta": "Gap change",
+      "baselineVersion": "Rate dataset: {version}",
+      "baselineFormula": "Calculation formula: {formula}",
+      "baselineRate": "Current rate: {rate} € per formula unit",
+      "baselineTax": "Alcohol excise: {amount}",
+      "hypotheticalRate": "Hypothetical rate: {rate} € per formula unit",
+      "hypotheticalFormula": "Calculation formula: {formula}",
+      "hypotheticalTax": "Alcohol excise: {amount}",
+      "gapLegend": "A positive gap means importing is dearer than the domestic reference price. The change states how the hypothetical rate shifts that gap relative to the current rate."
+    },
+    "share": {
+      "heading": "Share the calculation",
+      "body": "The share link opens the same scenario on the calculator page. The embed code shows the same calculation on another site without the site navigation — both carry the same disclaimer text.",
+      "copyLink": "Copy share link",
+      "copyEmbed": "Copy embed code",
+      "copied": "Copied",
+      "embedIframeTitle": "What-if calculation"
+    },
+    "empty": {
+      "title": "No calculation yet",
+      "body": "Fill in the product rows or move the rate slider. The calculation runs automatically once the inputs are valid."
+    },
+    "errors": {
+      "validation": "The calculation failed. Check the input values.",
+      "forbidden": "The what-if calculator is not available.",
+      "throttled": "Too many requests. The calculation continues in {seconds} s.",
+      "network": "Could not reach the server. Try again.",
+      "unknown": "Unexpected error. Try again.",
+      "invalidToken": "The shared calculation could not be read. The form is blank."
+    },
+    "embed": {
+      "title": "What-if calculation — rajahinta.fi",
+      "closedTitle": "The what-if calculator is not available",
+      "closedBody": "This embedded view is not in use.",
+      "invalidTitle": "The link could not be read",
+      "invalidBody": "The shared calculation is malformed or altered, so it cannot be displayed.",
+      "unavailableTitle": "The calculation is not available now",
+      "unavailableBody": "Try again in a moment.",
+      "throttledTitle": "Too many requests",
+      "throttledBody": "This view refreshes automatically in {seconds} seconds."
     }
   },
   "PriceAlerts": {

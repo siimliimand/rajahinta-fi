@@ -65,6 +65,7 @@
     "basket": "Ostoskori",
     "event": "Tilaisuuslaskuri",
     "trip": "Matkalaskuri",
+    "whatIf": "Mitä jos -laskuri",
     "account": "Oma tili",
     "ranking": "Miten järjestäminen toimii"
   },
@@ -621,7 +622,7 @@
       "datasets": "Lähteet: {versions}",
       "unpriced": "Ei hinnoiteltu (poissa suunnitelmasta): {types}",
       "budgetMet": "Budjetti riittää: {total} / {limit}.",
-      "budgetExceeded": "Budjetti ylittyy: yhteensä {total}, budjetti {limit} ({overrun} yli). Suunnitelma on silti kattavin ja edullisin laskettu vaihtoehto.",
+      "budgetExceeded": "Budjetti ylittyy: yhteensä {total}, budjetti {limit} ({overrun} yli). Suunnitelma on silti kattavin ja matalimman kokonaiskustannuksen laskettu vaihtoehto.",
       "packing": {
         "heading": "Pakkausehdotus rajalta tuotaville",
         "noBoxes": "Rajalta tuotavia juomia ei ole — ei pakkaustarvetta.",
@@ -698,6 +699,95 @@
       "rate-limited": "Liikaa pyyntöjä. Yritä hetken kuluttua uudelleen.",
       "network": "Yhteys palvelimeen ei toiminut. Yritä uudelleen.",
       "unknown": "Odottamaton virhe. Yritä uudelleen."
+    }
+  },
+  "WhatIfPage": {
+    "title": "Mitä jos -laskuri",
+    "subtitle": "Korvaa alkoholiveron verokanta valitsemallasi arvolla ja vertaa tuotteiden kokonaishintoja kiinteässä vertailuaineistossa. Laskelma on hypoteettinen.",
+    "recalculating": "Lasketaan…",
+    "form": {
+      "rateLabel": "Hypoteettinen verokanta (€ kaava-yksikköä kohti)",
+      "rateValue": "{rate} €",
+      "rateHint": "Yksikkö noudattaa kunkin tuotelajin laskentakaavaa (esim. € etanolilitraa kohti tai € litraa kohti). Alue 0–1000.",
+      "rowsHeading": "Tuotteet",
+      "rowCount": "{count}/{max} tuotetta",
+      "rowLabel": "Tuoterivi {index}",
+      "category": "Tuotelaji",
+      "abv": "Alkoholipitoisuus (%)",
+      "volume": "Määrä (litraa)",
+      "alkoPrice": "Kotimainen vertailuhinta (€)",
+      "importPrice": "Tuonnin vähittäishinta (€)",
+      "addRow": "Lisää tuoterivi",
+      "removeRowAria": "Poista tuoterivi {index}",
+      "recalculate": "Laske uudelleen",
+      "invalidHint": "Täytä jokaisen tuoterivin kaikki kentät. Tulokset päivittyvät, kun syötteet ovat kelvolliset."
+    },
+    "category": {
+      "beer": "Olut",
+      "wine_still": "Makuuviini",
+      "wine_sparkling": "Kuohuviini",
+      "spirits": "Väkevät alkoholijuomat",
+      "intermediate_products": "Välituotteet (esim. vermutti)",
+      "other_fermented": "Siideri ja pitkäjuoma"
+    },
+    "result": {
+      "heading": "Laskelma",
+      "scenarioRate": "Hypoteettinen verokanta: {rate} € kaava-yksikköä kohti",
+      "scenarioBaselineVersion": "Vertailun verokanta-aineisto: {version}",
+      "totalsHeading": "Yhteenveto",
+      "totalsBaselineExcise": "Alkoholivero yhteensä, nykyinen verokanta",
+      "totalsHypotheticalExcise": "Alkoholivero yhteensä, hypoteettinen verokanta",
+      "totalsGapBaseline": "Tuonnin hintaero vertailuhintaan, nykyinen verokanta",
+      "totalsGapHypothetical": "Tuonnin hintaero vertailuhintaan, hypoteettinen verokanta",
+      "linesHeading": "Tuotteittain",
+      "columnProduct": "Tuote",
+      "columnBaseline": "Nykyinen verokanta",
+      "columnHypothetical": "Hypoteettinen verokanta",
+      "columnDelta": "Muutos",
+      "lineImportTotalBaseline": "Tuonti yhteensä, nykyinen verokanta",
+      "lineImportTotalHypothetical": "Tuonti yhteensä, hypoteettinen verokanta",
+      "lineGapBaseline": "Hintaero vertailuhintaan, nykyinen verokanta",
+      "lineGapHypothetical": "Hintaero vertailuhintaan, hypoteettinen verokanta",
+      "lineGapDelta": "Muutos hintaeroon",
+      "baselineVersion": "Verokanta-aineisto: {version}",
+      "baselineFormula": "Laskentakaava: {formula}",
+      "baselineRate": "Nykyinen verokanta: {rate} € / kaavayksikkö",
+      "baselineTax": "Alkoholivero: {amount}",
+      "hypotheticalRate": "Hypoteettinen verokanta: {rate} € / kaavayksikkö",
+      "hypotheticalFormula": "Laskentakaava: {formula}",
+      "hypotheticalTax": "Alkoholivero: {amount}",
+      "gapLegend": "Positiivinen hintaero tarkoittaa, että tuonti on kotimaista vertailuhintaa kalliimpi. Muutos kertoo, miten hypoteettinen verokanta siirtää hintaeroa nykyiseen verokantaan verrattuna."
+    },
+    "share": {
+      "heading": "Jaa laskelma",
+      "body": "Jakolinkki avaa saman skenaarion laskurisivulla. Upotuskoodi näyttää saman laskelman toisella sivustolla ilman sivuston navigaatiota — molemmissa näkyy sama huomautusteksti.",
+      "copyLink": "Kopioi jakolinkki",
+      "copyEmbed": "Kopioi upotuskoodi",
+      "copied": "Kopioitu",
+      "embedIframeTitle": "Mitä jos -laskelma"
+    },
+    "empty": {
+      "title": "Ei vielä laskentaa",
+      "body": "Täytä tuoterivien tiedot tai siirrä verokantaliukua. Laskenta suoritetaan automaattisesti, kun syötteet ovat kelvolliset."
+    },
+    "errors": {
+      "validation": "Laskenta epäonnistui. Tarkista syötteiden arvot.",
+      "forbidden": "Mitä jos -laskuri ei ole käytettävissä.",
+      "throttled": "Liikaa laskentapyyntöjä. Laskenta jatkuu {seconds} s kuluttua.",
+      "network": "Yhteys palvelimeen ei toiminut. Yritä uudelleen.",
+      "unknown": "Odottamaton virhe. Yritä uudelleen.",
+      "invalidToken": "Jaettua laskelmaa ei voitu lukea. Lomake on tyhjä."
+    },
+    "embed": {
+      "title": "Mitä jos -laskelma — rajahinta.fi",
+      "closedTitle": "Mitä jos -laskuri ei ole käytettävissä",
+      "closedBody": "Tämä upotettu näkymä ei ole käytössä.",
+      "invalidTitle": "Linkkiä ei voitu lukea",
+      "invalidBody": "Jaettu laskelma on viallinen tai muokattu, joten sitä ei voi näyttää.",
+      "unavailableTitle": "Laskelma ei ole nyt saatavilla",
+      "unavailableBody": "Kokeile hetken kuluttua uudelleen.",
+      "throttledTitle": "Liikaa pyyntöjä",
+      "throttledBody": "Näkymä päivittyy automaattisesti {seconds} sekunnin kuluttua."
     }
   },
   "PriceAlerts": {
