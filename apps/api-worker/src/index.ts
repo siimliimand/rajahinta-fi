@@ -51,6 +51,7 @@ import { registerGroupOrderRoutes } from './routes/group-order.routes';
 import { registerAnalyticsRoutes } from './routes/analytics.routes';
 import { registerOpsRoutes } from './routes/ops.routes';
 import { registerHealthRoutes } from './routes/health.routes';
+import { registerFeatureFlagsRoutes } from './routes/feature-flags.routes';
 import { dispatchScheduled } from './cron/router';
 import { handleIngestionBatch } from './queues/ingestion.queue';
 import type { IngestionMessageBody } from './queues/ingestion-message';
@@ -118,6 +119,11 @@ export function createApp(): Hono<AppEnv> {
   // ping, short timeouts, per-dependency status) at /api/v1/health/ready.
   // Uptime probes key off /ready — see src/routes/health.routes.ts.
   registerHealthRoutes(app);
+
+  // Public flag map (Nest FeatureFlagsController port) — unguarded static
+  // config read the frontend's SSR bootstrap keys off; registration with
+  // the health routes keeps it outside every guard/rate-limit prefix.
+  registerFeatureFlagsRoutes(app);
 
   // Ported Nest guards (task 3.2) — registered after the health route so
   // liveness stays unguarded (HealthController is reviewed-safe). Their
