@@ -589,6 +589,14 @@ export interface FeatureFlagsResponse {
      * a backend predating the flag) must render the UI hidden.
      */
     readonly PRICE_ALERTS?: boolean;
+    /**
+     * GROUP_ORDER_LEDGER — gates the group order API and UI: the session
+     * create/manage entry and the share-link session page (task 9.4,
+     * change product-roadmap-phases-1-4). Optional in the client type
+     * like OPERATOR_CONSOLE/PRICE_ALERTS: an absent key (payload from a
+     * backend predating the flag) must render the UI absent.
+     */
+    readonly GROUP_ORDER_LEDGER?: boolean;
   };
 }
 
