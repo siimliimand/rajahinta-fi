@@ -123,6 +123,16 @@ export const FeatureFlag = {
    * loudly-hypothetical or not at all.
    */
   EXCISE_WHAT_IF: 'EXCISE_WHAT_IF',
+  /**
+   * Gate the curated editorial lists API (GET /api/v1/lists + GET
+   * /api/v1/lists/:slug, task 7.2, change product-roadmap-phases-1-4)
+   * and the public list page that consumes it (task 7.3). Spec/design
+   * slug: `enable_curated_lists`. Default OFF — instant rollback for the
+   * editorial content surface; the frontend sitemap derives its list
+   * entries from the same flag-gated catalog, so a flag-off deployment
+   * never advertises list URLs that would not serve.
+   */
+  CURATED_LISTS: 'CURATED_LISTS',
 } as const;
 
 export type FeatureFlag = (typeof FeatureFlag)[keyof typeof FeatureFlag];

@@ -64,6 +64,7 @@ describe('FeatureFlagService', () => {
         'TRIP_CALCULATOR',
         'PRODUCER_DUPE_FINDER',
         'EXCISE_WHAT_IF',
+        'CURATED_LISTS',
       ].sort(),
     );
   });
