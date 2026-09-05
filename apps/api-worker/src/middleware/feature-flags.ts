@@ -150,7 +150,7 @@ export type FeatureFlag = (typeof FeatureFlag)[keyof typeof FeatureFlag];
 export type FeatureFlagConfig = Record<FeatureFlag, boolean>;
 
 /** All known flags, in declaration order (enum member order parity). */
-const ALL_FLAGS = Object.values(FeatureFlag) as FeatureFlag[];
+export const ALL_FLAGS = Object.values(FeatureFlag) as FeatureFlag[];
 
 /**
  * Environment the service reads states from. `object` keeps the Worker
