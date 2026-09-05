@@ -11,6 +11,7 @@ Time-series aggregation SHALL run as a scheduled Cron Trigger in the API Worker.
 
 - **WHEN** an aggregation run fails partway
 - **THEN** the watermark is not advanced and the next scheduled run reprocesses the same window
+
 ### Requirement: Per-merchant ingestion scheduling
 
 Ingestion scheduling SHALL be driven by the database-backed merchant registry: a scheduled producer enqueues one Cloudflare Queue message per permitted merchant with per-merchant dedupe keys (`price-ingestion-<merchantId>-<hour>`), and the consumer SHALL skip work whose dedupe key was already processed. Onboarding a merchant SHALL NOT require a deploy, and governance gating SHALL remain enforced before any fetch or persistence.
@@ -24,6 +25,7 @@ Ingestion scheduling SHALL be driven by the database-backed merchant registry: a
 
 - **WHEN** a merchant is granted in the registry
 - **THEN** the next scheduling run enqueues its ingestion without any code change
+
 ### Requirement: Transport freshness alerting job support
 
 Transport-rate freshness monitoring SHALL run as a scheduled Cron Trigger that evaluates the freshness invariant and triggers the operational alert through the email Worker.
@@ -32,6 +34,7 @@ Transport-rate freshness monitoring SHALL run as a scheduled Cron Trigger that e
 
 - **WHEN** transport offers exceed the freshness threshold
 - **THEN** an alert email is triggered via the email Worker
+
 ### Requirement: Calculation record retention job
 
 Retention SHALL run as a scheduled Cron Trigger that batch-deletes anonymous-session calculation records past the configured window (30 days) from D1, in bounded batches so no single run exceeds statement limits. The behavior, window, and audit trail SHALL match the current retention semantics.
@@ -40,3 +43,18 @@ Retention SHALL run as a scheduled Cron Trigger that batch-deletes anonymous-ses
 
 - **WHEN** retention runs with more rows past the window than one batch allows
 - **THEN** it deletes in multiple bounded batches and completes without statement-limit failures
+
+### Requirement: Price-alert evaluation job
+
+A scheduled job SHALL evaluate active price alerts after ingestion cycles. The job SHALL read only materialized summaries and alert state, SHALL be idempotent under retries (a re-run produces no duplicate notifications), SHALL record evaluated, matched, notified, and failure counters through the observability module, and SHALL never run on the user-facing request path.
+
+#### Scenario: Idempotent re-run
+
+- **WHEN** the evaluation job runs twice over the same data
+- **THEN** alerts already notified within their cooldown SHALL produce no additional sends and counters SHALL remain consistent
+
+#### Scenario: Failure visibility
+
+- **WHEN** email delivery fails for one alert
+- **THEN** the failure SHALL be counted and surfaced through the observability metrics without blocking evaluation of other alerts
+
