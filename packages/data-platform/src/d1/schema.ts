@@ -1061,6 +1061,91 @@ export const carrierBoxTypes = sqliteTable(
 );
 
 /**
+ * Consumption norms — versioned expected-consumption reference dataset
+ * for the event calculator (task 4.1, change product-roadmap-phases-1-4,
+ * design R5). NOT constants: rows are keyed by drinkType × eventProfile
+ * inside a version (the set of rows sharing versionLabel, mirroring how
+ * an FX dataset versions a set of fx_rates rows), each row carrying an
+ * effective window, a NOT NULL source citation, and the
+ * PENDING_CONFIRMATION → PUBLISHED lifecycle reused from the FX dataset
+ * flow — publication is a human operator's explicit confirmation, never
+ * automatic, and rows are append-only (corrections append a version,
+ * historical rows stay queryable).
+ *
+ * The effective window is HALF-OPEN on calendar dates: effective_from ≤
+ * event_date < effective_to (null effective_to = open-ended/current) —
+ * ISO 'YYYY-MM-DD' TEXT compares chronologically, matching the pg
+ * `date` translation rule above.
+ *
+ * normValuePerGuestPerHour is litres of finished beverage per guest per
+ * hour (REAL — a fractional norm is the normal case, e.g. half a glass
+ * of wine per hour). drinkType reuses the canonical tax-rule category
+ * keys so the calculator's per-type lines feed the landed-cost/tax
+ * engines without translation; eventProfile is the MVP simple mode's
+ * closed profile set.
+ *
+ * UNIQUE (drink_type, event_profile, version_label) is the curated
+ * seed's idempotent upsert target; UNIQUE already covers the resolution
+ * read's key columns. The window CHECK makes an inverted window
+ * unrepresentable at rest — the repository enforces the same rule on
+ * the way in (defense in depth on a high-liability dataset).
+ */
+export const consumptionNorms = sqliteTable(
+  'consumption_norms',
+  {
+    id: integer('id').primaryKey(),
+    /** Norms version identifier — the set of rows sharing this label is one published dataset the calculator can name. */
+    versionLabel: text('version_label', { length: 64 }).notNull(),
+    /** Drink type — canonical tax-rule category key (beer, wine_still, wine_sparkling, intermediate_products, other_fermented, spirits). */
+    drinkType: text('drink_type', { length: 32 }).notNull(),
+    /** Event profile — the MVP simple mode's closed set (casual_gathering, dinner_party, celebration). */
+    eventProfile: text('event_profile', { length: 32 }).notNull(),
+    /** Expected consumption in litres of finished beverage per guest per hour. */
+    normValuePerGuestPerHour: real('norm_value_per_guest_per_hour').notNull(),
+    /** Provenance: verifiable source citation — a row without one can never reach PUBLISHED (spec: event-calculator). */
+    sourceCitation: text('source_citation').notNull(),
+    /** Lifecycle: PENDING_CONFIRMATION until a human publishes; PUBLISHED is terminal. */
+    status: text('status', { length: 32 }).default('PENDING_CONFIRMATION').notNull(),
+    /** Start of the effective window (inclusive), ISO 'YYYY-MM-DD'. */
+    effectiveFrom: text('effective_from').notNull(),
+    /** End of the effective window (exclusive, null = open-ended/current). */
+    effectiveTo: text('effective_to'),
+    /** Operator who published the version — null while unconfirmed (auditability of the manual step). */
+    confirmedBy: text('confirmed_by', { length: 128 }),
+    /** When the version was published — null while unconfirmed. */
+    confirmedAt: text('confirmed_at'),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    unique('consumption_norms_key_version_unique').on(
+      table.drinkType,
+      table.eventProfile,
+      table.versionLabel,
+    ),
+    check(
+      'consumption_norms_status_check',
+      sql`${table.status} IN ('PENDING_CONFIRMATION', 'PUBLISHED')`,
+    ),
+    check(
+      'consumption_norms_drink_type_check',
+      sql`${table.drinkType} IN ('beer', 'wine_still', 'wine_sparkling', 'intermediate_products', 'other_fermented', 'spirits')`,
+    ),
+    check(
+      'consumption_norms_event_profile_check',
+      sql`${table.eventProfile} IN ('casual_gathering', 'dinner_party', 'celebration')`,
+    ),
+    check(
+      'consumption_norms_norm_value_check',
+      sql`${table.normValuePerGuestPerHour} > 0`,
+    ),
+    check(
+      'consumption_norms_window_check',
+      sql`${table.effectiveTo} IS NULL OR ${table.effectiveTo} > ${table.effectiveFrom}`,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -1088,4 +1173,5 @@ export const d1Schema = {
   merchantRegistry,
   productDimensions,
   carrierBoxTypes,
+  consumptionNorms,
 };

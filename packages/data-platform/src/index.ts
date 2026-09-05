@@ -160,6 +160,26 @@ export {
 export type { CarrierBoxTypeRecord } from './repositories/d1/carrier-box-types.repository';
 
 // ---------------------------------------------------------------------------
+// Consumption norms repository — versioned event-calculator reference
+// dataset (task 4.1; design R5), FX-dataset lifecycle on a D1-only table
+// ---------------------------------------------------------------------------
+
+export {
+  ConsumptionNormsRepository,
+  D1ConsumptionNormsRepository,
+  MissingNormSourceCitationError,
+  NormVersionMismatchError,
+  CONSUMPTION_NORM_STATUSES,
+  CONSUMPTION_NORM_DRINK_TYPES,
+  CONSUMPTION_NORM_EVENT_PROFILES,
+} from './repositories/d1/consumption-norms.repository';
+export type {
+  ConsumptionNormRecord,
+  ConsumptionNormStatus,
+  ConsumptionNormInsert,
+} from './repositories/d1/consumption-norms.repository';
+
+// ---------------------------------------------------------------------------
 // Module boundary — pure interfaces for cross-layer contracts
 // ---------------------------------------------------------------------------
 
@@ -210,6 +230,19 @@ export {
   CARRIER_BOX_TYPES_SEED,
   type CarrierBoxTypeSeedRow,
 } from './seed/carrier-box-types.seed';
+
+// ---------------------------------------------------------------------------
+// Consumption norms seed — curated event-calculator norms (task 4.1), every
+// row carrying a verifiable source citation; D1-only table
+// ---------------------------------------------------------------------------
+
+export {
+  seedConsumptionNorms,
+  CONSUMPTION_NORMS_SEED,
+  CONSUMPTION_NORMS_SEED_VERSION,
+  CONSUMPTION_NORMS_CITATION_URL,
+  type ConsumptionNormSeedRow,
+} from './seed/consumption-norms.seed';
 
 // ---------------------------------------------------------------------------
 // Drizzle connection provider

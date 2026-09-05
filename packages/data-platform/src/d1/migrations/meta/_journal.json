@@ -36,6 +36,13 @@
       "when": 1788590416147,
       "tag": "0005_product_dimensions_carrier_box_types",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788676816147,
+      "tag": "0006_consumption_norms",
+      "breakpoints": true
     }
   ]
 }
