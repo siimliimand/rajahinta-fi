@@ -29,3 +29,15 @@ export function isEventCalculatorFlagEnabled(
   return (flags.flags as Record<string, boolean | undefined>)
     .EVENT_CALCULATOR === true;
 }
+
+/**
+ * Whether the packing-recommendations opt-in may be offered (task 4.5
+ * reuses the R4 packing module; the section is per-feature gated like
+ * the basket's, design R13). Same absent-key-counts-OFF rule as above.
+ */
+export function isPackingOptimizerFlagEnabled(
+  flags: FeatureFlagsResponse,
+): boolean {
+  return (flags.flags as Record<string, boolean | undefined>)
+    .PACKING_OPTIMIZER === true;
+}

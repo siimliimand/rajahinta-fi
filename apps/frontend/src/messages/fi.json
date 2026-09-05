@@ -551,7 +551,25 @@
     "form": {
       "guests": "Vieraiden määrä (kpl)",
       "duration": "Kesto (tuntia)",
-      "profile": "Tilaisuuden tyyppi"
+      "profile": "Tilaisuuden tyyppi",
+      "sourcing": {
+        "toggle": "Vertaa ulkomaisiin kauppoihin (V2)",
+        "country": "Vertailumaa",
+        "countryName": {
+          "EE": "Viro",
+          "LV": "Latvia",
+          "LT": "Liettua",
+          "SE": "Ruotsi",
+          "DE": "Saksa"
+        },
+        "budget": "Budjetti (€, valinnainen)",
+        "packing": "Ehdota pakkausta rajalta tuotaville juomille",
+        "pricesHeading": "Hintaperuste euroa litralta",
+        "domesticPrice": "{type} — Suomi (€/l)",
+        "foreignPrice": "Ulkomaa (€/l)",
+        "priceHint": "Syötä hinta litralta vähintään yhdelle juomatyypille. Ulkomainen hinta vaatii aina kotimaisen vertailuhinnan.",
+        "priceError": "Tarkista hinnat: käytä numeroita (esim. 2,50) ja anna kotimainen hinta aina kun ulkomainen hinta on syötetty."
+      }
     },
     "profile": {
       "casual_gathering": "Rentoutunut kokoontuminen",
@@ -587,6 +605,36 @@
       "rate-limited": "Liikaa pyyntöjä. Yritä hetken kuluttua uudelleen.",
       "network": "Yhteys palvelimeen ei toiminut. Yritä uudelleen.",
       "unknown": "Odottamaton virhe. Yritä uudelleen."
+    },
+    "plan": {
+      "heading": "Ostopaikkasuunnitelma",
+      "total": "Suunnitelma yhteensä:",
+      "buyHere": "Osta Suomesta",
+      "bringFrom": "Tuo maasta: {country}",
+      "retail": "Hyllyhinta",
+      "excise": "Alkoholivero",
+      "containerDuty": "Pakkausmaksu",
+      "transport": "Kuljetus",
+      "lineTotal": "Rivi yhteensä",
+      "savings": "Säästät {amount} verrattuna kotimaiseen ostopaikkaan.",
+      "datasets": "Lähteet: {versions}",
+      "unpriced": "Ei hinnoiteltu (poissa suunnitelmasta): {types}",
+      "budgetMet": "Budjetti riittää: {total} / {limit}.",
+      "budgetExceeded": "Budjetti ylittyy: yhteensä {total}, budjetti {limit} ({overrun} yli). Suunnitelma on silti kattavin ja edullisin laskettu vaihtoehto.",
+      "packing": {
+        "heading": "Pakkausehdotus rajalta tuotaville",
+        "noBoxes": "Rajalta tuotavia juomia ei ole — ei pakkaustarvetta.",
+        "box": "{name}: {units} kpl, täyttöaste {fill}",
+        "excludedHeading": "Jätettiin pakkauksen ulkopuolelle:",
+        "excludedItem": "{type} × {quantity}",
+        "reason": {
+          "MISSING_DIMENSIONS": "mitat puuttuvat",
+          "INVALID_DIMENSIONS": "virheelliset mitat",
+          "INVALID_QUANTITY": "virheellinen kappalemäärä",
+          "NO_FITTING_BOX": "ei sovellu mihinkään laatikkoon"
+        },
+        "mixingWarning": "Sekalasti varoitus: {glass} lasi- ja {can} metallikuorainen tuote samassa lähetyksessä — pakkaa lasi erilleen."
+      }
     }
   },
   "PriceAlerts": {

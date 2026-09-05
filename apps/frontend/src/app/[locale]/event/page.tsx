@@ -13,10 +13,11 @@ import {
   classifyEventCalcError,
   type EventCalcErrorKind,
 } from './event.client';
-import { isEventCalculatorFlagEnabled } from './event-calculator-flag';
+import { isEventCalculatorFlagEnabled, isPackingOptimizerFlagEnabled } from './event-calculator-flag';
 import type {
   EventCalcResponse,
   EventProfile,
+  SourcingRequest,
 } from './event.types';
 import EventForm from './components/EventForm';
 import EventShoppingListResult from './components/EventShoppingListResult';
@@ -45,8 +46,8 @@ function todayIsoDate(): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Event calculator page — MVP simple mode (task 4.4, change
- * product-roadmap-phases-1-4).
+ * Event calculator page — MVP simple mode + V2 sourcing (tasks 4.4/4.5,
+ * change product-roadmap-phases-1-4).
  *
  * Behaviour:
  *  - `enable_event_calculator` off ⇒ renders nothing. The flag state is
@@ -56,6 +57,10 @@ function todayIsoDate(): string {
  *  - Submit posts to `/api/v1/event-calc`; both 200 states render:
  *    COMPUTED as a shopping list with per-line surplus, and
  *    NO_PUBLISHED_NORMS as a calm explanation.
+ *  - With the sourcing section enabled (task 4.5) the COMPUTED response
+ *    additionally carries the V2 sourcing plan — per-line source
+ *    assignment, totals, explicit budget state, and the optional
+ *    packing panel (offered only while PACKING_OPTIMIZER is on).
  *  - The structural disclaimer from the response is rendered with the
  *    result — never a UI-only string.
  *
@@ -64,9 +69,12 @@ function todayIsoDate(): string {
 export default function EventPage() {
   const t = useTranslations('EventPage');
 
-  // ── Feature flag (server-resolved, inlined with the initial HTML) ──
+  // ── Feature flags (server-resolved, inlined with the initial HTML) ──
   const flags = useFeatureFlags();
   const flagEnabled = isEventCalculatorFlagEnabled(flags);
+  // The packing opt-in is offered only while the packing feature is on
+  // (per-feature rollout, design R13); the server re-checks the flag.
+  const packingAvailable = isPackingOptimizerFlagEnabled(flags);
 
   // ── Submission state ──
   const [submitting, setSubmitting] = useState(false);
@@ -81,6 +89,7 @@ export default function EventPage() {
       guests: number;
       durationHours: number;
       eventProfile: EventProfile;
+      sourcing?: SourcingRequest;
     }) => {
       if (submitInFlight.current) return;
 
@@ -116,10 +125,10 @@ export default function EventPage() {
       <h1 className="mb-1 text-2xl font-bold text-primary-700">{t('title')}</h1>
       <p className="mb-8 text-sm text-gray-500">{t('subtitle')}</p>
 
-      {/* ── Simple-mode form ── */}
+      {/* ── Simple-mode form (with the V2 sourcing section) ── */}
       <section className="mb-8">
         <Card>
-          <EventForm onSubmit={handleSubmit} submitting={submitting} />
+          <EventForm onSubmit={handleSubmit} submitting={submitting} packingAvailable={packingAvailable} />
         </Card>
       </section>
 

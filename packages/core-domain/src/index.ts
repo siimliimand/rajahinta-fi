@@ -453,6 +453,23 @@ export {
   InconsistentNormsError,
   MixedNormVersionsError,
 } from './eventcalc/eventcalc.types';
+export { buildEventSourcingPlan } from './eventcalc/sourcing';
+export {
+  SOURCING_COUNTRY_ORDER,
+  sourcingCountryRank,
+  SourcingInputError,
+} from './eventcalc/sourcing.types';
+export type {
+  SourcingCountry,
+  SourcingCostOption,
+  SourcingOptionsByDrinkType,
+  SourcingSourceKind,
+  SourcingPlanLine,
+  SourcingInputErrorReason,
+  EventSourcingInput,
+  EventSourcingPlan,
+  BudgetCheck,
+} from './eventcalc/sourcing.types';
 
 // ---------------------------------------------------------------------------
 // What-if excise simulator — hypothetical rate substitution through the
@@ -473,6 +490,35 @@ export type {
   WhatIfTotals,
   WhatIfInputErrorReason,
 } from './whatif/whatif.types';
+
+// ---------------------------------------------------------------------------
+// Trip feasibility calculator — travel cost per traveller, break-even
+// volumes, allowance capping (pure, resolved allowances passed in;
+// spec trip-feasibility-calculator)
+// ---------------------------------------------------------------------------
+
+export { calculateTripBreakEven } from './tripcalc/tripcalc';
+export { TRIP_DISCLAIMER_FI, TRIP_DISCLAIMER_EN } from './tripcalc/tripcalc.disclaimer';
+export {
+  TRIP_CATEGORY_KEYS,
+  TRIP_VEHICLE_TYPES,
+  InvalidTripInputError,
+} from './tripcalc/tripcalc.types';
+export type {
+  TripCalcInput,
+  TripCalcResult,
+  TripCalcStatus,
+  TripCategoryKey,
+  TripVehicleType,
+  TripAllowanceLimitRow,
+  TripResolvedAllowances,
+  TripCategoryPriceInput,
+  TripBreakEvenLine,
+  TripBreakEvenVolumeLine,
+  TripNoBreakEvenLine,
+  TripCapStatus,
+  TripInputErrorReason,
+} from './tripcalc/tripcalc.types';
 
 // ---------------------------------------------------------------------------
 // Ranking & Sorting — objective sort orders for beverage price comparison

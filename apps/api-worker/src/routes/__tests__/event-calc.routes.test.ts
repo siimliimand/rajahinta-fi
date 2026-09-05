@@ -17,6 +17,7 @@
  * @module EventCalcRoutesTest
  */
 
+import type { DatabaseSync } from 'node:sqlite';
 import { describe, it, expect } from 'vitest';
 import {
   createApp,
@@ -25,6 +26,7 @@ import {
   openMigratedD1,
   permissiveEnv,
   request,
+  seedTaxRule,
 } from './harness';
 import { registerEventCalcRoutes } from '../event-calc.routes';
 import { D1ConsumptionNormsRepository } from '../../../../../packages/data-platform/src/repositories/d1/consumption-norms.repository';
@@ -287,5 +289,351 @@ describe('POST /api/v1/event-calc — version-aware idempotency', () => {
     expect(bumpBody.normsVersion).toBe('norms-v2');
     expect(bumpBody.lines![0]!.needMl).toBe(24_000); // 0.6 l × 10 × 4
     expect(afterBump.headers.get('X-Content-Hash')).not.toBe(firstHash);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V2 cross-border sourcing (task 4.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Real engine fixtures (design R14: golden-style tests use real engines,
+ * not mocks): beer excise on the per-centilitre-ethanol formula and the
+ * flat per-litre container duty, both effective from 2026-01-01 — the
+ * event date 2026-06-01 resolves them through the same half-open
+ * windows the production route uses.
+ */
+function seedSourcingTaxRules(db: DatabaseSync): void {
+  seedTaxRule(db, { id: 1, taxType: 'excise', productCategory: 'beer', rate: 0.365 });
+  seedTaxRule(db, {
+    id: 2,
+    taxType: 'container_duty',
+    productCategory: 'all_beverages',
+    rate: 0.51,
+    verified: false,
+  });
+}
+
+/** 0.5 l × 10 guests × 4 h = exactly 20 l → 40 × 0.5 l cans, zero surplus. */
+const BEER_RETAIL_CENTS_AT = (centsPerLitre: number): number =>
+  Math.round((centsPerLitre * 20_000) / 1000);
+
+interface V2LineJson {
+  drinkType: string;
+  sourceCountry: string;
+  sourceKind: string;
+  totalCents: number;
+  components: { retailCents: number; exciseCents: number; containerDutyCents: number; transportCents: number };
+  statuses: Record<string, string>;
+  confidenceOverall: string;
+  datasetVersions: string[];
+  domesticTotalCents: number;
+  savingsVsDomesticCents: number;
+}
+
+interface V2Json extends EventCalcJson {
+  plan?: {
+    lines: V2LineJson[];
+    unpricedDrinkTypes: string[];
+    totalCents: number;
+    budget: { limitCents: number; totalCents: number; met: boolean; overrunCents: number } | null;
+  };
+  packing?: {
+    suggestion: {
+      status: string;
+      boxes: unknown[];
+      excludedItems: { productId: number; quantity: number; reason: string }[];
+      mixingWarning: unknown;
+    };
+    lines: { productId: number; drinkType: string }[];
+  };
+}
+
+/** A sourcing section pricing beer domestically and in Estonia. */
+function sourcingBeer(
+  domesticCentsPerLitre: number,
+  foreign: { country: string; pricePerLitreCents: number }[],
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    lines: [
+      {
+        drinkType: 'beer',
+        abvPercent: 4.7,
+        container: 'can',
+        domesticPricePerLitreCents: domesticCentsPerLitre,
+        foreign,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function postV2(
+  app: ReturnType<typeof createApp>,
+  env: Env,
+  sourcing: Record<string, unknown>,
+): Promise<Response> {
+  return postEvent(app, env, { ...EVENT, sourcing });
+}
+
+describe('POST /api/v1/event-calc — V2 plan', () => {
+  it('assigns a line to the foreign source that undercuts the domestic total, engines priced', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedNorm(d1);
+    seedSourcingTaxRules(db);
+    const app = eventCalcApp();
+    const env = eventCalcEnv(d1);
+
+    // EE shelf 2.00 €/l vs FI 5.00 €/l: 4 000 + excise + duty well under 10 000.
+    const res = await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }]));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as V2Json;
+
+    // MVP shape stays intact next to the plan; structural disclaimer too.
+    expect(body.status).toBe('COMPUTED');
+    expect(body.disclaimer).toMatchObject({ language: 'fi' });
+    expect(body.plan).toBeDefined();
+
+    const plan = body.plan!;
+    expect(plan.lines).toHaveLength(1);
+    const line = plan.lines[0]!;
+    expect(line.drinkType).toBe('beer');
+    expect(line.sourceCountry).toBe('EE');
+    expect(line.sourceKind).toBe('FOREIGN');
+    // Retail basis is user-supplied: exact half-up cents over exact ml.
+    expect(line.components.retailCents).toBe(BEER_RETAIL_CENTS_AT(200));
+    // Landed-cost engines priced the import — EXACT vectors (design R14):
+    // excise 94 cl ethanol × 0.365 ¢/cl = 34 ¢; duty 20 l × 51 ¢/l = 1020 ¢.
+    expect(line.components.exciseCents).toBe(34);
+    expect(line.components.containerDutyCents).toBe(1020);
+    // No carrier dimension yet: transport is an explicit UNAVAILABLE zero.
+    expect(line.components.transportCents).toBe(0);
+    expect(line.statuses.transport).toBe('UNAVAILABLE');
+    // Every figure traceable: the total is its components; datasets named.
+    expect(line.totalCents).toBe(4000 + 34 + 1020);
+    expect(line.totalCents).toBe(
+      line.components.retailCents +
+        line.components.exciseCents +
+        line.components.containerDutyCents +
+        line.components.transportCents,
+    );
+    expect(line.datasetVersions.length).toBeGreaterThanOrEqual(2);
+    expect(line.domesticTotalCents).toBe(BEER_RETAIL_CENTS_AT(500));
+    expect(line.savingsVsDomesticCents).toBe(10_000 - 5_054);
+    expect(plan.unpricedDrinkTypes).toEqual([]);
+    expect(plan.totalCents).toBe(line.totalCents);
+    expect(plan.budget).toBeNull();
+  });
+
+  it('keeps the domestic store when Finnish taxes erase the shelf-price gap', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedNorm(d1);
+    seedSourcingTaxRules(db);
+    const app = eventCalcApp();
+    const env = eventCalcEnv(d1);
+
+    // EE shelf 4.90 €/l → 9 800 + 34 excise + 1 020 duty = 10 854 over the
+    // 10 000 domestic total — the gap only erases through the taxes.
+    const res = await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 490 }]));
+    const body = (await res.json()) as V2Json;
+    const line = body.plan!.lines[0]!;
+    expect(line.sourceCountry).toBe('FI');
+    expect(line.sourceKind).toBe('DOMESTIC');
+    expect(line.totalCents).toBe(BEER_RETAIL_CENTS_AT(500));
+    expect(line.components.exciseCents).toBe(0);
+    expect(line.components.containerDutyCents).toBe(0);
+    expect(line.savingsVsDomesticCents).toBe(0);
+  });
+
+  it('breaks a foreign tie by the fixed country order regardless of array order', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedNorm(d1);
+    seedSourcingTaxRules(db);
+    const app = eventCalcApp();
+    const env = eventCalcEnv(d1);
+
+    // Identical shelf prices in DE and LV ⇒ identical landed totals ⇒
+    // SOURCING_COUNTRY_ORDER decides (LV before DE); the MIRROR request
+    // lists them in the opposite order and must produce the same plan.
+    const first = await postV2(app, env, sourcingBeer(500, [
+      { country: 'DE', pricePerLitreCents: 200 },
+      { country: 'LV', pricePerLitreCents: 200 },
+    ]));
+    const mirror = await postV2(app, env, sourcingBeer(500, [
+      { country: 'LV', pricePerLitreCents: 200 },
+      { country: 'DE', pricePerLitreCents: 200 },
+    ]));
+    const firstBody = (await first.json()) as V2Json;
+    expect((await mirror.json()) as V2Json).toEqual(firstBody);
+    expect(firstBody.plan!.lines[0]!.sourceCountry).toBe('LV');
+  });
+
+  it('degrades an exceeded budget explicitly: complete plan, met:false, exact overrun', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedNorm(d1);
+    seedSourcingTaxRules(db);
+    const app = eventCalcApp();
+    const env = eventCalcEnv(d1);
+
+    const plain = (await (await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }]))).json()) as V2Json;
+    const budgeted = (await (await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }], { budgetCents: 100 }))).json()) as V2Json;
+
+    // NOT truncated: identical assignment and total, only the flag differs.
+    expect(budgeted.plan!.lines).toEqual(plain.plan!.lines);
+    expect(budgeted.plan!.budget).toEqual({
+      limitCents: 100,
+      totalCents: plain.plan!.totalCents,
+      met: false,
+      overrunCents: plain.plan!.totalCents - 100,
+    });
+  });
+
+  it('reports unpriced plan lines explicitly instead of dropping them', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedNorm(d1);
+    seedSourcingTaxRules(db);
+    const app = eventCalcApp();
+    const env = eventCalcEnv(d1);
+
+    const res = await postV2(app, env, sourcingBeer(500, []));
+    const body = (await res.json()) as V2Json;
+    expect(body.plan!.lines).toHaveLength(1);
+    expect(body.plan!.lines[0]!.sourceCountry).toBe('FI');
+    expect(body.plan!.totalCents).toBe(BEER_RETAIL_CENTS_AT(500));
+  });
+
+  it('stays a NO_PUBLISHED_NORMS value when sourcing is requested but no norms exist', async () => {
+    const { d1 } = openMigratedD1();
+    const app = eventCalcApp();
+    const res = await postV2(app, eventCalcEnv(d1), sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }]));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as V2Json;
+    expect(body.status).toBe('NO_PUBLISHED_NORMS');
+    expect(body.plan).toBeUndefined();
+    expect(body.disclaimer).toMatchObject({ language: 'fi' });
+  });
+});
+
+describe('POST /api/v1/event-calc — V2 idempotency', () => {
+  it('serves byte-identical V2 repeats and keys equal plans canonically (array order-insensitive)', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedNorm(d1);
+    seedSourcingTaxRules(db);
+    const app = eventCalcApp();
+    const env = eventCalcEnv(d1);
+
+    const first = await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }]));
+    expect(first.headers.get('X-Cache')).toBe('MISS');
+    const firstBody = (await first.json()) as V2Json;
+
+    const repeat = await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }]));
+    expect(repeat.headers.get('X-Cache')).toBe('HIT');
+    expect(await repeat.json()).toEqual(firstBody);
+
+    // Same plan, different foreign-array order ⇒ same canonical key ⇒ HIT.
+    const reordered = await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }]));
+    expect(reordered.headers.get('X-Cache')).toBe('HIT');
+
+    // A different budget changes the result ⇒ fresh MISS.
+    const otherBudget = await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }], { budgetCents: 999_999 }));
+    expect(otherBudget.headers.get('X-Cache')).toBe('MISS');
+  });
+});
+
+describe('POST /api/v1/event-calc — V2 packing opt-in', () => {
+  function seedBoxType(db: DatabaseSync): void {
+    db.prepare(
+      `INSERT INTO carrier_box_types (
+         carrier, name, internal_height_mm, internal_width_mm, internal_depth_mm,
+         max_weight_g, source, observed_at
+       ) VALUES ('postnord', 'PostNord Box M', 250, 180, 120, 5000, 'carrier packaging page', ?)`,
+    ).run(new Date().toISOString());
+  }
+
+  it('attaches the packing section over the foreign haul when opted in and flagged on', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedNorm(d1);
+    seedSourcingTaxRules(db);
+    seedBoxType(db);
+    const app = eventCalcApp();
+    const env = eventCalcEnv(d1, { FF_PACKING_OPTIMIZER: 'true' });
+
+    const res = await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }], { packing: true }));
+    const body = (await res.json()) as V2Json;
+    expect(body.packing).toBeDefined();
+    // Synthetic id 1 = beer (position in the canonical set + 1), echoed.
+    expect(body.packing!.lines).toEqual([{ productId: 1, drinkType: 'beer' }]);
+    // No product_dimensions rows exist for drink types — the packing
+    // module's own degradation: ESTIMATED status + named exclusions.
+    expect(body.packing!.suggestion.status).toBe('ESTIMATED');
+    expect(body.packing!.suggestion.excludedItems).toEqual([
+      { productId: 1, quantity: 40, reason: 'MISSING_DIMENSIONS' },
+    ]);
+    expect(body.packing!.suggestion.boxes).toEqual([]);
+  });
+
+  it('omits the packing section when the PACKING_OPTIMIZER flag is off (flag-less shape)', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedNorm(d1);
+    seedSourcingTaxRules(db);
+    const app = eventCalcApp();
+    const env = eventCalcEnv(d1); // permissive env leaves PACKING_OPTIMIZER unset
+
+    const res = await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }], { packing: true }));
+    const body = (await res.json()) as V2Json;
+    expect(body.plan).toBeDefined();
+    expect(body.packing).toBeUndefined();
+  });
+
+  it('omits the packing section when not opted in', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedNorm(d1);
+    seedSourcingTaxRules(db);
+    seedBoxType(db);
+    const app = eventCalcApp();
+    const env = eventCalcEnv(d1, { FF_PACKING_OPTIMIZER: 'true' });
+
+    const res = await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }]));
+    const body = (await res.json()) as V2Json;
+    expect(body.packing).toBeUndefined();
+  });
+});
+
+describe('POST /api/v1/event-calc — V2 validation', () => {
+  it.each([
+    ['unknown country', sourcingBeer(500, [{ country: 'US', pricePerLitreCents: 200 }])],
+    ['duplicate line drink type', {
+      lines: [
+        { drinkType: 'beer', abvPercent: 4.7, container: 'can', domesticPricePerLitreCents: 500 },
+        { drinkType: 'beer', abvPercent: 5.0, container: 'can', domesticPricePerLitreCents: 400 },
+      ],
+    }],
+    ['duplicate foreign country', sourcingBeer(500, [
+      { country: 'EE', pricePerLitreCents: 200 },
+      { country: 'EE', pricePerLitreCents: 210 },
+    ])],
+    ['zero budget', sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }], { budgetCents: 0 })],
+    ['zero abv', sourcingBeer(0, [])],
+    ['zero foreign price', sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 0 }])],
+    ['empty lines', { lines: [] }],
+  ])('rejects %s with 400', async (_name, sourcing) => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedNorm(d1);
+    seedSourcingTaxRules(db);
+    const app = eventCalcApp();
+    const res = await postV2(app, eventCalcEnv(d1), sourcing);
+    await expectEnvelope(res, 400, { error: 'ValidationError' });
+  });
+
+  it('keeps the MVP response byte-compatible — no plan key without the sourcing section', async () => {
+    const { d1 } = openMigratedD1();
+    await seedPublishedNorm(d1);
+    const app = eventCalcApp();
+    const res = await postEvent(app, eventCalcEnv(d1));
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.status).toBe('COMPUTED');
+    expect('plan' in body).toBe(false);
+    expect('packing' in body).toBe(false);
   });
 });

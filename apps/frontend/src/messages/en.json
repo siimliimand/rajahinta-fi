@@ -551,7 +551,25 @@
     "form": {
       "guests": "Number of guests",
       "duration": "Duration (hours)",
-      "profile": "Event type"
+      "profile": "Event type",
+      "sourcing": {
+        "toggle": "Compare with foreign stores (V2)",
+        "country": "Comparison country",
+        "countryName": {
+          "EE": "Estonia",
+          "LV": "Latvia",
+          "LT": "Lithuania",
+          "SE": "Sweden",
+          "DE": "Germany"
+        },
+        "budget": "Budget (€, optional)",
+        "packing": "Suggest packing for the haul brought from abroad",
+        "pricesHeading": "Price basis in euros per litre",
+        "domesticPrice": "{type} — Finland (€/l)",
+        "foreignPrice": "Abroad (€/l)",
+        "priceHint": "Enter a per-litre price for at least one drink type. A foreign price always requires the domestic comparison price.",
+        "priceError": "Check the prices: use numbers (e.g. 2.50) and always provide the domestic price when a foreign price is given."
+      }
     },
     "profile": {
       "casual_gathering": "Casual gathering",
@@ -587,6 +605,36 @@
       "rate-limited": "Too many requests. Try again in a moment.",
       "network": "Could not reach the server. Try again.",
       "unknown": "Unexpected error. Try again."
+    },
+    "plan": {
+      "heading": "Sourcing plan",
+      "total": "Plan total:",
+      "buyHere": "Buy in Finland",
+      "bringFrom": "Bring from {country}",
+      "retail": "Shelf price",
+      "excise": "Alcohol excise",
+      "containerDuty": "Container duty",
+      "transport": "Transport",
+      "lineTotal": "Line total",
+      "savings": "Saves {amount} compared with buying domestically.",
+      "datasets": "Sources: {versions}",
+      "unpriced": "Unpriced (not part of the plan): {types}",
+      "budgetMet": "Within budget: {total} of {limit}.",
+      "budgetExceeded": "Budget exceeded: total {total} against a {limit} budget ({overrun} over). The plan is still the complete, cheapest computed option.",
+      "packing": {
+        "heading": "Packing suggestion for the foreign haul",
+        "noBoxes": "Nothing is sourced from abroad — no packing needed.",
+        "box": "{name}: {units} units, {fill} full",
+        "excludedHeading": "Excluded from packing:",
+        "excludedItem": "{type} × {quantity}",
+        "reason": {
+          "MISSING_DIMENSIONS": "dimensions unknown",
+          "INVALID_DIMENSIONS": "invalid dimensions",
+          "INVALID_QUANTITY": "invalid quantity",
+          "NO_FITTING_BOX": "fits no available box"
+        },
+        "mixingWarning": "Mixed-material warning: {glass} glass and {can} can units in one shipment — pack glass separately."
+      }
     }
   },
   "PriceAlerts": {

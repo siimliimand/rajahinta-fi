@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 import type { EventCalcResponse, ShoppingListLine } from '../event.types';
 import { Badge, Card, EmptyState } from '@/components/ui';
 import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
+import EventPlanResult from './EventPlanResult';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -131,6 +132,13 @@ export default function EventShoppingListResult({
               <ShoppingListLineCard key={line.drinkType} line={line} />
             ))}
           </div>
+          {/* ── V2 sourcing plan (task 4.5) — present only when the
+                  request carried the sourcing section. ── */}
+          {result.plan && (
+            <div className="mt-8">
+              <EventPlanResult plan={result.plan} packing={result.packing} />
+            </div>
+          )}
         </>
       ) : (
         <EmptyState
