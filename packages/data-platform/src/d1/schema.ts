@@ -1266,6 +1266,101 @@ export const travellerAllowanceLimits = sqliteTable(
 );
 
 /**
+ * Group order sessions — shareable cost-splitting sessions (task 9.1,
+ * change product-roadmap-phases-1-4, design R12).
+ *
+ * One row per collaborative order being planned. The share token is the
+ * join credential: it grants write access to exactly this session and
+ * expires — past the expiry edge the link stops being usable (the
+ * rejection itself is the API layer's job, task 9.3; this table only
+ * carries the edge honestly). Data minimization per R12: the session
+ * stores no personal data beyond participant nicknames (on the item
+ * rows) and no account data for non-owning participants.
+ *
+ * Accounting-only boundary (spec: group-order-ledger): NO
+ * payment-adjacent columns exist here BY DESIGN — no amounts, no
+ * currencies, no settlement state. Item VALUE for the proportional
+ * allocation is derived at compute time from product/offer data
+ * (tasks 9.2/9.3), never stored on session or item rows, so a payment
+ * instrument or an amount is unrepresentable in a group order at the
+ * schema level. Deleting the owner account cascades here (GDPR
+ * erasure, the savedScenarios guarantee), which cascades onward to the
+ * items below.
+ */
+export const groupOrderSessions = sqliteTable(
+  'group_order_sessions',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to accounts — the authenticated creator; the only account reference these tables carry. */
+    ownerAccountId: integer('owner_account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** The join credential — lookup key for the share link; unique so it identifies exactly one session. */
+    shareToken: text('share_token', { length: 64 }).notNull(),
+    /** When the token stops granting access (exclusive edge — at this instant the link is expired). */
+    expiresAt: text('expires_at').notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // The share link's lookup — one token, one session, by definition.
+    unique('group_order_sessions_share_token_unique').on(table.shareToken),
+    // Expiry housekeeping scans (session deletion on expiry) filter by
+    // the edge alone; the unique index cannot serve that filter.
+    index('group_order_sessions_expires_at_idx').on(table.expiresAt),
+    // A blank token is a credential-generation bug, not a session.
+    check('group_order_sessions_share_token_check', sql`${table.shareToken} <> ''`),
+  ],
+);
+
+/**
+ * Group order items — one participant's line on a shared session
+ * (task 9.1, change product-roadmap-phases-1-4, design R12).
+ *
+ * participantNickname is free text (bounded at 64 chars) and
+ * deliberately NOT a user reference: participants join via the share
+ * link without creating an account, so the self-chosen nickname is the
+ * only participant identity a row carries — anonymity by design, the
+ * minimal-personal-data guardrail R12 allows. Content validation
+ * beyond the length bound belongs to the API's DTO layer (task 9.3),
+ * not to this table.
+ *
+ * Like its session, an item row carries NO payment-adjacent columns:
+ * quantity selects product_master rows and the item's euro value for
+ * proportional allocation is computed from offer data at compute time
+ * (tasks 9.2/9.3) — never persisted here. Deleting the session
+ * cascades (expired/owner-deleted sessions cannot orphan item rows);
+ * products are never deleted, so product_id needs no cascade (the
+ * priceAlerts precedent).
+ */
+export const groupOrderItems = sqliteTable(
+  'group_order_items',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to group_order_sessions — cascade delete keeps items from outliving their session. */
+    sessionId: integer('session_id')
+      .references(() => groupOrderSessions.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** Self-chosen display nickname — the only participant identity; NOT a user reference (see table docblock). */
+    participantNickname: text('participant_nickname', { length: 64 }).notNull(),
+    /** FK to product_master — the beverage the line selects (value derived from offer data at compute time). */
+    productId: integer('product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** Number of units the participant takes. */
+    quantity: integer('quantity').notNull(),
+    /** When the line was added — the deterministic list ordering's leading column. */
+    addedAt: text('added_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // Items of one session in list order (addedAt, then id for ties) —
+    // the ledger's deterministic input.
+    index('group_order_items_session_id_added_at_idx').on(table.sessionId, table.addedAt),
+    // A zero/negative-quantity line selects nothing — unrepresentable.
+    check('group_order_items_quantity_check', sql`${table.quantity} > 0`),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -1296,4 +1391,6 @@ export const d1Schema = {
   consumptionNorms,
   travellerAllowanceDatasets,
   travellerAllowanceLimits,
+  groupOrderSessions,
+  groupOrderItems,
 };

@@ -202,6 +202,24 @@ export type {
 } from './repositories/d1/traveller-allowances.repository';
 
 // ---------------------------------------------------------------------------
+// Group order ledger — shareable sessions + participant item lines behind
+// the accounting-only boundary (task 9.1; design R12), D1-only table pair
+// ---------------------------------------------------------------------------
+
+export {
+  GroupOrderRepository,
+  D1GroupOrderRepository,
+} from './repositories/d1/group-order.repository';
+export type {
+  GroupOrderSessionRecord,
+  GroupOrderItemRecord,
+  GroupOrderSessionInsert,
+  GroupOrderItemInsert,
+  GroupOrderSessionView,
+  GroupOrderParticipantSummary,
+} from './repositories/d1/group-order.repository';
+
+// ---------------------------------------------------------------------------
 // Module boundary — pure interfaces for cross-layer contracts
 // ---------------------------------------------------------------------------
 
