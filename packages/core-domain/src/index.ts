@@ -423,6 +423,38 @@ export type {
 } from './packing/packing.types';
 
 // ---------------------------------------------------------------------------
+// Event calculator — norms-based consumption + minimal-surplus shopping list
+// ---------------------------------------------------------------------------
+
+export {
+  calculateEventShoppingList,
+  computeConsumption,
+  toShoppingList,
+} from './eventcalc/eventcalc';
+export { RETAIL_UNITS_BY_DRINK_TYPE } from './eventcalc/retail-units';
+export type {
+  EventCalcInput,
+  EventCalcResult,
+  EventCalcStatus,
+  EventDrinkType,
+  EventNormRow,
+  EventProfile,
+  EventShoppingList,
+  NoPublishedNormsResult,
+  EventConsumptionLine,
+  ShoppingListLine,
+  PlannedUnit,
+  InconsistentNormsReason,
+} from './eventcalc/eventcalc.types';
+export {
+  EVENT_CALC_DRINK_TYPES,
+  EVENT_CALC_EVENT_PROFILES,
+  InvalidEventInputError,
+  InconsistentNormsError,
+  MixedNormVersionsError,
+} from './eventcalc/eventcalc.types';
+
+// ---------------------------------------------------------------------------
 // Ranking & Sorting — objective sort orders for beverage price comparison
 // ---------------------------------------------------------------------------
 
