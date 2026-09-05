@@ -230,7 +230,8 @@
     "LAUNCH_GATE_TAX_SOURCE_MAPPING": "true",
     "LAUNCH_GATE_CORRECTION_MECHANISM": "true",
     // Product-roadmap feature flags (task 10.1, change
-    // product-roadmap-phases-1-4) — ALL default OFF. Parsed by
+    // product-roadmap-phases-1-4) — enabled 2026-09-05 (owner decision,
+    // flags/enable-roadmap-features). Parsed by
     // src/middleware/feature-flags.ts as FF_<FLAG> ("true"/"1" = on,
     // numeric = rollout %, anything else/absent = off). Optional
     // FF_ROLLOUT_<FLAG> percentage overrides exist in src/env.ts but are
@@ -240,15 +241,15 @@
     // launch gates are duplicated. Compliance rule: gated features ship
     // flag-off; instant rollback = flip the flag back to "false" (var
     // change only, no code, no schema rollback).
-    "FF_UNIT_PRICE_EUR_PER_GRAM": "false",
-    "FF_PRICE_ALERTS": "false",
-    "FF_PACKING_OPTIMIZER": "false",
-    "FF_EVENT_CALCULATOR": "false",
-    "FF_TRIP_CALCULATOR": "false",
-    "FF_PRODUCER_DUPE_FINDER": "false",
-    "FF_CURATED_LISTS": "false",
-    "FF_EXCISE_WHAT_IF": "false",
-    "FF_GROUP_ORDER_LEDGER": "false"
+    "FF_UNIT_PRICE_EUR_PER_GRAM": "true",
+    "FF_PRICE_ALERTS": "true",
+    "FF_PACKING_OPTIMIZER": "true",
+    "FF_EVENT_CALCULATOR": "true",
+    "FF_TRIP_CALCULATOR": "true",
+    "FF_PRODUCER_DUPE_FINDER": "true",
+    "FF_CURATED_LISTS": "true",
+    "FF_EXCISE_WHAT_IF": "true",
+    "FF_GROUP_ORDER_LEDGER": "true"
   },
   "env": {
     "dev": {
@@ -311,15 +312,15 @@
         // Product-roadmap flags (task 10.1) — all default OFF; see the
         // top-level vars comment. Dev promotion expectation: enable
         // freely for development; rollback is a flag flip.
-        "FF_UNIT_PRICE_EUR_PER_GRAM": "false",
-        "FF_PRICE_ALERTS": "false",
-        "FF_PACKING_OPTIMIZER": "false",
-        "FF_EVENT_CALCULATOR": "false",
-        "FF_TRIP_CALCULATOR": "false",
-        "FF_PRODUCER_DUPE_FINDER": "false",
-        "FF_CURATED_LISTS": "false",
-        "FF_EXCISE_WHAT_IF": "false",
-        "FF_GROUP_ORDER_LEDGER": "false"
+        "FF_UNIT_PRICE_EUR_PER_GRAM": "true",
+        "FF_PRICE_ALERTS": "true",
+        "FF_PACKING_OPTIMIZER": "true",
+        "FF_EVENT_CALCULATOR": "true",
+        "FF_TRIP_CALCULATOR": "true",
+        "FF_PRODUCER_DUPE_FINDER": "true",
+        "FF_CURATED_LISTS": "true",
+        "FF_EXCISE_WHAT_IF": "true",
+        "FF_GROUP_ORDER_LEDGER": "true"
       },
       "queues": {
         "producers": [
@@ -384,15 +385,15 @@
         // top-level vars comment. Staging promotion expectation: enable
         // per feature for review against the staging tax-rule/merchant
         // data copy; promote to production only after that review passes.
-        "FF_UNIT_PRICE_EUR_PER_GRAM": "false",
-        "FF_PRICE_ALERTS": "false",
-        "FF_PACKING_OPTIMIZER": "false",
-        "FF_EVENT_CALCULATOR": "false",
-        "FF_TRIP_CALCULATOR": "false",
-        "FF_PRODUCER_DUPE_FINDER": "false",
-        "FF_CURATED_LISTS": "false",
-        "FF_EXCISE_WHAT_IF": "false",
-        "FF_GROUP_ORDER_LEDGER": "false"
+        "FF_UNIT_PRICE_EUR_PER_GRAM": "true",
+        "FF_PRICE_ALERTS": "true",
+        "FF_PACKING_OPTIMIZER": "true",
+        "FF_EVENT_CALCULATOR": "true",
+        "FF_TRIP_CALCULATOR": "true",
+        "FF_PRODUCER_DUPE_FINDER": "true",
+        "FF_CURATED_LISTS": "true",
+        "FF_EXCISE_WHAT_IF": "true",
+        "FF_GROUP_ORDER_LEDGER": "true"
       },
       "queues": {
         "producers": [
@@ -458,15 +459,15 @@
         // per-feature rollout decision only (staging review passed);
         // gradual rollout via the FF_ROLLOUT_<FLAG> override; instant
         // rollback by flipping the flag back to "false".
-        "FF_UNIT_PRICE_EUR_PER_GRAM": "false",
-        "FF_PRICE_ALERTS": "false",
-        "FF_PACKING_OPTIMIZER": "false",
-        "FF_EVENT_CALCULATOR": "false",
-        "FF_TRIP_CALCULATOR": "false",
-        "FF_PRODUCER_DUPE_FINDER": "false",
-        "FF_CURATED_LISTS": "false",
-        "FF_EXCISE_WHAT_IF": "false",
-        "FF_GROUP_ORDER_LEDGER": "false"
+        "FF_UNIT_PRICE_EUR_PER_GRAM": "true",
+        "FF_PRICE_ALERTS": "true",
+        "FF_PACKING_OPTIMIZER": "true",
+        "FF_EVENT_CALCULATOR": "true",
+        "FF_TRIP_CALCULATOR": "true",
+        "FF_PRODUCER_DUPE_FINDER": "true",
+        "FF_CURATED_LISTS": "true",
+        "FF_EXCISE_WHAT_IF": "true",
+        "FF_GROUP_ORDER_LEDGER": "true"
       },
       "queues": {
         "producers": [
