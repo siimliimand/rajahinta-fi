@@ -521,6 +521,31 @@ export type {
 } from './tripcalc/tripcalc.types';
 
 // ---------------------------------------------------------------------------
+// Group order ledger — proportional shared-cost allocation and minimal
+// transfer settlement (pure, accounting-only; spec group-order-ledger)
+// ---------------------------------------------------------------------------
+
+export { calculateGroupOrderLedger, settleBalances } from './grouporder/grouporder';
+export { GROUP_ORDER_DISCLAIMER_FI, GROUP_ORDER_DISCLAIMER_EN } from './grouporder/grouporder.disclaimer';
+export { InvalidGroupOrderInputError } from './grouporder/grouporder.types';
+export type {
+  GroupOrderLedgerInput,
+  GroupOrderParticipantInput,
+  GroupOrderSharedCostLineInput,
+  GroupOrderLedgerResult,
+  GroupOrderLedgerStatus,
+  GroupOrderComputedLedger,
+  GroupOrderEmptySessionLedger,
+  GroupOrderNoItemValueLedger,
+  GroupOrderSharedCostAllocation,
+  GroupOrderPerParticipantAllocation,
+  GroupOrderParticipantLedger,
+  MinimalTransfer,
+  ParticipantBalance,
+  GroupOrderInputErrorReason,
+} from './grouporder/grouporder.types';
+
+// ---------------------------------------------------------------------------
 // Ranking & Sorting — objective sort orders for beverage price comparison
 // ---------------------------------------------------------------------------
 
