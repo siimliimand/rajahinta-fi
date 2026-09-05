@@ -64,6 +64,7 @@
     "compare": "Compare",
     "basket": "Basket",
     "event": "Event calculator",
+    "trip": "Trip calculator",
     "account": "My account",
     "ranking": "How ranking works"
   },
@@ -635,6 +636,68 @@
         },
         "mixingWarning": "Mixed-material warning: {glass} glass and {can} can units in one shipment — pack glass separately."
       }
+    }
+  },
+  "TripPage": {
+    "title": "Trip calculator",
+    "subtitle": "Calculate how many litres are worth importing on a trip: the shared travel cost, the per-category price difference, and where the traveller allowance caps bite. Each line shows the break-even import volume and the effect of the allowance cap.",
+    "form": {
+      "passengers": "Passengers",
+      "vehicle": "Vehicle",
+      "ticket": "Tickets total (€)",
+      "fuel": "Fuel total (€)",
+      "pricesHeading": "Prices in euros per litre",
+      "domesticPrice": "{category} — Finland (€/l)",
+      "foreignPrice": "Abroad (€/l)",
+      "priceHint": "Enter a domestic and a foreign price for at least one category.",
+      "priceError": "Check the prices: use numbers (e.g. 2.50) and fill every started row with both prices."
+    },
+    "vehicle": {
+      "car": "Car",
+      "van": "Van"
+    },
+    "category": {
+      "beer": "Beer",
+      "wine_still": "Still wine",
+      "wine_sparkling": "Sparkling wine",
+      "intermediate_products": "Intermediate products (e.g. vermouth)",
+      "other_fermented": "Cider and long drink",
+      "spirits": "Spirits"
+    },
+    "submit": "Calculate break-even volume",
+    "submitting": "Calculating…",
+    "result": {
+      "heading": "Break-even volumes",
+      "priceDifference": "Price difference (Finland − abroad)",
+      "breakEven": "Break-even volume",
+      "cap": "Allowance cap (duty-free maximum)",
+      "suggested": "Suggested duty-free volume",
+      "capExceeded": "Cap exceeded",
+      "withinAllowance": "Within the allowance",
+      "cappedWith": "{cap} (without the cap {uncapped})",
+      "noAllowanceRow": "No allowance row in the dataset version",
+      "noAllowanceRowBody": "The dataset version has no allowance row for this category, so no cap can be applied and no capped suggestion can be given.",
+      "capNotVolume": "The cap is a quantity cap",
+      "capNotVolumeBody": "This category's cap is stated in units (pcs), so it cannot be expressed in litres or used to cap a volume.",
+      "noBreakEven": "Importing does not save money",
+      "noBreakEvenBody": "The foreign price is not below the domestic comparison price, so there is no break-even volume.",
+      "travelCost": "Total travel cost: {total}",
+      "perTraveller": "Per traveller: {amount} ({passengers} travellers)",
+      "allowanceVersion": "Allowance dataset version: {version}"
+    },
+    "partners": {
+      "label": "Partner links"
+    },
+    "noAllowances": {
+      "title": "No published traveller allowances",
+      "body": "There is no published allowance dataset version effective on the selected date, so the calculation cannot be produced. Try again later."
+    },
+    "errors": {
+      "validation": "Check the input values: 1–9 passengers, costs above €0.",
+      "forbidden": "The trip calculator is not available.",
+      "rate-limited": "Too many requests. Try again in a moment.",
+      "network": "Could not reach the server. Try again.",
+      "unknown": "Unexpected error. Try again."
     }
   },
   "PriceAlerts": {

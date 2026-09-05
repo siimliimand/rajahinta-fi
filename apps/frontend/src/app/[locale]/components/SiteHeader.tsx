@@ -7,6 +7,7 @@ import { useFeatureFlags } from '@/lib/feature-flags';
 import Logo from './Logo';
 import { Button } from '@/components/ui';
 import { isEventCalculatorFlagEnabled } from '../event/event-calculator-flag';
+import { isTripCalculatorFlagEnabled } from '../trip/trip-calculator-flag';
 
 /**
  * Layout-level header: the five primary destinations on every page.
@@ -31,11 +32,13 @@ const NAV_ITEMS = [
 ] as const;
 
 /**
- * The event-calculator entry, appended after basket when its flag is on.
- * Kept out of the base list so flag-off deployments render exactly the
- * original five destinations.
+ * The flag-gated destinations, appended after basket when their flags are
+ * on — the event entry first, the trip entry after it. Kept out of the
+ * base list so flag-off deployments render exactly the original five
+ * destinations.
  */
 const EVENT_NAV_ITEM = { href: '/event', messageKey: 'event' } as const;
+const TRIP_NAV_ITEM = { href: '/trip', messageKey: 'trip' } as const;
 
 const MOBILE_NAV_ID = 'site-header-mobile-nav';
 
@@ -54,13 +57,20 @@ export default function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
 
-  // The event entry rides the same server-inlined flag payload as every
-  // gated page: flag off (or absent from an older payload) ⇒ the original
-  // five destinations, byte-identical to the pre-event header.
+  // The gated entries ride the same server-inlined flag payload as every
+  // gated page: a flag off (or absent from an older payload) removes its
+  // destination — flag-off keeps the original five destinations.
   const flags = useFeatureFlags();
-  const navItems = isEventCalculatorFlagEnabled(flags)
+  const eventOn = isEventCalculatorFlagEnabled(flags);
+  const withEvent = eventOn
     ? [...NAV_ITEMS.slice(0, 3), EVENT_NAV_ITEM, ...NAV_ITEMS.slice(3)]
     : NAV_ITEMS;
+  // The trip entry follows the event entry — or basket when the event
+  // feature is off.
+  const tripInsertAt = eventOn ? 4 : 3;
+  const navItems = isTripCalculatorFlagEnabled(flags)
+    ? [...withEvent.slice(0, tripInsertAt), TRIP_NAV_ITEM, ...withEvent.slice(tripInsertAt)]
+    : withEvent;
 
   // Following a nav link must close the menu — otherwise the panel stays
   // open over the page the visitor just navigated to.

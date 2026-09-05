@@ -64,6 +64,7 @@
     "compare": "Vertailu",
     "basket": "Ostoskori",
     "event": "Tilaisuuslaskuri",
+    "trip": "Matkalaskuri",
     "account": "Oma tili",
     "ranking": "Miten järjestäminen toimii"
   },
@@ -635,6 +636,68 @@
         },
         "mixingWarning": "Sekalasti varoitus: {glass} lasi- ja {can} metallikuorainen tuote samassa lähetyksessä — pakkaa lasi erilleen."
       }
+    }
+  },
+  "TripPage": {
+    "title": "Matkalaskuri",
+    "subtitle": "Laske, kuinka monta litraa kannattaa tuoda matkalla: jaettu matkakustannus, hintaero kategorioittain ja tullimäärärajojen ylittymiskohta. Jokainen rivi näyttää kannattavan tuontimäärän ja tullimäärärajan vaikutuksen.",
+    "form": {
+      "passengers": "Matkustajat (kpl)",
+      "vehicle": "Ajoneuvo",
+      "ticket": "Matkaliput yhteensä (€)",
+      "fuel": "Polttoaine yhteensä (€)",
+      "pricesHeading": "Hinnat euroa litralta",
+      "domesticPrice": "{category} — Suomi (€/l)",
+      "foreignPrice": "Ulkomaat (€/l)",
+      "priceHint": "Syötä kotimainen ja ulkomainen hinta vähintään yhdelle kategorialle.",
+      "priceError": "Tarkista hinnat: käytä numeroita (esim. 2,50) ja täytä jokainen aloitettu rivi molemmin hinnoin."
+    },
+    "vehicle": {
+      "car": "Henkilöauto",
+      "van": "Pakettiauto"
+    },
+    "category": {
+      "beer": "Olut",
+      "wine_still": "Makuuviini",
+      "wine_sparkling": "Kuohuviini",
+      "intermediate_products": "Välituotteet (esim. vermutti)",
+      "other_fermented": "Siideri ja pitkäjuoma",
+      "spirits": "Väkevät alkoholijuomat"
+    },
+    "submit": "Laske kannattava tuontimäärä",
+    "submitting": "Lasketaan…",
+    "result": {
+      "heading": "Kannattava tuontimäärä",
+      "priceDifference": "Hintaero (Suomi − ulkomaat)",
+      "breakEven": "Kannattava tuontimäärä",
+      "cap": "Tullimääräraja (tulliton enintään)",
+      "suggested": "Suositeltu tulliton määrä",
+      "capExceeded": "Raja ylittyy",
+      "withinAllowance": "Sopii määrärajaan",
+      "cappedWith": "{cap} (ilman määrärajaa {uncapped})",
+      "noAllowanceRow": "Ei määrärajariviä aineistoversiossa",
+      "noAllowanceRowBody": "Aineistoversiossa ei ole tämän kategorian määrärajariviä, joten rajaa ei voida soveltaa eikä rajattua suositusta antaa.",
+      "capNotVolume": "Määräraja on kappalemääräinen",
+      "capNotVolumeBody": "Tämän kategorian määräraja on annettu kappalemääränä (kpl), joten sitä ei voida ilmaista litroissa eikä rajata litramäärää.",
+      "noBreakEven": "Tuonti ei säästä rahaa",
+      "noBreakEvenBody": "Ulkomainen hinta ei ole alempi kuin kotimainen vertailuhinta, joten kannattavaa tuontimäärää ei ole.",
+      "travelCost": "Matkakustannus yhteensä: {total}",
+      "perTraveller": "Matkustajaa kohden: {amount} ({passengers} matkustajaa)",
+      "allowanceVersion": "Tullimäärärajojen aineistoversio: {version}"
+    },
+    "partners": {
+      "label": "Kumppanilinkit"
+    },
+    "noAllowances": {
+      "title": "Ei julkaistuja tullimäärärajoja",
+      "body": "Valitulle päivälle ei löydy julkaistua tullimääräraja-aineiston versiota, joten laskentaa ei voida tehdä. Kokeile uudelleen myöhemmin."
+    },
+    "errors": {
+      "validation": "Tarkista syötteen arvot: matkustajia 1–9, kustannukset yli 0 €.",
+      "forbidden": "Matkalaskuri ei ole käytettävissä.",
+      "rate-limited": "Liikaa pyyntöjä. Yritä hetken kuluttua uudelleen.",
+      "network": "Yhteys palvelimeen ei toiminut. Yritä uudelleen.",
+      "unknown": "Odottamaton virhe. Yritä uudelleen."
     }
   },
   "PriceAlerts": {
