@@ -786,6 +786,14 @@
     "dataNote": "Prices are collected observations, not merchant offers.",
     "landingNote": "The landed cost for Finland includes the price plus taxes, duties, and transport — calculate it in the calculator."
   },
+  "ProductDupes": {
+    "title": "Products from the same manufacturer abroad",
+    "dataNote": "Editorially curated sibling products — every link is backed by a verified manufacturer and published with its source. These are not ads or affiliate links.",
+    "producerLabel": "Producer key",
+    "manufacturerEvidence": "Manufacturer: {manufacturer}",
+    "siblingLink": "Product page #{id}",
+    "sourceLink": "Source"
+  },
   "OperatorConsole": {
     "title": "Operator console",
     "intro": "Manage source-governance permissions, confirm tax-rate and exchange-rate dataset publications, and work the correction queue. Every action is recorded in the audit log.",

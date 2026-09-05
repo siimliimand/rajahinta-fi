@@ -786,6 +786,14 @@
     "dataNote": "Hinnat ovat kerättyjä havaintoja, eivät myyjien tarjouksia.",
     "landingNote": "Kokonaiskustannus Suomeen sisältää hinnan lisäksi verot, tullit ja kuljetuksen — laske se laskurissa."
   },
+  "ProductDupes": {
+    "title": "Saman valmistajan tuotteita ulkomailla",
+    "dataNote": "Toimituksellisesti kuratoidut sisaratuotteet — jokainen linkki perustuu tarkistettuun valmistajatietoon ja julkaistaan lähteineen. Kyseessä eivät ole mainos- eikä affiliate-linkit.",
+    "producerLabel": "Valmistaja-avain",
+    "manufacturerEvidence": "Valmistaja: {manufacturer}",
+    "siblingLink": "Tuotesivu #{id}",
+    "sourceLink": "Lähde"
+  },
   "OperatorConsole": {
     "title": "Operaattorin konsoli",
     "intro": "Hallinnoi tietolähteiden käyttöoikeuksia, vahvista verokanta- ja valuuttakurssijulkaisuja ja käsittele korjausjono. Jokainen toimeen kirjataan auditointilokiin.",
