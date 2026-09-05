@@ -3,8 +3,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Link, usePathname } from '@/i18n/navigation';
+import { useFeatureFlags } from '@/lib/feature-flags';
 import Logo from './Logo';
 import { Button } from '@/components/ui';
+import { isEventCalculatorFlagEnabled } from '../event/event-calculator-flag';
 
 /**
  * Layout-level header: the five primary destinations on every page.
@@ -28,6 +30,13 @@ const NAV_ITEMS = [
   { href: '/ranking', messageKey: 'ranking' },
 ] as const;
 
+/**
+ * The event-calculator entry, appended after basket when its flag is on.
+ * Kept out of the base list so flag-off deployments render exactly the
+ * original five destinations.
+ */
+const EVENT_NAV_ITEM = { href: '/event', messageKey: 'event' } as const;
+
 const MOBILE_NAV_ID = 'site-header-mobile-nav';
 
 /**
@@ -45,6 +54,14 @@ export default function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
 
+  // The event entry rides the same server-inlined flag payload as every
+  // gated page: flag off (or absent from an older payload) ⇒ the original
+  // five destinations, byte-identical to the pre-event header.
+  const flags = useFeatureFlags();
+  const navItems = isEventCalculatorFlagEnabled(flags)
+    ? [...NAV_ITEMS.slice(0, 3), EVENT_NAV_ITEM, ...NAV_ITEMS.slice(3)]
+    : NAV_ITEMS;
+
   // Following a nav link must close the menu — otherwise the panel stays
   // open over the page the visitor just navigated to.
   useEffect(() => {
@@ -58,7 +75,7 @@ export default function SiteHeader() {
     }
   };
 
-  const renderNavLink = (item: (typeof NAV_ITEMS)[number], mobile: boolean) => {
+  const renderNavLink = (item: { href: string; messageKey: string }, mobile: boolean) => {
     const active = isRouteActive(pathname, item.href);
     // The active state is never carried by color alone: the desktop row
     // underlines the link (2px border) and the mobile panel keeps a
@@ -104,7 +121,7 @@ export default function SiteHeader() {
           aria-label={t('navLabel')}
           className="hidden flex-wrap items-center gap-x-5 gap-y-1 md:flex"
         >
-          {NAV_ITEMS.map((item) => renderNavLink(item, false))}
+          {navItems.map((item) => renderNavLink(item, false))}
         </nav>
 
         {/* Mobile disclosure toggle; native button semantics give
@@ -141,7 +158,7 @@ export default function SiteHeader() {
         aria-label={t('navLabel')}
         className={`${menuOpen ? 'flex' : 'hidden'} flex-col gap-1 border-t border-gray-200 px-4 pb-3 pt-2 md:hidden`}
       >
-        {NAV_ITEMS.map((item) => renderNavLink(item, true))}
+        {navItems.map((item) => renderNavLink(item, true))}
       </nav>
     </header>
   );

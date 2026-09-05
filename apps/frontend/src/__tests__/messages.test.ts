@@ -131,12 +131,13 @@ describe('layout and navigation catalog completeness', () => {
     }
   }
 
-  it('SiteHeader carries exactly the five destinations plus the nav label', () => {
+  it('SiteHeader carries the five base destinations, the flag-gated event destination, and the nav label', () => {
     expectNamespaceKeys('SiteHeader', [
       'navLabel',
       'calculator',
       'compare',
       'basket',
+      'event',
       'account',
       'ranking',
     ]);

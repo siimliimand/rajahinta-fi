@@ -63,6 +63,7 @@
     "calculator": "Calculator",
     "compare": "Compare",
     "basket": "Basket",
+    "event": "Event calculator",
     "account": "My account",
     "ranking": "How ranking works"
   },
@@ -543,6 +544,50 @@
     "product": "Product #{id}",
     "unitCount": "{count, plural, one {# unit} other {# units}}",
     "updated": "Updated {date}"
+  },
+  "EventPage": {
+    "title": "Event calculator",
+    "subtitle": "Estimate the drink requirement from the number of guests, the duration, and the event type. Each line of the resulting shopping list shows the need, the suggested purchase, and the surplus.",
+    "form": {
+      "guests": "Number of guests",
+      "duration": "Duration (hours)",
+      "profile": "Event type"
+    },
+    "profile": {
+      "casual_gathering": "Casual gathering",
+      "dinner_party": "Dinner party",
+      "celebration": "Celebration"
+    },
+    "submit": "Calculate shopping list",
+    "submitting": "Calculating…",
+    "result": {
+      "heading": "Shopping list",
+      "need": "Need",
+      "purchase": "Suggested purchase",
+      "surplus": "Surplus",
+      "unitQuantity": "{quantity} ×",
+      "noPurchase": "Nothing to buy",
+      "normsVersion": "Consumption norms version: {version}"
+    },
+    "noNorms": {
+      "title": "No published consumption norms",
+      "body": "There are no published consumption norms for the selected event type and date, so a shopping list cannot be calculated. Try again later."
+    },
+    "drinkType": {
+      "beer": "Beer",
+      "wine_still": "Still wine",
+      "wine_sparkling": "Sparkling wine",
+      "intermediate_products": "Intermediate products (e.g. vermouth)",
+      "other_fermented": "Cider and long drink",
+      "spirits": "Spirits"
+    },
+    "errors": {
+      "validation": "Check the input values: 1–500 guests, duration 1–72 hours.",
+      "forbidden": "The event calculator is not available.",
+      "rate-limited": "Too many requests. Try again in a moment.",
+      "network": "Could not reach the server. Try again.",
+      "unknown": "Unexpected error. Try again."
+    }
   },
   "PriceAlerts": {
     "title": "Price alerts",

@@ -172,7 +172,9 @@ function FlagGatedProbe() {
 
 describe('SiteHeader SSR — five destinations, both locales', () => {
   /** Render the real header the way the layout does: inside the
-      client-intl context for the steered locale and pathname. */
+      client-intl context for the steered locale and pathname, with the
+      server-inlined flag provider around it (the header's nav entries are
+      flag-gated since task 4.4). */
   async function renderHeaderHtml(locale: 'fi' | 'en'): Promise<string> {
     state.locale = locale;
     const { default: SiteHeader } = await vi.importActual<
@@ -181,7 +183,9 @@ describe('SiteHeader SSR — five destinations, both locales', () => {
     const messages = (await import(`@/messages/${locale}.json`)).default;
     return renderToString(
       <NextIntlClientProvider locale={locale} messages={messages}>
-        <SiteHeader />
+        <FeatureFlagsProvider flags={FLAGS_ON}>
+          <SiteHeader />
+        </FeatureFlagsProvider>
       </NextIntlClientProvider>,
     );
   }
@@ -203,6 +207,36 @@ describe('SiteHeader SSR — five destinations, both locales', () => {
     state.pathname = '/';
     const html = await renderHeaderHtml('fi');
     expect(html).toContain('Päävalikko');
+  });
+
+  it('adds the event-calculator destination only when its flag is on (task 4.4)', async () => {
+    state.locale = 'fi';
+    state.pathname = '/';
+    const { default: SiteHeader } = await vi.importActual<
+      typeof import('./components/SiteHeader')
+    >('./components/SiteHeader');
+    const messages = (await import('@/messages/fi.json')).default;
+    const renderWithFlags = (flags: FeatureFlagsResponse) =>
+      renderToString(
+        <NextIntlClientProvider locale="fi" messages={messages}>
+          <FeatureFlagsProvider flags={flags}>
+            <SiteHeader />
+          </FeatureFlagsProvider>
+        </NextIntlClientProvider>,
+      );
+
+    // Flag on: the sixth destination joins the row after basket.
+    const eventOn = {
+      flags: { ...FLAGS_ON.flags, EVENT_CALCULATOR: true },
+    } as FeatureFlagsResponse;
+    const onHtml = renderWithFlags(eventOn);
+    expect(onHtml).toContain('href="/event"');
+    expect(onHtml).toContain('Tilaisuuslaskuri');
+
+    // Flag off — including the key being absent from an older payload —
+    // keeps exactly the original five destinations.
+    expect(renderWithFlags(FLAGS_OFF)).not.toContain('href="/event"');
+    expect(renderWithFlags(FLAGS_ON)).not.toContain('href="/event"');
   });
 
   it('the mobile menu toggle is wired to a panel that is closed by default', async () => {
