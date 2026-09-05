@@ -43,7 +43,13 @@ rajahinta/
 │   │       ├── transport/             # TransportEstimationService, BasketShippingCalculator, bracket-selection
 │   │       ├── calculator/            # LandedCostCalculatorService (orchestrator, shared offer-constrained core)
 │   │       ├── optimizer/             # BasketOptimizerService — bounded exhaustive multi-store search (ports: merchant-terms, basket-calculation-record)
-    │       │       ├── reliability/           # ConfidenceFrameworkService, ReliabilityService, MerchantReliabilityScoreService
+│   │       ├── unitprice/             # €/g ethanol unit price — pure eurPerGram, density 789 g/l, status-carrying (VERIFIED/ESTIMATED/unavailable)
+│   │       ├── packing/               # Deterministic first-fit-decreasing box packing, fill-rate + glass/metal mixing warning
+│   │       ├── eventcalc/             # Event consumption calculator — MVP shopping list + V2 cross-border sourcing over versioned norms
+│   │       ├── tripcalc/              # Trip break-even calculator over versioned traveller allowance datasets
+│   │       ├── whatif/                # Hypothetical excise substitution — pure, zero persistence (ephemeral by design)
+│   │       ├── grouporder/            # Group-order proportional allocation + minimal transfers (accounting-only, no payment fields)
+│   │       ├── reliability/           # ConfidenceFrameworkService, ReliabilityService, MerchantReliabilityScoreService
 │   │       ├── ranking/               # RankingService (neutrality-enforced sorting)
 │   │       ├── declaration/           # ExciseDeclarationService (read-only, never submits)
 │   │       ├── correction/            # CorrectionService, CorrectionModule
@@ -54,7 +60,7 @@ rajahinta/
 │   │       └── history/               # PriceObservationRecorderService, TaxChangeAttributionService
 │   ├── data-platform/                 # Drizzle ORM repositories, schema, seed data
 │   │   └── src/
-    │       │       ├── schema.ts              # Canonical Drizzle schema (productMaster, retailOffers, taxRules, transportOffers, calculationRecords, priceObservations, priceHistorySummaries, aggregationWatermarks, merchantTerms, basketCalculationRecords, savedScenarios, accounts, savedBaskets, fxRateDatasets, fxRates, sessions, auditEvents, clickCounterSnapshots, merchantRegistry)
+│   │       ├── schema.ts              # Canonical Drizzle schema — 30 tables: productMaster, retailOffers, taxRules, transportOffers, calculationRecords, priceHistorySummaries, aggregationWatermarks, merchantTerms, basketCalculationRecords, savedScenarios, accounts, savedBaskets, sessions, auditEvents, clickCounterSnapshots, merchantRegistry, fxRateDatasets, fxRates, priceAlerts, alertNotifications, productDimensions, carrierBoxTypes, consumptionNorms, travellerAllowanceDatasets, travellerAllowanceLimits, groupOrderSessions, groupOrderItems, ferryOffers, producerLinks, curatedEntries (raw observations live in R2, not D1 — §5)
 │   │       ├── abstracts.ts           # Abstract repository classes (ProductRepository, TaxRateRepository, etc.)
 │   │       ├── drizzle/               # Committed Drizzle migrations (schema.ts is the source of truth, §15.1)
 │   │       ├── db/
@@ -69,14 +75,14 @@ rajahinta/
 │   │       │   ├── aggregation-watermark.repository.ts # Aggregation watermark persistence
 │   │       │   ├── calculation-record.repository.ts
 │   │       │   ├── merchant-terms.repository.ts        # Minimum-order thresholds with provenance (IMerchantTermsPort adapter)
-    │       │       │   ├── basket-calculation-record.repository.ts # Optimizer result persistence (IBasketCalculationRecordPort adapter)
-    │       │       │   ├── saved-scenario.repository.ts        # Named calculator input sets per account
-    │       │       │   ├── fx-rate.repository.ts               # Versioned FX datasets + rates (FxModule port adapter)
-    │       │       │   ├── session.repository.ts               # Server-issued sessions, tokens hashed at rest
-    │       │       │   ├── audit-event.repository.ts           # Append-only audit trail
-    │       │       │   ├── click-counter-snapshot.repository.ts # Click analytics PostgreSQL snapshots
-    │       │       │   ├── merchant-registry.repository.ts     # Database-backed merchant registry
-    │       │       │   └── merchant-reliability.repository.ts  # Merchant data-reliability aggregation reads
+│   │       │   ├── basket-calculation-record.repository.ts # Optimizer result persistence (IBasketCalculationRecordPort adapter)
+│   │       │   ├── saved-scenario.repository.ts        # Named calculator input sets per account
+│   │       │   ├── fx-rate.repository.ts               # Versioned FX datasets + rates (FxModule port adapter)
+│   │       │   ├── session.repository.ts               # Server-issued sessions, tokens hashed at rest
+│   │       │   ├── audit-event.repository.ts           # Append-only audit trail
+│   │       │   ├── click-counter-snapshot.repository.ts # Click analytics PostgreSQL snapshots
+│   │       │   ├── merchant-registry.repository.ts     # Database-backed merchant registry
+│   │       │   └── merchant-reliability.repository.ts  # Merchant data-reliability aggregation reads
 │   │       ├── data-platform.module.ts # DataPlatformModule — registers concrete repos + TAX_RULE_REPOSITORY_PORT
 │   │       └── seed/tax-rules.seed.ts # Versioned Finnish excise duty rates (v1.0-2024 … v3.0-2026)
 │   ├── data-acquisition/              # Merchant feed ingestion pipeline
@@ -137,7 +143,7 @@ rajahinta/
 ├── docs/
 │   ├── Rajahinta-FI.docx              # Business plan (Finnish)
 │   ├── rajahinta-fi-implementation-plan.md  # Engineering implementation plan
-│   ├── tasks.md                       # Task checkboxes (Phase 0–3)
+│   ├── tasks.md                       # Task checkboxes (Phase 0–3 + product-roadmap Phases 1–4)
 │   ├── tech-stack.md                  # Technology decisions
 │   ├── TECHNICAL-ASSESSMENT.md        # Codebase assessment with completion notes
 │   └── USER-GUIDE.md                  # End-user guide
@@ -207,7 +213,7 @@ The application is a **NestJS modular monolith** with four bounded layers:
 
 | Package                     | Responsibility                                                                                                                                        | Key modules / files                                                                                                                                                          |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core-domain`      | Domain logic — tax engines, classification, ranking, calculator orchestrator, basket optimizer, confidence framework, merchant reliability scoring, correction, entitlement, audit, source governance, price-history recording and attribution | `tax/`, `classification/`, `normalization/`, `transport/`, `calculator/`, `optimizer/`, `reliability/`, `ranking/`, `declaration/`, `correction/`, `entitlement/`, `audit/`, `governance/`, `history/` |
+| `packages/core-domain`      | Domain logic — tax engines, classification, ranking, calculator orchestrator, basket optimizer, confidence framework, merchant reliability scoring, correction, entitlement, audit, source governance, price-history recording and attribution, plus the roadmap modules: €/g unit price, packing optimization, event and trip calculators, excise what-if simulation, group-order allocation | `tax/`, `classification/`, `normalization/`, `transport/`, `calculator/`, `optimizer/`, `unitprice/`, `packing/`, `eventcalc/`, `tripcalc/`, `whatif/`, `grouporder/`, `reliability/`, `ranking/`, `declaration/`, `correction/`, `entitlement/`, `audit/`, `governance/`, `history/` |
 | `packages/data-platform`    | Drizzle ORM schema, concrete repositories, connection provider, seed data                                                                             | `schema.ts`, `abstracts.ts`, `repositories/`, `db/drizzle.provider.ts`, `data-platform.module.ts`, `seed/tax-rules.seed.ts`                                                  |
 | `packages/data-acquisition` | Merchant feed ingestion pipeline (Systembolaget, Alko), FX and carrier sources (ECB, Posti), data-quality checks, rate-review scheduler | `adapters/`, `services/`, `__fixtures__/` |
 | `packages/application-api`  | API controllers, DTOs, guards (session auth, rate limiting, idempotency, age gate, entitlement, launch gate, ops access), operator console API, analytics, background job workers, observability | `calculator/`, `calculations/`, `basket/`, `search/`, `ranking/`, `declaration/`, `historical/`, `ops/`, `analytics/`, `feature-flags/`, `rate-limiting/`, `age-gate/`, `jobs/`, `observability/` |
@@ -222,6 +228,7 @@ The application is a **NestJS modular monolith** with four bounded layers:
 - `TransportOfferRepository` → `DrizzleTransportOfferRepository`
 - `CalculationRecordRepository` → `DrizzleCalculationRecordRepository`
 - Plus durable stores added in the technical-assessment remediation: `SessionRepository` (hashed session tokens), `AuditEventRepository` (append-only audit trail), `ClickCounterSnapshotRepository`, `MerchantRegistryRepository`, and `FxRateRepository` (exposed to core-domain through the `FxModule` port adapter).
+- Plus the roadmap repositories (change `product-roadmap-phases-1-4`, under `repositories/d1/`): `PriceAlertRepository`/`AlertNotificationRepository` (intent-log + delivery marking), `ProductDimensionRepository`/`CarrierBoxTypeRepository`, `ConsumptionNormRepository`, `TravellerAllowanceRepository` (both versioned datasets behind the manual publish gate), `FerryOfferRepository`, `ProducerLinkRepository`, `CuratedEntryRepository`, and the `GroupOrderRepository` (sessions + items; `groupOrderSessions`/`groupOrderItems` carry no payment-adjacent columns by design).
 
 No `useValue: null` providers for data repos — all have concrete implementations.
 
@@ -250,7 +257,8 @@ No `useValue: null` providers for data repos — all have concrete implementatio
 | **Basket page**      | Basket builder (items, quantities, destination, transport arrangement) and optimization results with neutral cost-ordered alternatives (flag-gated) | `apps/frontend/src/app/[locale]/basket/`                          |
 | **Ranking page**     | Explanation of ranking methodology (neutrality enforcement); structured JSON via `GET /api/v1/ranking/methodology` | `apps/frontend/src/app/[locale]/ranking/page.tsx`, `packages/application-api/src/ranking/ranking.controller.ts` |
 | **Account page**     | Account management, saved baskets, session-linked history      | `apps/frontend/src/app/[locale]/account/`                          |
-| **Product pages**    | SEO surface: per-product pages with metadata, plus sitemap and robots       | `apps/frontend/src/app/[locale]/products/`, `apps/frontend/src/app/sitemap.ts`, `apps/frontend/src/app/robots.ts` |
+| **Product pages**    | SEO surface: per-product pages with metadata, plus sitemap and robots; flag-gated dupe panel (evidence-backed producer links) and set-alert action | `apps/frontend/src/app/[locale]/products/`, `apps/frontend/src/app/sitemap.ts`, `apps/frontend/src/app/robots.ts` |
+| **Roadmap feature pages** | Flag-gated (all default off): alerts management (account), event calculator, trip feasibility with the visually distinct ferry-offer block, curated lists (`lists/[slug]`), what-if simulator with embeddable widget, group-order session page with a persistent settlement-happens-outside note | `apps/frontend/src/app/[locale]/account/`, `.../event/`, `.../trip/`, `.../lists/`, `.../what-if/`, `.../group-order/` |
 | **Operator console** | Flag-gated (`OPERATOR_CONSOLE`, default off): governance grants, dataset confirmations including FX publish, correction queue | `apps/frontend/src/app/[locale]/ops/`, `packages/application-api/src/ops/` |
 | **Age Gate**         | Age verification wrapper (renders in root layout); honest gate: SSR placeholder, gating after mount, in-house declined page; Phase 1 confirmation is self-attestation | `apps/frontend/src/app/[locale]/age-gate/` (incl. `declined/`), `apps/frontend/src/app/[locale]/components/AgeGate.tsx` |
 | **DisclaimerBanner** | Structural disclaimer rendered on every calculation result                                  | `apps/frontend/src/app/[locale]/calculator/components/DisclaimerBanner.tsx` |
@@ -285,7 +293,7 @@ The implemented primary user journey:
 
 | Store          | Purpose                                                                                                             | Implementation                                                             |
 | -------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| D1 (SQLite)    | Primary relational store: products, retail offers, transport offers, versioned tax rules, FX datasets, calculation records, price-history summaries, sessions, audit trail, merchant registry, click-counter snapshots | `packages/data-platform/src/d1/schema.ts` (sqliteTable, design D2), bound as `DB` in `apps/api-worker/wrangler.jsonc`; 20 tables, FTS5 search (design D3); migrations via `wrangler d1 migrations` in the deploy pipeline (design D2) |
+| D1 (SQLite)    | Primary relational store: products, retail offers, transport offers, versioned tax rules, FX datasets, calculation records, price-history summaries, sessions, audit trail, merchant registry, click-counter snapshots, price alerts + notification intents, packing dimensions + carrier box types, versioned consumption-norm and traveller-allowance datasets, curated ferry offers, producer links, curated editorial entries, and the group-order ledger | `packages/data-platform/src/d1/schema.ts` (sqliteTable, design D2), bound as `DB` in `apps/api-worker/wrangler.jsonc`; 30 tables plus the `product_master_fts` FTS5 search index (design D3); migrations via `wrangler d1 migrations` in the deploy pipeline (design D2) |
 | R2             | Append-only price-observation log (JSONL objects partitioned by date, batch-read for aggregation — design D4 as amended by G1) + rate-snapshot objects + OpenNext ISR cache | `OBSERVATION_LOG`, `RATE_SNAPSHOTS`, `NEXT_INC_CACHE_R2_BUCKET` bindings; EU jurisdiction (design D9) |
 | Durable Objects | Strongly consistent request-scoped state: `RateLimiterDO` (sliding-window log), `IdempotencyDO` (version-aware cache keys), `ClickCounterDO` (SQLite storage, `alarm()`-flushed snapshots into D1) | `apps/api-worker/src/do/` (design D5) |
 | Legacy Postgres + Redis (test harness) | The former production stores, kept only for the legacy pg suites (golden, data-quality, compliance, integration) and the legacy browser-E2E harness | `docker-compose.yml` (postgres+redis services), `tests/integration/` |
@@ -293,7 +301,9 @@ The implemented primary user journey:
 Schema design principles applied (unchanged through the migration):
 
 - Data minimization at schema level — no optional fields "for later"
-- Versioned tax rules are append-only (never mutated in place); FX datasets follow the same discipline (`PENDING_CONFIRMATION` → `PUBLISHED` only through explicit operator confirmation)
+- Versioned tax rules are append-only (never mutated in place); FX datasets follow the same discipline (`PENDING_CONFIRMATION` → `PUBLISHED` only through explicit operator confirmation) — as do the roadmap reference datasets: `consumptionNorms` and `travellerAllowanceDatasets`/`travellerAllowanceLimits` are append-only with effective-date resolution and the same manual publish gate
+- **Data immutability for history (explicit):** the price-observation log is append-only — observations are written once and never overwritten or rewritten; corrections surface as new observations, and tax-driven movements are attributed read-time against the versioned tax-rule history. The only history-adjacent mutation is the idempotent re-materialization of `priceHistorySummaries` aggregates from the log
+- `groupOrderSessions`/`groupOrderItems` carry no payment-adjacent columns by design — the ledger is accounting-only (see §9); `ferryOffers` is a curated, display-only affiliate slot that is never part of a calculation input (see §9)
 - Time-series: `priceObservations` lives in R2 as an append-only JSONL log partitioned by date, scanned by watermark like the former TimescaleDB hypertable chunks (design D4 as amended by gate G1 — D1-only storage failed the ≥2× byte-headroom requirement); `priceHistorySummaries` remains the long-term analytical record, materialized into D1 with `strftime` bucketing
 - Retention: calculation records are **age-capped** by configuration (default 180 days) via a scheduled Cron `DELETE` sweep — anonymous rows keep the 30-day window, and the cap replaces the former "session-bearing rows are never pruned" rule (amended by G1)
 - `sessions` stores server-issued opaque tokens SHA-256 hashed at rest; the plaintext token exists only in the httpOnly cookie
@@ -351,12 +361,12 @@ Merchant ingestion is driven by the **database-backed merchant registry** (`merc
 | Email                       | Implemented | Email Worker on the `send_email` binding (`POST /internal/email/send` behind a shared-secret header) — first consumer is the ops freshness alert (design D7)                                                                              |
 | Rollback                    | Implemented | `wrangler rollback --env production` (previous Workers Version, no DNS changes); the K8s DNS-revert lever was retired at decommission (task 6.7)                                                                                          |
 | Feature flags               | Implemented | `FF_*` wrangler vars resolved by `apps/api-worker/src/middleware/feature-flags.ts`; frontend bootstrap inlines flag states in the initial HTML payload                                                                                    |
-| Background jobs             | Implemented | Cron Triggers (7 patterns dispatched in `src/cron/router.ts`), Queues (price ingestion + DLQ), and the price-ingestion Workflow with durable per-step retries (design D6)                                                                 |
+| Background jobs             | Implemented | Cron Triggers (6 patterns dispatched in `src/cron/router.ts` — the 30-minute aggregation tick carries three handlers: time-series aggregation, freshness alert, and price-alert evaluation, each isolated in its own `waitUntil`), Queues (price ingestion + DLQ), and the price-ingestion Workflow with durable per-step retries (design D6)                                                                                                           |
 | CI                          | Implemented | `ci.yml`: build, lint, unit, golden, data-quality, compliance, e2e, composition smoke, integration, D1 suite, api-worker e2e, OpenNext build + compile check, per-worker `wrangler deploy --dry-run` validation (task 6.5)                 |
 
 The former Docker/K8s production path (root Dockerfile, `docker-compose` app stack, Kustomize overlays in `infra/k8s/`, migrate/seed Jobs, ServiceMonitor/PrometheusRule) was **deleted at decommission** (task 6.7, after the rollback window closed per `docs/cutover-runbook.md` §6). `docker-compose.yml` remains only as the Postgres/Redis provider for the legacy pg test suites.
 
-The promotion path is development → staging → production, with staging carrying its own tax-rule and merchant data copies, and feature flags gating new merchant sources, tax rulesets, UI ranking behavior, historical price intelligence (`enable_historical_price_intelligence`, default off), basket optimization (`enable_basket_optimization`, default off), and advanced features (`enable_advanced_features` — saved scenarios, report exports, merchant freshness, declaration guidance; default off).
+The promotion path is development → staging → production, with staging carrying its own tax-rule and merchant data copies, and feature flags gating new merchant sources, tax rulesets, UI ranking behavior, historical price intelligence (`enable_historical_price_intelligence`, default off), basket optimization (`enable_basket_optimization`, default off), the operator console (`OPERATOR_CONSOLE`, default off), and advanced features (`enable_advanced_features` — saved scenarios, report exports, merchant freshness, declaration guidance; default off). The product-roadmap features (change `product-roadmap-phases-1-4`) each ship behind their own flag, all default off, declared in `apps/api-worker/wrangler.jsonc` (all environments) and `infra/environments/*.yaml` with per-environment promotion expectations: `UNIT_PRICE_EUR_PER_GRAM` (€/g metric), `PRICE_ALERTS` (Hinta-Haukka watchlist + evaluation cron), `PACKING_OPTIMIZER` (packing section of the basket optimize response), `EVENT_CALCULATOR`, `TRIP_CALCULATOR`, `PRODUCER_DUPE_FINDER`, `CURATED_LISTS`, `EXCISE_WHAT_IF`, and `GROUP_ORDER_LEDGER`; `FF_ROLLOUT_*` variables opt specific flags into percentage rollout.
 
 ## 9. Security Architecture
 
@@ -372,12 +382,18 @@ Implemented measures:
 - **Audit trail**: append-only `audit_events` table; governance actions, dataset confirmations, and operator-console actions are durably recorded.
 - **Data minimization**: Schema-level enforcement — no optional fields "for later"; identity document storage deferred.
 - **Neutrality enforcement**: `RankingService` structurally rejects any input with billing-related fields; no code path allows paid/manual boost.
+- **Affiliate neutrality (ferry slot display-only)**: `ferryOffers` is a curated, audited operator-console-managed block returned alongside the trip-feasibility result in its own separate `ferryOffers` section — affiliate fields are absent from the calculation module's input types at source level, and a compliance test proves calculation output is byte-identical with zero, one, and many ferry-offer rows (`tests/compliance/trip-affiliate-neutrality.test.ts`).
+- **Evidence-only dupes**: the producer dupe finder (`GET /api/v1/products/:id/dupes`) returns only `producerLinks` rows with complete evidence fields (producer key, manufacturer, source URL, reviewer, review date); there is deliberately no similarity scoring or flavor matching anywhere in the module — asserted at source level. Evidence links (dupes and curated lists) render as direct outbound anchors rather than through the offer-keyed redirect controller, because no offerId exists for evidence links (a generic redirect route would be api-worker scope; noted in the module docblocks).
+- **What-if ephemerality**: the excise what-if simulator (`POST /api/v1/what-if/excise`) persists nothing — no scenario rows, no rule mutation; sharing works through an opaque token encoding the scenario inputs, decoded read-only. Zero persistence is compliance/integration-tested.
+- **Group-order accounting-only**: the ledger computes proportional allocation and minimal transfers and nothing else — payment-instrument fields are rejected at the DTO with the offending field named, the module contains no payment-processing imports (import-position scanned), and settlement happens entirely outside the platform.
 
 Non-negotiable constraints from the implementation plan:
 
 - Minimal personal data: default to anonymous usage; identity/age-verification (only if legally required) is a separate, isolated subsystem.
 - Tax data is versioned, never overwritten; historical calculations resolve against the effective rate version.
 - No code path may allow paid/manual boost of a merchant's position (neutrality enforced in code).
+- No commercial or affiliate signal may enter any calculation input (ferry offers are display-only; compliance-tested).
+- No payment processing anywhere: the group-order ledger is accounting-only; users settle externally with their own methods.
 
 Agent infrastructure constraints: credentials stay out of logs and committed files; `.env` files are write-only.
 
@@ -387,7 +403,7 @@ The production observability path is the Workers rework (design D8):
 
 | Concern                  | Implementation                                                                    |
 | ------------------------ | ---------------------------------------------------------------------------------- |
-| Metrics                  | Workers Analytics Engine `writeDataPoint`: request counters and freshness gauges (stale price share, transport age), queried via the Cloudflare GraphQL API; Grafana dashboards re-pointed (`apps/api-worker/src/observability/`) |
+| Metrics                  | Workers Analytics Engine `writeDataPoint`: request counters, freshness gauges (stale price share, transport age), and the price-alert evaluation counters (evaluated/matched/notified/failed with a failure gauge, following the freshness-gauge pattern), queried via the Cloudflare GraphQL API; Grafana dashboards re-pointed (`apps/api-worker/src/observability/`) |
 | Traces                   | Workers' OTLP export keeps **Grafana Cloud as the trace destination** — no APM vendor change; env-configured endpoint |
 | Logs                     | Workers Logs with request-ID fields (replaces pino-to-stdout)                       |
 | Health                   | `GET /api/v1/health/ready` verifies a D1 roundtrip plus a DO ping (dependency-aware, short timeouts); liveness stays process-only and cheap |
@@ -402,7 +418,7 @@ The legacy Nest-side observability (`packages/application-api/src/observability/
 
 Implemented:
 
-- **Background jobs separate from request/response path**: Cloudflare Queues, Workflows, and Cron Triggers handle per-merchant price ingestion, transport-rate refresh, tax-dataset review, FX-dataset review, time-series aggregation, and retention sweeps (formerly BullMQ workers); a slow scrape never blocks a user's calculation.
+- **Background jobs separate from request/response path**: Cloudflare Queues, Workflows, and Cron Triggers handle per-merchant price ingestion, transport-rate refresh, tax-dataset review, FX-dataset review, time-series aggregation, price-alert evaluation, and retention sweeps (formerly BullMQ workers); a slow scrape never blocks a user's calculation. The price-alert evaluation shares the 30-minute post-ingestion tick — it reads only the materialized summaries that tick maintains (never the raw R2 log), enforces the 24 h per-alert cooldown through a crash-safe write-before-dispatch intent log, and never runs on a request path.
 - **Basket-level transport estimation**: `BasketShippingCalculator` handles non-linear shipping thresholds for multi-item baskets.
 - **Idempotent calculation endpoints**: results are reproducible and cacheable for identical inputs given the same dataset versions. Cache keys are version-aware: tax, transport, and FX dataset versions are part of the key, so entries invalidate when a dataset version changes, not on a timer. The basket optimizer enforces input caps with a total-combinations guard (clean 422 when exceeded).
 
@@ -445,7 +461,8 @@ The repository is an agentic workspace with a working application build. Command
 | Session integrity tests | Implemented | `packages/application-api/src/accounts/__tests__/`: token forge/guess denied, cross-account access denied, rotation invalidates the old token atomically, `x-user-id` rejected |
 | FX dataset tests | Implemented | `packages/core-domain/src/fx/__tests__/` (lifecycle, publication gate, rate resolution), `packages/data-acquisition/src/__tests__/fx-dataset-review.service.test.ts`, `ecb-rate.source.test.ts`, mixed-currency golden cases, cache invalidation on FX dataset version change |
 | Search tests | Implemented | `packages/application-api/src/search/__tests__/`: "karhu" matches, deterministic ranked order, pagination interplay, blank query passthrough |
-| Compliance suite | Implemented | `tests/compliance/`: neutrality-compliance, ranking-lockstep; runs with `COMPLIANCE_ENFORCED=true` so violations fail the build |
+| Compliance suite | Implemented | `tests/compliance/`: neutrality-compliance, ranking-lockstep, trip-affiliate-neutrality (byte-identical calculation output across zero/one/many `ferryOffers` rows); runs with `COMPLIANCE_ENFORCED=true` so violations fail the build |
+| Roadmap-feature tests | Implemented | Unit suites per module (`packages/core-domain/src/{unitprice,packing,eventcalc,tripcalc,whatif,grouporder}/__tests__/`); D1 integration suites `tests/integration/d1/` (`price-alerts`, `packing-optimizer`, `event-calc`, `group-order` incl. payment-field named rejection, `producer-dupes` evidence completeness, `curated-lists`, `what-if` zero-persistence); flag-off 403 gates per endpoint |
 | Data-quality suite | Implemented | Data-quality invariants over seeded data (`scripts/test-data-quality.sh`) |
 | Durability tests | Implemented | `tests/integration/durability-restart.test.ts`: rate limits shared across two app instances, audit and analytics survive restart |
 | Data-lifecycle tests | Implemented | `tests/integration/data-lifecycle.test.ts`: partition pruning, hypertable query parity, watermark scan |
@@ -466,6 +483,10 @@ Suite sizes at the technical-assessment remediation gate (task 13.1): unit 2337,
 | Transaction Classification isolated | Most important proprietary logic; independently testable, versioned rule sets subject to legislative change                                        |
 | Neutrality enforced in code         | Ranking must be objective and deterministic; no paid/manual boost path                                                                             |
 | Data freshness first-class          | Every external fact carries reliability status + timestamp surfaced to the user                                                                    |
+| Affiliate neutrality                | The curated `ferryOffers` slot never enters a calculation input; output is compliance-tested byte-identical regardless of ferry-offer rows        |
+| Roadmap features flag-gated, default off | Each of the ten product-roadmap features ships behind its own `FF_*` variable (default off) for instant rollback                              |
+| Group order is accounting-only      | No payment fields in schema or DTOs, no payment-processing imports; settlement happens entirely outside the platform                              |
+| History is immutable                | The observation log is append-only — rows are appended, never overwritten; corrections and attribution are new-row/read-time concerns             |
 | Compliance layer across all layers  | Neutrality, reliability labeling, and audit at each boundary, not a separate service                                                               |
 
 ## 15. Constraints, Risks, and Technical Debt
@@ -559,4 +580,4 @@ Per the implementation plan's delivery phases (cross-cutting durable stores, fee
 | Hypertable       | TimescaleDB time-partitioned table; the former home of `price_observations` (7-day chunks) — superseded by the R2 date-partitioned JSONL log (design D4); still required by the legacy pg test harness |
 | ECB              | European Central Bank (publisher of the default FX reference rates)                                                 |
 
-<!-- Last updated: 2026-08-31, migrate-to-cloudflare decommission (task 6.7): Cloudflare Workers/D1/R2/DO/Queues/Workflows/Cron architecture, OpenNext frontend, email Worker, Grafana via OTLP, wrangler CI/CD; K8s/Docker-prod artifacts removed; prior: technical-assessment-remediation (2026-08-28, sessions, FX datasets, merchant registry, TimescaleDB hypertable, durable audit/analytics/rate limiting, Next 15/React 19/next-intl, ops console, observability); prior: Phase 2 advanced features -->
+<!-- Last updated: 2026-09-05, product-roadmap-phases-1-4 (task 10.3): ten roadmap features — core-domain modules unitprice/packing/eventcalc/tripcalc/whatif/grouporder, twelve new D1 tables (30 total), price-alert-evaluation cron on the 30-min tick, nine FF_* flags default off, affiliate-neutrality/accounting-only/evidence-only/what-if-ephemerality boundaries, explicit data-immutability statement; prior: migrate-to-cloudflare decommission (2026-08-31, task 6.7): Cloudflare Workers/D1/R2/DO/Queues/Workflows/Cron architecture, OpenNext frontend, email Worker, Grafana via OTLP, wrangler CI/CD; K8s/Docker-prod artifacts removed; prior: technical-assessment-remediation (2026-08-28, sessions, FX datasets, merchant registry, TimescaleDB hypertable, durable audit/analytics/rate limiting, Next 15/React 19/next-intl, ops console, observability); prior: Phase 2 advanced features -->

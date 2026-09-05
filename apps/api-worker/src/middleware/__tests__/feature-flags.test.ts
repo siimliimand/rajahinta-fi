@@ -23,7 +23,7 @@ function envWith(vars: Record<string, string | undefined> = {}): AppEnv['Binding
   return { ...vars } as unknown as AppEnv['Bindings'];
 }
 
-/** All seven flag names, boolean map. */
+/** Every flag name, boolean map (grows with the FeatureFlag const). */
 function allOff(): FeatureFlagConfig {
   return Object.fromEntries(
     Object.values(FeatureFlag).map((flag) => [flag, false]),
@@ -57,6 +57,15 @@ describe('FeatureFlagService', () => {
         'BASKET_OPTIMIZATION',
         'ADVANCED_FEATURES',
         'OPERATOR_CONSOLE',
+        'UNIT_PRICE_EUR_PER_GRAM',
+        'PRICE_ALERTS',
+        'PACKING_OPTIMIZER',
+        'EVENT_CALCULATOR',
+        'TRIP_CALCULATOR',
+        'PRODUCER_DUPE_FINDER',
+        'EXCISE_WHAT_IF',
+        'CURATED_LISTS',
+        'GROUP_ORDER_LEDGER',
       ].sort(),
     );
   });

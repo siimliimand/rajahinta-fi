@@ -14,6 +14,8 @@
  * | DeclarationController (/api/v1/declaration)| class: AgeGateGuard; GET :recordId: EntitlementGuard + RequireFeature   | ageGate(); requireFeature('declaration:summary') on GET /:recordId |
  * | AccountController (/api/v1/account)       | class: SessionAuthGuard; scenarios: FeatureFlagGuard(ADVANCED_FEATURES)  | sessionAuth() per route; + flag on scenarios |
  * | SessionController (/api/v1/account)       | POST session: RateLimit only; rotate/revoke: SessionAuthGuard            | rotate + DELETE session: sessionAuth(); POST session stays public |
+ * | PriceAlertsRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/account/alerts) | no Nest counterpart | sessionAuth(), requireFeatureFlag('PRICE_ALERTS'); per-account rate limit registers on the routes (needs the resolved identity) |
+ * | GroupOrderRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/group-orders) | no Nest counterpart | POST create only: sessionAuth(), requireFeatureFlag('GROUP_ORDER_LEDGER'); the token-scoped participant routes carry the flag gate on the routes — NO sessionAuth there (the share token is the capability) |
  * | OpsDashboardController (/ops/health)      | OpsAccessGuard                                                           | opsAccess() |
  * | Ops console (4 controllers, /ops/console/*)| OpsAccessGuard + FeatureFlagGuard(OPERATOR_CONSOLE)                      | opsAccess(), requireFeatureFlag('OPERATOR_CONSOLE') |
  *
@@ -103,6 +105,39 @@ const GUARDED_ROUTES: readonly GuardedRoute[] = [
     methods: ['DELETE'],
     path: '/api/v1/account/scenarios/:id',
     use: [sessionAuth(), requireFeatureFlag('ADVANCED_FEATURES')],
+  },
+
+  // PriceAlertsRoutes (task 2.3, change product-roadmap-phases-1-4) — NEW
+  // surface, no Nest counterpart. Session first, then the PRICE_ALERTS
+  // flag (the scenarios-route order pinned by route-coverage: an anonymous
+  // caller gets the 401 envelope regardless of flag state, so flag state
+  // never leaks to unauthenticated callers). The per-account rate limit is
+  // NOT listed here — requireAccountRateLimit keys the bucket on the
+  // resolved identity, so it registers on the route handlers themselves,
+  // composing after these guards.
+  {
+    methods: ['GET', 'POST'],
+    path: '/api/v1/account/alerts',
+    use: [sessionAuth(), requireFeatureFlag('PRICE_ALERTS')],
+  },
+  {
+    methods: ['PATCH', 'DELETE'],
+    path: '/api/v1/account/alerts/:alertId',
+    use: [sessionAuth(), requireFeatureFlag('PRICE_ALERTS')],
+  },
+
+  // GroupOrderRoutes (task 9.3, change product-roadmap-phases-1-4) — only
+  // the session-create route is owner-authenticated (alerts order: an
+  // anonymous caller gets the 401 envelope, so flag state never leaks to
+  // unauthenticated callers). The token-scoped participant routes
+  // (join/items/ledger) deliberately stay OUT of this table: participants
+  // join by share link without an account (the share token IS the
+  // capability, spec: participant joins by link), so they register the
+  // GROUP_ORDER_LEDGER gate directly on their handlers in the routes file.
+  {
+    methods: ['POST'],
+    path: '/api/v1/group-orders',
+    use: [sessionAuth(), requireFeatureFlag('GROUP_ORDER_LEDGER')],
   },
 
   // SessionController — method-level SessionAuthGuard; POST /session

@@ -203,6 +203,23 @@
 
 ---
 
+## Product Roadmap — Phases 1–4 (Ten Roadmap Features)
+
+> Implemented via `openspec/changes/product-roadmap-phases-1-4` (feature groups 1–10; cross-cutting 10.1 flag declarations and 10.2 observability done, 10.3 this documentation, 10.4 full verification). Roadmap phases here are the product roadmap's four phases (data-engine extensions, user-value features, differentiating features, predictive/analytical tools) — distinct from the implementation-plan phases above. Every feature ships behind its own flag, default off, declared in `apps/api-worker/wrangler.jsonc` and `infra/environments/*.yaml`.
+
+- [x] **F1** €/g ethanol unit price (flag `enable_unit_price_eur_per_gram`) → pure `eurPerGram` in `core-domain/src/unitprice/` (density 789 g/l, ESTIMATED/unavailable when inputs missing, never persisted); flag-gated inclusion on product/offer reads; compare-view €/g column, deterministic sort, formula tooltip; ranking-neutrality compliance extended to the new sort. *(completed via openspec/changes/product-roadmap-phases-1-4 — group 1)*
+- [x] **F2** Price history exposure → no new machinery required: the append-only observation log, immutability rule, materialized summaries, history API, and charts already shipped with T2.1–T2.5. This change records the data-immutability principle explicitly (ARCHITECTURE.md §5: observations are appended, never overwritten). *(completed via openspec/changes/product-roadmap-phases-1-4 — proposal idea 2, documentation half)*
+- [x] **F3** Price-drop alerts, Hinta-Haukka (flag `enable_price_alerts`) → `priceAlerts` + `alertNotifications` D1 tables (migration 0004) with intent-log/delivery-marking repositories; alerts CRUD at `/api/v1/account/alerts` behind the session guard; post-ingestion evaluation cron (`apps/api-worker/src/cron/price-alert-evaluation.ts`) reading materialized summaries only, 24 h per-alert cooldown, crash-safe write-before-dispatch, never on the request path; AE counters (evaluated/matched/notified/failed); account alerts UI + product-page set-alert action. *(completed via openspec/changes/product-roadmap-phases-1-4 — group 2, plus 10.2)*
+- [x] **F4** Packing optimizer (flag `enable_packing_optimizer`) → `productDimensions` + `carrierBoxTypes` tables (migration 0005, curated PostNord/DHL seed); deterministic first-fit-decreasing module in `core-domain/src/packing/` with fill rates and glass/metal mixing warning; flag-gated packing section on the basket optimize response (shape unchanged while off); basket-page packing panel with ESTIMATED degradation when dimensions are missing. *(completed via openspec/changes/product-roadmap-phases-1-4 — group 3)*
+- [x] **F5** Event calculator (flag `enable_event_calculator`) → versioned, cited `consumptionNorms` dataset (migration 0006) published through the manual dataset-confirmation gate; MVP module in `core-domain/src/eventcalc/` (guests × duration × profile → minimal-surplus shopping list) and V2 cross-border sourcing reusing the landed-cost engines with optional budget constraint; `POST /api/v1/event-calc` with structural norms-are-estimates disclaimer; event page (simple + plan views). *(completed via openspec/changes/product-roadmap-phases-1-4 — group 4)*
+- [x] **F6** Trip feasibility calculator (flag `enable_trip_calculator`) → versioned, append-only `travellerAllowanceDatasets`/`travellerAllowanceLimits` (migration 0007, EU-cited seed); break-even module in `core-domain/src/tripcalc/` (travel cost ÷ unit-price difference, explicit no-break-even result, allowance caps with dataset version named); `POST /api/v1/trip-feasibility` with the curated `ferryOffers` block (migration 0009) returned separately and never part of the calculation input — byte-identical output proven by `tests/compliance/trip-affiliate-neutrality.test.ts`; trip page with visually distinct partner block. *(completed via openspec/changes/product-roadmap-phases-1-4 — group 5)*
+- [x] **F7** Producer dupe finder (flag `enable_producer_dupe_finder`) → evidence-hardened `producerLinks` table (migration 0010, NOT NULL evidence + CHECKs); `GET /api/v1/products/:id/dupes` returning only evidence-backed links (no similarity scoring or flavor matching anywhere — source-level asserted); product-page dupe panel showing WHY (producer/manufacturer evidence and source link); audited operator-console CRUD. *(completed via openspec/changes/product-roadmap-phases-1-4 — group 6)*
+- [x] **F8** Curated lists, "Alkon hylkäämät" (flag `enable_curated_lists`) → `curatedEntries` table (migration 0011, draft/published lifecycle, rationale + evidence links required); `GET /api/v1/lists` + `/api/v1/lists/:slug` (published entries only); list pages with curation criteria and per-entry rationale; audited operator-console entry lifecycle so content updates need no code changes; criteria document at `docs/curation-criteria.md`; flag-derived sitemap entries. *(completed via openspec/changes/product-roadmap-phases-1-4 — group 7)*
+- [x] **F9** Excise what-if simulator (flag `enable_excise_what_if`) → pure substitution module in `core-domain/src/whatif/` (hypothetical rate through the existing excise math, baseline dataset version cited, no rule mutation); anonymous, rate-limited `POST /api/v1/what-if/excise` with structural HYPOTHETICAL disclaimer; opaque share token for the embeddable widget — zero persistence, integration-tested; neutral wording enforced by vocabulary lint. *(completed via openspec/changes/product-roadmap-phases-1-4 — group 8)*
+- [x] **F10** Group order ledger (flag `enable_group_order_ledger`) → `groupOrderSessions` + `groupOrderItems` tables (migration 0008) carrying no payment-adjacent columns by design; allocation module in `core-domain/src/grouporder/` (proportional split by item-value share, deterministic largest-remainder rule, minimal-transfer settlement); token-scoped session API (unauthenticated participants within session scope, expiry enforced) whose DTOs reject payment-instrument fields with the field named; group-order page with who-owes-whom transfers and a persistent settlement-happens-outside note. *(completed via openspec/changes/product-roadmap-phases-1-4 — group 9)*
+
+---
+
 ## Critical Path Summary (Build Order)
 
 Per Section 15 of the engineering plan, the must-do-first sequencing:
@@ -233,7 +250,7 @@ Per the business plan and engineering plan, the following are explicitly deferre
 |---|---|
 | Social features, reviews | Not in MVP scope |
 | Alcohol recommendations, promotional notifications | Violates neutrality/promotional-content policy |
-| Affiliate sales, commission tracking | Violates "no affiliate incentives at launch" policy |
+| Affiliate sales, commission tracking | Violates "no affiliate incentives at launch" policy. *Note (2026-09-05, product-roadmap change): the curated `ferryOffers` trip-page block is display-only curation — no commission-tracking infrastructure exists and offers never influence any calculation output (compliance-tested byte-identical; see ARCHITECTURE.md §9)* |
 | Loyalty systems | Not in MVP scope |
 | Automated tax filing | Legal risk — platform prepares information only |
 | Large-scale merchant advertising | Violates neutrality policy |
@@ -243,4 +260,4 @@ Per the business plan and engineering plan, the following are explicitly deferre
 
 ---
 
-*Last updated: 2026-08-27 — T2.10–T2.13 (Phase 2C Advanced Features) completed*
+*Last updated: 2026-09-05 — product-roadmap Phases 1–4 (ten features, groups 1–9 + 10.1/10.2) completed via openspec/changes/product-roadmap-phases-1-4; prior: 2026-08-27 — T2.10–T2.13 (Phase 2C Advanced Features) completed*

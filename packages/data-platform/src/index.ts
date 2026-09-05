@@ -112,6 +112,114 @@ export { MerchantReliabilityRepository } from './repositories/merchant-reliabili
 export type { MerchantReliabilityAggregate } from './repositories/merchant-reliability.repository';
 
 // ---------------------------------------------------------------------------
+// Price alerts — D1-only tables (task 2.1, change
+// product-roadmap-phases-1-4); abstract + concrete are co-located in the
+// repository files (merchant-reliability precedent; no pg counterpart)
+// ---------------------------------------------------------------------------
+
+export {
+  PriceAlertRepository,
+  D1PriceAlertRepository,
+} from './repositories/d1/price-alert.repository';
+export type {
+  PriceAlertRecord,
+  PriceAlertCreateInput,
+  PriceAlertUpdatePatch,
+  PriceAlertStatus,
+} from './repositories/d1/price-alert.repository';
+export {
+  AlertNotificationRepository,
+  D1AlertNotificationRepository,
+} from './repositories/d1/alert-notification.repository';
+export type {
+  AlertNotificationRecord,
+  AlertNotificationIntentInput,
+  AlertChannel,
+  AlertDeliveryStatus,
+} from './repositories/d1/alert-notification.repository';
+
+// ---------------------------------------------------------------------------
+// Product dimensions + carrier box types — D1-only tables (task 3.1, change
+// product-roadmap-phases-1-4); abstract + concrete are co-located in the
+// repository files (price-alert precedent; no pg counterpart)
+// ---------------------------------------------------------------------------
+
+export {
+  ProductDimensionsRepository,
+  D1ProductDimensionsRepository,
+} from './repositories/d1/product-dimensions.repository';
+export type {
+  ProductDimensionRecord,
+  ProductDimensionUpsertInput,
+  ProductDimensionMaterial,
+} from './repositories/d1/product-dimensions.repository';
+export {
+  CarrierBoxTypesRepository,
+  D1CarrierBoxTypesRepository,
+} from './repositories/d1/carrier-box-types.repository';
+export type { CarrierBoxTypeRecord } from './repositories/d1/carrier-box-types.repository';
+
+// ---------------------------------------------------------------------------
+// Consumption norms repository — versioned event-calculator reference
+// dataset (task 4.1; design R5), FX-dataset lifecycle on a D1-only table
+// ---------------------------------------------------------------------------
+
+export {
+  ConsumptionNormsRepository,
+  D1ConsumptionNormsRepository,
+  MissingNormSourceCitationError,
+  NormVersionMismatchError,
+  CONSUMPTION_NORM_STATUSES,
+  CONSUMPTION_NORM_DRINK_TYPES,
+  CONSUMPTION_NORM_EVENT_PROFILES,
+} from './repositories/d1/consumption-norms.repository';
+export type {
+  ConsumptionNormRecord,
+  ConsumptionNormStatus,
+  ConsumptionNormInsert,
+} from './repositories/d1/consumption-norms.repository';
+
+// ---------------------------------------------------------------------------
+// Traveller allowances repository — versioned EU personal-use indicative
+// limits for the trip calculator (task 5.1; design R7), FX-dataset
+// lifecycle on a D1-only table pair
+// ---------------------------------------------------------------------------
+
+export {
+  TravellerAllowancesRepository,
+  D1TravellerAllowancesRepository,
+  MissingAllowanceSourceCitationError,
+  TRAVELLER_ALLOWANCE_STATUSES,
+  TRAVELLER_ALLOWANCE_CATEGORIES,
+} from './repositories/d1/traveller-allowances.repository';
+export type {
+  TravellerAllowanceDatasetRecord,
+  TravellerAllowanceLimitRecord,
+  TravellerAllowanceDatasetWithLimits,
+  TravellerAllowanceStatus,
+  TravellerAllowanceDatasetInsert,
+  TravellerAllowanceLimitInsert,
+} from './repositories/d1/traveller-allowances.repository';
+
+// ---------------------------------------------------------------------------
+// Group order ledger — shareable sessions + participant item lines behind
+// the accounting-only boundary (task 9.1; design R12), D1-only table pair
+// ---------------------------------------------------------------------------
+
+export {
+  GroupOrderRepository,
+  D1GroupOrderRepository,
+} from './repositories/d1/group-order.repository';
+export type {
+  GroupOrderSessionRecord,
+  GroupOrderItemRecord,
+  GroupOrderSessionInsert,
+  GroupOrderItemInsert,
+  GroupOrderSessionView,
+  GroupOrderParticipantSummary,
+} from './repositories/d1/group-order.repository';
+
+// ---------------------------------------------------------------------------
 // Module boundary — pure interfaces for cross-layer contracts
 // ---------------------------------------------------------------------------
 
@@ -151,6 +259,44 @@ export {
   seedMerchantRegistry,
   type MerchantRegistrySeedRow,
 } from './seed/merchant-registry.seed';
+
+// ---------------------------------------------------------------------------
+// Carrier box-type seed — curated PostNord/DHL standard catalogue (task 3.1),
+// the packing module's only source of box geometry; D1-only table
+// ---------------------------------------------------------------------------
+
+export {
+  seedCarrierBoxTypes,
+  CARRIER_BOX_TYPES_SEED,
+  type CarrierBoxTypeSeedRow,
+} from './seed/carrier-box-types.seed';
+
+// ---------------------------------------------------------------------------
+// Consumption norms seed — curated event-calculator norms (task 4.1), every
+// row carrying a verifiable source citation; D1-only table
+// ---------------------------------------------------------------------------
+
+export {
+  seedConsumptionNorms,
+  CONSUMPTION_NORMS_SEED,
+  CONSUMPTION_NORMS_SEED_VERSION,
+  CONSUMPTION_NORMS_CITATION_URL,
+  type ConsumptionNormSeedRow,
+} from './seed/consumption-norms.seed';
+
+// ---------------------------------------------------------------------------
+// Traveller allowances seed — curated EU personal-use indicative limits
+// (task 5.1), every row carrying an official source citation; D1-only tables
+// ---------------------------------------------------------------------------
+
+export {
+  seedTravellerAllowances,
+  TRAVELLER_ALLOWANCES_SEED,
+  TRAVELLER_ALLOWANCES_SEED_VERSION,
+  TRAVELLER_ALLOWANCES_CITATION_URL,
+  TRAVELLER_ALLOWANCES_DATASET_CITATION,
+  type TravellerAllowanceSeedRow,
+} from './seed/traveller-allowances.seed';
 
 // ---------------------------------------------------------------------------
 // Drizzle connection provider

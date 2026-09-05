@@ -25,6 +25,7 @@ import {
   request,
 } from './harness';
 import { D1FxRateRepository } from '../../../../../packages/data-platform/src/repositories/d1/fx-rate.repository';
+import { D1ConsumptionNormsRepository } from '../../../../../packages/data-platform/src/repositories/d1/consumption-norms.repository';
 
 const OPS = { authorization: `Bearer ${FAKE_OPS_TOKEN}` };
 const JSON_HDRS = { 'content-type': 'application/json', ...OPS };
@@ -270,6 +271,88 @@ describe('/ops/console/confirmations', () => {
       );
       await expectEnvelope(res, 503, { error: 'StoreUnavailable' });
     }
+  });
+
+  it('lists pending consumption norms by version and publishes via confirm: 404 unknown, 409 terminal, audit', async () => {
+    const { d1 } = openMigratedD1();
+    const norms = new D1ConsumptionNormsRepository(d1);
+    const [created] = await norms.createPendingVersion([
+      {
+        versionLabel: 'norms-2026.1',
+        drinkType: 'beer',
+        eventProfile: 'casual_gathering',
+        normValuePerGuestPerHour: 0.32,
+        sourceCitation: 'cited source — https://example.invalid/norms',
+        effectiveFrom: '2026-01-01',
+        effectiveTo: null,
+      },
+    ]);
+    const app = buildApp();
+    const env = authedEnv(d1);
+
+    const list = await request(app, env, '/ops/console/confirmations', { headers: OPS });
+    expect(list.status).toBe(200);
+    const listBody = (await list.json()) as Record<string, any>;
+    expect(listBody.consumptionNorms).toHaveLength(1);
+    expect(listBody.consumptionNorms[0]).toMatchObject({
+      versionLabel: 'norms-2026.1',
+      status: 'PENDING_CONFIRMATION',
+    });
+    expect(listBody.consumptionNorms[0].rows).toEqual([
+      expect.objectContaining({
+        id: created.id,
+        drinkType: 'beer',
+        eventProfile: 'casual_gathering',
+        normValuePerGuestPerHour: 0.32,
+      }),
+    ]);
+
+    const missing = await request(
+      app,
+      env,
+      '/ops/console/confirmations/consumption-norms/999/confirm',
+      { method: 'POST', headers: JSON_HDRS, body: JSON.stringify({ operator: 'ops-1' }) },
+    );
+    await expectEnvelope(missing, 404, { message: 'Consumption norm 999 not found' });
+
+    const ok = await request(
+      app,
+      env,
+      `/ops/console/confirmations/consumption-norms/${created.id}/confirm`,
+      {
+        method: 'POST',
+        headers: JSON_HDRS,
+        body: JSON.stringify({ operator: 'ops-1', note: 'Citations verified' }),
+      },
+    );
+    expect(ok.status).toBe(200);
+    expect((await ok.json()) as Record<string, any>).toMatchObject({
+      id: created.id,
+      versionLabel: 'norms-2026.1',
+      status: 'PUBLISHED',
+    });
+
+    // PUBLISHED is terminal — the FX republish 409 parity.
+    const again = await request(
+      app,
+      env,
+      `/ops/console/confirmations/consumption-norms/${created.id}/confirm`,
+      { method: 'POST', headers: JSON_HDRS, body: JSON.stringify({ operator: 'ops-1' }) },
+    );
+    await expectEnvelope(again, 409, { error: 'InvalidTransition' });
+
+    const trail = await request(app, env, '/ops/console/audit?limit=10', { headers: OPS });
+    const trailBody = (await trail.json()) as Record<string, any>;
+    expect(trailBody.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'consumption_norm',
+          entityId: 'norms-2026.1',
+          action: 'confirmed',
+          author: 'ops-1',
+        }),
+      ]),
+    );
   });
 });
 

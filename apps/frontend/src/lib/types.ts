@@ -59,7 +59,47 @@ export interface RetailOffer {
   readonly sourceUrl: string | null;
   readonly observedAt: string;
   readonly reliabilityStatus: string;
+  /**
+   * Read-time €/g ethanol metric for this offer (mirrors core-domain's
+   * `UnitPriceResult`), attached by the API only while
+   * enable_unit_price_eur_per_gram is on — key absent otherwise.
+   */
+  readonly eurPerGram?: UnitPriceResult;
 }
+
+// ---------------------------------------------------------------------------
+// Unit-price metric (mirrors core-domain unitprice.types)
+// ---------------------------------------------------------------------------
+
+/** Why the €/g metric could not be produced (mirrors core-domain). */
+export type UnitPriceUnavailableReason =
+  | 'MISSING_VOLUME'
+  | 'MISSING_ALCOHOL_FRACTION'
+  | 'INVALID_VOLUME'
+  | 'INVALID_ALCOHOL_FRACTION'
+  | 'INVALID_PRICE';
+
+/** Successful metric: value present, offer-price provenance attached. */
+export interface UnitPriceValue {
+  readonly status: 'computed' | 'ESTIMATED';
+  /** Offer price in euro cents per gram of pure ethanol. */
+  readonly centsPerGram: number;
+  /** Grams of pure ethanol in one unit (volume × fraction × 789 g/l). */
+  readonly ethanolGrams: number;
+  /** Reliability of the offer price the metric was derived from. */
+  readonly priceReliability: ReliabilityStatus;
+}
+
+/** Metric could not be produced: explicitly no value, with a reason. */
+export interface UnitPriceUnavailable {
+  readonly status: 'unavailable';
+  readonly centsPerGram: null;
+  readonly ethanolGrams: null;
+  readonly reason: UnitPriceUnavailableReason;
+}
+
+/** Discriminated €/g result — discriminate on `status` (mirrors core-domain). */
+export type UnitPriceResult = UnitPriceValue | UnitPriceUnavailable;
 
 export interface ProductDetailResponse {
   readonly product: ProductDetail;
@@ -529,13 +569,55 @@ export interface FeatureFlagsResponse {
      */
     readonly ADVANCED_FEATURES: boolean;
     /**
+     * enable_unit_price_eur_per_gram — gates the €/g ethanol metric on
+     * product/offer read responses and the compare view's €/g column +
+     * sort option.
+     */
+    readonly UNIT_PRICE_EUR_PER_GRAM: boolean;
+    /**
      * enable_operator_console — gates the operator console UI + API
      * (task 12.1). Optional in the client type: the degrade-to-hidden
      * default predates it, and an absent key must render the console
      * hidden (compliance rule: flag-off by default).
      */
     readonly OPERATOR_CONSOLE?: boolean;
+    /**
+     * PRICE_ALERTS — gates the price-alert watchlist API and UI: the
+     * account alerts management view and the product-page set-alert
+     * action (task 2.4, change product-roadmap-phases-1-4). Optional in
+     * the client type like OPERATOR_CONSOLE: an absent key (payload from
+     * a backend predating the flag) must render the UI hidden.
+     */
+    readonly PRICE_ALERTS?: boolean;
+    /**
+     * GROUP_ORDER_LEDGER — gates the group order API and UI: the session
+     * create/manage entry and the share-link session page (task 9.4,
+     * change product-roadmap-phases-1-4). Optional in the client type
+     * like OPERATOR_CONSOLE/PRICE_ALERTS: an absent key (payload from a
+     * backend predating the flag) must render the UI absent.
+     */
+    readonly GROUP_ORDER_LEDGER?: boolean;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Price alerts (GET/POST/PATCH/DELETE /api/v1/account/alerts)
+// Mirrors the serialization in api-worker alerts.routes.ts — ISO timestamps,
+// accountId omitted (the list is always caller-scoped).
+// ---------------------------------------------------------------------------
+
+/** Alert delivery state: active alerts are evaluated, paused alerts are kept but mute. */
+export type PriceAlertStatus = 'active' | 'paused';
+
+/** A price alert row as served by the account API (ISO timestamps). */
+export interface PriceAlert {
+  readonly id: number;
+  readonly productId: number;
+  /** Alert threshold in integer euro cents (1–1,000,000 — see alerts.routes.ts). */
+  readonly thresholdCents: number;
+  readonly status: PriceAlertStatus;
+  readonly createdAt: string;
+  readonly updatedAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -679,6 +761,16 @@ export type SortOrder =
   | 'ALCOHOL_PERCENTAGE'
   | 'PRODUCT_CATEGORY';
 
+/**
+ * Compare-view sort orders: the shared contract above plus the
+ * flag-gated €/g ethanol option. EUR_PER_GRAM is a compare-view-only
+ * client-side order (the backend ranking contract in core-domain does
+ * not include it), so it deliberately lives here and not in SortOrder —
+ * the ranking methodology page and its backend-lockstep description
+ * reference stay untouched.
+ */
+export type CompareSortOrder = SortOrder | 'EUR_PER_GRAM';
+
 // ---------------------------------------------------------------------------
 // Ranking methodology (GET /api/v1/ranking/methodology)
 // ---------------------------------------------------------------------------
@@ -711,6 +803,13 @@ export interface ComparisonProduct {
   readonly itemizedCosts: readonly ItemizedCost[];
   readonly confidence: ConfidenceLevel;
   readonly reliability: ReliabilityStatus;
+  /**
+   * €/g ethanol metric shown in the compare view's €/g column — the best
+   * (lowest centsPerGram, then offer id) value across the product detail's
+   * offers. Present only while enable_unit_price_eur_per_gram is on and
+   * the detail payload resolved; absent means no value may be shown.
+   */
+  readonly eurPerGram?: UnitPriceResult;
   /** Optional retail-offer ID for the outbound redirect link */
   readonly offerId?: number;
   /** Optional merchant display name (shown as the link label) */

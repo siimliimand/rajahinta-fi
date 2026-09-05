@@ -205,6 +205,217 @@ describe('GET /api/v1/products/:id (detail)', () => {
   });
 });
 
+describe('eurPerGram embed (flag UNIT_PRICE_EUR_PER_GRAM)', () => {
+  // The flag-less shapes — the embed key appends to (flag on) or stays
+  // absent from (flag off) these exact key lists, in this order.
+  const LEGACY_ITEM_KEYS = [
+    'id',
+    'name',
+    'brand',
+    'category',
+    'alcoholByVolume',
+    'unitVolume',
+    'containerType',
+    'lowestPriceCents',
+    'merchantCount',
+  ];
+  const LEGACY_OFFER_KEYS = [
+    'id',
+    'merchant',
+    'country',
+    'priceCents',
+    'currency',
+    'availability',
+    'sourceUrl',
+    'observedAt',
+    'reliabilityStatus',
+  ];
+
+  it('search items carry the metric while the flag is on — explicitly unavailable (no price in the search path)', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 }); // volume + ABV present
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      permissiveEnv(d1, { FF_UNIT_PRICE_EUR_PER_GRAM: 'true' }),
+      '/api/v1/products',
+      { headers: AGE },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: Array<Record<string, unknown>> };
+    expect(body.items).toHaveLength(1);
+    // One embed shape everywhere: the Phase 1 search path loads no offers,
+    // so there is no price to derive from — the metric degrades to an
+    // explicit unavailable, never a substituted value.
+    expect(body.items[0]!.eurPerGram).toEqual({
+      status: 'unavailable',
+      centsPerGram: null,
+      ethanolGrams: null,
+      reason: 'INVALID_PRICE',
+    });
+    expect(Object.keys(body.items[0]!)).toEqual([...LEGACY_ITEM_KEYS, 'eurPerGram']);
+  });
+
+  it('search metric names a missing alcohol fraction before the absent price (module precedence)', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, alcoholByVolume: null });
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      permissiveEnv(d1, { FF_UNIT_PRICE_EUR_PER_GRAM: 'true' }),
+      '/api/v1/products',
+      { headers: AGE },
+    );
+    const body = (await res.json()) as {
+      items: Array<{ eurPerGram: Record<string, unknown> }>;
+    };
+    expect(body.items[0]!.eurPerGram).toEqual({
+      status: 'unavailable',
+      centsPerGram: null,
+      ethanolGrams: null,
+      reason: 'MISSING_ALCOHOL_FRACTION',
+    });
+  });
+
+  it('flag off leaves the search item byte-compatible (no eurPerGram key)', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      permissiveEnv(d1, { FF_UNIT_PRICE_EUR_PER_GRAM: undefined }),
+      '/api/v1/products',
+      { headers: AGE },
+    );
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).not.toContain('eurPerGram');
+    const body = JSON.parse(text) as { items: Array<Record<string, unknown>> };
+    expect(Object.keys(body.items[0]!)).toEqual(LEGACY_ITEM_KEYS);
+  });
+
+  it('offer metric is computed from the exact inputs while VERIFIED (density 789 g/l)', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 }); // 0.33 l, ABV 0.047
+    seedOffer(db, { id: 11, productId: 1, priceCents: 350 }); // VERIFIED
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      permissiveEnv(d1, { FF_UNIT_PRICE_EUR_PER_GRAM: 'true' }),
+      '/api/v1/products/1',
+      { headers: AGE },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      offers: Array<{
+        eurPerGram: {
+          status: string;
+          ethanolGrams: number;
+          centsPerGram: number;
+          priceReliability: string;
+        };
+      }>;
+    };
+    // 0.33 l × 0.047 × 789 g/l ≈ 12.23739 g ethanol; 350 ¢ / that ≈ 28.6 ¢/g.
+    expect(body.offers[0]!.eurPerGram.status).toBe('computed');
+    expect(body.offers[0]!.eurPerGram.ethanolGrams).toBeCloseTo(12.23739, 5);
+    expect(body.offers[0]!.eurPerGram.centsPerGram).toBeCloseTo(28.60087, 4);
+    expect(body.offers[0]!.eurPerGram.priceReliability).toBe('VERIFIED');
+    expect(Object.keys(body.offers[0]!)).toEqual([...LEGACY_OFFER_KEYS, 'eurPerGram']);
+  });
+
+  it('a non-VERIFIED offer price yields an ESTIMATED metric (value still returned)', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    seedOffer(db, {
+      id: 11,
+      productId: 1,
+      priceCents: 350,
+      reliabilityStatus: 'ESTIMATED',
+    });
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      permissiveEnv(d1, { FF_UNIT_PRICE_EUR_PER_GRAM: 'true' }),
+      '/api/v1/products/1',
+      { headers: AGE },
+    );
+    const body = (await res.json()) as {
+      offers: Array<{
+        eurPerGram: { status: string; priceReliability: string; centsPerGram: number };
+      }>;
+    };
+    expect(body.offers[0]!.eurPerGram.status).toBe('ESTIMATED');
+    expect(body.offers[0]!.eurPerGram.priceReliability).toBe('ESTIMATED');
+    expect(body.offers[0]!.eurPerGram.centsPerGram).toBeCloseTo(28.60087, 4);
+  });
+
+  it('missing alcohol percentage → explicit unavailable, no value substituted', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, alcoholByVolume: null });
+    seedOffer(db, { id: 11, productId: 1, priceCents: 350 });
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      permissiveEnv(d1, { FF_UNIT_PRICE_EUR_PER_GRAM: 'true' }),
+      '/api/v1/products/1',
+      { headers: AGE },
+    );
+    const body = (await res.json()) as {
+      offers: Array<{ eurPerGram: Record<string, unknown> }>;
+    };
+    expect(body.offers[0]!.eurPerGram).toEqual({
+      status: 'unavailable',
+      centsPerGram: null,
+      ethanolGrams: null,
+      reason: 'MISSING_ALCOHOL_FRACTION',
+    });
+  });
+
+  it('flag off leaves the detail payload byte-compatible and the embed never reorders offers', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    seedOffer(db, { id: 11, productId: 1, priceCents: 350 });
+    seedOffer(db, { id: 12, productId: 1, priceCents: 420, merchant: 'systembolaget' });
+    const app = buildApp();
+
+    const on = await request(
+      app,
+      permissiveEnv(d1, { FF_UNIT_PRICE_EUR_PER_GRAM: 'true' }),
+      '/api/v1/products/1',
+      { headers: AGE },
+    );
+    const onBody = (await on.json()) as { offers: Array<Record<string, unknown>> };
+
+    const off = await request(
+      app,
+      permissiveEnv(d1, { FF_UNIT_PRICE_EUR_PER_GRAM: undefined }),
+      '/api/v1/products/1',
+      { headers: AGE },
+    );
+    const offText = await off.text();
+    expect(offText).not.toContain('eurPerGram');
+    const offBody = JSON.parse(offText) as { offers: Array<Record<string, unknown>> };
+
+    // Identical order and identical values — the only difference is the
+    // appended embed key.
+    expect(onBody.offers.map((o) => o.id)).toEqual(offBody.offers.map((o) => o.id));
+    expect(offBody.offers.map((o) => Object.keys(o))).toEqual([
+      LEGACY_OFFER_KEYS,
+      LEGACY_OFFER_KEYS,
+    ]);
+    const stripped = structuredClone(onBody.offers);
+    for (const offer of stripped) delete offer.eurPerGram;
+    expect(stripped).toEqual(offBody.offers);
+  });
+});
+
 describe('GET /api/v1/declaration/:recordId (pinned Nest behavior)', () => {
   it('403s with InsufficientEntitlement even for a valid PREMIUM session', async () => {
     const { db, d1 } = openMigratedD1();

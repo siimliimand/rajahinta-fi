@@ -14,7 +14,7 @@
  * @module BasketPage
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import type { BasketOptimizationResult, BasketItemInput } from '@/lib/basket.types';
 import { optimizeBasket, classifyBasketError } from '@/lib/basket.client';
@@ -75,6 +75,15 @@ export default function BasketPage() {
 
   // Guard against duplicate submits
   const optimizeInFlight = useRef(false);
+
+  /**
+   * Product names by ID for the packing section — it names excluded
+   * products and box contents instead of bare product IDs.
+   */
+  const productNames = useMemo(
+    () => new Map(items.map((i) => [i.productId, i.productName])),
+    [items],
+  );
 
   // ── Handlers ──
 
@@ -198,7 +207,7 @@ export default function BasketPage() {
       {/* ── Results ── */}
       {result && (
         <section>
-          <BasketResults result={result} />
+          <BasketResults result={result} productNames={productNames} />
         </section>
       )}
     </main>

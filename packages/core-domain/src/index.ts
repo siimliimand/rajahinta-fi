@@ -387,6 +387,165 @@ export {
 } from './reliability/reliability.types';
 
 // ---------------------------------------------------------------------------
+// Unit price — cents per gram of pure ethanol (read-time derived, never persisted)
+// ---------------------------------------------------------------------------
+
+export { eurPerGram, ETHANOL_DENSITY_G_PER_L } from './unitprice/eur-per-gram';
+export type {
+  UnitPriceResult,
+  UnitPriceValue,
+  UnitPriceUnavailable,
+  UnitPriceStatus,
+  UnitPriceUnavailableReason,
+} from './unitprice/unitprice.types';
+
+// ---------------------------------------------------------------------------
+// Packing — deterministic carrier box suggestion (FFD, mixing warning)
+// ---------------------------------------------------------------------------
+
+export { suggestPacking } from './packing/packing';
+export {
+  MIXED_MATERIAL_MAX_UNITS,
+  MIXED_MATERIAL_MAX_COMBINED_WEIGHT_G,
+} from './packing/thresholds';
+export type {
+  CarrierBoxType,
+  ExcludedPackingItem,
+  MixingTrigger,
+  MixingWarning,
+  PackedBox,
+  PackedBoxGroup,
+  PackingExclusionReason,
+  PackingItem,
+  PackingMaterial,
+  PackingStatus,
+  PackingSuggestion,
+} from './packing/packing.types';
+
+// ---------------------------------------------------------------------------
+// Event calculator — norms-based consumption + minimal-surplus shopping list
+// ---------------------------------------------------------------------------
+
+export {
+  calculateEventShoppingList,
+  computeConsumption,
+  toShoppingList,
+} from './eventcalc/eventcalc';
+export { RETAIL_UNITS_BY_DRINK_TYPE } from './eventcalc/retail-units';
+export type {
+  EventCalcInput,
+  EventCalcResult,
+  EventCalcStatus,
+  EventDrinkType,
+  EventNormRow,
+  EventProfile,
+  EventShoppingList,
+  NoPublishedNormsResult,
+  EventConsumptionLine,
+  ShoppingListLine,
+  PlannedUnit,
+  InconsistentNormsReason,
+} from './eventcalc/eventcalc.types';
+export {
+  EVENT_CALC_DRINK_TYPES,
+  EVENT_CALC_EVENT_PROFILES,
+  InvalidEventInputError,
+  InconsistentNormsError,
+  MixedNormVersionsError,
+} from './eventcalc/eventcalc.types';
+export { buildEventSourcingPlan } from './eventcalc/sourcing';
+export {
+  SOURCING_COUNTRY_ORDER,
+  sourcingCountryRank,
+  SourcingInputError,
+} from './eventcalc/sourcing.types';
+export type {
+  SourcingCountry,
+  SourcingCostOption,
+  SourcingOptionsByDrinkType,
+  SourcingSourceKind,
+  SourcingPlanLine,
+  SourcingInputErrorReason,
+  EventSourcingInput,
+  EventSourcingPlan,
+  BudgetCheck,
+} from './eventcalc/sourcing.types';
+
+// ---------------------------------------------------------------------------
+// What-if excise simulator — hypothetical rate substitution through the
+// excise math (pure, ephemeral, no persistence; spec excise-what-if-simulator)
+// ---------------------------------------------------------------------------
+
+export { calculateWhatIfExcise } from './whatif/whatif';
+export { WHATIF_DISCLAIMER_FI, WHATIF_DISCLAIMER_EN } from './whatif/whatif.disclaimer';
+export { InvalidWhatIfInputError, MixedTaxDatasetVersionsError } from './whatif/whatif.types';
+export type {
+  WhatIfScenarioInput,
+  WhatIfScenarioResult,
+  WhatIfProductInput,
+  WhatIfBaselineRule,
+  WhatIfProductLine,
+  WhatIfBaselineExcise,
+  WhatIfHypotheticalExcise,
+  WhatIfTotals,
+  WhatIfInputErrorReason,
+} from './whatif/whatif.types';
+
+// ---------------------------------------------------------------------------
+// Trip feasibility calculator — travel cost per traveller, break-even
+// volumes, allowance capping (pure, resolved allowances passed in;
+// spec trip-feasibility-calculator)
+// ---------------------------------------------------------------------------
+
+export { calculateTripBreakEven } from './tripcalc/tripcalc';
+export { TRIP_DISCLAIMER_FI, TRIP_DISCLAIMER_EN } from './tripcalc/tripcalc.disclaimer';
+export {
+  TRIP_CATEGORY_KEYS,
+  TRIP_VEHICLE_TYPES,
+  InvalidTripInputError,
+} from './tripcalc/tripcalc.types';
+export type {
+  TripCalcInput,
+  TripCalcResult,
+  TripCalcStatus,
+  TripCategoryKey,
+  TripVehicleType,
+  TripAllowanceLimitRow,
+  TripResolvedAllowances,
+  TripCategoryPriceInput,
+  TripBreakEvenLine,
+  TripBreakEvenVolumeLine,
+  TripNoBreakEvenLine,
+  TripCapStatus,
+  TripInputErrorReason,
+} from './tripcalc/tripcalc.types';
+
+// ---------------------------------------------------------------------------
+// Group order ledger — proportional shared-cost allocation and minimal
+// transfer settlement (pure, accounting-only; spec group-order-ledger)
+// ---------------------------------------------------------------------------
+
+export { calculateGroupOrderLedger, settleBalances } from './grouporder/grouporder';
+export { GROUP_ORDER_DISCLAIMER_FI, GROUP_ORDER_DISCLAIMER_EN } from './grouporder/grouporder.disclaimer';
+export { InvalidGroupOrderInputError } from './grouporder/grouporder.types';
+export type {
+  GroupOrderLedgerInput,
+  GroupOrderParticipantInput,
+  GroupOrderSharedCostLineInput,
+  GroupOrderLedgerResult,
+  GroupOrderLedgerStatus,
+  GroupOrderComputedLedger,
+  GroupOrderEmptySessionLedger,
+  GroupOrderNoItemValueLedger,
+  GroupOrderSharedCostAllocation,
+  GroupOrderPerParticipantAllocation,
+  GroupOrderParticipantLedger,
+  MinimalTransfer,
+  ParticipantBalance,
+  GroupOrderInputErrorReason,
+} from './grouporder/grouporder.types';
+
+// ---------------------------------------------------------------------------
 // Ranking & Sorting — objective sort orders for beverage price comparison
 // ---------------------------------------------------------------------------
 

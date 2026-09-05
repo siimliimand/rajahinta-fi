@@ -565,6 +565,7 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlagsResponse = {
     HISTORICAL_PRICE_INTELLIGENCE: false,
     BASKET_OPTIMIZATION: false,
     ADVANCED_FEATURES: false,
+    UNIT_PRICE_EUR_PER_GRAM: false,
   },
 };
 

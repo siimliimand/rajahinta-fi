@@ -63,6 +63,9 @@
     "calculator": "Laskuri",
     "compare": "Vertailu",
     "basket": "Ostoskori",
+    "event": "Tilaisuuslaskuri",
+    "trip": "Matkalaskuri",
+    "whatIf": "Mitä jos -laskuri",
     "account": "Oma tili",
     "ranking": "Miten järjestäminen toimii"
   },
@@ -328,7 +331,28 @@
     "empty": "Vertailuun ei ole vielä lisätty tuotteita.",
     "totalLandedCost": "Kokonaiskustannus yhteensä",
     "dataConfidence": "Tietojen luotettavuus",
-    "viewAt": "Katso myyjältä {merchant}"
+    "viewAt": "Katso myyjältä {merchant}",
+    "eurPerGram": {
+      "columnHeader": "€/g puhdasta etanolia",
+      "sortOptionLabel": "Etanoli-€/g (matalin ensin)",
+      "unit": "snt/g",
+      "noValue": "Ei arvoa",
+      "reason": {
+        "MISSING_VOLUME": "tuotteen tilavuus puuttuu",
+        "MISSING_ALCOHOL_FRACTION": "tuotteen alkoholipitoisuus puuttuu",
+        "INVALID_VOLUME": "tuotteen tilavuus on virheellinen",
+        "INVALID_ALCOHOL_FRACTION": "tuotteen alkoholipitoisuus on virheellinen",
+        "INVALID_PRICE": "hinta on virheellinen"
+      },
+      "tooltip": {
+        "triggerLabel": "Miten €/g lasketaan?",
+        "title": "€/g puhdasta etanolia",
+        "formula": "Kaava: hinta ÷ (tilavuus litroissa × alkoholiosuus × 789 g/l).",
+        "density": "Puhtaan etanolin tiheys on 789 g/l.",
+        "priceReliability": "Hintatiedon luotettavuus: {status}.",
+        "unavailableReason": "Arvoa ei ole: {reason}."
+      }
+    }
   },
   "SortSelector": {
     "label": "Järjestä:"
@@ -389,6 +413,30 @@
     "alternative": "Vaihtoehto {index}",
     "dataReliability": "Tietojen luotettavuus"
   },
+  "BasketPacking": {
+    "title": "Pakkausehdotus",
+    "advisory": "Ohjeellinen ehdotus lähetyksen pakkaamiseksi — kuljettaja vahvistaa lopullisen pakkaustavan.",
+    "fillAriaLabel": "Laatikon {boxName} täyttöaste",
+    "warning": {
+      "title": "Materiaalisekoitus ylittää raja-arvot",
+      "figures": "Lasi: {glassUnits} kpl · Tölkki: {canUnits} kpl · Yhteispaino: {combinedWeight}",
+      "triggered": "Ylittyneet raja-arvot: {triggers}",
+      "trigger": {
+        "UNIT_COUNT": "yksikkömäärä",
+        "COMBINED_WEIGHT": "yhteispaino"
+      }
+    },
+    "excluded": {
+      "title": "Pakkaamatta jääneet tuotteet",
+      "item": "{name} · {count} kpl — {reason}",
+      "reason": {
+        "MISSING_DIMENSIONS": "mitat puuttuvat",
+        "INVALID_DIMENSIONS": "virheelliset mitat",
+        "INVALID_QUANTITY": "virheellinen määrä",
+        "NO_FITTING_BOX": "ei sopivaa laatikkoa"
+      }
+    }
+  },
   "BasketComparison": {
     "title": "Usean myyjän ostoskorivertailu",
     "subtitle": "Vertaa, miten monituoteisen ostoskorin kustannukset jakautuvat myyjien kesken. Kaikki järjestäminen on objektiivista ja neutraalia.",
@@ -437,6 +485,9 @@
     "savedBaskets": "Tallennetut ostoskorit",
     "savedBasketsDesc": "Tallenna tuotevalikoimat nopeaa uudelleenlaskentaa varten.",
     "browseSavedBaskets": "Selaa tallennettuja ostoskoreja →",
+    "priceAlerts": "Hintaherätykset",
+    "priceAlertsDesc": "Aseta tuotteille hintarajoja ja hallitse herätyksiä.",
+    "browsePriceAlerts": "Hallitse hintaherätyksiä →",
     "historyFeature": "Laskentahistoria",
     "historyFeatureDesc": "Näytä ja suorita uudelleen aiemmat kokonaiskustannuslaskennat.",
     "viewHistory": "Näytä historia →",
@@ -496,6 +547,288 @@
     "unitCount": "{count, plural, one {# yksikkö} other {# yksikköä}}",
     "updated": "Päivitetty {date}"
   },
+  "EventPage": {
+    "title": "Tilaisuuslaskuri",
+    "subtitle": "Arvioi juonetarve vieraiden määrän, keston ja tilaisuustyypin perusteella. Tuloksena on ostoslista, jonka jokainen rivi näyttää tarpeen, ehdotetun ostomäärän ja ylijäämän.",
+    "form": {
+      "guests": "Vieraiden määrä (kpl)",
+      "duration": "Kesto (tuntia)",
+      "profile": "Tilaisuuden tyyppi",
+      "sourcing": {
+        "toggle": "Vertaa ulkomaisiin kauppoihin (V2)",
+        "country": "Vertailumaa",
+        "countryName": {
+          "EE": "Viro",
+          "LV": "Latvia",
+          "LT": "Liettua",
+          "SE": "Ruotsi",
+          "DE": "Saksa"
+        },
+        "budget": "Budjetti (€, valinnainen)",
+        "packing": "Ehdota pakkausta rajalta tuotaville juomille",
+        "pricesHeading": "Hintaperuste euroa litralta",
+        "domesticPrice": "{type} — Suomi (€/l)",
+        "foreignPrice": "Ulkomaa (€/l)",
+        "priceHint": "Syötä hinta litralta vähintään yhdelle juomatyypille. Ulkomainen hinta vaatii aina kotimaisen vertailuhinnan.",
+        "priceError": "Tarkista hinnat: käytä numeroita (esim. 2,50) ja anna kotimainen hinta aina kun ulkomainen hinta on syötetty."
+      }
+    },
+    "profile": {
+      "casual_gathering": "Rentoutunut kokoontuminen",
+      "dinner_party": "Päivälliskutsut",
+      "celebration": "Juhlat"
+    },
+    "submit": "Laske ostoslista",
+    "submitting": "Lasketaan…",
+    "result": {
+      "heading": "Ostoslista",
+      "need": "Tarve",
+      "purchase": "Ehdotettu osto",
+      "surplus": "Ylijäämä",
+      "unitQuantity": "{quantity} ×",
+      "noPurchase": "Ei ostotarvetta",
+      "normsVersion": "Kulutusnormien versio: {version}"
+    },
+    "noNorms": {
+      "title": "Ei julkaistuja kulutusnormeja",
+      "body": "Valitulle tilaisuustyypille ja päivälle ei löydy julkaistua kulutusnormiversiota, joten ostoslistaa ei voida laskea. Kokeile uudelleen myöhemmin."
+    },
+    "drinkType": {
+      "beer": "Olut",
+      "wine_still": "Makuuviini",
+      "wine_sparkling": "Kuohuviini",
+      "intermediate_products": "Välituotteet (esim. vermutti)",
+      "other_fermented": "Siideri ja pitkäjuoma",
+      "spirits": "Väkevät alkoholijuomat"
+    },
+    "errors": {
+      "validation": "Tarkista syötteen arvot: vieraita 1–500, kestoa 1–72 tuntia.",
+      "forbidden": "Tilaisuuslaskuri ei ole käytettävissä.",
+      "rate-limited": "Liikaa pyyntöjä. Yritä hetken kuluttua uudelleen.",
+      "network": "Yhteys palvelimeen ei toiminut. Yritä uudelleen.",
+      "unknown": "Odottamaton virhe. Yritä uudelleen."
+    },
+    "plan": {
+      "heading": "Ostopaikkasuunnitelma",
+      "total": "Suunnitelma yhteensä:",
+      "buyHere": "Osta Suomesta",
+      "bringFrom": "Tuo maasta: {country}",
+      "retail": "Hyllyhinta",
+      "excise": "Alkoholivero",
+      "containerDuty": "Pakkausmaksu",
+      "transport": "Kuljetus",
+      "lineTotal": "Rivi yhteensä",
+      "savings": "Säästät {amount} verrattuna kotimaiseen ostopaikkaan.",
+      "datasets": "Lähteet: {versions}",
+      "unpriced": "Ei hinnoiteltu (poissa suunnitelmasta): {types}",
+      "budgetMet": "Budjetti riittää: {total} / {limit}.",
+      "budgetExceeded": "Budjetti ylittyy: yhteensä {total}, budjetti {limit} ({overrun} yli). Suunnitelma on silti kattavin ja matalimman kokonaiskustannuksen laskettu vaihtoehto.",
+      "packing": {
+        "heading": "Pakkausehdotus rajalta tuotaville",
+        "noBoxes": "Rajalta tuotavia juomia ei ole — ei pakkaustarvetta.",
+        "box": "{name}: {units} kpl, täyttöaste {fill}",
+        "excludedHeading": "Jätettiin pakkauksen ulkopuolelle:",
+        "excludedItem": "{type} × {quantity}",
+        "reason": {
+          "MISSING_DIMENSIONS": "mitat puuttuvat",
+          "INVALID_DIMENSIONS": "virheelliset mitat",
+          "INVALID_QUANTITY": "virheellinen kappalemäärä",
+          "NO_FITTING_BOX": "ei sovellu mihinkään laatikkoon"
+        },
+        "mixingWarning": "Sekalasti varoitus: {glass} lasi- ja {can} metallikuorainen tuote samassa lähetyksessä — pakkaa lasi erilleen."
+      }
+    }
+  },
+  "TripPage": {
+    "title": "Matkalaskuri",
+    "subtitle": "Laske, kuinka monta litraa kannattaa tuoda matkalla: jaettu matkakustannus, hintaero kategorioittain ja tullimäärärajojen ylittymiskohta. Jokainen rivi näyttää kannattavan tuontimäärän ja tullimäärärajan vaikutuksen.",
+    "form": {
+      "passengers": "Matkustajat (kpl)",
+      "vehicle": "Ajoneuvo",
+      "ticket": "Matkaliput yhteensä (€)",
+      "fuel": "Polttoaine yhteensä (€)",
+      "pricesHeading": "Hinnat euroa litralta",
+      "domesticPrice": "{category} — Suomi (€/l)",
+      "foreignPrice": "Ulkomaat (€/l)",
+      "priceHint": "Syötä kotimainen ja ulkomainen hinta vähintään yhdelle kategorialle.",
+      "priceError": "Tarkista hinnat: käytä numeroita (esim. 2,50) ja täytä jokainen aloitettu rivi molemmin hinnoin."
+    },
+    "vehicle": {
+      "car": "Henkilöauto",
+      "van": "Pakettiauto"
+    },
+    "category": {
+      "beer": "Olut",
+      "wine_still": "Makuuviini",
+      "wine_sparkling": "Kuohuviini",
+      "intermediate_products": "Välituotteet (esim. vermutti)",
+      "other_fermented": "Siideri ja pitkäjuoma",
+      "spirits": "Väkevät alkoholijuomat"
+    },
+    "submit": "Laske kannattava tuontimäärä",
+    "submitting": "Lasketaan…",
+    "result": {
+      "heading": "Kannattava tuontimäärä",
+      "priceDifference": "Hintaero (Suomi − ulkomaat)",
+      "breakEven": "Kannattava tuontimäärä",
+      "cap": "Tullimääräraja (tulliton enintään)",
+      "suggested": "Suositeltu tulliton määrä",
+      "capExceeded": "Raja ylittyy",
+      "withinAllowance": "Sopii määrärajaan",
+      "cappedWith": "{cap} (ilman määrärajaa {uncapped})",
+      "noAllowanceRow": "Ei määrärajariviä aineistoversiossa",
+      "noAllowanceRowBody": "Aineistoversiossa ei ole tämän kategorian määrärajariviä, joten rajaa ei voida soveltaa eikä rajattua suositusta antaa.",
+      "capNotVolume": "Määräraja on kappalemääräinen",
+      "capNotVolumeBody": "Tämän kategorian määräraja on annettu kappalemääränä (kpl), joten sitä ei voida ilmaista litroissa eikä rajata litramäärää.",
+      "noBreakEven": "Tuonti ei säästä rahaa",
+      "noBreakEvenBody": "Ulkomainen hinta ei ole alempi kuin kotimainen vertailuhinta, joten kannattavaa tuontimäärää ei ole.",
+      "travelCost": "Matkakustannus yhteensä: {total}",
+      "perTraveller": "Matkustajaa kohden: {amount} ({passengers} matkustajaa)",
+      "allowanceVersion": "Tullimäärärajojen aineistoversio: {version}"
+    },
+    "partners": {
+      "label": "Kumppanilinkit"
+    },
+    "noAllowances": {
+      "title": "Ei julkaistuja tullimäärärajoja",
+      "body": "Valitulle päivälle ei löydy julkaistua tullimääräraja-aineiston versiota, joten laskentaa ei voida tehdä. Kokeile uudelleen myöhemmin."
+    },
+    "errors": {
+      "validation": "Tarkista syötteen arvot: matkustajia 1–9, kustannukset yli 0 €.",
+      "forbidden": "Matkalaskuri ei ole käytettävissä.",
+      "rate-limited": "Liikaa pyyntöjä. Yritä hetken kuluttua uudelleen.",
+      "network": "Yhteys palvelimeen ei toiminut. Yritä uudelleen.",
+      "unknown": "Odottamaton virhe. Yritä uudelleen."
+    }
+  },
+  "WhatIfPage": {
+    "title": "Mitä jos -laskuri",
+    "subtitle": "Korvaa alkoholiveron verokanta valitsemallasi arvolla ja vertaa tuotteiden kokonaishintoja kiinteässä vertailuaineistossa. Laskelma on hypoteettinen.",
+    "recalculating": "Lasketaan…",
+    "form": {
+      "rateLabel": "Hypoteettinen verokanta (€ kaava-yksikköä kohti)",
+      "rateValue": "{rate} €",
+      "rateHint": "Yksikkö noudattaa kunkin tuotelajin laskentakaavaa (esim. € etanolilitraa kohti tai € litraa kohti). Alue 0–1000.",
+      "rowsHeading": "Tuotteet",
+      "rowCount": "{count}/{max} tuotetta",
+      "rowLabel": "Tuoterivi {index}",
+      "category": "Tuotelaji",
+      "abv": "Alkoholipitoisuus (%)",
+      "volume": "Määrä (litraa)",
+      "alkoPrice": "Kotimainen vertailuhinta (€)",
+      "importPrice": "Tuonnin vähittäishinta (€)",
+      "addRow": "Lisää tuoterivi",
+      "removeRowAria": "Poista tuoterivi {index}",
+      "recalculate": "Laske uudelleen",
+      "invalidHint": "Täytä jokaisen tuoterivin kaikki kentät. Tulokset päivittyvät, kun syötteet ovat kelvolliset."
+    },
+    "category": {
+      "beer": "Olut",
+      "wine_still": "Makuuviini",
+      "wine_sparkling": "Kuohuviini",
+      "spirits": "Väkevät alkoholijuomat",
+      "intermediate_products": "Välituotteet (esim. vermutti)",
+      "other_fermented": "Siideri ja pitkäjuoma"
+    },
+    "result": {
+      "heading": "Laskelma",
+      "scenarioRate": "Hypoteettinen verokanta: {rate} € kaava-yksikköä kohti",
+      "scenarioBaselineVersion": "Vertailun verokanta-aineisto: {version}",
+      "totalsHeading": "Yhteenveto",
+      "totalsBaselineExcise": "Alkoholivero yhteensä, nykyinen verokanta",
+      "totalsHypotheticalExcise": "Alkoholivero yhteensä, hypoteettinen verokanta",
+      "totalsGapBaseline": "Tuonnin hintaero vertailuhintaan, nykyinen verokanta",
+      "totalsGapHypothetical": "Tuonnin hintaero vertailuhintaan, hypoteettinen verokanta",
+      "linesHeading": "Tuotteittain",
+      "columnProduct": "Tuote",
+      "columnBaseline": "Nykyinen verokanta",
+      "columnHypothetical": "Hypoteettinen verokanta",
+      "columnDelta": "Muutos",
+      "lineImportTotalBaseline": "Tuonti yhteensä, nykyinen verokanta",
+      "lineImportTotalHypothetical": "Tuonti yhteensä, hypoteettinen verokanta",
+      "lineGapBaseline": "Hintaero vertailuhintaan, nykyinen verokanta",
+      "lineGapHypothetical": "Hintaero vertailuhintaan, hypoteettinen verokanta",
+      "lineGapDelta": "Muutos hintaeroon",
+      "baselineVersion": "Verokanta-aineisto: {version}",
+      "baselineFormula": "Laskentakaava: {formula}",
+      "baselineRate": "Nykyinen verokanta: {rate} € / kaavayksikkö",
+      "baselineTax": "Alkoholivero: {amount}",
+      "hypotheticalRate": "Hypoteettinen verokanta: {rate} € / kaavayksikkö",
+      "hypotheticalFormula": "Laskentakaava: {formula}",
+      "hypotheticalTax": "Alkoholivero: {amount}",
+      "gapLegend": "Positiivinen hintaero tarkoittaa, että tuonti on kotimaista vertailuhintaa kalliimpi. Muutos kertoo, miten hypoteettinen verokanta siirtää hintaeroa nykyiseen verokantaan verrattuna."
+    },
+    "share": {
+      "heading": "Jaa laskelma",
+      "body": "Jakolinkki avaa saman skenaarion laskurisivulla. Upotuskoodi näyttää saman laskelman toisella sivustolla ilman sivuston navigaatiota — molemmissa näkyy sama huomautusteksti.",
+      "copyLink": "Kopioi jakolinkki",
+      "copyEmbed": "Kopioi upotuskoodi",
+      "copied": "Kopioitu",
+      "embedIframeTitle": "Mitä jos -laskelma"
+    },
+    "empty": {
+      "title": "Ei vielä laskentaa",
+      "body": "Täytä tuoterivien tiedot tai siirrä verokantaliukua. Laskenta suoritetaan automaattisesti, kun syötteet ovat kelvolliset."
+    },
+    "errors": {
+      "validation": "Laskenta epäonnistui. Tarkista syötteiden arvot.",
+      "forbidden": "Mitä jos -laskuri ei ole käytettävissä.",
+      "throttled": "Liikaa laskentapyyntöjä. Laskenta jatkuu {seconds} s kuluttua.",
+      "network": "Yhteys palvelimeen ei toiminut. Yritä uudelleen.",
+      "unknown": "Odottamaton virhe. Yritä uudelleen.",
+      "invalidToken": "Jaettua laskelmaa ei voitu lukea. Lomake on tyhjä."
+    },
+    "embed": {
+      "title": "Mitä jos -laskelma — rajahinta.fi",
+      "closedTitle": "Mitä jos -laskuri ei ole käytettävissä",
+      "closedBody": "Tämä upotettu näkymä ei ole käytössä.",
+      "invalidTitle": "Linkkiä ei voitu lukea",
+      "invalidBody": "Jaettu laskelma on viallinen tai muokattu, joten sitä ei voi näyttää.",
+      "unavailableTitle": "Laskelma ei ole nyt saatavilla",
+      "unavailableBody": "Kokeile hetken kuluttua uudelleen.",
+      "throttledTitle": "Liikaa pyyntöjä",
+      "throttledBody": "Näkymä päivittyy automaattisesti {seconds} sekunnin kuluttua."
+    }
+  },
+  "PriceAlerts": {
+    "title": "Hintaherätykset",
+    "subtitle": "Saat ilmoituksen, kun seurattavan tuotteen hinta alittaa asettamasi hintarajan.",
+    "loading": "Ladataan hintaherätyksiä…",
+    "loadFailed": "Hintaherätysten lataaminen epäonnistui",
+    "emptyTitle": "Ei vielä hintaherätyksiä",
+    "emptyBody": "Lisää hintaherätys alla olevalla lomakkeella tai tuotesivulta.",
+    "signInTitle": "Kirjautuminen vaaditaan",
+    "signInBody": "Hintaherätysten hallinta vaatii istunnon.",
+    "signInLink": "Luo istunto",
+    "createTitle": "Lisää hintaherätys",
+    "searchFailed": "Tuotehaku epäonnistui",
+    "selectedProduct": "Valittu tuote",
+    "thresholdLabel": "Hintaraja (€)",
+    "thresholdPlaceholder": "esim. 12,50",
+    "createButton": "Lisää herätys",
+    "creating": "Lisätään…",
+    "createFailed": "Herätyksen lisääminen epäonnistui",
+    "thresholdInvalid": "Syötä hinta euroina väliltä 0,01–10 000 € (enintään kaksi desimaalia).",
+    "duplicateAlert": "Tälle tuotteelle on jo hintaherätys.",
+    "productMissing": "Tuotetta ei enää löydy — hae tuote uudelleen.",
+    "statusActive": "Aktiivinen",
+    "statusPaused": "Keskeytetty",
+    "pause": "Keskeytä",
+    "pausing": "Keskeytetään…",
+    "resume": "Jatka",
+    "resuming": "Jatketaan…",
+    "delete": "Poista",
+    "deleting": "Poistetaan…",
+    "updateFailed": "Herätyksen päivittäminen epäonnistui",
+    "deleteFailed": "Herätyksen poistaminen epäonnistui",
+    "thresholdValue": "Hintaraja {euros} €",
+    "created": "Luotu {date}",
+    "updated": "Päivitetty {date}",
+    "product": "Tuote #{id}",
+    "productTitle": "Hintaherätys",
+    "productBody": "Aseta tälle tuotteelle hintaraja — saat ilmoituksen, kun hinta alittaa sen.",
+    "existingAlert": "Tällä tuotteella on jo hintaherätys."
+  },
   "Ranking": {
     "title": "Miten järjestäminen toimii",
     "subtitle": "Objektiivinen, avoin ja kaupallisista intresseistä vapaa.",
@@ -542,6 +875,33 @@
     "noOffers": "Ei aktiivisia hintahavaintoja.",
     "dataNote": "Hinnat ovat kerättyjä havaintoja, eivät myyjien tarjouksia.",
     "landingNote": "Kokonaiskustannus Suomeen sisältää hinnan lisäksi verot, tullit ja kuljetuksen — laske se laskurissa."
+  },
+  "ProductDupes": {
+    "title": "Saman valmistajan tuotteita ulkomailla",
+    "dataNote": "Toimituksellisesti kuratoidut sisaratuotteet — jokainen linkki perustuu tarkistettuun valmistajatietoon ja julkaistaan lähteineen. Kyseessä eivät ole mainos- eikä affiliate-linkit.",
+    "producerLabel": "Valmistaja-avain",
+    "manufacturerEvidence": "Valmistaja: {manufacturer}",
+    "siblingLink": "Tuotesivu #{id}",
+    "sourceLink": "Lähde"
+  },
+  "ListsPage": {
+    "metaTitle": "{title} — kuratoitu listaus",
+    "metaDescription": "{title} — jokaisella listauksella toimituksellinen perustelu ja todistelulinkit. Valintakriteerit näkyvät sivulla.",
+    "fallbackMetaTitle": "Listausta ei löytynyt",
+    "fallbackMetaDescription": "Kuratoidut tuotelistaukset perusteluineen ja todistelulinkkeineen.",
+    "criteriaTitle": "Valintakriteerit",
+    "criteriaIntro": "Tuote pääsee listalle vain, jos se täyttää kaikki alla mainitut kriteerit. Kriteerit ovat listan toimituksellinen ohjenuora.",
+    "entriesTitle": "Listaukset",
+    "entriesCount": "Listauksia: {count}",
+    "emptyTitle": "Ei julkaistuja listauksia",
+    "emptyBody": "Listalle ei ole vielä julkaistu yhtään tuotetta. Yllä olevat kriteerit kuvaavat, millaiset tuotteet sinne tulevat.",
+    "rationaleLabel": "Perustelu",
+    "evidenceLabel": "Todistelulinkit",
+    "evidenceNote": "Linkit avautuvat uuteen välilehteen ja osoittavat listauksen taustalla olevaan todisteluun.",
+    "productLinkLabel": "Avaa tuotesivu",
+    "externalRefLabel": "Ulkoinen tunniste",
+    "unavailableTitle": "Listausta ei ole saatavilla",
+    "unavailableBody": "Tämä listaus ei ole nyt luettavissa. Voit yrittää myöhemmin uudelleen."
   },
   "OperatorConsole": {
     "title": "Operaattorin konsoli",
@@ -594,5 +954,95 @@
     "auditTitle": "Auditointiloki",
     "auditIntro": "Konsolin toimeen liittyvät viimeisimmät kestävät auditointitapahtumat, uusin ensin.",
     "noAuditEntries": "Ei auditointitapahtumia."
+  },
+  "GroupOrder": {
+    "metaTitle": "Ryhmätilaus",
+    "title": "Ryhmätilaus",
+    "subtitle": "Yhteinen tilaussessio: osallistujat lisäävät tuotteita omilla lempinimillään ja Rajahinta laskee yhteisten kulujen jaon.",
+    "retry": "Yritä uudelleen",
+    "signInTitle": "Kirjautuminen vaaditaan",
+    "signInBody": "Ryhmätilauksen luominen vaatii istunnon.",
+    "signInLink": "Luo istunto",
+    "createTitle": "Luo uusi sessio",
+    "createBody": "Sessio kestää 7 päivää. Saat jaettavan linkin, jonka kautta osallistujat liittyvät omalla lempinimellään ilman tunnusta.",
+    "createAction": "Luo sessio",
+    "creating": "Luodaan…",
+    "createFailed": "Sessiota ei voitu luoda.",
+    "shareLinkTitle": "Jaettava linkki",
+    "shareLinkBody": "Anna tämä linkki osallistujille. Linkki vanhenee {date}.",
+    "copyLink": "Kopioi linkki",
+    "copied": "Kopioitu",
+    "expiresAt": "Sessio vanhenee: {date}",
+    "joinTitle": "Liity tilaukseen",
+    "joinBody": "Valitse lempinimi, jolla lisäät tuotteita tilaukseen. Sessioon tallennetaan vain lempinimi.",
+    "nicknameLabel": "Lempinimi",
+    "nicknameRequired": "Anna lempinimi (1–64 merkkiä).",
+    "joinAction": "Liity",
+    "joining": "Liitytään…",
+    "joinFailed": "Liittyminen ei onnistunut.",
+    "expiredTitle": "Sessio on vanhentunut",
+    "expiredBody": "Tämä jakolinkki ei ole enää voimassa. Pyydä tilauksen omistajalta uusi linkki.",
+    "unknownTitle": "Linkkiä ei löytynyt",
+    "unknownBody": "Tätä jakolinkkiä ei löydy. Tarkista linkki tai pyydä tilauksen omistajalta uusi.",
+    "participantsTitle": "Osallistujat",
+    "participantsEmpty": "Kukaan ei ole vielä lisännyt tuotteita.",
+    "participantItems": "{count} tuotetta",
+    "itemsTitle": "Tuotteet",
+    "itemsEmptyTitle": "Ei vielä tuotteita",
+    "itemsEmptyBody": "Lisää ensimmäinen tuote alla olevalla haulla.",
+    "quantityCount": "{count} kpl",
+    "itemAddedBy": "lisäsi {nickname}",
+    "productUnknown": "Tuote #{id}",
+    "addItemTitle": "Lisää tuote",
+    "searchFailed": "Haku ei onnistunut. Yritä uudelleen.",
+    "selectedProduct": "Valittu: {name}",
+    "quantityLabel": "Määrä",
+    "addAction": "Lisää tuote",
+    "adding": "Lisätään…",
+    "addInvalidQuantity": "Määrän on oltava kokonaisluku 1–999.",
+    "addMissingProduct": "Valitse ensin tuote hakutuloksista.",
+    "addProductNotFound": "Tuotetta ei löytynyt. Valitse tuote hakutuloksista.",
+    "addFailed": "Tuotteen lisääminen ei onnistunut.",
+    "paymentRejected": "Maksutietoja sisältävä kenttä hylätty: {field} Rajahinta ei hyväksy maksutietoja — suoritus tapahtuu Rajahinnan ulkopuolella.",
+    "ledgerTitle": "Yhteiskustannusten jako",
+    "ledgerIntro": "Lisää yhteiset kulut, esimerkiksi toimitus tai pakkaus. Rajahinta jakaa ne osallistujien tuote-arvojen suhteessa ja laskee, kuka on velassa kenellekin.",
+    "sharedCostLabel": "Kulun nimi",
+    "sharedCostAmount": "Summa (€)",
+    "sharedCostFrontedBy": "Etukäteen maksanut",
+    "frontedByPlaceholder": "Valitse osallistuja",
+    "lineInvalidLabel": "Anna kulun nimi (1–100 merkkiä).",
+    "lineInvalidAmount": "Anna summa euroina, enintään kaksi desimaalia.",
+    "lineInvalidFrontedBy": "Valitse osallistuja.",
+    "addLine": "Lisää rivi",
+    "linesTitle": "Jaettavat kulut",
+    "noLines": "Ei vielä jaettavia kuluja.",
+    "frontedByLine": "etukäteen maksanut {nickname}",
+    "removeLine": "Poista rivi",
+    "computeAction": "Laske jako",
+    "computing": "Lasketaan…",
+    "noParticipantsHint": "Jaettavat kulut vaativat, että vähintään yksi osallistuja on lisännyt tuotteita.",
+    "computeFailed": "Jakoa ei voitu laskea.",
+    "resultTitle": "Jako",
+    "valuationRuleEcho": "Tuote-arvot: {rule} (alin todennettu eurohinta per tuote).",
+    "emptySessionTitle": "Sessio on vielä tyhjä",
+    "emptySessionBody": "Kukaan ei ole vielä liittynyt eikä jaettavia kuluja ole annettu. Liity tilaukseen ja lisää tuotteita, niin jako voidaan laskea.",
+    "noItemValueTitle": "Tuote-arvoja ei voida määrittää",
+    "noItemValueBody": "Yhteisiä kuluja on annettu, mutta yhdelläkään tuotteella ei ole todennettua eurohintaa, joten suhteellista jakoa ei voida laskea. Tarkista tuotteet ja yritä uudelleen.",
+    "colParticipant": "Osallistuja",
+    "colItemValue": "Tuote-arvo",
+    "colAllocated": "Osuus yhteisistä",
+    "colFronted": "Maksanut etukäteen",
+    "colTotalOwed": "Yhteensä",
+    "colBalance": "Saldo",
+    "balanceGroupOwes": "ryhmä velaa {amount}",
+    "balanceOwesGroup": "velkaa ryhmälle {amount}",
+    "balanceSettled": "sovitettu",
+    "transfersTitle": "Velkasuhteet",
+    "transfersEmpty": "Kaikki saldot ovat nollassa — siirtoja ei tarvita.",
+    "transferLine": "{from} velaa {to}:lle {amount}",
+    "valuationsTitle": "Tuotteiden arvot",
+    "unvaluedItem": "Arvoa ei tiedossa",
+    "settlementNoteTitle": "Suoritus tapahtuu Rajahinnan ulkopuolella",
+    "settlementNoteBody": "Rajahinta laskee vain, kuka on velassa kenellekin. Rajahinta ei käsittele, välitä eikä mahdollista maksuja. Osallistujat sopivat suorituksesta keskenään omilla tavoillaan, esimerkiksi Swish-, MobilePay- tai pankkisiirrolla."
   }
 }

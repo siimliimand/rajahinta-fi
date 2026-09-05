@@ -80,15 +80,18 @@ export default async function RootLayout({
         {/* Explicit locale: the provider must not depend on the RSC
             request store to know which catalog it carries. */}
         <NextIntlClientProvider locale={locale} messages={messages}>
-          {/* Header and footer stay outside the gate: navigation chrome is
-              not restricted content and belongs in the SSR payload. */}
+          {/* Header and footer stay outside the age gate: navigation chrome
+              is not restricted content and belongs in the SSR payload. The
+              flag provider must cover SiteHeader — its gated nav entries
+              read the same inlined payload (a provider-less render throws,
+              by design). */}
           <div className="flex min-h-screen flex-col">
-            <SiteHeader />
-            <div className="flex-1">
-              <FeatureFlagsProvider flags={flags}>
+            <FeatureFlagsProvider flags={flags}>
+              <SiteHeader />
+              <div className="flex-1">
                 <AgeGate>{children}</AgeGate>
-              </FeatureFlagsProvider>
-            </div>
+              </div>
+            </FeatureFlagsProvider>
             <SiteFooter />
           </div>
         </NextIntlClientProvider>

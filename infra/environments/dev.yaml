@@ -49,6 +49,27 @@ feature_flags:
   deposit_system_mock: true
   rate_auto_publish: false  # rates never auto-publish even in dev
 
+# API-worker feature flags (task 10.1, change product-roadmap-phases-1-4).
+# Literal Cloudflare Worker vars, committed "false" in apps/api-worker/
+# wrangler.jsonc (top level + every env block). Parsed as FF_<FLAG> by the
+# api-worker feature-flag middleware; optional FF_ROLLOUT_<FLAG> percentage
+# overrides enable gradual rollout (opt-in, never committed on). The
+# `feature_flags:` block above is the pre-migration Nest-era config —
+# kept as-is; the Worker registry is the source of truth going forward.
+api_worker_feature_flags:                  # all default OFF
+  FF_UNIT_PRICE_EUR_PER_GRAM: false        # €/g unit-price metric on product/offer reads
+  FF_PRICE_ALERTS: false                   # price-alert watchlist API + UI
+  FF_PACKING_OPTIMIZER: false              # packing-optimizer section of basket optimize
+  FF_EVENT_CALCULATOR: false               # event calculator API + page
+  FF_TRIP_CALCULATOR: false                # trip feasibility calculator API + page
+  FF_PRODUCER_DUPE_FINDER: false           # producer dupe finder API + product-page panel
+  FF_CURATED_LISTS: false                  # curated editorial lists API + public pages
+  FF_EXCISE_WHAT_IF: false                 # excise what-if simulator (politically sensitive)
+  FF_GROUP_ORDER_LEDGER: false             # group order ledger (shared sessions)
+# PROMOTION EXPECTATION (dev = enable-freely tier): flip any flag to "true"
+# for local/dev testing without review; promotion to staging is always an
+# explicit, separate enable — nothing promotes automatically.
+
 # Dev seed data: small sample set for manual testing
 seed:
   enabled: true

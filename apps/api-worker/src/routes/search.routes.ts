@@ -13,13 +13,22 @@
  * fallback, task 2.2); the alphabetical sort and pagination semantics are
  * copied verbatim. The detail response embeds per-merchant reliability
  * scores only while ADVANCED_FEATURES is enabled (informational only —
- * see src/services/merchant-reliability.ts).
+ * see src/services/merchant-reliability.ts). While
+ * UNIT_PRICE_EUR_PER_GRAM is on, search items and detail offers carry the
+ * read-time €/g metric (`eurPerGram`) with its status; flag off leaves
+ * the key absent (byte-compatible payloads, never persisted).
  *
  * @module SearchRoutes
  */
 
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+// Direct source imports, route-file parity (basket/calculator.routes) —
+// wrangler aliases the @rajahinta/core-domain barrel to the bridge module,
+// which re-exports only the pipeline's runtime closure.
+import { eurPerGram } from '../../../../packages/core-domain/src/unitprice/eur-per-gram';
+import type { UnitPriceResult } from '../../../../packages/core-domain/src/unitprice/unitprice.types';
+import type { ReliabilityStatus } from '../../../../packages/core-domain/src/reliability/reliability.types';
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
 import { parseIntParam } from './support';
@@ -77,6 +86,13 @@ type SearchItem = {
   merchantCount: number;
 };
 
+/**
+ * Search item as returned: the flag-less shape, plus the €/g metric embed
+ * only while `UNIT_PRICE_EUR_PER_GRAM` is on (key absent otherwise —
+ * byte-compatible with the flag-less shape).
+ */
+type SearchItemResponse = SearchItem & { eurPerGram?: UnitPriceResult };
+
 /** Map a product row to a search-result item (toSearchItem parity). */
 function toSearchItem(p: ProductRow): SearchItem {
   return {
@@ -90,6 +106,81 @@ function toSearchItem(p: ProductRow): SearchItem {
     containerType: p.containerType,
     lowestPriceCents: null,
     merchantCount: 0,
+  };
+}
+
+/**
+ * `unit_volume` is the numeric(10,4) column rendered as fixed-scale text
+ * ("0.33") — already litres. The column is NOT NULL, so an unparseable
+ * value is corrupt data, not a missing one: NaN propagates into the
+ * metric and is reported as INVALID_VOLUME. A value is never invented.
+ */
+function parseLitres(raw: string): number {
+  return Number.parseFloat(raw);
+}
+
+/** ABV numeric(5,3) text ("0.047") → fraction, or null when absent. */
+function parseAlcoholFraction(raw: string | null): number | null {
+  return raw !== null ? Number.parseFloat(raw) : null;
+}
+
+const RELIABILITY_STATUSES: readonly string[] = [
+  'VERIFIED',
+  'STALE',
+  'ESTIMATED',
+  'UNAVAILABLE',
+];
+
+/**
+ * Narrow the offer's stored reliability status (a loose string at the
+ * repository boundary) to the domain union. An unknown stored value is
+ * treated as UNAVAILABLE — the price provenance is unreadable, so the
+ * metric must not present it as VERIFIED.
+ */
+function toReliabilityStatus(raw: string): ReliabilityStatus {
+  return RELIABILITY_STATUSES.includes(raw)
+    ? (raw as ReliabilityStatus)
+    : 'UNAVAILABLE';
+}
+
+/** The physical inputs the €/g metric derives from, parsed once per product. */
+interface UnitPriceInputs {
+  readonly unitVolumeL: number;
+  readonly alcoholFraction: number | null;
+}
+
+function unitPriceInputs(p: ProductRow): UnitPriceInputs {
+  return {
+    unitVolumeL: parseLitres(p.unitVolume),
+    alcoholFraction: parseAlcoholFraction(p.alcoholByVolume),
+  };
+}
+
+/**
+ * The €/g metric embed for a search item. The Phase 1 search path loads
+ * no offers (lowestPriceCents is null), so there is no price to derive
+ * from: the price input is NaN and the module reports the metric
+ * unavailable — naming the first missing physical input (volume before
+ * alcohol fraction, module precedence) so the item still says WHY it has
+ * no €/g. The union has no MISSING_PRICE reason, so a product with
+ * complete physical data degrades to INVALID_PRICE (the price input is
+ * genuinely unusable here). No value is silently substituted (spec
+ * unit-price-metrics).
+ */
+function searchItemUnitPrice(inputs: UnitPriceInputs): UnitPriceResult {
+  return eurPerGram(Number.NaN, inputs.unitVolumeL, inputs.alcoholFraction);
+}
+
+/** Map a product row to its response shape, embedding the metric on flag. */
+function toSearchItemResponse(
+  p: ProductRow,
+  includeUnitPrice: boolean,
+): SearchItemResponse {
+  const item = toSearchItem(p);
+  if (!includeUnitPrice) return item;
+  return {
+    ...item,
+    eurPerGram: searchItemUnitPrice(unitPriceInputs(p)),
   };
 }
 
@@ -120,7 +211,13 @@ async function search(c: Context<AppEnv>): Promise<Response> {
 
   try {
     const repo = new D1ProductSearchRepository(c.env.DB);
-    let items: SearchItem[] = [];
+    // Flag resolved in the route (per-request pattern, see getProduct):
+    // on → each item carries the eurPerGram embed; off → the key stays
+    // absent (byte-compatible with the flag-less shape).
+    const includeUnitPrice = new FeatureFlagService(c.env).isEnabled(
+      FeatureFlag.UNIT_PRICE_EUR_PER_GRAM,
+    );
+    let items: SearchItemResponse[] = [];
     const query = q !== undefined ? q.trim() : '';
 
     if (ids !== undefined && ids.trim().length > 0) {
@@ -133,20 +230,20 @@ async function search(c: Context<AppEnv>): Promise<Response> {
       const products = await Promise.all(productIds.map((id) => repo.findById(id)));
       items = products
         .filter((p): p is NonNullable<typeof p> => p !== null)
-        .map((p) => toSearchItem(p));
+        .map((p) => toSearchItemResponse(p, includeUnitPrice));
       items.sort(compareByName);
     } else if (query.length > 0) {
       // Ranked search — the repository ranks (relevance order); an
       // explicit sort is honored over the filtered set.
       const products = await repo.searchRanked(query, MAX_PAGE_SIZE);
-      items = products.map((p) => toSearchItem(p));
+      items = products.map((p) => toSearchItemResponse(p, includeUnitPrice));
       if (sort !== undefined) {
         items.sort(compareByNameThenId);
       }
     } else {
       // Blank or absent q — the repository lists products alphabetically.
       const products = await repo.searchByName(q ?? null, MAX_PAGE_SIZE);
-      items = products.map((p) => toSearchItem(p));
+      items = products.map((p) => toSearchItemResponse(p, includeUnitPrice));
       items.sort(compareByName);
     }
 
@@ -179,6 +276,20 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
 
     const offers = await repo.findOffers(id);
 
+    // Flag resolved in the route (established per-request pattern): on →
+    // each offer carries the eurPerGram embed; off → the key stays absent
+    // (byte-compatible with the flag-less shape). The embed never reorders
+    // the offers — it maps in place.
+    const includeUnitPrice = new FeatureFlagService(c.env).isEnabled(
+      FeatureFlag.UNIT_PRICE_EUR_PER_GRAM,
+    );
+    // Physical inputs are per-product: parsed once and shared by every
+    // offer's metric. unitVolume is litres as numeric text; an unparseable
+    // value propagates as NaN → the module reports INVALID_VOLUME. The
+    // ABV text is a fraction (0.047 = 4.7 %); absent → null → the module
+    // reports MISSING_ALCOHOL_FRACTION.
+    const inputs = unitPriceInputs(product);
+
     const response: Record<string, unknown> = {
       product: {
         id: product.id,
@@ -207,6 +318,20 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
         observedAt:
           o.observedAt instanceof Date ? o.observedAt.toISOString() : String(o.observedAt),
         reliabilityStatus: o.reliabilityStatus,
+        // Flag-gated embed: value offers inherit the offer price's
+        // reliability (VERIFIED → computed, otherwise ESTIMATED);
+        // missing/invalid inputs degrade to an explicit unavailable —
+        // never a substituted value (spec unit-price-metrics).
+        ...(includeUnitPrice
+          ? {
+              eurPerGram: eurPerGram(
+                o.priceCents,
+                inputs.unitVolumeL,
+                inputs.alcoholFraction,
+                toReliabilityStatus(o.reliabilityStatus),
+              ),
+            }
+          : {}),
       })),
     };
 

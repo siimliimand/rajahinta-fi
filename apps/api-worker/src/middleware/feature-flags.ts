@@ -60,6 +60,88 @@ export const FeatureFlag = {
    * flag-off); the bearer+allowlist guard stays on regardless of the flag.
    */
   OPERATOR_CONSOLE: 'OPERATOR_CONSOLE',
+  /**
+   * Gate the €/g unit-price metric on product/offer read responses
+   * (search items + per-offer embeds; derived at read time, never
+   * persisted — spec unit-price-metrics). Spec/design slug:
+   * `enable_unit_price_eur_per_gram`.
+   * Default OFF — the embed key stays absent so payloads remain
+   * byte-compatible with the flag-less shape.
+   */
+  UNIT_PRICE_EUR_PER_GRAM: 'UNIT_PRICE_EUR_PER_GRAM',
+  /**
+   * Gate the price-alert watchlist API + UI (task 2.3, change
+   * product-roadmap-phases-1-4). Spec/design slug: `enable_price_alerts`.
+   * Default OFF — the CRUD surface (and the frontend bootstrap key) stay
+   * absent until the alert evaluation cron + email delivery path are live.
+   */
+  PRICE_ALERTS: 'PRICE_ALERTS',
+  /**
+   * Gate the packing-optimizer SECTION of the basket optimize response
+   * (task 3.3, change product-roadmap-phases-1-4). Spec/design slug:
+   * `enable_packing_optimizer`. Default OFF — a response-section gate,
+   * not an endpoint gate: while off, POST /api/v1/basket/optimize keeps
+   * its exact flag-less shape (no `packing` key); while on, the advisory
+   * packing suggestion rides along on both cache MISS and HIT payloads.
+   */
+  PACKING_OPTIMIZER: 'PACKING_OPTIMIZER',
+  /**
+   * Gate the event calculator API (POST /api/v1/event-calc, task 4.3,
+   * change product-roadmap-phases-1-4) and the event page that consumes
+   * it (task 4.4). Spec/design slug: `enable_event_calculator`.
+   * Default OFF — instant rollback until the curated norms dataset has
+   * its first published version and the operator confirmation path is
+   * exercised (a calculator without published norms only ever serves the
+   * explicit empty state).
+   */
+  EVENT_CALCULATOR: 'EVENT_CALCULATOR',
+  /**
+   * Gate the trip feasibility calculator API (POST /api/v1/trip-feasibility,
+   * task 5.3, change product-roadmap-phases-1-4) and the trip page that
+   * consumes it (task 5.4). Spec/design slug: `enable_trip_calculator`.
+   * Default OFF — instant rollback until the curated allowance dataset has
+   * its first published version and the ferry-offer curation path is
+   * exercised (a calculator without a published allowance version can
+   * never produce a capped result).
+   */
+  TRIP_CALCULATOR: 'TRIP_CALCULATOR',
+  /**
+   * Gate the producer dupe finder API (GET /api/v1/products/:id/dupes,
+   * task 6.3, change product-roadmap-phases-1-4) and the product-page
+   * dupe panel that consumes it (task 6.4). Spec/design slug:
+   * `enable_producer_dupe_finder`. Default OFF — instant rollback until
+   * the curated producer-link store has its first published rows (the
+   * endpoint serves only PUBLISHED evidence-backed links).
+   */
+  PRODUCER_DUPE_FINDER: 'PRODUCER_DUPE_FINDER',
+  /**
+   * Gate the excise what-if simulator API (POST /api/v1/what-if/excise,
+   * task 8.2, change product-roadmap-phases-1-4) and the what-if page +
+   * embeddable widget that consume it (task 8.3). Spec/design slug:
+   * `enable_excise_what_if`. Default OFF — instant rollback; the
+   * simulator is politically sensitive (design R11), so it ships
+   * loudly-hypothetical or not at all.
+   */
+  EXCISE_WHAT_IF: 'EXCISE_WHAT_IF',
+  /**
+   * Gate the curated editorial lists API (GET /api/v1/lists + GET
+   * /api/v1/lists/:slug, task 7.2, change product-roadmap-phases-1-4)
+   * and the public list page that consumes it (task 7.3). Spec/design
+   * slug: `enable_curated_lists`. Default OFF — instant rollback for the
+   * editorial content surface; the frontend sitemap derives its list
+   * entries from the same flag-gated catalog, so a flag-off deployment
+   * never advertises list URLs that would not serve.
+   */
+  CURATED_LISTS: 'CURATED_LISTS',
+  /**
+   * Gate the group order ledger (task 9.3, change
+   * product-roadmap-phases-1-4): session create/join/add-item/ledger API
+   * and the group order page that consumes it (task 9.4). Spec/design
+   * slug: `enable_group_order_ledger`. Default OFF — instant rollback for
+   * the entire shared-session surface (spec: feature gating — session
+   * creation AND share-link access return the feature-disabled error).
+   */
+  GROUP_ORDER_LEDGER: 'GROUP_ORDER_LEDGER',
 } as const;
 
 export type FeatureFlag = (typeof FeatureFlag)[keyof typeof FeatureFlag];

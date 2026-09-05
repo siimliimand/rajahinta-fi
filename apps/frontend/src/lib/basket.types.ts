@@ -143,6 +143,92 @@ export interface BasketShipment {
 }
 
 // ---------------------------------------------------------------------------
+// Response types — flag-gated packing section (enable_packing_optimizer)
+// Mirrors packages/core-domain/src/packing/packing.types.ts without
+// importing backend-coupled modules. The section rides on the optimize
+// response only when the backend flag is on; off, the key is absent
+// entirely and the UI renders no packing panel.
+// ---------------------------------------------------------------------------
+
+/** Overall packing suggestion status (mirrors core-domain PackingStatus). */
+export type PackingStatus = 'COMPUTED' | 'ESTIMATED';
+
+/** Why a basket line was excluded from the packing suggestion. */
+export type PackingExclusionReason =
+  | 'MISSING_DIMENSIONS'
+  | 'INVALID_DIMENSIONS'
+  | 'INVALID_QUANTITY'
+  | 'NO_FITTING_BOX';
+
+/** Which mixing-warning threshold fired. */
+export type MixingTrigger = 'UNIT_COUNT' | 'COMBINED_WEIGHT';
+
+/** One product grouped inside a packed box. */
+export interface PackedBoxItem {
+  /** Product master ID. */
+  readonly productId: number;
+  /** Units of this product packed into the box. */
+  readonly units: number;
+}
+
+/** One suggested box with its grouped contents. */
+export interface PackedBox {
+  /** Box catalogue identifier (carrier_box_types.id). */
+  readonly boxTypeId: number;
+  /** Carrier identifier. */
+  readonly carrier: string;
+  /** Carrier's published box name. */
+  readonly boxName: string;
+  /** Products grouped into this box. */
+  readonly items: readonly PackedBoxItem[];
+  /** Summed packed weight in grams. */
+  readonly totalWeightG: number;
+  /** Box fill rate 0..1 (unrounded). */
+  readonly fillRate: number;
+}
+
+/** A basket line that could not be packed. */
+export interface ExcludedPackingItem {
+  /** Product master ID. */
+  readonly productId: number;
+  /** Quantity of the excluded basket line. */
+  readonly quantity: number;
+  /** Why the line was excluded. */
+  readonly reason: PackingExclusionReason;
+}
+
+/**
+ * Glass+metal mixing warning with the triggering figures. Non-null only
+ * when at least one threshold fired over the PACKED units.
+ */
+export interface MixingWarning {
+  /** Packed glass units. */
+  readonly glassUnits: number;
+  /** Packed metal can units. */
+  readonly canUnits: number;
+  /** Summed packed glass weight in grams. */
+  readonly glassWeightG: number;
+  /** Summed packed can weight in grams. */
+  readonly canWeightG: number;
+  /** glassWeightG + canWeightG. */
+  readonly combinedWeightG: number;
+  /** Every threshold that fired (non-empty when the warning exists). */
+  readonly triggeredBy: readonly MixingTrigger[];
+}
+
+/** The advisory packing suggestion attached to the optimize response. */
+export interface PackingSuggestion {
+  /** ESTIMATED the moment any line was excluded (suggestion incomplete). */
+  readonly status: PackingStatus;
+  /** Suggested boxes in the order the algorithm opened them. */
+  readonly boxes: readonly PackedBox[];
+  /** Basket lines that could not be packed. */
+  readonly excludedItems: readonly ExcludedPackingItem[];
+  /** Mixing warning, or null when packed contents stay within thresholds. */
+  readonly mixingWarning: MixingWarning | null;
+}
+
+// ---------------------------------------------------------------------------
 // Response types — result-level
 // ---------------------------------------------------------------------------
 
@@ -214,4 +300,10 @@ export interface BasketOptimizationResult {
   readonly alternatives: readonly BasketOptimizationAlternate[];
   /** Calculation metadata including input echo and dataset provenance. */
   readonly metadata: BasketOptimizationMetadata;
+  /**
+   * Advisory packing suggestion (task 3.3). Present only when the backend
+   * `enable_packing_optimizer` flag is on — absent entirely when off, so
+   * the UI gates on this key's presence and never on its own flag state.
+   */
+  readonly packing?: PackingSuggestion;
 }

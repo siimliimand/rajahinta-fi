@@ -22,6 +22,62 @@
       "when": 1788245616147,
       "tag": "0002_product_container_type_check",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788504016147,
+      "tag": "0004_price_alerts",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788590416147,
+      "tag": "0005_product_dimensions_carrier_box_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788676816147,
+      "tag": "0006_consumption_norms",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788763216147,
+      "tag": "0007_traveller_allowances",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788849616147,
+      "tag": "0008_group_order_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788936016147,
+      "tag": "0009_ferry_offers",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789022416147,
+      "tag": "0010_producer_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789108816147,
+      "tag": "0011_curated_entries",
+      "breakpoints": true
     }
   ]
 }

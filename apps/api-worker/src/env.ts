@@ -126,6 +126,24 @@ export interface Env {
   readonly FF_ADVANCED_FEATURES?: string;
   /** Gate the operator console at /ops/console/** (default off; new UI ships flag-off). */
   readonly FF_OPERATOR_CONSOLE?: string;
+  /** Gate the €/g unit-price metric embed on product/offer read responses (default off). */
+  readonly FF_UNIT_PRICE_EUR_PER_GRAM?: string;
+  /** Gate price-drop alerts (Hinta-Haukka): alerts CRUD API, UI, evaluation cron (default off). */
+  readonly FF_PRICE_ALERTS?: string;
+  /** Gate the packing-optimizer section of the basket optimize response (default off). */
+  readonly FF_PACKING_OPTIMIZER?: string;
+  /** Gate the event calculator API + event page (default off). */
+  readonly FF_EVENT_CALCULATOR?: string;
+  /** Gate the trip feasibility calculator API + trip page (default off). */
+  readonly FF_TRIP_CALCULATOR?: string;
+  /** Gate the producer dupe finder API + product-page dupe panel (default off). */
+  readonly FF_PRODUCER_DUPE_FINDER?: string;
+  /** Gate the excise what-if simulator API + page/widget (default off). */
+  readonly FF_EXCISE_WHAT_IF?: string;
+  /** Gate the curated editorial lists API + public list page (default off). */
+  readonly FF_CURATED_LISTS?: string;
+  /** Gate the group order ledger API + page — sessions, share-link access, ledger compute (default off). */
+  readonly FF_GROUP_ORDER_LEDGER?: string;
   /** Explicit rollout-percentage override per flag (`FF_ROLLOUT_<FLAG>`). */
   readonly FF_ROLLOUT_NEW_MERCHANT_SOURCE?: string;
   readonly FF_ROLLOUT_NEW_TAX_RULESET?: string;
@@ -134,6 +152,15 @@ export interface Env {
   readonly FF_ROLLOUT_BASKET_OPTIMIZATION?: string;
   readonly FF_ROLLOUT_ADVANCED_FEATURES?: string;
   readonly FF_ROLLOUT_OPERATOR_CONSOLE?: string;
+  readonly FF_ROLLOUT_UNIT_PRICE_EUR_PER_GRAM?: string;
+  readonly FF_ROLLOUT_PRICE_ALERTS?: string;
+  readonly FF_ROLLOUT_PACKING_OPTIMIZER?: string;
+  readonly FF_ROLLOUT_EVENT_CALCULATOR?: string;
+  readonly FF_ROLLOUT_TRIP_CALCULATOR?: string;
+  readonly FF_ROLLOUT_PRODUCER_DUPE_FINDER?: string;
+  readonly FF_ROLLOUT_EXCISE_WHAT_IF?: string;
+  readonly FF_ROLLOUT_CURATED_LISTS?: string;
+  readonly FF_ROLLOUT_GROUP_ORDER_LEDGER?: string;
 
   // -- Launch gates (task 3.2; names match the Nest LaunchGateService) ------
 

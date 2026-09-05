@@ -33,6 +33,7 @@ import {
   AGGREGATION_CRON,
 } from './time-series-aggregation';
 import { handleFreshnessAlert } from './freshness-alert';
+import { handlePriceAlertEvaluation } from './price-alert-evaluation';
 import { handleRetentionSweep, RETENTION_CRON } from './retention-sweep';
 import {
   INGESTION_PRODUCER_CRON,
@@ -103,6 +104,13 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   add(AGGREGATION_CRON, {
     name: 'freshness-alert',
     run: (env, log) => handleFreshnessAlert(env, log),
+  });
+  // Task 2.2 (design R2) shares the same 30-minute post-ingestion tick:
+  // price-alert evaluation reads the materialized summaries the
+  // aggregation handler maintains — never the raw R2 observation log.
+  add(AGGREGATION_CRON, {
+    name: 'price-alert-evaluation',
+    run: (env, log) => handlePriceAlertEvaluation(env, log),
   });
   add(RETENTION_CRON, {
     name: 'retention-sweep',

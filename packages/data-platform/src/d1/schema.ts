@@ -545,6 +545,101 @@ export const savedScenarios = sqliteTable(
 );
 
 /**
+ * Price alerts — per-account watchlist thresholds on a product
+ * (task 2.1, change product-roadmap-phases-1-4).
+ *
+ * One row per (account, product): the UNIQUE constraint makes the
+ * evaluation cooldown's per-alert scope identical to design R2's
+ * per-product-per-account scope — a second alert on the same pair could
+ * only produce duplicate emails. Pausing keeps the configuration while
+ * excluding the row from scheduled evaluation; deleting the account row
+ * cascades here (GDPR erasure, same guarantee as savedScenarios).
+ */
+export const priceAlerts = sqliteTable(
+  'price_alerts',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to accounts — the owning user; cascade delete implements the erasure path. */
+    accountId: integer('account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** FK to product_master — the tracked product. Products are never deleted, so no cascade. */
+    productId: integer('product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** Notify when the product's materialized price falls to or below this (cents). */
+    thresholdCents: integer('threshold_cents').notNull(),
+    /** active = evaluated by the cron; paused = configuration kept, evaluation skipped. */
+    status: text('status', { length: 16 }).default('active').notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+    updatedAt: text('updated_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // Serves list-by-account (leading column) and the create-time
+    // duplicate guard — one alert per (account, product).
+    unique('price_alerts_account_id_product_id_unique').on(
+      table.accountId,
+      table.productId,
+    ),
+    // The post-ingestion evaluation cron scans active alerts; the
+    // (account_id, product_id) unique index cannot serve that filter.
+    index('price_alerts_status_idx').on(table.status),
+    check('price_alerts_threshold_cents_check', sql`${table.thresholdCents} > 0`),
+    check('price_alerts_status_check', sql`${table.status} IN ('active', 'paused')`),
+  ],
+);
+
+/**
+ * Alert notifications — the delivery intent log for price alerts
+ * (task 2.1, change product-roadmap-phases-1-4).
+ *
+ * Written BEFORE dispatch and marked AFTER: the pending row is the
+ * intent, the outcome marking is the completion record. A retried
+ * evaluation run skips a row already marked delivered, so a crash
+ * mid-delivery can never double-send (spec: crash-safe delivery).
+ * The delivery outcome transition (pending → delivered | failed) plus
+ * marked_at is the ONLY update these rows ever receive — the attempt
+ * facts (alert, observed price, channel, createdAt) are immutable, per
+ * the product-data-model spec: "append-only records of delivery
+ * attempts ... never rewritten". Deleting the alert cascades here.
+ */
+export const alertNotifications = sqliteTable(
+  'alert_notifications',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to price_alerts — the alert whose threshold triggered; cascade delete. */
+    alertId: integer('alert_id')
+      .references(() => priceAlerts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** Materialized price (cents) observed when the notification intent was written. */
+    observedPriceCents: integer('observed_price_cents').notNull(),
+    /** Delivery channel — email only for MVP (design R2); no push in this change. */
+    channel: text('channel', { length: 16 }).notNull(),
+    /** Intent-log lifecycle: pending until dispatch resolves (delivered | failed). */
+    deliveryStatus: text('delivery_status', { length: 16 })
+      .default('pending')
+      .notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+    /** When the outcome was marked — null while the intent is still pending. */
+    markedAt: text('marked_at'),
+  },
+  (table) => [
+    // Latest-DELIVERED-notification lookup (alert_id, status) ordered by
+    // createdAt — the 24-hour cooldown's enforcement read.
+    index('alert_notifications_alert_id_delivery_status_created_at_idx').on(
+      table.alertId,
+      table.deliveryStatus,
+      table.createdAt,
+    ),
+    check('alert_notifications_channel_check', sql`${table.channel} IN ('email')`),
+    check(
+      'alert_notifications_delivery_status_check',
+      sql`${table.deliveryStatus} IN ('pending', 'delivered', 'failed')`,
+    ),
+  ],
+);
+
+/**
  * Merchant terms — store-level commercial conditions.
  *
  * One row per merchant carrying minimum-order thresholds and other
@@ -864,6 +959,620 @@ export const merchantRegistry = sqliteTable('merchant_registry', {
 });
 
 /**
+ * Product physical dimensions — curated packaging facts (task 3.1, change
+ * product-roadmap-phases-1-4, design R3).
+ *
+ * One row per product: weight, height, diameter, and the packaging
+ * material, each row carrying source, reliability status, and observedAt —
+ * dimensions are externally sourced facts, so provenance is part of every
+ * row, not an afterthought. Absence of a row is a normal state (packing
+ * results flag the product ESTIMATED and omit it from breakage-risk
+ * reasoning); nothing in the system estimates or defaults dimensions to
+ * fill gaps. A new observation replaces the previous row (upsert on the
+ * product unique key) — the operator console is the update path.
+ *
+ * `material` is its own closed value set (GLASS/CAN/PLASTIC/OTHER), not
+ * the container_type vocabulary of product_master: it classifies the
+ * packed packaging for the mixing warning, and the two vocabularies serve
+ * different engines.
+ */
+export const productDimensions = sqliteTable(
+  'product_dimensions',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to product_master — the measured product. Products are never deleted, so no cascade. */
+    productId: integer('product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** Measured product weight in grams. */
+    weightG: integer('weight_g').notNull(),
+    /** Measured product height in millimetres. */
+    heightMm: integer('height_mm').notNull(),
+    /** Measured product diameter in millimetres (beverage units are cylindrical). */
+    diameterMm: integer('diameter_mm').notNull(),
+    /** Packaging material of the packed unit — mixing-warning classification. */
+    material: text('material', { length: 16 }).notNull(),
+    /** Provenance: where the measurement came from (source page, carrier sheet, operator note). */
+    source: text('source').notNull(),
+    /** Data freshness indicator (VERIFIED/ESTIMATED/STALE/UNAVAILABLE) — same value set as retail_offers. */
+    reliabilityStatus: text('reliability_status', { length: 16 })
+      .default('ESTIMATED')
+      .notNull(),
+    /** When the measurement was observed from the source. */
+    observedAt: text('observed_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // One row per product: the unique key is the upsert/replace target,
+    // and a missing row is the designed "dimensions unknown" state.
+    unique('product_dimensions_product_id_unique').on(table.productId),
+    check(
+      'product_dimensions_material_check',
+      sql`${table.material} IN ('GLASS', 'CAN', 'PLASTIC', 'OTHER')`,
+    ),
+    check('product_dimensions_reliability_status_check', sql`${table.reliabilityStatus} IN ${RELIABILITY_VALUES}`),
+    check('product_dimensions_weight_g_check', sql`${table.weightG} > 0`),
+    check('product_dimensions_height_mm_check', sql`${table.heightMm} > 0`),
+    check('product_dimensions_diameter_mm_check', sql`${table.diameterMm} > 0`),
+  ],
+);
+
+/**
+ * Carrier box types — standard shipping boxes per carrier (task 3.1,
+ * change product-roadmap-phases-1-4).
+ *
+ * The packing module's ONLY source of box geometry (spec:
+ * packing-optimization): internal dimensions and maximum weight per
+ * standard box name. Curated reference data seeded from the carriers'
+ * published packaging specifications — every row records the source page
+ * and when the values were taken, mirroring the provenance discipline of
+ * the other externally sourced tables. Box selection iterates a carrier's
+ * boxes smallest-first; the packing engine owns that ordering, the table
+ * does not encode it.
+ */
+export const carrierBoxTypes = sqliteTable(
+  'carrier_box_types',
+  {
+    id: integer('id').primaryKey(),
+    /** Carrier identifier — matches transport_offers.carrier (e.g. "postnord", "dhl"). */
+    carrier: text('carrier', { length: 64 }).notNull(),
+    /** Carrier's published box name (e.g. "PostNord Box M") — unique per carrier. */
+    name: text('name', { length: 128 }).notNull(),
+    /** Usable internal height in millimetres. */
+    internalHeightMm: integer('internal_height_mm').notNull(),
+    /** Usable internal width in millimetres. */
+    internalWidthMm: integer('internal_width_mm').notNull(),
+    /** Usable internal depth in millimetres. */
+    internalDepthMm: integer('internal_depth_mm').notNull(),
+    /** Maximum permitted shipment weight in grams. */
+    maxWeightG: integer('max_weight_g').notNull(),
+    /** Provenance: the carrier page the specification was taken from. */
+    source: text('source').notNull(),
+    /** When the specification was copied from the carrier's page. */
+    observedAt: text('observed_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // One box per (carrier, name) — the seed's idempotent upsert target.
+    unique('carrier_box_types_carrier_name_unique').on(table.carrier, table.name),
+    check('carrier_box_types_internal_height_mm_check', sql`${table.internalHeightMm} > 0`),
+    check('carrier_box_types_internal_width_mm_check', sql`${table.internalWidthMm} > 0`),
+    check('carrier_box_types_internal_depth_mm_check', sql`${table.internalDepthMm} > 0`),
+    check('carrier_box_types_max_weight_g_check', sql`${table.maxWeightG} > 0`),
+  ],
+);
+
+/**
+ * Consumption norms — versioned expected-consumption reference dataset
+ * for the event calculator (task 4.1, change product-roadmap-phases-1-4,
+ * design R5). NOT constants: rows are keyed by drinkType × eventProfile
+ * inside a version (the set of rows sharing versionLabel, mirroring how
+ * an FX dataset versions a set of fx_rates rows), each row carrying an
+ * effective window, a NOT NULL source citation, and the
+ * PENDING_CONFIRMATION → PUBLISHED lifecycle reused from the FX dataset
+ * flow — publication is a human operator's explicit confirmation, never
+ * automatic, and rows are append-only (corrections append a version,
+ * historical rows stay queryable).
+ *
+ * The effective window is HALF-OPEN on calendar dates: effective_from ≤
+ * event_date < effective_to (null effective_to = open-ended/current) —
+ * ISO 'YYYY-MM-DD' TEXT compares chronologically, matching the pg
+ * `date` translation rule above.
+ *
+ * normValuePerGuestPerHour is litres of finished beverage per guest per
+ * hour (REAL — a fractional norm is the normal case, e.g. half a glass
+ * of wine per hour). drinkType reuses the canonical tax-rule category
+ * keys so the calculator's per-type lines feed the landed-cost/tax
+ * engines without translation; eventProfile is the MVP simple mode's
+ * closed profile set.
+ *
+ * UNIQUE (drink_type, event_profile, version_label) is the curated
+ * seed's idempotent upsert target; UNIQUE already covers the resolution
+ * read's key columns. The window CHECK makes an inverted window
+ * unrepresentable at rest — the repository enforces the same rule on
+ * the way in (defense in depth on a high-liability dataset).
+ */
+export const consumptionNorms = sqliteTable(
+  'consumption_norms',
+  {
+    id: integer('id').primaryKey(),
+    /** Norms version identifier — the set of rows sharing this label is one published dataset the calculator can name. */
+    versionLabel: text('version_label', { length: 64 }).notNull(),
+    /** Drink type — canonical tax-rule category key (beer, wine_still, wine_sparkling, intermediate_products, other_fermented, spirits). */
+    drinkType: text('drink_type', { length: 32 }).notNull(),
+    /** Event profile — the MVP simple mode's closed set (casual_gathering, dinner_party, celebration). */
+    eventProfile: text('event_profile', { length: 32 }).notNull(),
+    /** Expected consumption in litres of finished beverage per guest per hour. */
+    normValuePerGuestPerHour: real('norm_value_per_guest_per_hour').notNull(),
+    /** Provenance: verifiable source citation — a row without one can never reach PUBLISHED (spec: event-calculator). */
+    sourceCitation: text('source_citation').notNull(),
+    /** Lifecycle: PENDING_CONFIRMATION until a human publishes; PUBLISHED is terminal. */
+    status: text('status', { length: 32 }).default('PENDING_CONFIRMATION').notNull(),
+    /** Start of the effective window (inclusive), ISO 'YYYY-MM-DD'. */
+    effectiveFrom: text('effective_from').notNull(),
+    /** End of the effective window (exclusive, null = open-ended/current). */
+    effectiveTo: text('effective_to'),
+    /** Operator who published the version — null while unconfirmed (auditability of the manual step). */
+    confirmedBy: text('confirmed_by', { length: 128 }),
+    /** When the version was published — null while unconfirmed. */
+    confirmedAt: text('confirmed_at'),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    unique('consumption_norms_key_version_unique').on(
+      table.drinkType,
+      table.eventProfile,
+      table.versionLabel,
+    ),
+    check(
+      'consumption_norms_status_check',
+      sql`${table.status} IN ('PENDING_CONFIRMATION', 'PUBLISHED')`,
+    ),
+    check(
+      'consumption_norms_drink_type_check',
+      sql`${table.drinkType} IN ('beer', 'wine_still', 'wine_sparkling', 'intermediate_products', 'other_fermented', 'spirits')`,
+    ),
+    check(
+      'consumption_norms_event_profile_check',
+      sql`${table.eventProfile} IN ('casual_gathering', 'dinner_party', 'celebration')`,
+    ),
+    check(
+      'consumption_norms_norm_value_check',
+      sql`${table.normValuePerGuestPerHour} > 0`,
+    ),
+    check(
+      'consumption_norms_window_check',
+      sql`${table.effectiveTo} IS NULL OR ${table.effectiveTo} > ${table.effectiveFrom}`,
+    ),
+  ],
+);
+
+/**
+ * Traveller allowance datasets — the versioned dataset of EU personal-use
+ * indicative limits behind the trip feasibility calculator (task 5.1,
+ * change product-roadmap-phases-1-4, design R7). A dataset VERSION is one
+ * row here plus the traveller_allowance_limits rows referencing it, the
+ * same dataset+rates shape as fx_rate_datasets/fx_rates. Rows are
+ * append-only: a correction appends a new version and the historical rows
+ * stay queryable; no code path updates a published version.
+ *
+ * Every dataset carries a NOT NULL source citation (an allowance dataset
+ * without a citation is unrepresentable — spec: product-data-model,
+ * "Versioned traveller allowance datasets") and starts
+ * PENDING_CONFIRMATION; publication to the terminal PUBLISHED state is
+ * the repository's explicit publish call, the same manual
+ * dataset-confirmation lifecycle as fx_rate_datasets and
+ * consumption_norms — publication is a human operator's explicit
+ * confirmation, never automatic (the seed never publishes).
+ *
+ * The effective window is HALF-OPEN on calendar dates: effective_from ≤
+ * travel_date < effective_to (null effective_to = open-ended/current) —
+ * ISO 'YYYY-MM-DD' TEXT compares chronologically, matching the pg `date`
+ * translation rule above.
+ */
+export const travellerAllowanceDatasets = sqliteTable(
+  'traveller_allowance_datasets',
+  {
+    id: integer('id').primaryKey(),
+    /** Allowance dataset version identifier — named by capped calculation results as provenance. */
+    versionLabel: text('version_label', { length: 64 }).notNull(),
+    /** Provenance: verifiable official source citation (directive/regulation + URL) for the dataset. */
+    sourceCitation: text('source_citation').notNull(),
+    /** Lifecycle: PENDING_CONFIRMATION until a human publishes; PUBLISHED is terminal. */
+    status: text('status', { length: 32 }).default('PENDING_CONFIRMATION').notNull(),
+    /** Start of the effective window (inclusive), ISO 'YYYY-MM-DD'. */
+    effectiveFrom: text('effective_from').notNull(),
+    /** End of the effective window (exclusive, null = open-ended/current). */
+    effectiveTo: text('effective_to'),
+    /** Operator who published the version — null while unconfirmed (auditability of the manual step). */
+    confirmedBy: text('confirmed_by', { length: 128 }),
+    /** When the version was published — null while unconfirmed. */
+    confirmedAt: text('confirmed_at'),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    unique('traveller_allowance_datasets_version_label_unique').on(table.versionLabel),
+    index('traveller_allowance_datasets_status_effective_idx').on(table.status, table.effectiveFrom),
+    check(
+      'traveller_allowance_datasets_status_check',
+      sql`${table.status} IN ('PENDING_CONFIRMATION', 'PUBLISHED')`,
+    ),
+    check(
+      'traveller_allowance_datasets_window_check',
+      sql`${table.effectiveTo} IS NULL OR ${table.effectiveTo} > ${table.effectiveFrom}`,
+    ),
+  ],
+);
+
+/**
+ * Traveller allowance limits — one curated row per product category inside
+ * an allowance dataset version, each carrying its own verifiable source
+ * citation and effective window (spec: product-data-model, "Versioned
+ * traveller allowance datasets"). The category reuses the canonical
+ * tax-rule category keys so the trip calculator's per-category caps map
+ * onto the landed-cost/tax engines without a translation layer.
+ *
+ * A cap is a volume (litres of finished beverage), a quantity (units, e.g.
+ * sticks), or both — at least one MUST be present (the CHECK makes a cap-less
+ * row unrepresentable at rest); the caps the EU defines for alcohol are all
+ * volumes, so quantity stays null there. UNIQUE (dataset_id, category) is
+ * the curated seed's idempotent upsert target and the per-version identity.
+ */
+export const travellerAllowanceLimits = sqliteTable(
+  'traveller_allowance_limits',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to traveller_allowance_datasets — the version this limit belongs to. */
+    datasetId: integer('dataset_id')
+      .references(() => travellerAllowanceDatasets.id)
+      .notNull(),
+    /** Product category — canonical tax-rule category key (beer, wine_still, wine_sparkling, intermediate_products, other_fermented, spirits). */
+    category: text('category', { length: 32 }).notNull(),
+    /** Volume cap in litres of finished beverage — null when the cap is quantity-only. */
+    volumeCapLitres: real('volume_cap_litres'),
+    /** Quantity cap in units (e.g. cigarette sticks) — null when the cap is volume-only. */
+    quantityCap: integer('quantity_cap'),
+    /** Provenance: verifiable official source citation for this limit (rule text + URL). */
+    sourceCitation: text('source_citation').notNull(),
+    /** Start of the effective window (inclusive), ISO 'YYYY-MM-DD'. */
+    effectiveFrom: text('effective_from').notNull(),
+    /** End of the effective window (exclusive, null = open-ended/current). */
+    effectiveTo: text('effective_to'),
+  },
+  (table) => [
+    unique('traveller_allowance_limits_dataset_category_unique').on(
+      table.datasetId,
+      table.category,
+    ),
+    check(
+      'traveller_allowance_limits_category_check',
+      sql`${table.category} IN ('beer', 'wine_still', 'wine_sparkling', 'intermediate_products', 'other_fermented', 'spirits')`,
+    ),
+    check(
+      'traveller_allowance_limits_cap_present_check',
+      sql`${table.volumeCapLitres} IS NOT NULL OR ${table.quantityCap} IS NOT NULL`,
+    ),
+    check(
+      'traveller_allowance_limits_volume_cap_check',
+      sql`${table.volumeCapLitres} IS NULL OR ${table.volumeCapLitres} > 0`,
+    ),
+    check(
+      'traveller_allowance_limits_quantity_cap_check',
+      sql`${table.quantityCap} IS NULL OR ${table.quantityCap} > 0`,
+    ),
+    check(
+      'traveller_allowance_limits_window_check',
+      sql`${table.effectiveTo} IS NULL OR ${table.effectiveTo} > ${table.effectiveFrom}`,
+    ),
+  ],
+);
+
+/**
+ * Group order sessions — shareable cost-splitting sessions (task 9.1,
+ * change product-roadmap-phases-1-4, design R12).
+ *
+ * One row per collaborative order being planned. The share token is the
+ * join credential: it grants write access to exactly this session and
+ * expires — past the expiry edge the link stops being usable (the
+ * rejection itself is the API layer's job, task 9.3; this table only
+ * carries the edge honestly). Data minimization per R12: the session
+ * stores no personal data beyond participant nicknames (on the item
+ * rows) and no account data for non-owning participants.
+ *
+ * Accounting-only boundary (spec: group-order-ledger): NO
+ * payment-adjacent columns exist here BY DESIGN — no amounts, no
+ * currencies, no settlement state. Item VALUE for the proportional
+ * allocation is derived at compute time from product/offer data
+ * (tasks 9.2/9.3), never stored on session or item rows, so a payment
+ * instrument or an amount is unrepresentable in a group order at the
+ * schema level. Deleting the owner account cascades here (GDPR
+ * erasure, the savedScenarios guarantee), which cascades onward to the
+ * items below.
+ */
+export const groupOrderSessions = sqliteTable(
+  'group_order_sessions',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to accounts — the authenticated creator; the only account reference these tables carry. */
+    ownerAccountId: integer('owner_account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** The join credential — lookup key for the share link; unique so it identifies exactly one session. */
+    shareToken: text('share_token', { length: 64 }).notNull(),
+    /** When the token stops granting access (exclusive edge — at this instant the link is expired). */
+    expiresAt: text('expires_at').notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // The share link's lookup — one token, one session, by definition.
+    unique('group_order_sessions_share_token_unique').on(table.shareToken),
+    // Expiry housekeeping scans (session deletion on expiry) filter by
+    // the edge alone; the unique index cannot serve that filter.
+    index('group_order_sessions_expires_at_idx').on(table.expiresAt),
+    // A blank token is a credential-generation bug, not a session.
+    check('group_order_sessions_share_token_check', sql`${table.shareToken} <> ''`),
+  ],
+);
+
+/**
+ * Group order items — one participant's line on a shared session
+ * (task 9.1, change product-roadmap-phases-1-4, design R12).
+ *
+ * participantNickname is free text (bounded at 64 chars) and
+ * deliberately NOT a user reference: participants join via the share
+ * link without creating an account, so the self-chosen nickname is the
+ * only participant identity a row carries — anonymity by design, the
+ * minimal-personal-data guardrail R12 allows. Content validation
+ * beyond the length bound belongs to the API's DTO layer (task 9.3),
+ * not to this table.
+ *
+ * Like its session, an item row carries NO payment-adjacent columns:
+ * quantity selects product_master rows and the item's euro value for
+ * proportional allocation is computed from offer data at compute time
+ * (tasks 9.2/9.3) — never persisted here. Deleting the session
+ * cascades (expired/owner-deleted sessions cannot orphan item rows);
+ * products are never deleted, so product_id needs no cascade (the
+ * priceAlerts precedent).
+ */
+export const groupOrderItems = sqliteTable(
+  'group_order_items',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to group_order_sessions — cascade delete keeps items from outliving their session. */
+    sessionId: integer('session_id')
+      .references(() => groupOrderSessions.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** Self-chosen display nickname — the only participant identity; NOT a user reference (see table docblock). */
+    participantNickname: text('participant_nickname', { length: 64 }).notNull(),
+    /** FK to product_master — the beverage the line selects (value derived from offer data at compute time). */
+    productId: integer('product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** Number of units the participant takes. */
+    quantity: integer('quantity').notNull(),
+    /** When the line was added — the deterministic list ordering's leading column. */
+    addedAt: text('added_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // Items of one session in list order (addedAt, then id for ties) —
+    // the ledger's deterministic input.
+    index('group_order_items_session_id_added_at_idx').on(table.sessionId, table.addedAt),
+    // A zero/negative-quantity line selects nothing — unrepresentable.
+    check('group_order_items_quantity_check', sql`${table.quantity} > 0`),
+  ],
+);
+
+/**
+ * Ferry offers — the curated affiliate slot behind the trip feasibility
+ * calculator (task 5.3, change product-roadmap-phases-1-4, design R8).
+ *
+ * One row per curated ferry operator link. Columns are exactly the R8
+ * set (operator, route label, url, status) plus the created_at stamp —
+ * data minimization forbids optional fields "for later" (no campaign
+ * fields, no ranking weight, no price data: an affiliate row that could
+ * influence a calculation is unrepresentable by construction, which is
+ * what makes the affiliate-neutrality compliance test structurally
+ * trivial — the trip route reads this table on a data path that never
+ * touches the calculation input).
+ *
+ * Status lifecycle: rows start DRAFT (operator-console work in
+ * progress, invisible to the public trip API) and move to PUBLISHED by
+ * the audited console publish action; PUBLISHED is terminal for the
+ * status — content comes down by deletion, which the audit trail
+ * records. The stored url never leaves the operator console: the
+ * public API returns redirector-ready references and the outbound
+ * redirect controller serves the click (R8: click tracking reuses the
+ * existing redirect controller).
+ */
+export const ferryOffers = sqliteTable(
+  'ferry_offers',
+  {
+    id: integer('id').primaryKey(),
+    /** Ferry operator name as presented on the partner block (e.g. "Viking Line"). */
+    operator: text('operator', { length: 128 }).notNull(),
+    /** Human route label (e.g. "Helsinki–Tallinn"). */
+    routeLabel: text('route_label', { length: 128 }).notNull(),
+    /** Outbound link target — console-only; the public surface sees the redirect reference. */
+    url: text('url').notNull(),
+    /** Lifecycle: DRAFT until the audited console publish action; PUBLISHED is terminal. */
+    status: text('status', { length: 16 }).default('DRAFT').notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // Serves the public block's deterministic (operator, route_label, id)
+    // ordering — affiliate data must not influence anything, including
+    // its own ordering surprises.
+    index('ferry_offers_operator_route_label_idx').on(table.operator, table.routeLabel),
+    // The public block reads published rows; the console queue reads drafts.
+    index('ferry_offers_status_idx').on(table.status),
+    check(
+      'ferry_offers_status_check',
+      sql`${table.status} IN ('DRAFT', 'PUBLISHED')`,
+    ),
+    // A blank operator/route/url is a curation bug, not an offer (the
+    // group_order_sessions share-token check precedent).
+    check('ferry_offers_operator_check', sql`${table.operator} <> ''`),
+    check('ferry_offers_route_label_check', sql`${table.routeLabel} <> ''`),
+    check('ferry_offers_url_check', sql`${table.url} <> ''`),
+  ],
+);
+
+/**
+ * Producer links — curated sibling-product evidence for the producer
+ * dupe finder (task 6.1, change product-roadmap-phases-1-4, design
+ * R9, spec: producer-matching).
+ *
+ * One row per (Alko product, foreign-shop sibling) pair, curated only
+ * through the audited operator console or the validated import script.
+ * The R9 evidence columns — producer_key, manufacturer, source_url,
+ * plus reviewer and reviewed_at — are NOT NULL and non-empty (CHECKs):
+ * an unevidenced row is unrepresentable at the schema level.
+ *
+ * Matching is an EXACT lookup on normalized producer keys — plain
+ * indexed equality, no scoring/similarity/fuzzy path exists anywhere
+ * in the module (binding spec requirement; the repository normalizes
+ * keys on write and lookup via its exported pure rule). No ranking
+ * weight, taste profile, or confidence column exists by design — the
+ * 6.5 source-level compliance assertion depends on that absence.
+ *
+ * Status lifecycle follows ferry_offers: DRAFT work in progress →
+ * audited one-way publish → PUBLISHED terminal; public reads see only
+ * PUBLISHED rows. Product FKs need no cascade — products are never
+ * deleted (the priceAlerts precedent) — and a self-link (a product
+ * paired with itself) is a curation bug, unrepresentable at rest.
+ */
+export const producerLinks = sqliteTable(
+  'producer_links',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to product_master — the Alko product the link starts from. */
+    alkoProductId: integer('alko_product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** FK to product_master — the foreign-shop sibling it evidences. */
+    siblingProductId: integer('sibling_product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /**
+     * Producer key in NORMALIZED form (trim + lowercase + whitespace
+     * collapse — the repository's exported rule) — the exact-lookup
+     * matching key; the raw form is never persisted.
+     */
+    producerKey: text('producer_key', { length: 256 }).notNull(),
+    /** Manufacturer behind the link — evidence presented with every sibling. */
+    manufacturer: text('manufacturer', { length: 256 }).notNull(),
+    /** Verifiable source URL for the sibling claim — evidence, not an outbound target. */
+    sourceUrl: text('source_url').notNull(),
+    /** Operator who reviewed the link — the curation audit face of R9. */
+    reviewer: text('reviewer', { length: 128 }).notNull(),
+    /** When the review happened — ISO-8601 TEXT (design D2 timestamp rule). */
+    reviewedAt: text('reviewed_at').notNull(),
+    /** Lifecycle: DRAFT until the audited console publish action; PUBLISHED is terminal. */
+    status: text('status', { length: 16 }).default('DRAFT').notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // The exact lookup's index — equality on the normalized key is the
+    // ONLY matching path (spec: no similarity scoring).
+    index('producer_links_producer_key_idx').on(table.producerKey),
+    // Product-scoped reads (console listing, the dupes endpoint).
+    index('producer_links_alko_product_id_idx').on(table.alkoProductId),
+    check(
+      'producer_links_status_check',
+      sql`${table.status} IN ('DRAFT', 'PUBLISHED')`,
+    ),
+    // A blank evidence/review field is a curation bug, not a link
+    // (R9: unevidenced rows are unrepresentable — the ferry_offers
+    // non-empty CHECK precedent).
+    check('producer_links_producer_key_check', sql`${table.producerKey} <> ''`),
+    check('producer_links_manufacturer_check', sql`${table.manufacturer} <> ''`),
+    check('producer_links_source_url_check', sql`${table.sourceUrl} <> ''`),
+    check('producer_links_reviewer_check', sql`${table.reviewer} <> ''`),
+    check('producer_links_reviewed_at_check', sql`${table.reviewedAt} <> ''`),
+    // A product is its own trivial sibling — never returnable.
+    check(
+      'producer_links_self_link_check',
+      sql`${table.alkoProductId} <> ${table.siblingProductId}`,
+    ),
+  ],
+);
+
+/**
+ * Curated list entries — operator-managed editorial content behind the
+ * public curated lists (task 7.1, change product-roadmap-phases-1-4,
+ * design R10, spec: curated-lists; first slug "Alkon hylkäämät").
+ *
+ * One row per entry of a list slug. The slug is the 7.2 public lookup
+ * key (bounded, indexed). The target is EITHER a product_master
+ * reference OR an external reference — the exactly-one CHECK makes a
+ * both-null (points at nothing) and a both-present (ambiguous) entry
+ * unrepresentable at rest. rationale, evidence_links (JSON), and
+ * reviewer are NOT NULL and non-empty (CHECKs, the producer_links
+ * evidence discipline); evidence_links additionally carries a
+ * json_valid() CHECK — the STRUCTURE (a non-empty array of labeled
+ * http(s) links) is validated by the repository on every write.
+ *
+ * Status lifecycle deliberately differs from ferry_offers /
+ * producer_links (binding spec): entries are "created, updated, and
+ * unpublished through the audited operator console" and content
+ * changes require no deploys, so a PUBLISHED entry is editable and
+ * can be unpublished (PUBLISHED → DRAFT). Every mutation is audited
+ * at the console layer, so no code change or deploy is ever needed
+ * for content work. updated_at moves on every edit; the product FK
+ * needs no cascade (products are never deleted).
+ */
+export const curatedEntries = sqliteTable(
+  'curated_entries',
+  {
+    id: integer('id').primaryKey(),
+    /** Owning list slug in NORMALIZED form (trim + lowercase — the repository's exported rule); the 7.2 public lookup key. */
+    listSlug: text('list_slug', { length: 128 }).notNull(),
+    /** FK to product_master — the referenced Alko/merchant product (exactly-one target CHECK with externalRef). */
+    productId: integer('product_id').references(() => productMaster.id),
+    /** External reference for entries without a product_master row (exactly-one target CHECK with productId). */
+    externalRef: text('external_ref', { length: 512 }),
+    /** Why this entry qualifies for the list — the mandatory editorial justification. */
+    rationale: text('rationale').notNull(),
+    /** Evidence links (JSON array of {label, url}) — structure validated by the repository on every write. */
+    evidenceLinks: text('evidence_links', { mode: 'json' }).notNull(),
+    /** Operator who reviewed the entry — the curation audit face of R10. */
+    reviewer: text('reviewer', { length: 128 }).notNull(),
+    /** Lifecycle: DRAFT until the audited console publish; NOT terminal — the console can edit and unpublish (spec). */
+    status: text('status', { length: 16 }).default('DRAFT').notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+    /** Moves on every console edit — published content is updatable without deploys (spec). */
+    updatedAt: text('updated_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // The 7.2 public lookup (published rows of one slug) plus — via the
+    // leftmost prefix — the console's per-slug management reads.
+    index('curated_entries_list_slug_status_idx').on(table.listSlug, table.status),
+    check(
+      'curated_entries_status_check',
+      sql`${table.status} IN ('DRAFT', 'PUBLISHED')`,
+    ),
+    // A blank slug/rationale/reviewer is a curation bug, not an entry
+    // (the producer_links non-empty CHECK precedent).
+    check('curated_entries_list_slug_check', sql`${table.listSlug} <> ''`),
+    check('curated_entries_rationale_check', sql`${table.rationale} <> ''`),
+    check('curated_entries_reviewer_check', sql`${table.reviewer} <> ''`),
+    // Parseable JSON at rest; the repository validates the structure.
+    check(
+      'curated_entries_evidence_links_check',
+      sql`${table.evidenceLinks} <> '' AND json_valid(${table.evidenceLinks})`,
+    ),
+    // Exactly one target: a NULL/NULL entry points at nothing, a
+    // value/value entry is ambiguous — both unrepresentable.
+    check(
+      'curated_entries_target_check',
+      sql`(${table.productId} IS NULL) <> (${table.externalRef} IS NULL)`,
+    ),
+    check(
+      'curated_entries_external_ref_check',
+      sql`${table.externalRef} IS NULL OR ${table.externalRef} <> ''`,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -879,6 +1588,8 @@ export const d1Schema = {
   accounts,
   savedBaskets,
   savedScenarios,
+  priceAlerts,
+  alertNotifications,
   merchantTerms,
   basketCalculationRecords,
   fxRateDatasets,
@@ -887,4 +1598,14 @@ export const d1Schema = {
   auditEvents,
   clickCounterSnapshots,
   merchantRegistry,
+  productDimensions,
+  carrierBoxTypes,
+  consumptionNorms,
+  travellerAllowanceDatasets,
+  travellerAllowanceLimits,
+  groupOrderSessions,
+  groupOrderItems,
+  ferryOffers,
+  producerLinks,
+  curatedEntries,
 };

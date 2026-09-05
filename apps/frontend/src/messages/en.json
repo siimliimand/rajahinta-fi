@@ -63,6 +63,9 @@
     "calculator": "Calculator",
     "compare": "Compare",
     "basket": "Basket",
+    "event": "Event calculator",
+    "trip": "Trip calculator",
+    "whatIf": "What-if calculator",
     "account": "My account",
     "ranking": "How ranking works"
   },
@@ -328,7 +331,28 @@
     "empty": "No products added to comparison yet.",
     "totalLandedCost": "Total landed cost",
     "dataConfidence": "Data confidence",
-    "viewAt": "View at {merchant}"
+    "viewAt": "View at {merchant}",
+    "eurPerGram": {
+      "columnHeader": "€/g pure ethanol",
+      "sortOptionLabel": "€/g ethanol (lowest first)",
+      "unit": "¢/g",
+      "noValue": "No value",
+      "reason": {
+        "MISSING_VOLUME": "product volume is missing",
+        "MISSING_ALCOHOL_FRACTION": "product alcohol percentage is missing",
+        "INVALID_VOLUME": "product volume is invalid",
+        "INVALID_ALCOHOL_FRACTION": "product alcohol percentage is invalid",
+        "INVALID_PRICE": "the price is invalid"
+      },
+      "tooltip": {
+        "triggerLabel": "How is €/g calculated?",
+        "title": "€/g pure ethanol",
+        "formula": "Formula: price ÷ (volume in litres × alcohol fraction × 789 g/l).",
+        "density": "The density of pure ethanol is 789 g/l.",
+        "priceReliability": "Price input reliability: {status}.",
+        "unavailableReason": "No value: {reason}."
+      }
+    }
   },
   "SortSelector": {
     "label": "Sort by"
@@ -389,6 +413,30 @@
     "alternative": "Alternative {index}",
     "dataReliability": "Data reliability"
   },
+  "BasketPacking": {
+    "title": "Packing suggestion",
+    "advisory": "An advisory suggestion for packing the shipment — the carrier determines the final packing method.",
+    "fillAriaLabel": "Fill level of box {boxName}",
+    "warning": {
+      "title": "Mixed materials exceed thresholds",
+      "figures": "Glass: {glassUnits} units · Cans: {canUnits} units · Combined weight: {combinedWeight}",
+      "triggered": "Thresholds exceeded: {triggers}",
+      "trigger": {
+        "UNIT_COUNT": "unit count",
+        "COMBINED_WEIGHT": "combined weight"
+      }
+    },
+    "excluded": {
+      "title": "Products not packed",
+      "item": "{name} · {count, plural, one {# unit} other {# units}} — {reason}",
+      "reason": {
+        "MISSING_DIMENSIONS": "missing dimensions",
+        "INVALID_DIMENSIONS": "invalid dimensions",
+        "INVALID_QUANTITY": "invalid quantity",
+        "NO_FITTING_BOX": "no fitting box"
+      }
+    }
+  },
   "BasketComparison": {
     "title": "Multi-store basket comparison",
     "subtitle": "Compare how the costs of a multi-item basket are distributed across stores. All rankings are objective and neutral.",
@@ -437,6 +485,9 @@
     "savedBaskets": "Saved baskets",
     "savedBasketsDesc": "Save product selections for quick re-calculation.",
     "browseSavedBaskets": "Browse saved baskets →",
+    "priceAlerts": "Price alerts",
+    "priceAlertsDesc": "Set price thresholds for products and manage your alerts.",
+    "browsePriceAlerts": "Manage price alerts →",
     "historyFeature": "Calculation history",
     "historyFeatureDesc": "View and re-run past landed-cost calculations.",
     "viewHistory": "View history →",
@@ -496,6 +547,288 @@
     "unitCount": "{count, plural, one {# unit} other {# units}}",
     "updated": "Updated {date}"
   },
+  "EventPage": {
+    "title": "Event calculator",
+    "subtitle": "Estimate the drink requirement from the number of guests, the duration, and the event type. Each line of the resulting shopping list shows the need, the suggested purchase, and the surplus.",
+    "form": {
+      "guests": "Number of guests",
+      "duration": "Duration (hours)",
+      "profile": "Event type",
+      "sourcing": {
+        "toggle": "Compare with foreign stores (V2)",
+        "country": "Comparison country",
+        "countryName": {
+          "EE": "Estonia",
+          "LV": "Latvia",
+          "LT": "Lithuania",
+          "SE": "Sweden",
+          "DE": "Germany"
+        },
+        "budget": "Budget (€, optional)",
+        "packing": "Suggest packing for the haul brought from abroad",
+        "pricesHeading": "Price basis in euros per litre",
+        "domesticPrice": "{type} — Finland (€/l)",
+        "foreignPrice": "Abroad (€/l)",
+        "priceHint": "Enter a per-litre price for at least one drink type. A foreign price always requires the domestic comparison price.",
+        "priceError": "Check the prices: use numbers (e.g. 2.50) and always provide the domestic price when a foreign price is given."
+      }
+    },
+    "profile": {
+      "casual_gathering": "Casual gathering",
+      "dinner_party": "Dinner party",
+      "celebration": "Celebration"
+    },
+    "submit": "Calculate shopping list",
+    "submitting": "Calculating…",
+    "result": {
+      "heading": "Shopping list",
+      "need": "Need",
+      "purchase": "Suggested purchase",
+      "surplus": "Surplus",
+      "unitQuantity": "{quantity} ×",
+      "noPurchase": "Nothing to buy",
+      "normsVersion": "Consumption norms version: {version}"
+    },
+    "noNorms": {
+      "title": "No published consumption norms",
+      "body": "There are no published consumption norms for the selected event type and date, so a shopping list cannot be calculated. Try again later."
+    },
+    "drinkType": {
+      "beer": "Beer",
+      "wine_still": "Still wine",
+      "wine_sparkling": "Sparkling wine",
+      "intermediate_products": "Intermediate products (e.g. vermouth)",
+      "other_fermented": "Cider and long drink",
+      "spirits": "Spirits"
+    },
+    "errors": {
+      "validation": "Check the input values: 1–500 guests, duration 1–72 hours.",
+      "forbidden": "The event calculator is not available.",
+      "rate-limited": "Too many requests. Try again in a moment.",
+      "network": "Could not reach the server. Try again.",
+      "unknown": "Unexpected error. Try again."
+    },
+    "plan": {
+      "heading": "Sourcing plan",
+      "total": "Plan total:",
+      "buyHere": "Buy in Finland",
+      "bringFrom": "Bring from {country}",
+      "retail": "Shelf price",
+      "excise": "Alcohol excise",
+      "containerDuty": "Container duty",
+      "transport": "Transport",
+      "lineTotal": "Line total",
+      "savings": "Saves {amount} compared with buying domestically.",
+      "datasets": "Sources: {versions}",
+      "unpriced": "Unpriced (not part of the plan): {types}",
+      "budgetMet": "Within budget: {total} of {limit}.",
+      "budgetExceeded": "Budget exceeded: total {total} against a {limit} budget ({overrun} over). The plan is still the complete computed option with the lowest total.",
+      "packing": {
+        "heading": "Packing suggestion for the foreign haul",
+        "noBoxes": "Nothing is sourced from abroad — no packing needed.",
+        "box": "{name}: {units} units, {fill} full",
+        "excludedHeading": "Excluded from packing:",
+        "excludedItem": "{type} × {quantity}",
+        "reason": {
+          "MISSING_DIMENSIONS": "dimensions unknown",
+          "INVALID_DIMENSIONS": "invalid dimensions",
+          "INVALID_QUANTITY": "invalid quantity",
+          "NO_FITTING_BOX": "fits no available box"
+        },
+        "mixingWarning": "Mixed-material warning: {glass} glass and {can} can units in one shipment — pack glass separately."
+      }
+    }
+  },
+  "TripPage": {
+    "title": "Trip calculator",
+    "subtitle": "Calculate how many litres are worth importing on a trip: the shared travel cost, the per-category price difference, and where the traveller allowance caps bite. Each line shows the break-even import volume and the effect of the allowance cap.",
+    "form": {
+      "passengers": "Passengers",
+      "vehicle": "Vehicle",
+      "ticket": "Tickets total (€)",
+      "fuel": "Fuel total (€)",
+      "pricesHeading": "Prices in euros per litre",
+      "domesticPrice": "{category} — Finland (€/l)",
+      "foreignPrice": "Abroad (€/l)",
+      "priceHint": "Enter a domestic and a foreign price for at least one category.",
+      "priceError": "Check the prices: use numbers (e.g. 2.50) and fill every started row with both prices."
+    },
+    "vehicle": {
+      "car": "Car",
+      "van": "Van"
+    },
+    "category": {
+      "beer": "Beer",
+      "wine_still": "Still wine",
+      "wine_sparkling": "Sparkling wine",
+      "intermediate_products": "Intermediate products (e.g. vermouth)",
+      "other_fermented": "Cider and long drink",
+      "spirits": "Spirits"
+    },
+    "submit": "Calculate break-even volume",
+    "submitting": "Calculating…",
+    "result": {
+      "heading": "Break-even volumes",
+      "priceDifference": "Price difference (Finland − abroad)",
+      "breakEven": "Break-even volume",
+      "cap": "Allowance cap (duty-free maximum)",
+      "suggested": "Suggested duty-free volume",
+      "capExceeded": "Cap exceeded",
+      "withinAllowance": "Within the allowance",
+      "cappedWith": "{cap} (without the cap {uncapped})",
+      "noAllowanceRow": "No allowance row in the dataset version",
+      "noAllowanceRowBody": "The dataset version has no allowance row for this category, so no cap can be applied and no capped suggestion can be given.",
+      "capNotVolume": "The cap is a quantity cap",
+      "capNotVolumeBody": "This category's cap is stated in units (pcs), so it cannot be expressed in litres or used to cap a volume.",
+      "noBreakEven": "Importing does not save money",
+      "noBreakEvenBody": "The foreign price is not below the domestic comparison price, so there is no break-even volume.",
+      "travelCost": "Total travel cost: {total}",
+      "perTraveller": "Per traveller: {amount} ({passengers} travellers)",
+      "allowanceVersion": "Allowance dataset version: {version}"
+    },
+    "partners": {
+      "label": "Partner links"
+    },
+    "noAllowances": {
+      "title": "No published traveller allowances",
+      "body": "There is no published allowance dataset version effective on the selected date, so the calculation cannot be produced. Try again later."
+    },
+    "errors": {
+      "validation": "Check the input values: 1–9 passengers, costs above €0.",
+      "forbidden": "The trip calculator is not available.",
+      "rate-limited": "Too many requests. Try again in a moment.",
+      "network": "Could not reach the server. Try again.",
+      "unknown": "Unexpected error. Try again."
+    }
+  },
+  "WhatIfPage": {
+    "title": "What-if calculator",
+    "subtitle": "Substitute the alcohol excise rate with a value of your choice and compare product totals within a fixed baseline dataset. The calculation is hypothetical.",
+    "recalculating": "Calculating…",
+    "form": {
+      "rateLabel": "Hypothetical excise rate (€ per formula unit)",
+      "rateValue": "{rate} €",
+      "rateHint": "The unit follows each category's calculation formula (e.g. € per centilitre of ethanol or € per litre). Range 0–1000.",
+      "rowsHeading": "Products",
+      "rowCount": "{count}/{max} products",
+      "rowLabel": "Product row {index}",
+      "category": "Category",
+      "abv": "Alcohol by volume (%)",
+      "volume": "Volume (litres)",
+      "alkoPrice": "Domestic reference price (€)",
+      "importPrice": "Import retail price (€)",
+      "addRow": "Add a product row",
+      "removeRowAria": "Remove product row {index}",
+      "recalculate": "Recalculate",
+      "invalidHint": "Fill in every field of every product row. Results update once the inputs are valid."
+    },
+    "category": {
+      "beer": "Beer",
+      "wine_still": "Still wine",
+      "wine_sparkling": "Sparkling wine",
+      "spirits": "Spirits",
+      "intermediate_products": "Intermediate products (e.g. vermouth)",
+      "other_fermented": "Cider and long drink"
+    },
+    "result": {
+      "heading": "Calculation",
+      "scenarioRate": "Hypothetical excise rate: {rate} € per formula unit",
+      "scenarioBaselineVersion": "Baseline rate dataset: {version}",
+      "totalsHeading": "Summary",
+      "totalsBaselineExcise": "Alcohol excise total, current rate",
+      "totalsHypotheticalExcise": "Alcohol excise total, hypothetical rate",
+      "totalsGapBaseline": "Import gap to the reference price, current rate",
+      "totalsGapHypothetical": "Import gap to the reference price, hypothetical rate",
+      "linesHeading": "Per product",
+      "columnProduct": "Product",
+      "columnBaseline": "Current rate",
+      "columnHypothetical": "Hypothetical rate",
+      "columnDelta": "Change",
+      "lineImportTotalBaseline": "Import total, current rate",
+      "lineImportTotalHypothetical": "Import total, hypothetical rate",
+      "lineGapBaseline": "Gap to the reference price, current rate",
+      "lineGapHypothetical": "Gap to the reference price, hypothetical rate",
+      "lineGapDelta": "Gap change",
+      "baselineVersion": "Rate dataset: {version}",
+      "baselineFormula": "Calculation formula: {formula}",
+      "baselineRate": "Current rate: {rate} € per formula unit",
+      "baselineTax": "Alcohol excise: {amount}",
+      "hypotheticalRate": "Hypothetical rate: {rate} € per formula unit",
+      "hypotheticalFormula": "Calculation formula: {formula}",
+      "hypotheticalTax": "Alcohol excise: {amount}",
+      "gapLegend": "A positive gap means importing is dearer than the domestic reference price. The change states how the hypothetical rate shifts that gap relative to the current rate."
+    },
+    "share": {
+      "heading": "Share the calculation",
+      "body": "The share link opens the same scenario on the calculator page. The embed code shows the same calculation on another site without the site navigation — both carry the same disclaimer text.",
+      "copyLink": "Copy share link",
+      "copyEmbed": "Copy embed code",
+      "copied": "Copied",
+      "embedIframeTitle": "What-if calculation"
+    },
+    "empty": {
+      "title": "No calculation yet",
+      "body": "Fill in the product rows or move the rate slider. The calculation runs automatically once the inputs are valid."
+    },
+    "errors": {
+      "validation": "The calculation failed. Check the input values.",
+      "forbidden": "The what-if calculator is not available.",
+      "throttled": "Too many requests. The calculation continues in {seconds} s.",
+      "network": "Could not reach the server. Try again.",
+      "unknown": "Unexpected error. Try again.",
+      "invalidToken": "The shared calculation could not be read. The form is blank."
+    },
+    "embed": {
+      "title": "What-if calculation — rajahinta.fi",
+      "closedTitle": "The what-if calculator is not available",
+      "closedBody": "This embedded view is not in use.",
+      "invalidTitle": "The link could not be read",
+      "invalidBody": "The shared calculation is malformed or altered, so it cannot be displayed.",
+      "unavailableTitle": "The calculation is not available now",
+      "unavailableBody": "Try again in a moment.",
+      "throttledTitle": "Too many requests",
+      "throttledBody": "This view refreshes automatically in {seconds} seconds."
+    }
+  },
+  "PriceAlerts": {
+    "title": "Price alerts",
+    "subtitle": "Get notified when a tracked product's price drops below your threshold.",
+    "loading": "Loading price alerts…",
+    "loadFailed": "Failed to load price alerts",
+    "emptyTitle": "No price alerts yet",
+    "emptyBody": "Add an alert with the form below or from a product page.",
+    "signInTitle": "Sign-in required",
+    "signInBody": "Managing price alerts requires a session.",
+    "signInLink": "Create session",
+    "createTitle": "Add a price alert",
+    "searchFailed": "Product search failed",
+    "selectedProduct": "Selected product",
+    "thresholdLabel": "Price threshold (€)",
+    "thresholdPlaceholder": "e.g. 12.50",
+    "createButton": "Add alert",
+    "creating": "Adding…",
+    "createFailed": "Failed to add the alert",
+    "thresholdInvalid": "Enter a price in euros between €0.01–10,000 (at most two decimals).",
+    "duplicateAlert": "This product already has a price alert.",
+    "productMissing": "The product no longer exists — search again.",
+    "statusActive": "Active",
+    "statusPaused": "Paused",
+    "pause": "Pause",
+    "pausing": "Pausing…",
+    "resume": "Resume",
+    "resuming": "Resuming…",
+    "delete": "Delete",
+    "deleting": "Deleting…",
+    "updateFailed": "Failed to update the alert",
+    "deleteFailed": "Failed to delete the alert",
+    "thresholdValue": "Threshold {euros} €",
+    "created": "Created {date}",
+    "updated": "Updated {date}",
+    "product": "Product #{id}",
+    "productTitle": "Price alert",
+    "productBody": "Set a threshold for this product — get notified when the price drops below it.",
+    "existingAlert": "This product already has a price alert."
+  },
   "Ranking": {
     "title": "How ranking works",
     "subtitle": "Objective, transparent, and free of commercial influence.",
@@ -542,6 +875,33 @@
     "noOffers": "No active price observations.",
     "dataNote": "Prices are collected observations, not merchant offers.",
     "landingNote": "The landed cost for Finland includes the price plus taxes, duties, and transport — calculate it in the calculator."
+  },
+  "ProductDupes": {
+    "title": "Products from the same manufacturer abroad",
+    "dataNote": "Editorially curated sibling products — every link is backed by a verified manufacturer and published with its source. These are not ads or affiliate links.",
+    "producerLabel": "Producer key",
+    "manufacturerEvidence": "Manufacturer: {manufacturer}",
+    "siblingLink": "Product page #{id}",
+    "sourceLink": "Source"
+  },
+  "ListsPage": {
+    "metaTitle": "{title} — curated list",
+    "metaDescription": "{title} — every entry carries an editorial rationale and evidence links. The curation criteria are shown on the page.",
+    "fallbackMetaTitle": "List not found",
+    "fallbackMetaDescription": "Curated product lists with rationales and evidence links.",
+    "criteriaTitle": "Curation criteria",
+    "criteriaIntro": "A product qualifies for the list only when it meets every criterion below. The criteria are the list's editorial standard.",
+    "entriesTitle": "Entries",
+    "entriesCount": "Entries: {count}",
+    "emptyTitle": "No published entries",
+    "emptyBody": "No products have been published to this list yet. The criteria above describe what will qualify.",
+    "rationaleLabel": "Rationale",
+    "evidenceLabel": "Evidence links",
+    "evidenceNote": "Links open in a new tab and point to the evidence behind each entry.",
+    "productLinkLabel": "Open product page",
+    "externalRefLabel": "External reference",
+    "unavailableTitle": "This list is not available",
+    "unavailableBody": "This list cannot be read right now. Please try again later."
   },
   "OperatorConsole": {
     "title": "Operator console",
@@ -594,5 +954,95 @@
     "auditTitle": "Audit log",
     "auditIntro": "Recent durable audit events for console actions, newest first.",
     "noAuditEntries": "No audit events."
+  },
+  "GroupOrder": {
+    "metaTitle": "Group order",
+    "title": "Group order",
+    "subtitle": "A shared ordering session: participants add items under their own nicknames and Rajahinta divides the shared costs.",
+    "retry": "Try again",
+    "signInTitle": "Sign-in required",
+    "signInBody": "Creating a group order session requires a session.",
+    "signInLink": "Create session",
+    "createTitle": "Create a new session",
+    "createBody": "A session lasts 7 days. You receive a shareable link that participants use to join under a nickname, without an account.",
+    "createAction": "Create session",
+    "creating": "Creating…",
+    "createFailed": "The session could not be created.",
+    "shareLinkTitle": "Shareable link",
+    "shareLinkBody": "Give this link to the participants. It expires on {date}.",
+    "copyLink": "Copy link",
+    "copied": "Copied",
+    "expiresAt": "Session expires: {date}",
+    "joinTitle": "Join the order",
+    "joinBody": "Pick a nickname to add items under. Only the nickname is stored in the session.",
+    "nicknameLabel": "Nickname",
+    "nicknameRequired": "Enter a nickname (1–64 characters).",
+    "joinAction": "Join",
+    "joining": "Joining…",
+    "joinFailed": "Joining did not succeed.",
+    "expiredTitle": "The session has expired",
+    "expiredBody": "This share link is no longer valid. Ask the order owner for a new link.",
+    "unknownTitle": "Link not found",
+    "unknownBody": "This share link does not match any session. Check the link or ask the order owner for a new one.",
+    "participantsTitle": "Participants",
+    "participantsEmpty": "Nobody has added items yet.",
+    "participantItems": "{count} items",
+    "itemsTitle": "Items",
+    "itemsEmptyTitle": "No items yet",
+    "itemsEmptyBody": "Add the first item with the search below.",
+    "quantityCount": "{count} pcs",
+    "itemAddedBy": "added by {nickname}",
+    "productUnknown": "Product #{id}",
+    "addItemTitle": "Add an item",
+    "searchFailed": "The search did not succeed. Try again.",
+    "selectedProduct": "Selected: {name}",
+    "quantityLabel": "Quantity",
+    "addAction": "Add item",
+    "adding": "Adding…",
+    "addInvalidQuantity": "The quantity must be a whole number from 1 to 999.",
+    "addMissingProduct": "Select a product from the results first.",
+    "addProductNotFound": "The product was not found. Select a product from the results.",
+    "addFailed": "Adding the item did not succeed.",
+    "paymentRejected": "A field carrying payment details was rejected: {field} Rajahinta does not accept payment details — settlement happens outside Rajahinta.",
+    "ledgerTitle": "Shared cost split",
+    "ledgerIntro": "Add the shared costs, for example shipping or packaging. Rajahinta divides them in proportion to each participant's item value and calculates who owes whom.",
+    "sharedCostLabel": "Cost name",
+    "sharedCostAmount": "Amount (€)",
+    "sharedCostFrontedBy": "Paid upfront by",
+    "frontedByPlaceholder": "Select a participant",
+    "lineInvalidLabel": "Enter a cost name (1–100 characters).",
+    "lineInvalidAmount": "Enter an amount in euros, at most two decimals.",
+    "lineInvalidFrontedBy": "Select a participant.",
+    "addLine": "Add line",
+    "linesTitle": "Shared costs",
+    "noLines": "No shared costs yet.",
+    "frontedByLine": "paid upfront by {nickname}",
+    "removeLine": "Remove line",
+    "computeAction": "Calculate split",
+    "computing": "Calculating…",
+    "noParticipantsHint": "Shared costs require at least one participant who has added items.",
+    "computeFailed": "The split could not be calculated.",
+    "resultTitle": "Split",
+    "valuationRuleEcho": "Item values: {rule} (lowest verified EUR price per product).",
+    "emptySessionTitle": "The session is still empty",
+    "emptySessionBody": "Nobody has joined and no shared costs have been entered. Join the order and add items, and the split can be calculated.",
+    "noItemValueTitle": "Item values cannot be determined",
+    "noItemValueBody": "Shared costs have been entered, but no product has a verified EUR price, so a proportional split cannot be calculated. Check the products and try again.",
+    "colParticipant": "Participant",
+    "colItemValue": "Item value",
+    "colAllocated": "Share of shared costs",
+    "colFronted": "Paid upfront",
+    "colTotalOwed": "Total",
+    "colBalance": "Balance",
+    "balanceGroupOwes": "the group owes {amount}",
+    "balanceOwesGroup": "owes the group {amount}",
+    "balanceSettled": "settled",
+    "transfersTitle": "Who owes whom",
+    "transfersEmpty": "All balances are zero — no transfers are needed.",
+    "transferLine": "{from} owes {to} {amount}",
+    "valuationsTitle": "Item values",
+    "unvaluedItem": "No value available",
+    "settlementNoteTitle": "Settlement happens outside Rajahinta",
+    "settlementNoteBody": "Rajahinta only calculates who owes whom. Rajahinta does not process, broker, or facilitate payments. Participants settle between themselves using their own methods, for example Swish, MobilePay, or a bank transfer."
   }
 }

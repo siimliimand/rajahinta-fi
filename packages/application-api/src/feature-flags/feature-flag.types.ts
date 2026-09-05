@@ -36,6 +36,15 @@ export enum FeatureFlag {
    * bearer+allowlist guard stays on regardless of the flag.
    */
   OPERATOR_CONSOLE = 'OPERATOR_CONSOLE',
+  /**
+   * Gate the €/g unit-price metric on product/offer read responses
+   * (search items + per-offer embeds; derived at read time, never
+   * persisted — spec unit-price-metrics).
+   * Spec/design slug: `enable_unit_price_eur_per_gram`.
+   * Default OFF — the embed key stays absent so payloads remain
+   * byte-compatible with the flag-less shape.
+   */
+  UNIT_PRICE_EUR_PER_GRAM = 'UNIT_PRICE_EUR_PER_GRAM',
 }
 
 /** Runtime feature-flag configuration shape used by the service. */

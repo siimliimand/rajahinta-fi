@@ -63,6 +63,30 @@ Gauges and their producers:
   +Inf sentinel — AE doubles cannot carry Infinity, and the sentinel
   keeps `> threshold` / `max()` alert semantics firing)).
 
+### Price-alert job counters — one discrete write per counter per run
+
+Emitted once per run by the 30-min price-alert-evaluation cron handler
+(task 2.2, design R2) via `recordPriceAlertEvaluationCounters`, using
+the same data point shape as the freshness gauges. Each run writes five
+points; `double1` carries that run's count, so summing
+`double1 * _sample_interval` over a window gives the running totals
+(Prometheus `_total` namesakes):
+
+| `index1` / `blob1` | Meaning |
+|---|---|
+| `rajahinta_price_alerts_evaluated_total` | Alerts compared against a materialized price |
+| `rajahinta_price_alerts_matched_total` | Alerts whose observed price met the threshold (`<=`) |
+| `rajahinta_price_alerts_notified_total` | Emails dispatched successfully |
+| `rajahinta_price_alerts_failed_total` | Failed pipelines (dispatch, intent write, unresolvable recipient) |
+| `rajahinta_price_alerts_cooldown_suppressed_total` | Matched but withheld by the 24-hour delivered-row cooldown (the spec requires suppression be visible in the job's counters) |
+
+Notified should track matched minus suppressed and failed; divergence
+is the first forensics question. The dashboard panels for these
+counters are under "Querying" below (task 10.2); the failure-count
+warning/critical thresholds live in
+`src/observability/price-alert-thresholds.ts`
+(`PRICE_ALERT_FAILED_THRESHOLDS`).
+
 ## Querying — the Grafana re-point (task 6.5)
 
 AE SQL API (used by the Grafana Cloudflare/JSON data source or plain
@@ -140,6 +164,42 @@ WHERE index1 = 'rajahinta_transport_newest_offer_age_seconds'
 ORDER BY timestamp DESC
 LIMIT 1
 ```
+
+### Price-alert job counters (task 10.2 panel)
+
+Unlike the freshness gauges these are per-run counts, not latest-value
+observations — sum them over the window (weighted by `_sample_interval`)
+for the running totals:
+
+```sql
+SELECT index1 AS counter,
+       sum(double1 * _sample_interval) AS total
+FROM rajahinta-api-metrics-production
+WHERE index1 LIKE 'rajahinta_price_alerts_%'
+  AND timestamp > NOW() - INTERVAL '1' DAY
+GROUP BY counter
+ORDER BY counter
+```
+
+Per-run time series (Grafana buckets the rows, same as above) — panel
+for the failure gauge:
+
+```sql
+SELECT timestamp,
+       double1 * _sample_interval AS failed
+FROM rajahinta-api-metrics-production
+WHERE index1 = 'rajahinta_price_alerts_failed_total'
+  AND timestamp > NOW() - INTERVAL '1' DAY
+ORDER BY timestamp
+```
+
+Panel threshold steps mirror the in-code pair exactly
+(`PRICE_ALERT_FAILED_THRESHOLDS` in
+`src/observability/price-alert-thresholds.ts`, strict `>`):
+`warning` above 0 failed pipelines in a run, `critical` above 9
+(≥ 10 — systemic email-Worker/D1 breakage rather than a one-off bad
+recipient). `evaluated = 0` across a whole window is itself a canary:
+the 30-min cron stopped producing points.
 
 ### Error rate by status class
 

@@ -35,12 +35,19 @@ import {
   registerCalculatorRoutes,
 } from './routes/calculator.routes';
 import { registerSearchRoutes } from './routes/search.routes';
+import { registerProductDupesRoutes } from './routes/product-dupes.routes';
+import { registerWhatIfRoutes } from './routes/what-if.routes';
 import { registerDeclarationRoutes } from './routes/declaration.routes';
 import { registerBasketRoutes } from './routes/basket.routes';
+import { registerEventCalcRoutes } from './routes/event-calc.routes';
+import { registerTripFeasibilityRoutes } from './routes/trip-feasibility.routes';
+import { registerCuratedListsRoutes } from './routes/curated-lists.routes';
 import { registerHistoricalRoutes } from './routes/historical.routes';
 import { registerReportsRoutes } from './routes/reports.routes';
 import { registerMerchantsRoutes } from './routes/merchants.routes';
 import { registerAccountsRoutes } from './routes/accounts.routes';
+import { registerAlertsRoutes } from './routes/alerts.routes';
+import { registerGroupOrderRoutes } from './routes/group-order.routes';
 import { registerAnalyticsRoutes } from './routes/analytics.routes';
 import { registerOpsRoutes } from './routes/ops.routes';
 import { registerHealthRoutes } from './routes/health.routes';
@@ -132,12 +139,19 @@ export function createApp(): Hono<AppEnv> {
   // Route ports (tasks 3.5–3.8) — handlers appended behind the guards.
   registerCalculatorRoutes(app);
   registerSearchRoutes(app);
+  registerProductDupesRoutes(app);
+  registerWhatIfRoutes(app);
   registerDeclarationRoutes(app);
   registerBasketRoutes(app);
+  registerEventCalcRoutes(app);
+  registerTripFeasibilityRoutes(app);
+  registerCuratedListsRoutes(app);
   registerHistoricalRoutes(app);
   registerReportsRoutes(app);
   registerMerchantsRoutes(app);
   registerAccountsRoutes(app);
+  registerAlertsRoutes(app);
+  registerGroupOrderRoutes(app);
   registerAnalyticsRoutes(app);
   registerOpsRoutes(app);
 

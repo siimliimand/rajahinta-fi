@@ -119,7 +119,7 @@ Plain, hook-free React components over Tailwind utilities — usable from both s
 | `apps/frontend/src/app/[locale]/components/Logo.tsx` | Typographic wordmark — "Rajahinta" in gray-900 with ".fi" in primary-700; optional rounded-square initial mark. Server-compatible |
 | `apps/frontend/src/app/icon.svg` | Favicon: the initial on a primary-700 square; colors hardcoded to token values (renders outside CSS-variable scope) |
 | `apps/frontend/src/app/opengraph-image.tsx` | OG image: wordmark + the fi catalog description on white, built with next/og (Inter deliberately not fetched at build); token values mirrored as inline-style literals |
-| `apps/frontend/src/app/[locale]/components/SiteHeader.tsx` | Five primary destinations (calculator, compare, basket, account, ranking) on every page, outside the age gate. Active page shown by underline (desktop) / left bar (mobile) plus `aria-current="page"` — never color alone. Mobile menu is a disclosure panel: closed means `display:none` (no focus trap), Escape closes and returns focus to the toggle, navigation closes the panel |
+| `apps/frontend/src/app/[locale]/components/SiteHeader.tsx` | Five primary destinations (calculator, compare, basket, account, ranking) on every page, outside the age gate. Three additional flag-gated destinations (`/event`, `/trip`, `/what-if`) are inserted at fixed positions only when their server-resolved flags are on — absent from first render when off. Group order and curated lists are deliberately not in the nav (share-link and sitemap discovery). Active page shown by underline (desktop) / left bar (mobile) plus `aria-current="page"` — never color alone. Mobile menu is a disclosure panel: closed means `display:none` (no focus trap), Escape closes and returns focus to the toggle, navigation closes the panel |
 | `apps/frontend/src/app/[locale]/components/SiteFooter.tsx` | Structured legal layout: visually distinct disclaimer block on a white surface, methodology link, locale note naming the content languages |
 | `apps/frontend/src/app/[locale]/components/AgeGate.tsx` | Age verification wrapper rendered on every page inside the locale layout; header/footer stay outside the gate |
 
@@ -173,7 +173,14 @@ Feature-component paths above are relative to `apps/frontend/src/app/[locale]/`.
 | `/compare` | Product comparison with multiple sort orders; flag-gated multi-store comparison |
 | `/basket` | Basket builder and optimization results (hidden when `enable_basket_optimization` is off) |
 | `/ranking` | Explanation of ranking methodology and neutrality enforcement |
-| `/products/[id]` | Server-rendered per-product page with crawler-facing product metadata (age-gated catalog read via first-party prerender token) |
+| `/event` | Excursion alcohol calculator — MVP landed-cost estimate plus V2 deterministic cross-border sourcing plan (flag-gated) |
+| `/trip` | Trip feasibility — break-even math and neutral ferry-offer block excluded from all calculation input (flag-gated) |
+| `/what-if` | Hypothetical excise what-if simulator — pure recalculation, ephemeral share token, HYPOTHETICAL disclaimer (flag-gated) |
+| `/what-if/embed` | Chrome-less embeddable what-if widget for third-party sites |
+| `/products/[id]` | Server-rendered per-product page with crawler-facing product metadata (age-gated catalog read via first-party prerender token); includes the flag-gated evidence-backed dupe-alternatives panel |
+| `/lists/[slug]` | Curated editorial product lists with JSON-LD; entries in sitemap (flag-gated) |
+| `/group-order` | Group order session creation — create form and scope selection (flag-gated) |
+| `/group-order/[token]` | Shared group order session view via opaque token — participants, item valuations, transfers breakdown, accounting-only boundary note; noindexed, 410 after expiry (flag-gated) |
 | `/ops` | Internal operator console — client console fetches from `/ops/console/**` behind bearer-token + IP-allowlist realm and the OPERATOR_CONSOLE flag (default OFF); excluded from indexing |
 | `/account` | Account management page (anonymous session, calculation history, data export, saved scenarios) |
 | `/account/create` | Anonymous account creation confirmation |
