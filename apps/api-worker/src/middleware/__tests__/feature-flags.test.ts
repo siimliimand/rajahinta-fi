@@ -65,6 +65,7 @@ describe('FeatureFlagService', () => {
         'PRODUCER_DUPE_FINDER',
         'EXCISE_WHAT_IF',
         'CURATED_LISTS',
+        'GROUP_ORDER_LEDGER',
       ].sort(),
     );
   });
