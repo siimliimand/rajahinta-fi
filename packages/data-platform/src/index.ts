@@ -180,6 +180,28 @@ export type {
 } from './repositories/d1/consumption-norms.repository';
 
 // ---------------------------------------------------------------------------
+// Traveller allowances repository — versioned EU personal-use indicative
+// limits for the trip calculator (task 5.1; design R7), FX-dataset
+// lifecycle on a D1-only table pair
+// ---------------------------------------------------------------------------
+
+export {
+  TravellerAllowancesRepository,
+  D1TravellerAllowancesRepository,
+  MissingAllowanceSourceCitationError,
+  TRAVELLER_ALLOWANCE_STATUSES,
+  TRAVELLER_ALLOWANCE_CATEGORIES,
+} from './repositories/d1/traveller-allowances.repository';
+export type {
+  TravellerAllowanceDatasetRecord,
+  TravellerAllowanceLimitRecord,
+  TravellerAllowanceDatasetWithLimits,
+  TravellerAllowanceStatus,
+  TravellerAllowanceDatasetInsert,
+  TravellerAllowanceLimitInsert,
+} from './repositories/d1/traveller-allowances.repository';
+
+// ---------------------------------------------------------------------------
 // Module boundary — pure interfaces for cross-layer contracts
 // ---------------------------------------------------------------------------
 
@@ -243,6 +265,20 @@ export {
   CONSUMPTION_NORMS_CITATION_URL,
   type ConsumptionNormSeedRow,
 } from './seed/consumption-norms.seed';
+
+// ---------------------------------------------------------------------------
+// Traveller allowances seed — curated EU personal-use indicative limits
+// (task 5.1), every row carrying an official source citation; D1-only tables
+// ---------------------------------------------------------------------------
+
+export {
+  seedTravellerAllowances,
+  TRAVELLER_ALLOWANCES_SEED,
+  TRAVELLER_ALLOWANCES_SEED_VERSION,
+  TRAVELLER_ALLOWANCES_CITATION_URL,
+  TRAVELLER_ALLOWANCES_DATASET_CITATION,
+  type TravellerAllowanceSeedRow,
+} from './seed/traveller-allowances.seed';
 
 // ---------------------------------------------------------------------------
 // Drizzle connection provider

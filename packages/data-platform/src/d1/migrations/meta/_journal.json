@@ -43,6 +43,13 @@
       "when": 1788676816147,
       "tag": "0006_consumption_norms",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788763216147,
+      "tag": "0007_traveller_allowances",
+      "breakpoints": true
     }
   ]
 }

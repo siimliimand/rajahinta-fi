@@ -1146,6 +1146,126 @@ export const consumptionNorms = sqliteTable(
 );
 
 /**
+ * Traveller allowance datasets — the versioned dataset of EU personal-use
+ * indicative limits behind the trip feasibility calculator (task 5.1,
+ * change product-roadmap-phases-1-4, design R7). A dataset VERSION is one
+ * row here plus the traveller_allowance_limits rows referencing it, the
+ * same dataset+rates shape as fx_rate_datasets/fx_rates. Rows are
+ * append-only: a correction appends a new version and the historical rows
+ * stay queryable; no code path updates a published version.
+ *
+ * Every dataset carries a NOT NULL source citation (an allowance dataset
+ * without a citation is unrepresentable — spec: product-data-model,
+ * "Versioned traveller allowance datasets") and starts
+ * PENDING_CONFIRMATION; publication to the terminal PUBLISHED state is
+ * the repository's explicit publish call, the same manual
+ * dataset-confirmation lifecycle as fx_rate_datasets and
+ * consumption_norms — publication is a human operator's explicit
+ * confirmation, never automatic (the seed never publishes).
+ *
+ * The effective window is HALF-OPEN on calendar dates: effective_from ≤
+ * travel_date < effective_to (null effective_to = open-ended/current) —
+ * ISO 'YYYY-MM-DD' TEXT compares chronologically, matching the pg `date`
+ * translation rule above.
+ */
+export const travellerAllowanceDatasets = sqliteTable(
+  'traveller_allowance_datasets',
+  {
+    id: integer('id').primaryKey(),
+    /** Allowance dataset version identifier — named by capped calculation results as provenance. */
+    versionLabel: text('version_label', { length: 64 }).notNull(),
+    /** Provenance: verifiable official source citation (directive/regulation + URL) for the dataset. */
+    sourceCitation: text('source_citation').notNull(),
+    /** Lifecycle: PENDING_CONFIRMATION until a human publishes; PUBLISHED is terminal. */
+    status: text('status', { length: 32 }).default('PENDING_CONFIRMATION').notNull(),
+    /** Start of the effective window (inclusive), ISO 'YYYY-MM-DD'. */
+    effectiveFrom: text('effective_from').notNull(),
+    /** End of the effective window (exclusive, null = open-ended/current). */
+    effectiveTo: text('effective_to'),
+    /** Operator who published the version — null while unconfirmed (auditability of the manual step). */
+    confirmedBy: text('confirmed_by', { length: 128 }),
+    /** When the version was published — null while unconfirmed. */
+    confirmedAt: text('confirmed_at'),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    unique('traveller_allowance_datasets_version_label_unique').on(table.versionLabel),
+    index('traveller_allowance_datasets_status_effective_idx').on(table.status, table.effectiveFrom),
+    check(
+      'traveller_allowance_datasets_status_check',
+      sql`${table.status} IN ('PENDING_CONFIRMATION', 'PUBLISHED')`,
+    ),
+    check(
+      'traveller_allowance_datasets_window_check',
+      sql`${table.effectiveTo} IS NULL OR ${table.effectiveTo} > ${table.effectiveFrom}`,
+    ),
+  ],
+);
+
+/**
+ * Traveller allowance limits — one curated row per product category inside
+ * an allowance dataset version, each carrying its own verifiable source
+ * citation and effective window (spec: product-data-model, "Versioned
+ * traveller allowance datasets"). The category reuses the canonical
+ * tax-rule category keys so the trip calculator's per-category caps map
+ * onto the landed-cost/tax engines without a translation layer.
+ *
+ * A cap is a volume (litres of finished beverage), a quantity (units, e.g.
+ * sticks), or both — at least one MUST be present (the CHECK makes a cap-less
+ * row unrepresentable at rest); the caps the EU defines for alcohol are all
+ * volumes, so quantity stays null there. UNIQUE (dataset_id, category) is
+ * the curated seed's idempotent upsert target and the per-version identity.
+ */
+export const travellerAllowanceLimits = sqliteTable(
+  'traveller_allowance_limits',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to traveller_allowance_datasets — the version this limit belongs to. */
+    datasetId: integer('dataset_id')
+      .references(() => travellerAllowanceDatasets.id)
+      .notNull(),
+    /** Product category — canonical tax-rule category key (beer, wine_still, wine_sparkling, intermediate_products, other_fermented, spirits). */
+    category: text('category', { length: 32 }).notNull(),
+    /** Volume cap in litres of finished beverage — null when the cap is quantity-only. */
+    volumeCapLitres: real('volume_cap_litres'),
+    /** Quantity cap in units (e.g. cigarette sticks) — null when the cap is volume-only. */
+    quantityCap: integer('quantity_cap'),
+    /** Provenance: verifiable official source citation for this limit (rule text + URL). */
+    sourceCitation: text('source_citation').notNull(),
+    /** Start of the effective window (inclusive), ISO 'YYYY-MM-DD'. */
+    effectiveFrom: text('effective_from').notNull(),
+    /** End of the effective window (exclusive, null = open-ended/current). */
+    effectiveTo: text('effective_to'),
+  },
+  (table) => [
+    unique('traveller_allowance_limits_dataset_category_unique').on(
+      table.datasetId,
+      table.category,
+    ),
+    check(
+      'traveller_allowance_limits_category_check',
+      sql`${table.category} IN ('beer', 'wine_still', 'wine_sparkling', 'intermediate_products', 'other_fermented', 'spirits')`,
+    ),
+    check(
+      'traveller_allowance_limits_cap_present_check',
+      sql`${table.volumeCapLitres} IS NOT NULL OR ${table.quantityCap} IS NOT NULL`,
+    ),
+    check(
+      'traveller_allowance_limits_volume_cap_check',
+      sql`${table.volumeCapLitres} IS NULL OR ${table.volumeCapLitres} > 0`,
+    ),
+    check(
+      'traveller_allowance_limits_quantity_cap_check',
+      sql`${table.quantityCap} IS NULL OR ${table.quantityCap} > 0`,
+    ),
+    check(
+      'traveller_allowance_limits_window_check',
+      sql`${table.effectiveTo} IS NULL OR ${table.effectiveTo} > ${table.effectiveFrom}`,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -1174,4 +1294,6 @@ export const d1Schema = {
   productDimensions,
   carrierBoxTypes,
   consumptionNorms,
+  travellerAllowanceDatasets,
+  travellerAllowanceLimits,
 };
