@@ -7,7 +7,7 @@
  *
  *   1. Schema conformance ("all expected tables exist") → the D1 table
  *      set must exist in sqlite_master after the committed migrations:
- *      the 18 relational tables plus the FTS5 external-content index and
+ *      the 20 relational tables plus the FTS5 external-content index and
  *      the staging-infra table the seed creates.
  *   2. Tax rules generated from SEED_RULES and loaded (the
  *      export-seed-sql.mjs leg) → the byte-deterministic D1 seed pipeline
@@ -52,12 +52,13 @@ import { openMigratedD1 } from './harness';
 describe('D1 schema conformance', () => {
   const { db } = openMigratedD1();
 
-  /** The 18 relational tables the committed migrations create. */
+  /** The 20 relational tables the committed migrations create. */
   const EXPECTED_TABLES = [
     'accounts',
     'aggregation_watermarks',
     'audit_events',
     'basket_calculation_records',
+    'carrier_box_types',
     'calculation_records',
     'click_counter_snapshots',
     'fx_rate_datasets',
@@ -65,6 +66,7 @@ describe('D1 schema conformance', () => {
     'merchant_registry',
     'merchant_terms',
     'price_history_summaries',
+    'product_dimensions',
     'product_master',
     'retail_offers',
     'saved_baskets',
