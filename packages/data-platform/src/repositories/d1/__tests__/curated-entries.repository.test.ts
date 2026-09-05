@@ -190,11 +190,15 @@ describe('lifecycle — publish AND unpublish (spec: not terminal)', () => {
   it('edits a PUBLISHED entry (no-deploy content update) and bumps updated_at', async () => {
     const created = await repo.create(entry());
     await repo.publish(created.id);
-    // Rewind the stamp so the bump is observable regardless of clock
-    // granularity.
-    db.prepare(`UPDATE curated_entries SET updated_at = '2020-01-01T00:00:00.000Z' WHERE id = ?`).run(
-      created.id,
-    );
+    // Rewind BOTH stamps so the bump — and the created<updated
+    // monotonicity — is observable regardless of clock granularity:
+    // create and update can land inside the same millisecond.
+    db.prepare(
+      `UPDATE curated_entries
+          SET created_at = '2020-01-01T00:00:00.000Z',
+              updated_at = '2020-01-01T00:00:00.000Z'
+        WHERE id = ?`,
+    ).run(created.id);
 
     const edited = await repo.update(created.id, {
       rationale: 'Re-verified: still discontinued, still cheaper abroad.',

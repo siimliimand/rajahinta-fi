@@ -10,6 +10,7 @@ import { useFeatureFlags } from '@/lib/feature-flags';
 import { useDebouncedCallback } from '@/lib/use-debounced-callback';
 import { Card, EmptyState } from '@/components/ui';
 import { isWhatIfFlagEnabled } from './what-if-flag';
+import { RECALCULATION_DEBOUNCE_MS } from './what-if.constants';
 import {
   calculateWhatIfExcise,
   classifyWhatIfError,
@@ -26,28 +27,9 @@ import type { WhatIfResponse } from './what-if.types';
 import WhatIfForm from './components/WhatIfForm';
 import WhatIfResult from './components/WhatIfResult';
 
-/**
- * Real-time recalculation vs the CALCULATOR rate limit (10/min) — the
- * deliberate reconciliation (task 8.3):
- *
- *   TRAILING-EDGE DEBOUNCE + EXPLICIT PENDING STATE. The client cannot
- *   interpolate between server results: the baseline excise is resolved
- *   server-side from the active rate dataset, so any client-side
- *   interpolation would reimplement rule resolution and break the
- *   explainability of every figure. Instead the form's edits coalesce —
- *   at most one request per {@link RECALCULATION_DEBOUNCE_MS} of quiet —
- *   and a visible pending line covers both the debounce window and the
- *   in-flight request. The first computation (mount, share-token
- *   prefill) runs immediately; updates to an existing result are
- *   debounced.
- *
- *   429 (CALCULATOR tripped) is a first-class state: the Retry-After
- *   figure drives a visible countdown, no request is sent while it
- *   runs, and when it reaches zero the latest draft is recomputed once
- *   automatically — the stale result never lingers silently and the
- *   user never has to guess when retrying is allowed.
- */
-export const RECALCULATION_DEBOUNCE_MS = 800;
+// The recalculation-debounce rationale (task 8.3) and the constant's
+// documentation live in ./what-if.constants — a page module may only
+// export Next Page fields.
 
 /** Next row key: `product-N`, skipping keys already present in the draft. */
 function nextRowKey(rows: readonly ProductDraft[]): string {
@@ -186,7 +168,6 @@ export default function WhatIfPage() {
     }
     // runRecalc/scheduleRecalc identity tracks the draft; only draft
     // changes (and hydration) trigger this effect.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, rate, rows]);
 
   // ── Throttle countdown: tick each second, retry once at zero ──
@@ -208,7 +189,6 @@ export default function WhatIfPage() {
       void runRecalc();
     }
     // Retry exactly on the countdown-clear transition.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [throttleSeconds]);
 
   // Superseded in-flight requests must not touch state after unmount.

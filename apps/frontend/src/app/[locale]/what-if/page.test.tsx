@@ -28,9 +28,10 @@
 // @vitest-environment jsdom
 
 import * as React from 'react';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import WhatIfPage, { RECALCULATION_DEBOUNCE_MS } from './page';
+import WhatIfPage from './page';
+import { RECALCULATION_DEBOUNCE_MS } from './what-if.constants';
 import { ALL_FLAGS_OFF, renderWithIntl } from '@/lib/testing/test-intl';
 import { apiFetch, ApiFetchError } from '@/lib/api';
 import type { FeatureFlagsResponse } from '@/lib/types';
@@ -183,7 +184,7 @@ describe('WhatIfPage — flag gate', () => {
 
 describe('WhatIfPage — recalculation discipline', () => {
   it('fires no request while the form is blank and shows the empty state', async () => {
-    const { container } = renderWithIntl(<WhatIfPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<WhatIfPage />, { featureFlags: FLAGS_ON });
     await flushEffects();
 
     expect(mockedApiFetch).not.toHaveBeenCalled();
