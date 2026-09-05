@@ -12,6 +12,11 @@
  * dataset-version checks, exactly like the Nest controller's
  * IIdempotencyCache flow.
  *
+ * While PACKING_OPTIMIZER is on (task 3.3), the response additionally
+ * carries an advisory `packing` section (PackingSuggestion) computed
+ * from the curated product_dimensions / carrier_box_types tables; the
+ * flag gates the section, never the endpoint.
+ *
  * @module BasketRoutes
  */
 
@@ -19,6 +24,14 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
+import { FeatureFlag, FeatureFlagService } from '../middleware/feature-flags';
+import { suggestPacking } from '../../../../packages/core-domain/src/packing/packing';
+import type {
+  PackingItem,
+  PackingSuggestion,
+} from '../../../../packages/core-domain/src/packing/packing.types';
+import { D1ProductDimensionsRepository } from '../../../../packages/data-platform/src/repositories/d1/product-dimensions.repository';
+import { D1CarrierBoxTypesRepository } from '../../../../packages/data-platform/src/repositories/d1/carrier-box-types.repository';
 import {
   BasketOptimizerService,
   BasketShippingCalculator,
@@ -92,6 +105,61 @@ export function buildBasketOptimizerService(d1: AppEnv['Bindings']['DB']): {
     new ConfidenceFrameworkService(new ReliabilityService()),
   );
   return { optimizer, taxRepo };
+}
+
+// ---------------------------------------------------------------------------
+// Packing section (task 3.3) — advisory box suggestion behind
+// PACKING_OPTIMIZER, attached to the optimize response at read time
+// ---------------------------------------------------------------------------
+
+/** Optimize response — the optimizer result plus the flag-gated packing section. */
+type BasketOptimizeResponse = BasketOptimizationResult & {
+  readonly packing?: PackingSuggestion;
+};
+
+/**
+ * Build the packing suggestion for the requested basket lines (task 3.3).
+ *
+ * Purely advisory: product dimensions and the box catalogue are curated
+ * D1 tables the optimizer itself never reads, so a basket that optimizes
+ * fine can still pack as ESTIMATED. Absence of a `product_dimensions`
+ * row maps to the all-null physical fields — the packing module then
+ * excludes the line with reason MISSING_DIMENSIONS (spec:
+ * missing-dimensions-degrade-explicitly) instead of failing the request;
+ * an empty `carrier_box_types` catalogue degrades the same way with
+ * reason NO_FITTING_BOX. The record→input mapping is field-for-field:
+ * task 3.2 shaped the module's CarrierBoxType/PackingItem inputs
+ * structurally identical to the repository rows minus provenance columns.
+ */
+async function buildPackingSection(
+  d1: AppEnv['Bindings']['DB'],
+  lines: ReadonlyArray<{ readonly productId: number; readonly quantity: number }>,
+): Promise<PackingSuggestion> {
+  const [dimensions, boxTypes] = await Promise.all([
+    new D1ProductDimensionsRepository(d1).findByProductIds(lines.map((line) => line.productId)),
+    new D1CarrierBoxTypesRepository(d1).listAll(),
+  ]);
+  const byProductId = new Map(dimensions.map((dimension) => [dimension.productId, dimension]));
+  const packingItems: PackingItem[] = lines.map((line) => {
+    const dimension = byProductId.get(line.productId);
+    return {
+      productId: line.productId,
+      quantity: line.quantity,
+      weightG: dimension?.weightG ?? null,
+      heightMm: dimension?.heightMm ?? null,
+      diameterMm: dimension?.diameterMm ?? null,
+      material: dimension?.material ?? null,
+    };
+  });
+  return suggestPacking(packingItems, boxTypes);
+}
+
+/** Attach the packing section only when the flag resolved on — the key stays absent otherwise. */
+function withPackingSection(
+  result: BasketOptimizationResult,
+  packing: PackingSuggestion | undefined,
+): BasketOptimizeResponse {
+  return packing === undefined ? result : { ...result, packing };
 }
 
 // ---------------------------------------------------------------------------
@@ -217,11 +285,28 @@ async function optimize(c: Context<AppEnv>): Promise<Response> {
   const { optimizer, taxRepo } = buildBasketOptimizerService(c.env.DB);
   const currentVersions = await taxRepo.findActiveVersionLabels();
 
+  // PACKING_OPTIMIZER gates the response SECTION, not the endpoint
+  // (per-request resolution, search.routes pattern): off → the response
+  // keeps its exact flag-less shape, no `packing` key at all. The
+  // suggestion is computed per request from the curated tables and
+  // attached to both MISS and HIT payloads — the idempotency cache
+  // stores the flag-agnostic optimizer result only, so X-Content-Hash
+  // keeps identifying the optimization regardless of section visibility.
+  const includePacking = new FeatureFlagService(c.env).isEnabled(
+    FeatureFlag.PACKING_OPTIMIZER,
+  );
+  const packing = includePacking
+    ? await buildPackingSection(
+        c.env.DB,
+        dto.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+      )
+    : undefined;
+
   const cached = await idempotencyLookup(c.env, cacheKey, currentVersions);
   if (cached !== null) {
     c.header('X-Cache', 'HIT');
     c.header('X-Content-Hash', await idempotencyContentHash(cached.result));
-    return c.json(cached.result);
+    return c.json(withPackingSection(cached.result as BasketOptimizationResult, packing));
   }
 
   try {
@@ -238,7 +323,7 @@ async function optimize(c: Context<AppEnv>): Promise<Response> {
 
     c.header('X-Cache', 'MISS');
     c.header('X-Content-Hash', await idempotencyContentHash(result));
-    return c.json(result);
+    return c.json(withPackingSection(result, packing));
   } catch (err) {
     if (err instanceof BasketValidationError) {
       // Specific codes map to 404; the rest carry the validation payload.

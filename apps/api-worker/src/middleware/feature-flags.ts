@@ -76,6 +76,15 @@ export const FeatureFlag = {
    * absent until the alert evaluation cron + email delivery path are live.
    */
   PRICE_ALERTS: 'PRICE_ALERTS',
+  /**
+   * Gate the packing-optimizer SECTION of the basket optimize response
+   * (task 3.3, change product-roadmap-phases-1-4). Spec/design slug:
+   * `enable_packing_optimizer`. Default OFF — a response-section gate,
+   * not an endpoint gate: while off, POST /api/v1/basket/optimize keeps
+   * its exact flag-less shape (no `packing` key); while on, the advisory
+   * packing suggestion rides along on both cache MISS and HIT payloads.
+   */
+  PACKING_OPTIMIZER: 'PACKING_OPTIMIZER',
 } as const;
 
 export type FeatureFlag = (typeof FeatureFlag)[keyof typeof FeatureFlag];

@@ -400,6 +400,29 @@ export type {
 } from './unitprice/unitprice.types';
 
 // ---------------------------------------------------------------------------
+// Packing — deterministic carrier box suggestion (FFD, mixing warning)
+// ---------------------------------------------------------------------------
+
+export { suggestPacking } from './packing/packing';
+export {
+  MIXED_MATERIAL_MAX_UNITS,
+  MIXED_MATERIAL_MAX_COMBINED_WEIGHT_G,
+} from './packing/thresholds';
+export type {
+  CarrierBoxType,
+  ExcludedPackingItem,
+  MixingTrigger,
+  MixingWarning,
+  PackedBox,
+  PackedBoxGroup,
+  PackingExclusionReason,
+  PackingItem,
+  PackingMaterial,
+  PackingStatus,
+  PackingSuggestion,
+} from './packing/packing.types';
+
+// ---------------------------------------------------------------------------
 // Ranking & Sorting — objective sort orders for beverage price comparison
 // ---------------------------------------------------------------------------
 

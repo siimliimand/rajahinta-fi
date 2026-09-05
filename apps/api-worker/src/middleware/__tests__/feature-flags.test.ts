@@ -59,6 +59,7 @@ describe('FeatureFlagService', () => {
         'OPERATOR_CONSOLE',
         'UNIT_PRICE_EUR_PER_GRAM',
         'PRICE_ALERTS',
+        'PACKING_OPTIMIZER',
       ].sort(),
     );
   });
