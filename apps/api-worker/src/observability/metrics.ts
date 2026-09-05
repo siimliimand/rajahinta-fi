@@ -213,8 +213,10 @@ export function requestMetrics(): MiddlewareHandler<AppEnv> {
  * `sum(double1 * _sample_interval)` over a window is the running total
  * (the Prometheus `_total` namesake); the cooldown-suppressed counter
  * makes rate-limit suppression visible in the job's counters (spec:
- * notification rate limit). AE datapoint wiring/patterns for dashboards
- * are task 10.2 — only the module-level counter API lives here.
+ * notification rate limit). Task 10.2 completes the observability
+ * picture around these points: the failure-gauge threshold pair lives
+ * in `price-alert-thresholds.ts` and the dashboard panels (AE SQL) in
+ * METRICS.md, "Price-alert job counters".
  */
 export const PRICE_ALERT_EVALUATED_COUNTER =
   'rajahinta_price_alerts_evaluated_total';

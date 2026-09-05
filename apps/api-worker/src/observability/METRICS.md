@@ -81,7 +81,11 @@ points; `double1` carries that run's count, so summing
 | `rajahinta_price_alerts_cooldown_suppressed_total` | Matched but withheld by the 24-hour delivered-row cooldown (the spec requires suppression be visible in the job's counters) |
 
 Notified should track matched minus suppressed and failed; divergence
-is the first forensics question. Dashboard panel wiring is task 10.2.
+is the first forensics question. The dashboard panels for these
+counters are under "Querying" below (task 10.2); the failure-count
+warning/critical thresholds live in
+`src/observability/price-alert-thresholds.ts`
+(`PRICE_ALERT_FAILED_THRESHOLDS`).
 
 ## Querying — the Grafana re-point (task 6.5)
 
@@ -160,6 +164,42 @@ WHERE index1 = 'rajahinta_transport_newest_offer_age_seconds'
 ORDER BY timestamp DESC
 LIMIT 1
 ```
+
+### Price-alert job counters (task 10.2 panel)
+
+Unlike the freshness gauges these are per-run counts, not latest-value
+observations — sum them over the window (weighted by `_sample_interval`)
+for the running totals:
+
+```sql
+SELECT index1 AS counter,
+       sum(double1 * _sample_interval) AS total
+FROM rajahinta-api-metrics-production
+WHERE index1 LIKE 'rajahinta_price_alerts_%'
+  AND timestamp > NOW() - INTERVAL '1' DAY
+GROUP BY counter
+ORDER BY counter
+```
+
+Per-run time series (Grafana buckets the rows, same as above) — panel
+for the failure gauge:
+
+```sql
+SELECT timestamp,
+       double1 * _sample_interval AS failed
+FROM rajahinta-api-metrics-production
+WHERE index1 = 'rajahinta_price_alerts_failed_total'
+  AND timestamp > NOW() - INTERVAL '1' DAY
+ORDER BY timestamp
+```
+
+Panel threshold steps mirror the in-code pair exactly
+(`PRICE_ALERT_FAILED_THRESHOLDS` in
+`src/observability/price-alert-thresholds.ts`, strict `>`):
+`warning` above 0 failed pipelines in a run, `critical` above 9
+(≥ 10 — systemic email-Worker/D1 breakage rather than a one-off bad
+recipient). `evaluated = 0` across a whole window is itself a canary:
+the 30-min cron stopped producing points.
 
 ### Error rate by status class
 
