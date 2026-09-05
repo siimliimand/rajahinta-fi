@@ -959,6 +959,108 @@ export const merchantRegistry = sqliteTable('merchant_registry', {
 });
 
 /**
+ * Product physical dimensions — curated packaging facts (task 3.1, change
+ * product-roadmap-phases-1-4, design R3).
+ *
+ * One row per product: weight, height, diameter, and the packaging
+ * material, each row carrying source, reliability status, and observedAt —
+ * dimensions are externally sourced facts, so provenance is part of every
+ * row, not an afterthought. Absence of a row is a normal state (packing
+ * results flag the product ESTIMATED and omit it from breakage-risk
+ * reasoning); nothing in the system estimates or defaults dimensions to
+ * fill gaps. A new observation replaces the previous row (upsert on the
+ * product unique key) — the operator console is the update path.
+ *
+ * `material` is its own closed value set (GLASS/CAN/PLASTIC/OTHER), not
+ * the container_type vocabulary of product_master: it classifies the
+ * packed packaging for the mixing warning, and the two vocabularies serve
+ * different engines.
+ */
+export const productDimensions = sqliteTable(
+  'product_dimensions',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to product_master — the measured product. Products are never deleted, so no cascade. */
+    productId: integer('product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** Measured product weight in grams. */
+    weightG: integer('weight_g').notNull(),
+    /** Measured product height in millimetres. */
+    heightMm: integer('height_mm').notNull(),
+    /** Measured product diameter in millimetres (beverage units are cylindrical). */
+    diameterMm: integer('diameter_mm').notNull(),
+    /** Packaging material of the packed unit — mixing-warning classification. */
+    material: text('material', { length: 16 }).notNull(),
+    /** Provenance: where the measurement came from (source page, carrier sheet, operator note). */
+    source: text('source').notNull(),
+    /** Data freshness indicator (VERIFIED/ESTIMATED/STALE/UNAVAILABLE) — same value set as retail_offers. */
+    reliabilityStatus: text('reliability_status', { length: 16 })
+      .default('ESTIMATED')
+      .notNull(),
+    /** When the measurement was observed from the source. */
+    observedAt: text('observed_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // One row per product: the unique key is the upsert/replace target,
+    // and a missing row is the designed "dimensions unknown" state.
+    unique('product_dimensions_product_id_unique').on(table.productId),
+    check(
+      'product_dimensions_material_check',
+      sql`${table.material} IN ('GLASS', 'CAN', 'PLASTIC', 'OTHER')`,
+    ),
+    check('product_dimensions_reliability_status_check', sql`${table.reliabilityStatus} IN ${RELIABILITY_VALUES}`),
+    check('product_dimensions_weight_g_check', sql`${table.weightG} > 0`),
+    check('product_dimensions_height_mm_check', sql`${table.heightMm} > 0`),
+    check('product_dimensions_diameter_mm_check', sql`${table.diameterMm} > 0`),
+  ],
+);
+
+/**
+ * Carrier box types — standard shipping boxes per carrier (task 3.1,
+ * change product-roadmap-phases-1-4).
+ *
+ * The packing module's ONLY source of box geometry (spec:
+ * packing-optimization): internal dimensions and maximum weight per
+ * standard box name. Curated reference data seeded from the carriers'
+ * published packaging specifications — every row records the source page
+ * and when the values were taken, mirroring the provenance discipline of
+ * the other externally sourced tables. Box selection iterates a carrier's
+ * boxes smallest-first; the packing engine owns that ordering, the table
+ * does not encode it.
+ */
+export const carrierBoxTypes = sqliteTable(
+  'carrier_box_types',
+  {
+    id: integer('id').primaryKey(),
+    /** Carrier identifier — matches transport_offers.carrier (e.g. "postnord", "dhl"). */
+    carrier: text('carrier', { length: 64 }).notNull(),
+    /** Carrier's published box name (e.g. "PostNord Box M") — unique per carrier. */
+    name: text('name', { length: 128 }).notNull(),
+    /** Usable internal height in millimetres. */
+    internalHeightMm: integer('internal_height_mm').notNull(),
+    /** Usable internal width in millimetres. */
+    internalWidthMm: integer('internal_width_mm').notNull(),
+    /** Usable internal depth in millimetres. */
+    internalDepthMm: integer('internal_depth_mm').notNull(),
+    /** Maximum permitted shipment weight in grams. */
+    maxWeightG: integer('max_weight_g').notNull(),
+    /** Provenance: the carrier page the specification was taken from. */
+    source: text('source').notNull(),
+    /** When the specification was copied from the carrier's page. */
+    observedAt: text('observed_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // One box per (carrier, name) — the seed's idempotent upsert target.
+    unique('carrier_box_types_carrier_name_unique').on(table.carrier, table.name),
+    check('carrier_box_types_internal_height_mm_check', sql`${table.internalHeightMm} > 0`),
+    check('carrier_box_types_internal_width_mm_check', sql`${table.internalWidthMm} > 0`),
+    check('carrier_box_types_internal_depth_mm_check', sql`${table.internalDepthMm} > 0`),
+    check('carrier_box_types_max_weight_g_check', sql`${table.maxWeightG} > 0`),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -984,4 +1086,6 @@ export const d1Schema = {
   auditEvents,
   clickCounterSnapshots,
   merchantRegistry,
+  productDimensions,
+  carrierBoxTypes,
 };

@@ -139,6 +139,27 @@ export type {
 } from './repositories/d1/alert-notification.repository';
 
 // ---------------------------------------------------------------------------
+// Product dimensions + carrier box types — D1-only tables (task 3.1, change
+// product-roadmap-phases-1-4); abstract + concrete are co-located in the
+// repository files (price-alert precedent; no pg counterpart)
+// ---------------------------------------------------------------------------
+
+export {
+  ProductDimensionsRepository,
+  D1ProductDimensionsRepository,
+} from './repositories/d1/product-dimensions.repository';
+export type {
+  ProductDimensionRecord,
+  ProductDimensionUpsertInput,
+  ProductDimensionMaterial,
+} from './repositories/d1/product-dimensions.repository';
+export {
+  CarrierBoxTypesRepository,
+  D1CarrierBoxTypesRepository,
+} from './repositories/d1/carrier-box-types.repository';
+export type { CarrierBoxTypeRecord } from './repositories/d1/carrier-box-types.repository';
+
+// ---------------------------------------------------------------------------
 // Module boundary — pure interfaces for cross-layer contracts
 // ---------------------------------------------------------------------------
 
@@ -178,6 +199,17 @@ export {
   seedMerchantRegistry,
   type MerchantRegistrySeedRow,
 } from './seed/merchant-registry.seed';
+
+// ---------------------------------------------------------------------------
+// Carrier box-type seed — curated PostNord/DHL standard catalogue (task 3.1),
+// the packing module's only source of box geometry; D1-only table
+// ---------------------------------------------------------------------------
+
+export {
+  seedCarrierBoxTypes,
+  CARRIER_BOX_TYPES_SEED,
+  type CarrierBoxTypeSeedRow,
+} from './seed/carrier-box-types.seed';
 
 // ---------------------------------------------------------------------------
 // Drizzle connection provider

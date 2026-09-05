@@ -29,6 +29,13 @@
       "when": 1788504016147,
       "tag": "0004_price_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788590416147,
+      "tag": "0005_product_dimensions_carrier_box_types",
+      "breakpoints": true
     }
   ]
 }
