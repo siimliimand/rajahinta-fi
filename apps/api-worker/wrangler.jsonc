@@ -172,24 +172,22 @@
   //   0 */6 * * *   transport-rate refresh (EVERY_6_HOURS) AND the task-3.4
   //                 click-counter snapshot flush (legacy '0 */6 * * *');
   //                 both handlers fire on this pattern
-  //   0 2 * * *     tax-dataset review — BullMQ fired 02:00 Europe/Helsinki
-  //   0 3 * * *     FX-dataset review — BullMQ fired 03:00 Europe/Helsinki
-  //   30 3 * * *    calculation-record retention sweep — BullMQ 03:30 Helsinki
-  //
-  // TIMEZONE NOTE: wrangler crons are UTC-only, so the three daily jobs
-  // fire at their BullMQ CLOCK HOURS in UTC, i.e. two hours earlier than
-  // the Europe/Helsinki wall clock during EEST (and one hour in EET).
-  // All three are day-grained review/sweep passes where the precise hour
-  // is immaterial; the deviation is deliberate and documented rather
-  // than approximated with a shifted UTC hour (no single UTC time maps
-  // to a fixed Helsinki hour across DST).
-  "triggers": {
+//   0 2 * * *     tax-dataset review — BullMQ fired 02:00 Europe/Helsinki
+//   30 3 * * *    calculation-record retention sweep — BullMQ 03:30 Helsinki
+//
+// TIMEZONE NOTE: wrangler crons are UTC-only, so the two daily jobs
+// fire at their BullMQ CLOCK HOURS in UTC, i.e. two hours earlier than
+// the Europe/Helsinki wall clock during EEST (and one hour in EET).
+// Both are day-grained review/sweep passes where the precise hour
+// is immaterial; the deviation is deliberate and documented rather
+// than approximated with a shifted UTC hour (no single UTC time maps
+// to a fixed Helsinki hour across DST).
+"triggers": {
     "crons": [
       "0 * * * *",
       "*/30 * * * *",
       "0 */6 * * *",
       "0 2 * * *",
-      "0 3 * * *",
       "30 3 * * *"
     ]
   },
