@@ -222,7 +222,6 @@ describe('buildEventSourcingPlan — determinism', () => {
   it('is deterministic across repeated runs with shuffled option arrays', () => {
     const options = [
       option({ country: 'FI', retailCents: 5_000 }),
-      option({ country: 'SE', retailCents: 4_200, transportCents: 100 }),
       option({ country: 'EE', retailCents: 4_000, exciseCents: 250 }),
       option({ country: 'DE', retailCents: 4_000, exciseCents: 250 }),
     ];
@@ -234,7 +233,7 @@ describe('buildEventSourcingPlan — determinism', () => {
   });
 
   it('fixes the documented country sequence with FI first', () => {
-    expect([...SOURCING_COUNTRY_ORDER]).toEqual(['FI', 'EE', 'LV', 'LT', 'SE', 'DE']);
+    expect([...SOURCING_COUNTRY_ORDER]).toEqual(['FI', 'EE', 'LV', 'LT', 'DE']);
     expect(sourcingCountryRank('FI')).toBe(0);
     expect(sourcingCountryRank('FI')).toBeLessThan(sourcingCountryRank('EE'));
   });
@@ -305,6 +304,15 @@ describe('buildEventSourcingPlan — validation', () => {
   it('rejects an unknown country', () => {
     const input = sourcingInput({
       options: new Map([['beer', domesticAnd(option({ country: 'ESTONIA', retailCents: 3_000 }))]]),
+    });
+    expect(() => buildEventSourcingPlan(input)).toThrow(/UNKNOWN_COUNTRY/);
+  });
+
+  // Sweden was dropped from the sourcing set; this pins that it cannot
+  // silently return via a stale caller still sending it.
+  it('rejects Sweden, dropped from the sourcing country set', () => {
+    const input = sourcingInput({
+      options: new Map([['beer', domesticAnd(option({ country: 'SE', retailCents: 3_000 }))]]),
     });
     expect(() => buildEventSourcingPlan(input)).toThrow(/UNKNOWN_COUNTRY/);
   });
