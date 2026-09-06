@@ -40,8 +40,8 @@ function makeCase(overrides: Partial<ProducerLinkImportCase> = {}): ProducerLink
     producerKey: 'Testbrew',
     manufacturer: 'Test Brewery Ltd',
     siblingProductId: 202,
-    siblingMerchant: 'systembolaget',
-    siblingProductName: 'Systembolaget Testbeer',
+    siblingMerchant: 'foreign-shop',
+    siblingProductName: 'Foreign Shop Testbeer',
     sourceUrl: 'https://shop.example/products/202',
     ...overrides,
   };
@@ -121,22 +121,19 @@ describe('parseProducerLinksImportFile', () => {
     expect(parseFile(flood).errors.join(' ')).toContain('at most');
   });
 
-  it('pins the committed bootstrap file to the documented format', () => {
+  it('ships no committed bootstrap file (withdrawn with the removed foreign merchant)', () => {
+    // The original bootstrap load carried only foreign-catalog sibling
+    // evidence for a merchant that no longer exists; spec: seeds carry no
+    // rows for removed merchants. A future catalog authors a NEW bootstrap
+    // file under seed/producer-links/ per the README rules — this guard
+    // keeps a stale copy from resurfacing unnoticed.
     const candidates = [
       path.resolve(process.cwd(), 'src/seed/producer-links/producer-links-bootstrap.json'),
       path.resolve(process.cwd(), 'packages/data-platform/src/seed/producer-links/producer-links-bootstrap.json'),
     ];
-    const file = candidates.find((candidate) => {
-      try {
-        readFileSync(candidate);
-        return true;
-      } catch {
-        return false;
-      }
-    });
-    expect(file, `bootstrap file not found from cwd ${process.cwd()}`).toBeDefined();
-    const { errors } = parseProducerLinksImportFile(readFileSync(file!, 'utf8'));
-    expect(errors).toEqual([]);
+    for (const candidate of candidates) {
+      expect(() => readFileSync(candidate)).toThrow();
+    }
   });
 });
 
@@ -228,14 +225,14 @@ describe('resolveCaseProducts + importProducerLinkCases', () => {
   it('inserts DRAFT rows with normalized keys and complete evidence', async () => {
     const { db, d1 } = openMigratedD1();
     insertProduct(db, 101, 'Alko Testbeer 4.7%');
-    insertProduct(db, 202, 'Systembolaget Testbeer');
+    insertProduct(db, 202, 'Foreign Shop Testbeer');
     const repo = new D1ProducerLinksRepository(d1);
     const { file } = parseFile([makeCase({ producerKey: '  Testbrew  ' })]);
     expect(file).not.toBeNull();
 
     const resolutions = await resolveCaseProducts(d1, file!.cases);
     expect(resolutions[0]!.alkoProduct).toEqual({ id: 101, name: 'Alko Testbeer 4.7%' });
-    expect(resolutions[0]!.siblingProduct).toEqual({ id: 202, name: 'Systembolaget Testbeer' });
+    expect(resolutions[0]!.siblingProduct).toEqual({ id: 202, name: 'Foreign Shop Testbeer' });
 
     const { results, counts } = await importProducerLinkCases(repo, file!, resolutions);
     expect(counts).toEqual({
@@ -258,7 +255,7 @@ describe('resolveCaseProducts + importProducerLinkCases', () => {
   it('skips pairs that already exist as DRAFT on re-run (idempotent, no duplicates)', async () => {
     const { db, d1 } = openMigratedD1();
     insertProduct(db, 101, 'Alko Testbeer 4.7%');
-    insertProduct(db, 202, 'Systembolaget Testbeer');
+    insertProduct(db, 202, 'Foreign Shop Testbeer');
     const repo = new D1ProducerLinksRepository(d1);
     const { file } = parseFile([makeCase()]);
     const resolutions = await resolveCaseProducts(d1, file!.cases);
@@ -273,7 +270,7 @@ describe('resolveCaseProducts + importProducerLinkCases', () => {
   it('never overwrites a PUBLISHED row and skips it on re-run', async () => {
     const { db, d1 } = openMigratedD1();
     insertProduct(db, 101, 'Alko Testbeer 4.7%');
-    insertProduct(db, 202, 'Systembolaget Testbeer');
+    insertProduct(db, 202, 'Foreign Shop Testbeer');
     const repo = new D1ProducerLinksRepository(d1);
     const { file } = parseFile([makeCase()]);
     const resolutions = await resolveCaseProducts(d1, file!.cases);
@@ -311,7 +308,7 @@ describe('resolveCaseProducts + importProducerLinkCases', () => {
   it('dry-run computes outcomes without writing anything', async () => {
     const { db, d1 } = openMigratedD1();
     insertProduct(db, 101, 'Alko Testbeer 4.7%');
-    insertProduct(db, 202, 'Systembolaget Testbeer');
+    insertProduct(db, 202, 'Foreign Shop Testbeer');
     const repo = new D1ProducerLinksRepository(d1);
     const { file } = parseFile([makeCase(), makeCase({ alkoProductId: 404, alkoProductName: 'Ghost Product' })]);
     const resolutions = await resolveCaseProducts(d1, file!.cases);

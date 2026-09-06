@@ -81,8 +81,14 @@ describe('D1 seed SQL generation (task 2.6)', () => {
   it('emits INSERT OR IGNORE with explicit ids for every staging table', () => {
     const sql = generateStagingSql();
     const statements = sql.match(/INSERT OR IGNORE INTO "[a-z_]+"/g) ?? [];
-    expect(statements).toHaveLength(4); // transport_offers, product_master, retail_offers, staging_reviews
+    expect(statements).toHaveLength(5); // merchant_registry, transport_offers, product_master, retail_offers, staging_reviews
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS "staging_reviews"');
+  });
+
+  it('seeds the merchant registry alko-only (removed merchant never re-seeded)', () => {
+    const sql = generateStagingSql();
+    expect(sql).toContain("(1, 'alko'");
+    expect(sql).not.toContain('systembolaget');
   });
 
   it('derives physical column names from the D1 schema tables', () => {
@@ -100,8 +106,8 @@ describe('D1 seed SQL generation (task 2.6)', () => {
     // Scope to the product_master block: 'box' is a legitimate
     // transport_offers package_tier and must stay.
     const productBlock = staging.slice(
-      staging.indexOf('-- 2. Product master'),
-      staging.indexOf('-- 3. Retail offers'),
+      staging.indexOf('-- 3. Product master'),
+      staging.indexOf('-- 4. Retail offers'),
     );
     // Migration 0002 value set admits 'bottle'/'can' verbatim…
     expect(productBlock).toContain("'bottle'");
@@ -146,6 +152,7 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
 
     const expectations = buildExpectations();
     expect(result.verification['tax_rules_total']).toBe(expectations.taxRulesTotal);
+    expect(result.verification['merchant_registry_total']).toBe(expectations.merchantRegistry);
     expect(result.verification['product_master_total']).toBe(expectations.productMaster);
     expect(result.verification['retail_offers_total']).toBe(expectations.retailOffers);
     expect(result.verification['transport_offers_total']).toBe(expectations.transportOffers);

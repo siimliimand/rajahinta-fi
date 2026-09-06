@@ -10,7 +10,7 @@
  * @module EtlPgToD1Tests
  */
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import {
   CONTAINER_TYPES,
@@ -339,18 +339,19 @@ describe('transformRows — CHECK validation is loud, never silent', () => {
 // ---------------------------------------------------------------------------
 
 describe('emission', () => {
-  it('registers the 18 D1 tables in FK-safe order (parents before children)', () => {
-    expect(TABLE_REGISTRY).toHaveLength(18);
+  it('registers the 16 D1 tables in FK-safe order (parents before children)', () => {
+    expect(TABLE_REGISTRY).toHaveLength(16);
     const positions = new Map(TABLE_REGISTRY.map((t, i) => [t.name, i]));
     expect(positions.get('product_master')!).toBeLessThan(positions.get('retail_offers')!);
-    expect(positions.get('fx_rate_datasets')!).toBeLessThan(positions.get('fx_rates')!);
+    expect(KNOWN_TABLES).not.toContain('fx_rate_datasets');
+    expect(KNOWN_TABLES).not.toContain('fx_rates');
     expect(positions.get('accounts')!).toBeLessThan(positions.get('sessions')!);
     expect(positions.get('sessions')!).toBeLessThan(positions.get('saved_baskets')!);
     expect(positions.get('product_master')!).toBeLessThan(positions.get('calculation_records')!);
     expect(positions.get('transport_offers')!).toBeLessThan(positions.get('calculation_records')!);
     expect(positions.get('tax_rules')!).toBeLessThan(positions.get('calculation_records')!);
     expect(KNOWN_TABLES).toContain(OBSERVATIONS_TABLE);
-    expect(KNOWN_TABLES).toHaveLength(19); // 18 D1 + the R2-routed table
+    expect(KNOWN_TABLES).toHaveLength(17); // 16 D1 + the R2-routed table
   });
 
   it('pins exactly the D1 migration DDL column set for every table', () => {
@@ -363,6 +364,19 @@ describe('emission', () => {
     expect(existsSync(migrationsDir)).toBe(true);
 
     const ddl = readFileSync(join(migrationsDir, '0000_supreme_bucky.sql'), 'utf8');
+    // Later forward migrations may drop columns (0012 dropped the
+    // retail_offers FX provenance columns) — subtract them so the pin
+    // reflects the CURRENT schema, not the 0000 baseline.
+    const dropped = new Map<string, Set<string>>();
+    for (const file of readdirSync(migrationsDir).sort()) {
+      if (!file.endsWith('.sql') || file.startsWith('0000_')) continue;
+      const sql = readFileSync(join(migrationsDir, file), 'utf8');
+      for (const m of sql.matchAll(/ALTER TABLE `(\w+)` DROP COLUMN `(\w+)`/g)) {
+        const set = dropped.get(m[1]) ?? new Set<string>();
+        set.add(m[2]);
+        dropped.set(m[1], set);
+      }
+    }
     for (const spec of TABLE_REGISTRY) {
       const createRe = new RegExp(`CREATE TABLE \\\`${spec.name}\\\` \\([\\s\\S]*?\\n\\);`);
       const match = createRe.exec(ddl);
@@ -370,7 +384,8 @@ describe('emission', () => {
       const ddlColumns = match[0]
         .split('\n')
         .map((line) => /^\s*`([a-z_]+)`/.exec(line)?.[1]) // column defs start with a backtick-quoted name; CONSTRAINT/INDEX lines do not
-        .filter((name): name is string => name !== undefined);
+        .filter((name): name is string => name !== undefined)
+        .filter((name) => !dropped.get(spec.name)?.has(name));
       expect([...spec.columns].sort(), `column set of ${spec.name}`).toEqual([...ddlColumns].sort());
     }
   });
@@ -616,7 +631,7 @@ describe('runEtl over a fake pg client', () => {
       tables: ['accounts'],
       source: 'localhost:5432/rajahinta',
     });
-    const body = files.get('08-accounts.d1.jsonl')!;
+    const body = files.get('06-accounts.d1.jsonl')!;
     expect(body.split('\n')[0]).toBe(
       JSON.stringify(['id', 'user_id', 'email', 'tier', 'created_at', 'last_active_at']),
     );
@@ -628,7 +643,7 @@ describe('buildVerifySql', () => {
   it('produces one COUNT field per D1 table and never references the R2-routed table', () => {
     const sql = buildVerifySql(TABLE_REGISTRY.map((t) => t.name));
     expect(sql).toContain('SELECT');
-    expect((sql.match(/COUNT\(\*\)/g) ?? []).length).toBe(18);
+    expect((sql.match(/COUNT\(\*\)/g) ?? []).length).toBe(16);
     expect(sql).not.toContain(OBSERVATIONS_TABLE);
   });
 });

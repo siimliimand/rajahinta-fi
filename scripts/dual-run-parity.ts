@@ -11,7 +11,7 @@
  * ## Sample
  *
  *   - The golden 5 cases (tests/golden — beer/wine/spirits totals, the
- *     classification-gate rejection, and the mixed-currency offer set)
+ *     classification-gate rejection, and the multi-EUR-offer product)
  *     ALWAYS run: they are the regression core of every dual-run pass.
  *   - Plus a sample of real calculation inputs, either from
  *     `--sample-file <path>` (JSON array of
@@ -95,15 +95,15 @@ export interface ParityCase {
 /**
  * One input per golden case. Product ids follow tests/golden/data/products.ts:
  * 1 beer, 2 wine, 3 spirits (no transport), 4 unclassified (422), 13
- * mixed-currency SEK/EUR. Requires the golden products to exist on BOTH
- * stacks (the ETL/seed guarantees this during the dual-run window).
+ * multi-EUR-offer price spread. Requires the golden products to exist on
+ * BOTH stacks (the ETL/seed guarantees this during the dual-run window).
  */
 export const GOLDEN_CASES: readonly ParityCase[] = [
   { name: 'golden-1-beer-distance-selling', input: { productId: 1, quantity: 1, destination: 'FI', transportMethod: 'carrierA' } },
   { name: 'golden-2-wine-distance-buying', input: { productId: 2, quantity: 3, destination: 'FI', transportMethod: 'carrierB' } },
   { name: 'golden-3-spirits-transport-unavailable', input: { productId: 3, quantity: 1, destination: 'FI' } },
   { name: 'golden-4-unclassified-gate-rejection', input: { productId: 4, quantity: 1, destination: 'FI' } },
-  { name: 'golden-5-mixed-currency', input: { productId: 13, quantity: 1, destination: 'FI', transportMethod: 'carrierSE' } },
+  { name: 'golden-5-multi-eur-offers', input: { productId: 13, quantity: 1, destination: 'FI', transportMethod: 'carrierA' } },
 ];
 
 // ---------------------------------------------------------------------------

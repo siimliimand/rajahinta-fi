@@ -6,7 +6,7 @@
  * Reads every row from the source Postgres database and emits
  * byte-deterministic import artifacts:
  *
- *   - 18 D1 tables → `NN-<table>.d1.sql` (or `.d1.jsonl` with
+ *   - 16 D1 tables → `NN-<table>.d1.sql` (or `.d1.jsonl` with
  *     `--format jsonl` for `wrangler d1 import`), in FK-safe registry
  *     order, batched multi-row `INSERT OR IGNORE` with explicit ids
  *     preserved (explicit-id preservation is what keeps cross-table
@@ -91,7 +91,6 @@ export const RELIABILITY_VALUES = ['VERIFIED', 'ESTIMATED', 'STALE', 'UNAVAILABL
 export const CONFIDENCE_VALUES = ['HIGH', 'MEDIUM', 'LOW'] as const;
 export const TAX_TYPE_VALUES = ['excise', 'container_duty'] as const;
 export const TIER_VALUES = ['FREE', 'PREMIUM'] as const;
-export const FX_STATUS_VALUES = ['PENDING_CONFIRMATION', 'PUBLISHED'] as const;
 export const AUDIT_ACTION_VALUES = ['created', 'updated', 'deleted', 'confirmed'] as const;
 export const GRANULARITY_VALUES = ['daily', 'weekly'] as const;
 
@@ -113,7 +112,6 @@ export const CHECK_VALUE_SETS: Readonly<Record<string, Readonly<Record<string, r
   basket_calculation_records: { confidence: CONFIDENCE_VALUES },
   tax_rules: { tax_type: TAX_TYPE_VALUES },
   accounts: { tier: TIER_VALUES },
-  fx_rate_datasets: { status: FX_STATUS_VALUES },
   audit_events: { action: AUDIT_ACTION_VALUES },
 };
 
@@ -145,9 +143,9 @@ interface TableSpec {
 }
 
 /**
- * All 18 D1 tables in dependency order (parents before children;
+ * All 16 D1 tables in dependency order (parents before children;
  * `sessions` additionally rotation-ordered at emission time — see
- * `orderSessionsByRotation`). Adding a 19th table to the D1 schema
+ * `orderSessionsByRotation`). Adding a 17th table to the D1 schema
  * requires a registry entry here, or the ETL fails the schema-drift check.
  */
 export const TABLE_REGISTRY: readonly TableSpec[] = [
@@ -173,17 +171,7 @@ export const TABLE_REGISTRY: readonly TableSpec[] = [
   },
   {
     name: 'retail_offers',
-    columns: ['id', 'merchant', 'country', 'product_id', 'price_cents', 'currency', 'original_price_cents', 'original_currency', 'fx_dataset_version', 'availability', 'source_url', 'observed_at', 'reliability_status'],
-    orderBy: ['id'],
-  },
-  {
-    name: 'fx_rate_datasets',
-    columns: ['id', 'version_label', 'source_name', 'source_url', 'reference_date', 'status', 'effective_from', 'effective_to', 'confirmed_by', 'confirmed_at', 'created_at'],
-    orderBy: ['id'],
-  },
-  {
-    name: 'fx_rates',
-    columns: ['id', 'dataset_id', 'base_currency', 'quote_currency', 'rate', 'created_at'],
+    columns: ['id', 'merchant', 'country', 'product_id', 'price_cents', 'currency', 'availability', 'source_url', 'observed_at', 'reliability_status'],
     orderBy: ['id'],
   },
   {
@@ -243,7 +231,7 @@ export const TABLE_REGISTRY: readonly TableSpec[] = [
   },
 ];
 
-/** All valid `--table` names: the 18 D1 tables + the R2-routed observations. */
+/** All valid `--table` names: the 16 D1 tables + the R2-routed observations. */
 export const KNOWN_TABLES: readonly string[] = [
   ...TABLE_REGISTRY.map((t) => t.name),
   OBSERVATIONS_TABLE,
@@ -960,7 +948,7 @@ function usage(): string {
     'Options:',
     '  --out <dir>        output directory (default: <os tmp>/rajahinta-etl)',
     '  --format <f>       sql (wrangler d1 execute / import) | jsonl (wrangler d1 import). Default: sql',
-    '  --table <name>     repeatable; process only these tables (18 D1 names or',
+    '  --table <name>     repeatable; process only these tables (16 D1 names or',
     `                     "${OBSERVATIONS_TABLE}" for the R2 observation log). Default: all`,
     '  --batch-size <n>   rows per INSERT statement (default 100)',
     '  --dry-run          validate + count only; write nothing',

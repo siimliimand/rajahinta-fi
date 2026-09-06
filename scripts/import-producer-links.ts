@@ -19,7 +19,7 @@
  * Usage (run via data-platform's tsx, mirroring seed-d1.ts):
  *
  *   pnpm --filter @rajahinta/data-platform exec tsx ../../scripts/import-producer-links.ts \
- *     ../../packages/data-platform/src/seed/producer-links/producer-links-bootstrap.json \
+ *     ../../packages/data-platform/src/seed/producer-links/<catalog>.json \
  *     --db-file <path-to-d1-sqlite> [options]
  *
  * Options:

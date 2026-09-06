@@ -111,7 +111,7 @@ describe('GOLDEN_CASES — the always-run core sample', () => {
     expect(GOLDEN_CASES.map((c) => c.input.productId)).toEqual([1, 2, 3, 4, 13]);
     // Case 3 must omit transportMethod (transport-unavailable path).
     expect(GOLDEN_CASES[2].input.transportMethod).toBeUndefined();
-    // Case 4 is the gate rejection; case 5 the mixed-currency run.
+    // Case 4 is the gate rejection; case 5 the multi-EUR-offer run.
     expect(GOLDEN_CASES[3].name).toContain('gate-rejection');
     expect(GOLDEN_CASES[4].input.productId).toBe(13);
   });
