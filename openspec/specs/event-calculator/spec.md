@@ -32,17 +32,17 @@ The MVP UI SHALL expose the simple mode (guests, duration, profile) without cros
 
 ### Requirement: V2 cross-border sourcing plan
 
-The V2 extension SHALL compare sourcing per drink type across available countries by reusing the existing landed-cost engines, returning a purchase plan (domestic versus foreign store per line) under an optional budget, ordered deterministically by total cost.
+The V2 sourcing plan SHALL compare domestic purchase against foreign sourcing over the versioned sourcing-country set, which after this change SHALL be Finland, Estonia, Latvia, Lithuania, and Germany. Sweden SHALL NOT appear in the canonical country order, in validation, in fixtures, or in the user-facing country labels in either locale. All sourcing countries except Finland SHALL be EUR markets, consistent with the single-currency invariant.
 
-#### Scenario: Foreign sourcing recommended when cheaper
+#### Scenario: Sweden is not a selectable market
 
-- **WHEN** a drink type's landed cost from a foreign store undercuts the domestic price beyond the surplus cost of acquiring it
-- **THEN** the plan SHALL assign that line to the foreign source with the figures shown
+- **WHEN** the sourcing plan validates country inputs or the event page renders the country selector
+- **THEN** `SE` is rejected as invalid and no Swedish label exists in the message catalogs
 
-#### Scenario: Deterministic plan ordering
+#### Scenario: Deterministic tie-breaks preserved
 
-- **WHEN** two sourcing options tie on total cost
-- **THEN** the plan SHALL order them by a documented deterministic tiebreaker, identically on every run
+- **WHEN** two sourcing candidates tie on cost
+- **THEN** the fixed country order (FI, EE, LV, LT, DE) resolves the tie exactly as the previous order did for the remaining countries
 
 ### Requirement: Norms dataset governance
 

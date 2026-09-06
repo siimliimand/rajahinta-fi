@@ -14,12 +14,14 @@ The system SHALL maintain one Product Master record per canonical product, indep
 
 ### Requirement: Retail Offer linkage
 
-Each Retail Offer SHALL reference exactly one Product Master and SHALL store merchant, country, current price, currency, availability, source URL, timestamp, and reliability status.
+Retail offers SHALL link products to merchant prices as before, with merchant, source URL, observed-at, and reliability. After this change every offer SHALL carry the currency `'EUR'` only, and the FX provenance columns (`original_price_cents`, `original_currency`, `fx_dataset_version`) SHALL be dropped from both the Postgres and D1 schemas. The `fx_rate_datasets` and `fx_rates` tables SHALL be dropped.
 
-#### Scenario: Price refresh
+#### Scenario: Schema carries no FX remnants
 
-- **WHEN** a merchant price changes
-- **THEN** the Retail Offer SHALL be updated with the new price and a fresh timestamp, and the prior observation SHALL remain attributable to its own timestamp
+- **WHEN** migrations are applied to a fresh Postgres or D1 database
+- **THEN** no FX tables exist, `retail_offers` carries no FX provenance columns, and every offer row satisfies the EUR-only invariant
+
+## ADDED Requirements
 
 ### Requirement: Versioned Tax Rule
 
@@ -204,3 +206,11 @@ The schema SHALL provide `groupOrderSessions` (share token, expiry, owner accoun
 - **WHEN** the group order tables are inspected
 - **THEN** no column SHALL reference payment instruments, payment links, or transaction settlement
 
+### Requirement: Merchant removal purge
+
+Removing a merchant SHALL be executable as an auditable purge script that deletes the merchant's registry and governance rows and all queryable product, offer, and price-history-summary rows from the database, while leaving the append-only R2 observation log untouched. Seeds SHALL not contain rows for removed merchants.
+
+#### Scenario: Purge is repeatable and safe
+
+- **WHEN** the purge script runs twice against the same environment
+- **THEN** the second run is a no-op, and no `systembolaget` rows exist in any table afterward
