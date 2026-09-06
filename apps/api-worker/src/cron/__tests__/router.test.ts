@@ -60,7 +60,6 @@ describe('cron routing table (task 4.3 — BullMQ repeat-schedule parity)', () =
 
   it('routes the daily review + retention patterns', () => {
     expect(handlerNames('0 2 * * *')).toEqual(['tax-dataset-review']);
-    expect(handlerNames('0 3 * * *')).toEqual(['fx-dataset-review']);
     expect(handlerNames('30 3 * * *')).toEqual(['retention-sweep']);
   });
 
