@@ -7,7 +7,7 @@
  * could admit duplicate calculations, the DO cannot.
  *
  * Version-aware keys: cache keys are SHA-256 digests of the calculation
- * inputs PLUS the resolved dataset versions (tax, transport proxy, FX).
+ * inputs PLUS the resolved dataset versions (tax, transport proxy).
  * `hashCacheKey` reproduces the legacy `hashInput` byte stream exactly and
  * digests it with WebCrypto, so identical inputs hash identically across
  * the old node:crypto stack and this Worker (pinned by a cross-runtime
@@ -54,7 +54,7 @@ export interface CacheKeyInput {
    */
   readonly items?: readonly { productId: number; quantity: number }[];
   /**
-   * Resolved dataset version labels (tax, transport proxy, FX) at request
+   * Resolved dataset version labels (tax, transport proxy) at request
    * time — sorted before hashing so order does not affect the key.
    */
   readonly datasetVersions?: readonly string[];
