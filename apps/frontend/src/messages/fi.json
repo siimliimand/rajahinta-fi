@@ -38,7 +38,6 @@
       "LV": "Latvia",
       "LT": "Liettua",
       "DE": "Saksa",
-      "SE": "Ruotsi",
       "DK": "Tanska",
       "PL": "Puola",
       "NL": "Alankomaat",
@@ -75,10 +74,10 @@
   },
   "Home": {
     "subtitle": "Rajat ylittävien juomien kokonaiskustannuslaskuri Suomeen",
-    "heroValueProp": "Laske alkoholijuomien tuonnin kokonaiskustannus Ruotsista ja muualta Euroopasta Suomeen: ulkomainen vähittäishinta, kuljetus sekä arviot alkoholin valmisteverosta ja pakkausverosta.",
+    "heroValueProp": "Laske alkoholijuomien tuonnin kokonaiskustannus ulkomailta Suomeen: ulkomainen vähittäishinta, kuljetus sekä arviot alkoholin valmisteverosta ja pakkausverosta.",
     "trustHeading": "Tietolähteet ja luotettavuus",
     "trustSourcesTitle": "Aineistolähteet",
-    "trustSourcesBody": "Tuotteiden hinnat perustuvat Systembolagetin ja muiden eurooppalaisten vähittäismyyjien julkaisemiin aineistoihin. Verot ja maksut lasketaan Verohallinnon virallisiin verokanta-aineistoihin perustuen.",
+    "trustSourcesBody": "Tuotteiden hinnat perustuvat vähittäismyyjien julkaisemiin aineistoihin ja Alkon kotimaiseen vertailuhintaan. Verot ja maksut lasketaan Verohallinnon virallisiin verokanta-aineistoihin perustuen.",
     "trustReliabilityTitle": "Luotettavuusmerkinnät",
     "trustReliabilityBody": "Jokainen näytetty luku kantaa luotettavuusmerkinnän ja aikaleiman, joten tiedon varmuus ja ikä ovat aina näkyvissä.",
     "trustMethodologyTitle": "Menetelmä",
@@ -561,7 +560,6 @@
           "EE": "Viro",
           "LV": "Latvia",
           "LT": "Liettua",
-          "SE": "Ruotsi",
           "DE": "Saksa"
         },
         "budget": "Budjetti (€, valinnainen)",

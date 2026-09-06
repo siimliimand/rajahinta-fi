@@ -38,7 +38,6 @@
       "LV": "Latvia",
       "LT": "Lithuania",
       "DE": "Germany",
-      "SE": "Sweden",
       "DK": "Denmark",
       "PL": "Poland",
       "NL": "Netherlands",
@@ -75,10 +74,10 @@
   },
   "Home": {
     "subtitle": "Finnish cross-border beverage landed-cost calculator",
-    "heroValueProp": "Calculate the total cost of importing alcoholic beverages from Sweden and across Europe to Finland: the foreign retail price, transport, and estimates of alcohol excise duty and container duty.",
+    "heroValueProp": "Calculate the total cost of importing alcoholic beverages from abroad to Finland: the foreign retail price, transport, and estimates of alcohol excise duty and container duty.",
     "trustHeading": "Data sources and reliability",
     "trustSourcesTitle": "Data sources",
-    "trustSourcesBody": "Product prices are based on datasets published by Systembolaget and European retailers. Taxes and duties are calculated from the Finnish Tax Administration's official rate datasets.",
+    "trustSourcesBody": "Product prices are based on datasets published by retailers and on the Alko domestic reference price. Taxes and duties are calculated from the Finnish Tax Administration's official rate datasets.",
     "trustReliabilityTitle": "Reliability statuses",
     "trustReliabilityBody": "Every number shown carries a reliability status and a timestamp, so the certainty and age of the data are always visible.",
     "trustMethodologyTitle": "Methodology",
@@ -561,7 +560,6 @@
           "EE": "Estonia",
           "LV": "Latvia",
           "LT": "Lithuania",
-          "SE": "Sweden",
           "DE": "Germany"
         },
         "budget": "Budget (€, optional)",
