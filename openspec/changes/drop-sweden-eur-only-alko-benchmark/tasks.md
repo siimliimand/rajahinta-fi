@@ -22,7 +22,7 @@
 
 ## 3. Currency and event-calculator invariants
 
-- [x] 3.1 Collapse the currency union to the `'EUR'` literal, delete the unconvertible-offer exclusion path in the calculator and data mapping, and add the data-quality invariant that every stored offer is EUR <!-- agent: platform-engineer.build, depends_on: [1.7], touches: [packages/core-domain/src/calculator/**, packages/data-acquisition/src/services/data-mapping.service.ts, packages/data-platform/src/schema.ts, tests/] -->
+- [ ] 3.1 Collapse the currency union to the `'EUR'` literal, delete the unconvertible-offer exclusion path in the calculator and data mapping, and add the data-quality invariant that every stored offer is EUR <!-- REOPENED (6.2 finding): apps/backend/tests/e2e/calculator.test.ts still asserts removed `excludedOffers` (2 failures) — update stale assertions to the new contract --> <!-- agent: platform-engineer.build, depends_on: [1.7], touches: [packages/core-domain/src/calculator/**, packages/data-acquisition/src/services/data-mapping.service.ts, packages/data-platform/src/schema.ts, tests/] -->
 - [x] 3.2 Remove `'SE'` from the event calculator: `SOURCING_COUNTRY_ORDER`, country validation, sourcing types, fixtures, and tests <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/core-domain/src/eventcalc/**] -->
 
 ## 4. Alko benchmark
