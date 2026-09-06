@@ -27,7 +27,6 @@ import { createLogger, type Logger } from '../logger';
 import { flushClickCounters } from '../analytics/click-counter-flusher';
 import { handleTransportRateRefresh, TRANSPORT_REFRESH_CRON } from './transport-rate-refresh';
 import { handleTaxDatasetReview, TAX_REVIEW_CRON } from './tax-dataset-review';
-import { handleFxDatasetReview, FX_REVIEW_CRON } from './fx-dataset-review';
 import {
   handleTimeSeriesAggregation,
   AGGREGATION_CRON,
@@ -88,10 +87,6 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   add(TAX_REVIEW_CRON, {
     name: 'tax-dataset-review',
     run: (env, log) => handleTaxDatasetReview(env, log),
-  });
-  add(FX_REVIEW_CRON, {
-    name: 'fx-dataset-review',
-    run: (env, log) => handleFxDatasetReview(env, log),
   });
   add(AGGREGATION_CRON, {
     name: 'time-series-aggregation',
