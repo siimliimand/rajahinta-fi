@@ -104,11 +104,12 @@ export class D1ProductDataPort implements IProductDataPort {
   /**
    * @inheritdoc
    *
-   * Conversion-state columns (design D2 / task 1.5) pass through so live
-   * offers carry their FX provenance: `hasValidEurConversion` excludes
-   * offers whose non-EUR original lacks a recorded FX dataset version.
-   * Null columns are omitted rather than nulled — "absent" is the
-   * read-model state the domain contract expects for unknown provenance.
+   * Offers are EUR-only (design D3, change
+   * drop-sweden-eur-only-alko-benchmark): the stored `currency` column is
+   * a free string, so it is narrowed to the domain contract's `'EUR'`
+   * literal at this boundary — equality with the literal both proves the
+   * value and satisfies the type, with no cast. A hypothetical non-EUR
+   * row omits the field, and the contract reads absent as EUR.
    */
   async findRetailOffers(productId: number): Promise<CalculatorRetailOfferData[]> {
     const offers = await this.repo.findOffers(productId);
@@ -116,19 +117,10 @@ export class D1ProductDataPort implements IProductDataPort {
     return offers.map((o) => ({
       id: o.id,
       priceCents: o.priceCents,
-      currency: o.currency,
+      ...(o.currency === 'EUR' ? { currency: o.currency } : {}),
       merchant: o.merchant,
       country: o.country,
       reliabilityStatus: toReliabilityStatus(o.reliabilityStatus),
-      ...(o.originalPriceCents !== null
-        ? { originalPriceCents: o.originalPriceCents }
-        : {}),
-      ...(o.originalCurrency !== null
-        ? { originalCurrency: o.originalCurrency }
-        : {}),
-      ...(o.fxDatasetVersion !== null
-        ? { fxDatasetVersion: o.fxDatasetVersion }
-        : {}),
     }));
   }
 }
