@@ -19,6 +19,9 @@
  *   resolution path (list/approve/reject) for rate-review entries.
  * - Audit and the idempotency cache are the durable/shared services
  *   (AuditModule is global; IdempotencyModule is imported).
+ * - DataPlatformModule stays imported (FX-free since task 2.1) for the
+ *   Drizzle-backed MerchantRegistryRepository that OpsGovernanceService
+ *   injects — removing it breaks the module's DI resolution.
  *
  * @module OpsModule
  */
@@ -29,6 +32,7 @@ import {
   SourceGovernanceService,
 } from '@rajahinta/core-domain';
 import { RATE_REVIEW_REPOSITORY_PORT } from '@rajahinta/data-acquisition';
+import { DataPlatformModule } from '@rajahinta/data-platform';
 import { IdempotencyModule } from '../idempotency';
 import { CorrectionModule } from '../correction';
 import { InMemorySourceGovernanceRepository } from './governance/in-memory-source-governance.repository';
@@ -43,7 +47,7 @@ import { OpsAuditTrailController } from './audit/ops-audit-trail.controller';
 import { OpsAuditTrailService } from './audit/ops-audit-trail.service';
 
 @Module({
-  imports: [IdempotencyModule, CorrectionModule],
+  imports: [DataPlatformModule, IdempotencyModule, CorrectionModule],
   providers: [
     // Governance — console-scoped repository + service instance on it.
     InMemorySourceGovernanceRepository,
