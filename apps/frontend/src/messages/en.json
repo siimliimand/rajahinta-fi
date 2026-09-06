@@ -154,6 +154,15 @@
     "notStored": "Not stored with this record",
     "availableAt": "Available at",
     "viewAt": "View at {merchant}",
+    "alkoBenchmark": {
+      "label": "Alko benchmark",
+      "referencePrice": "Alko price: {price}",
+      "difference": "Difference: {difference} ({percent})",
+      "alkoCheaper": "Alko is cheaper",
+      "importCheaper": "Importing is cheaper",
+      "samePrice": "The price is the same",
+      "observedAt": "Observed: {timestamp}"
+    },
     "category": {
       "foreignRetailPrice": "Foreign retail price",
       "transportCost": "Transport cost",

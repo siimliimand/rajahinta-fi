@@ -154,6 +154,15 @@
     "notStored": "Ei tallennettu tämän tietueen yhteyteen",
     "availableAt": "Saatavilla:",
     "viewAt": "Katso myyjältä {merchant}",
+    "alkoBenchmark": {
+      "label": "Alko-vertailu",
+      "referencePrice": "Alkon hinta: {price}",
+      "difference": "Ero: {difference} ({percent})",
+      "alkoCheaper": "Alko on edullisempi",
+      "importCheaper": "Tuonti on edullisempaa",
+      "samePrice": "Hinta on sama",
+      "observedAt": "Havainto: {timestamp}"
+    },
     "category": {
       "foreignRetailPrice": "Ulkomainen vähittäishinta",
       "transportCost": "Kuljetuskustannus",
