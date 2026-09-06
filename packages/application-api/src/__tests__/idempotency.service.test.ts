@@ -21,8 +21,6 @@ function makeResult(overrides?: Partial<CalculatorResult>): CalculatorResult {
     transportCost: 500,
     alcoholExciseEstimate: 300,
     containerDutyEstimate: 100,
-    // Live-path field (task 1.5) — no exclusions in this fixture.
-    excludedOffers: [],
     totalCents: 1900,
     currency: 'EUR',
     confidence: 'HIGH' as any,
