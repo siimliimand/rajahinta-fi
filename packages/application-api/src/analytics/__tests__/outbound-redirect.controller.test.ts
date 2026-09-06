@@ -102,7 +102,7 @@ function createMockProductRepo(): ProductRepository {
   // Offer with no source URL
   offers.set(2, {
     id: 2,
-    merchant: 'systembolaget',
+    merchant: 'eu-import',
     sourceUrl: null,
   });
 

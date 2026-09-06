@@ -35,7 +35,7 @@ class InMemoryMerchantRegistry extends MerchantRegistryRepository {
       id: this.rows.length + 1,
       merchantId,
       name,
-      country: 'SE',
+      country: 'DE',
       feedUrl,
       feedFormat: 'json',
       pollingIntervalMs: 3_600_000,
@@ -63,7 +63,7 @@ class InMemoryMerchantRegistry extends MerchantRegistryRepository {
 
 function createHarness() {
   const registry = new InMemoryMerchantRegistry();
-  registry.add('b-systembolaget', 'Systembolaget');
+  registry.add('eu-import', 'EU Import');
   registry.add('alko-fi', 'Alko', '');
 
   const governanceRepo = new InMemorySourceGovernanceRepository();
@@ -80,7 +80,7 @@ function createHarness() {
 const GRANT = {
   operator: 'op@rajahinta.fi',
   acquisitionMethod: 'COMPLIANT_CRAWLING' as const,
-  sourceUrl: 'https://systembolaget.se/api/products',
+  sourceUrl: 'https://eu-import.example.com/api/products',
   note: 'Agreement 2026-08 signed',
 };
 
@@ -98,7 +98,7 @@ describe('OpsGovernanceService', () => {
       expect(result.total).toBe(2);
       expect(result.items.map((item) => item.merchantId).sort()).toEqual([
         'alko-fi',
-        'b-systembolaget',
+        'eu-import',
       ]);
       for (const item of result.items) {
         expect(item.permissionStatus).toBe('PENDING');
@@ -110,16 +110,16 @@ describe('OpsGovernanceService', () => {
     it('aggregates to GRANTED after a grant transitions an EXPIRED source', async () => {
       const { governanceRepo, service } = createHarness();
       await governanceRepo.create({
-        merchantId: 'b-systembolaget',
+        merchantId: 'eu-import',
         acquisitionMethod: 'COMPLIANT_CRAWLING',
         permissionStatus: 'EXPIRED',
         sourceUrl: 'https://old.example/',
       });
 
-      await service.grantPermission('b-systembolaget', GRANT);
+      await service.grantPermission('eu-import', GRANT);
 
       const result = await service.listMerchantGovernance();
-      const granted = result.items.find((item) => item.merchantId === 'b-systembolaget');
+      const granted = result.items.find((item) => item.merchantId === 'eu-import');
       expect(granted?.permissionStatus).toBe('GRANTED');
       expect(granted?.sourceCount).toBe(1); // the expired source was transitioned, not duplicated
       expect(granted?.hasWarnings).toBe(false);
@@ -130,7 +130,7 @@ describe('OpsGovernanceService', () => {
     it('registers a new GRANTED source and audits operator, target, and timestamp', async () => {
       const { auditRepo, service } = createHarness();
 
-      const result = await service.grantPermission('b-systembolaget', GRANT);
+      const result = await service.grantPermission('eu-import', GRANT);
 
       expect(result.changed).toBe(true);
       expect(result.permissionStatus).toBe('GRANTED');
@@ -139,7 +139,7 @@ describe('OpsGovernanceService', () => {
       expect(trail).toHaveLength(1);
       expect(trail[0].action).toBe('created');
       expect(trail[0].author).toBe('op@rajahinta.fi');
-      expect(trail[0].entityId).toBe('b-systembolaget');
+      expect(trail[0].entityId).toBe('eu-import');
       expect(new Date(trail[0].timestamp).getTime()).toBeGreaterThan(0);
       expect(trail[0].newValue).toMatchObject({ permissionStatus: 'GRANTED' });
     });
@@ -147,17 +147,17 @@ describe('OpsGovernanceService', () => {
     it('transitions an existing PENDING record instead of creating a second one', async () => {
       const { governanceRepo, auditRepo, service } = createHarness();
       await governanceRepo.create({
-        merchantId: 'b-systembolaget',
+        merchantId: 'eu-import',
         acquisitionMethod: 'COMPLIANT_CRAWLING',
         permissionStatus: 'PENDING',
-        sourceUrl: 'https://systembolaget.se/api/products',
+        sourceUrl: 'https://eu-import.example.com/api/products',
       });
 
-      const result = await service.grantPermission('b-systembolaget', GRANT);
+      const result = await service.grantPermission('eu-import', GRANT);
 
       expect(result.changed).toBe(true);
       expect(result.updatedSources).toBe(1);
-      const records = await governanceRepo.findByMerchantId('b-systembolaget');
+      const records = await governanceRepo.findByMerchantId('eu-import');
       expect(records).toHaveLength(1);
       expect(records[0].permissionStatus).toBe('GRANTED');
 
@@ -169,8 +169,8 @@ describe('OpsGovernanceService', () => {
     it('is an honest no-op (no audit) when every source is already GRANTED', async () => {
       const { auditRepo, service } = createHarness();
 
-      await service.grantPermission('b-systembolaget', GRANT);
-      const second = await service.grantPermission('b-systembolaget', GRANT);
+      await service.grantPermission('eu-import', GRANT);
+      const second = await service.grantPermission('eu-import', GRANT);
 
       expect(second.changed).toBe(false);
       expect(second.updatedSources).toBe(0);
@@ -191,9 +191,9 @@ describe('OpsGovernanceService', () => {
   describe('revokePermission', () => {
     it('revokes every source, records the reason, and audits the transition', async () => {
       const { auditRepo, service } = createHarness();
-      await service.grantPermission('b-systembolaget', GRANT);
+      await service.grantPermission('eu-import', GRANT);
 
-      const result = await service.revokePermission('b-systembolaget', {
+      const result = await service.revokePermission('eu-import', {
         operator: 'op@rajahinta.fi',
         reason: 'Agreement terminated 2026-09-01',
       });
@@ -215,7 +215,7 @@ describe('OpsGovernanceService', () => {
       const { service } = createHarness();
 
       await expect(
-        service.revokePermission('b-systembolaget', {
+        service.revokePermission('eu-import', {
           operator: 'op@rajahinta.fi',
           reason: 'nothing to revoke',
         }),

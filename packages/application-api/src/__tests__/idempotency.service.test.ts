@@ -429,7 +429,7 @@ describe('IdempotencyService', () => {
 
   it('returns null when transport proxy version changes (observedAt bump)', async () => {
     const inputOld: CacheKeyInput = {
-      productId: 55, quantity: 1, destination: 'SE',
+      productId: 55, quantity: 1, destination: 'DE',
       datasetVersions: ['v3.0-2026', '2026-08-21T00:00:00.000Z'],
     };
     const oldKey = service.getCacheKey(inputOld);
@@ -442,7 +442,7 @@ describe('IdempotencyService', () => {
 
     // Transport refreshed — new max(observedAt)
     const inputNew: CacheKeyInput = {
-      productId: 55, quantity: 1, destination: 'SE',
+      productId: 55, quantity: 1, destination: 'DE',
       datasetVersions: ['v3.0-2026', '2026-08-22T00:00:00.000Z'],
     };
     const newKey = service.getCacheKey(inputNew);

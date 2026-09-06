@@ -196,14 +196,14 @@ function baselineObservations(): PriceObservationRecord[] {
   return [
     observation({
       productId: 1,
-      merchant: 'systembolaget',
+      merchant: 'eu-import',
       observedAt: T.mon10,
       foreignRetailPriceCents: 1000,
       landedCostCents: 1500,
     }),
     observation({
       productId: 1,
-      merchant: 'systembolaget',
+      merchant: 'eu-import',
       observedAt: T.mon22,
       foreignRetailPriceCents: 1010,
       landedCostCents: 1510,
@@ -219,7 +219,7 @@ function baselineObservations(): PriceObservationRecord[] {
     }),
     observation({
       productId: 2,
-      merchant: 'systembolaget',
+      merchant: 'eu-import',
       observedAt: T.tue12,
       foreignRetailPriceCents: 500,
       landedCostCents: 700,
@@ -411,24 +411,24 @@ describe('TimeSeriesAggregationWorker', () => {
     const keys = [...summaries.buckets.keys()].sort();
     expect(keys).toEqual(
       [
-        // Product 1 daily: Mon 24th (systembolaget ×2 + wide), Wed 26th (alko + wide)
-        keyOf('daily', '2026-08-24', 1, 'systembolaget'),
+        // Product 1 daily: Mon 24th (eu-import ×2 + wide), Wed 26th (alko + wide)
+        keyOf('daily', '2026-08-24', 1, 'eu-import'),
         keyOf('daily', '2026-08-24', 1, null),
         keyOf('daily', '2026-08-26', 1, 'alko'),
         keyOf('daily', '2026-08-26', 1, null),
         // Product 2 daily: Tue 25th
-        keyOf('daily', '2026-08-25', 2, 'systembolaget'),
+        keyOf('daily', '2026-08-25', 2, 'eu-import'),
         keyOf('daily', '2026-08-25', 2, null),
         // Weekly: ISO week Monday 2026-08-24 spans Mon..Wed observations
-        keyOf('weekly', '2026-08-24', 1, 'systembolaget'),
+        keyOf('weekly', '2026-08-24', 1, 'eu-import'),
         keyOf('weekly', '2026-08-24', 1, 'alko'),
         keyOf('weekly', '2026-08-24', 1, null),
-        keyOf('weekly', '2026-08-24', 2, 'systembolaget'),
+        keyOf('weekly', '2026-08-24', 2, 'eu-import'),
         keyOf('weekly', '2026-08-24', 2, null),
       ].sort(),
     );
 
-    const monday = summaries.buckets.get(keyOf('daily', '2026-08-24', 1, 'systembolaget'))!;
+    const monday = summaries.buckets.get(keyOf('daily', '2026-08-24', 1, 'eu-import'))!;
     expect(monday.observationCount).toBe(2);
     expect(monday.priceOpenCents).toBe(1000);
     expect(monday.priceCloseCents).toBe(1010);
@@ -510,7 +510,7 @@ describe('TimeSeriesAggregationWorker', () => {
       keyOf('daily', '2026-08-26', 1, null),
       keyOf('daily', '2026-08-27', 1, 'alko'),
       keyOf('daily', '2026-08-27', 1, null),
-      keyOf('weekly', '2026-08-24', 1, 'systembolaget'),
+      keyOf('weekly', '2026-08-24', 1, 'eu-import'),
       keyOf('weekly', '2026-08-24', 1, 'alko'),
       keyOf('weekly', '2026-08-24', 1, null),
     ]);
@@ -626,7 +626,7 @@ describe('TimeSeriesAggregationWorker', () => {
     observations.rows.push(
       observation({
         productId: 1,
-        merchant: 'systembolaget',
+        merchant: 'eu-import',
         observedAt: new Date('2026-08-24T18:00:00.000Z'),
         foreignRetailPriceCents: 1005,
         landedCostCents: 1505,
@@ -639,7 +639,7 @@ describe('TimeSeriesAggregationWorker', () => {
       makeJob({ bucketStart: '2026-08-24T00:00:00Z', windowMinutes: 1440 }),
     );
 
-    const monday = summaries.buckets.get(keyOf('daily', '2026-08-24', 1, 'systembolaget'))!;
+    const monday = summaries.buckets.get(keyOf('daily', '2026-08-24', 1, 'eu-import'))!;
     expect(monday.observationCount).toBe(3);
     // (1000 + 1005 + 1010) / 3 = 1005; open/close keep series order.
     expect(monday.priceAvgCents).toBe(1005);
@@ -666,7 +666,7 @@ describe('TimeSeriesAggregationWorker', () => {
 
     // The explicit window forced re-aggregation of Monday's daily bucket.
     const secondRunKeys = summaries.upsertLog.slice(upsertsAfterFirstRun);
-    expect(secondRunKeys).toContain(keyOf('daily', '2026-08-24', 1, 'systembolaget'));
+    expect(secondRunKeys).toContain(keyOf('daily', '2026-08-24', 1, 'eu-import'));
     expect(secondRunKeys).toContain(keyOf('weekly', '2026-08-24', 2, null));
 
     // No observation above the watermark ⇒ watermark unchanged (never
@@ -687,7 +687,7 @@ describe('TimeSeriesAggregationWorker', () => {
     expect(secondRunKeys).toEqual([
       keyOf('daily', '2026-08-26', 1, 'alko'),
       keyOf('daily', '2026-08-26', 1, null),
-      keyOf('weekly', '2026-08-24', 1, 'systembolaget'),
+      keyOf('weekly', '2026-08-24', 1, 'eu-import'),
       keyOf('weekly', '2026-08-24', 1, 'alko'),
       keyOf('weekly', '2026-08-24', 1, null),
     ]);

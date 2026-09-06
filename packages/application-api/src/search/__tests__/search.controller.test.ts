@@ -127,20 +127,18 @@ const OFFER_ALKO = {
   reliabilityStatus: 'VERIFIED',
 };
 
-const OFFER_SYSTEMBOLAGET = {
+const OFFER_EU_IMPORT = {
   id: 102,
-  merchant: 'systembolaget',
-  country: 'SE',
+  merchant: 'eu-import',
+  country: 'DE',
   productId: PROD_A.id,
-  // Ingestion-side conversion (design D2): canonical amount is EUR cents
-  // with the SEK original and FX dataset version as provenance.
   priceCents: 199,
   currency: 'EUR',
-  originalPriceCents: 2290,
-  originalCurrency: 'SEK',
-  fxDatasetVersion: 'fx-ecb-2026-08-19',
+  originalPriceCents: null,
+  originalCurrency: null,
+  fxDatasetVersion: null,
   availability: 'in_stock',
-  sourceUrl: 'https://example.com/systembolaget/oltermanni',
+  sourceUrl: 'https://example.com/eu-import/oltermanni',
   observedAt: new Date('2026-08-19T10:00:00Z'),
   reliabilityStatus: 'ESTIMATED',
 };
@@ -179,7 +177,7 @@ function createMockProductRepository(): Partial<ProductRepository> {
     }),
     findOffers: vi.fn(
       async (productId: number): Promise<MockOffer[]> => {
-        if (productId === PROD_A.id) return [OFFER_ALKO, OFFER_SYSTEMBOLAGET];
+        if (productId === PROD_A.id) return [OFFER_ALKO, OFFER_EU_IMPORT];
         return [];
       },
     ),
@@ -546,7 +544,7 @@ describe('SearchController — merchant reliability embed', () => {
     const result = await controller.getProduct(PROD_A.id);
 
     expect(mockReliability.getReliabilityScoreMap).toHaveBeenCalledWith(
-      new Set(['alko', 'systembolaget']),
+      new Set(['alko', 'eu-import']),
     );
     expect(result.merchantReliability).toEqual(map);
     // Offers themselves are untouched — the embed never reorders them.

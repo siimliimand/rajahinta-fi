@@ -124,7 +124,7 @@ describe('operator console access', () => {
 
       await audit.logChange({
         entityType: 'source_governance',
-        entityId: 'b-systembolaget',
+        entityId: 'eu-import',
         action: 'created',
         author: 'first@rajahinta.fi',
         reason: 'grant 1',

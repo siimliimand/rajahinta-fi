@@ -126,7 +126,7 @@ describe('JobsSchedulerService.schedulePriceIngestion (task 7.3)', () => {
   it('enqueues one job per permitted merchant, deduped by per-merchant jobIds', async () => {
     const registry = fakeRegistry([
       registryRow('alko'),
-      registryRow('systembolaget', { country: 'SE' }),
+      registryRow('eu-import', { country: 'DE' }),
       registryRow('third-merchant'),
     ]);
     const governance = fakeGovernance(async (merchantId) =>
@@ -138,7 +138,7 @@ describe('JobsSchedulerService.schedulePriceIngestion (task 7.3)', () => {
     await scheduler.schedulePriceIngestion();
 
     expect(adds).toHaveLength(2);
-    expect(adds.map((a) => a.data.merchantId).sort()).toEqual(['alko', 'systembolaget']);
+    expect(adds.map((a) => a.data.merchantId).sort()).toEqual(['alko', 'eu-import']);
 
     for (const add of adds) {
       // The dedupe key carries the merchant identity — per-merchant
@@ -198,7 +198,7 @@ describe('JobsSchedulerService.schedulePriceIngestion (task 7.3)', () => {
   it('skips registry merchants whose feed URL is empty (adapter not live)', async () => {
     const registry = fakeRegistry([
       registryRow('alko', { feedUrl: '' }),
-      registryRow('systembolaget'),
+      registryRow('eu-import'),
     ]);
     const governance = fakeGovernance(async () => granted());
     const { queue, adds } = captureQueue();
@@ -206,13 +206,13 @@ describe('JobsSchedulerService.schedulePriceIngestion (task 7.3)', () => {
 
     await scheduler.schedulePriceIngestion();
 
-    expect(adds.map((a) => a.data.merchantId)).toEqual(['systembolaget']);
+    expect(adds.map((a) => a.data.merchantId)).toEqual(['eu-import']);
     // The empty-feed merchant is never even permission-checked.
     expect(governance.checkPermission).not.toHaveBeenCalledWith('alko');
   });
 
   it('continues enqueueing the remaining merchants when one add fails', async () => {
-    const registry = fakeRegistry([registryRow('alko'), registryRow('systembolaget')]);
+    const registry = fakeRegistry([registryRow('alko'), registryRow('eu-import')]);
     const governance = fakeGovernance(async () => granted());
     const adds: CapturedAdd[] = [];
     const queue = {
@@ -231,7 +231,7 @@ describe('JobsSchedulerService.schedulePriceIngestion (task 7.3)', () => {
 
     await scheduler.schedulePriceIngestion();
 
-    expect(adds.map((a) => a.data.merchantId)).toEqual(['systembolaget']);
+    expect(adds.map((a) => a.data.merchantId)).toEqual(['eu-import']);
     expect(
       errorSpy.mock.calls.map((c) => String(c[0])).join(' '),
     ).toMatch(/[Ff]ailed to enqueue price-ingestion job for merchant "alko"/);
