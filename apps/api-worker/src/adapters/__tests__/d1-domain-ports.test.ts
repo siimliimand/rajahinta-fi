@@ -86,7 +86,7 @@ describe('D1ProductDataPort.findRetailOffers', () => {
   });
 
   it('omits currency on a hypothetical non-EUR row — the contract reads absent as EUR', async () => {
-    const offers = await portWith([offerRow({ currency: 'SEK' })]).findRetailOffers(1);
+    const offers = await portWith([offerRow({ currency: 'USD' })]).findRetailOffers(1);
 
     expect('currency' in offers[0]).toBe(false);
     // The observation axis is independent of the currency narrowing.

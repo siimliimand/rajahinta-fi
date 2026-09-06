@@ -11,6 +11,7 @@
  * | `disclaimer` (object)     | `disclaimer` (text)    | JSON.stringify — text storage |
  * | `retailOfferIds` (array)  | `retail_offer_ids` (jsonb) | Passed as-is (Drizzle serializes) |
  * | `breakdown` (unknown)     | `breakdown` (jsonb)    | Passed as-is (Drizzle serializes) |
+ * | `alkoBenchmark` (optional)| `alko_benchmark` (jsonb, nullable) | Passed as-is; absent → column default NULL |
  *
  * @module CalculationRecordAdapter
  */
@@ -45,6 +46,9 @@ export class CalculationRecordAdapter implements ICalculationRecordPort {
       destination: record.destination,
       disclaimer: JSON.stringify(record.disclaimer),
       sessionId: record.sessionId,
+      // Absent (undefined) is dropped by Drizzle → the column's NULL
+      // default; the read mapper emits no key for NULL/legacy rows.
+      alkoBenchmark: record.alkoBenchmark,
     });
 
     return { id: persisted.id };

@@ -101,7 +101,6 @@ function createScheduler(
     {} as never, // transport queue — not under test
     {} as never, // tax review queue
     {} as never, // time-series queue
-    {} as never, // fx review queue
     { scheduleNextReview: vi.fn() } as never,
     registry,
     governance,

@@ -11,7 +11,6 @@ import type { PriceIngestionJobData } from './workers/price-ingestion.worker';
 import type { TransportRateRefreshJobData } from './workers/transport-rate-refresh.worker';
 import type { TaxDatasetReviewJobData } from './workers/tax-dataset-review.worker';
 import type { TimeSeriesAggregationJobData } from './workers/time-series-aggregation.worker';
-import type { FxDatasetReviewJobData } from './workers/fx-dataset-review.worker';
 
 /**
  * Schedules recurring background jobs via @Cron() decorators.
@@ -38,9 +37,6 @@ export class JobsSchedulerService implements OnModuleInit {
 
     @InjectQueue(QUEUES.TIME_SERIES_AGGREGATION)
     private readonly timeSeriesQueue: Queue<TimeSeriesAggregationJobData>,
-
-    @InjectQueue(QUEUES.FX_DATASET_REVIEW)
-    private readonly fxDatasetReviewQueue: Queue<FxDatasetReviewJobData>,
 
     private readonly rateReviewScheduler: RateReviewSchedulerService,
 
@@ -189,29 +185,6 @@ export class JobsSchedulerService implements OnModuleInit {
       'daily-review',
       {},
       { jobId: `tax-review-daily-${this.dateBucket()}`, ...cfg.defaultJobOptions },
-    );
-  }
-
-  // -----------------------------------------------------------------------
-  // FX-dataset review — daily at 3 AM (Finnish time)
-  // -----------------------------------------------------------------------
-
-  /**
-   * Recurring FX source check (task 1.3, design D2): fetch the latest
-   * ECB reference rates and surface a PENDING_CONFIRMATION dataset for
-   * operator confirmation. ECB publishes reference rates on TARGET
-   * business days by ~16:00 CET — a 3 AM Helsinki check always sees the
-   * previous publication. The worker never publishes.
-   */
-  @Cron('0 3 * * *', { timeZone: 'Europe/Helsinki' })
-  async scheduleFxDatasetReview(): Promise<void> {
-    const cfg = JOB_REGISTRY[QUEUES.FX_DATASET_REVIEW];
-    this.logger.log('Enqueuing daily FX-dataset review job');
-
-    await this.fxDatasetReviewQueue.add(
-      'daily-review',
-      {},
-      { jobId: `fx-review-daily-${this.dateBucket()}`, ...cfg.defaultJobOptions },
     );
   }
 
