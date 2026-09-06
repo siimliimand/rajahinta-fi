@@ -1,11 +1,15 @@
 /**
- * Golden-dataset mock product data — v2.0.
+ * Golden-dataset mock product data — v2.2.
  *
  * Every product in the golden dataset has a fixed ID, known input
  * parameters, and manually verified expected outputs.  These values
  * should never change without a version bump and a corresponding update
  * to every test assertion in golden-dataset.test.ts.
  *
+ * @version 2.2
+ *   2026-09-06: EUR-only offers (change drop-sweden-eur-only-alko-benchmark,
+ *   design D3) — the mixed-currency case becomes a multi-EUR-offer price
+ *   race for product 13; FX provenance fields are gone from offer data.
  * @version 2.1
  *   2026-08-28: mixed-currency case added (task 1.5/1.6, design D2) —
  *   SEK-converted, EUR-native, and unconvertible offers for product 13.
@@ -32,7 +36,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 /** Bump this when adding scenarios or changing expected values. */
-export const GOLDEN_DATASET_VERSION = '2.1' as const;
+export const GOLDEN_DATASET_VERSION = '2.2' as const;
 
 // ---------------------------------------------------------------------------
 // Product definitions
@@ -332,12 +336,11 @@ export const OFFER_NULL_DEPOSIT: CalculatorRetailOfferData = {
 };
 
 /**
- * Product 13 — Beer profile for the mixed-currency case (task 1.5/1.6,
- * design D2): identical tax shape to product 1, offered across
- * currencies. Same excise (91 ¢) and container duty (0 ¢) expectations
- * as Case 1 apply per unit.
+ * Product 13 — Beer profile for the multi-offer case (design D3): same
+ * tax shape as product 1, offered by three EUR merchants. Same excise
+ * (91 ¢) and container duty (0 ¢) expectations as Case 1 apply per unit.
  */
-export const PRODUCT_BEER_SEK: CalculatorProductData = {
+export const PRODUCT_BEER_MULTI_OFFER: CalculatorProductData = {
   id: 13,
   regulatoryClassification: 'beer',
   category: 'beer',
@@ -346,28 +349,21 @@ export const PRODUCT_BEER_SEK: CalculatorProductData = {
   containerType: 'can',
   depositSystemStatus: true,
   weightKg: 0.55,
-  normalizedName: 'Svensk Exportöl 5%',
+  normalizedName: 'Multi-offer Lager 5%',
 };
 
-/**
- * SEK offer converted at ingestion: 22.64 SEK at ECB EUR/SEK 11.32
- * → exactly 2.00 EUR → 200 cents. Original amount and FX dataset
- * version ride along as provenance (fx-rate-dataset spec delta).
- */
-export const OFFER_BEER_SEK_CONVERTED: CalculatorRetailOfferData = {
+/** Cheapest EUR offer — wins the price race. */
+export const OFFER_BEER_MULTI_A: CalculatorRetailOfferData = {
   id: 112,
   priceCents: 200,
   currency: 'EUR',
-  merchant: 'systembolaget',
-  country: 'SE',
+  merchant: 'beverage-de',
+  country: 'DE',
   reliabilityStatus: 'VERIFIED',
-  originalPriceCents: 2264,
-  originalCurrency: 'SEK',
-  fxDatasetVersion: 'ecb-2026-08-27.1',
 };
 
-/** EUR-native reference offer for the same product — pricier, honest. */
-export const OFFER_BEER_EUR_NATIVE: CalculatorRetailOfferData = {
+/** Pricier EUR offer from the same market. */
+export const OFFER_BEER_MULTI_B: CalculatorRetailOfferData = {
   id: 113,
   priceCents: 260,
   currency: 'EUR',
@@ -376,20 +372,14 @@ export const OFFER_BEER_EUR_NATIVE: CalculatorRetailOfferData = {
   reliabilityStatus: 'VERIFIED',
 };
 
-/**
- * Unconvertible offer: a raw SEK amount that leaked through as if it
- * were cents. Cheapest of the three — the exact trap task 1.5 exists to
- * close. Must be excluded with a visible reason, never summed.
- */
-export const OFFER_BEER_UNCONVERTIBLE_SEK: CalculatorRetailOfferData = {
+/** Mid-priced EUR offer from a third market — cheaper offers must win. */
+export const OFFER_BEER_MULTI_C: CalculatorRetailOfferData = {
   id: 114,
-  priceCents: 90,
-  currency: 'SEK',
-  merchant: 'shop-se-rogue',
-  country: 'SE',
+  priceCents: 210,
+  currency: 'EUR',
+  merchant: 'shop-ee',
+  country: 'EE',
   reliabilityStatus: 'ESTIMATED',
-  originalPriceCents: 900,
-  originalCurrency: 'SEK',
 };
 
 // ---------------------------------------------------------------------------
@@ -410,7 +400,7 @@ export const PRODUCT_BY_ID: Record<number, CalculatorProductData> = {
   [PRODUCT_NO_DEPOSIT.id]: PRODUCT_NO_DEPOSIT,
   [PRODUCT_ZERO_ABV.id]: PRODUCT_ZERO_ABV,
   [PRODUCT_NULL_DEPOSIT.id]: PRODUCT_NULL_DEPOSIT,
-  [PRODUCT_BEER_SEK.id]: PRODUCT_BEER_SEK,
+  [PRODUCT_BEER_MULTI_OFFER.id]: PRODUCT_BEER_MULTI_OFFER,
 };
 
 /** Map product ID to its retail offers. */
@@ -427,9 +417,9 @@ export const OFFERS_BY_PRODUCT_ID: Record<number, CalculatorRetailOfferData[]> =
   [PRODUCT_NO_DEPOSIT.id]: [OFFER_NO_DEPOSIT],
   [PRODUCT_ZERO_ABV.id]: [OFFER_ZERO_ABV],
   [PRODUCT_NULL_DEPOSIT.id]: [OFFER_NULL_DEPOSIT],
-  [PRODUCT_BEER_SEK.id]: [
-    OFFER_BEER_SEK_CONVERTED,
-    OFFER_BEER_EUR_NATIVE,
-    OFFER_BEER_UNCONVERTIBLE_SEK,
+  [PRODUCT_BEER_MULTI_OFFER.id]: [
+    OFFER_BEER_MULTI_C,
+    OFFER_BEER_MULTI_A,
+    OFFER_BEER_MULTI_B,
   ],
 };

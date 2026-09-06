@@ -445,7 +445,12 @@ describe('no what-if/scenario table in the committed schema (task 8.4)', () => {
       expect(file, file).not.toMatch(WHATIF_TABLE_VOCABULARY);
       // …and no what-if table ever lands inside a migration.
       const names = createTableNames(sql);
-      expect(names.length, `${file} yields CREATE TABLE names`).toBeGreaterThan(0);
+      // Drop/alter-only migrations (e.g. 0012_drop_fx_provenance) create
+      // no table — the >0 check applies only to migrations that should
+      // create one.
+      if (/\bCREATE (?:VIRTUAL )?TABLE/.test(sql)) {
+        expect(names.length, `${file} yields CREATE TABLE names`).toBeGreaterThan(0);
+      }
       seenTables += names.length;
       for (const name of names) {
         expect(name, `${file} defines "${name}"`).not.toMatch(
@@ -454,15 +459,16 @@ describe('no what-if/scenario table in the committed schema (task 8.4)', () => {
         if (SCENARIO_TABLE_VOCABULARY.test(name)) scenarioNamed.push(name);
       }
     }
-    expect(seenTables).toBeGreaterThanOrEqual(30);
-    // The allowlist is exercised on real data: the phase-1 table IS seen.
+    expect(seenTables).toBeGreaterThanOrEqual(30);    // The allowlist is exercised on real data: the phase-1 table IS seen.
     expect(scenarioNamed).toEqual(LEGITIMATE_SCENARIO_TABLES);
   });
 
   it('the drizzle schema declares no what-if/scenario table', () => {
     const names = schemaTableNames();
     // Non-vacuity: the extraction located the real schema surface.
-    expect(names.length).toBeGreaterThanOrEqual(30);
+    // (Floor 28: the two FX tables dropped in 0012_drop_fx_provenance
+    // no longer count.)
+    expect(names.length).toBeGreaterThanOrEqual(28);
     expect(names).toContain('saved_scenarios');
 
     const scenarioNamed = names.filter((n) => SCENARIO_TABLE_VOCABULARY.test(n));

@@ -52,7 +52,7 @@ import { openMigratedD1 } from './harness';
 describe('D1 schema conformance', () => {
   const { db } = openMigratedD1();
 
-  /** The 20 relational tables the committed migrations create. */
+  /** The 18 relational tables the committed migrations create. */
   const EXPECTED_TABLES = [
     'accounts',
     'aggregation_watermarks',
@@ -61,8 +61,6 @@ describe('D1 schema conformance', () => {
     'carrier_box_types',
     'calculation_records',
     'click_counter_snapshots',
-    'fx_rate_datasets',
-    'fx_rates',
     'merchant_registry',
     'merchant_terms',
     'price_history_summaries',
@@ -279,5 +277,69 @@ describe('data-quality invariants over D1 retail offers', () => {
       ).bind(MERCHANT, PRODUCT_ID)
       .run(),
     ).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Leg 4 — EUR-only invariant (design D3, change
+// drop-sweden-eur-only-alko-benchmark): every stored offer is EUR
+// ---------------------------------------------------------------------------
+
+/** The invariant query: count offers whose currency is not (or may not be read as) EUR. */
+function countNonEurOffers(
+  database: ReturnType<typeof openMigratedD1>['d1'],
+): Promise<number> {
+  return database
+    .prepare(
+      `SELECT COUNT(*) AS violations
+         FROM retail_offers
+        WHERE currency IS NULL OR UPPER(TRIM(currency)) <> 'EUR'`,
+    )
+    .first<{ violations: number }>()
+    .then((row) => row?.violations ?? 0);
+}
+
+describe('EUR-only invariant over stored offers (design D3)', () => {
+  const { d1 } = openMigratedD1();
+
+  const PRODUCT_ID = 8200;
+  const MERCHANT = 'eur-invariant-merchant';
+
+  it('passes on a clean database — zero non-EUR offers stored', async () => {
+    await expect(countNonEurOffers(d1)).resolves.toBe(0);
+  });
+
+  it('fails on violation — a non-EUR row is detected by the invariant query', async () => {
+    await d1
+      .prepare(
+        `INSERT INTO product_master (id, name, manufacturer, brand, category,
+            unit_volume, container_type, regulatory_classification)
+         VALUES (?, 'EUR Invariant Fixture', 'DQ Brewery', 'DQ', 'beer',
+                 0.5, 'can', 'beer')`,
+      )
+      .bind(PRODUCT_ID)
+      .run();
+
+    // The schema deliberately has no CHECK pinning the currency (design
+    // D3 keeps the column unconstrained to avoid a second migration);
+    // the suite-level invariant is what fails the run on violation.
+    await d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+            currency, availability, observed_at, reliability_status)
+         VALUES (8201, ?, 'DE', ?, 199, 'SEK', 'in_stock',
+                 '2026-09-06T00:00:00.000Z', 'ESTIMATED')`,
+      )
+      .bind(MERCHANT, PRODUCT_ID)
+      .run();
+
+    await expect(countNonEurOffers(d1)).resolves.toBe(1);
+
+    // Repair and re-check: the suite passes again — proving the gate is
+    // the query, not the schema, and that a violating dataset is caught.
+    await d1
+      .prepare(`DELETE FROM retail_offers WHERE id = 8201`)
+      .run();
+    await expect(countNonEurOffers(d1)).resolves.toBe(0);
   });
 });

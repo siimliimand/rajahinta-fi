@@ -27,9 +27,8 @@ export class DataMappingService {
    * Map a single raw feed record to upsert-ready product + offer inputs.
    *
    * @param record     Normalised feed record from the merchant adapter
-   *                   (currency already converted to EUR at ingestion,
-   *                   task 1.4 — the original amount stays on the record
-   *                   for display consumers).
+   *                   (EUR-only per design D3 — offers can no longer be
+   *                   unconvertible, and no FX provenance is carried).
    * @param merchantId Merchant identifier to stamp on the retail offer.
    * @param country    Merchant market (ISO 3166-1 alpha-2) from the
    *                   merchant registry row driving this run — what the
@@ -70,12 +69,6 @@ export class DataMappingService {
       country: country ?? 'FI',
       priceCents: record.priceCents,
       currency: record.currency,
-      // Conversion provenance (task 1.4, design D2): the original
-      // amount/currency stay next to the converted EUR cents, and the
-      // FX dataset version records which governed dataset produced them.
-      originalPriceCents: record.originalPriceCents,
-      originalCurrency: record.originalCurrency,
-      fxDatasetVersion: record.fxDatasetVersion ?? null,
       availability: 'in_stock',
       sourceUrl: record.sourceUrl,
       observedAt: new Date(),
