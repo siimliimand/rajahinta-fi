@@ -304,6 +304,7 @@ export type {
   CalculatorResult,
   CalculatorProductData,
   CalculatorRetailOfferData,
+  AlkoBenchmarkSnapshot,
   CostCategory,
   ItemizedCost,
   CreateCalculationRecordInput,

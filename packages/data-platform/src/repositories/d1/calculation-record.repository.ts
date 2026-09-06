@@ -53,6 +53,7 @@ interface D1CalculationRecordRow {
   readonly disclaimer: string;
   readonly session_id: string | null;
   readonly calculated_at: string;
+  readonly alko_benchmark: string | null;
 }
 
 function toContractRecord(row: D1CalculationRecordRow): CalculationRecord {
@@ -74,6 +75,12 @@ function toContractRecord(row: D1CalculationRecordRow): CalculationRecord {
     disclaimer: row.disclaimer,
     sessionId: row.session_id,
     calculatedAt: new Date(row.calculated_at),
+    // JSON TEXT → parsed object; NULL (reference-less / pre-change rows)
+    // stays null — the read mapper turns null into an absent key.
+    alkoBenchmark:
+      row.alko_benchmark === null
+        ? null
+        : (JSON.parse(row.alko_benchmark) as unknown),
   };
 }
 
@@ -81,13 +88,13 @@ const RECORD_COLUMNS = `
   id, product_master_id, retail_offer_ids, transport_offer_id,
   excise_rule_version_id, container_duty_rule_version_id, total_cents,
   breakdown, confidence, quantity, destination, disclaimer, session_id,
-  calculated_at`;
+  calculated_at, alko_benchmark`;
 
 /** Next id for the composite-PK table — no rowid alias to auto-assign. */
 const NEXT_ID_SQL = `
   SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM calculation_records`;
 
-const INSERT_COLUMNS = `(id, product_master_id, retail_offer_ids, transport_offer_id, excise_rule_version_id, container_duty_rule_version_id, total_cents, breakdown, confidence, quantity, destination, disclaimer, session_id, calculated_at)`;
+const INSERT_COLUMNS = `(id, product_master_id, retail_offer_ids, transport_offer_id, excise_rule_version_id, container_duty_rule_version_id, total_cents, breakdown, confidence, quantity, destination, disclaimer, session_id, calculated_at, alko_benchmark)`;
 
 const FIND_BY_ID_SQL = `
   SELECT ${RECORD_COLUMNS} FROM calculation_records
@@ -154,7 +161,7 @@ export class D1CalculationRecordRepository extends CalculationRecordRepository {
     const row = await this.d1
       .prepare(
         `INSERT INTO calculation_records ${INSERT_COLUMNS}
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          RETURNING ${RECORD_COLUMNS}`,
       )
       .bind(
@@ -174,6 +181,10 @@ export class D1CalculationRecordRepository extends CalculationRecordRepository {
         record.disclaimer,
         record.sessionId ?? null,
         calculatedAt,
+        // JSON-stable benchmark snapshot; absent → NULL (the legacy shape).
+        record.alkoBenchmark == null
+          ? null
+          : JSON.stringify(record.alkoBenchmark),
       )
       .first<D1CalculationRecordRow>();
     if (!row) {

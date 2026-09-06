@@ -270,6 +270,7 @@ export class D1CalculationRecordPort implements ICalculationRecordPort {
       destination: record.destination,
       disclaimer: JSON.stringify(record.disclaimer),
       sessionId: record.sessionId,
+      alkoBenchmark: record.alkoBenchmark,
     });
     return { id: persisted.id };
   }

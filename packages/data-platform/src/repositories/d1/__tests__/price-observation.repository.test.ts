@@ -26,7 +26,7 @@ import type { PriceObservation } from '@rajahinta/core-domain';
 
 const OBSERVATION: PriceObservation = {
   productId: 7,
-  merchant: 'systembolaget',
+  merchant: 'eu-import',
   retailOfferId: 101,
   observedAt: new Date('2026-08-15T10:30:00.000Z'),
   foreignRetailPriceCents: 1990,
@@ -78,7 +78,7 @@ describe('R2PriceObservationPort.append', () => {
     expect(record).toEqual({
       id: 42,
       product_id: 7,
-      merchant: 'systembolaget',
+      merchant: 'eu-import',
       retail_offer_id: 101,
       observed_at: '2026-08-15T10:30:00.000Z',
       foreign_retail_price_cents: 1990,

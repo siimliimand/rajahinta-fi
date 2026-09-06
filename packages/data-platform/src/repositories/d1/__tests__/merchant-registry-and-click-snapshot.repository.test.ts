@@ -19,11 +19,11 @@ const CAPTURED_AT = new Date('2026-08-28T06:00:00.000Z');
 
 describe('D1MerchantRegistryRepository', () => {
   it('lists the registry deterministically by merchantId', async () => {
-    await registry.upsert({ merchantId: 'systembolaget', name: 'Systembolaget', country: 'SE', feedUrl: 'https://systembolaget.se/feed', feedFormat: 'json', pollingIntervalMs: 3_600_000 });
+    await registry.upsert({ merchantId: 'eu-import', name: 'EU Import', country: 'FR', feedUrl: 'https://eu-import.example/feed', feedFormat: 'json', pollingIntervalMs: 3_600_000 });
     await registry.upsert({ merchantId: 'alko', name: 'Alko', country: 'FI', feedUrl: '', feedFormat: 'json', pollingIntervalMs: 3_600_000 });
 
     const listed = await registry.list();
-    expect(listed.map((r) => r.merchantId)).toEqual(['alko', 'systembolaget']);
+    expect(listed.map((r) => r.merchantId)).toEqual(['alko', 'eu-import']);
   });
 
   it('upserts on the merchantId unique key and refreshes updatedAt', async () => {

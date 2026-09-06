@@ -127,6 +127,13 @@
       "when": 1788682775916,
       "tag": "0017_drop_fx_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788689139733,
+      "tag": "0018_calculation_records_alko_benchmark",
+      "breakpoints": true
     }
   ]
 }

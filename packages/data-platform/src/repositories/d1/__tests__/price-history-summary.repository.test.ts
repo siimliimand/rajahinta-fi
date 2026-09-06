@@ -24,7 +24,7 @@ function bucket(overrides: Partial<PriceHistorySummaryUpsertInput> = {}): PriceH
     granularity: 'daily',
     periodStart: '2026-08-24',
     productId: 7,
-    merchant: 'systembolaget',
+    merchant: 'eu-import',
     priceOpenCents: 1099,
     priceCloseCents: 1149,
     priceMinCents: 1099,
@@ -64,14 +64,14 @@ describe('D1PriceHistorySummaryRepository.upsertBucket', () => {
     const result = await repo.upsertBucket(bucket());
     expect(result.id).toBeGreaterThan(0);
 
-    const rows = await repo.findByProductRange(7, 'daily', '2026-08-24', '2026-08-24', 'systembolaget');
+    const rows = await repo.findByProductRange(7, 'daily', '2026-08-24', '2026-08-24', 'eu-import');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       id: result.id,
       granularity: 'daily',
       periodStart: '2026-08-24',
       productId: 7,
-      merchant: 'systembolaget',
+      merchant: 'eu-import',
       priceOpenCents: 1099,
       priceCloseCents: 1149,
       priceAvgCents: 1124,
@@ -85,7 +85,7 @@ describe('D1PriceHistorySummaryRepository.upsertBucket', () => {
     const second = await repo.upsertBucket(bucket({ priceCloseCents: 1199, priceMaxCents: 1199, priceAvgCents: 1149, observationCount: 5 }));
 
     expect(second.id).toBe(first.id);
-    const rows = await repo.findByProductRange(7, 'daily', '2026-08-24', '2026-08-24', 'systembolaget');
+    const rows = await repo.findByProductRange(7, 'daily', '2026-08-24', '2026-08-24', 'eu-import');
     expect(rows).toHaveLength(1); // no duplicate — the job re-run converged
     expect(rows[0].priceCloseCents).toBe(1199);
     expect(rows[0].priceAvgCents).toBe(1149);
@@ -141,7 +141,7 @@ describe('D1PriceHistorySummaryRepository.findByProductRange', () => {
     await repo.upsertBucket(bucket({ periodStart: '2026-07-01', observationCount: 4 })); // outside
     await repo.upsertBucket(bucket({ periodStart: '2026-05-31', observationCount: 5 })); // outside
 
-    const rows = await repo.findByProductRange(7, 'daily', '2026-06-01', '2026-06-30', 'systembolaget');
+    const rows = await repo.findByProductRange(7, 'daily', '2026-06-01', '2026-06-30', 'eu-import');
     expect(rows.map((r) => r.periodStart)).toEqual(['2026-06-01', '2026-06-15', '2026-06-30']);
     expect(rows.map((r) => r.observationCount)).toEqual([2, 1, 3]);
   });

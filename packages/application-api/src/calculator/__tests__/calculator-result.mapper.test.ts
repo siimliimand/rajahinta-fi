@@ -74,6 +74,16 @@ const DISCLAIMER = {
   version: '1.0',
 } as const;
 
+/** The JSON-stable benchmark snapshot the orchestrator persists (task 4.2). */
+const PERSISTED_BENCHMARK = {
+  status: 'available',
+  referencePriceCents: 300,
+  differenceCents: -50,
+  differencePercent: -16.7,
+  reliabilityStatus: 'VERIFIED',
+  observedAt: '2026-08-05T10:00:00.000Z',
+} as const;
+
 function makeRecord(
   overrides: Partial<typeof calculationRecords.$inferSelect> = {},
 ): typeof calculationRecords.$inferSelect {
@@ -92,6 +102,8 @@ function makeRecord(
     disclaimer: JSON.stringify(DISCLAIMER),
     sessionId: 'session-abc',
     calculatedAt: CALCULATED_AT,
+    // Legacy shape: NULL column → the mapper must emit NO key.
+    alkoBenchmark: null,
     ...overrides,
   };
 }
@@ -361,6 +373,44 @@ describe('mapCalculationRecordToResult', () => {
     expect(result.itemizedCosts).toEqual(PERSISTED_BREAKDOWN);
   });
 
+  it('emits the persisted alkoBenchmark snapshot verbatim when the record carries one', () => {
+    const result = mapCalculationRecordToResult({
+      record: makeRecord({ alkoBenchmark: PERSISTED_BENCHMARK }),
+      product: makeProduct(),
+      exciseVersionLabel: null,
+      containerVersionLabel: null,
+    });
+
+    // Round-trip fidelity: the exact JSON-stable snapshot comes back —
+    // figures, reliability, and the ISO observation timestamp untouched.
+    expect(result.alkoBenchmark).toEqual(PERSISTED_BENCHMARK);
+    expect(result.alkoBenchmark?.observedAt).toBe('2026-08-05T10:00:00.000Z');
+    // Display-only: the benchmark adds no cent to the headline figure
+    // and stays out of the itemized array.
+    expect(result.totalCents).toBe(5144);
+    expect(result.itemizedCosts).toEqual(PERSISTED_BREAKDOWN);
+  });
+
+  it('drops malformed persisted benchmark values instead of emitting a placeholder', () => {
+    for (const benchmark of [
+      // The unavailable variant never reaches the response contract.
+      { status: 'unavailable', reason: 'NO_REFERENCE_OFFER' },
+      // Corrupt rows degrade to the absent state — render nothing.
+      { status: 'available', referencePriceCents: '300' },
+      { status: 'available', reliabilityStatus: 'EXACT' },
+      { status: 'available', observedAt: 'not-a-timestamp' },
+      'garbage',
+    ]) {
+      const result = mapCalculationRecordToResult({
+        record: makeRecord({ alkoBenchmark: benchmark }),
+        product: makeProduct(),
+        exciseVersionLabel: null,
+        containerVersionLabel: null,
+      });
+      expect('alkoBenchmark' in result).toBe(false);
+    }
+  });
+
   it('degrades factually when the classification is not persisted', () => {
     const result = mapCalculationRecordToResult({
       record: makeRecord(),
@@ -483,6 +533,20 @@ describe('CalculatorController — getResult', () => {
     // Labels resolved by rule ID via TaxRateRepository (deduped).
     expect(result.metadata.datasetVersions).toEqual(['v3.0-2026']);
     expect(result.disclaimer).toEqual(DISCLAIMER);
+  });
+
+  it('maps a benchmark-bearing record through GET with the exact snapshot', async () => {
+    const controller = buildController({
+      record: makeRecord({ alkoBenchmark: PERSISTED_BENCHMARK }),
+      products: [makeProduct()],
+      rules: [makeTaxRule(3, 'v3.0-2026')],
+    });
+
+    const result = await controller.getResult(42);
+
+    // The GET response carries the benchmark the live POST response had —
+    // the past result renders its benchmark line identically.
+    expect(result.alkoBenchmark).toEqual(PERSISTED_BENCHMARK);
   });
 
   it('returns 404 (unchanged) for a missing record', async () => {

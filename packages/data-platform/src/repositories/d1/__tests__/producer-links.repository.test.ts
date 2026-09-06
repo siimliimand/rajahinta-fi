@@ -48,7 +48,7 @@ function link(
     siblingProductId: 202,
     producerKey: 'Hartwall',
     manufacturer: 'Hartwall Oyj',
-    sourceUrl: 'https://systembolaget.example/produkt/karhu',
+    sourceUrl: 'https://eu-import.example/produkt/karhu',
     reviewer: 'curator@example.invalid',
     reviewedAt: '2026-09-01T12:00:00.000Z',
     ...overrides,
@@ -241,7 +241,7 @@ describe('D1ProducerLinksRepository — editability', () => {
 
     const updated = await repo.update(created.id, {
       producerKey: '  Hartwall  Oyj  ',
-      sourceUrl: 'https://systembolaget.example/produkt/karhu-v2',
+      sourceUrl: 'https://eu-import.example/produkt/karhu-v2',
     });
     expect(updated).not.toBeNull();
     expect(updated!.producerKey).toBe('hartwall oyj');
@@ -259,7 +259,7 @@ describe('D1ProducerLinksRepository — editability', () => {
     ).rejects.toBeInstanceOf(ProducerLinkImmutableError);
     // The stored evidence is untouched by the refused edit.
     expect((await repo.findById(created.id))!.sourceUrl).toBe(
-      'https://systembolaget.example/produkt/karhu',
+      'https://eu-import.example/produkt/karhu',
     );
   });
 

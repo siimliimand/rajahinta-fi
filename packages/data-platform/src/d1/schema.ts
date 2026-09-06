@@ -136,7 +136,7 @@ export const retailOffers = sqliteTable(
   'retail_offers',
   {
     id: integer('id').primaryKey(),
-    /** Merchant identifier — distinguishes sources (e.g. "alko", "systembolaget"). */
+    /** Merchant identifier — distinguishes sources (e.g. "alko", "eu-import"). */
     merchant: text('merchant', { length: 128 }).notNull(),
     /** Market/origin country (ISO 3166-1 alpha-2). */
     country: text('country', { length: 4 }).notNull(),
@@ -318,6 +318,13 @@ export const calculationRecords = sqliteTable(
     sessionId: text('session_id', { length: 64 }),
     /** When calculation was performed — the former partition key, kept in the PK. */
     calculatedAt: text('calculated_at').default(ISO_8601_NOW).notNull(),
+    /**
+     * Display-only Alko benchmark snapshot (JSON text) — written when the
+     * calculation had a usable Alko reference, NULL on reference-less and
+     * pre-change records (absence is the render-nothing state, never a
+     * placeholder).
+     */
+    alkoBenchmark: text('alko_benchmark', { mode: 'json' }),
   },
   (table) => [
     // Former partitioned-table PK must include the partition key.
@@ -640,7 +647,7 @@ export const merchantTerms = sqliteTable(
   'merchant_terms',
   {
     id: integer('id').primaryKey(),
-    /** Merchant identifier — matches retail_offers.merchant (e.g. "alko", "systembolaget"). */
+    /** Merchant identifier — matches retail_offers.merchant (e.g. "alko", "eu-import"). */
     merchantId: text('merchant_id').unique().notNull(),
     /** Minimum order value in cents to qualify for purchase. Null means no known threshold. */
     minimumOrderValueCents: integer('minimum_order_value_cents'),

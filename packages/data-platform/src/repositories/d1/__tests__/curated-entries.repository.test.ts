@@ -38,7 +38,7 @@ function seedProductRow(id: number, name: string): void {
 seedProductRow(101, 'Karhu III');
 seedProductRow(202, 'Karhu III (export)');
 
-const LINK = { label: 'Systembolaget listing', url: 'https://systembolaget.example/produkt/karhu' };
+const LINK = { label: 'EU Import listing', url: 'https://eu-import.example/produkt/karhu' };
 
 function entry(overrides: Partial<CuratedEntryInsert> = {}): CuratedEntryInsert {
   return {
@@ -82,10 +82,10 @@ describe('create — lands DRAFT with validated evidence', () => {
 
   it('creates an external-ref entry (exactly-one target, the other side null)', async () => {
     const created = await repo.create(
-      entry({ productId: undefined, externalRef: 'https://systembolaget.example/produkt/karhu-export' }),
+      entry({ productId: undefined, externalRef: 'https://eu-import.example/produkt/karhu-export' }),
     );
     expect(created.productId).toBeNull();
-    expect(created.externalRef).toBe('https://systembolaget.example/produkt/karhu-export');
+    expect(created.externalRef).toBe('https://eu-import.example/produkt/karhu-export');
   });
 
   it.each([

@@ -16,11 +16,11 @@ const repo = new D1AuditEventRepository(d1);
 
 function entry(overrides: Partial<AuditEntry> & { id: string }): AuditEntry {
   return {
-    entityType: 'fx_rate_dataset',
-    entityId: 'ecb-2026-08-01.1',
+    entityType: 'tax_rate_dataset',
+    entityId: 'tax-rates-2026-08-01.1',
     action: 'confirmed',
     author: 'ops@example.invalid',
-    reason: 'ECB reference rates reviewed',
+    reason: 'Tax rate dataset reviewed',
     timestamp: '2026-08-28T09:00:00.000Z',
     ...overrides,
   };
@@ -31,7 +31,7 @@ describe('D1AuditEventRepository', () => {
     const e = entry({ id: 'audit-1', previousValue: { status: 'PENDING_CONFIRMATION' }, newValue: { status: 'PUBLISHED' } });
     await repo.save(e);
 
-    const history = await repo.getHistory('fx_rate_dataset', 'ecb-2026-08-01.1');
+    const history = await repo.getHistory('tax_rate_dataset', 'tax-rates-2026-08-01.1');
     expect(history).toHaveLength(1);
     expect(history[0]).toEqual(e);
   });
@@ -39,7 +39,7 @@ describe('D1AuditEventRepository', () => {
   it('persists entries without snapshots (append-only, never mutated)', async () => {
     await repo.save(entry({ id: 'audit-2', action: 'created' }));
 
-    const history = await repo.getHistory('fx_rate_dataset', 'ecb-2026-08-01.1');
+    const history = await repo.getHistory('tax_rate_dataset', 'tax-rates-2026-08-01.1');
     const row = history.find((h) => h.id === 'audit-2')!;
     expect(row.previousValue).toBeUndefined();
     expect(row.newValue).toBeUndefined();

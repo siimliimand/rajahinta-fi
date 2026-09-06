@@ -36,6 +36,7 @@
  */
 
 import type {
+  AlkoBenchmarkSnapshot,
   ConfidenceLevel,
   CostCategory,
   Disclaimer,
@@ -197,6 +198,53 @@ function parseDisclaimer(raw: string): Disclaimer {
 }
 
 // ---------------------------------------------------------------------------
+// Alko benchmark — persisted as JSON.stringify(AlkoBenchmarkSnapshot);
+// malformed rows drop the field instead of inventing a placeholder
+// ---------------------------------------------------------------------------
+
+/**
+ * Narrow the persisted benchmark JSON to the core-domain snapshot.
+ * Anything outside the JSON-stable `available` shape (the `unavailable`
+ * variant, missing or non-finite figures, an unparseable timestamp)
+ * yields null — the mapper then omits the key entirely, the same
+ * render-nothing state as a record with no benchmark at all.
+ */
+function parseAlkoBenchmark(raw: unknown): AlkoBenchmarkSnapshot | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const entry = raw as Record<string, unknown>;
+
+  if (entry.status !== 'available') return null;
+  if (
+    typeof entry.referencePriceCents !== 'number' ||
+    !Number.isFinite(entry.referencePriceCents) ||
+    typeof entry.differenceCents !== 'number' ||
+    !Number.isFinite(entry.differenceCents) ||
+    typeof entry.differencePercent !== 'number' ||
+    !Number.isFinite(entry.differencePercent)
+  ) {
+    return null;
+  }
+  // Reliability outside the vocabulary drops the field — never overstated
+  // (the same policy toItemizedCost applies to cost lines).
+  if (!isReliabilityStatus(entry.reliabilityStatus)) return null;
+  if (
+    typeof entry.observedAt !== 'string' ||
+    Number.isNaN(new Date(entry.observedAt).getTime())
+  ) {
+    return null;
+  }
+
+  return {
+    status: 'available',
+    referencePriceCents: entry.referencePriceCents,
+    differenceCents: entry.differenceCents,
+    differencePercent: entry.differencePercent,
+    reliabilityStatus: entry.reliabilityStatus,
+    observedAt: entry.observedAt,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Flat convenience fields — sums of the persisted lines per category
 // ---------------------------------------------------------------------------
 
@@ -227,6 +275,7 @@ export function mapCalculationRecordToResult(
   const { record, product } = input;
 
   const itemizedCosts = parseItemizedCosts(record.breakdown);
+  const alkoBenchmark = parseAlkoBenchmark(record.alkoBenchmark);
 
   const datasetVersions: string[] = [];
   if (input.exciseVersionLabel !== null) {
@@ -261,6 +310,9 @@ export function mapCalculationRecordToResult(
         'Transaction classification is not persisted with the calculation ' +
         'record and cannot be shown for a past result.',
     },
+    // Persisted verbatim when the record has one; NULL/legacy rows emit
+    // NO key — absence is the render-nothing state, never null.
+    ...(alkoBenchmark !== null ? { alkoBenchmark } : {}),
     metadata: {
       input: {
         // CalculatorInput.productId IS the product-master ID (see
