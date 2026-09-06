@@ -34,11 +34,6 @@ export {
 } from '../../../../packages/core-domain/src/reliability/reliability.types';
 export type { ReliabilityStatus } from '../../../../packages/core-domain/src/reliability/reliability.types';
 
-// FX dataset service (FX review cron + Systembolaget SEK→EUR conversion)
-export { FxRateDatasetService } from '../../../../packages/core-domain/src/fx/fx-dataset.service';
-export { FX_DATASET_STATUSES } from '../../../../packages/core-domain/src/fx/fx-dataset.types';
-export { FX_RATE_DATASET_REPOSITORY_PORT } from '../../../../packages/core-domain/src/fx/ports/fx-rate-dataset-repository.port';
-
 // Feed mapping
 export { mapSourceCategory } from '../../../../packages/core-domain/src/normalization/source-category.mapper';
 

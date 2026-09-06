@@ -93,23 +93,6 @@ export interface ContainerDutyCalculation {
 export { TAX_RULE_REPOSITORY_PORT } from './tax/index';
 export type { ITaxRuleRepositoryPort, TaxRuleRecordPort, AbvTierConditions } from './tax/index';
 
-// ---------------------------------------------------------------------------
-// FX rate datasets — versioned, manually-confirmed conversion-rate datasets
-// ---------------------------------------------------------------------------
-
-export { FX_RATE_DATASET_REPOSITORY_PORT } from './fx/index';
-export type { IFxRateDatasetRepositoryPort } from './fx/index';
-export { FxRateDatasetService } from './fx/index';
-export type {
-  FxDatasetStatus,
-  FxDatasetVersion,
-  FxRateEntry,
-  NewFxDataset,
-  ResolvedFxDatasetRate,
-} from './fx/index';
-export { FX_DATASET_STATUSES } from './fx/index';
-export { FxModule, type FxModuleOptions } from './fx/index';
-
 // Tax formula reference constants — values stored in taxRules.calculationFormulaReference
 export {
   FORMULA_PER_LITRE_OF_PRODUCT,
