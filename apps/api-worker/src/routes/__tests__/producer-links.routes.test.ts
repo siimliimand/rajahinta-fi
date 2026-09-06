@@ -46,7 +46,7 @@ const LINK = {
   siblingProductId: 2,
   producerKey: '  Henri   COQUARD ',
   manufacturer: 'Henri Coquard S.A.S.',
-  sourceUrl: 'https://systembolaget.example/produkt/coquard-bourgogne',
+  sourceUrl: 'https://eu-import.example/produkt/coquard-bourgogne',
   reviewer: 'curator@example.invalid',
   reviewedAt: '2026-09-01T12:00:00.000Z',
 };
@@ -171,7 +171,7 @@ describe('/ops/console/producer-links — audited CRUD', () => {
     const updated = await post(app, e, `/ops/console/producer-links/${id}`, {
       operator: OPERATOR,
       producerKey: 'Coquard  Henri',
-      sourceUrl: 'https://systembolaget.example/produkt/coquard-v2',
+      sourceUrl: 'https://eu-import.example/produkt/coquard-v2',
     });
     expect(updated.status).toBe(200);
     expect(((await updated.json()) as { producerKey: string }).producerKey).toBe(

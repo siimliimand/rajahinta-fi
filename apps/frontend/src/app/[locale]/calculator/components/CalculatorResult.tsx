@@ -3,6 +3,7 @@
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import type {
+  AlkoBenchmark,
   CalculatorResult as CalculatorResultType,
   CostCategory,
   ReliabilityStatus,
@@ -61,28 +62,11 @@ function LocalizedReliabilityBadge({ status }: { status: ReliabilityStatus }) {
 }
 
 /**
- * Wire shape of the optional Alko benchmark. Declared locally and read
- * through a narrow lookup instead of `@/lib/types` — this task's touch
- * set is this component plus the catalogs, the same rule the flag
- * readers apply while the shared client type lags the API contract.
- * The backend emits the key only when a reference exists, so presence
- * implies the `'available'` variant.
- */
-interface AlkoBenchmarkView {
-  readonly status: 'available';
-  readonly referencePriceCents: number;
-  readonly differenceCents: number;
-  readonly differencePercent: number;
-  readonly reliabilityStatus: ReliabilityStatus;
-  readonly observedAt: string;
-}
-
-/**
  * The display-only Alko benchmark comparison. A separate section below
  * the itemized breakdown — never inside the total row — because the
  * reference is not a cost component of the landed cost.
  */
-function AlkoBenchmarkLine({ benchmark }: { benchmark: AlkoBenchmarkView }) {
+function AlkoBenchmarkLine({ benchmark }: { benchmark: AlkoBenchmark }) {
   const t = useTranslations('CalculatorResult');
   const postureKey =
     benchmark.differenceCents > 0
@@ -231,9 +215,7 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
   const tCommon = useTranslations('Common');
   const meta = result.metadata;
   const freshnessEntries = useFreshnessEntries(result);
-  const benchmark = (
-    result as CalculatorResultType & { alkoBenchmark?: AlkoBenchmarkView }
-  ).alkoBenchmark;
+  const benchmark = result.alkoBenchmark;
 
   return (
     <div className="space-y-6 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">

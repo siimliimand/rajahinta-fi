@@ -407,12 +407,12 @@ describe('PipelineOrchestratorService', () => {
 
       const reports = await service.runAll([
         MERCHANT,
-        { ...MERCHANT, merchantId: 'systembolaget' },
+        { ...MERCHANT, merchantId: 'eu-import' },
       ]);
 
       expect(reports).toHaveLength(2);
       expect(reports[0].merchantId).toBe('alko');
-      expect(reports[1].merchantId).toBe('systembolaget');
+      expect(reports[1].merchantId).toBe('eu-import');
     });
   });
 });

@@ -219,7 +219,7 @@ describe('/ops/console/curated-entries — audited CRUD', () => {
     // storage-side backstop — repo tests pin that rule).
     const external = await createEntry(app, e, {
       productId: undefined,
-      externalRef: 'https://systembolaget.example/produkt/karhu-export',
+      externalRef: 'https://eu-import.example/produkt/karhu-export',
       listSlug: 'alkon-hylkaamat',
     });
     expect(external.listSlug).toBe('alkon-hylkaamat');
@@ -239,7 +239,7 @@ describe('/ops/console/curated-entries — audited CRUD', () => {
     expect(filteredBody.total).toBe(1);
     expect(filteredBody.items[0].id).toBe(external.id);
     expect(filteredBody.items[0].externalRef).toBe(
-      'https://systembolaget.example/produkt/karhu-export',
+      'https://eu-import.example/produkt/karhu-export',
     );
 
     // One-sided target patch = wholesale swap (exactly-one invariant).

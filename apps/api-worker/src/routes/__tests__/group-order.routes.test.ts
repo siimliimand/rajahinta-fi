@@ -603,7 +603,7 @@ describe('POST /api/v1/group-orders/:shareToken/ledger', () => {
     const s = await setupWithLiveSession();
     seedProduct(s.db, { id: 1 });
     // Cheapest VERIFIED EUR offer wins: 280, regardless of the cheaper
-    // ESTIMATED 250, and the cheaper VERIFIED but non-EUR (SEK) 200 —
+    // ESTIMATED 250, and the cheaper VERIFIED but non-EUR (USD) 200 —
     // this layer never invents an FX conversion (documented rule).
     seedOffer(s.db, { id: 11, productId: 1, priceCents: 250, reliabilityStatus: 'ESTIMATED' });
     seedOffer(s.db, { id: 12, productId: 1, priceCents: 300, reliabilityStatus: 'VERIFIED' });
@@ -612,10 +612,10 @@ describe('POST /api/v1/group-orders/:shareToken/ledger', () => {
       `INSERT INTO retail_offers (
          id, merchant, country, product_id, price_cents, currency,
          availability, source_url, observed_at, reliability_status
-       ) VALUES (14, 'systembolaget', 'SE', 1, 200, 'SEK', 'in_stock',
+       ) VALUES (14, 'eu-import', 'FR', 1, 200, 'USD', 'in_stock',
                  'https://example.invalid/offer', ?, 'VERIFIED')`,
     ).run(new Date().toISOString());
-    // ^ the harness seedOffer pins currency 'EUR'; the SEK row is raw.
+    // ^ the harness seedOffer pins currency 'EUR'; the raw non-EUR row is literal.
     await addItem(s, s.shareToken, 'A', 1, 2); // 2 × 280 = 560
     await addItem(s, s.shareToken, 'B', 1, 1); // 1 × 280 = 280
 

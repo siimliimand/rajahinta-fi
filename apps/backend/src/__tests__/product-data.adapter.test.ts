@@ -84,7 +84,7 @@ describe('ProductDataAdapter.findRetailOffers', () => {
   });
 
   it('omits currency on a hypothetical non-EUR row — the contract reads absent as EUR', async () => {
-    const offers = await adapterWith([offerRow({ currency: 'SEK' })]).findRetailOffers(1);
+    const offers = await adapterWith([offerRow({ currency: 'USD' })]).findRetailOffers(1);
 
     expect('currency' in offers[0]).toBe(false);
     // The observation axis is independent of the currency narrowing.

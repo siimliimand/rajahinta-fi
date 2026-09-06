@@ -3,8 +3,9 @@
  *
  * Renders the REAL server component to an HTML string the way Next's RSC
  * runtime would (only Next server plumbing is mocked), pinning the D6
- * contract: the trust row names the data sources (Systembolaget feed,
- * Vero rate datasets), explains the reliability model by rendering the
+ * contract: the trust row names the data sources (published retailer
+ * datasets and the Alko domestic reference, Vero rate datasets), explains
+ * the reliability model by rendering the
  * four canonical statuses from RELIABILITY_STATUS_META, and links to the
  * same methodology destination (/ranking) the header and footer use —
  * all from static catalog copy, with no homepage API dependency.
@@ -75,13 +76,15 @@ describe('HomePage trust row (task 4.2, D6)', () => {
 
   it('renders the hero value prop unchanged', () => {
     expect(html).toContain(
-      'Laske alkoholijuomien tuonnin kokonaiskustannus Ruotsista ja muualta Euroopasta Suomeen',
+      'Laske alkoholijuomien tuonnin kokonaiskustannus ulkomailta Suomeen',
     );
   });
 
-  it('names both data sources: the Systembolaget feed and Vero rate datasets', () => {
+  it('names both data sources: published retailer datasets with the Alko reference, and Vero rate datasets', () => {
     expect(html).toContain('Aineistolähteet');
-    expect(html).toContain('Systembolagetin ja muiden eurooppalaisten vähittäismyyjien');
+    expect(html).toContain(
+      'vähittäismyyjien julkaisemiin aineistoihin ja Alkon kotimaiseen vertailuhintaan',
+    );
     expect(html).toContain('Verohallinnon virallisiin verokanta-aineistoihin');
   });
 

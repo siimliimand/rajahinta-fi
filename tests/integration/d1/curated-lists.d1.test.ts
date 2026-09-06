@@ -90,7 +90,7 @@ const ENTRY = {
   productId: 1,
   rationale: 'Alko poisti tuotteen valikoimasta; saatavissa yhä EU-alueen verkkokaupasta.',
   evidenceLinks: [
-    { label: 'Systembolaget', url: 'https://systembolaget.example/produkt/karhu-export' },
+    { label: 'EU Import', url: 'https://eu-import.example/produkt/karhu-export' },
   ],
   reviewer: 'curator@example.invalid',
 };

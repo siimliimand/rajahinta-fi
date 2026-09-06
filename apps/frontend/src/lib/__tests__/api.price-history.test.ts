@@ -67,7 +67,7 @@ function sampleResponse(): PriceHistoryResponse {
     ],
     attribution: [
       {
-        merchant: 'systembolaget',
+        merchant: 'eu-import',
         classification: 'TAX_RULE_CHANGE',
         fromObservedAt: '2026-01-01T06:00:00.000Z',
         toObservedAt: '2026-01-02T06:00:00.000Z',
@@ -122,7 +122,7 @@ describe('getPriceHistory()', () => {
       granularity: 'week',
       from: '2026-01-01',
       to: '2026-03-31',
-      merchant: 'systembolaget',
+      merchant: 'eu-import',
     });
 
     const calledUrl = (globalThis.fetch as ReturnType<typeof vi.fn>).mock
@@ -131,7 +131,7 @@ describe('getPriceHistory()', () => {
     expect(calledUrl).toContain('granularity=week');
     expect(calledUrl).toContain('from=2026-01-01');
     expect(calledUrl).toContain('to=2026-03-31');
-    expect(calledUrl).toContain('merchant=systembolaget');
+    expect(calledUrl).toContain('merchant=eu-import');
   });
 
   it('omits the merchant param when no merchant filter is given', async () => {

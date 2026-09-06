@@ -475,7 +475,7 @@ describe('GET /api/v1/merchants/reliability', () => {
     seedProduct(db, { id: 1 });
     seedProduct(db, { id: 2 });
     seedOffer(db, { id: 11, productId: 1, merchant: 'alko', reliabilityStatus: 'VERIFIED' });
-    seedOffer(db, { id: 22, productId: 2, merchant: 'systembolaget', reliabilityStatus: 'STALE' });
+    seedOffer(db, { id: 22, productId: 2, merchant: 'eu-import', reliabilityStatus: 'STALE' });
     const app = buildApp();
 
     const res = await request(app, permissiveEnv(d1), '/api/v1/merchants/reliability', {
@@ -484,7 +484,7 @@ describe('GET /api/v1/merchants/reliability', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { merchants: Array<Record<string, any>> };
 
-    expect(body.merchants.map((m) => m.merchant)).toEqual(['alko', 'systembolaget']);
+    expect(body.merchants.map((m) => m.merchant)).toEqual(['alko', 'eu-import']);
     const alko = body.merchants[0]!;
     expect(alko.offerCount).toBe(1);
     expect(alko.statusCounts).toEqual({ VERIFIED: 1, ESTIMATED: 0, STALE: 0, UNAVAILABLE: 0 });

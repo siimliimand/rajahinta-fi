@@ -22,7 +22,7 @@ const TRUST_ROW_STATUSES = [
  * Homepage (OpenSpec: design-system-foundation, tasks 4.1 + 4.2).
  *
  * Static catalog copy only (D6): one-sentence value prop answering what
- * importing alcohol from Sweden to Finland costs, the calculator as the
+ * importing alcohol from abroad to Finland costs, the calculator as the
  * primary call to action, quiet secondary links to the comparison view
  * and the ranking methodology, and a trust row naming the data sources,
  * the reliability model, and the methodology documentation. Typography

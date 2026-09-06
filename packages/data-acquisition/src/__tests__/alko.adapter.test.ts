@@ -113,7 +113,7 @@ describe('parseAlkoAssortment — contract guards', () => {
   it('rejects a payload from another source', () => {
     const { records, errors } = parseAlkoAssortment({
       ...ALKO_GOLDEN_PAYLOAD,
-      source: 'systembolaget',
+      source: 'other-merchant',
     });
     expect(records).toEqual([]);
     expect(errors[0]).toContain('expected "alko"');
@@ -122,7 +122,7 @@ describe('parseAlkoAssortment — contract guards', () => {
   it('rejects a non-EUR price list (Posti precedent — conversion is task 1.4)', () => {
     const { records, errors } = parseAlkoAssortment({
       ...ALKO_GOLDEN_PAYLOAD,
-      currency: 'SEK',
+      currency: 'USD',
     });
     expect(records).toEqual([]);
     expect(errors[0]).toContain('is not EUR');

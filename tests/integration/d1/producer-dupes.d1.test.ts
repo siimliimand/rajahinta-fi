@@ -102,7 +102,7 @@ interface DupesJson {
 /** Seed the two FK parents under one manufacturer. */
 function seedSiblingProducts(db: NonNullable<Parameters<typeof seedProduct>[0]>): void {
   seedProduct(db, { id: 1, name: 'Karjala III', manufacturer: 'Hartwall' });
-  seedProduct(db, { id: 2, name: 'Nakki III (Systembolaget)', manufacturer: 'Hartwall' });
+  seedProduct(db, { id: 2, name: 'Nakki III (EU Import)', manufacturer: 'Hartwall' });
 }
 
 /** Complete, well-evidenced insert — the baseline every bad case mutates. */
@@ -111,7 +111,7 @@ const FULL_LINK: ProducerLinkInsert = {
   siblingProductId: 2,
   producerKey: '  Hartwall ',
   manufacturer: 'Hartwall Oyj',
-  sourceUrl: 'https://systembolaget.example/karjala',
+  sourceUrl: 'https://eu-import.example/karjala',
   reviewer: 'curator@example.invalid',
   reviewedAt: '2026-09-01T12:00:00.000Z',
 };
@@ -318,7 +318,7 @@ describe('console-create → dupes absent → console-publish → dupes present 
         siblingProductId: 2,
         producerKey: 'hartwall',
         manufacturer: 'Hartwall Oyj',
-        sourceUrl: 'https://systembolaget.example/karjala',
+        sourceUrl: 'https://eu-import.example/karjala',
         reviewer: 'curator@example.invalid',
         reviewedAt: '2026-09-01T12:00:00.000Z',
       },

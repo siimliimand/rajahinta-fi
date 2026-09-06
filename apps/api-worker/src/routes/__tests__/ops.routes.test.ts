@@ -74,7 +74,7 @@ describe('ops console — deny before any data (ops-console.access parity)', () 
 describe('GET/POST /ops/console/governance', () => {
   it('lists registry merchants with fail-closed PENDING permission state', async () => {
     const { db, d1 } = openMigratedD1();
-    seedRegistryMerchant(db, { merchantId: 'systembolaget', name: 'Systembolaget' });
+    seedRegistryMerchant(db, { merchantId: 'eu-import', name: 'EU Import' });
     seedRegistryMerchant(db, { merchantId: 'alko', name: 'Alko', country: 'FI' });
     const app = buildApp();
 
@@ -84,7 +84,7 @@ describe('GET/POST /ops/console/governance', () => {
     expect(body.total).toBe(2);
     expect(body.items.map((m: Record<string, unknown>) => m.merchantId)).toEqual([
       'alko',
-      'systembolaget',
+      'eu-import',
     ]);
     for (const item of body.items) {
       expect(item.permissionStatus).toBe('PENDING');

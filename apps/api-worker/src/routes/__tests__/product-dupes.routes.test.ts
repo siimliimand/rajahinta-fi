@@ -82,7 +82,7 @@ async function seedPublishedLink(
     siblingProductId: overrides.siblingProductId ?? 2,
     producerKey: overrides.producerKey ?? '  Hartwall ',
     manufacturer: overrides.manufacturer ?? 'Hartwall Oyj',
-    sourceUrl: overrides.sourceUrl ?? 'https://systembolaget.example/hartwall-lager',
+    sourceUrl: overrides.sourceUrl ?? 'https://eu-import.example/hartwall-lager',
     reviewer: 'curator@example.invalid',
     reviewedAt: '2026-09-01T12:00:00.000Z',
   });
@@ -123,7 +123,7 @@ describe('GET /api/v1/products/:id/dupes — evidence-backed results', () => {
       siblingProductId: 3,
       producerKey: 'hartwall',
       manufacturer: 'Hartwall Oyj',
-      sourceUrl: 'https://systembolaget.example/koff',
+      sourceUrl: 'https://eu-import.example/koff',
       reviewer: 'curator@example.invalid',
       reviewedAt: '2026-09-02T12:00:00.000Z',
     });
@@ -142,7 +142,7 @@ describe('GET /api/v1/products/:id/dupes — evidence-backed results', () => {
         siblingProductId: 2,
         producerKey: 'hartwall',
         manufacturer: 'Hartwall Oyj',
-        sourceUrl: 'https://systembolaget.example/hartwall-lager',
+        sourceUrl: 'https://eu-import.example/hartwall-lager',
         reviewer: 'curator@example.invalid',
         reviewedAt: '2026-09-01T12:00:00.000Z',
       },

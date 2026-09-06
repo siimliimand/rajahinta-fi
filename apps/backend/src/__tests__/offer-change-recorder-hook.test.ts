@@ -7,7 +7,7 @@ function event(overrides: Partial<ChangedOfferEvent> = {}): ChangedOfferEvent {
   return {
     productId: 7,
     offerId: 902,
-    merchant: 'systembolaget',
+    merchant: 'eu-import',
     country: 'SE',
     priceCents: 1499,
     reliabilityStatus: 'VERIFIED',
@@ -29,7 +29,7 @@ describe('OfferChangeRecorderHook', () => {
       offer: {
         id: 902,
         priceCents: 1499,
-        merchant: 'systembolaget',
+        merchant: 'eu-import',
         country: 'SE',
         reliabilityStatus: 'VERIFIED',
       },

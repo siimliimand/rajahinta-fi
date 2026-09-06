@@ -327,7 +327,7 @@ describe('EUR-only invariant over stored offers (design D3)', () => {
       .prepare(
         `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
             currency, availability, observed_at, reliability_status)
-         VALUES (8201, ?, 'DE', ?, 199, 'SEK', 'in_stock',
+         VALUES (8201, ?, 'DE', ?, 199, 'USD', 'in_stock',
                  '2026-09-06T00:00:00.000Z', 'ESTIMATED')`,
       )
       .bind(MERCHANT, PRODUCT_ID)

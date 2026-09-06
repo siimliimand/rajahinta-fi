@@ -2,8 +2,8 @@
  * Alko feed adapter (task 7.5, change technical-assessment-remediation;
  * design D7/D6).
  *
- * The domestic reference merchant: Alko's assortment through the same
- * adapter interface and governance gate as Systembolaget. No live API
+ * The domestic reference merchant: Alko's assortment through the shared
+ * feed-adapter interface and governance gate. No live API
  * entitlement exists yet — the payload contract below is pinned by the
  * golden-dataset fixture (adapters/__fixtures__/alko-assortment.fixture.ts)
  * exactly like the Posti carrier source, so when a real feed is wired
@@ -14,8 +14,8 @@
  * `currency` ("EUR" — the domestic reference list is EUR by definition;
  * a non-EUR list is rejected per the Posti precedent), and a `products`
  * array. Each row names the product, its Finnish assortment group
- * ("Olut", "Viini", … — mapped through the same source-category
- * normalization as the Swedish groups), ABV, volume, and the price
+ * ("Olut", "Viini", … — mapped through the source-category
+ * normalization, like the historical assortment-group tokens), ABV, volume, and the price
  * including VAT. Rows failing validation are reported per-row, never
  * guessed around.
  *
@@ -84,7 +84,7 @@ function readAbv(value: unknown): number | null {
  * non-EUR list, or a missing products array is a payload-level error;
  * individual invalid rows (unmappable category, missing or invalid
  * price) are reported per-row and skipped — the correction-queue
- * surface shared with the Systembolaget adapter.
+ * surface shared across feed adapters.
  */
 export function parseAlkoAssortment(payload: unknown): {
   records: RawFeedRecord[];
