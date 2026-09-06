@@ -82,9 +82,6 @@ interface D1RetailOfferRow {
   readonly product_id: number;
   readonly price_cents: number;
   readonly currency: string;
-  readonly original_price_cents: number | null;
-  readonly original_currency: string | null;
-  readonly fx_dataset_version: string | null;
   readonly availability: string;
   readonly source_url: string | null;
   readonly observed_at: string;
@@ -191,9 +188,6 @@ function toContractOffer(row: D1RetailOfferRow): RetailOfferRecord {
     productId: row.product_id,
     priceCents: row.price_cents,
     currency: row.currency,
-    originalPriceCents: row.original_price_cents,
-    originalCurrency: row.original_currency,
-    fxDatasetVersion: row.fx_dataset_version,
     availability: row.availability,
     sourceUrl: row.source_url,
     observedAt: new Date(row.observed_at),
@@ -388,7 +382,6 @@ export class D1ProductSearchRepository extends ProductRepository {
       await this.d1
         .prepare(
           `SELECT id, merchant, country, product_id, price_cents, currency,
-                  original_price_cents, original_currency, fx_dataset_version,
                   availability, source_url, observed_at, reliability_status
              FROM retail_offers
             WHERE product_id = ?
@@ -405,7 +398,6 @@ export class D1ProductSearchRepository extends ProductRepository {
     const row = await this.d1
       .prepare(
         `SELECT id, merchant, country, product_id, price_cents, currency,
-                original_price_cents, original_currency, fx_dataset_version,
                 availability, source_url, observed_at, reliability_status
            FROM retail_offers WHERE id = ?`,
       )

@@ -26,8 +26,6 @@ export {
   savedScenarios,
   merchantTerms,
   basketCalculationRecords,
-  fxRateDatasets,
-  fxRates,
   sessions,
   auditEvents,
   clickCounterSnapshots,

@@ -145,26 +145,13 @@ export const retailOffers = sqliteTable(
       .references(() => productMaster.id)
       .notNull(),
     /**
-     * Retail price in EUR cents — the canonical stored amount. Non-EUR feed
-     * prices are converted at ingestion (design D2); a foreign-currency
-     * amount never enters this column.
+     * Retail price in EUR cents — the canonical stored amount. Offers are
+     * EUR-only (design D3, change drop-sweden-eur-only-alko-benchmark); a
+     * foreign-currency amount never enters this column.
      */
     priceCents: integer('price_cents').notNull(),
-    /** Canonical price currency — always 'EUR' after ingestion conversion. */
+    /** Canonical price currency — pinned to 'EUR' (design D3). */
     currency: text('currency', { length: 3 }).default('EUR').notNull(),
-    /**
-     * Original list price in the source currency's smallest unit, kept for
-     * display. Null on rows written before conversion provenance existed
-     * (EUR-native feeds may also omit it).
-     */
-    originalPriceCents: integer('original_price_cents'),
-    /** Source-market currency of original_price_cents (ISO 4217). */
-    originalCurrency: text('original_currency', { length: 3 }),
-    /**
-     * FX dataset version (fx_rate_datasets.version_label) that produced the
-     * conversion — present exactly when the original currency was not EUR.
-     */
-    fxDatasetVersion: text('fx_dataset_version', { length: 64 }),
     /** Stock status — filters out-of-stock offers from price comparisons. */
     availability: text('availability', { length: 16 }).default('unknown').notNull(),
     /** Provenance link to source product page. */
@@ -722,89 +709,6 @@ export const basketCalculationRecords = sqliteTable(
 );
 
 /**
- * Versioned FX rate datasets — never overwritten, always appended.
- *
- * Mirrors the tax-rules governance treatment (design D2, change
- * technical-assessment-remediation): each dataset is dated, versioned,
- * and carries source provenance plus an effective window. A dataset is
- * created in PENDING_CONFIRMATION status and only becomes effective
- * through the explicit publishDataset repository call performed by a
- * human operator — never automatically. Historical versions remain
- * queryable after a new version is published.
- */
-export const fxRateDatasets = sqliteTable(
-  'fx_rate_datasets',
-  {
-    id: integer('id').primaryKey(),
-    /** Human-readable version label (e.g. "ecb-2026-08-28.1") — unique dataset identity for cache invalidation and provenance. */
-    versionLabel: text('version_label', { length: 64 }).unique().notNull(),
-    /** Provenance: source adapter that fetched the payload (e.g. "ecb-reference-rates"). */
-    sourceName: text('source_name', { length: 128 }).notNull(),
-    /** Provenance: link to the source publication the rates were taken from. */
-    sourceUrl: text('source_url', { length: 512 }),
-    /** Date the source published these rates — the "as of" date of the payload. TEXT 'YYYY-MM-DD' (pg `date`). */
-    referenceDate: text('reference_date').notNull(),
-    /** Lifecycle: PENDING_CONFIRMATION until a human publishes; PUBLISHED is terminal. */
-    status: text('status', { length: 32 }).default('PENDING_CONFIRMATION').notNull(),
-    /** Start of the effective window (inclusive) — conversion uses the dataset effective on the observation date. */
-    effectiveFrom: text('effective_from').notNull(),
-    /** End of the effective window (exclusive, null = current/active dataset). */
-    effectiveTo: text('effective_to'),
-    /** Operator who published the dataset — null while unconfirmed (auditability of the manual step). */
-    confirmedBy: text('confirmed_by', { length: 128 }),
-    /** When the dataset was published — null while unconfirmed. */
-    confirmedAt: text('confirmed_at'),
-    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
-  },
-  (table) => [
-    check(
-      'fx_rate_datasets_status_check',
-      sql`${table.status} IN ('PENDING_CONFIRMATION', 'PUBLISHED')`,
-    ),
-  ],
-);
-
-/**
- * FX rates — the per-currency-pair rows of a versioned dataset.
- *
- * Append-only alongside its dataset: once the dataset is published the
- * rows are immutable, so a conversion ever made is reproducible. Rates
- * are stored in the source's direction (ECB: base EUR, quote foreign);
- * inversion is a domain-policy decision, never a storage-level one.
- */
-export const fxRates = sqliteTable(
-  'fx_rates',
-  {
-    id: integer('id').primaryKey(),
-    /** FK to fx_rate_datasets — the version this rate belongs to. */
-    datasetId: integer('dataset_id')
-      .references(() => fxRateDatasets.id)
-      .notNull(),
-    /** Base currency (ISO 4217) — 1 unit of base = rate units of quote. */
-    baseCurrency: text('base_currency', { length: 3 }).notNull(),
-    /** Quote currency (ISO 4217). */
-    quoteCurrency: text('quote_currency', { length: 3 }).notNull(),
-    /**
-     * Exchange rate: units of quote currency per 1 unit of base.
-     * REAL: pg numeric(24,12) has no SQLite equivalent; rates are stored
-     * as IEEE-754 doubles (ECB reference rates carry ~6 decimals, well
-     * within double precision).
-     */
-    rate: real('rate').notNull(),
-    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
-  },
-  (table) => [
-    // One row per currency pair per dataset version — appending the same
-    // pair twice for a version is a fetch bug, not a new rate.
-    unique('fx_rates_dataset_pair_unique').on(
-      table.datasetId,
-      table.baseCurrency,
-      table.quoteCurrency,
-    ),
-  ],
-);
-
-/**
  * Sessions — server-issued opaque session tokens (design D3, change
  * technical-assessment-remediation).
  *
@@ -851,7 +755,7 @@ export const sessions = sqliteTable(
  * technical-assessment-remediation).
  *
  * One row per domain AuditEntry: every change to tax-rule datasets,
- * FX datasets, classification rules, or governance state lands here.
+ * Classification rules or governance state lands here.
  * The domain entry id (UUID) is the primary key — rows are never
  * updated or deleted by application code; there is deliberately no
  * retention path, matching the in-memory contract the tests rely on.
@@ -861,7 +765,7 @@ export const auditEvents = sqliteTable(
   {
     /** Domain AuditEntry id (UUID) — identity is assigned at emission, not by storage. */
     id: text('id', { length: 64 }).primaryKey(),
-    /** High-liability entity type (e.g. 'tax_rule', 'fx_rate_dataset', 'account'). */
+    /** High-liability entity type (e.g. 'tax_rule', 'account'). */
     entityType: text('entity_type', { length: 64 }).notNull(),
     /** Entity-specific identifier (rule id, version label, user id). */
     entityId: text('entity_id', { length: 128 }).notNull(),
@@ -1592,8 +1496,6 @@ export const d1Schema = {
   alertNotifications,
   merchantTerms,
   basketCalculationRecords,
-  fxRateDatasets,
-  fxRates,
   sessions,
   auditEvents,
   clickCounterSnapshots,
