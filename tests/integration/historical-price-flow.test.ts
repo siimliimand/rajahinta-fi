@@ -38,10 +38,10 @@
  *   2026-01-01T10:00Z beverage-de   price 200, excise v1 (36.20 ¢/cl) = 91 ¢
  *   2026-01-02T10:00Z beverage-de   price 200, excise v2 (40.00 ¢/cl) = 100 ¢  ← tax boundary
  *   2026-01-03T10:00Z beverage-de   price 250, excise v2                 = 100 ¢  ← merchant move
- *   2026-01-01T12:00Z systembolaget price 300, excise v1                 = 91 ¢
- *   2026-01-02T12:00Z systembolaget price 300, excise v2                 = 100 ¢  ← tax boundary
+ *   2026-01-01T12:00Z eu-import price 300, excise v1                 = 91 ¢
+ *   2026-01-02T12:00Z eu-import price 300, excise v2                 = 100 ¢  ← tax boundary
  * Landed cost = price + excise + container duty (0 ¢ — deposit exempt)
- *             + transport (beverage-de 150 ¢, systembolaget 180 ¢).
+ *             + transport (beverage-de 150 ¢, eu-import 180 ¢).
  *
  * @module HistoricalPriceFlowIntegrationTest
  */
@@ -303,7 +303,7 @@ const TRANSPORT_OFFERS: TransportOffer[] = [
   },
   {
     id: 901,
-    carrier: 'systembolaget',
+    carrier: 'eu-import',
     originCountry: 'DE',
     destinationCountry: 'FI',
     weightBracket: { minKg: 0, maxKg: 1 },
@@ -766,8 +766,8 @@ const TIMELINE = [
   { merchant: 'beverage-de', offerId: 100, priceCents: 200, at: '2026-01-01T10:00:00Z', landed: 441, exciseRuleId: 102 },
   { merchant: 'beverage-de', offerId: 101, priceCents: 200, at: '2026-01-02T10:00:00Z', landed: 450, exciseRuleId: 104 },
   { merchant: 'beverage-de', offerId: 102, priceCents: 250, at: '2026-01-03T10:00:00Z', landed: 500, exciseRuleId: 104 },
-  { merchant: 'systembolaget', offerId: 103, priceCents: 300, at: '2026-01-01T12:00:00Z', landed: 571, exciseRuleId: 102 },
-  { merchant: 'systembolaget', offerId: 104, priceCents: 300, at: '2026-01-02T12:00:00Z', landed: 580, exciseRuleId: 104 },
+  { merchant: 'eu-import', offerId: 103, priceCents: 300, at: '2026-01-01T12:00:00Z', landed: 571, exciseRuleId: 102 },
+  { merchant: 'eu-import', offerId: 104, priceCents: 300, at: '2026-01-02T12:00:00Z', landed: 580, exciseRuleId: 104 },
 ] as const;
 
 /** Permissive rate limiter — never throttles during tests (e2e convention). */
@@ -1029,7 +1029,7 @@ describe('Historical price intelligence — ingestion → observation → aggreg
         '2026-01-03',
       ]);
 
-      // 2026-01-01: beverage-de 10:00 (200/441) then systembolaget 12:00 (300/571).
+      // 2026-01-01: beverage-de 10:00 (200/441) then eu-import 12:00 (300/571).
       expect(daily[0]).toMatchObject({
         granularity: 'daily',
         productId: PRODUCT_BEER.id,
@@ -1217,7 +1217,7 @@ describe('Historical price intelligence — ingestion → observation → aggreg
       // Deterministic order: chronological by toObservedAt.
       const [taxA, taxB, priceMove] = attribution;
       expect(taxA.merchant).toBe('beverage-de');
-      expect(taxB.merchant).toBe('systembolaget');
+      expect(taxB.merchant).toBe('eu-import');
       expect(priceMove.merchant).toBe('beverage-de');
 
       // Both merchants crossed the injected excise boundary with an
@@ -1254,10 +1254,10 @@ describe('Historical price intelligence — ingestion → observation → aggreg
 
     it('scopes series, attribution, and earliest date to the requested merchant', async () => {
       const res = await get(
-        'from=2026-01-01&to=2026-01-03&merchant=systembolaget',
+        'from=2026-01-01&to=2026-01-03&merchant=eu-import',
       ).expect(200);
 
-      expect(res.body.merchant).toBe('systembolaget');
+      expect(res.body.merchant).toBe('eu-import');
       expect(res.body.series).toHaveLength(2);
       expect(res.body.series[0]).toEqual({
         periodStart: '2026-01-01',
@@ -1273,7 +1273,7 @@ describe('Historical price intelligence — ingestion → observation → aggreg
       const attribution = res.body.attribution;
       expect(attribution).toHaveLength(1);
       expect(attribution[0].classification).toBe('TAX_RULE_CHANGE');
-      expect(attribution[0].merchant).toBe('systembolaget');
+      expect(attribution[0].merchant).toBe('eu-import');
 
       expect(res.body.earliestAvailableObservationDate).toBe(
         '2026-01-01T12:00:00.000Z',

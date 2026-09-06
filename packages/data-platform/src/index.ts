@@ -16,8 +16,6 @@ export {
   aggregationWatermarks,
   merchantTerms,
   basketCalculationRecords,
-  fxRateDatasets,
-  fxRates,
   sessions,
   auditEvents,
   clickCounterSnapshots,
@@ -41,7 +39,6 @@ export {
   AggregationWatermarkRepository,
   MerchantTermsRepository,
   BasketCalculationRecordRepository,
-  FxRateRepository,
   SessionRepository,
   MerchantRegistryRepository,
   ClickCounterSnapshotRepository,
@@ -55,9 +52,6 @@ export type {
   BasketCalculationRecord,
   SavedScenarioInputs,
   SavedScenarioRecord,
-  FxRateDatasetRecord,
-  FxRateRow,
-  ResolvedFxRate,
   SessionRecord,
   MerchantRegistryRecord,
   ClickCounterSnapshotRecord,
@@ -81,8 +75,6 @@ export { DrizzlePriceHistorySummaryRepository } from './repositories/price-histo
 export { DrizzleAggregationWatermarkRepository } from './repositories/aggregation-watermark.repository';
 export { DrizzleMerchantTermsRepository } from './repositories/merchant-terms.repository';
 export { DrizzleBasketCalculationRecordRepository } from './repositories/basket-calculation-record.repository';
-export { DrizzleFxRateRepository } from './repositories/fx-rate.repository';
-export { FxRateDatasetRepositoryAdapter } from './repositories/fx-rate-port.adapter';
 export { DrizzleSessionRepository } from './repositories/session.repository';
 export { DrizzleAuditEventRepository } from './repositories/audit-event.repository';
 export { DrizzleMerchantRegistryRepository } from './repositories/merchant-registry.repository';

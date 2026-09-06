@@ -78,6 +78,20 @@
       "when": 1789108816147,
       "tag": "0011_curated_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1789195216147,
+      "tag": "0012_drop_fx_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1789273616147,
+      "tag": "0013_calculation_records_alko_benchmark",
+      "breakpoints": true
     }
   ]
 }

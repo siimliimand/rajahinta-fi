@@ -372,12 +372,40 @@ export interface OriginalPrice {
   readonly currency: string;
 }
 
+/**
+ * Factual comparison of the calculated offer against the product's Alko
+ * reference price (change drop-sweden-eur-only-alko-benchmark). Display
+ * only: it never enters `totalCents` or the itemized breakdown.
+ *
+ * Absence handling: the API emits the key only when a reference offer
+ * exists, so no `'unavailable'` variant exists — an omitted key is the
+ * normal "no reference" state (pre-change records included), never an
+ * error.
+ */
+export interface AlkoBenchmark {
+  readonly status: 'available';
+  /** Alko reference price in EUR cents. */
+  readonly referencePriceCents: number;
+  /** Calculated offer − reference, EUR cents (negative = import cheaper). */
+  readonly differenceCents: number;
+  /** Difference as percent of the reference, one decimal. */
+  readonly differencePercent: number;
+  readonly reliabilityStatus: ReliabilityStatus;
+  /** Observation timestamp of the reference offer, ISO 8601. */
+  readonly observedAt: string;
+}
+
 export interface CalculatorResult {
   readonly itemizedCosts: readonly ItemizedCost[];
   /** Offers excluded for lacking a valid EUR conversion (task 1.5). */
   readonly excludedOffers: readonly OfferExclusion[];
   /** Original (pre-conversion) price of the selected offer, when any. */
   readonly originalRetailPrice?: OriginalPrice;
+  /**
+   * Display-only Alko reference comparison — present only when the
+   * product has Alko reference offers; absent otherwise (never null).
+   */
+  readonly alkoBenchmark?: AlkoBenchmark;
   readonly foreignRetailPrice: number;
   readonly transportCost: number;
   readonly alcoholExciseEstimate: number;
@@ -649,19 +677,6 @@ export interface OpsGovernanceMutationResponse {
   readonly changed: boolean;
 }
 
-/** A pending FX dataset awaiting operator confirmation. */
-export interface OpsPendingFxDataset {
-  readonly id: number;
-  readonly versionLabel: string;
-  readonly status: 'PENDING_CONFIRMATION';
-  readonly sourceName: string;
-  readonly sourceUrl: string | null;
-  readonly referenceDate: string;
-  readonly effectiveFrom: string;
-  readonly effectiveTo: string | null;
-  readonly rates: readonly { baseCurrency: string; quoteCurrency: string; rate: number }[];
-}
-
 /** A pending tax rate-review entry. */
 export interface OpsPendingTaxReview {
   readonly id: string;
@@ -675,17 +690,7 @@ export interface OpsPendingTaxReview {
 
 /** GET /ops/console/confirmations response. */
 export interface OpsConfirmationListResponse {
-  readonly fx: OpsPendingFxDataset[];
   readonly taxReviews: OpsPendingTaxReview[];
-}
-
-/** FX confirmation response. */
-export interface OpsFxDatasetConfirmedResponse {
-  readonly id: number;
-  readonly versionLabel: string;
-  readonly status: 'PUBLISHED';
-  readonly confirmedAt: string;
-  readonly invalidatedVersion: string | null;
 }
 
 /** Tax review approval/rejection response. */

@@ -20,7 +20,7 @@ import {
 const RECORD: ObservationLogRecord = {
   id: 42,
   product_id: 7,
-  merchant: 'systembolaget',
+  merchant: 'eu-import',
   retail_offer_id: 101,
   observed_at: '2026-08-15T10:30:00.000Z',
   foreign_retail_price_cents: 1990,

@@ -5,17 +5,12 @@ TBD - created by archiving change phase1-mvp. Update Purpose after archive.
 ## Requirements
 ### Requirement: Calculator UI
 
-The web application SHALL provide a calculator UI to search for a product, select quantity, select transport arrangement (seller-arranged / independent carrier / personal), and display the itemized breakdown with calculation-status metadata and confidence level. When the transport arrangement is personal, the UI SHALL surface the Traveller Import outcome and its excluded-from-this-calculator messaging.
+The calculator result view SHALL render an Alko benchmark line when the result carries the optional `alkoBenchmark` field: the Alko price, the difference in euros and percent, and the reference's reliability badge and timestamp. Wording SHALL be factual in both locales, including the plain statement when importing is not cheaper. The line SHALL NOT render when the field is absent, and SHALL never display as part of the total.
 
-#### Scenario: User runs a calculation
+#### Scenario: Benchmark line rendering
 
-- **WHEN** a user selects a product and quantity
-- **THEN** the UI SHALL display the itemized breakdown with confidence level and status metadata
-
-#### Scenario: Personal transport selection
-
-- **WHEN** a user selects personal transport and calculates
-- **THEN** the UI SHALL display the Traveller Import classification outcome and its messaging instead of a distance-selling/buying breakdown
+- **WHEN** a result with a benchmark field is displayed, and a pre-change record without one is displayed
+- **THEN** the first shows the factual benchmark line below the breakdown and the second shows the result unchanged with no placeholder
 
 ### Requirement: Explanation page
 
@@ -285,17 +280,12 @@ Buttons, badges, cards, and inputs SHALL be shared React components under `compo
 
 ### Requirement: Homepage value proposition
 
-The home page SHALL state in one sentence what the service calculates, offer the calculator as the primary call to action, and present trust content: the data sources, the reliability status model, and a link to the ranking methodology. The trust content SHALL be static catalog copy and SHALL NOT add backend API calls to the page. All homepage copy SHALL pass the content-policy lint in Finnish and English.
+The homepage value proposition and trust row SHALL describe the service without naming Sweden or Systembolaget: the landed-cost proposition in one sentence, the data model phrased as published retailer datasets plus the Alko domestic reference, the reliability model with its four statuses, and the methodology link. All copy SHALL exist in both locales and pass the content-policy lint.
 
-#### Scenario: First-time visitor understands the service
+#### Scenario: No residual market naming
 
-- **WHEN** a visitor opens the home page
-- **THEN** the page SHALL explain what the calculator does and how to start without scrolling past a hero
-
-#### Scenario: Copy passes content lint
-
-- **WHEN** either locale catalog contains forbidden marketing vocabulary
-- **THEN** `pnpm lint:content` SHALL fail
+- **WHEN** the fi and en message catalogs are linted
+- **THEN** no homepage or trust-row string names Sweden, Systembolaget, or a Swedish market, and translation coverage is complete in both locales
 
 ### Requirement: Designed non-happy states
 

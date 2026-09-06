@@ -382,7 +382,7 @@ describe('eurPerGram embed (flag UNIT_PRICE_EUR_PER_GRAM)', () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1 });
     seedOffer(db, { id: 11, productId: 1, priceCents: 350 });
-    seedOffer(db, { id: 12, productId: 1, priceCents: 420, merchant: 'systembolaget' });
+    seedOffer(db, { id: 12, productId: 1, priceCents: 420, merchant: 'eu-import' });
     const app = buildApp();
 
     const on = await request(

@@ -26,7 +26,12 @@ export interface MerchantRegistrySeedRow {
   readonly pollingIntervalMs: number;
 }
 
-/** The initial merchant set — same values as the retired static config. */
+/**
+ * The initial merchant set — Alko only. The foreign-catalog merchant was
+ * removed with its adapter (change drop-sweden-eur-only-alko-benchmark);
+ * the merchant-removal purge script under scripts/ removes its rows from
+ * environments that ingested it.
+ */
 export const MERCHANT_REGISTRY_SEED: readonly MerchantRegistrySeedRow[] = [
   {
     merchantId: 'alko',
@@ -35,14 +40,6 @@ export const MERCHANT_REGISTRY_SEED: readonly MerchantRegistrySeedRow[] = [
     // Adapter pending (task 7.5) — empty feed URL is skipped by the
     // pipeline, matching the static config's convention.
     feedUrl: '',
-    feedFormat: 'json',
-    pollingIntervalMs: 3_600_000,
-  },
-  {
-    merchantId: 'systembolaget',
-    name: 'Systembolaget',
-    country: 'SE',
-    feedUrl: 'https://www.systembolaget.se/api/assortment',
     feedFormat: 'json',
     pollingIntervalMs: 3_600_000,
   },

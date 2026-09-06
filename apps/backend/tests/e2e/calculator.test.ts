@@ -584,10 +584,15 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
         expect(result).toHaveProperty('alcoholExciseEstimate');
         expect(result).toHaveProperty('containerDutyEstimate');
         // Task 10.3 removed otherCharges from the result shape — the key
-        // must be absent (task 5.3-era contract), and the task-1.5
-        // exclusion fields are part of the live response.
+        // must be absent (task 5.3-era contract). The EUR-only contract
+        // (drop-sweden-eur-only-alko-benchmark) removed the SEK-exclusion
+        // and conversion-provenance fields — those keys must be absent too.
         expect(result).not.toHaveProperty('otherCharges');
-        expect(result).toHaveProperty('excludedOffers');
+        expect(result).not.toHaveProperty('excludedOffers');
+        expect(result).not.toHaveProperty('originalRetailPrice');
+        expect(result).not.toHaveProperty('originalPriceCents');
+        expect(result).not.toHaveProperty('originalCurrency');
+        expect(result).not.toHaveProperty('fxDatasetVersion');
 
         // --- Itemized costs ---
         expect(result.itemizedCosts).toBeInstanceOf(Array);
@@ -623,10 +628,10 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
         expect(result.containerDutyEstimate).toBe(0);
         // Task 10.3: otherCharges no longer exists — key absent, not zero.
         expect('otherCharges' in result).toBe(false);
-        // The seeded offer is a legacy EUR read model (no conversion
-        // fields) — validly summable, so no exclusions (task 1.5).
-        expect(result.excludedOffers).toEqual([]);
-        expect(result.originalRetailPrice).toBeUndefined();
+        // EUR-only contract: exclusion and conversion-provenance fields
+        // are gone from the response — keys absent, not empty values.
+        expect('excludedOffers' in result).toBe(false);
+        expect('originalRetailPrice' in result).toBe(false);
         expect(result.totalCents).toBe(441);
       });
 

@@ -101,9 +101,8 @@ export function seedGoldenProducts(db: DatabaseSync): number {
   const insertOffer = db.prepare(
     `INSERT INTO retail_offers (
        id, merchant, country, product_id, price_cents, currency,
-       original_price_cents, original_currency, fx_dataset_version,
        availability, source_url, reliability_status
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'in_stock', ?, ?)`,
+     ) VALUES (?, ?, ?, ?, ?, ?, 'in_stock', ?, ?)`,
   );
 
   let offerCount = 0;
@@ -141,9 +140,6 @@ function seedGoldenProductWithOffers(
       product.id,
       offer.priceCents,
       offer.currency ?? 'EUR',
-      offer.originalPriceCents ?? null,
-      offer.originalCurrency ?? null,
-      offer.fxDatasetVersion ?? null,
       'https://golden.invalid/offers',
       storableReliability(offer.reliabilityStatus),
     );

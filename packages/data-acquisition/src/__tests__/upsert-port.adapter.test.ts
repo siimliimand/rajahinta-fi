@@ -49,14 +49,11 @@ function createDbStub(
 
 function offerInput(overrides: Partial<UpsertOfferInput> = {}): UpsertOfferInput {
   return {
-    merchant: 'systembolaget',
-    country: 'SE',
+    merchant: 'alko',
+    country: 'FI',
     productId: 7,
     priceCents: 1499,
     currency: 'EUR',
-    originalPriceCents: 16900,
-    originalCurrency: 'SEK',
-    fxDatasetVersion: 'ecb-2026-08-27.1',
     availability: 'in_stock',
     sourceUrl: 'https://example.com/p7',
     observedAt: new Date('2026-08-26T10:00:00Z'),
@@ -96,7 +93,7 @@ describe('DrizzleUpsertRepository.upsertOffer — offer-level change detection',
     expect(result).toEqual({ offerId: 902, changed: false });
   });
 
-  it('persists the conversion-provenance columns alongside the EUR cents (FIX-F)', async () => {
+  it('persists the EUR offer without any FX provenance fields (design D3)', async () => {
     const inserted: unknown[] = [];
     const repo = new DrizzleUpsertRepository(
       createDbStub([[], [{ id: 903 }]], (payload) => inserted.push(payload)),
@@ -109,33 +106,12 @@ describe('DrizzleUpsertRepository.upsertOffer — offer-level change detection',
       expect.objectContaining({
         priceCents: 1499,
         currency: 'EUR',
-        originalPriceCents: 16900,
-        originalCurrency: 'SEK',
-        fxDatasetVersion: 'ecb-2026-08-27.1',
       }),
     );
-  });
-
-  it('inserts null provenance for EUR-native offers — columns exist, values absent', async () => {
-    const inserted: unknown[] = [];
-    const repo = new DrizzleUpsertRepository(
-      createDbStub([[], [{ id: 904 }]], (payload) => inserted.push(payload)),
-    );
-
-    await repo.upsertOffer(
-      offerInput({
-        originalPriceCents: 1499,
-        originalCurrency: 'EUR',
-        fxDatasetVersion: null,
-      }),
-    );
-
-    expect(inserted[0]).toEqual(
-      expect.objectContaining({
-        originalPriceCents: 1499,
-        originalCurrency: 'EUR',
-        fxDatasetVersion: null,
-      }),
-    );
+    // The provenance columns are gone (migration 0012) and the upsert
+    // input no longer carries the fields at all.
+    expect(inserted[0]).not.toHaveProperty('originalPriceCents');
+    expect(inserted[0]).not.toHaveProperty('originalCurrency');
+    expect(inserted[0]).not.toHaveProperty('fxDatasetVersion');
   });
 });

@@ -75,13 +75,13 @@ function createAdapter(
 
 describe('PipelinePriceIngestionAdapter (registry-backed)', () => {
   it('runs the pipeline with the configuration derived from the registry row', async () => {
-    const row = registryRow('systembolaget', { country: 'SE', feedFormat: 'json' });
+    const row = registryRow('eu-import', { country: 'FR', feedFormat: 'json' });
     const { adapter, pipeline } = createAdapter(
-      fakeRegistry(async (id) => (id === 'systembolaget' ? row : null)),
+      fakeRegistry(async (id) => (id === 'eu-import' ? row : null)),
     );
 
     const result = await adapter.ingestMerchantPrices(
-      'systembolaget',
+      'eu-import',
       'https://stale-url-from-job-data.example.invalid',
     );
 
@@ -89,9 +89,9 @@ describe('PipelinePriceIngestionAdapter (registry-backed)', () => {
     expect(result.errors).toEqual([]);
     expect(pipeline.runForMerchant).toHaveBeenCalledTimes(1);
     expect(pipeline.runForMerchant).toHaveBeenCalledWith({
-      merchantId: 'systembolaget',
-      name: 'systembolaget',
-      country: 'SE',
+      merchantId: 'eu-import',
+      name: 'eu-import',
+      country: 'FR',
       feedUrl: row.feedUrl,
       feedFormat: 'json',
       pollingIntervalMs: 3_600_000,

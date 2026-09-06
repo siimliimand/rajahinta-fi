@@ -15,7 +15,6 @@ import type {
   CorrectionListResponse,
   OpsAuditListResponse,
   OpsConfirmationListResponse,
-  OpsFxDatasetConfirmedResponse,
   OpsGovernanceListResponse,
   OpsGovernanceMutationResponse,
   OpsTaxReviewResolvedResponse,
@@ -109,18 +108,6 @@ export function listConfirmations(
   token: string,
 ): Promise<OpsConfirmationListResponse> {
   return opsFetch<OpsConfirmationListResponse>(token, '/ops/console/confirmations');
-}
-
-export function confirmFxDataset(
-  token: string,
-  datasetId: number,
-  body: { operator: string; note?: string },
-): Promise<OpsFxDatasetConfirmedResponse> {
-  return opsFetch<OpsFxDatasetConfirmedResponse>(
-    token,
-    `/ops/console/confirmations/fx/${datasetId}/confirm`,
-    { method: 'POST', body: JSON.stringify(body) },
-  );
 }
 
 export function resolveTaxReview(

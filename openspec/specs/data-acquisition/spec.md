@@ -5,12 +5,17 @@ TBD - created by archiving change phase1-mvp. Update Purpose after archive.
 ## Requirements
 ### Requirement: Permitted-source ingestion
 
-The system SHALL acquire product and price data only from permitted feeds, retailer APIs, structured merchant feeds, licensed providers, or compliant crawling, and SHALL record the acquisition method for each source.
+The pipeline SHALL ingest only merchants with `GRANTED` governance status, as before. After this change the adapter registry SHALL contain exactly one live feed adapter: the Alko domestic reference feed. The Systembolaget adapter and merchant SHALL be removed entirely: no adapter, no registry seed row, no governance records, and a purge of its queryable products, offers, and price-history summaries in existing environments. The R2 append-only observation log SHALL be retained untouched.
 
-#### Scenario: New merchant source
+#### Scenario: Registry holds only the domestic reference feed
 
-- **WHEN** a new merchant source is onboarded
-- **THEN** its acquisition method and permission status SHALL be recorded before any of its data enters the platform
+- **WHEN** the ingestion scheduler enumerates permitted merchants
+- **THEN** only `alko` is returned and no `systembolaget` adapter, seed row, or governance record exists anywhere in the codebase or seeds
+
+#### Scenario: Purged merchant leaves no queryable rows
+
+- **WHEN** the purge script runs against an environment that previously ingested Systembolaget data
+- **THEN** products, retail offers, and price-history summaries for merchant `systembolaget` are deleted while the R2 observation log partitions remain in place
 
 ### Requirement: Off-by-default enforcement
 
@@ -63,15 +68,6 @@ The pipeline orchestrator SHALL include a content linting step after data mappin
 - **WHEN** a product triggers a content vocabulary violation
 - **THEN** the pipeline run report SHALL include the violation detail (pattern matched, matching text, product identifier) in its quality section
 
-### Requirement: Currency normalization at ingestion
-
-Adapters ingesting non-EUR offers SHALL convert to EUR cents through the FX rate dataset effective on the observation date, store the original amount and currency for display, and reject offers that cannot be converted. Ingestion SHALL NOT store foreign-currency amounts as if they were EUR.
-
-#### Scenario: Systembolaget SEK offers
-
-- **WHEN** the Systembolaget adapter ingests offers priced in SEK
-- **THEN** each stored offer SHALL carry EUR cents converted via the effective FX dataset version plus the original SEK amount
-
 ### Requirement: Database-backed merchant registry
 
 Merchant configuration SHALL live in a database-backed registry aligned with the governance records, replacing static configuration files. Onboarding or changing a permitted merchant SHALL NOT require a deployment.
@@ -103,3 +99,4 @@ At least one additional merchant feed beyond the initial source SHALL be ingeste
 
 - **WHEN** the Alko adapter runs against the domestic feed
 - **THEN** its offers SHALL pass the governance gate and enter comparison data with reliability status and provenance
+

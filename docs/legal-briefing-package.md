@@ -33,8 +33,8 @@ confirmed. Visitors currently see: *"Laskuri ei ole vielä käytössä."*
 
 | Fact | Implementation |
 |---|---|
-| Foreign prices come from Systembolaget's published assortment (SE) and an Alko domestic reference feed (FI), ingested through a per-merchant permission gate | `packages/data-acquisition/src/adapters/systembolaget.adapter.ts`, `alko.adapter.ts`; `SourceGovernanceService` (`packages/core-domain/src/governance/`) — a merchant must have permission status `GRANTED` before any of its data is fetched; new merchants default to `PENDING` (off) |
-| SEK prices are converted to EUR at ingestion using a published, dated FX dataset built on ECB reference rates; the original amount and currency are kept as provenance | `ecb-rate.source.ts`; FX module `packages/core-domain/src/fx/` |
+| Price data comes from the Alko domestic reference feed (FI) and datasets published by retailers, ingested through a per-merchant permission gate | `packages/data-acquisition/src/adapters/alko.adapter.ts`; `SourceGovernanceService` (`packages/core-domain/src/governance/`) — a merchant must have permission status `GRANTED` before any of its data is fetched; new merchants default to `PENDING` (off) |
+| All prices are EUR only — the service performs no currency conversion; there is no exchange-rate source, dataset, or provenance anywhere in the pipeline | the currency union is the `'EUR'` literal (`packages/core-domain/src/calculator/calculator.types.ts`), `DataMappingService` accepts EUR only (`packages/data-acquisition/src/services/data-mapping.service.ts`), and the golden suite asserts every result is EUR |
 | Every displayed number carries a reliability status (`VERIFIED` / `ESTIMATED` / `STALE` / `UNAVAILABLE`), a timestamp, and the dataset versions used | `fi.json` `Common.reliability`; `ConfidenceFrameworkService` (`packages/core-domain/src/reliability/`) |
 | Tax rates are versioned and never overwritten (seeded from official Tax Administration tables, v1.0-2024 … v3.0-2026); a past calculation resolves against the rate version effective on its date | `packages/data-platform/src/seed/tax-rules.seed.ts` |
 | Product pages state that prices are collected observations, not live merchant offers | `fi.json` `ProductPage.dataNote`: *"Hinnat ovat kerättyjä havaintoja, eivät myyjien tarjouksia."* |
@@ -45,9 +45,12 @@ confirmed. Visitors currently see: *"Laskuri ei ole vielä käytössä."*
    sisältöä. Oletko vähintään 18-vuotias?"* with buttons *"Olen 18 vuotta täyttänyt"* and
    *"En"*. Self-attestation only — see Section 4.12.
 2. **Home page.** Value proposition: *"Laske alkoholijuomien tuonnin kokonaiskustannus
-   Ruotsista ja muualta Euroopasta Suomeen: ulkomainen vähittäishinta, kuljetus sekä arviot alkoholin
-   valmisteverosta ja pakkausverosta."* A static trust section names the data sources,
-   the reliability labels, and the open methodology.
+   ulkomailta Suomeen: ulkomainen vähittäishinta, kuljetus sekä arviot alkoholin
+   valmisteverosta ja pakkausverosta."* (names no specific market or retailer). A static
+   trust section states: *"Tuotteiden hinnat perustuvat vähittäismyyjien julkaisemiin
+   aineistoihin ja Alkon kotimaiseen vertailuhintaan."* ("Product prices are based on
+   datasets published by retailers and on the Alko domestic reference price."), plus the
+   reliability labels and the open methodology.
 3. **Calculator.** The user searches a product (search over the ingested assortment),
    selects one product, a quantity, a destination country (default FI; 15 countries
    listed), and a transport arrangement: *"Myyjän järjestämä"* (seller-arranged),
@@ -336,4 +339,8 @@ Staging access for a live walkthrough can be arranged on request. `Siim Liimand`
 ---
 
 *Prepared 2026-09-03 from commit dd47ece as the briefing package required by step 2 of
-T1.65 in `docs/legal-tasks-guide.md`. Owner sign-off before sending: ______________________*
+T1.65 in `docs/legal-tasks-guide.md`. Revised 2026-09-06 for the EUR-only product reality
+(change `drop-sweden-eur-only-alko-benchmark`): the Swedish merchant feed and all
+currency-conversion machinery described in earlier revisions no longer exist; the
+data-source descriptions and UI quotes above reflect the current implementation.
+Owner sign-off before sending: ______________________*

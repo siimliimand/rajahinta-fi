@@ -61,7 +61,7 @@ const AGGREGATES: MerchantReliabilityAggregate[] = [
     freshestObservedAt: FRESHEST_A,
   },
   {
-    merchant: 'b-systembolaget',
+    merchant: 'eu-import',
     offerCount: 3,
     statusCounts: { VERIFIED: 1, ESTIMATED: 0, STALE: 2, UNAVAILABLE: 0 },
     freshestObservedAt: FRESHEST_B,
@@ -150,7 +150,7 @@ describe('MerchantReliabilityController — GET /api/v1/merchants/reliability', 
     const { merchants } = await createController().getReliability();
     expect(merchants.map((m) => m.merchant)).toEqual([
       'a-beverage-de',
-      'b-systembolaget',
+      'eu-import',
     ]);
   });
 
@@ -215,7 +215,7 @@ describe('MerchantReliabilityController — GET /api/v1/merchants/reliability', 
     expect(a.statusShares.VERIFIED).toBeCloseTo(2 / 3, 10);
     expect(a.strictestStatus).toBe('ESTIMATED');
 
-    // b-systembolaget: STALE dominates → strictest STALE.
+    // eu-import: STALE dominates → strictest STALE.
     expect(b.strictestStatus).toBe('STALE');
     expect(b.statusShares.STALE).toBeCloseTo(2 / 3, 10);
   });

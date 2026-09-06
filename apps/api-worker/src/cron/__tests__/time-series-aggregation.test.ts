@@ -139,7 +139,7 @@ describe('handleTimeSeriesAggregation over a fake R2 log', () => {
     const store = createFakeStore({
       'observations/2026-08-28.jsonl': [
         record({ id: 1, productId: 7, merchant: 'alko', observedAt: '2026-08-28T10:00:00.000Z', priceCents: 1000 }),
-        record({ id: 2, productId: 7, merchant: 'systembolaget', observedAt: '2026-08-28T12:00:00.000Z', priceCents: 1200 }),
+        record({ id: 2, productId: 7, merchant: 'eu-import', observedAt: '2026-08-28T12:00:00.000Z', priceCents: 1200 }),
       ],
       'observations/2026-08-29.jsonl': [
         record({ id: 3, productId: 7, merchant: 'alko', observedAt: '2026-08-29T09:00:00.000Z', priceCents: 1100 }),

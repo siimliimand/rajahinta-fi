@@ -14,13 +14,14 @@
  *   shared null-bound singleton the scheduler/pipeline resolve stays
  *   fail-closed until the port is rebound in their module scope —
  *   permission is never overstated anywhere.
- * - FX: FxRateDatasetService is provided here; its repository port
- *   resolves from DataPlatformModule's exported Drizzle-backed adapter.
  * - Tax reviews: RATE_REVIEW_REPOSITORY_PORT is bound to the
  *   data-acquisition in-memory repository in this scope — the operator
  *   resolution path (list/approve/reject) for rate-review entries.
  * - Audit and the idempotency cache are the durable/shared services
  *   (AuditModule is global; IdempotencyModule is imported).
+ * - DataPlatformModule stays imported (FX-free since task 2.1) for the
+ *   Drizzle-backed MerchantRegistryRepository that OpsGovernanceService
+ *   injects — removing it breaks the module's DI resolution.
  *
  * @module OpsModule
  */
@@ -29,10 +30,9 @@ import { Module } from '@nestjs/common';
 import {
   SOURCE_GOVERNANCE_REPOSITORY_PORT,
   SourceGovernanceService,
-  FxRateDatasetService,
 } from '@rajahinta/core-domain';
-import { DataPlatformModule } from '@rajahinta/data-platform';
 import { RATE_REVIEW_REPOSITORY_PORT } from '@rajahinta/data-acquisition';
+import { DataPlatformModule } from '@rajahinta/data-platform';
 import { IdempotencyModule } from '../idempotency';
 import { CorrectionModule } from '../correction';
 import { InMemorySourceGovernanceRepository } from './governance/in-memory-source-governance.repository';
@@ -53,9 +53,6 @@ import { OpsAuditTrailService } from './audit/ops-audit-trail.service';
     InMemorySourceGovernanceRepository,
     { provide: SOURCE_GOVERNANCE_REPOSITORY_PORT, useClass: InMemorySourceGovernanceRepository },
     SourceGovernanceService,
-
-    // FX dataset lifecycle — repository port arrives via DataPlatformModule.
-    FxRateDatasetService,
 
     // Tax rate-review entries — in-memory Phase 1 backing owned by the
     // console (data-acquisition keeps its own instance private); the

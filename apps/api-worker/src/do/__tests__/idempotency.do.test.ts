@@ -575,7 +575,7 @@ describe('IdempotencyDO — job claims (claim/complete/release)', () => {
 
   it('reports in-flight for a live processing claim, then reclaims it once stale', async () => {
     const { do: cache } = createDo();
-    const key = 'price-ingestion-systembolaget-2026-08-30-14';
+    const key = 'price-ingestion-eu-import-2026-08-30-14';
 
     await expect(claimJob(cache, key, { nowMs: T0 })).resolves.toEqual({ status: 'claimed' });
     // Concurrent delivery within the stale window → in-flight.

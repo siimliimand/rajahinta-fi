@@ -65,7 +65,7 @@ export const productMaster = pgTable('product_master', {
  */
 export const retailOffers = pgTable('retail_offers', {
   id: serial('id').primaryKey(),
-  /** Merchant identifier — distinguishes sources (e.g. "alko", "systembolaget"). */
+  /** Merchant identifier — distinguishes sources (e.g. "alko", "eu-import"). */
   merchant: varchar('merchant', { length: 128 }).notNull(),
   /** Market/origin country (ISO 3166-1 alpha-2). */
   country: varchar('country', { length: 4 }).notNull(),
@@ -74,26 +74,13 @@ export const retailOffers = pgTable('retail_offers', {
     .references(() => productMaster.id)
     .notNull(),
   /**
-   * Retail price in EUR cents — the canonical stored amount. Non-EUR feed
-   * prices are converted at ingestion (design D2); a foreign-currency
-   * amount never enters this column.
+   * Retail price in EUR cents — the canonical stored amount. Offers are
+   * EUR-only (design D3, change drop-sweden-eur-only-alko-benchmark); a
+   * foreign-currency amount never enters this column.
    */
   priceCents: integer('price_cents').notNull(),
-  /** Canonical price currency — always 'EUR' after ingestion conversion. */
+  /** Canonical price currency — pinned to 'EUR' (design D3). */
   currency: varchar('currency', { length: 3 }).default('EUR').notNull(),
-  /**
-   * Original list price in the source currency's smallest unit, kept for
-   * display. Null on rows written before conversion provenance existed
-   * (EUR-native feeds may also omit it).
-   */
-  originalPriceCents: integer('original_price_cents'),
-  /** Source-market currency of original_price_cents (ISO 4217). */
-  originalCurrency: varchar('original_currency', { length: 3 }),
-  /**
-   * FX dataset version (fx_rate_datasets.version_label) that produced the
-   * conversion — present exactly when the original currency was not EUR.
-   */
-  fxDatasetVersion: varchar('fx_dataset_version', { length: 64 }),
   /** Stock status — filters out-of-stock offers from price comparisons. */
   availability: varchar('availability', { length: 16 })
     .default('unknown')
@@ -246,6 +233,12 @@ export const calculationRecords = pgTable(
     sessionId: varchar('session_id', { length: 64 }),
     /** When calculation was performed — the partition key. */
     calculatedAt: timestamp('calculated_at').defaultNow().notNull(),
+    /**
+     * Display-only Alko benchmark snapshot — written when the calculation
+     * had a usable Alko reference, NULL on reference-less and pre-change
+     * records (absence is the render-nothing state, never a placeholder).
+     */
+    alkoBenchmark: jsonb('alko_benchmark'),
   },
   (table) => [
     // Partitioned-table PK must include the partition key.
@@ -532,7 +525,7 @@ export const savedScenarios = pgTable(
  */
 export const merchantTerms = pgTable('merchant_terms', {
   id: serial('id').primaryKey(),
-  /** Merchant identifier — matches retail_offers.merchant (e.g. "alko", "systembolaget"). */
+  /** Merchant identifier — matches retail_offers.merchant (e.g. "alko", "eu-import"). */
   merchantId: text('merchant_id').unique().notNull(),
   /** Minimum order value in cents to qualify for purchase. Null means no known threshold. */
   minimumOrderValueCents: integer('minimum_order_value_cents'),
@@ -594,73 +587,6 @@ export const basketCalculationRecords = pgTable(
 
 
 /**
- * Versioned FX rate datasets — never overwritten, always appended.
- *
- * Mirrors the tax-rules governance treatment (design D2, change
- * technical-assessment-remediation): each dataset is dated, versioned,
- * and carries source provenance plus an effective window. A dataset is
- * created in PENDING_CONFIRMATION status and only becomes effective
- * through the explicit publishDataset repository call performed by a
- * human operator — never automatically. Historical versions remain
- * queryable after a new version is published.
- */
-export const fxRateDatasets = pgTable('fx_rate_datasets', {
-  id: serial('id').primaryKey(),
-  /** Human-readable version label (e.g. "ecb-2026-08-28.1") — unique dataset identity for cache invalidation and provenance. */
-  versionLabel: varchar('version_label', { length: 64 }).unique().notNull(),
-  /** Provenance: source adapter that fetched the payload (e.g. "ecb-reference-rates"). */
-  sourceName: varchar('source_name', { length: 128 }).notNull(),
-  /** Provenance: link to the source publication the rates were taken from. */
-  sourceUrl: varchar('source_url', { length: 512 }),
-  /** Date the source published these rates — the "as of" date of the payload. */
-  referenceDate: date('reference_date').notNull(),
-  /** Lifecycle: PENDING_CONFIRMATION until a human publishes; PUBLISHED is terminal. */
-  status: varchar('status', { length: 32 }).default('PENDING_CONFIRMATION').notNull(),
-  /** Start of the effective window (inclusive) — conversion uses the dataset effective on the observation date. */
-  effectiveFrom: timestamp('effective_from').notNull(),
-  /** End of the effective window (exclusive, null = current/active dataset). */
-  effectiveTo: timestamp('effective_to'),
-  /** Operator who published the dataset — null while unconfirmed (auditability of the manual step). */
-  confirmedBy: varchar('confirmed_by', { length: 128 }),
-  /** When the dataset was published — null while unconfirmed. */
-  confirmedAt: timestamp('confirmed_at'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
-/**
- * FX rates — the per-currency-pair rows of a versioned dataset.
- *
- * Append-only alongside its dataset: once the dataset is published the
- * rows are immutable, so a conversion ever made is reproducible. Rates
- * are stored in the source's direction (ECB: base EUR, quote foreign);
- * inversion is a domain-policy decision, never a storage-level one.
- */
-export const fxRates = pgTable(
-  'fx_rates',
-  {
-    id: serial('id').primaryKey(),
-    /** FK to fx_rate_datasets — the version this rate belongs to. */
-    datasetId: integer('dataset_id')
-      .references(() => fxRateDatasets.id)
-      .notNull(),
-    /** Base currency (ISO 4217) — 1 unit of base = rate units of quote. */
-    baseCurrency: varchar('base_currency', { length: 3 }).notNull(),
-    /** Quote currency (ISO 4217). */
-    quoteCurrency: varchar('quote_currency', { length: 3 }).notNull(),
-    /** Exchange rate: units of quote currency per 1 unit of base. */
-    rate: numeric('rate', { precision: 24, scale: 12 }).notNull(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-  },
-  (table) => [
-    // One row per currency pair per dataset version — appending the same
-    // pair twice for a version is a fetch bug, not a new rate.
-    unique('fx_rates_dataset_pair_unique').on(
-      table.datasetId,
-      table.baseCurrency,
-      table.quoteCurrency,
-    ),
-  ],
-);
-/**
  * Sessions — server-issued opaque session tokens (design D3, change
  * technical-assessment-remediation).
  *
@@ -706,7 +632,7 @@ export const sessions = pgTable(
  * technical-assessment-remediation).
  *
  * One row per domain AuditEntry: every change to tax-rule datasets,
- * FX datasets, classification rules, or governance state lands here.
+ * Classification rules or governance state lands here.
  * The domain entry id (UUID) is the primary key — rows are never
  * updated or deleted by application code; there is deliberately no
  * retention path, matching the in-memory contract the tests rely on.
@@ -716,7 +642,7 @@ export const auditEvents = pgTable(
   {
     /** Domain AuditEntry id (UUID) — identity is assigned at emission, not by storage. */
     id: varchar('id', { length: 64 }).primaryKey(),
-    /** High-liability entity type (e.g. 'tax_rule', 'fx_rate_dataset', 'account'). */
+    /** High-liability entity type (e.g. 'tax_rule', 'account'). */
     entityType: varchar('entity_type', { length: 64 }).notNull(),
     /** Entity-specific identifier (rule id, version label, user id). */
     entityId: varchar('entity_id', { length: 128 }).notNull(),

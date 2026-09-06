@@ -22,8 +22,6 @@ import {
   priceHistorySummaries,
   merchantTerms,
   basketCalculationRecords,
-  fxRateDatasets,
-  fxRates,
   sessions,
   clickCounterSnapshots,
   merchantRegistry,
@@ -371,98 +369,6 @@ export abstract class SavedScenarioRepository {
 
   /** Delete a scenario by its primary key, scoped to the owning account. */
   abstract delete(accountId: number, id: number): Promise<void>;
-}
-
-// ---------------------------------------------------------------------------
-// FX-rate repository abstraction
-// ---------------------------------------------------------------------------
-
-/** Persisted FX-rate-dataset row (raw schema shape). */
-export type FxRateDatasetRecord = typeof fxRateDatasets.$inferSelect;
-
-/** Persisted FX-rate row (raw schema shape — rate is still the pg numeric string). */
-export type FxRateRow = typeof fxRates.$inferSelect;
-
-/**
- * A rate resolved for conversion — dataset version plus the coerced rate.
- *
- * `rate` is a number: the repository boundary is where pg numeric
- * strings become numbers for domain consumers (task 3.5).
- */
-export interface ResolvedFxRate {
-  /** The published dataset version the rate belongs to (provenance). */
-  readonly dataset: FxRateDatasetRecord;
-  readonly baseCurrency: string;
-  readonly quoteCurrency: string;
-  /** Units of quote per 1 base, coerced from the stored numeric. */
-  readonly rate: number;
-}
-
-/**
- * FX-rate repository — versioned, append-only rate datasets (design D2).
- *
- * Lifecycle: datasets are created PENDING_CONFIRMATION by ingestion and
- * become effective ONLY through {@link publishDataset} — a human-only
- * transition; nothing in this repository auto-publishes. Rates are
- * appendable only while the dataset is unconfirmed; a published version
- * is immutable so past conversions stay reproducible.
- *
- * Rate direction: rows are stored in the source's direction (ECB: base
- * EUR). Resolution matches the exact (base, quote) pair — inversion is
- * domain policy, never performed implicitly here.
- */
-@Injectable()
-export abstract class FxRateRepository {
-  /** Insert a new dataset version (PENDING_CONFIRMATION) with its rates. */
-  abstract createDataset(
-    record: typeof fxRateDatasets.$inferInsert,
-    rates: Omit<typeof fxRates.$inferInsert, 'datasetId'>[],
-  ): Promise<FxRateDatasetRecord>;
-
-  abstract findDatasetById(
-    id: number,
-  ): Promise<FxRateDatasetRecord | null>;
-
-  abstract findDatasetByVersionLabel(
-    versionLabel: string,
-  ): Promise<FxRateDatasetRecord | null>;
-
-  /**
-   * Versions still awaiting operator confirmation (the review queue) —
-   * oldest first so review tooling surfaces the oldest pending dataset.
-   */
-  abstract findPendingDatasets(): Promise<FxRateDatasetRecord[]>;
-
-  /** The PUBLISHED dataset whose effective window covers {@code asOf} (most recent wins). */
-  abstract findPublishedDatasetEffectiveOn(
-    asOf: Date,
-  ): Promise<FxRateDatasetRecord | null>;
-
-  /**
-   * Publish a dataset — the only PENDING_CONFIRMATION → PUBLISHED
-   * transition, recording who confirmed it. Returns null when the
-   * dataset does not exist or is already published.
-   */
-  abstract publishDataset(
-    id: number,
-    confirmedBy: string,
-  ): Promise<FxRateDatasetRecord | null>;
-
-  /** Rates of a dataset version, ordered by (base, quote). */
-  abstract findRatesForDataset(
-    datasetId: number,
-  ): Promise<FxRateRow[]>;
-
-  /**
-   * Resolve the conversion rate for a pair from the PUBLISHED dataset
-   * effective on {@code asOf}. Null when no published dataset covers
-   * the date or the pair is absent — callers reject, never assume 1:1.
-   */
-  abstract resolveRate(
-    baseCurrency: string,
-    quoteCurrency: string,
-    asOf: Date,
-  ): Promise<ResolvedFxRate | null>;
 }
 
 // ---------------------------------------------------------------------------

@@ -104,13 +104,13 @@ describe('ClickCounterDO — increment exactness', () => {
     await seedClicks(instance, [
       ['alko', 'https://alko.fi/p/1', 3],
       ['alko', 'https://alko.fi/p/2', 1],
-      ['systembolaget', 'https://alko.fi/p/1', 2],
+      ['eu-import', 'https://alko.fi/p/1', 2],
     ], T0);
 
     const { counts } = await callDo<CountsResponse>(instance, { op: 'counts' });
     expect(counts).toEqual({
       alko: { 'https://alko.fi/p/1': 3, 'https://alko.fi/p/2': 1 },
-      systembolaget: { 'https://alko.fi/p/1': 2 },
+      'eu-import': { 'https://alko.fi/p/1': 2 },
     });
   });
 
@@ -181,7 +181,7 @@ describe('ClickCounterDO — drain-empties semantics', () => {
     await seedClicks(instance, [
       ['alko', 'https://alko.fi/p/2', 3],
       ['alko', 'https://alko.fi/p/1', 1],
-      ['systembolaget', 'https://systembolaget.se/p', 2],
+      ['eu-import', 'https://eu-import.example/p', 2],
     ], T0);
 
     const snapshot = await drain(instance, T0 + 1_000);
@@ -190,7 +190,7 @@ describe('ClickCounterDO — drain-empties semantics', () => {
     expect(snapshot!.rows).toEqual([
       { merchantId: 'alko', url: 'https://alko.fi/p/1', clickCount: 1 },
       { merchantId: 'alko', url: 'https://alko.fi/p/2', clickCount: 3 },
-      { merchantId: 'systembolaget', url: 'https://systembolaget.se/p', clickCount: 2 },
+      { merchantId: 'eu-import', url: 'https://eu-import.example/p', clickCount: 2 },
     ]);
   });
 

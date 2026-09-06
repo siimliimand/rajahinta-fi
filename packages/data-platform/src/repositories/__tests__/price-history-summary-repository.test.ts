@@ -85,7 +85,7 @@ const dailyBucket: PriceHistorySummaryUpsertInput = {
   granularity: 'daily',
   periodStart: '2026-06-15',
   productId: 7,
-  merchant: 'systembolaget',
+  merchant: 'eu-import',
   priceOpenCents: 1099,
   priceCloseCents: 1149,
   priceMinCents: 1099,

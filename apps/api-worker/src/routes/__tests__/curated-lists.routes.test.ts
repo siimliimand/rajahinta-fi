@@ -95,9 +95,9 @@ async function seedEntry(
     listSlug: 'Alkon-Hylkaamat', // arrives unnormalized — stored normalized
     productId: entry.productId,
     externalRef: entry.externalRef,
-    rationale: entry.rationale ?? 'Alko poisti tuotteen valikoimasta; saatavilla Ruotsissa.',
+    rationale: entry.rationale ?? 'Alko poisti tuotteen valikoimasta; saatavilla toisen EU-maan vähittäismyyjällä.',
     evidenceLinks: [
-      { label: 'Systembolaget', url: 'https://systembolaget.example/produkt/karhu-export' },
+      { label: 'EU Import', url: 'https://eu-import.example/produkt/karhu-export' },
     ],
     reviewer: 'curator@example.invalid',
   });
@@ -143,12 +143,12 @@ describe('GET /api/v1/lists/:slug — published list served', () => {
     const productEntryId = await seedEntry(d1, { productId: 7 });
     // DRAFT work in progress — invisible to the public API.
     await seedEntry(d1, {
-      externalRef: 'https://systembolaget.example/produkt/draft-only',
+      externalRef: 'https://eu-import.example/produkt/draft-only',
       publish: false,
     });
     const externalEntryId = await seedEntry(d1, {
-      externalRef: 'https://systembolaget.example/produkt/karhu-export',
-      rationale: 'Alkon hylkäämä; jatkaa myyntiä Systembolaget-valikoimassa.',
+      externalRef: 'https://eu-import.example/produkt/karhu-export',
+      rationale: 'Alkon hylkäämä; jatkaa myyntiä toisen EU-maan vähittäismyyjällä.',
     });
 
     const app = listsApp();
@@ -168,23 +168,23 @@ describe('GET /api/v1/lists/:slug — published list served', () => {
         id: productEntryId,
         productId: 7,
         externalRef: null,
-        rationale: 'Alko poisti tuotteen valikoimasta; saatavilla Ruotsissa.',
+        rationale: 'Alko poisti tuotteen valikoimasta; saatavilla toisen EU-maan vähittäismyyjällä.',
         evidenceLinks: [
           {
-            label: 'Systembolaget',
-            url: 'https://systembolaget.example/produkt/karhu-export',
+            label: 'EU Import',
+            url: 'https://eu-import.example/produkt/karhu-export',
           },
         ],
       },
       {
         id: externalEntryId,
         productId: null,
-        externalRef: 'https://systembolaget.example/produkt/karhu-export',
-        rationale: 'Alkon hylkäämä; jatkaa myyntiä Systembolaget-valikoimassa.',
+        externalRef: 'https://eu-import.example/produkt/karhu-export',
+        rationale: 'Alkon hylkäämä; jatkaa myyntiä toisen EU-maan vähittäismyyjällä.',
         evidenceLinks: [
           {
-            label: 'Systembolaget',
-            url: 'https://systembolaget.example/produkt/karhu-export',
+            label: 'EU Import',
+            url: 'https://eu-import.example/produkt/karhu-export',
           },
         ],
       },
@@ -193,7 +193,7 @@ describe('GET /api/v1/lists/:slug — published list served', () => {
 
   it('normalizes the slug over the wire — mixed-case param hits the canonical list', async () => {
     const { d1 } = openMigratedD1();
-    await seedEntry(d1, { externalRef: 'https://systembolaget.example/produkt/x' });
+    await seedEntry(d1, { externalRef: 'https://eu-import.example/produkt/x' });
 
     const app = listsApp();
     const canonical = await getList(app, listsEnv(d1), 'alkon-hylkaamat');
@@ -205,7 +205,7 @@ describe('GET /api/v1/lists/:slug — published list served', () => {
   it('returns 200 with empty entries for a known slug with no published entries (never a 404)', async () => {
     const { d1 } = openMigratedD1();
     // DRAFT-only content — the list exists but is not yet public.
-    await seedEntry(d1, { externalRef: 'https://systembolaget.example/produkt/x', publish: false });
+    await seedEntry(d1, { externalRef: 'https://eu-import.example/produkt/x', publish: false });
 
     const app = listsApp();
     const res = await getList(app, listsEnv(d1), 'alkon-hylkaamat');
@@ -237,7 +237,7 @@ describe('GET /api/v1/lists — catalog', () => {
     expect(empty.status).toBe(200);
     expect((await empty.json()) as CatalogJson).toEqual({ lists: [] });
 
-    await seedEntry(d1, { externalRef: 'https://systembolaget.example/produkt/x' });
+    await seedEntry(d1, { externalRef: 'https://eu-import.example/produkt/x' });
     const live = await getCatalog(app, env);
     expect(live.status).toBe(200);
     expect((await live.json()) as CatalogJson).toEqual({
@@ -253,7 +253,7 @@ describe('GET /api/v1/lists — catalog', () => {
 describe('GET /api/v1/lists/:slug — rate-limit profile', () => {
   it('admits sixty requests per minute per IP (DEFAULT) and rejects the sixty-first with 429', async () => {
     const { d1 } = openMigratedD1();
-    await seedEntry(d1, { externalRef: 'https://systembolaget.example/produkt/x' });
+    await seedEntry(d1, { externalRef: 'https://eu-import.example/produkt/x' });
     const app = listsApp();
     const env = listsEnv(d1); // one shared env = one shared DO limiter bucket
 

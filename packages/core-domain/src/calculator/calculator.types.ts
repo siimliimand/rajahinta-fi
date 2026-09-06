@@ -9,6 +9,7 @@ import type { ReliabilityStatus } from '../reliability/reliability.types';
 import type { ConfidenceLevel } from '../reliability/confidence-framework.types';
 import type { ConfidenceDetail } from '../reliability/confidence-framework.types';
 import type { ClassificationResult } from '../classification/classification.types';
+import type { AlkoBenchmarkAvailable } from '../benchmark/benchmark.types';
 
 // ---------------------------------------------------------------------------
 // Disclaimer — defined locally to avoid circular dependency through barrel
@@ -162,62 +163,30 @@ export interface CalculatorProductData {
 /**
  * A single retail offer for the product.
  *
- * After ingestion-side conversion (design D2), `priceCents` is always EUR
- * cents; the optional original-currency fields carry the pre-conversion
- * amount for display and the FX dataset version that produced the
- * conversion as provenance.
+ * Offers are EUR-only (design D3, change
+ * drop-sweden-eur-only-alko-benchmark): `priceCents` is always EUR cents
+ * and the currency union is pinned to the `'EUR'` literal, so a future
+ * non-EUR feed fails to compile until FX is reintroduced deliberately.
  */
 export interface CalculatorRetailOfferData {
   readonly id: number;
   /** Retail price in EUR cents — the canonical summable amount. */
   readonly priceCents: number;
   /**
-   * Canonical price currency (ISO 4217). Always 'EUR' on offers that
-   * passed ingestion conversion; absent means EUR (legacy read models
-   * that predate the currency fields). Any other value fails
-   * {@link hasValidEurConversion} and the offer is excluded.
+   * Canonical price currency — the `'EUR'` literal only. Absent means EUR
+   * (legacy read models that predate the currency field).
    */
-  readonly currency?: string;
+  readonly currency?: 'EUR';
   readonly merchant: string;
   readonly country: string;
   readonly reliabilityStatus: ReliabilityStatus;
-  /** Original list price in the source currency's smallest unit (display). */
-  readonly originalPriceCents?: number;
-  /** Source-market currency of `originalPriceCents` (ISO 4217). */
-  readonly originalCurrency?: string;
   /**
-   * FX dataset version that produced the conversion — present exactly
-   * when the original currency was not EUR. Its absence on a
-   * foreign-original offer means the conversion is unrecorded and the
-   * offer must not enter a total.
+   * When the offer was observed. Alko reference rows carry it — the
+   * benchmark's newest-reference selection needs the observation axis —
+   * while legacy read models may omit it; a row without it cannot serve
+   * as a benchmark reference.
    */
-  readonly fxDatasetVersion?: string;
-}
-
-/**
- * Whether an offer carries a valid EUR-converted amount the calculator
- * may sum.
- *
- * Fail-closed policy (spec: landed-cost-calculator "Single-currency
- * totals"): the canonical amount must be EUR, and a non-EUR original is
- * only trustworthy when the conversion is attributed to an FX dataset
- * version. Anything else is excluded from totals — never silently summed.
- */
-export function hasValidEurConversion(
-  offer: CalculatorRetailOfferData,
-): boolean {
-  if (
-    offer.currency !== undefined &&
-    offer.currency.trim().toUpperCase() !== 'EUR'
-  ) {
-    return false;
-  }
-  const original = offer.originalCurrency?.trim().toUpperCase();
-  if (original !== undefined && original !== 'EUR') {
-    const version = offer.fxDatasetVersion?.trim();
-    if (version === undefined || version === '') return false;
-  }
-  return true;
+  readonly observedAt?: Date;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,40 +226,21 @@ export interface ItemizedCost {
 // Output
 // ---------------------------------------------------------------------------
 
-/** Machine-readable reason an offer was excluded from a calculation. */
-export type OfferExclusionReason = 'NO_VALID_EUR_CONVERSION';
-
 /**
- * An offer excluded from the calculation because it lacked a valid EUR
- * conversion (spec: landed-cost-calculator "Single-currency totals").
+ * The serialized, display-only Alko benchmark carried on results and
+ * persisted records: the benchmark module's `AlkoBenchmarkAvailable`
+ * variant with the observation timestamp as ISO 8601. Every field of the
+ * result/record contract stays JSON-stable, so an idempotency-cache replay
+ * returns the type the live path returned.
  *
- * Exclusions are structural result data, not UI cosmetics: every
- * excluded offer stays visible with its reason and original amount so a
- * mixed-currency total can never masquerade as EUR.
+ * The module's `unavailable` variant never reaches this contract — the
+ * whole field is omitted instead: absence is the render-nothing state,
+ * never a null and never a placeholder object.
  */
-export interface OfferExclusion {
-  readonly offerId: number;
-  readonly merchant: string;
-  readonly country: string;
-  readonly reason: OfferExclusionReason;
-  /** Human-readable detail for display and audit. */
-  readonly detail: string;
-  /** Original amount in the source currency, when the offer carries one. */
-  readonly originalPriceCents: number | null;
-  /** Source currency of `originalPriceCents`, when the offer carries one. */
-  readonly originalCurrency: string | null;
-}
-
-/**
- * A pre-conversion price in its source currency — display-only data
- * carried alongside the EUR amounts (design D2).
- */
-export interface OriginalPrice {
-  /** Amount in the source currency's smallest unit. */
-  readonly priceCents: number;
-  /** Source currency (ISO 4217). */
-  readonly currency: string;
-}
+export type AlkoBenchmarkSnapshot = Omit<AlkoBenchmarkAvailable, 'observedAt'> & {
+  /** Observation timestamp of the selected reference row, ISO 8601. */
+  readonly observedAt: string;
+};
 
 /**
  * Full result from the landed-cost calculator.
@@ -298,20 +248,6 @@ export interface OriginalPrice {
 export interface CalculatorResult {
   /** Itemized list of all cost components. */
   readonly itemizedCosts: readonly ItemizedCost[];
-
-  /**
-   * Offers excluded from this calculation because they lacked a valid
-   * EUR conversion. Empty when every offer was summable; never a silent
-   * drop (task 1.5).
-   */
-  readonly excludedOffers: readonly OfferExclusion[];
-
-  /**
-   * Original (pre-conversion) price of the selected offer for display.
-   * Absent when the selected offer is EUR-native and carries no original
-   * amount.
-   */
-  readonly originalRetailPrice?: OriginalPrice;
 
   // ---------------------------------------------------------------------------
   // Convenience breakdown — each component from the itemized list as a flat
@@ -342,6 +278,14 @@ export interface CalculatorResult {
   /** Transaction classification outcome. */
   readonly classification: ClassificationResult;
 
+  /**
+   * Display-only Alko benchmark for the calculated offer. Present only
+   * when the product has a usable Alko reference offer; omitted (key
+   * absent) otherwise — never null, never a placeholder. Never enters
+   * `totalCents`, the itemized breakdown, or any ranking input.
+   */
+  readonly alkoBenchmark?: AlkoBenchmarkSnapshot;
+
   /** Calculation metadata. */
   readonly metadata: {
     readonly input: CalculatorInput;
@@ -367,8 +311,7 @@ export interface CalculatorResult {
 
     // -- Dataset provenance --
     /**
-     * Dataset versions that were applied — tax rule versions and, when
-     * the selected offer was FX-converted, the FX dataset version
+     * Dataset versions that were applied — the tax rule versions
      * (idempotency/cache keys derived from these invalidate on change).
      */
     readonly datasetVersions: readonly string[];
@@ -400,6 +343,12 @@ export interface CreateCalculationRecordInput {
   readonly destination: string;
   readonly disclaimer: Disclaimer;
   readonly sessionId: string | null;
+  /**
+   * Display-only Alko benchmark persisted with the record when available.
+   * Optional: reference-less calculations and pre-change records lack the
+   * field, and consumers treat absence as normal.
+   */
+  readonly alkoBenchmark?: AlkoBenchmarkSnapshot;
 }
 
 // ---------------------------------------------------------------------------

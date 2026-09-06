@@ -59,17 +59,6 @@ const OFFER_CARRIER_B: GoldenTransportSeed = {
   sellerInvolvementIndicator: false,
 };
 
-const OFFER_CARRIER_SE: GoldenTransportSeed = {
-  id: 902,
-  carrier: 'carrierSE',
-  originCountry: 'SE',
-  destinationCountry: 'FI',
-  weightBracket: { minKg: 0, maxKg: 1 },
-  packageTier: 'can',
-  priceCents: 150,
-  sellerInvolvementIndicator: true,
-};
-
 /** POST /calculator with golden input; returns the parsed CalculatorResult. */
 async function goldenCalculate(
   env: ReturnType<typeof e2eEnv>,
@@ -209,34 +198,27 @@ describe('Golden over HTTP — golden-dataset.test.ts', () => {
     expect(String(body.reason)).toContain('classification');
   });
 
-  it('Case 5 — mixed currency: converted SEK offer wins (112), rogue offer 114 excluded, total 441 EUR', async () => {
+  it('Case 5 — multiple EUR offers: cheapest wins (112), no exclusion path, total 441 EUR', async () => {
     const { db, d1 } = openMigratedD1();
     seedGoldenDataset(db);
-    seedGoldenTransport(db, [OFFER_CARRIER_SE]);
+    seedGoldenTransport(db, [OFFER_CARRIER_A]);
     const app = buildE2EApp();
 
     const result = await goldenCalculate(
       e2eEnv(d1),
       app,
-      { productId: 13, quantity: 1, destination: 'FI', transportMethod: 'carrierSE' },
+      { productId: 13, quantity: 1, destination: 'FI', transportMethod: 'carrierA' },
     );
 
     expect(result.metadata.retailOfferIds).toEqual([112]);
     expect(result.foreignRetailPrice).toBe(200);
     expect(result.totalCents).toBe(441); // 200 + 150 + 91 + 0
     expect(result.currency).toBe('EUR');
-    expect(result.excludedOffers).toHaveLength(1);
-    expect(result.excludedOffers[0]).toEqual({
-      offerId: 114,
-      merchant: 'shop-se-rogue',
-      country: 'SE',
-      reason: 'NO_VALID_EUR_CONVERSION',
-      detail: expect.stringContaining('lacks a valid EUR conversion'),
-      originalPriceCents: 900,
-      originalCurrency: 'SEK',
-    });
-    expect(result.originalRetailPrice).toEqual({ priceCents: 2264, currency: 'SEK' });
-    expect(result.metadata.datasetVersions).toContain('ecb-2026-08-27.1');
+    // EUR-only means the exclusion concept is gone from the result
+    // (design D3, change drop-sweden-eur-only-alko-benchmark).
+    expect(result).not.toHaveProperty('excludedOffers');
+    expect(result).not.toHaveProperty('originalRetailPrice');
+    expect(result.metadata.datasetVersions).not.toContain('ecb-2026-08-27.1');
     expect(result.classification).toMatchObject({
       classification: 'DistanceSelling',
       confidence: 'HIGH',

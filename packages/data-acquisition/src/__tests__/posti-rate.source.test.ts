@@ -55,7 +55,7 @@ describe('parsePostiRates — payload-level rejection', () => {
   });
 
   it('rejects a non-EUR price list — no silent FX conversion', () => {
-    const { rates, errors } = parsePostiRates({ ...POSTI_GOLDEN_PAYLOAD, currency: 'SEK' });
+    const { rates, errors } = parsePostiRates({ ...POSTI_GOLDEN_PAYLOAD, currency: 'USD' });
     expect(rates).toEqual([]);
     expect(errors[0]).toContain('not EUR');
   });

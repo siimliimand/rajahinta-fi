@@ -1,8 +1,7 @@
 /**
- * Tax/FX dataset-review + transport-refresh cron handler tests (task
+ * Tax dataset-review + transport-refresh cron handler tests (task
  * 4.3) — RateReviewSchedulerService semantics behind the snapshot-source
- * interface, the FX PENDING_CONFIRMATION flow against the real D1 fx
- * tables, and the transport refresh + freshness assessment.
+ * interface, and the transport refresh + freshness assessment.
  *
  * @module DatasetReviewCronTest
  */
@@ -15,8 +14,6 @@ import {
   toTaxReviewCheckResult,
 } from '../tax-dataset-review';
 import type { RateReviewResult } from '../../../../../packages/data-acquisition/src/interfaces/rate-review.types';
-import { handleFxDatasetReview } from '../fx-dataset-review';
-import type { IFxRateSource } from '../../../../../packages/data-acquisition/src/interfaces/fx-rate-source.port';
 import {
   assessFreshness,
   handleTransportRateRefresh,
@@ -131,94 +128,6 @@ describe('tax-dataset-review cron handler', () => {
       requiresConfirmation: true,
       detectedVersions: ['v1', 'v2'],
     });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// FX-dataset review
-// ---------------------------------------------------------------------------
-
-function fxSource(
-  snapshot: Parameters<IFxRateSource['fetchLatestRates']> extends never
-    ? never
-    : {
-        snapshot: {
-          sourceId: string;
-          sourceName: string;
-          sourceUrl: string | null;
-          referenceDate: string;
-          rates: { baseCurrency: string; quoteCurrency: string; rate: number }[];
-        } | null;
-        errors: string[];
-      },
-): IFxRateSource {
-  return {
-    sourceId: snapshot.snapshot?.sourceId ?? 'fake',
-    fetchLatestRates: async () => snapshot,
-  };
-}
-
-describe('fx-dataset-review cron handler', () => {
-  it('creates a PENDING_CONFIRMATION dataset for a new reference date — never publishes', async () => {
-    const { env, db } = createEnv();
-
-    const result = await handleFxDatasetReview(env, LOG, {
-      rateSource: fxSource({
-        snapshot: {
-          sourceId: 'ecb',
-          sourceName: 'ecb-reference-rates',
-          sourceUrl: 'https://ecb.example/rates',
-          referenceDate: '2026-08-28',
-          rates: [
-            { baseCurrency: 'EUR', quoteCurrency: 'SEK', rate: 11.02 },
-            { baseCurrency: 'EUR', quoteCurrency: 'USD', rate: 1.08 },
-          ],
-        },
-        errors: [],
-      }),
-    });
-
-    expect(result.requiresConfirmation).toBe(true);
-    expect(result.datasetsFound).toBe(1);
-    expect(result.detectedVersions).toEqual(['ecb-2026-08-28']);
-
-    const row = db
-      .prepare(
-        `SELECT status, version_label FROM fx_rate_datasets WHERE version_label = 'ecb-2026-08-28'`,
-      )
-      .get() as { status: string; version_label: string } | undefined;
-    expect(row).toBeDefined();
-    expect(row!.status).toBe('PENDING_CONFIRMATION');
-  });
-
-  it('is idempotent — a known reference date is a no-op', async () => {
-    const { env } = createEnv();
-    const source = fxSource({
-      snapshot: {
-        sourceId: 'ecb',
-        sourceName: 'ecb-reference-rates',
-        sourceUrl: null,
-        referenceDate: '2026-08-28',
-        rates: [{ baseCurrency: 'EUR', quoteCurrency: 'SEK', rate: 11.02 }],
-      },
-      errors: [],
-    });
-
-    await handleFxDatasetReview(env, LOG, { rateSource: source });
-    const second = await handleFxDatasetReview(env, LOG, { rateSource: source });
-
-    expect(second.datasetsFound).toBe(0);
-    expect(second.detectedVersions).toEqual(['ecb-2026-08-28']);
-  });
-
-  it('surfaces source errors without throwing', async () => {
-    const { env } = createEnv();
-    const result = await handleFxDatasetReview(env, LOG, {
-      rateSource: fxSource({ snapshot: null, errors: ['ECB fetch failed: HTTP 503'] }),
-    });
-    expect(result.datasetsFound).toBe(0);
-    expect(result.requiresConfirmation).toBe(false);
-    expect(result.errors).toEqual(['ECB fetch failed: HTTP 503']);
   });
 });
 

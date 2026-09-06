@@ -82,7 +82,6 @@ crons:                                     # UTC (see api-worker wrangler.jsonc)
   - "*/30 * * * *"
   - "0 */6 * * *"
   - "0 2 * * *"
-  - "0 3 * * *"
   - "30 3 * * *"
 
 # ── Secrets and variables (NAMES ONLY — values live in GitHub/wrangler) ───

@@ -5,27 +5,12 @@ TBD - created by archiving change technical-assessment-remediation. Update Purpo
 ## Requirements
 ### Requirement: Operator console for human workflows
 
-The system SHALL provide an authenticated operator console covering the three human workflows that currently have no UI: granting source-governance permission, confirming detected tax-rate versions, and working the correction queue. The console SHALL expose these workflows through both an API and a UI, and SHALL be reachable only by authenticated operators.
+The operator console SHALL cover the human workflows that remain after the FX removal: source-governance grants and revocations, tax-dataset version confirmations, and the correction queue. The FX dataset publish flow and its console section SHALL NOT exist. Every remaining console action SHALL stay audited in the append-only audit trail.
 
-#### Scenario: Governance permission grant
+#### Scenario: No FX publish surface
 
-- **WHEN** an operator grants source-governance permission for a merchant source in the console
-- **THEN** the permission SHALL be recorded with the operator identity and timestamp, and ingestion for that source SHALL proceed under the governance gate
-
-#### Scenario: Tax-rate confirmation
-
-- **WHEN** a detected tax-rate version awaits confirmation
-- **THEN** the console SHALL present the detected changes with provenance, and an operator confirmation SHALL move the version toward effectiveness while rejection SHALL keep the previous version effective
-
-#### Scenario: Correction queue
-
-- **WHEN** correction items exist in the queue
-- **THEN** the console SHALL list them with their evidence and SHALL record resolution actions with operator identity and timestamp
-
-#### Scenario: Unauthenticated access denied
-
-- **WHEN** an unauthenticated or non-operator user reaches any console route
-- **THEN** access SHALL be denied before any operational data is returned
+- **WHEN** an operator loads the console dataset-confirmation view
+- **THEN** only tax-dataset versions are listed for confirmation, and no FX publish endpoint exists in the API surface
 
 ### Requirement: Console actions are audited
 

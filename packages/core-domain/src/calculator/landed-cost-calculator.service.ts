@@ -26,6 +26,8 @@ import { TransactionClassificationService } from '../classification/transaction-
 import { ConfidenceFrameworkService } from '../reliability/confidence-framework.service';
 import { TransportEstimationService } from '../transport/transport-estimation.service';
 import { DISCLAIMER_FI } from '../disclaimer';
+import { computeAlkoBenchmark } from '../benchmark/alko-benchmark';
+import type { AlkoReferenceOffer } from '../benchmark/benchmark.types';
 import type {
   CalculatorInput,
   CalculatorResult,
@@ -34,21 +36,22 @@ import type {
   ItemizedCost,
   ComputeItemCostsTransportContext,
   ComputedItemCostsResult,
-  OfferExclusion,
-  OriginalPrice,
   IProductDataPort,
   ICalculationRecordPort,
+  AlkoBenchmarkSnapshot,
 } from './calculator.types';
 import {
   PRODUCT_DATA_PORT,
   CALCULATION_RECORD_PORT,
-  hasValidEurConversion,
   ClassificationGateRejectionError,
   ProductNotFoundError,
   NoRetailOffersError,
 } from './calculator.types';
 import type { ReliabilityStatus } from '../reliability/reliability.types';
 import type { ClassificationInput } from '../classification/classification.types';
+
+/** Merchant id of the domestic reference feed (design D6). */
+const ALKO_MERCHANT = 'alko';
 
 @Injectable()
 export class LandedCostCalculatorService {
@@ -108,21 +111,19 @@ export class LandedCostCalculatorService {
     }
 
     // -----------------------------------------------------------------------
-    // 2. Retail offers — keep only validly-converted EUR amounts, then
-    //    pick the best (lowest price). Offers without a valid conversion
-    //    are excluded with a visible reason, never summed (task 1.5).
+    // 2. Retail offers — every stored offer is EUR (data-quality invariant,
+    //    design D3), so the best (lowest-price) offer is always summable.
     // -----------------------------------------------------------------------
     const offers = await this.productData.findRetailOffers(input.productId);
     if (offers.length === 0) {
       throw new NoRetailOffersError(input.productId);
     }
-    const { usable, exclusions } = this.partitionOffersByConversion(offers);
-    if (usable.length === 0) {
-      // Every offer lacked a valid EUR conversion — an honest failure
-      // beats a mixed-currency total pretending to be EUR.
-      throw new NoRetailOffersError(input.productId);
-    }
-    const bestOffer = this.selectBestOffer(usable);
+    const bestOffer = this.selectBestOffer(offers);
+
+    // Display-only enrichment, resolved from the same single offers read —
+    // the product-data port stays the only lookup machinery. Never enters
+    // totals, the itemized breakdown, or any ranking input.
+    const alkoBenchmark = this.resolveAlkoBenchmark(offers, bestOffer);
 
     // -----------------------------------------------------------------------
     // 3. Transport estimation
@@ -185,17 +186,6 @@ export class LandedCostCalculatorService {
       computed.exciseTotal +
       computed.containerDutyTotal;
 
-    // Original (pre-conversion) price of the selected offer — display-only
-    // data surfaced next to the EUR amounts (task 1.5, design D2).
-    const originalRetailPrice: OriginalPrice | undefined =
-      bestOffer.originalCurrency !== undefined &&
-      bestOffer.originalPriceCents !== undefined
-        ? {
-            priceCents: bestOffer.originalPriceCents,
-            currency: bestOffer.originalCurrency,
-          }
-        : undefined;
-
     // -----------------------------------------------------------------------
     // 8. Persist calculation record
     // -----------------------------------------------------------------------
@@ -213,6 +203,7 @@ export class LandedCostCalculatorService {
       destination: input.destination,
       disclaimer: DISCLAIMER_FI,
       sessionId: input.sessionId ?? null,
+      ...(alkoBenchmark !== undefined ? { alkoBenchmark } : {}),
     });
 
     // -----------------------------------------------------------------------
@@ -221,8 +212,6 @@ export class LandedCostCalculatorService {
 
     return {
       itemizedCosts: allItemizedCosts,
-      excludedOffers: exclusions,
-      ...(originalRetailPrice !== undefined ? { originalRetailPrice } : {}),
       foreignRetailPrice: computed.retailTotal,
       transportCost: transportCostCents,
       alcoholExciseEstimate: computed.exciseTotal,
@@ -233,6 +222,7 @@ export class LandedCostCalculatorService {
       confidenceBreakdown: computed.confidenceBreakdown,
       disclaimer: DISCLAIMER_FI,
       classification: computed.classificationResult,
+      ...(alkoBenchmark !== undefined ? { alkoBenchmark } : {}),
       metadata: {
         input,
         calculationTimestamp: new Date().toISOString(),
@@ -360,10 +350,6 @@ export class LandedCostCalculatorService {
       datasetVersions.push(exciseResult.taxDatasetVersion);
     if (containerDutyResult.taxDatasetVersion)
       datasetVersions.push(containerDutyResult.taxDatasetVersion);
-    // FX provenance of the converted offer (task 1.5): consumers keying
-    // caches on datasetVersions (idempotency convention) invalidate when
-    // the effective FX dataset version changes.
-    if (offer.fxDatasetVersion) datasetVersions.push(offer.fxDatasetVersion);
 
     // -----------------------------------------------------------------------
     // Itemized costs (transport excluded — caller adds it)
@@ -434,45 +420,6 @@ export class LandedCostCalculatorService {
   }
 
   /**
-   * Split offers into summable (validly-converted EUR) and excluded with
-   * a visible per-offer reason (task 1.5, spec: landed-cost-calculator
-   * "Single-currency totals"). Excluded offers keep their original
-   * amount/currency on the exclusion entry for display.
-   */
-  private partitionOffersByConversion(offers: CalculatorRetailOfferData[]): {
-    usable: CalculatorRetailOfferData[];
-    exclusions: OfferExclusion[];
-  } {
-    const usable: CalculatorRetailOfferData[] = [];
-    const exclusions: OfferExclusion[] = [];
-
-    for (const offer of offers) {
-      if (hasValidEurConversion(offer)) {
-        usable.push(offer);
-        continue;
-      }
-
-      exclusions.push({
-        offerId: offer.id,
-        merchant: offer.merchant,
-        country: offer.country,
-        reason: 'NO_VALID_EUR_CONVERSION',
-        detail:
-          `Offer ${offer.id} (${offer.merchant}) lacks a valid EUR conversion — ` +
-          `canonical currency ${offer.currency ?? 'EUR (assumed)'}, ` +
-          `original ${offer.originalCurrency ?? 'n/a'}` +
-          (offer.fxDatasetVersion
-            ? `, FX dataset version ${offer.fxDatasetVersion}`
-            : ', no recorded FX conversion'),
-        originalPriceCents: offer.originalPriceCents ?? null,
-        originalCurrency: offer.originalCurrency ?? null,
-      });
-    }
-
-    return { usable, exclusions };
-  }
-
-  /**
    * Select the best retail offer — lowest price wins.
    * This may be enriched with additional scoring in the future.
    */
@@ -486,6 +433,41 @@ export class LandedCostCalculatorService {
       }
     }
     return best;
+  }
+
+  /**
+   * Resolve the display-only Alko benchmark from the offers already
+   * fetched through the product-data port. Only rows carrying an
+   * observation timestamp can serve as references — the deterministic
+   * newest-reference selection needs the observation axis — so legacy
+   * rows without one are dropped here rather than failing the whole
+   * benchmark. An unavailable result degrades to key-absence on the
+   * contract: absence is the render-nothing state, never null.
+   */
+  private resolveAlkoBenchmark(
+    offers: CalculatorRetailOfferData[],
+    bestOffer: CalculatorRetailOfferData,
+  ): AlkoBenchmarkSnapshot | undefined {
+    const alkoOffers: AlkoReferenceOffer[] = [];
+    for (const offer of offers) {
+      if (offer.merchant === ALKO_MERCHANT && offer.observedAt !== undefined) {
+        alkoOffers.push({
+          id: offer.id,
+          priceCents: offer.priceCents,
+          reliabilityStatus: offer.reliabilityStatus,
+          observedAt: offer.observedAt,
+        });
+      }
+    }
+
+    const benchmark = computeAlkoBenchmark({
+      calculatedPriceCents: bestOffer.priceCents,
+      alkoOffers,
+    });
+
+    return benchmark.status === 'available'
+      ? { ...benchmark, observedAt: benchmark.observedAt.toISOString() }
+      : undefined;
   }
 
   /**

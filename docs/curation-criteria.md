@@ -114,10 +114,9 @@ those properties.
 
 ### Tier C — Official retail listings
 
-Product pages of the Nordic monopoly retailers (Systembolaget, Vinmonopolet) or
-equivalent licensed EU retailers count as *official sources* under C3. They are
-not ratings; they serve as availability evidence (C2) or as a neutral source
-identifying the product.
+Product pages of the Nordic monopoly retailers (Vinmonopolet) or equivalent licensed
+EU retailers count as *official sources* under C3. They are not ratings; they serve as
+availability evidence (C2) or as a neutral source identifying the product.
 
 ### Sources that do not count
 

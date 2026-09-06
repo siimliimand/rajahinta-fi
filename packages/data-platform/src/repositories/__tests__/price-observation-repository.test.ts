@@ -86,7 +86,7 @@ const TO = new Date('2026-07-01T00:00:00.000Z');
 
 const fullObservation: PriceObservation = {
   productId: 7,
-  merchant: 'systembolaget',
+  merchant: 'eu-import',
   retailOfferId: 55,
   observedAt: new Date('2026-06-15T08:00:00.000Z'),
   foreignRetailPriceCents: 1099,
@@ -137,7 +137,7 @@ describe('DrizzlePriceObservationRepository.append', () => {
     // toEqual asserts the EXACT key set — a leaked versionLabel key fails.
     expect(values).toEqual({
       productId: 7,
-      merchant: 'systembolaget',
+      merchant: 'eu-import',
       retailOfferId: 55,
       observedAt: fullObservation.observedAt,
       foreignRetailPriceCents: 1099,

@@ -1,0 +1,1 @@
+ALTER TABLE "calculation_records" ADD COLUMN "alko_benchmark" jsonb;

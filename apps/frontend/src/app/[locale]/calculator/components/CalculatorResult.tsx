@@ -1,7 +1,9 @@
 'use client';
 
+import React from 'react';
 import { useTranslations } from 'next-intl';
 import type {
+  AlkoBenchmark,
   CalculatorResult as CalculatorResultType,
   CostCategory,
   ReliabilityStatus,
@@ -28,6 +30,23 @@ function formatEur(cents: number): string {
 }
 
 /**
+ * Signed variant for the benchmark gap — the API's sign convention is
+ * positive when the calculated offer costs more than the reference, so
+ * the sign stays visible even at zero or negative figures (WhatIfResult
+ * precedent).
+ */
+function formatSignedEur(cents: number): string {
+  const sign = cents > 0 ? '+' : cents < 0 ? '-' : '';
+  return `${sign}${formatEur(Math.abs(cents))}`;
+}
+
+/** Signed percent at one decimal — matches the API's rounding precision. */
+function formatSignedPercent(percent: number): string {
+  const sign = percent > 0 ? '+' : percent < 0 ? '-' : '';
+  return `${sign}${Math.abs(percent).toFixed(1)} %`;
+}
+
+/**
  * Reliability badge composed from the canonical status module: label key
  * from `@/lib/design/status`, rendering from the ui primitive. This is the
  * adoption pattern for every component that used to keep its own
@@ -39,6 +58,50 @@ function LocalizedReliabilityBadge({ status }: { status: ReliabilityStatus }) {
     <ReliabilityBadge status={status}>
       {t(RELIABILITY_STATUS_META[status].labelKey)}
     </ReliabilityBadge>
+  );
+}
+
+/**
+ * The display-only Alko benchmark comparison. A separate section below
+ * the itemized breakdown — never inside the total row — because the
+ * reference is not a cost component of the landed cost.
+ */
+function AlkoBenchmarkLine({ benchmark }: { benchmark: AlkoBenchmark }) {
+  const t = useTranslations('CalculatorResult');
+  const postureKey =
+    benchmark.differenceCents > 0
+      ? 'alkoCheaper'
+      : benchmark.differenceCents < 0
+        ? 'importCheaper'
+        : 'samePrice';
+  return (
+    <div className="rounded-md bg-gray-50 px-3 py-2" data-testid="alko-benchmark">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+          {t('alkoBenchmark.label')}
+        </span>
+        <LocalizedReliabilityBadge status={benchmark.reliabilityStatus} />
+      </div>
+      <div className="mt-1.5 flex items-center justify-between gap-2">
+        <span className="text-sm text-gray-700">
+          {t('alkoBenchmark.referencePrice', {
+            price: formatEur(benchmark.referencePriceCents),
+          })}
+        </span>
+        <span className="text-sm tabular-nums text-gray-600">
+          {t('alkoBenchmark.difference', {
+            difference: formatSignedEur(benchmark.differenceCents),
+            percent: formatSignedPercent(benchmark.differencePercent),
+          })}
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-gray-500">
+        {t(`alkoBenchmark.${postureKey}`)} ·{' '}
+        {t('alkoBenchmark.observedAt', {
+          timestamp: new Date(benchmark.observedAt).toLocaleString('fi-FI'),
+        })}
+      </p>
+    </div>
   );
 }
 
@@ -152,6 +215,7 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
   const tCommon = useTranslations('Common');
   const meta = result.metadata;
   const freshnessEntries = useFreshnessEntries(result);
+  const benchmark = result.alkoBenchmark;
 
   return (
     <div className="space-y-6 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
@@ -198,6 +262,10 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
           </span>
         </div>
       </div>
+
+      {/* ── Alko benchmark — display-only comparison, not a cost line:
+          renders nothing when the result carries no reference ── */}
+      {benchmark && <AlkoBenchmarkLine benchmark={benchmark} />}
 
       {/* ── Confidence breakdown ── */}
       {result.confidenceBreakdown.length > 0 && (

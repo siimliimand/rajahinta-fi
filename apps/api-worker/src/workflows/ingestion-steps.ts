@@ -47,7 +47,6 @@
 import {
   AlcoholExciseService,
   ContainerDutyService,
-  FxRateDatasetService,
   PriceObservationRecorderService,
   ReliabilityService,
   SourceGovernanceService,
@@ -70,7 +69,6 @@ import type { DataQualityReport } from '../../../../packages/data-acquisition/sr
 import { FeedIngestionService } from '../../../../packages/data-acquisition/src/services/feed-ingestion.service';
 import type { PermissionGateResult } from '../../../../packages/data-acquisition/src/services/pipeline-orchestrator.service';
 import { AlkoFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/alko.adapter';
-import { SystembolagetFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/systembolaget.adapter';
 import type { IFeedAdapter } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { RawFeedRecord } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { MerchantConfig } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
@@ -86,8 +84,6 @@ import { D1MerchantRegistryRepository } from '../../../../packages/data-platform
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 import { D1TaxRuleRepositoryAdapter } from '../../../../packages/data-platform/src/repositories/d1/tax-rate.repository';
 import { D1TransportOfferRepository } from '../../../../packages/data-platform/src/repositories/d1/transport-offer.repository';
-import { D1FxRateRepository } from '../../../../packages/data-platform/src/repositories/d1/fx-rate.repository';
-import { D1FxRateDatasetRepositoryAdapter } from '../../../../packages/data-platform/src/repositories/d1/fx-rate-port.adapter';
 import { R2PriceObservationPort } from '../../../../packages/data-platform/src/repositories/d1/price-observation.repository';
 import type { ObservationLogStore } from '../../../../packages/data-platform/src/d1/observation-log';
 import type { Env } from '../env';
@@ -191,7 +187,7 @@ export interface IngestionStageCompositionOptions {
   readonly governanceRepository?: ISourceGovernanceRepository;
   /** Observation log binding override (tests use an in-memory store). */
   readonly observationStoreOverride?: ObservationLogStore;
-  /** Feed adapters; default registers systembolaget + alko as pipeline.ts does. */
+  /** Feed adapters; default registers the Alko feed adapter as pipeline.ts does. */
   readonly feedAdaptersOverride?: Map<string, IFeedAdapter>;
   /** Write-port override (tests force upsert failures through it). */
   readonly upsertRepositoryOverride?: IUpsertRepository;
@@ -207,17 +203,11 @@ export function composeIngestionStageServices(
   env: Env,
   options: IngestionStageCompositionOptions = {},
 ): IngestionStageServices {
-  const fxDatasets = new FxRateDatasetService(
-    new D1FxRateDatasetRepositoryAdapter(new D1FxRateRepository(env.DB)),
-  );
-
   const adapters =
     options.feedAdaptersOverride ??
     (() => {
       const map = new Map<string, IFeedAdapter>();
-      const systembolaget = new SystembolagetFeedAdapter(fxDatasets);
       const alko = new AlkoFeedAdapter();
-      map.set(systembolaget.merchantId, systembolaget);
       map.set(alko.merchantId, alko);
       return map;
     })();

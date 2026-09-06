@@ -46,7 +46,7 @@ import type { EventDrinkType, EventShoppingList } from './eventcalc.types';
  * ({@link SourcingInputErrorReason.UNKNOWN_COUNTRY}), because a tie-break
  * over an open-ended country set could not be deterministic.
  */
-export const SOURCING_COUNTRY_ORDER = ['FI', 'EE', 'LV', 'LT', 'SE', 'DE'] as const;
+export const SOURCING_COUNTRY_ORDER = ['FI', 'EE', 'LV', 'LT', 'DE'] as const;
 
 export type SourcingCountry = (typeof SOURCING_COUNTRY_ORDER)[number];
 

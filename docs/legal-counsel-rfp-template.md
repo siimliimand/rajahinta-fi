@@ -26,8 +26,8 @@ Hei,
 Pyydämme tarjousta kirjallisesta oikeudellisesta arviosta koskien uutta suomalaisille kuluttajille suunnattua verkkopalvelua Rajahinta.fi.
 
 LYHYT KUVAUS PALVELUSTA:
-Rajahinta.fi on itsenäinen, puolueeton hintaindeksi ja kokonaiskustannuslaskuri (landed-cost calculator). Palvelu laskee kuluttajalle arvion siitä, mitä ulkomaisesta verkkokaupasta (esim. Systembolaget) ostetun alkoholijuoman tuonti Suomeen kokonaisuudessaan maksaa:
-  - Ulkomainen vähittäishinta (muunnettuna euroiksi EKP-viitekursseilla)
+Rajahinta.fi on itsenäinen, puolueeton hintaindeksi ja kokonaiskustannuslaskuri (landed-cost calculator). Palvelu laskee kuluttajalle arvion siitä, mitä ulkomaisessa verkkokaupassa (EUR-markkinat) ostetun alkoholijuoman tuonti Suomeen kokonaisuudessaan maksaa:
+  - Ulkomainen vähittäishinta (euroissa)
   - Kuljetuskustannus
   - Arvioitu Suomen alkoholivero (valmistevero)
   - Arvioitu juomapakkausvero
@@ -82,7 +82,7 @@ Dear Counsel,
 We are requesting a proposal for a formal written legal opinion concerning a new cross-border beverage cost-comparison service, Rajahinta.fi, targeted at Finnish consumers.
 
 BRIEF OVERVIEW:
-Rajahinta.fi is an independent landed-cost calculator and price index. It provides consumers with estimated total costs for purchasing beverages abroad (e.g. Systembolaget in Sweden) and importing them to Finland: foreign retail price, shipping, estimated Finnish alcohol excise duty, and beverage-container duty.
+Rajahinta.fi is an independent landed-cost calculator and price index. It provides consumers with estimated total costs for purchasing beverages at online retailers in EUR-market countries abroad and importing them to Finland: foreign retail price, shipping, estimated Finnish alcohol excise duty, and beverage-container duty.
 
 The platform is NOT a merchant or intermediary:
 - No checkout, no order taking, and no payment processing for alcohol.

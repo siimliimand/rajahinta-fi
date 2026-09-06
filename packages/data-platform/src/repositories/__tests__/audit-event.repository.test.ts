@@ -73,11 +73,11 @@ afterAll(async () => {
 
 const ENTRY: AuditEntry = {
   id: 'b7d6f2a1-1111-4222-8333-444455556666',
-  entityType: 'fx_rate_dataset',
-  entityId: 'ecb-2026-08-01.1',
+  entityType: 'tax_rate_dataset',
+  entityId: 'tax-rates-2026-08-01.1',
   action: 'confirmed',
   author: 'ops@example.invalid',
-  reason: 'ECB reference rates reviewed',
+  reason: 'Tax rate dataset reviewed',
   timestamp: '2026-08-28T09:00:00.000Z',
   previousValue: { status: 'PENDING_CONFIRMATION' },
   newValue: { status: 'PUBLISHED' },
@@ -92,7 +92,7 @@ describe('DrizzleAuditEventRepository', () => {
       const { sql, params } = lastRootSql(calls);
       expect(sql).toContain('insert into "audit_events"');
       expect(params).toContain(ENTRY.id);
-      expect(params).toContain('fx_rate_dataset');
+      expect(params).toContain('tax_rate_dataset');
       // Timestamp crosses the boundary as a driver-mapped instant of the
       // domain ISO timestamp (drizzle renders Date params as strings).
       const tsParams = params.filter(

@@ -38,17 +38,17 @@ describe('D1MerchantTermsRepository', () => {
 
   it('replaces the commercial columns on conflict and refreshes observedAt', async () => {
     await repo.upsert({
-      merchantId: 'systembolaget',
+      merchantId: 'eu-import',
       minimumOrderValueCents: 1500,
       currency: 'EUR',
-      sourceUrl: 'https://systembolaget.se',
+      sourceUrl: 'https://eu-import.example',
     });
     const refreshed = new Date('2026-08-20T12:00:00.000Z');
     const updated = await repo.upsert({
-      merchantId: 'systembolaget',
+      merchantId: 'eu-import',
       minimumOrderValueCents: 2500,
       currency: 'EUR',
-      sourceUrl: 'https://systembolaget.se/hjemleverans',
+      sourceUrl: 'https://eu-import.example/hjemleverans',
       reliabilityStatus: 'VERIFIED',
       observedAt: refreshed,
     });
@@ -61,7 +61,7 @@ describe('D1MerchantTermsRepository', () => {
     // One row per merchant — the unique key converged, never duplicated.
     const all = (await d1
       .prepare('SELECT count(*) AS n FROM merchant_terms WHERE merchant_id = ?')
-      .bind('systembolaget')
+      .bind('eu-import')
       .first()) as { n: number };
     expect(all.n).toBe(1);
   });

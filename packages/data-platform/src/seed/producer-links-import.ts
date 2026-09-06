@@ -74,7 +74,7 @@ export const producerLinkImportCaseSchema = z
       .number({ required_error: 'siblingProductId is required', invalid_type_error: 'siblingProductId must be a number' })
       .int('siblingProductId must be an integer')
       .positive('siblingProductId must be positive'),
-    /** Which foreign merchant catalog siblingProductId belongs to (e.g. "systembolaget"). */
+    /** Which foreign merchant catalog siblingProductId belongs to (a stable catalog id, e.g. a future feed's slug). */
     siblingMerchant: evidenceText(64, 'siblingMerchant'),
     /** Verified sibling product name — curation aid for the report, not persisted. */
     siblingProductName: evidenceText(256, 'siblingProductName'),
@@ -297,9 +297,9 @@ export interface CaseResolution {
  * Resolve every case's two product ids against product_master. Both
  * references are ids in the SAME table (schema FKs) — the bootstrap
  * file carries the merchants' own catalog ids (Alko product number,
- * Systembolaget artikelnummer; see seed/producer-links/README.md), so a
- * case whose products are not ingested under those ids resolves to null
- * and is reported as skipped instead of being written with fabricated
+ * the foreign catalog's article number; see seed/producer-links/README.md),
+ * so a case whose products are not ingested under those ids resolves to
+ * null and is reported as skipped instead of being written with fabricated
  * references.
  */
 export async function resolveCaseProducts(

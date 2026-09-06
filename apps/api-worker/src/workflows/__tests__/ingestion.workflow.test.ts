@@ -43,9 +43,7 @@ import { openMigratedD1 } from '../../analytics/__tests__/fake-d1';
 import { createLogger, type Logger } from '../../logger';
 import type { Env } from '../../env';
 import { AlkoFeedAdapter } from '../../../../../packages/data-acquisition/src/adapters/alko.adapter';
-import { SystembolagetFeedAdapter } from '../../../../../packages/data-acquisition/src/adapters/systembolaget.adapter';
 import { PostiCarrierRateSource } from '../../../../../packages/data-acquisition/src/adapters/posti-rate.source';
-import { EcbReferenceRateSource } from '../../../../../packages/data-acquisition/src/adapters/ecb-rate.source';
 import { ALKO_GOLDEN_PAYLOAD } from '../../../../../packages/data-acquisition/src/adapters/__fixtures__/alko-assortment.fixture';
 import { POSTI_GOLDEN_PAYLOAD } from '../../../../../packages/data-acquisition/src/adapters/__fixtures__/posti-rates.fixture';
 
@@ -613,26 +611,10 @@ describe('adapter fetch-compat smoke (feed paths: standard fetch + JSON only)', 
     });
   }
 
-  it('runs the four feed paths against recorded fixtures over real HTTP', async () => {
+  it('runs the two feed paths against recorded fixtures over real HTTP', async () => {
     const baseUrl = await serve({
       '/alko': ALKO_GOLDEN_PAYLOAD,
       '/posti': POSTI_GOLDEN_PAYLOAD,
-      '/systembolaget': [
-        {
-          productId: '1',
-          productNameBold: 'Norrlands Guld Export',
-          category: 'Öl',
-          alcoholPercentage: 5.3,
-          bottleVolume: 500,
-          price: 12.5,
-          apk: 'Burk',
-        },
-      ],
-      '/ecb': {
-        base: 'EUR',
-        date: '2026-08-28',
-        rates: { SEK: 11.02, USD: 1.08 },
-      },
     });
 
     // Alko — golden fixture payload through the real fetch path.
@@ -643,23 +625,7 @@ describe('adapter fetch-compat smoke (feed paths: standard fetch + JSON only)', 
     expect(alko.records.length).toBeGreaterThan(0);
     expect(alko.records[0].currency).toBe('EUR');
 
-    // Systembolaget — SEK offers convert through the (stubbed) FX service.
-    const fx = {
-      resolveRate: async () => ({
-        rate: 0.087,
-        dataset: { versionLabel: 'fx-test-2026' },
-      }),
-    };
-    const systembolaget = await new SystembolagetFeedAdapter(fx as never).fetch(
-      { feedUrl: `${baseUrl}/systembolaget`, feedFormat: 'json' },
-    );
-    expect(systembolaget.errors).toEqual([]);
-    expect(systembolaget.records[0].priceCents).toBe(
-      Math.round(12.5 * 0.087 * 100),
-    );
-    expect(systembolaget.records[0].fxDatasetVersion).toBe('fx-test-2026');
-
-    // Posti + ECB — default fetchers, constructor-injected fixture URLs.
+    // Posti — default fetcher, constructor-injected fixture URL.
     const posti = await new PostiCarrierRateSource(
       undefined,
       `${baseUrl}/posti`,
@@ -669,16 +635,5 @@ describe('adapter fetch-compat smoke (feed paths: standard fetch + JSON only)', 
     expect(posti.rates.length).toBeGreaterThan(0);
     expect(posti.errors.join(' ')).toMatch(/BAD-LANE/);
     expect(posti.errors.join(' ')).toMatch(/BAD-PRICE/);
-
-    const ecb = await new EcbReferenceRateSource(
-      undefined,
-      `${baseUrl}/ecb`,
-    ).fetchLatestRates();
-    expect(ecb.errors).toEqual([]);
-    expect(ecb.snapshot!.referenceDate).toBe('2026-08-28');
-    expect(ecb.snapshot!.rates.map((r) => r.quoteCurrency).sort()).toEqual([
-      'SEK',
-      'USD',
-    ]);
   });
 });

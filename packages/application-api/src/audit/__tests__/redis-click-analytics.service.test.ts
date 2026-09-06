@@ -87,11 +87,11 @@ describe('RedisClickAnalyticsService', () => {
     const url = 'https://example.invalid/product';
     await clickAnalytics.recordClick('alko', url);
     await clickAnalytics.recordClick('alko', url);
-    await clickAnalytics.recordClick('systembolaget', url);
+    await clickAnalytics.recordClick('eu-import', url);
 
     const counts = await clickAnalytics.getClickCounts();
     expect(counts.alko[url]).toBe(2);
-    expect(counts.systembolaget[url]).toBe(1);
+    expect(counts['eu-import'][url]).toBe(1);
   });
 
   it('summarises stats with the Phase 1 zero-literal fields', async () => {
@@ -116,11 +116,11 @@ describe('RedisClickAnalyticsService', () => {
 
   it('lists merchants deterministically', async () => {
     const { clickAnalytics } = makeService();
-    await clickAnalytics.recordClick('systembolaget', 'https://x.invalid');
+    await clickAnalytics.recordClick('eu-import', 'https://x.invalid');
     await clickAnalytics.recordClick('alko', 'https://x.invalid');
     await expect(clickAnalytics.listMerchants()).resolves.toEqual([
       'alko',
-      'systembolaget',
+      'eu-import',
     ]);
   });
 });

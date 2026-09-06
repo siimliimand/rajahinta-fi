@@ -158,6 +158,58 @@ describe('POST /api/v1/calculator', () => {
     expect(hitBody).toEqual(missBody);
   });
 
+  it('resolves an Alko reference WITH observedAt into the live alkoBenchmark', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    // Cheapest non-alko offer becomes the calculated offer; the Alko row
+    // is the benchmark reference selected by its pinned observedAt.
+    seedOffer(db, {
+      id: 11,
+      productId: 1,
+      merchant: 'kauppa',
+      priceCents: 250,
+      observedAt: '2026-08-06T10:00:00.000Z',
+    });
+    seedOffer(db, {
+      id: 12,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 300,
+      observedAt: '2026-08-05T10:00:00.000Z',
+    });
+    seedTaxRule(db, {
+      taxType: 'excise',
+      productCategory: 'beer',
+      rate: 0.365,
+    });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+    });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/calculator', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AGE },
+      body: JSON.stringify({ productId: 1, quantity: 1, destination: 'FI' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+
+    // 250 − 300 = −50 cents → −16.666…% → −16.7 (one decimal, half away
+    // from zero). observedAt serializes to ISO 8601 on the snapshot.
+    expect(body.alkoBenchmark).toEqual({
+      status: 'available',
+      referencePriceCents: 300,
+      differenceCents: -50,
+      differencePercent: -16.7,
+      reliabilityStatus: 'VERIFIED',
+      observedAt: '2026-08-05T10:00:00.000Z',
+    });
+  });
+
   it('gives a client-supplied idempotency key a verbatim cache entry', async () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1 });

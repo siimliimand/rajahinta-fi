@@ -23,17 +23,12 @@ Calculation endpoints SHALL be idempotent for identical inputs given the same un
 
 ### Requirement: Version-keyed caching
 
-Caching SHALL be keyed by (product, quantity, destination, transport assumption, transport arrangement, tax-dataset version, transport-dataset version), driven by dataset version changes rather than arbitrary TTLs. The resolved dataset versions SHALL participate in the cache key itself so that different dataset versions can never collide on one cache entry; any lookup-time version comparison is defence in depth, not the primary mechanism.
+Calculation idempotency cache keys SHALL be composed from the request payload plus the tax-dataset and transport-rate dataset versions. The FX dataset version component SHALL NOT exist.
 
-#### Scenario: Dataset bump invalidates cache
+#### Scenario: Cache key composition
 
-- **WHEN** a new tax-dataset version goes live
-- **THEN** previously cached results SHALL be invalidated by the version change without waiting for a TTL expiry
-
-#### Scenario: Versions participate in the key
-
-- **WHEN** two identical product inputs are calculated under different tax-dataset versions
-- **THEN** they SHALL produce distinct cache keys and the second calculation SHALL NOT return the first version's cached result
+- **WHEN** an idempotency key is built for a calculation request
+- **THEN** the key incorporates the tax and transport versions only, and two identical requests with the same versions resolve to one cached result
 
 ### Requirement: Rate limiting and abuse protection
 
@@ -202,9 +197,20 @@ Rate limiting SHALL be enforced by a sliding-window Durable Object (`RateLimiter
 
 ### Requirement: Version-keyed idempotency on a Durable Object
 
-Calculation idempotency SHALL be served by an `IdempotencyDO` preserving version-aware cache keys (tax, transport, and FX dataset versions remain part of the key). Entries SHALL invalidate when a dataset version changes, not on a timer.
+The `IdempotencyDO` SHALL apply the same version-aware key rule as the Nest service, minus the FX component, and SHALL keep the version-aware invalidation semantics for tax and transport datasets.
 
-#### Scenario: Dataset version change invalidates cache
+#### Scenario: Version change invalidates
 
-- **WHEN** a tax dataset version changes
-- **THEN** idempotent lookups for calculations computed under the previous version miss and recompute
+- **WHEN** a tax-dataset version changes between two identical calculation requests
+- **THEN** the Durable Object treats the second request as a fresh calculation rather than replaying the cached result
+
+## ADDED Requirements
+
+### Requirement: Benchmark field on the calculator contract
+
+The calculator response DTO SHALL include the optional `alkoBenchmark` field as specified in the landed-cost-calculator capability. The field SHALL be absent (not null, not a placeholder object) when no reference exists, and legacy persisted records without the field SHALL be served unchanged.
+
+#### Scenario: Old records keep serving
+
+- **WHEN** a calculation record created before this change is fetched by record id
+- **THEN** the response contains no `alkoBenchmark` key and the request succeeds

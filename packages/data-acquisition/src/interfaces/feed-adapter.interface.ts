@@ -2,7 +2,7 @@
  * Feed adapter port — the contract between the pipeline and merchant-specific
  * data sources.
  *
- * Each merchant (Alko, Systembolaget, …) must provide an implementation of
+ * Each merchant (Alko, …) must provide an implementation of
  * this interface registered under its `merchantId`.  The feed-ingestion
  * service looks up adapters by merchant ID so the pipeline remains
  * merchant-agnostic.
