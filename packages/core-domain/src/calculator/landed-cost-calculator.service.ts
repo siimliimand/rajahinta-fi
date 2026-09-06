@@ -26,6 +26,8 @@ import { TransactionClassificationService } from '../classification/transaction-
 import { ConfidenceFrameworkService } from '../reliability/confidence-framework.service';
 import { TransportEstimationService } from '../transport/transport-estimation.service';
 import { DISCLAIMER_FI } from '../disclaimer';
+import { computeAlkoBenchmark } from '../benchmark/alko-benchmark';
+import type { AlkoReferenceOffer } from '../benchmark/benchmark.types';
 import type {
   CalculatorInput,
   CalculatorResult,
@@ -36,6 +38,7 @@ import type {
   ComputedItemCostsResult,
   IProductDataPort,
   ICalculationRecordPort,
+  AlkoBenchmarkSnapshot,
 } from './calculator.types';
 import {
   PRODUCT_DATA_PORT,
@@ -46,6 +49,9 @@ import {
 } from './calculator.types';
 import type { ReliabilityStatus } from '../reliability/reliability.types';
 import type { ClassificationInput } from '../classification/classification.types';
+
+/** Merchant id of the domestic reference feed (design D6). */
+const ALKO_MERCHANT = 'alko';
 
 @Injectable()
 export class LandedCostCalculatorService {
@@ -113,6 +119,11 @@ export class LandedCostCalculatorService {
       throw new NoRetailOffersError(input.productId);
     }
     const bestOffer = this.selectBestOffer(offers);
+
+    // Display-only enrichment, resolved from the same single offers read —
+    // the product-data port stays the only lookup machinery. Never enters
+    // totals, the itemized breakdown, or any ranking input.
+    const alkoBenchmark = this.resolveAlkoBenchmark(offers, bestOffer);
 
     // -----------------------------------------------------------------------
     // 3. Transport estimation
@@ -192,6 +203,7 @@ export class LandedCostCalculatorService {
       destination: input.destination,
       disclaimer: DISCLAIMER_FI,
       sessionId: input.sessionId ?? null,
+      ...(alkoBenchmark !== undefined ? { alkoBenchmark } : {}),
     });
 
     // -----------------------------------------------------------------------
@@ -210,6 +222,7 @@ export class LandedCostCalculatorService {
       confidenceBreakdown: computed.confidenceBreakdown,
       disclaimer: DISCLAIMER_FI,
       classification: computed.classificationResult,
+      ...(alkoBenchmark !== undefined ? { alkoBenchmark } : {}),
       metadata: {
         input,
         calculationTimestamp: new Date().toISOString(),
@@ -420,6 +433,41 @@ export class LandedCostCalculatorService {
       }
     }
     return best;
+  }
+
+  /**
+   * Resolve the display-only Alko benchmark from the offers already
+   * fetched through the product-data port. Only rows carrying an
+   * observation timestamp can serve as references — the deterministic
+   * newest-reference selection needs the observation axis — so legacy
+   * rows without one are dropped here rather than failing the whole
+   * benchmark. An unavailable result degrades to key-absence on the
+   * contract: absence is the render-nothing state, never null.
+   */
+  private resolveAlkoBenchmark(
+    offers: CalculatorRetailOfferData[],
+    bestOffer: CalculatorRetailOfferData,
+  ): AlkoBenchmarkSnapshot | undefined {
+    const alkoOffers: AlkoReferenceOffer[] = [];
+    for (const offer of offers) {
+      if (offer.merchant === ALKO_MERCHANT && offer.observedAt !== undefined) {
+        alkoOffers.push({
+          id: offer.id,
+          priceCents: offer.priceCents,
+          reliabilityStatus: offer.reliabilityStatus,
+          observedAt: offer.observedAt,
+        });
+      }
+    }
+
+    const benchmark = computeAlkoBenchmark({
+      calculatedPriceCents: bestOffer.priceCents,
+      alkoOffers,
+    });
+
+    return benchmark.status === 'available'
+      ? { ...benchmark, observedAt: benchmark.observedAt.toISOString() }
+      : undefined;
   }
 
   /**

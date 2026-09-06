@@ -284,10 +284,12 @@ describe('mapCalculationRecordToResult', () => {
     expect('otherCharges' in result).toBe(false);
     expect(result.currency).toBe('EUR');
 
-    // -- Live-only fields degrade factually (not persisted with the
-    //    record): no exclusions to surface, no pre-conversion price --
-    expect(result.excludedOffers).toEqual([]);
-    expect(result.originalRetailPrice).toBeUndefined();
+    // -- Fields the record does not persist are key-absent (never null,
+    //    never a placeholder): the dead exclusion keys stay gone and the
+    //    benchmark is absent on records predating it.
+    expect('excludedOffers' in result).toBe(false);
+    expect('originalRetailPrice' in result).toBe(false);
+    expect('alkoBenchmark' in result).toBe(false);
 
     // -- Metadata: product facts joined from the master --
     expect(result.metadata.productName).toBe('Koff III 0.33L');
@@ -340,6 +342,23 @@ describe('mapCalculationRecordToResult', () => {
       containerVersionLabel: null,
     });
     expect(result.metadata.datasetVersions).toEqual([]);
+  });
+
+  it('serves a pre-change record with no alkoBenchmark key (spec application-api benchmark scenario)', () => {
+    // Records created before the benchmark change lack the field — the
+    // fetch must succeed and the response must not carry the key at all:
+    // absence is the render-nothing state, never null or a placeholder.
+    const result = mapCalculationRecordToResult({
+      record: makeRecord(),
+      product: makeProduct(),
+      exciseVersionLabel: 'v3.0-2026',
+      containerVersionLabel: 'v2.0-2025',
+    });
+
+    expect('alkoBenchmark' in result).toBe(false);
+    // The rest of the shape is unaffected — figures stay verbatim.
+    expect(result.totalCents).toBe(5144);
+    expect(result.itemizedCosts).toEqual(PERSISTED_BREAKDOWN);
   });
 
   it('degrades factually when the classification is not persisted', () => {

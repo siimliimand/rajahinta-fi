@@ -717,4 +717,133 @@ describe('LandedCostCalculatorService', () => {
       expect(result.metadata.datasetVersions).toEqual(['v1', 'v1']);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Alko benchmark enrichment (change drop-sweden-eur-only-alko-benchmark)
+  // ---------------------------------------------------------------------------
+
+  describe('Alko benchmark enrichment', () => {
+    /** Alko reference rows exercising the newest-observedAt selection. */
+    const ALKO_REFERENCES: CalculatorRetailOfferData[] = [
+      {
+        id: 300,
+        priceCents: 250,
+        merchant: 'alko',
+        country: 'FI',
+        reliabilityStatus: 'VERIFIED',
+        observedAt: new Date('2026-08-01T10:00:00.000Z'),
+      },
+      // Newest observation wins despite the higher id and lower
+      // reliability — selection is by observedAt first, id on ties.
+      {
+        id: 301,
+        priceCents: 240,
+        merchant: 'alko',
+        country: 'FI',
+        reliabilityStatus: 'STALE',
+        observedAt: new Date('2026-08-05T10:00:00.000Z'),
+      },
+    ];
+
+    /** The exact snapshot the default fixtures must produce. */
+    const EXPECTED_SNAPSHOT = {
+      status: 'available',
+      // Best offer (200) against the newest reference (240).
+      referencePriceCents: 240,
+      differenceCents: -40,
+      // -40 / 240 * 100 = -16.666… → -16.7 (half away from zero).
+      differencePercent: -16.7,
+      reliabilityStatus: 'STALE',
+      observedAt: '2026-08-05T10:00:00.000Z',
+    };
+
+    it('attaches the exact benchmark when an Alko reference exists', async () => {
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue([
+          ...DEFAULT_OFFERS,
+          ...ALKO_REFERENCES,
+        ]),
+      });
+      const { service } = createService({ productData });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.alkoBenchmark).toEqual(EXPECTED_SNAPSHOT);
+    });
+
+    it('persists the benchmark with the calculation record', async () => {
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue([
+          ...DEFAULT_OFFERS,
+          ...ALKO_REFERENCES,
+        ]),
+      });
+      const calculationRecords = createMockCalculationRecordPort();
+      const { service, mocks } = createService({
+        productData,
+        calculationRecords,
+      });
+
+      await service.calculate(DEFAULT_INPUT);
+
+      const createCall = (mocks.calculationRecords.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(createCall.alkoBenchmark).toEqual(EXPECTED_SNAPSHOT);
+    });
+
+    it('keeps totals, breakdown, and confidence byte-identical with references present (display-only)', async () => {
+      const without = createService();
+      const withoutResult = await without.service.calculate(DEFAULT_INPUT);
+
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue([
+          ...DEFAULT_OFFERS,
+          ...ALKO_REFERENCES,
+        ]),
+      });
+      const withRefs = createService({ productData });
+      const withResult = await withRefs.service.calculate(DEFAULT_INPUT);
+
+      // The benchmark varies; every calculated figure is invariant.
+      expect(withResult.totalCents).toBe(withoutResult.totalCents);
+      expect(withResult.itemizedCosts).toEqual(withoutResult.itemizedCosts);
+      expect(withResult.confidence).toBe(withoutResult.confidence);
+      expect(JSON.parse(JSON.stringify(withResult.itemizedCosts))).not.toHaveProperty(
+        'alkoBenchmark',
+      );
+    });
+
+    it('omits the key (never null) when no Alko reference exists', async () => {
+      const calculationRecords = createMockCalculationRecordPort();
+      const { service, mocks } = createService({ calculationRecords });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      // DEFAULT_OFFERS carry no 'alko' merchant row.
+      expect('alkoBenchmark' in result).toBe(false);
+      const createCall = (mocks.calculationRecords.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect('alkoBenchmark' in createCall).toBe(false);
+    });
+
+    it('omits the key when a reference row lacks an observation timestamp (legacy read model)', async () => {
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue([
+          ...DEFAULT_OFFERS,
+          // Reference without observedAt — cannot sit on the observation
+          // axis, so it cannot be selected as a reference.
+          {
+            id: 302,
+            priceCents: 240,
+            merchant: 'alko',
+            country: 'FI',
+            reliabilityStatus: 'VERIFIED',
+          },
+        ]),
+      });
+      const { service } = createService({ productData });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect('alkoBenchmark' in result).toBe(false);
+    });
+  });
 });

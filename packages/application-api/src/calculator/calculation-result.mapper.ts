@@ -245,13 +245,6 @@ export function mapCalculationRecordToResult(
     transportCost: sumCategory(itemizedCosts, 'transportCost'),
     alcoholExciseEstimate: sumCategory(itemizedCosts, 'alcoholExciseEstimate'),
     containerDutyEstimate: sumCategory(itemizedCosts, 'containerDutyEstimate'),
-    // Offer exclusions are computed on the live path (task 1.5) but not
-    // persisted with the record — the reconstructed result reports none.
-    // Empty is the representable "nothing to surface" state; the result
-    // page hides the section, the same degradation as confidenceBreakdown.
-    excludedOffers: [],
-    // The selected offer's pre-conversion price is likewise live-only;
-    // absence renders as EUR-native (optional in the frontend contract).
     totalCents: record.totalCents,
     currency: 'EUR',
     confidence: toConfidenceLevel(record.confidence),

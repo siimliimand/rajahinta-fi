@@ -9,6 +9,7 @@ import type { ReliabilityStatus } from '../reliability/reliability.types';
 import type { ConfidenceLevel } from '../reliability/confidence-framework.types';
 import type { ConfidenceDetail } from '../reliability/confidence-framework.types';
 import type { ClassificationResult } from '../classification/classification.types';
+import type { AlkoBenchmarkAvailable } from '../benchmark/benchmark.types';
 
 // ---------------------------------------------------------------------------
 // Disclaimer — defined locally to avoid circular dependency through barrel
@@ -179,6 +180,13 @@ export interface CalculatorRetailOfferData {
   readonly merchant: string;
   readonly country: string;
   readonly reliabilityStatus: ReliabilityStatus;
+  /**
+   * When the offer was observed. Alko reference rows carry it — the
+   * benchmark's newest-reference selection needs the observation axis —
+   * while legacy read models may omit it; a row without it cannot serve
+   * as a benchmark reference.
+   */
+  readonly observedAt?: Date;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,6 +227,22 @@ export interface ItemizedCost {
 // ---------------------------------------------------------------------------
 
 /**
+ * The serialized, display-only Alko benchmark carried on results and
+ * persisted records: the benchmark module's `AlkoBenchmarkAvailable`
+ * variant with the observation timestamp as ISO 8601. Every field of the
+ * result/record contract stays JSON-stable, so an idempotency-cache replay
+ * returns the type the live path returned.
+ *
+ * The module's `unavailable` variant never reaches this contract — the
+ * whole field is omitted instead: absence is the render-nothing state,
+ * never a null and never a placeholder object.
+ */
+export type AlkoBenchmarkSnapshot = Omit<AlkoBenchmarkAvailable, 'observedAt'> & {
+  /** Observation timestamp of the selected reference row, ISO 8601. */
+  readonly observedAt: string;
+};
+
+/**
  * Full result from the landed-cost calculator.
  */
 export interface CalculatorResult {
@@ -253,6 +277,14 @@ export interface CalculatorResult {
 
   /** Transaction classification outcome. */
   readonly classification: ClassificationResult;
+
+  /**
+   * Display-only Alko benchmark for the calculated offer. Present only
+   * when the product has a usable Alko reference offer; omitted (key
+   * absent) otherwise — never null, never a placeholder. Never enters
+   * `totalCents`, the itemized breakdown, or any ranking input.
+   */
+  readonly alkoBenchmark?: AlkoBenchmarkSnapshot;
 
   /** Calculation metadata. */
   readonly metadata: {
@@ -311,6 +343,12 @@ export interface CreateCalculationRecordInput {
   readonly destination: string;
   readonly disclaimer: Disclaimer;
   readonly sessionId: string | null;
+  /**
+   * Display-only Alko benchmark persisted with the record when available.
+   * Optional: reference-less calculations and pre-change records lack the
+   * field, and consumers treat absence as normal.
+   */
+  readonly alkoBenchmark?: AlkoBenchmarkSnapshot;
 }
 
 // ---------------------------------------------------------------------------
