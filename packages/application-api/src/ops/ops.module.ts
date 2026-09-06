@@ -14,8 +14,6 @@
  *   shared null-bound singleton the scheduler/pipeline resolve stays
  *   fail-closed until the port is rebound in their module scope —
  *   permission is never overstated anywhere.
- * - FX: FxRateDatasetService is provided here; its repository port
- *   resolves from DataPlatformModule's exported Drizzle-backed adapter.
  * - Tax reviews: RATE_REVIEW_REPOSITORY_PORT is bound to the
  *   data-acquisition in-memory repository in this scope — the operator
  *   resolution path (list/approve/reject) for rate-review entries.
@@ -29,9 +27,7 @@ import { Module } from '@nestjs/common';
 import {
   SOURCE_GOVERNANCE_REPOSITORY_PORT,
   SourceGovernanceService,
-  FxRateDatasetService,
 } from '@rajahinta/core-domain';
-import { DataPlatformModule } from '@rajahinta/data-platform';
 import { RATE_REVIEW_REPOSITORY_PORT } from '@rajahinta/data-acquisition';
 import { IdempotencyModule } from '../idempotency';
 import { CorrectionModule } from '../correction';
@@ -47,15 +43,12 @@ import { OpsAuditTrailController } from './audit/ops-audit-trail.controller';
 import { OpsAuditTrailService } from './audit/ops-audit-trail.service';
 
 @Module({
-  imports: [DataPlatformModule, IdempotencyModule, CorrectionModule],
+  imports: [IdempotencyModule, CorrectionModule],
   providers: [
     // Governance — console-scoped repository + service instance on it.
     InMemorySourceGovernanceRepository,
     { provide: SOURCE_GOVERNANCE_REPOSITORY_PORT, useClass: InMemorySourceGovernanceRepository },
     SourceGovernanceService,
-
-    // FX dataset lifecycle — repository port arrives via DataPlatformModule.
-    FxRateDatasetService,
 
     // Tax rate-review entries — in-memory Phase 1 backing owned by the
     // console (data-acquisition keeps its own instance private); the

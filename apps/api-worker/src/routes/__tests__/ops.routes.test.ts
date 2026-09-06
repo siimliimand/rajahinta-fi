@@ -6,8 +6,8 @@
  *   (deny-before-data: ops access + OPERATOR_CONSOLE flag),
  * - ops-governance.service.test.ts (list shape; mutations here fail
  *   closed — documented 3.8 scope note),
- * - ops-dataset-confirmation.service.test.ts (queue shape, publish
- *   transition, predecessor-based cache invalidation, audit write),
+ * - ops-dataset-confirmation.service.test.ts (queue shape, tax review
+ *   resolution, audit write),
  * - ops-correction-queue.service.test.ts / ops-audit-trail.service.test.ts
  *   (fail-closed queue; audit trail reads with limit clamps).
  *
@@ -24,7 +24,6 @@ import {
   permissiveEnv,
   request,
 } from './harness';
-import { D1FxRateRepository } from '../../../../../packages/data-platform/src/repositories/d1/fx-rate.repository';
 import { D1ConsumptionNormsRepository } from '../../../../../packages/data-platform/src/repositories/d1/consumption-norms.repository';
 
 const OPS = { authorization: `Bearer ${FAKE_OPS_TOKEN}` };
@@ -44,25 +43,6 @@ function seedRegistryMerchant(
        merchant_id, name, country, feed_url, feed_format, polling_interval_ms
      ) VALUES (?, ?, ?, ?, 'json', 3_600_000)`,
   ).run(merchant.merchantId, merchant.name, merchant.country ?? 'SE', 'https://feed.example');
-}
-
-async function seedPendingFxDatasetAsync(
-  fx: D1FxRateRepository,
-  versionLabel: string,
-): Promise<number> {
-  const created = await fx.createDataset(
-    {
-      versionLabel,
-      sourceName: 'ecb-reference-rates',
-      sourceUrl: 'https://www.ecb.example',
-      referenceDate: '2026-08-28',
-      effectiveFrom: new Date('2026-08-29T00:00:00.000Z'),
-      effectiveTo: null,
-      status: 'PENDING_CONFIRMATION',
-    },
-    [{ baseCurrency: 'EUR', quoteCurrency: 'SEK', rate: '11.20' }],
-  );
-  return created.id;
 }
 
 describe('ops console — deny before any data (ops-console.access parity)', () => {
@@ -157,102 +137,6 @@ describe('GET/POST /ops/console/governance', () => {
 });
 
 describe('/ops/console/confirmations', () => {
-  it('lists pending FX datasets with their rates (tax reviews fail-closed empty)', async () => {
-    const { d1 } = openMigratedD1();
-    const fx = new D1FxRateRepository(d1);
-    await seedPendingFxDatasetAsync(fx, 'ecb-2026-08-28.1');
-    const app = buildApp();
-
-    const res = await request(app, authedEnv(d1), '/ops/console/confirmations', {
-      headers: OPS,
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as Record<string, any>;
-    expect(body.fx).toHaveLength(1);
-    expect(body.fx[0]).toMatchObject({
-      versionLabel: 'ecb-2026-08-28.1',
-      status: 'PENDING_CONFIRMATION',
-      sourceName: 'ecb-reference-rates',
-      referenceDate: '2026-08-28',
-    });
-    expect(body.fx[0].rates).toEqual([
-      { baseCurrency: 'EUR', quoteCurrency: 'SEK', rate: 11.2 },
-    ]);
-    expect(body.taxReviews).toEqual([]);
-  });
-
-  it('publishes a pending FX dataset: 404 unknown, 409 wrong state, 200 transition + audit', async () => {
-    const { d1 } = openMigratedD1();
-    const fx = new D1FxRateRepository(d1);
-    // The currently effective (predecessor) dataset — already published.
-    await fx.createDataset(
-      {
-        versionLabel: 'ecb-2026-08-21.1',
-        sourceName: 'ecb-reference-rates',
-        referenceDate: '2026-08-21',
-        effectiveFrom: new Date('2026-08-22T00:00:00.000Z'),
-        effectiveTo: null,
-        status: 'PUBLISHED',
-        confirmedBy: 'ops-0',
-        confirmedAt: new Date('2026-08-21T12:00:00.000Z'),
-      },
-      [{ baseCurrency: 'EUR', quoteCurrency: 'SEK', rate: '11.10' }],
-    );
-    const pendingId = await seedPendingFxDatasetAsync(fx, 'ecb-2026-08-28.1');
-    const app = buildApp();
-    const env = authedEnv(d1);
-
-    const missing = await request(app, env, '/ops/console/confirmations/fx/999/confirm', {
-      method: 'POST',
-      headers: JSON_HDRS,
-      body: JSON.stringify({ operator: 'ops-1' }),
-    });
-    await expectEnvelope(missing, 404, { message: 'FX dataset 999 not found' });
-
-    // Publish the pending dataset — the ONLY PENDING → PUBLISHED path.
-    const ok = await request(
-      app,
-      env,
-      `/ops/console/confirmations/fx/${pendingId}/confirm`,
-      {
-        method: 'POST',
-        headers: JSON_HDRS,
-        body: JSON.stringify({ operator: 'ops-1', note: 'ECB rates verified' }),
-      },
-    );
-    expect(ok.status).toBe(200);
-    const body = (await ok.json()) as Record<string, any>;
-    expect(body).toMatchObject({
-      id: pendingId,
-      versionLabel: 'ecb-2026-08-28.1',
-      status: 'PUBLISHED',
-      invalidatedVersion: 'ecb-2026-08-21.1',
-    });
-    expect(body.confirmedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-
-    // Republishing is an invalid transition (409).
-    const again = await request(app, env, `/ops/console/confirmations/fx/${pendingId}/confirm`, {
-      method: 'POST',
-      headers: JSON_HDRS,
-      body: JSON.stringify({ operator: 'ops-1' }),
-    });
-    await expectEnvelope(again, 409, {});
-
-    // The action was audited to the durable D1 store.
-    const trail = await request(app, env, '/ops/console/audit?limit=10', { headers: OPS });
-    const trailBody = (await trail.json()) as Record<string, any>;
-    const entry = trailBody.items.find(
-      (e: Record<string, any>) => e.entityType === 'fx_rate_dataset',
-    );
-    expect(entry).toMatchObject({
-      entityType: 'fx_rate_dataset',
-      entityId: 'ecb-2026-08-28.1',
-      action: 'confirmed',
-      author: 'ops-1',
-      reason: 'ECB rates verified',
-    });
-  });
-
   it('fails tax-review approve/reject closed with 503 (no D1 store)', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
@@ -273,7 +157,7 @@ describe('/ops/console/confirmations', () => {
     }
   });
 
-  it('lists pending consumption norms by version and publishes via confirm: 404 unknown, 409 terminal, audit', async () => {
+  it('lists pending consumption norms by version (tax reviews fail-closed empty) and publishes via confirm: 404 unknown, 409 terminal, audit', async () => {
     const { d1 } = openMigratedD1();
     const norms = new D1ConsumptionNormsRepository(d1);
     const [created] = await norms.createPendingVersion([
@@ -293,6 +177,7 @@ describe('/ops/console/confirmations', () => {
     const list = await request(app, env, '/ops/console/confirmations', { headers: OPS });
     expect(list.status).toBe(200);
     const listBody = (await list.json()) as Record<string, any>;
+    expect(listBody.taxReviews).toEqual([]);
     expect(listBody.consumptionNorms).toHaveLength(1);
     expect(listBody.consumptionNorms[0]).toMatchObject({
       versionLabel: 'norms-2026.1',
@@ -332,7 +217,7 @@ describe('/ops/console/confirmations', () => {
       status: 'PUBLISHED',
     });
 
-    // PUBLISHED is terminal — the FX republish 409 parity.
+    // PUBLISHED is terminal — republish is a 409.
     const again = await request(
       app,
       env,
@@ -410,7 +295,7 @@ describe('GET /ops/console/audit — durable trail reads', () => {
       db.prepare(
         `INSERT INTO audit_events (
            id, entity_type, entity_id, action, author, reason, occurred_at
-         ) VALUES (?, 'fx_rate_dataset', ?, 'confirmed', 'ops-seed', 'seed', ?)`,
+         ) VALUES (?, 'seed_entity', ?, 'confirmed', 'ops-seed', 'seed', ?)`,
       ).run(
         `id-${index}`,
         entity,

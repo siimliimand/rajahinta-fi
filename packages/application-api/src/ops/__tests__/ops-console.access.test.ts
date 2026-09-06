@@ -132,8 +132,8 @@ describe('operator console access', () => {
       // Distinct milliseconds so newest-first ordering is deterministic.
       await new Promise((resolve) => setTimeout(resolve, 3));
       await audit.logChange({
-        entityType: 'fx_rate_dataset',
-        entityId: 'ecb-2026-08-28',
+        entityType: 'tax_rule_version',
+        entityId: 'v3.0-2026',
         action: 'confirmed',
         author: 'second@rajahinta.fi',
         reason: 'confirm 1',
@@ -142,7 +142,7 @@ describe('operator console access', () => {
       const recent = await controller.recent(undefined);
       expect(recent.total).toBe(2);
       expect(recent.items[0].author).toBe('second@rajahinta.fi'); // newest first
-      expect(recent.items[0].entityType).toBe('fx_rate_dataset');
+      expect(recent.items[0].entityType).toBe('tax_rule_version');
 
       const one = await controller.recent('1');
       expect(one.items).toHaveLength(1);

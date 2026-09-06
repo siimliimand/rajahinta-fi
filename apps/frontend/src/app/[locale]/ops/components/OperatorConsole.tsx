@@ -5,7 +5,7 @@
  * technical-assessment-remediation).
  *
  * Minimal functional console for the three human workflows: governance
- * permission grants, tax-rate/FX dataset-version confirmation, and the
+ * permission grants, tax-rate dataset-version confirmation, and the
  * correction queue, with the durable audit trail visible per action.
  *
  * Phase 1 auth model (documented future work: interactive login): the
@@ -31,7 +31,6 @@ import type {
 } from '@/lib/types';
 import {
   OpsApiError,
-  confirmFxDataset,
   grantGovernance,
   listAuditTrail,
   listConfirmations,
@@ -365,42 +364,6 @@ function ConfirmationSection({
           className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm text-gray-800"
         />
       </label>
-
-      <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
-        {t('fxDatasets')}
-      </h3>
-      <ul className="mt-2 space-y-2">
-        {data.confirmations.fx.map((dataset) => (
-          <li key={dataset.id} className="rounded border border-gray-200 p-3 text-xs">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-medium text-gray-900">{dataset.versionLabel}</p>
-                <p className="text-gray-500">
-                  {dataset.sourceName} · {dataset.referenceDate} ·{' '}
-                  {t('ratesCount', { count: dataset.rates.length })}
-                </p>
-                {dataset.sourceUrl !== null && (
-                  <p className="text-gray-400">{dataset.sourceUrl}</p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  onAction(t('fxConfirmed', { version: dataset.versionLabel }), () =>
-                    confirmFxDataset(token, dataset.id, actionBody()),
-                  )
-                }
-                className="rounded bg-primary-600 px-2 py-1 font-medium text-white hover:bg-primary-700"
-              >
-                {t('confirm')}
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-      {data.confirmations.fx.length === 0 && (
-        <p className="mt-2 text-xs text-gray-500">{t('noFxDatasets')}</p>
-      )}
 
       <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
         {t('taxReviews')}

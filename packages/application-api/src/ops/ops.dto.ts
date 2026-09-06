@@ -86,26 +86,8 @@ export interface OpsGovernanceMutationResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Dataset-version confirmation — FX datasets + tax rate-review entries
+// Dataset-version confirmation — tax rate-review entries
 // ---------------------------------------------------------------------------
-
-/** A pending FX dataset awaiting operator confirmation. */
-export interface OpsPendingFxDataset {
-  readonly id: number;
-  /** Dataset identity used for provenance and cache invalidation. */
-  readonly versionLabel: string;
-  readonly status: 'PENDING_CONFIRMATION';
-  readonly sourceName: string;
-  readonly sourceUrl: string | null;
-  /** ISO-8601 date the source published the rates (YYYY-MM-DD). */
-  readonly referenceDate: string;
-  /** ISO-8601 start of the effective window. */
-  readonly effectiveFrom: string;
-  /** ISO-8601 end of the effective window, null = open-ended. */
-  readonly effectiveTo: string | null;
-  /** Rates carried by the version (provenance display). */
-  readonly rates: readonly { baseCurrency: string; quoteCurrency: string; rate: number }[];
-}
 
 /** A pending tax rate-review entry (the tax-rate confirmation task). */
 export interface OpsPendingTaxReview {
@@ -123,19 +105,7 @@ export interface OpsPendingTaxReview {
 
 /** GET /ops/console/confirmations response. */
 export interface OpsConfirmationListResponse {
-  readonly fx: OpsPendingFxDataset[];
   readonly taxReviews: OpsPendingTaxReview[];
-}
-
-/** POST /ops/console/confirmations/fx/:id/confirm response. */
-export interface OpsFxDatasetConfirmedResponse {
-  readonly id: number;
-  readonly versionLabel: string;
-  readonly status: 'PUBLISHED';
-  /** ISO-8601 publication timestamp. */
-  readonly confirmedAt: string;
-  /** FX dataset version whose cache entries were invalidated (the replaced one). */
-  readonly invalidatedVersion: string | null;
 }
 
 /** POST /ops/console/confirmations/tax/:id/{approve,reject} response. */

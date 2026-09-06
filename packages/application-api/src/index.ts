@@ -169,7 +169,7 @@ imports: [
     MerchantsModule,
     // Operator console API (task 12.1, change
     // technical-assessment-remediation) — governance permission grants,
-    // tax-rate/FX dataset-version confirmation, and the correction queue
+    // tax-rate dataset-version confirmation, and the correction queue
     // at /ops/console/** behind OpsAccessGuard (bearer + allowlist,
     // fail-closed) and the OPERATOR_CONSOLE flag (default OFF).
     OpsModule,
@@ -482,10 +482,8 @@ export type {
   OpsGovernanceMerchant,
   OpsGovernanceListResponse,
   OpsGovernanceMutationResponse,
-  OpsPendingFxDataset,
   OpsPendingTaxReview,
   OpsConfirmationListResponse,
-  OpsFxDatasetConfirmedResponse,
   OpsTaxReviewResolvedResponse,
   OpsCreateCorrectionDto,
   OpsAuditEntry,

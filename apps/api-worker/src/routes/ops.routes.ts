@@ -1,8 +1,8 @@
 /**
  * Operator-console API port (task 3.8) — Hono re-host of the four ops
  * console controllers (packages/application-api/src/ops/): governance
- * grants, dataset confirmations (incl. FX publish), the correction queue,
- * and the audit trail. Task 5.3 (change product-roadmap-phases-1-4)
+ * grants, dataset confirmations (tax rate-reviews and consumption norms),
+ * the correction queue, and the audit trail. Task 5.3 (change product-roadmap-phases-1-4)
  * adds the ferry-offer CRUD — the curated affiliate slot's audited
  * management surface (design R8). Task 6.1 adds the producer-link CRUD
  * — the curated sibling-product evidence surface (design R9), exact
@@ -25,8 +25,6 @@
  *
  * ## Fail-closed stores (documented scope note, task 3.8)
  *
- * - FX datasets resolve against the D1 fx-rate repositories (2.5) — the
- *   confirmation queue lists and publishes for real.
  * - Tax rate-review entries and the source-governance table have NO D1
  *   counterpart yet (2.5 ported sessions, audit, watermarks, registry).
  *   The permission state therefore cannot resolve from storage, so
@@ -46,10 +44,6 @@ import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
 import { parseIntParam } from './support';
 import { WorkerAuditService } from '../adapters/audit';
-import { idempotencyInvalidateVersions } from '../do/client';
-import { FxRateDatasetService } from '../adapters/core-domain-bridge';
-import { D1FxRateDatasetRepositoryAdapter } from '../../../../packages/data-platform/src/repositories/d1/fx-rate-port.adapter';
-import { D1FxRateRepository } from '../../../../packages/data-platform/src/repositories/d1/fx-rate.repository';
 import { D1MerchantRegistryRepository } from '../../../../packages/data-platform/src/repositories/d1/merchant-registry.repository';
 import {
   D1ConsumptionNormsRepository,
@@ -168,48 +162,16 @@ async function revokeGovernance(c: Context<AppEnv>): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
-// Dataset confirmations — FX live from D1, tax reviews fail-closed
+// Dataset confirmations — tax reviews fail-closed
 // ---------------------------------------------------------------------------
 
-function fxService(env: AppEnv['Bindings']): {
-  service: FxRateDatasetService;
-  repo: D1FxRateDatasetRepositoryAdapter;
-} {
-  const repo = new D1FxRateDatasetRepositoryAdapter(new D1FxRateRepository(env.DB));
-  return { service: new FxRateDatasetService(repo), repo };
-}
-
 async function listConfirmations(c: Context<AppEnv>): Promise<Response> {
-  const { service, repo } = fxService(c.env);
-  const pending = await service.listPendingDatasets();
-
-  const fx = [];
-  for (const version of pending) {
-    const rates = await repo.findRatesForDataset(version.id);
-    fx.push({
-      id: version.id,
-      versionLabel: version.versionLabel,
-      status: 'PENDING_CONFIRMATION',
-      sourceName: version.sourceName,
-      sourceUrl: version.sourceUrl,
-      referenceDate: version.referenceDate,
-      effectiveFrom: version.effectiveFrom.toISOString(),
-      effectiveTo: version.effectiveTo === null ? null : version.effectiveTo.toISOString(),
-      rates: rates.map((rate) => ({
-        baseCurrency: rate.baseCurrency,
-        quoteCurrency: rate.quoteCurrency,
-        rate: Number(rate.rate),
-      })),
-    });
-  }
-
   // Tax rate-review entries: the rate-review store has no D1 counterpart
   // (2.5) — the queue reports none rather than fabricating entries.
   //
   // Consumption norms (task 4.1, wired 4.3): the pending review queue,
-  // grouped by versionLabel — the FX dataset-confirmation shape mirrored
-  // for the norms dataset (rows carry the citation the publish guard
-  // requires, so the operator verifies provenance before confirming).
+  // grouped by versionLabel — rows carry the citation the publish guard
+  // requires, so the operator verifies provenance before confirming.
   const pendingNorms = await new D1ConsumptionNormsRepository(
     c.env.DB,
   ).findPending();
@@ -235,79 +197,18 @@ async function listConfirmations(c: Context<AppEnv>): Promise<Response> {
     }),
   );
 
-  return c.json({ fx, taxReviews: [], consumptionNorms });
-}
-
-async function confirmFx(c: Context<AppEnv>): Promise<Response> {
-  const id = parseIntParam(c, 'id');
-  const dto = await readBody(c);
-  validateOperator(dto);
-
-  const { service, repo } = fxService(c.env);
-  const audit = new WorkerAuditService(c.env.DB);
-
-  // Read the predecessor BEFORE the transition — after publishing it is no
-  // longer the dataset effective "now".
-  let predecessor: { id: number; versionLabel: string } | null = null;
-  try {
-    const published = await repo.findPublishedDatasetEffectiveOn(new Date());
-    predecessor = published ? { id: published.id, versionLabel: published.versionLabel } : null;
-  } catch {
-    // Proceed without predecessor-based invalidation (service parity).
-  }
-
-  let published: Awaited<ReturnType<FxRateDatasetService['confirmPublication']>>;
-  try {
-    published = await service.confirmPublication(id, dto.operator as string);
-  } catch (err) {
-    if (err instanceof Error && err.name === 'FxDatasetNotFoundError') {
-      throw new ApiHttpError(404, `FX dataset ${id} not found`);
-    }
-    if (err instanceof Error && err.name === 'FxDatasetInvalidTransitionError') {
-      throw new ApiHttpError(409, err.message);
-    }
-    throw err;
-  }
-
-  const invalidatedVersion =
-    predecessor !== null && predecessor.id !== published.id ? predecessor.versionLabel : null;
-  if (invalidatedVersion !== null) {
-    await idempotencyInvalidateVersions(c.env, [invalidatedVersion]);
-  }
-
-  const confirmedAt = published.confirmedAt?.toISOString() ?? new Date().toISOString();
-  await audit.logChange({
-    entityType: 'fx_rate_dataset',
-    entityId: published.versionLabel,
-    action: 'confirmed',
-    author: dto.operator as string,
-    reason:
-      (dto.note as string | undefined)?.trim() ||
-      'FX dataset publication confirmed via operator console',
-    previousValue: { status: 'PENDING_CONFIRMATION', id: published.id },
-    newValue: { status: 'PUBLISHED', confirmedAt, invalidatedVersion },
-  });
-
-  return c.json({
-    id: published.id,
-    versionLabel: published.versionLabel,
-    status: 'PUBLISHED',
-    confirmedAt,
-    invalidatedVersion,
-  });
+  return c.json({ taxReviews: [], consumptionNorms });
 }
 
 /**
  * Consumption-norms confirmation (task 4.3, wiring the task-4.1
- * repository) — the FX dataset-confirmation path mirrored: read the row
- * first so unknown (404) and terminal (409, PUBLISHED is final) are
- * distinct; the blank-citation refusal is the repository's hard
- * defensive guard surfaced as 409. Deliberately NO idempotency-version
- * invalidation (unlike confirmFx): event-calc cache entries embed the
+ * repository) — read the row first so unknown (404) and terminal (409,
+ * PUBLISHED is final) are distinct; the blank-citation refusal is the
+ * repository's hard defensive guard surfaced as 409. Deliberately NO
+ * idempotency-version invalidation: event-calc cache entries embed the
  * norms version in their key, so a publication makes old-version entries
  * unreachable rather than stale — invalidating basket/calculator entries
- * (which carry tax/FX versions) with a norms version would corrupt their
- * version checks.
+ * with a norms version would corrupt their version checks.
  */
 async function confirmConsumptionNorm(c: Context<AppEnv>): Promise<Response> {
   const id = parseIntParam(c, 'id');
@@ -1305,7 +1206,6 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.post('/ops/console/governance/:merchantId/revoke', revokeGovernance);
 
   app.get('/ops/console/confirmations', listConfirmations);
-  app.post('/ops/console/confirmations/fx/:id/confirm', confirmFx);
   app.post(
     '/ops/console/confirmations/consumption-norms/:id/confirm',
     confirmConsumptionNorm,

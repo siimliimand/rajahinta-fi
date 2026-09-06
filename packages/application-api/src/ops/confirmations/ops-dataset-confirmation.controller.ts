@@ -1,13 +1,12 @@
 /**
- * OpsDatasetConfirmationController — tax-rate and FX dataset-version
+ * OpsDatasetConfirmationController — tax-rate dataset-version
  * confirmation endpoints of the operator console (task 12.1, change
  * technical-assessment-remediation).
  *
- * The queue lists PENDING_CONFIRMATION FX datasets (incl. their rates for
- * provenance) and pending tax rate-review entries; confirmation publishes
- * (FX) or resolves (tax) with a durable audit event per action. FX
- * publication additionally invalidates idempotency-cache entries keyed on
- * the replaced dataset version.
+ * The queue lists pending tax rate-review entries; resolving one
+ * (approve/reject) writes a durable audit event, and approval
+ * additionally invalidates idempotency-cache entries keyed on the named
+ * dataset version.
  *
  * @module OpsDatasetConfirmationController
  */
@@ -20,7 +19,6 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseIntPipe,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -29,7 +27,6 @@ import { OpsAccessGuard } from '../../observability';
 import { FeatureFlagGuard, FeatureFlagDec, FeatureFlag } from '../../feature-flags';
 import type {
   OpsConfirmationListResponse,
-  OpsFxDatasetConfirmedResponse,
   OpsTaxReviewResolvedResponse,
   OperatorActionDto,
 } from '../ops.dto';
@@ -50,41 +47,13 @@ export class OpsDatasetConfirmationController {
   @ApiOperation({
     summary: 'Pending dataset-version confirmations (operator console)',
     description:
-      'FX datasets in PENDING_CONFIRMATION with provenance and rates, plus ' +
-      'pending tax rate-review entries. Nothing here is effective yet — ' +
+      'Pending tax rate-review entries. Nothing here is effective yet — ' +
       'nothing auto-publishes.',
   })
-  @ApiResponse({ status: 200, description: 'Pending FX datasets and tax reviews' })
+  @ApiResponse({ status: 200, description: 'Pending tax reviews' })
   @ApiResponse({ status: 403, description: 'Unauthenticated, outside the allowlist, or flag off' })
   async list(): Promise<OpsConfirmationListResponse> {
     return this.confirmations.listPendingConfirmations();
-  }
-
-  // ---------------------------------------------------------------------------
-  // POST /ops/console/confirmations/fx/:id/confirm — publish an FX dataset
-  // ---------------------------------------------------------------------------
-
-  @Post('fx/:id/confirm')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Confirm (publish) a pending FX dataset version',
-    description:
-      'The only PENDING_CONFIRMATION → PUBLISHED transition. On publication, ' +
-      'idempotency-cache entries keyed on the previously effective FX dataset ' +
-      'version are invalidated (dataset-version convention). Audited with ' +
-      'operator identity.',
-  })
-  @ApiResponse({ status: 200, description: 'Dataset published; replaced version reported' })
-  @ApiResponse({ status: 400, description: 'Invalid input' })
-  @ApiResponse({ status: 403, description: 'Unauthenticated, outside the allowlist, or flag off' })
-  @ApiResponse({ status: 404, description: 'Dataset not found' })
-  @ApiResponse({ status: 409, description: 'Dataset is not PENDING_CONFIRMATION' })
-  async confirmFx(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: OperatorActionDto,
-  ): Promise<OpsFxDatasetConfirmedResponse> {
-    this.validateOperator(dto);
-    return this.confirmations.confirmFxDataset(id, dto);
   }
 
   // ---------------------------------------------------------------------------
