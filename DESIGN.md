@@ -125,7 +125,7 @@ Plain, hook-free React components over Tailwind utilities — usable from both s
 
 ### Homepage
 
-`apps/frontend/src/app/[locale]/page.tsx` — static catalog copy only, no API calls (D6): a one-sentence value proposition, the calculator as primary CTA (a real navigable link styled as primary Button), quiet secondary links to comparison and methodology, and a trust row naming the data sources, the reliability model (the four statuses with their canonical dots + labels), and the methodology documentation. Freshness numbers stay on result and comparison views.
+`apps/frontend/src/app/[locale]/page.tsx` — static catalog copy only, no API calls (D6): a one-sentence value proposition framed as *from abroad to Finland* (no market named — the hero does not promise a specific retailer or country), the calculator as primary CTA (a real navigable link styled as primary Button), quiet secondary links to comparison and methodology, and a trust row naming the data sources (product prices based on published retailer datasets and the Alko domestic reference price; taxes and duties calculated from the Finnish Tax Administration's official rate datasets), the reliability model (the four statuses with their canonical dots + labels), and the methodology documentation. Freshness numbers stay on result and comparison views.
 
 ### Designed states
 
@@ -210,4 +210,4 @@ The platform is positioned as a trustworthy, explainable financial/tax-intellige
 - Consider shadcn/ui or similar component library if component count grows significantly (D5 keeps this in force)
 - Swap the SiteFooter's hand-rolled card surface for the Card primitive once the primitive carries the React import the classic-JSX test runtime needs (noted in SiteFooter.tsx)
 
-<!-- Last updated: 2026-08-28 -->
+<!-- Last updated: 2026-09-06 (drop-sweden-eur-only-alko-benchmark: hero/trust-row posture — from abroad to Finland, sources = published retailer datasets and the Alko domestic reference); prior: 2026-08-28 -->

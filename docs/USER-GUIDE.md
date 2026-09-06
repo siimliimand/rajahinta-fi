@@ -70,6 +70,8 @@ The overall confidence grade (HIGH, MEDIUM, LOW) combines the reliability of all
 
 Every result also carries the disclaimer: the total is an estimated cost in Finland, not a final legal tax liability. The estimate is based on published rates that can change and on data with the freshness shown.
 
+If the product has a current Alko domestic reference price, the result also shows a factual comparison against it: the Alko price, the difference in euros and percent, and, plainly stated, when importing is not cheaper. The comparison is informational only — it never changes any line of the estimate or its total.
+
 Additional panels may appear depending on enabled features:
 
 - Price history: a chart of past prices and landed costs for the product, optionally filtered to one merchant. You can switch between daily and weekly granularity. The chart covers up to one year at a time.
@@ -126,7 +128,7 @@ Planning a party? The event calculator estimates how much drink you need and wha
 
 Tick "Compare with foreign stores" to turn the estimate into a cross-border plan:
 
-- Pick the **comparison country**: Estonia, Latvia, Lithuania, Sweden, or Germany.
+- Pick the **comparison country**: Estonia, Latvia, Lithuania, or Germany.
 - Enter the **price per litre** for each drink type at home and abroad (at least one row; a foreign price always requires the domestic comparison price).
 - Optionally enter a **budget** — the plan tells you explicitly if it overruns.
 - Optionally tick the packing suggestion for the haul brought from abroad.

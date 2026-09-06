@@ -1,6 +1,6 @@
 # Rajahinta.fi
 
-Rajahinta.fi is a Finnish cross-border beverage price index and landed-cost calculator. It compares alcohol prices at foreign retailers (currently Systembolaget in Sweden, with Alko planned), estimates shipping to Finland, adds Finnish alcohol excise duty and beverage-container duty, and shows the total estimated cost of importing a product. Every number carries a reliability status, every result carries a structural disclaimer, and no merchant can pay for position.
+Rajahinta.fi is a Finnish cross-border beverage price index and landed-cost calculator, EUR-only by design. It estimates shipping to Finland, adds Finnish alcohol excise duty and beverage-container duty, and shows the total estimated cost of importing a product bought abroad; every calculation can be compared against the Alko domestic reference price as a display-only benchmark. Prices come from published retailer datasets and the Alko domestic reference feed, ingested through a per-merchant permission gate (retailer feeds for the other EUR markets are a future direction). Every number carries a reliability status, every result carries a structural disclaimer, and no merchant can pay for position.
 
 The service is a calculator, not a shop: there is no checkout, no payment collection for alcohol, and no order management. The only commercial transaction the architecture allows is a software subscription.
 
@@ -38,7 +38,7 @@ apps/
 packages/
   core-domain/        Tax engines, calculator, ranking, reliability, optimizer,
                       classification, history, audit, entitlement, declaration
-  data-acquisition/   Feed adapters (Systembolaget), ingestion pipeline,
+  data-acquisition/   Feed adapters (Alko domestic reference), ingestion pipeline,
                       source governance, rate-review scheduler, content lint
   data-platform/      Drizzle ORM schema, PostgreSQL repositories, migrations,
                       seed data
