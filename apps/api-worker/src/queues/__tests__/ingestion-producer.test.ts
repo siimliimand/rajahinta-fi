@@ -71,8 +71,8 @@ describe('ingestionDedupeKey', () => {
       ingestionDedupeKey('alko', new Date('2026-08-30T14:05:00.000Z')),
     ).toBe('price-ingestion-alko-2026-08-30-14');
     expect(
-      ingestionDedupeKey('systembolaget', new Date('2026-01-01T00:30:00.000Z')),
-    ).toBe('price-ingestion-systembolaget-2026-01-01-00');
+      ingestionDedupeKey('eu-import', new Date('2026-01-01T00:30:00.000Z')),
+    ).toBe('price-ingestion-eu-import-2026-01-01-00');
   });
 });
 
@@ -94,10 +94,10 @@ describe('isMerchantPermitted (scheduler gate parity)', () => {
   it('skips non-GRANTED statuses', async () => {
     const repo = governanceRepo({
       alko: 'PENDING',
-      systembolaget: 'REVOKED',
+      'eu-import': 'REVOKED',
       beermax: 'EXPIRED' as never,
     });
-    for (const merchantId of ['alko', 'systembolaget', 'beermax']) {
+    for (const merchantId of ['alko', 'eu-import', 'beermax']) {
       await expect(
         isMerchantPermitted(checkPermissionOf(repo), merchantId, LOG),
       ).resolves.toBe(false);
@@ -119,7 +119,7 @@ describe('schedulePriceIngestions', () => {
   it('enqueues exactly one message per GRANTED merchant with the dedupe key in the body', async () => {
     const { env } = createEnv();
     await seedMerchant(env, 'alko', 'https://alko.example/api');
-    await seedMerchant(env, 'systembolaget', 'https://sb.example/json');
+    await seedMerchant(env, 'eu-import', 'https://sb.example/json');
     const sent: IngestionMessageBody[] = [];
     const queue = { send: async (body: IngestionMessageBody) => void sent.push(body) };
 
@@ -127,7 +127,7 @@ describe('schedulePriceIngestions', () => {
       now: new Date('2026-08-30T14:00:00.000Z'),
       queue,
       checkPermission: checkPermissionOf(
-        governanceRepo({ alko: 'GRANTED', systembolaget: 'GRANTED' }),
+        governanceRepo({ alko: 'GRANTED', 'eu-import': 'GRANTED' }),
       ),
     });
 
@@ -145,8 +145,8 @@ describe('schedulePriceIngestions', () => {
         sourceUrl: 'https://alko.example/api',
       },
       {
-        dedupeKey: 'price-ingestion-systembolaget-2026-08-30-14',
-        merchantId: 'systembolaget',
+        dedupeKey: 'price-ingestion-eu-import-2026-08-30-14',
+        merchantId: 'eu-import',
         sourceUrl: 'https://sb.example/json',
       },
     ]);

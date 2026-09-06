@@ -64,8 +64,6 @@ export interface Env {
    * file-based source resolved in the backend).
    */
   readonly RATE_SNAPSHOT_OBJECT_KEY?: string;
-  /** Override for the ECB reference-rate source URL (FX review cron). */
-  readonly FX_RATE_SOURCE_URL?: string;
   /**
    * Retention windows (days) for the calculation-record sweep — passed
    * into the D1 retention service as explicit overrides (the service's

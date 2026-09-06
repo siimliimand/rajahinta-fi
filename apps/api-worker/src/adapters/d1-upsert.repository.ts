@@ -83,9 +83,9 @@ const LATEST_OFFER_PRICE_SQL = `
 const INSERT_OFFER_SQL = `
   INSERT INTO retail_offers (
     merchant, country, product_id, price_cents, currency,
-    original_price_cents, original_currency, fx_dataset_version,
+    original_price_cents, original_currency,
     availability, source_url, observed_at, reliability_status
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   RETURNING id`;
 
 export class D1UpsertRepository implements IUpsertRepository {
@@ -181,7 +181,6 @@ export class D1UpsertRepository implements IUpsertRepository {
         input.currency,
         input.originalPriceCents ?? null,
         input.originalCurrency ?? null,
-        input.fxDatasetVersion ?? null,
         input.availability,
         input.sourceUrl ?? null,
         input.observedAt.toISOString(),

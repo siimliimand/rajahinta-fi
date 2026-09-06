@@ -24,7 +24,6 @@
 import {
   AlcoholExciseService,
   ContainerDutyService,
-  FxRateDatasetService,
   PriceObservationRecorderService,
   ReliabilityService,
   SourceGovernanceService,
@@ -41,7 +40,6 @@ import { DataQualityService } from '../../../../packages/data-acquisition/src/se
 import { FeedIngestionService } from '../../../../packages/data-acquisition/src/services/feed-ingestion.service';
 import { PipelineOrchestratorService } from '../../../../packages/data-acquisition/src/services/pipeline-orchestrator.service';
 import { AlkoFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/alko.adapter';
-import { SystembolagetFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/systembolaget.adapter';
 import type { IFeedAdapter } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { MerchantConfig } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
 import { merchantConfigFromRegistry } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
@@ -50,8 +48,6 @@ import { D1MerchantRegistryRepository } from '../../../../packages/data-platform
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 import { D1TaxRuleRepositoryAdapter } from '../../../../packages/data-platform/src/repositories/d1/tax-rate.repository';
 import { D1TransportOfferRepository } from '../../../../packages/data-platform/src/repositories/d1/transport-offer.repository';
-import { D1FxRateRepository } from '../../../../packages/data-platform/src/repositories/d1/fx-rate.repository';
-import { D1FxRateDatasetRepositoryAdapter } from '../../../../packages/data-platform/src/repositories/d1/fx-rate-port.adapter';
 import { R2PriceObservationPort } from '../../../../packages/data-platform/src/repositories/d1/price-observation.repository';
 import type { ObservationLogStore } from '../../../../packages/data-platform/src/d1/observation-log';
 import type { Env } from '../env';
@@ -97,30 +93,20 @@ export function composeGovernanceService(
   return new SourceGovernanceService(repository);
 }
 
-/** D1-backed FX dataset service — shared by the FX review cron and the Systembolaget SEK→EUR conversion. */
-export function composeFxRateDatasetService(env: Env): FxRateDatasetService {
-  return new FxRateDatasetService(
-    new D1FxRateDatasetRepositoryAdapter(new D1FxRateRepository(env.DB)),
-  );
-}
-
 /**
  * Compose the ingestion pipeline over the Worker bindings.
  *
  * Feed adapters register under their merchantId exactly as the
- * DataAcquisitionModule factory did (systembolaget, alko); the
- * offer-change hook appends one R2 observation per changed offer.
+ * DataAcquisitionModule factory did (alko); the offer-change hook
+ * appends one R2 observation per changed offer.
  */
 export function composeIngestionPipeline(
   env: Env,
   options: PipelineCompositionOptions = {},
 ): IngestionPipeline {
   // Data acquisition services
-  const fxDatasets = composeFxRateDatasetService(env);
   const adapters = new Map<string, IFeedAdapter>();
-  const systembolaget = new SystembolagetFeedAdapter(fxDatasets);
   const alko = new AlkoFeedAdapter();
-  adapters.set(systembolaget.merchantId, systembolaget);
   adapters.set(alko.merchantId, alko);
   const feedIngestion = new FeedIngestionService(adapters);
   const dataMapping = new DataMappingService();
