@@ -20,7 +20,6 @@
  *        │                                        ▼
  *        └──────── HTTP ──▶ GET /api/v1/products/:id/price-history
  *                    series from summaries + read-time attribution
- *                    (feature flag FF_HISTORICAL_PRICE_INTELLIGENCE=on)
  *
  * Golden-dataset convention (tests/golden): REAL production services
  * everywhere; plain in-memory implementations of the repository/port
@@ -133,7 +132,6 @@ import {
 // --- application-api: HTTP layer + guard modules ---
 import {
   HistoricalDataController,
-  FeatureFlagsModule,
   RateLimitingModule,
   AgeGateModule,
   RATE_LIMITER,
@@ -832,12 +830,8 @@ describe('Historical price intelligence — ingestion → observation → aggreg
   let app: INestApplication;
 
   beforeAll(async () => {
-    // Feature flag enabled via the documented env override — read once at
-    // FeatureFlagService construction, so it must be set before compile.
-    process.env.FF_HISTORICAL_PRICE_INTELLIGENCE = 'true';
-
     const moduleRef = await Test.createTestingModule({
-      imports: [FeatureFlagsModule, RateLimitingModule, AgeGateModule],
+      imports: [RateLimitingModule, AgeGateModule],
       controllers: [HistoricalDataController],
       providers: [
         { provide: ProductRepository, useValue: productRepository },
@@ -859,7 +853,6 @@ describe('Historical price intelligence — ingestion → observation → aggreg
 
   afterAll(async () => {
     await app?.close();
-    delete process.env.FF_HISTORICAL_PRICE_INTELLIGENCE;
   });
 
   // =====================================================================
@@ -1299,53 +1292,5 @@ describe('Historical price intelligence — ingestion → observation → aggreg
         .set('x-age-confirmed', 'test-token')
         .expect(404);
     });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Flag-off gate — the endpoint must stay dark while the rollout flag is off
-// ---------------------------------------------------------------------------
-
-describe('GET /api/v1/products/:id/price-history — feature flag disabled', () => {
-  let flagOffApp: INestApplication;
-
-  beforeAll(async () => {
-    delete process.env.FF_HISTORICAL_PRICE_INTELLIGENCE; // default: off
-
-    const taxRules = new InMemoryTaxRuleRepository();
-    const moduleRef = await Test.createTestingModule({
-      imports: [FeatureFlagsModule, RateLimitingModule, AgeGateModule],
-      controllers: [HistoricalDataController],
-      providers: [
-        { provide: ProductRepository, useValue: new InMemoryProductRepository() },
-        {
-          provide: PriceHistorySummaryRepository,
-          useValue: new InMemorySummaryStore(),
-        },
-        {
-          provide: PriceObservationRepository,
-          useValue: new InMemoryObservationStore(),
-        },
-        TaxChangeAttributionService,
-        { provide: TAX_RULE_REPOSITORY_PORT, useValue: taxRules },
-      ],
-    })
-      .overrideProvider(RATE_LIMITER)
-      .useValue(NEVER_RATE_LIMIT)
-      .compile();
-
-    flagOffApp = moduleRef.createNestApplication();
-    await flagOffApp.init();
-  });
-
-  afterAll(async () => {
-    await flagOffApp?.close();
-  });
-
-  it('returns 403 even with an age token while the flag is off', async () => {
-    await request(flagOffApp.getHttpServer())
-      .get('/api/v1/products/1/price-history?from=2026-01-01&to=2026-01-03')
-      .set('x-age-confirmed', 'test-token')
-      .expect(403);
   });
 });

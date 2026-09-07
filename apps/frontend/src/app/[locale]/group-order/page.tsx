@@ -8,10 +8,6 @@
  * interactive surface is the client view below; the server shell only
  * pins metadata.
  *
- * Flag gating lives in the client view (the inlined GROUP_ORDER_LEDGER
- * payload) — flag off renders nothing, consistently across the feature's
- * pages.
- *
  * @module GroupOrderCreatePage
  */
 

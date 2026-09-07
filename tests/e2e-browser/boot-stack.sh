@@ -92,13 +92,11 @@ else
   echo "==> SKIP_BUILD=1 — using existing dist/ artifacts"
 fi
 
-# --- 5. Backend (NestJS dev; gates open so the calculator is usable) --------
-# No FF_* variables are set: feature flags default OFF, the same state a
-# clean CI runner produces, so local and CI runs test the same surfaces.
+# --- 5. Backend (NestJS dev; no launch gates — system removed) --------------
 echo "==> Starting backend on :$BACKEND_PORT…"
 (
   cd "$ROOT"
-  setsid env DATABASE_URL="$DB_URL" LAUNCH_GATES_OVERRIDE=true PORT="$BACKEND_PORT" \
+  setsid env DATABASE_URL="$DB_URL" PORT="$BACKEND_PORT" \
     pnpm --filter @rajahinta/backend dev >"$LOG_DIR/backend.log" 2>&1 &
   echo $! > "$LOG_DIR/backend.pid"
 )
@@ -136,8 +134,6 @@ cat <<EOF
    Backend    http://localhost:$BACKEND_PORT   (Swagger: /api/docs)
    API path   $API_URL
    Postgres   localhost:5432 (rajahinta/rajahinta)
-
-   ⚠  Launch gates are DISABLED (LAUNCH_GATES_OVERRIDE=true).
 
    Logs       $LOG_DIR/{backend,frontend}.log
    Stop       bash tests/e2e-browser/boot-stack.sh --down

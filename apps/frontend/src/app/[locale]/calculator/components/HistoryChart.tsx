@@ -288,8 +288,7 @@ function buildTaxMarkers(
  * Historical price / landed-cost line chart — pure SVG, no chart library.
  *
  * Presentation only: prepared series in, SVG + visible reliability badges
- * out. Data fetching, feature-flag gating, and metric switching belong to
- * the integrating page.
+ * out. Data fetching and metric switching belong to the integrating page.
  *
  * Neutrality: series are sorted by name, share one colour cycle and one
  * stroke weight; colour never encodes price position.

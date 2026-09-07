@@ -9,8 +9,7 @@
  * Scope note — this file deliberately does NOT repeat the narrower
  * suites' bindings: box-selection/FFD internals, exclusion validation
  * order, and threshold arithmetic are pinned by the task-3.2 pure-module
- * unit tests, and the flag/section shape by the task-3.3 route tests
- * (fake-D1 harness). What only an integration run can prove, end to end
+ * unit tests (fake-D1 harness). What only an integration run can prove, end to end
  * through the real optimize path (route → idempotency → repositories →
  * seeded D1):
  *
@@ -23,11 +22,7 @@
  *    the exact observed figures and fired thresholds — driven through
  *    real inserted dimension rows against the real box catalogue, never
  *    by calling the pure module directly;
- * 3. flag-off omission — FF_PACKING_OPTIMIZER unset or explicitly
- *    'false' leaves the response with no `packing` key at all (exact
- *    legacy key list, not a falsy value), even with full packing data
- *    present;
- * 4. determinism — repeated optimize calls (same basket, same D1
+ * 3. determinism — repeated optimize calls (same basket, same D1
  *    state) return byte-stable bodies including packing across
  *    MISS → HIT → HIT, and two independent identically-seeded D1
  *    states compute the identical packing section on fresh MISSes.
@@ -63,18 +58,6 @@ import {
 
 /** JSON body + age confirmation — basket route request parity (3.3 tests). */
 const JSON_HDRS = { 'content-type': 'application/json', 'x-age-confirmed': 'confirmed' };
-
-/** The optimize response keys before the packing section existed. */
-const LEGACY_OPTIMIZE_KEYS = [
-  'shipments',
-  'totalCents',
-  'itemizedTotals',
-  'confidence',
-  'confidenceBreakdown',
-  'disclaimer',
-  'alternatives',
-  'metadata',
-];
 
 /** The proven working optimize fixture (3.3 route-test parity): products
  * the optimizer resolves, plus the active excise/container-duty rules. */
@@ -142,7 +125,7 @@ async function seedKnownGlassBasket(
   await seedBoxCatalogue(d1);
 }
 
-/** POST the given basket to the optimize route under a flag-on env. */
+/** POST the given basket to the optimize route. */
 function optimizeRequest(
   app: ReturnType<typeof buildApp>,
   env: ReturnType<typeof permissiveEnv>,
@@ -196,7 +179,7 @@ describe('missing-dimension degradation through the optimize route', () => {
   it('returns 200 with an ESTIMATED section: unknown products excluded MISSING_DIMENSIONS in basket order, known items still packed', async () => {
     const res = await optimizeRequest(
       app,
-      permissiveEnv(d1, { FF_PACKING_OPTIMIZER: 'true' }),
+      permissiveEnv(d1),
       [
         { productId: 1, quantity: 2 },
         { productId: 2, quantity: 1 },
@@ -292,7 +275,7 @@ describe('mixing-warning thresholds at exact boundary values', () => {
 
     const res = await optimizeRequest(
       app,
-      permissiveEnv(d1, { FF_PACKING_OPTIMIZER: 'true' }),
+      permissiveEnv(d1),
       [
         { productId: 1, quantity: 6 },
         { productId: 2, quantity: 6 },
@@ -339,7 +322,7 @@ describe('mixing-warning thresholds at exact boundary values', () => {
 
     const res = await optimizeRequest(
       app,
-      permissiveEnv(d1, { FF_PACKING_OPTIMIZER: 'true' }),
+      permissiveEnv(d1),
       [
         { productId: 1, quantity: 7 },
         { productId: 2, quantity: 6 },
@@ -386,7 +369,7 @@ describe('mixing-warning thresholds at exact boundary values', () => {
 
     const res = await optimizeRequest(
       app,
-      permissiveEnv(d1, { FF_PACKING_OPTIMIZER: 'true' }),
+      permissiveEnv(d1),
       [
         { productId: 1, quantity: 2 },
         { productId: 2, quantity: 2 },
@@ -446,7 +429,7 @@ describe('mixing-warning thresholds at exact boundary values', () => {
 
     const res = await optimizeRequest(
       app,
-      permissiveEnv(d1, { FF_PACKING_OPTIMIZER: 'true' }),
+      permissiveEnv(d1),
       [
         { productId: 1, quantity: 1 },
         { productId: 2, quantity: 2 },
@@ -493,7 +476,7 @@ describe('mixing-warning thresholds at exact boundary values', () => {
 
     const res = await optimizeRequest(
       app,
-      permissiveEnv(d1, { FF_PACKING_OPTIMIZER: 'true' }),
+      permissiveEnv(d1),
       [
         { productId: 1, quantity: 7 },
         { productId: 2, quantity: 6 },
@@ -516,60 +499,7 @@ describe('mixing-warning thresholds at exact boundary values', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3. Flag-off omission — no packing key at all, even with full packing data
-// ---------------------------------------------------------------------------
-
-describe('flag off: the optimize response omits the packing section entirely', () => {
-  let db: DatabaseSync;
-  let d1: ReturnType<typeof openMigratedD1>['d1'];
-  let app: ReturnType<typeof buildApp>;
-
-  beforeEach(async () => {
-    const opened = openMigratedD1();
-    db = opened.db;
-    d1 = opened.d1;
-    // Richest possible packing state: known dimensions AND the real box
-    // catalogue — none of it may leak into a flag-off response.
-    await seedKnownGlassBasket(db, d1);
-    app = buildApp();
-  });
-
-  afterEach(() => {
-    db.close();
-  });
-
-  it('FF_PACKING_OPTIMIZER unset (default off) → exact legacy key list, no packing key', async () => {
-    // permissiveEnv leaves FF_PACKING_OPTIMIZER unset — the flag service
-    // defaults it off while BASKET_OPTIMIZATION stays on.
-    const res = await optimizeRequest(app, permissiveEnv(d1), [
-      { productId: 1, quantity: 2 },
-    ]);
-    expect(res.status).toBe(200);
-    const text = await res.text();
-    const body = JSON.parse(text) as Record<string, unknown>;
-    // Key ABSENCE, not a falsy value: the exact flag-less key list.
-    expect(Object.hasOwn(body, 'packing')).toBe(false);
-    expect(Object.keys(body)).toEqual(LEGACY_OPTIMIZE_KEYS);
-    expect(text).not.toContain('"packing"');
-  });
-
-  it("FF_PACKING_OPTIMIZER='false' → exact legacy key list, no packing key", async () => {
-    const res = await optimizeRequest(
-      app,
-      permissiveEnv(d1, { FF_PACKING_OPTIMIZER: 'false' }),
-      [{ productId: 1, quantity: 2 }],
-    );
-    expect(res.status).toBe(200);
-    const text = await res.text();
-    const body = JSON.parse(text) as Record<string, unknown>;
-    expect(Object.hasOwn(body, 'packing')).toBe(false);
-    expect(Object.keys(body)).toEqual(LEGACY_OPTIMIZE_KEYS);
-    expect(text).not.toContain('"packing"');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 4. Determinism across repeated optimize calls
+// 3. Determinism across repeated optimize calls
 // ---------------------------------------------------------------------------
 
 describe('determinism across repeated optimize calls', () => {
@@ -580,7 +510,7 @@ describe('determinism across repeated optimize calls', () => {
       const app = buildApp();
       // One env = one DO namespace set = one idempotency cache: the
       // repeats exercise the HIT path against the stored MISS result.
-      const env = permissiveEnv(opened.d1, { FF_PACKING_OPTIMIZER: 'true' });
+      const env = permissiveEnv(opened.d1);
       const items = [{ productId: 1, quantity: 2 }];
 
       const first = await optimizeRequest(app, env, items);
@@ -615,12 +545,12 @@ describe('determinism across repeated optimize calls', () => {
 
       const res1 = await optimizeRequest(
         app,
-        permissiveEnv(first.d1, { FF_PACKING_OPTIMIZER: 'true' }),
+        permissiveEnv(first.d1),
         items,
       );
       const res2 = await optimizeRequest(
         app,
-        permissiveEnv(second.d1, { FF_PACKING_OPTIMIZER: 'true' }),
+        permissiveEnv(second.d1),
         items,
       );
       expect(res1.headers.get('X-Cache')).toBe('MISS');

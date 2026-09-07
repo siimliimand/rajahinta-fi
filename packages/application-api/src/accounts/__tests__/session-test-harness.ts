@@ -19,6 +19,7 @@
  * @module SessionTestHarness
  */
 
+import { randomUUID } from 'node:crypto';
 import {
   AccountRepository,
   SavedBasketRepository,
@@ -28,6 +29,7 @@ import {
   savedBaskets,
   savedScenarios,
   sessions,
+  type AccountCredentialRecord,
   type SessionRecord,
   type SavedScenarioRecord,
 } from '@rajahinta/data-platform';
@@ -72,12 +74,48 @@ export class InMemoryAccountRows extends AccountRepository {
     return this.rows.find((r) => r.userId === userId) ?? null;
   }
 
+  /**
+   * DrizzleAccountRepository parity: case-insensitive email read returning
+   * the credential projection with null credential columns — the legacy pg
+   * harness schema carries none (design D9, change email-password-auth).
+   */
+  async findByEmail(email: string): Promise<AccountCredentialRecord | null> {
+    const row = this.rows.find(
+      (r) => r.email.toLowerCase() === email.toLowerCase(),
+    );
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.userId,
+      email: row.email,
+      passwordHash: null,
+      emailVerifiedAt: null,
+      tier: row.tier,
+      createdAt: row.createdAt,
+      lastActiveAt: row.lastActiveAt,
+    };
+  }
+
   async updateLastActive(userId: string): Promise<void> {
     const row = await this.findByUserId(userId);
     if (row) row.lastActiveAt = new Date();
   }
 
-  async setVerifiedEmail(_userId: string, _email: string): Promise<void> {}
+  // Credential writes have no harness columns — the doubles reject loudly,
+  // mirroring the pg DrizzleAccountRepository (design D9).
+  async setVerifiedEmail(_userId: string, _verifiedAt: Date): Promise<void> {
+    throw new Error(
+      'setVerifiedEmail is not supported by the harness: verification ' +
+        'state lives only in the API Worker (design D9)',
+    );
+  }
+
+  async setPasswordHash(_userId: string, _passwordHash: string): Promise<void> {
+    throw new Error(
+      'setPasswordHash is not supported by the harness: the credential ' +
+        'flow lives only in the API Worker (design D9)',
+    );
+  }
 
   async delete(userId: string): Promise<void> {
     const index = this.rows.findIndex((r) => r.userId === userId);
@@ -307,7 +345,7 @@ export function createSessionHarness(): SessionHarness {
   return {
     sessionTokens,
     guard: new SessionAuthGuard(sessionTokens),
-    sessionController: new SessionController(sessionTokens, accountService),
+    sessionController: new SessionController(sessionTokens),
     accountController: new AccountController(
       new DataExportService(accountService),
       accountService,
@@ -378,22 +416,21 @@ export function responseDouble(): {
 }
 
 /**
- * Issue a real session for a fresh anonymous account through the
- * controller (server-generated identity, httpOnly cookie) and return the
- * raw token parsed from the Set-Cookie header.
+ * Create a fresh account row (server-generated UUID identity) and issue a
+ * real session for it through SessionTokenService — the harness's
+ * session-establishment path since the anonymous issuance endpoint moved
+ * to (and stays in) the API Worker (task 4.1, design D9). Tests place the
+ * returned raw token into request cookies themselves.
  */
-export async function issueSessionViaController(
+export async function issueSessionForNewAccount(
   harness: SessionHarness,
-): Promise<{ token: string; userId: string; cookie: string }> {
-  const { res, cookies } = responseDouble();
-  const body = await harness.sessionController.issue(res);
-  const cookie = cookies().find((c) => c.startsWith('rajahinta_session='));
-  if (!cookie) {
-    throw new Error('session issue did not set the rajahinta_session cookie');
-  }
-  // Cookie value runs to the first attribute separator.
-  const token = cookie
-    .slice('rajahinta_session='.length)
-    .split(';')[0]!;
-  return { token, userId: body.userId, cookie };
+): Promise<{ token: string; userId: string; accountId: number }> {
+  const userId = randomUUID();
+  const row = await harness.accountRows.create({
+    userId,
+    email: `${userId}@example.invalid`,
+    tier: 'FREE',
+  });
+  const issued = await harness.sessionTokens.issueSession(row.id);
+  return { token: issued.token, userId, accountId: row.id };
 }

@@ -1,6 +1,6 @@
 /**
  * SearchController tests — q-parameter ranked search (task 5.1), sort
- * behavior, and the flag-gated merchantReliability embed (task 3.4,
+ * behavior, and the merchantReliability embed (task 3.4,
  * change phase2-advanced-features).
  *
  * The `q` path delegates to ProductRepository.searchRanked (pg_trgm
@@ -22,7 +22,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BadRequestException } from '@nestjs/common';
 import { ProductRepository } from '@rajahinta/data-platform';
 import type { retailOffers } from '@rajahinta/data-platform';
-import { FeatureFlagService } from '../../feature-flags';
 import { MerchantReliabilityService } from '../../merchants';
 import type { MerchantReliabilityMap } from '../../merchants';
 import { SearchController } from '../search.controller';
@@ -209,16 +208,13 @@ function createMockProductRepository(): Partial<ProductRepository> {
 describe('SearchController — sort behavior', () => {
   let controller: SearchController;
   let mockRepo: Partial<ProductRepository>;
-  let mockFlags: { isEnabled: ReturnType<typeof vi.fn> };
   let mockReliability: { getReliabilityScoreMap: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     mockRepo = createMockProductRepository();
-    mockFlags = { isEnabled: vi.fn(() => false) };
     mockReliability = { getReliabilityScoreMap: vi.fn() };
     controller = new SearchController(
       mockRepo as unknown as ProductRepository,
-      mockFlags as unknown as FeatureFlagService,
       mockReliability as unknown as MerchantReliabilityService,
     );
   });
@@ -509,35 +505,18 @@ describe('SearchController — sort behavior', () => {
 describe('SearchController — merchant reliability embed', () => {
   let controller: SearchController;
   let mockRepo: Partial<ProductRepository>;
-  let mockFlags: { isEnabled: ReturnType<typeof vi.fn> };
   let mockReliability: { getReliabilityScoreMap: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     mockRepo = createMockProductRepository();
-    mockFlags = { isEnabled: vi.fn(() => false) };
     mockReliability = { getReliabilityScoreMap: vi.fn() };
     controller = new SearchController(
       mockRepo as unknown as ProductRepository,
-      mockFlags as unknown as FeatureFlagService,
       mockReliability as unknown as MerchantReliabilityService,
     );
   });
 
-  it('omits merchantReliability when the flag is off (byte-compatible)', async () => {
-    mockFlags.isEnabled.mockReturnValue(false);
-
-    const result = await controller.getProduct(PROD_A.id);
-
-    // Field physically absent — not null, not undefined-with-key.
-    expect('merchantReliability' in result).toBe(false);
-    expect(result.merchantReliability).toBeUndefined();
-    expect(mockFlags.isEnabled).toHaveBeenCalledWith('ADVANCED_FEATURES');
-    // Score computation must not run on the un-gated path.
-    expect(mockReliability.getReliabilityScoreMap).not.toHaveBeenCalled();
-  });
-
-  it('embeds scores for the offers\' merchants when the flag is on', async () => {
-    mockFlags.isEnabled.mockReturnValue(true);
+  it('embeds scores for the offers\' merchants', async () => {
     const map: MerchantReliabilityMap = { alko: SCORE_ALKO };
     mockReliability.getReliabilityScoreMap.mockResolvedValue(map);
 
@@ -552,9 +531,7 @@ describe('SearchController — merchant reliability embed', () => {
     expect(result.offers[0].merchant).toBe('alko');
   });
 
-  it('omits the field when the product has no offers, even with the flag on', async () => {
-    mockFlags.isEnabled.mockReturnValue(true);
-
+  it('omits the field when the product has no offers', async () => {
     const result = await controller.getProduct(PROD_Z.id);
 
     expect('merchantReliability' in result).toBe(false);
@@ -562,7 +539,6 @@ describe('SearchController — merchant reliability embed', () => {
   });
 
   it('omits the field when score computation fails — never fails the page', async () => {
-    mockFlags.isEnabled.mockReturnValue(true);
     mockReliability.getReliabilityScoreMap.mockRejectedValue(
       new Error('governance port unwired'),
     );

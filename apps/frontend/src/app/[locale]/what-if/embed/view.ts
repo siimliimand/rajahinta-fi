@@ -7,9 +7,8 @@
  * a self-contained minimal view suitable for iframe embedding.
  *
  * READ-ONLY by spec: this module never writes anything — it renders the
- * outcome the route handler produced (flag closed / invalid token /
- * recompute result). The result variant renders the structural
- * HYPOTHETICAL disclaimer from the API response prominently at the
+ * outcome the route handler produced (invalid token / recompute result).
+ * The result variant renders the structural HYPOTHETICAL disclaimer from the API response prominently at the
  * top — it travels with the result even in the embedded rendering
  * (spec: disclaimer travels with the result).
  *
@@ -34,7 +33,6 @@ const CATALOGS: Record<EmbedLocale, unknown> = { fi, en };
 
 /** One outcome the route handler can render. */
 export type EmbedOutcome =
-  | { readonly kind: 'closed' }
   | { readonly kind: 'invalid' }
   | { readonly kind: 'unavailable' }
   | { readonly kind: 'throttled'; readonly retryAfterSeconds: number }
@@ -191,9 +189,6 @@ export function renderEmbedHtml(locale: EmbedLocale, outcome: EmbedOutcome): str
   let body: string;
   let refresh = '';
   switch (outcome.kind) {
-    case 'closed':
-      body = noticeBody(locale, 'WhatIfPage.embed.closedTitle', 'WhatIfPage.embed.closedBody');
-      break;
     case 'invalid':
       body = noticeBody(locale, 'WhatIfPage.embed.invalidTitle', 'WhatIfPage.embed.invalidBody');
       break;

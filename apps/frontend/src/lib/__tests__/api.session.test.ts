@@ -1,17 +1,13 @@
 /**
- * API session client tests (task 2.3).
+ * Auth semantics of the API client (design D8, change
+ * email-password-auth).
  *
- * Verifies the client-side half of the server-issued session model:
- *   1. No client-generated identity exists — the retired `x-user-id`
- *      header is never attached, to any path.
- *   2. Every request carries credentials so the httpOnly
- *      `rajahinta_session` cookie travels.
- *   3. First account-touch: a 401 on an account-scoped path mints a
- *      session via POST /api/v1/account/session and replays the original
- *      request exactly once.
- *   4. Concurrent 401s share one single-flight issuance.
- *   5. The session lifecycle endpoints never trigger auto-issuance.
- *   6. ensureSession resolves the server-derived identity.
+ * The anonymous issuance flow (first-touch 401 → POST /session → replay)
+ * is deleted: an account-scoped 401 now propagates as ApiFetchError so
+ * route-level code can redirect to `/login`, and sign-in happens only
+ * through register/login. These tests pin that no issuance path exists
+ * and that the credential flow functions hit the routes the API Worker
+ * registers.
  *
  * @module ApiSessionTest
  */
@@ -20,9 +16,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   ApiFetchError,
+  confirmEmailVerification,
   ensureSession,
   listScenarios,
+  loginAccount,
+  registerAccount,
   request,
+  requestPasswordReset,
+  requestVerificationEmail,
+  resetPassword,
+  revokeSession,
   rotateSession,
   searchProducts,
 } from '../api';
@@ -33,8 +36,14 @@ import {
 
 const API_BASE = 'http://localhost:3000';
 
-const SESSION_INFO = {
+const ME = {
   userId: '11111111-2222-4333-8444-555555555555',
+  email: 'kayttaja@example.fi',
+  verified: false,
+};
+
+const SESSION_INFO = {
+  userId: ME.userId,
   expiresAt: '2026-09-27T00:00:00.000Z',
   verified: false,
 };
@@ -54,11 +63,19 @@ function lastCalls(): FetchCall[] {
   return (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls as FetchCall[];
 }
 
+/** Every POST issued to the (deleted) anonymous session endpoint. */
+function issuanceCalls(): FetchCall[] {
+  return lastCalls().filter(
+    ([url, init]) =>
+      url === `${API_BASE}/api/v1/account/session` && init.method === 'POST',
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('session handling in request()', () => {
+describe('request() auth semantics — no anonymous issuance', () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn();
   });
@@ -92,73 +109,63 @@ describe('session handling in request()', () => {
     );
   });
 
-  it('issues a session and replays the request once on a first-touch 401', async () => {
+  it('surfaces an account-scoped 401 without minting or replaying', async () => {
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ statusCode: 401, message: 'Authentication required', error: 'SessionRequired' }, 401))
-      .mockResolvedValueOnce(jsonResponse(SESSION_INFO, 201))
-      .mockResolvedValueOnce(jsonResponse([]));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        { statusCode: 401, message: 'Authentication required', error: 'SessionRequired' },
+        401,
+      ),
+    );
 
-    const result = await request<unknown[]>('/api/v1/account/scenarios');
+    const err = await request('/api/v1/account/scenarios').catch(
+      (e: unknown) => e,
+    );
 
-    expect(result).toEqual([]);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-
-    const [replayedUrl, replayedInit] = lastCalls()[2];
-    expect(replayedUrl).toBe(`${API_BASE}/api/v1/account/scenarios`);
-    // The replay carries no identity header either.
-    expect((replayedInit.headers as Record<string, string>)['x-user-id']).toBeUndefined();
+    expect(err).toBeInstanceOf(ApiFetchError);
+    expect((err as ApiFetchError).status).toBe(401);
+    // Exactly one exchange: no issuance POST, no replay.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(issuanceCalls()).toHaveLength(0);
   });
 
-  it('shares one issuance across concurrent first-touch 401s', async () => {
+  it('propagates 401s for concurrent account calls with no shared issuance', async () => {
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
-    // Both account calls 401 before either is retried.
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ error: 'SessionRequired' }, 401))
-      .mockResolvedValueOnce(jsonResponse({ error: 'SessionRequired' }, 401))
-      .mockResolvedValueOnce(jsonResponse(SESSION_INFO, 201))
-      .mockResolvedValueOnce(jsonResponse([1]))
-      .mockResolvedValueOnce(jsonResponse([2]));
+    fetchMock.mockResolvedValue(
+      jsonResponse({ statusCode: 401, error: 'SessionRequired' }, 401),
+    );
 
-    const [a, b] = await Promise.all([
+    const results = await Promise.allSettled([
       request<number[]>('/api/v1/account/history'),
       request<number[]>('/api/v1/account/history'),
     ]);
 
-    expect(a).toEqual([1]);
-    expect(b).toEqual([2]);
-    // 2 original + 1 shared issuance + 2 replays — never 2 issuances.
-    expect(fetchMock).toHaveBeenCalledTimes(5);
-    const issuanceCalls = lastCalls().filter(
-      ([url, init]) => url === `${API_BASE}/api/v1/account/session` && init.method === 'POST',
-    );
-    expect(issuanceCalls).toHaveLength(1);
+    expect(results.every((r) => r.status === 'rejected')).toBe(true);
+    // 2 original calls — never an issuance, never a replay.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(issuanceCalls()).toHaveLength(0);
   });
 
-  it('propagates a 401 without issuing when replay still fails', async () => {
+  it('propagates a rotate/revoke 401 as-is', async () => {
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ error: 'SessionRequired' }, 401))
-      .mockResolvedValueOnce(jsonResponse(SESSION_INFO, 201))
-      .mockResolvedValueOnce(jsonResponse({ error: 'InvalidSession' }, 401));
-
-    await expect(
-      request('/api/v1/account/scenarios'),
-    ).rejects.toBeInstanceOf(ApiFetchError);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
-
-  it('never auto-issues for the session lifecycle endpoints', async () => {
-    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ statusCode: 401, message: 'Session token is invalid', error: 'InvalidSession' }, 401),
-    );
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { statusCode: 401, message: 'Session token is invalid', error: 'InvalidSession' },
+          401,
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ statusCode: 401, error: 'InvalidSession' }, 401),
+      );
 
     await expect(rotateSession()).rejects.toBeInstanceOf(ApiFetchError);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(revokeSession()).rejects.toBeInstanceOf(ApiFetchError);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(issuanceCalls()).toHaveLength(0);
   });
 
-  it('never auto-issues for non-account paths', async () => {
+  it('propagates a 401 on non-account paths unchanged', async () => {
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ statusCode: 401, message: 'no', error: 'No' }, 401),
@@ -169,26 +176,150 @@ describe('session handling in request()', () => {
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+});
 
-  it('ensureSession returns the server-derived identity', async () => {
+describe('ensureSession', () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('reads GET /api/v1/account/me and returns the account identity', async () => {
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
-    fetchMock
-      .mockResolvedValueOnce(
-        jsonResponse({ statusCode: 401, message: 'Authentication required', error: 'SessionRequired' }, 401),
-      )
-      .mockResolvedValueOnce(jsonResponse(SESSION_INFO, 201))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          userId: SESSION_INFO.userId,
-          plan: 'FREE',
-          active: true,
-        }),
-      );
+    fetchMock.mockResolvedValueOnce(jsonResponse(ME));
 
     const status = await ensureSession();
 
-    expect(status.userId).toBe(SESSION_INFO.userId);
-    const [probeUrl] = lastCalls()[0];
-    expect(probeUrl).toBe(`${API_BASE}/api/v1/account/subscription`);
+    expect(status).toEqual(ME);
+    const [probeUrl, probeInit] = lastCalls()[0];
+    expect(probeUrl).toBe(`${API_BASE}/api/v1/account/me`);
+    expect(probeInit.method).toBeUndefined(); // default GET
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces the 401 so callers can redirect to /login', async () => {
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ statusCode: 401, error: 'SessionRequired' }, 401),
+    );
+
+    const err = await ensureSession().catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiFetchError);
+    expect((err as ApiFetchError).status).toBe(401);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('credential flows (design D2 routes)', () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('registerAccount POSTs the email and password to /register', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      jsonResponse(SESSION_INFO, 201),
+    );
+
+    const info = await registerAccount('Kayttaja@Example.fi', 'salasana-12-merkKIna');
+
+    expect(info).toEqual(SESSION_INFO);
+    const [url, init] = lastCalls()[0];
+    expect(url).toBe(`${API_BASE}/api/v1/account/register`);
+    expect(init.method).toBe('POST');
+    expect(init.credentials).toBe('include');
+    expect(JSON.parse(init.body as string)).toEqual({
+      email: 'Kayttaja@Example.fi',
+      password: 'salasana-12-merkKIna',
+    });
+  });
+
+  it('loginAccount POSTs to /login and surfaces the uniform 401', async () => {
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { statusCode: 401, message: 'Invalid email or password.', error: 'InvalidCredentials' },
+          401,
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse({ ...SESSION_INFO, verified: true }));
+
+    await expect(loginAccount('kayttaja@example.fi', 'vasara')).rejects.toMatchObject({
+      status: 401,
+    });
+
+    const info = await loginAccount('kayttaja@example.fi', 'salasana-12-merkKIna');
+    expect(info.verified).toBe(true);
+
+    const [loginUrl, loginInit] = lastCalls()[1];
+    expect(loginUrl).toBe(`${API_BASE}/api/v1/account/login`);
+    expect(loginInit.method).toBe('POST');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('confirmEmailVerification POSTs the token to the confirm endpoint', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      jsonResponse({ verified: true, userId: ME.userId, email: ME.email }),
+    );
+
+    const result = await confirmEmailVerification('token-abc');
+
+    expect(result).toEqual({ verified: true, userId: ME.userId, email: ME.email });
+    const [url, init] = lastCalls()[0];
+    expect(url).toBe(`${API_BASE}/api/v1/account/verify-email/confirm`);
+    expect(JSON.parse(init.body as string)).toEqual({ token: 'token-abc' });
+  });
+
+  it('requestVerificationEmail POSTs the sessionAuth resend endpoint', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      jsonResponse({ accepted: true }, 202),
+    );
+
+    await expect(requestVerificationEmail()).resolves.toEqual({ accepted: true });
+
+    const [url, init] = lastCalls()[0];
+    expect(url).toBe(`${API_BASE}/api/v1/account/verify-email/request`);
+    expect(init.method).toBe('POST');
+  });
+
+  it('requestPasswordReset POSTs the email to the reset-request endpoint', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      jsonResponse({ accepted: true }, 202),
+    );
+
+    await expect(requestPasswordReset('kayttaja@example.fi')).resolves.toEqual({
+      accepted: true,
+    });
+
+    const [url, init] = lastCalls()[0];
+    expect(url).toBe(`${API_BASE}/api/v1/account/password/reset-request`);
+    expect(JSON.parse(init.body as string)).toEqual({
+      email: 'kayttaja@example.fi',
+    });
+  });
+
+  it('resetPassword POSTs token and newPassword to the reset endpoint', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      jsonResponse({ reset: true }),
+    );
+
+    await expect(resetPassword('token-abc', 'salasana-12-merkKIna')).resolves.toEqual({
+      reset: true,
+    });
+
+    const [url, init] = lastCalls()[0];
+    expect(url).toBe(`${API_BASE}/api/v1/account/password/reset`);
+    expect(JSON.parse(init.body as string)).toEqual({
+      token: 'token-abc',
+      newPassword: 'salasana-12-merkKIna',
+    });
   });
 });

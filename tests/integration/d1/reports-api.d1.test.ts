@@ -6,8 +6,9 @@
  *
  * Same proof as the original — all three formats over HTTP incl.
  * content-type / disposition headers and the structural disclaimer (CSV
- * escaping round-trips through a quote-aware parser), entitlement 403s,
- * flag-off 403, 400/404, and the real DECLARATION limiter exhausting at 20
+ * escaping round-trips through a quote-aware parser), entitlement passes
+ * for the FREE feature tier, age-gate 403, 400/404, and the real
+ * DECLARATION limiter exhausting at 20
  * req/min — with one upgrade: the calculation-record query port reads from
  * a REAL D1 database (migrations applied, row seeded through the real
  * D1CalculationRecordRepository write path), so the 404 case exercises a
@@ -38,7 +39,6 @@ import type {
 import { Injectable } from '@nestjs/common';
 import { EntitlementModule } from '@rajahinta/core-domain';
 import {
-  FeatureFlagsModule,
   RateLimitingModule,
   AgeGateModule,
   ReportsModule,
@@ -281,19 +281,13 @@ function applyAuthStandIn(app: INestApplication): void {
 }
 
 interface AppOptions {
-  /** FF_ADVANCED_FEATURES state at FeatureFlagService construction time. */
-  flagOn: boolean;
   /** Keep a real (in-memory) limiter backend (rate-limit describe only). */
   realRateLimiter?: boolean;
 }
 
 async function createApp(options: AppOptions): Promise<INestApplication> {
-  if (options.flagOn) process.env.FF_ADVANCED_FEATURES = 'true';
-  else delete process.env.FF_ADVANCED_FEATURES;
-
   const builder = Test.createTestingModule({
     imports: [
-      FeatureFlagsModule,
       RateLimitingModule,
       AgeGateModule,
       EntitlementModule,
@@ -382,7 +376,7 @@ function parseCsv(csv: string): string[][] {
 }
 
 // ---------------------------------------------------------------------------
-// Suite — flag on, permissive limiter
+// Suite — permissive limiter
 // ---------------------------------------------------------------------------
 
 // D1 harness + seeded record live at FILE scope: every describe below boots
@@ -402,12 +396,12 @@ afterAll(() => {
   db.close();
 });
 
-describe('GET /api/v1/reports/:recordId on D1 — flag on', () => {
+describe('GET /api/v1/reports/:recordId on D1', () => {
   let app: INestApplication;
   const originalEnv = process.env;
 
   beforeAll(async () => {
-    app = await createApp({ flagOn: true });
+    app = await createApp({});
   });
 
   afterAll(async () => {
@@ -480,36 +474,28 @@ describe('GET /api/v1/reports/:recordId on D1 — flag on', () => {
   });
 
   // -------------------------------------------------------------------
-  // Entitlement — 403 for FREE tier and anonymous, 200 for PREMIUM
+  // Entitlement — calculation:export is FREE-tier, so every caller passes
   // -------------------------------------------------------------------
 
-  describe('entitlement enforcement (calculation:export)', () => {
+  describe('entitlement (calculation:export — FREE feature)', () => {
     const FREE_USER = 'report_free_user';
 
-    it('returns 403 InsufficientEntitlement for a FREE-tier user', async () => {
+    it('returns 200 for a FREE-tier user', async () => {
       const res = await get(`/api/v1/reports/${RECORD_ID}`, {
         ...PREMIUM_HEADERS,
         'x-test-user': FREE_USER,
         'x-test-tier': 'FREE',
-      }).expect(403);
+      }).expect(200);
 
-      expect(res.body).toMatchObject({
-        statusCode: 403,
-        error: 'InsufficientEntitlement',
-        requiredTier: 'calculation:export',
-        currentTier: 'FREE',
-      });
+      expect(res.body.record).toEqual(RECORD);
     });
 
-    it('returns 403 for anonymous requests (no auth context)', async () => {
+    it('returns 200 for anonymous requests (no auth context)', async () => {
       const res = await get(`/api/v1/reports/${RECORD_ID}`, {
         'x-age-confirmed': 'test-token',
-      }).expect(403);
+      }).expect(200);
 
-      expect(res.body).toMatchObject({
-        statusCode: 403,
-        currentTier: 'FREE',
-      });
+      expect(res.body.recordId).toBe(RECORD_ID);
     });
 
     it('an explicit PREMIUM user passes (default for authenticated users)', async () => {
@@ -547,34 +533,6 @@ describe('GET /api/v1/reports/:recordId on D1 — flag on', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Flag-off gate — the endpoint must stay dark while the rollout flag is off
-// ---------------------------------------------------------------------------
-
-describe('GET /api/v1/reports/:recordId on D1 — flag off', () => {
-  let flagOffApp: INestApplication;
-  const originalEnv = process.env;
-
-  beforeAll(async () => {
-    delete process.env.FF_ADVANCED_FEATURES; // default: off
-    flagOffApp = await createApp({ flagOn: false });
-  });
-
-  afterAll(async () => {
-    await flagOffApp?.close();
-    process.env = originalEnv;
-  });
-
-  it('returns 403 even with a premium user and an age token, in every format', async () => {
-    for (const format of ['json', 'csv', 'html']) {
-      await request(flagOffApp.getHttpServer())
-        .get(`/api/v1/reports/${RECORD_ID}?format=${format}`)
-        .set(PREMIUM_HEADERS)
-        .expect(403);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Rate limiting — real DECLARATION profile (20 req/min) through the stack
 // ---------------------------------------------------------------------------
 
@@ -585,9 +543,10 @@ describe('GET /api/v1/reports/:recordId on D1 — DECLARATION rate limit (real l
   beforeAll(async () => {
     // X-Forwarded-For derives the client key only behind a configured
     // proxy (RATE_LIMIT_TRUST_PROXY); supertest sockets all share one IP,
-    // so enable the flag for this describe to exercise per-key isolation.
+    // so enable the proxy setting for this describe to exercise per-key
+    // isolation.
     process.env = { ...originalEnv, RATE_LIMIT_TRUST_PROXY: 'true' };
-    rateLimitApp = await createApp({ flagOn: true, realRateLimiter: true });
+    rateLimitApp = await createApp({ realRateLimiter: true });
   });
 
   afterAll(async () => {

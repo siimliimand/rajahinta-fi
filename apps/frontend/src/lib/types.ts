@@ -106,9 +106,8 @@ export interface ProductDetailResponse {
   readonly offers: RetailOffer[];
   /**
    * Factual per-merchant reliability scores for the offers' merchants.
-   * Embedded by the API only while the enable_advanced_features flag is
-   * on; absent otherwise (never null). Informational only — the offers'
-   * order is never affected.
+   * Absent when the API supplies none (never null). Informational only —
+   * the offers' order is never affected.
    */
   readonly merchantReliability?: Readonly<
     Record<string, MerchantReliabilityScore>
@@ -181,8 +180,8 @@ export interface MerchantReliabilityListResponse {
 
 // ---------------------------------------------------------------------------
 // Declaration guidance (GET /api/v1/declaration/:recordId)
-// Mirrors declaration.dto.ts. The guidance field is present only while the
-// enable_advanced_features flag is on (omitted, never null, otherwise).
+// Mirrors declaration.dto.ts. The guidance field is optional (omitted,
+// never null).
 // ---------------------------------------------------------------------------
 
 /** One applied-duty line of the derivation walkthrough. */
@@ -276,7 +275,7 @@ export interface DeclarationSummaryResponse {
   readonly myTaxLink: string;
   readonly declarationDate: string;
   readonly disclaimer: Disclaimer;
-  /** Present only while the enable_advanced_features flag is on. */
+  /** Optional; omitted (never null) when the API supplies none. */
   readonly guidance?: DeclarationGuidance;
 }
 
@@ -570,65 +569,6 @@ export interface PriceHistoryResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Feature flags (GET /api/v1/feature-flags)
-// ---------------------------------------------------------------------------
-
-/**
- * Public feature-flag states for UI gating. Only the flags the frontend
- * consumes are declared — the API response is a superset keyed by flag
- * identifier, and unknown keys are ignored.
- */
-export interface FeatureFlagsResponse {
-  readonly flags: {
-    /**
-     * enable_historical_price_intelligence — gates the price-history API
-     * and the charts on the calculator result view / compare page.
-     */
-    readonly HISTORICAL_PRICE_INTELLIGENCE: boolean;
-    /**
-     * enable_basket_optimization — gates the multi-item basket
-     * optimization API and the compare page's basket section.
-     */
-    readonly BASKET_OPTIMIZATION: boolean;
-    /**
-     * enable_advanced_features — Phase 2 rollout flag: gates the scenario
-     * endpoints/UI, report exports, merchant reliability display, and the
-     * declaration guidance panel.
-     */
-    readonly ADVANCED_FEATURES: boolean;
-    /**
-     * enable_unit_price_eur_per_gram — gates the €/g ethanol metric on
-     * product/offer read responses and the compare view's €/g column +
-     * sort option.
-     */
-    readonly UNIT_PRICE_EUR_PER_GRAM: boolean;
-    /**
-     * enable_operator_console — gates the operator console UI + API
-     * (task 12.1). Optional in the client type: the degrade-to-hidden
-     * default predates it, and an absent key must render the console
-     * hidden (compliance rule: flag-off by default).
-     */
-    readonly OPERATOR_CONSOLE?: boolean;
-    /**
-     * PRICE_ALERTS — gates the price-alert watchlist API and UI: the
-     * account alerts management view and the product-page set-alert
-     * action (task 2.4, change product-roadmap-phases-1-4). Optional in
-     * the client type like OPERATOR_CONSOLE: an absent key (payload from
-     * a backend predating the flag) must render the UI hidden.
-     */
-    readonly PRICE_ALERTS?: boolean;
-    /**
-     * GROUP_ORDER_LEDGER — gates the group order API and UI: the session
-     * create/manage entry and the share-link session page (task 9.4,
-     * change product-roadmap-phases-1-4). Optional in the client type
-     * like OPERATOR_CONSOLE/PRICE_ALERTS: an absent key (payload from a
-     * backend predating the flag) must render the UI absent.
-     */
-    readonly GROUP_ORDER_LEDGER?: boolean;
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Price alerts (GET/POST/PATCH/DELETE /api/v1/account/alerts)
 // Mirrors the serialization in api-worker alerts.routes.ts — ISO timestamps,
 // accountId omitted (the list is always caller-scoped).
@@ -719,16 +659,19 @@ export interface OpsAuditListResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Session (POST /api/v1/account/session — identity derived server-side)
+// Session (GET /api/v1/account/me — identity derived server-side)
 // ---------------------------------------------------------------------------
 
 /**
- * Identity of the active anonymous session as derived by the server from
- * the httpOnly `rajahinta_session` cookie. The client never holds the
- * token itself.
+ * Identity of the signed-in account as derived by the server from the
+ * httpOnly `rajahinta_session` cookie. The client never holds the token
+ * itself. `verified` reports email-ownership confirmation — a status
+ * badge, never a lockout (USER-GUIDE).
  */
 export interface SessionStatus {
   readonly userId: string;
+  readonly email: string;
+  readonly verified: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -767,12 +710,12 @@ export type SortOrder =
   | 'PRODUCT_CATEGORY';
 
 /**
- * Compare-view sort orders: the shared contract above plus the
- * flag-gated €/g ethanol option. EUR_PER_GRAM is a compare-view-only
- * client-side order (the backend ranking contract in core-domain does
- * not include it), so it deliberately lives here and not in SortOrder —
- * the ranking methodology page and its backend-lockstep description
- * reference stay untouched.
+ * Compare-view sort orders: the shared contract above plus the €/g
+ * ethanol option. EUR_PER_GRAM is a compare-view-only client-side order
+ * (the backend ranking contract in core-domain does not include it), so
+ * it deliberately lives here and not in SortOrder — the ranking
+ * methodology page and its backend-lockstep description reference stay
+ * untouched.
  */
 export type CompareSortOrder = SortOrder | 'EUR_PER_GRAM';
 
@@ -811,8 +754,8 @@ export interface ComparisonProduct {
   /**
    * €/g ethanol metric shown in the compare view's €/g column — the best
    * (lowest centsPerGram, then offer id) value across the product detail's
-   * offers. Present only while enable_unit_price_eur_per_gram is on and
-   * the detail payload resolved; absent means no value may be shown.
+   * offers. Present only when the detail payload resolved; absent means
+   * no value may be shown.
    */
   readonly eurPerGram?: UnitPriceResult;
   /** Optional retail-offer ID for the outbound redirect link */

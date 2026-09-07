@@ -4,7 +4,7 @@
  *
  * Guard/rate-limit composition (route-scoped, historical/trip precedent):
  *   GET /api/v1/products/:id/dupes
- *     FeatureFlag(PRODUCER_DUPE_FINDER) → RateLimit(DEFAULT) → handler
+ *     RateLimit(DEFAULT) → handler
  *
  * MATCHING ARCHITECTURE (binding, R9): the only lookup is the
  * repository's exact PUBLISHED-by-(product, normalized producer key)
@@ -37,7 +37,6 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
-import { FeatureFlag, requireFeatureFlag } from '../middleware/feature-flags';
 import { requireRateLimit } from '../middleware/rate-limit';
 import { parseIntParam } from './support';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
@@ -100,11 +99,10 @@ async function getProductDupes(c: Context<AppEnv>): Promise<Response> {
   }
 }
 
-/** Register the dupes handler behind its flag gate + limiter. */
+/** Register the dupes handler behind its limiter. */
 export function registerProductDupesRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.get(
     '/api/v1/products/:id/dupes',
-    requireFeatureFlag(FeatureFlag.PRODUCER_DUPE_FINDER),
     requireRateLimit('DEFAULT'),
     getProductDupes,
   );

@@ -94,7 +94,7 @@ Confirm the age gate ("Yes, I am 18+") in the browser; the backend rejects API c
 
 Notes:
 
-- `dev-up.sh` sets `LAUNCH_GATES_OVERRIDE=true` so the calculator works in development. In production all three launch gates default to closed (legal opinion, tax source mapping, correction mechanism).
+- The launch-gate and feature-flag systems were removed (2026-09-07, owner decision): every feature is unconditionally live, in development and production alike.
 - If ports 3000/3001 are busy the script falls back to 3100/3101.
 - `SKIP_BUILD=1 bash scripts/dev-up.sh` skips rebuilding packages during iteration.
 
@@ -108,7 +108,7 @@ DATABASE_URL=postgresql://rajahinta:rajahinta@localhost:5432/rajahinta \
   pnpm exec tsx --tsconfig ../../packages/data-platform/tsconfig.json \
   ../../packages/data-platform/src/seed/seed-runner.ts)
 pnpm build
-DATABASE_URL=... REDIS_HOST=localhost LAUNCH_GATES_OVERRIDE=true \
+DATABASE_URL=... REDIS_HOST=localhost \
   pnpm --filter @rajahinta/backend dev        # :3000
 NEXT_PUBLIC_API_URL=http://localhost:3000 \
   pnpm --filter @rajahinta/frontend dev       # :3001
@@ -131,16 +131,10 @@ The Dockerfile builds backend and all workspace packages into a single Node 22 A
 | `CORS_ORIGIN` | no | Allowed origin (default `http://localhost:3001`) |
 | `REDIS_URL` / `REDIS_HOST` + `REDIS_PORT` | no | Redis for idempotency cache and BullMQ. When unset, in-memory fallbacks are used and background jobs do not run |
 | `NEXT_PUBLIC_API_URL` | no (frontend) | API base URL baked at build time (default `http://localhost:3000`) |
-| `LAUNCH_GATES_OVERRIDE` | no | `true` forces all launch gates open. Development only |
-| `LAUNCH_GATE_LEGAL_OPINION` | no | Individual launch gate confirmations; all three must be `true` before calculation and price data go public |
-| `LAUNCH_GATE_TAX_SOURCE_MAPPING` | no | see above |
-| `LAUNCH_GATE_CORRECTION_MECHANISM` | no | see above |
-| `FF_<FLAG>` | no | Feature flags: `true`/`1` enables, a number sets rollout percentage |
-| `FF_ROLLOUT_<FLAG>` | no | Explicit rollout percentage override |
 | `ENTITLEMENT_DEFAULT_TIER` | no | Tier for authenticated users (default PREMIUM) |
 | `ENTITLEMENT_TIER_<USERID>` | no | Per-user tier override |
 
-Feature flags (all default off): `NEW_MERCHANT_SOURCE`, `NEW_TAX_RULESET`, `UI_RANKING_V2`, `HISTORICAL_PRICE_INTELLIGENCE` (price history charts), `BASKET_OPTIMIZATION` (multi-store optimizer), `ADVANCED_FEATURES` (scenarios, report export, reliability scores, declaration guidance).
+The launch-gate and feature-flag env vars (`LAUNCH_GATE_*`, `FF_*`) no longer exist — the systems were removed and every feature ships enabled. All entitlement features currently require only the FREE tier (`FEATURE_TIER_MAP` in `packages/core-domain`); the tier machinery stays as the future paywall seam.
 
 ## Commands
 
@@ -195,7 +189,10 @@ All routes are versioned under `/api/v1` and documented in Swagger. Guards vary 
 | `/declaration/:recordId` | GET | Excise declaration guidance |
 | `/reports/:recordId` | GET | JSON/CSV/HTML report export (PREMIUM tier) |
 | `/corrections` | POST | Flag a calculation or data point for correction |
-| `/account/*` | GET/POST/DELETE | Anonymous-session history, baskets, scenarios, GDPR export |
+| `/account/register`, `/account/login` | POST | Email + password registration and login (the email address is the username) |
+| `/account/me` | GET | Current account identity and verification state |
+| `/account/verify-email/*`, `/account/password/*` | POST | Email verification and password reset via single-use emailed tokens |
+| `/account/*` | GET/POST/DELETE | Registered-account history, baskets, scenarios, GDPR export |
 | `/merchants/reliability` | GET | Per-merchant reliability scores |
 | `/analytics/click`, `/outbound/:offerId` | POST/GET | Click counting and merchant-link redirect (no affiliate fields allowed) |
 | `/ranking/methodology` | GET | Public ranking methodology |
@@ -213,7 +210,8 @@ These rules are enforced in code and verified by the compliance test suite:
 - Manual rate publication. The daily review job detects new official rates but only creates a review task; a human confirms before a version goes live.
 - Structural disclaimer. The Finnish disclaimer is stored on every calculation record, not only rendered in the UI.
 - Background work off the request path. Ingestion, aggregation, and reviews run in queues.
-- Minimal personal data. Accounts are anonymous sessions (UUID cookie) with no email collection in the current UI; GDPR export and retention jobs exist.
+- Minimal personal data. Accounts are email + password registrations (the email address is the username; it is collected for sign-in, verification, and alert mail); GDPR export and retention jobs exist.
+- Credentials auth, deliberately. Registration, login, email verification, and password reset run with self-hosted credentials; there is no OIDC/social login provider, and the age gate remains documented self-attestation.
 
 ## Testing and CI
 

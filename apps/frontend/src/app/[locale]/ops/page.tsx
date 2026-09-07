@@ -5,9 +5,8 @@
  * Server shell for the console at `/ops` (Finnish, default locale) and
  * `/en/ops` (English). Operational data itself never renders here — the
  * client console fetches it from the `/ops/console/**` API, which sits
- * behind the bearer-token + IP-allowlist realm and the OPERATOR_CONSOLE
- * feature flag (default OFF). The page is excluded from indexing: it is
- * an internal tool, not product surface.
+ * behind the bearer-token + IP-allowlist realm. The page is excluded
+ * from indexing: it is an internal tool, not product surface.
  *
  * @module OpsPage
  */

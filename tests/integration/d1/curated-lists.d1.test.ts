@@ -19,9 +19,8 @@
  *   listPublishedBySlug, NOT on the public HTTP API.
  * - 7.2 route tests (curated-lists.routes.test.ts) cover the public
  *   list API: published-only payloads (repository-seeded), 404 vs
- *   200-empty slug semantics, wire slug normalization, the catalog,
- *   the DEFAULT rate-limit profile, and flag-off 403 — with flag-off
- *   exercised on an EMPTY database.
+ *   200-empty slug semantics, wire slug normalization, and the catalog
+ *   DEFAULT rate-limit profile.
  * - 7.3 page tests (lists/[slug]/page.test.tsx) cover the rendering
  *   side against a mocked fetch client.
  *
@@ -49,9 +48,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import {
   createApp,
-  expectEnvelope,
   FAKE_OPS_TOKEN,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -78,9 +75,9 @@ function fullApp(): ReturnType<typeof createApp> {
   return createApp();
 }
 
-/** Lists flag ON + console open (permissive base) — the serving path. */
+/** Console open (permissive base) — the serving path. */
 function curatedEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}): Env {
-  return permissiveEnv(d1, { ...overrides, FF_CURATED_LISTS: 'true' });
+  return permissiveEnv(d1, overrides);
 }
 
 /** The console DTO — target is the product side (FK parent seeded). */
@@ -360,21 +357,5 @@ describe('GET /api/v1/lists(/:slug) — flag gate end-to-end with data present (
     );
     expect(catalog.lists).toEqual([{ slug: 'alkon-hylkaamat', title: 'Alkon hylkäämät' }]);
 
-    // Flag OFF (flags otherwise open — the rollback semantics): the SAME
-    // requests on the SAME data get the feature-disabled envelope.
-    for (const path of ['/api/v1/lists/alkon-hylkaamat', '/api/v1/lists']) {
-      await expectEnvelope(await request(app, permissiveEnv(d1), path), 403, {
-        message: 'Feature "CURATED_LISTS" is not enabled',
-        error: 'Forbidden',
-      });
-    }
-
-    // Fully locked env (the 7.2 route-unit case) — same verdict composed.
-    for (const path of ['/api/v1/lists/alkon-hylkaamat', '/api/v1/lists']) {
-      await expectEnvelope(await request(app, lockedEnv(d1), path), 403, {
-        message: 'Feature "CURATED_LISTS" is not enabled',
-        error: 'Forbidden',
-      });
-    }
   });
 });

@@ -13,7 +13,7 @@
  * @module ClickCounterFlusherTest
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
 import { flushClickCounters } from '../click-counter-flusher';
 import { getClickCounts, recordClick } from '../../do/client';
@@ -99,11 +99,18 @@ describe('flushClickCounters → click_counter_snapshots (D1)', () => {
   });
 
   it('archives cumulative intervals — later flushes carry grown totals at new instants', async () => {
+    // Deterministic clock: the two captures must land on DISTINCT instants
+    // or the (merchant, url, captured_at) upsert collapses the second row
+    // onto the first (same-ms flushes tripped this on CI runners).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
     const { env, instance, db } = createEnv();
     await recordClick(env, 'alko', 'u1', { by: 2 });
     await flushClickCounters(env);
 
-    // Traffic + an alarm tick, then a later flush.
+    // Traffic + an alarm tick, then a later flush at a strictly later
+    // capture instant.
+    vi.setSystemTime(new Date('2026-01-01T00:00:05.000Z'));
     await recordClick(env, 'alko', 'u1', { by: 3 });
     await instance.alarm();
     await flushClickCounters(env);
@@ -119,6 +126,10 @@ describe('flushClickCounters → click_counter_snapshots (D1)', () => {
     const result = await flushClickCounters(env);
     expect(result).toEqual({ snapshotTaken: false, rowsWritten: 0 });
     expect(await snapshotRows(db)).toHaveLength(2);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('drain-empties through the flush path — nothing re-archives on the next flush', async () => {

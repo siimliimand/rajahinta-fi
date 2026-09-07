@@ -10,10 +10,10 @@
  * set is the lists scope; the route remains the single source of truth.
  *
  * Outcome semantics (the distinction the page renders on):
- *   - unknown slug          → `{ kind: 'not-found' }`   (API 404)
- *   - flag off / fetch fail → `{ kind: 'unavailable' }` (API 403, 5xx,
+ *   - unknown slug    → `{ kind: 'not-found' }`   (API 404)
+ *   - fetch failure   → `{ kind: 'unavailable' }` (API 403, 5xx,
  *     unreachable backend — degrade, never error the response)
- *   - known slug            → `{ kind: 'ok', list }` with `entries: []`
+ *   - known slug      → `{ kind: 'ok', list }` with `entries: []`
  *     when nothing is published yet (an answer, not an error — the page
  *     renders criteria + the empty state)
  *
@@ -63,9 +63,9 @@ export type CuratedListOutcome =
 
 /**
  * Fetch a curated list by slug on the server, classified into the page's
- * three render outcomes. Any failure the page cannot act on (flag-off
- * 403, unexpected shape, 5xx, unreachable backend) degrades to
- * `unavailable`, mirroring the sitemap's degradation contract.
+ * three render outcomes. Any failure the page cannot act on (unexpected
+ * shape, 403, 5xx, unreachable backend) degrades to `unavailable`,
+ * mirroring the sitemap's degradation contract.
  */
 export async function getServerCuratedList(
   slug: string,

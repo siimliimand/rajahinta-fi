@@ -1,17 +1,16 @@
 /**
  * What-if excise route tests (task 8.2, change product-roadmap-phases-1-4)
  * over the FULL app composition (createApp() + registerWhatIfRoutes —
- * the exact composition index.ts wires, flag gate + rate limit on the
- * route itself) on the fake-D1 harness.
+ * the exact composition index.ts wires, rate limit on the route itself)
+ * on the fake-D1 harness.
  *
- * Pinning here: flag-off 403 (EXCISE_WHAT_IF), the zod bounds contract
- * (rate bounds, product list caps, canonical category, ABV fraction,
- * price/volume caps, duplicate ids), the HAND-computed scenario vector
- * through the engine-resolved baseline (36.20 €/cl-ethanol beer rule),
- * the structural HYPOTHETICAL disclaimer on every result, the
- * engine's zero-rate fallback baseline, and the share-token codec —
- * round-trip fidelity, encode∘decode identity, UTF-8 ids, and
- * tamper/corruption/bound rejection.
+ * Pinning here: the zod bounds contract (rate bounds, product list caps,
+ * canonical category, ABV fraction, price/volume caps, duplicate ids),
+ * the HAND-computed scenario vector through the engine-resolved baseline
+ * (36.20 €/cl-ethanol beer rule), the structural HYPOTHETICAL disclaimer
+ * on every result, the engine's zero-rate fallback baseline, and the
+ * share-token codec — round-trip fidelity, encode∘decode identity,
+ * UTF-8 ids, and tamper/corruption/bound rejection.
  *
  * EPHEMERAL architecture is pinned too: no idempotency store is wired
  * into the route, so identical payloads recompute fresh every time
@@ -24,7 +23,6 @@ import { describe, it, expect } from 'vitest';
 import {
   buildApp,
   expectEnvelope,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -40,9 +38,9 @@ import type { Env } from '../../env';
 import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
 
 /**
- * index.ts registers the what-if handler behind its route-level gate+
- * limiter (same slot as the other route ports); the test composition
- * mirrors that exactly.
+ * index.ts registers the what-if handler behind its route-level limiter
+ * (same slot as the other route ports); the test composition mirrors
+ * that exactly.
  */
 function whatIfApp(): ReturnType<typeof buildApp> {
   const app = buildApp();
@@ -51,7 +49,7 @@ function whatIfApp(): ReturnType<typeof buildApp> {
 }
 
 function whatIfEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}): Env {
-  return permissiveEnv(d1, { ...overrides, FF_EXCISE_WHAT_IF: 'true' });
+  return permissiveEnv(d1, overrides);
 }
 
 /** The seeded baseline: 36.20 € per centilitre of ethanol, beer, verified. */
@@ -134,24 +132,15 @@ interface WhatIfJson {
 }
 
 // ---------------------------------------------------------------------------
-// Gate: flag-off 403 (EXCISE_WHAT_IF)
+// Anonymity + the happy path
 // ---------------------------------------------------------------------------
 
-describe('POST /api/v1/what-if/excise — gate', () => {
-  it('rejects with 403 while EXCISE_WHAT_IF is off (route 403 envelope shape)', async () => {
-    const { d1 } = openMigratedD1();
-    const app = whatIfApp();
-    const res = await postWhatIf(app, lockedEnv(d1));
-    await expectEnvelope(res, 403, {
-      message: 'Feature "EXCISE_WHAT_IF" is not enabled',
-    });
-  });
-
+describe('POST /api/v1/what-if/excise — anonymity', () => {
   it('is anonymous — the happy path needs no session or account', async () => {
     const { db, d1 } = openMigratedD1();
     seedBeerRule(db);
     const app = whatIfApp();
-    // No Authorization header, no session cookie — only the flag + limiter.
+    // No Authorization header, no session cookie — only the limiter.
     const res = await postWhatIf(app, whatIfEnv(d1));
     expect(res.status).toBe(200);
   });

@@ -8,8 +8,8 @@
  * injected as the data-platform abstract tokens exported by
  * DataPlatformModule — the module stays storage-agnostic.
  *
- * Guards resolve from the global FeatureFlagsModule / RateLimitingModule /
- * AgeGateModule, so no additional imports are needed for them.
+ * Guards resolve from the global RateLimitingModule / AgeGateModule, so no
+ * additional imports are needed for them.
  *
  * @module HistoricalDataModule
  */

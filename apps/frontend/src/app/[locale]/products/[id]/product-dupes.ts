@@ -12,10 +12,10 @@
  * Fetch pattern: the product page loads its data server-side
  * (getServerProductDetail), so the dupes call does the same — a
  * server-side fetch alongside the existing data, resolved before HTML.
- * Any failure degrades to null so the panel stays absent: 403 (flag off
- * or flipped off mid-revalidate), 404 (cannot happen behind the page's
- * own product check, but harmless), 5xx, unreachable backend. "No
- * curated links" is a 200 with an empty list — an answer, not an error.
+ * Any failure degrades to null so the panel stays absent: 403, 404
+ * (cannot happen behind the page's own product check, but harmless),
+ * 5xx, unreachable backend. "No curated links" is a 200 with an empty
+ * list — an answer, not an error.
  *
  * The dupes endpoint sits outside the age gate's path scope
  * (guards.ts scopes ageGate to GET /api/v1/products and
@@ -49,8 +49,8 @@ export interface ProductDupesResponse {
 
 /**
  * Fetch a product's curated sibling links on the server, or null when
- * unavailable (flag off, backend unreachable) so the page degrades to an
- * absent panel instead of erroring.
+ * unavailable (backend unreachable) so the page degrades to an absent
+ * panel instead of erroring.
  */
 export async function getServerProductDupes(
   id: number,

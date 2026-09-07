@@ -6,17 +6,15 @@
  * routes so the historical controller sharing the /api/v1/products prefix
  * carries ONLY its own guard set — Nest applies class guards per
  * controller, not per URL prefix):
- *   GET /api/v1/products        RateLimit — none in Nest → LaunchGate(PRICE_DATA) → AgeGate
+ *   GET /api/v1/products        RateLimit — none in Nest → AgeGate
  *   GET /api/v1/products/:id    same
  *
  * Reads go through the D1 product-search repository (FTS5 + LIKE
  * fallback, task 2.2); the alphabetical sort and pagination semantics are
  * copied verbatim. The detail response embeds per-merchant reliability
- * scores only while ADVANCED_FEATURES is enabled (informational only —
- * see src/services/merchant-reliability.ts). While
- * UNIT_PRICE_EUR_PER_GRAM is on, search items and detail offers carry the
- * read-time €/g metric (`eurPerGram`) with its status; flag off leaves
- * the key absent (byte-compatible payloads, never persisted).
+ * scores (informational only — see src/services/merchant-reliability.ts).
+ * Search items and detail offers carry the read-time €/g metric
+ * (`eurPerGram`) with its status.
  *
  * @module SearchRoutes
  */
@@ -32,9 +30,7 @@ import type { ReliabilityStatus } from '../../../../packages/core-domain/src/rel
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
 import { parseIntParam } from './support';
-import { FeatureFlag, FeatureFlagService } from '../middleware/feature-flags';
 import { ageGate } from '../middleware/age-gate';
-import { requireLaunchGate } from '../middleware/launch-gate';
 import {
   getMerchantReliabilityMap,
   type MerchantReliabilityMap,
@@ -87,9 +83,7 @@ type SearchItem = {
 };
 
 /**
- * Search item as returned: the flag-less shape, plus the €/g metric embed
- * only while `UNIT_PRICE_EUR_PER_GRAM` is on (key absent otherwise —
- * byte-compatible with the flag-less shape).
+ * Search item as returned: the base shape plus the €/g metric embed.
  */
 type SearchItemResponse = SearchItem & { eurPerGram?: UnitPriceResult };
 
@@ -171,15 +165,10 @@ function searchItemUnitPrice(inputs: UnitPriceInputs): UnitPriceResult {
   return eurPerGram(Number.NaN, inputs.unitVolumeL, inputs.alcoholFraction);
 }
 
-/** Map a product row to its response shape, embedding the metric on flag. */
-function toSearchItemResponse(
-  p: ProductRow,
-  includeUnitPrice: boolean,
-): SearchItemResponse {
-  const item = toSearchItem(p);
-  if (!includeUnitPrice) return item;
+/** Map a product row to its response shape, embedding the metric. */
+function toSearchItemResponse(p: ProductRow): SearchItemResponse {
   return {
-    ...item,
+    ...toSearchItem(p),
     eurPerGram: searchItemUnitPrice(unitPriceInputs(p)),
   };
 }
@@ -211,12 +200,6 @@ async function search(c: Context<AppEnv>): Promise<Response> {
 
   try {
     const repo = new D1ProductSearchRepository(c.env.DB);
-    // Flag resolved in the route (per-request pattern, see getProduct):
-    // on → each item carries the eurPerGram embed; off → the key stays
-    // absent (byte-compatible with the flag-less shape).
-    const includeUnitPrice = new FeatureFlagService(c.env).isEnabled(
-      FeatureFlag.UNIT_PRICE_EUR_PER_GRAM,
-    );
     let items: SearchItemResponse[] = [];
     const query = q !== undefined ? q.trim() : '';
 
@@ -230,20 +213,20 @@ async function search(c: Context<AppEnv>): Promise<Response> {
       const products = await Promise.all(productIds.map((id) => repo.findById(id)));
       items = products
         .filter((p): p is NonNullable<typeof p> => p !== null)
-        .map((p) => toSearchItemResponse(p, includeUnitPrice));
+        .map((p) => toSearchItemResponse(p));
       items.sort(compareByName);
     } else if (query.length > 0) {
       // Ranked search — the repository ranks (relevance order); an
       // explicit sort is honored over the filtered set.
       const products = await repo.searchRanked(query, MAX_PAGE_SIZE);
-      items = products.map((p) => toSearchItemResponse(p, includeUnitPrice));
+      items = products.map((p) => toSearchItemResponse(p));
       if (sort !== undefined) {
         items.sort(compareByNameThenId);
       }
     } else {
       // Blank or absent q — the repository lists products alphabetically.
       const products = await repo.searchByName(q ?? null, MAX_PAGE_SIZE);
-      items = products.map((p) => toSearchItemResponse(p, includeUnitPrice));
+      items = products.map((p) => toSearchItemResponse(p));
       items.sort(compareByName);
     }
 
@@ -276,13 +259,8 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
 
     const offers = await repo.findOffers(id);
 
-    // Flag resolved in the route (established per-request pattern): on →
-    // each offer carries the eurPerGram embed; off → the key stays absent
-    // (byte-compatible with the flag-less shape). The embed never reorders
+    // Each offer carries the eurPerGram embed. The embed never reorders
     // the offers — it maps in place.
-    const includeUnitPrice = new FeatureFlagService(c.env).isEnabled(
-      FeatureFlag.UNIT_PRICE_EUR_PER_GRAM,
-    );
     // Physical inputs are per-product: parsed once and shared by every
     // offer's metric. unitVolume is litres as numeric text; an unparseable
     // value propagates as NaN → the module reports INVALID_VOLUME. The
@@ -318,31 +296,23 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
         observedAt:
           o.observedAt instanceof Date ? o.observedAt.toISOString() : String(o.observedAt),
         reliabilityStatus: o.reliabilityStatus,
-        // Flag-gated embed: value offers inherit the offer price's
-        // reliability (VERIFIED → computed, otherwise ESTIMATED);
-        // missing/invalid inputs degrade to an explicit unavailable —
-        // never a substituted value (spec unit-price-metrics).
-        ...(includeUnitPrice
-          ? {
-              eurPerGram: eurPerGram(
-                o.priceCents,
-                inputs.unitVolumeL,
-                inputs.alcoholFraction,
-                toReliabilityStatus(o.reliabilityStatus),
-              ),
-            }
-          : {}),
+        // Value offers inherit the offer price's reliability
+        // (VERIFIED → computed, otherwise ESTIMATED); missing/invalid
+        // inputs degrade to an explicit unavailable — never a
+        // substituted value (spec unit-price-metrics).
+        eurPerGram: eurPerGram(
+          o.priceCents,
+          inputs.unitVolumeL,
+          inputs.alcoholFraction,
+          toReliabilityStatus(o.reliabilityStatus),
+        ),
       })),
     };
 
-    // Informational per-merchant scores — only while the flag is on; flag
-    // off leaves the field absent (byte-compatible with the flag-less
-    // shape). The embed never reorders the offers.
+    // Informational per-merchant scores. The embed never reorders the
+    // offers; an unavailable reliability store leaves the field absent.
     const offersList = response.offers as Array<{ merchant: string }>;
-    if (
-      offersList.length > 0 &&
-      new FeatureFlagService(c.env).isEnabled(FeatureFlag.ADVANCED_FEATURES)
-    ) {
+    if (offersList.length > 0) {
       const merchants = new Set(offersList.map((o) => o.merchant));
       const embed = await getMerchantReliabilityMap(c.env.DB, merchants);
       if (embed !== undefined) {
@@ -362,10 +332,10 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
 
 /** Register the search handlers (guards registered per-route here). */
 export function registerSearchRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
-  // Nest SearchController class guards, method-scoped so the historical
+  // Nest SearchController class age gate, method-scoped so the historical
   // controller's route (same prefix) keeps only its own guard set.
   for (const path of ['/api/v1/products', '/api/v1/products/:id']) {
-    app.on('GET', path, requireLaunchGate('PRICE_DATA'), ageGate());
+    app.on('GET', path, ageGate());
   }
 
   app.get('/api/v1/products', search);

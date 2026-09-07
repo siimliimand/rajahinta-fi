@@ -1,16 +1,18 @@
 /**
- * DrizzleAccountRepository.setVerifiedEmail tests (FIX-E, change
- * technical-assessment-remediation).
+ * DrizzleAccountRepository — credential-surface tests (task 1.1, change
+ * email-password-auth).
  *
- * Pins the email-verification write contract: a targeted UPDATE on the
- * documented verified-email column keyed by userId, and an explicit
- * throw (never a silent no-op) when the account does not exist — a
- * silent success would lose the verification.
+ * Pins the contract the login path codes against: findByEmail resolves
+ * the case-insensitive lower(email) form and projects the row with
+ * truthful null credential fields (the legacy pg schema has no
+ * credential columns), and the credential WRITES reject loudly — the
+ * production credential flow lives only in the D1 repository (design
+ * D9).
  *
  * Package convention: recorded builder calls replayed against a
  * never-connected drizzle instance, so no TEST_DATABASE_URL is needed.
  *
- * @module DrizzleAccountRepositoryEmailTest
+ * @module DrizzleAccountRepositoryCredentialTest
  */
 import { describe, it, expect, afterAll } from 'vitest';
 import { Pool } from 'pg';
@@ -67,27 +69,69 @@ afterAll(async () => {
   await renderPool.end();
 });
 
-describe('DrizzleAccountRepository.setVerifiedEmail', () => {
-  it('updates only the email column of the addressed account row', async () => {
-    const { db, calls } = createRecordingDb(() => [{ id: 42 }]);
+describe('DrizzleAccountRepository.findByEmail', () => {
+  it('resolves the case-insensitive lower(email) form with a normalized parameter', async () => {
+    const { db, calls } = createRecordingDb(() => []);
     const repo = new DrizzleAccountRepository(db);
 
-    await repo.setVerifiedEmail('user-123', 'verified@example.invalid');
+    await repo.findByEmail('Mixed.Case@Example.INVALID');
 
     const { sql, params } = renderSql(calls);
-    expect(sql).toContain('update "accounts"');
-    expect(sql).toContain('"email" = $');
-    expect(sql).toContain('"user_id" = $');
-    expect(params).toContain('user-123');
-    expect(params).toContain('verified@example.invalid');
+    expect(sql).toContain('select');
+    expect(sql).toContain('from "accounts"');
+    expect(sql).toContain('lower("accounts"."email")');
+    // First bind is the normalized address (a later bind is the limit).
+    expect(params[0]).toBe('mixed.case@example.invalid');
   });
 
-  it('throws when no account exists for the userId — verification is never silently dropped', async () => {
+  it('projects the credential record with truthful null credential fields', async () => {
+    const row = {
+      id: 7,
+      userId: 'user-7',
+      email: 'user-7@example.invalid',
+      tier: 'FREE',
+      createdAt: new Date(0),
+      lastActiveAt: new Date(0),
+    };
+    const { db } = createRecordingDb(() => [row]);
+    const repo = new DrizzleAccountRepository(db);
+
+    const record = await repo.findByEmail('user-7@example.invalid');
+
+    expect(record).not.toBeNull();
+    expect(record!.id).toBe(7);
+    expect(record!.userId).toBe('user-7');
+    expect(record!.email).toBe('user-7@example.invalid');
+    // No credential columns exist in the pg harness schema — nulls are
+    // the truthful projection, and login treats them as fail-safe 401.
+    expect(record!.passwordHash).toBeNull();
+    expect(record!.emailVerifiedAt).toBeNull();
+  });
+
+  it('returns null for an unknown address', async () => {
     const { db } = createRecordingDb(() => []);
     const repo = new DrizzleAccountRepository(db);
 
+    await expect(repo.findByEmail('nobody@example.invalid')).resolves.toBeNull();
+  });
+});
+
+describe('DrizzleAccountRepository credential writes', () => {
+  it('setPasswordHash rejects — the credential flow lives only in the API Worker (D9)', async () => {
+    const { db } = createRecordingDb(() => [{ id: 42 }]);
+    const repo = new DrizzleAccountRepository(db);
+
     await expect(
-      repo.setVerifiedEmail('missing-user', 'verified@example.invalid'),
-    ).rejects.toThrow(/account not found/i);
+      repo.setPasswordHash('user-123', 'pbkdf2-sha256$600000$s$h'),
+    ).rejects.toThrow(/not supported by the legacy pg harness/);
+  });
+
+  it('setVerifiedEmail rejects — verification state exists only in the D1 schema (D9)', async () => {
+    const { db } = createRecordingDb(() => [{ id: 42 }]);
+    const repo = new DrizzleAccountRepository(db);
+
+    await expect(
+      repo.setVerifiedEmail('user-123', new Date(0)),
+    ).rejects.toThrow(/not supported by the legacy pg harness/);
   });
 });

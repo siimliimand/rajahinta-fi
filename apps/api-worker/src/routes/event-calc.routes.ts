@@ -78,21 +78,14 @@
  * to consult, so units carry the request's container material with
  * null dimensions and degrade to the packing module's own
  * MISSING_DIMENSIONS exclusion path (`ESTIMATED` status), never
- * invented geometry. Like the basket section (task 3.3), the section
- * is gated per-request by PACKING_OPTIMIZER: flag off → the response
- * keeps its exact flag-less shape.
+ * invented geometry — like the basket section (task 3.3).
  *
  * Middleware chain per request (in registration order):
  *
- *   requireFeatureFlag('EVENT_CALCULATOR') → requireRateLimit('CALCULATOR')
- *   → handler
+ *   requireRateLimit('CALCULATOR') → handler
  *
- * The flag gate composes here, not in guards.ts: this is a NEW surface
- * with no Nest counterpart, and guards.ts is the Nest-parity enumeration.
- * Flag BEFORE limiter (alerts ordering rationale): a flag-off deployment
- * rejects with 403 before any limiter DO traffic. The route is anonymous
- * (no session) like the calculator surface — the per-IP CALCULATOR
- * profile (10/min) applies.
+ * The route is anonymous (no session) like the calculator surface — the
+ * per-IP CALCULATOR profile (10/min) applies.
  *
  * Documented decisions:
  * - Caps: guests 1..500, durationHours 1..72. The module accepts 0, but
@@ -133,7 +126,6 @@ import type { Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
-import { FeatureFlag, requireFeatureFlag, FeatureFlagService } from '../middleware/feature-flags';
 import { requireRateLimit } from '../middleware/rate-limit';
 import { parseDto } from './support';
 import { calculateEventShoppingList } from '../../../../packages/core-domain/src/eventcalc/eventcalc';
@@ -652,14 +644,12 @@ async function calculateEvent(c: Context<AppEnv>): Promise<Response> {
       throw err;
     }
 
-    // Packing opt-in (R4 module), gated per-request like the basket
-    // section: flag off ⇒ the response keeps its exact flag-less shape.
-    const includePacking =
-      dto.sourcing.packing === true &&
-      new FeatureFlagService(c.env).isEnabled(FeatureFlag.PACKING_OPTIMIZER);
-    const packing = includePacking
-      ? await buildEventPackingSection(c.env.DB, result, plan, dto.sourcing)
-      : undefined;
+    // Packing opt-in (R4 module): the response carries the section only
+    // when the request asked for it.
+    const packing =
+      dto.sourcing.packing === true
+        ? await buildEventPackingSection(c.env.DB, result, plan, dto.sourcing)
+        : undefined;
 
     const normsVersion: string = result.normsVersion;
     // Dataset dimensions beyond the norms version: every tax dataset the
@@ -732,11 +722,10 @@ async function calculateEvent(c: Context<AppEnv>): Promise<Response> {
 // Registration
 // ---------------------------------------------------------------------------
 
-/** Register the event-calculator handler behind its flag gate + limiter. */
+/** Register the event-calculator handler behind its limiter. */
 export function registerEventCalcRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.post(
     '/api/v1/event-calc',
-    requireFeatureFlag(FeatureFlag.EVENT_CALCULATOR),
     requireRateLimit('CALCULATOR'),
     calculateEvent,
   );

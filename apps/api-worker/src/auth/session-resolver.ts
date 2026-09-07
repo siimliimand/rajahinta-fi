@@ -17,7 +17,6 @@
 
 import { D1SessionRepository } from '../../../../packages/data-platform/src/repositories/d1/session.repository';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
-import { isAccountVerified } from '../../../../packages/application-api/src/accounts/email-verification';
 import type { AuthenticatedAccount } from './authenticated-account';
 
 /** Known tier values as stored on the account row (guard parity). */
@@ -39,12 +38,13 @@ interface AccountRow {
   readonly id: number;
   readonly user_id: string;
   readonly email: string;
+  readonly email_verified_at: string | null;
   readonly tier: string;
 }
 
 /** The columns mirror DrizzleAccountRepository.findById's select. */
 const ACCOUNT_BY_ID_SQL = `
-  SELECT id, user_id, email, tier FROM accounts WHERE id = ? LIMIT 1`;
+  SELECT id, user_id, email, email_verified_at, tier FROM accounts WHERE id = ? LIMIT 1`;
 
 /**
  * Resolve the authenticated account from a presented token, or null when
@@ -75,6 +75,9 @@ export async function resolveAccountByToken(
     accountId: row.id,
     userId: row.user_id,
     tier: KNOWN_TIERS.has(row.tier) ? (row.tier as AuthenticatedAccount['tier']) : 'FREE',
-    verified: isAccountVerified(row.email),
+    // Verification STATE (change email-password-auth, task 2.4 semantics):
+    // email_verified_at IS NOT NULL — set only by the emailed single-use
+    // token flow; the placeholder-era derived-from-email rule is gone.
+    verified: row.email_verified_at !== null,
   };
 }

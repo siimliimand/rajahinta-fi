@@ -27,10 +27,6 @@ import QuantitySelector from './components/QuantitySelector';
 import CalculatorResultView from './components/CalculatorResult';
 import ProductHistoryPanel from './components/ProductHistoryPanel';
 import ScenarioControls from './components/ScenarioControls';
-import GateClosedNotice, {
-  isLaunchGateClosedError,
-} from './components/GateClosedNotice';
-
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -153,11 +149,6 @@ export default function CalculatorPage() {
   const [result, setResult] = useState<CalculatorResult | null>(null);
   const [calcError, setCalcError] = useState<CalculationError | null>(null);
 
-  // ── Launch-gate state (read from the guarded endpoints' own 403s) ──
-  // True once a search or calculation is rejected because the production
-  // launch gates are closed; the explanatory notice replaces the flow.
-  const [gateClosed, setGateClosed] = useState(false);
-
   // Cancels the in-flight search when a newer one supersedes it, so a
   // slow stale response can never overwrite a newer one's results.
   const searchAbortRef = useRef<AbortController | null>(null);
@@ -201,13 +192,6 @@ export default function CalculatorPage() {
       } catch (err: unknown) {
         // Superseded searches leave the newer one's state untouched.
         if (controller.signal.aborted) return;
-        // Launch gates closed: switch the page to the explanatory notice
-        // instead of surfacing the guard's rejection as a search error.
-        if (isLaunchGateClosedError(err)) {
-          setGateClosed(true);
-          setSearchResults([]);
-          return;
-        }
         const message =
           err instanceof Error ? err.message : t('searchFailed');
         setSearchError(message);
@@ -273,18 +257,13 @@ export default function CalculatorPage() {
         body: JSON.stringify({ recordId: res.calculationRecordId }),
       }).catch(() => { /* noop */ });
     } catch (err: unknown) {
-      // Launch gates closed mid-session: same explanatory notice as search.
-      if (isLaunchGateClosedError(err)) {
-        setGateClosed(true);
-        return;
-      }
       setCalcError(toCalculationError(err, t('calculationFailed')));
     } finally {
       setCalculating(false);
     }
   }, [selectedProduct, quantity, destination, t]);
 
-  // ── Save-scenario handler (scenario controls, flag-gated by the child) ──
+  // ── Save-scenario handler (delegated to the scenario controls) ──
   const handleSaveScenario = useCallback(
     async (name: string) => {
       if (!selectedProduct) {
@@ -381,23 +360,17 @@ export default function CalculatorPage() {
       <h1 className="mb-1 text-2xl font-bold text-primary-700">{t('title')}</h1>
       <p className="mb-8 text-sm text-gray-500">{t('subtitle')}</p>
 
-      {/* ── Launch-gate-closed notice — replaces the calculator flow while
-          the production launch gates are closed (task 5.2). With the gates
-          open (dev/staging) this branch never renders. ── */}
-      {gateClosed ? (
-        <GateClosedNotice />
-      ) : (
-        <>
-          {/* ── Search section ── */}
-          <section className="mb-6">
-            <ProductSearch
-              value={query}
-              onChange={handleQueryChange}
-              onSubmit={handleSearch}
-              loading={searchLoading}
-              error={searchError}
-            />
-          </section>
+      <>
+        {/* ── Search section ── */}
+        <section className="mb-6">
+          <ProductSearch
+            value={query}
+            onChange={handleQueryChange}
+            onSubmit={handleSearch}
+            loading={searchLoading}
+            error={searchError}
+          />
+        </section>
 
           {/* ── Search results ── */}
           {hasSearched && (
@@ -506,8 +479,7 @@ export default function CalculatorPage() {
             </section>
           )}
 
-          {/* ── Scenario controls — hidden and unfetched while the
-              enable_advanced_features flag is off ── */}
+          {/* ── Scenario controls ── */}
           <div className="mb-6">
             <ScenarioControls
               canSave={selectedProduct !== null}
@@ -520,8 +492,7 @@ export default function CalculatorPage() {
           {result && (
             <section>
               <CalculatorResultView result={result} />
-              {/* Historical charts — hidden and unfetched while the
-                  enable_historical_price_intelligence flag is off. */}
+              {/* Historical charts */}
               <div className="mt-6">
                 <ProductHistoryPanel
                   productId={result.metadata.input.productId}
@@ -530,8 +501,7 @@ export default function CalculatorPage() {
               </div>
             </section>
           )}
-        </>
-      )}
+      </>
     </main>
   );
 }

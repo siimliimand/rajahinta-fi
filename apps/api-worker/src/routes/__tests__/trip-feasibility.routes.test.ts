@@ -2,12 +2,11 @@
  * Trip-feasibility route tests (task 5.3, change
  * product-roadmap-phases-1-4) over the FULL app composition
  * (createApp() + registerTripFeasibilityRoutes — the exact composition
- * index.ts wires, flag gate + rate limit on the route itself) on the
- * fake-D1 harness.
+ * index.ts wires, rate limit on the route itself) on the fake-D1
+ * harness.
  *
  * Pinning here: the validation contract (positive costs, known vehicle
- * types, ISO date, per-category prices, duplicate rejection), flag-off
- * 403 (TRIP_CALCULATOR, alerts/event-calc 403 envelope shape), the
+ * types, ISO date, per-category prices, duplicate rejection), the
  * per-IP CALCULATOR rate-limit profile (10/min → 429 on the 11th), the
  * 409 when no published allowance version covers the travel date, the
  * STRUCTURAL indicative-limits disclaimer on every result,
@@ -28,7 +27,6 @@ import {
   buildApp,
   expectEnvelope,
   FAKE_OPS_TOKEN,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -41,9 +39,9 @@ import type { Env } from '../../env';
 import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
 
 /**
- * index.ts registers the trip handler behind its route-level gate+
- * limiter (same slot as the other route ports); the test composition
- * mirrors that exactly.
+ * index.ts registers the trip handler behind its route-level limiter
+ * (same slot as the other route ports); the test composition mirrors
+ * that exactly.
  */
 function tripApp(): ReturnType<typeof buildApp> {
   const app = buildApp();
@@ -52,7 +50,7 @@ function tripApp(): ReturnType<typeof buildApp> {
 }
 
 function tripEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}): Env {
-  return permissiveEnv(d1, { ...overrides, FF_TRIP_CALCULATOR: 'true' });
+  return permissiveEnv(d1, overrides);
 }
 
 const OPS = { authorization: `Bearer ${FAKE_OPS_TOKEN}` };
@@ -153,21 +151,6 @@ async function seedPublishedFerry(
   expect(published).not.toBeNull();
   return created.id;
 }
-
-// ---------------------------------------------------------------------------
-// Gate: flag-off 403 (TRIP_CALCULATOR)
-// ---------------------------------------------------------------------------
-
-describe('POST /api/v1/trip-feasibility — gate', () => {
-  it('rejects with 403 while TRIP_CALCULATOR is off (alerts/event-calc 403 shape)', async () => {
-    const { d1 } = openMigratedD1();
-    const app = tripApp();
-    const res = await postTrip(app, lockedEnv(d1));
-    await expectEnvelope(res, 403, {
-      message: 'Feature "TRIP_CALCULATOR" is not enabled',
-    });
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Validation — positive costs, known vehicle types, shapes

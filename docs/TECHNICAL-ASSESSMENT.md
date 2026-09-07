@@ -145,7 +145,7 @@ The optimizer enumerates subset masks per merchant (`packages/core-domain/src/op
 - `apps/frontend/tsconfig.tsbuildinfo` and `.next/` dev caches sit in the working tree; extend the frontend `.gitignore` with `*.tsbuildinfo`.
 - No LICENSE file in the repository root.
 - `dev-up.sh` runs the seed via `tsx` borrowed from the frontend package's devDependencies with a cross-package tsconfig flag (`scripts/dev-up.sh:66-70`). Move `tsx` to the data-platform package (or root) so the seeding path does not depend on an unrelated app's toolchain.
-- `dev-up.sh` sets `LAUNCH_GATES_OVERRIDE=true` silently. Print a loud warning so the flag never migrates into a real environment by copy-paste.
+- ~~`dev-up.sh` sets `LAUNCH_GATES_OVERRIDE=true` silently. Print a loud warning so the flag never migrates into a real environment by copy-paste.~~ Resolved differently: the launch-gate system was removed entirely (2026-09-07, owner decision); the var no longer exists.
 - Error envelopes differ between the legacy and current controllers; unify on the documented `ApiErrorResponse` shape.
 - `pg` returns `numeric` columns as strings. Parsing exists in the tax services (`parseDecimal`) but each consumer re-implements it; centralize decimal coercion at the repository boundary.
 
@@ -158,7 +158,7 @@ The optimizer enumerates subset masks per merchant (`packages/core-domain/src/op
 
 ## Add
 
-1. Real authentication (email or OIDC) behind the existing anonymous-session model, with the verified email column on `accounts` finally used. Until then, treat account data as disposable.
+1. Federated identity (OIDC/SSO) on top of the credentials auth that now exists (shipped: email+password register/login, verified-email flow, password reset, D1-backed accounts). Until then, treat account data as disposable.
 2. Foreign-exchange rate ingestion as a first-class versioned dataset, alongside tax rules, with the same manual-confirmation publication flow.
 3. At least one more merchant feed (Alko for the domestic reference price, or a German shipper) to make the comparison meaningful; the adapter interface and governance gate are ready for it.
 4. An operator console for the three human workflows that currently have no UI: granting source-governance permission, confirming detected tax-rate versions, and working the correction queue.
@@ -210,7 +210,7 @@ Remediation change: `openspec/changes/technical-assessment-remediation` (branch 
 - `otherCharges`: removed from the API shape (breaking change, decision D3). Task 10.3.
 - Search debounce: 300 ms debounce on the frontend search input. Task 5.2.
 - `*.tsbuildinfo` ignored; LICENSE file added. Task 11.5.
-- `dev-up.sh`: `tsx` moved to the data-platform toolchain; loud warning printed when `LAUNCH_GATES_OVERRIDE=true`. Task 11.4.
+- `dev-up.sh`: `tsx` moved to the data-platform toolchain; the `LAUNCH_GATES_OVERRIDE` warning later became moot when the launch-gate system was removed (2026-09-07). Task 11.4.
 - Error envelopes unified on the documented `ApiErrorResponse` across legacy and current controllers. Task 3.4.
 - Decimal coercion centralized at the repository boundary for pg `numeric` columns. Task 3.5.
 
@@ -223,7 +223,7 @@ Remediation change: `openspec/changes/technical-assessment-remediation` (branch 
 
 ### Add
 
-1. Real authentication: groundwork done with durable server-issued sessions and email-verification scaffolding (tasks 2.1–2.4). A real email/OIDC provider is still not wired; account data is documented as disposable until verification completes.
+1. Real authentication: email + password credentials are implemented in the production API Worker (register, login, identity read, email-ownership verification, and self-service password reset over single-use hashed tokens; change `email-password-auth`). An OIDC provider is still not wired, and the age gate remains documented self-attestation.
 2. FX rate ingestion as a first-class versioned dataset: done, including the manual-confirmation publication flow (tasks 1.1–1.3).
 3. Alko merchant feed: adapter implemented with a golden fixture, through the governance gate (task 7.5).
 4. Operator console: implemented at `/ops` behind the `OPERATOR_CONSOLE` flag (default off), covering governance grants, dataset confirmations including FX publish with cache invalidation, and the correction queue, with every action audited (task 12.1).
@@ -240,4 +240,4 @@ Remediation change: `openspec/changes/technical-assessment-remediation` (branch 
 - **Staging cluster deferral:** per `ARCHITECTURE.md` §15.2, no staging cluster exists; the blocking promotion of the artillery load gate and the staging verification walk remain deferred until one is provisioned.
 - **Integration suite not in CI:** `tests/integration/` (104 tests) runs locally against `TEST_DATABASE_URL`; CI covers build, lint, unit, golden, data-quality, compliance, e2e, and composition smoke.
 - **Anonymous calculation-record retention window:** 30 days configured; final value pending operator input.
-- **Email delivery:** verification endpoints exist but no mail transport is wired.
+- **Email deliverability:** the email Worker carries verification and reset mail alongside freshness and price-alert mail; sender-domain provisioning and deliverability remain operator runbook items.

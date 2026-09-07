@@ -16,9 +16,9 @@ import type { EntitlementTier } from '@rajahinta/core-domain';
 /**
  * The authenticated account for a request.
  *
- * `verified` reflects the email-verification groundwork (task 2.4): an
- * anonymous account carries a placeholder email and its data is disposable
- * by design; a verified email on the account row marks it as protected.
+ * No email-verification state is carried here: credentials auth and the
+ * verified-email state live only in the API Worker (design D9, change
+ * email-password-auth); the legacy harness deliberately excludes them.
  */
 export interface AuthenticatedAccount {
   /** Numeric account row id — links sessions, baskets, and scenarios. */
@@ -27,8 +27,6 @@ export interface AuthenticatedAccount {
   readonly userId: string;
   /** Tier from the account row — EntitlementService resolves from this. */
   readonly tier: EntitlementTier;
-  /** Whether the account's email column holds a verified (non-placeholder) address. */
-  readonly verified: boolean;
 }
 
 /** Property on the Nest request object holding the raw presented token. */

@@ -30,7 +30,7 @@ license: MIT
 - **Excise and container-duty are separate sub-engines.** They are independently versioned, with different rules and exemptions. Container duty must check deposit-return system exemption before applying the general rate.
 - **Unknown deposit status = ESTIMATED.** If deposit-system status cannot be determined, the container-duty calculation must be explicitly flagged as ESTIMATED, never silently assumed either way.
 - **Rates are never auto-published.** A recurring job checks for newly published official rate changes and creates a task for manual/legal confirmation before any new dataset version goes live.
-- **Feature flags for compliance-sensitive changes.** New merchant sources, new tax rulesets, and new UI ranking behavior must be gated behind feature flags for instant rollback.
+- **No feature flags.** The flag and launch-gate systems were removed (2026-09-07, owner decision): every feature ships unconditionally enabled, and no `FF_*`/`LAUNCH_GATE_*` env var may gate behavior. Rollback is `wrangler rollback`, not a flag flip. Do not reintroduce flag-gating without an explicit owner decision.
 - **Every number is explainable.** Every calculated figure (excise, container duty, transport, total) must be traceable to the exact input values, rate dataset version, and timestamp that produced it.
 
 ## Git Workflow
@@ -44,4 +44,4 @@ license: MIT
 - Project tooling dependencies are managed via `.opencode/package.json` (opencode plugins, browser automation, quota plugin). No application-level package manager is selected yet.
 - Lockfile: `skills-lock.json` pins externally installed agent skills.
 
-<!-- Last updated: 2026-08-15 -->
+<!-- Last updated: 2026-09-07 (feature-flag and launch-gate removal) -->

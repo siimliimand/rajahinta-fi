@@ -6,10 +6,8 @@
 import * as React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import { useDebouncedCallback } from '@/lib/use-debounced-callback';
 import { Card, EmptyState } from '@/components/ui';
-import { isWhatIfFlagEnabled } from './what-if-flag';
 import { RECALCULATION_DEBOUNCE_MS } from './what-if.constants';
 import {
   calculateWhatIfExcise,
@@ -43,8 +41,6 @@ function nextRowKey(rows: readonly ProductDraft[]): string {
  * What-if simulator page (task 8.3, change product-roadmap-phases-1-4).
  *
  * Behaviour:
- *  - `EXCISE_WHAT_IF` off ⇒ renders nothing (server-inlined flag state,
- *    design R13 — the trip/event gating treatment).
  *  - `?token=` from a share link is decoded READ-ONLY to prefill the
  *    scenario and trigger the first computation; an invalid token degrades
  *    to a calm note and a blank form, never a crash.
@@ -58,10 +54,6 @@ function nextRowKey(rows: readonly ProductDraft[]): string {
  */
 export default function WhatIfPage() {
   const t = useTranslations('WhatIfPage');
-
-  // ── Feature flags (server-resolved, inlined with the initial HTML) ──
-  const flags = useFeatureFlags();
-  const flagEnabled = isWhatIfFlagEnabled(flags);
 
   // ── Scenario draft ──
   const [rate, setRate] = useState(20);
@@ -230,11 +222,6 @@ export default function WhatIfPage() {
     scheduleRecalc.cancel();
     void runRecalc();
   }, [runRecalc, scheduleRecalc]);
-
-  // ── Hidden state: flag off in the inlined payload ──
-  if (!flagEnabled) {
-    return null;
-  }
 
   return (
     <main className="mx-auto min-h-screen max-w-4xl px-4 py-8 sm:px-6 lg:px-8">

@@ -3,10 +3,10 @@
  * of CalculatorController (packages/application-api/src/calculator/) and
  * CalculationController (…/calculations/).
  *
- * Guard/rate-limit composition (Nest decoration order preserved):
- *   POST /api/v1/calculator          RateLimit(CALCULATOR) → LaunchGate(CALCULATION)
- *                                    → AgeGate   (prefix, tasks 3.2/3.5)
- *   GET  /api/v1/calculator/result/:recordId   LaunchGate → AgeGate
+ * Guard/rate-limit composition:
+ *   POST /api/v1/calculator          RateLimit(CALCULATOR) → AgeGate
+ *                                    (prefix, task 3.2)
+ *   GET  /api/v1/calculator/result/:recordId   AgeGate
  *   POST /api/v1/calculations/excise|landed-cost   RateLimit(CALCULATOR) → AgeGate
  *
  * The calculator runs the REAL LandedCostCalculatorService over the D1

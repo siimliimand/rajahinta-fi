@@ -31,17 +31,11 @@
  *     settle at p95 ≈ 17 s on a quarter-core CPU budget — the suite
  *     pins 20 s as the regression tripwire for that envelope.
  *
- * **Flag gating note:** the HTTP route POST /api/v1/basket/optimize is
- * guarded by @FeatureFlagDec(FeatureFlag.BASKET_OPTIMIZATION) and
- * returns 403 while the flag is off. The flag is enabled server-side
- * via the `FF_BASKET_OPTIMIZATION=true` environment variable
- * (FeatureFlagService reads `FF_<FLAG>`; e.g. a wrangler var on the
- * Worker environment or the process env for local runs). This
- * service-level suite deliberately bypasses the HTTP guard layer — the
- * flag has no effect here, exactly like calculator-load.test.ts
- * bypasses rate limiting; the HTTP-level flag/rate-limit behaviour is
+ * **Guard note:** this service-level suite deliberately bypasses the
+ * HTTP guard layer — exactly like calculator-load.test.ts bypasses
+ * rate limiting; the HTTP-level guard/rate-limit behaviour is
  * covered by tests/load/artillery/basket-optimizer-suite.yml against a
- * deployed target with the flag enabled.
+ * deployed target.
  *
  * **Resource-limits method (256m CPU / 512Mi mem):** the K8s manifests
  * that pinned these limits were deleted at decommission (task 6.7,

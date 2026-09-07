@@ -4,7 +4,10 @@
  * Search a seeded product, set the quantity, run the calculation, and
  * verify the result renders the itemized cost breakdown, the total, the
  * quantity×destination summary (destination is Finland-scoped in the
- * Phase 1 UI), and the structural disclaimer banner.
+ * Phase 1 UI), and the structural disclaimer banner. The visitor is
+ * anonymous throughout: credentials auth replaced the anonymous session
+ * auto-mint (email-password-auth), so the fire-and-forget history write
+ * resolves 401 and no session cookie is ever issued.
  *
  * @module CalculatorFlowJourney
  */
@@ -49,15 +52,13 @@ test.describe('calculator flow journey', () => {
     await page.getByLabel(COPY.quantityLabel, { exact: true }).fill('6');
 
     // The calculate action also fires the (fire-and-forget) account
-    // history write — a 401, then session issuance, then the successful
-    // replay. Waiting for the 2xx replay keeps the session state
-    // deterministic for the assertions below.
-    const historyRecorded = page.waitForResponse(
+    // history write — for an anonymous visitor it resolves 401
+    // (SessionRequired envelope) and the UI stays silent about it.
+    const historyRejected = page.waitForResponse(
       (response) =>
         response.url().includes('/api/v1/account/history') &&
         response.request().method() === 'POST' &&
-        response.status() >= 200 &&
-        response.status() < 300,
+        response.status() === 401,
     );
 
     await page
@@ -94,20 +95,35 @@ test.describe('calculator flow journey', () => {
     await expect(page.getByText(DISCLAIMER_FRAGMENT)).toBeVisible();
     await expect(page.getByText(/^v[\d.]+ · suomi$/)).toBeVisible();
 
-    // The history write completed while the result rendered.
-    expect((await historyRecorded).status()).toBeLessThan(400);
+    // The history write was rejected while the result rendered — and no
+    // anonymous session was minted to replay it.
+    expect((await historyRejected).status()).toBe(401);
+    const cookies = await page.context().cookies();
+    expect(
+      cookies.find((c) => c.name === 'rajahinta_session'),
+    ).toBeUndefined();
   });
 
-  test('calculation persists into the session account history', async ({
+  test('anonymous account touch stays signed out — no session, no account data', async ({
     page,
   }) => {
-    // Same journey as above (quantity 1), asserted from the account's
-    // own record list — proves the session was issued on first account
-    // touch from the calculator page.
+    // The calculator works fully signed out; nothing issues a session.
+    // The /account gate itself (401 → /login redirect, design D8) is
+    // pinned by the frontend page tests with a mocked API — the harness
+    // stack deliberately carries no credential flow, so the browser
+    // journey pins the stack-independent half: no cookie is ever minted
+    // and no signed-in account data renders for an anonymous visitor.
     await runCalculation(page, SEED.beer.name, 1);
 
     const cookies = await page.context().cookies();
-    const session = cookies.find((c) => c.name === 'rajahinta_session');
-    expect(session).toBeDefined();
+    expect(
+      cookies.find((c) => c.name === 'rajahinta_session'),
+    ).toBeUndefined();
+
+    await page.goto('/account');
+    await expect(
+      page.getByRole('heading', { name: 'Tervetuloa takaisin', exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByText(/Istuntotunnus:/)).toHaveCount(0);
   });
 });

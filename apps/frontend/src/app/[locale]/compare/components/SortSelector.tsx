@@ -6,8 +6,7 @@
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import type { CompareSortOrder } from '@/lib/types';
-import { useFeatureFlags } from '@/lib/feature-flags';
-import { compareSortOptions } from '../sort-products';
+import { COMPARE_SORT_OPTIONS } from '../sort-products';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -32,10 +31,6 @@ interface SortSelectorProps {
  * Renders a labelled select with all available objective sort orders.
  * Visually neutral — no "recommended", "popular", or promoted labels.
  * Every option is presented with equal weight.
- *
- * The €/g ethanol option is gated by the enable_unit_price_eur_per_gram
- * flag: flag off removes it from the offered options entirely
- * (ranking-sorting spec).
  */
 export default function SortSelector({
   value,
@@ -45,7 +40,6 @@ export default function SortSelector({
   const t = useTranslations('SortSelector');
   const tSorts = useTranslations('SortOrders');
   const tCompare = useTranslations('Compare');
-  const flags = useFeatureFlags();
 
   function label(order: CompareSortOrder): string {
     return order === 'EUR_PER_GRAM'
@@ -68,13 +62,11 @@ export default function SortSelector({
         disabled={disabled}
         className="block rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {compareSortOptions(flags.flags.UNIT_PRICE_EUR_PER_GRAM).map(
-          (order) => (
-            <option key={order} value={order}>
-              {label(order)}
-            </option>
-          ),
-        )}
+        {COMPARE_SORT_OPTIONS.map((order) => (
+          <option key={order} value={order}>
+            {label(order)}
+          </option>
+        ))}
       </select>
     </div>
   );

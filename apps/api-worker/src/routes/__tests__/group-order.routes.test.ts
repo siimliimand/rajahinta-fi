@@ -5,14 +5,9 @@
  * harness.
  *
  * Pinning here (beyond plain flows):
- * - the create-route guard ORDER sessionAuth → requireFeatureFlag →
- *   requireAccountRateLimit (alerts precedent: an anonymous caller gets
- *   the 401 envelope even with the flag off; flag state never leaks to
- *   unauthenticated callers on the authenticated route),
- * - the token routes' SPEC-mandated inverse: flag off → share-link
- *   access returns the feature-disabled error even for anonymous callers
- *   (the share token is the capability; there is no sessionAuth to hide
- *   the flag behind),
+ * - the create-route guard chain sessionAuth → requireAccountRateLimit
+ *   (an anonymous caller gets the 401 envelope on the authenticated
+ *   route),
  * - expiry enforcement including the EXCLUSIVE edge (exactly at the
  *   expiry instant the token is already dead — pinned with faked clock
  *   time set precisely to the seeded edge),
@@ -33,7 +28,6 @@ import {
   createApp,
   expectEnvelope,
   issueSessionToken,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -62,13 +56,13 @@ function groupOrderApp(): ReturnType<typeof createApp> {
 }
 
 function groupOrderEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}): Env {
-  return permissiveEnv(d1, { ...overrides, FF_GROUP_ORDER_LEDGER: 'true' });
+  return permissiveEnv(d1, overrides);
 }
 
 /** Canonical two-account fixture: 7 is the acting owner, 9 the foreigner. */
 function seedAccounts(db: DatabaseSync): void {
   seedAccount(db, { id: 7, userId: 'user-7', email: 'user-7@example.invalid', tier: 'FREE' });
-  seedAccount(db, { id: 9, userId: 'user-9', email: 'user-9@placeholder.local', tier: 'FREE' });
+  seedAccount(db, { id: 9, userId: 'user-9', email: 'user-9@example.invalid', tier: 'FREE' });
 }
 
 const cookieOf = (token: string): string => `rajahinta_session=${token}`;
@@ -137,21 +131,21 @@ interface Setup {
   token7: string;
 }
 
-async function setup(flagOn: boolean): Promise<Setup> {
+async function setup(): Promise<Setup> {
   const { db, d1 } = openMigratedD1();
   seedAccounts(db);
   return {
     db,
     d1,
     app: groupOrderApp(),
-    env: flagOn ? groupOrderEnv(d1) : lockedEnv(d1),
+    env: groupOrderEnv(d1),
     token7: await issueSessionToken(d1, 7),
   };
 }
 
 /** Live session (future expiry) seeded directly, bypassing the fixed TTL. */
 async function setupWithLiveSession(): Promise<Setup & { shareToken: string }> {
-  const s = await setup(true);
+  const s = await setup();
   const shareToken = '11111111-2222-4333-8444-555555555555';
   seedSession(s.db, {
     id: 1,
@@ -167,45 +161,14 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Guard chain: session before flag (create route, alerts order pinned)
+// Create route guard: session required
 // ---------------------------------------------------------------------------
 
-describe('create guard chain — session before flag', () => {
-  it('rejects an anonymous caller with the 401 envelope even with the flag on', async () => {
-    const { app, env } = await setup(true);
+describe('create route guard — session required', () => {
+  it('rejects an anonymous caller with the 401 envelope', async () => {
+    const { app, env } = await setup();
     const res = await request(app, env, '/api/v1/group-orders', { method: 'POST' });
     await expectEnvelope(res, 401, { error: 'SessionRequired' });
-  });
-
-  it('rejects an anonymous caller with the 401 envelope even with the flag OFF', async () => {
-    const { app, env } = await setup(false);
-    const res = await request(app, env, '/api/v1/group-orders', { method: 'POST' });
-    await expectEnvelope(res, 401, { error: 'SessionRequired' });
-  });
-
-  it('rejects an authenticated caller with 403 while GROUP_ORDER_LEDGER is off', async () => {
-    const { app, env, token7 } = await setup(false);
-    const res = await createSession(app, env, token7);
-    await expectEnvelope(res, 403, {
-      message: 'Feature "GROUP_ORDER_LEDGER" is not enabled',
-    });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Token routes — spec: flag off → share-link access returns the
-// feature-disabled error (anonymous callers included)
-// ---------------------------------------------------------------------------
-
-describe('token routes flag gate', () => {
-  it('returns the feature-disabled error on every share-link route while the flag is off', async () => {
-    const { app, env } = await setup(false);
-    for (const path of TOKEN_PATHS('11111111-2222-4333-8444-555555555555')) {
-      const res = await request(app, env, path, tokenPost({}));
-      await expectEnvelope(res, 403, {
-        message: 'Feature "GROUP_ORDER_LEDGER" is not enabled',
-      });
-    }
   });
 });
 
@@ -215,7 +178,7 @@ describe('token routes flag gate', () => {
 
 describe('POST /api/v1/group-orders', () => {
   it('creates a session with a UUIDv4 share token and the fixed 7-day TTL', async () => {
-    const { db, app, env, token7 } = await setup(true);
+    const { db, app, env, token7 } = await setup();
     const before = Date.now();
     const res = await createSession(app, env, token7);
     expect(res.status).toBe(201);
@@ -234,7 +197,7 @@ describe('POST /api/v1/group-orders', () => {
   });
 
   it('generates a distinct token per session', async () => {
-    const { app, env, token7 } = await setup(true);
+    const { app, env, token7 } = await setup();
     const a = (await (await createSession(app, env, token7)).json()) as SessionJson;
     const b = (await (await createSession(app, env, token7)).json()) as SessionJson;
     expect(a.shareToken).not.toBe(b.shareToken);
@@ -242,7 +205,7 @@ describe('POST /api/v1/group-orders', () => {
   });
 
   it('accepts an empty body (no fields — owner and TTL are server-derived)', async () => {
-    const { app, env, token7 } = await setup(true);
+    const { app, env, token7 } = await setup();
     const res = await request(app, env, '/api/v1/group-orders', {
       method: 'POST',
       headers: { cookie: cookieOf(token7) },
@@ -257,7 +220,7 @@ describe('POST /api/v1/group-orders', () => {
 
 describe('token scope and expiry enforcement', () => {
   it('reports an unknown share token as 404 on every token route', async () => {
-    const { app, env } = await setup(true);
+    const { app, env } = await setup();
     for (const path of TOKEN_PATHS('99999999-9999-4999-8999-999999999999')) {
       const res = await request(app, env, path, tokenPost({}));
       await expectEnvelope(res, 404, { error: 'ShareTokenNotFound' });
@@ -265,7 +228,7 @@ describe('token scope and expiry enforcement', () => {
   });
 
   it('rejects an expired token with 410 Gone on every token route', async () => {
-    const { db, app, env } = await setup(true);
+    const { db, app, env } = await setup();
     seedSession(db, {
       id: 1,
       ownerAccountId: 7,
@@ -279,7 +242,7 @@ describe('token scope and expiry enforcement', () => {
   });
 
   it('rejects a token read EXACTLY at its expiry instant (exclusive edge)', async () => {
-    const { db, app, env } = await setup(true);
+    const { db, app, env } = await setup();
     const edge = new Date(Date.now() + DAY_MS);
     seedSession(db, {
       id: 1,
@@ -305,7 +268,7 @@ describe('token scope and expiry enforcement', () => {
   });
 
   it('still admits the token one millisecond BEFORE the edge', async () => {
-    const { db, app, env } = await setup(true);
+    const { db, app, env } = await setup();
     const edge = new Date(Date.now() + DAY_MS);
     seedSession(db, {
       id: 1,
@@ -329,7 +292,7 @@ describe('token scope and expiry enforcement', () => {
   });
 
   it('grants a token access only to its own session', async () => {
-    const s = await setup(true);
+    const s = await setup();
     const first = (await (await createSession(s.app, s.env, s.token7)).json()) as SessionJson;
     const second = (await (await createSession(s.app, s.env, s.token7)).json()) as SessionJson;
     seedProduct(s.db, { id: 1 });
@@ -498,7 +461,7 @@ describe('payment-instrument field rejection (accounting-only boundary)', () => 
   });
 
   it('rejects a payment field on the authenticated create route with the same named error', async () => {
-    const s = await setup(true);
+    const s = await setup();
     const res = await createSession(s.app, s.env, s.token7, { paypal: 'me@example.invalid' });
     const body = await expectEnvelope(res, 400, { error: 'ValidationError' });
     expect(body.message).toContain("field 'paypal' is not accepted");
@@ -774,7 +737,7 @@ describe('POST /api/v1/group-orders/:shareToken/ledger', () => {
 
 describe('group order rate limits', () => {
   it('create: admits 60/min per account, 429s the 61st, leaves another account unaffected', async () => {
-    const { app, env, token7, d1 } = await setup(true);
+    const { app, env, token7, d1 } = await setup();
     for (let i = 0; i < 60; i++) {
       const res = await createSession(app, env, token7);
       expect(res.status, `request #${String(i + 1)}`).toBe(201);

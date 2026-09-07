@@ -1,97 +1,51 @@
 /**
- * Journey 4 — account export.
+ * Journey 4 — account stays gated for anonymous visitors.
  *
- * The anonymous session is issued automatically on the first account
- * touch (httpOnly `rajahinta_session`, minted via the 401→issue→replay
- * path in the API client), and the data-export endpoint — reached
- * through the real UI button — returns this account's own data,
- * including the calculation recorded under the session.
+ * Credentials auth replaced the anonymous session auto-mint
+ * (email-password-auth): nothing issues a `rajahinta_session`
+ * client-side any more, and account data never renders for a signed-out
+ * visitor.
+ *
+ * The 401 → /login redirect itself (design D8) is pinned by the frontend
+ * account-page tests with a mocked API. The harness stack deliberately
+ * carries no credential flow (accounts-module divergence docblock), so
+ * the browser journey pins the stack-independent half: no session cookie
+ * is ever minted and no signed-in account surface renders.
  *
  * @module AccountExportJourney
  */
 
 import { test, expect } from '@playwright/test';
-import { COPY, SEED, acceptAgeGate, runCalculation } from './helpers';
+import { acceptAgeGate } from './helpers';
 
 test.describe('account export journey', () => {
-  test('session issues on account touch; export returns this account and its data', async ({
+  test('anonymous visitor: no session minted, no account data rendered', async ({
     page,
   }) => {
     await acceptAgeGate(page);
 
-    // Produce one calculation owned by this session so the export has
-    // verifiable content. runCalculation waits for the successful
-    // history POST — by then the session cookie is already minted (it
-    // happened on that POST's first 401).
-    await runCalculation(page, SEED.beer.name, 1);
-
-    const cookies = await page.context().cookies();
-    const sessionCookie = cookies.find((c) => c.name === 'rajahinta_session');
-    expect(sessionCookie).toBeDefined();
-    // The identity is server-held only — the token never reaches JS.
-    expect(sessionCookie?.httpOnly).toBe(true);
-
-    // The account page renders the server-derived identity (the API
-    // client minted the session; no client-generated identity exists).
     await page.goto('/account');
+
+    // Signed-in account DATA never renders for an anonymous visitor: the
+    // server-derived identity (welcome + session id) stays hidden. The
+    // page's static feature chrome (export button, retention policy) is
+    // not data and renders regardless. On this stack the account load
+    // fails closed with a retry affordance (the harness has no /me —
+    // credentials live in the API Worker); in production the same 401
+    // surface redirects to /login.
     await expect(
-      page.getByRole('heading', { name: COPY.welcomeBack, exact: true }),
+      page.getByRole('heading', { name: 'Tervetuloa takaisin', exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByText(/Istuntotunnus:/)).toHaveCount(0);
+    await expect(
+      page.getByText('Tilin tietojen lataaminen epäonnistui.'),
     ).toBeVisible();
 
-    const idLine = page.getByText(/Istuntotunnus: [0-9a-f-]{8}…/);
-    await expect(idLine).toBeVisible();
-    const idText = (await idLine.textContent()) ?? '';
-    const shortId = /Istuntotunnus: ([0-9a-f-]{8})…/.exec(idText)?.[1];
-    expect(shortId).toBeTruthy();
-
-    // Export through the UI path: click the button and capture the API
-    // response the button triggers (the client then wraps it in the
-    // JSON download).
-    const [exportResponse] = await Promise.all([
-      page.waitForResponse(
-        (response) =>
-          response.url().includes('/api/v1/account/export') &&
-          response.request().method() === 'GET',
-      ),
-      page
-        .getByRole('button', { name: COPY.exportButton, exact: true })
-        .click(),
-    ]);
-
-    expect(exportResponse.status()).toBe(200);
-
-    const payload = (await exportResponse.json()) as {
-      userId: string;
-      exportDate: string;
-      account: { userId: string };
-      savedBaskets: unknown[];
-      savedScenarios: unknown[];
-      calculationHistory: { calculationId: number; productName: string }[];
-    };
-
-    // The export is this account's data: the userId matches the
-    // server-derived session identity shown in the UI.
-    expect(payload.userId).toBe(payload.account.userId);
-    expect(payload.userId.startsWith(shortId!)).toBe(true);
-    expect(typeof payload.exportDate).toBe('string');
-    expect(Array.isArray(payload.savedBaskets)).toBe(true);
-    expect(Array.isArray(payload.savedScenarios)).toBe(true);
-
-    // Calculation history: the calculation recorded under this session
-    // is persisted (claimed via the calculation_records session link)
-    // and exports with its real facts — record id, product name, and
-    // the quantity of the run above.
-    expect(Array.isArray(payload.calculationHistory)).toBe(true);
-    expect(payload.calculationHistory.length).toBeGreaterThanOrEqual(1);
-    const mine = payload.calculationHistory.find(
-      (c) => c.productName === SEED.beer.name,
-    );
-    expect(mine).toBeDefined();
-    expect(mine!.calculationId).toBeGreaterThan(0);
-
-    // The UI confirmed the download started (Finnish copy).
-    await expect(
-      page.getByText(COPY.downloadStarted, { exact: true }),
-    ).toBeVisible();
+    // The identity is server-held only: no anonymous session cookie was
+    // issued on the way here (the auto-mint path is deleted).
+    const cookies = await page.context().cookies();
+    expect(
+      cookies.find((c) => c.name === 'rajahinta_session'),
+    ).toBeUndefined();
   });
 });

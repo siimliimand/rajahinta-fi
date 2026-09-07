@@ -5,15 +5,11 @@
  * calculator result detail page (task 4.4, change phase2-advanced-features).
  *
  * Behaviour:
- *  - `enable_advanced_features` off ⇒ the panel renders nothing and the
- *    declaration request is never fired (guard-before-fetch, same pattern
- *    as ProductHistoryPanel). The flag state arrives with the initial HTML
- *    payload, so the panel's visibility is correct on the first render.
  *  - Fed by GET /api/v1/declaration/:recordId. A response without the
- *    `guidance` field (flag flipped off server-side) renders nothing.
+ *    `guidance` field renders nothing.
  *  - Checklist and caveat strings are rendered verbatim — the observed
  *    pattern phrasing from the API is never reworded client-side.
- *  - A PREMIUM entitlement failure (403 error 'InsufficientEntitlement')
+ *  - An entitlement failure (403 error 'InsufficientEntitlement')
  *    surfaces a controlled-vocabulary message instead of a crash; other
  *    failures hide the panel (informational, read-only).
  *  - The standing disclaimer from the response is visible inside the panel
@@ -33,7 +29,6 @@ import {
   classifyReportError,
   getDeclarationSummary,
 } from '@/lib/api';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import DisclaimerBanner from './DisclaimerBanner';
 
 // ---------------------------------------------------------------------------
@@ -116,17 +111,13 @@ export default function DeclarationGuidancePanel({
 }: DeclarationGuidancePanelProps) {
   const t = useTranslations('DeclarationGuidance');
   const tCommon = useTranslations('Common');
-  // Flag state is inlined with the initial HTML payload (task 9.4).
-  const flags = useFeatureFlags();
-  const flagEnabled = flags.flags.ADVANCED_FEATURES;
   const [summary, setSummary] = useState<DeclarationSummaryResponse | null>(
     null,
   );
   const [needsSubscription, setNeedsSubscription] = useState(false);
 
-  // ── Declaration fetch — guarded by the flag, never fired when disabled ──
+  // ── Declaration fetch on mount ──
   useEffect(() => {
-    if (!flagEnabled) return;
     let cancelled = false;
 
     getDeclarationSummary(recordId)
@@ -148,13 +139,9 @@ export default function DeclarationGuidancePanel({
     return () => {
       cancelled = true;
     };
-  }, [flagEnabled, recordId]);
+  }, [recordId]);
 
-  // ── Hidden states: flag off in the inlined payload, hidden failures ──
-  if (!flagEnabled) {
-    return null;
-  }
-
+  // ── Hidden state: entitlement rejection ──
   if (needsSubscription) {
     return (
       <section

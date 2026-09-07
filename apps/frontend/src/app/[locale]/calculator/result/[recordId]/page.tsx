@@ -176,7 +176,7 @@ export default function CalculationResultPage() {
       {/* ── Full result display ── */}
       <CalculatorResultView result={result} />
 
-      {/* ── Historical charts (flag-gated; hidden and unfetched when off) ── */}
+      {/* ── Historical charts ── */}
       <div className="mt-6">
         <ProductHistoryPanel
           productId={result.metadata.input.productId}
@@ -184,8 +184,7 @@ export default function CalculationResultPage() {
         />
       </div>
 
-      {/* ── Declaration guidance (flag-gated; hidden and unfetched when
-          off) — informational, read-only ── */}
+      {/* ── Declaration guidance — informational, read-only ── */}
       <DeclarationGuidancePanel recordId={result.calculationRecordId} />
 
       {/* ── Traceable inputs section ── */}

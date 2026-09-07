@@ -6,7 +6,6 @@
 import * as React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import {
   ApiFetchError,
   fetchProductsByIds,
@@ -44,7 +43,7 @@ import { formatCents, formatTimestamp, parseEuroToCents } from './money';
  *   - 410 (server-set 7-day expiry passed) → a calm "session expired,
  *     contact the owner" state;
  *   - 404 (unknown token) → the same family of treatment;
- *   - 403 (flag flipped off server-side) → the view renders nothing;
+ *   - 403 (the backend rejecting the join) → the view renders nothing;
  *   - EMPTY_SESSION / NO_ITEM_VALUE ledger statuses and per-item
  *     `unitValueCents: null` render as stated gaps, not errors.
  *
@@ -91,12 +90,10 @@ interface StagedCostLine {
 export default function GroupOrderSessionView({ token }: { readonly token: string }) {
   const t = useTranslations('GroupOrder');
   const locale = useLocale();
-  const flags = useFeatureFlags();
-  const flagEnabled = flags.flags.GROUP_ORDER_LEDGER === true;
 
   // ── Join state ──
   const [phase, setPhase] = useState<Phase>('join');
-  const [flagStale, setFlagStale] = useState(false);
+  const [rejected403, setRejected403] = useState(false);
   const [nickname, setNickname] = useState('');
   const [joining, setJoining] = useState(false);
   const [joinFailure, setJoinFailure] = useState<JoinFailure>(null);
@@ -153,7 +150,7 @@ export default function GroupOrderSessionView({ token }: { readonly token: strin
         } else if (tokenState === 'unknown') {
           setPhase('unknown');
         } else if (err instanceof ApiFetchError && err.status === 403) {
-          setFlagStale(true);
+          setRejected403(true);
         }
         return false;
       }
@@ -185,7 +182,7 @@ export default function GroupOrderSessionView({ token }: { readonly token: strin
       } else if (tokenState === 'unknown') {
         setPhase('unknown');
       } else if (err instanceof ApiFetchError && err.status === 403) {
-        setFlagStale(true);
+        setRejected403(true);
       } else if (err instanceof ApiFetchError && err.status === 400) {
         setJoinFailure('invalid');
       } else {
@@ -339,9 +336,9 @@ export default function GroupOrderSessionView({ token }: { readonly token: strin
     }
   }, [computing, participants.length, stagedLines, token]);
 
-  // ── Hidden state: flag off in the inlined payload (or flipped off
-  //    server-side mid-session) — render nothing, fetch nothing. ──
-  if (!flagEnabled || flagStale) {
+  // ── Hidden state: the backend rejected the join/refresh (403) —
+  //    render nothing. ──
+  if (rejected403) {
     return null;
   }
 

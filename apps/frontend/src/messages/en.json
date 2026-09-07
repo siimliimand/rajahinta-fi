@@ -83,11 +83,6 @@
     "trustMethodologyTitle": "Methodology",
     "trustMethodologyBody": "The calculation model, the tax sources in use, and the ranking criteria are documented openly."
   },
-  "GateClosed": {
-    "title": "The calculator is not yet available",
-    "body": "Landed-cost calculation is not yet publicly available. The service is being prepared for launch: the legal opinion, the tax-source mapping, and the correction mechanism are confirmed before publication.",
-    "availableAtLaunch": "Once launched, the calculator shows a product's total cost of importing to Finland: the foreign retail price, the transport cost, the estimated alcohol excise duty, and the estimated container duty."
-  },
   "AgeGate": {
     "title": "Age verification",
     "body": "This site contains alcohol-related content. Are you 18 or older?",
@@ -482,13 +477,16 @@
   "Account": {
     "title": "My account",
     "subtitle": "Manage your saved baskets, calculation history, and subscription.",
-    "welcomeBack": "Welcome back",
-    "signedInBody": "You are signed in as an anonymous user. Your session is active, and account features are available below.",
-    "continue": "Continue →",
-    "createNewSession": "Create new session",
-    "anonymous": "Anonymous account",
-    "anonymousBody": "Create an anonymous account to save baskets, view your calculation history, and manage your preferences. No email or personal data required.",
-    "createAccount": "Create account",
+    "signedInTitle": "Account details",
+    "verifiedBadge": "Verified",
+    "unverifiedBadge": "Unverified",
+    "unverifiedBody": "Verification confirms that the email address is genuine. Account features work while unverified, too.",
+    "resendVerification": "Request a new verification link",
+    "resendSent": "Verification link sent. Check your email.",
+    "resendFailed": "Sending the verification link failed. Please try again.",
+    "loading": "Loading account details…",
+    "loadFailed": "Loading the account details failed.",
+    "redirecting": "Sign-in required. Redirecting to the sign-in page…",
     "featuresTitle": "Account features",
     "savedBaskets": "Saved baskets",
     "savedBasketsDesc": "Save product selections for quick re-calculation.",
@@ -526,11 +524,73 @@
     "analyticsValue": "Anonymized after <strong>12 months</strong>",
     "retentionNote": "Retention is enforced automatically. No action is needed on your part."
   },
-  "AccountCreate": {
-    "title": "Your anonymous account is ready",
-    "body": "No email or personal data was required. Your session is now active.",
-    "goToAccount": "Go to my account",
-    "startBrowsing": "Start browsing"
+  "Auth": {
+    "emailLabel": "Email address",
+    "passwordLabel": "Password",
+    "newPasswordLabel": "New password",
+    "passwordHint": "At least 12 and at most 128 characters.",
+    "invalidEmail": "Please check the email address.",
+    "invalidPassword": "The password must be 12 to 128 characters long.",
+    "rateLimited": "Too many attempts. Please try again in a few minutes.",
+    "genericError": "The action failed. Please try again."
+  },
+  "AuthNav": {
+    "signIn": "Sign in",
+    "register": "Register",
+    "signOut": "Sign out"
+  },
+  "Login": {
+    "title": "Sign in",
+    "subtitle": "Sign in to manage your saved baskets, price alerts, and calculation history.",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "invalidCredentials": "Invalid email or password.",
+    "noAccount": "No account yet?",
+    "toRegister": "Create an account",
+    "toForgot": "Forgot your password?"
+  },
+  "Register": {
+    "title": "Create an account",
+    "subtitle": "Register with an email address and a password. After registering we send a verification link to your email address.",
+    "submit": "Create an account",
+    "submitting": "Creating the account…",
+    "emailTaken": "This email address is already registered.",
+    "hasAccount": "Already have an account?",
+    "toLogin": "Sign in"
+  },
+  "VerifyEmail": {
+    "title": "Email verification",
+    "verifying": "Verifying…",
+    "successTitle": "Email address verified",
+    "successBody": "Your email address has now been verified.",
+    "toAccount": "My account",
+    "invalidTitle": "Verification failed",
+    "invalidBody": "The verification link has expired or has already been used.",
+    "missingToken": "The verification link is missing its token.",
+    "resendHint": "You can request a new verification link on your account page after signing in.",
+    "toLogin": "Sign in",
+    "errorBody": "Something went wrong during verification. Please try opening the link again."
+  },
+  "ForgotPassword": {
+    "title": "Password reset",
+    "subtitle": "Enter the email address and we will send a password-reset link to it.",
+    "submit": "Request a reset link",
+    "submitting": "Sending…",
+    "acceptedTitle": "Check your email",
+    "acceptedBody": "If the address is registered, a reset link has been sent to it. The link is valid for one hour.",
+    "toLogin": "Back to sign-in"
+  },
+  "ResetPassword": {
+    "title": "Set a new password",
+    "subtitle": "Choose a new password for your account.",
+    "submit": "Change the password",
+    "submitting": "Changing…",
+    "successTitle": "The password has been changed",
+    "successBody": "All of your sessions have been signed out. Sign in with the new password.",
+    "toLogin": "Sign in",
+    "invalidTitle": "Password reset failed",
+    "invalidBody": "The reset link has expired or has already been used.",
+    "missingToken": "The reset link is missing its token."
   },
   "SavedBaskets": {
     "title": "Saved baskets",
@@ -806,7 +866,7 @@
     "emptyBody": "Add an alert with the form below or from a product page.",
     "signInTitle": "Sign-in required",
     "signInBody": "Managing price alerts requires a session.",
-    "signInLink": "Create session",
+    "signInLink": "Sign in",
     "createTitle": "Add a price alert",
     "searchFailed": "Product search failed",
     "selectedProduct": "Selected product",

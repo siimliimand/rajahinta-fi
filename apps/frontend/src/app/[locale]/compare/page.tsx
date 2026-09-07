@@ -9,7 +9,6 @@ import type {
   ProductSearchItem,
 } from '@/lib/types';
 import { searchProducts, calculateLandedCost, getProductDetail } from '@/lib/api';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import SortSelector from './components/SortSelector';
 import ComparisonView from './components/ComparisonView';
 import BasketComparisonSection from './components/BasketComparisonSection';
@@ -42,8 +41,6 @@ export default function ComparePage() {
   const tCalc = useTranslations('Calculator');
   const tCommon = useTranslations('Common');
   const tSorts = useTranslations('SortOrders');
-  const flags = useFeatureFlags();
-  const unitPriceEnabled = flags.flags.UNIT_PRICE_EUR_PER_GRAM;
 
   // ── Search state ──
   const [query, setQuery] = useState('');
@@ -60,14 +57,6 @@ export default function ComparePage() {
 
   // Guard against duplicate submissions
   const searchInFlight = useRef(false);
-
-  // ── Flag flip mid-session degrade: if the unit-price flag turns off
-  //    while €/g is selected, fall back to the default order — the
-  //    selector no longer offers the hidden option. ──
-  const effectiveSortBy: CompareSortOrder =
-    !unitPriceEnabled && sortBy === 'EUR_PER_GRAM'
-      ? DEFAULT_SORT
-      : sortBy;
 
   // ── Search handler ──
   const handleSearch = useCallback(async (q: string) => {
@@ -111,9 +100,9 @@ export default function ComparePage() {
         // The product detail resolves the offering merchants in parallel
         // with the calculation; it feeds the factual data-freshness
         // display only and never affects ordering. A failed detail fetch
-        // degrades to no freshness rows for this column. While the
-        // unit-price flag is on, the same detail payload also supplies
-        // each offer's €/g metric (best offer becomes the column value).
+        // degrades to no freshness rows for this column. The same detail
+        // payload also supplies each offer's €/g metric (the best offer
+        // becomes the column value).
         const [result, detail] = await Promise.all([
           calculateLandedCost({
             productId: item.id,
@@ -129,9 +118,7 @@ export default function ComparePage() {
             : [];
 
         const unitPrice =
-          unitPriceEnabled && detail !== null
-            ? bestOfferUnitPrice(detail.offers)
-            : undefined;
+          detail !== null ? bestOfferUnitPrice(detail.offers) : undefined;
 
         const comparisonProduct: ComparisonProduct = {
           id: item.id,
@@ -147,8 +134,9 @@ export default function ComparePage() {
             ? result.itemizedCosts[0].reliability
             : 'UNAVAILABLE',
           merchants,
-          // Present only while the flag is on — mirrors the API's
-          // key-absent-when-off contract; undefined renders as no value.
+          // Present only when the detail payload resolved — mirrors the
+          // API's key-absent-when-unresolved contract; undefined renders
+          // as no value.
           ...(unitPrice !== undefined ? { eurPerGram: unitPrice } : {}),
         };
 
@@ -161,7 +149,7 @@ export default function ComparePage() {
         setCalcLoading(false);
       }
     },
-    [tCalc, unitPriceEnabled],
+    [tCalc],
   );
 
   // ── Sort change handler ──
@@ -174,8 +162,8 @@ export default function ComparePage() {
   //    EUR_PER_GRAM orders by metric value with product id as
   //    tiebreaker) ──
   const sortedProducts = useMemo(
-    () => sortComparisonProducts(products, effectiveSortBy),
-    [products, effectiveSortBy],
+    () => sortComparisonProducts(products, sortBy),
+    [products, sortBy],
   );
 
   // ── Render ──
@@ -187,7 +175,7 @@ export default function ComparePage() {
       {/* ── Toolbar ── */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <SortSelector
-          value={effectiveSortBy}
+          value={sortBy}
           onChange={handleSortChange}
           disabled={calcLoading}
         />
@@ -244,7 +232,7 @@ export default function ComparePage() {
       {/* ── Comparison view ── */}
       <ComparisonView
         products={sortedProducts}
-        sortBy={effectiveSortBy}
+        sortBy={sortBy}
         loading={calcLoading}
         onAddProduct={handleAddProduct}
       />
@@ -258,9 +246,9 @@ export default function ComparePage() {
           <p className="text-xs leading-relaxed text-gray-500">
             {t.rich('aboutBody', {
               sort:
-                effectiveSortBy === 'EUR_PER_GRAM'
+                sortBy === 'EUR_PER_GRAM'
                   ? t('eurPerGram.sortOptionLabel')
-                  : tSorts(`${effectiveSortBy}.label`),
+                  : tSorts(`${sortBy}.label`),
               link: (chunks) => (
                 <Link
                   href="/ranking"
@@ -274,7 +262,7 @@ export default function ComparePage() {
         </section>
       )}
 
-      {/* ── Multi-store basket comparison — gated behind BASKET_OPTIMIZATION flag ── */}
+      {/* ── Multi-store basket comparison ── */}
       <BasketComparisonSection />
     </main>
   );

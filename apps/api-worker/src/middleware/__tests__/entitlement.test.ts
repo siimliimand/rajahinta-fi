@@ -44,23 +44,16 @@ describe('EntitlementMiddleware', () => {
       expect(res.status).toBe(200);
     });
 
-    it('denies a PREMIUM feature with the service reason (403 InsufficientEntitlement)', async () => {
+    it('admits an anonymous caller for a FREE-tier feature (declaration:summary)', async () => {
+      // Current policy: every feature is FREE (the tier machinery stays
+      // as the future paywall seam) — anonymous callers pass the check.
       const res = await buildApp(undefined).request('/probe', undefined, env);
-
-      expect(res.status).toBe(403);
-      const body = (await res.json()) as Record<string, unknown>;
-      expect(body).toMatchObject({
-        statusCode: 403,
-        error: 'InsufficientEntitlement',
-        requiredTier: 'declaration:summary',
-        currentTier: 'FREE',
-        message: 'Feature "declaration:summary" requires PREMIUM tier. Sign in or upgrade.',
-      });
+      expect(res.status).toBe(200);
     });
   });
 
   describe('when the user has sufficient tier', () => {
-    it('allows a PREMIUM feature for a PREMIUM account context', async () => {
+    it('allows the feature for a PREMIUM account context', async () => {
       const user = accountFixture({ tier: 'PREMIUM' });
       const res = await buildApp(user).request('/probe', undefined, env);
       expect(res.status).toBe(200);
@@ -72,7 +65,7 @@ describe('EntitlementMiddleware', () => {
       expect(res.status).toBe(200);
     });
 
-    it('allows a PROFESSIONAL-tier feature for a PROFESSIONAL account context', async () => {
+    it('allows the feature for a PROFESSIONAL account context', async () => {
       const app = new Hono<AppEnv>();
       app.onError((err, c) => respondToError(c, err));
       app.use('*', (c, next) => {
@@ -86,20 +79,13 @@ describe('EntitlementMiddleware', () => {
     });
   });
 
-  describe('when the user has insufficient tier', () => {
-    it('denies a PROFESSIONAL feature with the current tier in the body', async () => {
+  describe('when the feature requires no more than FREE', () => {
+    it('admits a PREMIUM account for the (now FREE) api:batch feature', async () => {
+      // api:batch used to require PROFESSIONAL and 403 a PREMIUM account;
+      // the all-FREE policy admits it while keeping the wiring intact.
       const user = accountFixture({ tier: 'PREMIUM' });
       const res = await buildApp(user).request('/pro', undefined, env);
-
-      expect(res.status).toBe(403);
-      const body = (await res.json()) as Record<string, unknown>;
-      expect(body).toMatchObject({
-        statusCode: 403,
-        error: 'InsufficientEntitlement',
-        requiredTier: 'api:batch',
-        currentTier: 'PREMIUM',
-        message: 'Feature "api:batch" requires PROFESSIONAL tier. Current tier: PREMIUM.',
-      });
+      expect(res.status).toBe(200);
     });
   });
 

@@ -1,18 +1,14 @@
 /**
  * ProductHistoryPanel integration tests (task 5.3).
  *
- * Verifies the flag-gated integration contract:
- *   1. Flag off in the inlined payload → the panel renders nothing on the
- *      FIRST render and NEVER fires the price-history (or product-detail)
- *      request — the guard runs before the fetch, not as error-handling
- *      after.
- *   2. Flag on   → fetches the product-wide daily series with the default
- *      90-day range and renders the chart.
- *   3. Truncated history → the chart states "Data available from <date>"
+ * Verifies the integration contract:
+ *   1. Fetches the product-wide daily series with the default 90-day
+ *      range and renders the chart.
+ *   2. Truncated history → the chart states "Data available from <date>"
  *      from earliestAvailableObservationDate instead of implying more.
- *   4. Metric toggle → refetches with metric=landed-cost and relabels.
- *   5. Merchant filter (result view) → refetches with merchant=<name>.
- *   6. Rate-limited failure → neutral retry affordance that refetches.
+ *   3. Metric toggle → refetches with metric=landed-cost and relabels.
+ *   4. Merchant filter (result view) → refetches with merchant=<name>.
+ *   5. Rate-limited failure → neutral retry affordance that refetches.
  *
  * @module ProductHistoryPanelTest
  */
@@ -26,7 +22,7 @@ import ProductHistoryPanel, {
   defaultHistoryRange,
 } from './ProductHistoryPanel';
 import { ApiFetchError, getPriceHistory, getProductDetail } from '@/lib/api';
-import { ALL_FLAGS_OFF, renderWithIntl } from '@/lib/testing/test-intl';
+import { renderWithIntl } from '@/lib/testing/test-intl';
 import type { PriceHistoryResponse } from '@/lib/types';
 
 // Real classifyPriceHistoryError/ApiFetchError are kept; only the network
@@ -125,24 +121,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('ProductHistoryPanel', () => {
-  it('hides the section on the first render and never fetches history when the flag is off', () => {
-    const { container } = renderWithIntl(
-      <ProductHistoryPanel productId={42} showMerchantFilter />,
-      { featureFlags: ALL_FLAGS_OFF },
-    );
-
-    // Synchronous first-render assertion: the inlined flag state hides the
-    // panel with no client-side flag round-trip (task 9.4).
-    expect(container.firstChild).toBeNull();
-
-    expect(mockedGetPriceHistory).not.toHaveBeenCalled();
-    expect(mockedGetProductDetail).not.toHaveBeenCalled();
-    expect(
-      screen.queryByTestId('product-history-panel'),
-    ).not.toBeInTheDocument();
-  });
-
-  it('fetches the product-wide daily 90-day series and renders the chart when the flag is on', async () => {
+  it('fetches the product-wide daily 90-day series and renders the chart', async () => {
     renderWithIntl(<ProductHistoryPanel productId={42} />);
 
     const chart = await screen.findByTestId('history-chart');
@@ -274,11 +253,11 @@ describe('ProductHistoryPanel', () => {
     expect(await screen.findByTestId('history-chart')).toBeInTheDocument();
   });
 
-  it('hides the section when the server rejects with 403 (flag flipped off server-side)', async () => {
+  it('hides the section when the server rejects with 403', async () => {
     mockedGetPriceHistory.mockRejectedValue(
       new ApiFetchError(403, {
         statusCode: 403,
-        message: 'Feature flag disabled',
+        message: 'Forbidden',
         error: 'Forbidden',
         timestamp: '2026-08-26T12:00:00Z',
         path: '/api/v1/products/42/price-history',

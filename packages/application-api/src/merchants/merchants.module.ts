@@ -13,9 +13,8 @@
  * MerchantReliabilityService is exported so the search module's product
  * detail embed (same change, task 3.4) can reuse the identical pipeline.
  *
- * Guards (LaunchGateGuard, FeatureFlagGuard / AgeGateGuard) resolve from
- * the global FeatureFlagsModule / AgeGateModule — no additional imports
- * needed for them.
+ * Guards (AgeGateGuard) resolve from the global AgeGateModule — no
+ * additional imports needed for them.
  *
  * @module MerchantsModule
  */

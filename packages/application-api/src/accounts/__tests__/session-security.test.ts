@@ -1,12 +1,12 @@
 /**
  * Session security tests (task 2.5, change technical-assessment-remediation;
- * mvp-testing "Session security coverage").
+ * mvp-testing "Session security coverage"; trimmed by task 4.1, change
+ * email-password-auth).
  *
  * Proves, through the real SessionTokenService / SessionAuthGuard /
  * SessionController / AccountController over in-memory repositories
  * (golden-dataset convention — plain classes, no vi.fn()):
  *
- *   - issuance: server-generated identity, httpOnly cookie, hash-only at rest
  *   - forged / guessed / tampered / expired / revoked tokens are denied
  *   - the retired x-user-id header never authenticates (alone or with a
  *     valid token)
@@ -16,6 +16,10 @@
  *     resolves, the old token is dead and the successor authenticates the
  *     same account; a rotated token never mints a successor; two
  *     concurrent rotations of one token produce exactly one successor
+ *
+ * Sessions are established through SessionTokenService.issueSession over
+ * freshly created account rows — the harness has no issuance endpoint
+ * (credentials auth lives only in the API Worker, design D9).
  *
  * @module SessionSecurityTest
  */
@@ -27,7 +31,7 @@ import { SessionTokenService } from '../session-token.service';
 import { SESSION_COOKIE_NAME } from '../session-cookie';
 import {
   createSessionHarness,
-  issueSessionViaController,
+  issueSessionForNewAccount,
   requestWithSessionCookie,
   requestWithRawCookieHeader,
   executionContext,
@@ -70,30 +74,13 @@ function guessedToken(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Issuance — server-side identity, httpOnly cookie, hash-only at rest
+// Token-at-rest + transport parity
 // ---------------------------------------------------------------------------
 
-describe('Session issuance', () => {
-  it('issues a server-generated identity with an httpOnly SameSite cookie', async () => {
-    const harness = createSessionHarness();
-    const { token, userId, cookie } = await issueSessionViaController(harness);
-
-    // Identity is a server-generated UUID, never client-chosen.
-    expect(userId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    );
-    // Cookie hygiene: httpOnly, SameSite=Lax, correct name.
-    expect(cookie).toContain(`${SESSION_COOKIE_NAME}=`);
-    expect(cookie).toContain('HttpOnly');
-    expect(cookie).toContain('SameSite=Lax');
-    // The opaque token never appears in the response body.
-    const body = await harness.sessionController.issue(responseDouble().res);
-    expect(JSON.stringify(body)).not.toContain(token);
-  });
-
+describe('session establishment', () => {
   it('stores only the SHA-256 hash — the raw token is never persisted', async () => {
     const harness = createSessionHarness();
-    const { token } = await issueSessionViaController(harness);
+    const { token } = await issueSessionForNewAccount(harness);
 
     expect(harness.sessionRows.rows).toHaveLength(1);
     const row = harness.sessionRows.rows[0]!;
@@ -104,7 +91,7 @@ describe('Session issuance', () => {
 
   it('authenticates its own cookie via the parsed jar and the raw Cookie header', async () => {
     const harness = createSessionHarness();
-    const { token, userId } = await issueSessionViaController(harness);
+    const { token, userId } = await issueSessionForNewAccount(harness);
 
     const viaJar = await authenticate(harness, requestWithSessionCookie(token));
     expect(viaJar.user.userId).toBe(userId);
@@ -119,7 +106,7 @@ describe('Session issuance', () => {
 
   it('derives the account from the token record, not from any client claim', async () => {
     const harness = createSessionHarness();
-    const { token } = await issueSessionViaController(harness);
+    const { token } = await issueSessionForNewAccount(harness);
     const accountRow = harness.accountRows.rows[0]!;
 
     // A client asserts a different identity in every plausible place —
@@ -144,7 +131,7 @@ describe('Session issuance', () => {
 describe('forged and guessed tokens are denied', () => {
   it('rejects never-issued tokens with indistinguishable 401s', async () => {
     const harness = createSessionHarness();
-    await issueSessionViaController(harness); // an account exists
+    await issueSessionForNewAccount(harness); // an account exists
 
     for (const token of [guessedToken(), guessedToken(), guessedToken()]) {
       await expectDenied(harness, requestWithSessionCookie(token));
@@ -153,7 +140,7 @@ describe('forged and guessed tokens are denied', () => {
 
   it('rejects a tampered variant of a real token', async () => {
     const harness = createSessionHarness();
-    const { token } = await issueSessionViaController(harness);
+    const { token } = await issueSessionForNewAccount(harness);
 
     // Single-character mutation of a valid token — must not authenticate.
     const last = token.slice(-1);
@@ -168,7 +155,7 @@ describe('forged and guessed tokens are denied', () => {
 
   it('rejects a hash-collision-shaped forgery (raw digest presented as token)', async () => {
     const harness = createSessionHarness();
-    const { token } = await issueSessionViaController(harness);
+    const { token } = await issueSessionForNewAccount(harness);
     // Presenting the stored hash itself is just another unknown token —
     // lookup hashes the presented value again.
     const digest = createHash('sha256').update(token).digest('hex');
@@ -179,7 +166,7 @@ describe('forged and guessed tokens are denied', () => {
 describe('expired and revoked tokens are denied', () => {
   it('rejects an expired session', async () => {
     const harness = createSessionHarness();
-    const { token } = await issueSessionViaController(harness);
+    const { token } = await issueSessionForNewAccount(harness);
 
     // Age the session past its expiry window (issue uses the default TTL).
     const row = harness.sessionRows.rows[0]!;
@@ -190,7 +177,7 @@ describe('expired and revoked tokens are denied', () => {
 
   it('rejects a revoked session (logout)', async () => {
     const harness = createSessionHarness();
-    const { token } = await issueSessionViaController(harness);
+    const { token } = await issueSessionForNewAccount(harness);
 
     const { res, cookies } = responseDouble();
     const result = await harness.sessionController.revoke(
@@ -229,7 +216,7 @@ describe('expired and revoked tokens are denied', () => {
 describe('legacy x-user-id header is rejected', () => {
   it('a header alone authenticates nothing (401, no compat mode)', async () => {
     const harness = createSessionHarness();
-    const victim = await issueSessionViaController(harness);
+    const victim = await issueSessionForNewAccount(harness);
 
     const request = requestWithSessionCookie(undefined, {
       'x-user-id': victim.userId,
@@ -245,8 +232,8 @@ describe('legacy x-user-id header is rejected', () => {
 
   it('a valid session PLUS the header is still rejected outright', async () => {
     const harness = createSessionHarness();
-    const own = await issueSessionViaController(harness);
-    const other = await issueSessionViaController(harness);
+    const own = await issueSessionForNewAccount(harness);
+    const other = await issueSessionForNewAccount(harness);
 
     // Valid own token + another account's identifier via the legacy
     // header: the impersonation vector must stay dead even for
@@ -265,7 +252,7 @@ describe('legacy x-user-id header is rejected', () => {
 
   it('an empty header value is treated as absent and does not break token auth', async () => {
     const harness = createSessionHarness();
-    const { token, userId } = await issueSessionViaController(harness);
+    const { token, userId } = await issueSessionForNewAccount(harness);
 
     const { user } = await authenticate(
       harness,
@@ -290,8 +277,8 @@ describe('cross-account access is denied', () => {
 
   async function twoAccountsWithData(): Promise<TwoAccounts> {
     const harness = createSessionHarness();
-    const a = await issueSessionViaController(harness);
-    const b = await issueSessionViaController(harness);
+    const a = await issueSessionForNewAccount(harness);
+    const b = await issueSessionForNewAccount(harness);
 
     const rowA = harness.accountRows.rows.find((r) => r.userId === a.userId)!;
     const rowB = harness.accountRows.rows.find((r) => r.userId === b.userId)!;
@@ -389,7 +376,7 @@ describe('cross-account access is denied', () => {
 describe('token rotation', () => {
   it('old token dies immediately, the successor authenticates the same account', async () => {
     const harness = createSessionHarness();
-    const { token, userId } = await issueSessionViaController(harness);
+    const { token, userId } = await issueSessionForNewAccount(harness);
 
     const { res, cookies } = responseDouble();
     const request = requestWithSessionCookie(token);
@@ -412,7 +399,7 @@ describe('token rotation', () => {
 
   it('links the successor to the revoked predecessor (audit chain)', async () => {
     const harness = createSessionHarness();
-    const { token } = await issueSessionViaController(harness);
+    const { token } = await issueSessionForNewAccount(harness);
     const predecessor = harness.sessionRows.rows[0]!;
 
     const issued = await harness.sessionTokens.rotateSessionToken(token);
@@ -428,7 +415,7 @@ describe('token rotation', () => {
 
   it('a rotated token never mints a successor', async () => {
     const harness = createSessionHarness();
-    const { token } = await issueSessionViaController(harness);
+    const { token } = await issueSessionForNewAccount(harness);
 
     const first = await harness.sessionTokens.rotateSessionToken(token);
     expect(first).not.toBeNull();
@@ -440,7 +427,7 @@ describe('token rotation', () => {
 
   it('two concurrent rotations of one token produce exactly one successor', async () => {
     const harness = createSessionHarness();
-    const { token, userId } = await issueSessionViaController(harness);
+    const { token, userId } = await issueSessionForNewAccount(harness);
 
     const results = await Promise.all([
       harness.sessionTokens.rotateSessionToken(token),
@@ -459,18 +446,19 @@ describe('token rotation', () => {
     await expectDenied(harness, requestWithSessionCookie(token));
   });
 
-  it('the session survives an email upgrade (links to the row, not the email)', async () => {
+  it('the session survives account-row updates (links to the row id, not any mutable field)', async () => {
     const harness = createSessionHarness();
-    const { token } = await issueSessionViaController(harness);
+    const { token } = await issueSessionForNewAccount(harness);
 
-    // Anonymous-upgrade write (task 2.4) lands on the account row; the
-    // SAME session token keeps authenticating and now reports verified.
+    // A row mutation lands on the account (e.g. an anonymize-style
+    // identifier overwrite); the SAME session token keeps authenticating
+    // because sessions link to the row id.
     const row = harness.accountRows.rows[0]!;
-    row.email = 'verified@example.invalid';
+    row.email = 'mutated@example.invalid';
 
     const { user } = await authenticate(harness, requestWithSessionCookie(token));
     expect(user.userId).toBe(row.userId);
-    expect(user.verified).toBe(true);
+    expect(user.accountId).toBe(row.id);
   });
 });
 

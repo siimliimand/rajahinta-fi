@@ -96,7 +96,7 @@ class FakeCalculationRecordRepository extends CalculationRecordRepository {
 function makeService(repo: FakeCalculationRecordRepository): AccountService {
   // Repositories first per the constructor shape; the calculation-record
   // repository is the last positional parameter.
-  return new AccountService(undefined, undefined, undefined, undefined, undefined, repo);
+  return new AccountService(undefined, undefined, undefined, undefined, repo);
 }
 
 describe('AccountService calculation history — repository path', () => {

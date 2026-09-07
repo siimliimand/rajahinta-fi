@@ -3,10 +3,8 @@
  *
  * Typed fetch plus error classification for the states the UI renders
  * distinctly, following the {@link classifyTripCalcError} precedent.
- * The endpoint sits behind the `EXCISE_WHAT_IF` gate, so a flag flipped
- * off server-side mid-session reaches the client as 403 and must
- * degrade to a friendly "not available" message, never a crash
- * (design R13).
+ * A server-side 403 reaches the client as `forbidden` and must degrade
+ * to a friendly "not available" message, never a crash (design R13).
  *
  * Uses the low-level {@link apiFetch} instead of `request()` — the same
  * escape hatch the report exporter uses — for one reason: the
@@ -64,7 +62,7 @@ export function parseRetryAfterSeconds(raw: string | null): number {
 /**
  * Classified failure modes of {@link calculateWhatIfExcise}:
  * - `validation`     — 400: out-of-bounds scenario or malformed input
- * - `forbidden`      — 403: EXCISE_WHAT_IF flag off server-side
+ * - `forbidden`      — 403: the backend rejected the calculation
  * - `rate-limited`   — 429: CALCULATOR limiter tripped (carries retry seconds)
  * - `network`        — fetch itself failed (no HTTP response)
  * - `unknown`        — any other error

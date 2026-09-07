@@ -1,34 +1,58 @@
 /**
  * D1 account store — the account persistence the account/session routes
  * consume (task 3.7), re-hosted against the `accounts`, `saved_baskets`,
- * and `saved_scenarios` tables of the translated D1 schema (task 2.1).
+ * and `saved_scenarios` tables of the translated D1 schema, extended by
+ * the credential flow (tasks 2.2/2.3, change email-password-auth): the
+ * email IS the username, so this adapter owns the lowercase-normalized
+ * email lookup, the registered-account INSERT against the lower(email)
+ * unique index, the password/verification-state writes, and the
+ * revoke-all-sessions sweep the password reset performs.
  *
- * The data-platform package carries no D1 account repository (only the pg
- * Drizzle set), and packages/** is out of scope for the route ports — so
- * this adapter lives worker-side and mirrors the Drizzle repository's
- * documented semantics row-for-row: placeholder email on anonymous
- * creation, find-or-create race handling, upsert-by-name scenarios
- * (identity = account + name), first-claim-wins history linking, and the
- * verified-email UPDATE that replaces the always-throw
- * UnboundVerifiedEmailStore (task 2.4 / FIX-E; the write the abstract
- * AccountRepository exposes as setVerifiedEmail).
+ * packages/** is out of scope for the route ports — so the credential
+ * writes mirror D1AccountRepository (task 1.1) statement-for-statement
+ * worker-side, the same way this adapter already mirrored the Drizzle
+ * repository's basket/scenario semantics: race-safe registered-account
+ * INSERT (unique-index rejection), upsert-by-name scenarios
+ * (identity = account + name), first-claim-wins history linking.
+ *
+ * Accounts are created ONLY by registration — no anonymous/placeholder
+ * identity is minted anywhere (change email-password-auth);
+ * basket/scenario writes receive the account id the sessionAuth-guarded
+ * route resolved, and a missing row fails closed at the route (401),
+ * never as a created row.
  *
  * @module AccountStore
  */
 
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 
-/** Placeholder domain used for anonymous account rows (email-verification parity). */
-export const PLACEHOLDER_EMAIL_SUFFIX = '@placeholder.local';
-
 /** Account row projection for the API surface. */
 export interface AccountRow {
   readonly id: number;
   readonly userId: string;
   readonly email: string;
+  /** Verification STATE (email_verified_at) — null = unverified. */
+  readonly emailVerifiedAt: Date | null;
   readonly tier: string;
   readonly createdAt: Date;
   readonly lastActiveAt: Date;
+}
+
+/** The account row plus the stored credential — the login-path read. */
+export interface AccountCredentialRow extends AccountRow {
+  /** Stored PBKDF2 envelope; null/empty = no usable credential (fail-safe 401). */
+  readonly passwordHash: string | null;
+}
+
+/**
+ * Registration hit the lower(email) unique index — the address is already
+ * registered. The route maps this to the 409 conflict envelope.
+ */
+export class EmailAlreadyRegisteredError extends Error {
+  constructor(readonly email: string) {
+    super(`Email already registered: ${email}`);
+    this.name = 'EmailAlreadyRegisteredError';
+  }
 }
 
 /** Saved-basket row projection (Basket parity — id is the stringified row id). */
@@ -57,24 +81,37 @@ export interface HistoryEntry {
   readonly productName: string;
 }
 
-const ACCOUNT_COLUMNS = `id, user_id, email, tier, created_at, last_active_at`;
+const ACCOUNT_COLUMNS = `id, user_id, email, email_verified_at, tier, created_at, last_active_at`;
 
-function toAccount(row: {
+/** The credential read adds only the stored hash (never leaves the data layer raw-parsed). */
+const CREDENTIAL_COLUMNS = `${ACCOUNT_COLUMNS}, password_hash`;
+
+interface AccountDbRow {
   id: number;
   user_id: string;
   email: string;
+  email_verified_at: string | null;
   tier: string;
   created_at: string;
   last_active_at: string;
-}): AccountRow {
+}
+
+type CredentialDbRow = AccountDbRow & { password_hash: string | null };
+
+function toAccount(row: AccountDbRow): AccountRow {
   return {
     id: row.id,
     userId: row.user_id,
     email: row.email,
+    emailVerifiedAt: row.email_verified_at === null ? null : new Date(row.email_verified_at),
     tier: row.tier,
     createdAt: new Date(row.created_at),
     lastActiveAt: new Date(row.last_active_at),
   };
+}
+
+function toCredential(row: CredentialDbRow): AccountCredentialRow {
+  return { ...toAccount(row), passwordHash: row.password_hash };
 }
 
 /** SQLSTATE unique-constraint parity on SQLite (constraint failed message). */
@@ -90,63 +127,121 @@ export class D1AccountStore {
   // Accounts
   // -----------------------------------------------------------------------
 
+  /** Find an account row by its primary key (serial id) — the email-token join. */
+  async findById(id: number): Promise<AccountRow | null> {
+    const row = await this.d1
+      .prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts WHERE id = ? LIMIT 1`)
+      .bind(id)
+      .first<AccountDbRow>();
+    return row ? toAccount(row) : null;
+  }
+
   /** Find an account row by external userId, or null. */
   async findByUserId(userId: string): Promise<AccountRow | null> {
     const row = await this.d1
       .prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts WHERE user_id = ? LIMIT 1`)
       .bind(userId)
-      .first<{
-        id: number;
-        user_id: string;
-        email: string;
-        tier: string;
-        created_at: string;
-        last_active_at: string;
-      }>();
+      .first<AccountDbRow>();
     return row ? toAccount(row) : null;
   }
 
   /**
-   * Find-or-create the account row for `userId`, safe against concurrent
-   * callers racing the INSERT (ensureAccountRow parity): on a unique
-   * violation the row already exists — re-read it instead of failing.
+   * The credential read (login): resolve the account by email. The
+   * address is normalized to lowercase here and on write, so the lookup
+   * is index-served by the lower(email) unique index and case variants
+   * resolve to one identity (D1AccountRepository.findByEmail parity).
    */
-  async ensureAccount(userId: string): Promise<AccountRow> {
-    const existing = await this.findByUserId(userId);
-    if (existing) return existing;
-
-    try {
-      await this.d1
-        .prepare(
-          `INSERT INTO accounts (user_id, email, tier) VALUES (?, ?, 'FREE')`,
-        )
-        .bind(userId, `${userId}${PLACEHOLDER_EMAIL_SUFFIX}`)
-        .run();
-    } catch (err) {
-      if (!isUniqueViolation(err)) throw err;
-    }
-    const raced = await this.findByUserId(userId);
-    if (!raced) {
-      throw new Error(`Account row for userId="${userId}" disappeared mid-create`);
-    }
-    return raced;
+  async findCredentialByEmail(email: string): Promise<AccountCredentialRow | null> {
+    const row = await this.d1
+      .prepare(`SELECT ${CREDENTIAL_COLUMNS} FROM accounts WHERE lower(email) = ? LIMIT 1`)
+      .bind(email.toLowerCase())
+      .first<CredentialDbRow>();
+    return row ? toCredential(row) : null;
   }
 
   /**
-   * Persist a verified email on the account row — the anonymous-upgrade
-   * write that replaces the placeholder address (task 2.4 / FIX-E). Throws
-   * when no account exists: a silent no-op would lose the verification.
+   * Create a registered account: server-generated userId, the email
+   * (already validated by the route) stored lowercase-canonical, and the
+   * pre-hashed PBKDF2 envelope. Uniqueness is the lower(email) unique
+   * index enforced in SQL — a losing race surfaces as
+   * {@link EmailAlreadyRegisteredError} rather than a raw constraint error.
    */
-  async setVerifiedEmail(userId: string, email: string): Promise<void> {
+  async createRegisteredAccount(input: {
+    email: string;
+    passwordHash: string;
+  }): Promise<AccountCredentialRow> {
+    const email = input.email.toLowerCase();
+    const userId = crypto.randomUUID();
+    try {
+      await this.d1
+        .prepare(
+          `INSERT INTO accounts (user_id, email, password_hash, tier)
+           VALUES (?, ?, ?, 'FREE')`,
+        )
+        .bind(userId, email, input.passwordHash)
+        .run();
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new EmailAlreadyRegisteredError(email);
+      }
+      throw err;
+    }
+    const row = await this.findCredentialByEmail(email);
+    if (!row) {
+      throw new Error(`Account row for email="${email}" disappeared mid-create`);
+    }
+    return row;
+  }
+
+  /**
+   * Store the PBKDF2 envelope produced by hashPassword (registration and
+   * reset share this write). Throws when the account vanished — a silent
+   * no-op would strand the credential.
+   */
+  async setPasswordHash(userId: string, passwordHash: string): Promise<void> {
     const result = await this.d1
-      .prepare(`UPDATE accounts SET email = ? WHERE user_id = ?`)
-      .bind(email, userId)
+      .prepare(`UPDATE accounts SET password_hash = ? WHERE user_id = ?`)
+      .bind(passwordHash, userId)
+      .run();
+    if (((result.meta as { changes?: number } | undefined)?.changes ?? 0) === 0) {
+      throw new Error(`Cannot set password hash: account not found for userId="${userId}"`);
+    }
+  }
+
+  /**
+   * Stamp the email-verification instant — the write the emailed
+   * single-use token flow performs after consuming a `verify_email`
+   * token (email_verified_at IS NOT NULL is the verification state; the
+   * address itself is set at registration). Throws when the account is
+   * gone: a silent no-op would lose the verification.
+   */
+  async setVerifiedEmail(userId: string, verifiedAt: Date): Promise<void> {
+    const result = await this.d1
+      .prepare(`UPDATE accounts SET email_verified_at = ? WHERE user_id = ?`)
+      .bind(verifiedAt.toISOString(), userId)
       .run();
     if (((result.meta as { changes?: number } | undefined)?.changes ?? 0) === 0) {
       throw new Error(
         `Cannot set verified email: account not found for userId="${userId}"`,
       );
     }
+  }
+
+  /**
+   * Revoke every active session of the account (password-reset hygiene,
+   * design D2: a completed reset logs out ALL devices). The active
+   * predicate mirrors the session repository — already-revoked and
+   * expired rows are untouched. Returns the number of sessions revoked.
+   */
+  async revokeAllSessionsForAccount(accountId: number): Promise<number> {
+    const result = await this.d1
+      .prepare(
+        `UPDATE sessions SET revoked_at = ?
+          WHERE account_id = ? AND revoked_at IS NULL AND expires_at > ?`,
+      )
+      .bind(new Date().toISOString(), accountId, new Date().toISOString())
+      .run();
+    return ((result.meta as { changes?: number } | undefined)?.changes ?? 0);
   }
 
   // -----------------------------------------------------------------------
@@ -175,17 +270,20 @@ export class D1AccountStore {
     }));
   }
 
-  /** Insert a saved basket for the account. */
+  /**
+   * Insert a saved basket for the account. `accountId` comes from the
+   * sessionAuth-guarded route's resolved account row — this write never
+   * mints an account row.
+   */
   async createBasket(
-    userId: string,
+    accountId: number,
     basket: { name: string; items: unknown },
   ): Promise<void> {
-    const account = await this.ensureAccount(userId);
     await this.d1
       .prepare(
         `INSERT INTO saved_baskets (account_id, name, items) VALUES (?, ?, ?)`,
       )
-      .bind(account.id, basket.name, JSON.stringify(basket.items))
+      .bind(accountId, basket.name, JSON.stringify(basket.items))
       .run();
   }
 
@@ -238,13 +336,14 @@ export class D1AccountStore {
   /**
    * Upsert-by-name: the (account, name) pair is the identity; inputs and
    * updatedAt refresh on replace. Returns the persisted scenario.
+   * `accountId` comes from the sessionAuth-guarded route's resolved
+   * account row — no account is created here.
    */
   async upsertScenario(
-    userId: string,
+    accountId: number,
     name: string,
     inputs: unknown,
   ): Promise<ScenarioRow> {
-    const account = await this.ensureAccount(userId);
     const row = await this.d1
       .prepare(
         `INSERT INTO saved_scenarios (account_id, name, inputs) VALUES (?, ?, ?)
@@ -253,7 +352,7 @@ export class D1AccountStore {
             updated_at = excluded.updated_at
           RETURNING id, name, inputs, created_at, updated_at`,
       )
-      .bind(account.id, name, JSON.stringify(inputs))
+      .bind(accountId, name, JSON.stringify(inputs))
       .first<{
         id: number;
         name: string;
@@ -353,9 +452,4 @@ export class D1AccountStore {
       productName: row.product_name,
     }));
   }
-}
-
-/** Fresh UUIDv4 for server-generated anonymous identities (Workers-global). */
-export function newAnonymousUserId(): string {
-  return crypto.randomUUID();
 }

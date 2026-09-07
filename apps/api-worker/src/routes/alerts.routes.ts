@@ -5,16 +5,13 @@
  *
  * Middleware chain per request (in composition order):
  *
- *   sessionAuth() → requireFeatureFlag('PRICE_ALERTS') →
- *   requireAccountRateLimit('DEFAULT') → handler
+ *   sessionAuth() → requireAccountRateLimit('DEFAULT') → handler
  *
- * The first two register through the guards table (middleware/guards.ts —
+ * sessionAuth registers through the guards table (middleware/guards.ts —
  * route-coverage enumeration). The rate limit registers HERE, after the
- * guards, for two reasons: its bucket key is the authenticated account
- * (lead decision "rate-limited per profile"), so the identity must already
- * be resolved, and a flag-off deployment then rejects before any limiter
- * DO traffic. Unauthenticated callers are rejected by sessionAuth before
- * the flag is consulted, so flag state never leaks to anonymous callers.
+ * guard, because its bucket key is the authenticated account (lead
+ * decision "rate-limited per profile") — the identity must already be
+ * resolved.
  *
  * Documented decisions:
  * - Threshold bounds: integer cents, 1..1_000_000 (€0.01–€10,000). The

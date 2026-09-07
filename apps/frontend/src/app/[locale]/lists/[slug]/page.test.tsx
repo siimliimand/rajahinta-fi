@@ -5,22 +5,19 @@
  * would (only Next server plumbing is mocked — the ProductDupesPanel
  * 6.4 test precedent), pinning the committed 7.2 API contract:
  *
- *   1. CURATED_LISTS off (absent key or explicit false) → the
- *      feature-unavailable state renders and no list request fires.
- *   2. Flag on, unknown slug → API 404 → notFound().
- *   3. Flag on, known slug with zero published entries → criteria
- *      render + the explicit empty state, no entry rows.
- *   4. Flag on, published entries → every entry shows its mandatory
- *      rationale; evidence links are DIRECT external anchors with the
- *      outbound treatment (new tab, nofollow/noopener — no offer id
- *      exists to route through the offer-keyed redirect controller);
- *      productId entries link to the local product page; externalRef
- *      entries render the reference without a local link; the
+ *   1. Unknown slug → API 404 → notFound().
+ *   2. Known slug with zero published entries → criteria render + the
+ *      explicit empty state, no entry rows.
+ *   3. Published entries → every entry shows its mandatory rationale;
+ *      evidence links are DIRECT external anchors with the outbound
+ *      treatment (new tab, nofollow/noopener — no offer id exists to
+ *      route through the offer-keyed redirect controller); productId
+ *      entries link to the local product page; externalRef entries
+ *      render the reference without a local link; the
  *      CollectionPage/ItemList JSON-LD carries absolute factual URLs.
- *   5. Flag on, fetch 403s (flag flipped off mid-revalidate) → the
- *      unavailable state, no crash.
- *   6. generateMetadata: list-specific title/description when ok,
- *      generic fallback when flag off or unknown slug.
+ *   4. Fetch 403s (backend rejects) → the unavailable state, no crash.
+ *   5. generateMetadata: list-specific title/description when ok,
+ *      generic fallback when the list is unavailable or unknown.
  *
  * @module CuratedListPageTest
  */
@@ -31,7 +28,7 @@ import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CuratedListPage, { generateMetadata } from './page';
 import { request } from '@/lib/api';
-import type { ApiError, FeatureFlagsResponse } from '@/lib/types';
+import type { ApiError } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Mocked Next server plumbing — next-intl/server resolved straight from the
@@ -92,13 +89,10 @@ vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
-    getServerFeatureFlags: vi.fn(),
     request: vi.fn(),
   };
 });
 
-import { getServerFeatureFlags } from '@/lib/api';
-const mockedGetServerFeatureFlags = vi.mocked(getServerFeatureFlags);
 const mockedRequest = vi.mocked(request);
 
 // ---------------------------------------------------------------------------
@@ -106,21 +100,6 @@ const mockedRequest = vi.mocked(request);
 // ---------------------------------------------------------------------------
 
 const SLUG = 'alkon-hylkaamat';
-
-/** Flags payload with every known flag off and CURATED_LISTS controllable. */
-function flagsWith(curatedLists: boolean | undefined): FeatureFlagsResponse {
-  return {
-    flags: {
-      HISTORICAL_PRICE_INTELLIGENCE: false,
-      BASKET_OPTIMIZATION: false,
-      ADVANCED_FEATURES: false,
-      UNIT_PRICE_EUR_PER_GRAM: false,
-      ...(curatedLists === undefined
-        ? {}
-        : { CURATED_LISTS: curatedLists }),
-    },
-  } as FeatureFlagsResponse;
-}
 
 /** GET /api/v1/lists/:slug — one local entry, one externalRef-only entry. */
 const LIST_OK = {
@@ -184,46 +163,8 @@ beforeEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('CuratedListPage flag gate (server-resolved)', () => {
-  it('CURATED_LISTS absent (off) → the unavailable state renders and no list request fires', async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(undefined));
-
-    const html = await renderPage();
-
-    expect(html).toContain('data-testid="lists-unavailable"');
-    expect(html).not.toContain('data-testid="lists-criteria"');
-    expect(mockedRequest).not.toHaveBeenCalled();
-  });
-
-  it('CURATED_LISTS explicitly false → the unavailable state renders', async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(false));
-
-    const html = await renderPage();
-
-    expect(html).toContain('data-testid="lists-unavailable"');
-    expect(mockedRequest).not.toHaveBeenCalled();
-  });
-
-  it('flag on but list fetch 403s (flag flipped mid-revalidate) → the unavailable state', async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(true));
-    mockedRequest.mockRejectedValue(
-      new (await import('@/lib/api')).ApiFetchError(
-        403,
-        apiError(403, 'Feature flag is off'),
-        'req-1',
-      ),
-    );
-
-    const html = await renderPage();
-
-    expect(html).toContain('data-testid="lists-unavailable"');
-    expect(html).not.toContain('data-testid="lists-entries"');
-  });
-});
-
 describe('CuratedListPage slug outcomes', () => {
   it('unknown slug (API 404) → notFound()', async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(true));
     mockedRequest.mockRejectedValue(
       new (await import('@/lib/api')).ApiFetchError(
         404,
@@ -236,7 +177,6 @@ describe('CuratedListPage slug outcomes', () => {
   });
 
   it('known slug, zero published entries → criteria + explicit empty state, no entries', async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(true));
     mockedRequest.mockResolvedValue(LIST_EMPTY);
 
     const html = await renderPage();
@@ -248,8 +188,22 @@ describe('CuratedListPage slug outcomes', () => {
     expect(html).not.toContain('data-testid="list-entry"');
   });
 
+  it('list fetch 403s (backend rejects) → the unavailable state', async () => {
+    mockedRequest.mockRejectedValue(
+      new (await import('@/lib/api')).ApiFetchError(
+        403,
+        apiError(403, 'Forbidden'),
+        'req-1',
+      ),
+    );
+
+    const html = await renderPage();
+
+    expect(html).toContain('data-testid="lists-unavailable"');
+    expect(html).not.toContain('data-testid="lists-entries"');
+  });
+
   it('fetches the committed 7.2 endpoint at the sitemap revalidation cadence', async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(true));
     mockedRequest.mockResolvedValue(LIST_EMPTY);
 
     await renderPage();
@@ -265,7 +219,6 @@ describe('CuratedListPage entry rendering', () => {
   let html = '';
 
   beforeEach(async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(true));
     mockedRequest.mockResolvedValue(LIST_OK);
     html = await renderPage();
   });
@@ -338,18 +291,7 @@ function metadataParams(): { params: Promise<{ locale: string; slug: string }> }
 }
 
 describe('CuratedListPage generateMetadata', () => {
-  it('flag off → generic fallback metadata', async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(undefined));
-
-    const meta = await generateMetadata(metadataParams());
-
-    expect(meta.title).toBe('Listausta ei löytynyt');
-    expect(meta.description).toContain('Kuratoidut tuotelistaukset');
-    expect(mockedRequest).not.toHaveBeenCalled();
-  });
-
-  it('flag on, list ok → list-specific title and description', async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(true));
+  it('list ok → list-specific title and description', async () => {
     mockedRequest.mockResolvedValue(LIST_OK);
 
     const meta = await generateMetadata(metadataParams());
@@ -360,7 +302,6 @@ describe('CuratedListPage generateMetadata', () => {
   });
 
   it('unknown slug (404) → generic fallback metadata', async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(true));
     mockedRequest.mockRejectedValue(
       new (await import('@/lib/api')).ApiFetchError(
         404,

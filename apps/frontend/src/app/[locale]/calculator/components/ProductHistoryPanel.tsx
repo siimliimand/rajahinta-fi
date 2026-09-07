@@ -3,22 +3,18 @@
 /**
  * ProductHistoryPanel — integrating container for {@link HistoryChart}.
  *
- * Owns everything HistoryChart deliberately does not (task 5.3): the
- * feature-flag gate, data fetching, metric switching, and the per-merchant
- * filter on the calculator result view.
+ * Owns everything HistoryChart deliberately does not (task 5.3): data
+ * fetching, metric switching, and the per-merchant filter on the
+ * calculator result view.
  *
  * Behaviour:
- *  - `enable_historical_price_intelligence` off ⇒ the section renders
- *    nothing and the price-history request is never fired (guard runs
- *    before fetch, not as error-handling after). A failed flag lookup also
- *    degrades to hidden.
  *  - Default view: product-wide series (merchant = null), daily buckets,
  *    90-day inclusive range — well under the API's 365-day cap.
  *  - Truncated history: `earliestAvailableObservationDate` from the
  *    response is passed through so the chart states "data available from"
  *    instead of implying a longer history.
  *  - Rate-limited / network failures degrade to a neutral retry
- *    affordance; a 403 (flag flipped server-side) hides the section.
+ *    affordance; other failures hide the section.
  *  - Neutrality: the metric buttons and the merchant select treat every
  *    option identically — no option is visually promoted.
  *
@@ -36,7 +32,6 @@ import {
   getPriceHistory,
   getProductDetail,
 } from '@/lib/api';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import { Button, Card } from '@/components/ui';
 import HistoryChart from './HistoryChart';
 
@@ -106,9 +101,6 @@ export default function ProductHistoryPanel({
 }: ProductHistoryPanelProps) {
   const t = useTranslations('ProductHistoryPanel');
   const tCommon = useTranslations('Common');
-  // Flag state is inlined with the initial HTML payload (task 9.4).
-  const flags = useFeatureFlags();
-  const flagEnabled = flags.flags.HISTORICAL_PRICE_INTELLIGENCE;
   const [metric, setMetric] = useState<PriceHistoryMetric>('price');
   const [merchant, setMerchant] = useState<string | null>(null);
   const [merchants, setMerchants] = useState<readonly string[]>([]);
@@ -117,9 +109,9 @@ export default function ProductHistoryPanel({
   const [failure, setFailure] = useState<FailureState>(null);
   const [retryNonce, setRetryNonce] = useState(0);
 
-  // ── Merchant filter options (result view only, after the flag is on) ──
+  // ── Merchant filter options (result view only) ──
   useEffect(() => {
-    if (!flagEnabled || !showMerchantFilter) return;
+    if (!showMerchantFilter) return;
     let cancelled = false;
     getProductDetail(productId)
       .then((detail) => {
@@ -133,14 +125,10 @@ export default function ProductHistoryPanel({
     return () => {
       cancelled = true;
     };
-  }, [flagEnabled, productId, showMerchantFilter]);
+  }, [productId, showMerchantFilter]);
 
-  // ── History fetch — guarded by the flag, never fired when disabled ──
+  // ── History fetch ──
   useEffect(() => {
-    // Disabled returns before any request (design decision 7: the UI
-    // skips the fetch, not just the rendering).
-    if (!flagEnabled) return;
-
     let cancelled = false;
     setLoading(true);
     setFailure(null);
@@ -162,8 +150,8 @@ export default function ProductHistoryPanel({
         if (kind === 'rate-limited' || kind === 'network' || kind === 'unknown') {
           setFailure('retryable');
         } else {
-          // 'forbidden' (flag off server-side / age gate), 'validation',
-          // 'not-found' — hiding the section is the honest degradation.
+          // 'forbidden' (age gate), 'validation', 'not-found' — hiding
+          // the section is the honest degradation.
           setFailure('hidden');
         }
       })
@@ -174,10 +162,10 @@ export default function ProductHistoryPanel({
     return () => {
       cancelled = true;
     };
-  }, [flagEnabled, productId, metric, merchant, retryNonce]);
+  }, [productId, metric, merchant, retryNonce]);
 
-  // ── Hidden states: flag off in the inlined payload, or hidden failure ──
-  if (!flagEnabled || failure === 'hidden') {
+  // ── Hidden state: hidden failure ──
+  if (failure === 'hidden') {
     return null;
   }
 

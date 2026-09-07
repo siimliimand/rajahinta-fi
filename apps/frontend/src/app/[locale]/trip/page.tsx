@@ -6,14 +6,12 @@
 import * as React from 'react';
 import { useCallback, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import { Card, EmptyState } from '@/components/ui';
 import {
   calculateTripFeasibility,
   classifyTripCalcError,
   type TripCalcErrorKind,
 } from './trip.client';
-import { isTripCalculatorFlagEnabled } from './trip-calculator-flag';
 import type {
   TripCategoryKey,
   TripFeasibilityResponse,
@@ -49,10 +47,6 @@ function todayIsoDate(): string {
  * Trip feasibility page (task 5.4, change product-roadmap-phases-1-4).
  *
  * Behaviour:
- *  - `TRIP_CALCULATOR` off ⇒ renders nothing. The flag state is resolved
- *    server-side and inlined with the initial HTML payload (design R13),
- *    so the page is hidden from the first render — the account/alerts/
- *    event gating treatment.
  *  - Submit posts to `/api/v1/trip-feasibility`; the 200 body renders as
  *    break-even lines with allowance capping, the dataset citation, the
  *    structural disclaimer, and the separate partner block.
@@ -65,10 +59,6 @@ function todayIsoDate(): string {
  */
 export default function TripPage() {
   const t = useTranslations('TripPage');
-
-  // ── Feature flags (server-resolved, inlined with the initial HTML) ──
-  const flags = useFeatureFlags();
-  const flagEnabled = isTripCalculatorFlagEnabled(flags);
 
   // ── Submission state ──
   const [submitting, setSubmitting] = useState(false);
@@ -113,11 +103,6 @@ export default function TripPage() {
     [],
   );
 
-  // ── Hidden state: flag off in the inlined payload ──
-  if (!flagEnabled) {
-    return null;
-  }
-
   return (
     <main className="mx-auto min-h-screen max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
       {/* ── Header ── */}
@@ -142,8 +127,7 @@ export default function TripPage() {
         </div>
       )}
 
-      {/* ── Error (classified failure; the 403 case covers a flag flipped
-              off server-side mid-session — degrade, never crash) ── */}
+      {/* ── Error (classified failure; degrade, never crash) ── */}
       {errorKind !== null && errorKind !== 'no-allowances' && (
         <p role="alert" className="mb-8 text-sm text-red-600">
           {t(`errors.${errorKind}`)}

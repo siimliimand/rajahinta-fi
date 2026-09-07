@@ -37,7 +37,7 @@ Transport-rate freshness monitoring SHALL run as a scheduled Cron Trigger that e
 
 ### Requirement: Calculation record retention job
 
-Retention SHALL run as a scheduled Cron Trigger that batch-deletes anonymous-session calculation records past the configured window (30 days) from D1, in bounded batches so no single run exceeds statement limits. The behavior, window, and audit trail SHALL match the current retention semantics.
+Retention SHALL run as a scheduled Cron Trigger that batch-deletes calculation records not attached to an account once they pass the configured window (30 days) in D1, in bounded batches so no single run exceeds statement limits. The behavior, window, and audit trail SHALL match the current retention semantics.
 
 #### Scenario: Retention prunes in bounded batches
 

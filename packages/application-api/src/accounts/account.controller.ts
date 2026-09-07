@@ -4,8 +4,7 @@
  * Groups account operations under `/api/v1/account`, including
  * the GDPR data-export endpoint, saved-basket CRUD, calculation-history
  * lookup, and subscription-status retrieval. Phase 2 adds saved-scenario
- * CRUD (named calculator input sets), gated behind the ADVANCED_FEATURES
- * feature flag — the pre-existing endpoints are deliberately NOT gated.
+ * CRUD (named calculator input sets).
  *
  * Session authentication (task 2.2, design D3): every route is guarded by
  * `SessionAuthGuard`, which derives the account from the opaque token in
@@ -39,8 +38,6 @@ import type { DataExport } from './data-export.types';
 import type { Basket, BasketItem, SavedScenario, SaveScenarioRequest } from './account.types';
 import { SessionAuthGuard } from './session-auth.guard';
 import { CurrentUser, type AuthenticatedAccount } from './current-user.decorator';
-import { isValidEmailFormat } from './email-verification';
-import { FeatureFlagGuard, FeatureFlagDec, FeatureFlag } from '../feature-flags';
 
 /** Allowed values of `inputs.transportArrangement` (core-domain TransportArrangement). */
 const TRANSPORT_ARRANGEMENTS: readonly string[] = [
@@ -171,22 +168,17 @@ export class AccountController {
 
   // ---------------------------------------------------------------------------
   // Phase 2 — GET /api/v1/account/scenarios — list saved scenarios
-  // (ADVANCED_FEATURES-gated; the pre-existing endpoints above stay ungated)
   // ---------------------------------------------------------------------------
 
   @Get('scenarios')
-  @UseGuards(FeatureFlagGuard)
-  @FeatureFlagDec(FeatureFlag.ADVANCED_FEATURES)
   @ApiOperation({
     summary: 'List saved scenarios for the authenticated user',
     description:
       'Returns the user\'s named calculator input sets (scenarios) with ' +
-      'their full inputs so the UI can re-run them against current data. ' +
-      'Gated by the ADVANCED_FEATURES feature flag.',
+      'their full inputs so the UI can re-run them against current data.',
   })
   @ApiResponse({ status: 200, description: 'Array of saved scenarios' })
   @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
-  @ApiResponse({ status: 403, description: 'ADVANCED_FEATURES flag is disabled' })
   async listScenarios(
     @CurrentUser() user: AuthenticatedAccount,
   ): Promise<SavedScenario[]> {
@@ -198,19 +190,16 @@ export class AccountController {
   // ---------------------------------------------------------------------------
 
   @Post('scenarios')
-  @UseGuards(FeatureFlagGuard)
-  @FeatureFlagDec(FeatureFlag.ADVANCED_FEATURES)
   @ApiOperation({
     summary: 'Create or replace a named scenario (upsert by name)',
     description:
       'Saving under an existing name replaces that scenario\'s inputs ' +
       '(identity is the account + name pair); a new name inserts. Returns ' +
-      'the persisted scenario. Gated by the ADVANCED_FEATURES feature flag.',
+      'the persisted scenario.',
   })
   @ApiResponse({ status: 201, description: 'Scenario saved (inserted or replaced)' })
   @ApiResponse({ status: 400, description: 'Body validation failed' })
   @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
-  @ApiResponse({ status: 403, description: 'ADVANCED_FEATURES flag is disabled' })
   async saveScenario(
     @Body() body: SaveScenarioRequest,
     @CurrentUser() user: AuthenticatedAccount,
@@ -226,19 +215,15 @@ export class AccountController {
   // ---------------------------------------------------------------------------
 
   @Delete('scenarios/:id')
-  @UseGuards(FeatureFlagGuard)
-  @FeatureFlagDec(FeatureFlag.ADVANCED_FEATURES)
   @ApiOperation({
     summary: 'Delete a saved scenario by ID',
     description:
       'Account-scoped: a scenario id that does not belong to the requesting ' +
-      'user\'s account is reported as not found, never deleted. Gated by ' +
-      'the ADVANCED_FEATURES feature flag.',
+      'user\'s account is reported as not found, never deleted.',
   })
   @ApiResponse({ status: 200, description: 'Scenario deleted' })
   @ApiResponse({ status: 400, description: 'id is not an integer' })
   @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
-  @ApiResponse({ status: 403, description: 'ADVANCED_FEATURES flag is disabled' })
   @ApiResponse({ status: 404, description: 'Scenario not found for this account' })
   async deleteScenario(
     @Param('id', ParseIntPipe) scenarioId: number,
@@ -366,39 +351,5 @@ export class AccountController {
   ): Promise<{ userId: string; plan: string; active: boolean }> {
     const account = await this.accountService.getAccount(user.userId);
     return account.subscription;
-  }
-
-  // ---------------------------------------------------------------------------
-  // 2.4 — POST /api/v1/account/verify-email — anonymous → verified upgrade
-  // ---------------------------------------------------------------------------
-
-  @Post('verify-email')
-  @ApiOperation({
-    summary: 'Verify an email on the authenticated account (groundwork)',
-    description:
-      'Upgrades an anonymous account to a verified one by persisting the ' +
-      'verified email on the account row (the existing verified-email ' +
-      'column). The current session keeps authenticating the account ' +
-      'unchanged. Until verification, account data is DISPOSABLE and not ' +
-      'protected by identity guarantees. Groundwork only: real email ' +
-      'delivery/provider round-trip is out of scope for this change.',
-  })
-  @ApiResponse({ status: 200, description: 'Account upgraded; the same session continues to authenticate it' })
-  @ApiResponse({ status: 400, description: 'email missing or malformed' })
-  @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
-  async verifyEmail(
-    @Body() body: { email: string },
-    @CurrentUser() user: AuthenticatedAccount,
-  ): Promise<{ verified: true; email: string }> {
-    if (typeof body?.email !== 'string' || !isValidEmailFormat(body.email)) {
-      throw new BadRequestException({
-        statusCode: 400,
-        message: '"email" is required and must be a valid email address',
-        error: 'InvalidEmail',
-      });
-    }
-
-    await this.accountService.verifyEmail(user.userId, body.email);
-    return { verified: true, email: body.email };
   }
 }

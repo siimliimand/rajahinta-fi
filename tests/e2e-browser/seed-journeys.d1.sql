@@ -31,10 +31,8 @@
 -- Deliberately NOT seeded here:
 -- - sessions/accounts — minted by the API at runtime via the journeys'
 --   401 → issue-session → replay path (the behavior under test);
--- - feature flags — resolved from wrangler vars (FF_*, apps/api-worker
---   src/middleware/feature-flags.ts); the journeys run with flags OFF,
---   the same state a clean runner gets when no FF_* var is set
---   (boot-stack.sh parity).
+-- - feature flags — the flag system was removed (2026-09-07); every
+--   feature is live with nothing to seed
 --
 -- Determinism note for the compare-sorting journey: the beer is cheaper
 -- (€1.49 < €5.99) and weaker (4.7 % < 12 %) than the wine, while

@@ -5,11 +5,9 @@
  * wires, guards first) on the fake-D1 harness.
  *
  * Pinning here (beyond plain CRUD): the middleware ORDER of the chain
- * sessionAuth → requireFeatureFlag('PRICE_ALERTS') →
- * requireAccountRateLimit — an anonymous caller gets the 401 envelope
- * even with the flag off (flag state never leaks to unauthenticated
- * callers; the scenarios-route order from route-coverage), and the rate
- * limiter buckets per AUTHENTICATED ACCOUNT, not per edge IP.
+ * sessionAuth → requireAccountRateLimit — an anonymous caller gets the
+ * 401 envelope, and the rate limiter buckets per AUTHENTICATED ACCOUNT,
+ * not per edge IP.
  *
  * @module AlertsRoutesTest
  */
@@ -19,7 +17,6 @@ import {
   createApp,
   expectEnvelope,
   issueSessionToken,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -40,22 +37,14 @@ function alertsApp(): ReturnType<typeof createApp> {
   return app;
 }
 
-/**
- * Flag-on env. `FF_PRICE_ALERTS` is read at runtime via the FF_<FLAG>
- * convention (feature-flags.ts); the typed Env var lands with the
- * index.ts/env.ts wiring outside this task's edit scope, hence the cast.
- */
 function alertsEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}): Env {
-  return permissiveEnv(d1, {
-    ...overrides,
-    FF_PRICE_ALERTS: 'true',
-  } as Partial<Env>);
+  return permissiveEnv(d1, overrides);
 }
 
 /** Canonical two-account fixture: 7 is the acting owner, 9 the foreigner. */
 function seedAccounts(db: ReturnType<typeof openMigratedD1>['db']): void {
   seedAccount(db, { id: 7, userId: 'user-7', email: 'user-7@example.invalid', tier: 'FREE' });
-  seedAccount(db, { id: 9, userId: 'user-9', email: 'user-9@placeholder.local', tier: 'FREE' });
+  seedAccount(db, { id: 9, userId: 'user-9', email: 'user-9@example.invalid', tier: 'FREE' });
 }
 
 const cookieOf = (token: string): string => `rajahinta_session=${token}`;
@@ -68,13 +57,13 @@ interface Setup {
   token9: string;
 }
 
-async function setup(flagOn: boolean): Promise<Setup> {
+async function setup(): Promise<Setup> {
   const { db, d1 } = openMigratedD1();
   seedAccounts(db);
   return {
     db,
     app: alertsApp(),
-    env: flagOn ? alertsEnv(d1) : lockedEnv(d1),
+    env: alertsEnv(d1),
     token7: await issueSessionToken(d1, 7),
     token9: await issueSessionToken(d1, 9),
   };
@@ -108,12 +97,12 @@ async function createAlert(
 }
 
 // ---------------------------------------------------------------------------
-// Guard chain: session → flag (order pinned)
+// Guard chain: session first
 // ---------------------------------------------------------------------------
 
-describe('alerts guard chain — session before flag', () => {
+describe('alerts guard chain — session required', () => {
   it('rejects all four methods without a session with the standard 401 envelope', async () => {
-    const { app, env } = await setup(false); // flag OFF — auth must still win
+    const { app, env } = await setup();
     for (const [method, path] of [
       ['GET', '/api/v1/account/alerts'],
       ['POST', '/api/v1/account/alerts'],
@@ -124,16 +113,6 @@ describe('alerts guard chain — session before flag', () => {
       await expectEnvelope(res, 401, { error: 'SessionRequired' });
     }
   });
-
-  it('rejects an authenticated caller with 403 while PRICE_ALERTS is off', async () => {
-    const { app, env, token7 } = await setup(false);
-    const res = await request(app, env, '/api/v1/account/alerts', {
-      headers: { cookie: cookieOf(token7) },
-    });
-    await expectEnvelope(res, 403, {
-      message: 'Feature "PRICE_ALERTS" is not enabled',
-    });
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -142,7 +121,7 @@ describe('alerts guard chain — session before flag', () => {
 
 describe('POST /api/v1/account/alerts', () => {
   it('creates an active alert bound to the session account and returns it', async () => {
-    const { db, app, env, token7 } = await setup(true);
+    const { db, app, env, token7 } = await setup();
     seedProduct(db, { id: 1 });
 
     const res = await createAlert(app, env, token7, 1, 2499);
@@ -156,21 +135,21 @@ describe('POST /api/v1/account/alerts', () => {
   });
 
   it('accepts the threshold boundary of 1000000 cents (€10,000)', async () => {
-    const { db, app, env, token7 } = await setup(true);
+    const { db, app, env, token7 } = await setup();
     seedProduct(db, { id: 1 });
     const res = await createAlert(app, env, token7, 1, 1_000_000);
     expect(res.status).toBe(201);
   });
 
   it.each([0, -100, 1.5, 1_000_001])('rejects thresholdCents %s with 400', async (threshold) => {
-    const { db, app, env, token7 } = await setup(true);
+    const { db, app, env, token7 } = await setup();
     seedProduct(db, { id: 1 });
     const res = await createAlert(app, env, token7, 1, threshold);
     await expectEnvelope(res, 400, { error: 'ValidationError' });
   });
 
   it('rejects a missing or invalid productId with 400', async () => {
-    const { db, app, env, token7 } = await setup(true);
+    const { db, app, env, token7 } = await setup();
     seedProduct(db, { id: 1 });
     for (const productId of [undefined, 0, -1, 2.5]) {
       const res = await request(app, env, '/api/v1/account/alerts', jsonInit('POST', token7, { productId, thresholdCents: 500 }));
@@ -179,13 +158,13 @@ describe('POST /api/v1/account/alerts', () => {
   });
 
   it('rejects an unknown product with 404', async () => {
-    const { app, env, token7 } = await setup(true);
+    const { app, env, token7 } = await setup();
     const res = await createAlert(app, env, token7, 999_999, 500);
     await expectEnvelope(res, 404, { error: 'ProductNotFound' });
   });
 
   it('rejects a duplicate (account, product) with 409', async () => {
-    const { db, app, env, token7 } = await setup(true);
+    const { db, app, env, token7 } = await setup();
     seedProduct(db, { id: 1 });
     await createAlert(app, env, token7, 1, 1000);
     const again = await createAlert(app, env, token7, 1, 2000);
@@ -193,7 +172,7 @@ describe('POST /api/v1/account/alerts', () => {
   });
 
   it('scopes the uniqueness to the account: another account may watch the same product', async () => {
-    const { db, app, env, token7, token9 } = await setup(true);
+    const { db, app, env, token7, token9 } = await setup();
     seedProduct(db, { id: 1 });
     await createAlert(app, env, token7, 1, 1000);
     const res = await createAlert(app, env, token9, 1, 1000);
@@ -207,7 +186,7 @@ describe('POST /api/v1/account/alerts', () => {
 
 describe('GET /api/v1/account/alerts', () => {
   it('lists only the session account’s own alerts', async () => {
-    const { db, app, env, token7, token9 } = await setup(true);
+    const { db, app, env, token7, token9 } = await setup();
     seedProduct(db, { id: 1 });
     seedProduct(db, { id: 2 });
     await createAlert(app, env, token7, 1, 1000);
@@ -224,7 +203,7 @@ describe('GET /api/v1/account/alerts', () => {
   });
 
   it('returns an empty array for an account without alerts', async () => {
-    const { app, env, token7 } = await setup(true);
+    const { app, env, token7 } = await setup();
     const res = await request(app, env, '/api/v1/account/alerts', {
       headers: { cookie: cookieOf(token7) },
     });
@@ -246,7 +225,7 @@ describe('PATCH /api/v1/account/alerts/:alertId', () => {
   }
 
   it('updates the threshold and keeps the status', async () => {
-    const s = await setup(true);
+    const s = await setup();
     const alert = await seedOwnAlert(s);
     const res = await request(s.app, s.env, `/api/v1/account/alerts/${alert.id}`, jsonInit('PATCH', s.token7, { thresholdCents: 4321 }));
     expect(res.status).toBe(200);
@@ -257,7 +236,7 @@ describe('PATCH /api/v1/account/alerts/:alertId', () => {
   });
 
   it('pauses via status and keeps the threshold', async () => {
-    const s = await setup(true);
+    const s = await setup();
     const alert = await seedOwnAlert(s);
     const res = await request(s.app, s.env, `/api/v1/account/alerts/${alert.id}`, jsonInit('PATCH', s.token7, { status: 'paused' }));
     expect(res.status).toBe(200);
@@ -267,7 +246,7 @@ describe('PATCH /api/v1/account/alerts/:alertId', () => {
   });
 
   it('updates threshold and status together', async () => {
-    const s = await setup(true);
+    const s = await setup();
     const alert = await seedOwnAlert(s);
     const res = await request(s.app, s.env, `/api/v1/account/alerts/${alert.id}`, jsonInit('PATCH', s.token7, { thresholdCents: 500, status: 'active' }));
     expect(res.status).toBe(200);
@@ -277,7 +256,7 @@ describe('PATCH /api/v1/account/alerts/:alertId', () => {
   });
 
   it('rejects an empty patch, an invalid status, and an over-max threshold with 400', async () => {
-    const s = await setup(true);
+    const s = await setup();
     const alert = await seedOwnAlert(s);
     for (const body of [{}, { status: 'retired' }, { thresholdCents: 1_000_001 }]) {
       const res = await request(s.app, s.env, `/api/v1/account/alerts/${alert.id}`, jsonInit('PATCH', s.token7, body));
@@ -286,7 +265,7 @@ describe('PATCH /api/v1/account/alerts/:alertId', () => {
   });
 
   it('reports a foreign alert as 404 and leaves it untouched', async () => {
-    const s = await setup(true);
+    const s = await setup();
     const alert = await seedOwnAlert(s);
     const res = await request(s.app, s.env, `/api/v1/account/alerts/${alert.id}`, jsonInit('PATCH', s.token9, { thresholdCents: 1 }));
     await expectEnvelope(res, 404, { error: 'AlertNotFound' });
@@ -300,13 +279,13 @@ describe('PATCH /api/v1/account/alerts/:alertId', () => {
   });
 
   it('reports an absent alert id as 404', async () => {
-    const s = await setup(true);
+    const s = await setup();
     const res = await request(s.app, s.env, '/api/v1/account/alerts/999999', jsonInit('PATCH', s.token7, { status: 'paused' }));
     await expectEnvelope(res, 404, { error: 'AlertNotFound' });
   });
 
   it('rejects a non-numeric alert id with the ParseIntPipe 400', async () => {
-    const s = await setup(true);
+    const s = await setup();
     const res = await request(s.app, s.env, '/api/v1/account/alerts/abc', jsonInit('PATCH', s.token7, { status: 'paused' }));
     await expectEnvelope(res, 400, {
       message: 'Validation failed (numeric string is expected)',
@@ -320,7 +299,7 @@ describe('PATCH /api/v1/account/alerts/:alertId', () => {
 
 describe('DELETE /api/v1/account/alerts/:alertId', () => {
   it('removes the owned alert; a repeat reports 404', async () => {
-    const s = await setup(true);
+    const s = await setup();
     seedProduct(s.db, { id: 1 });
     const created = await createAlert(s.app, s.env, s.token7, 1, 1000);
     const { id } = (await created.json()) as AlertJson;
@@ -338,7 +317,7 @@ describe('DELETE /api/v1/account/alerts/:alertId', () => {
   });
 
   it('reports a foreign alert as 404 and leaves it for its owner', async () => {
-    const s = await setup(true);
+    const s = await setup();
     seedProduct(s.db, { id: 1 });
     const created = await createAlert(s.app, s.env, s.token7, 1, 1000);
     const { id } = (await created.json()) as AlertJson;
@@ -359,7 +338,7 @@ describe('DELETE /api/v1/account/alerts/:alertId', () => {
 
 describe('alerts rate limit (per authenticated account)', () => {
   it('admits 60 requests per minute per account, 429s the 61st, and leaves another account unaffected', async () => {
-    const s = await setup(true);
+    const s = await setup();
     for (let i = 0; i < 60; i++) {
       const res = await request(s.app, s.env, '/api/v1/account/alerts', {
         headers: { cookie: cookieOf(s.token7) },

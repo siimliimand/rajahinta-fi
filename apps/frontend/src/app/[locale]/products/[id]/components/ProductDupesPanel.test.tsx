@@ -4,13 +4,11 @@
  *
  * Renders the REAL async server component to an HTML string the way
  * Next's RSC runtime would (only Next server plumbing is mocked — the
- * page.ssr.test.tsx precedent), pinning the R9/R13 contract:
+ * page.ssr.test.tsx precedent), pinning the R9 contract:
  *
- *   1. Flag off → renders nothing, fires no dupes request.
- *   2. Flag on, dupes fetch fails (403 — flag flipped server-side) →
- *      renders nothing.
- *   3. Flag on, empty curated list → renders nothing (no empty shell).
- *   4. Flag on + curated links → every row shows the WHY (producer key,
+ *   1. Dupes fetch fails (403) → renders nothing.
+ *   2. Empty curated list → renders nothing (no empty shell).
+ *   3. Curated links → every row shows the WHY (producer key,
  *      manufacturer) and the source link is a DIRECT external anchor
  *      with the app's outbound-link treatment (new tab,
  *      nofollow/noopener — no offer id exists to route through the
@@ -26,7 +24,7 @@ import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductDupesPanel from './ProductDupesPanel';
 import { ApiFetchError, request } from '@/lib/api';
-import type { ApiError, FeatureFlagsResponse } from '@/lib/types';
+import type { ApiError } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Mocked Next server plumbing — next-intl/server resolved straight from the
@@ -78,35 +76,15 @@ vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
-    getServerFeatureFlags: vi.fn(),
     request: vi.fn(),
   };
 });
 
-import { getServerFeatureFlags } from '@/lib/api';
-const mockedGetServerFeatureFlags = vi.mocked(getServerFeatureFlags);
 const mockedRequest = vi.mocked(request);
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
-
-/** Flags payload with every known flag on and the dupe flag ABSENT. */
-function flagsWith(
-  producerDupeFinder: boolean | undefined,
-): FeatureFlagsResponse {
-  return {
-    flags: {
-      HISTORICAL_PRICE_INTELLIGENCE: false,
-      BASKET_OPTIMIZATION: false,
-      ADVANCED_FEATURES: false,
-      UNIT_PRICE_EUR_PER_GRAM: false,
-      ...(producerDupeFinder === undefined
-        ? {}
-        : { PRODUCER_DUPE_FINDER: producerDupeFinder }),
-    },
-  };
-}
 
 function dupe(overrides: Partial<{
   siblingProductId: number;
@@ -148,27 +126,12 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('ProductDupesPanel gating (R13, server-resolved)', () => {
-  it('flag off → renders nothing and never fetches', async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(undefined));
-
-    expect(await renderPanel()).toBe('');
-    expect(mockedRequest).not.toHaveBeenCalled();
-  });
-
-  it('flag explicitly false → renders nothing', async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(false));
-
-    expect(await renderPanel()).toBe('');
-    expect(mockedRequest).not.toHaveBeenCalled();
-  });
-
-  it('flag on but dupes fetch 403s (flag flipped mid-revalidate) → renders nothing', async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(true));
+describe('ProductDupesPanel degradation', () => {
+  it('dupes fetch 403s (backend rejects) → renders nothing', async () => {
     mockedRequest.mockRejectedValue(
       new ApiFetchError(
         403,
-        apiError(403, 'Feature flag PRODUCER_DUPE_FINDER is disabled'),
+        apiError(403, 'Forbidden'),
         'req-1',
       ),
     );
@@ -176,8 +139,7 @@ describe('ProductDupesPanel gating (R13, server-resolved)', () => {
     expect(await renderPanel()).toBe('');
   });
 
-  it('flag on, empty curated list → renders nothing (no empty shell)', async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(true));
+  it('empty curated list → renders nothing (no empty shell)', async () => {
     mockedRequest.mockResolvedValue({ dupes: [] });
 
     expect(await renderPanel()).toBe('');
@@ -188,7 +150,6 @@ describe('ProductDupesPanel evidence rendering (R9)', () => {
   let html = '';
 
   beforeEach(async () => {
-    mockedGetServerFeatureFlags.mockResolvedValue(flagsWith(true));
     mockedRequest.mockResolvedValue({
       dupes: [
         dupe(),

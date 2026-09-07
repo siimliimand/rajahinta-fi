@@ -75,7 +75,7 @@ export interface NeutralSortInput {
  * placement data into the sorting function at the call site. If this line
  * ever compiles without error, the neutrality enforcement has been broken.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 export type _NeutralityTypeCheck = NeutralSortInput extends { paidBoost: number }
   ? never
   : true;

@@ -207,13 +207,11 @@ export default async function ProductPage({ params }: ProductPageProps) {
         )}
       </section>
 
-      {/* ── Producer dupe panel — gated server-side on the
-          PRODUCER_DUPE_FINDER flag + curated-link existence; absent
-          from the HTML otherwise (design R9/R13) ── */}
+      {/* ── Producer dupe panel — absent from the HTML when no curated
+          links exist (design R9) ── */}
       <ProductDupesPanel productId={productId} />
 
-      {/* ── Price-alert action — gated client-side on the bootstrapped
-          PRICE_ALERTS flag; renders nothing while the flag is off ── */}
+      {/* ── Price-alert action ── */}
       <ProductAlertAction productId={productId} />
 
       <p className="text-xs text-gray-400">{t('landingNote')}</p>

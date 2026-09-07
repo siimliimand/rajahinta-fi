@@ -25,18 +25,20 @@ export type EntitlementTier = 'FREE' | 'PREMIUM' | 'PROFESSIONAL';
 /**
  * The authenticated account for a request.
  *
- * `verified` reflects the email-verification groundwork (task 2.4): an
- * anonymous account carries a placeholder email and its data is disposable
- * by design; a verified email on the account row marks it as protected.
+ * `verified` reflects email-verification state (change email-password-auth,
+ * task 2.4): the account row's `email_verified_at` is set only by the
+ * emailed single-use token flow, and a verified email protects the account
+ * row. Sessions exist only for accounts created through register/login —
+ * no anonymous identity is minted anywhere.
  */
 export interface AuthenticatedAccount {
   /** Numeric account row id — links sessions, baskets, and scenarios. */
   readonly accountId: number;
-  /** Stable external identifier (server-generated for anonymous sessions). */
+  /** Stable external identifier (server-generated at registration). */
   readonly userId: string;
   /** Tier from the account row — EntitlementService resolves from this. */
   readonly tier: EntitlementTier;
-  /** Whether the account's email column holds a verified (non-placeholder) address. */
+  /** Whether the account's email is verified (`email_verified_at` IS NOT NULL). */
   readonly verified: boolean;
 }
 

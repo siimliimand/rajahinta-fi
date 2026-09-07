@@ -1,33 +1,44 @@
 'use client';
 
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Link } from '@/i18n/navigation';
-import { ensureSession, request, getCalculationResult } from '../../../lib/api';
+import { Link, useRouter } from '@/i18n/navigation';
+import {
+  ApiFetchError,
+  ensureSession,
+  request,
+  getCalculationResult,
+  requestVerificationEmail,
+} from '@/lib/api';
+import { Badge } from '@/components/ui';
 import type { CalculatorResult, SessionStatus } from '@/lib/types';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import SavedScenariosSection from './components/SavedScenariosSection';
 import ReportExportActions from '../calculator/components/ReportExportActions';
 
 /**
  * Account overview page.
  *
- * Phase 1: shows the current session state and a list of account features.
- * The anonymous session is issued server-side on the first account-touch
- * (the ensureSession probe); the token lives in an httpOnly cookie the page
- * never reads. Anonymous-only design — no email or personal data collection.
+ * Shows the signed-in account (server-derived identity from
+ * `GET /account/me`) and the account features. There is no signed-out
+ * render: an account-scoped 401 redirects to `/login` (design D8 — the
+ * anonymous auto-mint no longer exists). The email-verification state is
+ * a status badge, never a lockout (USER-GUIDE); an unverified account can
+ * re-send the verification email here.
  *
  * @module AccountPage
  */
 export default function AccountPage() {
   const t = useTranslations('Account');
   const tCommon = useTranslations('Common');
-  // Bootstrapped flag state; the alerts card is absent (not hidden) when
-  // the flag is off, so the grid shows no dead entry (design R13).
-  const flags = useFeatureFlags();
-  const alertsEnabled = flags.flags.PRICE_ALERTS === true;
+  const router = useRouter();
 
   const [session, setSession] = useState<SessionStatus | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [probeTick, setProbeTick] = useState(0);
 
   // ── Calculation history state ──
   const [historyResults, setHistoryResults] = useState<CalculatorResult[]>([]);
@@ -37,21 +48,42 @@ export default function AccountPage() {
   const [exporting, setExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
 
+  // ── Verification-email resend state ──
+  const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent' | 'failed'>(
+    'idle',
+  );
+
   useEffect(() => {
     let cancelled = false;
-    // ensureSession resolves only once a server-issued session exists (the
-    // request wrapper mints one on the first 401); the userId shown in the
-    // UI is the server-derived identity, never a client-generated value.
+    setLoadFailed(false);
     ensureSession()
       .then((s) => {
         if (!cancelled) setSession(s);
       })
-      .catch(() => {
-        // Backend unreachable — the anonymous panel renders instead.
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        if (err instanceof ApiFetchError && err.status === 401) {
+          // No signed-in session — the anonymous bootstrap is gone, so
+          // the sign-in page is the only way in.
+          router.replace('/login');
+          return;
+        }
+        // Backend unreachable — offer a retry instead of a redirect.
+        setLoadFailed(true);
       });
     return () => {
       cancelled = true;
     };
+  }, [router, probeTick]);
+
+  const handleResend = useCallback(async () => {
+    setResendState('sending');
+    try {
+      await requestVerificationEmail();
+      setResendState('sent');
+    } catch {
+      setResendState('failed');
+    }
   }, []);
 
   // ── Fetch calculation history ──
@@ -127,45 +159,71 @@ export default function AccountPage() {
 
       {/* ── Session status ── */}
       <section className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        {session ? (
-          <>
-            <h2 className="text-lg font-semibold text-gray-900">
-              {t('welcomeBack')}
-            </h2>
-            <p className="mt-2 text-sm text-gray-600">{t('signedInBody')}</p>
-            <div className="mt-4 flex gap-3">
-              <Link
-                href="/account/saved-baskets"
-                className="inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
-              >
-                {t('continue')}
-              </Link>
-              <Link
-                href="/account/create"
-                className="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                {t('createNewSession')}
-              </Link>
-            </div>
-            <p className="mt-3 text-xs text-gray-400">
-              {tCommon('sessionId', { id: session.userId.slice(0, 8) })}
-              &nbsp;&middot;&nbsp; {t('anonymous')}
+        {!session && !loadFailed && (
+          <p data-testid="account-loading" className="text-sm text-gray-500">
+            {t('loading')}
+          </p>
+        )}
+
+        {!session && loadFailed && (
+          <div data-testid="account-load-failed" className="text-sm text-gray-600">
+            <p role="alert" className="font-medium text-error">
+              {t('loadFailed')}
             </p>
-          </>
-        ) : (
+            <button
+              type="button"
+              onClick={() => setProbeTick((n) => n + 1)}
+              className="mt-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              {tCommon('retry')}
+            </button>
+          </div>
+        )}
+
+        {session && (
           <>
             <h2 className="text-lg font-semibold text-gray-900">
-              {t('anonymous')}
+              {t('signedInTitle')}
             </h2>
-            <p className="mt-2 text-sm text-gray-600">{t('anonymousBody')}</p>
-            <div className="mt-4 flex gap-3">
-              <Link
-                href="/account/create"
-                className="inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
-              >
-                {t('createAccount')}
-              </Link>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <p data-testid="account-email" className="text-sm font-medium text-gray-900">
+                {session.email}
+              </p>
+              {session.verified ? (
+                <span data-testid="account-verified-badge">
+                  <Badge tone="verified">{t('verifiedBadge')}</Badge>
+                </span>
+              ) : (
+                <span data-testid="account-unverified-badge">
+                  <Badge tone="neutral">{t('unverifiedBadge')}</Badge>
+                </span>
+              )}
             </div>
+
+            {!session.verified && (
+              <div className="mt-4 rounded-md bg-gray-50 p-4">
+                <p className="text-sm text-gray-600">{t('unverifiedBody')}</p>
+                <button
+                  type="button"
+                  data-testid="account-resend-verification"
+                  onClick={() => void handleResend()}
+                  disabled={resendState === 'sending'}
+                  className="mt-3 inline-flex items-center rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {t('resendVerification')}
+                </button>
+                {resendState === 'sent' && (
+                  <p data-testid="account-resend-sent" className="mt-2 text-xs text-green-600">
+                    {t('resendSent')}
+                  </p>
+                )}
+                {resendState === 'failed' && (
+                  <p data-testid="account-resend-failed" role="alert" className="mt-2 text-xs font-medium text-error">
+                    {t('resendFailed')}
+                  </p>
+                )}
+              </div>
+            )}
           </>
         )}
       </section>
@@ -187,25 +245,22 @@ export default function AccountPage() {
             </span>
           </Link>
 
-          {/* Price alerts — rendered only while the bootstrapped
-              PRICE_ALERTS flag is on */}
-          {alertsEnabled && (
-            <Link
-              href="/account/alerts"
-              data-testid="account-alerts-card"
-              className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-primary-300 hover:shadow-md"
-            >
-              <h3 className="font-medium text-gray-900">
-                {t('priceAlerts')}
-              </h3>
-              <p className="mt-1 text-xs text-gray-500">
-                {t('priceAlertsDesc')}
-              </p>
-              <span className="mt-2 inline-block text-xs font-medium text-primary-600">
-                {t('browsePriceAlerts')}
-              </span>
-            </Link>
-          )}
+          {/* Price alerts */}
+          <Link
+            href="/account/alerts"
+            data-testid="account-alerts-card"
+            className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-primary-300 hover:shadow-md"
+          >
+            <h3 className="font-medium text-gray-900">
+              {t('priceAlerts')}
+            </h3>
+            <p className="mt-1 text-xs text-gray-500">
+              {t('priceAlertsDesc')}
+            </p>
+            <span className="mt-2 inline-block text-xs font-medium text-primary-600">
+              {t('browsePriceAlerts')}
+            </span>
+          </Link>
 
           <Link
             href="/account#calculation-history"
@@ -319,8 +374,6 @@ export default function AccountPage() {
                     >
                       {t('reRun')}
                     </Link>
-                    {/* Report export — hidden and unfetched while the
-                        enable_advanced_features flag is off */}
                     <ReportExportActions
                       recordId={calc.calculationRecordId}
                       compact
@@ -333,7 +386,7 @@ export default function AccountPage() {
         )}
       </section>
 
-      {/* ── Saved scenarios (flag-gated; hidden and unfetched when off) ── */}
+      {/* ── Saved scenarios ── */}
       <SavedScenariosSection />
 
       {/* ── Data retention ── */}

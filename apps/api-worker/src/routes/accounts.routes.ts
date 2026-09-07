@@ -1,17 +1,30 @@
 /**
- * Account + session route ports (task 3.7) — Hono re-host of
- * AccountController and SessionController
- * (packages/application-api/src/accounts/), re-hosted against D1
+ * Account + session route ports (tasks 3.7, 2.2 and 2.3 of
+ * change email-password-auth) — Hono re-host of AccountController and
+ * SessionController (packages/application-api/src/accounts/) against D1
  * (src/adapters/account-store.ts + the task-2.5 session repository).
  *
- * Session lifecycle (design D3): POST /api/v1/account/session issues an
- * anonymous session (identity GENERATED here, never client-supplied) and
- * sets the httpOnly `rajahinta_session` cookie — the token never appears
- * in a response body. Rotate replaces the presented token atomically;
- * DELETE revokes and clears the cookie. Guard composition is the 3.2
- * route-coverage map: issuance is public (rate-limited only), everything
- * else requires a session; scenarios additionally require
- * ADVANCED_FEATURES.
+ * Credential lifecycle (design D2): POST /register creates the account
+ * (email = username, lowercase-canonical, unique in SQL), issues a
+ * session with the same mechanics the deleted anonymous-issuance handler
+ * used, and sends the verification mail best-effort; POST /login answers
+ * unknown-email and wrong-password with ONE uniform 401; GET /me is the
+ * cheap identity read. The anonymous `POST /api/v1/account/session`
+ * issuance route and the self-asserted `POST /api/v1/account/verify-email`
+ * endpoint are DELETED — register/login are the only session-issuing
+ * endpoints, and email ownership is proven by single-use emailed tokens
+ * (src/services/email-token.service.ts), never by client assertions.
+ *
+ * `verified` in every payload below derives from the account row's
+ * `email_verified_at` (tasks 2.2/2.3 note) — the row is the only
+ * verification source; the middleware-level derived flag was removed in
+ * task 2.4.
+ *
+ * Guard composition is the design-D2 table: AUTH rate limit on
+ * register/login/password/reset-request, sessionAuth on me and
+ * verify-email/request, public confirm/reset (the token IS the
+ * capability) — the wiring lives in guards.ts; rotate keeps the Nest
+ * guard order (sessionAuth → DEFAULT rate limit).
  *
  * @module AccountsRoutes
  */
@@ -25,62 +38,30 @@ import { parseIntParam, parseUuidParam } from './support';
 import { z } from 'zod';
 import { USER_CONTEXT_KEY, SESSION_TOKEN_CONTEXT_KEY } from '../auth/authenticated-account';
 import type { AuthenticatedAccount } from '../auth/authenticated-account';
+import { isValidPassword, hashPassword, verifyPassword } from '../auth/password';
 import { D1SessionRepository } from '../../../../packages/data-platform/src/repositories/d1/session.repository';
-import { isValidEmailFormat } from '../../../../packages/application-api/src/accounts/email-verification';
 import {
   D1AccountStore,
-  newAnonymousUserId,
+  EmailAlreadyRegisteredError,
   type AccountRow,
+  type AccountCredentialRow,
   type BasketRow,
   type ScenarioRow,
 } from '../adapters/account-store';
-
-/** Cookie carrying the opaque session token (httpOnly, SameSite=Lax). */
-const SESSION_COOKIE_NAME = 'rajahinta_session';
-
-/** Session lifetime in hours (30 days by default — SessionTokenService parity). */
-const DEFAULT_SESSION_TTL_HOURS = 24 * 30;
-
-/**
- * Cookie builder parity — with one Workers-specific correction (task 5.2):
- * `Secure` is UNCONDITIONAL. Every deployed Workers origin is https-only
- * (workers.dev and custom-domain routes force TLS), so the old
- * NODE_ENV-gated flag would never fire — NODE_ENV is not set in
- * wrangler.jsonc — and staging would ship a non-Secure session cookie.
- * `wrangler dev` (http://localhost) is a trustworthy origin in
- * Chromium/Gecko, so local flows still hold the cookie; Safari does not
- * make that exception (known dev-only caveat).
- *
- * No `Domain` attribute — host-only cookie. The frontend never reads the
- * httpOnly token and the API origin is the cookie's only consumer
- * (same-zone routing, task 5.2), so a cross-subdomain Domain=.rajahinta.fi
- * would broaden the cookie for zero benefit.
- */
-function buildSessionCookie(token: string, expiresAt: Date | string): string {
-  const expires = typeof expiresAt === 'string' ? new Date(expiresAt) : expiresAt;
-  const maxAgeSeconds = Math.max(0, Math.floor((expires.getTime() - Date.now()) / 1000));
-  return (
-    `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; ` +
-    `Max-Age=${maxAgeSeconds}; Expires=${expires.toUTCString()}`
-  );
-}
-
-/** Clear-cookie parity (logout) — same unconditional `Secure`. */
-function buildSessionCookieClear(): string {
-  return (
-    `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; ` +
-    `Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
-  );
-}
-
-/** The configured session TTL — env read with the service's fallbacks. */
-function sessionTtlMs(env: AppEnv['Bindings']): number {
-  const raw = (env as { SESSION_TTL_HOURS?: string }).SESSION_TTL_HOURS;
-  if (raw === undefined || raw.trim() === '') return DEFAULT_SESSION_TTL_HOURS * 3_600_000;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_SESSION_TTL_HOURS * 3_600_000;
-  return parsed * 3_600_000;
-}
+import { EmailTokenService } from '../services/email-token.service';
+import { createLogger } from '../logger';
+import {
+  buildSessionCookie,
+  buildSessionCookieClear,
+  hashToken,
+  issueSession,
+  opaqueToken,
+  readJsonBody,
+  recordSecurityEvent,
+  sessionTtlMs,
+  isValidEmailFormat,
+  LOGIN_TIMING_PARITY_ENVELOPE,
+} from './auth.helpers';
 
 // ---------------------------------------------------------------------------
 // Serialization — application-layer types with Date fields cross as ISO
@@ -111,27 +92,8 @@ function subscriptionOf(account: AccountRow): Record<string, unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// Session routes
+// Session lifecycle routes (rotate + logout — unchanged semantics)
 // ---------------------------------------------------------------------------
-
-async function issue(c: Context<AppEnv>): Promise<Response> {
-  // The identity is GENERATED here — randomUUID, never client input.
-  const userId = newAnonymousUserId();
-  const store = new D1AccountStore(c.env.DB);
-  const account = await store.ensureAccount(userId);
-
-  const token = opaqueToken();
-  const expiresAt = new Date(Date.now() + sessionTtlMs(c.env));
-  const sessions = new D1SessionRepository(c.env.DB);
-  await sessions.create({
-    tokenHash: await hashToken(token),
-    accountId: account.id,
-    expiresAt,
-  });
-
-  c.header('Set-Cookie', buildSessionCookie(token, expiresAt));
-  return c.json({ userId, expiresAt: expiresAt.toISOString(), verified: false }, 201);
-}
 
 async function rotate(c: Context<AppEnv>): Promise<Response> {
   const user = c.get(USER_CONTEXT_KEY) as AuthenticatedAccount;
@@ -148,17 +110,17 @@ async function rotate(c: Context<AppEnv>): Promise<Response> {
   if (session === null) {
     // The guard already validated the token; this covers a concurrent
     // rotation/expiry racing between guard and service.
-    throw new ApiHttpError(401, {
-      statusCode: 401,
-      message: 'Session token is invalid, expired, or revoked.',
-      error: 'InvalidSession',
-    });
+    throw invalidSessionError();
   }
   c.header('Set-Cookie', buildSessionCookie(newToken, session.expiresAt));
+  // `verified` derives from the account row's verification state — the
+  // row is the only source (the middleware-level derived flag was
+  // removed in task 2.4).
+  const account = await new D1AccountStore(c.env.DB).findByUserId(user.userId);
   return c.json({
     userId: user.userId,
     expiresAt: new Date(session.expiresAt).toISOString(),
-    verified: user.verified,
+    verified: account === null ? false : account.emailVerifiedAt !== null,
   });
 }
 
@@ -171,18 +133,297 @@ async function revoke(c: Context<AppEnv>): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
-// Account routes
+// Credential routes (tasks 2.2/2.3 — design D2 table)
 // ---------------------------------------------------------------------------
 
 function requireUser(c: Context<AppEnv>): AuthenticatedAccount {
   return c.get(USER_CONTEXT_KEY) as AuthenticatedAccount;
 }
 
+/** Uniform invalid-session rejection (fail-closed). */
+function invalidSessionError(): ApiHttpError {
+  return new ApiHttpError(401, {
+    statusCode: 401,
+    message: 'Session token is invalid, expired, or revoked.',
+    error: 'InvalidSession',
+  });
+}
+
+function invalidEmailError(): ApiHttpError {
+  return new ApiHttpError(400, {
+    statusCode: 400,
+    message: '"email" is required and must be a valid email address',
+    error: 'InvalidEmail',
+  });
+}
+
+function invalidPasswordError(field = 'password'): ApiHttpError {
+  return new ApiHttpError(400, {
+    statusCode: 400,
+    message: `"${field}" is required and must be 12 to 128 characters long`,
+    error: 'InvalidPassword',
+  });
+}
+
+/** Email-token service wired per request (fresh stores over this env's D1). */
+function emailTokenService(c: Context<AppEnv>): EmailTokenService {
+  return new EmailTokenService({
+    d1: c.env.DB,
+    log: createLogger(c.env.LOG_LEVEL),
+    config: {
+      // Frontend origin the mailed links point at (design D4). Per-env
+      // wrangler var; the fallback is the production custom-domain origin.
+      frontendOrigin:
+        (c.env as { APP_PUBLIC_URL?: string }).APP_PUBLIC_URL ?? 'https://rajahinta.fi',
+      emailWorkerUrl: c.env.EMAIL_WORKER_URL,
+      emailSendSecret: c.env.EMAIL_SEND_SECRET,
+    },
+  });
+}
+
+/**
+ * POST /api/v1/account/register — validate, create the account (the
+ * lower(email) unique index is the duplicate rejection), issue a session
+ * with the deleted issuance handler's mechanics, and send the
+ * verification mail best-effort (design D4: mail failure never fails
+ * registration — the resend flow exists).
+ */
+async function register(c: Context<AppEnv>): Promise<Response> {
+  const body = await readJsonBody(c);
+  const { email, password } = body as { email?: unknown; password?: unknown };
+  if (typeof email !== 'string' || !isValidEmailFormat(email)) {
+    throw invalidEmailError();
+  }
+  // Policy gate BEFORE hashing — the task-2.1 invariant (never run the
+  // 600k-iteration derivation on policy-rejected input).
+  if (typeof password !== 'string' || !isValidPassword(password)) {
+    throw invalidPasswordError();
+  }
+
+  const store = new D1AccountStore(c.env.DB);
+  let account: AccountCredentialRow;
+  try {
+    account = await store.createRegisteredAccount({
+      email,
+      passwordHash: await hashPassword(password),
+    });
+  } catch (err) {
+    if (err instanceof EmailAlreadyRegisteredError) {
+      await recordSecurityEvent(c.env.DB, {
+        entityType: 'account',
+        entityId: email.toLowerCase(),
+        author: 'anonymous',
+        action: 'created',
+        reason: 'registration rejected: email already registered',
+        newValue: { email: email.toLowerCase() },
+      });
+      throw new ApiHttpError(409, {
+        statusCode: 409,
+        message: 'Email already registered.',
+        error: 'EmailAlreadyRegistered',
+      });
+    }
+    throw err;
+  }
+
+  await recordSecurityEvent(c.env.DB, {
+    entityType: 'account',
+    entityId: account.userId,
+    author: account.userId,
+    action: 'created',
+    reason: 'account registered',
+    newValue: { email: account.email, tier: account.tier },
+  });
+
+  const issued = await issueSession(c.env.DB, account.id, sessionTtlMs(c.env));
+  c.header('Set-Cookie', buildSessionCookie(issued.token, issued.expiresAt));
+
+  // Never throws — dispatch/store failures are logged in the service.
+  await emailTokenService(c).sendVerificationEmail(account);
+
+  return c.json(
+    {
+      userId: account.userId,
+      expiresAt: issued.expiresAt.toISOString(),
+      verified: account.emailVerifiedAt !== null,
+    },
+    201,
+  );
+}
+
+/**
+ * POST /api/v1/account/login — ONE uniform 401 for unknown email and
+ * wrong password (no enumeration), with matching work: a missing
+ * credential verifies against the timing-parity envelope so both failure
+ * modes cost the same PBKDF2 derivation. Empty/null stored hashes fail
+ * safe (design D7) without ever authenticating.
+ */
+async function login(c: Context<AppEnv>): Promise<Response> {
+  const body = await readJsonBody(c);
+  const { email, password } = body as { email?: unknown; password?: unknown };
+  if (typeof email !== 'string' || !isValidEmailFormat(email)) {
+    throw invalidEmailError();
+  }
+  if (typeof password !== 'string' || !isValidPassword(password)) {
+    throw invalidPasswordError();
+  }
+
+  const account = await new D1AccountStore(c.env.DB).findCredentialByEmail(email);
+  const storedHash = account?.passwordHash;
+  const passwordOk =
+    storedHash !== undefined && storedHash !== null && storedHash.length > 0
+      ? await verifyPassword(password, storedHash)
+      : await verifyPassword(password, LOGIN_TIMING_PARITY_ENVELOPE);
+
+  if (account === null || !passwordOk) {
+    // Security event (design D6) — outcome in `reason`; the actor is the
+    // resolved userId, 'anonymous' otherwise. Never the password.
+    await recordSecurityEvent(c.env.DB, {
+      entityType: 'account_session',
+      entityId: account?.userId ?? 'unknown',
+      author: account?.userId ?? 'anonymous',
+      action: 'created',
+      reason: 'login failed: invalid credentials',
+      newValue: { email: account?.email ?? email.toLowerCase() },
+    });
+    throw new ApiHttpError(401, {
+      statusCode: 401,
+      message: 'Invalid email or password.',
+      error: 'InvalidCredentials',
+    });
+  }
+
+  await recordSecurityEvent(c.env.DB, {
+    entityType: 'account_session',
+    entityId: account.userId,
+    author: account.userId,
+    action: 'created',
+    reason: 'login succeeded',
+  });
+
+  const issued = await issueSession(c.env.DB, account.id, sessionTtlMs(c.env));
+  c.header('Set-Cookie', buildSessionCookie(issued.token, issued.expiresAt));
+  return c.json({
+    userId: account.userId,
+    expiresAt: issued.expiresAt.toISOString(),
+    verified: account.emailVerifiedAt !== null,
+  });
+}
+
+/** GET /api/v1/account/me — cheap identity read for the frontend. */
+async function me(c: Context<AppEnv>): Promise<Response> {
+  const user = requireUser(c);
+  const account = await new D1AccountStore(c.env.DB).findByUserId(user.userId);
+  if (account === null) {
+    // The session resolved but the account row is gone — fail closed.
+    throw invalidSessionError();
+  }
+  return c.json({
+    userId: account.userId,
+    email: account.email,
+    verified: account.emailVerifiedAt !== null,
+  });
+}
+
+/**
+ * POST /api/v1/account/verify-email/request — re-send the verification
+ * token to the account's address (sessionAuth; the service's dispatch
+ * failures are logged, never surfaced as a failed request).
+ */
+async function verifyEmailRequest(c: Context<AppEnv>): Promise<Response> {
+  const user = requireUser(c);
+  const account = await new D1AccountStore(c.env.DB).findByUserId(user.userId);
+  if (account === null) {
+    throw invalidSessionError();
+  }
+  await emailTokenService(c).sendVerificationEmail(account);
+  return c.json({ accepted: true }, 202);
+}
+
+/**
+ * POST /api/v1/account/verify-email/confirm — public; the token IS the
+ * capability. Single-use consumption stamps `email_verified_at` (24 h
+ * horizon; replay/expiry/wrong-purpose all see the same 401).
+ */
+async function verifyEmailConfirm(c: Context<AppEnv>): Promise<Response> {
+  const body = await readJsonBody(c);
+  if (typeof body.token !== 'string' || body.token.length === 0) {
+    throw new ApiHttpError(400, {
+      statusCode: 400,
+      message: '"token" is required',
+      error: 'InvalidToken',
+    });
+  }
+  const result = await emailTokenService(c).confirmEmailVerification(body.token);
+  if (!result.ok) {
+    throw new ApiHttpError(401, {
+      statusCode: 401,
+      message: 'Verification token is invalid, expired, or already used.',
+      error: 'InvalidToken',
+    });
+  }
+  return c.json({ verified: true, userId: result.userId, email: result.email });
+}
+
+/**
+ * POST /api/v1/account/password/reset-request — ALWAYS 202. Mail goes
+ * out only when the account exists (design D2); the send outcome is
+ * invisible to the caller, so the route cannot leak account existence.
+ */
+async function passwordResetRequest(c: Context<AppEnv>): Promise<Response> {
+  const body = await readJsonBody(c);
+  if (typeof body.email === 'string' && body.email.length > 0) {
+    await emailTokenService(c).sendPasswordResetEmail(body.email.toLowerCase());
+  }
+  return c.json({ accepted: true }, 202);
+}
+
+/**
+ * POST /api/v1/account/password/reset — public; the token IS the
+ * capability. Rehashes the password, revokes ALL of the account's
+ * sessions, and retires its outstanding reset tokens (design D2/D3).
+ */
+async function passwordReset(c: Context<AppEnv>): Promise<Response> {
+  const body = await readJsonBody(c);
+  if (typeof body.token !== 'string' || body.token.length === 0) {
+    throw new ApiHttpError(400, {
+      statusCode: 400,
+      message: '"token" is required',
+      error: 'InvalidToken',
+    });
+  }
+  // Policy gate BEFORE the service (and before hashing — task-2.1
+  // invariant), so a policy-rejected password never burns the token.
+  if (typeof body.newPassword !== 'string' || !isValidPassword(body.newPassword)) {
+    throw invalidPasswordError('newPassword');
+  }
+  const result = await emailTokenService(c).resetPassword(body.token, body.newPassword);
+  if (!result.ok) {
+    // 'invalid_password' is unreachable here (gated above) — the only
+    // observable failure is the uniform token rejection.
+    throw new ApiHttpError(401, {
+      statusCode: 401,
+      message: 'Reset token is invalid, expired, or already used.',
+      error: 'InvalidToken',
+    });
+  }
+  return c.json({ reset: true });
+}
+
+// ---------------------------------------------------------------------------
+// Account routes
+// ---------------------------------------------------------------------------
+
 /** GDPR Article 15/20 data-portability export (DataExportService parity). */
 async function exportData(c: Context<AppEnv>): Promise<Response> {
   const user = requireUser(c);
   const store = new D1AccountStore(c.env.DB);
-  const account = await store.ensureAccount(user.userId);
+  // Mirror /me: the session resolved but the account row is gone — fail
+  // closed. No account is ever minted here.
+  const account = await store.findByUserId(user.userId);
+  if (account === null) {
+    throw invalidSessionError();
+  }
 
   const savedBaskets = (await store.findBaskets(user.userId)).map(toBasketJson);
   const savedScenarios = (await store.findScenarios(user.userId)).map(toScenarioJson);
@@ -234,7 +475,14 @@ async function saveBasket(c: Context<AppEnv>): Promise<Response> {
       error: 'ValidationError',
     });
   }
-  await new D1AccountStore(c.env.DB).createBasket(user.userId, {
+  const store = new D1AccountStore(c.env.DB);
+  // Resolve the session's account (fail closed like /me) — writes are
+  // account-scoped and never mint a row.
+  const account = await store.findByUserId(user.userId);
+  if (account === null) {
+    throw invalidSessionError();
+  }
+  await store.createBasket(account.id, {
     name: body.name,
     items: body.items,
   });
@@ -296,30 +544,12 @@ async function addHistory(c: Context<AppEnv>): Promise<Response> {
 
 async function getSubscription(c: Context<AppEnv>): Promise<Response> {
   const user = requireUser(c);
-  const account = await new D1AccountStore(c.env.DB).ensureAccount(user.userId);
+  // Fail closed like /me — the real account row or a 401, never a mint.
+  const account = await new D1AccountStore(c.env.DB).findByUserId(user.userId);
+  if (account === null) {
+    throw invalidSessionError();
+  }
   return c.json(subscriptionOf(account));
-}
-
-async function verifyEmail(c: Context<AppEnv>): Promise<Response> {
-  const user = requireUser(c);
-  let body: { email?: unknown };
-  try {
-    body = (await c.req.json()) as { email?: unknown };
-  } catch {
-    body = {};
-  }
-  if (typeof body.email !== 'string' || !isValidEmailFormat(body.email)) {
-    throw new ApiHttpError(400, {
-      statusCode: 400,
-      message: '"email" is required and must be a valid email address',
-      error: 'InvalidEmail',
-    });
-  }
-
-  // The verified-email write path: the real D1 UPDATE replaces the
-  // UnboundVerifiedEmailStore's always-throw (task 2.4 / FIX-E wiring).
-  await new D1AccountStore(c.env.DB).setVerifiedEmail(user.userId, body.email);
-  return c.json({ verified: true, email: body.email });
 }
 
 // ---------------------------------------------------------------------------
@@ -409,8 +639,15 @@ async function saveScenario(c: Context<AppEnv>): Promise<Response> {
     throw new ApiHttpError(400, 'Request body must be JSON');
   }
   validateScenarioBody(body as never);
-  const saved = await new D1AccountStore(c.env.DB).upsertScenario(
-    user.userId,
+  const store = new D1AccountStore(c.env.DB);
+  // Resolve the session's account (fail closed like /me) — writes are
+  // account-scoped and never mint a row.
+  const account = await store.findByUserId(user.userId);
+  if (account === null) {
+    throw invalidSessionError();
+  }
+  const saved = await store.upsertScenario(
+    account.id,
     body.name as string,
     body.inputs,
   );
@@ -433,41 +670,29 @@ async function deleteScenario(c: Context<AppEnv>): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
-// Token helpers (SessionTokenService parity, WebCrypto)
-// ---------------------------------------------------------------------------
-
-/** Opaque 256-bit token, base64url — no structure to leak or guess. */
-function opaqueToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return base64UrlEncode(bytes);
-}
-
-function base64UrlEncode(bytes: Uint8Array): string {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-/** SHA-256 hex digest of a token (session-resolver parity). */
-async function hashToken(token: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
-  return [...new Uint8Array(digest)]
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-// ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 
 /** Register account/session/analytics handlers (guards pre-registered). */
 export function registerAccountsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
-  // SessionController — issuance is PUBLIC (rate-limited only; Nest
-  // SessionController has no class guard), rotate is session-guarded
-  // (middleware from registerGuardMiddleware, so the limit composes AFTER
-  // the guard exactly like Nest's SessionAuthGuard → RateLimitGuard order).
-  app.post('/api/v1/account/session', requireRateLimit('DEFAULT'), issue);
+  // Credential routes (tasks 2.2/2.3). Guard wiring is the design-D2
+  // table in guards.ts: AUTH rate limit composes ahead of register,
+  // login, and password/reset-request; sessionAuth ahead of me and
+  // verify-email/request; confirm and password/reset are public (the
+  // token IS the capability). The anonymous POST /api/v1/account/session
+  // issuance route and the self-asserted POST /api/v1/account/verify-email
+  // endpoint are deleted — no anonymous identity is minted anywhere.
+  app.post('/api/v1/account/register', register);
+  app.post('/api/v1/account/login', login);
+  app.get('/api/v1/account/me', me);
+  app.post('/api/v1/account/verify-email/request', verifyEmailRequest);
+  app.post('/api/v1/account/verify-email/confirm', verifyEmailConfirm);
+  app.post('/api/v1/account/password/reset-request', passwordResetRequest);
+  app.post('/api/v1/account/password/reset', passwordReset);
+
+  // SessionController parity — rotate is session-guarded (middleware from
+  // registerGuardMiddleware, so the limit composes AFTER the guard exactly
+  // like Nest's SessionAuthGuard → RateLimitGuard order); DELETE revokes.
   app.on('POST', '/api/v1/account/session/rotate', requireRateLimit('DEFAULT'));
   app.post('/api/v1/account/session/rotate', rotate);
   app.delete('/api/v1/account/session', revoke);
@@ -480,7 +705,6 @@ export function registerAccountsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.get('/api/v1/account/history', getHistory);
   app.post('/api/v1/account/history', addHistory);
   app.get('/api/v1/account/subscription', getSubscription);
-  app.post('/api/v1/account/verify-email', verifyEmail);
   app.get('/api/v1/account/scenarios', listScenarios);
   app.post('/api/v1/account/scenarios', saveScenario);
   app.delete('/api/v1/account/scenarios/:id', deleteScenario);

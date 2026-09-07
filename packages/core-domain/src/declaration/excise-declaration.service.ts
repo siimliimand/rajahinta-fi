@@ -59,9 +59,17 @@ import {
  * resolves under the rules effective on the record's date.
  */
 function getAdvanceNoticeInfo(
-  classification: ClassificationLabel,
+  classification: ClassificationLabel | 'NotPersisted',
   asOf: Date,
 ): DeclarationAdvanceNoticeInfo {
+  // A record without a persisted classification derives NO obligation —
+  // the switch below states statutory facts per label, and guessing one
+  // would fabricate a legal conclusion. `required: false` reads as "no
+  // advance-notice requirement derived from this record", in either era.
+  if (classification === 'NotPersisted') {
+    return { required: false };
+  }
+
   const postReform = asOf.getTime() >= JOINT_LIABILITY_REFORM_FROM.getTime();
 
   if (!postReform) {
@@ -98,6 +106,12 @@ function buildLiabilityNotice(
 ): DeclarationLiabilityNotice | null {
   const asOf = new Date(record.calculationTimestamp);
   if (Number.isNaN(asOf.getTime()) || asOf < JOINT_LIABILITY_REFORM_FROM) {
+    return null;
+  }
+
+  // Unknown classification — no liability flags are fabricated; the caller
+  // treats null the same as a pre-reform record.
+  if (record.classification === 'NotPersisted') {
     return null;
   }
 
@@ -495,6 +509,7 @@ void _exciseServiceSafetyProof; // consumed — prevents TS6133
  * If a write method is added, `ReadonlyInterface<ExciseDeclarationService>`
  * will exclude it, and the assignment will fail because key counts differ.
  */
-const _readonlySurface: ReadonlyInterface<ExciseDeclarationService> =
-  new (ExciseDeclarationService as any)();
+const _readonlySurface: ReadonlyInterface<ExciseDeclarationService> = new (
+  ExciseDeclarationService as unknown as new () => ExciseDeclarationService
+)();
 void _readonlySurface; // consumed — prevents TS6133

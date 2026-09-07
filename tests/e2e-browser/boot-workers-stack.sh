@@ -27,10 +27,8 @@
 # starts `frontend` and polls `/` — so the frontend build runs against a
 # live API.
 #
-# Feature flags (apps/api-worker/src/middleware/feature-flags.ts) resolve
-# from wrangler vars (FF_*); none are set here — flags OFF, the same state
-# a clean CI runner gets. To exercise a flag-gated surface locally, add
-# e.g. --var FF_BASKET_OPTIMIZATION:true to the api command.
+# The feature-flag and launch-gate systems are removed (2026-09-07): every
+# feature is live; no FF_* vars exist.
 #
 # Usage:
 #   bash tests/e2e-browser/boot-workers-stack.sh api
@@ -76,10 +74,9 @@ case "${1:-}" in
     (cd "$ROOT" && pnpm --filter @rajahinta/api-worker exec wrangler d1 execute DB \
       --local --file "$ROOT/tests/e2e-browser/seed-journeys.d1.sql" -y)
 
-    echo "==> [workers-e2e] Starting API Worker on :$API_PORT (gates open, flags off)…"
+    echo "==> [workers-e2e] Starting API Worker on :$API_PORT…"
     cd "$ROOT/apps/api-worker"
     exec pnpm exec wrangler dev --port "$API_PORT" \
-      --var "LAUNCH_GATES_OVERRIDE:true" \
       --var "CORS_ORIGIN:${FRONTEND_ORIGIN}"
     ;;
 

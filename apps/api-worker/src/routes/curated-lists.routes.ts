@@ -4,8 +4,8 @@
  * curated-lists.
  *
  * Guard/rate-limit composition (route-scoped, product-dupes precedent):
- *   GET /api/v1/lists            FeatureFlag(CURATED_LISTS) → RateLimit(DEFAULT) → handler
- *   GET /api/v1/lists/:slug      FeatureFlag(CURATED_LISTS) → RateLimit(DEFAULT) → handler
+ *   GET /api/v1/lists            RateLimit(DEFAULT) → handler
+ *   GET /api/v1/lists/:slug      RateLimit(DEFAULT) → handler
  *
  * LIST REGISTRY (R10 "of a listed slug"): the set of public lists —
  * slug, display title, and curation criteria — is this module's static
@@ -37,8 +37,8 @@
  * the public payload.
  *
  * The catalog endpoint serves the registry lists that currently have
- * at least one PUBLISHED entry — the sitemap's slug source (flag off →
- * 403 → zero list URLs) and the future lists-index feed.
+ * at least one PUBLISHED entry — the sitemap's slug source and the
+ * future lists-index feed.
  *
  * Rate-limit profile: DEFAULT — the public unauthenticated read
  * profile (60/min, product-dupes precedent).
@@ -50,7 +50,6 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
-import { FeatureFlag, requireFeatureFlag } from '../middleware/feature-flags';
 import { requireRateLimit } from '../middleware/rate-limit';
 import {
   D1CuratedEntriesRepository,
@@ -180,17 +179,15 @@ async function getListCatalog(c: Context<AppEnv>): Promise<Response> {
   }
 }
 
-/** Register both list reads behind their flag gate + limiter. */
+/** Register both list reads behind their limiter. */
 export function registerCuratedListsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.get(
     '/api/v1/lists',
-    requireFeatureFlag(FeatureFlag.CURATED_LISTS),
     requireRateLimit('DEFAULT'),
     getListCatalog,
   );
   app.get(
     '/api/v1/lists/:slug',
-    requireFeatureFlag(FeatureFlag.CURATED_LISTS),
     requireRateLimit('DEFAULT'),
     getListBySlug,
   );

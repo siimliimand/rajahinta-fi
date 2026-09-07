@@ -7,7 +7,7 @@
  * - packages/application-api/src/reports/__tests__/reports.controller.test.ts
  *   (format vocabulary, JSON mirror, CSV/HTML shapes, 404),
  * - packages/application-api/src/merchants/__tests__/merchant-reliability.controller.test.ts
- *   (factual score list, flag gate).
+ *   (factual score list, age gate).
  *
  * @module HistoricalReportsMerchantsRoutesTest
  */
@@ -17,7 +17,6 @@ import {
   buildApp,
   expectEnvelope,
   issueSessionToken,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -120,14 +119,9 @@ function seedSummary(
 // ---------------------------------------------------------------------------
 
 describe('GET /api/v1/products/:id/price-history', () => {
-  it('is flag-gated and age-gated (guard order: flag then age)', async () => {
+  it('is age-gated', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
-
-    const off = await request(app, lockedEnv(d1), '/api/v1/products/1/price-history?from=2026-01-01&to=2026-01-31');
-    await expectEnvelope(off, 403, {
-      message: 'Feature "HISTORICAL_PRICE_INTELLIGENCE" is not enabled',
-    });
 
     const noAge = await request(
       app,
@@ -319,36 +313,33 @@ describe('GET /api/v1/reports/:recordId', () => {
     seedCalculationRecord(db, { id: 5, productMasterId: 1, totalCents: 873 });
   }
 
-  it('gates: flag off → 403; age gate → 403; anonymous/FREE → 403 InsufficientEntitlement', async () => {
+  it('gates: age gate → 403; anonymous/FREE sessions are served (entitlements all FREE)', async () => {
     const { db, d1 } = openMigratedD1();
     seedReportFixture(db);
     const app = buildApp();
-
-    const flagOff = await request(app, lockedEnv(d1), '/api/v1/reports/5');
-    await expectEnvelope(flagOff, 403, {
-      message: 'Feature "ADVANCED_FEATURES" is not enabled',
-    });
 
     const noAge = await request(app, permissiveEnv(d1), '/api/v1/reports/5');
     await expectEnvelope(noAge, 403, {
       message: expect.stringMatching(/age confirmation required/i),
     });
 
+    // The entitlement check (calculation:export) still runs, but every
+    // feature is FREE tier today — an anonymous caller with the age
+    // confirmation reaches the handler.
     const anonymous = await request(app, permissiveEnv(d1), '/api/v1/reports/5', {
       headers: AGE,
     });
-    await expectEnvelope(anonymous, 403, {
-      error: 'InsufficientEntitlement',
-      requiredTier: 'calculation:export',
-      currentTier: 'FREE',
-    });
+    expect(anonymous.status).toBe(200);
+    const anonymousBody = (await anonymous.json()) as Record<string, any>;
+    expect(anonymousBody.format).toBe('json');
+    expect(anonymousBody.recordId).toBe(5);
 
     seedAccount(db, { id: 7, userId: 'user-7', email: 'f@example.invalid', tier: 'FREE' });
     const freeToken = await issueSessionToken(d1, 7);
     const free = await request(app, permissiveEnv(d1), '/api/v1/reports/5', {
       headers: { ...AGE, cookie: `rajahinta_session=${freeToken}` },
     });
-    await expectEnvelope(free, 403, { error: 'InsufficientEntitlement' });
+    expect(free.status).toBe(200);
   });
 
   it('serves a lossless JSON report for a PREMIUM session', async () => {
@@ -450,23 +441,13 @@ describe('GET /api/v1/reports/:recordId', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET /api/v1/merchants/reliability', () => {
-  it('carries the PRICE_DATA gate, age gate, and ADVANCED_FEATURES flag', async () => {
+  it('carries the age gate', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
 
-    const closed = await request(app, lockedEnv(d1), '/api/v1/merchants/reliability');
-    await expectEnvelope(closed, 403, {
-      message: expect.stringMatching(/Price data is not yet publicly available/),
-    });
-
-    const flagOff = await request(
-      app,
-      permissiveEnv(d1, { FF_ADVANCED_FEATURES: undefined }),
-      '/api/v1/merchants/reliability',
-      { headers: AGE },
-    );
-    await expectEnvelope(flagOff, 403, {
-      message: 'Feature "ADVANCED_FEATURES" is not enabled',
+    const noAge = await request(app, permissiveEnv(d1), '/api/v1/merchants/reliability');
+    await expectEnvelope(noAge, 403, {
+      message: expect.stringMatching(/age confirmation required/i),
     });
   });
 

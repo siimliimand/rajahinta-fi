@@ -43,14 +43,14 @@ export interface Entitlement {
  * Extend this union as new premium features are added.
  */
 export type FeatureId =
-  | 'product:browse'           // FREE  — browse products and search
-  | 'calculation:basic'        // FREE  — run a landed-cost calculation
-  | 'calculation:detail'       // PREMIUM — detailed breakdown with per-line confidence
-  | 'calculation:history'      // PREMIUM — access to past calculation records
-  | 'calculation:export'       // PREMIUM — CSV/PDF export of calculations
-  | 'declaration:summary'      // PREMIUM — excise declaration assistant
-  | 'api:batch'                // PROFESSIONAL — batch calculation API
-  | 'api:access';              // PROFESSIONAL — API key-based access
+  | 'product:browse'           // browse products and search
+  | 'calculation:basic'        // run a landed-cost calculation
+  | 'calculation:detail'       // detailed breakdown with per-line confidence
+  | 'calculation:history'      // access to past calculation records
+  | 'calculation:export'       // CSV/PDF export of calculations
+  | 'declaration:summary'      // excise declaration assistant
+  | 'api:batch'                // batch calculation API
+  | 'api:access';              // API key-based access
 
 // ---------------------------------------------------------------------------
 // Tier-to-feature mapping
@@ -58,16 +58,20 @@ export type FeatureId =
 
 /**
  * Minimum tier required for each feature.
+ *
+ * Current policy: every feature is FREE — the tier machinery is kept intact
+ * as the future paywall seam, but nothing requires more than FREE today.
+ * Reintroduce paid tiers by raising individual entries here.
  */
 export const FEATURE_TIER_MAP: Record<FeatureId, EntitlementTier> = {
   'product:browse': 'FREE',
   'calculation:basic': 'FREE',
-  'calculation:detail': 'PREMIUM',
-  'calculation:history': 'PREMIUM',
-  'calculation:export': 'PREMIUM',
-  'declaration:summary': 'PREMIUM',
-  'api:batch': 'PROFESSIONAL',
-  'api:access': 'PROFESSIONAL',
+  'calculation:detail': 'FREE',
+  'calculation:history': 'FREE',
+  'calculation:export': 'FREE',
+  'declaration:summary': 'FREE',
+  'api:batch': 'FREE',
+  'api:access': 'FREE',
 };
 
 // ---------------------------------------------------------------------------

@@ -27,10 +27,6 @@
  *   as /api/v1/calculations/excise (RateLimiterDO windows are isolated per
  *   (client DO instance, profile), so a shared 10-admit budget across the
  *   two routes proves the profile IS CALCULATOR).
- * - "integration: flag-off 403" — 8.2 covers lockedEnv; ADDED here as the
- *   composed, data-present version (producer-dupes pattern): flag ON
- *   serves the SAME scenario the OFF case 403s, on the same composition —
- *   the flag is the only variable (rollback semantics).
  * - "no scenario rows written (schema unchanged)" — MISSING entirely;
  *   ADDED here in both layers:
  *   (a) static: the committed migration set and the drizzle schema define
@@ -45,7 +41,7 @@
  *       sqlite_master (schema unchanged) plus every row of every user
  *       table (nothing written; spec R11: "nothing about a what-if run is
  *       persisted", stored rules never mutated) — is byte-identical across
- *       success/validation/flag-off traffic.
+ *       success/validation traffic.
  * - "vocabulary lint on the widget copy" — no precedent exists in this
  *   suite for invoking frontend content checks (the content-lint.service
  *   imports elsewhere here are the data-acquisition merchant-content
@@ -68,7 +64,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   createApp,
   expectEnvelope,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -141,9 +136,9 @@ function jsonInit(body: unknown): RequestInit {
   };
 }
 
-/** Flag-on env over the given D1 (permissive base leaves the flag unset). */
+/** Env over the given D1 (permissive base). */
 function whatIfEnv(d1: D1DatabaseLike): Env {
-  return permissiveEnv(d1, { FF_EXCISE_WHAT_IF: 'true' });
+  return permissiveEnv(d1);
 }
 
 /** Minimal response shape — exact-field pins live in the 8.2 route suite. */
@@ -171,7 +166,7 @@ function expectWhatIfDisclaimer(body: WhatIfJson): void {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Production wiring end-to-end — createApp() as-is, flag the only variable
+// 1. Production wiring end-to-end — createApp() as-is
 // ---------------------------------------------------------------------------
 
 describe('POST /api/v1/what-if/excise — production composition (task 8.4)', () => {
@@ -208,29 +203,6 @@ describe('POST /api/v1/what-if/excise — production composition (task 8.4)', ()
     expect(decodeWhatIfShareToken(body.shareToken)).toEqual(SCENARIO);
   });
 
-  it('flag-off 403 composed: ON serves the same scenario, OFF and fully-locked 403 on the same data', async () => {
-    seedBeerRule(db);
-
-    // Flag ON: the scenario serves (non-vacuity — data exists that the
-    // OFF cases must refuse to serve).
-    const on = await request(app, whatIfEnv(d1), WHAT_IF_PATH, jsonInit(SCENARIO));
-    expect(on.status).toBe(200);
-
-    // Flag OFF with all other gates open (the rollback semantics): the
-    // SAME request gets the feature-disabled envelope.
-    const off = await request(app, permissiveEnv(d1), WHAT_IF_PATH, jsonInit(SCENARIO));
-    await expectEnvelope(off, 403, {
-      message: 'Feature "EXCISE_WHAT_IF" is not enabled',
-      error: 'Forbidden',
-    });
-
-    // Fully locked env (the 8.2 route-unit case) — same verdict composed.
-    const locked = await request(app, lockedEnv(d1), WHAT_IF_PATH, jsonInit(SCENARIO));
-    await expectEnvelope(locked, 403, {
-      message: 'Feature "EXCISE_WHAT_IF" is not enabled',
-      error: 'Forbidden',
-    });
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -527,7 +499,7 @@ function d1Digest(db: DatabaseSync): string {
 }
 
 describe('what-if traffic leaves the migrated D1 byte-identical (task 8.4)', () => {
-  it('fires success, validation, and flag-off traffic — the full-database digest does not move', async () => {
+  it('fires success and validation traffic — the full-database digest does not move', async () => {
     const opened = openMigratedD1();
     const { db, d1 } = opened;
     try {
@@ -558,12 +530,6 @@ describe('what-if traffic leaves the migrated D1 byte-identical (task 8.4)', () 
         jsonInit({ hypotheticalRate: -1, products: [] }),
       );
       expect(bad.status).toBe(400);
-
-      // 403 — the flag-off gate, fresh env over the SAME D1.
-      const off = await request(app, permissiveEnv(d1), WHAT_IF_PATH, jsonInit(SCENARIO));
-      await expectEnvelope(off, 403, {
-        message: 'Feature "EXCISE_WHAT_IF" is not enabled',
-      });
 
       // Nothing moved — no scenario row, no tax-rule mutation, no new table.
       expect(d1Digest(db)).toBe(before);

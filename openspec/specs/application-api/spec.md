@@ -129,7 +129,7 @@ The backend composition root SHALL inject the concrete calculator port implement
 
 ### Requirement: Durable audit trail
 
-Audit events SHALL persist to an append-only PostgreSQL table. In-memory audit storage SHALL exist only in test environments.
+Audit events SHALL persist to an append-only D1 table. In-memory audit storage SHALL exist only in test environments.
 
 #### Scenario: Audit survives restart
 
@@ -165,11 +165,11 @@ Values returned by PostgreSQL `numeric` columns SHALL be coerced to numbers once
 
 ### Requirement: Calculation record retention
 
-Calculation records SHALL be partitioned by month, and partitions covering anonymous-session records older than the configured retention window SHALL be pruned by a scheduled job.
+Calculation records SHALL be partitioned by month, and partitions covering records not attached to an account that are older than the configured retention window SHALL be pruned by a scheduled job.
 
-#### Scenario: Anonymous records pruned
+#### Scenario: Unattached records pruned
 
-- **WHEN** the retention job runs and an anonymous-session partition is older than the retention window
+- **WHEN** the retention job runs and a partition holding records not attached to an account is older than the retention window
 - **THEN** the partition SHALL be dropped and account-scoped records SHALL be unaffected
 
 ### Requirement: Workers runtime API hosting

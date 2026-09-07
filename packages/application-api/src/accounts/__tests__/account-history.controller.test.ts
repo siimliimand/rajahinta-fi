@@ -24,7 +24,7 @@ const USER_ID = 'history-test-user';
 
 /** AuthenticatedAccount the SessionAuthGuard would attach for a userId. */
 function user(userId: string): AuthenticatedAccount {
-  return { accountId: 1, userId, tier: 'FREE', verified: false };
+  return { accountId: 1, userId, tier: 'FREE' };
 }
 
 // ---------------------------------------------------------------------------

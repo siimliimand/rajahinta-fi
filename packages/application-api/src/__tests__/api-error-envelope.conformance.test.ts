@@ -41,7 +41,7 @@ import {
   createSessionHarness,
   requestWithSessionCookie,
   executionContext,
-  issueSessionViaController,
+  issueSessionForNewAccount,
   type HarnessRequest,
 } from '../accounts/__tests__/session-test-harness';
 
@@ -290,7 +290,7 @@ describe('ApiErrorResponse conformance — real error paths', () => {
 
   it('AccountController missing-basket 404 keeps its domain context in the envelope', async () => {
     const harness = createSessionHarness();
-    const { token } = await issueSessionViaController(harness);
+    const { token } = await issueSessionForNewAccount(harness);
     const request: HarnessRequest = requestWithSessionCookie(token);
     await harness.guard.canActivate(executionContext(request));
 

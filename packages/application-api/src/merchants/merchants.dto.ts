@@ -52,7 +52,7 @@ export interface MerchantReliabilityScoreDto {
 
 /**
  * Merchant identifier → score. Embedded in product-detail responses when
- * the ADVANCED_FEATURES flag is enabled; absent otherwise.
+ * the offers' merchants can be scored; absent otherwise.
  */
 export type MerchantReliabilityMap = Readonly<
   Record<string, MerchantReliabilityScoreDto>

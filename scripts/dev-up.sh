@@ -36,22 +36,6 @@ stop_stack() {
   echo "Stopped. (DB volume is kept — docker compose down --volumes to wipe.)"
 }
 
-# Loud, unmissable banner for running ungated. Fires on every dev-up because
-# the backend below is started with the override active (default true).
-warn_gates_disabled() {
-  cat >&2 <<'WARN'
-
-  =====================================================================
-   !! WARNING — LAUNCH GATES ARE DISABLED (LAUNCH_GATES_OVERRIDE=true)
-  =====================================================================
-   All launch gates (legal opinion, tax source mapping, correction
-   mechanism) are FORCED OPEN. This dev stack is NOT gated: do not use
-   it for compliance verification or treat it as production behaviour.
-  =====================================================================
-
-WARN
-}
-
 if [ "${1:-}" = "--down" ]; then
   stop_stack
   exit 0
@@ -108,18 +92,11 @@ if [ "${SKIP_BUILD:-0}" != "1" ]; then
   (cd "$ROOT" && pnpm build)
 fi
 
-# --- 5. Backend (NestJS; gates open so calculator is usable) ----------------
-# Default LAUNCH_GATES_OVERRIDE=true keeps the dev calculator usable without
-# the legal/tax/correction confirmations; an explicit =false opts into the
-# real (closed) gate state. The warning mirrors whatever value is effective.
-GATES_OVERRIDE="${LAUNCH_GATES_OVERRIDE:-true}"
-if [ "$GATES_OVERRIDE" = "true" ]; then
-  warn_gates_disabled
-fi
+# --- 5. Backend (NestJS) ------------------------------------------------------
 echo "==> Starting backend on :$BACKEND_PORT…"
 (
   cd "$ROOT"
-  setsid env DATABASE_URL="$DB_URL" LAUNCH_GATES_OVERRIDE="$GATES_OVERRIDE" PORT="$BACKEND_PORT" \
+  setsid env DATABASE_URL="$DB_URL" PORT="$BACKEND_PORT" \
     pnpm --filter @rajahinta/backend dev >"$LOG_DIR/backend.log" 2>&1 &
   echo $! > "$LOG_DIR/backend.pid"
 )
@@ -167,8 +144,6 @@ cat <<EOF
    Frontend   http://localhost:$FRONTEND_PORT   (confirm the age gate to enter)
    Backend    http://localhost:$BACKEND_PORT   (Swagger: /api/docs)
    Postgres   localhost:5432 (rajahinta/rajahinta)
-
-   ⚠  Launch gates are DISABLED on this stack (LAUNCH_GATES_OVERRIDE=true).
 
    Logs       $LOG_DIR/{backend,frontend}.log
    Stop       bash scripts/dev-up.sh --down

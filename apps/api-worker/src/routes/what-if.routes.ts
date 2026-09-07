@@ -5,7 +5,7 @@
  *
  * Guard/rate-limit composition (event-calc/trip precedent):
  *   POST /api/v1/what-if/excise
- *     FeatureFlag(EXCISE_WHAT_IF) → RateLimit(CALCULATOR) → handler
+ *     RateLimit(CALCULATOR) → handler
  * ANONYMOUS by spec: no session guard — the endpoint requires no
  * account and stores no personal data.
  *
@@ -57,7 +57,6 @@ import type { Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
-import { FeatureFlag, requireFeatureFlag } from '../middleware/feature-flags';
 import { requireRateLimit } from '../middleware/rate-limit';
 import { parseDto } from './support';
 import { AlcoholExciseService, TAX_TYPES, normaliseCategory } from '../adapters/core-domain-bridge';
@@ -413,11 +412,10 @@ async function calculateWhatIfExciseRoute(c: Context<AppEnv>): Promise<Response>
   return c.json(body);
 }
 
-/** Register the what-if handler behind its flag gate + limiter (anonymous). */
+/** Register the what-if handler behind its limiter (anonymous). */
 export function registerWhatIfRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.post(
     '/api/v1/what-if/excise',
-    requireFeatureFlag(FeatureFlag.EXCISE_WHAT_IF),
     requireRateLimit('CALCULATOR'),
     calculateWhatIfExciseRoute,
   );

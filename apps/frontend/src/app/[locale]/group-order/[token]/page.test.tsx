@@ -3,8 +3,7 @@
  * product-roadmap-phases-1-4).
  *
  * Pins the committed 9.3 contract wiring and the R12 states:
- *   1. Flag off (absent = off) → renders nothing, never requests.
- *   2. Settlement note present on the FIRST render (join state) — the
+ *   1. Settlement note present on the FIRST render (join state) — the
  *      mandatory accounting-only boundary note is persistent, never
  *      gated behind a computation, and names Swish/MobilePay/bank
  *      transfer strictly as user-side examples.
@@ -31,14 +30,10 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import GroupOrderSessionView from '../session-view';
-import {
-  ALL_FLAGS_OFF,
-  renderWithIntl,
-} from '@/lib/testing/test-intl';
+import { renderWithIntl } from '@/lib/testing/test-intl';
 import { ApiFetchError, fetchProductsByIds, request, searchProducts } from '@/lib/api';
 import type {
   ApiError,
-  FeatureFlagsResponse,
   ProductSearchResult,
 } from '@/lib/types';
 import type { JoinResponse, LedgerResponse } from '../api';
@@ -66,9 +61,6 @@ const mockedFetchProductsByIds = vi.mocked(fetchProductsByIds);
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const FLAGS_ON: FeatureFlagsResponse = {
-  flags: { ...ALL_FLAGS_OFF.flags, GROUP_ORDER_LEDGER: true },
-};
 
 function apiError(
   status: number,
@@ -215,9 +207,7 @@ async function joinAndActivate(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<void> {
   mockRoutes({ join: async () => joinState() });
-  renderWithIntl(<GroupOrderSessionView token="tok" />, {
-    featureFlags: FLAGS_ON,
-  });
+  renderWithIntl(<GroupOrderSessionView token="tok" />);
   await user.type(screen.getByLabelText('Lempinimi'), 'Matti');
   await user.click(screen.getByRole('button', { name: 'Liity' }));
   await screen.findByTestId('group-order-participants');
@@ -237,18 +227,14 @@ beforeEach(() => {
 });
 
 describe('GroupOrderSessionView', () => {
-  it('renders nothing when the flag is absent (absent = off) and never requests', () => {
-    const { container } = renderWithIntl(<GroupOrderSessionView token="tok" />, {
-      featureFlags: ALL_FLAGS_OFF,
-    });
-    expect(container.firstChild).toBeNull();
+  it('renders the join state by default and never requests before joining', () => {
+    renderWithIntl(<GroupOrderSessionView token="tok" />);
+    expect(screen.getByTestId('group-order-join-form')).toBeInTheDocument();
     expect(mockedRequest).not.toHaveBeenCalled();
   });
 
   it('shows the mandatory settlement note on the first render, before any join or compute', () => {
-    renderWithIntl(<GroupOrderSessionView token="tok" />, {
-      featureFlags: FLAGS_ON,
-    });
+    renderWithIntl(<GroupOrderSessionView token="tok" />);
 
     // Persistent, not buried: present in the join state with its own card.
     const note = screen.getByTestId('group-order-settlement-note');
@@ -274,9 +260,7 @@ describe('GroupOrderSessionView', () => {
       return Promise.resolve(joinState());
     }) as unknown as typeof request);
 
-    renderWithIntl(<GroupOrderSessionView token="tok" />, {
-      featureFlags: FLAGS_ON,
-    });
+    renderWithIntl(<GroupOrderSessionView token="tok" />);
 
     await user.type(screen.getByLabelText('Lempinimi'), 'Matti');
     await user.click(screen.getByRole('button', { name: 'Liity' }));
@@ -397,9 +381,7 @@ describe('GroupOrderSessionView', () => {
       },
     });
 
-    renderWithIntl(<GroupOrderSessionView token="tok" />, {
-      featureFlags: FLAGS_ON,
-    });
+    renderWithIntl(<GroupOrderSessionView token="tok" />);
     await user.type(screen.getByLabelText('Lempinimi'), 'Matti');
     await user.click(screen.getByRole('button', { name: 'Liity' }));
 
@@ -425,9 +407,7 @@ describe('GroupOrderSessionView', () => {
       },
     });
 
-    renderWithIntl(<GroupOrderSessionView token="tok" />, {
-      featureFlags: FLAGS_ON,
-    });
+    renderWithIntl(<GroupOrderSessionView token="tok" />);
     await user.type(screen.getByLabelText('Lempinimi'), 'Matti');
     await user.click(screen.getByRole('button', { name: 'Liity' }));
 

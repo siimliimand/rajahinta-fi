@@ -26,7 +26,6 @@ import {
   SESSION_COOKIE_NAME,
   extractSessionToken,
 } from './session-cookie';
-import { isAccountVerified } from './email-verification';
 import type { AuthenticatedAccount } from './current-user.decorator';
 
 /** Known tier values as stored on the account row. */
@@ -88,11 +87,12 @@ export class SessionAuthGuard implements CanActivate {
 
     // Attach the server-derived identity for downstream consumers
     // (controllers via @CurrentUser, EntitlementGuard via request.user).
+    // No verification state is attached: email-verification semantics
+    // live only in the API Worker (design D9, change email-password-auth).
     request.user = {
       accountId: account.id,
       userId: account.userId,
       tier: KNOWN_TIERS.has(account.tier) ? (account.tier as AuthenticatedAccount['tier']) : 'FREE',
-      verified: isAccountVerified(account.email),
     };
     // The raw token stays on the request for rotate/revoke handlers.
     request.sessionToken = token;

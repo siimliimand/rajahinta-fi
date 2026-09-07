@@ -50,7 +50,6 @@ import {
   IdempotencyModule,
   RateLimitingModule,
   RATE_LIMITER,
-  FeatureFlagsModule,
   AgeGateModule,
 } from '@rajahinta/application-api';
 
@@ -460,18 +459,11 @@ const BEER_DTO_QTY_2 = {
 };
 
 /** Build a seeded NestJS test module and return the app + in-memory stores. */
-async function buildTestModule(gatesOpen: boolean): Promise<{
+async function buildTestModule(): Promise<{
   app: INestApplication;
   calcRecordPort: InMemoryCalculationRecordPort;
   calcRecordRepo: InMemoryCalculationRecordRepository;
 }> {
-  if (gatesOpen) {
-    process.env.LAUNCH_GATES_OVERRIDE = 'true';
-  } else {
-    // Ensure the override is absent so LaunchGateService reads all gates as false.
-    delete process.env.LAUNCH_GATES_OVERRIDE;
-  }
-
   // Clear Redis env vars so RedisModule uses its in-memory fallback.
   // The Deploy workflow sets REDIS_HOST to staging, which the test runner
   // inherits — without cleanup ioredis would try to resolve an unreachable
@@ -497,7 +489,6 @@ async function buildTestModule(gatesOpen: boolean): Promise<{
       CoreDomainModule,
       IdempotencyModule,
       RateLimitingModule,
-      FeatureFlagsModule,
       AgeGateModule,
     ],
     controllers: [CalculatorController],
@@ -535,16 +526,16 @@ async function buildTestModule(gatesOpen: boolean): Promise<{
 
 describe('Calculator e2e — HTTP layer with guard enforcement', () => {
   // ===================================================================
-  // Gates open — LAUNCH_GATES_OVERRIDE=true
+  // Happy path — age gate satisfied
   // ===================================================================
 
-  describe('gates open (LAUNCH_GATES_OVERRIDE=true)', () => {
+  describe('calculator with age token', () => {
     let app: INestApplication;
     let calcRecordPort: InMemoryCalculationRecordPort;
     let calcRecordRepo: InMemoryCalculationRecordRepository;
 
     beforeAll(async () => {
-      const built = await buildTestModule(true);
+      const built = await buildTestModule();
       app = built.app;
       calcRecordPort = built.calcRecordPort;
       calcRecordRepo = built.calcRecordRepo;
@@ -552,7 +543,6 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
 
     afterAll(async () => {
       await app?.close();
-      delete process.env.LAUNCH_GATES_OVERRIDE;
     });
 
     // -----------------------------------------------------------------
@@ -832,14 +822,14 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
   });
 
   // ===================================================================
-  // Gates off — no LAUNCH_GATES_OVERRIDE
+  // Age gate — 403 without a confirmation token
   // ===================================================================
 
-  describe('gates off (no override)', () => {
+  describe('age gate (no confirmation token)', () => {
     let app: INestApplication;
 
     beforeAll(async () => {
-      const built = await buildTestModule(false);
+      const built = await buildTestModule();
       app = built.app;
     });
 
@@ -847,16 +837,8 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
       await app?.close();
     });
 
-    describe('POST /api/v1/calculator — 403 when launch gates are closed', () => {
-      it('returns 403 even when age token is sent (launch gate blocks first)', async () => {
-        await request(app.getHttpServer())
-          .post('/api/v1/calculator')
-          .set('x-age-confirmed', 'test-token')
-          .send(BEER_DTO)
-          .expect(403);
-      });
-
-      it('returns 403 when both age token and launch gates are missing', async () => {
+    describe('POST /api/v1/calculator — 403 without age token', () => {
+      it('returns 403 when the age token is missing', async () => {
         await request(app.getHttpServer())
           .post('/api/v1/calculator')
           .send(BEER_DTO)
@@ -864,14 +846,7 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
       });
     });
 
-    describe('GET /api/v1/calculator/result/:recordId — 403 when launch gates are closed', () => {
-      it('returns 403 with age token', async () => {
-        await request(app.getHttpServer())
-          .get('/api/v1/calculator/result/1')
-          .set('x-age-confirmed', 'test-token')
-          .expect(403);
-      });
-
+    describe('GET /api/v1/calculator/result/:recordId — 403 without age token', () => {
       it('returns 403 without age token', async () => {
         await request(app.getHttpServer())
           .get('/api/v1/calculator/result/1')

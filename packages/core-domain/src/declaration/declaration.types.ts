@@ -37,7 +37,14 @@ export interface CalculationRecordData {
   readonly containerDutyCents: number;
   readonly totalCents: number;
   readonly confidence: ConfidenceLevel;
-  readonly classification: ClassificationLabel;
+  /**
+   * 'NotPersisted' — calculation records are stored without the transaction
+   * classification, so adapters carry the factual absence marker (the
+   * calculator DTO's established convention) instead of a fabricated legal
+   * label. Guidance degrades: no advance-notice obligation or liability
+   * flags are derived from an unknown classification.
+   */
+  readonly classification: ClassificationLabel | 'NotPersisted';
   readonly disclaimerText: string;
   readonly disclaimerLanguage: 'fi' | 'en';
   readonly disclaimerVersion: string;
@@ -342,7 +349,10 @@ export interface DeclarationSummary {
  * ```
  */
 export type ReadonlyInterface<T> = {
-  [K in keyof T as T[K] extends (...args: any[]) => Promise<{ id: any }>
+  // `never[]` params + `id: unknown`: same write-shape matching as `any`
+  // (every function extends a never-param signature; any id type extends
+  // unknown) without introducing `any` into the type algebra.
+  [K in keyof T as T[K] extends (...args: never[]) => Promise<{ id: unknown }>
     ? never
     : K]: T[K];
 };

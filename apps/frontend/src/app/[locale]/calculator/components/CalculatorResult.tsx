@@ -377,8 +377,7 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
         </dl>
       </div>
 
-      {/* ── Report export actions — hidden and unfetched while the
-          enable_advanced_features flag is off ── */}
+      {/* ── Report export actions ── */}
       <ReportExportActions recordId={result.calculationRecordId} />
 
       {/* ── Disclaimer ── */}

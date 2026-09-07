@@ -23,15 +23,13 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { OpsAccessGuard } from '../../observability';
-import { FeatureFlagGuard, FeatureFlagDec, FeatureFlag } from '../../feature-flags';
 import type { CorrectionItem, CorrectionListResponse } from '../../correction';
 import type { OpsCreateCorrectionDto, OperatorActionDto } from '../ops.dto';
 import { OpsCorrectionQueueService } from './ops-correction-queue.service';
 
 @ApiTags('ops')
 @Controller('ops/console/corrections')
-@UseGuards(OpsAccessGuard, FeatureFlagGuard)
-@FeatureFlagDec(FeatureFlag.OPERATOR_CONSOLE)
+@UseGuards(OpsAccessGuard)
 export class OpsCorrectionQueueController {
   constructor(private readonly queue: OpsCorrectionQueueService) {}
 
@@ -47,7 +45,7 @@ export class OpsCorrectionQueueController {
       'the evidence the operator works from.',
   })
   @ApiResponse({ status: 200, description: 'Correction items' })
-  @ApiResponse({ status: 403, description: 'Unauthenticated, outside the allowlist, or flag off' })
+  @ApiResponse({ status: 403, description: 'Unauthenticated or outside the allowlist' })
   async list(): Promise<CorrectionListResponse> {
     return this.queue.listQueue();
   }
@@ -64,7 +62,7 @@ export class OpsCorrectionQueueController {
   })
   @ApiResponse({ status: 201, description: 'Correction created' })
   @ApiResponse({ status: 400, description: 'Invalid input' })
-  @ApiResponse({ status: 403, description: 'Unauthenticated, outside the allowlist, or flag off' })
+  @ApiResponse({ status: 403, description: 'Unauthenticated or outside the allowlist' })
   async open(@Body() dto: OpsCreateCorrectionDto): Promise<CorrectionItem> {
     this.validateCreate(dto);
     return this.queue.openCorrection(dto);
@@ -84,7 +82,7 @@ export class OpsCorrectionQueueController {
   })
   @ApiResponse({ status: 200, description: 'Correction resolved' })
   @ApiResponse({ status: 400, description: 'Invalid input' })
-  @ApiResponse({ status: 403, description: 'Unauthenticated, outside the allowlist, or flag off' })
+  @ApiResponse({ status: 403, description: 'Unauthenticated or outside the allowlist' })
   @ApiResponse({ status: 404, description: 'Correction not found' })
   async resolve(
     @Param('id', ParseIntPipe) id: number,

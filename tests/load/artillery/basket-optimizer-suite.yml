@@ -6,14 +6,6 @@
 # Two payload profiles: 2-item and 4-item baskets over the seeded
 # golden-dataset products (1=beer, 2=wine, 3=spirits).
 #
-# ⚠ Feature flag: POST /api/v1/basket/optimize is guarded by
-# @FeatureFlagDec(FeatureFlag.BASKET_OPTIMIZATION) and answers 403 while
-# the flag is off. Enable it ON THE TARGET before running this suite:
-#   - Workers: set `FF_BASKET_OPTIMIZATION` in the target environment's
-#     wrangler vars (staging/prod environment config; or `wrangler dev
-#     --var "FF_BASKET_OPTIMIZATION:true"` locally).
-# A 403 flood in the results means the flag was not enabled.
-#
 # Thresholds:
 #   p95 latency     < 5000 ms   (provisional: service-level measurement
 #                                under the 256m/512Mi staging limits puts

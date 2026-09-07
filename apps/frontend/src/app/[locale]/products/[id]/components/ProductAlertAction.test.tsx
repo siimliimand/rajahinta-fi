@@ -2,16 +2,14 @@
  * ProductAlertAction (product-page set-alert action) tests (task 2.4,
  * change product-roadmap-phases-1-4).
  *
- * Verifies the flag-gated contract and the create/manage switching:
- *   1. Flag off in the inlined payload → renders nothing on the FIRST
- *      render and never fires the account request.
- *   2. Flag on, no existing alert → create form; submit → POST
+ * Verifies the create/manage switching:
+ *   1. No existing alert → create form; submit → POST
  *      /api/v1/account/alerts with integer euro cents → manage view.
- *   3. Flag on, existing alert → manage controls (pause/resume, delete),
- *      no create form.
- *   4. 409 on create → the list is re-read and the manage view renders
+ *   2. Existing alert → manage controls (pause/resume, delete), no
+ *      create form.
+ *   3. 409 on create → the list is re-read and the manage view renders
  *      instead of a duplicate error.
- *   5. 401 → sign-in prompt; 403 → renders nothing.
+ *   4. 401 → sign-in prompt; 403 → renders nothing.
  *
  * @module ProductAlertActionTest
  */
@@ -22,13 +20,9 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductAlertAction from './ProductAlertAction';
-import {
-  ALL_FLAGS_OFF,
-  ALL_FLAGS_ON,
-  renderWithIntl,
-} from '@/lib/testing/test-intl';
+import { renderWithIntl } from '@/lib/testing/test-intl';
 import { ApiFetchError, apiFetch, request } from '@/lib/api';
-import type { ApiError, FeatureFlagsResponse, PriceAlert } from '@/lib/types';
+import type { ApiError, PriceAlert } from '@/lib/types';
 
 // The panel links through next-intl navigation, which needs a Next.js
 // router context that unit tests do not have (AgeGate.test.tsx precedent).
@@ -53,9 +47,6 @@ const mockedApiFetch = vi.mocked(apiFetch);
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const FLAGS_ON: FeatureFlagsResponse = {
-  flags: { ...ALL_FLAGS_ON.flags, PRICE_ALERTS: true },
-};
 
 /** Full ApiError body as the API emits it (ApiFetchError carries it). */
 function apiError(status: number, message: string): ApiError {
@@ -92,45 +83,24 @@ beforeEach(() => {
   } as unknown as Response);
 });
 
-// ---------------------------------------------------------------------------
-// Gating
-// ---------------------------------------------------------------------------
-
 describe('ProductAlertAction', () => {
-  it('renders nothing and never fires the account request when the flag is off', () => {
-    const { container } = renderWithIntl(
-      <ProductAlertAction productId={PRODUCT_ID} />,
-      { featureFlags: ALL_FLAGS_OFF },
-    );
+  it('renders the create form by default when no alert exists', async () => {
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
 
-    expect(container.firstChild).toBeNull();
-    expect(mockedRequest).not.toHaveBeenCalled();
-    expect(
-      screen.queryByTestId('product-alert-action'),
-    ).not.toBeInTheDocument();
+    const create = await screen.findByTestId('product-alert-create');
+    expect(create).toBeInTheDocument();
   });
 
-  it('renders nothing when the flag key is absent (older payload)', () => {
-    const { container } = renderWithIntl(
-      <ProductAlertAction productId={PRODUCT_ID} />,
-      { featureFlags: ALL_FLAGS_ON },
-    );
-
-    expect(container.firstChild).toBeNull();
-    expect(mockedRequest).not.toHaveBeenCalled();
-  });
-
-  it('degrades to nothing when the API reports the flag off (403)', async () => {
+  it('degrades to nothing when the API rejects the list read (403)', async () => {
     mockedRequest.mockRejectedValue(
       new ApiFetchError(
         403,
-        apiError(403, 'Feature "PRICE_ALERTS" is not enabled'),
+        apiError(403, 'Forbidden'),
       ),
     );
 
     const { container } = renderWithIntl(
       <ProductAlertAction productId={PRODUCT_ID} />,
-      { featureFlags: FLAGS_ON },
     );
 
     await waitFor(() => expect(mockedRequest).toHaveBeenCalledTimes(1));
@@ -142,9 +112,7 @@ describe('ProductAlertAction', () => {
       new ApiFetchError(401, apiError(401, 'no session')),
     );
 
-    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />, {
-      featureFlags: FLAGS_ON,
-    });
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
 
     const prompt = await screen.findByTestId('alert-signin-prompt');
     expect(prompt).toHaveTextContent('Hintaherätysten hallinta vaatii istunnon.');
@@ -164,9 +132,7 @@ describe('ProductAlertAction', () => {
       throw new Error(`unexpected ${init?.method ?? 'GET'} ${path}`);
     });
 
-    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />, {
-      featureFlags: FLAGS_ON,
-    });
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
 
     const input = await screen.findByLabelText('Hintaraja (€)');
     await user.type(input, '20');
@@ -186,9 +152,7 @@ describe('ProductAlertAction', () => {
 
   it('rejects an invalid threshold locally without calling the API', async () => {
     const user = userEvent.setup();
-    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />, {
-      featureFlags: FLAGS_ON,
-    });
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
 
     const input = await screen.findByLabelText('Hintaraja (€)');
     await user.type(input, '0,00');
@@ -219,9 +183,7 @@ describe('ProductAlertAction', () => {
       throw new Error(`unexpected ${init?.method ?? 'GET'} ${path}`);
     });
 
-    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />, {
-      featureFlags: FLAGS_ON,
-    });
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
 
     const input = await screen.findByLabelText('Hintaraja (€)');
     await user.type(input, '20');
@@ -241,9 +203,7 @@ describe('ProductAlertAction', () => {
   it('offers pause/resume/delete (no create form) when an alert already exists', async () => {
     mockedRequest.mockResolvedValue([alert()]);
 
-    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />, {
-      featureFlags: FLAGS_ON,
-    });
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
 
     const manage = await screen.findByTestId('product-alert-manage');
     expect(manage).toHaveTextContent('Hintaraja 12.50 €');
@@ -267,9 +227,7 @@ describe('ProductAlertAction', () => {
       throw new Error(`unexpected ${init?.method ?? 'GET'} ${path}`);
     });
 
-    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />, {
-      featureFlags: FLAGS_ON,
-    });
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
 
     const manage = await screen.findByTestId('product-alert-manage');
     await user.click(
@@ -291,9 +249,7 @@ describe('ProductAlertAction', () => {
     const user = userEvent.setup();
     mockedRequest.mockResolvedValue([alert()]);
 
-    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />, {
-      featureFlags: FLAGS_ON,
-    });
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
 
     const manage = await screen.findByTestId('product-alert-manage');
     await user.click(within(manage).getByRole('button', { name: 'Poista' }));

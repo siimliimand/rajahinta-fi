@@ -190,6 +190,27 @@ export abstract class AuditRepository {
 // Account repository abstractions
 // ---------------------------------------------------------------------------
 
+/**
+ * The credential-flow projection of an account row (change
+ * email-password-auth): exactly the columns the register/login/verify
+ * paths consume, contract-stable across the D1 and pg implementations.
+ *
+ * `passwordHash` carries the stored PBKDF2 envelope (hashing is the
+ * application layer's job — this contract never sees a raw password);
+ * null = no credential stored, which the login path treats as a
+ * fail-safe 401. `emailVerifiedAt` is null = unverified.
+ */
+export interface AccountCredentialRecord {
+  readonly id: number;
+  readonly userId: string;
+  readonly email: string;
+  readonly passwordHash: string | null;
+  readonly emailVerifiedAt: Date | null;
+  readonly tier: string;
+  readonly createdAt: Date;
+  readonly lastActiveAt: Date;
+}
+
 @Injectable()
 export abstract class AccountRepository {
   /** Insert a new account record. */
@@ -205,6 +226,16 @@ export abstract class AccountRepository {
     userId: string,
   ): Promise<typeof accounts.$inferSelect | null>;
 
+  /**
+   * Look up an account by email address — the login/credential read
+   * (change email-password-auth). The address is normalized to
+   * lowercase on write and lookup (uniqueness is the lower(email)
+   * unique index, enforced in SQL), so case variants resolve to the
+   * same identity. Returns null for unknown addresses — the caller
+   * renders the enumeration-uniform response.
+   */
+  abstract findByEmail(email: string): Promise<AccountCredentialRecord | null>;
+
   /** Update the lastActiveAt timestamp for a user. */
   abstract updateLastActive(userId: string): Promise<void>;
 
@@ -215,13 +246,24 @@ export abstract class AccountRepository {
   abstract findAllUserIds(): Promise<string[]>;
 
   /**
-   * Persist a verified email on an account (task 2.4 / FIX-E, change
-   * technical-assessment-remediation) — the anonymous-upgrade write that
-   * replaces the placeholder address on the documented verified-email
-   * column. Throws when no account exists for the userId: a silent
-   * no-op would lose the verification.
+   * Stamp the email-verification instant on the account (change
+   * email-password-auth) — the write the emailed single-use token flow
+   * performs after consuming a `verify_email` token. This replaces the
+   * placeholder-era email-overwrite semantics: the address itself is
+   * set at registration, only the verification STATE is written here.
+   * Throws when no account exists for the userId: a silent no-op would
+   * lose the verification.
    */
-  abstract setVerifiedEmail(userId: string, email: string): Promise<void>;
+  abstract setVerifiedEmail(userId: string, verifiedAt: Date): Promise<void>;
+
+  /**
+   * Store the account's password credential envelope (change
+   * email-password-auth) — the registration write and the
+   * password-reset rehash write. Callers hash first (design D1
+   * PBKDF2 envelope); this persists the envelope verbatim and never
+   * derives one. Throws when no account exists for the userId.
+   */
+  abstract setPasswordHash(userId: string, passwordHash: string): Promise<void>;
 
   /**
    * Irreversibly anonymize an account — replaces identifiers with
@@ -232,6 +274,87 @@ export abstract class AccountRepository {
    * identifier, so the operation cannot be reversed.
    */
   abstract anonymize(userId: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Email-token repository abstractions
+// ---------------------------------------------------------------------------
+
+/** What a token authorizes — the closed set enforced by the schema CHECK. */
+export type EmailTokenPurpose = 'verify_email' | 'password_reset';
+
+/**
+ * Persisted email-token row (design D3, change email-password-auth).
+ * Timestamps are instants at the contract boundary; only the SHA-256
+ * token hash is ever stored or returned — the raw token value exists
+ * solely in emailed links and request bodies, above this layer.
+ */
+export interface EmailTokenRecord {
+  readonly id: number;
+  readonly accountId: number;
+  readonly tokenHash: string;
+  readonly purpose: EmailTokenPurpose;
+  readonly expiresAt: Date;
+  readonly usedAt: Date | null;
+  readonly createdAt: Date;
+}
+
+/** Creation input — expiry is caller policy (24 h verify, 1 h reset). */
+export interface EmailTokenCreateInput {
+  readonly accountId: number;
+  /** SHA-256 hex digest of the opaque token — never the raw value. */
+  readonly tokenHash: string;
+  readonly purpose: EmailTokenPurpose;
+  readonly expiresAt: Date;
+}
+
+/**
+ * Email-token repository — hashed, single-use, purpose-scoped
+ * credentials (design D3, change email-password-auth).
+ *
+ * Lookups are by hash; "active" mirrors the session contract
+ * (unconsumed AND unexpired). Consumption sets `usedAt` in the same
+ * statement that checks the active predicate, so a replayed or expired
+ * token loses: exactly one caller ever sees a token redeem. The
+ * invalidation sweep is how a completed flow retires every outstanding
+ * same-purpose token of the account.
+ */
+@Injectable()
+export abstract class EmailTokenRepository {
+  /** Insert a token from its hash. Returns the persisted row. */
+  abstract create(record: EmailTokenCreateInput): Promise<EmailTokenRecord>;
+
+  /**
+   * The active (unconsumed, unexpired) token for a (hash, purpose)
+   * pair, or null. The purpose is part of the lookup — a token can
+   * never authenticate a different flow than it was minted for.
+   */
+  abstract findActiveByTokenHashAndPurpose(
+    tokenHash: string,
+    purpose: EmailTokenPurpose,
+  ): Promise<EmailTokenRecord | null>;
+
+  /**
+   * Consume the active token for a (hash, purpose) pair: `usedAt` is
+   * set in the same statement that checks `usedAt IS NULL AND
+   * expiresAt > now`. Returns false when no active token exists
+   * (unknown, replayed, expired, or wrong purpose) — replay loses.
+   */
+  abstract consume(
+    tokenHash: string,
+    purpose: EmailTokenPurpose,
+  ): Promise<boolean>;
+
+  /**
+   * Mark every outstanding (unconsumed) same-purpose token of the
+   * account used — the sweep a confirmed verification or completed
+   * reset runs so superseded tokens can never redeem. Returns the
+   * number of tokens retired.
+   */
+  abstract invalidateAllForAccount(
+    accountId: number,
+    purpose: EmailTokenPurpose,
+  ): Promise<number>;
 }
 
 @Injectable()

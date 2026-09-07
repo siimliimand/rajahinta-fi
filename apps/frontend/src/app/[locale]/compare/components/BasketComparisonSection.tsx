@@ -3,12 +3,9 @@
 /**
  * BasketComparisonSection — store-grouped multi-store comparison view.
  *
- * Gated behind the BASKET_OPTIMIZATION feature flag, whose state arrives
- * inlined with the initial HTML payload.  When hidden, renders nothing —
- * at the correct visibility from the first render.  When visible, provides
- * a product-search → basket-builder → optimize → store-grouped-results flow
- * that mirrors the basket page's patterns but is integrated into the compare
- * page context.
+ * Provides a product-search → basket-builder → optimize →
+ * store-grouped-results flow that mirrors the basket page's patterns but
+ * is integrated into the compare page context.
  *
  * **Neutrality**: every store card is visually identical.  No visual preference
  * cues beyond objective cost ordering (total ascending).  Sorting is applied
@@ -34,7 +31,6 @@ import type {
 } from '@/lib/basket.types';
 import type { ConfidenceLevel, ReliabilityStatus } from '@/lib/types';
 import { searchProducts } from '@/lib/api';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import { optimizeBasket, classifyBasketError } from '@/lib/basket.client';
 import {
   CONFIDENCE_LEVEL_META,
@@ -359,8 +355,8 @@ function ResultMetadata({
 /**
  * Multi-store comparison section for the compare page.
  *
- * Orchestrates the feature-flag gate, product search, basket builder, API
- * call, and store-grouped result rendering with per-item figures, transport,
+ * Orchestrates product search, basket builder, API call, and
+ * store-grouped result rendering with per-item figures, transport,
  * threshold checks, confidence, and the structural disclaimer.
  */
 export default function BasketComparisonSection() {
@@ -370,10 +366,6 @@ export default function BasketComparisonSection() {
   const tCommon = useTranslations('Common');
   const tResults = useTranslations('BasketResults');
   const tCalc = useTranslations('Calculator');
-
-  // ── Feature flag (inlined with the initial HTML payload) ──
-  const flags = useFeatureFlags();
-  const flagEnabled = flags.flags.BASKET_OPTIMIZATION;
 
   // ── Search state ──
   const [query, setQuery] = useState('');
@@ -471,7 +463,7 @@ export default function BasketComparisonSection() {
     setOptimizeError(null);
   }, []);
 
-  // ── Optimize ──
+  // ── Optimization ──
   const handleOptimize = useCallback(async () => {
     if (items.length === 0 || optimizeInFlight.current) return;
 
@@ -499,10 +491,6 @@ export default function BasketComparisonSection() {
       optimizeInFlight.current = false;
     }
   }, [items, destination, transportArrangement, tPage]);
-
-  // ── Hidden states (after all hooks — early returns above them break
-  // React's hook-order invariant) ──
-  if (!flagEnabled) return null;
 
   const atCapacity = items.length >= MAX_ITEMS;
   const canOptimize = items.length > 0 && !optimizing;

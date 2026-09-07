@@ -95,24 +95,30 @@ export function buildProbeApp(): Hono<AppEnv> {
 
   // Account routes.
   app.get('/api/v1/account/export', ok);
+  app.get('/api/v1/account/me', ok);
   app.get('/api/v1/account/baskets', ok);
   app.post('/api/v1/account/baskets', ok);
   app.delete('/api/v1/account/baskets/:basketId', ok);
   app.get('/api/v1/account/history', ok);
   app.post('/api/v1/account/history', ok);
   app.get('/api/v1/account/subscription', ok);
-  app.post('/api/v1/account/verify-email', ok);
+  app.post('/api/v1/account/verify-email/request', ok);
   app.get('/api/v1/account/scenarios', ok);
   app.post('/api/v1/account/scenarios', ok);
   app.delete('/api/v1/account/scenarios/:id', ok);
 
-  // SessionController routes — issuance probe proves the route is public.
-  app.post('/api/v1/account/session', ok);
+  // Credential routes (email-password-auth D2) — public; the AUTH rate
+  // limit composes ahead (fails open without a RATE_LIMITER binding).
+  app.post('/api/v1/account/register', ok);
+  app.post('/api/v1/account/login', ok);
+  app.post('/api/v1/account/password/reset-request', ok);
+
+  // SessionController routes — the anonymous issuance route is deleted
+  // (register/login issue sessions); rotate/revoke probes remain.
   app.post('/api/v1/account/session/rotate', ok);
   app.delete('/api/v1/account/session', ok);
 
   // Ops routes.
-  app.get('/ops/health', ok);
   app.get('/ops/console/audit', ok);
 
   return app;
@@ -196,7 +202,7 @@ export function seedStandardAccounts(db: DatabaseSync): void {
   seedAccount(db, {
     id: 9,
     userId: 'user-9',
-    email: 'user-9@placeholder.local', // anonymous placeholder
+    email: 'user-9@example.invalid', // real-looking address, unverified (email_verified_at NULL)
     tier: 'FREE',
   });
   seedAccount(db, {

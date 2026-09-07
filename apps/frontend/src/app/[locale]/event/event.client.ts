@@ -3,9 +3,7 @@
  *
  * Provides a typed fetch function plus error classification for the states
  * the UI renders distinctly, following the {@link BasketClient} precedent.
- * The 403 case is classified explicitly: the endpoint sits behind the
- * `enable_event_calculator` gate, so a flag flipped off server-side
- * mid-session reaches the client as 403 and must degrade to a friendly
+ * The 403 case is classified explicitly: it must degrade to a friendly
  * "not available" message, never a crash (design R13).
  *
  * @module EventClient
@@ -21,7 +19,7 @@ import type { EventCalcRequest, EventCalcResponse } from './event.types';
 /**
  * Classified failure modes of {@link calculateEventPlan}:
  * - `validation`   — 400: out-of-cap guests/duration or malformed input
- * - `forbidden`    — 403: event-calculator flag off server-side
+ * - `forbidden`    — 403: the backend rejected the calculation
  * - `rate-limited` — 429: CALCULATOR limiter tripped
  * - `network`      — fetch itself failed (no HTTP response)
  * - `unknown`      — any other error

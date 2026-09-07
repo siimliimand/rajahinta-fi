@@ -15,10 +15,6 @@
  * - "unit: evidence completeness" — ALREADY COVERED at the same two
  *   layers (6.1: blank-field CHECK unrepresentability + full record
  *   shape; 6.3 route tests: exact complete-evidence payload pin).
- * - "integration: flag-off 403" — route-level unit coverage exists
- *   (6.3, lockedEnv); ADDED here as the composed-app, data-present
- *   end-to-end version: flag on serves the sibling, flag off 403s on
- *   the SAME composition and data — the flag is the only variable.
  * - "unevidenced insert rejected at the repository boundary" — 6.1
  *   proves the CHECKs on RAW SQL (bypassing even the repository);
  *   ADDED here through the repository write path — create() and the
@@ -50,9 +46,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import {
   createApp,
-  expectEnvelope,
   FAKE_OPS_TOKEN,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -73,17 +67,17 @@ const OPS = { authorization: `Bearer ${FAKE_OPS_TOKEN}` };
 const OPS_JSON = { 'content-type': 'application/json', ...OPS };
 
 /**
- * index.ts registers the dupes handler (flag gate + limiter) and the
- * ops console (guard prefix) on the one app — the composition under
- * test is exactly what production serves.
+ * index.ts registers the dupes handler and the ops console (guard
+ * prefix) on the one app — the composition under test is exactly what
+ * production serves.
  */
 function fullApp(): ReturnType<typeof createApp> {
   return createApp();
 }
 
-/** Dupes flag ON + console open (permissive base) — the curated path. */
+/** Console open (permissive base) — the curated path. */
 function curatedEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}): Env {
-  return permissiveEnv(d1, { ...overrides, FF_PRODUCER_DUPE_FINDER: 'true' });
+  return permissiveEnv(d1, overrides);
 }
 
 interface DupeJson {
@@ -117,12 +111,11 @@ const FULL_LINK: ProducerLinkInsert = {
 };
 
 // ===========================================================================
-// 1. Flag-off 403 end-to-end — the gate is the only variable
-//    (spec "Flag off": feature-disabled error; composed-app delta over
-//    the 6.3 route-unit case)
+// 1. Serving end-to-end — the composed app returns the evidence-backed
+//    sibling (composed-app delta over the 6.3 route-unit case)
 // ===========================================================================
 
-describe('GET /api/v1/products/:id/dupes — flag gate end-to-end (task 6.5)', () => {
+describe('GET /api/v1/products/:id/dupes — composed app (task 6.5)', () => {
   let db: NonNullable<Parameters<typeof seedProduct>[0]>;
   let d1: D1DatabaseLike;
   let app: ReturnType<typeof createApp>;
@@ -138,34 +131,17 @@ describe('GET /api/v1/products/:id/dupes — flag gate end-to-end (task 6.5)', (
     db.close();
   });
 
-  it('serves the curated sibling with the flag ON, then 403s the identical request with the flag OFF', async () => {
+  it('serves the curated sibling over the composed app', async () => {
     seedSiblingProducts(db);
     const repo = new D1ProducerLinksRepository(d1);
     const created = await repo.create(FULL_LINK);
     expect((await repo.publish(created.id))!.status).toBe('PUBLISHED');
 
-    // Flag ON: the evidence-backed sibling serves (non-vacuity — data
-    // exists that the OFF case must refuse to serve).
     const on = await request(app, curatedEnv(d1), '/api/v1/products/1/dupes');
     expect(on.status).toBe(200);
     const onBody = (await on.json()) as DupesJson;
     expect(onBody.dupes).toHaveLength(1);
     expect(onBody.dupes[0]!.siblingProductId).toBe(2);
-
-    // Flag OFF (flags otherwise open — the rollback semantics): the SAME
-    // request on the SAME data gets the feature-disabled envelope.
-    const off = await request(app, permissiveEnv(d1), '/api/v1/products/1/dupes');
-    await expectEnvelope(off, 403, {
-      message: 'Feature "PRODUCER_DUPE_FINDER" is not enabled',
-      error: 'Forbidden',
-    });
-
-    // Fully locked env (the 6.3 route-unit case) — same verdict composed.
-    const locked = await request(app, lockedEnv(d1), '/api/v1/products/1/dupes');
-    await expectEnvelope(locked, 403, {
-      message: 'Feature "PRODUCER_DUPE_FINDER" is not enabled',
-      error: 'Forbidden',
-    });
   });
 });
 

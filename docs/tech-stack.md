@@ -29,7 +29,7 @@
 | E2E testing | Playwright | 1.62+ | Browser journeys against the Workers stack (local wrangler dev or staging) |
 | Observability | OpenTelemetry (OTLP) + Workers Analytics Engine | — | Traces to Grafana Cloud (destination unchanged); request/freshness metrics via `writeDataPoint` |
 | Frontend RUM | Faro Web SDK | 1.14+ | Session replay, Core Web Vitals, error tracking, correlates to backend traces |
-| Feature flags | Custom service (wrangler vars) | — | Synchronous resolution from `FF_*` environment vars; LaunchDarkly-ready interface |
+| Feature flags | Removed | — | The `FF_*` flag system and the launch gates were deleted (2026-09-07, owner decision); every feature ships enabled, rollback is `wrangler rollback` |
 | CI/CD | GitHub Actions + wrangler | — | Wrangler deploy pipelines, `--dry-run` config validation, D1 migrate → seed → deploy gating |
 
 ## 2. Backend Rationale (NestJS / Node.js / TypeScript)

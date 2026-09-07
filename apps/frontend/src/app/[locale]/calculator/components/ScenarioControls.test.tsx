@@ -1,15 +1,13 @@
 /**
  * ScenarioControls tests (task 4.1).
  *
- * Verifies the flag-gated contract:
- *   1. Flag off in the inlined payload → the section renders nothing on
- *      the FIRST render and NEVER fires the scenario list request.
- *   2. Flag on → the section is visible on the first render, loads the
- *      list, and renders the picker options.
- *   3. Saving → delegates to onSaveScenario, shows a saved status, and
+ * Verifies the rendering and delegation contract:
+ *   1. The section renders by default and loads the list, rendering the
+ *      picker options.
+ *   2. Saving → delegates to onSaveScenario, shows a saved status, and
  *      refreshes the list.
- *   4. Save failure → controlled error message.
- *   5. Picking a scenario → delegates to onLoadScenario with the row.
+ *   3. Save failure → controlled error message.
+ *   4. Picking a scenario → delegates to onLoadScenario with the row.
  *
  * @module ScenarioControlsTest
  */
@@ -20,11 +18,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ScenarioControls from './ScenarioControls';
-import {
-  ALL_FLAGS_OFF,
-  ALL_FLAGS_ON,
-  renderWithIntl,
-} from '@/lib/testing/test-intl';
+import { renderWithIntl } from '@/lib/testing/test-intl';
 import { listScenarios } from '@/lib/api';
 import type { SavedScenario } from '@/lib/types';
 
@@ -63,24 +57,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('ScenarioControls', () => {
-  it('hides the section on the first render and never fetches scenarios when the flag is off', () => {
-    const { container } = renderWithIntl(
-      <ScenarioControls
-        canSave
-        onSaveScenario={vi.fn()}
-        onLoadScenario={vi.fn()}
-      />,
-      { featureFlags: { ...ALL_FLAGS_OFF } },
-    );
-
-    // Synchronous first-render assertion: the inlined flag state hides the
-    // section with no client-side fetch round-trip (task 9.4).
-    expect(container.firstChild).toBeNull();
-    expect(screen.queryByTestId('scenario-controls')).not.toBeInTheDocument();
-    expect(mockedListScenarios).not.toHaveBeenCalled();
-  });
-
-  it('shows the section on the first render when the flag is on in the inlined payload', () => {
+  it('renders the section by default before the list request settles', () => {
     // The list request never settles: visibility must not depend on it.
     mockedListScenarios.mockReturnValue(new Promise(() => {}));
 
@@ -90,16 +67,13 @@ describe('ScenarioControls', () => {
         onSaveScenario={vi.fn()}
         onLoadScenario={vi.fn()}
       />,
-      { featureFlags: ALL_FLAGS_ON },
     );
 
-    // No flag round-trip to wait for — visibility matches the inlined
-    // state immediately (task 9.4: no late gated-UI appearance).
     expect(container.firstChild).not.toBeNull();
     expect(screen.getByTestId('scenario-controls')).toBeInTheDocument();
   });
 
-  it('loads the scenario list and renders the picker when the flag is on', async () => {
+  it('loads the scenario list and renders the picker', async () => {
     renderWithIntl(
       <ScenarioControls
         canSave

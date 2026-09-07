@@ -60,7 +60,6 @@ import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/e
 import { D1PriceAlertRepository } from '../../../../packages/data-platform/src/repositories/d1/price-alert.repository';
 import { D1PriceHistorySummaryRepository } from '../../../../packages/data-platform/src/repositories/d1/price-history-summary.repository';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
-import { FeatureFlag, FeatureFlagService } from '../middleware/feature-flags';
 import {
   recordPriceAlertEvaluationCounters,
   type PriceAlertEvaluationCounters,
@@ -92,9 +91,6 @@ export const PRICE_ALERT_COOLDOWN_MS = 24 * 3_600 * 1_000;
 const SUMMARY_LOOKBACK_DAYS = 7;
 
 const ALERT_CHANNEL: AlertChannel = 'email';
-
-/** The price-alerts feature gate (spec slug `enable_price_alerts`). */
-const PRICE_ALERTS_FLAG = FeatureFlag.PRICE_ALERTS;
 
 // ---------------------------------------------------------------------------
 // Alert email (email Worker send contract — freshness-alert precedent)
@@ -192,8 +188,6 @@ export async function sendPriceAlertEmail(
 
 /** One run's outcome — logged by the cron dispatch, asserted by tests. */
 export interface PriceAlertEvaluationResult extends PriceAlertEvaluationCounters {
-  /** False when the price-alerts flag is off — nothing was scanned. */
-  readonly flagEnabled: boolean;
   /** False when the email Worker URL/secret are unset — nothing evaluated. */
   readonly configured: boolean;
   /** Size of the active-alert scan set. */
@@ -209,11 +203,6 @@ export interface PriceAlertEvaluationDeps {
   findAccountEmail?: (accountId: number) => Promise<string | null>;
   send?: (email: PriceAlertEmail) => Promise<void>;
   now?: () => Date;
-  /**
-   * Flag override for tests — defaults to the FeatureFlagService
-   * resolution of the price-alerts gate (no-op when off).
-   */
-  flagEnabled?: boolean;
 }
 
 /** The run-local, mutable twin of the exported counter shape. */
@@ -273,16 +262,6 @@ export async function handlePriceAlertEvaluation(
     suppressed: 0,
   } as const;
 
-  // -- Flag gate (instant rollback) ---------------------------------------
-  const flagEnabled =
-    deps.flagEnabled ?? new FeatureFlagService(env).isEnabled(PRICE_ALERTS_FLAG);
-  if (!flagEnabled) {
-    log.info({
-      message: 'Price-alerts flag is off — evaluation skipped this tick',
-    });
-    return { flagEnabled: false, configured: true, ...zeros };
-  }
-
   // -- Email configuration gate -------------------------------------------
   // Without the send path no intent could ever complete; evaluating
   // would only strand pending rows. Same posture as the freshness alert.
@@ -292,7 +271,7 @@ export async function handlePriceAlertEvaluation(
         'Price-alert email delivery is not configured (EMAIL_WORKER_URL, ' +
         'EMAIL_SEND_SECRET) — alerts not evaluated this tick',
     });
-    return { flagEnabled: true, configured: false, ...zeros };
+    return { configured: false, ...zeros };
   }
 
   const now = deps.now ?? (() => new Date());
@@ -440,7 +419,6 @@ export async function handlePriceAlertEvaluation(
   });
 
   return {
-    flagEnabled: true,
     configured: true,
     activeAlerts: active.length,
     ...counters,

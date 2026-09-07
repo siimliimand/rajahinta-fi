@@ -10,23 +10,19 @@
  * and refreshes inputs + updatedAt while keeping the row identity, and
  * delete is scoped to the owning account.
  *
- * Also covers, at the metadata + guard-unit level (same convention as
- * historical-guard-regression.test.ts): the ADVANCED_FEATURES flag gate on
- * all three handlers (403 while off) and the SessionAuthGuard on the class
- * (token-derived identity, task 2.2).
+ * Also covers, at the metadata level (same convention as sibling guard
+ * regression tests): the SessionAuthGuard on the class (token-derived
+ * identity, task 2.2).
  *
  * @module AccountScenariosControllerTest
  */
 
 import { randomUUID } from 'node:crypto';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   BadRequestException,
-  ForbiddenException,
   NotFoundException,
-  type ExecutionContext,
 } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
 import {
   AccountRepository,
   SavedBasketRepository,
@@ -34,20 +30,15 @@ import {
   accounts,
   savedBaskets,
   savedScenarios,
+  type AccountCredentialRecord,
   type SavedScenarioRecord,
 } from '@rajahinta/data-platform';
 import { AccountService } from '../account.service';
 import { DataExportService } from '../data-export.service';
 import { AccountController } from '../account.controller';
-import { SessionAuthGuard } from '../session-auth.guard';
 import type { AuthenticatedAccount } from '../current-user.decorator';
 import type { SaveScenarioRequest } from '../account.types';
-import {
-  FeatureFlagGuard,
-  FeatureFlag,
-  FEATURE_FLAG_KEY,
-} from '../../feature-flags';
-import { FeatureFlagService } from '../../feature-flags/feature-flag.service';
+import { SessionAuthGuard } from '../session-auth.guard';
 
 // ---------------------------------------------------------------------------
 // In-memory repository implementations (plain classes — no vi.fn)
@@ -87,13 +78,43 @@ class InMemoryAccountRows extends AccountRepository {
     return this.rows.find((r) => r.userId === userId) ?? null;
   }
 
+  // DrizzleAccountRepository parity: credential columns are null on the
+  // legacy pg harness (design D9, change email-password-auth).
+  async findByEmail(email: string): Promise<AccountCredentialRecord | null> {
+    const row = this.rows.find(
+      (r) => r.email.toLowerCase() === email.toLowerCase(),
+    );
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.userId,
+      email: row.email,
+      passwordHash: null,
+      emailVerifiedAt: null,
+      tier: row.tier,
+      createdAt: row.createdAt,
+      lastActiveAt: row.lastActiveAt,
+    };
+  }
+
   async updateLastActive(userId: string): Promise<void> {
     const row = await this.findByUserId(userId);
     if (row) row.lastActiveAt = new Date();
   }
 
-  // FIX-E: email-verification write — unused in these tests, satisfies the contract.
-  async setVerifiedEmail(_userId: string, _email: string): Promise<void> {}
+  // Credential writes have no harness columns — reject loudly, mirroring
+  // the pg repository (design D9).
+  async setVerifiedEmail(_userId: string, _verifiedAt: Date): Promise<void> {
+    throw new Error(
+      'setVerifiedEmail is not supported by the harness (design D9)',
+    );
+  }
+
+  async setPasswordHash(_userId: string, _passwordHash: string): Promise<void> {
+    throw new Error(
+      'setPasswordHash is not supported by the harness (design D9)',
+    );
+  }
 
   async delete(userId: string): Promise<void> {
     const index = this.rows.findIndex((r) => r.userId === userId);
@@ -252,7 +273,7 @@ const OTHER_USER_ID = 'scenario-user-2';
 
 /** AuthenticatedAccount the SessionAuthGuard would attach for a userId. */
 function user(userId: string): AuthenticatedAccount {
-  return { accountId: 1, userId, tier: 'FREE', verified: false };
+  return { accountId: 1, userId, tier: 'FREE' };
 }
 
 const VALID_BODY: SaveScenarioRequest = {
@@ -518,115 +539,5 @@ describe('AccountController scenarios — session authentication', () => {
       AccountController,
     ) as unknown[];
     expect(guards).toContain(SessionAuthGuard);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Tests — ADVANCED_FEATURES flag gating (403 on all three handlers)
-// ---------------------------------------------------------------------------
-
-/** NestJS internal metadata key for guards applied via @UseGuards. */
-const GUARDS_METADATA = '__guards__';
-
-function contextForMethod<F>(handler: F, controller: object): ExecutionContext {
-  return {
-    getHandler: () => handler,
-    getClass: () => controller,
-    switchToHttp: () => ({
-      getRequest: () => ({ headers: {}, cookies: {} }),
-      getResponse: () => ({ header: () => undefined }),
-    }),
-    getArgs: () => [],
-    getType: () => 'http',
-  } as unknown as ExecutionContext;
-}
-
-describe('AccountController scenarios — ADVANCED_FEATURES gating', () => {
-  const reflector = new Reflector();
-  const originalEnv = process.env;
-
-  beforeEach(() => {
-    process.env = { ...originalEnv };
-    delete process.env.FF_ADVANCED_FEATURES;
-  });
-
-  afterEach(() => {
-    process.env = originalEnv;
-  });
-
-  const handlers = [
-    ['listScenarios', AccountController.prototype.listScenarios],
-    ['saveScenario', AccountController.prototype.saveScenario],
-    ['deleteScenario', AccountController.prototype.deleteScenario],
-  ] as const;
-
-  it('all three handlers are flag-gated via @FeatureFlagDec(ADVANCED_FEATURES)', () => {
-    for (const [, handler] of handlers) {
-      const flag = reflector.getAllAndOverride<FeatureFlag>(FEATURE_FLAG_KEY, [
-        handler,
-        AccountController,
-      ]);
-      expect(flag).toBe(FeatureFlag.ADVANCED_FEATURES);
-    }
-  });
-
-  it('all three handlers carry the FeatureFlagGuard', () => {
-    for (const [, handler] of handlers) {
-      const guards = reflector.getAllAndOverride<unknown[]>(GUARDS_METADATA, [
-        handler,
-        AccountController,
-      ]);
-      expect(guards).toContain(FeatureFlagGuard);
-    }
-  });
-
-  it('FeatureFlagGuard rejects every handler with 403 while the flag is off (default)', () => {
-    const guard = new FeatureFlagGuard(reflector, new FeatureFlagService());
-
-    for (const [name, handler] of handlers) {
-      const context = contextForMethod(handler, AccountController);
-      expect(() => guard.canActivate(context), `${name} must be gated`).toThrow(
-        ForbiddenException,
-      );
-    }
-  });
-
-  it('FeatureFlagGuard names the flag in the rejection', () => {
-    const guard = new FeatureFlagGuard(reflector, new FeatureFlagService());
-    const context = contextForMethod(
-      AccountController.prototype.listScenarios,
-      AccountController,
-    );
-
-    try {
-      guard.canActivate(context);
-      expect.unreachable('Expected ForbiddenException');
-    } catch (err) {
-      expect(err).toBeInstanceOf(ForbiddenException);
-      expect((err as ForbiddenException).message).toMatch(/ADVANCED_FEATURES/);
-    }
-  });
-
-  it('FeatureFlagGuard allows every handler once FF_ADVANCED_FEATURES=true', () => {
-    process.env.FF_ADVANCED_FEATURES = 'true';
-    const guard = new FeatureFlagGuard(reflector, new FeatureFlagService());
-
-    for (const [, handler] of handlers) {
-      const context = contextForMethod(handler, AccountController);
-      expect(guard.canActivate(context)).toBe(true);
-    }
-  });
-
-  it('the pre-existing basket endpoints stay ungated (regression guard)', () => {
-    for (const handler of [
-      AccountController.prototype.listBaskets,
-      AccountController.prototype.getHistory,
-    ]) {
-      const flag = reflector.getAllAndOverride<FeatureFlag>(FEATURE_FLAG_KEY, [
-        handler,
-        AccountController,
-      ]);
-      expect(flag, 'basket/history handlers must not be flag-gated').toBeUndefined();
-    }
   });
 });

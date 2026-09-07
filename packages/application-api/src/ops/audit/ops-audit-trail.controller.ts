@@ -11,14 +11,12 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { OpsAccessGuard } from '../../observability';
-import { FeatureFlagGuard, FeatureFlagDec, FeatureFlag } from '../../feature-flags';
 import type { OpsAuditListResponse } from '../ops.dto';
 import { OpsAuditTrailService } from './ops-audit-trail.service';
 
 @ApiTags('ops')
 @Controller('ops/console/audit')
-@UseGuards(OpsAccessGuard, FeatureFlagGuard)
-@FeatureFlagDec(FeatureFlag.OPERATOR_CONSOLE)
+@UseGuards(OpsAccessGuard)
 export class OpsAuditTrailController {
   constructor(private readonly trail: OpsAuditTrailService) {}
 
@@ -34,7 +32,7 @@ export class OpsAuditTrailController {
       'console and dataset-governance actions.',
   })
   @ApiResponse({ status: 200, description: 'Recent audit entries' })
-  @ApiResponse({ status: 403, description: 'Unauthenticated, outside the allowlist, or flag off' })
+  @ApiResponse({ status: 403, description: 'Unauthenticated or outside the allowlist' })
   async recent(@Query('limit') limit?: string): Promise<OpsAuditListResponse> {
     const parsed = limit === undefined ? undefined : Number.parseInt(limit, 10);
     return this.trail.recentEntries(Number.isNaN(parsed) ? undefined : parsed);
