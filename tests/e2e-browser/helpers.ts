@@ -39,9 +39,6 @@ export const COPY = {
   compareTitle: 'Tuotevertailu',
   addProductButton: '+ Lisää tuote',
   sortLabel: 'Järjestä:',
-  exportButton: 'Vie tietoni',
-  downloadStarted: 'Lataus aloitettu — tarkista latauskansiosi.',
-  welcomeBack: 'Tervetuloa takaisin',
 } as const;
 
 /** Structural disclaimer (packages/core-domain/src/disclaimer.ts, fi). */
@@ -115,9 +112,12 @@ export async function searchProduct(
  * Run one landed-cost calculation through the calculator UI and wait for
  * the itemized breakdown to render.
  *
- * Also waits for the fire-and-forget account-history POST so a caller
- * can rely on the calculation being recorded under the session (used by
- * the account-export journey).
+ * Anonymous by design: the account-history write the calculate action
+ * fires resolves 401 for a signed-out visitor (credentials auth replaced
+ * the anonymous auto-mint — email-password-auth), and the UI surfaces
+ * nothing. Journeys that need a signed-in account run against the API
+ * Worker's own suites; the harness stack deliberately carries no
+ * credential flow (accounts-module divergence docblock).
  */
 export async function runCalculation(
   page: Page,
@@ -137,17 +137,6 @@ export async function runCalculation(
   const quantityInput = page.getByLabel(COPY.quantityLabel, { exact: true });
   await quantityInput.fill(String(quantity));
 
-  // The history write is fire-and-forget with a 401→issue-session→replay
-  // shape on first account touch; wait for the successful replay so the
-  // session cookie and the history row are both in place afterwards.
-  const historyRecorded = page.waitForResponse(
-    (response) =>
-      response.url().includes('/api/v1/account/history') &&
-      response.request().method() === 'POST' &&
-      response.status() >= 200 &&
-      response.status() < 300,
-  );
-
   await page
     .getByRole('button', { name: COPY.calculateButton, exact: true })
     .click();
@@ -155,10 +144,6 @@ export async function runCalculation(
   await expect(
     page.getByRole('heading', { name: COPY.costBreakdown, exact: true }),
   ).toBeVisible();
-
-  // The history write is fire-and-forget; wait for it to land so the
-  // account export can assert on the recorded calculation.
-  await historyRecorded;
 }
 
 /**
@@ -194,11 +179,14 @@ export async function addCompareProduct(
 }
 
 /**
- * Product column names in display order (the h3 of each comparison
- * column, DOM order = visual order in the grid).
+ * Product column names in display order (the first h3 of each comparison
+ * column — the product title; the always-rendered price-history panel
+ * deeper in the column carries its own h3s, which must not leak in).
  */
 export async function compareColumnNames(page: Page): Promise<string[]> {
   return page
-    .locator('main div.grid > div h3')
-    .allTextContents();
+    .locator('main div.grid > div')
+    .evaluateAll((cols) =>
+      cols.map((col) => col.querySelector('h3')?.textContent?.trim() ?? ''),
+    );
 }
