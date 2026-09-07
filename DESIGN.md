@@ -182,9 +182,13 @@ Feature-component paths above are relative to `apps/frontend/src/app/[locale]/`.
 | `/group-order` | Group order session creation — create form and scope selection (flag-gated) |
 | `/group-order/[token]` | Shared group order session view via opaque token — participants, item valuations, transfers breakdown, accounting-only boundary note; noindexed, 410 after expiry (flag-gated) |
 | `/ops` | Internal operator console — client console fetches from `/ops/console/**` behind bearer-token + IP-allowlist realm and the OPERATOR_CONSOLE flag (default OFF); excluded from indexing |
-| `/account` | Account management page (anonymous session, calculation history, data export, saved scenarios) |
-| `/account/create` | Anonymous account creation confirmation |
+| `/account` | Account management page (login required — session cookie; calculation history, data export, saved scenarios, price alerts) |
 | `/account/saved-baskets` | User's saved calculation baskets |
+| `/login` | Credentials login (email + password); links to register and password reset |
+| `/register` | Account registration (min 12-char password policy); triggers verification email |
+| `/account/verify` | Email-verification landing page — confirms the single-use emailed token and renders the result |
+| `/account/forgot` | Password reset request (always-neutral response; mail only when the account exists) |
+| `/account/reset` | Password reset form consuming the emailed single-use token |
 | `/age-gate` | Age verification page |
 | `/age-gate/declined` | Neutral destination for declining the age gate — no alcohol-related content, no external links |
 | `[...rest]` (catch-all) | Unmatched paths inside a locale route through `notFound()` to the localized not-found page |

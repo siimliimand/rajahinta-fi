@@ -158,7 +158,7 @@ The optimizer enumerates subset masks per merchant (`packages/core-domain/src/op
 
 ## Add
 
-1. Real authentication (email or OIDC) behind the existing anonymous-session model, with the verified email column on `accounts` finally used. Until then, treat account data as disposable.
+1. Federated identity (OIDC/SSO) on top of the credentials auth that now exists (shipped: email+password register/login, verified-email flow, password reset, D1-backed accounts). Until then, treat account data as disposable.
 2. Foreign-exchange rate ingestion as a first-class versioned dataset, alongside tax rules, with the same manual-confirmation publication flow.
 3. At least one more merchant feed (Alko for the domestic reference price, or a German shipper) to make the comparison meaningful; the adapter interface and governance gate are ready for it.
 4. An operator console for the three human workflows that currently have no UI: granting source-governance permission, confirming detected tax-rate versions, and working the correction queue.
