@@ -111,28 +111,43 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     }
   });
 
-  it('account routes require a session; POST /api/v1/account/session stays public', async () => {
+  it('account routes require a session; credential issuance routes are public', async () => {
     const { db, d1 } = openMigratedD1();
     seedStandardAccounts(db);
     const app = buildProbeApp();
     const locked = testEnv(d1);
     const token = await issueSessionToken(d1, 7);
 
-    // Issuance is reachable WITHOUT a cookie — the route must stay public.
-    const issue = await probe(app, locked, '/api/v1/account/session', { method: 'POST' });
-    expect(issue.status).toBe(200);
+    // The credential routes (email-password-auth D2) are PUBLIC by design —
+    // register/login/reset-request carry only the AUTH rate limit, and the
+    // anonymous POST /session issuance route is deleted; their probe
+    // handlers are reachable without a cookie.
+    for (const path of [
+      '/api/v1/account/register',
+      '/api/v1/account/login',
+      '/api/v1/account/password/reset-request',
+    ]) {
+      const publicRoute = await probe(app, locked, path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+      });
+      expect(publicRoute.status, `POST ${path}`).toBe(200);
+    }
 
     // Everything else in the /api/v1/account prefix (class-level
-    // SessionAuthGuard) requires the session cookie.
+    // SessionAuthGuard) requires the session cookie. The self-asserted
+    // POST /api/v1/account/verify-email endpoint is DELETED (replaced by
+    // the verify-email/request + /confirm token flow).
     for (const [method, path] of [
       ['GET', '/api/v1/account/export'],
+      ['GET', '/api/v1/account/me'],
       ['GET', '/api/v1/account/baskets'],
       ['POST', '/api/v1/account/baskets'],
       ['DELETE', '/api/v1/account/baskets/basket-1'],
       ['GET', '/api/v1/account/history'],
       ['POST', '/api/v1/account/history'],
       ['GET', '/api/v1/account/subscription'],
-      ['POST', '/api/v1/account/verify-email'],
+      ['POST', '/api/v1/account/verify-email/request'],
       ['POST', '/api/v1/account/session/rotate'],
       ['DELETE', '/api/v1/account/session'],
     ] as const) {

@@ -1,22 +1,33 @@
 /**
- * Accounts + analytics route parity tests (task 3.7).
+ * Accounts + analytics route parity tests (tasks 3.7, 2.2).
  *
  * Expectations ported from:
  * - packages/application-api/src/accounts/__tests__/session.controller.test.ts
- *   and session-security.test.ts (issuance shape, cookie flags, rotation
+ *   and session-security.test.ts (session shape, cookie flags, rotation
  *   invalidates the predecessor, revoke clears the cookie),
  * - account.controller.test.ts / gdpr-integration.test.ts (export shape),
  * - account-scenarios.controller.test.ts / account-history.controller.test.ts
  *   (upsert-by-name, account-scoped deletes, history claim semantics),
- * - email-verification.test.ts (upgrade endpoint validation + persistence),
  * - analytics/__tests__/analytics.controller.test.ts and
  *   outbound-redirect.controller.test.ts (payload policy, count report,
  *   redirect).
+ *
+ * Task 2.2 (change email-password-auth): the anonymous
+ * `POST /api/v1/account/session` issuance route is DELETED — sessions are
+ * issued by `POST /register` / `POST /login` (credential routes), which
+ * these suites drive directly. Coverage here: register/login happy paths,
+ * lowercase normalization, duplicate-email 409, enumeration-identical
+ * login 401s (unknown email vs wrong password, empty-hash fail-safe),
+ * `/me`, the AUTH rate-limit profile and its composition order, and the
+ * durable audit_events security trail (D6 — never the password, never a
+ * raw token). The email-token flows (verify/reset) live in
+ * email-token.routes.test.ts.
  *
  * @module AccountsAnalyticsRoutesTest
  */
 
 import { describe, it, expect } from 'vitest';
+import type { DatabaseSync } from 'node:sqlite';
 import {
   buildApp,
   expectEnvelope,
@@ -28,6 +39,7 @@ import {
   seedProduct,
   lockedEnv,
 } from './harness';
+import type { Env } from '../../env';
 
 const AGE = { 'x-age-confirmed': 'confirmed' };
 const JSON_HDRS = { 'content-type': 'application/json', ...AGE };
@@ -40,23 +52,437 @@ function sessionCookieOf(res: Response): { raw: string; token: string } {
   return { raw, token: match![1]! };
 }
 
+let registerSeq = 0;
+
+/**
+ * Register a fresh account against the app and return its session cookie
+ * + identity. The replacement for the deleted anonymous-issuance helper —
+ * every authenticated flow in this file starts from a real registration.
+ */
+async function registerInto(
+  env: Env,
+  app: ReturnType<typeof buildApp>,
+  overrides: { email?: string; password?: string } = {},
+): Promise<{ cookie: string; userId: string; email: string; password: string }> {
+  registerSeq += 1;
+  const email = overrides.email ?? `user-${registerSeq}@example.invalid`;
+  const password = overrides.password ?? 'correct horse battery staple';
+  const res = await request(app, env, '/api/v1/account/register', {
+    method: 'POST',
+    headers: JSON_HDRS,
+    body: JSON.stringify({ email, password }),
+  });
+  expect(res.status, `register ${email}`).toBe(201);
+  const body = (await res.json()) as { userId: string };
+  return {
+    cookie: `rajahinta_session=${sessionCookieOf(res).token}`,
+    userId: body.userId,
+    email,
+    password,
+  };
+}
+
+/** All audit rows, oldest first — the D6 trail assertions read these. */
+function auditRows(db: DatabaseSync): Array<Record<string, unknown>> {
+  return db
+    .prepare(
+      `SELECT entity_type, entity_id, action, author, reason, new_value
+         FROM audit_events ORDER BY occurred_at ASC, id ASC`,
+    )
+    .all() as unknown as Array<Record<string, unknown>>;
+}
+
+// ---------------------------------------------------------------------------
+// Credential routes — register / login / me (task 2.2, design D2)
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/account/register', () => {
+  it('creates the account and issues a session: 201, httpOnly cookie, no token in the body', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/account/register', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'me@example.invalid', password: 'correct horse battery staple' }),
+    });
+    expect(res.status).toBe(201);
+    const { raw, token } = sessionCookieOf(res);
+    for (const flag of ['Path=/', 'HttpOnly', 'Secure', 'SameSite=Lax']) {
+      expect(raw).toContain(flag);
+    }
+    expect(raw).not.toMatch(/domain=/i);
+
+    const body = (await res.json()) as { userId: string; expiresAt: string; verified: boolean };
+    expect(body.userId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(body.verified).toBe(false); // email_verified_at is null until the token flow
+    expect(new Date(body.expiresAt).getTime()).toBeGreaterThan(Date.now());
+    // The session token never appears in a response body.
+    expect(JSON.stringify(body)).not.toContain(token);
+  });
+
+  it('normalizes the email to lowercase — case variants are one identity', async () => {
+    const { db, d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const registered = await request(app, env, '/api/v1/account/register', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'Mixed@Case.EXAMPLE.invalid', password: 'correct horse battery staple' }),
+    });
+    expect(registered.status).toBe(201);
+    const { userId } = (await registered.json()) as { userId: string };
+
+    // Stored lowercase-canonical (the lower(email) unique index's form).
+    const row = db.prepare(`SELECT email FROM accounts WHERE user_id = ?`).get(userId) as
+      | { email: string }
+      | undefined;
+    expect(row?.email).toBe('mixed@case.example.invalid');
+
+    // Login with a different case resolves the same account.
+    const login = await request(app, env, '/api/v1/account/login', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'MIXED@case.example.invalid', password: 'correct horse battery staple' }),
+    });
+    expect(login.status).toBe(200);
+    expect(((await login.json()) as { userId: string }).userId).toBe(userId);
+  });
+
+  it('rejects duplicate emails with 409 — across case variants too', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+    const password = 'correct horse battery staple';
+
+    const first = await request(app, env, '/api/v1/account/register', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'dupe@example.invalid', password }),
+    });
+    expect(first.status).toBe(201);
+
+    const duplicate = await request(app, env, '/api/v1/account/register', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'dupe@example.invalid', password }),
+    });
+    await expectEnvelope(duplicate, 409, {
+      message: 'Email already registered.',
+      error: 'EmailAlreadyRegistered',
+    });
+
+    const caseVariant = await request(app, env, '/api/v1/account/register', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'DUPE@example.invalid', password }),
+    });
+    await expectEnvelope(caseVariant, 409, { error: 'EmailAlreadyRegistered' });
+  });
+
+  it('validates email format and the 12–128 password policy (400, before any hashing side effect)', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const badEmail = await request(app, env, '/api/v1/account/register', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'not-an-email', password: 'correct horse battery staple' }),
+    });
+    await expectEnvelope(badEmail, 400, {
+      message: '"email" is required and must be a valid email address',
+      error: 'InvalidEmail',
+    });
+
+    const shortPassword = await request(app, env, '/api/v1/account/register', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'me@example.invalid', password: 'short' }),
+    });
+    await expectEnvelope(shortPassword, 400, { error: 'InvalidPassword' });
+  });
+
+  it('appends register success (and duplicate rejection) to audit_events — never the password', async () => {
+    const { db, d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+    const password = 'correct horse battery staple';
+
+    await request(app, env, '/api/v1/account/register', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'audited@example.invalid', password }),
+    });
+    await request(app, env, '/api/v1/account/register', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'audited@example.invalid', password }),
+    });
+
+    const rows = auditRows(db);
+    expect(rows.some((r) => r.reason === 'account registered' && r.action === 'created')).toBe(true);
+    expect(
+      rows.some((r) => r.reason === 'registration rejected: email already registered'),
+    ).toBe(true);
+    // D6: never log the password (or any credential material).
+    expect(JSON.stringify(rows)).not.toContain(password);
+  });
+});
+
+describe('POST /api/v1/account/login', () => {
+  it('logs in with the registered credential: 200, cookie set, verified flag from the account row', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+    const { email, password } = await registerInto(env, app);
+
+    const res = await request(app, env, '/api/v1/account/login', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email, password }),
+    });
+    expect(res.status).toBe(200);
+    const { raw, token } = sessionCookieOf(res);
+    expect(raw).toContain('HttpOnly');
+    expect(JSON.stringify(await res.json())).not.toContain(token);
+
+    // The issued cookie authenticates the account endpoints.
+    const me = await request(app, env, '/api/v1/account/me', {
+      headers: { cookie: `rajahinta_session=${token}` },
+    });
+    expect(me.status).toBe(200);
+  });
+
+  it('answers unknown email and wrong password with the IDENTICAL 401 envelope', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+    await registerInto(env, app, { email: 'known@example.invalid' });
+
+    const unknownEmail = await request(app, env, '/api/v1/account/login', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'who@example.invalid', password: 'correct horse battery staple' }),
+    });
+    const wrongPassword = await request(app, env, '/api/v1/account/login', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'known@example.invalid', password: 'wrong horse battery staple' }),
+    });
+
+    const unknownBody = await expectEnvelope(unknownEmail, 401, {
+      message: 'Invalid email or password.',
+      error: 'InvalidCredentials',
+    });
+    const wrongBody = await expectEnvelope(wrongPassword, 401, {
+      message: 'Invalid email or password.',
+      error: 'InvalidCredentials',
+    });
+    // Enumeration resistance: strip the per-request envelope fields and
+    // the two failure modes must be byte-identical.
+    const stable = (b: Record<string, unknown>) =>
+      JSON.stringify({ ...b, timestamp: undefined, path: undefined });
+    expect(stable(unknownBody)).toBe(stable(wrongBody));
+  });
+
+  it('fails safe on an empty stored hash: 401, never 500, never authenticated', async () => {
+    const { db, d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    // Migration 0014 backfills pre-credential rows with '' — a stray row
+    // must fail CLOSED (design D7).
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO accounts (id, user_id, email, password_hash, tier, created_at, last_active_at)
+       VALUES (501, 'user-501', 'hashless@example.invalid', '', 'FREE', ?, ?)`,
+    ).run(now, now);
+
+    const res = await request(app, env, '/api/v1/account/login', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'hashless@example.invalid', password: 'correct horse battery staple' }),
+    });
+    await expectEnvelope(res, 401, { error: 'InvalidCredentials' });
+  });
+
+  it('appends login success + failure security events (D6) — actor is the userId', async () => {
+    const { db, d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+    const { userId, email, password } = await registerInto(env, app, { email: 'login-audit@example.invalid' });
+
+    await request(app, env, '/api/v1/account/login', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email, password: 'wrong horse battery staple' }),
+    });
+    await request(app, env, '/api/v1/account/login', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email, password }),
+    });
+    await request(app, env, '/api/v1/account/login', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'unknown@example.invalid', password }),
+    });
+
+    const rows = auditRows(db);
+    const failure = rows.find((r) => r.reason === 'login failed: invalid credentials');
+    expect(failure).toBeDefined();
+    expect(failure!.entity_type).toBe('account_session');
+    expect(JSON.stringify(rows)).not.toContain(password);
+
+    const success = rows.find((r) => r.reason === 'login succeeded');
+    expect(success).toBeDefined();
+    expect(success!.entity_id).toBe(userId);
+    expect(success!.author).toBe(userId);
+  });
+});
+
+describe('GET /api/v1/account/me', () => {
+  it('returns { userId, email, verified } from the account row (sessionAuth)', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+    const { cookie, userId, email } = await registerInto(env, app);
+
+    const res = await request(app, env, '/api/v1/account/me', { headers: { cookie } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ userId, email, verified: false });
+  });
+
+  it('requires a session', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const noSession = await request(app, lockedEnv(d1), '/api/v1/account/me');
+    await expectEnvelope(noSession, 401, { error: 'SessionRequired' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AUTH rate limit (design D5) and its composition order
+// ---------------------------------------------------------------------------
+
+describe('AUTH rate-limit profile (register/login/reset-request)', () => {
+  it('admits 10 AUTH requests per 5 min, then rejects the handler with the 429 envelope', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    // 10 failed logins (handler reached → 401 each) exhaust the bucket.
+    for (let i = 0; i < 10; i++) {
+      const attempt = await request(app, env, '/api/v1/account/login', {
+        method: 'POST',
+        headers: JSON_HDRS,
+        body: JSON.stringify({ email: 'who@example.invalid', password: 'wrong horse battery staple' }),
+      });
+      expect(attempt.status).toBe(401);
+    }
+
+    // The 11th never reaches the handler — the limiter (composed AHEAD of
+    // the route in the guard table) rejects with the guard's 429 shape.
+    const rejected = await request(app, env, '/api/v1/account/login', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'who@example.invalid', password: 'wrong horse battery staple' }),
+    });
+    await expectEnvelope(rejected, 429, { error: 'TooManyRequests' });
+    expect(rejected.headers.get('Retry-After')).toBeTruthy();
+  });
+
+  it('the AUTH bucket is its own window — exhausting it leaves DEFAULT routes untouched', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    for (let i = 0; i < 10; i++) {
+      await request(app, env, '/api/v1/account/register', {
+        method: 'POST',
+        headers: JSON_HDRS,
+        body: JSON.stringify({ email: `burst-${i}@example.invalid`, password: 'correct horse battery staple' }),
+      });
+    }
+    const authExhausted = await request(app, env, '/api/v1/account/register', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'burst-over@example.invalid', password: 'correct horse battery staple' }),
+    });
+    expect(authExhausted.status).toBe(429);
+
+    // A DEFAULT-profile route still admits (profile windows are isolated).
+    const click = await request(app, env, '/api/v1/analytics/click', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ merchantId: 'alko', url: 'https://example.invalid/karhu' }),
+    });
+    expect(click.status).toBe(200);
+  });
+
+  it('composition order on rotate: sessionAuth runs BEFORE the rate limit (Nest guard order)', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+
+    // Without a cookie the guard rejects — the limiter never admits these,
+    // and repeated unauthenticated calls keep hitting the guard's 401, not
+    // the handler's output or a limiter state change.
+    for (let i = 0; i < 3; i++) {
+      const denied = await request(app, lockedEnv(d1), '/api/v1/account/session/rotate', {
+        method: 'POST',
+      });
+      await expectEnvelope(denied, 401, { error: 'SessionRequired' });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Deleted anonymous surfaces
+// ---------------------------------------------------------------------------
+
+describe('removed anonymous-account endpoints', () => {
+  it('POST /api/v1/account/session is gone — register/login are the only issuance', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const res = await request(app, permissiveEnv(d1), '/api/v1/account/session', {
+      method: 'POST',
+    });
+    await expectEnvelope(res, 404, { message: 'Cannot POST /api/v1/account/session' });
+  });
+
+  it('the self-asserted POST /api/v1/account/verify-email is gone', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+    const { cookie } = await registerInto(env, app);
+    const res = await request(app, env, '/api/v1/account/verify-email', {
+      method: 'POST',
+      headers: { ...JSON_HDRS, cookie },
+      body: JSON.stringify({ email: 'me@example.invalid' }),
+    });
+    await expectEnvelope(res, 404, { message: 'Cannot POST /api/v1/account/verify-email' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session cookie lifecycle (rotate + logout) over credential sessions
+// ---------------------------------------------------------------------------
+
 describe('session cookie attributes — Workers deployment (task 5.2)', () => {
-  /**
-   * Every deployed Workers origin is https-only (workers.dev and custom
-   * domains force TLS), so `Secure` must be present in ALL environments —
-   * the legacy NODE_ENV gate never fired (no NODE_ENV var in
-   * wrangler.jsonc) and staging would have shipped a non-Secure cookie.
-   * The cookie stays host-only: the API origin is its only consumer
-   * (frontend never reads the httpOnly token), so no `Domain` attribute.
-   */
   const EXPECTED_FLAGS = ['Path=/', 'HttpOnly', 'Secure', 'SameSite=Lax'];
 
   it('issues with Secure, HttpOnly, SameSite=Lax, Path=/ and no Domain attribute', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
 
-    const res = await request(app, permissiveEnv(d1), '/api/v1/account/session', {
+    const res = await request(app, permissiveEnv(d1), '/api/v1/account/register', {
       method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'flags@example.invalid', password: 'correct horse battery staple' }),
     });
     expect(res.status).toBe(201);
     const { raw } = sessionCookieOf(res);
@@ -70,13 +496,11 @@ describe('session cookie attributes — Workers deployment (task 5.2)', () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
     const env = permissiveEnv(d1);
-
-    const issued = await request(app, env, '/api/v1/account/session', { method: 'POST' });
-    const { token } = sessionCookieOf(issued);
+    const { cookie } = await registerInto(env, app);
 
     const rotated = await request(app, env, '/api/v1/account/session/rotate', {
       method: 'POST',
-      headers: { cookie: `rajahinta_session=${token}` },
+      headers: { cookie },
     });
     expect(rotated.status).toBe(200);
     const { raw } = sessionCookieOf(rotated);
@@ -90,13 +514,11 @@ describe('session cookie attributes — Workers deployment (task 5.2)', () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
     const env = permissiveEnv(d1);
-
-    const issued = await request(app, env, '/api/v1/account/session', { method: 'POST' });
-    const { token } = sessionCookieOf(issued);
+    const { cookie } = await registerInto(env, app);
 
     const logout = await request(app, env, '/api/v1/account/session', {
       method: 'DELETE',
-      headers: { cookie: `rajahinta_session=${token}` },
+      headers: { cookie },
     });
     expect(logout.status).toBe(200);
     const cleared = logout.headers.get('Set-Cookie') ?? '';
@@ -108,79 +530,28 @@ describe('session cookie attributes — Workers deployment (task 5.2)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Sessions (design D3)
-// ---------------------------------------------------------------------------
-
-describe('POST /api/v1/account/session — anonymous issuance', () => {
-  it('issues a session without any credential: 201, httpOnly cookie, no token in the body', async () => {
-    const { d1 } = openMigratedD1();
-    const app = buildApp();
-
-    const res = await request(app, permissiveEnv(d1), '/api/v1/account/session', {
-      method: 'POST',
-    });
-    expect(res.status).toBe(201);
-    const { raw, token } = sessionCookieOf(res);
-    expect(raw).toContain('HttpOnly');
-    expect(raw).toContain('SameSite=Lax');
-    expect(raw).toContain('Path=/');
-    expect(token.length).toBeGreaterThan(0);
-
-    const body = (await res.json()) as { userId: string; expiresAt: string; verified: boolean };
-    // The identity is a server-generated UUID.
-    expect(body.userId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-    );
-    expect(body.verified).toBe(false);
-    expect(new Date(body.expiresAt).getTime()).toBeGreaterThan(Date.now());
-    // The token never appears in a response body.
-    expect(JSON.stringify(body)).not.toContain(token);
-  });
-
-  it('authenticates the issued cookie against the account endpoints', async () => {
-    const { d1 } = openMigratedD1();
-    const app = buildApp();
-    const env = permissiveEnv(d1);
-
-    const issued = await request(app, env, '/api/v1/account/session', { method: 'POST' });
-    const { token } = sessionCookieOf(issued);
-    const body = (await issued.json()) as { userId: string };
-
-    const exportRes = await request(app, env, '/api/v1/account/export', {
-      headers: { cookie: `rajahinta_session=${token}` },
-    });
-    expect(exportRes.status).toBe(200);
-    const exported = (await exportRes.json()) as Record<string, any>;
-    expect(exported.userId).toBe(body.userId);
-    expect(exported.account.email).toContain('@placeholder.local');
-    expect(exported.subscription).toEqual({ userId: body.userId, plan: 'FREE', active: true });
-  });
-});
-
 describe('POST /api/v1/account/session/rotate + DELETE /session', () => {
   it('rotates atomically: the old token stops authenticating immediately', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
     const env = permissiveEnv(d1);
-
-    const issued = await request(app, env, '/api/v1/account/session', { method: 'POST' });
-    const first = sessionCookieOf(issued);
+    const { cookie, userId } = await registerInto(env, app);
 
     const rotated = await request(app, env, '/api/v1/account/session/rotate', {
       method: 'POST',
-      headers: { cookie: `rajahinta_session=${first.token}` },
+      headers: { cookie },
     });
     expect(rotated.status).toBe(200);
     const second = sessionCookieOf(rotated);
-    expect(second.token).not.toBe(first.token);
+    expect(second.token).not.toBe(cookie);
     const rotatedBody = (await rotated.json()) as { userId: string; verified: boolean };
+    expect(rotatedBody.userId).toBe(userId);
     expect(rotatedBody.verified).toBe(false);
 
     // The predecessor is dead — a rotated token never mints a successor.
     const stale = await request(app, env, '/api/v1/account/session/rotate', {
       method: 'POST',
-      headers: { cookie: `rajahinta_session=${first.token}` },
+      headers: { cookie },
     });
     await expectEnvelope(stale, 401, { error: 'InvalidSession' });
 
@@ -195,13 +566,11 @@ describe('POST /api/v1/account/session/rotate + DELETE /session', () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
     const env = permissiveEnv(d1);
-
-    const issued = await request(app, env, '/api/v1/account/session', { method: 'POST' });
-    const { token } = sessionCookieOf(issued);
+    const { cookie } = await registerInto(env, app);
 
     const logout = await request(app, env, '/api/v1/account/session', {
       method: 'DELETE',
-      headers: { cookie: `rajahinta_session=${token}` },
+      headers: { cookie },
     });
     expect(logout.status).toBe(200);
     expect(await logout.json()).toEqual({ revoked: true });
@@ -210,31 +579,22 @@ describe('POST /api/v1/account/session/rotate + DELETE /session', () => {
 
     // The revoked token no longer authenticates.
     const after = await request(app, env, '/api/v1/account/subscription', {
-      headers: { cookie: `rajahinta_session=${token}` },
+      headers: { cookie },
     });
     await expectEnvelope(after, 401, { error: 'InvalidSession' });
   });
 });
 
 // ---------------------------------------------------------------------------
-// Account data — baskets, history, subscription, GDPR export, verify-email
+// Account data — baskets, history, subscription, GDPR export
 // ---------------------------------------------------------------------------
 
 describe('account data endpoints', () => {
-  async function issueInto(env: unknown, app: ReturnType<typeof buildApp>) {
-    const issued = await request(app, env as never, '/api/v1/account/session', {
-      method: 'POST',
-    });
-    const cookie = `rajahinta_session=${sessionCookieOf(issued).token}`;
-    const body = (await issued.json()) as { userId: string };
-    return { cookie, userId: body.userId };
-  }
-
   it('saves and lists baskets with the persisted identity', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
     const env = permissiveEnv(d1);
-    const { cookie } = await issueInto(env, app);
+    const { cookie } = await registerInto(env, app);
 
     const saved = await request(app, env, '/api/v1/account/baskets', {
       method: 'POST',
@@ -262,7 +622,7 @@ describe('account data endpoints', () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
     const env = permissiveEnv(d1);
-    const { cookie } = await issueInto(env, app);
+    const { cookie } = await registerInto(env, app);
 
     const bad = await request(app, env, '/api/v1/account/baskets/not-a-uuid', {
       method: 'DELETE',
@@ -288,8 +648,8 @@ describe('account data endpoints', () => {
     seedCalculationRecord(db, { id: 42, productMasterId: 1 });
     const app = buildApp();
     const env = permissiveEnv(d1);
-    const first = await issueInto(env, app);
-    const second = await issueInto(env, app);
+    const first = await registerInto(env, app);
+    const second = await registerInto(env, app);
 
     const add = await request(app, env, '/api/v1/account/history', {
       method: 'POST',
@@ -335,7 +695,7 @@ describe('account data endpoints', () => {
     seedCalculationRecord(db, { id: 7, productMasterId: 1 });
     const app = buildApp();
     const env = permissiveEnv(d1);
-    const { cookie, userId } = await issueInto(env, app);
+    const { cookie, userId, email } = await registerInto(env, app);
 
     await request(app, env, '/api/v1/account/history', {
       method: 'POST',
@@ -361,7 +721,7 @@ describe('account data endpoints', () => {
     expect(exported.exportDate).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(exported.account).toMatchObject({
       userId,
-      email: `${userId}@placeholder.local`,
+      email,
       tier: 'FREE',
     });
     expect(exported.savedBaskets).toEqual([]);
@@ -376,45 +736,11 @@ describe('account data endpoints', () => {
     expect(exported.subscription).toEqual({ userId, plan: 'FREE', active: true });
   });
 
-  it('upgrades the anonymous account to a verified email (persisted)', async () => {
-    const { d1 } = openMigratedD1();
-    const app = buildApp();
-    const env = permissiveEnv(d1);
-    const { cookie, userId } = await issueInto(env, app);
-
-    const invalid = await request(app, env, '/api/v1/account/verify-email', {
-      method: 'POST',
-      headers: { ...JSON_HDRS, cookie },
-      body: JSON.stringify({ email: 'not-an-email' }),
-    });
-    await expectEnvelope(invalid, 400, {
-      message: '"email" is required and must be a valid email address',
-      error: 'InvalidEmail',
-    });
-
-    const ok = await request(app, env, '/api/v1/account/verify-email', {
-      method: 'POST',
-      headers: { ...JSON_HDRS, cookie },
-      body: JSON.stringify({ email: 'me@example.invalid' }),
-    });
-    expect(ok.status).toBe(200);
-    expect(await ok.json()).toEqual({ verified: true, email: 'me@example.invalid' });
-
-    // The verified address replaced the placeholder on the account row —
-    // visible in the export (and the session keeps authenticating).
-    const exported = await request(app, env, '/api/v1/account/export', {
-      headers: { cookie },
-    });
-    const data = (await exported.json()) as Record<string, any>;
-    expect(data.account.email).toBe('me@example.invalid');
-    expect(data.userId).toBe(userId);
-  });
-
   it('returns the FREE-tier subscription status', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
     const env = permissiveEnv(d1);
-    const { cookie, userId } = await issueInto(env, app);
+    const { cookie, userId } = await registerInto(env, app);
 
     const res = await request(app, env, '/api/v1/account/subscription', {
       headers: { cookie },
@@ -429,13 +755,6 @@ describe('account data endpoints', () => {
 // ---------------------------------------------------------------------------
 
 describe('account scenarios', () => {
-  async function issueInto(env: unknown, app: ReturnType<typeof buildApp>) {
-    const issued = await request(app, env as never, '/api/v1/account/session', {
-      method: 'POST',
-    });
-    return `rajahinta_session=${sessionCookieOf(issued).token}`;
-  }
-
   it('stays session-guarded', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
@@ -448,7 +767,7 @@ describe('account scenarios', () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
     const env = permissiveEnv(d1);
-    const cookie = await issueInto(env, app);
+    const { cookie } = await registerInto(env, app);
 
     const invalid = await request(app, env, '/api/v1/account/scenarios', {
       method: 'POST',
@@ -526,8 +845,8 @@ describe('account scenarios', () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
     const env = permissiveEnv(d1);
-    const cookieA = await issueInto(env, app);
-    const cookieB = await issueInto(env, app);
+    const cookieA = (await registerInto(env, app)).cookie;
+    const cookieB = (await registerInto(env, app)).cookie;
 
     const created = await request(app, env, '/api/v1/account/scenarios', {
       method: 'POST',

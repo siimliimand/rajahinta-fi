@@ -34,6 +34,15 @@ import { USER_CONTEXT_KEY } from '../auth/authenticated-account';
 /** Named limits — RATE_LIMIT_PROFILES parity (rate-limiting.service.ts). */
 export const RATE_LIMIT_PROFILES = {
   DEFAULT: { limit: 60, windowMs: 60_000 },
+  /**
+   * Credential surface (change email-password-auth, design D5): tighter
+   * than DEFAULT because these routes are the brute-force target —
+   * 10 attempts / 5 min / IP across register, login, and
+   * password/reset-request. The shared sliding window IS the lockout
+   * mechanism (no separate account lockout), consistent with the rest
+   * of the API. Its own DO window — profile keys are isolated per client.
+   */
+  AUTH: { limit: 10, windowMs: 300_000 },
   CALCULATOR: { limit: 10, windowMs: 60_000 },
   BASKET: { limit: 10, windowMs: 60_000 },
   SEARCH: { limit: 30, windowMs: 60_000 },

@@ -48,33 +48,41 @@ describe('SessionAuthMiddleware', () => {
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as { user: Record<string, unknown>; sessionToken: string };
+    // `verified` maps email_verified_at IS NOT NULL (email-password-auth
+    // task 2.4 semantics) — account 7 has no verification instant yet.
     expect(body.user).toEqual({
       accountId: 7,
       userId: 'user-7',
       tier: 'FREE',
-      verified: true,
+      verified: false,
     });
     // The raw token stays on the context for rotate/revoke handlers.
     expect(body.sessionToken).toBe(token);
   });
 
-  it('marks verified state from the account email (placeholder ⇒ anonymous)', async () => {
+  it('marks verified state from email_verified_at (null ⇒ unverified until the token confirms)', async () => {
     const { db, d1 } = openMigratedD1();
     seedStandardAccounts(db);
     const app = buildProbeApp();
     const env = testEnv(d1);
 
+    // The verification instant is written ONLY by the emailed single-use
+    // token flow; here it is stamped directly on the row.
+    db.prepare(
+      `UPDATE accounts SET email_verified_at = ? WHERE id = 7`,
+    ).run(new Date().toISOString());
+
     const verified = await probe(app, env, '/api/v1/account/export', {
       ...cookieHeader(await issueSessionToken(d1, 7)),
       method: 'GET',
     });
-    const anonymous = await probe(app, env, '/api/v1/account/export', {
+    const unverified = await probe(app, env, '/api/v1/account/export', {
       ...cookieHeader(await issueSessionToken(d1, 9)),
       method: 'GET',
     });
 
     expect(((await verified.json()) as { user: { verified: boolean } }).user.verified).toBe(true);
-    expect(((await anonymous.json()) as { user: { verified: boolean } }).user.verified).toBe(false);
+    expect(((await unverified.json()) as { user: { verified: boolean } }).user.verified).toBe(false);
   });
 
   it('resolves tier from the account row (PREMIUM account)', async () => {

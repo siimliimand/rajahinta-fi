@@ -18,7 +18,8 @@
  * | BasketOptimizerController (/api/v1/basket)| class: RateLimit                | — |
  * | DeclarationController (/api/v1/declaration)| class: AgeGateGuard; GET :recordId: EntitlementGuard + RequireFeature   | ageGate(); requireFeature('declaration:summary') on GET /:recordId |
  * | AccountController (/api/v1/account)       | class: SessionAuthGuard         | sessionAuth() per route |
- * | SessionController (/api/v1/account)       | POST session: RateLimit only; rotate/revoke: SessionAuthGuard            | rotate + DELETE session: sessionAuth(); POST session stays public |
+ * | Credential routes (NEW, email-password-auth D2) | POST register + login + password/reset-request: rate-limit AUTH (public); GET me + POST verify-email/request: sessionAuth; POST verify-email/confirm + POST password/reset: PUBLIC (the token IS the capability) | AUTH limiter and sessionAuth() per route below; confirm/reset register no guard |
+ * | SessionController (/api/v1/account)       | rotate/revoke: SessionAuthGuard            | rotate + DELETE session: sessionAuth(); the anonymous POST /session issuance route is DELETED (register/login replace it) |
  * | PriceAlertsRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/account/alerts) | no Nest counterpart | sessionAuth(); per-account rate limit registers on the routes (needs the resolved identity) |
  * | GroupOrderRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/group-orders) | no Nest counterpart | POST create only: sessionAuth(); the token-scoped participant routes carry NO sessionAuth (the share token is the capability) |
  * | OpsDashboardController (/ops/health)      | OpsAccessGuard                                                           | opsAccess() |
@@ -40,6 +41,7 @@ import { ageGate } from './age-gate';
 import { requireFeature } from './entitlement';
 import { opsAccess } from './ops-access';
 import { sessionAuth } from './session-auth';
+import { requireRateLimit } from './rate-limit';
 
 /** HTTP methods used by the guarded Nest routes. */
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
@@ -58,8 +60,9 @@ interface GuardedRoute {
  * Method-scoped registrations. Anything class-level in Nest (whole
  * controller prefix) is registered below via `app.use`; these are the
  * per-method routes where Nest scoping is narrower than a prefix — most
- * importantly POST /api/v1/account/session, which MUST stay unguarded
- * (it issues anonymous sessions).
+ * importantly the credential routes (email-password-auth D2), where the
+ * public ones are rate-limited only and the capability routes stay
+ * guard-free by design.
  */
 const GUARDED_ROUTES: readonly GuardedRoute[] = [
   // DeclarationController — GET :recordId adds the entitlement on top of
@@ -70,9 +73,29 @@ const GUARDED_ROUTES: readonly GuardedRoute[] = [
     use: [requireFeature('declaration:summary')],
   },
 
+  // Credential routes (tasks 2.2/2.3, change email-password-auth, design
+  // D2/D5). register/login/password-reset-request are PUBLIC — the AUTH
+  // limiter (10 req / 5 min / IP, design D5) is the brute-force defence
+  // and composes ahead of the handler. verify-email/confirm and
+  // password/reset deliberately stay OUT of this table: the emailed
+  // single-use token IS the capability, a session would add nothing.
+  { methods: ['POST'], path: '/api/v1/account/register', use: [requireRateLimit('AUTH')] },
+  { methods: ['POST'], path: '/api/v1/account/login', use: [requireRateLimit('AUTH')] },
+  {
+    methods: ['POST'],
+    path: '/api/v1/account/password/reset-request',
+    use: [requireRateLimit('AUTH')],
+  },
+  { methods: ['GET'], path: '/api/v1/account/me', use: [sessionAuth()] },
+  {
+    methods: ['POST'],
+    path: '/api/v1/account/verify-email/request',
+    use: [sessionAuth()],
+  },
+
   // AccountController — class-level SessionAuthGuard, enumerated per
-  // method so the SessionController's POST /session (same prefix) stays
-  // public.
+  // method so the credential routes above (same prefix) keep their own
+  // composition.
   { methods: ['GET'], path: '/api/v1/account/export', use: [sessionAuth()] },
   {
     methods: ['GET', 'POST'],
@@ -92,11 +115,6 @@ const GUARDED_ROUTES: readonly GuardedRoute[] = [
   {
     methods: ['GET'],
     path: '/api/v1/account/subscription',
-    use: [sessionAuth()],
-  },
-  {
-    methods: ['POST'],
-    path: '/api/v1/account/verify-email',
     use: [sessionAuth()],
   },
   {
@@ -139,8 +157,9 @@ const GUARDED_ROUTES: readonly GuardedRoute[] = [
     use: [sessionAuth()],
   },
 
-  // SessionController — method-level SessionAuthGuard; POST /session
-  // (issuance) is rate-limited only in Nest and must stay public here.
+  // SessionController — method-level SessionAuthGuard; the anonymous
+  // POST /session issuance route was DELETED (register/login are the
+  // only session-issuing endpoints, change email-password-auth).
   {
     methods: ['POST'],
     path: '/api/v1/account/session/rotate',
