@@ -36,6 +36,7 @@ import {
   accounts,
   savedBaskets,
   savedScenarios,
+  type AccountCredentialRecord,
   type SavedScenarioRecord,
 } from '@rajahinta/data-platform';
 import { AccountService } from '../account.service';
@@ -140,13 +141,43 @@ class FakeAccountRepository extends AccountRepository {
     return this.db.findAccountByUserId(userId);
   }
 
+  // DrizzleAccountRepository parity: credential columns are null on the
+  // legacy pg harness (design D9, change email-password-auth).
+  async findByEmail(email: string): Promise<AccountCredentialRecord | null> {
+    const row = this.db.accountRows.find(
+      (r) => r.email.toLowerCase() === email.toLowerCase(),
+    );
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.userId,
+      email: row.email,
+      passwordHash: null,
+      emailVerifiedAt: null,
+      tier: row.tier,
+      createdAt: row.createdAt,
+      lastActiveAt: row.lastActiveAt,
+    };
+  }
+
   async updateLastActive(userId: string): Promise<void> {
     const row = this.db.findAccountByUserId(userId);
     if (row) row.lastActiveAt = new Date();
   }
 
-  // FIX-E: email-verification write — unused in these tests, satisfies the contract.
-  async setVerifiedEmail(_userId: string, _email: string): Promise<void> {}
+  // Credential writes have no harness columns — reject loudly, mirroring
+  // the pg repository (design D9).
+  async setVerifiedEmail(_userId: string, _verifiedAt: Date): Promise<void> {
+    throw new Error(
+      'setVerifiedEmail is not supported by the harness (design D9)',
+    );
+  }
+
+  async setPasswordHash(_userId: string, _passwordHash: string): Promise<void> {
+    throw new Error(
+      'setPasswordHash is not supported by the harness (design D9)',
+    );
+  }
 
   async delete(userId: string): Promise<void> {
     this.db.deleteAccount(userId);

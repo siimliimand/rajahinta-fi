@@ -1,17 +1,22 @@
 /**
- * SessionController tests (task 2.2, change technical-assessment-remediation).
+ * SessionController tests (task 2.2, change technical-assessment-remediation;
+ * trimmed by task 4.1, change email-password-auth).
  *
- * Issue/rotate/revoke against a REAL SessionTokenService over in-memory
- * fakes — verifies the cookie is the only place the token travels, the
- * identity is server-generated, rotation replaces the cookie, and logout
- * clears it.
+ * Rotate/revoke against a REAL SessionTokenService over in-memory fakes —
+ * verifies rotation replaces the cookie (and the old token stops
+ * authenticating immediately) and logout clears it. Sessions are
+ * established through SessionTokenService.issueSession: the harness has
+ * no issuance endpoint (credentials auth lives only in the API Worker,
+ * design D9).
  *
  * @module SessionControllerTest
  */
 
 import { describe, it, expect } from 'vitest';
 import { UnauthorizedException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type {
+  AccountCredentialRecord,
   AccountRepository,
   SessionRepository,
   SessionRecord,
@@ -20,7 +25,6 @@ import type {
 } from '@rajahinta/data-platform';
 import { SessionTokenService } from '../session-token.service';
 import { SessionController } from '../session.controller';
-import { AccountService } from '../account.service';
 import { SessionAuthGuard } from '../session-auth.guard';
 import type { AuthenticatedAccount } from '../current-user.decorator';
 import { SESSION_COOKIE_NAME } from '../session-cookie';
@@ -37,7 +41,7 @@ class InMemoryAccountRows implements AccountRepository {
     const row = {
       id: this.nextId++,
       userId: record.userId,
-      email: record.email ?? 'a@placeholder.local',
+      email: record.email,
       tier: record.tier ?? 'FREE',
       createdAt: new Date(),
       lastActiveAt: new Date(),
@@ -51,9 +55,37 @@ class InMemoryAccountRows implements AccountRepository {
   async findByUserId(userId: string) {
     return this.rows.find((r) => r.userId === userId) ?? null;
   }
+  // DrizzleAccountRepository parity: credential columns are null on the
+  // legacy pg harness (design D9, change email-password-auth).
+  async findByEmail(email: string): Promise<AccountCredentialRecord | null> {
+    const row = this.rows.find(
+      (r) => r.email.toLowerCase() === email.toLowerCase(),
+    );
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.userId,
+      email: row.email,
+      passwordHash: null,
+      emailVerifiedAt: null,
+      tier: row.tier,
+      createdAt: row.createdAt,
+      lastActiveAt: row.lastActiveAt,
+    };
+  }
   async updateLastActive() {}
-  // FIX-E: email-verification write — unused in these tests, satisfies the contract.
-  async setVerifiedEmail(_userId: string, _email: string): Promise<void> {}
+  // Credential writes have no harness columns — reject loudly, mirroring
+  // the pg repository (design D9).
+  async setVerifiedEmail(_userId: string, _verifiedAt: Date): Promise<void> {
+    throw new Error(
+      'setVerifiedEmail is not supported by the harness (design D9)',
+    );
+  }
+  async setPasswordHash(_userId: string, _passwordHash: string): Promise<void> {
+    throw new Error(
+      'setPasswordHash is not supported by the harness (design D9)',
+    );
+  }
   async delete() {}
   async findAllUserIds() {
     return this.rows.map((r) => r.userId);
@@ -115,11 +147,23 @@ function makeController() {
   const sessionRepo = new FakeSessionRepository();
   const accountRepo = new InMemoryAccountRows();
   const tokenService = new SessionTokenService(sessionRepo, accountRepo);
-  // Test environment: repos present, in-memory fallback allowed.
-  const accountService = new AccountService(accountRepo);
-  const controller = new SessionController(tokenService, accountService);
+  const controller = new SessionController(tokenService);
   const guard = new SessionAuthGuard(tokenService);
   return { controller, tokenService, sessionRepo, accountRepo, guard };
+}
+
+/** Create an account row and mint a real session for it. */
+async function establishSession(
+  tokenService: SessionTokenService,
+  accountRepo: InMemoryAccountRows,
+) {
+  const row = await accountRepo.create({
+    userId: randomUUID(),
+    email: `${randomUUID()}@example.invalid`,
+    tier: 'FREE',
+  });
+  const issued = await tokenService.issueSession(row.id);
+  return { token: issued.token, userId: row.userId, accountId: row.id };
 }
 
 /** Response double capturing Set-Cookie headers. */
@@ -136,65 +180,13 @@ function responseDouble(): { headers: Record<string, string>; header(name: strin
 // ---------------------------------------------------------------------------
 
 describe('SessionController', () => {
-  describe('POST /api/v1/account/session — issue', () => {
-    it('creates a server-generated anonymous account and links the session to it', async () => {
-      const { controller, sessionRepo, accountRepo } = makeController();
-      const res = responseDouble();
-
-      const body = await controller.issue(res);
-
-      expect(accountRepo.rows).toHaveLength(1);
-      expect(body.userId).toBe(accountRepo.rows[0].userId);
-      // Server-generated identity (UUID), never client-chosen.
-      expect(body.userId).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-      );
-      expect(body.verified).toBe(false);
-      expect(body.expiresAt).toBe(sessionRepo.rows[0].expiresAt.toISOString());
-      expect(sessionRepo.rows[0].accountId).toBe(accountRepo.rows[0].id);
-    });
-
-    it('sets the token only as an httpOnly cookie — never in the body', async () => {
-      const { controller, sessionRepo } = makeController();
-      const res = responseDouble();
-
-      const body = await controller.issue(res);
-
-      const setCookie = res.headers['Set-Cookie'];
-      expect(setCookie).toBeDefined();
-      expect(setCookie).toContain(`${SESSION_COOKIE_NAME}=`);
-      expect(setCookie).toContain('HttpOnly');
-      expect(setCookie).toContain('SameSite=Lax');
-      // The raw token appears only in the cookie header — the body carries
-      // no credential material.
-      expect(JSON.stringify(body)).not.toContain(sessionRepo.rows[0].tokenHash);
-      const token = setCookie!.slice(
-        `${SESSION_COOKIE_NAME}=`.length,
-        setCookie!.indexOf(';'),
-      );
-      expect(token.length).toBeGreaterThanOrEqual(40);
-    });
-
-    it('each issuance mints a distinct identity and token', async () => {
-      const { controller } = makeController();
-      const first = await controller.issue(responseDouble());
-      const second = await controller.issue(responseDouble());
-      expect(first.userId).not.toBe(second.userId);
-    });
-  });
-
   describe('POST /api/v1/account/session/rotate — rotate', () => {
     it('replaces the cookie and the old token stops authenticating', async () => {
-      const { controller, tokenService, guard } = makeController();
+      const { controller, tokenService, guard, accountRepo } = makeController();
 
-      // Issue and recover the raw token from the Set-Cookie header (the
-      // only place it ever travels).
-      const issueRes = responseDouble();
-      const issued = await controller.issue(issueRes);
-      const token = issueRes.headers['Set-Cookie']!.slice(
-        `${SESSION_COOKIE_NAME}=`.length,
-        issueRes.headers['Set-Cookie']!.indexOf(';'),
-      );
+      // Establish a session the harness way: account row + issued token.
+      const established = await establishSession(tokenService, accountRepo);
+      const token = established.token;
 
       // Attach the guard-derived identity the way a real request would.
       const request: {
@@ -215,7 +207,7 @@ describe('SessionController', () => {
         rotateRes,
       );
 
-      expect(body.userId).toBe(issued.userId);
+      expect(body.userId).toBe(established.userId);
       const newCookie = rotateRes.headers['Set-Cookie'];
       expect(newCookie).toContain(`${SESSION_COOKIE_NAME}=`);
       const newToken = newCookie!.slice(
@@ -227,14 +219,14 @@ describe('SessionController', () => {
       // Old token dead, new token resolves the same account.
       await expect(tokenService.resolveAccountByToken(token)).resolves.toBeNull();
       const account = await tokenService.resolveAccountByToken(newToken);
-      expect(account?.userId).toBe(issued.userId);
+      expect(account?.userId).toBe(established.userId);
     });
 
     it('throws UnauthorizedException when the presented token has no active session (race)', async () => {
       const { controller } = makeController();
       await expect(
         controller.rotate(
-          { accountId: 1, userId: 'u', tier: 'FREE', verified: false },
+          { accountId: 1, userId: 'u', tier: 'FREE' },
           { sessionToken: '' },
           responseDouble(),
         ),
@@ -244,13 +236,9 @@ describe('SessionController', () => {
 
   describe('DELETE /api/v1/account/session — revoke', () => {
     it('revokes the session and clears the cookie', async () => {
-      const { controller, tokenService } = makeController();
-      const res = responseDouble();
-      await controller.issue(res);
-      const token = res.headers['Set-Cookie']!.slice(
-        `${SESSION_COOKIE_NAME}=`.length,
-        res.headers['Set-Cookie']!.indexOf(';'),
-      );
+      const { controller, tokenService, accountRepo } = makeController();
+      const established = await establishSession(tokenService, accountRepo);
+      const token = established.token;
 
       const revokeRes = responseDouble();
       await expect(

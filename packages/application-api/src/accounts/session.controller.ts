@@ -1,18 +1,19 @@
 /**
- * SessionController — server-issued anonymous session lifecycle (task 2.2,
- * change technical-assessment-remediation; design D3).
+ * SessionController — session-validation surface of the legacy harness
+ * (task 2.2, change technical-assessment-remediation; design D3; trimmed
+ * by task 4.1, change email-password-auth).
  *
- * `POST /api/v1/account/session` issues an anonymous session: the identity
- * is GENERATED here (random UUID), never chosen by the client — the same
- * create-on-demand anonymous flow the retired `x-user-id` model used, minus
- * the client-supplied identifier. The opaque token is set as an httpOnly
- * `rajahinta_session` cookie and never appears in a response body.
+ * This controller exists only so the legacy pg suites keep exercising
+ * session rotate/revoke and the SessionAuthGuard contract: `POST
+ * /api/v1/account/session/rotate` atomically replaces the presented token
+ * (the old one stops authenticating immediately); `DELETE
+ * /api/v1/account/session` revokes it (logout).
  *
- * `POST /api/v1/account/session/rotate` atomically replaces the presented
- * token (the old one stops authenticating immediately); `DELETE
- * /api/v1/account/session` revokes it (logout). Existing client-UUID
- * anonymous accounts are NOT migrated — anonymous data is disposable by
- * design (see email-verification.ts for the verified-account upgrade path).
+ * No session ISSUANCE endpoint lives here: anonymous issuance and the
+ * placeholder-email model were removed (design D9) so the removed model
+ * cannot resurrect in code. Credentials auth — registration, login,
+ * verified-email state — lives only in the API Worker; this harness
+ * deliberately does not implement it.
  *
  * @module SessionController
  */
@@ -29,9 +30,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { randomUUID } from 'node:crypto';
 import { SessionTokenService } from './session-token.service';
-import { AccountService } from './account.service';
 import { SessionAuthGuard } from './session-auth.guard';
 import { CurrentUser, type AuthenticatedAccount } from './current-user.decorator';
 import {
@@ -42,53 +41,16 @@ import {
 } from './session-cookie';
 import { RateLimitGuard, RateLimit } from '../rate-limiting';
 
-/** Response for issue/rotate — the token itself travels only in the cookie. */
+/** Response for rotate — the token itself travels only in the cookie. */
 export interface SessionResponse {
   readonly userId: string;
   readonly expiresAt: string;
-  readonly verified: boolean;
 }
 
 @ApiTags('account')
 @Controller('api/v1/account')
 export class SessionController {
-  constructor(
-    private readonly sessionTokens: SessionTokenService,
-    private readonly accountService: AccountService,
-  ) {}
-
-  // ---------------------------------------------------------------------------
-  // POST /api/v1/account/session — anonymous session issuance
-  // ---------------------------------------------------------------------------
-
-  @Post('session')
-  @UseGuards(RateLimitGuard)
-  @RateLimit('DEFAULT')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({
-    summary: 'Issue an anonymous session',
-    description:
-      'Creates a fresh anonymous account with a server-generated identity ' +
-      'and returns its session as an httpOnly `rajahinta_session` cookie. ' +
-      'The token never appears in a response body. Anonymous account data ' +
-      'is DISPOSABLE until the account completes email verification — it is ' +
-      'not protected by identity guarantees and may be pruned by retention.',
-  })
-  @ApiResponse({ status: 201, description: 'Session issued; cookie set' })
-  @ApiResponse({ status: 429, description: 'Rate limit exceeded' })
-  async issue(
-    @Res({ passthrough: true }) res?: CookieResponse,
-  ): Promise<SessionResponse> {
-    const userId = randomUUID();
-    const row = await this.accountService.ensureAccountForSession(userId);
-    const issued = await this.sessionTokens.issueSession(row.id);
-    setSessionCookie(res, buildSessionCookie(issued.token, issued.session.expiresAt));
-    return {
-      userId,
-      expiresAt: issued.session.expiresAt.toISOString(),
-      verified: false,
-    };
-  }
+  constructor(private readonly sessionTokens: SessionTokenService) {}
 
   // ---------------------------------------------------------------------------
   // POST /api/v1/account/session/rotate — atomic token rotation
@@ -131,7 +93,6 @@ export class SessionController {
     return {
       userId: user.userId,
       expiresAt: issued.session.expiresAt.toISOString(),
-      verified: user.verified,
     };
   }
 

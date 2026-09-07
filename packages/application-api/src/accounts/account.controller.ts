@@ -38,7 +38,6 @@ import type { DataExport } from './data-export.types';
 import type { Basket, BasketItem, SavedScenario, SaveScenarioRequest } from './account.types';
 import { SessionAuthGuard } from './session-auth.guard';
 import { CurrentUser, type AuthenticatedAccount } from './current-user.decorator';
-import { isValidEmailFormat } from './email-verification';
 
 /** Allowed values of `inputs.transportArrangement` (core-domain TransportArrangement). */
 const TRANSPORT_ARRANGEMENTS: readonly string[] = [
@@ -352,39 +351,5 @@ export class AccountController {
   ): Promise<{ userId: string; plan: string; active: boolean }> {
     const account = await this.accountService.getAccount(user.userId);
     return account.subscription;
-  }
-
-  // ---------------------------------------------------------------------------
-  // 2.4 — POST /api/v1/account/verify-email — anonymous → verified upgrade
-  // ---------------------------------------------------------------------------
-
-  @Post('verify-email')
-  @ApiOperation({
-    summary: 'Verify an email on the authenticated account (groundwork)',
-    description:
-      'Upgrades an anonymous account to a verified one by persisting the ' +
-      'verified email on the account row (the existing verified-email ' +
-      'column). The current session keeps authenticating the account ' +
-      'unchanged. Until verification, account data is DISPOSABLE and not ' +
-      'protected by identity guarantees. Groundwork only: real email ' +
-      'delivery/provider round-trip is out of scope for this change.',
-  })
-  @ApiResponse({ status: 200, description: 'Account upgraded; the same session continues to authenticate it' })
-  @ApiResponse({ status: 400, description: 'email missing or malformed' })
-  @ApiResponse({ status: 401, description: 'No/invalid session cookie, or a legacy x-user-id header was presented' })
-  async verifyEmail(
-    @Body() body: { email: string },
-    @CurrentUser() user: AuthenticatedAccount,
-  ): Promise<{ verified: true; email: string }> {
-    if (typeof body?.email !== 'string' || !isValidEmailFormat(body.email)) {
-      throw new BadRequestException({
-        statusCode: 400,
-        message: '"email" is required and must be a valid email address',
-        error: 'InvalidEmail',
-      });
-    }
-
-    await this.accountService.verifyEmail(user.userId, body.email);
-    return { verified: true, email: body.email };
   }
 }

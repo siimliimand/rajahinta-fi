@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import type { ExecutionContext } from '@nestjs/common';
 import { UnauthorizedException } from '@nestjs/common';
 import type {
+  AccountCredentialRecord,
   AccountRepository,
   SessionRepository,
   SessionRecord,
@@ -39,7 +40,6 @@ function makeAccount(id: number, email: string): AccountRow {
   const now = new Date();
   return { id, userId: `user-${id}`, email, tier: 'FREE', createdAt: now, lastActiveAt: now };
 }
-
 class FakeSessionRepository implements SessionRepository {
   rows: SessionRecord[] = [];
   private nextId = 1;
@@ -102,9 +102,37 @@ class FakeAccountRepository implements AccountRepository {
   async findByUserId() {
     return null;
   }
+  // DrizzleAccountRepository parity: credential columns are null on the
+  // legacy pg harness (design D9, change email-password-auth).
+  async findByEmail(email: string): Promise<AccountCredentialRecord | null> {
+    const row = this.rows.find(
+      (r) => r.email.toLowerCase() === email.toLowerCase(),
+    );
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.userId,
+      email: row.email,
+      passwordHash: null,
+      emailVerifiedAt: null,
+      tier: row.tier,
+      createdAt: row.createdAt,
+      lastActiveAt: row.lastActiveAt,
+    };
+  }
   async updateLastActive() {}
-  // FIX-E: email-verification write — unused in these tests, satisfies the contract.
-  async setVerifiedEmail(_userId: string, _email: string): Promise<void> {}
+  // Credential writes have no harness columns — reject loudly, mirroring
+  // the pg repository (design D9).
+  async setVerifiedEmail(_userId: string, _verifiedAt: Date): Promise<void> {
+    throw new Error(
+      'setVerifiedEmail is not supported by the harness (design D9)',
+    );
+  }
+  async setPasswordHash(_userId: string, _passwordHash: string): Promise<void> {
+    throw new Error(
+      'setPasswordHash is not supported by the harness (design D9)',
+    );
+  }
   async delete() {}
   async findAllUserIds() {
     return [];
@@ -115,8 +143,8 @@ class FakeAccountRepository implements AccountRepository {
 function makeGuard() {
   const sessionRepo = new FakeSessionRepository();
   const accountRepo = new FakeAccountRepository([
-    makeAccount(7, 'user-7@example.invalid'), // verified email
-    makeAccount(9, 'user-9@placeholder.local'), // anonymous placeholder
+    makeAccount(7, 'user-7@example.invalid'),
+    makeAccount(9, 'user-9@example.invalid'),
   ]);
   const service = new SessionTokenService(sessionRepo, accountRepo);
   const guard = new SessionAuthGuard(service);
@@ -159,18 +187,21 @@ describe('SessionAuthGuard', () => {
     expect(request.sessionToken).toBe(issued.token);
   });
 
-  it('marks verified state from the account email (placeholder ⇒ anonymous)', async () => {
+  it('attaches no email-verification state (credentials live only in the API Worker)', async () => {
     const { guard, service } = makeGuard();
-    const verified = await service.issueSession(7);
-    const anonymous = await service.issueSession(9);
+    const issued = await service.issueSession(7);
 
-    const verifiedReq = cookieHeader(verified.token);
-    await guard.canActivate(context(verifiedReq));
-    expect((verifiedReq.user as { verified: boolean }).verified).toBe(true);
+    const request = cookieHeader(issued.token);
+    await guard.canActivate(context(request));
 
-    const anonReq = cookieHeader(anonymous.token);
-    await guard.canActivate(context(anonReq));
-    expect((anonReq.user as { verified: boolean }).verified).toBe(false);
+    // The placeholder-era derived `verified` flag was removed (task 4.1,
+    // design D9) — the guard identity carries only id/userId/tier.
+    expect(request.user).toMatchObject({
+      accountId: 7,
+      userId: 'user-7',
+      tier: 'FREE',
+    });
+    expect(request.user).not.toHaveProperty('verified');
   });
 
   it('reads the token from a parsed cookie jar as well', async () => {

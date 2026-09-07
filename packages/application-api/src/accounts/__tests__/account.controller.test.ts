@@ -29,7 +29,7 @@ const ANOTHER_USER_ID = 'other-user-456';
 
 /** AuthenticatedAccount the SessionAuthGuard would attach for a userId. */
 function user(userId: string): AuthenticatedAccount {
-  return { accountId: 1, userId, tier: 'FREE', verified: false };
+  return { accountId: 1, userId, tier: 'FREE' };
 }
 
 const mockBasket: Basket = {
@@ -325,49 +325,6 @@ describe('AccountController', () => {
       await expect(controller.exportData(user(USER_ID))).rejects.toThrow(
         InternalServerErrorException,
       );
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // POST /verify-email — anonymous → verified upgrade (task 2.4)
-  // -----------------------------------------------------------------------
-
-  describe('POST /verify-email — verifyEmail', () => {
-    it('persists a valid email and confirms the upgrade', async () => {
-      const verifyEmail = vi.fn(async (): Promise<void> => undefined);
-      (mockAccountService as { verifyEmail?: unknown }).verifyEmail = verifyEmail;
-
-      const result = await controller.verifyEmail(
-        { email: 'user@example.com' },
-        user(USER_ID),
-      );
-
-      expect(result).toEqual({ verified: true, email: 'user@example.com' });
-      expect(verifyEmail).toHaveBeenCalledWith(USER_ID, 'user@example.com');
-    });
-
-    it('rejects a malformed email with BadRequestException', async () => {
-      await expect(
-        controller.verifyEmail({ email: 'not-an-email' }, user(USER_ID)),
-      ).rejects.toThrow('email');
-    });
-
-    it('rejects a missing email with BadRequestException', async () => {
-      await expect(
-        controller.verifyEmail({} as { email: string }, user(USER_ID)),
-      ).rejects.toThrow('email');
-    });
-
-    it('scopes the upgrade to the authenticated identity', async () => {
-      const verifyEmail = vi.fn(async (): Promise<void> => undefined);
-      (mockAccountService as { verifyEmail?: unknown }).verifyEmail = verifyEmail;
-
-      await controller.verifyEmail(
-        { email: 'other@example.com' },
-        user(ANOTHER_USER_ID),
-      );
-
-      expect(verifyEmail).toHaveBeenCalledWith(ANOTHER_USER_ID, 'other@example.com');
     });
   });
 });

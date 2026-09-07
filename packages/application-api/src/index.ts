@@ -399,8 +399,10 @@ export type { IVerificationProvider, VerificationResult } from './age-gate';
 
 // ---------------------------------------------------------------------------
 // Accounts — minimal account system (saved baskets, history, subscription)
-// plus server-issued session authentication (task 2.2, design D3) and the
-// email-verification groundwork (task 2.4, D5)
+// plus the session-validation surface kept for the legacy pg suites
+// (task 2.2, design D3). Credentials auth (register/login/verify-email)
+// lives only in the API Worker — deliberately absent here (design D9,
+// change email-password-auth).
 // ---------------------------------------------------------------------------
 
 export { AccountModule, AccountService, AccountRetentionService, DataExportService } from './accounts';
@@ -416,10 +418,6 @@ export {
   buildSessionCookie,
   buildSessionCookieClear,
   setSessionCookie,
-  VerifiedEmailStore,
-  UnboundVerifiedEmailStore,
-  isAccountVerified,
-  isValidEmailFormat,
 } from './accounts';
 export type { IssuedSession, SessionResponse, AuthenticatedAccount } from './accounts';
 
