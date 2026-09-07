@@ -139,7 +139,8 @@ describe('SessionAuthMiddleware', () => {
         error: 'LegacyUserIdHeaderRejected',
         message:
           'The x-user-id header is no longer accepted. Authenticate with ' +
-          'the rajahinta_session cookie issued by POST /api/v1/account/session.',
+          'the rajahinta_session cookie issued by ' +
+          'POST /api/v1/account/register or POST /api/v1/account/login.',
       });
     });
 

@@ -53,7 +53,8 @@ export function sessionAuth(): MiddlewareHandler<AppEnv> {
         statusCode: 401,
         message:
           'The x-user-id header is no longer accepted. Authenticate with ' +
-          `the ${SESSION_COOKIE_NAME} cookie issued by POST /api/v1/account/session.`,
+          `the ${SESSION_COOKIE_NAME} cookie issued by ` +
+          'POST /api/v1/account/register or POST /api/v1/account/login.',
         error: 'LegacyUserIdHeaderRejected',
       });
     }

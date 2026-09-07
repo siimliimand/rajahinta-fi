@@ -203,7 +203,7 @@ export function seedStandardAccounts(db: DatabaseSync): void {
   seedAccount(db, {
     id: 9,
     userId: 'user-9',
-    email: 'user-9@placeholder.local', // anonymous placeholder
+    email: 'user-9@example.invalid', // real-looking address, unverified (email_verified_at NULL)
     tier: 'FREE',
   });
   seedAccount(db, {
