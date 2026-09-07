@@ -659,16 +659,19 @@ export interface OpsAuditListResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Session (POST /api/v1/account/session — identity derived server-side)
+// Session (GET /api/v1/account/me — identity derived server-side)
 // ---------------------------------------------------------------------------
 
 /**
- * Identity of the active anonymous session as derived by the server from
- * the httpOnly `rajahinta_session` cookie. The client never holds the
- * token itself.
+ * Identity of the signed-in account as derived by the server from the
+ * httpOnly `rajahinta_session` cookie. The client never holds the token
+ * itself. `verified` reports email-ownership confirmation — a status
+ * badge, never a lockout (USER-GUIDE).
  */
 export interface SessionStatus {
   readonly userId: string;
+  readonly email: string;
+  readonly verified: boolean;
 }
 
 // ---------------------------------------------------------------------------

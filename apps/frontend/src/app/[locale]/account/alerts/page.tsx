@@ -249,7 +249,8 @@ export default function AlertsPage() {
       <h1 className="mb-1 text-2xl font-bold text-primary-700">{t('title')}</h1>
       <p className="mb-8 text-sm text-gray-500">{t('subtitle')}</p>
 
-      {/* ── Sign-in prompt (401 after the session-mint retry) ── */}
+      {/* ── Sign-in prompt (account-scoped 401; the anonymous auto-mint
+              is gone — sign-in happens on /login, design D8) ── */}
       {loadFailure === 'signin' && (
         <section
           data-testid="alert-signin-prompt"
@@ -261,7 +262,7 @@ export default function AlertsPage() {
           <p className="mt-2 text-sm text-gray-600">{t('signInBody')}</p>
           <div className="mt-4">
             <Link
-              href="/account/create"
+              href="/login"
               className="inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
             >
               {t('signInLink')}

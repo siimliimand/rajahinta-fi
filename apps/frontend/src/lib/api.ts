@@ -100,6 +100,22 @@ export class ApiFetchError extends Error {
 const AGE_GATE_REQUIRED_EVENT = 'age-gate:required';
 
 /**
+ * Window event fired after an auth-state change (sign-in, registration,
+ * logout). The SiteHeader probes `/account/me` on mount only — a client-side
+ * navigation never remounts it — so auth pages and the logout button use
+ * this event to make the header re-probe (same recovery pattern as
+ * `age-gate:required`).
+ */
+const AUTH_STATE_CHANGED_EVENT = 'auth:state-changed';
+
+/** Notify listeners (the SiteHeader) that the signed-in state may have changed. */
+function notifyAuthStateChanged(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(AUTH_STATE_CHANGED_EVENT));
+  }
+}
+
+/**
  * Re-open the AgeGate prompt in place when the API rejects a request with
  * 403 `AGE_GATE_REQUIRED`. The confirmation cookie can expire while
  * client-side state still treats the visitor as verified, leaving
@@ -128,22 +144,6 @@ function getCookie(name: string): string | undefined {
     .map((c) => c.trim())
     .find((c) => c.startsWith(`${name}=`));
   return match ? match.slice(name.length + 1) : undefined;
-}
-
-/**
- * Account-scoped paths authenticate with the server-issued
- * `rajahinta_session` cookie. The session lifecycle endpoints are excluded:
- * issuing a session needs no session, and re-issuing on a 401 from
- * rotate/revoke would corrupt their semantics.
- */
-const ACCOUNT_SCOPE_PREFIX = '/api/v1/account/';
-const SESSION_ENDPOINT_PREFIX = '/api/v1/account/session';
-
-function isAccountScoped(path: string): boolean {
-  return (
-    path.startsWith(ACCOUNT_SCOPE_PREFIX) &&
-    !path.startsWith(SESSION_ENDPOINT_PREFIX)
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -273,37 +273,30 @@ async function executeRequest<T>(
 }
 
 /**
- * Account-scoped request wrapper.
+ * Request wrapper used by every domain function.
  *
- * On the first account-touch without a session (fresh visitor, or an
- * expired anonymous session — its data is disposable by design) a session is
- * minted server-side and the original request replayed exactly once. The
- * single-flight promise collapses concurrent 401s into one issuance.
+ * There is no anonymous-issuance retry (design D8, change
+ * email-password-auth): an account-scoped 401 propagates as
+ * {@link ApiFetchError} so route-level code can redirect to `/login`.
+ * Sign-in happens only through {@link registerAccount} /
+ * {@link loginAccount}, which set the cookie server-side.
  */
 export async function request<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  try {
-    return await executeRequest<T>(path, init);
-  } catch (err) {
-    if (
-      !(err instanceof ApiFetchError) ||
-      err.status !== 401 ||
-      !isAccountScoped(path)
-    ) {
-      throw err;
-    }
-    await issueSessionOnce();
-    return executeRequest<T>(path, init);
-  }
+  return executeRequest<T>(path, init);
 }
 
 // ---------------------------------------------------------------------------
-// Session lifecycle (server-issued httpOnly cookie)
+// Session lifecycle (credentials auth; server-issued httpOnly cookie)
 // ---------------------------------------------------------------------------
 
-/** Response of POST /api/v1/account/session (issue and rotate). */
+/**
+ * Session payload of the endpoints that issue or rotate the cookie
+ * (register, login, rotate). The token itself travels only in the
+ * httpOnly `rajahinta_session` cookie and never in readable state.
+ */
 export interface SessionInfo {
   readonly userId: string;
   readonly expiresAt: string;
@@ -311,28 +304,38 @@ export interface SessionInfo {
 }
 
 /**
- * Issue a fresh anonymous session. Always mints a NEW account — call only
- * where abandoning the current one is intended; the token arrives as an
- * httpOnly `rajahinta_session` cookie and never in readable state.
+ * Create an account (email = username) and sign in: the API validates the
+ * credentials, issues the session cookie, and fires a best-effort
+ * verification email. Rejections: 400 InvalidEmail/InvalidPassword, 409
+ * EmailAlreadyRegistered, 429 (AUTH rate limit).
  */
-export async function issueSession(): Promise<SessionInfo> {
-  return executeRequest<SessionInfo>('/api/v1/account/session', {
+export async function registerAccount(
+  email: string,
+  password: string,
+): Promise<SessionInfo> {
+  const info = await request<SessionInfo>('/api/v1/account/register', {
     method: 'POST',
+    body: JSON.stringify({ email, password }),
   });
+  notifyAuthStateChanged();
+  return info;
 }
 
-/** Single-flight issuance shared by concurrent first-touch 401s. */
-let sessionIssuePromise: Promise<SessionInfo> | null = null;
-
-function issueSessionOnce(): Promise<SessionInfo> {
-  if (sessionIssuePromise === null) {
-    // Cleared on completion so a later 401 can re-issue; while in flight,
-    // every caller shares the same issuance.
-    sessionIssuePromise = issueSession().finally(() => {
-      sessionIssuePromise = null;
-    });
-  }
-  return sessionIssuePromise;
+/**
+ * Sign in with the email credential. The API answers unknown email and
+ * wrong password with one uniform 401 (no enumeration); 429 is possible
+ * under the AUTH rate limit.
+ */
+export async function loginAccount(
+  email: string,
+  password: string,
+): Promise<SessionInfo> {
+  const info = await request<SessionInfo>('/api/v1/account/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  notifyAuthStateChanged();
+  return info;
 }
 
 /**
@@ -347,22 +350,85 @@ export async function rotateSession(): Promise<SessionInfo> {
 
 /** Revoke the session (logout) and clear the session cookie. */
 export async function revokeSession(): Promise<{ revoked: true }> {
-  return executeRequest<{ revoked: true }>('/api/v1/account/session', {
+  const result = await request<{ revoked: true }>('/api/v1/account/session', {
     method: 'DELETE',
+  });
+  notifyAuthStateChanged();
+  return result;
+}
+
+/**
+ * Ensure a signed-in session exists and return its server-derived
+ * identity. `GET /account/me` is the cheapest auth-required read; a 401
+ * here is the sign-in redirect signal for route-level code.
+ */
+export async function ensureSession(): Promise<SessionStatus> {
+  return request<SessionStatus>('/api/v1/account/me');
+}
+
+// ---------------------------------------------------------------------------
+// Email verification and password reset (design D2/D3/D4)
+// ---------------------------------------------------------------------------
+
+/** Response of `POST /account/verify-email/confirm`. */
+export interface EmailVerificationResult {
+  readonly verified: true;
+  readonly userId: string;
+  readonly email: string;
+}
+
+/**
+ * Consume the emailed verification token (public — the token IS the
+ * capability; single-use, 24 h expiry). Invalid, expired, and replayed
+ * tokens all fail with a 401 InvalidToken.
+ */
+export async function confirmEmailVerification(
+  token: string,
+): Promise<EmailVerificationResult> {
+  return request<EmailVerificationResult>(
+    '/api/v1/account/verify-email/confirm',
+    { method: 'POST', body: JSON.stringify({ token }) },
+  );
+}
+
+/**
+ * Re-send the verification email for the signed-in account
+ * (sessionAuth). Mail dispatch failures are logged server-side and never
+ * break the 202.
+ */
+export async function requestVerificationEmail(): Promise<{ accepted: true }> {
+  return request<{ accepted: true }>('/api/v1/account/verify-email/request', {
+    method: 'POST',
   });
 }
 
 /**
- * Ensure an authenticated session exists and return its server-derived
- * identity. The subscription probe is the cheapest auth-required read that
- * also returns the userId; the request() wrapper mints the session on the
- * first account-touch, so callers need no issuance logic of their own.
+ * Request a password-reset email. The API answers 202 unconditionally so
+ * the route cannot leak account existence.
  */
-export async function ensureSession(): Promise<SessionStatus> {
-  const sub = await request<{ userId: string; plan: string; active: boolean }>(
-    '/api/v1/account/subscription',
-  );
-  return { userId: sub.userId };
+export async function requestPasswordReset(
+  email: string,
+): Promise<{ accepted: true }> {
+  return request<{ accepted: true }>('/api/v1/account/password/reset-request', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+/**
+ * Complete the password reset with the emailed token (public — the token
+ * IS the capability). The API rehashes the password and revokes ALL of
+ * the account's sessions. Rejections: 400 InvalidPassword (policy),
+ * 401 InvalidToken (invalid/expired/replayed).
+ */
+export async function resetPassword(
+  token: string,
+  newPassword: string,
+): Promise<{ reset: true }> {
+  return request<{ reset: true }>('/api/v1/account/password/reset', {
+    method: 'POST',
+    body: JSON.stringify({ token, newPassword }),
+  });
 }
 
 // ---------------------------------------------------------------------------

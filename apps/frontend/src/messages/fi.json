@@ -477,13 +477,16 @@
   "Account": {
     "title": "Oma tili",
     "subtitle": "Hallinnoi tallennettuja ostoskoreja, laskentahistoriaa ja tilaustasi.",
-    "welcomeBack": "Tervetuloa takaisin",
-    "signedInBody": "Olet kirjautuneena anonyyminä käyttäjänä. Istuntosi on aktiivinen, ja tilin ominaisuudet ovat alla.",
-    "continue": "Jatka →",
-    "createNewSession": "Luo uusi istunto",
-    "anonymous": "Anonyymi tili",
-    "anonymousBody": "Luo anonyymi tili tallentaaksesi ostoskoreja, nähdäksesi laskentahistoriasi ja hallitaksesi asetuksiasi. Sähköpostia tai henkilötietoja ei vaadita.",
-    "createAccount": "Luo tili",
+    "signedInTitle": "Tilin tiedot",
+    "verifiedBadge": "Vahvistettu",
+    "unverifiedBadge": "Vahvistamatta",
+    "unverifiedBody": "Vahvistus merkitsee, että sähköpostiosoite on todennettu. Tilin ominaisuudet toimivat myös vahvistamattomana.",
+    "resendVerification": "Pyydä uusi vahvistuslinkki",
+    "resendSent": "Vahvistuslinkki lähetetty. Tarkista sähköpostisi.",
+    "resendFailed": "Vahvistuslinkin lähetys epäonnistui. Yritä uudelleen.",
+    "loading": "Ladataan tilin tietoja…",
+    "loadFailed": "Tilin tietojen lataaminen epäonnistui.",
+    "redirecting": "Kirjautuminen vaaditaan. Siirrytään kirjautumissivulle…",
     "featuresTitle": "Tilin ominaisuudet",
     "savedBaskets": "Tallennetut ostoskorit",
     "savedBasketsDesc": "Tallenna tuotevalikoimat nopeaa uudelleenlaskentaa varten.",
@@ -521,11 +524,73 @@
     "analyticsValue": "Anonymisoitu <strong>12 kuukauden</strong> jälkeen",
     "retentionNote": "Säilytys toteutuu automaattisesti. Sinun ei tarvitse tehdä mitään."
   },
-  "AccountCreate": {
-    "title": "Anonyymi tilisi on valmis",
-    "body": "Sähköpostia tai henkilötietoja ei vaadittu. Istuntosi on nyt aktiivinen.",
-    "goToAccount": "Siirry omalle tilille",
-    "startBrowsing": "Aloita selaaminen"
+  "Auth": {
+    "emailLabel": "Sähköpostiosoite",
+    "passwordLabel": "Salasana",
+    "newPasswordLabel": "Uusi salasana",
+    "passwordHint": "Vähintään 12 ja enintään 128 merkkiä.",
+    "invalidEmail": "Tarkista sähköpostiosoite.",
+    "invalidPassword": "Salasanan tulee olla 12–128 merkkiä pitkä.",
+    "rateLimited": "Liian monta yritystä. Yritä hetken kuluttua uudelleen.",
+    "genericError": "Toiminto epäonnistui. Yritä uudelleen."
+  },
+  "AuthNav": {
+    "signIn": "Kirjaudu",
+    "register": "Rekisteröidy",
+    "signOut": "Kirjaudu ulos"
+  },
+  "Login": {
+    "title": "Kirjaudu sisään",
+    "subtitle": "Kirjaudu hallitaksesi tallennettuja ostoskoreja, hintaherätyksiä ja laskentahistoriaa.",
+    "submit": "Kirjaudu",
+    "submitting": "Kirjaudutaan…",
+    "invalidCredentials": "Virheellinen sähköposti tai salasana.",
+    "noAccount": "Ei vielä tiliä?",
+    "toRegister": "Luo tili",
+    "toForgot": "Unohditko salasanan?"
+  },
+  "Register": {
+    "title": "Luo tili",
+    "subtitle": "Rekisteröidy sähköpostiosoitteella ja salasanalla. Rekisteröinnin jälkeen lähetämme vahvistuslinkin sähköpostiisi.",
+    "submit": "Luo tili",
+    "submitting": "Luodaan tiliä…",
+    "emailTaken": "Sähköpostiosoite on jo rekisteröity.",
+    "hasAccount": "Onko sinulla jo tili?",
+    "toLogin": "Kirjaudu sisään"
+  },
+  "VerifyEmail": {
+    "title": "Sähköpostin vahvistus",
+    "verifying": "Vahvistusta suoritetaan…",
+    "successTitle": "Sähköpostiosoite vahvistettu",
+    "successBody": "Sähköpostiosoitteesi on nyt vahvistettu.",
+    "toAccount": "Oma tili",
+    "invalidTitle": "Vahvistus ei onnistunut",
+    "invalidBody": "Vahvistuslinkki on vanhentunut tai jo käytetty.",
+    "missingToken": "Vahvistuslinkistä puuttuu tunnus.",
+    "resendHint": "Voit pyytää uuden vahvistuslinkin omalla tilisivulla kirjautumisen jälkeen.",
+    "toLogin": "Kirjaudu sisään",
+    "errorBody": "Vahvistuksessa tapahtui virhe. Yritä avata linkki uudelleen."
+  },
+  "ForgotPassword": {
+    "title": "Salasanan nollaus",
+    "subtitle": "Anna sähköpostiosoite, johon lähetämme nollauslinkin.",
+    "submit": "Pyydä nollauslinkki",
+    "submitting": "Lähetetään…",
+    "acceptedTitle": "Tarkista sähköpostisi",
+    "acceptedBody": "Jos osoite on rekisteröity, siihen on lähetetty nollauslinkki. Linkki on voimassa tunnin.",
+    "toLogin": "Takaisin kirjautumiseen"
+  },
+  "ResetPassword": {
+    "title": "Uusi salasana",
+    "subtitle": "Valitse tilillesi uusi salasana.",
+    "submit": "Vaihda salasana",
+    "submitting": "Vaihdetaan…",
+    "successTitle": "Salasana on vaihdettu",
+    "successBody": "Kaikki istuntosi on kirjattu ulos. Kirjaudu sisään uudella salasanalla.",
+    "toLogin": "Kirjaudu sisään",
+    "invalidTitle": "Nollaus ei onnistunut",
+    "invalidBody": "Nollauslinkki on vanhentunut tai jo käytetty.",
+    "missingToken": "Nollauslinkistä puuttuu tunnus."
   },
   "SavedBaskets": {
     "title": "Tallennetut ostoskorit",
@@ -801,7 +866,7 @@
     "emptyBody": "Lisää hintaherätys alla olevalla lomakkeella tai tuotesivulta.",
     "signInTitle": "Kirjautuminen vaaditaan",
     "signInBody": "Hintaherätysten hallinta vaatii istunnon.",
-    "signInLink": "Luo istunto",
+    "signInLink": "Kirjaudu sisään",
     "createTitle": "Lisää hintaherätys",
     "searchFailed": "Tuotehaku epäonnistui",
     "selectedProduct": "Valittu tuote",
