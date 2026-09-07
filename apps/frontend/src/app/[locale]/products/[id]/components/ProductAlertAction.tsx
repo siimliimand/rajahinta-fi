@@ -186,7 +186,7 @@ export default function ProductAlertAction({
         <div data-testid="alert-signin-prompt" className="mt-4">
           <p className="text-sm text-gray-600">{t('signInBody')}</p>
           <Link
-            href="/account/create"
+            href="/login"
             className="mt-2 inline-flex items-center rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
           >
             {t('signInLink')}

@@ -102,7 +102,7 @@ export default function CreateGroupOrderView() {
           <p className="mt-2 text-sm text-gray-600">{t('signInBody')}</p>
           <div className="mt-4">
             <Link
-              href="/account/create"
+              href="/login"
               className="inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
             >
               {t('signInLink')}

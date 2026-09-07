@@ -7,7 +7,7 @@
  *      and the 7-day TTL are server-derived) → the shareable link panel
  *      with the expiry date.
  *   2. 401 → the sign-in prompt (create is owner-authenticated; no
- *      retry loop), linking to /account/create like the alerts view.
+ *      retry loop), linking to /login like the alerts view.
  *   3. 403 (backend rejects) → renders nothing.
  *
  * @module GroupOrderCreatePageTest
@@ -110,7 +110,7 @@ describe('CreateGroupOrderView', () => {
     expect(prompt).toHaveTextContent('Kirjautuminen vaaditaan');
     const link = prompt.querySelector('a');
     expect(link).not.toBeNull();
-    expect(link).toHaveAttribute('href', '/account/create');
+    expect(link).toHaveAttribute('href', '/login');
     expect(screen.queryByTestId('group-order-share-panel')).not.toBeInTheDocument();
   });
 
