@@ -16,8 +16,18 @@
  * @module password
  */
 
-/** PBKDF2 iteration count for NEW hashes — verify reads the stored header instead. */
-export const PBKDF2_ITERATIONS = 600_000;
+/**
+ * Iteration count for NEW hashes — verify reads the stored header instead.
+ *
+ * 100 000 is the workerd platform ceiling, not a policy choice: the
+ * runtime rejects PBKDF2 above it outright ("iteration counts above
+ * 100000 are not supported" — NotSupportedError at request time, which
+ * `wrangler deploy --dry-run` cannot catch). The 600 000 figure from the
+ * original task spec is unreachable on Workers; if it ever matters, the
+ * self-describing storage format accepts a per-hash raise (or a KDF
+ * migration) without rehashing every row.
+ */
+export const PBKDF2_ITERATIONS = 100_000;
 
 /** Per-user random salt length in bytes. */
 export const SALT_BYTES = 16;

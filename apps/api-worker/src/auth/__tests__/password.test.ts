@@ -78,17 +78,17 @@ describe('derivePbkdf2Sha256 (WebCrypto PBKDF2-SHA-256)', () => {
     });
   }
 
-  it('matches the known answer for the production parameters (fixed salt, 600 000 iterations)', async () => {
+  it('matches the known answer for the production parameters (fixed salt, 100 000 iterations)', async () => {
     const derived = await derivePbkdf2Sha256(
       'correct horse battery staple',
       KAT_SALT,
-      600_000,
+      100_000,
     );
     expect(derived).toHaveLength(32);
     expect(bytesToHex(derived)).toBe(
-      '847dc042cff88b4b066538938e1b50649c794b6e7343bdefbf5871e08682b058',
+      'f54e46978b9881b9984f8f4300ee7b9c12568070cc1b8d86d4f7c1dae758d0ac',
     );
-  }, 30_000);
+  });
 });
 
 describe('hashPassword', () => {
@@ -120,26 +120,27 @@ describe('hashPassword', () => {
 });
 
 describe('verifyPassword', () => {
-  it('accepts the known-answer storage string (fixed salt + 600 000 iterations, precomputed hash)', async () => {
+  it('accepts the known-answer storage string (fixed salt + 100 000 iterations, precomputed hash)', async () => {
     // The hash below was computed independently of this module
-    // (hashlib.pbkdf2_hmac, hex 847dc042…8b058) and pinned here — a
-    // deterministic end-to-end assertion, not a round-trip check.
+    // (hashlib.pbkdf2_hmac, hex f54e4697…758d0ac) and pinned here — a
+    // deterministic end-to-end assertion, not a round-trip check. 100 000
+    // is the production count: workerd rejects PBKDF2 above it.
     const stored =
-      'pbkdf2-sha256$600000$' +
-      `${KAT_SALT_B64URL}$hH3AQs_4i0sGZTiTjhtQZJx5S25zQ73vv1hx4IaCsFg`;
+      'pbkdf2-sha256$100000$' +
+      `${KAT_SALT_B64URL}$9U5Gl4uYgbmYT49DAO57nBJWgHDMG42G1PfB2udY0Kw`;
     await expect(
       verifyPassword('correct horse battery staple', stored),
     ).resolves.toBe(true);
-  }, 30_000);
+  });
 
   it('rejects a wrong password (negative known answer)', async () => {
     const stored =
-      'pbkdf2-sha256$600000$' +
-      `${KAT_SALT_B64URL}$hH3AQs_4i0sGZTiTjhtQZJx5S25zQ73vv1hx4IaCsFg`;
+      'pbkdf2-sha256$100000$' +
+      `${KAT_SALT_B64URL}$9U5Gl4uYgbmYT49DAO57nBJWgHDMG42G1PfB2udY0Kw`;
     await expect(
       verifyPassword('incorrect horse battery staple', stored),
     ).resolves.toBe(false);
-  }, 30_000);
+  });
 
   it('verifies hashes produced by hashPassword (round-trip smoke)', async () => {
     const password = 'correct horse battery staple';
