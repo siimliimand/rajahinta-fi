@@ -125,6 +125,13 @@
     },
     "production": {
       "name": "rajahinta-frontend-production",
+      // Custom domains on the rajahinta.fi zone (task 6.5): apex serves the
+      // site; www redirects at the edge via the same Worker custom domain.
+      // DNS records + certificates are created automatically at deploy.
+      "routes": [
+        { "pattern": "rajahinta.fi", "custom_domain": true },
+        { "pattern": "www.rajahinta.fi", "custom_domain": true }
+      ],
       "services": [
         {
           "binding": "WORKER_SELF_REFERENCE",

@@ -353,6 +353,13 @@
     },
     "production": {
       "name": "rajahinta-api-production",
+      // Custom domain on the rajahinta.fi zone (task 6.5): wrangler attaches
+      // the hostname and creates the DNS record automatically at deploy;
+      // certificate issuance is automatic. Rollback of the Worker does not
+      // detach the custom domain (see docs/cutover-runbook.md §5).
+      "routes": [
+        { "pattern": "api.rajahinta.fi", "custom_domain": true }
+      ],
       "durable_objects": {
         "bindings": [
           { "name": "RATE_LIMITER", "class_name": "RateLimiterDO" },
@@ -382,15 +389,18 @@
       "analytics_engine_datasets": [
         { "binding": "METRICS", "dataset": "rajahinta-api-metrics-production" }
       ],
-      // Freshness alerting (task 6.3, design D7/D8) — PLACEHOLDERS; see the
-      // dev block comment. Secret via `wrangler secret put EMAIL_SEND_SECRET
-      // --env production`.
+      // Freshness alerting (task 6.3, design D7/D8): real production values
+      // (2026-09-07 go-live). EMAIL_WORKER_URL is the deployed email
+      // Worker's workers.dev hostname; the alert targets the operator
+      // inbox, which is also the send_email binding's pinned destination.
+      // Shared secret via `wrangler secret put EMAIL_SEND_SECRET
+      // --env production` (must match the email Worker's).
       "vars": {
         "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
-        "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
-        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
+        "EMAIL_WORKER_URL": "https://rajahinta-email-production.siim-liimand.workers.dev",
+        "FRESHNESS_ALERT_EMAIL_TO": "siim.liimand@gmail.com",
         // CORS (task 5.2): exact origins, comma-separated; never "*".
-        "CORS_ORIGIN": "https://rajahinta.fi"
+        "CORS_ORIGIN": "https://rajahinta.fi,https://www.rajahinta.fi"
       },
       "queues": {
         "producers": [
