@@ -82,16 +82,20 @@ export async function hashToken(token: string): Promise<string> {
 }
 
 /**
- * Structurally valid 600k-iteration PBKDF2 envelope for the login path's
+ * Structurally valid 100k-iteration PBKDF2 envelope for the login path's
  * constant-work verify: when the account (or its stored credential) is
  * missing, verifyPassword runs against this burn target so unknown-email
  * and wrong-password attempts cost the SAME derivation — the 401 response
  * is uniform AND so is the CPU profile (no account-existence timing
  * oracle). The value is a fixed, non-secret hash of a non-credential
  * string; verification against it always returns false.
+ *
+ * 100 000 (not the original 600 000): the workerd runtime rejects PBKDF2
+ * above 100k iterations at request time, and this envelope is DERIVED on
+ * the same runtime — it must stay derivable. See password.ts.
  */
 export const LOGIN_TIMING_PARITY_ENVELOPE =
-  'pbkdf2-sha256$600000$cmFqYWhpbnRhLWR1bW15LXNhbHQtMDE$JFCDBzkpLJeonVvEOsfl6lV5X-5X3gBYGI1-9CkRTaQ';
+  'pbkdf2-sha256$100000$cmFqYWhpbnRhLWR1bW15LXNhbHQtMDE$CNh68q0BFoSuIab2fnIOADx3BhcLN25QHc4wCuEVwUk';
 
 /** The outcome of one session issuance: the raw token + its expiry. */
 export interface IssuedSession {
