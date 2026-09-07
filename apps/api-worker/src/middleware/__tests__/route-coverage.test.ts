@@ -6,9 +6,10 @@
  *
  * Each guarded area: unauthenticated/ungated requests are denied with the
  * guard's envelope BEFORE reaching the probe handler; requests satisfying
- * every guard reach it. POST /api/v1/account/session is pinned as PUBLIC
- * (SessionController issues anonymous sessions — the impersonation-vector
- * guard would break issuance if it leaked into the prefix).
+ * every guard reach it. The anonymous POST /api/v1/account/session
+ * issuance route is DELETED (change email-password-auth) — register and
+ * login are the only session-issuing endpoints, so nothing anonymous is
+ * pinned here.
  *
  * Feature flags and launch gates are gone (owner decision): no probe
  * asserts a flag or launch-gate denial, and /api/v1/feature-flags stays

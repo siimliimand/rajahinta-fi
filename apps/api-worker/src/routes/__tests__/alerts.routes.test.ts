@@ -44,7 +44,7 @@ function alertsEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}): Env {
 /** Canonical two-account fixture: 7 is the acting owner, 9 the foreigner. */
 function seedAccounts(db: ReturnType<typeof openMigratedD1>['db']): void {
   seedAccount(db, { id: 7, userId: 'user-7', email: 'user-7@example.invalid', tier: 'FREE' });
-  seedAccount(db, { id: 9, userId: 'user-9', email: 'user-9@placeholder.local', tier: 'FREE' });
+  seedAccount(db, { id: 9, userId: 'user-9', email: 'user-9@example.invalid', tier: 'FREE' });
 }
 
 const cookieOf = (token: string): string => `rajahinta_session=${token}`;

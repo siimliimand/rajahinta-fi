@@ -16,9 +16,9 @@
  * (src/services/email-token.service.ts), never by client assertions.
  *
  * `verified` in every payload below derives from the account row's
- * `email_verified_at` (tasks 2.2/2.3 note) — rotate re-reads the row
- * rather than trusting the middleware-level placeholder-derived flag,
- * whose cleanup is task 2.4.
+ * `email_verified_at` (tasks 2.2/2.3 note) — the row is the only
+ * verification source; the middleware-level derived flag was removed in
+ * task 2.4.
  *
  * Guard composition is the design-D2 table: AUTH rate limit on
  * register/login/password/reset-request, sessionAuth on me and
@@ -113,8 +113,9 @@ async function rotate(c: Context<AppEnv>): Promise<Response> {
     throw invalidSessionError();
   }
   c.header('Set-Cookie', buildSessionCookie(newToken, session.expiresAt));
-  // `verified` derives from the account row's verification state, not the
-  // middleware-level placeholder-derived flag (task 2.4 cleans the flag).
+  // `verified` derives from the account row's verification state — the
+  // row is the only source (the middleware-level derived flag was
+  // removed in task 2.4).
   const account = await new D1AccountStore(c.env.DB).findByUserId(user.userId);
   return c.json({
     userId: user.userId,
@@ -417,7 +418,12 @@ async function passwordReset(c: Context<AppEnv>): Promise<Response> {
 async function exportData(c: Context<AppEnv>): Promise<Response> {
   const user = requireUser(c);
   const store = new D1AccountStore(c.env.DB);
-  const account = await store.ensureAccount(user.userId);
+  // Mirror /me: the session resolved but the account row is gone — fail
+  // closed. No account is ever minted here.
+  const account = await store.findByUserId(user.userId);
+  if (account === null) {
+    throw invalidSessionError();
+  }
 
   const savedBaskets = (await store.findBaskets(user.userId)).map(toBasketJson);
   const savedScenarios = (await store.findScenarios(user.userId)).map(toScenarioJson);
@@ -469,7 +475,14 @@ async function saveBasket(c: Context<AppEnv>): Promise<Response> {
       error: 'ValidationError',
     });
   }
-  await new D1AccountStore(c.env.DB).createBasket(user.userId, {
+  const store = new D1AccountStore(c.env.DB);
+  // Resolve the session's account (fail closed like /me) — writes are
+  // account-scoped and never mint a row.
+  const account = await store.findByUserId(user.userId);
+  if (account === null) {
+    throw invalidSessionError();
+  }
+  await store.createBasket(account.id, {
     name: body.name,
     items: body.items,
   });
@@ -531,7 +544,11 @@ async function addHistory(c: Context<AppEnv>): Promise<Response> {
 
 async function getSubscription(c: Context<AppEnv>): Promise<Response> {
   const user = requireUser(c);
-  const account = await new D1AccountStore(c.env.DB).ensureAccount(user.userId);
+  // Fail closed like /me — the real account row or a 401, never a mint.
+  const account = await new D1AccountStore(c.env.DB).findByUserId(user.userId);
+  if (account === null) {
+    throw invalidSessionError();
+  }
   return c.json(subscriptionOf(account));
 }
 
@@ -622,8 +639,15 @@ async function saveScenario(c: Context<AppEnv>): Promise<Response> {
     throw new ApiHttpError(400, 'Request body must be JSON');
   }
   validateScenarioBody(body as never);
-  const saved = await new D1AccountStore(c.env.DB).upsertScenario(
-    user.userId,
+  const store = new D1AccountStore(c.env.DB);
+  // Resolve the session's account (fail closed like /me) — writes are
+  // account-scoped and never mint a row.
+  const account = await store.findByUserId(user.userId);
+  if (account === null) {
+    throw invalidSessionError();
+  }
+  const saved = await store.upsertScenario(
+    account.id,
     body.name as string,
     body.inputs,
   );

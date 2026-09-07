@@ -11,17 +11,20 @@
  * packages/** is out of scope for the route ports — so the credential
  * writes mirror D1AccountRepository (task 1.1) statement-for-statement
  * worker-side, the same way this adapter already mirrored the Drizzle
- * repository's basket/scenario semantics: find-or-create race handling,
- * upsert-by-name scenarios (identity = account + name), first-claim-wins
- * history linking.
+ * repository's basket/scenario semantics: race-safe registered-account
+ * INSERT (unique-index rejection), upsert-by-name scenarios
+ * (identity = account + name), first-claim-wins history linking.
+ *
+ * Accounts are created ONLY by registration — no anonymous/placeholder
+ * identity is minted anywhere (change email-password-auth);
+ * basket/scenario writes receive the account id the sessionAuth-guarded
+ * route resolved, and a missing row fails closed at the route (401),
+ * never as a created row.
  *
  * @module AccountStore
  */
 
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
-
-/** Placeholder domain used for anonymous account rows (email-verification parity). */
-export const PLACEHOLDER_EMAIL_SUFFIX = '@placeholder.local';
 
 /** Account row projection for the API surface. */
 export interface AccountRow {
@@ -241,32 +244,6 @@ export class D1AccountStore {
     return ((result.meta as { changes?: number } | undefined)?.changes ?? 0);
   }
 
-  /**
-   * Find-or-create the account row for `userId`, safe against concurrent
-   * callers racing the INSERT (ensureAccountRow parity): on a unique
-   * violation the row already exists — re-read it instead of failing.
-   */
-  async ensureAccount(userId: string): Promise<AccountRow> {
-    const existing = await this.findByUserId(userId);
-    if (existing) return existing;
-
-    try {
-      await this.d1
-        .prepare(
-          `INSERT INTO accounts (user_id, email, tier) VALUES (?, ?, 'FREE')`,
-        )
-        .bind(userId, `${userId}${PLACEHOLDER_EMAIL_SUFFIX}`)
-        .run();
-    } catch (err) {
-      if (!isUniqueViolation(err)) throw err;
-    }
-    const raced = await this.findByUserId(userId);
-    if (!raced) {
-      throw new Error(`Account row for userId="${userId}" disappeared mid-create`);
-    }
-    return raced;
-  }
-
   // -----------------------------------------------------------------------
   // Saved baskets
   // -----------------------------------------------------------------------
@@ -293,17 +270,20 @@ export class D1AccountStore {
     }));
   }
 
-  /** Insert a saved basket for the account. */
+  /**
+   * Insert a saved basket for the account. `accountId` comes from the
+   * sessionAuth-guarded route's resolved account row — this write never
+   * mints an account row.
+   */
   async createBasket(
-    userId: string,
+    accountId: number,
     basket: { name: string; items: unknown },
   ): Promise<void> {
-    const account = await this.ensureAccount(userId);
     await this.d1
       .prepare(
         `INSERT INTO saved_baskets (account_id, name, items) VALUES (?, ?, ?)`,
       )
-      .bind(account.id, basket.name, JSON.stringify(basket.items))
+      .bind(accountId, basket.name, JSON.stringify(basket.items))
       .run();
   }
 
@@ -356,13 +336,14 @@ export class D1AccountStore {
   /**
    * Upsert-by-name: the (account, name) pair is the identity; inputs and
    * updatedAt refresh on replace. Returns the persisted scenario.
+   * `accountId` comes from the sessionAuth-guarded route's resolved
+   * account row — no account is created here.
    */
   async upsertScenario(
-    userId: string,
+    accountId: number,
     name: string,
     inputs: unknown,
   ): Promise<ScenarioRow> {
-    const account = await this.ensureAccount(userId);
     const row = await this.d1
       .prepare(
         `INSERT INTO saved_scenarios (account_id, name, inputs) VALUES (?, ?, ?)
@@ -371,7 +352,7 @@ export class D1AccountStore {
             updated_at = excluded.updated_at
           RETURNING id, name, inputs, created_at, updated_at`,
       )
-      .bind(account.id, name, JSON.stringify(inputs))
+      .bind(accountId, name, JSON.stringify(inputs))
       .first<{
         id: number;
         name: string;
