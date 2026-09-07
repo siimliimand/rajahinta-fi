@@ -1,12 +1,11 @@
 /**
  * Curated lists route tests (task 7.2, change product-roadmap-phases-1-4)
  * over the FULL app composition (createApp() + registerCuratedListsRoutes
- * — the exact composition index.ts wires, flag gate + rate limit on the
- * routes themselves) on the fake-D1 harness.
+ * — the exact composition index.ts wires, rate limit on the routes
+ * themselves) on the fake-D1 harness.
  *
- * Pinning here: flag-off 403 on BOTH endpoints (CURATED_LISTS),
- * published-only responses (DRAFT entries never surface), complete
- * evidence per entry (rationale + non-empty {label, url} links),
+ * Pinning here: published-only responses (DRAFT entries never surface),
+ * complete evidence per entry (rationale + non-empty {label, url} links),
  * criteria metadata on every known-list response, slug normalization
  * over the wire, the 200-empty vs 404 slug contract (known list with
  * no published entries is an answer, an unknown slug is a 404), the
@@ -20,7 +19,6 @@ import { describe, it, expect } from 'vitest';
 import {
   buildApp,
   expectEnvelope,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -32,9 +30,9 @@ import type { Env } from '../../env';
 import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
 
 /**
- * index.ts registers both list reads behind their route-level gate+
- * limiter (same slot as the other route ports); the test composition
- * mirrors that exactly.
+ * index.ts registers both list reads behind their route-level limiter
+ * (same slot as the other route ports); the test composition mirrors
+ * that exactly.
  */
 function listsApp(): ReturnType<typeof buildApp> {
   const app = buildApp();
@@ -43,7 +41,7 @@ function listsApp(): ReturnType<typeof buildApp> {
 }
 
 function listsEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}): Env {
-  return permissiveEnv(d1, { ...overrides, FF_CURATED_LISTS: 'true' });
+  return permissiveEnv(d1, overrides);
 }
 
 interface EntryJson {
@@ -107,30 +105,6 @@ async function seedEntry(
   }
   return created.id;
 }
-
-// ---------------------------------------------------------------------------
-// Gate: flag-off 403 (CURATED_LISTS) — both endpoints
-// ---------------------------------------------------------------------------
-
-describe('GET /api/v1/lists(/:slug) — gate', () => {
-  it('rejects the per-slug read with 403 while CURATED_LISTS is off (route 403 envelope shape)', async () => {
-    const { d1 } = openMigratedD1();
-    const app = listsApp();
-    const res = await getList(app, lockedEnv(d1), 'alkon-hylkaamat');
-    await expectEnvelope(res, 403, {
-      message: 'Feature "CURATED_LISTS" is not enabled',
-    });
-  });
-
-  it('rejects the catalog read with 403 while CURATED_LISTS is off (route 403 envelope shape)', async () => {
-    const { d1 } = openMigratedD1();
-    const app = listsApp();
-    const res = await getCatalog(app, lockedEnv(d1));
-    await expectEnvelope(res, 403, {
-      message: 'Feature "CURATED_LISTS" is not enabled',
-    });
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Published list payload — published-only, complete evidence, criteria

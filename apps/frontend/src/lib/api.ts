@@ -30,7 +30,6 @@ import type {
   CorrectionItem,
   PriceHistoryQuery,
   PriceHistoryResponse,
-  FeatureFlagsResponse,
   SavedScenario,
   SaveScenarioRequest,
   MerchantReliabilityListResponse,
@@ -511,39 +510,6 @@ export async function createCorrectionFlag(
 }
 
 // ---------------------------------------------------------------------------
-// Feature flags
-// ---------------------------------------------------------------------------
-
-/**
- * Cached single-flight fetch of the public feature-flag states.
- *
- * Flag values are static per deployment (loaded from env at boot), so one
- * request is shared across every caller on the page — N chart panels issue
- * a single flag lookup, not N. A failed lookup clears the cache so a later
- * call retries; callers treat rejection as "flag off" and hide gated UI
- * rather than erroring the page.
- */
-let featureFlagsPromise: Promise<FeatureFlagsResponse> | null = null;
-
-/**
- * Fetch the public feature-flag states used for UI gating.
- *
- * Throws {@link ApiFetchError} on non-2xx; resolve callers decide the
- * degraded presentation (see ProductHistoryPanel).
- */
-export function getFeatureFlags(): Promise<FeatureFlagsResponse> {
-  if (featureFlagsPromise === null) {
-    featureFlagsPromise = request<FeatureFlagsResponse>(
-      '/api/v1/feature-flags',
-    ).catch((err: unknown) => {
-      featureFlagsPromise = null;
-      throw err;
-    });
-  }
-  return featureFlagsPromise;
-}
-
-// ---------------------------------------------------------------------------
 // Server-side reads (RSC / route handlers only)
 // ---------------------------------------------------------------------------
 
@@ -554,36 +520,6 @@ export function getFeatureFlags(): Promise<FeatureFlagsResponse> {
  */
 export const SITE_URL: string =
   process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rajahinta.fi';
-
-/**
- * Every flag the frontend consumes, off. Used as the fallback when the
- * backend cannot be reached at render time — gated UI stays hidden, the
- * same degradation the client-side fetch path uses.
- */
-export const DEFAULT_FEATURE_FLAGS: FeatureFlagsResponse = {
-  flags: {
-    HISTORICAL_PRICE_INTELLIGENCE: false,
-    BASKET_OPTIMIZATION: false,
-    ADVANCED_FEATURES: false,
-    UNIT_PRICE_EUR_PER_GRAM: false,
-  },
-};
-
-/**
- * Resolve feature-flag states on the server so they can be inlined into
- * the initial HTML payload (no late gated-UI flash). Values are static per
- * deployment; the short revalidate bounds staleness after a backend flip
- * without turning every render into an API round-trip.
- */
-export async function getServerFeatureFlags(): Promise<FeatureFlagsResponse> {
-  try {
-    return await request<FeatureFlagsResponse>('/api/v1/feature-flags', {
-      next: { revalidate: 60 },
-    });
-  } catch {
-    return DEFAULT_FEATURE_FLAGS;
-  }
-}
 
 /**
  * Fixed age-confirmation token for first-party server-side rendering.
@@ -639,12 +575,13 @@ export async function getServerProductListing(): Promise<ProductSearchItem[]> {
 
 /**
  * Classified failure modes of {@link getPriceHistory} that UI consumers
- * render distinctly (task 5.3): flag-off hides the chart entirely, rate
- * limiting shows a retry hint, validation errors surface the message.
+ * render distinctly (task 5.3): forbidden failures hide the chart
+ * entirely, rate limiting shows a retry hint, validation errors surface
+ * the message.
  */
 export type PriceHistoryErrorKind =
   | 'validation' // 400 — invalid query (including ranges wider than 365 days)
-  | 'forbidden' // 403 — feature flag disabled or age confirmation missing
+  | 'forbidden' // 403 — age confirmation missing
   | 'rate-limited' // 429 — HISTORICAL rate limit exceeded
   | 'not-found' // 404 — product does not exist
   | 'network' // fetch itself failed (no HTTP response)
@@ -739,8 +676,7 @@ export async function deleteScenario(scenarioId: number): Promise<void> {
  *
  * Every compare product column needs the same list; the cache means N
  * columns share one request per page load. A failed lookup clears the
- * cache so a later call retries. Callers gate on the ADVANCED_FEATURES
- * flag before calling — the fetch is never made for a hidden surface.
+ * cache so a later call retries.
  */
 let merchantReliabilityPromise: Promise<MerchantReliabilityListResponse> | null =
   null;
@@ -765,9 +701,8 @@ export function getMerchantReliability(): Promise<MerchantReliabilityListRespons
 /**
  * Fetch the declaration summary for a persisted calculation.
  *
- * The response includes the advanced `guidance` object only while the
- * enable_advanced_features flag is on server-side; callers treat its
- * absence as "panel hidden".
+ * The response may omit the advanced `guidance` object; callers treat
+ * its absence as "panel hidden".
  */
 export async function getDeclarationSummary(
   recordId: number,
@@ -791,7 +726,7 @@ export type ReportFormat = 'json' | 'csv' | 'html';
  */
 export type ReportErrorKind =
   | 'entitlement' // 403 with error 'InsufficientEntitlement' — tier too low
-  | 'forbidden' // 403 otherwise (flag off server-side, age confirmation missing)
+  | 'forbidden' // 403 otherwise (age confirmation missing)
   | 'rate-limited' // 429
   | 'not-found' // 404 — calculation record does not exist
   | 'network' // fetch itself failed (no HTTP response)

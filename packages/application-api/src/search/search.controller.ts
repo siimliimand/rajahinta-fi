@@ -32,13 +32,6 @@ import type {
 } from './search.dto';
 import type { MerchantReliabilityMap } from '../merchants/merchants.dto';
 import { MerchantReliabilityService } from '../merchants';
-import {
-  FeatureFlag,
-  FeatureFlagService,
-  LaunchGateGuard,
-  LaunchGate,
-  LaunchGateType,
-} from '../feature-flags';
 import { AgeGateGuard } from '../age-gate';
 
 /** Default page size for product listing. */
@@ -65,8 +58,7 @@ function compareByNameThenId(a: ProductSearchItem, b: ProductSearchItem): number
   return compareByName(a, b) || a.id - b.id;
 }
 
-@UseGuards(LaunchGateGuard, AgeGateGuard)
-@LaunchGate(LaunchGateType.PRICE_DATA)
+@UseGuards(AgeGateGuard)
 @ApiTags('products')
 @Controller('api/v1/products')
 export class SearchController {
@@ -74,7 +66,6 @@ export class SearchController {
 
   constructor(
     private readonly productRepo: ProductRepository,
-    private readonly featureFlags: FeatureFlagService,
     private readonly merchantReliability: MerchantReliabilityService,
   ) {}
 
@@ -239,14 +230,9 @@ export class SearchController {
         ),
       };
 
-      // Informational per-merchant scores — computed only while the flag
-      // is on so the un-gated path pays nothing; flag off leaves the
-      // field absent and the payload byte-identical to the flag-less
-      // shape. The embed never reorders or re-ranks the offers.
-      if (
-        response.offers.length > 0 &&
-        this.featureFlags.isEnabled(FeatureFlag.ADVANCED_FEATURES)
-      ) {
+      // Informational per-merchant scores — the embed never reorders or
+      // re-ranks the offers.
+      if (response.offers.length > 0) {
         const embed = await this.computeReliabilityEmbed(response.offers);
         if (embed !== undefined) {
           return { ...response, merchantReliability: embed };

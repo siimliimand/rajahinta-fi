@@ -10,9 +10,10 @@
  *     and the structural disclaimer (CSV escaping round-trips through a
  *     quote-aware parser — the fixture disclaimer contains a comma, double
  *     quotes, and a CRLF)
- *   - entitlement 403 for FREE tier (forced via the account context the
- *     auth stand-in attaches from x-test-tier), anonymous 403, age-gate 403
- *   - flag-off 403 on a second app booted with FF_ADVANCED_FEATURES unset
+ *   - entitlement: calculation:export is a FREE-tier feature, so FREE-tier
+ *     and anonymous requests pass (denial mechanics are unit-tested in the
+ *     entitlement guard suite with a PREMIUM-required mock)
+ *   - age-gate 403
  *   - 400 for an unsupported format, 404 for an unknown record
  *   - rate limiting: exhausting the real in-memory DECLARATION limiter
  *     (20 req/min) through the full stack yields 429 + Retry-After
@@ -33,7 +34,6 @@ import type {
 } from '@rajahinta/core-domain';
 import { EntitlementModule } from '@rajahinta/core-domain';
 import {
-  FeatureFlagsModule,
   RateLimitingModule,
   AgeGateModule,
   ReportsModule,
@@ -113,19 +113,13 @@ function applyAuthStandIn(app: INestApplication): void {
 }
 
 interface AppOptions {
-  /** FF_ADVANCED_FEATURES state at FeatureFlagService construction time. */
-  flagOn: boolean;
   /** Keep a real (in-memory) limiter backend (rate-limit describe only). */
   realRateLimiter?: boolean;
 }
 
 async function createApp(options: AppOptions): Promise<INestApplication> {
-  if (options.flagOn) process.env.FF_ADVANCED_FEATURES = 'true';
-  else delete process.env.FF_ADVANCED_FEATURES;
-
   const builder = Test.createTestingModule({
     imports: [
-      FeatureFlagsModule,
       RateLimitingModule,
       AgeGateModule,
       EntitlementModule,
@@ -215,15 +209,15 @@ function parseCsv(csv: string): string[][] {
 }
 
 // ---------------------------------------------------------------------------
-// Suite — flag on, permissive limiter
+// Suite — single boot, permissive limiter
 // ---------------------------------------------------------------------------
 
-describe('GET /api/v1/reports/:recordId — flag on', () => {
+describe('GET /api/v1/reports/:recordId', () => {
   let app: INestApplication;
   const originalEnv = process.env;
 
   beforeAll(async () => {
-    app = await createApp({ flagOn: true });
+    app = await createApp({});
   });
 
   afterAll(async () => {
@@ -296,39 +290,30 @@ describe('GET /api/v1/reports/:recordId — flag on', () => {
   });
 
   // -------------------------------------------------------------------
-  // Entitlement — 403 for FREE tier and anonymous, 200 for PREMIUM
+  // Entitlement — calculation:export is FREE-tier, so every caller passes
   // -------------------------------------------------------------------
 
-  describe('entitlement enforcement (calculation:export)', () => {
+  describe('entitlement (calculation:export — FREE feature)', () => {
     const FREE_USER = 'report_free_user';
 
-    it('returns 403 InsufficientEntitlement for a FREE-tier user', async () => {
+    it('returns 200 for a FREE-tier user', async () => {
       // Tier resolves from the account context the auth stand-in attaches
-      // from x-test-tier — mirroring a FREE account row (the per-user
-      // ENTITLEMENT_TIER_<USERID> env override no longer exists).
+      // from x-test-tier — mirroring a FREE account row.
       const res = await get(`/api/v1/reports/${RECORD_ID}`, {
         ...PREMIUM_HEADERS,
         'x-test-user': FREE_USER,
         'x-test-tier': 'FREE',
-      }).expect(403);
+      }).expect(200);
 
-      expect(res.body).toMatchObject({
-        statusCode: 403,
-        error: 'InsufficientEntitlement',
-        requiredTier: 'calculation:export',
-        currentTier: 'FREE',
-      });
+      expect(res.body.record).toEqual(RECORD);
     });
 
-    it('returns 403 for anonymous requests (no auth context)', async () => {
+    it('returns 200 for anonymous requests (no auth context)', async () => {
       const res = await get(`/api/v1/reports/${RECORD_ID}`, {
         'x-age-confirmed': 'test-token',
-      }).expect(403);
+      }).expect(200);
 
-      expect(res.body).toMatchObject({
-        statusCode: 403,
-        currentTier: 'FREE',
-      });
+      expect(res.body.recordId).toBe(RECORD_ID);
     });
 
     it('an explicit PREMIUM user passes (default for authenticated users)', async () => {
@@ -363,32 +348,14 @@ describe('GET /api/v1/reports/:recordId — flag on', () => {
   it('returns 404 for an unknown record in csv format too', async () => {
     await get('/api/v1/reports/999999?format=csv').expect(404);
   });
-});
 
-// ---------------------------------------------------------------------------
-// Flag-off gate — the endpoint must stay dark while the rollout flag is off
-// ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------
+  // Every format is served unconditionally — formerly flag-gated
+  // -------------------------------------------------------------------
 
-describe('GET /api/v1/reports/:recordId — flag off', () => {
-  let flagOffApp: INestApplication;
-  const originalEnv = process.env;
-
-  beforeAll(async () => {
-    delete process.env.FF_ADVANCED_FEATURES; // default: off
-    flagOffApp = await createApp({ flagOn: false });
-  });
-
-  afterAll(async () => {
-    await flagOffApp?.close();
-    process.env = originalEnv;
-  });
-
-  it('returns 403 even with a premium user and an age token, in every format', async () => {
+  it('serves every format with a premium user and an age token', async () => {
     for (const format of ['json', 'csv', 'html']) {
-      await request(flagOffApp.getHttpServer())
-        .get(`/api/v1/reports/${RECORD_ID}?format=${format}`)
-        .set(PREMIUM_HEADERS)
-        .expect(403);
+      await get(`/api/v1/reports/${RECORD_ID}?format=${format}`).expect(200);
     }
   });
 });
@@ -404,9 +371,10 @@ describe('GET /api/v1/reports/:recordId — DECLARATION rate limit (real limiter
   beforeAll(async () => {
     // X-Forwarded-For derives the client key only behind a configured
     // proxy (RATE_LIMIT_TRUST_PROXY); supertest sockets all share one IP,
-    // so enable the flag for this describe to exercise per-key isolation.
+    // so enable the proxy setting for this describe to exercise per-key
+    // isolation.
     process.env = { ...originalEnv, RATE_LIMIT_TRUST_PROXY: 'true' };
-    rateLimitApp = await createApp({ flagOn: true, realRateLimiter: true });
+    rateLimitApp = await createApp({ realRateLimiter: true });
   });
 
   afterAll(async () => {

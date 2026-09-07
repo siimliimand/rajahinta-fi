@@ -9,9 +9,9 @@
  * normalized-key matching only (spec: producer-matching).
  *
  * guard composition (3.2 route-coverage map): the /ops/console/* prefix
- * already carries opsAccess() → requireFeatureFlag('OPERATOR_CONSOLE') —
- * deny BEFORE any operational data. Operator identity for the audit trail
- * travels in each mutating request body (`operator`), as in Nest.
+ * already carries opsAccess() — deny BEFORE any operational data.
+ * Operator identity for the audit trail travels in each mutating request
+ * body (`operator`), as in Nest.
  *
  * Task 7.1 (change product-roadmap-phases-1-4) adds the curated-entry
  * CRUD — the public curated lists' audited management surface (design

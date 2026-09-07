@@ -42,34 +42,8 @@ log:
   format: pretty  # pretty | json
   otel_enabled: false
 
-feature_flags:
-  new_merchant_sources: true
-  experimental_rulesets: true
-  compliance_monitoring: false
-  deposit_system_mock: true
-  rate_auto_publish: false  # rates never auto-publish even in dev
-
-# API-worker feature flags (task 10.1, change product-roadmap-phases-1-4).
-# Literal Cloudflare Worker vars, committed "true" (enabled 2026-09-05, owner
-# go-live decision) in apps/api-worker/
-# wrangler.jsonc (top level + every env block). Parsed as FF_<FLAG> by the
-# api-worker feature-flag middleware; optional FF_ROLLOUT_<FLAG> percentage
-# overrides enable gradual rollout (opt-in, never committed on). The
-# `feature_flags:` block above is the pre-migration Nest-era config —
-# kept as-is; the Worker registry is the source of truth going forward.
-api_worker_feature_flags:                  # enabled 2026-09-05 (owner go-live decision)
-  FF_UNIT_PRICE_EUR_PER_GRAM: true        # €/g unit-price metric on product/offer reads
-  FF_PRICE_ALERTS: true                   # price-alert watchlist API + UI
-  FF_PACKING_OPTIMIZER: true              # packing-optimizer section of basket optimize
-  FF_EVENT_CALCULATOR: true               # event calculator API + page
-  FF_TRIP_CALCULATOR: true                # trip feasibility calculator API + page
-  FF_PRODUCER_DUPE_FINDER: true           # producer dupe finder API + product-page panel
-  FF_CURATED_LISTS: true                  # curated editorial lists API + public pages
-  FF_EXCISE_WHAT_IF: true                 # excise what-if simulator (politically sensitive)
-  FF_GROUP_ORDER_LEDGER: true             # group order ledger (shared sessions)
-# PROMOTION EXPECTATION (dev = enable-freely tier): flip any flag to "true"
-# for local/dev testing without review; promotion to staging is always an
-# explicit, separate enable — nothing promotes automatically.
+# Feature-flag system removed (2026-09-07, owner decision): all roadmap
+# features ship unconditionally. Rollback is `wrangler rollback`, not flags.
 
 # Dev seed data: small sample set for manual testing
 seed:

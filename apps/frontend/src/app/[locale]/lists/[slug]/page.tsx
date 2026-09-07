@@ -5,20 +5,17 @@
  *
  * A server component so crawlers receive list-specific title and
  * description metadata plus CollectionPage/ItemList structured data in
- * the initial HTML. generateMetadata and the page body share the flag
- * and list fetches per render pass — Next dedupes identical server
- * fetches within a render.
+ * the initial HTML. generateMetadata and the page body share the list
+ * fetch per render pass — Next dedupes identical server fetches within
+ * a render.
  *
- * Flag-off semantics (documented, differs from the app pages): a curated
- * list is public SEO content, not a gated app surface, so `CURATED_LISTS`
- * off renders a server-side "unavailable" state instead of the feature
- * UI — the web-application spec's "Gated page hidden when flag off"
- * scenario ("SHALL render the feature-unavailable state"), not the
- * render-null treatment of interactive pages like the event calculator.
- * The sitemap (7.2) only advertises list URLs while the flag is on
- * (flag off → catalog 403 → zero list URLs), so this state is reachable
- * only by direct URL or a flag flipped mid-revalidate — never by a
- * crawler following the sitemap.
+ * Degradation semantics: a curated list is public SEO content. An
+ * unavailable list (backend down, unexpected response) renders a
+ * server-side "unavailable" state instead of the feature UI; an unknown
+ * slug's HTML is replaced by not-found. The sitemap only advertises
+ * list URLs the catalog publishes, so this state is reachable only by
+ * direct URL or a list removed mid-revalidate — never by a crawler
+ * following the sitemap.
  *
  * Evidence-link treatment (deviation note for task 10.3's architecture
  * update): the task text says "outbound links through the redirect
@@ -46,9 +43,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
-import { getServerFeatureFlags } from '@/lib/api';
 import { Card } from '@/components/ui';
-import { isCuratedListsFlagEnabled } from '../curated-lists-flag';
 import {
   buildCuratedListJsonLd,
   getServerCuratedList,
@@ -64,16 +59,6 @@ export async function generateMetadata({
 }: ListPageProps): Promise<Metadata> {
   const { locale, slug } = await params;
   const t = await getTranslations({ locale, namespace: 'ListsPage' });
-
-  // Flag off → generic metadata; the page body renders the unavailable
-  // state, so nothing list-specific is claimed in the head either.
-  const flags = await getServerFeatureFlags();
-  if (!isCuratedListsFlagEnabled(flags)) {
-    return {
-      title: t('fallbackMetaTitle'),
-      description: t('fallbackMetaDescription'),
-    };
-  }
 
   // Unavailable list data (unknown slug, backend down) degrades to
   // generic metadata instead of erroring the response — the product-page
@@ -92,8 +77,7 @@ export async function generateMetadata({
   };
 }
 
-/** The feature-unavailable state (flag off, or the flag flipped to off
- * server-side between the inlined payload and this fetch). */
+/** The feature-unavailable state (list fetch degraded server-side). */
 function UnavailableState({
   title,
   body,
@@ -183,17 +167,6 @@ function ListEntry({
 export default async function CuratedListPage({ params }: ListPageProps) {
   const { locale, slug } = await params;
   const t = await getTranslations({ locale, namespace: 'ListsPage' });
-
-  // ── Flag gate (server-resolved, inlined payload) ──
-  const flags = await getServerFeatureFlags();
-  if (!isCuratedListsFlagEnabled(flags)) {
-    return (
-      <UnavailableState
-        title={t('unavailableTitle')}
-        body={t('unavailableBody')}
-      />
-    );
-  }
 
   // ── Fetch: not-found → the app's 404; other failures degrade ──
   const outcome = await getServerCuratedList(slug);

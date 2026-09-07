@@ -97,11 +97,7 @@ stack.
 
 `tests/load/artillery/basket-optimizer-suite.yml` (run via
 `bash tests/load/artillery/run.sh --basket`) exercises
-`POST /api/v1/basket/optimize` against a deployed target with the
-feature flag enabled. **Flag:** the endpoint is guarded by
-`@FeatureFlagDec(FeatureFlag.BASKET_OPTIMIZATION)`; enable on the
-target with `FF_BASKET_OPTIMIZATION=true` (k8s ConfigMap
-`rajahinta-config` entry, or process env for local runs) — a 403 flood
-means the flag is off. Its p95 threshold (5 000 ms) is provisional
+`POST /api/v1/basket/optimize` against a deployed target. Its p95
+threshold (5 000 ms) is provisional
 until the first staging baseline; request bodies randomise `sessionId`
 so the idempotency cache serves MISSes and the suite measures compute.

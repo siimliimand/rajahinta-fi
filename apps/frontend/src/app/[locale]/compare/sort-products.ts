@@ -8,11 +8,11 @@
  * LOWEST_PER_UNIT is equivalent to total-cost order but is kept for
  * parity with the shared SortOrder contract.
  *
- * The flag-gated EUR_PER_GRAM order is the one deliberate contract
- * deviation: unit-price-metrics spec requires the metric value with
- * product id as the tiebreaker, so that comparator reads ONLY the €/g
- * value and the product id — no name, merchant, or promotion input
- * exists on ComparisonProduct.
+ * The EUR_PER_GRAM order is the one deliberate contract deviation: the
+ * unit-price-metrics spec requires the metric value with product id as
+ * the tiebreaker, so that comparator reads ONLY the €/g value and the
+ * product id — no name, merchant, or promotion input exists on
+ * ComparisonProduct.
  *
  * @module CompareSorting
  */
@@ -115,7 +115,7 @@ const COMPARATORS: Record<
 
 /**
  * Every compare sort order, selector display order. EUR_PER_GRAM is the
- * flag-gated option (unit-price-metrics / ranking-sorting specs).
+ * €/g ethanol option (unit-price-metrics / ranking-sorting specs).
  */
 export const COMPARE_SORT_OPTIONS: readonly CompareSortOrder[] = [
   'LOWEST_LANDED_COST',
@@ -126,19 +126,6 @@ export const COMPARE_SORT_OPTIONS: readonly CompareSortOrder[] = [
   'PRODUCT_CATEGORY',
   'EUR_PER_GRAM',
 ];
-
-/**
- * The sort orders currently offered, resolved from the unit-price flag.
- * Flag off removes the €/g option entirely (ranking-sorting spec) —
- * the selector renders no such entry and the page never sorts by it.
- */
-export function compareSortOptions(
-  unitPriceEnabled: boolean,
-): readonly CompareSortOrder[] {
-  return unitPriceEnabled
-    ? COMPARE_SORT_OPTIONS
-    : COMPARE_SORT_OPTIONS.filter((order) => order !== 'EUR_PER_GRAM');
-}
 
 /**
  * Return a new array sorted by the given order. The input array is never

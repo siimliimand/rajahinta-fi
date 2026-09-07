@@ -109,16 +109,14 @@ export function createDoNamespace<
 // Env
 // ---------------------------------------------------------------------------
 
-/** Permissive env — gates open, flags on, ops configured, DOs bound. */
+/**
+ * Permissive env — ops configured, DOs bound. (Feature flags and launch
+ * gates no longer exist; nothing to open.)
+ */
 export function permissiveEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}): Env {
   return {
     DB: d1 as unknown as Env['DB'],
     LOG_LEVEL: 'error',
-    LAUNCH_GATES_OVERRIDE: 'true',
-    FF_BASKET_OPTIMIZATION: 'true',
-    FF_ADVANCED_FEATURES: 'true',
-    FF_HISTORICAL_PRICE_INTELLIGENCE: 'true',
-    FF_OPERATOR_CONSOLE: 'true',
     OPS_BEARER_TOKEN: FAKE_OPS_TOKEN,
     RATE_LIMITER: rateLimiterNamespace(),
     IDEMPOTENCY: idempotencyNamespace(),
@@ -127,14 +125,9 @@ export function permissiveEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}):
   } as Env;
 }
 
-/** Locked-down env — gates closed, flags off, DOs still bound. */
+/** Locked-down env — ops NOT configured (fail-closed), DOs still bound. */
 export function lockedEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}): Env {
   return permissiveEnv(d1, {
-    LAUNCH_GATES_OVERRIDE: undefined,
-    FF_BASKET_OPTIMIZATION: undefined,
-    FF_ADVANCED_FEATURES: undefined,
-    FF_HISTORICAL_PRICE_INTELLIGENCE: undefined,
-    FF_OPERATOR_CONSOLE: undefined,
     OPS_BEARER_TOKEN: undefined,
     ...overrides,
   });

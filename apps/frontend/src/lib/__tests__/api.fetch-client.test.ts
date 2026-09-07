@@ -144,9 +144,9 @@ describe('request() outbound contract', () => {
   });
 
   it('assembles the configured base URL with the request path', async () => {
-    await request('/api/v1/feature-flags');
+    await request('/api/v1/products?q=karhu');
     const [url] = lastCalls()[0];
-    expect(url).toBe(`${API_BASE}/api/v1/feature-flags`);
+    expect(url).toBe(`${API_BASE}/api/v1/products?q=karhu`);
   });
 
   it('always sends credentials: include so the httpOnly session cookie travels', async () => {

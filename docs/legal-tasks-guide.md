@@ -1,5 +1,15 @@
 # Rajahinta.fi — Legal & Tax Tasks Guide
 
+> **STATUS (2026-09-07): SUPERSEDED IN CODE.** The owner decided to remove the
+> `LaunchGateService`/`LaunchGateGuard` launch-gate system and all `FF_*`
+> feature flags: every feature is publicly reachable and no environment
+> variable toggles anything. The legal review tasks below remain **advisory
+> only** — the underlying questions (legal opinion, tax-source mapping,
+> correction mechanism) still deserve real answers, but nothing in the
+> codebase blocks launch on them anymore. The sign-off records
+> (`docs/launch-signoff-record.md`, `docs/launch-decision-record.md`) remain
+> as the historical trail.
+
 > Manual, owner-led tasks required before public launch.
 > Derived from `docs/tasks.md` (Section 1Q: Pre-Launch Legal Review & Gating) and
 > `docs/Rajahinta-FI.docx` (Sections 10.5 and 29 — Critical Launch Conditions).

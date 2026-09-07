@@ -5,8 +5,7 @@ import { notFound } from 'next/navigation';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, getTranslations, setRequestLocale } from 'next-intl/server';
 import { routing } from '@/i18n/routing';
-import { getServerFeatureFlags, SITE_URL } from '@/lib/api';
-import { FeatureFlagsProvider } from '@/lib/feature-flags';
+import { SITE_URL } from '@/lib/api';
 import { AgeGate } from './components/AgeGate';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
@@ -30,9 +29,9 @@ const inter = Inter({
  * paths, English from `/en`.
  */
 
-// ISR window for the inlined flag states: a failed build-time flag fetch
-// must not bake stale states into fully-static pages — they re-render at
-// most this far behind the backend's actual flag configuration.
+// ISR window for the locale tree: server-fetched pages under this layout
+// (metadata, curated lists, sitemap inputs) re-render at most this far
+// behind the backend's data instead of staying fully static.
 export const revalidate = 60;
 
 export function generateStaticParams() {
@@ -70,10 +69,6 @@ export default async function RootLayout({
   // Messages are inherited by every client component below the provider.
   const messages = await getMessages();
 
-  // Flag states are resolved server-side and inlined with the page payload
-  // so flag-gated UI renders at the correct visibility on the first paint.
-  const flags = await getServerFeatureFlags();
-
   return (
     <html lang={locale} className={inter.variable}>
       <body>
@@ -81,17 +76,12 @@ export default async function RootLayout({
             request store to know which catalog it carries. */}
         <NextIntlClientProvider locale={locale} messages={messages}>
           {/* Header and footer stay outside the age gate: navigation chrome
-              is not restricted content and belongs in the SSR payload. The
-              flag provider must cover SiteHeader — its gated nav entries
-              read the same inlined payload (a provider-less render throws,
-              by design). */}
+              is not restricted content and belongs in the SSR payload. */}
           <div className="flex min-h-screen flex-col">
-            <FeatureFlagsProvider flags={flags}>
-              <SiteHeader />
-              <div className="flex-1">
-                <AgeGate>{children}</AgeGate>
-              </div>
-            </FeatureFlagsProvider>
+            <SiteHeader />
+            <div className="flex-1">
+              <AgeGate>{children}</AgeGate>
+            </div>
             <SiteFooter />
           </div>
         </NextIntlClientProvider>

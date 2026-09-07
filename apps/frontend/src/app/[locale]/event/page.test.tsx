@@ -2,18 +2,14 @@
  * EventPage (event calculator MVP simple mode) tests (task 4.4, change
  * product-roadmap-phases-1-4).
  *
- * Verifies the flag-gated contract and the endpoint wiring:
- *   1. Flag off in the inlined payload (absent key — a payload from a
- *      backend predating the flag) → renders nothing on the FIRST render
- *      and never fires the request.
- *   2. Flag on → submit posts /api/v1/event-calc with today's ISO date
- *      (the simple mode has no date input) and the form values.
- *   3. COMPUTED → per-line need/purchase/surplus with fi number
+ * Verifies the endpoint wiring:
+ *   1. Submit posts /api/v1/event-calc with today's ISO date (the simple
+ *      mode has no date input) and the form values.
+ *   2. COMPUTED → per-line need/purchase/surplus with fi number
  *      formatting, norms version named, structural disclaimer rendered.
- *   4. NO_PUBLISHED_NORMS → the explicit empty state is explained, and
+ *   3. NO_PUBLISHED_NORMS → the explicit empty state is explained, and
  *      the disclaimer still renders (it is part of the 200 response).
- *   5. 403 (flag flipped off server-side mid-session) → friendly
- *      unavailable message, no crash.
+ *   4. 403 (backend rejection) → friendly unavailable message, no crash.
  *
  * @module EventPageTest
  */
@@ -24,13 +20,8 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import EventPage from './page';
-import {
-  ALL_FLAGS_OFF,
-  ALL_FLAGS_ON,
-  renderWithIntl,
-} from '@/lib/testing/test-intl';
+import { renderWithIntl } from '@/lib/testing/test-intl';
 import { ApiFetchError, request } from '@/lib/api';
-import type { FeatureFlagsResponse } from '@/lib/types';
 import type { EventCalcResponse } from './event.types';
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -46,13 +37,6 @@ const mockedRequest = vi.mocked(request);
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
-
-// EVENT_CALCULATOR is deliberately absent from the shared client type (the
-// task touch set excludes lib/types.ts) — the cast mirrors the runtime
-// payload, which keys every flag by its backend enum name.
-const FLAGS_ON: FeatureFlagsResponse = {
-  flags: { ...ALL_FLAGS_ON.flags, EVENT_CALCULATOR: true },
-} as FeatureFlagsResponse;
 
 const DISCLAIMER = {
   text: 'Ostoslista perustuu yleisiin kulutusnormeihin.',
@@ -116,20 +100,18 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('EventPage', () => {
-  it('renders nothing on the first render when the flag is absent (off), and fires no request', () => {
-    const { container } = renderWithIntl(<EventPage />, {
-      featureFlags: ALL_FLAGS_OFF,
-    });
+  it('renders the page content by default', () => {
+    const { container } = renderWithIntl(<EventPage />);
 
-    expect(container).toBeEmptyDOMElement();
-    expect(mockedRequest).not.toHaveBeenCalled();
+    expect(container).not.toBeEmptyDOMElement();
+    expect(screen.getByRole('heading')).toBeInTheDocument();
   });
 
   it('submits the form values with today as the event date', async () => {
     mockedRequest.mockResolvedValueOnce(COMPUTED);
 
     const user = userEvent.setup();
-    renderWithIntl(<EventPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<EventPage />);
 
     const guests = screen.getByLabelText('Vieraiden määrä (kpl)');
     await user.clear(guests);
@@ -157,7 +139,7 @@ describe('EventPage', () => {
     mockedRequest.mockResolvedValueOnce(COMPUTED);
 
     const user = userEvent.setup();
-    renderWithIntl(<EventPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<EventPage />);
 
     await user.click(
       screen.getByRole('button', { name: 'Laske ostoslista' }),
@@ -185,7 +167,7 @@ describe('EventPage', () => {
     mockedRequest.mockResolvedValueOnce(NO_NORMS);
 
     const user = userEvent.setup();
-    renderWithIntl(<EventPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<EventPage />);
 
     await user.click(
       screen.getByRole('button', { name: 'Laske ostoslista' }),
@@ -202,11 +184,11 @@ describe('EventPage', () => {
     expect(screen.getByText(DISCLAIMER.text)).toBeInTheDocument();
   });
 
-  it('degrades a 403 (flag flipped off server-side mid-session) to an unavailable message', async () => {
+  it('degrades a 403 (backend rejection) to an unavailable message', async () => {
     mockedRequest.mockRejectedValueOnce(
       new ApiFetchError(403, {
         statusCode: 403,
-        message: 'Feature flag is off',
+        message: 'Forbidden',
         error: 'Forbidden',
         timestamp: '2026-09-05T10:00:00.000Z',
         path: '/api/v1/event-calc',
@@ -214,7 +196,7 @@ describe('EventPage', () => {
     );
 
     const user = userEvent.setup();
-    renderWithIntl(<EventPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<EventPage />);
 
     await user.click(
       screen.getByRole('button', { name: 'Laske ostoslista' }),
@@ -223,19 +205,6 @@ describe('EventPage', () => {
     expect(
       await screen.findByRole('alert'),
     ).toHaveTextContent('Tilaisuuslaskuri ei ole käytettävissä.');
-  });
-
-  it('renders nothing when the flag is explicitly false', () => {
-    const flagExplicitlyOff = {
-      flags: { ...FLAGS_ON.flags, EVENT_CALCULATOR: false },
-    } as FeatureFlagsResponse;
-
-    const { container } = renderWithIntl(<EventPage />, {
-      featureFlags: flagExplicitlyOff,
-    });
-
-    expect(container).toBeEmptyDOMElement();
-    expect(mockedRequest).not.toHaveBeenCalled();
   });
 });
 
@@ -319,10 +288,9 @@ describe('EventPage — V2 sourcing', () => {
   async function enableSourcingAndSubmit(
     user: ReturnType<typeof userEvent.setup>,
     response: EventCalcResponse,
-    flags: FeatureFlagsResponse = FLAGS_ON,
   ): Promise<void> {
     mockedRequest.mockResolvedValueOnce(response);
-    const { container } = renderWithIntl(<EventPage />, { featureFlags: flags });
+    const { container } = renderWithIntl(<EventPage />);
 
     await user.click(screen.getByTestId('event-sourcing-toggle'));
     await user.type(screen.getByLabelText('Olut — Suomi (€/l)'), '5,00');
@@ -351,7 +319,8 @@ describe('EventPage — V2 sourcing', () => {
       domesticPricePerLitreCents: 500,
       foreign: [{ country: 'EE', pricePerLitreCents: 200 }],
     });
-    expect(body.sourcing!.packing).toBeUndefined(); // flag off in FLAGS_ON fixture
+    // The packing opt-in was not toggled for this submit.
+    expect(body.sourcing!.packing).toBeUndefined();
   });
 
   it('renders the plan view: source assignment, figures, budget state, packing panel', async () => {
@@ -384,13 +353,10 @@ describe('EventPage — V2 sourcing', () => {
     expect(screen.queryByTestId('event-plan-packing')).not.toBeInTheDocument();
   });
 
-  it('offers the packing opt-in only while PACKING_OPTIMIZER is on', async () => {
+  it('offers the packing opt-in and posts packing=true when toggled', async () => {
     const user = userEvent.setup();
-    const flags = {
-      flags: { ...FLAGS_ON.flags, PACKING_OPTIMIZER: true },
-    } as FeatureFlagsResponse;
     mockedRequest.mockResolvedValueOnce(COMPUTED_WITH_PLAN);
-    const { container } = renderWithIntl(<EventPage />, { featureFlags: flags });
+    const { container } = renderWithIntl(<EventPage />);
 
     await user.click(screen.getByTestId('event-sourcing-toggle'));
     await user.type(screen.getByLabelText('Olut — Suomi (€/l)'), '5,00');

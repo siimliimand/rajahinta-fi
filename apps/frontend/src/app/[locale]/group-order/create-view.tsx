@@ -7,7 +7,6 @@ import * as React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import { ApiFetchError } from '@/lib/api';
 import { Button } from '@/components/ui';
 import {
@@ -20,15 +19,11 @@ import { formatTimestamp } from './money';
  * Group order create/manage entry (task 9.4, change
  * product-roadmap-phases-1-4) at /group-order.
  *
- * Gating: renders NOTHING unless the inlined GROUP_ORDER_LEDGER flag is
- * on (absent key counts as off — the narrow-lookup contract). A 403 from
- * the API — the flag flipped off server-side mid-session — degrades to
- * the same absent UI (alerts precedent, design R13).
- *
  * Auth UI state: session create is owner-authenticated server-side; a 401
  * (no usable account session) is answered with a sign-in prompt, not a
  * retry loop. The request wrapper's anonymous-session minting does not
  * apply here — /api/v1/group-orders is outside the account-scope prefix.
+ * A 403 from the API degrades the view to nothing.
  *
  * On success the owner gets the shareable link — the URL participants
  * open under /group-order/[token]. The link is shown for copying and as
@@ -40,14 +35,10 @@ import { formatTimestamp } from './money';
 export default function CreateGroupOrderView() {
   const t = useTranslations('GroupOrder');
   const locale = useLocale();
-  // Flag state arrives inlined with the initial HTML payload — the
-  // visibility is correct on the first render, no late appearance.
-  const flags = useFeatureFlags();
-  const flagEnabled = flags.flags.GROUP_ORDER_LEDGER === true;
 
   const [created, setCreated] = useState<CreateSessionResponse | null>(null);
   const [creating, setCreating] = useState(false);
-  // 'signin' (401) | 'forbidden' (403 flag flipped) | 'error' | null
+  // 'signin' (401) | 'forbidden' (403) | 'error' | null
   const [failure, setFailure] = useState<
     'signin' | 'forbidden' | 'error' | null
   >(null);
@@ -79,9 +70,8 @@ export default function CreateGroupOrderView() {
     return () => setCopied(false);
   }, []);
 
-  // ── Hidden state: flag off in the inlined payload (or flipped off
-  //    server-side mid-session) — render nothing, fetch nothing. ──
-  if (!flagEnabled || failure === 'forbidden') {
+  // ── Hidden state: the API rejected the create (403) — render nothing. ──
+  if (failure === 'forbidden') {
     return null;
   }
 

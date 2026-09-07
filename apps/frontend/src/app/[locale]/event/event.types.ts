@@ -6,8 +6,9 @@
  * result value (200), not an error, and every result carries the structural
  * norms-are-estimates disclaimer. The optional `sourcing` request section switches
  * the computed response over to shopping list + V2 sourcing `plan` (buy here vs
- * bring from a candidate country) and, when opted in and flag-gated on, a
- * `packing` section. Requests without `sourcing` keep the byte-compatible MVP shape.
+ * bring from a candidate country) and, when opted in and offered by the
+ * API, a `packing` section. Requests without `sourcing` keep the
+ * byte-compatible MVP shape.
  *
  * Kept in the event scope rather than `@/lib/types` so task 4.4's edits stay
  * inside its declared touch set; 4.5 (V2 sourcing) extends from here.
@@ -122,7 +123,7 @@ export interface EventShoppingListResult extends EventCalcResultBase {
   readonly lines: readonly ShoppingListLine[];
   /** V2 sourcing plan — present exactly when the request carried `sourcing`. */
   readonly plan?: EventSourcingPlan;
-  /** Packing section — present when opted in AND the packing flag is on. */
+  /** Packing section — present when the API supplies one for an opted-in request. */
   readonly packing?: EventPackingSection;
 }
 

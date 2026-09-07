@@ -5,9 +5,7 @@
  * for compare product columns (task 4.3, change phase2-advanced-features).
  *
  * Behaviour:
- *  - `enable_advanced_features` off ⇒ the section renders nothing and the
- *    reliability request is never fired. A failed flag lookup also
- *    degrades to hidden. An empty merchant list also renders nothing.
+ *  - An empty merchant list renders nothing.
  *  - Data comes from GET /api/v1/merchants/reliability via a single-flight
  *    cached client, so N product columns share one request.
  *  - Neutrality: every merchant row is styled identically — factual
@@ -28,7 +26,6 @@ import type {
   ReliabilityStatus,
 } from '@/lib/types';
 import { getMerchantReliability } from '@/lib/api';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import { RELIABILITY_STATUS_META } from '@/lib/design/status';
 
 // ---------------------------------------------------------------------------
@@ -81,16 +78,13 @@ export default function MerchantFreshnessSection({
   const t = useTranslations('MerchantFreshness');
   const tAll = useTranslations();
   const tCommon = useTranslations('Common');
-  // Flag state is inlined with the initial HTML payload (task 9.4).
-  const flags = useFeatureFlags();
-  const flagEnabled = flags.flags.ADVANCED_FEATURES;
   const [scores, setScores] = useState<
     Readonly<Record<string, MerchantReliabilityScore>>
   >({});
 
-  // ── Reliability fetch — guarded by the flag and a non-empty list ──
+  // ── Reliability fetch — guarded by a non-empty list ──
   useEffect(() => {
-    if (!flagEnabled || merchants.length === 0) return;
+    if (merchants.length === 0) return;
     let cancelled = false;
 
     getMerchantReliability()
@@ -109,10 +103,10 @@ export default function MerchantFreshnessSection({
     return () => {
       cancelled = true;
     };
-  }, [flagEnabled, merchants]);
+  }, [merchants]);
 
-  // ── Hidden states: flag off in the inlined payload, no merchants/data ──
-  if (!flagEnabled || merchants.length === 0) {
+  // ── Hidden states: no merchants/data ──
+  if (merchants.length === 0) {
     return null;
   }
   const visible = merchants.filter((m) => scores[m] !== undefined);

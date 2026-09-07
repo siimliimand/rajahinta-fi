@@ -28,7 +28,6 @@ import {
   EntitlementService,
 } from '@rajahinta/core-domain';
 import { DeclarationController } from '../declaration.controller';
-import { FeatureFlagService, FeatureFlag } from '../../feature-flags';
 import {
   EntitlementGuard,
   REQUIRE_FEATURE_KEY,
@@ -142,17 +141,6 @@ function createMockDeclarationService(): ExciseDeclarationService {
   } as unknown as ExciseDeclarationService;
 }
 
-function createMockFeatureFlagService(
-  advancedFeaturesEnabled: boolean,
-): FeatureFlagService {
-  return {
-    isEnabled: vi.fn(
-      (flag: FeatureFlag) => flag === FeatureFlag.ADVANCED_FEATURES && advancedFeaturesEnabled,
-    ),
-    isEnabledForEntity: vi.fn(() => false),
-  } as unknown as FeatureFlagService;
-}
-
 function createMockEntitlementService(): EntitlementService {
   return {
     checkAccess: vi.fn(
@@ -190,12 +178,7 @@ describe('DeclarationController — prepareDeclaration', () => {
 
   beforeEach(() => {
     mockService = createMockDeclarationService();
-    // Flag on by default — happy path expects the full summary including
-    // guidance; the flag-off behaviour is covered in its own block below.
-    controller = new DeclarationController(
-      mockService,
-      createMockFeatureFlagService(true),
-    );
+    controller = new DeclarationController(mockService);
   });
 
   // ---------------------------------------------------------------------------
@@ -216,33 +199,13 @@ describe('DeclarationController — prepareDeclaration', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // ADVANCED_FEATURES gating of the guidance field (design D5)
+  // Guidance field pass-through
   // ---------------------------------------------------------------------------
 
-  describe('when ADVANCED_FEATURES is enabled', () => {
+  describe('guidance field', () => {
     it('passes the guidance object through', async () => {
       const result = await controller.prepareDeclaration(42);
       expect(result.guidance).toEqual(MOCK_SUMMARY.guidance);
-    });
-  });
-
-  describe('when ADVANCED_FEATURES is disabled', () => {
-    it('omits the guidance field entirely (byte-compatible with pre-guidance responses)', async () => {
-      const flags = createMockFeatureFlagService(false);
-      const flagOffController = new DeclarationController(mockService, flags);
-      const result = await flagOffController.prepareDeclaration(42);
-
-      expect(Object.keys(result)).not.toContain('guidance');
-      expect(result.guidance).toBeUndefined();
-      const { guidance: _stripped, ...expected } = MOCK_SUMMARY;
-      expect(result).toEqual(expected);
-    });
-
-    it('consults the ADVANCED_FEATURES flag', async () => {
-      const flags = createMockFeatureFlagService(false);
-      const flagOffController = new DeclarationController(mockService, flags);
-      await flagOffController.prepareDeclaration(42);
-      expect(flags.isEnabled).toHaveBeenCalledWith(FeatureFlag.ADVANCED_FEATURES);
     });
   });
 

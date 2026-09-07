@@ -5,13 +5,9 @@
  * persisted calculation (task 4.2, change phase2-advanced-features).
  *
  * Behaviour:
- *  - `enable_advanced_features` off ⇒ the actions render nothing and no
- *    report request is fired (same guard-before-fetch pattern as
- *    ProductHistoryPanel). The flag state arrives with the initial HTML
- *    payload, so the actions' visibility is correct on the first render.
- *  - PREMIUM entitlement failures (403 error 'InsufficientEntitlement')
- *    surface a controlled-vocabulary message — never a crash and never
- *    promotional wording.
+ *  - Entitlement failures (403 error 'InsufficientEntitlement') surface a
+ *    controlled-vocabulary message — never a crash and never promotional
+ *    wording.
  *  - Reports are fetched as blobs (the route needs the age-confirmation
  *    header, which a plain anchor navigation cannot attach cross-origin).
  *
@@ -25,7 +21,6 @@ import {
   downloadReport,
   openPrintableReport,
 } from '@/lib/api';
-import { useFeatureFlags } from '@/lib/feature-flags';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -49,16 +44,8 @@ export default function ReportExportActions({
   compact = false,
 }: ReportExportActionsProps) {
   const t = useTranslations('ReportExport');
-  // Flag state is inlined with the initial HTML payload (task 9.4).
-  const flags = useFeatureFlags();
-  const flagEnabled = flags.flags.ADVANCED_FEATURES;
   const [busy, setBusy] = useState<BusyFormat>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // ── Hidden state: flag off in the inlined payload ──
-  if (!flagEnabled) {
-    return null;
-  }
 
   // ── Shared runner: classify failures into controlled messages ──
   const run = async (format: BusyFormat, action: () => Promise<void>) => {

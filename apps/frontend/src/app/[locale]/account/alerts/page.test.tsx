@@ -2,16 +2,14 @@
  * AlertsPage (account price-alerts management) tests (task 2.4, change
  * product-roadmap-phases-1-4).
  *
- * Verifies the flag-gated contract and the endpoint wiring:
- *   1. Flag off in the inlined payload → renders nothing on the FIRST
- *      render and never fires the account request.
- *   2. Flag on → renders the list (product name, euro threshold, status)
- *      and the create form.
- *   3. Create → POST /api/v1/account/alerts with integer euro cents.
- *   4. Pause/resume → PATCH with the status field.
- *   5. Delete → DELETE via apiFetch (the endpoint answers 200 with an
+ * Verifies the endpoint wiring:
+ *   1. Renders the list (product name, euro threshold, status) and the
+ *      create form.
+ *   2. Create → POST /api/v1/account/alerts with integer euro cents.
+ *   3. Pause/resume → PATCH with the status field.
+ *   4. Delete → DELETE via apiFetch (the endpoint answers 200 with an
  *      empty body, which request() cannot parse) and row removal.
- *   6. 401 → sign-in prompt; 403 → the whole view degrades to nothing.
+ *   5. 401 → sign-in prompt; 403 → the whole view degrades to nothing.
  *
  * @module AlertsPageTest
  */
@@ -22,11 +20,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AlertsPage from './page';
-import {
-  ALL_FLAGS_OFF,
-  ALL_FLAGS_ON,
-  renderWithIntl,
-} from '@/lib/testing/test-intl';
+import { renderWithIntl } from '@/lib/testing/test-intl';
 import {
   ApiFetchError,
   apiFetch,
@@ -36,7 +30,6 @@ import {
 } from '@/lib/api';
 import type {
   ApiError,
-  FeatureFlagsResponse,
   PriceAlert,
   ProductSearchResult,
 } from '@/lib/types';
@@ -68,9 +61,6 @@ const mockedFetchProductsByIds = vi.mocked(fetchProductsByIds);
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const FLAGS_ON: FeatureFlagsResponse = {
-  flags: { ...ALL_FLAGS_ON.flags, PRICE_ALERTS: true },
-};
 
 /** Full ApiError body as the API emits it (ApiFetchError carries it). */
 function apiError(status: number, message: string): ApiError {
@@ -128,41 +118,16 @@ beforeEach(() => {
   mockedFetchProductsByIds.mockResolvedValue(SEARCH_RESULT);
 });
 
-// ---------------------------------------------------------------------------
-// Gating
-// ---------------------------------------------------------------------------
-
 describe('AlertsPage', () => {
-  it('renders nothing and never fires the account request when the flag is off', () => {
-    const { container } = renderWithIntl(<AlertsPage />, {
-      featureFlags: ALL_FLAGS_OFF,
-    });
-
-    expect(container.firstChild).toBeNull();
-    expect(mockedRequest).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('price-alerts-page')).not.toBeInTheDocument();
-  });
-
-  it('renders nothing when the flag key is absent (older payload)', () => {
-    const { container } = renderWithIntl(<AlertsPage />, {
-      featureFlags: ALL_FLAGS_ON,
-    });
-
-    expect(container.firstChild).toBeNull();
-    expect(mockedRequest).not.toHaveBeenCalled();
-  });
-
-  it('degrades to nothing when the API reports the flag off (403)', async () => {
+  it('degrades to nothing when the API rejects the list read (403)', async () => {
     mockedRequest.mockRejectedValue(
       new ApiFetchError(
         403,
-        apiError(403, 'Feature "PRICE_ALERTS" is not enabled'),
+        apiError(403, 'Forbidden'),
       ),
     );
 
-    const { container } = renderWithIntl(<AlertsPage />, {
-      featureFlags: FLAGS_ON,
-    });
+    const { container } = renderWithIntl(<AlertsPage />);
 
     await waitFor(() => expect(mockedRequest).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(container.firstChild).toBeNull());
@@ -173,7 +138,7 @@ describe('AlertsPage', () => {
       new ApiFetchError(401, apiError(401, 'no session')),
     );
 
-    renderWithIntl(<AlertsPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<AlertsPage />);
 
     const prompt = await screen.findByTestId('alert-signin-prompt');
     expect(prompt).toHaveTextContent('Kirjautuminen vaaditaan');
@@ -199,7 +164,7 @@ describe('AlertsPage', () => {
       totalPages: 1,
     });
 
-    renderWithIntl(<AlertsPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<AlertsPage />);
 
     const rows = await screen.findAllByTestId('price-alert-row');
     expect(rows).toHaveLength(2);
@@ -223,14 +188,14 @@ describe('AlertsPage', () => {
       totalPages: 0,
     });
 
-    renderWithIntl(<AlertsPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<AlertsPage />);
 
     const row = await screen.findByTestId('price-alert-row');
     expect(row).toHaveTextContent('Tuote #42');
   });
 
   it('renders the empty state when no alerts exist', async () => {
-    renderWithIntl(<AlertsPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<AlertsPage />);
 
     expect(await screen.findByText('Ei vielä hintaherätyksiä')).toBeInTheDocument();
     expect(screen.queryByTestId('price-alert-row')).not.toBeInTheDocument();
@@ -250,7 +215,7 @@ describe('AlertsPage', () => {
       throw new Error(`unexpected ${init?.method ?? 'GET'} ${path}`);
     });
 
-    renderWithIntl(<AlertsPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<AlertsPage />);
 
     // Search for the product and select it from the results.
     await screen.findByText('Ei vielä hintaherätyksiä');
@@ -281,7 +246,7 @@ describe('AlertsPage', () => {
 
   it('rejects an invalid threshold locally without calling the API', async () => {
     const user = userEvent.setup();
-    renderWithIntl(<AlertsPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<AlertsPage />);
 
     await screen.findByText('Ei vielä hintaherätyksiä');
     await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'kahvi');
@@ -309,7 +274,7 @@ describe('AlertsPage', () => {
       return [];
     });
 
-    renderWithIntl(<AlertsPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<AlertsPage />);
 
     await screen.findByText('Ei vielä hintaherätyksiä');
     await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'kahvi');
@@ -337,7 +302,7 @@ describe('AlertsPage', () => {
       throw new Error(`unexpected ${init?.method ?? 'GET'} ${path}`);
     });
 
-    renderWithIntl(<AlertsPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<AlertsPage />);
 
     const row = await screen.findByTestId('price-alert-row');
     await user.click(
@@ -361,7 +326,7 @@ describe('AlertsPage', () => {
     const user = userEvent.setup();
     mockedRequest.mockResolvedValue([alert()]);
 
-    renderWithIntl(<AlertsPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<AlertsPage />);
 
     const row = await screen.findByTestId('price-alert-row');
     await user.click(within(row).getByRole('button', { name: 'Poista' }));

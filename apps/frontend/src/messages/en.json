@@ -83,11 +83,6 @@
     "trustMethodologyTitle": "Methodology",
     "trustMethodologyBody": "The calculation model, the tax sources in use, and the ranking criteria are documented openly."
   },
-  "GateClosed": {
-    "title": "The calculator is not yet available",
-    "body": "Landed-cost calculation is not yet publicly available. The service is being prepared for launch: the legal opinion, the tax-source mapping, and the correction mechanism are confirmed before publication.",
-    "availableAtLaunch": "Once launched, the calculator shows a product's total cost of importing to Finland: the foreign retail price, the transport cost, the estimated alcohol excise duty, and the estimated container duty."
-  },
   "AgeGate": {
     "title": "Age verification",
     "body": "This site contains alcohol-related content. Are you 18 or older?",

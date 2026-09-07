@@ -3,8 +3,7 @@
  *
  * Typed fetch plus error classification for the states the UI renders
  * distinctly, following the {@link classifyEventCalcError} precedent.
- * The endpoint sits behind the `TRIP_CALCULATOR` gate, so a flag flipped
- * off server-side mid-session reaches the client as 403 and must degrade
+ * A server-side 403 reaches the client as `forbidden` and must degrade
  * to a friendly "not available" message, never a crash (design R13).
  * 409 (`NoPublishedAllowances`) is classified explicitly too: it is an
  * expected data state — no published allowance dataset covers the travel
@@ -23,7 +22,7 @@ import type { TripFeasibilityRequest, TripFeasibilityResponse } from './trip.typ
 /**
  * Classified failure modes of {@link calculateTripFeasibility}:
  * - `validation`     — 400: out-of-cap passengers/costs or malformed input
- * - `forbidden`      — 403: TRIP_CALCULATOR flag off server-side
+ * - `forbidden`      — 403: the backend rejected the calculation
  * - `no-allowances`  — 409: no published allowance dataset for the date
  * - `rate-limited`   — 429: CALCULATOR limiter tripped
  * - `network`        — fetch itself failed (no HTTP response)

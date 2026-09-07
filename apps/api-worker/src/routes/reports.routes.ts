@@ -2,9 +2,9 @@
  * Reports route port (task 3.6) — Hono re-host of ReportsController
  * (packages/application-api/src/reports/).
  *
- * Guard/rate-limit composition (Nest decoration order preserved):
+ * Guard/rate-limit composition:
  *   GET /api/v1/reports/:recordId
- *     RateLimit(DECLARATION) → FeatureFlag(ADVANCED_FEATURES) → AgeGate
+ *     RateLimit(DECLARATION) → AgeGate
  *     → Entitlement('calculation:export')
  *
  * The format serializers are the application-api module's pure functions
@@ -24,7 +24,6 @@ import { ApiHttpError } from '../errors';
 import { parseIntParam } from './support';
 import { ageGate } from '../middleware/age-gate';
 import { requireFeature } from '../middleware/entitlement';
-import { requireFeatureFlag, FeatureFlag } from '../middleware/feature-flags';
 import { resolveAccountByToken } from '../auth/session-resolver';
 import { SESSION_COOKIE_NAME } from '../middleware/session-auth';
 import { USER_CONTEXT_KEY } from '../auth/authenticated-account';
@@ -38,7 +37,7 @@ import {
 /**
  * Resolve the presented session cookie — when one exists AND is valid —
  * into the user context WITHOUT requiring it. Anonymous callers fall
- * through (the entitlement check then resolves FREE, its documented 403).
+ * through (the entitlement check then resolves FREE).
  */
 const attachOptionalSession: MiddlewareHandler<AppEnv> = async (c, next) => {
   const token = getCookie(c, SESSION_COOKIE_NAME);
@@ -113,17 +112,15 @@ async function getReport(c: Context<AppEnv>): Promise<Response> {
   }
 }
 
-/** Register the reports handlers with the full Nest guard stack. */
+/** Register the reports handlers with the guard stack. */
 export function registerReportsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
-  // Class-level stack, Nest order (the DECLARATION-profile rate limit is
+  // Class-level age gate (the DECLARATION-profile rate limit is
   // registered ahead of the guard blocks in index.ts).
-  app.use('/api/v1/reports/*', requireFeatureFlag(FeatureFlag.ADVANCED_FEATURES), ageGate());
-  // Method-level EntitlementGuard pair. Unlike declaration (whose pinned
-  // always-403 composition is preserved), the phase2-advanced-features
-  // guard contract for this route is explicit — "PREMIUM allowed; FREE
-  // tier and anonymous requests get 403 with the InsufficientEntitlement
-  // body; tiers resolve from the account context" — so the presented
-  // session cookie, when any, resolves the tier ahead of the check.
+  app.use('/api/v1/reports/*', ageGate());
+  // Method-level EntitlementGuard. The presented session cookie, when
+  // any, resolves the tier ahead of the check; every feature is FREE tier
+  // today, so the check admits anonymous callers too — the wiring stays
+  // as the future paywall seam.
   app.on('GET', '/api/v1/reports/:recordId', attachOptionalSession, requireFeature('calculation:export'));
   app.get('/api/v1/reports/:recordId', getReport);
   return app;

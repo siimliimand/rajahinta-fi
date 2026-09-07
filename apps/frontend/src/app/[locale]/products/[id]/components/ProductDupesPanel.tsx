@@ -2,13 +2,10 @@
  * Product-page dupe panel (task 6.4, change product-roadmap-phases-1-4)
  * — curated sibling products with their WHY (design R9).
  *
- * Gating (R13, server-resolved): the panel resolves the
- * PRODUCER_DUPE_FINDER flag server-side via the bootstrapped flag
- * payload and fetches the dupes server-side alongside the page's own
- * data. It renders ONLY when the flag is on AND at least one curated
- * link exists — flag off, fetch failure (including a 403 from the flag
- * flipping mid-revalidate), or an empty list all render nothing: no
- * empty shell, nothing in the HTML, no layout shift.
+ * Rendering: the panel fetches the dupes server-side alongside the
+ * page's own data and renders ONLY when at least one curated link
+ * exists — a fetch failure or an empty list renders nothing: no empty
+ * shell, nothing in the HTML, no layout shift.
  *
  * Evidence discipline (R9): every row shows the WHY — the normalized
  * producer key the exact match ran on (Badge, estimated tone: curated
@@ -32,25 +29,18 @@
 import * as React from 'react';
 import { getTranslations } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
-import { getServerFeatureFlags } from '@/lib/api';
 import { Badge, Card } from '@/components/ui';
 import { getServerProductDupes } from '../product-dupes';
-import { isProducerDupeFinderFlagEnabled } from '../product-dupes-flag';
 
 interface ProductDupesPanelProps {
   /** The product page's resolved product id. */
   readonly productId: number;
 }
 
-/** Server component; absent from the HTML unless gated in. */
+/** Server component; absent from the HTML when no curated links exist. */
 export default async function ProductDupesPanel({
   productId,
 }: ProductDupesPanelProps) {
-  const flags = await getServerFeatureFlags();
-  if (!isProducerDupeFinderFlagEnabled(flags)) {
-    return null;
-  }
-
   const dupes = await getServerProductDupes(productId);
   if (dupes === null || dupes.dupes.length === 0) {
     return null;

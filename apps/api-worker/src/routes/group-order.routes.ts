@@ -13,19 +13,13 @@
  *
  * ## Middleware chain per request
  *
- *   create:   sessionAuth() → requireFeatureFlag('GROUP_ORDER_LEDGER') →
- *             requireAccountRateLimit('DEFAULT') → handler
- *             (the guards table registers the first two — the alerts
- *             CRUD order: an anonymous caller gets the 401 envelope, so
- *             flag state never leaks to unauthenticated callers)
+ *   create:   sessionAuth() → requireAccountRateLimit('DEFAULT') →
+ *             handler (the guards table registers sessionAuth)
  *
- *   token routes: requireFeatureFlag('GROUP_ORDER_LEDGER') →
- *             requireRateLimit(profile) → handler
+ *   token routes: requireRateLimit(profile) → handler
  *             (deliberately NO sessionAuth — the share token IS the
  *             capability; participants join without an account, spec:
- *             participant joins by link. The flag gate comes first and
- *             applies to anonymous callers here: spec — flag off →
- *             share-link access returns the feature-disabled error.)
+ *             participant joins by link)
  *
  * ## Documented decisions
  *
@@ -87,7 +81,6 @@ import type { AddItemDto, JoinDto, LedgerDto } from './group-order-dto';
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
 import { requireAccountRateLimit, requireRateLimit } from '../middleware/rate-limit';
-import { requireFeatureFlag, FeatureFlag } from '../middleware/feature-flags';
 import { USER_CONTEXT_KEY } from '../auth/authenticated-account';
 import type { AuthenticatedAccount } from '../auth/authenticated-account';
 import { D1GroupOrderRepository } from '../../../../packages/data-platform/src/repositories/d1/group-order.repository';
@@ -379,24 +372,20 @@ async function computeLedger(c: Context<AppEnv>): Promise<Response> {
 export function registerGroupOrderRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.post('/api/v1/group-orders', requireAccountRateLimit('DEFAULT'), createSession);
 
-  // Token-scope routes: flag gate first (spec — flag off → share-link
-  // access returns the feature-disabled error), then the IP-keyed rate
-  // limit (participants are anonymous; see the documented decisions).
+  // Token-scope routes: the IP-keyed rate limit (participants are
+  // anonymous; see the documented decisions).
   app.post(
     '/api/v1/group-orders/:shareToken/join',
-    requireFeatureFlag(FeatureFlag.GROUP_ORDER_LEDGER),
     requireRateLimit('DEFAULT'),
     join,
   );
   app.post(
     '/api/v1/group-orders/:shareToken/items',
-    requireFeatureFlag(FeatureFlag.GROUP_ORDER_LEDGER),
     requireRateLimit('DEFAULT'),
     addItem,
   );
   app.post(
     '/api/v1/group-orders/:shareToken/ledger',
-    requireFeatureFlag(FeatureFlag.GROUP_ORDER_LEDGER),
     requireRateLimit('CALCULATOR'),
     computeLedger,
   );

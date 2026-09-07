@@ -44,13 +44,11 @@ import type { CalculateRequest, CalculationResultResponse } from './calculator.d
 import { mapCalculationRecordToResult } from './calculation-result.mapper';
 import { IdempotencyService } from '../idempotency';
 import { RateLimitGuard, RateLimit } from '../rate-limiting';
-import { LaunchGateGuard, LaunchGate, LaunchGateType } from '../feature-flags';
 import { AgeGateGuard } from '../age-gate';
 
 @ApiTags('calculator')
 @Controller('api/v1/calculator')
-@LaunchGate(LaunchGateType.CALCULATION)
-@UseGuards(RateLimitGuard, LaunchGateGuard, AgeGateGuard)
+@UseGuards(RateLimitGuard, AgeGateGuard)
 export class CalculatorController {
   constructor(
     private readonly calculator: LandedCostCalculatorService,

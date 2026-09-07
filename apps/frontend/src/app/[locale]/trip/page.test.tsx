@@ -3,21 +3,18 @@
  * product-roadmap-phases-1-4).
  *
  * Mirrors the event page test's contract, adapted to the task-5.3 API:
- *   1. Flag off in the inlined payload (absent key or explicit false)
- *      → renders nothing on the FIRST render and never fires the request.
- *   2. Flag on → submit posts /api/v1/trip-feasibility with today's ISO
- *      date (the form has no date input) and the form values parsed to
- *      integer cents.
- *   3. COMPUTED → per-line break-even/cap figures with fi number
+ *   1. Submit posts /api/v1/trip-feasibility with today's ISO date (the
+ *      form has no date input) and the form values parsed to integer
+ *      cents.
+ *   2. COMPUTED → per-line break-even/cap figures with fi number
  *      formatting, the allowance dataset version cited, the CAPPED cap
  *      visualization (uncapped figure beside the cap), NO_BREAK_EVEN as
  *      an explained value state, and the structural disclaimer rendered.
- *   4. Partner block (design R8): rendered in its own labeled container
+ *   3. Partner block (design R8): rendered in its own labeled container
  *      with links through the redirect path when populated, absent when
  *      empty — with the results section identical in both cases.
- *   5. 403 (flag flipped off server-side mid-session) → friendly
- *      unavailable message; 409 (no published allowances) → calm empty
- *      state, not a red error.
+ *   4. 403 (backend rejection) → friendly unavailable message;
+ *      409 (no published allowances) → calm empty state, not a red error.
  *
  * @module TripPageTest
  */
@@ -28,13 +25,8 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TripPage from './page';
-import {
-  ALL_FLAGS_OFF,
-  ALL_FLAGS_ON,
-  renderWithIntl,
-} from '@/lib/testing/test-intl';
+import { renderWithIntl } from '@/lib/testing/test-intl';
 import { ApiFetchError, request } from '@/lib/api';
-import type { FeatureFlagsResponse } from '@/lib/types';
 import type { TripFeasibilityResponse } from './trip.types';
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -50,13 +42,6 @@ const mockedRequest = vi.mocked(request);
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
-
-// TRIP_CALCULATOR is deliberately absent from the shared client type —
-// the cast mirrors the runtime payload, which keys every flag by its
-// backend enum name (event page test precedent).
-const FLAGS_ON: FeatureFlagsResponse = {
-  flags: { ...ALL_FLAGS_ON.flags, TRIP_CALCULATOR: true },
-} as FeatureFlagsResponse;
 
 const DISCLAIMER = {
   text: 'Määrärajat ovat viranomaisen indikatiivisia rajoja.',
@@ -157,7 +142,7 @@ async function submitForm(
     mockedRequest.mockResolvedValueOnce(response);
   }
   const user = userEvent.setup();
-  const { container } = renderWithIntl(<TripPage />, { featureFlags: FLAGS_ON });
+  const { container } = renderWithIntl(<TripPage />);
   await fillValidForm(user, container);
   await user.click(
     within(container).getByRole('button', {
@@ -176,31 +161,16 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('TripPage', () => {
-  it('renders nothing on the first render when the flag is absent (off), and fires no request', () => {
-    const { container } = renderWithIntl(<TripPage />, {
-      featureFlags: ALL_FLAGS_OFF,
-    });
+  it('renders the page content by default', () => {
+    const { container } = renderWithIntl(<TripPage />);
 
-    expect(container).toBeEmptyDOMElement();
-    expect(mockedRequest).not.toHaveBeenCalled();
-  });
-
-  it('renders nothing when the flag is explicitly false', () => {
-    const flagExplicitlyOff = {
-      flags: { ...FLAGS_ON.flags, TRIP_CALCULATOR: false },
-    } as FeatureFlagsResponse;
-
-    const { container } = renderWithIntl(<TripPage />, {
-      featureFlags: flagExplicitlyOff,
-    });
-
-    expect(container).toBeEmptyDOMElement();
-    expect(mockedRequest).not.toHaveBeenCalled();
+    expect(container).not.toBeEmptyDOMElement();
+    expect(container.querySelector('h1')).not.toBeNull();
   });
 
   it('submits the form values parsed to integer cents, with today as the travel date', async () => {
     const user = userEvent.setup();
-    const { container } = renderWithIntl(<TripPage />, { featureFlags: FLAGS_ON });
+    const { container } = renderWithIntl(<TripPage />);
     await fillValidForm(user, container);
 
     const scope = within(container);
@@ -307,7 +277,7 @@ describe('TripPage', () => {
     ): Promise<string> {
       mockedRequest.mockResolvedValueOnce(response);
       const user = userEvent.setup();
-      const view = renderWithIntl(<TripPage />, { featureFlags: FLAGS_ON });
+      const view = renderWithIntl(<TripPage />);
       await fillValidForm(user, view.container);
       await user.click(
         within(view.container).getByRole('button', {
@@ -328,11 +298,11 @@ describe('TripPage', () => {
     expect(populatedOffersHtml).toBe(emptyOffersHtml);
   });
 
-  it('degrades a 403 (flag flipped off server-side mid-session) to an unavailable message', async () => {
+  it('degrades a 403 (backend rejection) to an unavailable message', async () => {
     await submitForm(
       new ApiFetchError(403, {
         statusCode: 403,
-        message: 'Feature flag is off',
+        message: 'Forbidden',
         error: 'Forbidden',
         timestamp: '2026-09-05T10:00:00.000Z',
         path: '/api/v1/trip-feasibility',

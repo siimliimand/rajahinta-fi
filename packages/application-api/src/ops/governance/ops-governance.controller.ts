@@ -3,7 +3,7 @@
  * operator console (task 12.1, change technical-assessment-remediation).
  *
  * Separate auth realm: OpsAccessGuard (bearer token + IP allowlist,
- * fail-closed) runs before the feature flag; access is denied before any
+ * fail-closed) denies access before any
  * operational data is returned to unauthenticated callers.
  *
  * @module OpsGovernanceController
@@ -23,7 +23,6 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AcquisitionMethod } from '@rajahinta/core-domain';
 import { OpsAccessGuard } from '../../observability';
-import { FeatureFlagGuard, FeatureFlagDec, FeatureFlag } from '../../feature-flags';
 import type {
   GrantGovernanceDto,
   OpsGovernanceListResponse,
@@ -49,8 +48,7 @@ interface OperatorBody {
 
 @ApiTags('ops')
 @Controller('ops/console/governance')
-@UseGuards(OpsAccessGuard, FeatureFlagGuard)
-@FeatureFlagDec(FeatureFlag.OPERATOR_CONSOLE)
+@UseGuards(OpsAccessGuard)
 export class OpsGovernanceController {
   constructor(private readonly governance: OpsGovernanceService) {}
 
@@ -67,7 +65,7 @@ export class OpsGovernanceController {
       'revoke writes a durable audit event.',
   })
   @ApiResponse({ status: 200, description: 'Merchants with permission status' })
-  @ApiResponse({ status: 403, description: 'Unauthenticated, outside the allowlist, or flag off' })
+  @ApiResponse({ status: 403, description: 'Unauthenticated or outside the allowlist' })
   async list(): Promise<OpsGovernanceListResponse> {
     return this.governance.listMerchantGovernance();
   }
@@ -86,7 +84,7 @@ export class OpsGovernanceController {
   })
   @ApiResponse({ status: 200, description: 'Permission granted (or already held)' })
   @ApiResponse({ status: 400, description: 'Invalid input' })
-  @ApiResponse({ status: 403, description: 'Unauthenticated, outside the allowlist, or flag off' })
+  @ApiResponse({ status: 403, description: 'Unauthenticated or outside the allowlist' })
   @ApiResponse({ status: 404, description: 'Merchant not in the registry' })
   async grant(
     @Param('merchantId') merchantId: string,
@@ -110,7 +108,7 @@ export class OpsGovernanceController {
   })
   @ApiResponse({ status: 200, description: 'Permission revoked' })
   @ApiResponse({ status: 400, description: 'Invalid input (reason required)' })
-  @ApiResponse({ status: 403, description: 'Unauthenticated, outside the allowlist, or flag off' })
+  @ApiResponse({ status: 403, description: 'Unauthenticated or outside the allowlist' })
   @ApiResponse({ status: 404, description: 'Merchant unknown or no governance records' })
   async revoke(
     @Param('merchantId') merchantId: string,

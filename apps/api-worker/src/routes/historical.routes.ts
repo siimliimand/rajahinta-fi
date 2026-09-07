@@ -2,9 +2,9 @@
  * Historical price-history route port (task 3.6) — Hono re-host of
  * HistoricalDataController (packages/application-api/src/historical/).
  *
- * Guard/rate-limit composition (Nest decoration order preserved):
+ * Guard/rate-limit composition:
  *   GET /api/v1/products/:id/price-history
- *     RateLimit(HISTORICAL) → FeatureFlag(HISTORICAL_PRICE_INTELLIGENCE) → AgeGate
+ *     RateLimit(HISTORICAL) → AgeGate
  *
  * Chart series serve strictly from the materialized D1
  * price_history_summaries buckets (never raw aggregation on the request
@@ -22,7 +22,6 @@ import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
 import { parseIntParam } from './support';
 import { ageGate } from '../middleware/age-gate';
-import { requireFeatureFlag, FeatureFlag } from '../middleware/feature-flags';
 import {
   TaxChangeAttributionService,
   TAX_TYPES,
@@ -449,14 +448,9 @@ async function getPriceHistory(c: Context<AppEnv>): Promise<Response> {
 
 /** Register the price-history handler with its own guard set. */
 export function registerHistoricalRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
-  // Nest class guards: RateLimit(HISTORICAL) is registered ahead of the
-  // task-3.2 guard blocks in index.ts; flag + age gate here, in order.
-  app.on(
-    'GET',
-    '/api/v1/products/:id/price-history',
-    requireFeatureFlag(FeatureFlag.HISTORICAL_PRICE_INTELLIGENCE),
-    ageGate(),
-  );
+  // RateLimit(HISTORICAL) is registered ahead of the task-3.2 guard
+  // blocks in index.ts; the age gate here.
+  app.on('GET', '/api/v1/products/:id/price-history', ageGate());
   app.get('/api/v1/products/:id/price-history', getPriceHistory);
   return app;
 }

@@ -425,7 +425,7 @@ describe('account data endpoints', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Scenarios (ADVANCED_FEATURES-gated)
+// Scenarios (session-guarded; flag removed)
 // ---------------------------------------------------------------------------
 
 describe('account scenarios', () => {
@@ -436,23 +436,12 @@ describe('account scenarios', () => {
     return `rajahinta_session=${sessionCookieOf(issued).token}`;
   }
 
-  it('stays session-guarded, then flag-gated (route-coverage parity)', async () => {
+  it('stays session-guarded', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
 
     const noSession = await request(app, lockedEnv(d1), '/api/v1/account/scenarios');
     await expectEnvelope(noSession, 401, { error: 'SessionRequired' });
-
-    const cookie = await issueInto(permissiveEnv(d1), app);
-    const flagOff = await request(
-      app,
-      permissiveEnv(d1, { FF_ADVANCED_FEATURES: undefined }),
-      '/api/v1/account/scenarios',
-      { headers: { cookie } },
-    );
-    await expectEnvelope(flagOff, 403, {
-      message: 'Feature "ADVANCED_FEATURES" is not enabled',
-    });
   });
 
   it('upserts by name and returns the persisted scenario (201)', async () => {

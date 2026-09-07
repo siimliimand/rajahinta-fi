@@ -86,11 +86,7 @@ if [[ "${1:-}" == "--429-only" ]]; then
     --target "$TARGET_URL"
   echo " ✓ 429 check complete"
 elif [[ "${1:-}" == "--basket" ]]; then
-  # Basket optimizer suite — requires FF_BASKET_OPTIMIZATION=true on the
-  # target (see the header of basket-optimizer-suite.yml); 403 responses
-  # mean the flag is off.
   echo "⏵ Phase: Basket optimizer suite (ramp 1→10 over 60 s, steady 10 for 120 s)"
-  echo "  (target must have FF_BASKET_OPTIMIZATION=true — otherwise expect 403s)"
   $ARTILLERY run "$SCRIPT_DIR/basket-optimizer-suite.yml" \
     --target "$TARGET_URL"
   echo " ✓ Basket optimizer load test complete"

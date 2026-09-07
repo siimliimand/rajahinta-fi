@@ -145,7 +145,7 @@ The optimizer enumerates subset masks per merchant (`packages/core-domain/src/op
 - `apps/frontend/tsconfig.tsbuildinfo` and `.next/` dev caches sit in the working tree; extend the frontend `.gitignore` with `*.tsbuildinfo`.
 - No LICENSE file in the repository root.
 - `dev-up.sh` runs the seed via `tsx` borrowed from the frontend package's devDependencies with a cross-package tsconfig flag (`scripts/dev-up.sh:66-70`). Move `tsx` to the data-platform package (or root) so the seeding path does not depend on an unrelated app's toolchain.
-- `dev-up.sh` sets `LAUNCH_GATES_OVERRIDE=true` silently. Print a loud warning so the flag never migrates into a real environment by copy-paste.
+- ~~`dev-up.sh` sets `LAUNCH_GATES_OVERRIDE=true` silently. Print a loud warning so the flag never migrates into a real environment by copy-paste.~~ Resolved differently: the launch-gate system was removed entirely (2026-09-07, owner decision); the var no longer exists.
 - Error envelopes differ between the legacy and current controllers; unify on the documented `ApiErrorResponse` shape.
 - `pg` returns `numeric` columns as strings. Parsing exists in the tax services (`parseDecimal`) but each consumer re-implements it; centralize decimal coercion at the repository boundary.
 
@@ -210,7 +210,7 @@ Remediation change: `openspec/changes/technical-assessment-remediation` (branch 
 - `otherCharges`: removed from the API shape (breaking change, decision D3). Task 10.3.
 - Search debounce: 300 ms debounce on the frontend search input. Task 5.2.
 - `*.tsbuildinfo` ignored; LICENSE file added. Task 11.5.
-- `dev-up.sh`: `tsx` moved to the data-platform toolchain; loud warning printed when `LAUNCH_GATES_OVERRIDE=true`. Task 11.4.
+- `dev-up.sh`: `tsx` moved to the data-platform toolchain; the `LAUNCH_GATES_OVERRIDE` warning later became moot when the launch-gate system was removed (2026-09-07). Task 11.4.
 - Error envelopes unified on the documented `ApiErrorResponse` across legacy and current controllers. Task 3.4.
 - Decimal coercion centralized at the repository boundary for pg `numeric` columns. Task 3.5.
 

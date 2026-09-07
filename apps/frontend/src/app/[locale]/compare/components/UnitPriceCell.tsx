@@ -14,7 +14,7 @@ import { ReliabilityBadge } from '@/components/ui';
 // ---------------------------------------------------------------------------
 
 /**
- * The €/g ethanol cell of a compare column (flag-gated by the caller).
+ * The €/g ethanol cell of a compare column (rendered by the caller).
  *
  * - computed/ESTIMATED: value in localized ¢/g plus the input price's
  *   reliability badge — the canonical VERIFIED/ESTIMATED presentation.

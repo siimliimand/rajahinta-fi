@@ -7,13 +7,12 @@
  * @module BasketOptimizerControllerTest
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   BadRequestException,
   NotFoundException,
   UnprocessableEntityException,
   InternalServerErrorException,
-  ForbiddenException,
 } from '@nestjs/common';
 import {
   BasketOptimizerService,
@@ -28,9 +27,6 @@ import { BasketOptimizerController } from '../basket-optimizer.controller';
 import type { BasketOptimizeRequest } from '../basket.dto';
 import { IdempotencyService } from '../../idempotency';
 import type { IIdempotencyCache } from '../../idempotency';
-import { FeatureFlag, FeatureFlagService } from '../../feature-flags';
-import { FeatureFlagGuard } from '../../feature-flags/feature-flags.guard';
-import { Reflector } from '@nestjs/core';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -243,65 +239,6 @@ describe('BasketOptimizerController', () => {
         expect(body.message).toContain('items');
         expect(body.message).toContain('destination');
       }
-    });
-  });
-
-  // ===================================================================
-  // Feature flag gating (class-level), mocked via FeatureFlagGuard
-  // ===================================================================
-
-  describe('feature flag gating', () => {
-    let originalEnv: Record<string, string | undefined>;
-
-    beforeEach(() => {
-      originalEnv = { ...process.env };
-      delete process.env.FF_BASKET_OPTIMIZATION;
-    });
-
-    afterEach(() => {
-      process.env = { ...originalEnv };
-    });
-
-    it('class carries the BASKET_OPTIMIZATION feature flag decorator', () => {
-      const reflector = new Reflector();
-      const flag = reflector.getAllAndOverride<FeatureFlag>(
-        'feature_flag',
-        [BasketOptimizerController.prototype.optimize, BasketOptimizerController],
-      );
-      expect(flag).toBe(FeatureFlag.BASKET_OPTIMIZATION);
-    });
-
-    it('FeatureFlagGuard rejects when BASKET_OPTIMIZATION is off', () => {
-      const guard = new FeatureFlagGuard(new Reflector(), new FeatureFlagService());
-      const ctx = {
-        getHandler: () => BasketOptimizerController.prototype.optimize,
-        getClass: () => BasketOptimizerController,
-        switchToHttp: () => ({
-          getRequest: () => ({ headers: {}, cookies: {} }),
-          getResponse: () => ({ header: () => undefined }),
-        }),
-        getArgs: () => [],
-        getType: () => 'http',
-      } as any;
-
-      expect(() => guard.canActivate(ctx)).toThrow(ForbiddenException);
-    });
-
-    it('FeatureFlagGuard allows when BASKET_OPTIMIZATION is on', () => {
-      process.env.FF_BASKET_OPTIMIZATION = 'true';
-      const guard = new FeatureFlagGuard(new Reflector(), new FeatureFlagService());
-      const ctx = {
-        getHandler: () => BasketOptimizerController.prototype.optimize,
-        getClass: () => BasketOptimizerController,
-        switchToHttp: () => ({
-          getRequest: () => ({ headers: {}, cookies: {} }),
-          getResponse: () => ({ header: () => undefined }),
-        }),
-        getArgs: () => [],
-        getType: () => 'http',
-      } as any;
-
-      expect(guard.canActivate(ctx)).toBe(true);
     });
   });
 

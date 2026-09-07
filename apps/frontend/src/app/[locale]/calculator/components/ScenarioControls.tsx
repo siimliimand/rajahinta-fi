@@ -5,11 +5,6 @@
  * calculator page (task 4.1, change phase2-advanced-features).
  *
  * Behaviour:
- *  - `enable_advanced_features` off ⇒ the section renders nothing and the
- *    scenario list request is never fired (guard runs before the fetch,
- *    same pattern as ProductHistoryPanel). The flag state arrives with the
- *    initial HTML payload, so the section's visibility is correct on the
- *    first render — no late appearance.
  *  - Saving delegates to the page via `onSaveScenario` (the page owns the
  *    current calculator inputs); the component owns the name field,
  *    pending state, and the result message. A successful save refreshes
@@ -24,7 +19,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { SavedScenario } from '@/lib/types';
 import { listScenarios } from '@/lib/api';
-import { useFeatureFlags } from '@/lib/feature-flags';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -59,9 +53,6 @@ export default function ScenarioControls({
   onLoadScenario,
 }: ScenarioControlsProps) {
   const t = useTranslations('ScenarioControls');
-  // Flag state is inlined with the initial HTML payload (task 9.4).
-  const flags = useFeatureFlags();
-  const flagEnabled = flags.flags.ADVANCED_FEATURES;
   const [scenarios, setScenarios] = useState<readonly SavedScenario[]>([]);
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -77,16 +68,10 @@ export default function ScenarioControls({
     }
   }, []);
 
-  // ── Load the scenario list when the flag is on ──
+  // ── Load the scenario list on mount ──
   useEffect(() => {
-    if (!flagEnabled) return;
     refreshScenarios();
-  }, [flagEnabled, refreshScenarios]);
-
-  // ── Hidden state: flag off in the inlined payload ──
-  if (!flagEnabled) {
-    return null;
-  }
+  }, [refreshScenarios]);
 
   // ── Save handler ──
   const handleSave = async () => {

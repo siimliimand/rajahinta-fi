@@ -115,12 +115,6 @@ describe('renderEmbedHtml — result outcome', () => {
 });
 
 describe('renderEmbedHtml — non-result outcomes', () => {
-  it('renders the closed view when the flag is off', () => {
-    const html = renderEmbedHtml('fi', { kind: 'closed' });
-    expect(html).toContain('Mitä jos -laskuri ei ole käytettävissä');
-    expect(html).not.toContain('http-equiv="refresh"');
-  });
-
   it('renders the invalid-token view', () => {
     const html = renderEmbedHtml('fi', { kind: 'invalid' });
     expect(html).toContain('Linkkiä ei voitu lukea');

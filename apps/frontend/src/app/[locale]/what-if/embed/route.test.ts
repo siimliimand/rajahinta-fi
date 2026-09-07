@@ -1,36 +1,28 @@
 /**
- * Embed widget route tests (task 8.3) — the GET flow over the real
- * flag gate, read-only token decode, and recompute path: flag off →
- * closed view; tampered token → invalid view; valid token → result view
- * carrying the structural disclaimer; 429 → throttled view with the
- * Retry-After meta refresh; unknown locale → 404.
+ * Embed widget route tests (task 8.3) — the GET flow over the read-only
+ * token decode and recompute path: tampered token → invalid view; valid
+ * token → result view carrying the structural disclaimer; 429 →
+ * throttled view with the Retry-After meta refresh; unknown locale →
+ * 404.
  *
  * @module WhatIfEmbedRouteTest
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET } from './route';
-import { apiFetch, getServerFeatureFlags } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 import { encodeWhatIfShareToken } from '../share-token';
 import type { WhatIfResponse } from '../what-if.types';
-import type { FeatureFlagsResponse } from '@/lib/types';
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
-    getServerFeatureFlags: vi.fn(),
     apiFetch: vi.fn(),
   };
 });
 
-const mockedFlags = vi.mocked(getServerFeatureFlags);
 const mockedApiFetch = vi.mocked(apiFetch);
-
-const FLAGS_ON = {
-  flags: { EXCISE_WHAT_IF: true },
-} as unknown as FeatureFlagsResponse;
-const FLAGS_OFF = { flags: {} } as FeatureFlagsResponse;
 
 const TOKEN = encodeWhatIfShareToken({
   hypotheticalRate: 18.1,
@@ -79,21 +71,10 @@ async function get(locale: string, token?: string): Promise<Response> {
 }
 
 beforeEach(() => {
-  mockedFlags.mockReset();
   mockedApiFetch.mockReset();
-  mockedFlags.mockResolvedValue(FLAGS_ON);
 });
 
 describe('GET /what-if/embed', () => {
-  it('returns the closed view while EXCISE_WHAT_IF is off — no decode, no recompute', async () => {
-    mockedFlags.mockResolvedValue(FLAGS_OFF);
-    const res = await get('fi', TOKEN);
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8');
-    expect(await res.text()).toContain('Mitä jos -laskuri ei ole käytettävissä');
-    expect(mockedApiFetch).not.toHaveBeenCalled();
-  });
-
   it('rejects unknown locale segments with 404', async () => {
     const res = await get('xx', TOKEN);
     expect(res.status).toBe(404);

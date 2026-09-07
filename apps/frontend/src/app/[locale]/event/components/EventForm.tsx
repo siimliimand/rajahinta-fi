@@ -98,7 +98,7 @@ interface EventFormProps {
   }) => void;
   /** Disables the submit control while a calculation is in flight. */
   readonly submitting: boolean;
-  /** Whether the packing-recommendations opt-in may be offered (flag-gated). */
+  /** Whether the packing-recommendations opt-in is offered. */
   readonly packingAvailable?: boolean;
 }
 
@@ -108,7 +108,7 @@ interface EventFormProps {
  * sourcing toggle is off and the request payload is then byte-identical
  * to the MVP's. Sourcing mode prices the drink-type lines against one
  * candidate country (the API is richer than the UI on purpose), with an
- * optional budget and an optional packing opt-in (flag-gated).
+ * optional budget and an optional packing opt-in.
  *
  * The event date is intentionally absent — the MVP simple mode has no date
  * input (spec event-calculator "MVP simple mode"); the page supplies today

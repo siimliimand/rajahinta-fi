@@ -14,8 +14,7 @@
  * - attribution entries are evidence (moved inputs + bounding rule-version
  *   labels), never conclusions; merchant series treatment stays neutral —
  *   no ranking or comparison semantics anywhere in the response;
- * - gated behind the `enable_historical_price_intelligence` feature flag
- *   (default OFF ⇒ 403 from FeatureFlagGuard) and rate-limited.
+ * - rate-limited and age-gated.
  *
  * @module HistoricalDataController
  */
@@ -63,7 +62,6 @@ import type {
   PriceHistoryResponse,
 } from './historical.dto';
 import { RateLimitGuard, RateLimit } from '../rate-limiting';
-import { FeatureFlagGuard, FeatureFlagDec, FeatureFlag } from '../feature-flags';
 import { AgeGateGuard } from '../age-gate';
 
 /** Maximum requested range width in days (inclusive endpoints). */
@@ -86,8 +84,7 @@ const GRANULARITY_TO_SUMMARY: Record<PriceHistoryGranularity, string> = {
 
 @ApiTags('products')
 @Controller('api/v1/products')
-@UseGuards(RateLimitGuard, FeatureFlagGuard, AgeGateGuard)
-@FeatureFlagDec(FeatureFlag.HISTORICAL_PRICE_INTELLIGENCE)
+@UseGuards(RateLimitGuard, AgeGateGuard)
 export class HistoricalDataController {
   constructor(
     private readonly productRepo: ProductRepository,
@@ -122,7 +119,7 @@ export class HistoricalDataController {
   @ApiQuery({ name: 'merchant', required: false, description: 'Optional merchant filter; omit for the product-wide series' })
   @ApiResponse({ status: 200, description: 'Series points with reliability, change attribution, and earliest available observation date' })
   @ApiResponse({ status: 400, description: 'Invalid query parameters (including ranges wider than 365 days)' })
-  @ApiResponse({ status: 403, description: 'Feature flag disabled or age confirmation missing' })
+  @ApiResponse({ status: 403, description: 'Age confirmation missing' })
   @ApiResponse({ status: 404, description: 'Product not found' })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded' })
   async getPriceHistory(

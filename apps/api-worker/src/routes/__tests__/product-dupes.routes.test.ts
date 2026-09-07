@@ -1,15 +1,15 @@
 /**
  * Product dupes route tests (task 6.3, change product-roadmap-phases-1-4)
  * over the FULL app composition (createApp() + registerProductDupesRoutes
- * — the exact composition index.ts wires, flag gate + rate limit on the
- * route itself) on the fake-D1 harness.
+ * — the exact composition index.ts wires, rate limit on the route itself)
+ * on the fake-D1 harness.
  *
- * Pinning here: flag-off 403 (PRODUCER_DUPE_FINDER), the exact-key
- * matching contract (only PUBLISHED rows; a near-miss producer key
- * matches NOTHING — no fuzzy fallback), complete evidence on every
- * returned link, empty result = 200 with an empty list (never a 404),
- * unknown product = the product read route's 404 semantics, and the
- * per-IP DEFAULT rate-limit profile (60/min → 429 on the 61st).
+ * Pinning here: the exact-key matching contract (only PUBLISHED rows; a
+ * near-miss producer key matches NOTHING — no fuzzy fallback), complete
+ * evidence on every returned link, empty result = 200 with an empty list
+ * (never a 404), unknown product = the product read route's 404
+ * semantics, and the per-IP DEFAULT rate-limit profile (60/min → 429 on
+ * the 61st).
  *
  * @module ProductDupesRoutesTest
  */
@@ -18,7 +18,6 @@ import { describe, it, expect } from 'vitest';
 import {
   buildApp,
   expectEnvelope,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -30,9 +29,9 @@ import type { Env } from '../../env';
 import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
 
 /**
- * index.ts registers the dupes handler behind its route-level gate+
- * limiter (same slot as the other route ports); the test composition
- * mirrors that exactly.
+ * index.ts registers the dupes handler behind its route-level limiter
+ * (same slot as the other route ports); the test composition mirrors
+ * that exactly.
  */
 function dupesApp(): ReturnType<typeof buildApp> {
   const app = buildApp();
@@ -41,7 +40,7 @@ function dupesApp(): ReturnType<typeof buildApp> {
 }
 
 function dupesEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}): Env {
-  return permissiveEnv(d1, { ...overrides, FF_PRODUCER_DUPE_FINDER: 'true' });
+  return permissiveEnv(d1, overrides);
 }
 
 interface DupeJson {
@@ -89,21 +88,6 @@ async function seedPublishedLink(
   const published = await repo.publish(created.id);
   expect(published).not.toBeNull();
 }
-
-// ---------------------------------------------------------------------------
-// Gate: flag-off 403 (PRODUCER_DUPE_FINDER)
-// ---------------------------------------------------------------------------
-
-describe('GET /api/v1/products/:id/dupes — gate', () => {
-  it('rejects with 403 while PRODUCER_DUPE_FINDER is off (route 403 envelope shape)', async () => {
-    const { d1 } = openMigratedD1();
-    const app = dupesApp();
-    const res = await getDupes(app, lockedEnv(d1), 1);
-    await expectEnvelope(res, 403, {
-      message: 'Feature "PRODUCER_DUPE_FINDER" is not enabled',
-    });
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Evidence-backed results — exact key, complete evidence, DRAFT invisible

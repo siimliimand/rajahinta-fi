@@ -12,13 +12,12 @@
  *
  * Asserts the response mirrors the aggregate → score mapping with ISO
  * timestamps and controlled-vocabulary keys only, and (per the sibling
- * guard-regression convention) that the endpoint is dark while
- * ADVANCED_FEATURES is off and behind the PRICE_DATA launch gate.
+ * guard-regression convention) that the endpoint is behind the age gate.
  *
  * @module MerchantReliabilityControllerTest
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import {
@@ -34,17 +33,9 @@ import {
 } from '@rajahinta/data-platform';
 import { MerchantReliabilityService } from '../merchant-reliability.service';
 import { MerchantReliabilityController } from '../merchants.controller';
-import {
-  FeatureFlagGuard,
-  FeatureFlag,
-  FEATURE_FLAG_KEY,
-  LaunchGateGuard,
-  LaunchGateType,
-  LAUNCH_GATE_KEY,
-} from '../../feature-flags';
-import { FeatureFlagService } from '../../feature-flags/feature-flag.service';
-import { LaunchGateService } from '../../feature-flags/launch-gate.service';
 import { AgeGateGuard } from '../../age-gate/age-gate.guard';
+import { AgeGateService } from '../../age-gate/age-gate.service';
+import { SimpleConfirmationProvider } from '../../age-gate/simple-confirmation.provider';
 
 // ---------------------------------------------------------------------------
 // Fixtures — aggregates exactly as the Drizzle grouping emits them
@@ -253,8 +244,7 @@ describe('MerchantReliabilityController — GET /api/v1/merchants/reliability', 
 });
 
 // ---------------------------------------------------------------------------
-// Tests — gating (launch gate, flag, age gate) per the guard-regression
-// convention
+// Tests — gating (age gate) per the guard-regression convention
 // ---------------------------------------------------------------------------
 
 /** NestJS internal metadata key for guards applied via @UseGuards. */
@@ -279,67 +269,33 @@ function context(
 
 describe('MerchantReliabilityController — gating', () => {
   const reflector = new Reflector();
-  const originalEnv = process.env;
 
-  beforeEach(() => {
-    process.env = { ...originalEnv };
-    delete process.env.FF_ADVANCED_FEATURES;
-    delete process.env.LAUNCH_GATES_OVERRIDE;
-  });
-
-  afterEach(() => {
-    process.env = originalEnv;
-  });
-
-  it('class guard order is LaunchGateGuard → AgeGateGuard → FeatureFlagGuard', () => {
+  it('class carries exactly the AgeGateGuard', () => {
     const guards = reflector.getAllAndOverride<unknown[]>(GUARDS_METADATA, [
       HANDLER,
       MerchantReliabilityController,
     ]);
-    expect(guards).toHaveLength(3);
-    expect(guards).toEqual([LaunchGateGuard, AgeGateGuard, FeatureFlagGuard]);
+    expect(guards).toHaveLength(1);
+    expect(guards).toEqual([AgeGateGuard]);
   });
 
-  it('carries the PRICE_DATA launch gate and the ADVANCED_FEATURES flag', () => {
-    expect(
-      reflector.getAllAndOverride<LaunchGateType>(LAUNCH_GATE_KEY, [
-        HANDLER,
-        MerchantReliabilityController,
-      ]),
-    ).toBe(LaunchGateType.PRICE_DATA);
-    expect(
-      reflector.getAllAndOverride<FeatureFlag>(FEATURE_FLAG_KEY, [
-        HANDLER,
-        MerchantReliabilityController,
-      ]),
-    ).toBe(FeatureFlag.ADVANCED_FEATURES);
+  it('AgeGateGuard rejects while no age confirmation token is presented', async () => {
+    const guard = new AgeGateGuard(
+      new AgeGateService(new SimpleConfirmationProvider()),
+    );
+    await expect(guard.canActivate(context({ headers: {}, cookies: {} }))).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 
-  it('LaunchGateGuard rejects while the launch gates are closed (default)', () => {
-    const guard = new LaunchGateGuard(reflector, new LaunchGateService());
-    expect(() => guard.canActivate(context())).toThrow(ForbiddenException);
+  it('AgeGateGuard allows once the confirmation header is present', async () => {
+    const guard = new AgeGateGuard(
+      new AgeGateService(new SimpleConfirmationProvider()),
+    );
+    await expect(
+      guard.canActivate(
+        context({ headers: { 'x-age-confirmed': 'test-token' }, cookies: {} }),
+      ),
+    ).resolves.toBe(true);
   });
-
-  it('LaunchGateGuard allows with LAUNCH_GATES_OVERRIDE=true', () => {
-    process.env.LAUNCH_GATES_OVERRIDE = 'true';
-    const guard = new LaunchGateGuard(reflector, new LaunchGateService());
-    expect(guard.canActivate(context())).toBe(true);
-  });
-
-  it('FeatureFlagGuard rejects with 403 while ADVANCED_FEATURES is off', () => {
-    const guard = new FeatureFlagGuard(reflector, new FeatureFlagService());
-    try {
-      guard.canActivate(context());
-      expect.unreachable('Expected ForbiddenException');
-    } catch (err) {
-      expect(err).toBeInstanceOf(ForbiddenException);
-      expect((err as ForbiddenException).message).toMatch(/ADVANCED_FEATURES/);
-    }
-  });
-
-  it('FeatureFlagGuard allows once FF_ADVANCED_FEATURES=true', () => {
-    process.env.FF_ADVANCED_FEATURES = 'true';
-    const guard = new FeatureFlagGuard(reflector, new FeatureFlagService());
-    expect(guard.canActivate(context())).toBe(true);
-  });
-});
+})

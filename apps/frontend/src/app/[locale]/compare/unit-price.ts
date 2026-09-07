@@ -48,8 +48,8 @@ function isBetter(candidate: OfferMetric, incumbent: OfferMetric): boolean {
 
 /**
  * The best €/g metric across a product's retail offers, or undefined
- * when the API did not supply the metric (flag off, empty offer list,
- * or a failed detail fetch) — undefined renders as "no value", never 0.
+ * when the API did not supply the metric (empty offer list, or a failed
+ * detail fetch) — undefined renders as "no value", never 0.
  */
 export function bestOfferUnitPrice(
   offers: readonly RetailOffer[],

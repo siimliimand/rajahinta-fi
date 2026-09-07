@@ -22,10 +22,7 @@
  * 2. the structural norms-are-estimates disclaimer rides EVERY 200
  *    result: MVP COMPUTED, NO_PUBLISHED_NORMS (with and without a
  *    sourcing section), and the V2 plan response;
- * 3. flag-off 403: the standard feature-disabled envelope for both
- *    request shapes, the gate composing before the handler parses
- *    anything;
- * 4. V2 determinism across the wire: the same request twice yields a
+ * 3. V2 determinism across the wire: the same request twice yields a
  *    byte-identical body (deep-equal + equal X-Content-Hash), the second
  *    served as an idempotency HIT — the spec's deterministic-ordering
  *    requirement observed over HTTP, cache round-trip included.
@@ -49,8 +46,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import {
   createApp,
-  expectEnvelope,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -124,9 +119,9 @@ function eventCalcApp(): ReturnType<typeof createApp> {
   return app;
 }
 
-/** Flag-on env over the given D1 (permissive env leaves the flag unset). */
+/** Env over the given D1 (permissive base). */
 function eventCalcEnv(d1: D1DatabaseLike): Env {
-  return permissiveEnv(d1, { FF_EVENT_CALCULATOR: 'true' });
+  return permissiveEnv(d1);
 }
 
 function jsonInit(body: unknown): RequestInit {
@@ -286,30 +281,7 @@ describe('POST /api/v1/event-calc — real-stack integration (task 4.6)', () => 
   });
 
   // -------------------------------------------------------------------------
-  // 3. Flag-off 403 — gate composes before the handler, both request shapes
-  // -------------------------------------------------------------------------
-
-  it('rejects the MVP request with 403 while EVENT_CALCULATOR is off (alerts 403 shape)', async () => {
-    const res = await postEvent(app, lockedEnv(d1));
-    await expectEnvelope(res, 403, {
-      message: 'Feature "EVENT_CALCULATOR" is not enabled',
-      error: 'Forbidden',
-    });
-  });
-
-  it('rejects the V2 request with the same 403 — the gate fires before any sourcing parsing', async () => {
-    const res = await postEvent(app, lockedEnv(d1), {
-      ...EVENT,
-      sourcing: sourcingBeer(),
-    });
-    await expectEnvelope(res, 403, {
-      message: 'Feature "EVENT_CALCULATOR" is not enabled',
-      error: 'Forbidden',
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // 4. V2 determinism across the wire — byte-identical repeat, HIT served
+  // 3. V2 determinism across the wire — byte-identical repeat, HIT served
   // -------------------------------------------------------------------------
 
   it('serves the same V2 request twice byte-identically — MISS then idempotency HIT, deterministic country assignment', async () => {

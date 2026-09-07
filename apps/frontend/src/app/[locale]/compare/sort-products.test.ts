@@ -5,14 +5,14 @@
  * contract: every order deterministic, name ('fi' locale) as universal
  * tiebreaker, no dependence on insertion order.
  *
- * The flag-gated EUR_PER_GRAM order is the spec'd exception: metric
+ * The EUR_PER_GRAM order is the spec'd exception: metric
  * value with product id as the tiebreaker (unit-price-metrics spec).
  *
  * @module CompareSortingTest
  */
 import { describe, it, expect } from 'vitest';
 import type { ComparisonProduct } from '@/lib/types';
-import { sortComparisonProducts, compareSortOptions } from './sort-products';
+import { sortComparisonProducts, COMPARE_SORT_OPTIONS } from './sort-products';
 
 function product(overrides: Partial<ComparisonProduct>): ComparisonProduct {
   return {
@@ -125,7 +125,7 @@ describe('sortComparisonProducts', () => {
   });
 });
 
-describe('sortComparisonProducts — EUR_PER_GRAM (flag-gated option)', () => {
+describe('sortComparisonProducts — EUR_PER_GRAM option', () => {
   /** Value-bearing €/g metric in euro cents per gram. */
   const metric = (centsPerGram: number) => ({
     status: 'computed' as const,
@@ -170,7 +170,7 @@ describe('sortComparisonProducts — EUR_PER_GRAM (flag-gated option)', () => {
     ).toEqual([1, 2, 3]);
   });
 
-  it('an absent metric (flag off / unresolved) sorts last', () => {
+  it('an absent metric (unresolved) sorts last', () => {
     const bare = product({ id: 3, name: 'C Bare' });
     expect(
       sortComparisonProducts([bare, cheap], 'EUR_PER_GRAM').map((p) => p.id),
@@ -200,15 +200,9 @@ describe('sortComparisonProducts — EUR_PER_GRAM (flag-gated option)', () => {
   });
 });
 
-describe('compareSortOptions — flag gating', () => {
-  it('offers EUR_PER_GRAM when the unit-price flag is on', () => {
-    expect(compareSortOptions(true)).toContain('EUR_PER_GRAM');
-    expect(compareSortOptions(true)).toHaveLength(7);
-  });
-
-  it('removes EUR_PER_GRAM when the flag is off, keeping the six neutral orders', () => {
-    const options = compareSortOptions(false);
-    expect(options).not.toContain('EUR_PER_GRAM');
-    expect(options).toHaveLength(6);
+describe('COMPARE_SORT_OPTIONS', () => {
+  it('offers all seven orders including €/g', () => {
+    expect(COMPARE_SORT_OPTIONS).toContain('EUR_PER_GRAM');
+    expect(COMPARE_SORT_OPTIONS).toHaveLength(7);
   });
 });

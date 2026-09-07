@@ -11,18 +11,16 @@
  * and route validation/ownership by the task-2.3 route tests. What only an
  * integration run can prove:
  *
- * 1. flag-off: every alerts method returns the standard feature-disabled
- *    403 even for an authenticated session (flag gate, not auth gate);
- * 2. the one-notification-per-day invariant ACROSS REPEATED handler runs
+ * 1. the one-notification-per-day invariant ACROSS REPEATED handler runs
  *    on real persisted rows — cooldown enforcement reads back what earlier
  *    runs wrote, suppression is counted, and the window's expiry allows
  *    exactly one more notification (time advances via the handler's
  *    documented `now` seam — never sleeps);
- * 3. evaluation is never invoked from request paths — source-level (no
+ * 2. evaluation is never invoked from request paths — source-level (no
  *    route module references the cron handler) and behaviorally (CRUD
  *    traffic over trigger-ready state produces zero notification rows and
  *    zero evaluation counters);
- * 4. end-to-end: API-created alert → evaluation → the exact HTTP request
+ * 3. end-to-end: API-created alert → evaluation → the exact HTTP request
  *    the email Worker would receive (URL, shared-secret header, payload).
  *
  * The route/env helpers are imported from the api-worker route harness
@@ -37,9 +35,7 @@ import type { DatabaseSync } from 'node:sqlite';
 
 import {
   createApp,
-  expectEnvelope,
   issueSessionToken,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -137,13 +133,12 @@ function stubEmailWorker(): Array<{ url: string; init: RequestInit }> {
   return calls;
 }
 
-/** Flag-on, email-configured env over the given D1 + metrics binding. */
+/** Email-configured env over the given D1 + metrics binding. */
 function alertsEnv(
   d1: ReturnType<typeof openMigratedD1>['d1'],
   metrics: ReturnType<typeof fakeMetricsBinding>,
 ): Env {
   return permissiveEnv(d1, {
-    FF_PRICE_ALERTS: 'true',
     EMAIL_WORKER_URL,
     EMAIL_SEND_SECRET,
     METRICS: metrics.binding,
@@ -195,57 +190,7 @@ function notificationRows(db: DatabaseSync): Array<Record<string, unknown>> {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Flag-off — the whole CRUD surface is dark, even authenticated
-// ---------------------------------------------------------------------------
-
-describe('flag-off: /api/v1/account/alerts returns 403 for every method', () => {
-  let db: DatabaseSync;
-  let app: ReturnType<typeof alertsApp>;
-  let env: Env;
-  let token: string;
-
-  beforeEach(async () => {
-    const opened = openMigratedD1();
-    db = opened.db;
-    seedAccount(opened.db, {
-      id: ACCOUNT_ID,
-      userId: 'user-7',
-      email: ACCOUNT_EMAIL,
-      tier: 'FREE',
-    });
-    token = await issueSessionToken(opened.d1, ACCOUNT_ID);
-    app = alertsApp();
-    // lockedEnv leaves FF_PRICE_ALERTS unset → FeatureFlagService default off.
-    env = lockedEnv(opened.d1);
-  });
-
-  afterEach(() => {
-    db.close();
-  });
-
-  it('rejects an AUTHENTICATED session with the standard feature-disabled body', async () => {
-    // The session proves the 403 is the flag gate firing BEHIND successful
-    // authentication — not the 401 the missing session would produce.
-    for (const [method, path] of [
-      ['GET', '/api/v1/account/alerts'],
-      ['POST', '/api/v1/account/alerts'],
-      ['PATCH', '/api/v1/account/alerts/1'],
-      ['DELETE', '/api/v1/account/alerts/1'],
-    ] as const) {
-      const res = await request(app, env, path, {
-        method,
-        headers: { cookie: cookieOf(token) },
-      });
-      await expectEnvelope(res, 403, {
-        message: 'Feature "PRICE_ALERTS" is not enabled',
-        error: 'Forbidden',
-      });
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 2. One-notification-per-day invariant across repeated evaluation runs
+// 1. One-notification-per-day invariant across repeated evaluation runs
 // ---------------------------------------------------------------------------
 
 describe('one-notification-per-day invariant across repeated runs', () => {
@@ -492,7 +437,7 @@ describe('end-to-end: created alert → cron evaluation → email Worker send co
   });
 
   it('delivers one on-threshold email through the internal send contract and records the intent', async () => {
-    // Flag on → create the watchlist entry through the REAL route chain.
+    // Create the watchlist entry through the REAL route chain.
     const created = await request(app, env, '/api/v1/account/alerts', {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: cookieOf(token) },

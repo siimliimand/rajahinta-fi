@@ -1,9 +1,7 @@
 /**
  * WhatIfPage tests (task 8.3, change product-roadmap-phases-1-4).
  *
- *   1. Flag off in the inlined payload (absent key or explicit false)
- *      → renders nothing and never fires the request.
- *   2. Blank form → no request; the invalid-input hint and the empty
+ *   1. Blank form → no request; the invalid-input hint and the empty
  *      state show instead.
  *   3. Edits recalculate through POST /api/v1/what-if/excise with the
  *      parsed comma-decimal inputs (integer cents, ABV fraction).
@@ -17,8 +15,7 @@
  *   7. THROTTLE PIN: a 429 starts the Retry-After countdown, edits
  *      during the countdown fire NO request, and the latest draft is
  *      recomputed once automatically when the countdown clears.
- *   8. 403 (flag flipped off server-side mid-session) degrades to the
- *      unavailable message.
+ *   8. 403 (backend rejection) degrades to the unavailable message.
  *   9. A share token in the URL is decoded read-only: the form prefills
  *      and the first computation uses the decoded inputs; an invalid
  *      token degrades to a calm note.
@@ -32,9 +29,8 @@ import { act, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WhatIfPage from './page';
 import { RECALCULATION_DEBOUNCE_MS } from './what-if.constants';
-import { ALL_FLAGS_OFF, renderWithIntl } from '@/lib/testing/test-intl';
+import { renderWithIntl } from '@/lib/testing/test-intl';
 import { apiFetch, ApiFetchError } from '@/lib/api';
-import type { FeatureFlagsResponse } from '@/lib/types';
 import type { WhatIfResponse } from './what-if.types';
 import { encodeWhatIfShareToken } from './share-token';
 
@@ -48,11 +44,6 @@ vi.mock('@/lib/api', async (importOriginal) => {
 
 const mockedApiFetch = vi.mocked(apiFetch);
 
-// EXCISE_WHAT_IF is deliberately absent from the shared client type —
-// the cast mirrors the runtime payload (trip page test precedent).
-const FLAGS_ON: FeatureFlagsResponse = {
-  flags: { ...ALL_FLAGS_OFF.flags, EXCISE_WHAT_IF: true },
-} as FeatureFlagsResponse;
 
 const DISCLAIMER = {
   text: 'Hypoteettinen laskelma: tulokset on laskettu korvaamalla alkoholiveron oletettu verokanta käyttäjän valitsemalla arvolla kiinteässä lähtötietoaineistossa. Laskelma ei ole ennuste, arvio tulevaisuuden hinnoista eikä virallinen ilmoitus.',
@@ -157,34 +148,12 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Flag gate
-// ---------------------------------------------------------------------------
-
-describe('WhatIfPage — flag gate', () => {
-  it('renders nothing on the first render when the flag is absent, and fires no request', async () => {
-    const { container } = renderWithIntl(<WhatIfPage />);
-    await flushEffects();
-    expect(container).toBeEmptyDOMElement();
-    expect(mockedApiFetch).not.toHaveBeenCalled();
-  });
-
-  it('renders nothing when the flag is explicitly false', async () => {
-    const { container } = renderWithIntl(<WhatIfPage />, {
-      featureFlags: { flags: { ...FLAGS_ON.flags, EXCISE_WHAT_IF: false } } as FeatureFlagsResponse,
-    });
-    await flushEffects();
-    expect(container).toBeEmptyDOMElement();
-    expect(mockedApiFetch).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Blank form, first computation, debounce
 // ---------------------------------------------------------------------------
 
 describe('WhatIfPage — recalculation discipline', () => {
   it('fires no request while the form is blank and shows the empty state', async () => {
-    renderWithIntl(<WhatIfPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<WhatIfPage />);
     await flushEffects();
 
     expect(mockedApiFetch).not.toHaveBeenCalled();
@@ -196,7 +165,7 @@ describe('WhatIfPage — recalculation discipline', () => {
 
   it('sends parsed comma-decimal inputs (integer cents, ABV fraction) once the row is valid', async () => {
     mockedApiFetch.mockResolvedValueOnce(jsonResponse(RESULT_A));
-    const { container } = renderWithIntl(<WhatIfPage />, { featureFlags: FLAGS_ON });
+    const { container } = renderWithIntl(<WhatIfPage />);
     await flushEffects();
 
     fillValidRow(container);
@@ -222,7 +191,7 @@ describe('WhatIfPage — recalculation discipline', () => {
 
   it('DEBOUNCE PIN: rapid slider edits coalesce into one request after the quiet window', async () => {
     mockedApiFetch.mockResolvedValue(jsonResponse(RESULT_A));
-    const { container } = renderWithIntl(<WhatIfPage />, { featureFlags: FLAGS_ON });
+    const { container } = renderWithIntl(<WhatIfPage />);
     await flushEffects();
     fillValidRow(container);
     await advance(RECALCULATION_DEBOUNCE_MS);
@@ -246,7 +215,7 @@ describe('WhatIfPage — recalculation discipline', () => {
 
   it('still fires exactly one request for the manual recalculate action', async () => {
     mockedApiFetch.mockResolvedValue(jsonResponse(RESULT_A));
-    const { container } = renderWithIntl(<WhatIfPage />, { featureFlags: FLAGS_ON });
+    const { container } = renderWithIntl(<WhatIfPage />);
     await flushEffects();
     fillValidRow(container);
     await advance(RECALCULATION_DEBOUNCE_MS);
@@ -265,7 +234,7 @@ describe('WhatIfPage — recalculation discipline', () => {
 describe('WhatIfPage — result rendering', () => {
   async function renderWithResult(): Promise<HTMLElement> {
     mockedApiFetch.mockResolvedValue(jsonResponse(RESULT_A));
-    const { container } = renderWithIntl(<WhatIfPage />, { featureFlags: FLAGS_ON });
+    const { container } = renderWithIntl(<WhatIfPage />);
     await flushEffects();
     fillValidRow(container);
     await advance(RECALCULATION_DEBOUNCE_MS);
@@ -342,7 +311,7 @@ describe('WhatIfPage — throttle discipline', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ ...RESULT_A, hypotheticalRate: 50 })); // auto-retry
 
-    const { container } = renderWithIntl(<WhatIfPage />, { featureFlags: FLAGS_ON });
+    const { container } = renderWithIntl(<WhatIfPage />);
     await flushEffects();
     fillValidRow(container);
     await advance(RECALCULATION_DEBOUNCE_MS);
@@ -388,17 +357,17 @@ describe('WhatIfPage — throttle discipline', () => {
 // ---------------------------------------------------------------------------
 
 describe('WhatIfPage — failure degradation', () => {
-  it('degrades a 403 (flag flipped off server-side mid-session) to the unavailable message', async () => {
+  it('degrades a 403 (backend rejection) to the unavailable message', async () => {
     mockedApiFetch.mockRejectedValueOnce(
       new ApiFetchError(403, {
         statusCode: 403,
-        message: 'Feature "EXCISE_WHAT_IF" is not enabled',
+        message: 'Forbidden',
         error: 'Forbidden',
         timestamp: '2026-09-05T10:00:00.000Z',
         path: '/api/v1/what-if/excise',
       }),
     );
-    const { container } = renderWithIntl(<WhatIfPage />, { featureFlags: FLAGS_ON });
+    const { container } = renderWithIntl(<WhatIfPage />);
     await flushEffects();
     fillValidRow(container);
     await advance(RECALCULATION_DEBOUNCE_MS);
@@ -418,7 +387,7 @@ describe('WhatIfPage — share token prefill', () => {
     mockedApiFetch.mockResolvedValueOnce(jsonResponse(RESULT_A));
     window.history.replaceState(null, '', `/?token=${RESULT_A.shareToken}`);
 
-    renderWithIntl(<WhatIfPage />, { featureFlags: FLAGS_ON });
+    renderWithIntl(<WhatIfPage />);
     await advance(RECALCULATION_DEBOUNCE_MS);
 
     // First and only request: the decoded inputs, immediately (no debounce
@@ -445,7 +414,7 @@ describe('WhatIfPage — share token prefill', () => {
 
   it('degrades an invalid token to a calm note with a blank form and no request', async () => {
     window.history.replaceState(null, '', '/?token=not-a-real-token');
-    const { container } = renderWithIntl(<WhatIfPage />, { featureFlags: FLAGS_ON });
+    const { container } = renderWithIntl(<WhatIfPage />);
     await flushEffects();
 
     expect(screen.getByTestId('what-if-invalid-token')).toBeInTheDocument();

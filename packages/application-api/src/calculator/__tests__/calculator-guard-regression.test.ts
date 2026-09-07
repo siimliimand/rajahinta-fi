@@ -4,31 +4,20 @@
  * Task 9.1 covers the HTTP layer (supertest).  This test verifies at the
  * metadata + guard-unit level that `getResult` is properly protected:
  *
- *   1. The class-level `@UseGuards(RateLimitGuard, LaunchGateGuard, AgeGateGuard)`
+ *   1. The class-level `@UseGuards(RateLimitGuard, AgeGateGuard)`
  *      is correctly inherited by the `getResult` handler via NestJS metadata.
- *   2. The class-level `@LaunchGate(LaunchGateType.CALCULATION)` metadata is
- *      correctly inherited by `getResult`.
- *   3. AgeGateGuard rejects `getResult` when no age confirmation token is sent,
+ *   2. AgeGateGuard rejects `getResult` when no age confirmation token is sent,
  *      with the machine-readable AGE_GATE_REQUIRED code on the rejection body.
- *   4. LaunchGateGuard rejects `getResult` when launch gates are closed.
- *   5. LaunchGateGuard allows `getResult` when the override env var is set.
  *
  * @module CalculatorGuardRegressionTest
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { ForbiddenException, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import {
   CalculatorController,
 } from '../calculator.controller';
-import {
-  LaunchGateGuard,
-  LaunchGateType,
-  LAUNCH_GATE_KEY,
-} from '../../feature-flags/launch-gate.guard';
-import { LaunchGateService } from '../../feature-flags/launch-gate.service';
-import { GATE_ENV_KEYS } from '../../feature-flags/launch-gate.types';
 import { RateLimitGuard } from '../../rate-limiting/rate-limit.guard';
 import { AgeGateGuard } from '../../age-gate/age-gate.guard';
 import { AgeGateService } from '../../age-gate/age-gate.service';
@@ -95,32 +84,16 @@ describe('CalculatorController — getResult guard regression', () => {
       );
 
       expect(guards).toBeDefined();
-      expect(guards).toHaveLength(3);
+      expect(guards).toHaveLength(2);
       expect(guards).toContain(RateLimitGuard);
-      expect(guards).toContain(LaunchGateGuard);
       expect(guards).toContain(AgeGateGuard);
-    });
-
-    it('inherits class-level @LaunchGate(CALCULATION) metadata for getResult', () => {
-      const gateType = reflector.getAllAndOverride<LaunchGateType>(
-        LAUNCH_GATE_KEY,
-        [
-          CalculatorController.prototype.getResult,
-          CalculatorController,
-        ],
-      );
-
-      expect(gateType).toBe(LaunchGateType.CALCULATION);
     });
 
     it('class metadata is defined (smoke check — guards exist at class level)', () => {
       // Direct metadata check — this confirms decorators were applied at all
       const classGuards = Reflect.getMetadata(GUARDS_METADATA, CalculatorController);
       expect(classGuards).toBeDefined();
-      expect(classGuards).toHaveLength(3);
-
-      const classGateType = Reflect.getMetadata(LAUNCH_GATE_KEY, CalculatorController);
-      expect(classGateType).toBe(LaunchGateType.CALCULATION);
+      expect(classGuards).toHaveLength(2);
     });
 
     it('getResult handler does NOT have method-level guards (inherits from class)', () => {
@@ -182,70 +155,6 @@ describe('CalculatorController — getResult guard regression', () => {
       );
 
       await expect(guard.canActivate(context)).resolves.toBe(true);
-    });
-  });
-
-  // ===================================================================
-  // LaunchGateGuard rejection for getResult
-  // ===================================================================
-
-  describe('LaunchGateGuard guards getResult when gates are closed', () => {
-    const originalEnv = process.env;
-
-    beforeEach(() => {
-      process.env = { ...originalEnv };
-      delete process.env[GATE_ENV_KEYS.legalOpinion];
-      delete process.env[GATE_ENV_KEYS.taxSourceMapping];
-      delete process.env[GATE_ENV_KEYS.correctionMechanism];
-      delete process.env[GATE_ENV_KEYS.override];
-    });
-
-    afterEach(() => {
-      process.env = originalEnv;
-    });
-
-    it('throws ForbiddenException when all gates are OFF', () => {
-      const reflector = new Reflector();
-      const service = new LaunchGateService();
-      const guard = new LaunchGateGuard(reflector, service);
-      const context = contextForMethod(
-        CalculatorController.prototype.getResult,
-        CalculatorController,
-      );
-
-      expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
-    });
-
-    it('throws ForbiddenException with a message referencing calculations', () => {
-      const reflector = new Reflector();
-      const service = new LaunchGateService();
-      const guard = new LaunchGateGuard(reflector, service);
-      const context = contextForMethod(
-        CalculatorController.prototype.getResult,
-        CalculatorController,
-      );
-
-      try {
-        guard.canActivate(context);
-        expect.unreachable('Expected ForbiddenException');
-      } catch (err) {
-        expect(err).toBeInstanceOf(ForbiddenException);
-        const fb = err as ForbiddenException;
-        expect(fb.message).toMatch(/calculations?/i);
-      }
-    });
-
-    it('allows access when LAUNCH_GATES_OVERRIDE=true', () => {
-      process.env[GATE_ENV_KEYS.override] = 'true';
-      const reflector = new Reflector();
-      const service = new LaunchGateService();
-      const guard = new LaunchGateGuard(reflector, service);
-      const context = contextForMethod(
-        CalculatorController.prototype.getResult,
-        CalculatorController,
-      );
-
-      expect(guard.canActivate(context)).toBe(true);
     });
   });
 });

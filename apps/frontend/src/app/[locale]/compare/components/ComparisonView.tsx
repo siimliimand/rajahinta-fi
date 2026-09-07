@@ -9,7 +9,6 @@ import {
   CONFIDENCE_LEVEL_META,
   RELIABILITY_STATUS_META,
 } from '@/lib/design/status';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import { Button, Card } from '@/components/ui';
 import { logClick } from '@/lib/api';
 import { MerchantLink } from './MerchantLink';
@@ -59,7 +58,6 @@ function ProductColumn({
 }) {
   const t = useTranslations('Compare');
   const tCommon = useTranslations('Common');
-  const flags = useFeatureFlags();
   // Same source of truth as the calculator result view: cost categories map
   // to localized labels (fi catalog primary) — the API's own itemized
   // `label` strings are English and never rendered directly.
@@ -91,16 +89,13 @@ function ProductColumn({
         </p>
       </div>
 
-      {/* €/g ethanol metric — flag-gated (hidden entirely when
-          enable_unit_price_eur_per_gram is off). Every column carries an
-          identical cell; an unavailable metric renders as an explicit
-          dash, never a substituted value. */}
-      {flags.flags.UNIT_PRICE_EUR_PER_GRAM && (
-        <UnitPriceCell
-          metric={product.eurPerGram}
-          tooltipId={`eur-per-gram-tooltip-${product.id}`}
-        />
-      )}
+      {/* €/g ethanol metric. Every column carries an identical cell; an
+          unavailable metric renders as an explicit dash, never a
+          substituted value. */}
+      <UnitPriceCell
+        metric={product.eurPerGram}
+        tooltipId={`eur-per-gram-tooltip-${product.id}`}
+      />
 
       {/* Cost breakdown */}
       <div className="space-y-1">
@@ -127,17 +122,15 @@ function ProductColumn({
       </div>
 
       {/* Merchant data-freshness display — factual per-merchant summary
-          from the reliability endpoint, flag-gated (hidden and unfetched
-          when the enable_advanced_features flag is off). Informational
-          only: identical styling per merchant, no ranking alteration. */}
+          from the reliability endpoint. Informational only: identical
+          styling per merchant, no ranking alteration. */}
       <div className="mt-3">
         <MerchantFreshnessSection merchants={product.merchants ?? []} />
       </div>
 
-      {/* Historical price chart — product-wide series, flag-gated the same
-          way as the calculator result view (hidden and unfetched when the
-          enable_historical_price_intelligence flag is off). Every product
-          column carries an identical panel — equal visual weight. */}
+      {/* Historical price chart — product-wide series, the same treatment
+          as the calculator result view. Every product column carries an
+          identical panel — equal visual weight. */}
       <div className="mt-3">
         <ProductHistoryPanel productId={product.id} />
       </div>

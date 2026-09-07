@@ -8,7 +8,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import { ApiFetchError, apiFetch, request } from '@/lib/api';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import { Button, Input } from '@/components/ui';
 import type { PriceAlert } from '@/lib/types';
 import { eurosToCents, formatCents } from '@/app/[locale]/account/alerts/threshold';
@@ -31,16 +30,12 @@ interface ProductAlertActionProps {
  * Product-page set-alert action (task 2.4, change
  * product-roadmap-phases-1-4).
  *
- * Gating: renders nothing unless the bootstrapped PRICE_ALERTS flag is on
- * (absent key counts as off), and a 403 — the flag having flipped off
- * server-side mid-session — degrades to the same nothing (design R13).
- * While rendering is gated client-side, the flag state is already inline
- * with the initial HTML, so nothing appears late.
- *
- * Existence: the panel checks the account's alert list on mount and
+ * Behaviour: the panel checks the account's alert list on mount and
  * switches between create and manage views. A 409 on create (duplicate
- * account/product pair, or a race with another tab) re-reads the list and
- * lands in the manage view instead of surfacing an error.
+ * account/product pair, or a race with another tab) re-reads the list
+ * and lands in the manage view instead of surfacing an error. A 403 —
+ * the backend rejecting the read — degrades the panel to nothing so no
+ * dead controls render.
  *
  * Units: euros in the UI, integer euro cents at the API boundary (see
  * account/alerts/threshold).
@@ -52,8 +47,6 @@ export default function ProductAlertAction({
 }: ProductAlertActionProps) {
   const t = useTranslations('PriceAlerts');
   const tCommon = useTranslations('Common');
-  const flags = useFeatureFlags();
-  const flagEnabled = flags.flags.PRICE_ALERTS === true;
 
   const [phase, setPhase] = useState<Phase>('loading');
   const [loadFailure, setLoadFailure] = useState<LoadFailure>(null);
@@ -88,9 +81,8 @@ export default function ProductAlertAction({
   }, [productId]);
 
   useEffect(() => {
-    if (!flagEnabled) return;
     void load();
-  }, [flagEnabled, load]);
+  }, [load]);
 
   const handleCreate = useCallback(async () => {
     if (creating) return;
@@ -169,12 +161,10 @@ export default function ProductAlertAction({
     }
   }, [busy, existing]);
 
-  // ── Hidden state: flag off (or flipped off mid-session) — render
-  //    nothing, fetch nothing, no dead controls, no layout shift. The
-  //    loading check keeps the panel absent until the existence check
-  //    resolves; a sign-in/error failure renders its prompt instead. ──
+  // ── Hidden states: the existence check is still running, or the API
+  //    rejected the read (403) — render nothing, no dead controls, no
+  //    layout shift. A sign-in/error failure renders its prompt instead. ──
   if (
-    !flagEnabled ||
     loadFailure === 'forbidden' ||
     (phase === 'loading' && loadFailure === null)
   ) {

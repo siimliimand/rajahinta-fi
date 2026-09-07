@@ -2,8 +2,8 @@
  * Basket optimizer route port (task 3.6) — Hono re-host of
  * BasketOptimizerController (packages/application-api/src/basket/).
  *
- * Guard/rate-limit composition (Nest decoration order preserved):
- *   POST /api/v1/basket/optimize   RateLimit(BASKET) → FeatureFlag(BASKET_OPTIMIZATION)
+ * Guard/rate-limit composition:
+ *   POST /api/v1/basket/optimize   RateLimit(BASKET)
  *
  * The optimizer runs the REAL BasketOptimizerService over the D1 port
  * adapters (product data + merchant terms + basket-calculation records —
@@ -12,10 +12,9 @@
  * dataset-version checks, exactly like the Nest controller's
  * IIdempotencyCache flow.
  *
- * While PACKING_OPTIMIZER is on (task 3.3), the response additionally
- * carries an advisory `packing` section (PackingSuggestion) computed
- * from the curated product_dimensions / carrier_box_types tables; the
- * flag gates the section, never the endpoint.
+ * The response additionally carries an advisory `packing` section
+ * (PackingSuggestion) computed from the curated product_dimensions /
+ * carrier_box_types tables.
  *
  * @module BasketRoutes
  */
@@ -24,7 +23,6 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
-import { FeatureFlag, FeatureFlagService } from '../middleware/feature-flags';
 import { suggestPacking } from '../../../../packages/core-domain/src/packing/packing';
 import type {
   PackingItem,
@@ -108,11 +106,11 @@ export function buildBasketOptimizerService(d1: AppEnv['Bindings']['DB']): {
 }
 
 // ---------------------------------------------------------------------------
-// Packing section (task 3.3) — advisory box suggestion behind
-// PACKING_OPTIMIZER, attached to the optimize response at read time
+// Packing section (task 3.3) — advisory box suggestion, attached to the
+// optimize response at read time
 // ---------------------------------------------------------------------------
 
-/** Optimize response — the optimizer result plus the flag-gated packing section. */
+/** Optimize response — the optimizer result plus the packing section. */
 type BasketOptimizeResponse = BasketOptimizationResult & {
   readonly packing?: PackingSuggestion;
 };
@@ -152,14 +150,6 @@ async function buildPackingSection(
     };
   });
   return suggestPacking(packingItems, boxTypes);
-}
-
-/** Attach the packing section only when the flag resolved on — the key stays absent otherwise. */
-function withPackingSection(
-  result: BasketOptimizationResult,
-  packing: PackingSuggestion | undefined,
-): BasketOptimizeResponse {
-  return packing === undefined ? result : { ...result, packing };
 }
 
 // ---------------------------------------------------------------------------
@@ -285,28 +275,23 @@ async function optimize(c: Context<AppEnv>): Promise<Response> {
   const { optimizer, taxRepo } = buildBasketOptimizerService(c.env.DB);
   const currentVersions = await taxRepo.findActiveVersionLabels();
 
-  // PACKING_OPTIMIZER gates the response SECTION, not the endpoint
-  // (per-request resolution, search.routes pattern): off → the response
-  // keeps its exact flag-less shape, no `packing` key at all. The
-  // suggestion is computed per request from the curated tables and
-  // attached to both MISS and HIT payloads — the idempotency cache
-  // stores the flag-agnostic optimizer result only, so X-Content-Hash
-  // keeps identifying the optimization regardless of section visibility.
-  const includePacking = new FeatureFlagService(c.env).isEnabled(
-    FeatureFlag.PACKING_OPTIMIZER,
+  // The packing suggestion is computed per request from the curated
+  // tables and attached to both MISS and HIT payloads — the idempotency
+  // cache stores the optimizer result only, so X-Content-Hash keeps
+  // identifying the optimization.
+  const packing = await buildPackingSection(
+    c.env.DB,
+    dto.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
   );
-  const packing = includePacking
-    ? await buildPackingSection(
-        c.env.DB,
-        dto.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-      )
-    : undefined;
 
   const cached = await idempotencyLookup(c.env, cacheKey, currentVersions);
   if (cached !== null) {
     c.header('X-Cache', 'HIT');
     c.header('X-Content-Hash', await idempotencyContentHash(cached.result));
-    return c.json(withPackingSection(cached.result as BasketOptimizationResult, packing));
+    return c.json({
+      ...(cached.result as BasketOptimizationResult),
+      packing,
+    } satisfies BasketOptimizeResponse);
   }
 
   try {
@@ -323,7 +308,7 @@ async function optimize(c: Context<AppEnv>): Promise<Response> {
 
     c.header('X-Cache', 'MISS');
     c.header('X-Content-Hash', await idempotencyContentHash(result));
-    return c.json(withPackingSection(result, packing));
+    return c.json({ ...result, packing } satisfies BasketOptimizeResponse);
   } catch (err) {
     if (err instanceof BasketValidationError) {
       // Specific codes map to 404; the rest carry the validation payload.
@@ -361,9 +346,8 @@ async function optimize(c: Context<AppEnv>): Promise<Response> {
   }
 }
 
-/** Register the basket handler (flag guard pre-registered by task 3.2). */
+/** Register the basket handler (rate limit pre-registered in index.ts). */
 export function registerBasketRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
-  // BASKET_OPTIMIZATION flag: class-level prefix from registerGuardMiddleware.
   app.post('/api/v1/basket/optimize', optimize);
   return app;
 }

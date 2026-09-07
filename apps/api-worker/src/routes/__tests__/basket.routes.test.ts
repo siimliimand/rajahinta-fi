@@ -1,12 +1,13 @@
 /**
  * Basket optimizer route parity tests (task 3.6) — extended with the
- * flag-gated packing response section (task 3.3, change
- * product-roadmap-phases-1-4).
+ * packing response section (task 3.3, change product-roadmap-phases-1-4).
  *
  * Expectations ported from
  * packages/application-api/src/basket/__tests__/basket-optimizer.controller.test.ts
  * (validation messages, error mapping, idempotency headers) with the
  * composed-app guard checks from the task-3.2 route-coverage suite.
+ * Feature flags are gone: the endpoint and the packing section are
+ * always served.
  *
  * @module BasketRoutesTest
  */
@@ -16,7 +17,6 @@ import { describe, it, expect } from 'vitest';
 import {
   buildApp,
   expectEnvelope,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -140,18 +140,6 @@ describe('POST /api/v1/basket/optimize — error mapping (controller parity)', (
 });
 
 describe('POST /api/v1/basket/optimize — composed guards + idempotency', () => {
-  it('carries the BASKET_OPTIMIZATION flag gate (route-coverage parity)', async () => {
-    const { d1 } = openMigratedD1();
-    const app = buildApp();
-
-    const off = await request(app, lockedEnv(d1), '/api/v1/basket/optimize', {
-      method: 'POST',
-    });
-    await expectEnvelope(off, 403, {
-      message: 'Feature "BASKET_OPTIMIZATION" is not enabled',
-    });
-  });
-
   it('serves MISS then HIT for identical baskets, with stable content hash', async () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1, depositSystemStatus: 0 });
@@ -199,9 +187,8 @@ describe('POST /api/v1/basket/optimize — composed guards + idempotency', () =>
 });
 
 // ---------------------------------------------------------------------------
-// Packing section (task 3.3) — PACKING_OPTIMIZER gates the response section,
-// never the endpoint. Shape expectations follow the 1.2 eurPerGram-embed
-// precedent: flag off = exact legacy key list, flag on = legacy keys +
+// Packing section (task 3.3) — advisory section always attached. Shape
+// expectations follow the eurPerGram-embed precedent: legacy keys +
 // `packing` appended last.
 // ---------------------------------------------------------------------------
 
@@ -287,41 +274,8 @@ function seedOptimizableProducts(db: DatabaseSync, ids: number[]): void {
   });
 }
 
-describe('packing section (flag PACKING_OPTIMIZER)', () => {
-  it('flag off keeps the response byte-compatible — no packing key, dimensions present or not', async () => {
-    const { db, d1 } = openMigratedD1();
-    seedOptimizableProducts(db, [1]);
-    seedDimension(db, {
-      productId: 1,
-      weightG: 400,
-      heightMm: 250,
-      diameterMm: 80,
-      material: 'GLASS',
-    });
-    seedBoxType(db, {
-      carrier: 'postnord',
-      name: 'PostNord Box M',
-      internalHeightMm: 350,
-      internalWidthMm: 250,
-      internalDepthMm: 180,
-      maxWeightG: 20000,
-    });
-    const app = buildApp();
-
-    const res = await request(app, permissiveEnv(d1), '/api/v1/basket/optimize', {
-      method: 'POST',
-      headers: JSON_HDRS,
-      body: JSON.stringify(VALID_REQUEST),
-    });
-    expect(res.status).toBe(200);
-    const text = await res.text();
-    expect(text).not.toContain('"packing"');
-    expect(Object.keys(JSON.parse(text) as Record<string, unknown>)).toEqual(
-      LEGACY_OPTIMIZE_KEYS,
-    );
-  });
-
-  it('flag on appends the packing section — smallest sufficient box, COMPUTED, exact fill rate', async () => {
+describe('packing section', () => {
+  it('appends the packing section — smallest sufficient box, COMPUTED, exact fill rate', async () => {
     const { db, d1 } = openMigratedD1();
     seedOptimizableProducts(db, [1]);
     seedDimension(db, {
@@ -352,7 +306,7 @@ describe('packing section (flag PACKING_OPTIMIZER)', () => {
 
     const res = await request(
       app,
-      permissiveEnv(d1, { FF_PACKING_OPTIMIZER: 'true' }),
+      permissiveEnv(d1),
       '/api/v1/basket/optimize',
       { method: 'POST', headers: JSON_HDRS, body: JSON.stringify(VALID_REQUEST) },
     );
@@ -377,7 +331,7 @@ describe('packing section (flag PACKING_OPTIMIZER)', () => {
     );
   });
 
-  it('flag on + missing dimension rows degrades to ESTIMATED with the excluded list — optimize itself still succeeds', async () => {
+  it('missing dimension rows degrades to ESTIMATED with the excluded list — optimize itself still succeeds', async () => {
     const { db, d1 } = openMigratedD1();
     seedOptimizableProducts(db, [1]);
     seedBoxType(db, {
@@ -392,7 +346,7 @@ describe('packing section (flag PACKING_OPTIMIZER)', () => {
 
     const res = await request(
       app,
-      permissiveEnv(d1, { FF_PACKING_OPTIMIZER: 'true' }),
+      permissiveEnv(d1),
       '/api/v1/basket/optimize',
       { method: 'POST', headers: JSON_HDRS, body: JSON.stringify(VALID_REQUEST) },
     );
@@ -409,7 +363,7 @@ describe('packing section (flag PACKING_OPTIMIZER)', () => {
     });
   });
 
-  it('flag on + empty box catalogue degrades to NO_FITTING_BOX exclusions, never an error', async () => {
+  it('empty box catalogue degrades to NO_FITTING_BOX exclusions, never an error', async () => {
     const { db, d1 } = openMigratedD1();
     seedOptimizableProducts(db, [1]);
     seedDimension(db, {
@@ -423,7 +377,7 @@ describe('packing section (flag PACKING_OPTIMIZER)', () => {
 
     const res = await request(
       app,
-      permissiveEnv(d1, { FF_PACKING_OPTIMIZER: 'true' }),
+      permissiveEnv(d1),
       '/api/v1/basket/optimize',
       { method: 'POST', headers: JSON_HDRS, body: JSON.stringify(VALID_REQUEST) },
     );
@@ -437,7 +391,7 @@ describe('packing section (flag PACKING_OPTIMIZER)', () => {
     });
   });
 
-  it('flag on mixing warning cites the observed figures and only the fired threshold', async () => {
+  it('mixing warning cites the observed figures and only the fired threshold', async () => {
     const { db, d1 } = openMigratedD1();
     seedOptimizableProducts(db, [1, 2]);
     seedDimension(db, {
@@ -468,7 +422,7 @@ describe('packing section (flag PACKING_OPTIMIZER)', () => {
 
     const res = await request(
       app,
-      permissiveEnv(d1, { FF_PACKING_OPTIMIZER: 'true' }),
+      permissiveEnv(d1),
       '/api/v1/basket/optimize',
       {
         method: 'POST',
@@ -513,7 +467,7 @@ describe('packing section (flag PACKING_OPTIMIZER)', () => {
     );
   });
 
-  it('flag on serves the packing section on cache HITs too — same body, stable hash', async () => {
+  it('serves the packing section on cache HITs too — same body, stable hash', async () => {
     const { db, d1 } = openMigratedD1();
     seedOptimizableProducts(db, [1]);
     seedDimension(db, {
@@ -532,7 +486,7 @@ describe('packing section (flag PACKING_OPTIMIZER)', () => {
       maxWeightG: 20000,
     });
     const app = buildApp();
-    const env = permissiveEnv(d1, { FF_PACKING_OPTIMIZER: 'true' });
+    const env = permissiveEnv(d1);
     const init: RequestInit = {
       method: 'POST',
       headers: JSON_HDRS,
@@ -548,7 +502,7 @@ describe('packing section (flag PACKING_OPTIMIZER)', () => {
     const second = await request(app, env, '/api/v1/basket/optimize', init);
     expect(second.headers.get('X-Cache')).toBe('HIT');
     expect(second.headers.get('X-Content-Hash')).toBe(missHash);
-    // The cached payload stays flag-agnostic; the section is attached per
+    // The cached payload is section-free; the section is attached per
     // request, so the HIT body equals the MISS body including packing.
     expect(await second.json()).toEqual(missBody);
   });

@@ -10,9 +10,9 @@
  * step); the service fails fast with a descriptive error when the port is
  * unwired.
  *
- * Guards (RateLimitGuard, FeatureFlagGuard, AgeGateGuard, EntitlementGuard)
+ * Guards (RateLimitGuard, AgeGateGuard, EntitlementGuard)
  * resolve from modules already imported by the composition root
- * (RateLimitingModule, FeatureFlagsModule, AgeGateModule, EntitlementModule
+ * (RateLimitingModule, AgeGateModule, EntitlementModule
  * via CoreDomainModule) — no additional imports needed for them.
  *
  * @module ReportsModule

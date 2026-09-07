@@ -74,7 +74,6 @@ import {
   createApp,
   expectEnvelope,
   issueSessionToken,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -102,9 +101,9 @@ function fullApp(): ReturnType<typeof createApp> {
   return createApp();
 }
 
-/** Group order flag ON (permissive base) — the serving path. */
+/** Serving env (permissive base). */
 function groupOrderEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}): Env {
-  return permissiveEnv(d1, { ...overrides, FF_GROUP_ORDER_LEDGER: 'true' });
+  return permissiveEnv(d1, overrides);
 }
 
 interface SessionJson {
@@ -304,54 +303,7 @@ describe('share-link expiry end-to-end — the API-created TTL edge (task 9.5)',
 });
 
 // ===========================================================================
-// 3. Flag-off 403 — both the authed create and the token routes, with data
-//    present so the flag is provably the only variable (spec "Feature
-//    gating": session creation AND share-link access return the
-//    feature-disabled error)
-// ===========================================================================
-
-describe('GROUP_ORDER_LEDGER flag gate end-to-end with data present (task 9.5)', () => {
-  it('serves create + share-link with the flag ON, then 403s both with the flag OFF', async () => {
-    // Flag ON: a real session with a real item exists.
-    const s = await setupWithSession();
-    seedProduct(s.db, { id: 1 });
-    const item = await request(
-      s.app,
-      s.env,
-      `/api/v1/group-orders/${s.shareToken}/items`,
-      tokenPost({ nickname: 'A', productId: 1, quantity: 1 }),
-    );
-    expect(item.status).toBe(201);
-
-    // Flag OFF (permissive base — the flag key absent, everything else
-    // open): the SAME authed create and the SAME share link get the
-    // feature-disabled envelope.
-    const off = permissiveEnv(s.d1);
-    await expectEnvelope(await createSession(s.app, off, s.token), 403, {
-      message: 'Feature "GROUP_ORDER_LEDGER" is not enabled',
-      error: 'Forbidden',
-    });
-    await expectEnvelope(
-      await request(s.app, off, `/api/v1/group-orders/${s.shareToken}/join`, tokenPost({ nickname: 'A' })),
-      403,
-      { message: 'Feature "GROUP_ORDER_LEDGER" is not enabled', error: 'Forbidden' },
-    );
-
-    // Fully locked env — same verdicts composed.
-    const locked = lockedEnv(s.d1);
-    await expectEnvelope(await createSession(s.app, locked, s.token), 403, {
-      error: 'Forbidden',
-    });
-    await expectEnvelope(
-      await request(s.app, locked, `/api/v1/group-orders/${s.shareToken}/join`, tokenPost({})),
-      403,
-      { error: 'Forbidden' },
-    );
-  });
-});
-
-// ===========================================================================
-// 4. Source level — no payment-processing import exists in the group-order
+// 3. Source level — no payment-processing import exists in the group-order
 //    module (spec "Accounting-only boundary"; design R12). See the module
 //    docblock for the PROHIBITED (capability, import positions) vs ALLOWED
 //    (vocabulary as data: DTO rejection lists, disclaimer text) distinction.

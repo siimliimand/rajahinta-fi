@@ -35,18 +35,12 @@ import {
 } from '@rajahinta/core-domain';
 import type { BasketOptimizeRequest } from './basket.dto';
 import { RateLimitGuard, RateLimit } from '../rate-limiting';
-import {
-  FeatureFlagGuard,
-  FeatureFlagDec,
-  FeatureFlag,
-} from '../feature-flags';
 import { IdempotencyService, IDEMPOTENCY_CACHE, hashInput } from '../idempotency';
 import type { IIdempotencyCache, CacheKeyInput } from '../idempotency';
 
 @ApiTags('basket')
 @Controller('api/v1/basket')
-@UseGuards(RateLimitGuard, FeatureFlagGuard)
-@FeatureFlagDec(FeatureFlag.BASKET_OPTIMIZATION)
+@UseGuards(RateLimitGuard)
 export class BasketOptimizerController {
   constructor(
     private readonly optimizer: BasketOptimizerService,
@@ -87,7 +81,6 @@ export class BasketOptimizerController {
     },
   })
   @ApiResponse({ status: 400, description: 'Invalid input parameters' })
-  @ApiResponse({ status: 403, description: 'Feature not available' })
   @ApiResponse({ status: 404, description: 'Product not found' })
   @ApiResponse({ status: 422, description: 'Product rejected by classification gate, no covering offers, or the merchant-assignment combinations exceed the maximum' })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded' })

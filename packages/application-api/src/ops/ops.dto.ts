@@ -6,8 +6,8 @@
  * with the frontend's API types, following the correction.dto.ts precedent.
  *
  * The console is its own auth realm: every route sits behind OpsAccessGuard
- * (env-configured operator bearer token + IP allowlist, fail-closed) and the
- * OPERATOR_CONSOLE feature flag. Operator identity for the audit trail is
+ * (env-configured operator bearer token + IP allowlist, fail-closed).
+ * Operator identity for the audit trail is
  * supplied per action via the `operator` request field — interactive login
  * is documented future work (design open question, "separate path" answer).
  *

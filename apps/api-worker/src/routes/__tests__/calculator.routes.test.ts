@@ -19,7 +19,6 @@ import { describe, it, expect } from 'vitest';
 import {
   buildApp,
   expectEnvelope,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -37,19 +36,11 @@ function expectedBeerExciseCents(abv: number, volumeLitres: number): number {
 const AGE = { 'x-age-confirmed': 'confirmed' };
 
 describe('POST /api/v1/calculator', () => {
-  it('honors the guard stack: launch gate, age gate, then handler', async () => {
+  it('honors the guard stack: age gate, then handler', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
 
-    // Gates closed → launch gate denies first (Nest guard order).
-    const closed = await request(app, lockedEnv(d1), '/api/v1/calculator', {
-      method: 'POST',
-    });
-    await expectEnvelope(closed, 403, {
-      message: expect.stringMatching(/not yet publicly available/),
-    });
-
-    // Gates open, no age confirmation → age gate denies.
+    // No age confirmation → age gate denies.
     const noAge = await request(app, permissiveEnv(d1), '/api/v1/calculator', {
       method: 'POST',
     });

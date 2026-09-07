@@ -5,10 +5,6 @@
  * page (task 4.1, change phase2-advanced-features).
  *
  * Behaviour:
- *  - `enable_advanced_features` off ⇒ the section renders nothing and the
- *    scenario list request is never fired. The flag state arrives with
- *    the initial HTML payload, so the section's visibility is correct on
- *    the first render — no late appearance.
  *  - Scenarios are listed factually: name, resolved product (name or ID),
  *    quantity, destination, and last-updated timestamp. Loading happens on
  *    the calculator page, so no load action is offered here.
@@ -24,7 +20,6 @@ import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import type { SavedScenario } from '@/lib/types';
 import { fetchProductsByIds, listScenarios } from '@/lib/api';
-import { useFeatureFlags } from '@/lib/feature-flags';
 
 /** Render an ISO timestamp with the fi-FI locale conventions used elsewhere. */
 function formatTimestamp(iso: string): string {
@@ -42,17 +37,13 @@ function formatTimestamp(iso: string): string {
 
 export default function SavedScenariosSection() {
   const t = useTranslations('SavedScenarios');
-  // Flag state is inlined with the initial HTML payload (task 9.4).
-  const flags = useFeatureFlags();
-  const flagEnabled = flags.flags.ADVANCED_FEATURES;
   const [scenarios, setScenarios] = useState<readonly SavedScenario[]>([]);
   const [productNames, setProductNames] = useState<
     Readonly<Record<number, string>>
   >({});
 
-  // ── Load the scenario list when the flag is on ──
+  // ── Load the scenario list on mount ──
   useEffect(() => {
-    if (!flagEnabled) return;
     let cancelled = false;
 
     (async () => {
@@ -81,12 +72,7 @@ export default function SavedScenariosSection() {
     return () => {
       cancelled = true;
     };
-  }, [flagEnabled]);
-
-  // ── Hidden state: flag off in the inlined payload ──
-  if (!flagEnabled) {
-    return null;
-  }
+  }, []);
 
   return (
     <section

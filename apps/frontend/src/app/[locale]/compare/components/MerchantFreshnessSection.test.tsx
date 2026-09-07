@@ -1,14 +1,12 @@
 /**
  * MerchantFreshnessSection tests (task 4.3).
  *
- * Verifies the flag-gated, informational-only contract:
- *   1. Flag off in the inlined payload → the section renders nothing on
- *      the FIRST render and NEVER fires the reliability request.
- *   2. Flag on → renders the factual per-merchant summary (offer count,
- *      per-status shares as percentages, freshest observation, governance
- *      status) with identical rows per merchant.
- *   3. A merchant without a score in the response is omitted.
- *   4. Fetch failure → the display degrades to hidden (informational).
+ * Verifies the informational-only contract:
+ *   1. Renders the factual per-merchant summary (offer count, per-status
+ *      shares as percentages, freshest observation, governance status)
+ *      with identical rows per merchant.
+ *   2. A merchant without a score in the response is omitted.
+ *   3. Fetch failure → the display degrades to hidden (informational).
  *
  * @module MerchantFreshnessSectionTest
  */
@@ -18,7 +16,7 @@ import React from 'react';
 import { screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MerchantFreshnessSection from './MerchantFreshnessSection';
-import { ALL_FLAGS_OFF, renderWithIntl } from '@/lib/testing/test-intl';
+import { renderWithIntl } from '@/lib/testing/test-intl';
 import { getMerchantReliability } from '@/lib/api';
 import type { MerchantReliabilityScore } from '@/lib/types';
 
@@ -70,21 +68,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('MerchantFreshnessSection', () => {
-  it('hides the display on the first render and never fetches reliability when the flag is off', () => {
-    const { container } = renderWithIntl(
-      <MerchantFreshnessSection merchants={['merchant-a']} />,
-      { featureFlags: ALL_FLAGS_OFF },
-    );
-
-    // Synchronous first-render assertion: the inlined flag state hides the
-    // section with no client-side flag round-trip (task 9.4).
-    expect(container.firstChild).toBeNull();
-
-    expect(mockedGetMerchantReliability).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('merchant-freshness')).not.toBeInTheDocument();
-  });
-
-  it('renders the factual summary per merchant when the flag is on', async () => {
+  it('renders the factual summary per merchant', async () => {
     renderWithIntl(
       <MerchantFreshnessSection merchants={['merchant-a', 'merchant-b']} />,
     );
@@ -121,7 +105,7 @@ describe('MerchantFreshnessSection', () => {
     expect(rows[0]).not.toHaveTextContent('merchant-z');
   });
 
-  it('renders nothing when the merchant list is empty (even with the flag on)', () => {
+  it('renders nothing when the merchant list is empty', () => {
     const { container } = renderWithIntl(
       <MerchantFreshnessSection merchants={[]} />,
     );

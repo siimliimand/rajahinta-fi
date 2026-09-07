@@ -14,8 +14,7 @@
  * - a failed dispatch marks the row failed and counts it;
  * - per-alert error isolation and the skip paths (no summary, no
  *   recipient);
- * - flag-off no-op with zero evaluations (the flag resolves through
- *   FeatureFlagService by default);
+ * - the unconfigured-email no-op with zero evaluations;
  * - counters exported via the observability module; router wiring on
  *   the shared 30-minute pattern.
  *
@@ -217,7 +216,6 @@ function makeWorld(options: WorldOptions = {}): {
     products: { findById } as never as D1ProductSearchRepository,
     findAccountEmail,
     send,
-    flagEnabled: true,
   };
 
   const world: World = {
@@ -459,29 +457,10 @@ describe('skip paths and per-alert isolation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Flag gate and configuration gate
+// Configuration gate
 // ---------------------------------------------------------------------------
 
-describe('flag and configuration gates', () => {
-  it('flag off → no-op with ZERO evaluations (nothing scanned, nothing sent)', async () => {
-    const { world, run } = makeWorld();
-    // No flagEnabled override: the default FeatureFlagService resolution
-    // runs, and the env carries no FF_PRICE_ALERTS → off.
-    const deps = { flagEnabled: undefined };
-
-    const result = await run({}, deps);
-
-    expect(result.flagEnabled).toBe(false);
-    expect(result.activeAlerts).toBe(0);
-    expect(result.evaluated).toBe(0);
-    expect(result.matched).toBe(0);
-    expect(result.notified).toBe(0);
-    expect(result.failed).toBe(0);
-    expect(result.suppressed).toBe(0);
-    expect(world.findActive).not.toHaveBeenCalled();
-    expect(world.send).not.toHaveBeenCalled();
-  });
-
+describe('configuration gate', () => {
   it('unconfigured email path → no evaluation, one warning (freshness-alert posture)', async () => {
     const { world } = makeWorld();
     const warn = vi.fn();
@@ -497,7 +476,6 @@ describe('flag and configuration gates', () => {
         products: {} as never as D1ProductSearchRepository,
         findAccountEmail: world.findAccountEmail,
         send: world.send,
-        flagEnabled: true,
       },
     );
 

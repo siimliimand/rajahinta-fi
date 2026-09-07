@@ -12,10 +12,8 @@
  * historical/basket controllers):
  * 1. RateLimitGuard  — DECLARATION profile (same persisted-record read via
  *    the same port, same payload class; 20 req/min)
- * 2. FeatureFlagGuard + @FeatureFlagDec(ADVANCED_FEATURES) — 403 when the
- *    Phase 2C rollout flag is off (instant rollback)
- * 3. AgeGateGuard    — age confirmation required
- * 4. EntitlementGuard + @RequireFeature('calculation:export') — PREMIUM
+ * 2. AgeGateGuard    — age confirmation required
+ * 3. EntitlementGuard + @RequireFeature('calculation:export') — PREMIUM
  *
  * @module ReportsController
  */
@@ -37,7 +35,6 @@ import { CalculationRecordNotFoundError } from '@rajahinta/core-domain';
 import { EntitlementGuard, RequireFeature } from '../entitlement';
 import { AgeGateGuard } from '../age-gate';
 import { RateLimitGuard, RateLimit } from '../rate-limiting';
-import { FeatureFlagGuard, FeatureFlagDec, FeatureFlag } from '../feature-flags';
 import { ReportExportService } from './report-export.service';
 import type { JsonReport, ReportFormat } from './reports.dto';
 
@@ -52,8 +49,7 @@ interface HeaderCapableResponse {
 
 @ApiTags('reports')
 @Controller('api/v1/reports')
-@UseGuards(RateLimitGuard, FeatureFlagGuard, AgeGateGuard)
-@FeatureFlagDec(FeatureFlag.ADVANCED_FEATURES)
+@UseGuards(RateLimitGuard, AgeGateGuard)
 export class ReportsController {
   constructor(private readonly reportExport: ReportExportService) {}
 
@@ -88,7 +84,7 @@ export class ReportsController {
       'Report in the requested format — JSON object, text/csv attachment, or printable text/html',
   })
   @ApiResponse({ status: 400, description: 'Unsupported format parameter' })
-  @ApiResponse({ status: 403, description: 'Feature flag off, insufficient entitlement, or age confirmation missing' })
+  @ApiResponse({ status: 403, description: 'Insufficient entitlement or age confirmation missing' })
   @ApiResponse({ status: 404, description: 'Calculation record not found' })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded' })
   async getReport(

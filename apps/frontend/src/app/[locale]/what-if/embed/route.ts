@@ -7,16 +7,14 @@
  *
  * Flow (spec: excise-what-if-simulator — shareable embed, rate limiting,
  * anonymous access):
- *   1. `EXCISE_WHAT_IF` is checked server-resolved (the same inlined
- *      flag source the layout uses) — flag off renders the closed view.
- *   2. The share token is decoded READ-ONLY against the same bounds the
+ *   1. The share token is decoded READ-ONLY against the same bounds the
  *      POST endpoint enforces. There is no scenario storage anywhere —
  *      the token carries the inputs and nothing else.
- *   3. The scenario is RECOMPUTED through the pure what-if endpoint (the
+ *   2. The scenario is RECOMPUTED through the pure what-if endpoint (the
  *      computation itself is ephemeral by design — 8.2). A 429 renders
  *      a calm throttled view whose meta-refresh waits out the limiter's
  *      Retry-After; any other failure renders the unavailable view.
- *   4. The document renders the structural HYPOTHETICAL disclaimer from
+ *   3. The document renders the structural HYPOTHETICAL disclaimer from
  *      the response prominently — the disclaimer travels with the result
  *      even in the embedded rendering.
  *
@@ -30,8 +28,6 @@
  */
 
 import { routing } from '@/i18n/routing';
-import { getServerFeatureFlags } from '@/lib/api';
-import { isWhatIfFlagEnabled } from '../what-if-flag';
 import { decodeWhatIfShareToken } from '../share-token';
 import { calculateWhatIfExcise, classifyWhatIfError } from '../what-if.client';
 import { renderEmbedHtml, type EmbedLocale, type EmbedOutcome } from './view';
@@ -56,13 +52,6 @@ export async function GET(
     return new Response('Not found', { status: 404 });
   }
   const locale = rawLocale as EmbedLocale;
-
-  // Flag gate — the same server-resolved payload the layout inlines
-  // (revalidate-bounded; a flipped-off flag closes the embed within it).
-  const flags = await getServerFeatureFlags();
-  if (!isWhatIfFlagEnabled(flags)) {
-    return htmlResponse(renderEmbedHtml(locale, { kind: 'closed' }));
-  }
 
   // Read-only decode of the share token.
   const token = new URL(request.url).searchParams.get('token');

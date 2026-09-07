@@ -13,16 +13,11 @@
  * component state and is sent as the Authorization header. The backend's
  * OpsAccessGuard enforces the token + IP allowlist regardless of this UI.
  *
- * The whole console is dark while the OPERATOR_CONSOLE flag is off
- * (compliance rule: new UI ships flag-off) — the flag state is inlined in
- * the page payload by the layout, so there is no late-visibility flash.
- *
  * @module OperatorConsole
  */
 
 import React, { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import type {
   CorrectionListResponse,
   OpsAuditListResponse,
@@ -70,7 +65,6 @@ async function loadAll(token: string): Promise<ConsoleData> {
 
 export default function OperatorConsole() {
   const t = useTranslations('OperatorConsole');
-  const flags = useFeatureFlags();
 
   const [token, setToken] = useState('');
   const [operator, setOperator] = useState('');
@@ -78,8 +72,6 @@ export default function OperatorConsole() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);
-
-  const enabled = flags.flags.OPERATOR_CONSOLE ?? false;
 
   const refresh = useCallback(
     async (activeToken: string) => {
@@ -116,15 +108,6 @@ export default function OperatorConsole() {
     },
     [refresh, t, token],
   );
-
-  if (!enabled) {
-    return (
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-6">
-        <h1 className="text-lg font-semibold text-gray-900">{t('title')}</h1>
-        <p className="mt-2 text-sm text-gray-600">{t('disabled')}</p>
-      </div>
-    );
-  }
 
   const operatorReady = operator.trim() !== '' && token.trim() !== '';
 

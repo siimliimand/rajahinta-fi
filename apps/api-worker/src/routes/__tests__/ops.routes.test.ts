@@ -3,7 +3,7 @@
  *
  * Expectations ported from the ops suites:
  * - packages/application-api/src/ops/__tests__/ops-console.access.test.ts
- *   (deny-before-data: ops access + OPERATOR_CONSOLE flag),
+ *   (deny-before-data: ops access),
  * - ops-governance.service.test.ts (list shape; mutations here fail
  *   closed — documented 3.8 scope note),
  * - ops-dataset-confirmation.service.test.ts (queue shape, tax review
@@ -46,7 +46,7 @@ function seedRegistryMerchant(
 }
 
 describe('ops console — deny before any data (ops-console.access parity)', () => {
-  it('403s without credentials, and with ops config but the flag off', async () => {
+  it('403s without credentials', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
 
@@ -54,18 +54,7 @@ describe('ops console — deny before any data (ops-console.access parity)', () 
     const closed = await request(app, lockedEnv(d1), '/ops/console/audit');
     await expectEnvelope(closed, 403, { message: 'Forbidden' });
 
-    // Ops config but console flag off (default in lockedEnv) → dark.
-    const dark = await request(
-      app,
-      permissiveEnv(d1, { FF_OPERATOR_CONSOLE: undefined }),
-      '/ops/console/audit',
-      { headers: OPS },
-    );
-    await expectEnvelope(dark, 403, {
-      message: 'Feature "OPERATOR_CONSOLE" is not enabled',
-    });
-
-    // Configured + flag → the trail endpoint serves.
+    // Configured → the trail endpoint serves.
     const ok = await request(app, authedEnv(d1), '/ops/console/audit', { headers: OPS });
     expect(ok.status).toBe(200);
   });

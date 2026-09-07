@@ -4,29 +4,24 @@
  *
  * Mirrors historical-guard-regression.test.ts — verifies at the metadata +
  * guard-unit level that the report export endpoint is protected by its
- * documented stack, with REAL guard dependencies (FeatureFlagService,
- * EntitlementService, AgeGateService, InMemoryRateLimiter) and no vi.fn():
+ * documented stack, with REAL guard dependencies (EntitlementService,
+ * AgeGateService, InMemoryRateLimiter) and no vi.fn():
  *
- *   1. Class-level @UseGuards(RateLimitGuard, FeatureFlagGuard, AgeGateGuard)
+ *   1. Class-level @UseGuards(RateLimitGuard, AgeGateGuard)
  *      + method-level @UseGuards(EntitlementGuard) metadata.
  *   2. The route is rate-limited with the DECLARATION profile (20 req/min).
- *   3. The route is gated by the ADVANCED_FEATURES feature flag — 403 while
- *      off (the default), allowed once FF_ADVANCED_FEATURES is set.
- *   4. EntitlementGuard @RequireFeature('calculation:export') — PREMIUM
- *      allowed; FREE tier and anonymous requests get a 403 with the
- *      InsufficientEntitlement body. Tiers resolve from the account context
- *      the auth guard attaches (EntitlementService accepts
- *      AccountContext | string | null) — the per-user
- *      ENTITLEMENT_TIER_<USERID> env override was removed with the tier
- *      move to the account record.
- *   5. AgeGateGuard rejects without a confirmation token.
- *   6. Exhausting the DECLARATION profile through the REAL in-memory
+ *   3. EntitlementGuard @RequireFeature('calculation:export') — the feature
+ *      is FREE-tier, so authenticated (default-PREMIUM), FREE-tier, and
+ *      anonymous requests all pass. Entitlement denial mechanics are
+ *      covered in entitlement.guard.test.ts with a PREMIUM-required mock.
+ *   4. AgeGateGuard rejects without a confirmation token.
+ *   5. Exhausting the DECLARATION profile through the REAL in-memory
  *      limiter yields HTTP 429 with a Retry-After header.
  *
  * @module ReportsGuardRegressionTest
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   ForbiddenException,
   HttpException,
@@ -35,12 +30,6 @@ import {
 import { Reflector } from '@nestjs/core';
 import { EntitlementService } from '@rajahinta/core-domain';
 import { ReportsController } from '../reports.controller';
-import {
-  FeatureFlagGuard,
-  FeatureFlag,
-  FEATURE_FLAG_KEY,
-} from '../../feature-flags';
-import { FeatureFlagService } from '../../feature-flags/feature-flag.service';
 import {
   EntitlementGuard,
   REQUIRE_FEATURE_KEY,
@@ -89,15 +78,14 @@ describe('ReportsController — guard regression', () => {
   const reflector = new Reflector();
 
   describe('guard + gate metadata', () => {
-    it('carries class-level RateLimitGuard, FeatureFlagGuard, AgeGateGuard', () => {
+    it('carries class-level RateLimitGuard and AgeGateGuard', () => {
       // getAllAndOverride would return the method-level list (override
       // semantics), so read the class metadata directly.
       const guards = Reflect.getMetadata(GUARDS_METADATA, ReportsController) as unknown[];
 
       expect(guards).toBeDefined();
-      expect(guards).toHaveLength(3);
+      expect(guards).toHaveLength(2);
       expect(guards).toContain(RateLimitGuard);
-      expect(guards).toContain(FeatureFlagGuard);
       expect(guards).toContain(AgeGateGuard);
     });
 
@@ -122,55 +110,12 @@ describe('ReportsController — guard regression', () => {
       });
     });
 
-    it('is gated by the ADVANCED_FEATURES feature flag', () => {
-      const flag = reflector.getAllAndOverride<FeatureFlag>(FEATURE_FLAG_KEY, [
-        HANDLER,
-        ReportsController,
-      ]);
-      expect(flag).toBe(FeatureFlag.ADVANCED_FEATURES);
-    });
-
     it('requires the calculation:export entitlement feature', () => {
       const feature = reflector.getAllAndOverride<string>(
         REQUIRE_FEATURE_KEY,
         [HANDLER, ReportsController],
       );
       expect(feature).toBe('calculation:export');
-    });
-  });
-
-  describe('FeatureFlagGuard — flag-off 403 / flag-on allow', () => {
-    const originalEnv = process.env;
-
-    beforeEach(() => {
-      process.env = { ...originalEnv };
-      delete process.env.FF_ADVANCED_FEATURES;
-    });
-
-    afterEach(() => {
-      process.env = originalEnv;
-    });
-
-    it('throws ForbiddenException while the flag is off (default)', () => {
-      const guard = new FeatureFlagGuard(reflector, new FeatureFlagService());
-      expect(() => guard.canActivate(context())).toThrow(ForbiddenException);
-    });
-
-    it('the rejection names the ADVANCED_FEATURES flag', () => {
-      const guard = new FeatureFlagGuard(reflector, new FeatureFlagService());
-      try {
-        guard.canActivate(context());
-        expect.unreachable('Expected ForbiddenException');
-      } catch (err) {
-        expect(err).toBeInstanceOf(ForbiddenException);
-        expect((err as ForbiddenException).message).toMatch(/ADVANCED_FEATURES/);
-      }
-    });
-
-    it('allows once FF_ADVANCED_FEATURES=true', () => {
-      process.env.FF_ADVANCED_FEATURES = 'true';
-      const guard = new FeatureFlagGuard(reflector, new FeatureFlagService());
-      expect(guard.canActivate(context())).toBe(true);
     });
   });
 
@@ -188,40 +133,18 @@ describe('ReportsController — guard regression', () => {
       ).toBe(true);
     });
 
-    it('rejects a FREE-tier user with the InsufficientEntitlement body', () => {
+    it('allows a FREE-tier user — calculation:export is a FREE feature', () => {
       // Tier from the account context (accounts.tier), the way the session
-      // auth guard attaches it — no per-user env override exists anymore.
-      try {
+      // auth guard attaches it. FREE suffices for a FREE-tier feature.
+      expect(
         guard().canActivate(
           context({ user: { id: FREE_USER, userId: FREE_USER, tier: 'FREE' } }),
-        );
-        expect.unreachable('Expected ForbiddenException');
-      } catch (err) {
-        expect(err).toBeInstanceOf(ForbiddenException);
-        expect((err as ForbiddenException).getResponse()).toMatchObject({
-          statusCode: 403,
-          error: 'InsufficientEntitlement',
-          requiredTier: 'calculation:export',
-          currentTier: 'FREE',
-        });
-        const message = ((err as ForbiddenException).getResponse() as {
-          message: string;
-        }).message;
-        expect(message).toContain('calculation:export');
-      }
+        ),
+      ).toBe(true);
     });
 
-    it('rejects anonymous requests (no request.user) as FREE', () => {
-      try {
-        guard().canActivate(context({ user: undefined }));
-        expect.unreachable('Expected ForbiddenException');
-      } catch (err) {
-        expect(err).toBeInstanceOf(ForbiddenException);
-        expect((err as ForbiddenException).getResponse()).toMatchObject({
-          statusCode: 403,
-          currentTier: 'FREE',
-        });
-      }
+    it('allows anonymous requests (no request.user) — FREE suffices for a FREE feature', () => {
+      expect(guard().canActivate(context({ user: undefined }))).toBe(true);
     });
   });
 

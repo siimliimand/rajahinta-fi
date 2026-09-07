@@ -126,7 +126,7 @@ const TRIP = {
   ],
 };
 
-/** Full production composition (index.ts wiring: flag gate + limiter + route). */
+/** Full production composition (index.ts wiring: limiter + route). */
 function tripApp(): ReturnType<typeof createApp> {
   const app = createApp();
   registerTripFeasibilityRoutes(app);
@@ -134,7 +134,7 @@ function tripApp(): ReturnType<typeof createApp> {
 }
 
 function tripEnv(d1: D1DatabaseLike): Env {
-  return permissiveEnv(d1, { FF_TRIP_CALCULATOR: 'true' });
+  return permissiveEnv(d1);
 }
 
 async function postTrip(

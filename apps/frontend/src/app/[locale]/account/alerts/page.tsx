@@ -14,7 +14,6 @@ import {
   request,
   searchProducts,
 } from '@/lib/api';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import { Button, Input } from '@/components/ui';
 import type { PriceAlert, ProductSearchItem } from '@/lib/types';
 import ProductSearch from '../../calculator/components/ProductSearch';
@@ -51,10 +50,9 @@ function formatTimestamp(iso: string): string {
  * Account price-alerts management view (task 2.4, change
  * product-roadmap-phases-1-4): list, create, pause/resume, delete.
  *
- * Gating: the whole view renders nothing unless the bootstrapped
- * PRICE_ALERTS flag is on (absent key counts as off). A 403 from the API —
- * the flag having flipped off server-side mid-session — degrades to the
- * same absent UI, so the section never shows dead controls (design R13).
+ * Gating: none — the view renders unconditionally. A 403 from the API
+ * (the backend rejecting the read) degrades the whole view to nothing,
+ * so the section never shows dead controls.
  *
  * Auth: paths under /api/v1/account/ ride the httpOnly session cookie via
  * request(), which mints a session and replays once on the first 401. A
@@ -69,10 +67,6 @@ function formatTimestamp(iso: string): string {
 export default function AlertsPage() {
   const t = useTranslations('PriceAlerts');
   const tCommon = useTranslations('Common');
-  // Flag state arrives inlined with the initial HTML payload — the
-  // visibility is correct on the first render, no late appearance.
-  const flags = useFeatureFlags();
-  const flagEnabled = flags.flags.PRICE_ALERTS === true;
 
   // ── List state ──
   const [alerts, setAlerts] = useState<readonly PriceAlert[]>([]);
@@ -134,9 +128,8 @@ export default function AlertsPage() {
   }, []);
 
   useEffect(() => {
-    if (!flagEnabled) return;
     void load();
-  }, [flagEnabled, load]);
+  }, [load]);
 
   const handleSearch = useCallback(
     async (q: string) => {
@@ -242,9 +235,9 @@ export default function AlertsPage() {
     }
   }, []);
 
-  // ── Hidden state: flag off in the inlined payload (or flipped off
-  //    server-side mid-session) — render nothing, fetch nothing. ──
-  if (!flagEnabled || loadFailure === 'forbidden') {
+  // ── Hidden state: the API rejected the list read (403) — render
+  //    nothing, no dead controls. ──
+  if (loadFailure === 'forbidden') {
     return null;
   }
 

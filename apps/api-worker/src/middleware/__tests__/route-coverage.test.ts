@@ -10,6 +10,10 @@
  * (SessionController issues anonymous sessions — the impersonation-vector
  * guard would break issuance if it leaked into the prefix).
  *
+ * Feature flags and launch gates are gone (owner decision): no probe
+ * asserts a flag or launch-gate denial, and /api/v1/feature-flags stays
+ * a 404.
+ *
  * @module RouteCoverageTest
  */
 
@@ -27,35 +31,25 @@ import {
 import type { Env } from '../../env';
 import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
 
-/** All gates open + operator console on — the "everything passes" env. */
+/** Ops configured — the "everything passes" env. */
 function permissiveEnv(d1: D1DatabaseLike): Env {
   return testEnv(d1, {
-    LAUNCH_GATES_OVERRIDE: 'true',
-    FF_BASKET_OPTIMIZATION: 'true',
-    FF_ADVANCED_FEATURES: 'true',
-    FF_OPERATOR_CONSOLE: 'true',
     OPS_BEARER_TOKEN: FAKE_OPS_TOKEN,
   });
 }
 
 describe('guard route coverage (Nest @UseGuards parity)', () => {
-  it('calculator: launch gate + age gate guard POST /api/v1/calculator', async () => {
+  it('calculator: the age gate guards POST /api/v1/calculator', async () => {
     const { d1 } = openMigratedD1();
     const app = buildProbeApp();
 
-    // Default: gates closed → launch gate denies first (guard order).
-    const closed = await probe(app, testEnv(d1), '/api/v1/calculator', { method: 'POST' });
-    await expectEnvelope(closed, 403, {
-      message: expect.stringMatching(/Landed-cost calculations are not yet publicly available/),
-    });
-
-    // Gates open but no age confirmation → age gate denies.
+    // No age confirmation → age gate denies.
     const noAge = await probe(app, permissiveEnv(d1), '/api/v1/calculator', { method: 'POST' });
     await expectEnvelope(noAge, 403, {
       message: 'Age confirmation required. Please confirm your age via the age-gate prompt.',
     });
 
-    // Both satisfied → probe handler reached.
+    // Age confirmed → probe handler reached.
     const ok = await probe(app, permissiveEnv(d1), '/api/v1/calculator', {
       method: 'POST',
       headers: { 'x-age-confirmed': 'confirmed' },
@@ -73,14 +67,9 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     });
   });
 
-  it('products: PRICE_DATA launch gate + age gate guard the search surface', async () => {
+  it('products: the age gate guards the search surface', async () => {
     const { d1 } = openMigratedD1();
     const app = buildProbeApp();
-
-    const closed = await probe(app, testEnv(d1), '/api/v1/products');
-    await expectEnvelope(closed, 403, {
-      message: expect.stringMatching(/Price data is not yet publicly available/),
-    });
 
     const noAge = await probe(app, permissiveEnv(d1), '/api/v1/products');
     await expectEnvelope(noAge, 403, { message: expect.stringMatching(/age confirmation/i) });
@@ -91,18 +80,15 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     expect(ok.status).toBe(200);
   });
 
-  it('basket: BASKET_OPTIMIZATION flag guards POST /api/v1/basket/optimize', async () => {
+  it('basket: reachable without flags (rate limit slots in at index.ts)', async () => {
     const { d1 } = openMigratedD1();
     const app = buildProbeApp();
 
-    const off = await probe(app, testEnv(d1), '/api/v1/basket/optimize', { method: 'POST' });
-    await expectEnvelope(off, 403, { message: 'Feature "BASKET_OPTIMIZATION" is not enabled' });
-
-    const on = await probe(app, permissiveEnv(d1), '/api/v1/basket/optimize', { method: 'POST' });
+    const on = await probe(app, testEnv(d1), '/api/v1/basket/optimize', { method: 'POST' });
     expect(on.status).toBe(200);
   });
 
-  it('declaration: age gate at class level, entitlement on GET :recordId', async () => {
+  it('declaration: age gate at class level, entitlement admits FREE on GET :recordId', async () => {
     const { db, d1 } = openMigratedD1();
     seedStandardAccounts(db);
     const app = buildProbeApp();
@@ -111,11 +97,9 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     const noAge = await probe(app, permissiveEnv(d1), '/api/v1/declaration/5');
     await expectEnvelope(noAge, 403, { message: expect.stringMatching(/age confirmation/i) });
 
-    // Entitlement: the Nest controller carries EntitlementGuard but NO
-    // session guard — request.user is never attached on this surface, so
-    // the check resolves anonymous (FREE < declaration:summary) and the
-    // route denies identically for anonymous callers and valid sessions.
-    // Faithful port of current Nest behavior (see PR notes).
+    // The entitlement check runs after the age gate. Every feature is
+    // FREE tier today, so it admits anonymous callers and valid sessions
+    // alike (the middleware itself is covered in entitlement.test.ts).
     const token = await issueSessionToken(d1, 11); // PREMIUM account
     const headerSets: Record<string, string>[] = [
       { 'x-age-confirmed': 'confirmed' },
@@ -123,16 +107,8 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     ];
     for (const headers of headerSets) {
       const res = await probe(app, permissiveEnv(d1), '/api/v1/declaration/5', { headers });
-      await expectEnvelope(res, 403, {
-        error: 'InsufficientEntitlement',
-        requiredTier: 'declaration:summary',
-        currentTier: 'FREE',
-      });
+      expect(res.status).toBe(200);
     }
-
-    // The middleware itself (outside the route scoping) admits a PREMIUM
-    // context — the identity wiring is the route ports' (tasks 3.5–3.8).
-    // Covered in entitlement.test.ts.
   });
 
   it('account routes require a session; POST /api/v1/account/session stays public', async () => {
@@ -171,30 +147,20 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     }
   });
 
-  it('account scenarios: session first, then the ADVANCED_FEATURES flag', async () => {
+  it('account scenarios: session-guarded only (flag removed)', async () => {
     const { db, d1 } = openMigratedD1();
     seedStandardAccounts(db);
     const app = buildProbeApp();
-    const noFlag = testEnv(d1); // flag off (default)
 
-    // No session → SessionRequired (session guard runs first).
-    const noSession = await probe(app, noFlag, '/api/v1/account/scenarios');
+    // No session → SessionRequired.
+    const noSession = await probe(app, testEnv(d1), '/api/v1/account/scenarios');
     await expectEnvelope(noSession, 401, { error: 'SessionRequired' });
 
-    // Session but flag off → flag denies with 403.
+    // Session → passes (no flag check anymore).
     const token = await issueSessionToken(d1, 7);
-    const flagOff = await probe(app, noFlag, '/api/v1/account/scenarios', {
+    const ok = await probe(app, testEnv(d1), '/api/v1/account/scenarios', {
       headers: { cookie: `rajahinta_session=${token}` },
     });
-    await expectEnvelope(flagOff, 403, { message: 'Feature "ADVANCED_FEATURES" is not enabled' });
-
-    // Session + flag → passes.
-    const ok = await probe(
-      app,
-      testEnv(d1, { FF_ADVANCED_FEATURES: 'true' }),
-      '/api/v1/account/scenarios',
-      { headers: { cookie: `rajahinta_session=${token}` } },
-    );
     expect(ok.status).toBe(200);
   });
 
@@ -211,7 +177,7 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     expect(ok.status).toBe(200);
   });
 
-  it('ops console: ops access AND the OPERATOR_CONSOLE flag (deny before any data)', async () => {
+  it('ops console: ops access (deny before any data)', async () => {
     const { d1 } = openMigratedD1();
     const app = buildProbeApp();
 
@@ -219,13 +185,7 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     const closed = await probe(app, testEnv(d1), '/ops/console/audit');
     await expectEnvelope(closed, 403, { message: 'Forbidden' });
 
-    // Ops config but console flag off (default) → dark even for operators.
-    const dark = await probe(app, testEnv(d1, { OPS_BEARER_TOKEN: FAKE_OPS_TOKEN }), '/ops/console/audit', {
-      headers: { authorization: `Bearer ${FAKE_OPS_TOKEN}` },
-    });
-    await expectEnvelope(dark, 403, { message: 'Feature "OPERATOR_CONSOLE" is not enabled' });
-
-    // Ops config + flag → passes both.
+    // Ops config → passes.
     const ok = await probe(app, permissiveEnv(d1), '/ops/console/audit', {
       headers: { authorization: `Bearer ${FAKE_OPS_TOKEN}` },
     });
@@ -240,7 +200,9 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     expect(health.status).toBe(200);
 
     // A route outside every guard prefix falls through to the Nest-parity
-    // 404 envelope — no guard rejects it.
+    // 404 envelope — no guard rejects it. /api/v1/feature-flags is pinned
+    // here as a regression guard: the flag-map endpoint was REMOVED with
+    // the flag system.
     const other = await probe(app, testEnv(d1), '/api/v1/feature-flags');
     expect(other.status).toBe(404);
     const body = (await other.json()) as { message: string; error: string };

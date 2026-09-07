@@ -2,13 +2,11 @@
  * Event-calculator route tests (task 4.3, change
  * product-roadmap-phases-1-4) over the FULL app composition
  * (createApp() + registerEventCalcRoutes — the exact composition
- * index.ts wires, flag gate + rate limit on the route itself) on the
- * fake-D1 harness.
+ * index.ts wires, rate limit on the route itself) on the fake-D1
+ * harness.
  *
  * Pinning here: the validation caps (guests 1..500, durationHours
- * 1..72, whole hours), flag-off 403 (EVENT_CALCULATOR, same envelope
- * shape the alerts gate uses — 4.6 integration tests rely on this
- * class of contract), the NO_PUBLISHED_NORMS empty state (pending
+ * 1..72, whole hours), the NO_PUBLISHED_NORMS empty state (pending
  * norms invisible, wrong profile/date not resolved), the STRUCTURAL
  * disclaimer field on every result, and version-aware idempotency
  * (byte-identical repeats within a norms version; a published newer
@@ -22,7 +20,6 @@ import { describe, it, expect } from 'vitest';
 import {
   createApp,
   expectEnvelope,
-  lockedEnv,
   openMigratedD1,
   permissiveEnv,
   request,
@@ -36,7 +33,7 @@ import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d
 
 /**
  * index.ts registers the event-calculator handler behind its route-level
- * gate+limiter (same slot as the other route ports); the test composition
+ * limiter (same slot as the other route ports); the test composition
  * mirrors that exactly.
  */
 function eventCalcApp(): ReturnType<typeof createApp> {
@@ -46,7 +43,7 @@ function eventCalcApp(): ReturnType<typeof createApp> {
 }
 
 function eventCalcEnv(d1: D1DatabaseLike, overrides: Partial<Env> = {}): Env {
-  return permissiveEnv(d1, { ...overrides, FF_EVENT_CALCULATOR: 'true' });
+  return permissiveEnv(d1, overrides);
 }
 
 const CITATION = 'Curated test norm — https://example.invalid/norms';
@@ -108,21 +105,6 @@ async function postEvent(
 ): Promise<Response> {
   return request(app, env, '/api/v1/event-calc', jsonInit(body));
 }
-
-// ---------------------------------------------------------------------------
-// Gate: flag-off 403 (EVENT_CALCULATOR)
-// ---------------------------------------------------------------------------
-
-describe('POST /api/v1/event-calc — gate', () => {
-  it('rejects with 403 while EVENT_CALCULATOR is off (alerts 403 shape)', async () => {
-    const { d1 } = openMigratedD1();
-    const app = eventCalcApp();
-    const res = await postEvent(app, lockedEnv(d1));
-    await expectEnvelope(res, 403, {
-      message: 'Feature "EVENT_CALCULATOR" is not enabled',
-    });
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Validation — caps and shapes
@@ -551,13 +533,13 @@ describe('POST /api/v1/event-calc — V2 packing opt-in', () => {
     ).run(new Date().toISOString());
   }
 
-  it('attaches the packing section over the foreign haul when opted in and flagged on', async () => {
+  it('attaches the packing section over the foreign haul when opted in', async () => {
     const { db, d1 } = openMigratedD1();
     await seedPublishedNorm(d1);
     seedSourcingTaxRules(db);
     seedBoxType(db);
     const app = eventCalcApp();
-    const env = eventCalcEnv(d1, { FF_PACKING_OPTIMIZER: 'true' });
+    const env = eventCalcEnv(d1);
 
     const res = await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }], { packing: true }));
     const body = (await res.json()) as V2Json;
@@ -573,26 +555,13 @@ describe('POST /api/v1/event-calc — V2 packing opt-in', () => {
     expect(body.packing!.suggestion.boxes).toEqual([]);
   });
 
-  it('omits the packing section when the PACKING_OPTIMIZER flag is off (flag-less shape)', async () => {
-    const { db, d1 } = openMigratedD1();
-    await seedPublishedNorm(d1);
-    seedSourcingTaxRules(db);
-    const app = eventCalcApp();
-    const env = eventCalcEnv(d1); // permissive env leaves PACKING_OPTIMIZER unset
-
-    const res = await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }], { packing: true }));
-    const body = (await res.json()) as V2Json;
-    expect(body.plan).toBeDefined();
-    expect(body.packing).toBeUndefined();
-  });
-
   it('omits the packing section when not opted in', async () => {
     const { db, d1 } = openMigratedD1();
     await seedPublishedNorm(d1);
     seedSourcingTaxRules(db);
     seedBoxType(db);
     const app = eventCalcApp();
-    const env = eventCalcEnv(d1, { FF_PACKING_OPTIMIZER: 'true' });
+    const env = eventCalcEnv(d1);
 
     const res = await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }]));
     const body = (await res.json()) as V2Json;

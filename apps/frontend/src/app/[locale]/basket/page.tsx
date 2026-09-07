@@ -4,8 +4,7 @@
  * Basket optimization page.
  *
  * Orchestrates the product-search → builder → optimize → results flow for
- * multi-item cross-border beverage cost optimization. Gated behind the
- * `enable_basket_optimization` feature flag.
+ * multi-item cross-border beverage cost optimization.
  *
  * All user-visible copy comes from the message catalogs; error messages
  * per classified {@link classifyBasketError} kind live under
@@ -18,7 +17,6 @@ import { useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import type { BasketOptimizationResult, BasketItemInput } from '@/lib/basket.types';
 import { optimizeBasket, classifyBasketError } from '@/lib/basket.client';
-import { useFeatureFlags } from '@/lib/feature-flags';
 import type { TransportArrangement } from '@/lib/basket.types';
 import BasketBuilder from './components/BasketBuilder';
 import BasketResults from './components/BasketResults';
@@ -41,24 +39,15 @@ const MIN_QUERY_LENGTH = 2;
 // ---------------------------------------------------------------------------
 
 /**
- * Basket optimization page — feature-flag-gated multi-item landed-cost
- * optimizer.
+ * Basket optimization page — multi-item landed-cost optimizer.
  *
  * Behaviour:
- *  - `enable_basket_optimization` off ⇒ renders nothing (same as
- *    ProductHistoryPanel's hidden treatment). The flag state is inlined
- *    with the initial HTML, so the page is hidden or visible from the
- *    first render — no late appearance.
  *  - Builder allows adding up to 10 products with quantities.
  *  - Submit calls {@link optimizeBasket} and renders the result with
  *    per-store breakdowns, confidence, disclaimer, and alternatives.
  */
 export default function BasketPage() {
   const t = useTranslations('BasketPage');
-
-  // ── Feature flag (inlined with the initial HTML payload) ──
-  const flags = useFeatureFlags();
-  const flagEnabled = flags.flags.BASKET_OPTIMIZATION;
 
   // ── Basket builder state ──
   const [items, setItems] = useState<
@@ -158,11 +147,6 @@ export default function BasketPage() {
       optimizeInFlight.current = false;
     }
   }, [items, destination, transportArrangement, t]);
-
-  // ── Hidden state: flag off in the inlined payload ──
-  if (!flagEnabled) {
-    return null;
-  }
 
   const canOptimize = items.length > 0 && !optimizing;
 

@@ -38,12 +38,9 @@
  *
  * Middleware chain per request (in registration order):
  *
- *   requireFeatureFlag('TRIP_CALCULATOR') → requireRateLimit('CALCULATOR')
- *   → handler
+ *   requireRateLimit('CALCULATOR') → handler
  *
- * Flag BEFORE limiter (alerts/event-calc ordering rationale): a flag-off
- * deployment rejects with 403 before any limiter DO traffic. Anonymous
- * route (no session) like the calculator surface — the per-IP
+ * Anonymous route (no session) like the calculator surface — the per-IP
  * CALCULATOR profile (10/min) applies.
  *
  * Documented decisions:
@@ -84,7 +81,6 @@ import type { Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
-import { FeatureFlag, requireFeatureFlag } from '../middleware/feature-flags';
 import { requireRateLimit } from '../middleware/rate-limit';
 import { parseDto } from './support';
 import { calculateTripBreakEven } from '../../../../packages/core-domain/src/tripcalc/tripcalc';
@@ -360,11 +356,10 @@ async function withFerryBlock(
 // Registration
 // ---------------------------------------------------------------------------
 
-/** Register the trip-feasibility handler behind its flag gate + limiter. */
+/** Register the trip-feasibility handler behind its limiter. */
 export function registerTripFeasibilityRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.post(
     '/api/v1/trip-feasibility',
-    requireFeatureFlag(FeatureFlag.TRIP_CALCULATOR),
     requireRateLimit('CALCULATOR'),
     calculateTripFeasibility,
   );

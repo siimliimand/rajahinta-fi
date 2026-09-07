@@ -29,7 +29,6 @@ The config's webServer array does everything in order:
    migrations → seed files → loud verification), applies the journey
    fixtures (`seed-journeys.d1.sql` — the TEST Beer / TEST Wine rows the
    journeys assert on), then starts `wrangler dev` on :8788 with
-   `LAUNCH_GATES_OVERRIDE:true` (calculator/price-data gates open) and
    `CORS_ORIGIN:http://localhost:8787` (the frontend Worker origin — the
    journeys exercise the real cross-origin CORS + httpOnly-cookie flow).
    Readiness gate: `GET /api/v1/health/ready` must stop answering 503.
@@ -99,23 +98,9 @@ follow them automatically.
 
 ## Feature flags and launch gates
 
-Flags resolve synchronously from wrangler vars (`FF_*`,
-`apps/api-worker/src/middleware/feature-flags.ts`) and default to all
-OFF — the same state a clean runner gets, which is what the journeys
-assert (the helpers scope defensively around flag-on UI, e.g. the compare
-page's basket section). To exercise a flag-gated surface locally, add the
-var to the api entry in `boot-workers-stack.sh`:
-
-```bash
-exec pnpm exec wrangler dev --port "$API_PORT" \
-  --var "LAUNCH_GATES_OVERRIDE:true" \
-  --var "CORS_ORIGIN:${FRONTEND_ORIGIN}" \
-  --var "FF_BASKET_OPTIMIZATION:true"
-```
-
-`LAUNCH_GATES_OVERRIDE` exists only to open the calculation/price-data
-gates locally (`apps/api-worker/src/middleware/launch-gate.ts`); staging
-and production manage gates through their own environment config.
+Both systems were removed (2026-09-07, owner decision): every feature is
+unconditionally live and no `FF_*`/`LAUNCH_GATE_*` vars exist. Rollback is
+`wrangler rollback`, not a flag flip.
 
 ## What is seeded, and where it comes from
 

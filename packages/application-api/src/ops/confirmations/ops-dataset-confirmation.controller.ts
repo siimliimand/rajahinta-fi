@@ -24,7 +24,6 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { OpsAccessGuard } from '../../observability';
-import { FeatureFlagGuard, FeatureFlagDec, FeatureFlag } from '../../feature-flags';
 import type {
   OpsConfirmationListResponse,
   OpsTaxReviewResolvedResponse,
@@ -34,8 +33,7 @@ import { OpsDatasetConfirmationService } from './ops-dataset-confirmation.servic
 
 @ApiTags('ops')
 @Controller('ops/console/confirmations')
-@UseGuards(OpsAccessGuard, FeatureFlagGuard)
-@FeatureFlagDec(FeatureFlag.OPERATOR_CONSOLE)
+@UseGuards(OpsAccessGuard)
 export class OpsDatasetConfirmationController {
   constructor(private readonly confirmations: OpsDatasetConfirmationService) {}
 
@@ -51,7 +49,7 @@ export class OpsDatasetConfirmationController {
       'nothing auto-publishes.',
   })
   @ApiResponse({ status: 200, description: 'Pending tax reviews' })
-  @ApiResponse({ status: 403, description: 'Unauthenticated, outside the allowlist, or flag off' })
+  @ApiResponse({ status: 403, description: 'Unauthenticated or outside the allowlist' })
   async list(): Promise<OpsConfirmationListResponse> {
     return this.confirmations.listPendingConfirmations();
   }
@@ -70,7 +68,7 @@ export class OpsDatasetConfirmationController {
   })
   @ApiResponse({ status: 200, description: 'Review resolved as approved' })
   @ApiResponse({ status: 400, description: 'Invalid input' })
-  @ApiResponse({ status: 403, description: 'Unauthenticated, outside the allowlist, or flag off' })
+  @ApiResponse({ status: 403, description: 'Unauthenticated or outside the allowlist' })
   @ApiResponse({ status: 404, description: 'Review not found' })
   @ApiResponse({ status: 409, description: 'Review already resolved' })
   async approveTax(
@@ -95,7 +93,7 @@ export class OpsDatasetConfirmationController {
   })
   @ApiResponse({ status: 200, description: 'Review resolved as rejected' })
   @ApiResponse({ status: 400, description: 'Invalid input' })
-  @ApiResponse({ status: 403, description: 'Unauthenticated, outside the allowlist, or flag off' })
+  @ApiResponse({ status: 403, description: 'Unauthenticated or outside the allowlist' })
   @ApiResponse({ status: 404, description: 'Review not found' })
   @ApiResponse({ status: 409, description: 'Review already resolved' })
   async rejectTax(

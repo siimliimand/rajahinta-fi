@@ -31,7 +31,6 @@ import {
   TaxRuleRepositoryAdapter,
 } from '@rajahinta/data-platform';
 import { ObservabilityModule } from './observability';
-import { FeatureFlagsModule } from './feature-flags';
 import { JobsModule } from './jobs';
 import { IdempotencyModule } from './idempotency';
 import { RateLimitingModule } from './rate-limiting';
@@ -138,7 +137,6 @@ export abstract class UseCaseOrchestrator {
 
 @Module({
 imports: [
-    FeatureFlagsModule,
     ObservabilityModule,
     JobsModule,
     IdempotencyModule,
@@ -155,23 +153,20 @@ imports: [
    DataPlatformModule,
    CorrectionModule,
     ApplicationRankingModule,
-    // Price-history API — declares its own controller behind the
-    // enable_historical_price_intelligence feature flag (task 4.1).
+    // Price-history API — declares its own controller (task 4.1).
     HistoricalDataModule,
     // Report export API — declares its own controller behind the
-    // ADVANCED_FEATURES feature flag + calculation:export entitlement
-    // (task 3.3, change phase2-advanced-features).
+    // calculation:export entitlement (task 3.3, change phase2-advanced-features).
     ReportsModule,
     // Merchant reliability API — declares its own controller behind the
-    // ADVANCED_FEATURES feature flag + PRICE_DATA launch gate + age gate
-    // (task 3.4, change phase2-advanced-features); also exports the
+    // age gate (task 3.4, change phase2-advanced-features); also exports the
     // score pipeline used by the search module's detail-response embed.
     MerchantsModule,
     // Operator console API (task 12.1, change
     // technical-assessment-remediation) — governance permission grants,
     // tax-rate dataset-version confirmation, and the correction queue
     // at /ops/console/** behind OpsAccessGuard (bearer + allowlist,
-    // fail-closed) and the OPERATOR_CONSOLE flag (default OFF).
+    // fail-closed).
     OpsModule,
   ],
   providers: [
@@ -195,7 +190,7 @@ imports: [
     OutboundRedirectController,
     BasketOptimizerController,
   ],
-  exports: [FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule, RedisModule],
+  exports: [ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule, RedisModule],
 })
 export class ApplicationApiModule {}
 
@@ -237,7 +232,6 @@ export namespace ApplicationApiModule {
     return {
       module: ApplicationApiConfiguredModule,
       imports: [
-        FeatureFlagsModule,
         ObservabilityModule,
         JobsModule,
         IdempotencyModule,
@@ -276,18 +270,10 @@ export namespace ApplicationApiModule {
         OutboundRedirectController,
         BasketOptimizerController,
       ],
-      exports: [FeatureFlagsModule, ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule, RedisModule],
+      exports: [ObservabilityModule, JobsModule, IdempotencyModule, RateLimitingModule, AuditModule, RedisModule],
     };
   }
 }
-
-// ---------------------------------------------------------------------------
-// Feature-flag re-exports for consumers outside the layer
-// ---------------------------------------------------------------------------
-
-export { FeatureFlag, FeatureFlagService, FeatureFlagGuard, FeatureFlagDec as FeatureFlagDecorator } from './feature-flags';
-export type { FeatureFlagConfig } from './feature-flags';
-export { FeatureFlagsModule } from './feature-flags';
 
 // ---------------------------------------------------------------------------
 // Common — unified ApiErrorResponse envelope (task 3.4)
@@ -363,7 +349,7 @@ export { DeclarationController } from './declaration';
 export type { DeclarationSummaryResponse } from './declaration';
 
 // ---------------------------------------------------------------------------
-// Historical — price-history API (feature-flagged, default off)
+// Historical — price-history API
 // ---------------------------------------------------------------------------
 
 export { HistoricalDataModule, HistoricalDataController } from './historical';
@@ -378,14 +364,14 @@ export type {
 } from './historical';
 
 // ---------------------------------------------------------------------------
-// Reports — calculation export API (feature-flagged + entitlement-gated)
+// Reports — calculation export API (entitlement-gated)
 // ---------------------------------------------------------------------------
 
 export { ReportsModule, ReportsController, ReportExportService } from './reports';
 export type { ReportFormat, JsonReport, ReportsModulePorts } from './reports';
 
 // ---------------------------------------------------------------------------
-// Merchants — merchant reliability API (feature-flagged, default off)
+// Merchants — merchant reliability API
 // ---------------------------------------------------------------------------
 
 export { MerchantsModule, MerchantReliabilityController, MerchantReliabilityService } from './merchants';
@@ -459,7 +445,7 @@ export type { BasketOptimizeRequest, BasketItemInput } from './basket';
 
 // ---------------------------------------------------------------------------
 // Ops — operator console API (governance grants, dataset-version
-// confirmation, correction queue; bearer+allowlist realm, flag-gated)
+// confirmation, correction queue; bearer+allowlist realm)
 // ---------------------------------------------------------------------------
 
 export {

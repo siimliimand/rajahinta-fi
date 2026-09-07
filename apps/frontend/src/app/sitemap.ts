@@ -3,17 +3,13 @@
  *
  * Static destinations per locale plus per-product URLs drawn from the
  * product listing via the shared API client, plus one URL per published
- * curated list drawn from the flag-gated list catalog. Finnish serves
- * from the unprefixed paths, English under /en (localePrefix:
- * 'as-needed'). Backend reads are cached; an unreachable backend
- * degrades to a static-routes-only sitemap rather than a failed one.
- *
- * Curated-list flag interaction (`enable_curated_lists`): the catalog
- * endpoint is gated by the same flag as the list pages themselves, so
- * flag off → 403 → zero list URLs and flag on without published
- * entries → empty catalog → zero list URLs. A flag-off deployment thus
- * never advertises list URLs that would not serve; the sitemap needs
- * no flag awareness of its own (degrades to inert).
+ * curated list drawn from the list catalog. Finnish serves from the
+ * unprefixed paths, English under /en (localePrefix: 'as-needed').
+ * Backend reads are cached; an unreachable backend degrades to a
+ * static-routes-only sitemap rather than a failed one. The catalog
+ * only ever advertises URLs that serve: a fetch failure or a catalog
+ * without published entries yields zero list URLs (the sitemap degrades
+ * to inert).
  *
  * @module Sitemap
  */
@@ -37,8 +33,8 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /**
  * Published curated-list slugs from the API catalog (GET /api/v1/lists,
  * task 7.2). Mirrors the product-listing degradation contract: any
- * failure (backend unreachable, flag-off 403, unexpected shape)
- * degrades to an empty list, never a failed sitemap.
+ * failure (backend unreachable, 403, unexpected shape) degrades to an
+ * empty list, never a failed sitemap.
  */
 async function getServerCuratedListSlugs(): Promise<string[]> {
   try {

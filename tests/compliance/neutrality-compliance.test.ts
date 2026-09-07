@@ -36,7 +36,7 @@ import type { NeutralSortInput } from '@rajahinta/core-domain/ranking/ranking.ty
 import { checkContent, isCompliant } from '@rajahinta/frontend/lib/content-policy';
 import type { ComparisonProduct } from '@rajahinta/frontend/lib/types';
 import {
-  compareSortOptions,
+  COMPARE_SORT_OPTIONS,
   sortComparisonProducts,
 } from '@rajahinta/frontend/app/[locale]/compare/sort-products';
 
@@ -313,30 +313,27 @@ function createCompareProduct(
   };
 }
 
-describe('EUR_PER_GRAM sort option registration (unit-price flag)', () => {
-  it('€/g is offered when the unit-price flag is on', () => {
-    const options = compareSortOptions(true);
-    expect(options).toContain('EUR_PER_GRAM');
+describe('EUR_PER_GRAM sort option registration', () => {
+  it('€/g is offered unconditionally (flag system removed)', () => {
+    expect(COMPARE_SORT_OPTIONS).toContain('EUR_PER_GRAM');
   });
 
   it('the option set is a bare string list — no promoted/recommended metadata', () => {
-    for (const option of compareSortOptions(true)) {
+    for (const option of COMPARE_SORT_OPTIONS) {
       expect(typeof option).toBe('string');
       expect(option).not.toMatch(/promo|sponsor|featured|boost/i);
     }
   });
 
-  it('flag off removes the €/g option and keeps the six neutral orders', () => {
-    const options = compareSortOptions(false);
-    expect(options).not.toContain('EUR_PER_GRAM');
-    expect(options).toHaveLength(6);
-    expect(options).toEqual([
+  it('the option set is exactly the seven neutral orders', () => {
+    expect(COMPARE_SORT_OPTIONS).toEqual([
       'LOWEST_LANDED_COST',
       'LOWEST_PER_LITRE',
       'LOWEST_PER_UNIT',
       'ALPHABETICAL',
       'ALCOHOL_PERCENTAGE',
       'PRODUCT_CATEGORY',
+      'EUR_PER_GRAM',
     ]);
   });
 });

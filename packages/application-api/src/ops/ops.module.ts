@@ -3,9 +3,7 @@
  * technical-assessment-remediation).
  *
  * A separate auth realm at `/ops/console/**`: every controller sits behind
- * OpsAccessGuard (env-configured bearer token + IP allowlist, fail-closed)
- * and the OPERATOR_CONSOLE feature flag (default OFF per the compliance
- * rule — new UI ships flag-off).
+ * OpsAccessGuard (env-configured bearer token + IP allowlist, fail-closed).
  *
  * Wiring notes:
  * - Governance: the console binds its own SOURCE_GOVERNANCE_REPOSITORY_PORT
