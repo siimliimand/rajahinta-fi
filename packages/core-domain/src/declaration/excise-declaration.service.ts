@@ -509,6 +509,7 @@ void _exciseServiceSafetyProof; // consumed — prevents TS6133
  * If a write method is added, `ReadonlyInterface<ExciseDeclarationService>`
  * will exclude it, and the assignment will fail because key counts differ.
  */
-const _readonlySurface: ReadonlyInterface<ExciseDeclarationService> =
-  new (ExciseDeclarationService as any)();
+const _readonlySurface: ReadonlyInterface<ExciseDeclarationService> = new (
+  ExciseDeclarationService as unknown as new () => ExciseDeclarationService
+)();
 void _readonlySurface; // consumed — prevents TS6133

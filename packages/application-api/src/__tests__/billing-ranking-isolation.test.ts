@@ -167,19 +167,19 @@ describe('compile-time ranking input neutrality', () => {
   it('proves NeutralSortInput has no billing-related field', () => {
     // If NeutralSortInput ever gains a 'plan' field (from billing), this
     // conditional type resolves to `never` and the assignment below fails.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     type _NoPlanField = NeutralSortInput extends { plan: string }
       ? never
       : true;
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     type _NoSubscriptionTierField = NeutralSortInput extends {
       subscriptionTier: string;
     }
       ? never
       : true;
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     type _NoUserIdField = NeutralSortInput extends { userId: string }
       ? never
       : true;
@@ -256,13 +256,13 @@ describe('write-path audit', () => {
     // Verify that the parameter type of RankingService.rank() has no
     // billing-related fields. We do this by checking that a type-level
     // assertion passes: billing types are structurally incompatible.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     type _RankInput = Parameters<
       typeof import('@rajahinta/core-domain').RankingService['prototype']['rank']
     >[0][number];
 
     // Verify _RankInput is exactly NeutralSortInput (no extra fields)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     type _RankInputIsNeutral = _RankInput extends NeutralSortInput
       ? NeutralSortInput extends _RankInput
         ? true

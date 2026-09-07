@@ -22,7 +22,6 @@
  * | SessionController (/api/v1/account)       | rotate/revoke: SessionAuthGuard            | rotate + DELETE session: sessionAuth(); the anonymous POST /session issuance route is DELETED (register/login replace it) |
  * | PriceAlertsRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/account/alerts) | no Nest counterpart | sessionAuth(); per-account rate limit registers on the routes (needs the resolved identity) |
  * | GroupOrderRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/group-orders) | no Nest counterpart | POST create only: sessionAuth(); the token-scoped participant routes carry NO sessionAuth (the share token is the capability) |
- * | OpsDashboardController (/ops/health)      | OpsAccessGuard                                                           | opsAccess() |
  * | Ops console (4 controllers, /ops/console/*)| OpsAccessGuard                      | opsAccess() |
  *
  * Rate limiting (RateLimitGuard) is not in this task's scope — it ports
@@ -170,9 +169,9 @@ const GUARDED_ROUTES: readonly GuardedRoute[] = [
     path: '/api/v1/account/session',
     use: [sessionAuth()],
   },
-
-  // OpsDashboardController — OpsAccessGuard only.
-  { methods: ['GET'], path: '/ops/health', use: [opsAccess()] },
+  // No /ops/health entry: the Nest OpsDashboardController health route was
+  // never ported — liveness/readiness live at /api/v1/health(+/ready),
+  // which register no guard (see health.routes.ts).
 ];
 
 /**

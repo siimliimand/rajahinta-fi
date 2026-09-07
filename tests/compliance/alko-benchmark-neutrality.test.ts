@@ -333,7 +333,7 @@ describe('persisted record fetch (pre-change shape, no benchmark field)', () => 
  * `_NeutralityTypeCheck` applies to `paidBoost`. If this line ever
  * fails to compile, the ranking input type accepts the benchmark.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 type _AlkoRankingTypeCheck = NeutralSortInput extends { alkoBenchmark: unknown }
   ? never
   : true;

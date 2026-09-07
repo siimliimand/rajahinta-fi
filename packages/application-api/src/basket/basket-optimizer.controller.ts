@@ -87,7 +87,9 @@ export class BasketOptimizerController {
   async optimize(
     @Body() dto: BasketOptimizeRequest,
     @Headers('x-idempotency-key') idempotencyKey?: string,
-    @Res({ passthrough: true }) res?: any,
+    // Structural type: exactly the passthrough-response surface this
+    // controller uses (the harness has no @types/express dependency).
+    @Res({ passthrough: true }) res?: { header(name: string, value: string): unknown },
   ): Promise<BasketOptimizationResult> {
     this.validateOptimizeRequest(dto);
 

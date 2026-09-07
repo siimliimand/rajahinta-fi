@@ -119,7 +119,6 @@ export function buildProbeApp(): Hono<AppEnv> {
   app.delete('/api/v1/account/session', ok);
 
   // Ops routes.
-  app.get('/ops/health', ok);
   app.get('/ops/console/audit', ok);
 
   return app;

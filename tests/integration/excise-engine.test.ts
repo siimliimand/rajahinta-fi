@@ -53,9 +53,9 @@ function dpResolve(name: string): string {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { Pool } = require(dpResolve('pg')) as typeof import('pg');
-// eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { drizzle } = require(dpResolve('drizzle-orm/node-postgres')) as typeof import('drizzle-orm/node-postgres');
 
 // ---------------------------------------------------------------------------

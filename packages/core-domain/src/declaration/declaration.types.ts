@@ -349,7 +349,10 @@ export interface DeclarationSummary {
  * ```
  */
 export type ReadonlyInterface<T> = {
-  [K in keyof T as T[K] extends (...args: any[]) => Promise<{ id: any }>
+  // `never[]` params + `id: unknown`: same write-shape matching as `any`
+  // (every function extends a never-param signature; any id type extends
+  // unknown) without introducing `any` into the type algebra.
+  [K in keyof T as T[K] extends (...args: never[]) => Promise<{ id: unknown }>
     ? never
     : K]: T[K];
 };

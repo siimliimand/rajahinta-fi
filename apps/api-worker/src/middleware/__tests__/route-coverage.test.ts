@@ -180,19 +180,6 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     expect(ok.status).toBe(200);
   });
 
-  it('ops health: fails closed when unconfigured, admits the configured operator', async () => {
-    const { d1 } = openMigratedD1();
-    const app = buildProbeApp();
-
-    const denied = await probe(app, testEnv(d1), '/ops/health');
-    await expectEnvelope(denied, 403, { message: 'Forbidden' });
-
-    const ok = await probe(app, permissiveEnv(d1), '/ops/health', {
-      headers: { authorization: `Bearer ${FAKE_OPS_TOKEN}` },
-    });
-    expect(ok.status).toBe(200);
-  });
-
   it('ops console: ops access (deny before any data)', async () => {
     const { d1 } = openMigratedD1();
     const app = buildProbeApp();
