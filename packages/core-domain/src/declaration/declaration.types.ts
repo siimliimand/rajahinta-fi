@@ -37,7 +37,14 @@ export interface CalculationRecordData {
   readonly containerDutyCents: number;
   readonly totalCents: number;
   readonly confidence: ConfidenceLevel;
-  readonly classification: ClassificationLabel;
+  /**
+   * 'NotPersisted' — calculation records are stored without the transaction
+   * classification, so adapters carry the factual absence marker (the
+   * calculator DTO's established convention) instead of a fabricated legal
+   * label. Guidance degrades: no advance-notice obligation or liability
+   * flags are derived from an unknown classification.
+   */
+  readonly classification: ClassificationLabel | 'NotPersisted';
   readonly disclaimerText: string;
   readonly disclaimerLanguage: 'fi' | 'en';
   readonly disclaimerVersion: string;

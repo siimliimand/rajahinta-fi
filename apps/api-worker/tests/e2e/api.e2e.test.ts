@@ -8,9 +8,10 @@
  * in-memory DO namespaces, every assertion made on HTTP responses.
  *
  * Covered paths: calculator golden case + IdempotencyDO HIT/MISS headers,
- * search (karhu ranked), session issue→use→rotate→dead predecessor, account
- * export, ops console 403, rate-limit 429 burst, declaration pinned 403,
- * and the unified envelope on every error path.
+ * search (karhu ranked), register→use→rotate→dead predecessor on real
+ * credentials, account export, ops console 403, rate-limit 429 burst,
+ * declaration summary under the all-FREE entitlement, launch-gate
+ * removal regression, and the unified envelope on every error path.
  *
  * @module ApiE2E
  */
@@ -37,6 +38,10 @@ import {
 } from '../../src/routes/__tests__/harness';
 
 const AGE = { 'x-age-confirmed': 'confirmed' };
+
+/** Real credentials for the register/login flows (min 12-char password). */
+const REGISTER_EMAIL = 'e2e-account@example.invalid';
+const REGISTER_PASSWORD = 'correct-horse-battery-staple';
 
 /** Extract the token value from an issued session's Set-Cookie header. */
 function sessionCookieOf(res: Response): string {
@@ -142,14 +147,19 @@ describe('E2E — GET /api/v1/products (search)', () => {
   });
 });
 
-describe('E2E — session lifecycle (issue → use → rotate → dead predecessor)', () => {
-  it('walks the full rotation chain over HTTP', async () => {
+describe('E2E — session lifecycle (register → use → rotate → dead predecessor)', () => {
+  it('walks the full rotation chain over real credentials', async () => {
     const { d1 } = openMigratedD1();
     const app = buildE2EApp();
     const env = e2eEnv(d1);
 
-    // 1. Issue — no credential needed; identity is a server-derived UUID.
-    const issued = await postJson(app, env, '/api/v1/account/session', {});
+    // 1. Register — the credentials create the account and issue the
+    //    session (register/login are the only session-issuing endpoints;
+    //    the anonymous POST /api/v1/account/session route is deleted).
+    const issued = await postJson(app, env, '/api/v1/account/register', {
+      email: REGISTER_EMAIL,
+      password: REGISTER_PASSWORD,
+    });
     expect(issued.status).toBe(201);
     const first = sessionCookieOf(issued);
     const issuedBody = (await issued.json()) as { userId: string };
@@ -158,14 +168,14 @@ describe('E2E — session lifecycle (issue → use → rotate → dead predecess
     );
 
     // 2. Use — the cookie authenticates the account endpoints under the
-    //    SAME server-derived identity.
+    //    registered identity (no server-derived placeholder account).
     const exportRes = await request(app, env, '/api/v1/account/export', {
       headers: { cookie: `rajahinta_session=${first}` },
     });
     expect(exportRes.status).toBe(200);
     const exported = (await exportRes.json()) as Record<string, any>;
     expect(exported.userId).toBe(issuedBody.userId);
-    expect(exported.account.email).toContain('@placeholder.local');
+    expect(exported.account.email).toBe(REGISTER_EMAIL);
 
     // 3. Rotate — a fresh token is minted; the new one works immediately.
     const rotated = await request(app, env, '/api/v1/account/session/rotate', {
@@ -251,31 +261,72 @@ describe('E2E — rate limiting (CALCULATOR burst → 429)', () => {
   });
 });
 
-describe('E2E — declaration pinned 403', () => {
-  it('keeps the pinned InsufficientEntitlement 403 for a valid PREMIUM session', async () => {
+describe('E2E — declaration summary (all-FREE entitlement)', () => {
+  it('serves the declaration summary to valid sessions and anonymous callers alike', async () => {
     const { db, d1 } = openMigratedD1();
     seedAccount(db, { id: 41, userId: 'user-41', email: 'premium@example.invalid', tier: 'PREMIUM' });
     seedProduct(db, { id: 1 });
     seedCalculationRecord(db, { id: 51, productMasterId: 1 });
     const token = await issueSessionToken(d1, 41);
     const app = buildE2EApp();
+    const env = e2eEnv(d1);
 
-    const res = await request(app, e2eEnv(d1), '/api/v1/declaration/51', {
-      headers: { ...AGE, cookie: `rajahinta_session=${token}` },
-    });
-    await expectEnvelope(res, 403, {
-      error: 'InsufficientEntitlement',
-      requiredTier: 'declaration:summary',
-      currentTier: 'FREE',
-    });
+    // Every feature is FREE tier today (the middleware stays as the future
+    // paywall seam), so a valid PREMIUM session and an anonymous caller
+    // both reach the handler.
+    for (const headers of [
+      { ...AGE, cookie: `rajahinta_session=${token}` },
+      AGE,
+    ]) {
+      const res = await request(app, env, '/api/v1/declaration/51', { headers });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        product: { name: string };
+        estimatedExcise: {
+          alcoholExciseCents: number;
+          containerDutyCents: number;
+          totalCents: number;
+        };
+        advanceNoticeInfo: { required: boolean };
+        guidance: { liabilityNotice: unknown };
+      };
+      expect(body.product.name).toBe('Karhu III');
+      // Breakdown sums from the seeded record (route-parity fixtures).
+      expect(body.estimatedExcise).toEqual({
+        alcoholExciseCents: 6,
+        containerDutyCents: 17,
+        totalCents: 23,
+        confidence: 'MEDIUM',
+      });
+      // The record persists no classification — no advance-notice
+      // obligation or liability notice is fabricated (NotPersisted).
+      expect(body.advanceNoticeInfo.required).toBe(false);
+      expect(body.guidance.liabilityNotice).toBeNull();
+    }
   });
 });
 
-describe('E2E — locked-down deployment (launch gates closed)', () => {
-  it('403s the calculator and search ahead of any handler', async () => {
-    const { d1 } = openMigratedD1();
+describe('E2E — launch gates are removed (regression pin)', () => {
+  it('leaves public surfaces open even with ops unconfigured', async () => {
+    const { db, d1 } = openMigratedD1();
+    // The proven golden fixture so the calculator can compute for real.
+    seedProduct(db, { id: 1, depositSystemStatus: 0 });
+    seedOffer(db, { productId: 1, priceCents: 350 });
+    seedTaxRule(db, { taxType: 'excise', productCategory: 'beer', rate: 0.365 });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+      verified: false,
+      versionLabel: 'v2.0-2025',
+    });
+    seedProduct(db, { id: 2, name: 'Koff III' });
     const app = buildE2EApp();
 
+    // lockedEnv differs from permissive only by the absent ops token —
+    // the flag/launch-gate system was removed by owner decision, so no
+    // env shape closes a public surface anymore.
     const calc = await postJson(
       app,
       lockedEnv(d1),
@@ -283,15 +334,22 @@ describe('E2E — locked-down deployment (launch gates closed)', () => {
       { productId: 1, quantity: 1, destination: 'FI' },
       AGE,
     );
-    await expectEnvelope(calc, 403, {
-      message: expect.stringMatching(/not yet publicly available/),
-    });
+    expect(calc.status).toBe(200);
 
-    const search = await request(app, lockedEnv(d1), '/api/v1/products', {
+    const search = await request(app, lockedEnv(d1), '/api/v1/products?q=koff', {
       headers: AGE,
     });
-    await expectEnvelope(search, 403, {
-      message: expect.stringMatching(/Price data is not yet publicly available/),
+    expect(search.status).toBe(200);
+    const searchBody = (await search.json()) as { items: Array<{ id: number }> };
+    expect(searchBody.items[0]!.id).toBe(2);
+
+    // The flag-map endpoint stays gone (route-coverage parity pin).
+    const flags = await request(app, lockedEnv(d1), '/api/v1/feature-flags', {
+      headers: AGE,
+    });
+    await expectEnvelope(flags, 404, {
+      message: 'Cannot GET /api/v1/feature-flags',
+      error: 'Not Found',
     });
   });
 });

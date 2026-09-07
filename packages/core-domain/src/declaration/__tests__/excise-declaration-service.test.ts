@@ -506,6 +506,23 @@ describe('advance-notice logic', () => {
     expect(result.advanceNoticeInfo.deadlineDays).toBe(4);
   });
 
+  it('NotPersisted classification derives no obligation (regression: unhandled label 500ed)', async () => {
+    // Calculation records persist no transaction classification; the
+    // adapter carries the factual 'NotPersisted' marker. The summary must
+    // degrade to "no derived obligation", not crash.
+    const record = createRecord({ classification: 'NotPersisted' });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1);
+
+    expect(result.advanceNoticeInfo.required).toBe(false);
+    expect(result.advanceNoticeInfo.deadlineDays).toBeUndefined();
+  });
+
   it('produces correctly typed DeclarationAdvanceNoticeInfo for all classifications', async () => {
     const record = createRecord({ id: 1 });
     const { service } = createService(
@@ -527,6 +544,19 @@ describe('advance-notice logic', () => {
 // ---------------------------------------------------------------------------
 
 describe('liability notices', () => {
+  it('NotPersisted classification fabricates no liability flags (null notice)', async () => {
+    const record = createRecord({ classification: 'NotPersisted' });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1);
+
+    expect(result.guidance.liabilityNotice).toBeNull();
+  });
+
   it('DistanceSelling post-reform: buyer jointly liable, files no advance notice', async () => {
     const record = createRecord({ classification: 'DistanceSelling' });
     const { service } = createService(

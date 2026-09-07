@@ -108,16 +108,12 @@ describe('FEATURE_TIER_MAP', () => {
     expect(FEATURE_TIER_MAP['calculation:basic']).toBe('FREE');
   });
 
-  it('declaration:summary maps to PREMIUM', () => {
-    expect(FEATURE_TIER_MAP['declaration:summary']).toBe('PREMIUM');
-  });
-
-  it('api:access maps to PROFESSIONAL', () => {
-    expect(FEATURE_TIER_MAP['api:access']).toBe('PROFESSIONAL');
-  });
-
-  it('api:batch maps to PROFESSIONAL', () => {
-    expect(FEATURE_TIER_MAP['api:batch']).toBe('PROFESSIONAL');
+  it('every feature maps to FREE (owner decision: all features unconditionally live)', () => {
+    // The flag/launch-gate removal made the map all-FREE — every feature is
+    // free today and the tier machinery stays as the future paywall seam.
+    for (const tier of Object.values(FEATURE_TIER_MAP)) {
+      expect(tier).toBe('FREE');
+    }
   });
 });
 
@@ -145,18 +141,18 @@ describe('EntitlementService', () => {
       expect(result.tier).toBe('FREE');
     });
 
-    it('denies PREMIUM features with a reason', () => {
+    it('admits an anonymous caller for declaration:summary (all-FREE policy)', () => {
+      // declaration:summary required PREMIUM before the all-FREE policy;
+      // the anonymous-FREE resolution now admits it.
       const result = service.checkAccess(null, 'declaration:summary');
-      expect(result.allowed).toBe(false);
+      expect(result.allowed).toBe(true);
       expect(result.tier).toBe('FREE');
-      expect(result.reason).toContain('PREMIUM');
     });
 
-    it('denies PROFESSIONAL features', () => {
+    it('admits an anonymous caller for api:access (all-FREE policy)', () => {
       const result = service.checkAccess(null, 'api:access');
-      expect(result.allowed).toBe(false);
+      expect(result.allowed).toBe(true);
       expect(result.tier).toBe('FREE');
-      expect(result.reason).toContain('PROFESSIONAL');
     });
   });
 
@@ -168,12 +164,11 @@ describe('EntitlementService', () => {
       expect(result.tier).toBe('PREMIUM');
     });
 
-    it('resolves FREE from the account tier and denies premium features', () => {
+    it('resolves FREE from the account tier and admits the (now FREE) features', () => {
       const account: AccountContext = { userId: 'user-123', tier: 'FREE' };
       const result = service.checkAccess(account, 'declaration:summary');
-      expect(result.allowed).toBe(false);
+      expect(result.allowed).toBe(true);
       expect(result.tier).toBe('FREE');
-      expect(result.reason).toContain('PREMIUM');
     });
 
     it('resolves PROFESSIONAL from the account tier', () => {
@@ -191,7 +186,7 @@ describe('EntitlementService', () => {
 
       const result = service.checkAccess(account, 'api:access');
       expect(result.tier).toBe('FREE');
-      expect(result.allowed).toBe(false);
+      expect(result.allowed).toBe(true);
     });
 
     it('account tier PREMIUM wins over any per-user env variable (spec scenario)', () => {
@@ -222,7 +217,9 @@ describe('EntitlementService', () => {
       const account: AccountContext = { userId: 'user-123', tier: 'FREE' };
       const result = service.checkAccess(account, 'api:access');
       expect(result.tier).toBe('FREE');
-      expect(result.allowed).toBe(false);
+      // api:access is FREE under the all-FREE policy, so admission follows;
+      // the pinned invariant is that the override was REFUSED (tier).
+      expect(result.allowed).toBe(true);
     });
 
     it('falls back to the account tier when the override value is invalid', () => {
@@ -243,11 +240,10 @@ describe('EntitlementService', () => {
       expect(result.tier).toBe('PREMIUM');
     });
 
-    it('denies PROFESSIONAL features with reason', () => {
+    it('admits the (now FREE) api:batch with the Phase 1 PREMIUM default', () => {
       const result = service.checkAccess('user-123', 'api:batch');
-      expect(result.allowed).toBe(false);
+      expect(result.allowed).toBe(true);
       expect(result.tier).toBe('PREMIUM');
-      expect(result.reason).toContain('PROFESSIONAL');
     });
 
     it('honors the global test override like account contexts do', () => {
@@ -255,7 +251,7 @@ describe('EntitlementService', () => {
       process.env.ENTITLEMENT_DEFAULT_TIER = 'FREE';
 
       const result = service.checkAccess('user-123', 'declaration:summary');
-      expect(result.allowed).toBe(false);
+      expect(result.allowed).toBe(true);
       expect(result.tier).toBe('FREE');
     });
   });

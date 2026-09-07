@@ -365,11 +365,10 @@ function parseDisclaimer(raw: string): {
  * parsing) and ProductDataAdapter (ABV/volume conversion).
  *
  * KNOWN DEGRADATION: the transaction classification is not persisted with
- * calculation records (see calculation-result.mapper). The port contract
- * cannot express absence, so the factual `'NotPersisted'` marker from the
- * mapper rides the field — never a fabricated legal label. Consumers are
- * behind the pinned always-403 declaration gate and the default-OFF
- * reports flag in this phase.
+ * calculation records (see calculation-result.mapper), so the factual
+ * `'NotPersisted'` marker rides the field — never a fabricated legal label.
+ * The declaration guidance degrades to "no derived obligation" and a null
+ * liability notice for such records (core-domain handles the marker).
  */
 export class D1CalculationRecordQueryAdapter implements ICalculationRecordQueryPort {
   constructor(private readonly d1: D1DatabaseLike) {}
@@ -405,7 +404,7 @@ export class D1CalculationRecordQueryAdapter implements ICalculationRecordQueryP
       containerDutyCents: sumBreakdownCategory(breakdown, 'containerDutyEstimate'),
       totalCents: row.total_cents,
       confidence: row.confidence === 'HIGH' || row.confidence === 'MEDIUM' ? row.confidence : 'LOW',
-      classification: 'NotPersisted' as CalculationRecordData['classification'],
+      classification: 'NotPersisted',
       disclaimerText: disclaimer.text,
       disclaimerLanguage: disclaimer.language,
       disclaimerVersion: disclaimer.version,

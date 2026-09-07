@@ -6,8 +6,9 @@
  *   (list/search/ids/pagination/sort + detail shapes),
  * - packages/application-api/src/declaration/__tests__/declaration.controller.test.ts
  *   (handler paths; the composed route's entitlement admits FREE callers
- *   since the all-FREE policy — the handler's factual 500 on the
- *   unpersisted-classification degradation is pinned on a bare app).
+ *   since the all-FREE policy — records persist no classification, so the
+ *   summary degrades factually: no derived advance-notice obligation and a
+ *   null liability notice, pinned on a bare app below).
  *
  * @module SearchDeclarationRoutesTest
  */
@@ -359,7 +360,7 @@ describe('eurPerGram embed', () => {
 });
 
 describe('GET /api/v1/declaration/:recordId', () => {
-  it('entitlement admits anonymous and PREMIUM callers; the handler surfaces its documented 500 (unpersisted classification)', async () => {
+  it('entitlement admits anonymous and PREMIUM callers; both get the degraded summary', async () => {
     const { db, d1 } = openMigratedD1();
     seedAccount(db, { id: 11, userId: 'user-11', email: 'p@example.invalid', tier: 'PREMIUM' });
     seedProduct(db, { id: 1 });
@@ -370,14 +371,20 @@ describe('GET /api/v1/declaration/:recordId', () => {
     // The entitlement check (declaration:summary) passes for every tier
     // today, so the request reaches the handler. The D1 record adapter
     // carries the factual 'NotPersisted' classification marker, which the
-    // declaration assembly reports as a factual 500 — the same behavior
-    // pinned on a bare app below.
+    // declaration assembly degrades: no derived obligation, no fabricated
+    // liability flags — never a 500.
     for (const headers of [
       AGE,
       { ...AGE, cookie: `rajahinta_session=${token}` },
     ]) {
       const res = await request(app, permissiveEnv(d1), '/api/v1/declaration/5', { headers });
-      await expectEnvelope(res, 500, { error: 'Internal Server Error' });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        advanceNoticeInfo: { required: boolean };
+        guidance: { liabilityNotice: unknown };
+      };
+      expect(body.advanceNoticeInfo.required).toBe(false);
+      expect(body.guidance.liabilityNotice).toBeNull();
     }
   });
 
@@ -411,18 +418,23 @@ describe('GET /api/v1/declaration/:recordId', () => {
       });
     });
 
-    it('500s factually on a persisted record whose classification is unpersisted', async () => {
+    it('degrades factually on a persisted record whose classification is unpersisted', async () => {
       // The record adapter degrades the un-persisted classification to the
-      // factual marker; the declaration assembly needs a legal label and
-      // fails — the same closed failure the phase-1 null port produced.
+      // factual marker; the assembly derives no advance-notice obligation
+      // and fabricates no liability flags from a label it does not know.
       const { db, d1 } = freshD1();
       seedProduct(db, { id: 1 });
       seedCalculationRecord(db, { id: 5, productMasterId: 1 });
       const app = bareApp();
 
       const res = await request(app, permissiveEnv(d1), '/api/v1/declaration/5');
-      const body = await expectEnvelope(res, 500, { error: 'Internal Server Error' });
-      expect(typeof body.message).toBe('string');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        advanceNoticeInfo: { required: boolean };
+        guidance: { liabilityNotice: unknown };
+      };
+      expect(body.advanceNoticeInfo).toEqual({ required: false });
+      expect(body.guidance.liabilityNotice).toBeNull();
     });
   });
 });
