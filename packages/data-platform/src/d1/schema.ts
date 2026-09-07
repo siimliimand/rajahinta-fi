@@ -50,6 +50,7 @@ import {
   sqliteTable,
   text,
   unique,
+  uniqueIndex,
   type AnySQLiteColumn,
 } from 'drizzle-orm/sqlite-core';
 
@@ -454,18 +455,36 @@ export const aggregationWatermarks = sqliteTable('aggregation_watermarks', {
 /**
  * User accounts — one row per registered user.
  *
- * Created by the auth/signup flow. Tier controls feature-gate access
- * via the application-api entitlement service. Calculation history is
- * stored separately via savedBaskets and calculationRecords FK.
+ * Created by the register flow (change email-password-auth): the email
+ * address IS the username, normalized to lowercase by the repositories
+ * on write and lookup — the case-insensitive uniqueness below is
+ * enforced in SQL, not just application code. Tier controls
+ * feature-gate access via the application-api entitlement service.
+ * Calculation history is stored separately via savedBaskets and
+ * calculationRecords FK.
  */
 export const accounts = sqliteTable(
   'accounts',
   {
     id: integer('id').primaryKey(),
-    /** Stable external identifier (from auth provider). */
+    /** Stable external identifier (issued at registration). */
     userId: text('user_id', { length: 128 }).unique().notNull(),
-    /** Verified email address — used for account recovery and notifications. */
+    /** Login name and contact address, stored lowercase (unique via lower(email)). */
     email: text('email', { length: 320 }).notNull(),
+    /**
+     * Password credential envelope (PBKDF2-SHA256, design D1 of change
+     * email-password-auth) — hashed by the application layer, this
+     * column stores only the self-describing envelope string. Nullable:
+     * the login path rejects a null/empty hash fail-safe (401), so a
+     * credential-less row can never authenticate.
+     */
+    passwordHash: text('password_hash'),
+    /**
+     * When email ownership was verified (ISO-8601 TEXT); null =
+     * unverified. Set only by the emailed single-use token flow — never
+     * self-asserted.
+     */
+    emailVerifiedAt: text('email_verified_at'),
     /** Service tier — gates premium features (FREE or PREMIUM). */
     tier: text('tier', { length: 16 }).default('FREE').notNull(),
     createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
@@ -473,6 +492,57 @@ export const accounts = sqliteTable(
   },
   (table) => [
     check('accounts_tier_check', sql`${table.tier} IN ('FREE', 'PREMIUM')`),
+    // Username === email: uniqueness is case-insensitive and lives in
+    // SQL (design D7, change email-password-auth). The expression form
+    // matches the repositories' lower(email) lookups — the index serves
+    // the login query directly.
+    uniqueIndex('accounts_email_lower_idx').on(sql`lower(${table.email})`),
+  ],
+);
+
+/**
+ * Email tokens — single-use, hashed, purpose-scoped credentials for
+ * email-ownership verification and password reset (design D3, change
+ * email-password-auth).
+ *
+ * Only the SHA-256 hex digest of the token is stored (the sessions
+ * hashing convention); the raw 256-bit base64url value exists solely in
+ * emailed links and request bodies, and lookups are by hash. Single-use
+ * is enforced in the UPDATE that consumes: `usedAt` is set in the same
+ * statement that checks `used_at IS NULL AND expires_at > now`, so a
+ * replayed token finds no active row and loses. Expiry horizons (24 h
+ * verification, 1 h reset) are the callers' policy — this table stores
+ * and compares instants, it does not own them.
+ */
+export const emailTokens = sqliteTable(
+  'email_tokens',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to accounts — the identity the token acts on; cascade delete (GDPR erasure precedent). */
+    accountId: integer('account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** SHA-256 hex digest of the opaque token — lookup key, never the raw value. */
+    tokenHash: text('token_hash', { length: 64 }).notNull(),
+    /** What the token authorizes — closed set enforced by CHECK. */
+    purpose: text('purpose', { length: 16 }).notNull(),
+    /** When the token stops granting anything (exclusive edge). */
+    expiresAt: text('expires_at').notNull(),
+    /** When the token was consumed — null while still redeemable. */
+    usedAt: text('used_at'),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // The consume/find lookups address one (hash, purpose) pair; the
+    // composite index serves them without a full scan.
+    index('email_tokens_token_hash_purpose_idx').on(table.tokenHash, table.purpose),
+    // invalidateAllForAccount scans one account's outstanding tokens
+    // (the same access shape as sessions_account_id_idx).
+    index('email_tokens_account_id_idx').on(table.accountId),
+    check(
+      'email_tokens_purpose_check',
+      sql`${table.purpose} IN ('verify_email', 'password_reset')`,
+    ),
   ],
 );
 
@@ -1517,4 +1587,5 @@ export const d1Schema = {
   ferryOffers,
   producerLinks,
   curatedEntries,
+  emailTokens,
 };

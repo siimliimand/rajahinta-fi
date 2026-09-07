@@ -5,13 +5,18 @@
  * Provides CRUD for the accounts table, looked up by the external
  * user identifier (userId).
  *
+ * The credential-flow writes (setPasswordHash, setVerifiedEmail) are
+ * loud rejections here: the legacy pg harness carries no credential
+ * columns — the production credential flow lives once, in the API
+ * Worker's D1AccountRepository (design D9, change email-password-auth).
+ *
  * @module DrizzleAccountRepository
  */
 import { Injectable, Inject } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { DRIZZLE, type DrizzleDatabase } from '../db/drizzle.provider';
-import { AccountRepository } from '../abstracts';
+import { AccountRepository, type AccountCredentialRecord } from '../abstracts';
 import { accounts, savedBaskets, savedScenarios } from '../schema';
 
 @Injectable()
@@ -58,6 +63,32 @@ export class DrizzleAccountRepository extends AccountRepository {
   }
 
   /** @inheritdoc */
+  async findByEmail(email: string): Promise<AccountCredentialRecord | null> {
+    const [row] = await this.db
+      .select()
+      .from(accounts)
+      // Case-insensitive resolution, matching the lower(email) lookup
+      // convention (the pg harness carries no such index; the D1
+      // production table enforces uniqueness on this expression).
+      .where(sql`lower(${accounts.email}) = ${email.toLowerCase()}`)
+      .limit(1);
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.userId,
+      email: row.email,
+      // The pg harness schema has no credential columns — a null hash
+      // and a null verification instant are the truthful projection
+      // (login against them fails safe at the application layer).
+      passwordHash: null,
+      emailVerifiedAt: null,
+      tier: row.tier,
+      createdAt: row.createdAt,
+      lastActiveAt: row.lastActiveAt,
+    };
+  }
+
+  /** @inheritdoc */
   async updateLastActive(userId: string): Promise<void> {
     await this.db
       .update(accounts)
@@ -81,17 +112,31 @@ export class DrizzleAccountRepository extends AccountRepository {
   }
 
   /** @inheritdoc */
-  async setVerifiedEmail(userId: string, email: string): Promise<void> {
-    const [row] = await this.db
-      .update(accounts)
-      .set({ email })
-      .where(eq(accounts.userId, userId))
-      .returning({ id: accounts.id });
-    if (!row) {
-      throw new Error(
-        `Cannot set verified email: account not found for userId="${userId}"`,
-      );
-    }
+  async setVerifiedEmail(
+    _userId: string,
+    _verifiedAt: Date,
+  ): Promise<void> {
+    return Promise.reject(
+      new Error(
+        'setVerifiedEmail is not supported by the legacy pg harness ' +
+          'repository: the accounts verification state exists only in the ' +
+          'D1 schema (design D9, change email-password-auth)',
+      ),
+    );
+  }
+
+  /** @inheritdoc */
+  async setPasswordHash(
+    _userId: string,
+    _passwordHash: string,
+  ): Promise<void> {
+    return Promise.reject(
+      new Error(
+        'setPasswordHash is not supported by the legacy pg harness ' +
+          'repository: the credential flow lives only in the API Worker ' +
+          '(design D9, change email-password-auth)',
+      ),
+    );
   }
 
   /** @inheritdoc */
