@@ -45,6 +45,14 @@ pipeline, and this document.
       `dig +short`).
 - [ ] **Observation R2 bucket ready**: `rajahinta-observations-production`
       exists, EU jurisdiction, `OBSERVATION_LOG` binding live (task 6.5).
+- [ ] **Email-worker configuration present in staging + production**:
+      `EMAIL_WORKER_URL` and `FRESHNESS_ALERT_EMAIL_TO` set on the API
+      Worker, `EMAIL_SEND_SECRET` shared with the email Worker, and
+      `EMAIL_FROM` on the email Worker set to a verified sender address.
+      These are already required by the freshness-alert and price-alert
+      mail; account verification and password-reset mail reuse the same
+      `/internal/email/send` contract and the same variables, so no new
+      email configuration ships with credentials auth.
 - [ ] **Freeze**: ingestion cron/queues on the K8s stack keep running
       during dual-run (both stacks must see the same data); **schema
       changes on pg are frozen** from here until decommission (task 6.7).

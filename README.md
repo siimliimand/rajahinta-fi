@@ -189,7 +189,10 @@ All routes are versioned under `/api/v1` and documented in Swagger. Guards vary 
 | `/declaration/:recordId` | GET | Excise declaration guidance |
 | `/reports/:recordId` | GET | JSON/CSV/HTML report export (PREMIUM tier) |
 | `/corrections` | POST | Flag a calculation or data point for correction |
-| `/account/*` | GET/POST/DELETE | Anonymous-session history, baskets, scenarios, GDPR export |
+| `/account/register`, `/account/login` | POST | Email + password registration and login (the email address is the username) |
+| `/account/me` | GET | Current account identity and verification state |
+| `/account/verify-email/*`, `/account/password/*` | POST | Email verification and password reset via single-use emailed tokens |
+| `/account/*` | GET/POST/DELETE | Registered-account history, baskets, scenarios, GDPR export |
 | `/merchants/reliability` | GET | Per-merchant reliability scores |
 | `/analytics/click`, `/outbound/:offerId` | POST/GET | Click counting and merchant-link redirect (no affiliate fields allowed) |
 | `/ranking/methodology` | GET | Public ranking methodology |
@@ -207,7 +210,8 @@ These rules are enforced in code and verified by the compliance test suite:
 - Manual rate publication. The daily review job detects new official rates but only creates a review task; a human confirms before a version goes live.
 - Structural disclaimer. The Finnish disclaimer is stored on every calculation record, not only rendered in the UI.
 - Background work off the request path. Ingestion, aggregation, and reviews run in queues.
-- Minimal personal data. Accounts are anonymous sessions (UUID cookie) with no email collection in the current UI; GDPR export and retention jobs exist.
+- Minimal personal data. Accounts are email + password registrations (the email address is the username; it is collected for sign-in, verification, and alert mail); GDPR export and retention jobs exist.
+- Credentials auth, deliberately. Registration, login, email verification, and password reset run with self-hosted credentials; there is no OIDC/social login provider, and the age gate remains documented self-attestation.
 
 ## Testing and CI
 

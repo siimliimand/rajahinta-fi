@@ -223,7 +223,7 @@ Remediation change: `openspec/changes/technical-assessment-remediation` (branch 
 
 ### Add
 
-1. Real authentication: groundwork done with durable server-issued sessions and email-verification scaffolding (tasks 2.1–2.4). A real email/OIDC provider is still not wired; account data is documented as disposable until verification completes.
+1. Real authentication: email + password credentials are implemented in the production API Worker (register, login, identity read, email-ownership verification, and self-service password reset over single-use hashed tokens; change `email-password-auth`). An OIDC provider is still not wired, and the age gate remains documented self-attestation.
 2. FX rate ingestion as a first-class versioned dataset: done, including the manual-confirmation publication flow (tasks 1.1–1.3).
 3. Alko merchant feed: adapter implemented with a golden fixture, through the governance gate (task 7.5).
 4. Operator console: implemented at `/ops` behind the `OPERATOR_CONSOLE` flag (default off), covering governance grants, dataset confirmations including FX publish with cache invalidation, and the correction queue, with every action audited (task 12.1).
@@ -240,4 +240,4 @@ Remediation change: `openspec/changes/technical-assessment-remediation` (branch 
 - **Staging cluster deferral:** per `ARCHITECTURE.md` §15.2, no staging cluster exists; the blocking promotion of the artillery load gate and the staging verification walk remain deferred until one is provisioned.
 - **Integration suite not in CI:** `tests/integration/` (104 tests) runs locally against `TEST_DATABASE_URL`; CI covers build, lint, unit, golden, data-quality, compliance, e2e, and composition smoke.
 - **Anonymous calculation-record retention window:** 30 days configured; final value pending operator input.
-- **Email delivery:** verification endpoints exist but no mail transport is wired.
+- **Email deliverability:** the email Worker carries verification and reset mail alongside freshness and price-alert mail; sender-domain provisioning and deliverability remain operator runbook items.

@@ -29,6 +29,8 @@ The header on every page shows the main destinations:
 - My account: your calculation history, saved baskets, scenarios, and price alerts
 - How ranking works: the public explanation of how sorting works and why it cannot be bought
 
+When you are signed out, the header also shows **Log in** and **Register**. When you are signed in, it shows the account link and **Log out** instead.
+
 When enabled, three planning calculators also appear in the header: **Event calculator**, **Trip calculator**, and **What-if calculator**. Two more features are reached by link rather than the header: **group orders** (via a share link or `/group-order`) and **curated lists** (via `/lists/<name>` links shared around or listed in the site's sitemap).
 
 ## The calculator
@@ -178,12 +180,12 @@ Splitting a purchase with friends? A group order is a shared session where every
 
 One person creates the session:
 
-1. Press "Create session". You need a site session (the same anonymous session the rest of the site uses — no registration).
+1. Press "Create session". You need to be signed in to your Rajahinta account.
 2. You receive a **shareable link, valid for 7 days**. Give it to the participants.
 
 Each participant:
 
-1. Opens the link and picks a **nickname** (1–64 characters). Only the nickname is stored — no account, no contact details.
+1. Opens the link and picks a **nickname** (1–64 characters). Only the nickname is stored, with no contact details.
 2. Adds items to the order under that nickname.
 
 The session view shows the items with their valuations and a **transfers breakdown**: the minimal set of "who pays whom" steps that settles the shared costs fairly. A standing note reminds everyone that settlement itself happens **outside the tool** — Rajahinta keeps the ledger but never handles money. When the 7 days pass, the link stops working with a clear "session has expired" message.
@@ -202,14 +204,35 @@ If a list has no published entries yet, the page says so and shows the criteria 
 
 ## Your account
 
-The account page works without registration. On your first visit the site creates an anonymous session identifier stored in a cookie. Nothing links it to your identity.
+Account features need a free Rajahinta account. You register with an email address and a password, and the email address is your username on the site. Calculating, comparing, and the planning tools stay open to everyone; an account is what carries your data from one visit to the next.
+
+### Registering and the password policy
+
+Press "Register" in the header, enter your email address, and choose a password. The password must be at least 12 characters and at most 128. There are no other composition rules (no forced symbols or capital letters), so a long passphrase of unrelated words works well. The email address is treated case-insensitively, and one address can have only one account.
+
+Registration signs you in immediately, so the account is usable right away, and sends a verification link to your address. If the verification email cannot be sent at that moment, the registration still succeeds and the account view shows a "verification email pending" note with a way to request the mail again.
+
+### The unverified badge
+
+Until you open the verification link, the account is marked **unverified**. The badge is a status marker, not a lockout: history, saved baskets, scenarios, price alerts, and data export all work either way. It tells you honestly whether the address on file has been confirmed, which matters when emails from the site (price alerts, password reset) need to reach you. The verification link is valid for 24 hours and works once; if it expires, request a new one from the account view.
+
+### Signing in and out
+
+"Log in" in the header takes your email address and password. A wrong email address and a wrong password produce the same message; the site does not reveal which one failed. "Log out" ends your session on that device.
+
+### Forgot your password?
+
+Use the "Forgot password" link on the login page and enter your email address. You see a confirmation either way; a reset link is only actually sent when the address belongs to an account, so the form cannot be used to probe who has one. The reset link is valid for one hour and works once. Setting a new password signs you out on every device, and you sign in again with the new password.
+
+### What the account holds
 
 - Calculation history: your recent calculations, newest first. Open any entry to see the full result.
 - Saved baskets: product collections you saved for repeat calculations.
 - Saved scenarios: named calculator input sets (product, quantity, destination). Save the current calculator inputs from the calculator page, and load or delete them here.
 - Price alerts: add, review, and remove your price alerts (see above).
-- Data export: download everything the site stores about your session as a JSON file. This is the GDPR access path.
-- Deleting the session cookie (or asking for deletion) removes the link to this data; retention jobs purge inactive sessions.
+- Data export: download everything the site stores about your account as a JSON file. This is the GDPR access path.
+
+Signing out ends the session on one device; resetting your password ends every session. Retention jobs purge inactive accounts and their data.
 
 If account features are temporarily unavailable, the page degrades quietly; history and scenarios simply do not show.
 
@@ -244,7 +267,10 @@ Can a merchant pay for a better position?
 No. The sorting input type physically has no field for promotion, and a compliance test suite fails the build if anyone tries to add one. The methodology page states this publicly.
 
 Do I need an account?
-No. The site works anonymously, and the session cookie is created for you automatically.
+For anything you save, yes: history, saved baskets, scenarios, price alerts, group orders, and data export need a free account. Calculating, comparing, and the planning tools work without one. Registration asks for an email address and a password.
+
+Why does my account show "unverified"?
+You have not confirmed your email address yet. The account works normally, and the badge clears once you open the verification link from your email (valid 24 hours; you can request a new link from the account view).
 
 Are the ferry offers or the "same manufacturer" links ads?
 No. Ferry offers are displayed in a separate block that never affects any calculation, and manufacturer-sibling links are editorially curated with published evidence. Neither is a paid placement.
