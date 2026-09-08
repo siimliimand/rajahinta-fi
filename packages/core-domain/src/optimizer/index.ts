@@ -39,6 +39,27 @@ export type { IMerchantTermsPort, MerchantTerms } from './ports/merchant-terms.p
 export { MERCHANT_TERMS_PORT } from './ports/merchant-terms.port';
 export type { IBasketCalculationRecordPort, CreateBasketCalculationRecordInput } from './ports/basket-calculation-record.port';
 export { BASKET_CALCULATION_RECORD_PORT } from './ports/basket-calculation-record.port';
+export type {
+  ITravellerAllowancePort,
+  TripResolvedAllowances,
+  TripAllowanceLimitRow,
+} from './ports/traveller-allowance.port';
+export { TRAVELLER_ALLOWANCE_PORT } from './ports/traveller-allowance.port';
+
+// Allowance fill (design D8, task 8.1)
+export { MAX_FILL_ITEMS, MAX_FILL_QUANTITY, AllowanceFillError } from './allowance-fill.types';
+export type {
+  AllowanceFillErrorReason,
+  AllowanceFillItem,
+  AllowanceFillInput,
+  AllowanceFillLineStatus,
+  AllowanceFillHeadroom,
+  AllowanceFillLine,
+  AllowanceFillStatus,
+  AllowanceFillCategoryHeadroom,
+  AllowanceFillResult,
+} from './allowance-fill.types';
+export { AllowanceFillService } from './services/allowance-fill.service';
 
 // Services
 export { BasketOptimizerService } from './services/basket-optimizer.service';

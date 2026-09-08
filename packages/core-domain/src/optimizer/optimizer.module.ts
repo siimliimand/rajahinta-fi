@@ -34,11 +34,16 @@ import {
 import { BasketShippingCalculator } from '../transport/basket-shipping-calculator.service';
 import { ReliabilityModule } from '../reliability/reliability.module';
 import { BasketOptimizerService } from './services/basket-optimizer.service';
+import { AllowanceFillService } from './services/allowance-fill.service';
 import { MERCHANT_TERMS_PORT, type IMerchantTermsPort } from './ports/merchant-terms.port';
 import {
   BASKET_CALCULATION_RECORD_PORT,
   type IBasketCalculationRecordPort,
 } from './ports/basket-calculation-record.port';
+import {
+  TRAVELLER_ALLOWANCE_PORT,
+  type ITravellerAllowancePort,
+} from './ports/traveller-allowance.port';
 
 /**
  * Ports for {@link OptimizerModule.forRoot}. Omitted ports keep the null
@@ -52,6 +57,7 @@ export interface OptimizerModulePorts extends TaxModuleOptions {
   merchantTermsPort?: Type<IMerchantTermsPort>;
   basketCalculationRecordPort?: Type<IBasketCalculationRecordPort>;
   transportOfferQuery?: Type<ITransportOfferQuery>;
+  travellerAllowancePort?: Type<ITravellerAllowancePort>;
   extraProviders?: Provider[];
 }
 
@@ -64,13 +70,17 @@ export interface OptimizerModulePorts extends TaxModuleOptions {
   ],
   providers: [
     BasketOptimizerService,
+    AllowanceFillService,
     { provide: MERCHANT_TERMS_PORT, useValue: null },
     { provide: BASKET_CALCULATION_RECORD_PORT, useValue: null },
+    { provide: TRAVELLER_ALLOWANCE_PORT, useValue: null },
   ],
   exports: [
     BasketOptimizerService,
+    AllowanceFillService,
     MERCHANT_TERMS_PORT,
     BASKET_CALCULATION_RECORD_PORT,
+    TRAVELLER_ALLOWANCE_PORT,
   ],
 })
 export class OptimizerModule {
@@ -96,6 +106,7 @@ export class OptimizerModule {
 
     const providers: Provider[] = [
       BasketOptimizerService,
+      AllowanceFillService,
       // Re-hosted locally so its TRANSPORT_OFFER_QUERY resolves against the
       // binding below (the TransportEstimationModule export carries that
       // module's local null binding instead).
@@ -120,6 +131,11 @@ export class OptimizerModule {
         ? { provide: BASKET_CALCULATION_RECORD_PORT, useClass: ports.basketCalculationRecordPort }
         : { provide: BASKET_CALCULATION_RECORD_PORT, useValue: null },
     );
+    providers.push(
+      ports.travellerAllowancePort
+        ? { provide: TRAVELLER_ALLOWANCE_PORT, useClass: ports.travellerAllowancePort }
+        : { provide: TRAVELLER_ALLOWANCE_PORT, useValue: null },
+    );
 
     // Fresh identity per call (see HistoryModule.forRoot for the rationale):
     // a shared class identity would collapse configured and port-less
@@ -135,7 +151,7 @@ export class OptimizerModule {
         ReliabilityModule,
       ],
       providers,
-      exports: [BasketOptimizerService],
+      exports: [BasketOptimizerService, AllowanceFillService],
     };
   }
 }
