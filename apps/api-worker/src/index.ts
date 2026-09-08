@@ -35,6 +35,7 @@ import {
   registerCalculatorRoutes,
 } from './routes/calculator.routes';
 import { registerSearchRoutes } from './routes/search.routes';
+import { registerUnitPriceRoutes } from './routes/unitprice.routes';
 import { registerProductDupesRoutes } from './routes/product-dupes.routes';
 import { registerWhatIfRoutes } from './routes/what-if.routes';
 import { registerDeclarationRoutes } from './routes/declaration.routes';
@@ -139,6 +140,7 @@ export function createApp(): Hono<AppEnv> {
   // Route ports (tasks 3.5–3.8) — handlers appended behind the guards.
   registerCalculatorRoutes(app);
   registerSearchRoutes(app);
+  registerUnitPriceRoutes(app);
   registerProductDupesRoutes(app);
   registerWhatIfRoutes(app);
   registerDeclarationRoutes(app);
