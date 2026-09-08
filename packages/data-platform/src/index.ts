@@ -132,6 +132,23 @@ export type {
 } from './repositories/d1/alert-notification.repository';
 
 // ---------------------------------------------------------------------------
+// Newsletter notification intents — D1-only table (task 5.3, change
+// trust-and-reach-roadmap); abstract + concrete are co-located in the
+// repository file (alert-notification precedent; no pg counterpart)
+// ---------------------------------------------------------------------------
+
+export {
+  NewsletterNotificationRepository,
+  D1NewsletterNotificationRepository,
+} from './repositories/d1/newsletter-notification.repository';
+export type {
+  NewsletterNotificationRecord,
+  NewsletterNotificationIntentInput,
+  NewsletterChannel,
+  NewsletterDeliveryStatus,
+} from './repositories/d1/newsletter-notification.repository';
+
+// ---------------------------------------------------------------------------
 // Product dimensions + carrier box types — D1-only tables (task 3.1, change
 // product-roadmap-phases-1-4); abstract + concrete are co-located in the
 // repository files (price-alert precedent; no pg counterpart)

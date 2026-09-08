@@ -235,6 +235,60 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     expect(ok.status).toBe(200);
   });
 
+  it('ops console: every moderation + newsletter ops route rides the guard prefix (tasks 2.3/5.3)', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildProbeApp();
+
+    // The task-2.3/5.3 additions — each must deny with the SAME
+    // fail-closed envelope before any probe handler is reached.
+    const opsRoutes: [string, string][] = [
+      ['GET', '/ops/console/reports'],
+      ['POST', '/ops/console/reports/1/link'],
+      ['POST', '/ops/console/reports/1/reject'],
+      ['GET', '/ops/console/blacklist/entries'],
+      ['POST', '/ops/console/blacklist/publish'],
+      ['GET', '/ops/console/blacklist/appeals'],
+      ['POST', '/ops/console/blacklist/1/appeal'],
+      ['POST', '/ops/console/blacklist/1/resolve'],
+      ['POST', '/ops/console/newsletter/notify'],
+    ];
+    for (const [method, path] of opsRoutes) {
+      const closed = await probe(app, testEnv(d1), path, { method });
+      await expectEnvelope(closed, 403, { message: 'Forbidden' });
+
+      const open = await probe(app, permissiveEnv(d1), path, {
+        method,
+        headers: { authorization: `Bearer ${FAKE_OPS_TOKEN}` },
+      });
+      expect(open.status, `${method} ${path}`).toBe(200);
+    }
+  });
+
+  it('newsletter: subscribe is rate-limited public; confirm/unsubscribe are token-capability (task 5.3)', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildProbeApp();
+    const noDoEnv = testEnv(d1); // no RATE_LIMITER binding → limiter fails open
+
+    // Subscribe: public (no session required — consent is
+    // account-independent), the AUTH limiter composes ahead and fails
+    // open without its DO binding, so the probe handler is reached.
+    const subscribe = await probe(app, noDoEnv, '/api/v1/newsletter/subscribe', {
+      method: 'POST',
+    });
+    expect(subscribe.status).toBe(200);
+
+    // Confirm/unsubscribe: deliberately OUT of the guard table — the
+    // emailed single-use token IS the capability (verify-email/confirm
+    // precedent); nothing anonymous is pinned beyond reachability.
+    for (const path of [
+      '/api/v1/newsletter/confirm',
+      '/api/v1/newsletter/unsubscribe',
+    ]) {
+      const reachable = await probe(app, noDoEnv, path);
+      expect(reachable.status, `GET ${path}`).toBe(200);
+    }
+  });
+
   it('health and unscoped routes stay unguarded (reviewed-safe / not-yet-ported)', async () => {
     const { d1 } = openMigratedD1();
     const app = buildProbeApp();

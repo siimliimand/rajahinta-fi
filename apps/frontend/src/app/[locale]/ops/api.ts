@@ -150,3 +150,145 @@ export function resolveCorrection(
 export function listAuditTrail(token: string): Promise<OpsAuditListResponse> {
   return opsFetch<OpsAuditListResponse>(token, '/ops/console/audit?limit=25');
 }
+
+// ---------------------------------------------------------------------------
+// Shop-report moderation + blacklist (task 2.3, change
+// trust-and-reach-roadmap) — response types are local to the console API
+// module (lib/types.ts is shared surface with other workstreams).
+// ---------------------------------------------------------------------------
+
+/** One OPEN report in the review queue, with its evidence. */
+export interface OpsReportQueueItem {
+  id: number;
+  merchantDomain: string;
+  merchantNameNormalized: string;
+  orderReference: string;
+  correspondenceSummary: string;
+  reporterAccountId: number;
+  status: string;
+  linkedEntryId: number | null;
+  createdAt: string;
+}
+
+export interface OpsReportQueueResponse {
+  items: OpsReportQueueItem[];
+  total: number;
+}
+
+/** One blacklist entry in the console overview / appeal inbox. */
+export interface OpsBlacklistEntry {
+  id: number;
+  merchantDomain: string;
+  merchantNameNormalized: string;
+  standardMet: string;
+  publishedAt: string;
+  publishedBy: string;
+  status: string;
+  appealedAt: string | null;
+  appealReason: string | null;
+}
+
+export interface OpsBlacklistListResponse {
+  items: OpsBlacklistEntry[];
+  total: number;
+}
+
+export interface OpsPublishEntryResponse extends OpsBlacklistEntry {
+  linkedReportIds: number[];
+}
+
+export function listReports(token: string): Promise<OpsReportQueueResponse> {
+  return opsFetch<OpsReportQueueResponse>(token, '/ops/console/reports');
+}
+
+export function linkReport(
+  token: string,
+  reportId: number,
+  body: { operator: string; entryId: number; note?: string },
+): Promise<{ id: number; status: string; linkedEntryId: number | null }> {
+  return opsFetch(token, `/ops/console/reports/${reportId}/link`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function rejectReport(
+  token: string,
+  reportId: number,
+  body: { operator: string; note?: string },
+): Promise<{ id: number; status: string }> {
+  return opsFetch(token, `/ops/console/reports/${reportId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function listBlacklistEntries(
+  token: string,
+): Promise<OpsBlacklistListResponse> {
+  return opsFetch<OpsBlacklistListResponse>(token, '/ops/console/blacklist/entries');
+}
+
+export function publishBlacklistEntry(
+  token: string,
+  body: {
+    operator: string;
+    merchantDomain: string;
+    merchantName: string;
+    confirmedReportIds: number[];
+    businessRegistrationConfirmed?: boolean;
+    note?: string;
+  },
+): Promise<OpsPublishEntryResponse> {
+  return opsFetch<OpsPublishEntryResponse>(token, '/ops/console/blacklist/publish', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function listAppeals(token: string): Promise<OpsBlacklistListResponse> {
+  return opsFetch<OpsBlacklistListResponse>(token, '/ops/console/blacklist/appeals');
+}
+
+export function recordAppeal(
+  token: string,
+  entryId: number,
+  body: { operator: string; appealReason: string; note?: string },
+): Promise<OpsBlacklistEntry> {
+  return opsFetch<OpsBlacklistEntry>(token, `/ops/console/blacklist/${entryId}/appeal`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function resolveAppeal(
+  token: string,
+  entryId: number,
+  body: { operator: string; resolution: 'REPUBLISH' | 'REJECT'; note?: string },
+): Promise<OpsBlacklistEntry> {
+  return opsFetch<OpsBlacklistEntry>(token, `/ops/console/blacklist/${entryId}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Newsletter broadcast (task 5.3, change trust-and-reach-roadmap)
+// ---------------------------------------------------------------------------
+
+export interface OpsNewsletterBroadcastResponse {
+  total: number;
+  notified: number;
+  failed: number;
+  skipped: number;
+}
+
+export function notifySubscribers(
+  token: string,
+  body: { operator: string; subject: string; bodyFi: string; bodyEn: string; note?: string },
+): Promise<OpsNewsletterBroadcastResponse> {
+  return opsFetch<OpsNewsletterBroadcastResponse>(token, '/ops/console/newsletter/notify', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}

@@ -24,7 +24,8 @@
  * | GroupOrderRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/group-orders) | no Nest counterpart | POST create only: sessionAuth(); the token-scoped participant routes carry NO sessionAuth (the share token is the capability) |
  * | Shop-report submission (NEW surface, trust-and-reach-roadmap 2.2) (POST /api/v1/reports) | no Nest counterpart | requireRateLimit('AUTH') → sessionAuth() |
  * | Outcome + share writes (NEW surface, trust-and-reach-roadmap 3.2/6.1) (POST /api/v1/calculations/:id/{outcome,share}) | no Nest counterpart | sessionAuth() (the prefix's CALCULATOR rate limit registers at index.ts) |
- * | Ops console (4 controllers, /ops/console/*)| OpsAccessGuard                      | opsAccess() |
+ * | Newsletter (NEW surface, trust-and-reach-roadmap 5.3) (/api/v1/newsletter/*) | no Nest counterpart | POST subscribe: requireRateLimit('AUTH') (public write; consent is account-independent — no session exists); GET confirm + unsubscribe: NO guard (the emailed token IS the capability — verify-email/confirm precedent) |
+ * | Ops console (4 controllers, /ops/console/*) + moderation/newsletter additions (trust-and-reach-roadmap 2.3/5.3: reports queue, blacklist publish/appeals, newsletter notify) | OpsAccessGuard | opsAccess() (prefix registration below covers every /ops/console/** route) |
  *
  * Rate limiting (RateLimitGuard) is not in this task's scope — it ports
  * with the RateLimiterDO wiring (task 3.3) and slots into the same
@@ -197,6 +198,19 @@ const GUARDED_ROUTES: readonly GuardedRoute[] = [
     path: '/api/v1/calculations/:id/share',
     use: [sessionAuth()],
   },
+
+  // Newsletter subscribe (task 5.3, change trust-and-reach-roadmap) — a
+  // public bulk-mail entry point, so the AUTH limiter (credential-route
+  // precedent) is the abuse defence. Consent is account-independent by
+  // design: NO sessionAuth (an anonymous visitor subscribes). The
+  // confirm/unsubscribe routes stay OUT of this table — the emailed
+  // token IS the capability (verify-email/confirm precedent).
+  {
+    methods: ['POST'],
+    path: '/api/v1/newsletter/subscribe',
+    use: [requireRateLimit('AUTH')],
+  },
+
   // No /ops/health entry: the Nest OpsDashboardController health route was
   // never ported — liveness/readiness live at /api/v1/health(+/ready),
   // which register no guard (see health.routes.ts).

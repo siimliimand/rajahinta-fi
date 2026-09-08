@@ -62,6 +62,22 @@ import {
   evidenceLinksSchema,
 } from '../../../../packages/data-platform/src/repositories/d1/curated-entries.repository';
 import { D1BlogPostRepository } from '../../../../packages/data-platform/src/repositories/d1/blog-post.repository';
+import { D1ShopReportRepository } from '../../../../packages/data-platform/src/repositories/d1/shop-report.repository';
+import { D1BlacklistRepository } from '../../../../packages/data-platform/src/repositories/d1/blacklist.repository';
+import type { ShopReportRecord } from '../../../../packages/data-platform/src/abstracts';
+import type { BlacklistEntryRecord } from '../../../../packages/data-platform/src/abstracts';
+import {
+  evaluatePublicationStandard,
+  normalizeMerchantIdentity,
+} from '../../../../packages/core-domain/src/blacklist/blacklist';
+import {
+  InvalidBlacklistReportError,
+  MIN_INDEPENDENT_NON_DELIVERY_REPORTS,
+} from '../../../../packages/core-domain/src/blacklist/blacklist.types';
+import {
+  notifyNewsletterSubscribers,
+} from '../services/newsletter.service';
+import { createLogger } from '../logger';
 import { passesContentPolicy } from '../../../../packages/core-domain/src/content/content-lint';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 
@@ -1247,6 +1263,488 @@ async function publishBlogPost(c: Context<AppEnv>): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
+// Shop-report moderation + blacklist publication (task 2.3, change
+// trust-and-reach-roadmap; spec merchant-blacklist)
+// ---------------------------------------------------------------------------
+
+/** The review-queue row — OPEN reports WITH their evidence (ops-only). */
+function reportQueueItem(report: ShopReportRecord): Record<string, unknown> {
+  return {
+    id: report.id,
+    merchantDomain: report.merchantDomain,
+    merchantNameNormalized: report.merchantNameNormalized,
+    orderReference: report.orderReference,
+    correspondenceSummary: report.correspondenceSummary,
+    reporterAccountId: report.reporterAccountId,
+    status: report.status,
+    linkedEntryId: report.linkedEntryId,
+    createdAt: report.createdAt.toISOString(),
+  };
+}
+
+/** The console's blacklist-entry row (appeal facts included). */
+function blacklistEntryBody(entry: BlacklistEntryRecord): Record<string, unknown> {
+  return {
+    id: entry.id,
+    merchantDomain: entry.merchantDomain,
+    merchantNameNormalized: entry.merchantNameNormalized,
+    standardMet: entry.standardMet,
+    publishedAt: entry.publishedAt.toISOString(),
+    publishedBy: entry.publishedBy,
+    status: entry.status,
+    appealedAt: entry.appealedAt?.toISOString() ?? null,
+    appealReason: entry.appealReason,
+  };
+}
+
+/** Review queue: the OPEN reports, oldest first (repository order). */
+async function listReportQueue(c: Context<AppEnv>): Promise<Response> {
+  const reports = await new D1ShopReportRepository(c.env.DB).findOpen();
+  return c.json({ items: reports.map(reportQueueItem), total: reports.length });
+}
+
+const reportLinkSchema = z.object({
+  entryId: z.number({
+    required_error: 'entryId is required',
+    invalid_type_error: 'entryId must be a positive integer',
+  }).int().positive('entryId must be a positive integer'),
+});
+
+/** Link an OPEN report to an EXISTING published entry (late evidence). */
+async function linkReport(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const content = parseConsoleContent(reportLinkSchema, dto);
+
+  const reports = new D1ShopReportRepository(c.env.DB);
+  const report = await reports.findById(id);
+  if (report === null) {
+    throw new ApiHttpError(404, `Shop report ${id} not found`);
+  }
+  const entry = await new D1BlacklistRepository(c.env.DB).findById(content.entryId);
+  if (entry === null) {
+    throw new ApiHttpError(404, `Blacklist entry ${content.entryId} not found`);
+  }
+  // A report can only back an entry for the SAME merchant identity.
+  if (
+    entry.merchantDomain !== report.merchantDomain ||
+    entry.merchantNameNormalized !== report.merchantNameNormalized
+  ) {
+    throw new ApiHttpError(400, {
+      statusCode: 400,
+      message: 'report and entry belong to different merchant identities',
+      error: 'IdentityMismatch',
+    });
+  }
+
+  // OPEN → LINKED, terminal (guarded UPDATE; not-OPEN ⇒ 409).
+  const linked = await reports.linkToEntry(id, content.entryId);
+  if (linked === null) {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `Shop report ${id} is not OPEN (only an OPEN report can be linked)`,
+      error: 'InvalidTransition',
+    });
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'shop_report',
+    entityId: String(id),
+    action: 'updated',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      `Report linked to blacklist entry ${content.entryId} via operator console`,
+    previousValue: { status: report.status, linkedEntryId: report.linkedEntryId },
+    newValue: { status: linked.status, linkedEntryId: linked.linkedEntryId },
+  });
+
+  return c.json({
+    id: linked.id,
+    status: linked.status,
+    linkedEntryId: linked.linkedEntryId,
+  });
+}
+
+/** Reject an OPEN report — the evidence did not survive review (terminal). */
+async function rejectReport(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+
+  const reports = new D1ShopReportRepository(c.env.DB);
+  const report = await reports.findById(id);
+  if (report === null) {
+    throw new ApiHttpError(404, `Shop report ${id} not found`);
+  }
+
+  const rejected = await reports.reject(id);
+  if (rejected === null) {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `Shop report ${id} is not OPEN (only an OPEN report can be rejected)`,
+      error: 'InvalidTransition',
+    });
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'shop_report',
+    entityId: String(id),
+    action: 'updated',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Report rejected via operator console',
+    previousValue: { status: report.status },
+    newValue: { status: rejected.status },
+  });
+
+  return c.json({ id: rejected.id, status: rejected.status });
+}
+
+/** Every entry regardless of status — the console's blacklist overview. */
+async function listBlacklistEntries(c: Context<AppEnv>): Promise<Response> {
+  const entries = await new D1BlacklistRepository(c.env.DB).list();
+  return c.json({
+    items: entries.map(blacklistEntryBody),
+    total: entries.length,
+  });
+}
+
+/** The appeal inbox: exactly the REOPENED entries awaiting re-review. */
+async function listAppeals(c: Context<AppEnv>): Promise<Response> {
+  const entries = await new D1BlacklistRepository(c.env.DB).list();
+  const appeals = entries.filter((entry) => entry.status === 'REOPENED');
+  return c.json({
+    items: appeals.map(blacklistEntryBody),
+    total: appeals.length,
+  });
+}
+
+const publishSchema = z.object({
+  merchantDomain: z
+    .string({ required_error: 'merchantDomain is required', invalid_type_error: 'merchantDomain is required' })
+    .min(1, 'merchantDomain is required'),
+  merchantName: z
+    .string({ required_error: 'merchantName is required', invalid_type_error: 'merchantName is required' })
+    .min(1, 'merchantName is required'),
+  confirmedReportIds: z.array(
+    z.number({
+      required_error: 'confirmedReportIds is required',
+      invalid_type_error: 'confirmedReportIds must be an array of report ids',
+    }).int().positive('confirmedReportIds must be an array of report ids'),
+    { required_error: 'confirmedReportIds is required' },
+  ),
+  businessRegistrationConfirmed: z.boolean({
+    invalid_type_error: 'businessRegistrationConfirmed must be a boolean when provided',
+  }).optional(),
+});
+
+/**
+ * Publish a blacklist entry — the manual action behind the published
+ * standard. The standard is enforced SERVER-SIDE from the stored rows:
+ * the operator names the merchant and the reports they confirm as
+ * non-delivery; the corpus handed to core-domain's
+ * `evaluatePublicationStandard` is recomputed from the database (the
+ * confirmed OPEN reports plus every LINKED report of the identity —
+ * earlier moderation decisions), so a below-threshold publication is
+ * rejected with NO entry created (spec scenario "Standard not met").
+ * Independence is exact reporter-account distinctness, decided by the
+ * stored reporter ids, never by the request.
+ */
+async function publishBlacklistEntry(c: Context<AppEnv>): Promise<Response> {
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const content = parseConsoleContent(publishSchema, dto);
+
+  // The identity normalizes here exactly as reports did at submission —
+  // an unusable domain/name cannot form an entry.
+  let identity: ReturnType<typeof normalizeMerchantIdentity>;
+  try {
+    identity = normalizeMerchantIdentity(content.merchantDomain, content.merchantName);
+  } catch (err) {
+    if (err instanceof InvalidBlacklistReportError) {
+      throw new ApiHttpError(400, {
+        statusCode: 400,
+        message: err.message,
+        error: err.reason,
+      });
+    }
+    throw err;
+  }
+
+  const reports = new D1ShopReportRepository(c.env.DB);
+  const entries = new D1BlacklistRepository(c.env.DB);
+  const identityReports = await reports.findByMerchantIdentity(identity);
+
+  // Every confirmed id must be a real report of THIS identity.
+  const byId = new Map(identityReports.map((report) => [report.id, report]));
+  for (const reportId of content.confirmedReportIds) {
+    if (!byId.has(reportId)) {
+      throw new ApiHttpError(400, {
+        statusCode: 400,
+        message: `report ${reportId} does not belong to this merchant identity`,
+        error: 'UnknownReport',
+      });
+    }
+  }
+  const confirmedIds = new Set(content.confirmedReportIds);
+
+  // Evidence corpus, recomputed from stored rows: confirmed OPEN
+  // reports + every LINKED report (already-confirmed evidence).
+  const corpus = identityReports
+    .filter(
+      (report) =>
+        report.status === 'LINKED' ||
+        (report.status === 'OPEN' && confirmedIds.has(report.id)),
+    )
+    .map((report) => ({
+      reporterAccountId: String(report.reporterAccountId),
+      confirmedNonDelivery: true,
+    }));
+
+  const standard = evaluatePublicationStandard({
+    nonDeliveryReports: corpus,
+    businessRegistration:
+      content.businessRegistrationConfirmed === true
+        ? { confirmedInvalid: true }
+        : null,
+  });
+  if (!standard.met) {
+    throw new ApiHttpError(400, {
+      statusCode: 400,
+      message:
+        `published standard not met (${standard.reason}; ` +
+        `${standard.independentConfirmedCount} independent confirmed ` +
+        `non-delivery reports of ${MIN_INDEPENDENT_NON_DELIVERY_REPORTS} required)` +
+        (content.businessRegistrationConfirmed === true
+          ? ''
+          : '; no confirmed invalid business registration'),
+      error: 'StandardNotMet',
+    });
+  }
+
+  const entry = await entries.publish({
+    merchantIdentity: identity,
+    standardMet: standard.basis,
+    publishedBy: actor,
+  });
+
+  // The confirmed OPEN reports become the entry's evidence (terminal).
+  const linkedReportIds: number[] = [];
+  for (const reportId of confirmedIds) {
+    const linked = await reports.linkToEntry(reportId, entry.id);
+    if (linked !== null) {
+      linkedReportIds.push(reportId);
+    }
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'blacklist_entry',
+    entityId: String(entry.id),
+    action: 'created',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      `Blacklist entry published via operator console (basis ${standard.basis})`,
+    newValue: {
+      merchantDomain: entry.merchantDomain,
+      merchantNameNormalized: entry.merchantNameNormalized,
+      standardMet: entry.standardMet,
+      linkedReportIds,
+    },
+  });
+
+  return c.json(
+    { ...blacklistEntryBody(entry), linkedReportIds },
+    201,
+  );
+}
+
+const appealSchema = z.object({
+  appealReason: z
+    .string({ required_error: 'appealReason is required', invalid_type_error: 'appealReason is required' })
+    .min(1, 'appealReason is required'),
+});
+
+/**
+ * Record an appeal against a PUBLISHED entry (the merchant disputes
+ * out-of-band; the console records it): PUBLISHED → REOPENED, which
+ * removes the entry from public display immediately (the repository's
+ * display join filters to exactly-PUBLISHED).
+ */
+async function recordAppeal(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const content = parseConsoleContent(appealSchema, dto);
+
+  const entries = new D1BlacklistRepository(c.env.DB);
+  const entry = await entries.findById(id);
+  if (entry === null) {
+    throw new ApiHttpError(404, `Blacklist entry ${id} not found`);
+  }
+
+  const reopened = await entries.appeal(id, {
+    appealedAt: new Date(),
+    appealReason: content.appealReason.trim(),
+  });
+  if (reopened === null) {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `Blacklist entry ${id} is not PUBLISHED (only a PUBLISHED entry can be reopened by an appeal)`,
+      error: 'InvalidTransition',
+    });
+  }
+
+  // The appeal reason lives on the row; the audit carries the decision
+  // facts (status change + that an appeal was recorded), not the
+  // merchant's text.
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'blacklist_entry',
+    entityId: String(id),
+    action: 'updated',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Appeal recorded via operator console — entry reopened for re-review',
+    previousValue: { status: entry.status },
+    newValue: { status: reopened.status, appealRecorded: true },
+  });
+
+  return c.json(blacklistEntryBody(reopened));
+}
+
+const appealResolutionSchema = z.object({
+  resolution: z.enum(['REPUBLISH', 'REJECT'], {
+    required_error: 'resolution must be REPUBLISH or REJECT',
+    invalid_type_error: 'resolution must be REPUBLISH or REJECT',
+    message: 'resolution must be REPUBLISH or REJECT',
+  }),
+});
+
+/**
+ * Resolve a REOPENED entry — REPUBLISH returns it to PUBLISHED (appeal
+ * denied), REJECT ends it (appeal upheld, terminal). Both are audited
+ * operator decisions.
+ */
+async function resolveAppeal(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const content = parseConsoleContent(appealResolutionSchema, dto);
+
+  const entries = new D1BlacklistRepository(c.env.DB);
+  const entry = await entries.findById(id);
+  if (entry === null) {
+    throw new ApiHttpError(404, `Blacklist entry ${id} not found`);
+  }
+
+  const resolved =
+    content.resolution === 'REPUBLISH'
+      ? await entries.resolveRepublish(id)
+      : await entries.resolveReject(id);
+  if (resolved === null) {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `Blacklist entry ${id} is not REOPENED (only a REOPENED entry can be resolved)`,
+      error: 'InvalidTransition',
+    });
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'blacklist_entry',
+    entityId: String(id),
+    action: 'confirmed',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      `Appeal ${content.resolution === 'REPUBLISH' ? 'denied — entry republished' : 'upheld — entry rejected'} via operator console`,
+    previousValue: { status: entry.status },
+    newValue: { status: resolved.status },
+  });
+
+  return c.json(blacklistEntryBody(resolved));
+}
+
+// ---------------------------------------------------------------------------
+// Newsletter broadcast (task 5.3, change trust-and-reach-roadmap;
+// design D4, spec content-publication) — the notify-subscribers action
+// through the email worker with the delivery intent log.
+// ---------------------------------------------------------------------------
+
+const notifySchema = z.object({
+  subject: z
+    .string({ required_error: 'subject is required', invalid_type_error: 'subject is required' })
+    .min(1, 'subject is required')
+    .max(255, 'subject must be at most 255 characters')
+    .refine((value) => !/[\r\n]/.test(value), 'subject must not contain line breaks'),
+  bodyFi: z
+    .string({ required_error: 'bodyFi is required', invalid_type_error: 'bodyFi is required' })
+    .min(1, 'bodyFi is required'),
+  bodyEn: z
+    .string({ required_error: 'bodyEn is required', invalid_type_error: 'bodyEn is required' })
+    .min(1, 'bodyEn is required'),
+});
+
+/**
+ * POST /ops/console/newsletter/notify — one broadcast to every ACTIVE
+ * subscriber (PENDING is never scanned, so unconfirmed addresses are
+ * never mailed). The pipeline is the alert intent-log pattern: per
+ * subscriber, cooldown → PENDING intent row → dispatch through the
+ * email worker → outcome mark, so a retried action skips subscribers
+ * already marked delivered (crash-safe, spec). Unconfigured email
+ * delivery fails closed with the console's 503 StoreUnavailable.
+ */
+async function notifySubscribers(c: Context<AppEnv>): Promise<Response> {
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const content = parseConsoleContent(notifySchema, dto);
+
+  const config = {
+    frontendOrigin:
+      (c.env as { APP_PUBLIC_URL?: string }).APP_PUBLIC_URL ?? 'https://rajahinta.fi',
+    emailWorkerUrl: c.env.EMAIL_WORKER_URL,
+    emailSendSecret: c.env.EMAIL_SEND_SECRET,
+  };
+  if (!config.emailWorkerUrl || !config.emailSendSecret) {
+    throw new ApiHttpError(503, {
+      statusCode: 503,
+      message:
+        'newsletter delivery is not configured (EMAIL_WORKER_URL / EMAIL_SEND_SECRET)',
+      error: 'StoreUnavailable',
+    });
+  }
+
+  const result = await notifyNewsletterSubscribers(
+    c.env.DB,
+    config,
+    content,
+    createLogger(c.env.LOG_LEVEL),
+  );
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'newsletter_broadcast',
+    entityId: crypto.randomUUID(),
+    action: 'created',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Newsletter broadcast via operator console',
+    newValue: {
+      subject: content.subject,
+      total: result.total,
+      notified: result.notified,
+      failed: result.failed,
+      skipped: result.skipped,
+    },
+  });
+
+  return c.json(result);
+}
+
+// ---------------------------------------------------------------------------
 // Audit trail — real D1 audit_events reads
 // ---------------------------------------------------------------------------
 
@@ -1339,6 +1837,25 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   // read + audited publish; there is deliberately NO auto-publish path.
   app.get('/ops/console/blog/posts', listBlogPosts);
   app.post('/ops/console/blog/posts/:id/publish', publishBlogPost);
+
+  // Shop-report moderation + blacklist (task 2.3, trust-and-reach-roadmap)
+  // — the review queue (OPEN + evidence, link/reject), the publish
+  // action (published standard enforced server-side), and the appeal
+  // path (record + REPUBLISH/REJECT resolve). Every mutation appends to
+  // the audit trail; all ride the /ops/console/* guard prefix.
+  app.get('/ops/console/reports', listReportQueue);
+  app.post('/ops/console/reports/:id/link', linkReport);
+  app.post('/ops/console/reports/:id/reject', rejectReport);
+  app.get('/ops/console/blacklist/entries', listBlacklistEntries);
+  app.post('/ops/console/blacklist/publish', publishBlacklistEntry);
+  app.get('/ops/console/blacklist/appeals', listAppeals);
+  app.post('/ops/console/blacklist/:id/appeal', recordAppeal);
+  app.post('/ops/console/blacklist/:id/resolve', resolveAppeal);
+
+  // Newsletter broadcast (task 5.3, trust-and-reach-roadmap) — the
+  // notify-subscribers action through the email worker's send contract
+  // with the delivery intent log (crash-safe redelivery).
+  app.post('/ops/console/newsletter/notify', notifySubscribers);
 
   app.get('/ops/console/audit', recentAudit);
   return app;

@@ -52,7 +52,8 @@ import { openMigratedD1 } from './harness';
 describe('D1 schema conformance', () => {
   const { db } = openMigratedD1();
 
-  /** The 18 relational tables the committed migrations create. */
+  /** Relational-table spot check (additive across waves; the shared
+   * *-check constraint guarantees these exist after the migrations). */
   const EXPECTED_TABLES = [
     'accounts',
     'aggregation_watermarks',
@@ -63,6 +64,7 @@ describe('D1 schema conformance', () => {
     'click_counter_snapshots',
     'merchant_registry',
     'merchant_terms',
+    'newsletter_notifications',
     'price_history_summaries',
     'product_dimensions',
     'product_master',

@@ -75,6 +75,10 @@ import { D1BlacklistRepository } from './repositories/d1/blacklist.repository';
 import { D1CalculationOutcomeRepository } from './repositories/d1/calculation-outcome.repository';
 import { D1BlogPostRepository } from './repositories/d1/blog-post.repository';
 import { D1NewsletterSubscriberRepository } from './repositories/d1/newsletter-subscriber.repository';
+import {
+  NewsletterNotificationRepository,
+  D1NewsletterNotificationRepository,
+} from './repositories/d1/newsletter-notification.repository';
 import { D1ShareSnapshotRepository } from './repositories/d1/share-snapshot.repository';
 import { D1PriceAlertRepository } from './repositories/d1/price-alert.repository';
 
@@ -215,6 +219,13 @@ import { D1PriceAlertRepository } from './repositories/d1/price-alert.repository
       provide: NewsletterSubscriberRepository,
       useClass: D1NewsletterSubscriberRepository,
     },
+    // Newsletter delivery intent log (task 5.3, change
+    // trust-and-reach-roadmap) — the crash-safe send record behind the
+    // ops notify-subscribers action.
+    {
+      provide: NewsletterNotificationRepository,
+      useClass: D1NewsletterNotificationRepository,
+    },
     {
       provide: ShareSnapshotRepository,
       useClass: D1ShareSnapshotRepository,
@@ -252,6 +263,7 @@ import { D1PriceAlertRepository } from './repositories/d1/price-alert.repository
     D1CalculationOutcomeRepository,
     D1BlogPostRepository,
     D1NewsletterSubscriberRepository,
+    D1NewsletterNotificationRepository,
     D1ShareSnapshotRepository,
     D1PriceAlertRepository,
   ],
@@ -281,6 +293,7 @@ AggregationWatermarkRepository,
     // (task 1.4, change trust-and-reach-roadmap)
     BlogPostRepository,
     NewsletterSubscriberRepository,
+    NewsletterNotificationRepository,
     ShareSnapshotRepository,
     PriceAlertRepository,
     DrizzleAuditEventRepository,
@@ -314,6 +327,7 @@ AggregationWatermarkRepository,
     D1CalculationOutcomeRepository,
     D1BlogPostRepository,
     D1NewsletterSubscriberRepository,
+    D1NewsletterNotificationRepository,
     D1ShareSnapshotRepository,
     D1PriceAlertRepository,
   ],

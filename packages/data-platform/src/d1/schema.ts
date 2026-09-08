@@ -1877,6 +1877,56 @@ export const newsletterSubscribers = sqliteTable(
 );
 
 /**
+ * Newsletter notification intents — the delivery intent log behind
+ * crash-safe ops newsletter sends (task 5.3, change
+ * trust-and-reach-roadmap, design D4; the alert_notifications
+ * precedent applied to the newsletter audience).
+ *
+ * The ops notify-subscribers action writes one PENDING intent row per
+ * recipient BEFORE dispatch through the email worker and marks the
+ * outcome AFTER, so a retried action skips subscribers already marked
+ * delivered — a crash mid-batch can never double-send (spec
+ * content-publication: crash-safe send). Rows are append-only delivery
+ * attempt records: the outcome transition (pending → delivered |
+ * failed) plus marked_at is the only update a row ever receives.
+ * Deleting the subscriber cascades here — the intent log has no
+ * meaning without its recipient.
+ */
+export const newsletterNotifications = sqliteTable(
+  'newsletter_notifications',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to newsletter_subscribers — the intended recipient; cascade delete. */
+    subscriberId: integer('subscriber_id')
+      .references(() => newsletterSubscribers.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** Delivery channel — email only (the newsletter has no other channel). */
+    channel: text('channel', { length: 16 }).notNull(),
+    /** Intent-log lifecycle: pending until dispatch resolves (delivered | failed). */
+    deliveryStatus: text('delivery_status', { length: 16 })
+      .default('pending')
+      .notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+    /** When the outcome was marked — null while the intent is still pending. */
+    markedAt: text('marked_at'),
+  },
+  (table) => [
+    // Latest-DELIVERED-intent lookup (subscriber_id, status) ordered by
+    // createdAt — the 24-hour redelivery cooldown's enforcement read.
+    index('newsletter_notifications_subscriber_id_delivery_status_created_at_idx').on(
+      table.subscriberId,
+      table.deliveryStatus,
+      table.createdAt,
+    ),
+    check('newsletter_notifications_channel_check', sql`${table.channel} IN ('email')`),
+    check(
+      'newsletter_notifications_delivery_status_check',
+      sql`${table.deliveryStatus} IN ('pending', 'delivered', 'failed')`,
+    ),
+  ],
+);
+
+/**
  * Share snapshots — frozen copies of a calculation result behind a
  * public permalink (task 1.2, change trust-and-reach-roadmap, design
  * D6, spec: share-permalinks).
@@ -1956,6 +2006,7 @@ export const d1Schema = {
   calculationOutcomes,
   blogPosts,
   newsletterSubscribers,
+  newsletterNotifications,
   shareSnapshots,
   emailTokens,
 };
