@@ -719,6 +719,50 @@ export type {
 } from './outcomes/outcomes.types';
 
 // ---------------------------------------------------------------------------
+// Blog content — rate-change explainer drafts at the confirmation gate
+// (pure; spec content-publication)
+// ---------------------------------------------------------------------------
+
+export {
+  buildRateChangeDrafts,
+  estimateTypicalBasketImpactCents,
+  rateChangeSlug,
+} from './content/content';
+export { FORBIDDEN_TERMS, lintContentPolicy, passesContentPolicy } from './content/content-lint';
+export { RATE_CHANGE_SLUG_PREFIX, CONTENT_LOCALES } from './content/content.types';
+export type {
+  BlogDraft,
+  ContentLocale,
+  RateChangeDraftInput,
+  RateChangeLine,
+} from './content/content.types';
+
+// ---------------------------------------------------------------------------
+// Share snapshots — frozen result copies behind random public ids
+// (pure; spec share-permalinks)
+// ---------------------------------------------------------------------------
+
+export {
+  assembleShareSnapshot,
+  assertNoPersonalData,
+  generatePublicId,
+  isValidPublicId,
+  publicIdFromBytes,
+  randomBytes16,
+} from './sharing/sharing';
+export {
+  PUBLIC_ID_CHARSET,
+  PUBLIC_ID_LENGTH,
+  PUBLIC_ID_RANDOM_BYTES,
+  SHARE_SNAPSHOT_RETENTION_DAYS,
+  PersonalDataFieldError,
+} from './sharing/sharing.types';
+export type {
+  ShareSnapshotPayload,
+  ShareSnapshotSource,
+} from './sharing/sharing.types';
+
+// ---------------------------------------------------------------------------
 // NestJS module — registration shell; domain logic is injected via providers
 // ---------------------------------------------------------------------------
 

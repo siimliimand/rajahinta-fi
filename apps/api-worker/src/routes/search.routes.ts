@@ -35,6 +35,10 @@ import {
   getMerchantReliabilityMap,
   type MerchantReliabilityMap,
 } from '../services/merchant-reliability';
+import {
+  getMerchantWarnings,
+  merchantsForProducts,
+} from '../services/merchant-warnings';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 
 /** Default page size for product listing (controller parity). */
@@ -233,13 +237,27 @@ async function search(c: Context<AppEnv>): Promise<Response> {
     const start = (pageNum - 1) * limitNum;
     const paginated = items.slice(start, start + limitNum);
 
-    return c.json({
+    // Additive merchantWarnings join (task 2.2): the merchants of this
+    // page's products' offers, matched against PUBLISHED blacklist
+    // entries. Strictly additive — items, ordering, and totals above are
+    // computed before and untouched by the join; a failed lookup omits
+    // the block (never an error, never a filtered item).
+    const warnings = await getMerchantWarnings(
+      c.env.DB,
+      await merchantsForProducts(c.env.DB, paginated.map((item) => item.id)),
+    );
+
+    const payload: Record<string, unknown> = {
       items: paginated,
       total: items.length,
       page: pageNum,
       limit: limitNum,
       totalPages: Math.ceil(items.length / limitNum),
-    });
+    };
+    if (warnings !== undefined) {
+      payload.merchantWarnings = warnings;
+    }
+    return c.json(payload);
   } catch (err) {
     throw new ApiHttpError(
       500,
@@ -312,6 +330,21 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
     // Informational per-merchant scores. The embed never reorders the
     // offers; an unavailable reliability store leaves the field absent.
     const offersList = response.offers as Array<{ merchant: string }>;
+
+    // Additive merchantWarnings join (task 2.2): PUBLISHED blacklist
+    // entries matching this product's offer merchants by domain OR
+    // normalized name. Strictly additive — one extra top-level field;
+    // the offers array, its order, and every calculated figure are built
+    // before and never touched (spec merchant-blacklist). A failed
+    // lookup omits the block rather than failing the response.
+    const warnings = await getMerchantWarnings(
+      c.env.DB,
+      new Set(offersList.map((o) => o.merchant)),
+    );
+    if (warnings !== undefined) {
+      response.merchantWarnings = warnings;
+    }
+
     if (offersList.length > 0) {
       const merchants = new Set(offersList.map((o) => o.merchant));
       const embed = await getMerchantReliabilityMap(c.env.DB, merchants);

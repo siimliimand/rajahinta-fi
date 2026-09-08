@@ -180,6 +180,46 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     expect(ok.status).toBe(200);
   });
 
+  it('shop reports: AUTH rate limit then session (guard order, task 2.2)', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedStandardAccounts(db);
+    const app = buildProbeApp();
+    const token = await issueSessionToken(d1, 7);
+
+    // No session → SessionRequired (the AUTH limiter fails open without a
+    // DO binding here; the session guard is the denial face).
+    const denied = await probe(app, testEnv(d1), '/api/v1/reports', { method: 'POST' });
+    await expectEnvelope(denied, 401, { error: 'SessionRequired' });
+
+    // Session → reaches the probe handler.
+    const allowed = await probe(app, testEnv(d1), '/api/v1/reports', {
+      method: 'POST',
+      headers: { cookie: `rajahinta_session=${token}` },
+    });
+    expect(allowed.status).toBe(200);
+  });
+
+  it('outcome + share writes: session-guarded (tasks 3.2/6.1)', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedStandardAccounts(db);
+    const app = buildProbeApp();
+    const token = await issueSessionToken(d1, 7);
+
+    for (const path of [
+      '/api/v1/calculations/1/outcome',
+      '/api/v1/calculations/1/share',
+    ]) {
+      const denied = await probe(app, testEnv(d1), path, { method: 'POST' });
+      await expectEnvelope(denied, 401, { error: 'SessionRequired' });
+
+      const allowed = await probe(app, testEnv(d1), path, {
+        method: 'POST',
+        headers: { cookie: `rajahinta_session=${token}` },
+      });
+      expect(allowed.status, `POST ${path}`).toBe(200);
+    }
+  });
+
   it('ops console: ops access (deny before any data)', async () => {
     const { d1 } = openMigratedD1();
     const app = buildProbeApp();

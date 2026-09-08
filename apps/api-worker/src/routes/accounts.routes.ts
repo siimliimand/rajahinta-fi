@@ -49,6 +49,7 @@ import {
   type ScenarioRow,
 } from '../adapters/account-store';
 import { EmailTokenService } from '../services/email-token.service';
+import { historyWithOutcomeFlags } from './outcomes.routes';
 import { createLogger } from '../logger';
 import {
   buildSessionCookie,
@@ -506,6 +507,17 @@ async function deleteBasket(c: Context<AppEnv>): Promise<Response> {
 
 async function getHistory(c: Context<AppEnv>): Promise<Response> {
   const user = requireUser(c);
+  // Extended payload (task 3.2, change trust-and-reach-roadmap):
+  // `?outcomes=1` flags each record with outcome presence for the
+  // in-account report prompt. Additive query parameter — the default
+  // shape stays the plain id array the frontend already consumes.
+  if (c.req.query('outcomes') === '1' || c.req.query('outcomes') === 'true') {
+    const account = await new D1AccountStore(c.env.DB).findByUserId(user.userId);
+    if (account === null) {
+      throw invalidSessionError();
+    }
+    return c.json(await historyWithOutcomeFlags(c.env.DB, user.userId, account.id));
+  }
   const ids = await new D1AccountStore(c.env.DB).findHistoryIds(user.userId);
   return c.json(ids);
 }

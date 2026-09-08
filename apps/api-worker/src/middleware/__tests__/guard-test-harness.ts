@@ -118,6 +118,12 @@ export function buildProbeApp(): Hono<AppEnv> {
   app.post('/api/v1/account/session/rotate', ok);
   app.delete('/api/v1/account/session', ok);
 
+  // Trust-and-reach routes (tasks 2.2/3.2/6.1, change
+  // trust-and-reach-roadmap) — session-guarded writes.
+  app.post('/api/v1/reports', ok);
+  app.post('/api/v1/calculations/:id/outcome', ok);
+  app.post('/api/v1/calculations/:id/share', ok);
+
   // Ops routes.
   app.get('/ops/console/audit', ok);
 

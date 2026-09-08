@@ -61,6 +61,8 @@ import {
   D1CuratedEntriesRepository,
   evidenceLinksSchema,
 } from '../../../../packages/data-platform/src/repositories/d1/curated-entries.repository';
+import { D1BlogPostRepository } from '../../../../packages/data-platform/src/repositories/d1/blog-post.repository';
+import { passesContentPolicy } from '../../../../packages/core-domain/src/content/content-lint';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 
 // ---------------------------------------------------------------------------
@@ -1164,6 +1166,87 @@ async function resolveCorrection(c: Context<AppEnv>): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
+// Blog posts — the human publication gate (task 5.1, change
+// trust-and-reach-roadmap): the rate-confirmation hook lands DRAFTs; only
+// this console action makes one public, and only when the body passes the
+// content-policy lint (spec content-publication).
+// ---------------------------------------------------------------------------
+
+async function listBlogPosts(c: Context<AppEnv>): Promise<Response> {
+  const posts = await new D1BlogPostRepository(c.env.DB).listByLocale(
+    // The console manages the launch locales as one list.
+    'fi',
+  );
+  const en = await new D1BlogPostRepository(c.env.DB).listByLocale('en');
+  const items = [...posts, ...en].map((post) => ({
+    id: post.id,
+    slug: post.slug,
+    locale: post.locale,
+    title: post.title,
+    status: post.status,
+    rateDatasetVersion: post.rateDatasetVersion,
+    publishedAt: post.publishedAt?.toISOString() ?? null,
+    createdAt: post.createdAt.toISOString(),
+  }));
+  return c.json({ items, total: items.length });
+}
+
+async function publishBlogPost(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+
+  const repo = new D1BlogPostRepository(c.env.DB);
+  const existing = await repo.findById(id);
+  if (existing === null) {
+    throw new ApiHttpError(404, `Blog post ${id} not found`);
+  }
+
+  // The lint gates the TRANSITION (spec: bodies pass the content-policy
+  // lint before publication) — a violating draft stays a draft.
+  if (!passesContentPolicy(existing.bodyMarkdown)) {
+    throw new ApiHttpError(400, {
+      statusCode: 400,
+      message: 'Post body violates the content policy — edit the draft before publication',
+      error: 'ContentPolicyViolation',
+    });
+  }
+
+  // DRAFT → PUBLISHED, exactly once (null ⇒ 409, terminal-state parity).
+  const published = await repo.publish(id);
+  if (published === null) {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `Blog post ${id} is not a draft (PUBLISHED is terminal)`,
+      error: 'InvalidTransition',
+    });
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'blog_post',
+    entityId: String(id),
+    action: 'confirmed',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      `Blog post published via operator console (${published.slug}/${published.locale})`,
+    previousValue: { status: existing.status, slug: existing.slug, locale: existing.locale },
+    newValue: {
+      status: published.status,
+      publishedAt: published.publishedAt?.toISOString() ?? null,
+    },
+  });
+
+  return c.json({
+    id: published.id,
+    slug: published.slug,
+    locale: published.locale,
+    status: published.status,
+    publishedAt: published.publishedAt?.toISOString() ?? null,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Audit trail — real D1 audit_events reads
 // ---------------------------------------------------------------------------
 
@@ -1250,6 +1333,12 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.post('/ops/console/curated-entries/:id/publish', publishCuratedEntry);
   app.post('/ops/console/curated-entries/:id/unpublish', unpublishCuratedEntry);
   app.post('/ops/console/curated-entries/:id/delete', deleteCuratedEntry);
+
+  // Blog posts (task 5.1, trust-and-reach-roadmap) — the human
+  // publication gate over the rate-confirmation hook's drafts. Console
+  // read + audited publish; there is deliberately NO auto-publish path.
+  app.get('/ops/console/blog/posts', listBlogPosts);
+  app.post('/ops/console/blog/posts/:id/publish', publishBlogPost);
 
   app.get('/ops/console/audit', recentAudit);
   return app;
