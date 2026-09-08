@@ -39,7 +39,14 @@ import {
   SessionRepository,
   MerchantRegistryRepository,
   ClickCounterSnapshotRepository,
+  ShopReportRepository,
+  BlacklistRepository,
+  CalculationOutcomeRepository,
+  BlogPostRepository,
+  NewsletterSubscriberRepository,
+  ShareSnapshotRepository,
 } from './abstracts';
+import { PriceAlertRepository } from './repositories/d1/price-alert.repository';
 import { DrizzleProductRepository } from './repositories/product.repository';
 import { DrizzleTaxRateRepository } from './repositories/tax-rate.repository';
 import { DrizzleTransportOfferRepository } from './repositories/transport-offer.repository';
@@ -63,6 +70,13 @@ import {
   MerchantReliabilityRepository,
   DrizzleMerchantReliabilityRepository,
 } from './repositories/merchant-reliability.repository';
+import { D1ShopReportRepository } from './repositories/d1/shop-report.repository';
+import { D1BlacklistRepository } from './repositories/d1/blacklist.repository';
+import { D1CalculationOutcomeRepository } from './repositories/d1/calculation-outcome.repository';
+import { D1BlogPostRepository } from './repositories/d1/blog-post.repository';
+import { D1NewsletterSubscriberRepository } from './repositories/d1/newsletter-subscriber.repository';
+import { D1ShareSnapshotRepository } from './repositories/d1/share-snapshot.repository';
+import { D1PriceAlertRepository } from './repositories/d1/price-alert.repository';
 
 @Module({
   imports: [DrizzleModule],
@@ -173,6 +187,42 @@ import {
       provide: ClickCounterSnapshotRepository,
       useClass: DrizzleClickCounterSnapshotRepository,
     },
+    // Trust tables (task 1.3, change trust-and-reach-roadmap): shop
+    // reports, blacklist entries, and user-reported calculation
+    // outcomes — consumed by the moderation console and the public
+    // accuracy statistic wired by later tasks.
+    {
+      provide: ShopReportRepository,
+      useClass: D1ShopReportRepository,
+    },
+    {
+      provide: BlacklistRepository,
+      useClass: D1BlacklistRepository,
+    },
+    {
+      provide: CalculationOutcomeRepository,
+      useClass: D1CalculationOutcomeRepository,
+    },
+    // Content / share / newsletter repositories (task 1.4, change
+    // trust-and-reach-roadmap): blog posts behind the publication gate,
+    // double opt-in newsletter consent, and shareable frozen results —
+    // plus the kind-aware alert contract (duplicate per product+kind).
+    {
+      provide: BlogPostRepository,
+      useClass: D1BlogPostRepository,
+    },
+    {
+      provide: NewsletterSubscriberRepository,
+      useClass: D1NewsletterSubscriberRepository,
+    },
+    {
+      provide: ShareSnapshotRepository,
+      useClass: D1ShareSnapshotRepository,
+    },
+    {
+      provide: PriceAlertRepository,
+      useClass: D1PriceAlertRepository,
+    },
     // Monthly-partition maintenance + anonymous-record retention
     // (task 8.1) — driven by the retention cron worker in jobs.
     CalculationRecordRetentionService,
@@ -195,6 +245,15 @@ import {
     DrizzleSessionRepository,
     DrizzleMerchantRegistryRepository,
     DrizzleClickCounterSnapshotRepository,
+    // Trust + content/share D1 repositories (tasks 1.3/1.4, change
+    // trust-and-reach-roadmap)
+    D1ShopReportRepository,
+    D1BlacklistRepository,
+    D1CalculationOutcomeRepository,
+    D1BlogPostRepository,
+    D1NewsletterSubscriberRepository,
+    D1ShareSnapshotRepository,
+    D1PriceAlertRepository,
   ],
   exports: [
     // Abstract class tokens — inject by abstract class for loose coupling
@@ -214,6 +273,16 @@ AggregationWatermarkRepository,
     SessionRepository,
     MerchantRegistryRepository,
     ClickCounterSnapshotRepository,
+    // Trust repositories (task 1.3, change trust-and-reach-roadmap)
+    ShopReportRepository,
+    BlacklistRepository,
+    CalculationOutcomeRepository,
+    // Content / share / newsletter + kind-aware alert contracts
+    // (task 1.4, change trust-and-reach-roadmap)
+    BlogPostRepository,
+    NewsletterSubscriberRepository,
+    ShareSnapshotRepository,
+    PriceAlertRepository,
     DrizzleAuditEventRepository,
     CalculationRecordRetentionService,
     // Domain-port adapter tokens
@@ -238,6 +307,15 @@ AggregationWatermarkRepository,
     DrizzleSessionRepository,
     DrizzleMerchantRegistryRepository,
     DrizzleClickCounterSnapshotRepository,
+    // Trust + content/share D1 repositories (tasks 1.3/1.4, change
+    // trust-and-reach-roadmap)
+    D1ShopReportRepository,
+    D1BlacklistRepository,
+    D1CalculationOutcomeRepository,
+    D1BlogPostRepository,
+    D1NewsletterSubscriberRepository,
+    D1ShareSnapshotRepository,
+    D1PriceAlertRepository,
   ],
 })
 export class DataPlatformModule {}

@@ -2,10 +2,12 @@
  * D1 price-alert repositories — real-SQLite tests (task 2.1, change
  * product-roadmap-phases-1-4) on the node:sqlite harness with the
  * committed migrations applied. Covers the alert CRUD lifecycle, the
- * notification intent-log transitions (write-before-dispatch, one-shot
- * outcome marking), the latest-delivered finder the 24-hour cooldown
- * (task 2.2) enforces from, and the FK cascades that make account/alert
- * deletion carry their dependent rows away.
+ * kind-aware duplicate semantics (per product+kind, migration 0016;
+ * task 1.4 of change trust-and-reach-roadmap), the notification
+ * intent-log transitions (write-before-dispatch, one-shot outcome
+ * marking), the latest-delivered finder the 24-hour cooldown (task 2.2)
+ * enforces from, and the FK cascades that make account/alert deletion
+ * carry their dependent rows away.
  *
  * @module D1PriceAlertRepositoryTest
  */
@@ -64,16 +66,100 @@ describe('D1PriceAlertRepository', () => {
     expect(Math.abs(row.updatedAt.getTime() - row.createdAt.getTime())).toBeLessThan(5_000);
   });
 
-  it('enforces one alert per (account, product) — duplicates reject on the unique constraint', async () => {
+  it('duplicate check is per product+kind: same kind rejects, another kind coexists', async () => {
     const accountId = await seedAccount();
     const productId = await seedProduct();
     await alerts.create({ accountId, productId, thresholdCents: 1000 });
 
-    // The cooldown scope is per-product-per-account (design R2); a second
-    // alert on the same pair could only produce duplicate emails.
+    // Same product, same kind (PRICE default): the cooldown scope is
+    // per-product-per-account-per-kind (design R2 + migration 0016's
+    // (account_id, product_id, kind) unique) — a second alert could
+    // only produce duplicate emails.
     await expect(
       alerts.create({ accountId, productId, thresholdCents: 2000 }),
     ).rejects.toThrow();
+
+    // Same product, different kind: a price watch and a rate-change
+    // watch are independent subscriptions — both stay active.
+    const taxChange = await alerts.create({
+      accountId,
+      productId,
+      kind: 'TAX_CHANGE',
+    });
+    expect(taxChange.kind).toBe('TAX_CHANGE');
+    expect(taxChange.thresholdCents).toBeNull();
+
+    const rows = await alerts.findByAccountId(accountId);
+    expect(rows.filter((r) => r.productId === productId).map((r) => r.kind).sort())
+      .toEqual(['PRICE', 'TAX_CHANGE']);
+  });
+
+  it('TAX_CHANGE alerts carry no threshold — smuggling one in is refused', async () => {
+    const accountId = await seedAccount();
+    const productId = await seedProduct();
+
+    const row = await alerts.create({
+      accountId,
+      productId,
+      kind: 'TAX_CHANGE',
+    });
+    expect(row.status).toBe('active');
+    expect(row.thresholdCents).toBeNull();
+
+    // The union type forbids a threshold at compile time; the runtime
+    // guard keeps a cast (or a JS caller) honest — spec: TAX_CHANGE
+    // alerts SHALL NOT require a threshold.
+    await expect(
+      alerts.create({
+        accountId,
+        productId,
+        kind: 'TAX_CHANGE',
+        thresholdCents: 500,
+      } as never),
+    ).rejects.toThrow(/TAX_CHANGE alerts must not carry a threshold/);
+
+    // Symmetric guard: a threshold-less PRICE alert could never fire.
+    await expect(
+      alerts.create({
+        accountId,
+        productId,
+        thresholdCents: undefined,
+      } as never),
+    ).rejects.toThrow(/PRICE alerts require a positive threshold/);
+  });
+
+  it('list overloads filter by kind without changing the unfiltered behavior', async () => {
+    const accountId = await seedAccount();
+    const productA = await seedProduct();
+    const productB = await seedProduct();
+    const priceAlert = await alerts.create({
+      accountId,
+      productId: productA,
+      thresholdCents: 1000,
+    });
+    const taxAlert = await alerts.create({
+      accountId,
+      productId: productB,
+      kind: 'TAX_CHANGE',
+    });
+
+    const priceOnly = await alerts.findByAccountId(accountId, 'PRICE');
+    expect(priceOnly.map((r) => r.id)).toEqual([priceAlert.id]);
+    expect(priceOnly.every((r) => r.kind === 'PRICE')).toBe(true);
+
+    const taxOnly = await alerts.findByAccountId(accountId, 'TAX_CHANGE');
+    expect(taxOnly.map((r) => r.id)).toEqual([taxAlert.id]);
+
+    // Unfiltered reads return every kind (pre-kind behavior preserved).
+    const all = await alerts.findByAccountId(accountId);
+    expect(all.map((r) => r.id)).toEqual([priceAlert.id, taxAlert.id]);
+
+    // The evaluation crons scan per kind; a paused PRICE alert leaves
+    // its kind's scan set while TAX_CHANGE is untouched. (findActive is
+    // global across accounts — assert membership, not exact sets.)
+    await alerts.pause(accountId, priceAlert.id);
+    expect((await alerts.findActive('PRICE')).map((r) => r.id)).not.toContain(priceAlert.id);
+    expect((await alerts.findActive('TAX_CHANGE')).map((r) => r.id)).toContain(taxAlert.id);
   });
 
   it('rejects non-positive thresholds at the schema level', async () => {
