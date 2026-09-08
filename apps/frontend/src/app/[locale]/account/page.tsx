@@ -15,9 +15,18 @@ import {
   requestVerificationEmail,
 } from '@/lib/api';
 import { Badge } from '@/components/ui';
-import type { CalculatorResult, SessionStatus } from '@/lib/types';
+import type { CalculatorResult, HistoryOutcomeFlag, SessionStatus } from '@/lib/types';
 import SavedScenariosSection from './components/SavedScenariosSection';
+import OutcomeReportForm from './components/OutcomeReportForm';
 import ReportExportActions from '../calculator/components/ReportExportActions';
+
+/**
+ * The outcome reporting window the API enforces (core-domain
+ * OUTCOME_SUBMISSION_WINDOW, spec: 60 days). Mirrored client-side ONLY
+ * to decide whether the report prompt renders; the server re-checks and
+ * answers WINDOW_EXPIRED, which the form maps to its own copy.
+ */
+const OUTCOME_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
 
 /**
  * Account overview page.
@@ -34,6 +43,7 @@ import ReportExportActions from '../calculator/components/ReportExportActions';
 export default function AccountPage() {
   const t = useTranslations('Account');
   const tCommon = useTranslations('Common');
+  const tOutcome = useTranslations('OutcomeReport');
   const router = useRouter();
 
   const [session, setSession] = useState<SessionStatus | null>(null);
@@ -43,6 +53,11 @@ export default function AccountPage() {
   // ── Calculation history state ──
   const [historyResults, setHistoryResults] = useState<CalculatorResult[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  // Outcome flags from the extended history payload (?outcomes=1, task
+  // 3.2) — recordId → reported, driving the in-account report prompt.
+  const [outcomeFlags, setOutcomeFlags] = useState<
+    ReadonlyMap<number, boolean>
+  >(new Map());
 
   // ── Data export state ──
   const [exporting, setExporting] = useState(false);
@@ -95,8 +110,29 @@ export default function AccountPage() {
     async function loadHistory() {
       setHistoryLoading(true);
       try {
-        const ids = await request<number[]>('/api/v1/account/history');
-        if (cancelled) return;
+        // Extended payload (task 3.3): each record flagged with outcome
+        // presence, driving the in-account report prompt. If the flags
+        // endpoint is unavailable, degrade to the plain id list — the
+        // history still renders, without report prompts.
+        let ids: number[] = [];
+        try {
+          const flags = await request<HistoryOutcomeFlag[]>(
+            '/api/v1/account/history?outcomes=1',
+          );
+          if (cancelled) return;
+          setOutcomeFlags(
+            new Map(flags.map((f) => [f.recordId, f.outcomeReported])),
+          );
+          ids = flags.map((f) => f.recordId);
+        } catch {
+          if (cancelled) return;
+          setOutcomeFlags(new Map());
+          try {
+            ids = await request<number[]>('/api/v1/account/history');
+          } catch {
+            ids = [];
+          }
+        }
 
         // Fetch full results for the last 10 records (newest first when reversed).
         const recentIds = ids.slice(-10).reverse();
@@ -350,35 +386,69 @@ export default function AccountPage() {
                 minute: '2-digit',
               });
 
+              // Outcome prompt state (task 3.3): a record inside the
+              // 60-day window that still misses an outcome renders the
+              // report form; a reported record gets a settled badge.
+              // Outside the window nothing renders — the API rejects
+              // late reports, so the prompt would be a dead end.
+              const outcomeReported =
+                outcomeFlags.get(calc.calculationRecordId) ?? false;
+              const withinWindow =
+                Date.now() - date.getTime() <= OUTCOME_WINDOW_MS;
+
               return (
                 <li
                   key={calc.calculationRecordId}
-                  className="flex flex-wrap items-center justify-between gap-2 py-3"
+                  className="py-3"
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-gray-900">
-                      {calc.metadata.productName}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {t('historyEntry', {
-                        date: formatted,
-                        quantity: calc.metadata.quantity,
-                        total: (calc.totalCents / 100).toFixed(2),
-                      })}
-                    </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-gray-900">
+                        {calc.metadata.productName}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {t('historyEntry', {
+                          date: formatted,
+                          quantity: calc.metadata.quantity,
+                          total: (calc.totalCents / 100).toFixed(2),
+                        })}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center gap-3">
+                      <Link
+                        href="/calculator"
+                        className="text-xs font-medium text-primary-600 hover:text-primary-800"
+                      >
+                        {t('reRun')}
+                      </Link>
+                      <ReportExportActions
+                        recordId={calc.calculationRecordId}
+                        compact
+                      />
+                    </div>
                   </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-3">
-                    <Link
-                      href="/calculator"
-                      className="text-xs font-medium text-primary-600 hover:text-primary-800"
-                    >
-                      {t('reRun')}
-                    </Link>
-                    <ReportExportActions
+
+                  {outcomeReported ? (
+                    <div className="mt-2">
+                      <span data-testid={`outcome-reported-badge-${calc.calculationRecordId}`}>
+                        <Badge tone="verified">
+                          {tOutcome('reportedBadge')}
+                        </Badge>
+                      </span>
+                    </div>
+                  ) : withinWindow ? (
+                    <OutcomeReportForm
                       recordId={calc.calculationRecordId}
-                      compact
+                      estimatedTotalCents={calc.totalCents}
+                      onReported={(created) =>
+                        setOutcomeFlags((prev) => {
+                          const next = new Map(prev);
+                          next.set(created.calculationRecordId, true);
+                          return next;
+                        })
+                      }
                     />
-                  </div>
+                  ) : null}
                 </li>
               );
             })}

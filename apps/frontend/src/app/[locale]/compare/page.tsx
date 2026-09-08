@@ -6,12 +6,14 @@ import { Link } from '@/i18n/navigation';
 import type {
   CompareSortOrder,
   ComparisonProduct,
+  MerchantWarning,
   ProductSearchItem,
 } from '@/lib/types';
 import { searchProducts, calculateLandedCost, getProductDetail } from '@/lib/api';
 import SortSelector from './components/SortSelector';
 import ComparisonView from './components/ComparisonView';
 import BasketComparisonSection from './components/BasketComparisonSection';
+import MerchantWarningNotice from '../components/MerchantWarningNotice';
 import ProductSearch from '../calculator/components/ProductSearch';
 import ProductSelector from '../calculator/components/ProductSelector';
 import { sortComparisonProducts } from './sort-products';
@@ -48,6 +50,9 @@ export default function ComparePage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
+  // Merchant warnings joined additively into the search response
+  // (task 2.4) — display-only advisory for the results panel.
+  const [searchWarnings, setSearchWarnings] = useState<readonly MerchantWarning[]>([]);
 
   // ── Comparison state ──
   const [sortBy, setSortBy] = useState<CompareSortOrder>(DEFAULT_SORT);
@@ -70,11 +75,13 @@ export default function ComparePage() {
     try {
       const res = await searchProducts(trimmed);
       setSearchResults(res.items);
+      setSearchWarnings(res.merchantWarnings ?? []);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : tCalc('searchFailed');
       setSearchError(message);
       setSearchResults([]);
+      setSearchWarnings([]);
     } finally {
       setSearchLoading(false);
       searchInFlight.current = false;
@@ -86,6 +93,7 @@ export default function ComparePage() {
     setShowSearch(true);
     setQuery('');
     setSearchResults([]);
+    setSearchWarnings([]);
     setSearchError(null);
   }, []);
 
@@ -134,6 +142,9 @@ export default function ComparePage() {
             ? result.itemizedCosts[0].reliability
             : 'UNAVAILABLE',
           merchants,
+          // Display-only blacklist warnings joined from the detail
+          // payload (task 2.4) — rendered per column, ordering untouched.
+          merchantWarnings: detail?.merchantWarnings ?? [],
           // Present only when the detail payload resolved — mirrors the
           // API's key-absent-when-unresolved contract; undefined renders
           // as no value.
@@ -222,6 +233,14 @@ export default function ComparePage() {
             loading={searchLoading}
             query={query}
           />
+
+          {/* Display-only merchant warnings for this result set
+              (task 2.4) — the results themselves are untouched. */}
+          {searchResults.length > 0 && (
+            <div className="mt-3">
+              <MerchantWarningNotice warnings={searchWarnings} compact />
+            </div>
+          )}
 
           {calcError && (
             <p className="mt-3 text-sm text-red-600">{calcError}</p>

@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import type { RankingMethodology, SortOrder } from '@/lib/types';
 import { getRankingMethodology } from '@/lib/api';
+import AccuracyStat from '../components/AccuracyStat';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -121,6 +122,14 @@ export default function RankingPage() {
           </div>
         )}
       </section>
+
+      {/* ── Accuracy section (task 3.3) ──
+          The user-reported accuracy statistic with its sample size and
+          the API-supplied wording; an honest empty state until outcomes
+          exist. Anchor target of the share page's accuracy cross-link. */}
+      <div id="accuracy">
+        <AccuracyStat variant="section" />
+      </div>
 
       {/* ── Tiebreaker and determinism ── */}
       <section className="mb-8 rounded-lg border border-gray-200 bg-gray-50 p-5">

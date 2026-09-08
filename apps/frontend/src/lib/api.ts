@@ -35,6 +35,8 @@ import type {
   MerchantReliabilityListResponse,
   DeclarationSummaryResponse,
   SessionStatus,
+  AccuracyStatistic,
+  OutcomeReport,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -509,6 +511,40 @@ export async function getCalculationResult(
   recordId: number,
 ): Promise<CalculatorResult> {
   return request<CalculatorResult>(`/api/v1/calculator/result/${recordId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Verified outcomes (trust-and-reach-roadmap tasks 3.2/3.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Public accuracy statistic (GET /api/v1/accuracy): outcome count, the
+ * within-margin share (null exactly when count is 0 — the honest empty
+ * state), and the API-supplied user-reported label the UI renders
+ * verbatim. A failure propagates; callers degrade quietly.
+ */
+export async function getAccuracyStatistic(): Promise<AccuracyStatistic> {
+  return request<AccuracyStatistic>('/api/v1/accuracy');
+}
+
+/**
+ * Report the actual total paid for one owned calculation record
+ * (POST /api/v1/calculations/:id/outcome, session cookie rides along).
+ * Rejections surface as ApiFetchError: 404 RECORD_NOT_FOUND, 403
+ * NOT_RECORD_OWNER, 409 OUTCOME_ALREADY_EXISTS, 400
+ * WINDOW_EXPIRED / REPORTED_TOTAL_NOT_POSITIVE.
+ */
+export async function reportCalculationOutcome(
+  recordId: number,
+  reportedTotalCents: number,
+): Promise<OutcomeReport> {
+  return request<OutcomeReport>(
+    `/api/v1/calculations/${recordId}/outcome`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reportedTotalCents }),
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------

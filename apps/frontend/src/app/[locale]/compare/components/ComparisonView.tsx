@@ -13,6 +13,7 @@ import { Button, Card } from '@/components/ui';
 import { logClick } from '@/lib/api';
 import { MerchantLink } from './MerchantLink';
 import MerchantFreshnessSection from './MerchantFreshnessSection';
+import MerchantWarningNotice from '../../components/MerchantWarningNotice';
 import ProductHistoryPanel from '../../calculator/components/ProductHistoryPanel';
 import UnitPriceCell from './UnitPriceCell';
 
@@ -120,6 +121,19 @@ function ProductColumn({
           </div>
         ))}
       </div>
+
+      {/* Merchant warning (task 2.4) — display-only notice when any of
+          this product's merchants carries a PUBLISHED blacklist entry.
+          Presentational only: the column's position and totals are
+          computed before and untouched. */}
+      {(product.merchantWarnings?.length ?? 0) > 0 && (
+        <div className="mt-3">
+          <MerchantWarningNotice
+            warnings={product.merchantWarnings ?? []}
+            compact
+          />
+        </div>
+      )}
 
       {/* Merchant data-freshness display — factual per-merchant summary
           from the reliability endpoint. Informational only: identical

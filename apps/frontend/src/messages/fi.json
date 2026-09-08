@@ -1181,5 +1181,73 @@
     "unvaluedItem": "Arvoa ei tiedossa",
     "settlementNoteTitle": "Suoritus tapahtuu Rajahinnan ulkopuolella",
     "settlementNoteBody": "Rajahinta laskee vain, kuka on velassa kenellekin. Rajahinta ei käsittele, välitä eikä mahdollista maksuja. Osallistujat sopivat suorituksesta keskenään omilla tavoillaan, esimerkiksi Swish-, MobilePay- tai pankkisiirrolla."
+
+  },
+  "MerchantWarning": {
+    "noticeLabel": "Julkaistu kauppiashuomautus",
+    "noticeTitle": "Julkaistu kauppiashuomautus",
+    "warnedMerchant": "Kauppias {name}:",
+    "noticeBody": "T\u00e4m\u00e4 kauppias on saanut julkaistun huomautuksen ({basis}). Mit\u00e4 huomautus tarkoittaa ja miten se on julkaistu, kerrotaan <link>menetelm\u00e4sivulla</link>.",
+    "basisNonDelivery": "useita itsen\u00e4isi\u00e4, vahvistettuja toimitush\u00e4iri\u00f6raportteja",
+    "basisRegistration": "vahvistettu virheellinen yritysrekisteritieto",
+    "basisGeneric": "julkaistu n\u00e4ytt\u00f6vaatimus"
+  },
+  "AccuracyStat": {
+    "heading": "Kuinka tarkkoja arviot ovat?",
+    "shareLine": "{share} raportoiduista loppusumista on j\u00e4nyt 5 %:n sis\u00e4\u00e4n arviosta.",
+    "countLine": "Otoskoko: {count, plural, one {# lopputulos} other {# lopputulosta}}",
+    "emptyTitle": "Ei viel\u00e4 k\u00e4ytt\u00e4jien raportoimia lopputuloksia",
+    "emptyBody": "Kun vierailijat raportoivat laskelmansa todellisen loppusumman, t\u00e4h\u00e4n julkaistaan arvion 5 %:n sis\u00e4\u00e4n j\u00e4\u00e4neiden raporttien osuus. Mit\u00e4\u00e4n ei n\u00e4ytet\u00e4 ennen sit\u00e4.",
+    "asOfLine": "Laskettu {date}",
+    "loading": "Ladataan tarkkuustilastoa\u2026",
+    "loadFailed": "Tarkkuustilasto ei ole juuri nyt saatavilla."
+  },
+  "OutcomeReport": {
+    "formTitle": "Raportoi todellinen loppusumma",
+    "formIntro": "J\u00e4ik\u00f6 lopullinen summa muuksi kuin arvioksi? Raportoi, paljonko todellisuudessa maksoit \u2014 raportoidut lopputulokset sy\u00f6tt\u00e4v\u00e4t julkista tarkkuustilastoa. Yksi raportti per laskelma.",
+    "amountLabel": "Todellinen loppusumma (\u20ac)",
+    "submit": "L\u00e4het\u00e4 raportti",
+    "submitting": "L\u00e4hetet\u00e4\u00e4n\u2026",
+    "successWithin": "Kiitos \u2014 raportti on tallennettu ja j\u00e4i arvion 5 %:n sis\u00e4\u00e4n.",
+    "successOutside": "Kiitos \u2014 raportti on tallennettu. Se poikkesi arviosta yli 5 %.",
+    "alreadyReported": "T\u00e4m\u00e4 laskelma on jo raportoitu.",
+    "windowExpired": "Laskelman 60 vuorokauden raportointiikkuna on sulkeutunut.",
+    "invalidAmount": "Sy\u00f6t\u00e4 summa positiivisena eurom\u00e4\u00e4r\u00e4n\u00e4, esimerkiksi 24,90.",
+    "reportFailed": "Raportin l\u00e4hetys ep\u00e4onnistui. Yrit\u00e4 uudelleen.",
+    "reportedBadge": "Lopputulos raportoitu"
+  },
+  "BlogPage": {
+    "metaTitle": "Blogi",
+    "metaDescription": "Ilmoitukset virallisista veroaineistoversioista ja tietoa siit\u00e4, miten kokonaishinta-arviot lasketaan.",
+    "title": "Blogi",
+    "subtitle": "Ilmoitukset virallisista veroaineistoversioista ja tietoa laskentamenetelm\u00e4st\u00e4.",
+    "publishedLabel": "Julkaistu {date}",
+    "datasetVersionLabel": "Veroaineiston versio {version}",
+    "readMore": "Lue julkaisu",
+    "emptyTitle": "Ei viel\u00e4 julkaisuja",
+    "emptyBody": "Mit\u00e4\u00e4n ei ole viel\u00e4 julkaistu. Julkaisut ilmestyv\u00e4t t\u00e4nne, kun operaattori julkaisee ne.",
+    "unavailableTitle": "Blogi ei ole juuri nyt saatavilla",
+    "unavailableBody": "Julkaisuja ei voitu ladata. Kokeile hetken kuluttua uudelleen.",
+    "backToBlog": "\u2190 Kaikki julkaisut",
+    "postMetaTitle": "{title} \u2014 blogi",
+    "postMetaDescription": "Julkaistu {date} Rajahinta.fi:ss\u00e4."
+  },
+  "SharePage": {
+    "metaTitle": "Jaettu kokonaishinta-arvio: {name}",
+    "metaDescription": "J\u00e4\u00e4dytetty kokonaishinta-arvio: {quantity} \u00d7 {name} kohteeseen {destination}, yhteens\u00e4 {total}. Arvio on arvio, ei lopullinen verovelka.",
+    "metaTitleFallback": "Jaettu kokonaishinta-arvio",
+    "metaDescriptionFallback": "Rajahinta.fi:ss\u00e4 laskettu ja jaettu kokonaishinta-arvio.",
+    "eyebrow": "Jaettu arvio",
+    "snapshotOfLabel": "Kokonaishinta-arvio: {quantity} \u00d7 {name} kohteeseen {destination}",
+    "totalLabel": "Arvioitu yhteens\u00e4",
+    "breakdownTitle": "Eritelty arvio",
+    "breakdownUnavailable": "T\u00e4m\u00e4 kopio ei sis\u00e4ll\u00e4 eriteltyj\u00e4 rivej\u00e4.",
+    "calculatedLabel": "Laskettu {date}",
+    "createdLabel": "Kopio luotu {date}",
+    "frozenNote": "T\u00e4m\u00e4 sivu n\u00e4ytt\u00e4\u00e4 j\u00e4\u00e4dytetyn kopion: my\u00f6hemm\u00e4t muutokset alkuper\u00e4iseen laskelmaan eiv\u00e4t muuta sit\u00e4.",
+    "accuracyLinkTitle": "Kuinka tarkkoja arviot ovat?",
+    "accuracyLinkBody": "Katso menetelm\u00e4sivulla oleva <link>k\u00e4ytt\u00e4jien raportoima tarkkuustilasto</link>.",
+    "confidenceLabel": "Varmuus",
+    "disclaimerFallback": "Arvioitu kokonaishinta Suomessa on arvio, ei lopullinen verovelka."
   }
 }

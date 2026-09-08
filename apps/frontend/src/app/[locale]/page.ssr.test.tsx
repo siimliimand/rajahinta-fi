@@ -64,6 +64,13 @@ vi.mock('@/i18n/navigation', () => ({
   },
 }));
 
+// The accuracy statistic (task 3.3) is a self-contained client island
+// with its own fetch and its own test file. This file pins the STATIC
+// trust-row copy — stub the island so the SSR render stays offline.
+vi.mock('./components/AccuracyStat', () => ({
+  default: () => React.createElement('div', { 'data-testid': 'accuracy-trust-row-stub' }),
+}));
+
 describe('HomePage trust row (task 4.2, D6)', () => {
   let html = '';
 

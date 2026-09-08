@@ -9,6 +9,7 @@ import { useTranslations } from 'next-intl';
 import type {
   ProductSearchItem,
   CalculatorResult,
+  MerchantWarning,
   SavedScenario,
 } from '@/lib/types';
 import {
@@ -23,6 +24,7 @@ import { useDebouncedCallback } from '@/lib/use-debounced-callback';
 import { EmptyState, ErrorState } from '@/components/ui';
 import ProductSearch from './components/ProductSearch';
 import ProductSelector from './components/ProductSelector';
+import MerchantWarningNotice from '../components/MerchantWarningNotice';
 import QuantitySelector from './components/QuantitySelector';
 import CalculatorResultView from './components/CalculatorResult';
 import ProductHistoryPanel from './components/ProductHistoryPanel';
@@ -135,6 +137,9 @@ export default function CalculatorPage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  // Display-only merchant warnings joined into the search response
+  // (task 2.4) — advisory for the results panel, never a filter.
+  const [searchWarnings, setSearchWarnings] = useState<readonly MerchantWarning[]>([]);
 
   // ── Selection state ──
   const [selectedProduct, setSelectedProduct] =
@@ -178,6 +183,7 @@ export default function CalculatorPage() {
       setHasSearched(true);
       setSelectedProduct(null);
       setResult(null);
+      setSearchWarnings([]);
 
       try {
         const res = await searchProducts(
@@ -189,6 +195,7 @@ export default function CalculatorPage() {
         );
         if (controller.signal.aborted) return;
         setSearchResults(res.items);
+        setSearchWarnings(res.merchantWarnings ?? []);
       } catch (err: unknown) {
         // Superseded searches leave the newer one's state untouched.
         if (controller.signal.aborted) return;
@@ -196,6 +203,7 @@ export default function CalculatorPage() {
           err instanceof Error ? err.message : t('searchFailed');
         setSearchError(message);
         setSearchResults([]);
+        setSearchWarnings([]);
       } finally {
         if (searchAbortRef.current === controller) {
           setSearchLoading(false);
@@ -386,13 +394,22 @@ export default function CalculatorPage() {
                   })}
                 />
               ) : (
-                <ProductSelector
-                  items={searchResults}
-                  selectedId={selectedProduct?.id ?? null}
-                  onSelect={handleSelect}
-                  loading={searchLoading}
-                  query={query}
-                />
+                <>
+                  <ProductSelector
+                    items={searchResults}
+                    selectedId={selectedProduct?.id ?? null}
+                    onSelect={handleSelect}
+                    loading={searchLoading}
+                    query={query}
+                  />
+                  {/* Display-only merchant warnings for this result set
+                      (task 2.4) — additive advisory under the results. */}
+                  {searchResults.length > 0 && (
+                    <div className="mt-3">
+                      <MerchantWarningNotice warnings={searchWarnings} compact />
+                    </div>
+                  )}
+                </>
               )}
             </section>
           )}

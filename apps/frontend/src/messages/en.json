@@ -1181,5 +1181,73 @@
     "unvaluedItem": "No value available",
     "settlementNoteTitle": "Settlement happens outside Rajahinta",
     "settlementNoteBody": "Rajahinta only calculates who owes whom. Rajahinta does not process, broker, or facilitate payments. Participants settle between themselves using their own methods, for example Swish, MobilePay, or a bank transfer."
+
+  },
+  "MerchantWarning": {
+    "noticeLabel": "Published merchant warning",
+    "noticeTitle": "Published merchant warning",
+    "warnedMerchant": "Merchant {name}:",
+    "noticeBody": "This merchant carries a published warning ({basis}). What the warning means and how it was published is explained on the <link>methodology page</link>.",
+    "basisNonDelivery": "multiple independent confirmed non-delivery reports",
+    "basisRegistration": "a confirmed invalid business registration",
+    "basisGeneric": "the published evidence standard"
+  },
+  "AccuracyStat": {
+    "heading": "How accurate are the estimates?",
+    "shareLine": "{share} of reported totals have been within 5 % of the estimate.",
+    "countLine": "Sample size: {count, plural, one {# outcome} other {# outcomes}}",
+    "emptyTitle": "No user-reported outcomes yet",
+    "emptyBody": "When visitors report the actual total of their calculation, the share of reports within 5 % of the estimate is published here. Nothing is shown until then.",
+    "asOfLine": "Computed {date}",
+    "loading": "Loading the accuracy statistic\u2026",
+    "loadFailed": "The accuracy statistic is temporarily unavailable."
+  },
+  "OutcomeReport": {
+    "formTitle": "Report the actual total",
+    "formIntro": "Did the final total differ from the estimate? Report what you actually paid \u2014 reported outcomes feed the public accuracy statistic. One report per calculation.",
+    "amountLabel": "Actual total (\u20ac)",
+    "submit": "Send report",
+    "submitting": "Sending\u2026",
+    "successWithin": "Thank you \u2014 the report was recorded and lands within 5 % of the estimate.",
+    "successOutside": "Thank you \u2014 the report was recorded. It differs from the estimate by more than 5 %.",
+    "alreadyReported": "An outcome has already been reported for this calculation.",
+    "windowExpired": "The 60-day reporting window for this calculation has closed.",
+    "invalidAmount": "Enter the total as a positive amount in euros, for example 24.90.",
+    "reportFailed": "Sending the report failed. Try again.",
+    "reportedBadge": "Outcome reported"
+  },
+  "BlogPage": {
+    "metaTitle": "Blog",
+    "metaDescription": "Announcements about official rate dataset versions and information on how the landed-cost estimates are calculated.",
+    "title": "Blog",
+    "subtitle": "Announcements about official rate dataset versions and information on the calculation method.",
+    "publishedLabel": "Published {date}",
+    "datasetVersionLabel": "Rate dataset version {version}",
+    "readMore": "Read the post",
+    "emptyTitle": "No posts yet",
+    "emptyBody": "Nothing has been published yet. Posts appear here after an operator publishes them.",
+    "unavailableTitle": "The blog is temporarily unavailable",
+    "unavailableBody": "The posts could not be loaded. Try again shortly.",
+    "backToBlog": "\u2190 All posts",
+    "postMetaTitle": "{title} \u2014 blog",
+    "postMetaDescription": "Published {date} on Rajahinta.fi."
+  },
+  "SharePage": {
+    "metaTitle": "Shared landed-cost estimate: {name}",
+    "metaDescription": "A frozen landed-cost estimate for {quantity} \u00d7 {name} to {destination}: {total}. The estimate is an estimate, not a final tax liability.",
+    "metaTitleFallback": "Shared landed-cost estimate",
+    "metaDescriptionFallback": "A frozen landed-cost estimate shared from Rajahinta.fi.",
+    "eyebrow": "Shared estimate",
+    "snapshotOfLabel": "Landed-cost estimate: {quantity} \u00d7 {name} to {destination}",
+    "totalLabel": "Estimated total",
+    "breakdownTitle": "Itemized estimate",
+    "breakdownUnavailable": "The itemized lines are not part of this snapshot.",
+    "calculatedLabel": "Calculated {date}",
+    "createdLabel": "Snapshot created {date}",
+    "frozenNote": "This page shows a frozen copy: later changes to the original calculation do not alter it.",
+    "accuracyLinkTitle": "How accurate are these estimates?",
+    "accuracyLinkBody": "See the <link>user-reported accuracy statistic</link> on the methodology page.",
+    "confidenceLabel": "Confidence",
+    "disclaimerFallback": "The estimated total cost in Finland is an estimate, not a final tax liability."
   }
 }

@@ -44,6 +44,15 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
+// The merchant-warning notice (task 2.4) is rendered through the i18n
+// navigation Link; the router-aware navigation module does not load
+// under this test environment, so stub it with the plain-anchor shape
+// every other page test uses.
+vi.mock('@/i18n/navigation', () => ({
+  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
+    React.createElement('a', props),
+}));
+
 const mockedSearchProducts = vi.mocked(searchProducts);
 const mockedCalculateLandedCost = vi.mocked(calculateLandedCost);
 

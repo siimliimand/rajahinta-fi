@@ -6,6 +6,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import { RELIABILITY_STATUS_META } from '@/lib/design/status';
 import type { ReliabilityStatus } from '@/lib/types';
+import AccuracyStat from './components/AccuracyStat';
 
 /**
  * Canonical status order for the trust-row legend: the same hue ladder the
@@ -19,14 +20,17 @@ const TRUST_ROW_STATUSES = [
 ] as const satisfies readonly ReliabilityStatus[];
 
 /**
- * Homepage (OpenSpec: design-system-foundation, tasks 4.1 + 4.2).
+ * Homepage (OpenSpec: design-system-foundation, tasks 4.1 + 4.2;
+ * trust-and-reach-roadmap task 3.3 extends the trust row).
  *
  * Static catalog copy only (D6): one-sentence value prop answering what
  * importing alcohol from abroad to Finland costs, the calculator as the
  * primary call to action, quiet secondary links to the comparison view
  * and the ranking methodology, and a trust row naming the data sources,
- * the reliability model, and the methodology documentation. Typography
- * and spacing carry the hierarchy; no API calls are made from this page.
+ * the reliability model, the user-reported accuracy statistic, and the
+ * methodology documentation. The page shell itself makes no API calls;
+ * the accuracy statistic is a self-contained client island
+ * (AccuracyStat) that degrades quietly when the backend is unreachable.
  */
 export default async function HomePage({
   params,
@@ -94,7 +98,7 @@ export default async function HomePage({
           {t('trustHeading')}
         </h2>
 
-        <div className="grid gap-8 text-left sm:grid-cols-3">
+        <div className="grid gap-8 text-left sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <h3 className="text-sm font-semibold text-gray-900">
               {t('trustSourcesTitle')}
@@ -148,6 +152,13 @@ export default async function HomePage({
               {tNav('howRankingWorks')} →
             </Link>
           </div>
+
+          {/* ── Accuracy statistic (task 3.3) ──
+              The user-reported outcome share in the trust row: always
+              with its sample size and the API-supplied wording, honest
+              empty state until outcomes exist. The fetch failure
+              degrades quietly inside the component. */}
+          <AccuracyStat variant="trust-row" />
         </div>
       </section>
     </main>
