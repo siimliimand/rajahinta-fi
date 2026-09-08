@@ -45,13 +45,44 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: 'Metadata' });
+  const title = t('title');
+  const description = t('description');
 
   return {
     metadataBase: new URL(SITE_URL),
-    title: t('title'),
-    description: t('description'),
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: 'website',
+      siteName: 'Rajahinta.fi',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+    },
   };
 }
+
+/** JSON-LD schema for rich search results (WebApplication). */
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: 'Rajahinta.fi',
+  url: SITE_URL,
+  description:
+    'Finnish cross-border beverage landed-cost calculator. Calculate retail price, transport, excise duty and container tax in one estimate.',
+  applicationCategory: 'FinanceApplication',
+  operatingSystem: 'Web',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'EUR',
+  },
+  inLanguage: ['fi', 'en'],
+};
 
 export default async function RootLayout({
   children,
@@ -72,6 +103,10 @@ export default async function RootLayout({
   return (
     <html lang={locale} className={inter.variable}>
       <body>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
         {/* Explicit locale: the provider must not depend on the RSC
             request store to know which catalog it carries. */}
         <NextIntlClientProvider locale={locale} messages={messages}>

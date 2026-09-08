@@ -1,7 +1,7 @@
 {
   "Metadata": {
-    "title": "Rajahinta.fi",
-    "description": "Rajat ylittävien juomien hintaindeksi ja kokonaiskustannuslaskuri"
+    "title": "Rajahinta.fi — Laske alkoholin kokonaishinta Suomeen",
+    "description": "Laske alkoholin todellinen kokonaishinta ulkomailta Suomeen: vähittäishinta, kuljetus ja valmistevero yhdessä. Puolueeton, läpinäkyvä ja ilmainen."
   },
   "Common": {
     "reliability": {
@@ -70,10 +70,35 @@
   },
   "SiteFooter": {
     "disclaimer": "Rajahinta.fi on riippumaton hintavertailu- ja kokonaiskustannuslaskuri. Kaikki hinnat, verot ja maksut ovat arvioita eivätkä virallisia tietoja. Palvelu ei tarjoa vero- tai tullineuvontaa. Tarkista ajantasaiset tiedot aina viranomaislähteistä.",
-    "methodology": "Miten järjestäminen toimii"
+    "methodology": "Miten järjestäminen toimii",
+    "tagline": "Rajat ylittävien juomien hintaindeksi ja kokonaiskustannuslaskuri.",
+    "servicesHeading": "Palvelut",
+    "aboutHeading": "Tietoja",
+    "linkCalculator": "Kokonaiskustannuslaskuri",
+    "linkCompare": "Vertaile tuotteita",
+    "linkBasket": "Ostoskorioptimointori",
+    "linkTrip": "Matkalaskuri",
+    "linkEvent": "Tilaisuuslaskuri",
+    "linkValue": "Arvo (€/g alkoholi)",
+    "linkBlog": "Blogi",
+    "copyright": "© Rajahinta.fi"
   },
   "Home": {
     "subtitle": "Rajat ylittävien juomien kokonaiskustannuslaskuri Suomeen",
+    "heroHeadline": "Laske alkoholin todellinen kokonaishinta Suomeen",
+    "heroSubline": "Ulkomainen vähittäishinta, kuljetus ja arviot valmisteverosta ja pakkausverosta — yhdessä eritelyssä laskelmassa.",
+    "heroPillBadge": "Puolueeton · Läpinäkyvä · Verohallinnon verotaulukot",
+    "heroSearchPlaceholder": "Hae tuotetta… esim. Koskenkorva, IPA, Rioja",
+    "heroTrustLine": "🏛 Viralliset verolähteet · 📊 Hintaindeksi · 🔒 WCAG AA -saavutettava",
+    "whyTitle": "Miksi Rajahinta.fi?",
+    "feature1Title": "Todellinen kokonaishinta",
+    "feature1Body": "Vähittäishinta + kuljetus + valmistevero + palautusmaksu — kaikki yhdessä laskelmassa.",
+    "feature2Title": "Varmennettu tieto",
+    "feature2Body": "Vihreä = vahvistettu · Sininen = arvioitu · Oranssi = vanhentunut. Jokainen luku kantaa luotettavuusmerkinnän.",
+    "feature3Title": "Puolueeton pisteytys",
+    "feature3Body": "Ei maksettuja sijoituksia. Kaikki laskentaperusteet on dokumentoitu avoimesti ja valvottu koodissa.",
+    "feature4Title": "Hintahistoria",
+    "feature4Body": "Historiakuvaajat hinnoista ja veromuutoksista — näet miten kustannukset ovat kehittyneet ajan myötä.",
     "heroValueProp": "Laske alkoholijuomien tuonnin kokonaiskustannus ulkomailta Suomeen: ulkomainen vähittäishinta, kuljetus sekä arviot alkoholin valmisteverosta ja pakkausverosta.",
     "trustHeading": "Tietolähteet ja luotettavuus",
     "trustSourcesTitle": "Aineistolähteet",
@@ -109,6 +134,9 @@
   "Calculator": {
     "title": "Kokonaiskustannuslaskuri",
     "subtitle": "Hae tuote, valitse määrä ja saat eritellyn kokonaiskustannusarvion Suomeen.",
+    "stepSearch": "Haku",
+    "stepConfigure": "Määritys",
+    "stepResult": "Tulos",
     "searchResults": "Hakutulokset",
     "selectedProduct": "Valittu tuote",
     "change": "Vaihda",

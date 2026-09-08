@@ -29,6 +29,8 @@ import QuantitySelector from './components/QuantitySelector';
 import CalculatorResultView from './components/CalculatorResult';
 import ProductHistoryPanel from './components/ProductHistoryPanel';
 import ScenarioControls from './components/ScenarioControls';
+import StepIndicator from './components/StepIndicator';
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -362,66 +364,119 @@ export default function CalculatorPage() {
     searchResults.length === 0 &&
     query.trim().length >= MIN_QUERY_LENGTH;
 
+  // Derive the active step for the progress indicator:
+  //   Step 0 — search / product selection
+  //   Step 1 — quantity & calculate
+  //   Step 2 — result
+  const activeStep = result ? 2 : selectedProduct ? 1 : 0;
+
+  const stepLabels = [
+    t('stepSearch'),
+    t('stepConfigure'),
+    t('stepResult'),
+  ];
+
   return (
-    <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* ── Header ── */}
-      <h1 className="mb-1 text-2xl font-bold text-primary-700">{t('title')}</h1>
-      <p className="mb-8 text-sm text-gray-500">{t('subtitle')}</p>
+    <main className="mx-auto min-h-screen max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
+      {/* ── Page header ── */}
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+        <p className="mt-1 text-sm text-gray-500">{t('subtitle')}</p>
+      </div>
+
+      {/* ── Step progress indicator ── */}
+      <StepIndicator steps={stepLabels} currentStep={activeStep} />
 
       <>
-        {/* ── Search section ── */}
-        <section className="mb-6">
-          <ProductSearch
-            value={query}
-            onChange={handleQueryChange}
-            onSubmit={handleSearch}
-            loading={searchLoading}
-            error={searchError}
-          />
-        </section>
+        {/* ── Step 1: Search ── */}
+        <div className="mb-5 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-3.5">
+            <span
+              className={[
+                'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold',
+                activeStep >= 1
+                  ? 'bg-primary-600 text-white'
+                  : 'border-2 border-primary-600 text-primary-600',
+              ].join(' ')}
+            >
+              {activeStep >= 1 ? (
+                <svg aria-hidden="true" focusable="false" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+              ) : '1'}
+            </span>
+            <h2 className="text-sm font-semibold text-gray-800">{t('stepSearch')}</h2>
+          </div>
+          <div className="px-5 py-4">
+            <ProductSearch
+              value={query}
+              onChange={handleQueryChange}
+              onSubmit={handleSearch}
+              loading={searchLoading}
+              error={searchError}
+            />
 
-          {/* ── Search results ── */}
-          {hasSearched && (
-            <section className="mb-6">
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
-                {selectedProduct ? t('selectedProduct') : t('searchResults')}
-              </h2>
-              {searchSettledEmpty ? (
-                <EmptyState
-                  title={t('searchNoResultsTitle')}
-                  description={t('searchNoResultsDescription', {
-                    query: query.trim(),
-                  })}
-                />
-              ) : (
-                <>
-                  <ProductSelector
-                    items={searchResults}
-                    selectedId={selectedProduct?.id ?? null}
-                    onSelect={handleSelect}
-                    loading={searchLoading}
-                    query={query}
+            {/* ── Search results ── */}
+            {hasSearched && (
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  {selectedProduct ? t('selectedProduct') : t('searchResults')}
+                </p>
+                {searchSettledEmpty ? (
+                  <EmptyState
+                    title={t('searchNoResultsTitle')}
+                    description={t('searchNoResultsDescription', {
+                      query: query.trim(),
+                    })}
                   />
-                  {/* Display-only merchant warnings for this result set
-                      (task 2.4) — additive advisory under the results. */}
-                  {searchResults.length > 0 && (
-                    <div className="mt-3">
-                      <MerchantWarningNotice warnings={searchWarnings} compact />
-                    </div>
-                  )}
-                </>
-              )}
-            </section>
-          )}
+                ) : (
+                  <>
+                    <ProductSelector
+                      items={searchResults}
+                      selectedId={selectedProduct?.id ?? null}
+                      onSelect={handleSelect}
+                      loading={searchLoading}
+                      query={query}
+                    />
+                    {searchResults.length > 0 && (
+                      <div className="mt-3">
+                        <MerchantWarningNotice warnings={searchWarnings} compact />
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
 
-          {/* ── Selected product + quantity + calculate ── */}
-          {selectedProduct && (
-            <section className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        {/* ── Step 2: Configure + Calculate ── */}
+        {selectedProduct && (
+          <div className="mb-5 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-3.5">
+              <span
+                className={[
+                  'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold',
+                  activeStep >= 2
+                    ? 'bg-primary-600 text-white'
+                    : 'border-2 border-primary-600 text-primary-600',
+                ].join(' ')}
+              >
+                {activeStep >= 2 ? (
+                  <svg aria-hidden="true" focusable="false" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                ) : '2'}
+              </span>
+              <h2 className="text-sm font-semibold text-gray-800">{t('stepConfigure')}</h2>
+            </div>
+            <div className="px-5 py-4">
+              {/* Selected product summary */}
               <div className="mb-4 flex items-start justify-between">
                 <div>
-                  <h2 className="font-semibold text-gray-900">
+                  <p className="font-semibold text-gray-900">
                     {selectedProduct.name}
-                  </h2>
+                  </p>
                   <p className="text-xs text-gray-500">
                     {selectedProduct.brand}
                     {selectedProduct.category
@@ -435,35 +490,44 @@ export default function CalculatorPage() {
                 <button
                   type="button"
                   onClick={handleReset}
-                  className="text-xs text-primary-600 hover:text-primary-800"
+                  className="ml-4 shrink-0 rounded-md px-2 py-1 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-50 hover:text-primary-800"
                 >
                   {t('change')}
                 </button>
               </div>
 
-              <div className="mb-4">
+              <div className="mb-5">
                 <QuantitySelector value={quantity} onChange={setQuantity} />
               </div>
 
+              {/* Calculate button */}
               <button
                 type="button"
                 onClick={handleCalculate}
                 disabled={!canCalculate}
-                className="inline-flex w-full items-center justify-center rounded-md bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {calculating ? t('calculating') : t('calculate')}
+                {calculating ? (
+                  <>
+                    <svg
+                      aria-hidden="true"
+                      focusable="false"
+                      className="h-4 w-4 animate-spin"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    {t('calculating')}
+                  </>
+                ) : (
+                  t('calculate')
+                )}
               </button>
 
               {calcError && (
                 <div className="mt-3">
-                  {/* Designed error state (task 5.3): the rate-limited
-                      case replaces the raw server message with localized
-                      copy and surfaces the 429 Retry-After wait. The
-                      age-gate case (age-gate-recovery, task 3.4) does the
-                      same with the localized recovery copy — the AgeGate
-                      modal explains the re-confirmation itself, so the
-                      raw backend message never reaches the user. Retry
-                      stays available for both. */}
                   <ErrorState
                     title={
                       calcError.ageGateRequired
@@ -493,21 +557,31 @@ export default function CalculatorPage() {
                   </ErrorState>
                 </div>
               )}
-            </section>
-          )}
-
-          {/* ── Scenario controls ── */}
-          <div className="mb-6">
-            <ScenarioControls
-              canSave={selectedProduct !== null}
-              onSaveScenario={handleSaveScenario}
-              onLoadScenario={handleLoadScenario}
-            />
+            </div>
           </div>
+        )}
 
-          {/* ── Calculation result ── */}
-          {result && (
-            <section>
+        {/* ── Scenario controls ── */}
+        <div className="mb-5">
+          <ScenarioControls
+            canSave={selectedProduct !== null}
+            onSaveScenario={handleSaveScenario}
+            onLoadScenario={handleLoadScenario}
+          />
+        </div>
+
+        {/* ── Step 3: Result ── */}
+        {result && (
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-3.5">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-600 text-xs font-bold text-white">
+                <svg aria-hidden="true" focusable="false" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+              </span>
+              <h2 className="text-sm font-semibold text-gray-800">{t('stepResult')}</h2>
+            </div>
+            <div className="p-5">
               <CalculatorResultView result={result} />
               {/* Historical charts */}
               <div className="mt-6">
@@ -516,9 +590,11 @@ export default function CalculatorPage() {
                   showMerchantFilter
                 />
               </div>
-            </section>
-          )}
+            </div>
+          </div>
+        )}
       </>
     </main>
   );
 }
+

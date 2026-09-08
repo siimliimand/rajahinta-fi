@@ -147,9 +147,24 @@ describe('layout and navigation catalog completeness', () => {
   });
 
   it('SiteFooter carries the disclaimer and methodology link copy', () => {
-    expectNamespaceKeys('SiteFooter', ['disclaimer', 'methodology']);
-    expectTranslated('SiteFooter');
+    expectNamespaceKeys('SiteFooter', [
+      'disclaimer',
+      'methodology',
+      'tagline',
+      'servicesHeading',
+      'aboutHeading',
+      'linkCalculator',
+      'linkCompare',
+      'linkBasket',
+      'linkTrip',
+      'linkEvent',
+      'linkValue',
+      'linkBlog',
+      'copyright',
+    ]);
+    expectTranslated('SiteFooter', ['copyright']);
   });
+
 
   it('AgeGate carries the full dialog copy in both locales', () => {
     expectNamespaceKeys('AgeGate', [

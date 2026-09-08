@@ -252,14 +252,15 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
             />
           ))}
         </div>
-        {/* Total line */}
-        <div className="flex items-center justify-between border-t border-gray-300 pt-3">
-          <span className="text-sm font-semibold text-gray-900">
+
+        {/* ── Hero total ── */}
+        <div className="mt-4 rounded-xl bg-primary-600 px-5 py-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-primary-200">
             {t('total')}
-          </span>
-          <span className="text-sm font-semibold tabular-nums text-gray-900">
+          </p>
+          <p className="tabular-money mt-1 text-3xl font-extrabold text-white">
             {formatEur(result.totalCents)}
-          </span>
+          </p>
         </div>
       </div>
 

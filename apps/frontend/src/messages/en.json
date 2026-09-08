@@ -1,7 +1,7 @@
 {
   "Metadata": {
-    "title": "Rajahinta.fi",
-    "description": "Finnish cross-border beverage price index and landed-cost intelligence platform"
+    "title": "Rajahinta.fi — Finnish Cross-Border Alcohol Price Calculator",
+    "description": "Calculate the true total cost of importing alcohol from abroad to Finland: retail price, transport, excise duty and container tax in one estimate. Free, neutral, and transparent."
   },
   "Common": {
     "reliability": {
@@ -70,10 +70,35 @@
   },
   "SiteFooter": {
     "disclaimer": "Rajahinta.fi is an independent price comparison and landed-cost calculator. All prices, taxes, and duties are estimates rather than official figures. The service does not provide tax or customs advice. Always verify current details with official sources.",
-    "methodology": "How ranking works"
+    "methodology": "How ranking works",
+    "tagline": "Finnish cross-border beverage price index and landed-cost calculator.",
+    "servicesHeading": "Services",
+    "aboutHeading": "About",
+    "linkCalculator": "Landed-cost calculator",
+    "linkCompare": "Compare products",
+    "linkBasket": "Basket optimizer",
+    "linkTrip": "Trip calculator",
+    "linkEvent": "Event calculator",
+    "linkValue": "Value (€/g ethanol)",
+    "linkBlog": "Blog",
+    "copyright": "© Rajahinta.fi"
   },
   "Home": {
     "subtitle": "Finnish cross-border beverage landed-cost calculator",
+    "heroHeadline": "Calculate the true cost of importing alcohol to Finland",
+    "heroSubline": "Foreign retail price, transport, and estimates of excise duty and container tax — in one itemized breakdown.",
+    "heroPillBadge": "Neutral · Transparent · Finnish Tax Administration rates",
+    "heroSearchPlaceholder": "Search products… e.g. Koskenkorva, IPA, Rioja",
+    "heroTrustLine": "🏛 Official tax sources · 📊 Price index · 🔒 WCAG AA accessible",
+    "whyTitle": "Why Rajahinta.fi?",
+    "feature1Title": "True total landed cost",
+    "feature1Body": "Retail price + transport + excise duty + container deposit — all in one calculation.",
+    "feature2Title": "Verified data",
+    "feature2Body": "Green = verified · Blue = estimated · Amber = stale. Every number carries its reliability status.",
+    "feature3Title": "Neutral ranking",
+    "feature3Body": "No paid placements. All ranking criteria are documented openly and enforced in code.",
+    "feature4Title": "Price history",
+    "feature4Body": "Historical price and tax-change charts so you can see how costs have moved over time.",
     "heroValueProp": "Calculate the total cost of importing alcoholic beverages from abroad to Finland: the foreign retail price, transport, and estimates of alcohol excise duty and container duty.",
     "trustHeading": "Data sources and reliability",
     "trustSourcesTitle": "Data sources",
@@ -109,6 +134,9 @@
   "Calculator": {
     "title": "Landed-cost calculator",
     "subtitle": "Search for a product, select a quantity, and get an itemized landed-cost estimate for Finland.",
+    "stepSearch": "Search",
+    "stepConfigure": "Configure",
+    "stepResult": "Result",
     "searchResults": "Search results",
     "selectedProduct": "Selected product",
     "change": "Change",

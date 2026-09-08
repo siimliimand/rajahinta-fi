@@ -289,6 +289,7 @@ export default async function SharePage({ params }: SharePageProps) {
           {t.rich('accuracyLinkBody', {
             link: (chunks) => (
               <Link
+                key="accuracy-link"
                 href="/ranking#accuracy"
                 className="font-medium text-primary-700 underline hover:text-primary-800"
               >

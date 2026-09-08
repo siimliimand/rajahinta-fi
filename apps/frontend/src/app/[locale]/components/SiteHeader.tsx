@@ -194,7 +194,7 @@ export default function SiteHeader() {
   };
 
   return (
-    <header className="border-b border-gray-200 bg-white" onKeyDown={handleKeyDown}>
+    <header className="sticky [inset-block-start:0] z-40 border-b border-gray-200 bg-white/95 backdrop-blur-sm" onKeyDown={handleKeyDown}>
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-x-4 px-4 py-3 sm:px-6 lg:px-8">
         <Link
           href="/"
@@ -203,12 +203,48 @@ export default function SiteHeader() {
           <Logo />
         </Link>
 
-        {/* Desktop row — always visible from md up. */}
+        {/* Desktop row — always visible from md up.
+            Primary tools (calculator, compare, basket) are grouped first;
+            a subtle separator precedes the secondary destinations.
+            The Calculator link uses a distinct pill to signal primacy
+            without using color as the sole differentiator (aria-current
+            still marks the active page). */}
         <nav
           aria-label={t('navLabel')}
-          className="hidden flex-wrap items-center gap-x-5 gap-y-1 md:flex"
+          className="hidden flex-wrap items-center gap-x-1 gap-y-1 md:flex"
         >
-          {NAV_ITEMS.map((item) => renderNavLink(item, false))}
+          {/* ── Primary tool group ── */}
+          {NAV_ITEMS.filter((item) =>
+            ['/calculator', '/compare', '/basket'].includes(item.href)
+          ).map((item) => {
+            const active = isRouteActive(pathname, item.href);
+            if (item.href === '/calculator') {
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  {...(active ? { 'aria-current': 'page' as const } : {})}
+                  className={[
+                    'rounded-md px-3 py-1.5 text-sm font-semibold transition-colors',
+                    active
+                      ? 'bg-primary-700 text-white'
+                      : 'bg-primary-50 text-primary-700 ring-1 ring-primary-200 hover:bg-primary-100',
+                  ].join(' ')}
+                >
+                  {t(item.messageKey)}
+                </Link>
+              );
+            }
+            return renderNavLink(item, false);
+          })}
+
+          {/* ── Separator ── */}
+          <span aria-hidden="true" className="mx-2 h-4 w-px bg-gray-200" />
+
+          {/* ── Secondary / meta group ── */}
+          {NAV_ITEMS.filter((item) =>
+            !['/calculator', '/compare', '/basket'].includes(item.href)
+          ).map((item) => renderNavLink(item, false))}
         </nav>
 
         {/* Desktop auth actions — visible from md up. */}

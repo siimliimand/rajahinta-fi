@@ -31,6 +31,10 @@ const config: Config = {
           800: '#1e40af',
           900: '#1e3a8a',
         },
+        /** Slate-900 used as the hero gradient's dark endpoint (--hero-from). */
+        slate: {
+          900: '#0f172a',
+        },
         gray: {
           50: 'var(--gray-50)',
           100: 'var(--gray-100)',
@@ -76,6 +80,10 @@ const config: Config = {
           bg: 'var(--error-bg)',
           border: 'var(--error-border)',
         },
+        /** Primary-50 tint — feature/why section background, brand accent surfaces. */
+        'surface-brand': {
+          subtle: 'var(--surface-brand-subtle)',
+        },
       },
       borderRadius: {
         sm: 'var(--radius-sm)',
@@ -85,6 +93,7 @@ const config: Config = {
       boxShadow: {
         sm: 'var(--shadow-sm)',
         md: 'var(--shadow-md)',
+        xl: 'var(--shadow-xl)',
       },
     },
   },
@@ -92,3 +101,4 @@ const config: Config = {
 };
 
 export default config;
+

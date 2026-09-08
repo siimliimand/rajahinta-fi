@@ -80,9 +80,26 @@
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
 
-  /* Elevation — quiet surfaces; deeper shadows are not part of the tone. */
+  /* Elevation — quiet surfaces; xl shadow used for hero floating cards. */
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+  /* ── Surface design tokens ────────────────────────────────────────────────
+   *
+   * Hero gradient endpoints: dark-navy → primary-800 gives the
+   * full-bleed header its visual gravity without departing from the
+   * primary blue brand palette.
+   *
+   * surface-brand-subtle: the primary-50 tint used for feature cards and
+   * the "why" section — distinguishes brand surfaces from neutral gray-50.
+   *
+   * These are additive surface tokens; they sit outside the status ladder
+   * and never carry status meaning (D1/D2 unchanged).
+   */
+  --hero-from: #0f172a; /* slate-900 */
+  --hero-to:   #1e40af; /* primary-800 */
+  --surface-brand-subtle: #eff6ff; /* primary-50 */
 }
 
 @layer base {
@@ -119,6 +136,37 @@
   ::selection {
     @apply bg-primary-100 text-primary-900;
   }
+
+  /* ── Typographic base scale ─────────────────────────────────────────────
+   *
+   * Provides default styles for semantic headings so pages gain hierarchy
+   * without every component needing manual font-size/weight classes.
+   * Components that need different treatment can still override with
+   * Tailwind utilities — these are base layer styles, not !important rules.
+   */
+  h1 {
+    @apply text-3xl font-bold tracking-tight text-gray-900;
+  }
+
+  h2 {
+    @apply text-xl font-semibold text-gray-800;
+  }
+
+  h3 {
+    @apply text-base font-semibold text-gray-700;
+  }
+
+  /* Respect user preference for reduced motion — blanket override for
+     transforms so .card-hover and button scale are suppressed. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 @layer utilities {
@@ -129,5 +177,27 @@
    */
   .tabular-money {
     font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * Subtle lift for clickable cards — hover raises the shadow and shifts
+   * the card 1px up, giving a sense of interactivity without motion
+   * exceeding what is tasteful for a data tool. Suppressed when the user
+   * has requested reduced motion (prefers-reduced-motion above).
+   */
+  .card-hover {
+    @apply transition-all duration-200 ease-out hover:-translate-y-px hover:shadow-md;
+  }
+
+  /*
+   * Soft focus glow for text inputs — wider ring than the global floor,
+   * in the brand blue, so inputs are clearly distinct from other
+   * focusable elements.
+   */
+  .input-focus-glow {
+    @apply transition-shadow duration-150;
+  }
+  .input-focus-glow:focus-within {
+    box-shadow: 0 0 0 3px rgb(59 130 246 / 0.2);
   }
 }

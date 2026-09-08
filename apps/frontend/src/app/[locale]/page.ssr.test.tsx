@@ -81,9 +81,9 @@ describe('HomePage trust row (task 4.2, D6)', () => {
     html = renderToString(element);
   });
 
-  it('renders the hero value prop unchanged', () => {
+  it('renders the hero headline', () => {
     expect(html).toContain(
-      'Laske alkoholijuomien tuonnin kokonaiskustannus ulkomailta Suomeen',
+      'Laske alkoholin todellinen kokonaishinta Suomeen',
     );
   });
 
