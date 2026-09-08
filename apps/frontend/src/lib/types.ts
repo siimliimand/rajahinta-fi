@@ -101,6 +101,35 @@ export interface UnitPriceUnavailable {
 /** Discriminated €/g result — discriminate on `status` (mirrors core-domain). */
 export type UnitPriceResult = UnitPriceValue | UnitPriceUnavailable;
 
+// ---------------------------------------------------------------------------
+// Unit-price category ranking (GET /api/v1/unitprice/ranking)
+// Mirrors the route's RankingRow projection (unitprice.routes.ts). Purely
+// informational listing: the ascending €/g order is a read-model view and
+// never feeds search order, default ordering, or any calculation input.
+// ---------------------------------------------------------------------------
+
+/** One ranked row — the minimal per-product facts the value page renders. */
+export interface UnitPriceRankingItem {
+  readonly productId: number;
+  readonly name: string;
+  readonly brand: string;
+  /** The offer the ranked value was derived from (provenance). */
+  readonly offerId: number;
+  /** Offer price in euro cents per gram of pure ethanol, ascending order. */
+  readonly centsPerGram: number;
+  /** Grams of pure ethanol in one unit (volume × fraction × 789 g/l). */
+  readonly ethanolGrams: number;
+  /** Reliability of the offer price the ranked value was derived from. */
+  readonly reliabilityStatus: 'VERIFIED' | 'ESTIMATED';
+}
+
+/** Response of the per-category ranking listing. */
+export interface UnitPriceRankingResponse {
+  /** The canonical category key the listing was requested for. */
+  readonly category: string;
+  readonly items: UnitPriceRankingItem[];
+}
+
 export interface ProductDetailResponse {
   readonly product: ProductDetail;
   readonly offers: RetailOffer[];

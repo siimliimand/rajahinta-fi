@@ -919,6 +919,32 @@
     "spotTitle": "Spot a problem?",
     "spotBody": "If you believe a product ranking, calculation, or data point is incorrect, you can flag it for review from the <link>calculator result page</link>. Each result includes a \"Flag a problem\" affordance that sends your feedback directly to our review team."
   },
+  "ValuePage": {
+    "title": "Ethanol €/g by category",
+    "subtitle": "Each row states what one gram of pure ethanol costs when computed from the product's offer price. The value uses the same formula as the comparison view, and the listing is ordered by the €/g value, ascending.",
+    "informationalNote": "This listing is informational: it presents the computed values as they are. The order shown here is a separate read-only view and does not affect search, other listings, or the calculator.",
+    "categorySelectorLabel": "Price category",
+    "category": {
+      "beer": "Beer",
+      "wine_still": "Still wine",
+      "wine_sparkling": "Sparkling wine",
+      "intermediate_products": "Intermediate products (e.g. vermouth)",
+      "other_fermented": "Cider and long drink",
+      "spirits": "Spirits"
+    },
+    "tableCaption": "Products in the {category} price category by €/g value, ascending",
+    "columnPosition": "#",
+    "columnProduct": "Product",
+    "columnEurPerGram": "Ethanol €/g",
+    "columnEthanol": "Ethanol per unit (g)",
+    "columnReliability": "Price data reliability",
+    "unit": "¢/g",
+    "loading": "Loading the listing…",
+    "errorTitle": "The listing could not be loaded",
+    "errorBody": "The backend did not respond. You can try again.",
+    "emptyTitle": "No rows to show",
+    "emptyBody": "No offer in this price category currently has a computable €/g value."
+  },
   "ContentSafetyBadge": {
     "promotional": "Promotional language detected: \"{pattern}\" ({language})",
     "violations": "{count, plural, one {# content-policy violation found} other {# content-policy violations found}}"

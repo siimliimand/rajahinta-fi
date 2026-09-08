@@ -919,6 +919,32 @@
     "spotTitle": "Huomasitko ongelman?",
     "spotBody": "Jos arvioit, että tuotteen sijoitus, laskenta tai tieto on virheellinen, voit ilmoittaa siitä tarkistettavaksi <link>laskurin tulossivulta</link>. Jokaisessa tuloksessa on \\\"Ilmoita virheestä\\\"-toiminto, joka välittää palautteesi suoraan katselmointitiimillemme."
   },
+  "ValuePage": {
+    "title": "Etanoli-€/g hintaluokittain",
+    "subtitle": "Jokainen rivi kertoo, mitä yksi gramma puhdasta etanolia maksaa tuotteen myyntihinnasta laskettuna. Arvo lasketaan samalla kaavalla kuin vertailunäkymässä, ja luettelo on järjestetty €/g-arvon mukaan alimmasta alkaen.",
+    "informationalNote": "Luettelo on tiedollinen: se esittää lasketut arvot sellaisenaan. Tässä näkyvä järjestys on erillinen lukunäkymä, joka ei vaikuta hakuun, muihin listauksiin tai laskuriin.",
+    "categorySelectorLabel": "Hintaluokka",
+    "category": {
+      "beer": "Olut",
+      "wine_still": "Makuuviini",
+      "wine_sparkling": "Kuohuviini",
+      "intermediate_products": "Välituotteet (esim. vermutti)",
+      "other_fermented": "Siideri ja pitkäjuoma",
+      "spirits": "Väkevät alkoholijuomat"
+    },
+    "tableCaption": "Hintaluokan {category} tuotteet €/g-arvon mukaan alimmasta alkaen",
+    "columnPosition": "#",
+    "columnProduct": "Tuote",
+    "columnEurPerGram": "Etanoli-€/g",
+    "columnEthanol": "Etanolia yksikössä (g)",
+    "columnReliability": "Hintatiedon luotettavuus",
+    "unit": "snt/g",
+    "loading": "Luetteloa haetaan…",
+    "errorTitle": "Luetteloa ei saatu haettua",
+    "errorBody": "Taustajärjestelmä ei vastannut. Voit yrittää uudelleen.",
+    "emptyTitle": "Ei näytettäviä rivejä",
+    "emptyBody": "Tässä hintaluokassa ei ole yhtään tarjousta, jolle €/g-arvoa voisi laskea."
+  },
   "ContentSafetyBadge": {
     "promotional": "Mainoskieltä havaittu: \"{pattern}\" ({language})",
     "violations": "{count, plural, one {# sisältöpolitiikan loukkaus} other {# sisältöpolitiikan loukkausta}}"
