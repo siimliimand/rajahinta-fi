@@ -31,6 +31,7 @@ import {
 } from './guard-test-harness';
 import type { Env } from '../../env';
 import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
+import { createApp } from '../../index';
 
 /** Ops configured — the "everything passes" env. */
 function permissiveEnv(d1: D1DatabaseLike): Env {
@@ -305,5 +306,189 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     const body = (await other.json()) as { message: string; error: string };
     expect(body.message).toBe('Cannot GET /api/v1/feature-flags');
     expect(body.error).toBe('Not Found');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Route inventory (task 9.3, change trust-and-reach-roadmap)
+//
+// The probe blocks above pin guard BEHAVIOR for the chains registered in
+// guards.ts; route-local chains are pinned by their own route test files
+// (trip.routes.test.ts 401 face, unitprice.routes.test.ts age gate, …).
+// This block pins the route SET itself: every route createApp() registers
+// must appear in EXPECTED_ROUTES below, with its rate-limit profile
+// documented here and in the guards.ts header map. A new route that
+// skips the inventory fails this test — the guard table cannot rot.
+//
+// Unlike the probe blocks, this one deliberately imports the entry
+// script: introspection needs the real composition (no requests are
+// made, so no bindings are touched).
+// ---------------------------------------------------------------------------
+
+/**
+ * Every registered (path, methods) with its rate-limit profile. Profiles:
+ * AUTH 10 req/5 min/IP (public writes), CALCULATOR 10/min/IP, BASKET
+ * 5/min/IP, HISTORICAL 30/min/IP, DECLARATION 20/min/IP, DEFAULT 60/min/IP
+ * (requireAccountRateLimit keys the same profile on the resolved account).
+ * "—" = no rate limit (public read / token-capability exchange).
+ */
+const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[] = [
+  // Price alerts — sessionAuth + per-account DEFAULT on the handlers.
+  ['/api/v1/account/alerts', ['GET', 'POST'], 'DEFAULT (per-account) + sessionAuth'],
+  ['/api/v1/account/alerts/:alertId', ['DELETE', 'PATCH'], 'DEFAULT (per-account) + sessionAuth'],
+  // AccountController — sessionAuth per route, no rate limit.
+  ['/api/v1/account/baskets', ['GET', 'POST'], '— (sessionAuth)'],
+  ['/api/v1/account/baskets/:basketId', ['DELETE'], '— (sessionAuth)'],
+  ['/api/v1/account/export', ['GET'], '— (sessionAuth)'],
+  ['/api/v1/account/history', ['GET', 'POST'], '— (sessionAuth)'],
+  // Credential routes — AUTH on the brute-forceable writes; the emailed
+  // token IS the capability for confirm/reset ("—" profiles).
+  ['/api/v1/account/login', ['POST'], 'AUTH'],
+  ['/api/v1/account/me', ['GET'], '— (sessionAuth)'],
+  ['/api/v1/account/password/reset', ['POST'], '— (token capability)'],
+  ['/api/v1/account/password/reset-request', ['POST'], 'AUTH'],
+  ['/api/v1/account/register', ['POST'], 'AUTH'],
+  ['/api/v1/account/scenarios', ['GET', 'POST'], '— (sessionAuth)'],
+  ['/api/v1/account/scenarios/:id', ['DELETE'], '— (sessionAuth)'],
+  ['/api/v1/account/session', ['DELETE'], '— (sessionAuth)'],
+  ['/api/v1/account/session/rotate', ['POST'], 'DEFAULT + sessionAuth'],
+  ['/api/v1/account/subscription', ['GET'], '— (sessionAuth)'],
+  ['/api/v1/account/verify-email/confirm', ['POST'], '— (token capability)'],
+  ['/api/v1/account/verify-email/request', ['POST'], '— (sessionAuth)'],
+  // Trust-and-reach public trust statistic (task 3.3) — no guard, no limit.
+  ['/api/v1/accuracy', ['GET'], '—'],
+  // Click analytics — write-behind counter, no guard.
+  ['/api/v1/analytics/click', ['POST'], '—'],
+  // Basket optimizer — BASKET prefix profile at index.ts.
+  ['/api/v1/basket/optimize', ['POST'], 'BASKET'],
+  // Blog public reads (task 5.1) — PUBLISHED-only, no guard.
+  ['/api/v1/blog/posts', ['GET'], '—'],
+  ['/api/v1/blog/posts/:slug', ['GET'], '—'],
+  // Outcome + share writes (tasks 3.2/6.1) — CALCULATOR prefix at
+  // index.ts, sessionAuth from GUARDED_ROUTES.
+  ['/api/v1/calculations/:id/outcome', ['POST'], 'CALCULATOR + sessionAuth'],
+  ['/api/v1/calculations/:id/share', ['POST'], 'CALCULATOR + sessionAuth'],
+  // Legacy direct-engine endpoints — CALCULATOR prefix at index.ts.
+  ['/api/v1/calculations/excise', ['POST'], 'CALCULATOR'],
+  ['/api/v1/calculations/landed-cost', ['POST'], 'CALCULATOR'],
+  // Calculator — CALCULATOR prefix at index.ts, ageGate prefix in guards.
+  ['/api/v1/calculator', ['POST'], 'CALCULATOR + ageGate'],
+  ['/api/v1/calculator/result/:recordId', ['GET'], 'CALCULATOR + ageGate'],
+  // Declaration — ageGate prefix + requireFeature('declaration:summary').
+  ['/api/v1/declaration/:recordId', ['GET'], '— + ageGate + entitlement'],
+  // Event calculator — route-local CALCULATOR.
+  ['/api/v1/event-calc', ['POST'], 'CALCULATOR'],
+  // Group orders — create is session-bound (per-account DEFAULT); the
+  // participant routes take the share token as the capability.
+  ['/api/v1/group-orders', ['POST'], 'DEFAULT (per-account) + sessionAuth'],
+  ['/api/v1/group-orders/:shareToken/items', ['POST'], '— (share token)'],
+  ['/api/v1/group-orders/:shareToken/join', ['POST'], '— (share token)'],
+  ['/api/v1/group-orders/:shareToken/ledger', ['POST'], '— (share token)'],
+  // Health — process liveness + dependency readiness, unguarded.
+  ['/api/v1/health', ['GET'], '—'],
+  ['/api/v1/health/ready', ['GET'], '—'],
+  // Curated lists — route-local DEFAULT.
+  ['/api/v1/lists', ['GET'], 'DEFAULT'],
+  ['/api/v1/lists/:slug', ['GET'], 'DEFAULT'],
+  // Merchant reliability embed — route-local ageGate.
+  ['/api/v1/merchants/reliability', ['GET'], '— + ageGate'],
+  // Newsletter (task 5.3) — AUTH on the public bulk-mail entry point.
+  ['/api/v1/newsletter/confirm', ['GET'], '— (token capability)'],
+  ['/api/v1/newsletter/subscribe', ['POST'], 'AUTH'],
+  ['/api/v1/newsletter/unsubscribe', ['GET'], '— (token capability)'],
+  // Outbound redirectors — route-local DEFAULT.
+  ['/api/v1/outbound/:offerId', ['GET'], 'DEFAULT'],
+  ['/api/v1/outbound/ferry/:offerId', ['GET'], 'DEFAULT'],
+  // Search surface — ageGate (guards + search.routes), no rate limit.
+  ['/api/v1/products', ['GET'], '— + ageGate'],
+  ['/api/v1/products/:id', ['GET'], '— + ageGate'],
+  // Product dupes — route-local DEFAULT.
+  ['/api/v1/products/:id/dupes', ['GET'], 'DEFAULT'],
+  // Price history — HISTORICAL at index.ts + route-local ageGate.
+  ['/api/v1/products/:id/price-history', ['GET'], 'HISTORICAL + ageGate'],
+  // Shop-report submission (task 2.2) — AUTH then sessionAuth.
+  ['/api/v1/reports', ['POST'], 'AUTH + sessionAuth'],
+  // Calculation-record export — DECLARATION at index.ts + ageGate +
+  // optional session + entitlement, per-route.
+  ['/api/v1/reports/:recordId', ['GET'], 'DECLARATION + ageGate + entitlement'],
+  // Share permalink read (task 6.1) — public, frozen snapshot.
+  ['/api/v1/share/:publicId', ['GET'], '—'],
+  // Trip feasibility — route-local CALCULATOR (anonymous surface).
+  ['/api/v1/trip-feasibility', ['POST'], 'CALCULATOR'],
+  // Trip fill (task 8.2) — route-local CALCULATOR + sessionAuth +
+  // entitlement (spec: authenticated users).
+  ['/api/v1/trip/fill', ['POST'], 'CALCULATOR + sessionAuth + entitlement'],
+  // €/g value ranking (task 7.2) — route-local ageGate, no rate limit.
+  ['/api/v1/unitprice/ranking', ['GET'], '— + ageGate'],
+  // What-if — route-local CALCULATOR.
+  ['/api/v1/what-if/excise', ['POST'], 'CALCULATOR'],
+  // Ops console — every route rides the /ops/console/* opsAccess prefix;
+  // no rate limit (operator traffic, bearer-token gated).
+  ['/ops/console/audit', ['GET'], 'opsAccess'],
+  ['/ops/console/blacklist/:id/appeal', ['POST'], 'opsAccess'],
+  ['/ops/console/blacklist/:id/resolve', ['POST'], 'opsAccess'],
+  ['/ops/console/blacklist/appeals', ['GET'], 'opsAccess'],
+  ['/ops/console/blacklist/entries', ['GET'], 'opsAccess'],
+  ['/ops/console/blacklist/publish', ['POST'], 'opsAccess'],
+  ['/ops/console/blog/posts', ['GET'], 'opsAccess'],
+  ['/ops/console/blog/posts/:id/publish', ['POST'], 'opsAccess'],
+  ['/ops/console/confirmations', ['GET'], 'opsAccess'],
+  ['/ops/console/confirmations/consumption-norms/:id/confirm', ['POST'], 'opsAccess'],
+  ['/ops/console/confirmations/tax/:id/approve', ['POST'], 'opsAccess'],
+  ['/ops/console/confirmations/tax/:id/reject', ['POST'], 'opsAccess'],
+  ['/ops/console/corrections', ['GET', 'POST'], 'opsAccess'],
+  ['/ops/console/corrections/:id/resolve', ['POST'], 'opsAccess'],
+  ['/ops/console/curated-entries', ['GET', 'POST'], 'opsAccess'],
+  ['/ops/console/curated-entries/:id', ['POST'], 'opsAccess'],
+  ['/ops/console/curated-entries/:id/delete', ['POST'], 'opsAccess'],
+  ['/ops/console/curated-entries/:id/publish', ['POST'], 'opsAccess'],
+  ['/ops/console/curated-entries/:id/unpublish', ['POST'], 'opsAccess'],
+  ['/ops/console/ferry-offers', ['GET', 'POST'], 'opsAccess'],
+  ['/ops/console/ferry-offers/:id', ['POST'], 'opsAccess'],
+  ['/ops/console/ferry-offers/:id/delete', ['POST'], 'opsAccess'],
+  ['/ops/console/ferry-offers/:id/publish', ['POST'], 'opsAccess'],
+  ['/ops/console/governance', ['GET'], 'opsAccess'],
+  ['/ops/console/governance/:merchantId/grant', ['POST'], 'opsAccess'],
+  ['/ops/console/governance/:merchantId/revoke', ['POST'], 'opsAccess'],
+  ['/ops/console/newsletter/notify', ['POST'], 'opsAccess'],
+  ['/ops/console/producer-links', ['GET', 'POST'], 'opsAccess'],
+  ['/ops/console/producer-links/:id', ['POST'], 'opsAccess'],
+  ['/ops/console/producer-links/:id/delete', ['POST'], 'opsAccess'],
+  ['/ops/console/producer-links/:id/publish', ['POST'], 'opsAccess'],
+  ['/ops/console/reports', ['GET'], 'opsAccess'],
+  ['/ops/console/reports/:id/link', ['POST'], 'opsAccess'],
+  ['/ops/console/reports/:id/reject', ['POST'], 'opsAccess'],
+];
+
+describe('route inventory (guards.ts header map parity)', () => {
+  it('enumerates every registered route — a new route must extend this inventory', () => {
+    const app = createApp();
+    const registered = new Map<string, Set<string>>();
+    for (const { method, path } of app.routes as unknown as Array<{
+      method: string;
+      path: string;
+    }>) {
+      // 'ALL' entries are the prefix middleware (rate limits, guards,
+      // logging) — their profiles live in the inventory annotations and
+      // the guards.ts header map, not as routes of their own.
+      if (method === 'ALL') continue;
+      if (!registered.has(path)) registered.set(path, new Set());
+      registered.get(path)!.add(method);
+    }
+
+    const actual = [...registered.entries()]
+      .map(([path, methods]) => [path, [...methods].sort()] as const)
+      .sort((a, b) => a[0].localeCompare(b[0]));
+    const expected = EXPECTED_ROUTES.map(
+      ([path, methods]) => [path, [...methods].sort()] as const,
+    );
+
+    expect(actual).toEqual(expected);
+  });
+
+  it('keeps the inventory sorted so additions land in one place', () => {
+    const paths = EXPECTED_ROUTES.map(([path]) => path);
+    const sorted = [...paths].sort((a, b) => a.localeCompare(b));
+    expect(paths).toEqual(sorted);
   });
 });

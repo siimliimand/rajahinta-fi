@@ -83,6 +83,9 @@ export { CalculationRecordNotFoundError, CALCULATION_RECORD_QUERY_PORT } from '.
 export { DISCLAIMER_FI } from '../../../../packages/core-domain/src/disclaimer';
 export { TAX_TYPES } from '../../../../packages/core-domain/src/tax/tax-categories';
 export { normaliseCategory } from '../../../../packages/core-domain/src/tax/services/alcohol-excise.math';
+// Outcomes — the spec-fixed margin fraction interpolated into the D1
+// accuracy aggregate's SQL (calculation-outcome.repository.ts).
+export { WITHIN_MARGIN_FRACTION } from '../../../../packages/core-domain/src/outcomes/outcomes.types';
 
 // ---------------------------------------------------------------------------
 // Declaration + attribution services (route ports, tasks 3.5–3.6)
