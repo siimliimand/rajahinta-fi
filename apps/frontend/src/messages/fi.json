@@ -732,8 +732,51 @@
       "other_fermented": "Siideri ja pitkäjuoma",
       "spirits": "Väkevät alkoholijuomat"
     },
-    "submit": "Laske kannattava tuontimäärä",
-    "submitting": "Lasketaan…",
+ "submit": "Laske kannattava tuontimäärä",
+ "submitting": "Lasketaan…",
+ "mode": {
+  "breakeven": "Kannattavuusrajat",
+  "fill": "Määrärajan täyttö"
+ },
+ "fill": {
+  "searchHeading": "Hae tuoteehdokkaita",
+  "searchError": "Haku ei onnistunut. Yritä uudelleen.",
+  "candidatesHeading": "Valitut ehdokkaat ja enimmäismäärät",
+  "emptyCandidates": "Ei valittuja ehdokkaita. Hae tuotteita ja valitse vähintään yksi.",
+  "maxCandidates": "Enintään {max} ehdokasta yhdellä täytöllä.",
+  "maxQuantity": "Enintään (kpl)",
+  "removeAria": "Poista {name} ehdokkaista",
+  "quantityError": "Tarkista enimmäismäärät: kokonaislukuja välillä {min}–{max}.",
+  "submit": "Laske täyttö",
+  "submitting": "Lasketaan…",
+  "lineStatus": {
+   "FILLED": "Mukana täytössä",
+   "CAP_EXHAUSTED": "Määräraja loppui",
+   "NOT_SELECTED": "Ei tullut valituksi",
+   "NO_ALLOWANCE_ROW": "Ei määrärajariviä"
+  },
+  "line": {
+   "filledQuantity": "Täytetty määrä",
+   "unitsValue": "{count} kpl",
+   "unitPrice": "Yksikköhinta",
+   "merchant": "Myyjä",
+   "contribution": "Arvon osuus",
+   "consumedVolume": "Kulunut tilavuus",
+   "remainingLitres": "{category}: jäljellä",
+   "remainingUnits": "{category}: jäljellä (kpl)"
+  },
+  "result": {
+   "heading": "Täytön erittely",
+   "filledValue": "Täytetty arvo yhteensä: {total}",
+   "filledUnits": "Yksiköitä yhteensä: {count}",
+   "boundExhausted": "Määräraja ei riitä yhteenkään yksikköön",
+   "boundExhaustedBody": "Valittujen ehdokkaiden yksikköhinnat ylittävät käytettävissä olevan määrärajan, joten täyttöön ei mahtunut yhtään yksikköä.",
+   "noBoundableLine": "Mikään ehdokas ei ole rajattavissa",
+   "noBoundableLineBody": "Aineistoversiossa ei ole riviä yhdenkään valitun ehdokkaan kategorialle, joten täyttöä ei voitu muodostaa.",
+   "productFallback": "Tuote #{id}",
+   "headroomHeading": "Määrärajan jäljellä oleva tila kategorioittain"
+  }
+ },
     "result": {
       "heading": "Kannattava tuontimäärä",
       "priceDifference": "Hintaero (Suomi − ulkomaat)",
@@ -760,9 +803,10 @@
       "title": "Ei julkaistuja tullimäärärajoja",
       "body": "Valitulle päivälle ei löydy julkaistua tullimääräraja-aineiston versiota, joten laskentaa ei voida tehdä. Kokeile uudelleen myöhemmin."
     },
-    "errors": {
-      "validation": "Tarkista syötteen arvot: matkustajia 1–9, kustannukset yli 0 €.",
-      "forbidden": "Matkalaskuri ei ole käytettävissä.",
+ "errors": {
+  "validation": "Tarkista syötteen arvot: matkustajia 1–9, kustannukset yli 0 €.",
+  "unauthenticated": "Täyttö vaatii kirjautumisen. Kirjaudu sisään ja yritä uudelleen.",
+  "forbidden": "Matkalaskuri ei ole käytettävissä.",
       "rate-limited": "Liikaa pyyntöjä. Yritä hetken kuluttua uudelleen.",
       "network": "Yhteys palvelimeen ei toiminut. Yritä uudelleen.",
       "unknown": "Odottamaton virhe. Yritä uudelleen."
