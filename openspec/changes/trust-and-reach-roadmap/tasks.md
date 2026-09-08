@@ -23,14 +23,14 @@
 ## 4. Tax-change alerts
 
 - [x] 4.1 Extend the cron alert evaluator with the TAX_CHANGE kind: on rate-version confirmation enqueue evaluation, resolve per-product landed-cost deltas via `TaxChangeAttributionService`, select active TAX_CHANGE alerts whose product moved, deliver through the shared intent-log + 24 h cooldown path. Unit tests for selection, cooldown, crash-safe redelivery. <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [apps/api-worker/src/cron/**] -->
-- [ ] 4.2 Alert API + account UI: create/list with kind=tax_change (no threshold, duplicate check per product+kind), alert management page kind toggle and copy explaining the trigger, FI + EN catalogs. <!-- agent: platform-engineer.build, depends_on: [4.1], touches: [apps/api-worker/src/routes/**, apps/frontend/src/app/[locale]/account/**, apps/frontend/src/messages/**] -->
+- [x] 4.2 Alert API + account UI: create/list with kind=tax_change (no threshold, duplicate check per product+kind), alert management page kind toggle and copy explaining the trigger, FI + EN catalogs. <!-- agent: platform-engineer.build, depends_on: [4.1], touches: [apps/api-worker/src/routes/**, apps/frontend/src/app/[locale]/account/**, apps/frontend/src/messages/**] -->
 
 ## 5. Blog + newsletter
 
 - [x] 5.1 Blog service + routes: `packages/core-domain/src/content/` draft builder (what changed, effective date, typical-basket impact from the versioned rate delta, FI + EN bodies), draft creation hooked into the rate-version confirmation path (fail-open, logged), public `GET /api/v1/blog/posts` and `/blog/posts/:slug` returning PUBLISHED only, ops publish endpoint, content-lint coverage for post bodies. <!-- agent: platform-engineer.build, depends_on: [1.4], touches: [packages/core-domain/src/content/**, apps/api-worker/src/cron/**, apps/api-worker/src/routes/**] -->
 - [x] 5.2 Frontend blog: `/blog` index and `/blog/[slug]` pages (locale-aware, PUBLISHED only), sitemap inclusion, neutral-tone copy per content lint, FI + EN catalogs. <!-- agent: platform-engineer.build, depends_on: [5.1], touches: [apps/frontend/src/app/[locale]/blog/**, apps/frontend/src/messages/**, apps/frontend/src/app/sitemap.ts] -->
 - [x] 5.3 Newsletter backend: subscribe (pending + confirmation token via email worker), confirm, unsubscribe (immediate, one-click link), ops notify-subscribers action writing intent rows before send and marking outcomes after through `/internal/email/send`; FI + EN mail bodies. Route tests with stubbed transport (pending never mailed, crash-safe redelivery). <!-- agent: platform-engineer.build, depends_on: [1.4, 5.1], touches: [apps/api-worker/src/routes/**, apps/email-worker/src/**, apps/frontend/src/app/[locale]/ops/**] -->
-- [ ] 5.4 Newsletter UI: subscribe form in the blog and footer with explicit consent copy (separate from price alerts), confirmation landing page, FI + EN catalogs. <!-- agent: platform-engineer.fast, depends_on: [5.3], touches: [apps/frontend/src/app/[locale]/**, apps/frontend/src/messages/**] -->
+- [x] 5.4 Newsletter UI: subscribe form in the blog and footer with explicit consent copy (separate from price alerts), confirmation landing page, FI + EN catalogs. <!-- agent: platform-engineer.fast, depends_on: [5.3], touches: [apps/frontend/src/app/[locale]/**, apps/frontend/src/messages/**] -->
 
 ## 6. Share + embed
 
