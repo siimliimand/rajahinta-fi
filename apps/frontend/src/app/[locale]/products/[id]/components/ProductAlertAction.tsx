@@ -212,9 +212,17 @@ export default function ProductAlertAction({
       {loadFailure === null && phase === 'manage' && existing !== null && (
         <div className="mt-4" data-testid="product-alert-manage">
           <p className="text-sm text-gray-700">
-            <span className="font-medium">
-              {t('thresholdValue', { euros: formatCents(existing.thresholdCents) })}
-            </span>
+            {existing.kind === 'TAX_CHANGE' ? (
+              <span className="font-medium">{t('taxChangeValue')}</span>
+            ) : (
+              // PRICE rows carry a threshold by contract; `?? 0` only
+              // satisfies the nullable union.
+              <span className="font-medium">
+                {t('thresholdValue', {
+                  euros: formatCents(existing.thresholdCents ?? 0),
+                })}
+              </span>
+            )}
             {' · '}
             <span
               className={
@@ -228,7 +236,11 @@ export default function ProductAlertAction({
                 : t('statusPaused')}
             </span>
           </p>
-          <p className="mt-1 text-xs text-gray-400">{t('existingAlert')}</p>
+          <p className="mt-1 text-xs text-gray-400">
+            {existing.kind === 'TAX_CHANGE'
+              ? t('existingTaxChangeAlert')
+              : t('existingAlert')}
+          </p>
 
           {actionFailed !== null && (
             <p className="mt-2 text-sm text-red-600">

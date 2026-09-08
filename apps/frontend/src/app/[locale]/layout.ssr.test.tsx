@@ -73,6 +73,10 @@ vi.mock('next/font/google', () => ({
 
 vi.mock('@/lib/api', () => ({
   SITE_URL: 'https://rajahinta.test',
+  // The real SiteFooter embeds the newsletter client island (task 5.4),
+  // which imports these — stubs are enough: SSR never submits.
+  ApiFetchError: class ApiFetchError extends Error {},
+  subscribeToNewsletter: () => Promise.resolve({ status: 'PENDING' }),
 }));
 
 // Link applies the routing config's localePrefix: 'as-needed' — Finnish
@@ -204,7 +208,15 @@ describe('SiteFooter SSR — disclaimer and methodology, both locales', () => {
     const { default: SiteFooter } = await vi.importActual<
       typeof import('./components/SiteFooter')
     >('./components/SiteFooter');
-    const html = renderToString(await SiteFooter());
+    // The footer embeds the newsletter client island, so — exactly like
+    // the SiteHeader render above — the tree needs the client-intl
+    // context the [locale] layout provides in the app.
+    const messages = (await import(`@/messages/${locale}.json`)).default;
+    const html = renderToString(
+      <NextIntlClientProvider locale={locale} messages={messages}>
+        {await SiteFooter()}
+      </NextIntlClientProvider>,
+    );
 
     expect(html).toContain('<footer');
     expect(html).not.toContain('__MISSING_');
@@ -217,6 +229,24 @@ describe('SiteFooter SSR — disclaimer and methodology, both locales', () => {
       expect(html).toContain('independent price comparison and landed-cost calculator');
       expect(html).toContain('Always verify current details with official sources');
     }
+  });
+
+  it('carries the newsletter subscribe island with its separate-consent copy', async () => {
+    state.locale = 'fi';
+    const { default: SiteFooter } = await vi.importActual<
+      typeof import('./components/SiteFooter')
+    >('./components/SiteFooter');
+    const messages = (await import('@/messages/fi.json')).default;
+    const html = renderToString(
+      <NextIntlClientProvider locale="fi" messages={messages}>
+        {await SiteFooter()}
+      </NextIntlClientProvider>,
+    );
+
+    expect(html).toContain('data-testid="newsletter-subscribe"');
+    expect(html).toContain('type="checkbox"');
+    // Consent copy is explicit and names the separation from price alerts.
+    expect(html).toContain('erillinen suostumus, joka ei liity hintaherätyksiin');
   });
 });
 

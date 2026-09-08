@@ -8,7 +8,14 @@
  * @module RepositoryAbstractions
  */
 import { Injectable } from '@nestjs/common';
-import type { PriceObservation, TransportArrangement } from '@rajahinta/core-domain';
+import type {
+  BlacklistEntryStatus,
+  BlacklistReportStatus,
+  MerchantIdentity,
+  OutcomeAccuracyStatistic,
+  PriceObservation,
+  TransportArrangement,
+} from '@rajahinta/core-domain';
 import {
   productMaster,
   retailOffers,
@@ -840,4 +847,500 @@ export abstract class BasketCalculationRecordRepository {
   abstract findById(
     id: number,
   ): Promise<BasketCalculationRecord | null>;
+}
+
+// ---------------------------------------------------------------------------
+// Trust repositories — shop reports, blacklist entries, calculation
+// outcomes (task 1.3, change trust-and-reach-roadmap)
+// ---------------------------------------------------------------------------
+
+/**
+ * Moderation state of a shop-report row as the schema CHECK admits it
+ * (migration 0015: OPEN | LINKED | REJECTED).
+ *
+ * The core-domain `BlacklistReportStatus` ('OPEN' | 'LINKED') models the
+ * published-standard path, where a report survives moderation only by
+ * becoming LINKED evidence. The storage layer is one state wider: the
+ * ops console can also REJECT a report outright (evidence did not
+ * survive review), which the schema records on the row. Union keeps the
+ * repository honest about what the column actually holds.
+ */
+export type ShopReportStatus = BlacklistReportStatus | 'REJECTED';
+
+/** Persisted shop-report row — camelCase projection of the snake_case D1 row. */
+export interface ShopReportRecord {
+  readonly id: number;
+  /** Normalized merchant domain (lowercase host) — half of the identity key. */
+  readonly merchantDomain: string;
+  /** Merchant name in NORMALIZED form — the other identity half. */
+  readonly merchantNameNormalized: string;
+  /** Order reference proving a real transaction — mandatory evidence. */
+  readonly orderReference: string;
+  /** Reporter's digest of the correspondence — mandatory evidence. */
+  readonly correspondenceSummary: string;
+  readonly reporterAccountId: number;
+  readonly status: ShopReportStatus;
+  /** Published entry this report backs; null while OPEN/REJECTED. */
+  readonly linkedEntryId: number | null;
+  readonly createdAt: Date;
+}
+
+/** Submission input — every report lands OPEN; moderation moves it. */
+export interface ShopReportCreateInput {
+  readonly merchantDomain: string;
+  readonly merchantNameNormalized: string;
+  readonly orderReference: string;
+  readonly correspondenceSummary: string;
+  readonly reporterAccountId: number;
+}
+
+/**
+ * Shop-report repository — user-reported non-delivery/counterfeit
+ * evidence against foreign merchants, keyed by the derived merchant
+ * identity (normalized domain + normalized name — no registry row).
+ *
+ * Normalization is core-domain's job ({@link MerchantIdentity}); this
+ * layer stores and matches the already-normalized values verbatim.
+ *
+ * State machine (enforced by guarded UPDATEs, so a transition attempted
+ * from the wrong state matches no row and returns null rather than
+ * coercing): OPEN → LINKED (backs a published entry, terminal) or
+ * OPEN → REJECTED (terminal).
+ */
+@Injectable()
+export abstract class ShopReportRepository {
+  /** Insert one report as OPEN. Returns the persisted row. */
+  abstract create(input: ShopReportCreateInput): Promise<ShopReportRecord>;
+
+  abstract findById(id: number): Promise<ShopReportRecord | null>;
+
+  /** Every report against one merchant identity — evidence accumulation, id ASC. */
+  abstract findByMerchantIdentity(
+    identity: MerchantIdentity,
+  ): Promise<ShopReportRecord[]>;
+
+  /** One account's own reports — the GDPR/erasure-scoped read, id ASC. */
+  abstract findByReporterAccountId(
+    accountId: number,
+  ): Promise<ShopReportRecord[]>;
+
+  /** The OPEN moderation queue, oldest first. */
+  abstract findOpen(): Promise<ShopReportRecord[]>;
+
+  /** OPEN → REJECTED (terminal). Null when the report is absent or not OPEN. */
+  abstract reject(id: number): Promise<ShopReportRecord | null>;
+
+  /**
+   * OPEN → LINKED, stamping the published entry this report backs
+   * (terminal — a report links to at most one entry, ever). Null when
+   * the report is absent or not OPEN.
+   */
+  abstract linkToEntry(
+    id: number,
+    entryId: number,
+  ): Promise<ShopReportRecord | null>;
+}
+
+/** Persisted blacklist-entry row — camelCase projection of the snake_case D1 row. */
+export interface BlacklistEntryRecord {
+  readonly id: number;
+  /** Normalized merchant domain — half of the identity key. */
+  readonly merchantDomain: string;
+  /** Merchant name in NORMALIZED form — the other identity half. */
+  readonly merchantNameNormalized: string;
+  /** Which published standard was met — value set owned by core-domain. */
+  readonly standardMet: string;
+  readonly publishedAt: Date;
+  /** Operator who published the entry — the manual-step audit face. */
+  readonly publishedBy: string;
+  readonly status: BlacklistEntryStatus;
+  readonly appealedAt: Date | null;
+  readonly appealReason: string | null;
+}
+
+/** Publication input — an entry is born PUBLISHED or not at all. */
+export interface BlacklistEntryPublishInput {
+  readonly merchantIdentity: MerchantIdentity;
+  readonly standardMet: string;
+  readonly publishedBy: string;
+}
+
+/** Appeal input — stamped on the row as the entry moves to REOPENED. */
+export interface BlacklistEntryAppealInput {
+  readonly appealedAt: Date;
+  readonly appealReason: string;
+}
+
+/**
+ * Blacklist-entry repository — the published merchant warnings.
+ *
+ * Lifecycle (each transition a guarded UPDATE): created PUBLISHED by
+ * the explicit operator publish action (no automatic path exists); an
+ * appeal moves PUBLISHED → REOPENED (hidden from public display
+ * immediately); the operator resolution returns REOPENED → PUBLISHED or
+ * ends it REJECTED (terminal). Entries are governance records and are
+ * never deleted — there is deliberately no delete method.
+ */
+@Injectable()
+export abstract class BlacklistRepository {
+  /** Create the entry PUBLISHED (the only birth state). */
+  abstract publish(
+    input: BlacklistEntryPublishInput,
+  ): Promise<BlacklistEntryRecord>;
+
+  abstract findById(id: number): Promise<BlacklistEntryRecord | null>;
+
+  /**
+   * The public display join: PUBLISHED entries for one merchant
+   * identity only — REOPENED hide immediately (spec: appeal path),
+   * REJECTED never display again.
+   */
+  abstract findPublishedByIdentity(
+    identity: MerchantIdentity,
+  ): Promise<BlacklistEntryRecord[]>;
+
+  /** Every entry regardless of status — the ops console view, id ASC. */
+  abstract list(): Promise<BlacklistEntryRecord[]>;
+
+  /** PUBLISHED → REOPENED, stamping the appeal. Null when absent or not PUBLISHED. */
+  abstract appeal(
+    id: number,
+    input: BlacklistEntryAppealInput,
+  ): Promise<BlacklistEntryRecord | null>;
+
+  /** REOPENED → PUBLISHED (appeal denied). Null when absent or not REOPENED. */
+  abstract resolveRepublish(id: number): Promise<BlacklistEntryRecord | null>;
+
+  /** REOPENED → REJECTED (appeal upheld, terminal). Null when absent or not REOPENED. */
+  abstract resolveReject(id: number): Promise<BlacklistEntryRecord | null>;
+}
+
+/** Persisted calculation-outcome row — camelCase projection of the snake_case D1 row. */
+export interface CalculationOutcomeRecord {
+  readonly id: number;
+  /** calculation_records.id this outcome reports on — by convention, NOT an FK. */
+  readonly calculationRecordId: number;
+  readonly reporterAccountId: number;
+  /** Digest of the frozen estimate fields (JSON-parsed) — keeps the outcome explainable once the record is pruned. */
+  readonly estimateDigest: unknown;
+  readonly estimatedTotalCents: number;
+  readonly reportedTotalCents: number;
+  readonly reportedAt: Date;
+}
+
+/** Submission input — the duplicate guard is the (record, account) unique index. */
+export interface CalculationOutcomeCreateInput {
+  readonly calculationRecordId: number;
+  readonly reporterAccountId: number;
+  readonly estimateDigest: unknown;
+  readonly estimatedTotalCents: number;
+  readonly reportedTotalCents: number;
+}
+
+/** Half-open read period over reportedAt — null bounds are unbounded. */
+export interface OutcomeReadPeriod {
+  /** Inclusive lower bound on reportedAt; null/absent = no lower bound. */
+  readonly from?: Date | null;
+  /** Exclusive upper bound on reportedAt; null/absent = no upper bound. */
+  readonly to?: Date | null;
+}
+
+/**
+ * A second outcome for an already-reported (calculation record,
+ * account) pair — the (record, account) unique index rejected the
+ * insert. The stored outcome is untouched; the API surfaces this as
+ * 409 (spec: OUTCOME_ALREADY_EXISTS maps to 409 and must leave the
+ * stored outcome untouched).
+ */
+export class DuplicateOutcomeError extends Error {
+  readonly calculationRecordId: number;
+  readonly reporterAccountId: number;
+
+  constructor(calculationRecordId: number, reporterAccountId: number) {
+    super(
+      `calculation outcome already exists for record ${calculationRecordId} ` +
+        `and account ${reporterAccountId} — at most one outcome per (record, account)`,
+    );
+    this.name = 'DuplicateOutcomeError';
+    this.calculationRecordId = calculationRecordId;
+    this.reporterAccountId = reporterAccountId;
+  }
+}
+
+/**
+ * Calculation-outcome repository — user-reported actual totals for
+ * shown calculations, at most one per (record, account).
+ *
+ * Data-layer only: the submission window/ownership validation lives in
+ * the core-domain outcomes module; this repository persists validated
+ * submissions and serves the read side. The (calculation_record_id,
+ * reporter_account_id) unique index IS the duplicate guard — a second
+ * report for the same pair is a typed conflict, never an overwrite.
+ *
+ * Aggregation semantics (spec calculation-outcomes): the within-margin
+ * comparison is inclusive at {@link WITHIN_MARGIN_FRACTION} of the
+ * estimate; an empty sample yields count 0 and a **null** share — an
+ * honest "no data yet", never a fabricated percentage. Period bounds
+ * are half-open [from, to) on reportedAt, matching the observation-log
+ * bucket convention.
+ */
+@Injectable()
+export abstract class CalculationOutcomeRepository {
+  /**
+   * Insert one outcome. Rejects with the implementation's typed
+   * duplicate-conflict error (D1: {@link DuplicateOutcomeError}) when an
+   * outcome for the (record, account) pair already exists — the API
+   * surfaces it as 409; the stored row is never overwritten.
+   */
+  abstract create(
+    input: CalculationOutcomeCreateInput,
+  ): Promise<CalculationOutcomeRecord>;
+
+  abstract findById(id: number): Promise<CalculationOutcomeRecord | null>;
+
+  /** Outcomes reported for one calculation record, id ASC. */
+  abstract findByCalculationRecordId(
+    calculationRecordId: number,
+  ): Promise<CalculationOutcomeRecord[]>;
+
+  /** One account's own outcomes — the account-scoped read, id ASC. */
+  abstract findByReporterAccountId(
+    accountId: number,
+  ): Promise<CalculationOutcomeRecord[]>;
+
+  /** Stored-outcome count within the period. */
+  abstract countByPeriod(period: OutcomeReadPeriod): Promise<number>;
+
+  /**
+   * The public accuracy statistic over the period: sample count and
+   * within-margin share, with {@code asOf} passed through as the
+   * injected computation instant. Empty sample → count 0 and a null
+   * share (never a fabricated percentage).
+   */
+  abstract findAccuracyStatistic(
+    period: OutcomeReadPeriod,
+    asOf: Date,
+  ): Promise<OutcomeAccuracyStatistic>;
+}
+
+// ---------------------------------------------------------------------------
+// Content / share / newsletter repositories (task 1.4, change
+// trust-and-reach-roadmap)
+// ---------------------------------------------------------------------------
+
+/** Publication state of a blog post — DRAFT until the operator publish. */
+export type BlogPostStatus = 'DRAFT' | 'PUBLISHED';
+
+/** Persisted blog-post row — camelCase projection of the snake_case D1 row. */
+export interface BlogPostRecord {
+  readonly id: number;
+  /** URL slug — the public lookup half, unique per locale. */
+  readonly slug: string;
+  /** Content locale (BCP-47 — 'fi'/'en' at launch). */
+  readonly locale: string;
+  readonly title: string;
+  /** Markdown body — must pass the content-policy lint before publication. */
+  readonly bodyMarkdown: string;
+  readonly status: BlogPostStatus;
+  /** Rate dataset version the post explains (version_label vocabulary); null without a rate tie-in. */
+  readonly rateDatasetVersion: string | null;
+  /** When published — null while DRAFT. */
+  readonly publishedAt: Date | null;
+  readonly createdAt: Date;
+}
+
+/** Creation input — every post lands DRAFT; publication is explicit. */
+export interface BlogPostCreateInput {
+  readonly slug: string;
+  readonly locale: string;
+  readonly title: string;
+  readonly bodyMarkdown: string;
+  readonly rateDatasetVersion?: string | null;
+}
+
+/** Editable fields of a DRAFT post. Slug/locale/status are not editable. */
+export interface BlogPostDraftPatch {
+  readonly title?: string;
+  readonly bodyMarkdown?: string;
+  readonly rateDatasetVersion?: string | null;
+}
+
+/**
+ * Blog-post repository — rate-change explainers behind a human
+ * publication gate. The draft hook at the manual rate-confirmation
+ * point creates DRAFT rows (fail-open); only {@link publish} makes a
+ * post public, and the public endpoints read PUBLISHED rows only.
+ * One row per (slug, locale) — the unique key.
+ */
+@Injectable()
+export abstract class BlogPostRepository {
+  /** Insert one post as DRAFT. Rejects on the (slug, locale) unique key. */
+  abstract create(input: BlogPostCreateInput): Promise<BlogPostRecord>;
+
+  abstract findById(id: number): Promise<BlogPostRecord | null>;
+
+  /** The unique-key lookup — one (slug, locale) is one post. */
+  abstract findBySlugAndLocale(
+    slug: string,
+    locale: string,
+  ): Promise<BlogPostRecord | null>;
+
+  /**
+   * Posts of one locale, id ASC. With {@code status} — only that
+   * status (public endpoints pass PUBLISHED); without — every status
+   * (the ops console view).
+   */
+  abstract listByLocale(
+    locale: string,
+    status?: BlogPostStatus,
+  ): Promise<BlogPostRecord[]>;
+
+  /**
+   * Patch a DRAFT post's editable fields (COALESCE semantics — absent
+   * keys keep their values). Null when absent or already PUBLISHED:
+   * what the public saw is immutable.
+   */
+  abstract updateDraft(
+    id: number,
+    patch: BlogPostDraftPatch,
+  ): Promise<BlogPostRecord | null>;
+
+  /** DRAFT → PUBLISHED, stamping publishedAt (default: now). Null when absent or not DRAFT. */
+  abstract publish(
+    id: number,
+    publishedAt?: Date,
+  ): Promise<BlogPostRecord | null>;
+
+  /** Remove a post; false when absent. */
+  abstract delete(id: number): Promise<boolean>;
+}
+
+/** Consent lifecycle of a newsletter subscriber. UNSUBSCRIBED is terminal. */
+export type NewsletterSubscriberStatus = 'PENDING' | 'ACTIVE' | 'UNSUBSCRIBED';
+
+/** Persisted newsletter-subscriber row — camelCase projection of the snake_case D1 row. */
+export interface NewsletterSubscriberRecord {
+  readonly id: number;
+  /** Subscriber address, stored lowercase (uniqueness is lower(email) in SQL). */
+  readonly email: string;
+  readonly status: NewsletterSubscriberStatus;
+  /** SHA-256 hex digest of the single-use confirmation token — never the raw value. */
+  readonly confirmationTokenHash: string;
+  readonly confirmedAt: Date | null;
+  readonly unsubscribedAt: Date | null;
+  readonly createdAt: Date;
+}
+
+/** Subscribe input — the caller hashes the token; this layer never sees raw tokens. */
+export interface NewsletterSubscribeInput {
+  /** Stored lowercased — case variants of one address are one subscriber. */
+  readonly email: string;
+  /** SHA-256 hex digest of the confirmation token. */
+  readonly confirmationTokenHash: string;
+}
+
+/**
+ * A subscribe for an address that already exists (case-insensitive, the
+ * lower(email) unique index). The API surfaces this as 409 / a friendly
+ * "already subscribed"; nothing is overwritten.
+ */
+export class DuplicateNewsletterSubscriptionError extends Error {
+  readonly email: string;
+
+  constructor(email: string) {
+    super(
+      `newsletter subscription already exists for ${email} ` +
+        '(uniqueness is case-insensitive on the address)',
+    );
+    this.name = 'DuplicateNewsletterSubscriptionError';
+    this.email = email;
+  }
+}
+
+/**
+ * Newsletter-subscriber repository — double opt-in consent independent
+ * of accounts (no account FK; the email is the only identifier).
+ * Rows land PENDING with a token hash; only the emailed token confirms
+ * (PENDING → ACTIVE) — unconfirmed rows are never mailed. Lookups by
+ * hash; the raw token value exists solely in emailed links, above this
+ * layer (the email_tokens convention).
+ */
+@Injectable()
+export abstract class NewsletterSubscriberRepository {
+  /**
+   * Insert a PENDING subscriber (address lowercased). Rejects with
+   * {@link DuplicateNewsletterSubscriptionError} when the address
+   * already exists (case-insensitive).
+   */
+  abstract subscribe(
+    input: NewsletterSubscribeInput,
+  ): Promise<NewsletterSubscriberRecord>;
+
+  abstract findById(id: number): Promise<NewsletterSubscriberRecord | null>;
+
+  /** Case-insensitive address lookup (resolved in SQL on lower(email)). */
+  abstract findByEmail(
+    email: string,
+  ): Promise<NewsletterSubscriberRecord | null>;
+
+  /** The subscriber a confirmation token hashes to, or null. */
+  abstract findByConfirmationTokenHash(
+    tokenHash: string,
+  ): Promise<NewsletterSubscriberRecord | null>;
+
+  /** PENDING → ACTIVE, stamping confirmedAt. Null when absent or not PENDING. */
+  abstract confirm(
+    id: number,
+    confirmedAt: Date,
+  ): Promise<NewsletterSubscriberRecord | null>;
+
+  /** → UNSUBSCRIBED (terminal), stamping unsubscribedAt. Null when already unsubscribed or absent. */
+  abstract unsubscribe(
+    id: number,
+    unsubscribedAt: Date,
+  ): Promise<NewsletterSubscriberRecord | null>;
+
+  /** Every ACTIVE subscriber — the ops notify-subscribers scan, id ASC. */
+  abstract findActive(): Promise<NewsletterSubscriberRecord[]>;
+}
+
+/** Persisted share-snapshot row — camelCase projection of the snake_case D1 row. */
+export interface ShareSnapshotRecord {
+  readonly id: number;
+  /** Exactly-22-character random public id — the share URL's sole identifier. */
+  readonly publicId: string;
+  /** The frozen result copy (JSON-parsed) — self-contained, no account identifiers. */
+  readonly frozenResult: unknown;
+  readonly createdAt: Date;
+}
+
+/** Creation input — the caller generates the public id and freezes the result. */
+export interface ShareSnapshotCreateInput {
+  readonly publicId: string;
+  readonly frozenResult: unknown;
+}
+
+/**
+ * Share-snapshot repository — frozen calculation results behind
+ * unguessable public ids. Write-once: the copy is immutable and
+ * carries no account identifiers, so there is no update and no
+ * account-scoped read — only create, public-id lookup, and the
+ * 12-month hygiene sweep. A public-id collision (unique index) is
+ * astronomically unlikely and propagates as a raw constraint error —
+ * the generator retries with a fresh id above this layer.
+ */
+@Injectable()
+export abstract class ShareSnapshotRepository {
+  /**
+   * Insert one snapshot. The public id must be exactly 22 characters
+   * (the schema CHECK is the backstop; this guard fails fast with a
+   * clear error) and the frozen result must be JSON-serializable.
+   */
+  abstract create(input: ShareSnapshotCreateInput): Promise<ShareSnapshotRecord>;
+
+  /** The public share lookup — one id, one snapshot. */
+  abstract findByPublicId(publicId: string): Promise<ShareSnapshotRecord | null>;
+
+  /** Delete snapshots created before the cutoff (hygiene sweep). Returns rows removed. */
+  abstract deleteOlderThan(cutoff: Date): Promise<number>;
 }

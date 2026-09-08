@@ -13,23 +13,31 @@
  */
 
 import { request, ApiFetchError } from '@/lib/api';
-import type { TripFeasibilityRequest, TripFeasibilityResponse } from './trip.types';
+import type {
+  TripFeasibilityRequest,
+  TripFeasibilityResponse,
+  TripFillRequest,
+  TripFillResponse,
+} from './trip.types';
 
 // ---------------------------------------------------------------------------
 // Error classification
 // ---------------------------------------------------------------------------
 
 /**
- * Classified failure modes of {@link calculateTripFeasibility}:
- * - `validation`     — 400: out-of-cap passengers/costs or malformed input
- * - `forbidden`      — 403: the backend rejected the calculation
- * - `no-allowances`  — 409: no published allowance dataset for the date
- * - `rate-limited`   — 429: CALCULATOR limiter tripped
- * - `network`        — fetch itself failed (no HTTP response)
- * - `unknown`        — any other error
+ * Classified failure modes of {@link calculateTripFeasibility} and
+ * {@link fillTripAllowance}:
+ * - `validation`      — 400: out-of-cap passengers/costs or malformed input
+ * - `unauthenticated` — 401: the fill surface requires a signed-in user
+ * - `forbidden`       — 403: the backend rejected the calculation
+ * - `no-allowances`   — 409: no published allowance dataset for the date
+ * - `rate-limited`    — 429: CALCULATOR limiter tripped
+ * - `network`         — fetch itself failed (no HTTP response)
+ * - `unknown`         — any other error
  */
 export type TripCalcErrorKind =
   | 'validation'
+  | 'unauthenticated'
   | 'forbidden'
   | 'no-allowances'
   | 'rate-limited'
@@ -37,8 +45,8 @@ export type TripCalcErrorKind =
   | 'unknown';
 
 /**
- * Classify an error thrown by {@link calculateTripFeasibility} into a
- * typed kind. Never throws.
+ * Classify an error thrown by a trip calculation client into a typed
+ * kind. Never throws.
  */
 export function classifyTripCalcError(err: unknown): {
   kind: TripCalcErrorKind;
@@ -46,6 +54,7 @@ export function classifyTripCalcError(err: unknown): {
 } {
   if (err instanceof ApiFetchError) {
     if (err.status === 400) return { kind: 'validation', error: err };
+    if (err.status === 401) return { kind: 'unauthenticated', error: err };
     if (err.status === 403) return { kind: 'forbidden', error: err };
     if (err.status === 409) return { kind: 'no-allowances', error: err };
     if (err.status === 429) return { kind: 'rate-limited', error: err };
@@ -69,6 +78,31 @@ export async function calculateTripFeasibility(
   input: TripFeasibilityRequest,
 ): Promise<TripFeasibilityResponse> {
   return request<TripFeasibilityResponse>('/api/v1/trip-feasibility', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Allowance fill (task 8.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the allowance fill (POST /api/v1/trip/fill): a value-maximal
+ * basket under the traveller allowance effective on the travel date.
+ * The 200 body always carries the separate `ferryOffers` block
+ * (possibly empty).
+ *
+ * Requires a signed-in session (sessionAuth on the route) — an
+ * anonymous caller gets a 401; classify it with
+ * {@link classifyTripCalcError}.
+ *
+ * @throws {@link ApiFetchError} on non-2xx.
+ */
+export async function fillTripAllowance(
+  input: TripFillRequest,
+): Promise<TripFillResponse> {
+  return request<TripFillResponse>('/api/v1/trip/fill', {
     method: 'POST',
     body: JSON.stringify(input),
   });

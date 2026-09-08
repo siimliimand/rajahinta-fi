@@ -114,9 +114,11 @@ async function getReport(c: Context<AppEnv>): Promise<Response> {
 
 /** Register the reports handlers with the guard stack. */
 export function registerReportsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
-  // Class-level age gate (the DECLARATION-profile rate limit is
-  // registered ahead of the guard blocks in index.ts).
-  app.use('/api/v1/reports/*', ageGate());
+  // Class-level age gate — scoped to the EXPORT route (task 2.2):
+  // Hono's `/reports/*` pattern matches the bare `/api/v1/reports` too,
+  // and the submission route POST /api/v1/reports must compose only its
+  // own guard set (AUTH limiter + sessionAuth, via GUARDED_ROUTES).
+  app.on('GET', '/api/v1/reports/:recordId', ageGate());
   // Method-level EntitlementGuard. The presented session cookie, when
   // any, resolves the tier ahead of the check; every feature is FREE tier
   // today, so the check admits anonymous callers too — the wiring stays

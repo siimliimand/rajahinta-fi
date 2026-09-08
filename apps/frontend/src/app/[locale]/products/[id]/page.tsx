@@ -19,6 +19,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getServerProductDetail } from '@/lib/api';
 import type { ProductDetailResponse } from '@/lib/types';
+import MerchantWarningNotice from '../../components/MerchantWarningNotice';
 import ProductAlertAction from './components/ProductAlertAction';
 import ProductDupesPanel from './components/ProductDupesPanel';
 
@@ -161,6 +162,13 @@ export default async function ProductPage({ params }: ProductPageProps) {
           ))}
         </dl>
       </section>
+
+      {/* ── Merchant warnings (task 2.4) — display-only notice above the
+          offers when any of this product's merchants carries a PUBLISHED
+          blacklist entry; renders nothing when the block is absent. ── */}
+      <div className="mb-8">
+        <MerchantWarningNotice warnings={detail.merchantWarnings ?? []} />
+      </div>
 
       {/* ── Observed offers ── */}
       <section className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">

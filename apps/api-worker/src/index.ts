@@ -35,15 +35,22 @@ import {
   registerCalculatorRoutes,
 } from './routes/calculator.routes';
 import { registerSearchRoutes } from './routes/search.routes';
+import { registerUnitPriceRoutes } from './routes/unitprice.routes';
 import { registerProductDupesRoutes } from './routes/product-dupes.routes';
 import { registerWhatIfRoutes } from './routes/what-if.routes';
 import { registerDeclarationRoutes } from './routes/declaration.routes';
 import { registerBasketRoutes } from './routes/basket.routes';
 import { registerEventCalcRoutes } from './routes/event-calc.routes';
 import { registerTripFeasibilityRoutes } from './routes/trip-feasibility.routes';
+import { registerTripRoutes } from './routes/trip.routes';
 import { registerCuratedListsRoutes } from './routes/curated-lists.routes';
 import { registerHistoricalRoutes } from './routes/historical.routes';
 import { registerReportsRoutes } from './routes/reports.routes';
+import { registerMerchantReportsRoutes } from './routes/merchant-reports.routes';
+import { registerNewsletterRoutes } from './routes/newsletter.routes';
+import { registerOutcomeRoutes, registerAccuracyRoutes } from './routes/outcomes.routes';
+import { registerBlogRoutes } from './routes/blog.routes';
+import { registerShareRoutes } from './routes/share.routes';
 import { registerMerchantsRoutes } from './routes/merchants.routes';
 import { registerAccountsRoutes } from './routes/accounts.routes';
 import { registerAlertsRoutes } from './routes/alerts.routes';
@@ -133,21 +140,32 @@ export function createApp(): Hono<AppEnv> {
   app.use('/api/v1/calculations/*', requireRateLimit('CALCULATOR'));
   app.use('/api/v1/basket/*', requireRateLimit('BASKET'));
   app.use('/api/v1/products/:id/price-history', requireRateLimit('HISTORICAL'));
-  app.use('/api/v1/reports/*', requireRateLimit('DECLARATION'));
+  // Narrowed to the report-EXPORT path (task 2.2): the submission route
+  // POST /api/v1/reports must carry ONLY its AUTH profile, and Hono's
+  // `/reports/*` pattern matches the bare path too.
+  app.use('/api/v1/reports/:recordId', requireRateLimit('DECLARATION'));
   registerGuardMiddleware(app);
 
   // Route ports (tasks 3.5–3.8) — handlers appended behind the guards.
   registerCalculatorRoutes(app);
   registerSearchRoutes(app);
+  registerUnitPriceRoutes(app);
   registerProductDupesRoutes(app);
   registerWhatIfRoutes(app);
   registerDeclarationRoutes(app);
   registerBasketRoutes(app);
   registerEventCalcRoutes(app);
   registerTripFeasibilityRoutes(app);
+  registerTripRoutes(app);
   registerCuratedListsRoutes(app);
   registerHistoricalRoutes(app);
   registerReportsRoutes(app);
+  registerMerchantReportsRoutes(app);
+  registerNewsletterRoutes(app);
+  registerOutcomeRoutes(app);
+  registerAccuracyRoutes(app);
+  registerBlogRoutes(app);
+  registerShareRoutes(app);
   registerMerchantsRoutes(app);
   registerAccountsRoutes(app);
   registerAlertsRoutes(app);

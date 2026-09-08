@@ -22,14 +22,49 @@
  * | SessionController (/api/v1/account)       | rotate/revoke: SessionAuthGuard            | rotate + DELETE session: sessionAuth(); the anonymous POST /session issuance route is DELETED (register/login replace it) |
  * | PriceAlertsRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/account/alerts) | no Nest counterpart | sessionAuth(); per-account rate limit registers on the routes (needs the resolved identity) |
  * | GroupOrderRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/group-orders) | no Nest counterpart | POST create only: sessionAuth(); the token-scoped participant routes carry NO sessionAuth (the share token is the capability) |
- * | Ops console (4 controllers, /ops/console/*)| OpsAccessGuard                      | opsAccess() |
+ * | Shop-report submission (NEW surface, trust-and-reach-roadmap 2.2) (POST /api/v1/reports) | no Nest counterpart | requireRateLimit('AUTH') → sessionAuth() |
+ * | Outcome + share writes (NEW surface, trust-and-reach-roadmap 3.2/6.1) (POST /api/v1/calculations/:id/{outcome,share}) | no Nest counterpart | sessionAuth() (the prefix's CALCULATOR rate limit registers at index.ts) |
+ * | Newsletter (NEW surface, trust-and-reach-roadmap 5.3) (/api/v1/newsletter/*) | no Nest counterpart | POST subscribe: requireRateLimit('AUTH') (public write; consent is account-independent — no session exists); GET confirm + unsubscribe: NO guard (the emailed token IS the capability — verify-email/confirm precedent) |
+ * | Ops console (4 controllers, /ops/console/*) + moderation/newsletter additions (trust-and-reach-roadmap 2.3/5.3: reports queue, blacklist publish/appeals, newsletter notify) | OpsAccessGuard | opsAccess() (prefix registration below covers every /ops/console/** route) |
  *
- * Rate limiting (RateLimitGuard) is not in this task's scope — it ports
- * with the RateLimiterDO wiring (task 3.3) and slots into the same
- * registrations ahead of the guards.
+ * ## Route inventory — chains registered per-route (NOT in GUARDED_ROUTES)
  *
- * Controllers with no guard decorations (health, outbound redirects, …)
- * are deliberately absent.
+ * These surfaces register their guard chains in their own route files
+ * (route-specific needs — e.g. the trip fill entitlement or the
+ * historical route's narrow age gate). Listed here so the inventory
+ * covers every registered route and its rate-limit profile; the
+ * route-coverage test pins the full route set against this map.
+ *
+ * | Route (file) | Chain in registration order | Rate-limit profile |
+ * |---|---|---|
+ * | GET /api/v1/products/:id/price-history (historical.routes.ts) | requireRateLimit('HISTORICAL') at index.ts → ageGate() per-route | HISTORICAL |
+ * | GET /api/v1/reports/:recordId calculation-record export (reports.routes.ts) | requireRateLimit('DECLARATION') at index.ts → ageGate() → attachOptionalSession → requireFeature('calculation:export') per-route | DECLARATION |
+ * | GET /api/v1/unitprice/ranking (trust-and-reach-roadmap 7.2, unitprice.routes.ts) | ageGate() per-route (product-surface parity: alcoholic-beverage listing) | none (public read) |
+ * | POST /api/v1/trip/fill (trust-and-reach-roadmap 8.2, trip.routes.ts) | requireRateLimit('CALCULATOR') → sessionAuth() → requireFeature('calculation:basic') per-route (spec: authenticated users only; entitlement is the calculation-surface paywall seam) | CALCULATOR |
+ * | POST /api/v1/what-if/excise, POST /api/v1/event-calc, POST /api/v1/trip-feasibility (own route files) | requireRateLimit('CALCULATOR') per-route | CALCULATOR |
+ * | GET /api/v1/products/:id/dupes, GET /api/v1/lists, GET /api/v1/lists/:slug, GET /api/v1/outbound/:offerId, GET /api/v1/outbound/ferry/:offerId (own route files) | requireRateLimit('DEFAULT') per-route | DEFAULT |
+ * | POST /api/v1/account/session/rotate (accounts.routes.ts) | requireRateLimit('DEFAULT') per-route, then sessionAuth() from GUARDED_ROUTES below | DEFAULT |
+ * | GET /api/v1/account/alerts(+:alertId), POST /api/v1/group-orders | sessionAuth() from GUARDED_ROUTES below, then requireAccountRateLimit('DEFAULT') on the handlers (keys the bucket on the resolved identity) | DEFAULT (per-account) |
+ * | GET /api/v1/merchants/reliability (merchants.routes.ts) | ageGate() per-route | none (public read) |
+ *
+ * Guard-free surfaces with no rate limit (reviewed-safe public reads and
+ * token-capability exchanges): GET /api/v1/health(+/ready), GET
+ * /api/v1/accuracy (trust-and-reach-roadmap 3.3), GET /api/v1/blog/posts
+ * (+:/:slug, 5.1), GET /api/v1/share/:publicId (6.1), POST
+ * /api/v1/analytics/click, GET /api/v1/newsletter/confirm +
+ * /unsubscribe (5.3, emailed token IS the capability), POST
+ * /api/v1/account/password/reset + /verify-email/confirm (same
+ * precedent), and the group-order participant routes (share token IS
+ * the capability).
+ *
+ * Rate limiting composes ahead of the guards (RateLimiterDO wiring,
+ * task 3.3): prefix profiles register at index.ts
+ * (/api/v1/calculator/*, /api/v1/calculations/*, /api/v1/basket/*,
+ * /api/v1/products/:id/price-history, /api/v1/reports/:recordId — the
+ * latter two narrowed so POST /api/v1/reports carries ONLY its AUTH
+ * profile), route-local profiles register in the route files listed
+ * above, and the AUTH-profile public writes register in GUARDED_ROUTES
+ * below.
  *
  * @module guards
  */
@@ -169,6 +204,45 @@ const GUARDED_ROUTES: readonly GuardedRoute[] = [
     path: '/api/v1/account/session',
     use: [sessionAuth()],
   },
+
+  // Shop-blacklist report submission (task 2.2, change
+  // trust-and-reach-roadmap) — a public write surface, so the AUTH
+  // limiter (credential-route precedent) composes FIRST and the report
+  // binds to the session-resolved account. Nest guard order: rate limit
+  // before authentication.
+  {
+    methods: ['POST'],
+    path: '/api/v1/reports',
+    use: [requireRateLimit('AUTH'), sessionAuth()],
+  },
+
+  // Outcome reporting + share-link creation (tasks 3.2/6.1, change
+  // trust-and-reach-roadmap) — owner-scoped writes under the shared
+  // /api/v1/calculations prefix (whose CALCULATOR rate limit registers
+  // at index.ts, ahead of this guard).
+  {
+    methods: ['POST'],
+    path: '/api/v1/calculations/:id/outcome',
+    use: [sessionAuth()],
+  },
+  {
+    methods: ['POST'],
+    path: '/api/v1/calculations/:id/share',
+    use: [sessionAuth()],
+  },
+
+  // Newsletter subscribe (task 5.3, change trust-and-reach-roadmap) — a
+  // public bulk-mail entry point, so the AUTH limiter (credential-route
+  // precedent) is the abuse defence. Consent is account-independent by
+  // design: NO sessionAuth (an anonymous visitor subscribes). The
+  // confirm/unsubscribe routes stay OUT of this table — the emailed
+  // token IS the capability (verify-email/confirm precedent).
+  {
+    methods: ['POST'],
+    path: '/api/v1/newsletter/subscribe',
+    use: [requireRateLimit('AUTH')],
+  },
+
   // No /ops/health entry: the Nest OpsDashboardController health route was
   // never ported — liveness/readiness live at /api/v1/health(+/ready),
   // which register no guard (see health.routes.ts).

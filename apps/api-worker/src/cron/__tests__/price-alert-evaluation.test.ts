@@ -67,6 +67,7 @@ function alert(overrides: Partial<PriceAlertRecord> = {}): PriceAlertRecord {
     id: 11,
     accountId: 7,
     productId: 123,
+    kind: 'PRICE',
     thresholdCents: 1500,
     status: 'active',
     createdAt: NOW,

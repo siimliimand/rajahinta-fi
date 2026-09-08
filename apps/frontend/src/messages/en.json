@@ -732,8 +732,51 @@
       "other_fermented": "Cider and long drink",
       "spirits": "Spirits"
     },
-    "submit": "Calculate break-even volume",
-    "submitting": "Calculating…",
+ "submit": "Calculate break-even volume",
+ "submitting": "Calculating…",
+ "mode": {
+  "breakeven": "Break-even",
+  "fill": "Allowance fill"
+ },
+ "fill": {
+  "searchHeading": "Search candidate products",
+  "searchError": "The search failed. Try again.",
+  "candidatesHeading": "Selected candidates and quantity bounds",
+  "emptyCandidates": "No candidates selected. Search for products and select at least one.",
+  "maxCandidates": "At most {max} candidates in one fill.",
+  "maxQuantity": "At most (pcs)",
+  "removeAria": "Remove {name} from the candidates",
+  "quantityError": "Check the quantity bounds: whole numbers between {min}–{max}.",
+  "submit": "Calculate fill",
+  "submitting": "Calculating…",
+  "lineStatus": {
+   "FILLED": "Included in the fill",
+   "CAP_EXHAUSTED": "Allowance exhausted",
+   "NOT_SELECTED": "Not selected",
+   "NO_ALLOWANCE_ROW": "No allowance row"
+  },
+  "line": {
+   "filledQuantity": "Filled quantity",
+   "unitsValue": "{count} pcs",
+   "unitPrice": "Unit price",
+   "merchant": "Merchant",
+   "contribution": "Value contribution",
+   "consumedVolume": "Consumed volume",
+   "remainingLitres": "{category}: remaining",
+   "remainingUnits": "{category}: remaining (pcs)"
+  },
+  "result": {
+   "heading": "Fill itemization",
+   "filledValue": "Filled value total: {total}",
+   "filledUnits": "Units total: {count}",
+   "boundExhausted": "The allowance does not cover a single unit",
+   "boundExhaustedBody": "The selected candidates' unit prices exceed the available allowance, so no unit fit into the fill.",
+   "noBoundableLine": "No candidate is boundable",
+   "noBoundableLineBody": "The dataset version has no row for any selected candidate's category, so a fill could not be formed.",
+   "productFallback": "Product #{id}",
+   "headroomHeading": "Remaining allowance by category"
+  }
+ },
     "result": {
       "heading": "Break-even volumes",
       "priceDifference": "Price difference (Finland − abroad)",
@@ -760,9 +803,10 @@
       "title": "No published traveller allowances",
       "body": "There is no published allowance dataset version effective on the selected date, so the calculation cannot be produced. Try again later."
     },
-    "errors": {
-      "validation": "Check the input values: 1–9 passengers, costs above €0.",
-      "forbidden": "The trip calculator is not available.",
+ "errors": {
+  "validation": "Check the input values: 1–9 passengers, costs above €0.",
+  "unauthenticated": "Filling requires signing in. Sign in and try again.",
+  "forbidden": "The trip calculator is not available.",
       "rate-limited": "Too many requests. Try again in a moment.",
       "network": "Could not reach the server. Try again.",
       "unknown": "Unexpected error. Try again."
@@ -894,7 +938,14 @@
     "product": "Product #{id}",
     "productTitle": "Price alert",
     "productBody": "Set a threshold for this product — get notified when the price drops below it.",
-    "existingAlert": "This product already has a price alert."
+    "existingAlert": "This product already has a price alert.",
+    "kindLabel": "Alert type",
+    "kindPrice": "Price alert",
+    "kindTaxChange": "Tax-change alert",
+    "taxChangeHint": "Notifies when a confirmed new version of the rate dataset changes the product's landed cost. No price threshold is needed.",
+    "taxChangeValue": "Triggers on a rate-dataset change",
+    "duplicateTaxChangeAlert": "This product already has a tax-change alert.",
+    "existingTaxChangeAlert": "This product already has a tax-change alert."
   },
   "Ranking": {
     "title": "How ranking works",
@@ -918,6 +969,32 @@
     "layer3Desc": " — the sort function rejects any input object with properties not declared on NeutralSortInput, catching accidental data leakage at runtime.",
     "spotTitle": "Spot a problem?",
     "spotBody": "If you believe a product ranking, calculation, or data point is incorrect, you can flag it for review from the <link>calculator result page</link>. Each result includes a \"Flag a problem\" affordance that sends your feedback directly to our review team."
+  },
+  "ValuePage": {
+    "title": "Ethanol €/g by category",
+    "subtitle": "Each row states what one gram of pure ethanol costs when computed from the product's offer price. The value uses the same formula as the comparison view, and the listing is ordered by the €/g value, ascending.",
+    "informationalNote": "This listing is informational: it presents the computed values as they are. The order shown here is a separate read-only view and does not affect search, other listings, or the calculator.",
+    "categorySelectorLabel": "Price category",
+    "category": {
+      "beer": "Beer",
+      "wine_still": "Still wine",
+      "wine_sparkling": "Sparkling wine",
+      "intermediate_products": "Intermediate products (e.g. vermouth)",
+      "other_fermented": "Cider and long drink",
+      "spirits": "Spirits"
+    },
+    "tableCaption": "Products in the {category} price category by €/g value, ascending",
+    "columnPosition": "#",
+    "columnProduct": "Product",
+    "columnEurPerGram": "Ethanol €/g",
+    "columnEthanol": "Ethanol per unit (g)",
+    "columnReliability": "Price data reliability",
+    "unit": "¢/g",
+    "loading": "Loading the listing…",
+    "errorTitle": "The listing could not be loaded",
+    "errorBody": "The backend did not respond. You can try again.",
+    "emptyTitle": "No rows to show",
+    "emptyBody": "No offer in this price category currently has a computable €/g value."
   },
   "ContentSafetyBadge": {
     "promotional": "Promotional language detected: \"{pattern}\" ({language})",
@@ -1111,5 +1188,111 @@
     "unvaluedItem": "No value available",
     "settlementNoteTitle": "Settlement happens outside Rajahinta",
     "settlementNoteBody": "Rajahinta only calculates who owes whom. Rajahinta does not process, broker, or facilitate payments. Participants settle between themselves using their own methods, for example Swish, MobilePay, or a bank transfer."
+
+  },
+  "MerchantWarning": {
+    "noticeLabel": "Published merchant warning",
+    "noticeTitle": "Published merchant warning",
+    "warnedMerchant": "Merchant {name}:",
+    "noticeBody": "This merchant carries a published warning ({basis}). What the warning means and how it was published is explained on the <link>methodology page</link>.",
+    "basisNonDelivery": "multiple independent confirmed non-delivery reports",
+    "basisRegistration": "a confirmed invalid business registration",
+    "basisGeneric": "the published evidence standard"
+  },
+  "AccuracyStat": {
+    "heading": "How accurate are the estimates?",
+    "shareLine": "{share} of reported totals have been within 5 % of the estimate.",
+    "countLine": "Sample size: {count, plural, one {# outcome} other {# outcomes}}",
+    "emptyTitle": "No user-reported outcomes yet",
+    "emptyBody": "When visitors report the actual total of their calculation, the share of reports within 5 % of the estimate is published here. Nothing is shown until then.",
+    "asOfLine": "Computed {date}",
+    "loading": "Loading the accuracy statistic\u2026",
+    "loadFailed": "The accuracy statistic is temporarily unavailable."
+  },
+  "OutcomeReport": {
+    "formTitle": "Report the actual total",
+    "formIntro": "Did the final total differ from the estimate? Report what you actually paid \u2014 reported outcomes feed the public accuracy statistic. One report per calculation.",
+    "amountLabel": "Actual total (\u20ac)",
+    "submit": "Send report",
+    "submitting": "Sending\u2026",
+    "successWithin": "Thank you \u2014 the report was recorded and lands within 5 % of the estimate.",
+    "successOutside": "Thank you \u2014 the report was recorded. It differs from the estimate by more than 5 %.",
+    "alreadyReported": "An outcome has already been reported for this calculation.",
+    "windowExpired": "The 60-day reporting window for this calculation has closed.",
+    "invalidAmount": "Enter the total as a positive amount in euros, for example 24.90.",
+    "reportFailed": "Sending the report failed. Try again.",
+    "reportedBadge": "Outcome reported"
+  },
+  "BlogPage": {
+    "metaTitle": "Blog",
+    "metaDescription": "Announcements about official rate dataset versions and information on how the landed-cost estimates are calculated.",
+    "title": "Blog",
+    "subtitle": "Announcements about official rate dataset versions and information on the calculation method.",
+    "publishedLabel": "Published {date}",
+    "datasetVersionLabel": "Rate dataset version {version}",
+    "readMore": "Read the post",
+    "emptyTitle": "No posts yet",
+    "emptyBody": "Nothing has been published yet. Posts appear here after an operator publishes them.",
+    "unavailableTitle": "The blog is temporarily unavailable",
+    "unavailableBody": "The posts could not be loaded. Try again shortly.",
+    "backToBlog": "\u2190 All posts",
+    "postMetaTitle": "{title} \u2014 blog",
+    "postMetaDescription": "Published {date} on Rajahinta.fi."
+  },
+  "SharePage": {
+    "metaTitle": "Shared landed-cost estimate: {name}",
+    "metaDescription": "A frozen landed-cost estimate for {quantity} \u00d7 {name} to {destination}: {total}. The estimate is an estimate, not a final tax liability.",
+    "metaTitleFallback": "Shared landed-cost estimate",
+    "metaDescriptionFallback": "A frozen landed-cost estimate shared from Rajahinta.fi.",
+    "eyebrow": "Shared estimate",
+    "snapshotOfLabel": "Landed-cost estimate: {quantity} \u00d7 {name} to {destination}",
+    "totalLabel": "Estimated total",
+    "breakdownTitle": "Itemized estimate",
+    "breakdownUnavailable": "The itemized lines are not part of this snapshot.",
+    "calculatedLabel": "Calculated {date}",
+    "createdLabel": "Snapshot created {date}",
+    "frozenNote": "This page shows a frozen copy: later changes to the original calculation do not alter it.",
+    "accuracyLinkTitle": "How accurate are these estimates?",
+    "accuracyLinkBody": "See the <link>user-reported accuracy statistic</link> on the methodology page.",
+    "confidenceLabel": "Confidence",
+    "disclaimerFallback": "The estimated total cost in Finland is an estimate, not a final tax liability."
+  },
+  "Newsletter": {
+    "title": "Newsletter",
+    "description": "Email notices about rate-dataset changes and service change announcements.",
+    "emailLabel": "Email address",
+    "consentLabel": "I want to receive the newsletter and consent to my email address being stored to manage the subscription.",
+    "separationNote": "The newsletter is a separate consent — it is not tied to price alerts or to an account. Every email carries a one-click unsubscribe link, and unsubscribing takes effect immediately.",
+    "submit": "Subscribe",
+    "submitting": "Subscribing…",
+    "successTitle": "Confirm the subscription by email",
+    "successBody": "The address has been recorded. Open the confirmation link in the email — the subscription activates only after that.",
+    "errorInvalid": "Check the email address.",
+    "errorRateLimited": "Too many attempts — try again in a while.",
+    "errorGeneric": "The subscription failed — try again."
+  },
+  "NewsletterConfirm": {
+    "title": "Newsletter confirmation",
+    "checking": "Checking the confirmation…",
+    "confirmedTitle": "Subscription confirmed",
+    "confirmedBody": "The newsletter subscription is now active. Every email carries a one-click unsubscribe link.",
+    "endedTitle": "The subscription has ended",
+    "endedBody": "This address has unsubscribed from the newsletter, and an old link cannot activate it again.",
+    "missingToken": "The confirmation link is missing its token.",
+    "invalidBody": "The confirmation token is invalid or has already been used.",
+    "invalidHint": "If the subscription is still unfinished, subscribe again — a new confirmation email will be sent.",
+    "errorBody": "The confirmation failed — try reloading the page.",
+    "toBlog": "To the blog"
+  },
+  "NewsletterUnsubscribe": {
+    "title": "Newsletter unsubscribe",
+    "working": "Unsubscribing…",
+    "doneTitle": "Subscription ended",
+    "doneBody": "This email address has been removed from the newsletter list immediately, and no further emails will be sent.",
+    "missingToken": "The unsubscribe link is missing its token.",
+    "invalidBody": "The unsubscribe token is invalid.",
+    "invalidHint": "Check that you opened the link from the email exactly as it was sent.",
+    "errorBody": "The unsubscribe failed — try reloading the page.",
+    "toHome": "To the front page"
   }
 }

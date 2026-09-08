@@ -1,15 +1,16 @@
 /**
- * Sitemap (task 9.5; curated lists added by task 7.2).
+ * Sitemap (task 9.5; curated lists added by task 7.2, blog by
+ * trust-and-reach-roadmap task 5.2).
  *
  * Static destinations per locale plus per-product URLs drawn from the
- * product listing via the shared API client, plus one URL per published
- * curated list drawn from the list catalog. Finnish serves from the
- * unprefixed paths, English under /en (localePrefix: 'as-needed').
- * Backend reads are cached; an unreachable backend degrades to a
- * static-routes-only sitemap rather than a failed one. The catalog
- * only ever advertises URLs that serve: a fetch failure or a catalog
- * without published entries yields zero list URLs (the sitemap degrades
- * to inert).
+ * product listing via the shared API client, one URL per published
+ * curated list drawn from the list catalog, and one URL per published
+ * blog post per locale. Finnish serves from the unprefixed paths,
+ * English under /en (localePrefix: 'as-needed'). Backend reads are
+ * cached; an unreachable backend degrades to a static-routes-only
+ * sitemap rather than a failed one. The catalog only ever advertises
+ * URLs that serve: a fetch failure or a catalog without published
+ * entries yields zero dynamic URLs (the sitemap degrades to inert).
  *
  * @module Sitemap
  */
@@ -19,7 +20,7 @@ import { getServerProductListing, SITE_URL, BASE_URL } from '@/lib/api';
 import { routing } from '@/i18n/routing';
 
 /** Static destinations every locale offers (header navigation surface). */
-const STATIC_PATHS = ['', '/calculator', '/compare', '/basket', '/ranking'];
+const STATIC_PATHS = ['', '/calculator', '/compare', '/basket', '/ranking', '/blog'];
 
 /** One catalog row — slug + display title (criteria live per slug). */
 interface CuratedCatalogList {
@@ -56,13 +57,46 @@ async function getServerCuratedListSlugs(): Promise<string[]> {
   }
 }
 
+/**
+ * Published blog slugs for one locale (GET /api/v1/blog/posts?locale=,
+ * trust-and-reach-roadmap task 5.2). The endpoint serves PUBLISHED rows
+ * only, so anything it returns is advertiseable. Same degradation
+ * contract as the list slugs: any failure or unexpected shape yields an
+ * empty list, never a failed sitemap.
+ */
+async function getServerBlogSlugs(locale: string): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/api/v1/blog/posts?locale=${encodeURIComponent(locale)}`,
+      {
+        headers: { accept: 'application/json' },
+        next: { revalidate: 900 },
+      },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as { items?: Array<{ slug?: unknown }> };
+    const slugs = Array.isArray(body.items)
+      ? body.items
+          .map((post) => post?.slug)
+          .filter((slug): slug is string => typeof slug === 'string' && SLUG_PATTERN.test(slug))
+      : [];
+    return slugs;
+  } catch {
+    return [];
+  }
+}
+
 export const revalidate = 900;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [products, listSlugs] = await Promise.all([
+  const [products, listSlugs, ...blogSlugLists] = await Promise.all([
     getServerProductListing(),
     getServerCuratedListSlugs(),
+    ...routing.locales.map((locale) => getServerBlogSlugs(locale)),
   ]);
+  const blogSlugsByLocale = new Map(
+    routing.locales.map((locale, index) => [locale, blogSlugLists[index]]),
+  );
 
   const entries: MetadataRoute.Sitemap = [];
   for (const locale of routing.locales) {
@@ -90,6 +124,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     for (const slug of listSlugs) {
       entries.push({
         url: `${SITE_URL}${prefix}/lists/${slug}`,
+        changeFrequency: 'weekly',
+        priority: 0.6,
+      });
+    }
+
+    // Published blog posts (task 5.2) — per-locale content, so each
+    // locale advertises only its own posts.
+    for (const slug of blogSlugsByLocale.get(locale) ?? []) {
+      entries.push({
+        url: `${SITE_URL}${prefix}/blog/${slug}`,
         changeFrequency: 'weekly',
         priority: 0.6,
       });

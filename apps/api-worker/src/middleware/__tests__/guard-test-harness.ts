@@ -118,8 +118,33 @@ export function buildProbeApp(): Hono<AppEnv> {
   app.post('/api/v1/account/session/rotate', ok);
   app.delete('/api/v1/account/session', ok);
 
+  // Trust-and-reach routes (tasks 2.2/3.2/6.1, change
+  // trust-and-reach-roadmap) — session-guarded writes.
+  app.post('/api/v1/reports', ok);
+  app.post('/api/v1/calculations/:id/outcome', ok);
+  app.post('/api/v1/calculations/:id/share', ok);
+
+  // Newsletter routes (task 5.3, change trust-and-reach-roadmap) —
+  // subscribe is a rate-limited public write; confirm/unsubscribe are
+  // token-capability public (no guard by design).
+  app.post('/api/v1/newsletter/subscribe', ok);
+  app.get('/api/v1/newsletter/confirm', ok);
+  app.get('/api/v1/newsletter/unsubscribe', ok);
+
   // Ops routes.
   app.get('/ops/console/audit', ok);
+  // Moderation + newsletter ops additions (tasks 2.3/5.3, change
+  // trust-and-reach-roadmap) — every one rides the /ops/console/*
+  // opsAccess() prefix registration.
+  app.get('/ops/console/reports', ok);
+  app.post('/ops/console/reports/:id/link', ok);
+  app.post('/ops/console/reports/:id/reject', ok);
+  app.get('/ops/console/blacklist/entries', ok);
+  app.post('/ops/console/blacklist/publish', ok);
+  app.get('/ops/console/blacklist/appeals', ok);
+  app.post('/ops/console/blacklist/:id/appeal', ok);
+  app.post('/ops/console/blacklist/:id/resolve', ok);
+  app.post('/ops/console/newsletter/notify', ok);
 
   return app;
 }

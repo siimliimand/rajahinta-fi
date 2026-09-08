@@ -65,6 +65,7 @@ function alert(overrides: Partial<PriceAlert> = {}): PriceAlert {
   return {
     id: 7,
     productId: PRODUCT_ID,
+    kind: 'PRICE',
     thresholdCents: 1250,
     status: 'active',
     createdAt: '2026-08-01T10:00:00.000Z',

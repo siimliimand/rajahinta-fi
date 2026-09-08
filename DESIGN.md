@@ -120,7 +120,7 @@ Plain, hook-free React components over Tailwind utilities — usable from both s
 | `apps/frontend/src/app/icon.svg` | Favicon: the initial on a primary-700 square; colors hardcoded to token values (renders outside CSS-variable scope) |
 | `apps/frontend/src/app/opengraph-image.tsx` | OG image: wordmark + the fi catalog description on white, built with next/og (Inter deliberately not fetched at build); token values mirrored as inline-style literals |
 | `apps/frontend/src/app/[locale]/components/SiteHeader.tsx` | Five primary destinations (calculator, compare, basket, account, ranking) on every page, outside the age gate. Three additional flag-gated destinations (`/event`, `/trip`, `/what-if`) are inserted at fixed positions only when their server-resolved flags are on — absent from first render when off. Group order and curated lists are deliberately not in the nav (share-link and sitemap discovery). Active page shown by underline (desktop) / left bar (mobile) plus `aria-current="page"` — never color alone. Mobile menu is a disclosure panel: closed means `display:none` (no focus trap), Escape closes and returns focus to the toggle, navigation closes the panel |
-| `apps/frontend/src/app/[locale]/components/SiteFooter.tsx` | Structured legal layout: visually distinct disclaimer block on a white surface, methodology link, locale note naming the content languages |
+| `apps/frontend/src/app/[locale]/components/SiteFooter.tsx` | Structured legal layout: visually distinct disclaimer block on a white surface, methodology link, locale note naming the content languages; hosts the newsletter subscribe form (explicit consent checkbox, separate from price alerts) |
 | `apps/frontend/src/app/[locale]/components/AgeGate.tsx` | Age verification wrapper rendered on every page inside the locale layout; header/footer stay outside the gate |
 
 ### Homepage
@@ -158,6 +158,12 @@ Plain, hook-free React components over Tailwind utilities — usable from both s
 | `calculator/components/ReportExportActions.tsx` | `/calculator`, `/account` | Report export affordance — JSON/CSV lossless, printable HTML via browser print (flag-gated, premium entitlement) |
 | `calculator/components/DeclarationGuidancePanel.tsx` | `/calculator/result/[recordId]` | Collapsible advanced declaration guidance — excise derivation, advance-notice deadline, MyTax checklist, confidence caveats, official vero.fi links (flag-gated) |
 | `compare/components/MerchantFreshnessSection.tsx` | `/compare` | Per-merchant data-freshness/reliability display — informational only, never affects ranking (flag-gated) |
+| `components/MerchantWarningNotice.tsx` | `/products/[id]`, `/compare`, `/calculator` | Additive published-blacklist warning notice (error-token group, triangle icon) rendered wherever a warned merchant appears; links the ranking-methodology page; never removes or reorders offers |
+| `components/AccuracyStat.tsx` | `/` (trust row), `/ranking#accuracy` | User-reported accuracy statistic — count + within-margin share + as-of, sample size always shown, API-supplied label verbatim, honest zero state |
+| `account/components/OutcomeReportForm.tsx` | `/account` | Report-outcome form on history records within the 60-day window — euro input, within/outside-margin confirmations, calm duplicate/window error mapping |
+| `trip/components/TripFillForm.tsx` | `/trip` | Fill-mode input — allowance, candidate selection with per-candidate quantity bounds (1–99, 10-line cap) |
+| `trip/components/TripFillResult.tsx` | `/trip` | Fill result itemization — per-line contribution/consumed volume/running headroom, per-category headroom, dataset-version provenance, structural disclaimer, display-only ferry block |
+| `components/NewsletterSubscribeForm.tsx` | footer, `/blog`, `/blog/[slug]` | Client form with required consent checkbox, separation-from-price-alerts note, uniform "confirm by email" panel (anti-enumeration 202) |
 | `account/components/SavedScenariosSection.tsx` | `/account` | Saved scenarios list with load affordance (flag-gated) |
 | `components/ContentSafetyBadge.tsx` | — | Warns about promotional/subjective product content (content-lint violations); hidden when clean. Currently defined but not wired into any route |
 
@@ -167,14 +173,14 @@ Feature-component paths above are relative to `apps/frontend/src/app/[locale]/`.
 
 | Route | Purpose |
 |---|---|
-| `/` | Homepage — value proposition, calculator CTA, trust row (static copy, no API calls) |
+| `/` | Homepage — value proposition, calculator CTA, trust row (static copy + user-reported accuracy statistic with honest zero state) |
 | `/calculator` | Landed-cost calculator with product search, selection, quantity, result; designed empty/error/gate-closed states |
 | `/calculator/result/[recordId]` | Individual calculation result page |
 | `/compare` | Product comparison with multiple sort orders; flag-gated multi-store comparison |
 | `/basket` | Basket builder and optimization results (hidden when `enable_basket_optimization` is off) |
 | `/ranking` | Explanation of ranking methodology and neutrality enforcement |
 | `/event` | Excursion alcohol calculator — MVP landed-cost estimate plus V2 deterministic cross-border sourcing plan (flag-gated) |
-| `/trip` | Trip feasibility — break-even math and neutral ferry-offer block excluded from all calculation input (flag-gated) |
+| `/trip` | Trip feasibility — break-even math plus allowance-fill mode (best basket inside the traveller allowance, per-line itemization) and neutral ferry-offer block excluded from all calculation input |
 | `/what-if` | Hypothetical excise what-if simulator — pure recalculation, ephemeral share token, HYPOTHETICAL disclaimer (flag-gated) |
 | `/what-if/embed` | Chrome-less embeddable what-if widget for third-party sites |
 | `/products/[id]` | Server-rendered per-product page with crawler-facing product metadata (age-gated catalog read via first-party prerender token); includes the flag-gated evidence-backed dupe-alternatives panel |
@@ -182,7 +188,7 @@ Feature-component paths above are relative to `apps/frontend/src/app/[locale]/`.
 | `/group-order` | Group order session creation — create form and scope selection (flag-gated) |
 | `/group-order/[token]` | Shared group order session view via opaque token — participants, item valuations, transfers breakdown, accounting-only boundary note; noindexed, 410 after expiry (flag-gated) |
 | `/ops` | Internal operator console — client console fetches from `/ops/console/**` behind bearer-token + IP-allowlist realm and the OPERATOR_CONSOLE flag (default OFF); excluded from indexing |
-| `/account` | Account management page (login required — session cookie; calculation history, data export, saved scenarios, price alerts) |
+| `/account` | Account management page (login required — session cookie; calculation history with outcome reporting on in-window records, data export, saved scenarios, price alerts with PRICE/TAX_CHANGE kind toggle) |
 | `/account/saved-baskets` | User's saved calculation baskets |
 | `/login` | Credentials login (email + password); links to register and password reset |
 | `/register` | Account registration (min 12-char password policy); triggers verification email |
@@ -190,6 +196,13 @@ Feature-component paths above are relative to `apps/frontend/src/app/[locale]/`.
 | `/account/forgot` | Password reset request (always-neutral response; mail only when the account exists) |
 | `/account/reset` | Password reset form consuming the emailed single-use token |
 | `/age-gate` | Age verification page |
+| `/value` | €/g value page — per-category deterministic ranking table with standard status badges; informational copy only |
+| `/blog` | Blog index — rate-change posts (PUBLISHED only, locale-aware); entries in sitemap |
+| `/blog/[slug]` | Individual blog post — escaped body rendering; drafts render as unknown (notFound) |
+| `/share/[publicId]` | Frozen share-snapshot view — DisclaimerBanner on every render, OG card metadata from snapshot fields, accuracy-stat cross-link, notFound with no identifier echo |
+| `/embed/calculator` | Chrome-less embeddable calculator — minimal chrome, iframe-friendly headers, age gate and disclaimers intact, submissions through the normal API path |
+| `/newsletter/confirm` | Newsletter confirmation landing — confirmed/already-active/ended/invalid states, honest copy |
+| `/newsletter/unsubscribe` | One-click unsubscribe landing — immediate, terminal state confirmed to the user |
 | `/age-gate/declined` | Neutral destination for declining the age gate — no alcohol-related content, no external links |
 | `[...rest]` (catch-all) | Unmatched paths inside a locale route through `notFound()` to the localized not-found page |
 
@@ -214,4 +227,4 @@ The platform is positioned as a trustworthy, explainable financial/tax-intellige
 - Consider shadcn/ui or similar component library if component count grows significantly (D5 keeps this in force)
 - Swap the SiteFooter's hand-rolled card surface for the Card primitive once the primitive carries the React import the classic-JSX test runtime needs (noted in SiteFooter.tsx)
 
-<!-- Last updated: 2026-09-06 (drop-sweden-eur-only-alko-benchmark: hero/trust-row posture — from abroad to Finland, sources = published retailer datasets and the Alko domestic reference); prior: 2026-08-28 -->
+<!-- Last updated: 2026-09-08 (trust-and-reach-roadmap: warning notices, accuracy stat, trip fill mode, blog, newsletter form, share page, embed calculator, value page); prior: 2026-09-06 -->

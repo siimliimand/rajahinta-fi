@@ -2,6 +2,7 @@ import React from 'react';
 import { getMessages, getTranslations } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import { routing } from '@/i18n/routing';
+import NewsletterSubscribeForm from './NewsletterSubscribeForm';
 
 /**
  * Layout-level footer as a structured legal layout (OpenSpec:
@@ -11,6 +12,11 @@ import { routing } from '@/i18n/routing';
  * to the catalogs (pinned by the SSR and compliance tests). The
  * per-result disclaimer on calculation output stays with the API
  * payload it describes.
+ *
+ * The newsletter subscribe form (task 5.4, change
+ * trust-and-reach-roadmap) rides here as a client island: navigation
+ * chrome stays in the SSR payload, and the double opt-in consent copy
+ * lives next to the disclaimer it is independent of.
  */
 export default async function SiteFooter() {
   const t = await getTranslations('SiteFooter');
@@ -19,6 +25,7 @@ export default async function SiteFooter() {
   return (
     <footer className="border-t border-gray-200 bg-gray-50">
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+        <NewsletterSubscribeForm />
         {/* Legal block: a quiet white surface sets the disclaimer apart
             from the gray footer without raising the volume; no shadow —
             a border is distinction enough. Hand-rolls the Card surface
@@ -26,7 +33,7 @@ export default async function SiteFooter() {
             not import React and crashes under the classic JSX runtime
             the vitest chrome tests use; swap to <Card padding="sm"
             shadow="none"> once the primitive carries that import. */}
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
           <p className="text-xs leading-relaxed text-gray-600">
             {t('disclaimer')}
           </p>

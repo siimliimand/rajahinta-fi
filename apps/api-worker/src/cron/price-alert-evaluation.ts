@@ -305,6 +305,12 @@ export async function handlePriceAlertEvaluation(
   const evaluatedAt = now();
 
   for (const alert of active) {
+    // Kind ownership (task 4.1, design D5): the kind-filtered repository
+    // read returns every kind, and TAX_CHANGE rows belong to the
+    // tax-change evaluator — the PRICE sweep skips them before any read
+    // or counter. Existing rows carry kind = 'PRICE' (migration 0016
+    // backfill), so prior evaluations are unaffected.
+    if (alert.kind !== 'PRICE') continue;
     // Per-alert isolation: a failing alert counts failed, never aborts
     // the sweep.
     try {
@@ -322,8 +328,12 @@ export async function handlePriceAlertEvaluation(
       counters.evaluated++;
 
       // Threshold semantics (design decision): observed <= threshold
-      // triggers.
-      if (observed > alert.thresholdCents) continue;
+      // triggers. A PRICE row always carries a threshold — the kind-aware
+      // create contract requires it (task 1.4 made the shared contract
+      // nullable only for TAX_CHANGE rows, which the kind guard above
+      // already excluded).
+      const thresholdCents = alert.thresholdCents as number;
+      if (observed > thresholdCents) continue;
       counters.matched++;
 
       // Cooldown from the latest DELIVERED row — the same read makes a
@@ -357,7 +367,7 @@ export async function handlePriceAlertEvaluation(
         productName: product?.name ?? null,
         productId: alert.productId,
         observedPriceCents: observed,
-        thresholdCents: alert.thresholdCents,
+        thresholdCents,
         evaluatedAt,
       });
       const intent = await notifications.createIntent({

@@ -732,8 +732,51 @@
       "other_fermented": "Siideri ja pitkäjuoma",
       "spirits": "Väkevät alkoholijuomat"
     },
-    "submit": "Laske kannattava tuontimäärä",
-    "submitting": "Lasketaan…",
+ "submit": "Laske kannattava tuontimäärä",
+ "submitting": "Lasketaan…",
+ "mode": {
+  "breakeven": "Kannattavuusrajat",
+  "fill": "Määrärajan täyttö"
+ },
+ "fill": {
+  "searchHeading": "Hae tuoteehdokkaita",
+  "searchError": "Haku ei onnistunut. Yritä uudelleen.",
+  "candidatesHeading": "Valitut ehdokkaat ja enimmäismäärät",
+  "emptyCandidates": "Ei valittuja ehdokkaita. Hae tuotteita ja valitse vähintään yksi.",
+  "maxCandidates": "Enintään {max} ehdokasta yhdellä täytöllä.",
+  "maxQuantity": "Enintään (kpl)",
+  "removeAria": "Poista {name} ehdokkaista",
+  "quantityError": "Tarkista enimmäismäärät: kokonaislukuja välillä {min}–{max}.",
+  "submit": "Laske täyttö",
+  "submitting": "Lasketaan…",
+  "lineStatus": {
+   "FILLED": "Mukana täytössä",
+   "CAP_EXHAUSTED": "Määräraja loppui",
+   "NOT_SELECTED": "Ei tullut valituksi",
+   "NO_ALLOWANCE_ROW": "Ei määrärajariviä"
+  },
+  "line": {
+   "filledQuantity": "Täytetty määrä",
+   "unitsValue": "{count} kpl",
+   "unitPrice": "Yksikköhinta",
+   "merchant": "Myyjä",
+   "contribution": "Arvon osuus",
+   "consumedVolume": "Kulunut tilavuus",
+   "remainingLitres": "{category}: jäljellä",
+   "remainingUnits": "{category}: jäljellä (kpl)"
+  },
+  "result": {
+   "heading": "Täytön erittely",
+   "filledValue": "Täytetty arvo yhteensä: {total}",
+   "filledUnits": "Yksiköitä yhteensä: {count}",
+   "boundExhausted": "Määräraja ei riitä yhteenkään yksikköön",
+   "boundExhaustedBody": "Valittujen ehdokkaiden yksikköhinnat ylittävät käytettävissä olevan määrärajan, joten täyttöön ei mahtunut yhtään yksikköä.",
+   "noBoundableLine": "Mikään ehdokas ei ole rajattavissa",
+   "noBoundableLineBody": "Aineistoversiossa ei ole riviä yhdenkään valitun ehdokkaan kategorialle, joten täyttöä ei voitu muodostaa.",
+   "productFallback": "Tuote #{id}",
+   "headroomHeading": "Määrärajan jäljellä oleva tila kategorioittain"
+  }
+ },
     "result": {
       "heading": "Kannattava tuontimäärä",
       "priceDifference": "Hintaero (Suomi − ulkomaat)",
@@ -760,9 +803,10 @@
       "title": "Ei julkaistuja tullimäärärajoja",
       "body": "Valitulle päivälle ei löydy julkaistua tullimääräraja-aineiston versiota, joten laskentaa ei voida tehdä. Kokeile uudelleen myöhemmin."
     },
-    "errors": {
-      "validation": "Tarkista syötteen arvot: matkustajia 1–9, kustannukset yli 0 €.",
-      "forbidden": "Matkalaskuri ei ole käytettävissä.",
+ "errors": {
+  "validation": "Tarkista syötteen arvot: matkustajia 1–9, kustannukset yli 0 €.",
+  "unauthenticated": "Täyttö vaatii kirjautumisen. Kirjaudu sisään ja yritä uudelleen.",
+  "forbidden": "Matkalaskuri ei ole käytettävissä.",
       "rate-limited": "Liikaa pyyntöjä. Yritä hetken kuluttua uudelleen.",
       "network": "Yhteys palvelimeen ei toiminut. Yritä uudelleen.",
       "unknown": "Odottamaton virhe. Yritä uudelleen."
@@ -894,7 +938,14 @@
     "product": "Tuote #{id}",
     "productTitle": "Hintaherätys",
     "productBody": "Aseta tälle tuotteelle hintaraja — saat ilmoituksen, kun hinta alittaa sen.",
-    "existingAlert": "Tällä tuotteella on jo hintaherätys."
+    "existingAlert": "Tällä tuotteella on jo hintaherätys.",
+    "kindLabel": "Herätyksen tyyppi",
+    "kindPrice": "Hintaherätys",
+    "kindTaxChange": "Veromuutosherätys",
+    "taxChangeHint": "Laukaisee, kun vahvistettu uusi verotietoversio muuttaa tuotteen kokonaiskustannusta. Hintarajaa ei tarvita.",
+    "taxChangeValue": "Laukaisee verotietojen muuttuessa",
+    "duplicateTaxChangeAlert": "Tälle tuotteelle on jo veromuutosherätys.",
+    "existingTaxChangeAlert": "Tällä tuotteella on jo veromuutosherätys."
   },
   "Ranking": {
     "title": "Miten järjestäminen toimii",
@@ -918,6 +969,32 @@
     "layer3Desc": " — lajittelufunktio hylkää syötteen, jossa on NeutralSortInputin ulkopuolisia ominaisuuksia, ja paljastaa näin tahattoman tietovuodon ajonaikaisesti.",
     "spotTitle": "Huomasitko ongelman?",
     "spotBody": "Jos arvioit, että tuotteen sijoitus, laskenta tai tieto on virheellinen, voit ilmoittaa siitä tarkistettavaksi <link>laskurin tulossivulta</link>. Jokaisessa tuloksessa on \\\"Ilmoita virheestä\\\"-toiminto, joka välittää palautteesi suoraan katselmointitiimillemme."
+  },
+  "ValuePage": {
+    "title": "Etanoli-€/g hintaluokittain",
+    "subtitle": "Jokainen rivi kertoo, mitä yksi gramma puhdasta etanolia maksaa tuotteen myyntihinnasta laskettuna. Arvo lasketaan samalla kaavalla kuin vertailunäkymässä, ja luettelo on järjestetty €/g-arvon mukaan alimmasta alkaen.",
+    "informationalNote": "Luettelo on tiedollinen: se esittää lasketut arvot sellaisenaan. Tässä näkyvä järjestys on erillinen lukunäkymä, joka ei vaikuta hakuun, muihin listauksiin tai laskuriin.",
+    "categorySelectorLabel": "Hintaluokka",
+    "category": {
+      "beer": "Olut",
+      "wine_still": "Makuuviini",
+      "wine_sparkling": "Kuohuviini",
+      "intermediate_products": "Välituotteet (esim. vermutti)",
+      "other_fermented": "Siideri ja pitkäjuoma",
+      "spirits": "Väkevät alkoholijuomat"
+    },
+    "tableCaption": "Hintaluokan {category} tuotteet €/g-arvon mukaan alimmasta alkaen",
+    "columnPosition": "#",
+    "columnProduct": "Tuote",
+    "columnEurPerGram": "Etanoli-€/g",
+    "columnEthanol": "Etanolia yksikössä (g)",
+    "columnReliability": "Hintatiedon luotettavuus",
+    "unit": "snt/g",
+    "loading": "Luetteloa haetaan…",
+    "errorTitle": "Luetteloa ei saatu haettua",
+    "errorBody": "Taustajärjestelmä ei vastannut. Voit yrittää uudelleen.",
+    "emptyTitle": "Ei näytettäviä rivejä",
+    "emptyBody": "Tässä hintaluokassa ei ole yhtään tarjousta, jolle €/g-arvoa voisi laskea."
   },
   "ContentSafetyBadge": {
     "promotional": "Mainoskieltä havaittu: \"{pattern}\" ({language})",
@@ -1111,5 +1188,111 @@
     "unvaluedItem": "Arvoa ei tiedossa",
     "settlementNoteTitle": "Suoritus tapahtuu Rajahinnan ulkopuolella",
     "settlementNoteBody": "Rajahinta laskee vain, kuka on velassa kenellekin. Rajahinta ei käsittele, välitä eikä mahdollista maksuja. Osallistujat sopivat suorituksesta keskenään omilla tavoillaan, esimerkiksi Swish-, MobilePay- tai pankkisiirrolla."
+
+  },
+  "MerchantWarning": {
+    "noticeLabel": "Julkaistu kauppiashuomautus",
+    "noticeTitle": "Julkaistu kauppiashuomautus",
+    "warnedMerchant": "Kauppias {name}:",
+    "noticeBody": "T\u00e4m\u00e4 kauppias on saanut julkaistun huomautuksen ({basis}). Mit\u00e4 huomautus tarkoittaa ja miten se on julkaistu, kerrotaan <link>menetelm\u00e4sivulla</link>.",
+    "basisNonDelivery": "useita itsen\u00e4isi\u00e4, vahvistettuja toimitush\u00e4iri\u00f6raportteja",
+    "basisRegistration": "vahvistettu virheellinen yritysrekisteritieto",
+    "basisGeneric": "julkaistu n\u00e4ytt\u00f6vaatimus"
+  },
+  "AccuracyStat": {
+    "heading": "Kuinka tarkkoja arviot ovat?",
+    "shareLine": "{share} raportoiduista loppusumista on j\u00e4nyt 5 %:n sis\u00e4\u00e4n arviosta.",
+    "countLine": "Otoskoko: {count, plural, one {# lopputulos} other {# lopputulosta}}",
+    "emptyTitle": "Ei viel\u00e4 k\u00e4ytt\u00e4jien raportoimia lopputuloksia",
+    "emptyBody": "Kun vierailijat raportoivat laskelmansa todellisen loppusumman, t\u00e4h\u00e4n julkaistaan arvion 5 %:n sis\u00e4\u00e4n j\u00e4\u00e4neiden raporttien osuus. Mit\u00e4\u00e4n ei n\u00e4ytet\u00e4 ennen sit\u00e4.",
+    "asOfLine": "Laskettu {date}",
+    "loading": "Ladataan tarkkuustilastoa\u2026",
+    "loadFailed": "Tarkkuustilasto ei ole juuri nyt saatavilla."
+  },
+  "OutcomeReport": {
+    "formTitle": "Raportoi todellinen loppusumma",
+    "formIntro": "J\u00e4ik\u00f6 lopullinen summa muuksi kuin arvioksi? Raportoi, paljonko todellisuudessa maksoit \u2014 raportoidut lopputulokset sy\u00f6tt\u00e4v\u00e4t julkista tarkkuustilastoa. Yksi raportti per laskelma.",
+    "amountLabel": "Todellinen loppusumma (\u20ac)",
+    "submit": "L\u00e4het\u00e4 raportti",
+    "submitting": "L\u00e4hetet\u00e4\u00e4n\u2026",
+    "successWithin": "Kiitos \u2014 raportti on tallennettu ja j\u00e4i arvion 5 %:n sis\u00e4\u00e4n.",
+    "successOutside": "Kiitos \u2014 raportti on tallennettu. Se poikkesi arviosta yli 5 %.",
+    "alreadyReported": "T\u00e4m\u00e4 laskelma on jo raportoitu.",
+    "windowExpired": "Laskelman 60 vuorokauden raportointiikkuna on sulkeutunut.",
+    "invalidAmount": "Sy\u00f6t\u00e4 summa positiivisena eurom\u00e4\u00e4r\u00e4n\u00e4, esimerkiksi 24,90.",
+    "reportFailed": "Raportin l\u00e4hetys ep\u00e4onnistui. Yrit\u00e4 uudelleen.",
+    "reportedBadge": "Lopputulos raportoitu"
+  },
+  "BlogPage": {
+    "metaTitle": "Blogi",
+    "metaDescription": "Ilmoitukset virallisista veroaineistoversioista ja tietoa siit\u00e4, miten kokonaishinta-arviot lasketaan.",
+    "title": "Blogi",
+    "subtitle": "Ilmoitukset virallisista veroaineistoversioista ja tietoa laskentamenetelm\u00e4st\u00e4.",
+    "publishedLabel": "Julkaistu {date}",
+    "datasetVersionLabel": "Veroaineiston versio {version}",
+    "readMore": "Lue julkaisu",
+    "emptyTitle": "Ei viel\u00e4 julkaisuja",
+    "emptyBody": "Mit\u00e4\u00e4n ei ole viel\u00e4 julkaistu. Julkaisut ilmestyv\u00e4t t\u00e4nne, kun operaattori julkaisee ne.",
+    "unavailableTitle": "Blogi ei ole juuri nyt saatavilla",
+    "unavailableBody": "Julkaisuja ei voitu ladata. Kokeile hetken kuluttua uudelleen.",
+    "backToBlog": "\u2190 Kaikki julkaisut",
+    "postMetaTitle": "{title} \u2014 blogi",
+    "postMetaDescription": "Julkaistu {date} Rajahinta.fi:ss\u00e4."
+  },
+  "SharePage": {
+    "metaTitle": "Jaettu kokonaishinta-arvio: {name}",
+    "metaDescription": "J\u00e4\u00e4dytetty kokonaishinta-arvio: {quantity} \u00d7 {name} kohteeseen {destination}, yhteens\u00e4 {total}. Arvio on arvio, ei lopullinen verovelka.",
+    "metaTitleFallback": "Jaettu kokonaishinta-arvio",
+    "metaDescriptionFallback": "Rajahinta.fi:ss\u00e4 laskettu ja jaettu kokonaishinta-arvio.",
+    "eyebrow": "Jaettu arvio",
+    "snapshotOfLabel": "Kokonaishinta-arvio: {quantity} \u00d7 {name} kohteeseen {destination}",
+    "totalLabel": "Arvioitu yhteens\u00e4",
+    "breakdownTitle": "Eritelty arvio",
+    "breakdownUnavailable": "T\u00e4m\u00e4 kopio ei sis\u00e4ll\u00e4 eriteltyj\u00e4 rivej\u00e4.",
+    "calculatedLabel": "Laskettu {date}",
+    "createdLabel": "Kopio luotu {date}",
+    "frozenNote": "T\u00e4m\u00e4 sivu n\u00e4ytt\u00e4\u00e4 j\u00e4\u00e4dytetyn kopion: my\u00f6hemm\u00e4t muutokset alkuper\u00e4iseen laskelmaan eiv\u00e4t muuta sit\u00e4.",
+    "accuracyLinkTitle": "Kuinka tarkkoja arviot ovat?",
+    "accuracyLinkBody": "Katso menetelm\u00e4sivulla oleva <link>k\u00e4ytt\u00e4jien raportoima tarkkuustilasto</link>.",
+    "confidenceLabel": "Varmuus",
+    "disclaimerFallback": "Arvioitu kokonaishinta Suomessa on arvio, ei lopullinen verovelka."
+  },
+  "Newsletter": {
+    "title": "Uutiskirje",
+    "description": "Sähköpostitiedot verotietojen muutoksista ja palvelun muutosilmoituksista.",
+    "emailLabel": "Sähköpostiosoite",
+    "consentLabel": "Haluan uutiskirjeen ja hyväksyn, että sähköpostiosoitteeni tallennetaan tilauksen hoitamista varten.",
+    "separationNote": "Uutiskirje on erillinen suostumus, joka ei liity hintaherätyksiin eikä tiliin. Jokainen viesti sisältää kertaklikkauslinkin tilauksen peruuttamiseen, ja peruutus on välitön.",
+    "submit": "Tilaa",
+    "submitting": "Tilataan…",
+    "successTitle": "Vahvista tilaus sähköpostista",
+    "successBody": "Osoite on tallennettu. Avaa sähköpostista vahvistuslinkki — tilaus aktivoituu vasta sen jälkeen.",
+    "errorInvalid": "Tarkista sähköpostiosoite.",
+    "errorRateLimited": "Liikaa yrityksiä — yritä hetken kuluttua uudelleen.",
+    "errorGeneric": "Tilaus epäonnistui — yritä uudelleen."
+  },
+  "NewsletterConfirm": {
+    "title": "Uutiskirjeen vahvistus",
+    "checking": "Vahvistusta tarkistetaan…",
+    "confirmedTitle": "Tilaus vahvistettu",
+    "confirmedBody": "Uutiskirjeen tilaus on nyt aktiivinen. Jokainen viesti sisältää kertaklikkauslinkin tilauksen peruuttamiseen.",
+    "endedTitle": "Tilaus on päättynyt",
+    "endedBody": "Tämä osoite on peruutettu uutiskirjeestä, eikä vanha linkki voi aktivoida sitä uudelleen.",
+    "missingToken": "Vahvistuslinkistä puuttuu tunnus.",
+    "invalidBody": "Vahvistustunnus on virheellinen tai jo käytetty.",
+    "invalidHint": "Jos tilaus on kesken, tilaa uutiskirje uudelleen — uusi vahvistusviesti lähtee sähköpostiin.",
+    "errorBody": "Vahvistus epäonnistui — yritä ladata sivu uudelleen.",
+    "toBlog": "Blogiin"
+  },
+  "NewsletterUnsubscribe": {
+    "title": "Uutiskirjeen peruutus",
+    "working": "Peruutusta tehdään…",
+    "doneTitle": "Tilaus peruutettu",
+    "doneBody": "Tämä sähköpostiosoite on poistettu uutiskirjeen tilaajista välittömästi, eikä uusia viestejä lähetetä.",
+    "missingToken": "Peruutuslinkistä puuttuu tunnus.",
+    "invalidBody": "Peruutustunnus on virheellinen.",
+    "invalidHint": "Tarkista, että avasit viestissä olleen linkin sellaisenaan.",
+    "errorBody": "Peruutus epäonnistui — yritä ladata sivu uudelleen.",
+    "toHome": "Etusivulle"
   }
 }

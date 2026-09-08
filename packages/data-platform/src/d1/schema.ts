@@ -609,15 +609,19 @@ export const savedScenarios = sqliteTable(
 );
 
 /**
- * Price alerts — per-account watchlist thresholds on a product
- * (task 2.1, change product-roadmap-phases-1-4).
+ * Price alerts — per-account watchlist alerts on a product (task 2.1,
+ * change product-roadmap-phases-1-4; kind column, threshold nullability
+ * and per-kind duplicate guard per task 1.2, change
+ * trust-and-reach-roadmap, design D5).
  *
- * One row per (account, product): the UNIQUE constraint makes the
+ * One row per (account, product, kind): the UNIQUE constraint makes the
  * evaluation cooldown's per-alert scope identical to design R2's
- * per-product-per-account scope — a second alert on the same pair could
- * only produce duplicate emails. Pausing keeps the configuration while
- * excluding the row from scheduled evaluation; deleting the account row
- * cascades here (GDPR erasure, same guarantee as savedScenarios).
+ * per-product-per-account scope — a second alert on the same triple
+ * could only produce duplicate emails — while PRICE and TAX_CHANGE
+ * watches on one product coexist (the duplicate check is per
+ * product+kind). Pausing keeps the configuration while excluding the
+ * row from scheduled evaluation; deleting the account row cascades here
+ * (GDPR erasure, same guarantee as savedScenarios).
  */
 export const priceAlerts = sqliteTable(
   'price_alerts',
@@ -631,8 +635,21 @@ export const priceAlerts = sqliteTable(
     productId: integer('product_id')
       .references(() => productMaster.id)
       .notNull(),
-    /** Notify when the product's materialized price falls to or below this (cents). */
-    thresholdCents: integer('threshold_cents').notNull(),
+    /**
+     * What triggers the alert: PRICE evaluates the materialized price
+     * after ingestion cycles; TAX_CHANGE evaluates on rate-version
+     * publication and carries no threshold. Defaults to 'PRICE' —
+     * existing rows took the default in migration 0016, preserving
+     * exactly the pre-kind behavior.
+     */
+    kind: text('kind', { length: 16 }).default('PRICE').notNull(),
+    /**
+     * Notify when the product's materialized price falls to or below
+     * this (cents). PRICE alerts carry it; TAX_CHANGE alerts leave it
+     * null — a rate-change trigger has no threshold to compare against
+     * (spec: "TAX_CHANGE alerts SHALL NOT require a threshold").
+     */
+    thresholdCents: integer('threshold_cents'),
     /** active = evaluated by the cron; paused = configuration kept, evaluation skipped. */
     status: text('status', { length: 16 }).default('active').notNull(),
     createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
@@ -640,16 +657,24 @@ export const priceAlerts = sqliteTable(
   },
   (table) => [
     // Serves list-by-account (leading column) and the create-time
-    // duplicate guard — one alert per (account, product).
-    unique('price_alerts_account_id_product_id_unique').on(
+    // duplicate guard — one alert per (account, product, kind).
+    unique('price_alerts_account_id_product_id_kind_unique').on(
       table.accountId,
       table.productId,
+      table.kind,
     ),
     // The post-ingestion evaluation cron scans active alerts; the
-    // (account_id, product_id) unique index cannot serve that filter.
+    // (account_id, product_id, kind) unique index cannot serve that
+    // filter.
     index('price_alerts_status_idx').on(table.status),
-    check('price_alerts_threshold_cents_check', sql`${table.thresholdCents} > 0`),
+    // A null threshold is the TAX_CHANGE shape; a present one must be a
+    // positive cent amount.
+    check(
+      'price_alerts_threshold_cents_check',
+      sql`${table.thresholdCents} IS NULL OR ${table.thresholdCents} > 0`,
+    ),
     check('price_alerts_status_check', sql`${table.status} IN ('active', 'paused')`),
+    check('price_alerts_kind_check', sql`${table.kind} IN ('PRICE', 'TAX_CHANGE')`),
   ],
 );
 
@@ -1554,6 +1579,395 @@ export const curatedEntries = sqliteTable(
 );
 
 /**
+ * Shop reports — user-submitted evidence against a merchant (task 1.1,
+ * change trust-and-reach-roadmap, design D2, spec: merchant-blacklist).
+ *
+ * One row per report. Merchant identity is domain + normalized name —
+ * NOT a merchant_registry FK: the reported shops are foreign merchants
+ * that are not ingested, so matching has to work without a registry row.
+ * The evidence fields (order reference, correspondence summary) are NOT
+ * NULL — an unevidenced report is unrepresentable (the producer_links
+ * evidence discipline); completeness beyond non-emptiness is the API
+ * layer's validation, not this table's.
+ *
+ * Moderation state machine: OPEN until the audited ops-console action
+ * links the report to a published blacklist entry (LINKED) or rejects
+ * it (REJECTED) — publication is never automatic (design D2).
+ * reporter_account_id cascades on account deletion (GDPR erasure, the
+ * price_alerts guarantee): the published entry is the durable public
+ * record, not the reporter's evidence rows.
+ */
+export const shopReports = sqliteTable(
+  'shop_reports',
+  {
+    id: integer('id').primaryKey(),
+    /** Merchant domain in normalized form (lowercase host) — half of the merchant identity key. */
+    merchantDomain: text('merchant_domain', { length: 256 }).notNull(),
+    /** Merchant display name in NORMALIZED form (trim + lowercase + whitespace collapse) — the other identity half. */
+    merchantNameNormalized: text('merchant_name_normalized', { length: 256 }).notNull(),
+    /** Order reference from the reporter's purchase — mandatory evidence. */
+    orderReference: text('order_reference', { length: 128 }).notNull(),
+    /** Reporter's digest of the correspondence with the merchant — mandatory evidence. */
+    correspondenceSummary: text('correspondence_summary').notNull(),
+    /** FK to accounts — the reporter; cascade delete implements the erasure path. */
+    reporterAccountId: integer('reporter_account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** Moderation state: OPEN → LINKED (backs a published entry) or REJECTED. */
+    status: text('status', { length: 16 }).default('OPEN').notNull(),
+    /** Published blacklist entry this report backs — set by the linking publish action; null while OPEN/REJECTED. */
+    linkedEntryId: integer('linked_entry_id').references(
+      (): AnySQLiteColumn => blacklistEntries.id,
+    ),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // The ops review queue reads OPEN reports; the moderation transition
+    // is the only mutation these rows ever receive.
+    index('shop_reports_status_idx').on(table.status),
+    // Evidence accumulation per merchant (the 3+-independent-reports
+    // standard) and report↔entry matching resolve by identity.
+    index('shop_reports_merchant_domain_merchant_name_normalized_idx').on(
+      table.merchantDomain,
+      table.merchantNameNormalized,
+    ),
+    // Account-scoped reads (the reporter's own reports) — SQLite does
+    // not index FK columns automatically (the email_tokens_account_id_idx
+    // precedent).
+    index('shop_reports_reporter_account_id_idx').on(table.reporterAccountId),
+    check('shop_reports_status_check', sql`${table.status} IN ('OPEN', 'LINKED', 'REJECTED')`),
+    // A blank identity/evidence field is a validation bypass, not a
+    // report (the producer_links non-empty CHECK precedent).
+    check('shop_reports_merchant_domain_check', sql`${table.merchantDomain} <> ''`),
+    check('shop_reports_merchant_name_check', sql`${table.merchantNameNormalized} <> ''`),
+    check('shop_reports_order_reference_check', sql`${table.orderReference} <> ''`),
+    check('shop_reports_correspondence_check', sql`${table.correspondenceSummary} <> ''`),
+  ],
+);
+
+/**
+ * Blacklist entries — the published merchant warnings (task 1.1, change
+ * trust-and-reach-roadmap, design D2, spec: merchant-blacklist).
+ *
+ * Created only by the audited operator publish action once the
+ * accumulated OPEN reports meet the published standard (confirmed
+ * non-delivery by 3+ independent reports, or a confirmed invalid
+ * business registration). The standard set lives as constants in the
+ * core-domain blacklist module, so `standardMet` stays unconstrained
+ * TEXT: the module owns the value set, the row only records which
+ * standard was met — inventing the enum here would duplicate it.
+ *
+ * Appeal path: an appeal stamps the appeal fields and moves the entry to
+ * REOPENED, which removes it from the public warnings immediately, until
+ * an operator republishes (PUBLISHED) or rejects (REJECTED, terminal);
+ * every decision is appended to the audit trail, not stored on the row.
+ * Entries are governance records and are never deleted (the audit_events
+ * posture), so shop_reports.linked_entry_id needs no cascade.
+ */
+export const blacklistEntries = sqliteTable(
+  'blacklist_entries',
+  {
+    id: integer('id').primaryKey(),
+    /** Merchant domain in normalized form — half of the identity key (matches shop_reports.merchant_domain). */
+    merchantDomain: text('merchant_domain', { length: 256 }).notNull(),
+    /** Merchant name in NORMALIZED form — the other identity half (matches shop_reports.merchant_name_normalized). */
+    merchantNameNormalized: text('merchant_name_normalized', { length: 256 }).notNull(),
+    /** Which published standard was met — value set owned by the core-domain blacklist module (documented, unconstrained). */
+    standardMet: text('standard_met', { length: 64 }).notNull(),
+    /** When the operator published the entry. */
+    publishedAt: text('published_at').default(ISO_8601_NOW).notNull(),
+    /** Operator who published the entry — the manual-step audit face (the consumption_norms confirmed_by precedent). */
+    publishedBy: text('published_by', { length: 128 }).notNull(),
+    /** Lifecycle: PUBLISHED (public) → REOPENED (appeal, hidden) → PUBLISHED | REJECTED (terminal). */
+    status: text('status', { length: 16 }).default('PUBLISHED').notNull(),
+    /** When the appeal was filed — null until an appeal moves the entry to REOPENED. */
+    appealedAt: text('appealed_at'),
+    /** Appeal grounds as submitted — null until an appeal. */
+    appealReason: text('appeal_reason'),
+  },
+  (table) => [
+    // The display join resolves warnings for the merchants appearing on
+    // a response by identity, filtered to PUBLISHED (REOPENED entries
+    // hide immediately — spec: appeal path).
+    index('blacklist_entries_merchant_domain_merchant_name_normalized_status_idx').on(
+      table.merchantDomain,
+      table.merchantNameNormalized,
+      table.status,
+    ),
+    check(
+      'blacklist_entries_status_check',
+      sql`${table.status} IN ('PUBLISHED', 'REOPENED', 'REJECTED')`,
+    ),
+    // A blank identity/standard/operator field is a publish-action bug,
+    // not an entry (the producer_links non-empty CHECK precedent).
+    check('blacklist_entries_merchant_domain_check', sql`${table.merchantDomain} <> ''`),
+    check('blacklist_entries_merchant_name_check', sql`${table.merchantNameNormalized} <> ''`),
+    check('blacklist_entries_standard_met_check', sql`${table.standardMet} <> ''`),
+    check('blacklist_entries_published_by_check', sql`${table.publishedBy} <> ''`),
+  ],
+);
+
+/**
+ * Retention cap for calculation_outcomes in days — 24 months (design
+ * D1, change trust-and-reach-roadmap, spec: calculation-outcomes
+ * "Retention decoupled from calculation records").
+ *
+ * calculation_outcomes is deliberately ABSENT from the calculation-record
+ * retention sweep's RETENTION_TABLES
+ * (src/repositories/d1/calculation-record-retention.ts): that sweep
+ * deletes exactly the estimate an outcome froze, so sweeping outcomes
+ * with it would silently destroy user-reported data. Outcomes prune by
+ * THIS cap in their own scheduled sweep instead (wired by a later task).
+ */
+export const CALCULATION_OUTCOME_RETENTION_DAYS = 730;
+
+/**
+ * Calculation outcomes — user-reported actual totals for a calculation
+ * record (task 1.1, change trust-and-reach-roadmap, design D1, spec:
+ * calculation-outcomes).
+ *
+ * At most one outcome per (record, account) — the UNIQUE key IS the
+ * duplicate guard behind the API's 409 (the saved_scenarios idempotency
+ * precedent). The row freezes what the accuracy statistic needs — a
+ * digest of the estimate fields plus both totals — so the "user-reported"
+ * accuracy number stays explainable after the record itself is pruned
+ * (spec scenario "Estimate pruned, outcome retained"; see
+ * CALCULATION_OUTCOME_RETENTION_DAYS for this table's own cap).
+ *
+ * calculation_record_id is deliberately NOT a FOREIGN KEY: records are
+ * sweep-pruned long before outcomes (180-day record cap vs this table's
+ * 24-month cap), and a cascade would destroy outcomes while a
+ * restrictive FK would break the record sweep's DELETEs — the reference
+ * is by convention, resolved read-side.
+ */
+export const calculationOutcomes = sqliteTable(
+  'calculation_outcomes',
+  {
+    id: integer('id').primaryKey(),
+    /** calculation_records.id this outcome reports on — by convention, NOT an FK (see table docblock: record cap < outcome cap). */
+    calculationRecordId: integer('calculation_record_id').notNull(),
+    /** FK to accounts — the reporter; at most one row per (record, account); cascade delete implements the erasure path. */
+    reporterAccountId: integer('reporter_account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /**
+     * Digest of the estimate fields the outcome freezes (JSON text) —
+     * written at report time so the outcome stays explainable once the
+     * record is pruned (documented like calculationRecords.alkoBenchmark;
+     * absence is unrepresentable — an outcome without its estimate
+     * digest could not power the within-margin comparison).
+     */
+    estimateDigest: text('estimate_digest', { mode: 'json' }).notNull(),
+    /** Estimated total in cents, from the frozen estimate — the margin comparison's reference. */
+    estimatedTotalCents: integer('estimated_total_cents').notNull(),
+    /** Reported actual total in cents — user-reported data, never a calculated value. */
+    reportedTotalCents: integer('reported_total_cents').notNull(),
+    /** When the outcome was reported — the as-of face of the public accuracy statistic. */
+    reportedAt: text('reported_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // The duplicate guard: at most one outcome per (record, account) —
+    // a second report is a 409 at the API and unrepresentable at rest.
+    unique('calculation_outcomes_calculation_record_id_reporter_account_id_unique').on(
+      table.calculationRecordId,
+      table.reporterAccountId,
+    ),
+    // Totals are positive cent amounts (spec: submission validation,
+    // "positive cents") — a zero/negative is a validation bypass,
+    // unrepresentable at rest.
+    check('calculation_outcomes_estimated_total_check', sql`${table.estimatedTotalCents} > 0`),
+    check('calculation_outcomes_reported_total_check', sql`${table.reportedTotalCents} > 0`),
+  ],
+);
+
+/**
+ * Blog posts — rate-change explainers behind a human publication gate
+ * (task 1.2, change trust-and-reach-roadmap, design D3, spec:
+ * content-publication).
+ *
+ * One row per (slug, locale): the draft hook at the manual
+ * rate-confirmation point creates FI + EN DRAFT rows summarizing the
+ * confirmed version's delta (fail-open — a draft failure never blocks
+ * the confirmation), and only an operator action moves a row to
+ * PUBLISHED; no auto-publish path exists (the consumption_norms publish
+ * lifecycle). rate_dataset_version names the confirmed version in the
+ * version_label vocabulary — a label reference, not an FK: versions are
+ * append-only rows across the rule tables, not keyed lookups.
+ */
+export const blogPosts = sqliteTable(
+  'blog_posts',
+  {
+    id: integer('id').primaryKey(),
+    /** URL slug — the public lookup half, unique per locale. */
+    slug: text('slug', { length: 256 }).notNull(),
+    /** Content locale (BCP-47, the [locale] route set — 'fi'/'en' at launch). */
+    locale: text('locale', { length: 16 }).notNull(),
+    /** Post title. */
+    title: text('title', { length: 512 }).notNull(),
+    /** Markdown body — must pass the content-policy lint before publication (spec). */
+    bodyMarkdown: text('body_markdown').notNull(),
+    /** Lifecycle: DRAFT until the audited operator publish; public endpoints return PUBLISHED only. */
+    status: text('status', { length: 16 }).default('DRAFT').notNull(),
+    /** Rate dataset version the post explains (version_label vocabulary) — null for posts without a rate tie-in. */
+    rateDatasetVersion: text('rate_dataset_version', { length: 64 }),
+    /** When published — null while DRAFT. */
+    publishedAt: text('published_at'),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // The public blog index reads PUBLISHED rows of one locale (the
+    // curated_entries lookup-shape precedent); the unique key covers the
+    // slug-page lookup.
+    index('blog_posts_locale_status_idx').on(table.locale, table.status),
+    unique('blog_posts_slug_locale_unique').on(table.slug, table.locale),
+    check('blog_posts_status_check', sql`${table.status} IN ('DRAFT', 'PUBLISHED')`),
+    // A blank slug/title is a draft-builder bug, not a post (the
+    // producer_links non-empty CHECK precedent).
+    check('blog_posts_slug_check', sql`${table.slug} <> ''`),
+    check('blog_posts_title_check', sql`${table.title} <> ''`),
+  ],
+);
+
+/**
+ * Newsletter subscribers — double opt-in consent, independent of
+ * accounts and of price-alert consent (task 1.2, change
+ * trust-and-reach-roadmap, design D4, spec: content-publication).
+ *
+ * Different purpose, different audience: no account FK exists — a
+ * subscription does not require registration. The row starts PENDING
+ * and only the emailed token's confirmation activates it (unconfirmed
+ * rows are never mailed — spec); the one-click unsubscribe takes effect
+ * immediately. Only the SHA-256 hex digest of the confirmation token is
+ * stored (the email_tokens convention); the raw value exists solely in
+ * the emailed link. The email is stored lowercase by the repository and
+ * uniqueness is case-insensitive in SQL (the accounts_email_lower_idx
+ * precedent).
+ */
+export const newsletterSubscribers = sqliteTable(
+  'newsletter_subscribers',
+  {
+    id: integer('id').primaryKey(),
+    /** Subscriber address, stored lowercase (unique via lower(email)). */
+    email: text('email', { length: 320 }).notNull(),
+    /** Consent lifecycle: PENDING until token confirmation; ACTIVE receives sends; UNSUBSCRIBED is terminal. */
+    status: text('status', { length: 16 }).default('PENDING').notNull(),
+    /** SHA-256 hex digest of the single-use confirmation token — lookup key, never the raw value. */
+    confirmationTokenHash: text('confirmation_token_hash', { length: 64 }).notNull(),
+    /** When confirmation happened — null while PENDING. */
+    confirmedAt: text('confirmed_at'),
+    /** When the one-click unsubscribe happened — null until then. */
+    unsubscribedAt: text('unsubscribed_at'),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // Case-insensitive uniqueness in SQL, not just application code —
+    // the accounts_email_lower_idx precedent; the expression form
+    // serves the subscribe lookup directly.
+    uniqueIndex('newsletter_subscribers_email_lower_idx').on(sql`lower(${table.email})`),
+    // The ops notify-subscribers action scans ACTIVE rows (the
+    // price_alerts_status_idx precedent).
+    index('newsletter_subscribers_status_idx').on(table.status),
+    check(
+      'newsletter_subscribers_status_check',
+      sql`${table.status} IN ('PENDING', 'ACTIVE', 'UNSUBSCRIBED')`,
+    ),
+    // A blank token hash is a subscribe-flow bug, not a subscriber.
+    check('newsletter_subscribers_token_hash_check', sql`${table.confirmationTokenHash} <> ''`),
+  ],
+);
+
+/**
+ * Newsletter notification intents — the delivery intent log behind
+ * crash-safe ops newsletter sends (task 5.3, change
+ * trust-and-reach-roadmap, design D4; the alert_notifications
+ * precedent applied to the newsletter audience).
+ *
+ * The ops notify-subscribers action writes one PENDING intent row per
+ * recipient BEFORE dispatch through the email worker and marks the
+ * outcome AFTER, so a retried action skips subscribers already marked
+ * delivered — a crash mid-batch can never double-send (spec
+ * content-publication: crash-safe send). Rows are append-only delivery
+ * attempt records: the outcome transition (pending → delivered |
+ * failed) plus marked_at is the only update a row ever receives.
+ * Deleting the subscriber cascades here — the intent log has no
+ * meaning without its recipient.
+ */
+export const newsletterNotifications = sqliteTable(
+  'newsletter_notifications',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to newsletter_subscribers — the intended recipient; cascade delete. */
+    subscriberId: integer('subscriber_id')
+      .references(() => newsletterSubscribers.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** Delivery channel — email only (the newsletter has no other channel). */
+    channel: text('channel', { length: 16 }).notNull(),
+    /** Intent-log lifecycle: pending until dispatch resolves (delivered | failed). */
+    deliveryStatus: text('delivery_status', { length: 16 })
+      .default('pending')
+      .notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+    /** When the outcome was marked — null while the intent is still pending. */
+    markedAt: text('marked_at'),
+  },
+  (table) => [
+    // Latest-DELIVERED-intent lookup (subscriber_id, status) ordered by
+    // createdAt — the 24-hour redelivery cooldown's enforcement read.
+    index('newsletter_notifications_subscriber_id_delivery_status_created_at_idx').on(
+      table.subscriberId,
+      table.deliveryStatus,
+      table.createdAt,
+    ),
+    check('newsletter_notifications_channel_check', sql`${table.channel} IN ('email')`),
+    check(
+      'newsletter_notifications_delivery_status_check',
+      sql`${table.deliveryStatus} IN ('pending', 'delivered', 'failed')`,
+    ),
+  ],
+);
+
+/**
+ * Share snapshots — frozen copies of a calculation result behind a
+ * public permalink (task 1.2, change trust-and-reach-roadmap, design
+ * D6, spec: share-permalinks).
+ *
+ * Sharing copies the rendered result into frozen_result under a random
+ * public id; later changes to — or pruning of — the original record
+ * cannot affect the snapshot. The copy contains no account identifiers,
+ * so no account FK exists and no retention exception is needed (a
+ * 12-month hygiene sweep applies anyway, owned by the sharing module —
+ * not the calculation-record sweep). public_id is the share URL's only
+ * identifier: exactly 22 characters, generated and length-checked
+ * app-side; the CHECK pins the documented length so a generator bug is
+ * unrepresentable at rest.
+ */
+export const shareSnapshots = sqliteTable(
+  'share_snapshots',
+  {
+    id: integer('id').primaryKey(),
+    /** Exactly-22-character random public id — the share URL's sole identifier. */
+    publicId: text('public_id', { length: 22 }).notNull(),
+    /** The frozen result copy (JSON) — self-contained, no account identifiers; rendered with the structural disclaimer. */
+    frozenResult: text('frozen_result', { mode: 'json' }).notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // The public /share/:publicId lookup — one id, one snapshot.
+    unique('share_snapshots_public_id_unique').on(table.publicId),
+    // The 12-month hygiene sweep filters by age (the
+    // group_order_sessions_expires_at_idx housekeeping precedent).
+    index('share_snapshots_created_at_idx').on(table.createdAt),
+    check('share_snapshots_public_id_check', sql`length(${table.publicId}) = 22`),
+    // Parseable JSON at rest — the share page renders it verbatim (the
+    // curated_entries json_valid precedent).
+    check(
+      'share_snapshots_frozen_result_check',
+      sql`${table.frozenResult} <> '' AND json_valid(${table.frozenResult})`,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -1587,5 +2001,12 @@ export const d1Schema = {
   ferryOffers,
   producerLinks,
   curatedEntries,
+  shopReports,
+  blacklistEntries,
+  calculationOutcomes,
+  blogPosts,
+  newsletterSubscribers,
+  newsletterNotifications,
+  shareSnapshots,
   emailTokens,
 };

@@ -29,6 +29,31 @@ export interface ProductSearchResult {
   readonly page: number;
   readonly limit: number;
   readonly totalPages: number;
+  /**
+   * Additive merchant-warnings block (trust-and-reach-roadmap task 2.2):
+   * PUBLISHED blacklist entries matching the page's offer merchants.
+   * Absent when nothing matches or the lookup fails — never null.
+   * Strictly informational: never filters, reorders, or annotates items.
+   */
+  readonly merchantWarnings?: readonly MerchantWarning[];
+}
+
+/**
+ * One public merchant warning — the display face of a PUBLISHED blacklist
+ * entry joined additively into product/search/compare responses (mirrors
+ * MerchantWarning in api-worker's merchant-warnings service).
+ */
+export interface MerchantWarning {
+  /** Normalized domain of the warned merchant (entry identity, domain half). */
+  readonly merchantDomain: string;
+  /** Normalized name of the warned merchant (entry identity, name half). */
+  readonly merchantName: string;
+  /** The published-standard basis the operator published under. */
+  readonly standardMet: string;
+  /** When the entry was published (ISO-8601). */
+  readonly publishedAt: string;
+  /** The ranking-methodology page explaining what a warning means. */
+  readonly methodologyUrl: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,9 +126,45 @@ export interface UnitPriceUnavailable {
 /** Discriminated €/g result — discriminate on `status` (mirrors core-domain). */
 export type UnitPriceResult = UnitPriceValue | UnitPriceUnavailable;
 
+// ---------------------------------------------------------------------------
+// Unit-price category ranking (GET /api/v1/unitprice/ranking)
+// Mirrors the route's RankingRow projection (unitprice.routes.ts). Purely
+// informational listing: the ascending €/g order is a read-model view and
+// never feeds search order, default ordering, or any calculation input.
+// ---------------------------------------------------------------------------
+
+/** One ranked row — the minimal per-product facts the value page renders. */
+export interface UnitPriceRankingItem {
+  readonly productId: number;
+  readonly name: string;
+  readonly brand: string;
+  /** The offer the ranked value was derived from (provenance). */
+  readonly offerId: number;
+  /** Offer price in euro cents per gram of pure ethanol, ascending order. */
+  readonly centsPerGram: number;
+  /** Grams of pure ethanol in one unit (volume × fraction × 789 g/l). */
+  readonly ethanolGrams: number;
+  /** Reliability of the offer price the ranked value was derived from. */
+  readonly reliabilityStatus: 'VERIFIED' | 'ESTIMATED';
+}
+
+/** Response of the per-category ranking listing. */
+export interface UnitPriceRankingResponse {
+  /** The canonical category key the listing was requested for. */
+  readonly category: string;
+  readonly items: UnitPriceRankingItem[];
+}
+
 export interface ProductDetailResponse {
   readonly product: ProductDetail;
   readonly offers: RetailOffer[];
+  /**
+   * Additive merchant-warnings block (trust-and-reach-roadmap task 2.2):
+   * PUBLISHED blacklist entries matching this product's offer merchants.
+   * Absent when nothing matches or the lookup fails — never null.
+   * Strictly informational: the offers array and its order are untouched.
+   */
+  readonly merchantWarnings?: readonly MerchantWarning[];
   /**
    * Factual per-merchant reliability scores for the offers' merchants.
    * Absent when the API supplies none (never null). Informational only —
@@ -577,12 +638,21 @@ export interface PriceHistoryResponse {
 /** Alert delivery state: active alerts are evaluated, paused alerts are kept but mute. */
 export type PriceAlertStatus = 'active' | 'paused';
 
+/**
+ * What triggers the alert (task 4.2, change trust-and-reach-roadmap):
+ * PRICE is the original threshold watch; TAX_CHANGE fires when a
+ * confirmed rate-version change moves the product's landed cost and
+ * carries no threshold.
+ */
+export type PriceAlertKind = 'PRICE' | 'TAX_CHANGE';
+
 /** A price alert row as served by the account API (ISO timestamps). */
 export interface PriceAlert {
   readonly id: number;
   readonly productId: number;
-  /** Alert threshold in integer euro cents (1–1,000,000 — see alerts.routes.ts). */
-  readonly thresholdCents: number;
+  readonly kind: PriceAlertKind;
+  /** PRICE alerts: threshold in integer euro cents (1–1,000,000). TAX_CHANGE alerts: always null. */
+  readonly thresholdCents: number | null;
   readonly status: PriceAlertStatus;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -767,6 +837,113 @@ export interface ComparisonProduct {
    * Feeds the factual data-freshness display; never affects ordering.
    */
   readonly merchants?: readonly string[];
+  /**
+   * PUBLISHED blacklist warnings joined from the product-detail payload
+   * (trust-and-reach-roadmap task 2.4). Absent when the detail fetch
+   * resolved nothing; rendered as a display-only notice per column.
+   */
+  readonly merchantWarnings?: readonly MerchantWarning[];
+}
+
+// ---------------------------------------------------------------------------
+// Verified outcomes (GET /api/v1/accuracy, history ?outcomes=1, POST
+// /api/v1/calculations/:id/outcome — trust-and-reach-roadmap tasks 3.2/3.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Public accuracy statistic. `withinMarginShare` is a fraction in [0,1]
+ * and is null EXACTLY when count is 0 — the honest empty state renders
+ * "no outcomes yet", never a percentage (spec calculation-outcomes).
+ */
+export interface AccuracyStatistic {
+  readonly count: number;
+  readonly withinMarginShare: number | null;
+  /** ISO-8601 read time of the aggregation. */
+  readonly asOf: string;
+  /**
+   * The exact user-reported wording per locale, supplied by the API —
+   * the UI renders it verbatim and never invents its own label.
+   */
+  readonly label: { readonly fi: string; readonly en: string };
+}
+
+/** One history record's outcome flag (GET /account/history?outcomes=1). */
+export interface HistoryOutcomeFlag {
+  readonly recordId: number;
+  /** True when the account already reported an outcome for the record. */
+  readonly outcomeReported: boolean;
+}
+
+/** Response of POST /api/v1/calculations/:id/outcome. */
+export interface OutcomeReport {
+  readonly id: number;
+  readonly calculationRecordId: number;
+  readonly estimatedTotalCents: number;
+  readonly reportedTotalCents: number;
+  /** Whether the report landed within the 5 % margin of the estimate. */
+  readonly withinMargin: boolean;
+  readonly reportedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Blog (GET /api/v1/blog/posts — trust-and-reach-roadmap task 5.1/5.2)
+// ---------------------------------------------------------------------------
+
+/** Index item of a PUBLISHED post — no body. */
+export interface BlogPostIndexItem {
+  readonly slug: string;
+  readonly locale: string;
+  readonly title: string;
+  /** The rate-dataset version the post documents, when version-keyed. */
+  readonly rateDatasetVersion: string | null;
+  readonly publishedAt: string | null;
+}
+
+/** GET /api/v1/blog/posts response (PUBLISHED only, one locale). */
+export interface BlogPostListResponse {
+  readonly items: readonly BlogPostIndexItem[];
+  readonly total: number;
+}
+
+/** One full PUBLISHED post — body included. */
+export interface BlogPost {
+  readonly slug: string;
+  readonly locale: string;
+  readonly title: string;
+  readonly rateDatasetVersion: string | null;
+  readonly publishedAt: string | null;
+  readonly bodyMarkdown: string;
+}
+
+// ---------------------------------------------------------------------------
+// Share snapshots (GET /api/v1/share/:publicId — task 6.1/6.2)
+// ---------------------------------------------------------------------------
+
+/** The frozen public copy (mirrors ShareSnapshotPayload in core-domain). */
+export interface ShareSnapshotPayload {
+  readonly type: 'landed-cost-snapshot';
+  readonly product: {
+    readonly name: string;
+    readonly brand: string | null;
+    readonly category: string;
+  };
+  readonly quantity: number;
+  readonly totalCents: number;
+  readonly currency: string;
+  /** Itemized estimate lines (JSON) — rendered defensively. */
+  readonly breakdown: unknown;
+  readonly confidence: string;
+  readonly destination: string;
+  /** The structural disclaimer object copied at share time. */
+  readonly disclaimer: unknown;
+  readonly calculatedAt: string;
+}
+
+/** GET /api/v1/share/:publicId response — no account fields by contract. */
+export interface ShareSnapshotResponse {
+  readonly publicId: string;
+  readonly snapshot: ShareSnapshotPayload;
+  readonly createdAt: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -485,6 +485,7 @@ describe('end-to-end: created alert → cron evaluation → email Worker send co
     });
     expect(listed.status).toBe(200);
     const alerts = (await listed.json()) as Array<{
+      kind: string;
       productId: number;
       thresholdCents: number;
       status: string;
@@ -492,6 +493,8 @@ describe('end-to-end: created alert → cron evaluation → email Worker send co
     expect(alerts).toEqual([
       {
         id: expect.any(Number),
+        // Task 4.1 added the alert kind; a threshold create defaults to PRICE.
+        kind: 'PRICE',
         productId: PRODUCT_ID,
         thresholdCents: 1500,
         status: 'active',
