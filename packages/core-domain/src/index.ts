@@ -651,6 +651,74 @@ export type { IAuditRepository } from './audit/audit-repository.port';
 export type { AuditEntry, AuditAction, AuditQuery } from './audit/audit.types';
 
 // ---------------------------------------------------------------------------
+// Merchant blacklist — evidence-gated reporting, published standard,
+// report/entry state machines (pure; spec merchant-blacklist)
+// ---------------------------------------------------------------------------
+
+export {
+  normalizeMerchantDomain,
+  normalizeMerchantName,
+  normalizeMerchantIdentity,
+  merchantIdentityKey,
+  validateBlacklistReport,
+  evaluatePublicationStandard,
+  linkReportToEntry,
+  reopenEntry,
+  resolveEntry,
+  isEntryPubliclyVisible,
+} from './blacklist/blacklist';
+export {
+  REPORT_INITIAL_STATUS,
+  ENTRY_INITIAL_STATUS,
+  MIN_INDEPENDENT_NON_DELIVERY_REPORTS,
+  InvalidBlacklistReportError,
+  InvalidBlacklistTransitionError,
+} from './blacklist/blacklist.types';
+export type {
+  BlacklistReportStatus,
+  BlacklistEntryStatus,
+  BlacklistReportInput,
+  BlacklistReportInputErrorReason,
+  BlacklistTransitionAction,
+  BusinessRegistrationEvidence,
+  EntryResolution,
+  MerchantIdentity,
+  NonDeliveryReportEvidence,
+  PublicationStandardInput,
+  PublicationStandardResult,
+  PublicationStandardFailureReason,
+  ValidatedBlacklistReport,
+} from './blacklist/blacklist.types';
+
+// ---------------------------------------------------------------------------
+// Calculation outcomes — user-reported actual totals vs stored estimates
+// (pure; spec calculation-outcomes)
+// ---------------------------------------------------------------------------
+
+export {
+  isWithinSubmissionWindow,
+  validateOutcomeSubmission,
+  isWithinMargin,
+  aggregateOutcomeAccuracy,
+} from './outcomes/outcomes';
+export {
+  OUTCOME_RECORD_QUERY_PORT,
+  OUTCOME_SUBMISSION_WINDOW,
+  USER_REPORTED_OUTCOMES_LABEL_FI,
+  USER_REPORTED_OUTCOMES_LABEL_EN,
+  WITHIN_MARGIN_FRACTION,
+  InvalidOutcomeInputError,
+} from './outcomes/outcomes.types';
+export type {
+  IOutcomeRecordQueryPort,
+  OutcomeSubmissionInput,
+  OutcomeInputErrorReason,
+  OutcomeAccuracyStatistic,
+  StoredOutcomeTotals,
+  ValidatedOutcomeSubmission,
+} from './outcomes/outcomes.types';
+
+// ---------------------------------------------------------------------------
 // NestJS module — registration shell; domain logic is injected via providers
 // ---------------------------------------------------------------------------
 
