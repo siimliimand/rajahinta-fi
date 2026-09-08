@@ -72,7 +72,8 @@ async function setup(): Promise<Setup> {
 interface AlertJson {
   id: number;
   productId: number;
-  thresholdCents: number;
+  kind: 'PRICE' | 'TAX_CHANGE';
+  thresholdCents: number | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -94,6 +95,16 @@ async function createAlert(
   thresholdCents: number,
 ): Promise<Response> {
   return request(app, env, '/api/v1/account/alerts', jsonInit('POST', token, { productId, thresholdCents }));
+}
+
+/** Create with the kind-aware body shape (task 4.2). */
+async function createAlertWithKind(
+  app: Setup['app'],
+  env: Env,
+  token: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  return request(app, env, '/api/v1/account/alerts', jsonInit('POST', token, body));
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +188,125 @@ describe('POST /api/v1/account/alerts', () => {
     await createAlert(app, env, token7, 1, 1000);
     const res = await createAlert(app, env, token9, 1, 1000);
     expect(res.status).toBe(201);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST — kind-aware create (task 4.2, change trust-and-reach-roadmap)
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/account/alerts — alert kind', () => {
+  it('creates a TAX_CHANGE alert without a threshold and returns kind TAX_CHANGE', async () => {
+    const { db, app, env, token7 } = await setup();
+    seedProduct(db, { id: 1 });
+
+    const res = await createAlertWithKind(app, env, token7, {
+      productId: 1,
+      kind: 'tax_change',
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as AlertJson;
+    expect(body.kind).toBe('TAX_CHANGE');
+    expect(body.thresholdCents).toBeNull();
+    expect(body.status).toBe('active');
+  });
+
+  it('defaults an absent kind to PRICE with the pre-kind contract', async () => {
+    const { db, app, env, token7 } = await setup();
+    seedProduct(db, { id: 1 });
+
+    const res = await createAlertWithKind(app, env, token7, {
+      productId: 1,
+      thresholdCents: 1500,
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as AlertJson;
+    expect(body.kind).toBe('PRICE');
+    expect(body.thresholdCents).toBe(1500);
+  });
+
+  it('rejects kind tax_change carrying a threshold with 400', async () => {
+    const { db, app, env, token7 } = await setup();
+    seedProduct(db, { id: 1 });
+    const res = await createAlertWithKind(app, env, token7, {
+      productId: 1,
+      kind: 'tax_change',
+      thresholdCents: 1500,
+    });
+    await expectEnvelope(res, 400, { error: 'ValidationError' });
+  });
+
+  it('rejects kind price without a threshold with 400', async () => {
+    const { db, app, env, token7 } = await setup();
+    seedProduct(db, { id: 1 });
+    const res = await createAlertWithKind(app, env, token7, {
+      productId: 1,
+      kind: 'price',
+    });
+    await expectEnvelope(res, 400, { error: 'ValidationError' });
+  });
+
+  it('rejects an unknown kind value with 400', async () => {
+    const { db, app, env, token7 } = await setup();
+    seedProduct(db, { id: 1 });
+    const res = await createAlertWithKind(app, env, token7, {
+      productId: 1,
+      kind: 'volatility',
+      thresholdCents: 1500,
+    });
+    await expectEnvelope(res, 400, { error: 'ValidationError' });
+  });
+
+  it('enforces the duplicate check per product+kind: same kind 409, other kind 201', async () => {
+    const { db, app, env, token7 } = await setup();
+    seedProduct(db, { id: 1 });
+
+    await createAlertWithKind(app, env, token7, { productId: 1, kind: 'tax_change' });
+    const sameKind = await createAlertWithKind(app, env, token7, {
+      productId: 1,
+      kind: 'tax_change',
+    });
+    await expectEnvelope(sameKind, 409, { error: 'AlertAlreadyExists' });
+
+    // A different kind on the same product is a distinct row: the two
+    // evaluate on different paths (price watch vs rate-version delta).
+    const otherKind = await createAlertWithKind(app, env, token7, {
+      productId: 1,
+      thresholdCents: 1000,
+    });
+    expect(otherKind.status).toBe(201);
+
+    // And the reverse order holds too: PRICE first, TAX_CHANGE second.
+    const { db: db2, app: app2, env: env2, token7: token7b } = await setup();
+    seedProduct(db2, { id: 1 });
+    await createAlertWithKind(app2, env2, token7b, { productId: 1, thresholdCents: 1000 });
+    const taxAfterPrice = await createAlertWithKind(app2, env2, token7b, {
+      productId: 1,
+      kind: 'tax_change',
+    });
+    expect(taxAfterPrice.status).toBe(201);
+  });
+
+  it('carries the kind through the list and scopes duplicates to the account', async () => {
+    const { db, app, env, token7, token9 } = await setup();
+    seedProduct(db, { id: 1 });
+    await createAlertWithKind(app, env, token7, { productId: 1, kind: 'tax_change' });
+    await createAlertWithKind(app, env, token7, { productId: 1, thresholdCents: 1000 });
+    // Another account may hold the same product+kind.
+    const foreign = await createAlertWithKind(app, env, token9, {
+      productId: 1,
+      kind: 'tax_change',
+    });
+    expect(foreign.status).toBe(201);
+
+    const res = await request(app, env, '/api/v1/account/alerts', {
+      headers: { cookie: cookieOf(token7) },
+    });
+    expect(res.status).toBe(200);
+    const alerts = (await res.json()) as AlertJson[];
+    expect(alerts).toHaveLength(2);
+    expect(alerts.map((a) => a.kind).sort()).toEqual(['PRICE', 'TAX_CHANGE']);
+    expect(alerts.find((a) => a.kind === 'TAX_CHANGE')?.thresholdCents).toBeNull();
   });
 });
 
@@ -290,6 +420,57 @@ describe('PATCH /api/v1/account/alerts/:alertId', () => {
     await expectEnvelope(res, 400, {
       message: 'Validation failed (numeric string is expected)',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PATCH — kind rules (task 4.2): kind is immutable, TAX_CHANGE has no threshold
+// ---------------------------------------------------------------------------
+
+describe('PATCH /api/v1/account/alerts/:alertId — kind rules', () => {
+  async function seedTaxChangeAlert(s: Setup): Promise<AlertJson> {
+    seedProduct(s.db, { id: 1 });
+    const res = await createAlertWithKind(s.app, s.env, s.token7, {
+      productId: 1,
+      kind: 'tax_change',
+    });
+    expect(res.status).toBe(201);
+    return (await res.json()) as AlertJson;
+  }
+
+  it('rejects a threshold patch on a TAX_CHANGE alert with 400 and leaves it untouched', async () => {
+    const s = await setup();
+    const alert = await seedTaxChangeAlert(s);
+
+    const res = await request(s.app, s.env, `/api/v1/account/alerts/${alert.id}`, jsonInit('PATCH', s.token7, { thresholdCents: 2500 }));
+    await expectEnvelope(res, 400, { error: 'ValidationError' });
+
+    const listed = await request(s.app, s.env, '/api/v1/account/alerts', {
+      headers: { cookie: cookieOf(s.token7) },
+    });
+    const alerts = (await listed.json()) as AlertJson[];
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.thresholdCents).toBeNull();
+    expect(alerts[0]!.status).toBe('active');
+  });
+
+  it('rejects a foreign alert threshold patch as 404 (no kind oracle across accounts)', async () => {
+    const s = await setup();
+    const alert = await seedTaxChangeAlert(s);
+    const res = await request(s.app, s.env, `/api/v1/account/alerts/${alert.id}`, jsonInit('PATCH', s.token9, { thresholdCents: 1 }));
+    await expectEnvelope(res, 404, { error: 'AlertNotFound' });
+  });
+
+  it('still allows the status patch on a TAX_CHANGE alert (pause/resume)', async () => {
+    const s = await setup();
+    const alert = await seedTaxChangeAlert(s);
+
+    const res = await request(s.app, s.env, `/api/v1/account/alerts/${alert.id}`, jsonInit('PATCH', s.token7, { status: 'paused' }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as AlertJson;
+    expect(body.kind).toBe('TAX_CHANGE');
+    expect(body.status).toBe('paused');
+    expect(body.thresholdCents).toBeNull();
   });
 });
 

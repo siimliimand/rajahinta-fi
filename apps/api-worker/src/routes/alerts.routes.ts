@@ -18,10 +18,18 @@
  *   schema CHECK enforces > 0; the explicit zod max keeps absurd values
  *   out of the int column — €10,000 sits far above any tracked beverage
  *   unit price, so no legitimate alert is excluded.
- * - Duplicate (account, product): 409 Conflict — the pair is guarded by a
- *   unique constraint and a second alert could only produce duplicate
- *   notifications; Conflict matches the ops-route usage of 409 for
- *   state a request cannot create.
+ * - Alert kind (task 4.2, change trust-and-reach-roadmap): the wire kind
+ *   is lowercase (`price` | `tax_change`, default `price`); the D1 column
+ *   stores the uppercase enum. A PRICE alert requires a threshold; a
+ *   TAX_CHANGE alert rejects one (a rate-change trigger has no threshold
+ *   to compare against — spec price-alerts). Kind is part of the create
+ *   identity and is NOT patchable, mirroring the repository's immutable
+ *   (account, product, kind) unique index.
+ * - Duplicate (account, product, kind): 409 Conflict — the triple is
+ *   guarded by a unique constraint and a second same-kind alert could
+ *   only produce duplicate notifications; Conflict matches the ops-route
+ *   usage of 409 for state a request cannot create. A different kind on
+ *   the same product still creates (the two evaluate on different paths).
  * - Ownership: PATCH/DELETE pass the session accountId into the
  *   repository's account-scoped queries; a foreign or absent id matches
  *   no row and surfaces as 404 (existence never leaks across accounts).
@@ -39,7 +47,10 @@ import { parseIntParam, parseDto } from './support';
 import { USER_CONTEXT_KEY } from '../auth/authenticated-account';
 import type { AuthenticatedAccount } from '../auth/authenticated-account';
 import { D1PriceAlertRepository } from '../../../../packages/data-platform/src/repositories/d1/price-alert.repository';
-import type { PriceAlertRecord } from '../../../../packages/data-platform/src/repositories/d1/price-alert.repository';
+import type {
+  PriceAlertCreate,
+  PriceAlertRecord,
+} from '../../../../packages/data-platform/src/repositories/d1/price-alert.repository';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 
 /** Upper threshold bound: €10,000 in cents — see the module doc. */
@@ -57,6 +68,7 @@ function toAlertJson(row: PriceAlertRecord): Record<string, unknown> {
   return {
     id: row.id,
     productId: row.productId,
+    kind: row.kind,
     thresholdCents: row.thresholdCents,
     status: row.status,
     createdAt: row.createdAt.toISOString(),
@@ -85,10 +97,45 @@ const thresholdSchema = z.number({
   `thresholdCents must be at most ${MAX_ALERT_THRESHOLD_CENTS} cents (€10,000)`,
 );
 
-const createAlertSchema = z.object({
-  productId: productIdSchema,
-  thresholdCents: thresholdSchema,
+/**
+ * Wire kind — lowercase with the repository's uppercase enum mapped in
+ * `toRepositoryKind`. Optional: an absent kind is the pre-kind PRICE
+ * contract, byte-identical for existing clients.
+ */
+const KIND_MESSAGE = "kind must be one of: price, tax_change";
+
+const kindSchema = z.enum(['price', 'tax_change'], {
+  errorMap: () => ({ message: KIND_MESSAGE }),
 });
+
+function toRepositoryKind(wire: z.infer<typeof kindSchema>): 'PRICE' | 'TAX_CHANGE' {
+  return wire === 'tax_change' ? 'TAX_CHANGE' : 'PRICE';
+}
+
+const PRICE_REQUIRES_THRESHOLD_MESSAGE =
+  'thresholdCents is required for kind "price" — without a threshold a price alert could never fire';
+
+const TAX_CHANGE_REJECTS_THRESHOLD_MESSAGE =
+  'thresholdCents is not allowed for kind "tax_change" — a rate-change trigger has no threshold to compare against';
+
+const createAlertSchema = z
+  .object({
+    productId: productIdSchema,
+    thresholdCents: thresholdSchema.optional(),
+    kind: kindSchema.optional(),
+  })
+  // Kind-conditional threshold rules (spec price-alerts): PRICE carries a
+  // threshold, TAX_CHANGE rejects one. superRefine (not refine) attaches
+  // each issue to the offending field so the error names the key.
+  .superRefine((body, ctx) => {
+    const kind = body.kind ?? 'price';
+    if (kind === 'price' && body.thresholdCents === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['thresholdCents'], message: PRICE_REQUIRES_THRESHOLD_MESSAGE });
+    }
+    if (kind === 'tax_change' && body.thresholdCents !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['thresholdCents'], message: TAX_CHANGE_REJECTS_THRESHOLD_MESSAGE });
+    }
+  });
 
 const updateAlertSchema = z
   .object({
@@ -102,6 +149,9 @@ const updateAlertSchema = z
     (body) => body.thresholdCents !== undefined || body.status !== undefined,
     { message: 'Provide at least one of thresholdCents or status' },
   );
+
+const TAX_CHANGE_THRESHOLD_PATCH_MESSAGE =
+  'thresholdCents cannot be set on a tax_change alert — the trigger is the published rate change itself, not a price level';
 
 // ---------------------------------------------------------------------------
 // Handlers
@@ -132,20 +182,35 @@ async function createAlert(c: Context<AppEnv>): Promise<Response> {
   }
 
   try {
-    const alert = await new D1PriceAlertRepository(c.env.DB).create({
-      accountId: user.accountId,
-      productId: body.productId,
-      thresholdCents: body.thresholdCents,
-    });
+    // The union's two arms are built explicitly so the compile-time shape
+    // matches the repository contract (PRICE: threshold required;
+    // TAX_CHANGE: none). The schema guarantees thresholdCents is defined
+    // on the price arm — parseDto would have answered 400 otherwise.
+    const kind = toRepositoryKind(body.kind ?? 'price');
+    const createInput: PriceAlertCreate =
+      kind === 'TAX_CHANGE'
+        ? {
+            accountId: user.accountId,
+            productId: body.productId,
+            kind: 'TAX_CHANGE',
+          }
+        : {
+            accountId: user.accountId,
+            productId: body.productId,
+            thresholdCents: body.thresholdCents!,
+          };
+    const alert = await new D1PriceAlertRepository(c.env.DB).create(createInput);
     return c.json(toAlertJson(alert), 201);
   } catch (err) {
     // The repository deliberately surfaces raw driver errors; the
-    // (account_id, product_id) unique violation is the one user-reachable
-    // case (the existence check above rules out the FKs) → 409.
+    // (account_id, product_id, kind) unique violation is the one
+    // user-reachable case (the existence check above rules out the FKs)
+    // → 409. The duplicate check is per product+kind: a different kind
+    // on the same product is a distinct row and still creates.
     if (err instanceof Error && /UNIQUE constraint failed/.test(err.message)) {
       throw new ApiHttpError(409, {
         statusCode: 409,
-        message: 'An alert for this product already exists',
+        message: 'An alert of this kind already exists for this product',
         error: 'AlertAlreadyExists',
       });
     }
@@ -157,8 +222,33 @@ async function updateAlert(c: Context<AppEnv>): Promise<Response> {
   const user = requireUser(c);
   const alertId = parseIntParam(c, 'alertId');
   const body = await parseDto(c, updateAlertSchema);
+  const repo = new D1PriceAlertRepository(c.env.DB);
+
+  // Kind is immutable (part of the create identity), so a threshold on a
+  // TAX_CHANGE alert is rejected BEFORE the write — the account-scoped
+  // read keeps the foreign/absent 404 semantics intact (existence never
+  // leaks; the same id under another account still reports 404 here).
+  if (body.thresholdCents !== undefined) {
+    const owned = await repo.findByAccountId(user.accountId);
+    const target = owned.find((alert) => alert.id === alertId);
+    if (target === undefined) {
+      throw new ApiHttpError(404, {
+        statusCode: 404,
+        message: `Alert "${alertId}" not found`,
+        error: 'AlertNotFound',
+      });
+    }
+    if (target.kind === 'TAX_CHANGE') {
+      throw new ApiHttpError(400, {
+        statusCode: 400,
+        message: TAX_CHANGE_THRESHOLD_PATCH_MESSAGE,
+        error: 'ValidationError',
+      });
+    }
+  }
+
   // Account-scoped: a foreign or absent id reports not found.
-  const updated = await new D1PriceAlertRepository(c.env.DB).update(
+  const updated = await repo.update(
     user.accountId,
     alertId,
     { thresholdCents: body.thresholdCents, status: body.status },

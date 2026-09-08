@@ -434,6 +434,69 @@ export async function resetPassword(
 }
 
 // ---------------------------------------------------------------------------
+// Newsletter (double opt-in; trust-and-reach-roadmap tasks 5.3/5.4)
+// ---------------------------------------------------------------------------
+
+/** Response of POST /api/v1/newsletter/subscribe — a uniform 202 body. */
+export interface NewsletterSubscribeResult {
+  readonly status: 'PENDING';
+}
+
+/**
+ * Response of the confirm/unsubscribe endpoints: the subscriber row's
+ * resulting status. ACTIVE covers a fresh confirmation and an
+ * already-active subscriber alike; UNSUBSCRIBED is terminal.
+ */
+export interface NewsletterStatusResult {
+  readonly status: 'PENDING' | 'ACTIVE' | 'UNSUBSCRIBED';
+}
+
+/**
+ * Record a newsletter subscription request (public, AUTH rate limit).
+ * The API answers 202 uniformly for fresh and already-subscribed
+ * addresses — no existence oracle — and mails the confirmation token
+ * best-effort. The subscription activates only through the emailed
+ * confirmation link; consent is independent of accounts and of
+ * price-alert consent.
+ */
+export async function subscribeToNewsletter(
+  email: string,
+  locale: 'fi' | 'en',
+): Promise<NewsletterSubscribeResult> {
+  return request<NewsletterSubscribeResult>('/api/v1/newsletter/subscribe', {
+    method: 'POST',
+    body: JSON.stringify({ email, locale }),
+  });
+}
+
+/**
+ * Consume the emailed confirmation token (public — the token IS the
+ * capability; single-use). Invalid or unknown tokens answer 400
+ * InvalidToken; an UNSUBSCRIBED row answers honestly and does not
+ * resurrect through an old link.
+ */
+export async function confirmNewsletterSubscription(
+  token: string,
+): Promise<NewsletterStatusResult> {
+  return request<NewsletterStatusResult>(
+    `/api/v1/newsletter/confirm?token=${encodeURIComponent(token)}`,
+  );
+}
+
+/**
+ * One-click unsubscribe (public — the emailed link performs the GET).
+ * Immediate and terminal; the API resolves both the raw-token and the
+ * stored-digest link forms and re-answers the same status on repeats.
+ */
+export async function unsubscribeNewsletter(
+  token: string,
+): Promise<NewsletterStatusResult> {
+  return request<NewsletterStatusResult>(
+    `/api/v1/newsletter/unsubscribe?token=${encodeURIComponent(token)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Products
 // ---------------------------------------------------------------------------
 

@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
+import NewsletterSubscribeForm from '../../components/NewsletterSubscribeForm';
 import { getServerBlogPost } from '../blog.server';
 import BlogPostBody from '../blog-post-body';
 
@@ -131,6 +132,12 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
           {t('backToBlog')}
         </Link>
       </nav>
+
+      {/* Newsletter subscribe (task 5.4) — beside the announcement
+          content, with consent copy separate from price alerts. */}
+      <div className="mt-8">
+        <NewsletterSubscribeForm />
+      </div>
     </main>
   );
 }

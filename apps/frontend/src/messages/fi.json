@@ -938,7 +938,14 @@
     "product": "Tuote #{id}",
     "productTitle": "Hintaherätys",
     "productBody": "Aseta tälle tuotteelle hintaraja — saat ilmoituksen, kun hinta alittaa sen.",
-    "existingAlert": "Tällä tuotteella on jo hintaherätys."
+    "existingAlert": "Tällä tuotteella on jo hintaherätys.",
+    "kindLabel": "Herätyksen tyyppi",
+    "kindPrice": "Hintaherätys",
+    "kindTaxChange": "Veromuutosherätys",
+    "taxChangeHint": "Laukaisee, kun vahvistettu uusi verotietoversio muuttaa tuotteen kokonaiskustannusta. Hintarajaa ei tarvita.",
+    "taxChangeValue": "Laukaisee verotietojen muuttuessa",
+    "duplicateTaxChangeAlert": "Tälle tuotteelle on jo veromuutosherätys.",
+    "existingTaxChangeAlert": "Tällä tuotteella on jo veromuutosherätys."
   },
   "Ranking": {
     "title": "Miten järjestäminen toimii",
@@ -1249,5 +1256,43 @@
     "accuracyLinkBody": "Katso menetelm\u00e4sivulla oleva <link>k\u00e4ytt\u00e4jien raportoima tarkkuustilasto</link>.",
     "confidenceLabel": "Varmuus",
     "disclaimerFallback": "Arvioitu kokonaishinta Suomessa on arvio, ei lopullinen verovelka."
+  },
+  "Newsletter": {
+    "title": "Uutiskirje",
+    "description": "Sähköpostitiedot verotietojen muutoksista ja palvelun muutosilmoituksista.",
+    "emailLabel": "Sähköpostiosoite",
+    "consentLabel": "Haluan uutiskirjeen ja hyväksyn, että sähköpostiosoitteeni tallennetaan tilauksen hoitamista varten.",
+    "separationNote": "Uutiskirje on erillinen suostumus, joka ei liity hintaherätyksiin eikä tiliin. Jokainen viesti sisältää kertaklikkauslinkin tilauksen peruuttamiseen, ja peruutus on välitön.",
+    "submit": "Tilaa",
+    "submitting": "Tilataan…",
+    "successTitle": "Vahvista tilaus sähköpostista",
+    "successBody": "Osoite on tallennettu. Avaa sähköpostista vahvistuslinkki — tilaus aktivoituu vasta sen jälkeen.",
+    "errorInvalid": "Tarkista sähköpostiosoite.",
+    "errorRateLimited": "Liikaa yrityksiä — yritä hetken kuluttua uudelleen.",
+    "errorGeneric": "Tilaus epäonnistui — yritä uudelleen."
+  },
+  "NewsletterConfirm": {
+    "title": "Uutiskirjeen vahvistus",
+    "checking": "Vahvistusta tarkistetaan…",
+    "confirmedTitle": "Tilaus vahvistettu",
+    "confirmedBody": "Uutiskirjeen tilaus on nyt aktiivinen. Jokainen viesti sisältää kertaklikkauslinkin tilauksen peruuttamiseen.",
+    "endedTitle": "Tilaus on päättynyt",
+    "endedBody": "Tämä osoite on peruutettu uutiskirjeestä, eikä vanha linkki voi aktivoida sitä uudelleen.",
+    "missingToken": "Vahvistuslinkistä puuttuu tunnus.",
+    "invalidBody": "Vahvistustunnus on virheellinen tai jo käytetty.",
+    "invalidHint": "Jos tilaus on kesken, tilaa uutiskirje uudelleen — uusi vahvistusviesti lähtee sähköpostiin.",
+    "errorBody": "Vahvistus epäonnistui — yritä ladata sivu uudelleen.",
+    "toBlog": "Blogiin"
+  },
+  "NewsletterUnsubscribe": {
+    "title": "Uutiskirjeen peruutus",
+    "working": "Peruutusta tehdään…",
+    "doneTitle": "Tilaus peruutettu",
+    "doneBody": "Tämä sähköpostiosoite on poistettu uutiskirjeen tilaajista välittömästi, eikä uusia viestejä lähetetä.",
+    "missingToken": "Peruutuslinkistä puuttuu tunnus.",
+    "invalidBody": "Peruutustunnus on virheellinen.",
+    "invalidHint": "Tarkista, että avasit viestissä olleen linkin sellaisenaan.",
+    "errorBody": "Peruutus epäonnistui — yritä ladata sivu uudelleen.",
+    "toHome": "Etusivulle"
   }
 }

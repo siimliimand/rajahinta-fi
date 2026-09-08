@@ -938,7 +938,14 @@
     "product": "Product #{id}",
     "productTitle": "Price alert",
     "productBody": "Set a threshold for this product — get notified when the price drops below it.",
-    "existingAlert": "This product already has a price alert."
+    "existingAlert": "This product already has a price alert.",
+    "kindLabel": "Alert type",
+    "kindPrice": "Price alert",
+    "kindTaxChange": "Tax-change alert",
+    "taxChangeHint": "Notifies when a confirmed new version of the rate dataset changes the product's landed cost. No price threshold is needed.",
+    "taxChangeValue": "Triggers on a rate-dataset change",
+    "duplicateTaxChangeAlert": "This product already has a tax-change alert.",
+    "existingTaxChangeAlert": "This product already has a tax-change alert."
   },
   "Ranking": {
     "title": "How ranking works",
@@ -1249,5 +1256,43 @@
     "accuracyLinkBody": "See the <link>user-reported accuracy statistic</link> on the methodology page.",
     "confidenceLabel": "Confidence",
     "disclaimerFallback": "The estimated total cost in Finland is an estimate, not a final tax liability."
+  },
+  "Newsletter": {
+    "title": "Newsletter",
+    "description": "Email notices about rate-dataset changes and service change announcements.",
+    "emailLabel": "Email address",
+    "consentLabel": "I want to receive the newsletter and consent to my email address being stored to manage the subscription.",
+    "separationNote": "The newsletter is a separate consent — it is not tied to price alerts or to an account. Every email carries a one-click unsubscribe link, and unsubscribing takes effect immediately.",
+    "submit": "Subscribe",
+    "submitting": "Subscribing…",
+    "successTitle": "Confirm the subscription by email",
+    "successBody": "The address has been recorded. Open the confirmation link in the email — the subscription activates only after that.",
+    "errorInvalid": "Check the email address.",
+    "errorRateLimited": "Too many attempts — try again in a while.",
+    "errorGeneric": "The subscription failed — try again."
+  },
+  "NewsletterConfirm": {
+    "title": "Newsletter confirmation",
+    "checking": "Checking the confirmation…",
+    "confirmedTitle": "Subscription confirmed",
+    "confirmedBody": "The newsletter subscription is now active. Every email carries a one-click unsubscribe link.",
+    "endedTitle": "The subscription has ended",
+    "endedBody": "This address has unsubscribed from the newsletter, and an old link cannot activate it again.",
+    "missingToken": "The confirmation link is missing its token.",
+    "invalidBody": "The confirmation token is invalid or has already been used.",
+    "invalidHint": "If the subscription is still unfinished, subscribe again — a new confirmation email will be sent.",
+    "errorBody": "The confirmation failed — try reloading the page.",
+    "toBlog": "To the blog"
+  },
+  "NewsletterUnsubscribe": {
+    "title": "Newsletter unsubscribe",
+    "working": "Unsubscribing…",
+    "doneTitle": "Subscription ended",
+    "doneBody": "This email address has been removed from the newsletter list immediately, and no further emails will be sent.",
+    "missingToken": "The unsubscribe link is missing its token.",
+    "invalidBody": "The unsubscribe token is invalid.",
+    "invalidHint": "Check that you opened the link from the email exactly as it was sent.",
+    "errorBody": "The unsubscribe failed — try reloading the page.",
+    "toHome": "To the front page"
   }
 }

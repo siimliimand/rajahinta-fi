@@ -638,12 +638,21 @@ export interface PriceHistoryResponse {
 /** Alert delivery state: active alerts are evaluated, paused alerts are kept but mute. */
 export type PriceAlertStatus = 'active' | 'paused';
 
+/**
+ * What triggers the alert (task 4.2, change trust-and-reach-roadmap):
+ * PRICE is the original threshold watch; TAX_CHANGE fires when a
+ * confirmed rate-version change moves the product's landed cost and
+ * carries no threshold.
+ */
+export type PriceAlertKind = 'PRICE' | 'TAX_CHANGE';
+
 /** A price alert row as served by the account API (ISO timestamps). */
 export interface PriceAlert {
   readonly id: number;
   readonly productId: number;
-  /** Alert threshold in integer euro cents (1–1,000,000 — see alerts.routes.ts). */
-  readonly thresholdCents: number;
+  readonly kind: PriceAlertKind;
+  /** PRICE alerts: threshold in integer euro cents (1–1,000,000). TAX_CHANGE alerts: always null. */
+  readonly thresholdCents: number | null;
   readonly status: PriceAlertStatus;
   readonly createdAt: string;
   readonly updatedAt: string;

@@ -48,7 +48,14 @@ function formatTimestamp(iso: string): string {
 
 /**
  * Account price-alerts management view (task 2.4, change
- * product-roadmap-phases-1-4): list, create, pause/resume, delete.
+ * product-roadmap-phases-1-4; kind toggle task 4.2, change
+ * trust-and-reach-roadmap): list, create, pause/resume, delete.
+ *
+ * Alert kinds: a price alert watches a threshold; a tax-change alert
+ * fires when a confirmed rate-dataset version moves the product's
+ * landed cost (no threshold — the trigger copy in the create form
+ * explains this). The duplicate rule is per product+kind on the API
+ * side; the create form picks the failure message by the selected kind.
  *
  * Gating: none — the view renders unconditionally. A 403 from the API
  * (the backend rejecting the read) degrades the whole view to nothing,
@@ -64,6 +71,9 @@ function formatTimestamp(iso: string): string {
  *
  * @module AlertsPage
  */
+
+/** Wire kind values of the create endpoint (alerts.routes.ts). */
+type AlertKind = 'price' | 'tax_change';
 export default function AlertsPage() {
   const t = useTranslations('PriceAlerts');
   const tCommon = useTranslations('Common');
@@ -82,6 +92,7 @@ export default function AlertsPage() {
   const [searching, setSearching] = useState(false);
   const [searchFailed, setSearchFailed] = useState(false);
   const [selected, setSelected] = useState<ProductSearchItem | null>(null);
+  const [kind, setKind] = useState<AlertKind>('price');
   const [threshold, setThreshold] = useState('');
   const [creating, setCreating] = useState(false);
   const [createFailure, setCreateFailure] = useState<CreateFailure>(null);
@@ -152,8 +163,11 @@ export default function AlertsPage() {
 
   const handleCreate = useCallback(async () => {
     if (selected === null || creating) return;
-    const thresholdCents = eurosToCents(threshold);
-    if (thresholdCents === null) {
+    // Threshold applies to the price kind only; the tax-change kind is
+    // validated (and sent) without one — a rate-change trigger has no
+    // threshold to compare against.
+    const thresholdCents = kind === 'price' ? eurosToCents(threshold) : 0;
+    if (kind === 'price' && thresholdCents === null) {
       setCreateFailure('invalid');
       return;
     }
@@ -162,10 +176,11 @@ export default function AlertsPage() {
     try {
       const created = await request<PriceAlert>('/api/v1/account/alerts', {
         method: 'POST',
-        body: JSON.stringify({
-          productId: selected.id,
-          thresholdCents,
-        }),
+        body: JSON.stringify(
+          kind === 'price'
+            ? { productId: selected.id, kind, thresholdCents }
+            : { productId: selected.id, kind },
+        ),
       });
       setAlerts((prev) => [created, ...prev]);
       setProductNames((prev) => ({
@@ -176,6 +191,7 @@ export default function AlertsPage() {
       setQuery('');
       setResults([]);
       setThreshold('');
+      setKind('price');
     } catch (err) {
       if (err instanceof ApiFetchError && err.status === 409) {
         setCreateFailure('duplicate');
@@ -187,7 +203,13 @@ export default function AlertsPage() {
     } finally {
       setCreating(false);
     }
-  }, [creating, selected, threshold]);
+  }, [creating, kind, selected, threshold]);
+
+  /** Switch the create-form kind; clears a stale failure message. */
+  const handleKindChange = useCallback((next: AlertKind) => {
+    setKind(next);
+    setCreateFailure(null);
+  }, []);
 
   const handleToggle = useCallback(async (alert: PriceAlert) => {
     const next = alert.status === 'active' ? 'paused' : 'active';
@@ -333,9 +355,17 @@ export default function AlertsPage() {
                             t('product', { id: alert.productId })}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {t('thresholdValue', {
-                            euros: formatCents(alert.thresholdCents),
-                          })}
+                          {alert.kind === 'TAX_CHANGE' ? (
+                            <span data-testid="alert-kind-tax-change">
+                              {t('taxChangeValue')}
+                            </span>
+                          ) : (
+                            // PRICE rows carry a threshold by contract;
+                            // `?? 0` only satisfies the nullable union.
+                            t('thresholdValue', {
+                              euros: formatCents(alert.thresholdCents ?? 0),
+                            })
+                          )}
                           {' · '}
                           <span
                             className={
@@ -424,26 +454,69 @@ export default function AlertsPage() {
                     {selected.name}
                   </span>
                 </p>
-                <Input
-                  id="alert-threshold"
-                  label={t('thresholdLabel')}
-                  type="text"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  placeholder={t('thresholdPlaceholder')}
-                  value={threshold}
-                  onChange={(e) => setThreshold(e.target.value)}
-                  error={
-                    createFailure === 'invalid'
-                      ? t('thresholdInvalid')
-                      : undefined
-                  }
-                />
+
+                {/* ── Kind toggle (task 4.2): price threshold vs
+                        rate-change trigger. ── */}
+                <fieldset className="mb-3">
+                  <legend className="mb-1 text-xs font-medium text-gray-500">
+                    {t('kindLabel')}
+                  </legend>
+                  <div className="flex gap-2">
+                    {(['price', 'tax_change'] as const).map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        aria-pressed={kind === option}
+                        data-testid={`alert-kind-${option}`}
+                        onClick={() => handleKindChange(option)}
+                        className={
+                          kind === option
+                            ? 'rounded-md border border-primary-600 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700'
+                            : 'rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50'
+                        }
+                      >
+                        {option === 'price'
+                          ? t('kindPrice')
+                          : t('kindTaxChange')}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+
+                {kind === 'tax_change' && (
+                  <p
+                    data-testid="tax-change-hint"
+                    className="mb-3 text-xs text-gray-500"
+                  >
+                    {t('taxChangeHint')}
+                  </p>
+                )}
+
+                {kind === 'price' && (
+                  <Input
+                    id="alert-threshold"
+                    label={t('thresholdLabel')}
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    placeholder={t('thresholdPlaceholder')}
+                    value={threshold}
+                    onChange={(e) => setThreshold(e.target.value)}
+                    error={
+                      createFailure === 'invalid'
+                        ? t('thresholdInvalid')
+                        : undefined
+                    }
+                  />
+                )}
                 <div className="mt-3">
                   <Button
                     type="button"
                     onClick={() => void handleCreate()}
-                    disabled={creating || threshold.trim().length === 0}
+                    disabled={
+                      creating ||
+                      (kind === 'price' && threshold.trim().length === 0)
+                    }
                   >
                     {creating ? t('creating') : t('createButton')}
                   </Button>
@@ -451,9 +524,14 @@ export default function AlertsPage() {
               </div>
             )}
 
-            {createFailure === 'duplicate' && (
-              <p className="mt-3 text-sm text-red-600">{t('duplicateAlert')}</p>
-            )}
+            {createFailure === 'duplicate' &&
+              (kind === 'tax_change' ? (
+                <p className="mt-3 text-sm text-red-600">
+                  {t('duplicateTaxChangeAlert')}
+                </p>
+              ) : (
+                <p className="mt-3 text-sm text-red-600">{t('duplicateAlert')}</p>
+              ))}
             {createFailure === 'missing' && (
               <p className="mt-3 text-sm text-red-600">{t('productMissing')}</p>
             )}

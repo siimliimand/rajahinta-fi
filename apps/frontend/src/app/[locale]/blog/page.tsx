@@ -5,6 +5,7 @@ import * as React from 'react';
 import type { Metadata } from 'next';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
+import NewsletterSubscribeForm from '../components/NewsletterSubscribeForm';
 import { getServerBlogIndex } from './blog.server';
 
 interface BlogIndexPageProps {
@@ -123,6 +124,12 @@ export default async function BlogIndexPage({ params }: BlogIndexPageProps) {
           })}
         </ul>
       )}
+
+      {/* Newsletter subscribe (task 5.4) — the blog is where rate
+          changes are announced, so the opt-in lives beside them. */}
+      <div className="mt-8">
+        <NewsletterSubscribeForm />
+      </div>
     </main>
   );
 }

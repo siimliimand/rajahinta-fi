@@ -26,12 +26,27 @@
 
 import * as React from 'react';
 import { renderToString } from 'react-dom/server';
+import { NextIntlClientProvider } from 'next-intl';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BlogIndexPage from './page';
 import BlogPostPage, { generateMetadata } from './[slug]/page';
 import { parsePostBody } from './blog-post-body';
 import { request } from '@/lib/api';
 import type { ApiError } from '@/lib/types';
+
+/**
+ * Both blog pages embed the newsletter client island (task 5.4), so the
+ * real component trees need the client-intl context the [locale] layout
+ * provides in the app (SiteHeader/SiteFooter SSR precedent).
+ */
+async function renderPageHtml(element: React.ReactElement): Promise<string> {
+  const messages = (await import('@/messages/fi.json')).default;
+  return renderToString(
+    <NextIntlClientProvider locale="fi" messages={messages}>
+      {element}
+    </NextIntlClientProvider>,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Mocked Next server plumbing — next-intl/server resolved straight from the
@@ -144,7 +159,7 @@ describe('BlogIndexPage', () => {
     const element = await BlogIndexPage({
       params: Promise.resolve({ locale: 'fi' }),
     });
-    const html = renderToString(element);
+    const html = await renderPageHtml(element);
 
     expect(html).toContain('Veromuutus 2026-2');
     expect(html).toContain('href="/blog/veromuutos-2026-2"');
@@ -157,7 +172,7 @@ describe('BlogIndexPage', () => {
     const element = await BlogIndexPage({
       params: Promise.resolve({ locale: 'fi' }),
     });
-    const html = renderToString(element);
+    const html = await renderPageHtml(element);
 
     expect(html).toContain('Ei vielä julkaisuja');
   });
@@ -168,7 +183,7 @@ describe('BlogIndexPage', () => {
     const element = await BlogIndexPage({
       params: Promise.resolve({ locale: 'fi' }),
     });
-    const html = renderToString(element);
+    const html = await renderPageHtml(element);
 
     expect(html).toContain('Blogi ei ole juuri nyt saatavilla');
   });
@@ -185,7 +200,7 @@ describe('BlogPostPage', () => {
     const element = await BlogPostPage({
       params: Promise.resolve({ locale: 'fi', slug: 'veromuutos-2026-2' }),
     });
-    const html = renderToString(element);
+    const html = await renderPageHtml(element);
 
     expect(html).toContain('Veromuutus 2026-2');
     expect(html).toContain('tulee voimaan 1.10.2026.');
@@ -216,7 +231,7 @@ describe('BlogPostPage', () => {
     const element = await BlogPostPage({
       params: Promise.resolve({ locale: 'fi', slug: 'veromuutos-2026-2' }),
     });
-    const html = renderToString(element);
+    const html = await renderPageHtml(element);
 
     expect(html).toContain('Blogi ei ole juuri nyt saatavilla');
   });

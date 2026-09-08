@@ -77,6 +77,7 @@ function alert(overrides: Partial<PriceAlert> = {}): PriceAlert {
   return {
     id: 7,
     productId: 42,
+    kind: 'PRICE',
     thresholdCents: 1250,
     status: 'active',
     createdAt: '2026-08-01T10:00:00.000Z',
@@ -235,7 +236,7 @@ describe('AlertsPage', () => {
     await waitFor(() =>
       expect(mockedRequest).toHaveBeenCalledWith('/api/v1/account/alerts', {
         method: 'POST',
-        body: JSON.stringify({ productId: 42, thresholdCents: 1250 }),
+        body: JSON.stringify({ productId: 42, kind: 'price', thresholdCents: 1250 }),
       }),
     );
 
@@ -286,6 +287,131 @@ describe('AlertsPage', () => {
     expect(
       await screen.findByText('Tälle tuotteelle on jo hintaherätys.'),
     ).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Kind toggle (task 4.2, change trust-and-reach-roadmap)
+  // ---------------------------------------------------------------------------
+
+  /** Drive the shared search-and-select flow to a selected product. */
+  async function selectProduct(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByText('Ei vielä hintaherätyksiä');
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'kahvi');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    await user.click(await screen.findByRole('button', { name: /Kahvi 500 g/ }));
+  }
+
+  it('tax-change kind: hides the threshold, shows the trigger copy, and POSTs without thresholdCents', async () => {
+    const user = userEvent.setup();
+    mockedRequest.mockImplementation(async (path, init) => {
+      if (path === '/api/v1/account/alerts' && init?.method === 'POST') {
+        return alert({
+          kind: 'TAX_CHANGE',
+          thresholdCents: null,
+        });
+      }
+      if (path === '/api/v1/account/alerts') return [];
+      throw new Error(`unexpected ${init?.method ?? 'GET'} ${path}`);
+    });
+
+    renderWithIntl(<AlertsPage />);
+    await selectProduct(user);
+
+    // Default kind is price: the threshold input is visible, the hint is not.
+    expect(screen.getByLabelText('Hintaraja (€)')).toBeInTheDocument();
+    expect(screen.queryByTestId('tax-change-hint')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('alert-kind-tax_change'));
+
+    // Tax-change kind: threshold gone, trigger copy in its place.
+    expect(screen.queryByLabelText('Hintaraja (€)')).not.toBeInTheDocument();
+    expect(screen.getByTestId('tax-change-hint')).toHaveTextContent(
+      'Laukaisee, kun vahvistettu uusi verotietoversio muuttaa tuotteen kokonaiskustannusta',
+    );
+
+    // The create button is enabled without a threshold entry.
+    const createButton = screen.getByRole('button', { name: 'Lisää herätys' });
+    expect(createButton).toBeEnabled();
+    await user.click(createButton);
+
+    await waitFor(() =>
+      expect(mockedRequest).toHaveBeenCalledWith('/api/v1/account/alerts', {
+        method: 'POST',
+        body: JSON.stringify({ productId: 42, kind: 'tax_change' }),
+      }),
+    );
+
+    // The created tax-change row renders the trigger label, not a threshold.
+    const row = await screen.findByTestId('price-alert-row');
+    expect(row).toHaveTextContent('Laukaisee verotietojen muuttuessa');
+    expect(row).not.toHaveTextContent('Hintaraja');
+  });
+
+  it('tax-change kind: maps a 409 to the tax-change duplicate message', async () => {
+    const user = userEvent.setup();
+    mockedRequest.mockImplementation(async (path, init) => {
+      if (init?.method === 'POST') {
+        throw new ApiFetchError(409, apiError(409, 'exists'));
+      }
+      return [];
+    });
+
+    renderWithIntl(<AlertsPage />);
+    await selectProduct(user);
+    await user.click(screen.getByTestId('alert-kind-tax_change'));
+    await user.click(screen.getByRole('button', { name: 'Lisää herätys' }));
+
+    expect(
+      await screen.findByText('Tälle tuotteelle on jo veromuutosherätys.'),
+    ).toBeInTheDocument();
+  });
+
+  it('toggling the kind back to price restores the threshold input and clears a stale failure', async () => {
+    const user = userEvent.setup();
+    mockedRequest.mockImplementation(async (path, init) => {
+      if (init?.method === 'POST') {
+        throw new ApiFetchError(409, apiError(409, 'exists'));
+      }
+      return [];
+    });
+
+    renderWithIntl(<AlertsPage />);
+    await selectProduct(user);
+
+    await user.click(screen.getByTestId('alert-kind-tax_change'));
+    await user.click(screen.getByRole('button', { name: 'Lisää herätys' }));
+    expect(
+      await screen.findByText('Tälle tuotteelle on jo veromuutosherätys.'),
+    ).toBeInTheDocument();
+
+    // Back to price: the duplicate message for the other kind must not
+    // linger, and the threshold input returns.
+    await user.click(screen.getByTestId('alert-kind-price'));
+    expect(
+      screen.queryByText('Tälle tuotteelle on jo veromuutosherätys.'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Hintaraja (€)')).toBeInTheDocument();
+  });
+
+  it('renders existing TAX_CHANGE rows with the trigger label instead of a threshold', async () => {
+    mockedRequest.mockResolvedValue([
+      alert({ kind: 'TAX_CHANGE', thresholdCents: null }),
+      alert({ id: 9 }),
+    ]);
+    mockedFetchProductsByIds.mockResolvedValue({
+      items: [SEARCH_ITEM],
+      total: 1,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+    });
+
+    renderWithIntl(<AlertsPage />);
+
+    const rows = await screen.findAllByTestId('price-alert-row');
+    expect(rows[0]).toHaveTextContent('Laukaisee verotietojen muuttuessa');
+    expect(rows[0]).not.toHaveTextContent('Hintaraja');
+    expect(rows[1]).toHaveTextContent('Hintaraja 12.50 €');
   });
 
   // ---------------------------------------------------------------------------
