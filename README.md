@@ -166,7 +166,11 @@ Jobs run in BullMQ queues, off the request path, scheduled by cron:
 | transport-refresh | every 6 h | Carrier rate refresh (adapter currently a documented no-op) |
 | tax-dataset-review | daily 02:00 Europe/Helsinki | Detect newly published official rates and create manual-review tasks. Rates are never auto-published |
 | time-series-aggregation | every 30 min | Materialize daily/weekly price-history summaries from observations using a persisted watermark cursor |
+| price-alert-evaluation | every 30 min, after aggregation | Compare PRICE alerts against the latest materialized price; 24-hour per-alert cooldown via a write-intent-then-send notification log |
 | account-retention | cron | GDPR retention sweeps for accounts |
+| tax-change-alert-evaluation | at manual rate-version confirmation | Select active TAX_CHANGE alerts whose product's landed cost moved across the confirmed versions (attribution via the tax-change history), notify through the same intent-log + cooldown path; fail-open — never blocks the confirmation |
+| rate-change-blog-drafts | at manual rate-version confirmation | Draft FI + EN blog posts (what changed, effective date, typical-basket impact) linked to the confirmed version; fail-open and idempotent; publication is a human operator action |
+| newsletter-broadcast | operator action | Deliver the newsletter to confirmed subscribers only: notification intent row before each send, outcome marked after, so a retried send cannot duplicate an email |
 
 Retry policy per queue is configured in `packages/application-api/src/jobs/job-registry.ts` (exponential backoff, 2 to 5 attempts).
 
@@ -174,32 +178,42 @@ A merchant feed is only ingested when source governance has a GRANTED permission
 
 ## API surface
 
-All routes are versioned under `/api/v1` and documented in Swagger. Guards vary per route (age gate, rate limit, feature flag, entitlement):
+All routes are versioned under `/api/v1` and documented in Swagger. Guards vary per route (age gate, rate limit, session auth, entitlement):
 
 | Route | Method | Purpose |
 |---|---|---|
 | `/health` | GET | Liveness (used by Docker and Kubernetes probes) |
 | `/products` | GET | Product search and ID lookup (free-text query is a Phase 2 placeholder) |
-| `/products/:id` | GET | Product detail with retail offers |
-| `/products/:id/price-history` | GET | Daily/weekly price and landed-cost series (feature-flagged) |
+| `/products/:id` | GET | Product detail with retail offers; carries an additive `merchantWarnings` block when a blacklisted merchant appears (offers, order, and totals unchanged) |
+| `/products/:id/price-history` | GET | Daily/weekly price and landed-cost series |
 | `/calculator` | POST | Single-product landed-cost calculation (idempotency-key aware) |
 | `/calculator/result/:recordId` | GET | Fetch a persisted result |
-| `/basket/optimize` | POST | Multi-store basket optimization (feature-flagged) |
+| `/basket/optimize` | POST | Multi-store basket optimization |
 | `/calculations/excise`, `/calculations/landed-cost` | POST | Legacy calculation endpoints (see technical assessment) |
+| `/calculations/:id/outcome` | POST | Report the actual total cost of your own calculation (60-day window, one per record per account) |
+| `/calculations/:id/share` | POST | Create a frozen share snapshot of your calculation under a random public id |
+| `/share/:publicId` | GET | Public read-only share snapshot (no account identifiers; unknown ids are an indistinguishable 404) |
+| `/accuracy` | GET | Public accuracy statistic: reported-outcome count, within-5%-of-estimate share, as-of date — labeled user-reported |
+| `/blog/posts`, `/blog/posts/:slug` | GET | Public rate-change blog (PUBLISHED posts only, per locale) |
+| `/newsletter/subscribe`, `/newsletter/confirm`, `/newsletter/unsubscribe` | POST/GET | Double opt-in newsletter (confirmation by emailed token; one-click immediate unsubscribe) |
+| `/trip/fill` | POST | Allowance-fill planner: best basket inside the traveller allowance effective on the travel date (ferry offers stay in a separate display-only block) |
+| `/unitprice/ranking` | GET | Public per-category €/g ranking — deterministic order, reliability status per row, unavailable omitted |
 | `/declaration/:recordId` | GET | Excise declaration guidance |
+| `/reports` | POST | Report a fraudulent or seriously unreliable merchant (order reference + correspondence summary required; rate-limited, audited) |
 | `/reports/:recordId` | GET | JSON/CSV/HTML report export (PREMIUM tier) |
 | `/corrections` | POST | Flag a calculation or data point for correction |
 | `/account/register`, `/account/login` | POST | Email + password registration and login (the email address is the username) |
 | `/account/me` | GET | Current account identity and verification state |
+| `/account/alerts` | GET/POST/PATCH/DELETE | Alert watchlist; PRICE alerts carry a threshold, TAX_CHANGE alerts watch a product's landed cost across rate-version changes |
 | `/account/verify-email/*`, `/account/password/*` | POST | Email verification and password reset via single-use emailed tokens |
 | `/account/*` | GET/POST/DELETE | Registered-account history, baskets, scenarios, GDPR export |
 | `/merchants/reliability` | GET | Per-merchant reliability scores |
 | `/analytics/click`, `/outbound/:offerId` | POST/GET | Click counting and merchant-link redirect (no affiliate fields allowed) |
 | `/ranking/methodology` | GET | Public ranking methodology |
-| `/feature-flags` | GET | Public flag states for UI gating |
+| `/ops/console/*` | GET/POST | Operator console (OpsAccessGuard): governance grants, dataset confirmations, correction queue, shop-report review (link/reject), blacklist publish + appeal resolution, blog post publication, newsletter notify-subscribers broadcast; every action audited |
 | `/ops/health` | GET | Ops dashboard snapshot |
 
-Rate limit profiles (per IP): default 60/min, calculator 10/min, basket 10/min, search 30/min, declaration 20/min, historical 30/min. Exceeding a limit returns 429 with `Retry-After`.
+Rate limit profiles (per IP): default 60/min, calculator 10/min, basket 10/min, search 30/min, declaration 20/min, historical 30/min, auth 10 per 5 min for the credential and merchant-report routes. Exceeding a limit returns 429 with `Retry-After`.
 
 ## Domain invariants
 

@@ -31,7 +31,7 @@ The header on every page shows the main destinations:
 
 When you are signed out, the header also shows **Log in** and **Register**. When you are signed in, it shows the account link and **Log out** instead.
 
-When enabled, three planning calculators also appear in the header: **Event calculator**, **Trip calculator**, and **What-if calculator**. Two more features are reached by link rather than the header: **group orders** (via a share link or `/group-order`) and **curated lists** (via `/lists/<name>` links shared around or listed in the site's sitemap).
+Three planning calculators also appear in the header: **Event calculator**, **Trip calculator**, and **What-if calculator**. Two more features are reached by link rather than the header: **group orders** (via a share link or `/group-order`) and **curated lists** (via `/lists/<name>` links shared around or listed in the site's sitemap). The **blog** (`/blog`) and the **€/g value page** (`/value`) work the same way — direct addresses and links rather than header slots.
 
 ## The calculator
 
@@ -106,7 +106,7 @@ The compare page puts multiple products side by side.
 5. Merchant freshness shows when each merchant's prices were last observed, so you know how current the columns are.
 6. Merchant links lead to the merchant's product page through the site's redirect endpoint, which counts clicks. The site records only the click, never a purchase.
 
-The page also includes a multi-store basket comparison section (see below) when the basket feature is enabled.
+The page also includes a multi-store basket comparison section (see below).
 
 ## The basket optimizer
 
@@ -152,6 +152,16 @@ The result shows, per category:
 
 If ferry operators have published offers relevant to the route, a separate **ferry offers** block appears below the results. It is provided for information only and is never part of the calculation.
 
+### Fill mode: plan a basket inside your allowance
+
+The trip page also has a fill mode. Instead of asking "when does importing pay off?", it asks "what should I buy with my duty-free allowance?":
+
+1. Switch to the fill mode and enter your **allowance budget** and **travel date**.
+2. Search and pick the candidate products you are considering.
+3. Press calculate.
+
+The result is a suggested basket of products and quantities whose total duty-free value fits inside the allowance that is in force **on your travel date** (not today's limit — the official limits are versioned, and the result names the version it used). Each line shows its contribution to the total and how much allowance is left. The ferry-offer block, if present, stays in its own section below and never affects the selection.
+
 ## The what-if calculator
 
 Curious how a tax change would affect prices? The what-if calculator substitutes the Finnish alcohol excise rate with a value of your choice and recalculates. Open it from the header ("What-if calculator").
@@ -166,13 +176,20 @@ The calculation itself is not stored anywhere. You can share it as a **link** th
 
 ## Price alerts
 
-Want to know when a product gets cheaper? Price alerts watch a product and notify you by email when its observed price drops below a threshold you set.
+Want to know when something about a product changes? Alerts watch a product and notify you by email. There are two kinds:
 
-1. Open a product page and use the price-alert control, or go to **My account → "Manage price alerts"**.
-2. Search and select the product, then enter your **price threshold in euros** (0.01–10 000, at most two decimals).
+- **Price alerts** fire when the observed price drops below a threshold you set.
+- **Tax-change alerts** fire when a confirmed change in official rates actually moves the product's estimated landed cost. They need no threshold — the trigger is the rate change itself.
+
+To set either:
+
+1. Open a product page and use the alert control, or go to **My account → "Manage price alerts"**.
+2. Search and select the product. For a price alert, enter your **price threshold in euros** (0.01–10 000, at most two decimals). For a tax-change alert, just pick the tax-change kind.
 3. Press "Add alert".
 
-The site checks prices periodically. When an observed price drops below your threshold, you receive an email. All your alerts are listed in the account view, where you can remove them. One product has one alert at a time; a duplicate attempt is reported instead of silently added.
+The site checks price alerts periodically after its data updates; tax-change alerts are checked when a new official rate version is confirmed — never while you browse. When your alert matches, you receive an email with the observed price or the old and new landed cost. All your alerts are listed in the account view, where you can pause or remove them. One product has one alert of each kind at a time; a duplicate attempt is reported instead of silently added.
+
+Whatever the kind, you get at most one email per alert per 24 hours, even if the condition matches again within the window.
 
 ## Group orders
 
@@ -202,6 +219,55 @@ Each list page shows:
 
 If a list has no published entries yet, the page says so and shows the criteria — the standard is public even before the picks are.
 
+## Merchant warnings and reporting a shop
+
+Some merchants are genuinely unreliable. When enough verified evidence exists against one — confirmed non-delivery by three or more independent reports, or a confirmed invalid business registration — a human operator publishes a warning, and that warning appears wherever the merchant's offers appear: product pages, search results, and comparisons. The warning names the merchant and links to the ranking-methodology page. It never removes an offer, changes a price, or reorders anything — you see the same numbers with or without it. An appeal by the merchant reopens the entry and the warning disappears until the appeal is resolved.
+
+You can report a shop yourself:
+
+1. Sign in and submit a report against the merchant's web address, including your **order reference** and a **summary of the correspondence** — the evidence fields are required.
+2. Reports go to a human review queue, not to any automatic list. Nothing is published without operator review against the standard above.
+3. Reports are rate-limited and the actions around them are logged, like the rest of the site's moderation trail.
+
+A merchant with reports but no published warning shows no badge — publication is the gate, not the accusation.
+
+## Reporting what your import actually cost
+
+Every estimate on the site is exactly that — an estimate. If you bought the product, you can close the loop: within **60 days** of a calculation, open the record in **My account → History** and report the **actual total cost** you ended up paying. One report per calculation.
+
+Aggregated, reported outcomes power the site's public accuracy statistic: how many outcomes were reported, and what share of them landed within 5% of the estimate. You can see it on the home page's trust row and on the methodology page. Three things about that number, always:
+
+- It is based on **user-reported outcomes** — people telling the site what they paid, not verified receipts.
+- The **sample size is shown** next to it.
+- When nothing has been reported yet, the site says so plainly instead of showing a percentage over zero.
+
+## The blog and the newsletter
+
+When the site confirms a new version of the official tax rates, it drafts blog posts automatically — what changed, the effective date, and the estimated impact on a typical basket, in Finnish and English. Every post is reviewed and published by a human before it appears; drafts are never visible publicly. The blog lives at `/blog`, and published posts are also listed in the site's sitemap.
+
+The **newsletter** is the low-frequency companion: an email when something worth announcing has been published. How it works:
+
+1. Submit your address in the subscribe form (in the blog or the site footer). The form states plainly that you are subscribing to the newsletter — this consent is separate from any price alerts you may have.
+2. You receive a confirmation email with a link. **Until you open that link, nothing is sent to the address** — no confirmation, no newsletter.
+3. Once confirmed, you receive newsletter sends. Every newsletter email carries a one-click unsubscribe link; following it ends the subscription immediately.
+
+## Sharing a calculation and embedding the calculator
+
+A calculation result page has its own permanent link, but you can also create a **share link**: a frozen, public copy of the result under an unguessable address. Creating one needs an account; viewing one does not.
+
+- The snapshot is copied at the moment you create the link. Later changes to the calculation — or its eventual deletion by retention — do not affect the shared page.
+- The snapshot carries the same structural disclaimer as the result it came from: the total is an estimated cost in Finland, not a final legal tax liability.
+- No account information is in the snapshot or the page around it — just the product, the numbers, and the disclaimer.
+- A link that does not exist shows a normal not-found page; the site does not reveal which links do exist.
+
+If you want the calculator on your own site, `/embed/calculator` is an embeddable version with the navigation stripped. It shows the same age gate and disclaimers as the main site, and calculations made through it go through exactly the same checks as the main application — embedding is not a shortcut around anything.
+
+## The €/g value page
+
+`/value` lists the products of one category by **euros per gram of pure alcohol** — a factual ratio of price to ethanol content, computed the same way as the €/g figure on product and compare pages. The order is strictly by the number (ties fall back to a stable secondary key), so the same data always produces the same list. Each row carries the reliability status of its underlying price, and products with no computable €/g are left out rather than guessed into a position.
+
+The page is an informational listing. It does not call anything best or recommended, and it does not influence any other ordering or calculation on the site.
+
 ## Your account
 
 Account features need a free Rajahinta account. You register with an email address and a password, and the email address is your username on the site. Calculating, comparing, and the planning tools stay open to everyone; an account is what carries your data from one visit to the next.
@@ -226,10 +292,10 @@ Use the "Forgot password" link on the login page and enter your email address. Y
 
 ### What the account holds
 
-- Calculation history: your recent calculations, newest first. Open any entry to see the full result.
+- Calculation history: your recent calculations, newest first. Open any entry to see the full result; records from the last 60 days invite you to report what the import actually cost (see above).
 - Saved baskets: product collections you saved for repeat calculations.
 - Saved scenarios: named calculator input sets (product, quantity, destination). Save the current calculator inputs from the calculator page, and load or delete them here.
-- Price alerts: add, review, and remove your price alerts (see above).
+- Price and tax-change alerts: add, review, pause, and remove your alerts (see above).
 - Data export: download everything the site stores about your account as a JSON file. This is the GDPR access path.
 
 Signing out ends the session on one device; resetting your password ends every session. Retention jobs purge inactive accounts and their data.
@@ -250,7 +316,7 @@ Errors you may see:
 - "Product not found" or "no retail offers": the product was removed or has no current offers.
 - "Product lacks regulatory classification": the product cannot be calculated safely, so it is excluded rather than guessed.
 - "The session has expired": a group order link past its 7-day validity. Ask the session owner to create a new one.
-- Feature-off messages: some surfaces (history charts, reports, declaration guidance, the planning calculators) can be switched off during review. The UI hides them rather than erroring.
+- Some surfaces degrade quietly when the data behind them is temporarily unavailable — history and scenarios simply do not show until the service recovers.
 
 ## Frequently asked questions
 
@@ -267,7 +333,7 @@ Can a merchant pay for a better position?
 No. The sorting input type physically has no field for promotion, and a compliance test suite fails the build if anyone tries to add one. The methodology page states this publicly.
 
 Do I need an account?
-For anything you save, yes: history, saved baskets, scenarios, price alerts, group orders, and data export need a free account. Calculating, comparing, and the planning tools work without one. Registration asks for an email address and a password.
+For anything you save or submit, yes: history, saved baskets, scenarios, price and tax-change alerts, outcome reports, shop reports, share links, group orders, and data export need a free account. Calculating, comparing, the planning tools, reading the blog, viewing a share link, and the €/g ranking work without one. Registration asks for an email address and a password.
 
 Why does my account show "unverified"?
 You have not confirmed your email address yet. The account works normally, and the badge clears once you open the verification link from your email (valid 24 hours; you can request a new link from the account view).
@@ -286,3 +352,18 @@ The panel only lists reviewed entries. Products without reviewed entries show no
 
 How long does a group order link work?
 Seven days from creation. After that the link expires and a new session is needed.
+
+What does the accuracy percentage actually mean?
+It is the share of **user-reported** outcomes that landed within 5% of the estimate, with the sample size shown next to it. It measures how the estimates have held up against what people said they actually paid — it is not a verified audit of anyone's purchase, and it says nothing about any individual future calculation.
+
+Why does a shop show a warning badge?
+An operator published a blacklist entry for that merchant after the evidence met the published standard (three or more independent confirmed non-delivery reports, or a confirmed invalid business registration). The badge is informational: your results, their order, and every number are identical with or without it. Merchants can appeal, and a reopened entry stops showing immediately.
+
+Does subscribing to the newsletter sign me up for anything else?
+No. Newsletter consent is stored separately from price alerts, nothing is sent until you confirm the subscription email, and every newsletter carries a one-click unsubscribe link that works immediately.
+
+What does a share link reveal about me?
+Nothing about your account. The share page renders a frozen copy of the calculation — product, numbers, disclaimer — under an unguessable address, with no session and no account identifiers.
+
+Is the allowance-fill basket what I am allowed to bring in?
+It is a plan that fits inside the traveller allowance in force on your travel date, resolved from the versioned official limits. It is a shopping plan, not a customs ruling; the allowance version used is shown with the result.
