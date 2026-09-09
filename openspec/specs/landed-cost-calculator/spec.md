@@ -19,17 +19,22 @@ The Landed-Cost Calculator SHALL take a product + quantity + destination (+ opti
 
 ### Requirement: Itemized breakdown
 
-The itemized result SHALL contain retail price, transport, alcohol excise, and container duty as before, each with reliability status and timestamp. The response and the persisted calculation record SHALL additionally carry an optional `alkoBenchmark` object: the product's Alko reference price, the difference against the calculated offer in euros and percent, the reference's reliability status, and its observation timestamp. The field SHALL be absent when no Alko reference offer exists for the product, SHALL be excluded from `totalCents` and from the itemized array, and SHALL be display-only. Records created before this change lack the field, and consumers SHALL treat absence as normal.
+The itemized result SHALL contain retail price, transport, alcohol excise, and container duty, each with reliability status and timestamp. It SHALL additionally contain an import-VAT line when the offer's seller country differs from the destination: the VAT amount, the rate version id, the base breakdown, and a reliability status. The line SHALL be absent for domestic offers, and absence SHALL mean zero contribution to the total, not a displayed zero. `totalCents` SHALL include the import-VAT amount exactly when the line is present. The response and the persisted calculation record SHALL also carry the optional `alkoBenchmark` object as before: absent when no Alko reference offer exists, excluded from `totalCents` and the itemized array, display-only. Records created before this change lack any VAT line, and consumers SHALL treat absence as normal.
 
-#### Scenario: Benchmark present
+#### Scenario: Foreign seller carries import VAT
 
-- **WHEN** a calculation runs for a product that has an Alko reference offer
-- **THEN** the result and its persisted record carry `alkoBenchmark` with price, difference, percent, reliability, and timestamp, and the total equals the itemized breakdown without it
+- **WHEN** a calculation runs for an alks.fi offer (seller country DE) into FI
+- **THEN** the result contains an import-VAT line with amount, rate version, and base breakdown, and the total includes it
 
-#### Scenario: Benchmark absent
+#### Scenario: Domestic offer unchanged
 
-- **WHEN** a calculation runs for a product with no Alko reference offer, or a pre-change record is fetched
-- **THEN** the field is absent, the response and page render normally, and no placeholder or guess is shown
+- **WHEN** a calculation runs for an Alko offer
+- **THEN** no VAT line exists, the total equals the pre-change engine's output for the same inputs, and the response renders normally
+
+#### Scenario: Pre-change record stays readable
+
+- **WHEN** a calculation record created before this change is fetched
+- **THEN** it has no VAT line, and consumers render it without error or placeholder
 
 ## ADDED Requirements
 
