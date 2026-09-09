@@ -53,6 +53,13 @@ export const productMaster = pgTable('product_master', {
   depositSystemStatus: boolean('deposit_system_status'),
   /** EAN-13 barcode — primary product identification key for upsert matching. */
   ean: varchar('ean', { length: 13 }),
+  /**
+   * Product weight in grams — optional transport-estimation input (falls
+   * back to the volume-based estimate when absent). Nullable by ingestion
+   * contract: feeds that carry no weight leave it null; no backfill, no
+   * default (change alks-feed-and-import-vat task 2.1).
+   */
+  weightGrams: integer('weight_grams'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

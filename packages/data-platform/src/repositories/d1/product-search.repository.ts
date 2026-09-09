@@ -55,7 +55,7 @@ type RetailOfferRecord = typeof retailOffers.$inferSelect;
 const PRODUCT_COLUMNS = `
   id, name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
   container_type, regulatory_classification, deposit_system_status, ean,
-  created_at, updated_at`;
+  weight_grams, created_at, updated_at`;
 
 /** Raw D1 product_master row (snake_case, REAL numbers, ISO-8601 TEXT). */
 interface D1ProductRow {
@@ -70,6 +70,7 @@ interface D1ProductRow {
   readonly regulatory_classification: string;
   readonly deposit_system_status: number | null;
   readonly ean: string | null;
+  readonly weight_grams: number | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -175,6 +176,7 @@ function toContractProduct(row: D1ProductRow): ProductRecord {
     regulatoryClassification: row.regulatory_classification,
     depositSystemStatus: intToBoolean(row.deposit_system_status),
     ean: row.ean,
+    weightGrams: row.weight_grams,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
@@ -226,7 +228,7 @@ const FTS_SEARCH_SQL = `
   SELECT p.id, p.name, p.manufacturer, p.brand, p.category,
          p.alcohol_by_volume, p.unit_volume, p.container_type,
          p.regulatory_classification, p.deposit_system_status, p.ean,
-         p.created_at, p.updated_at
+         p.weight_grams, p.created_at, p.updated_at
     FROM product_master_fts f
     JOIN product_master p ON p.id = f.rowid
    WHERE product_master_fts MATCH ?

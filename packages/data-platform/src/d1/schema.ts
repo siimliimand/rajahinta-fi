@@ -111,6 +111,13 @@ export const productMaster = sqliteTable(
     depositSystemStatus: integer('deposit_system_status', { mode: 'boolean' }),
     /** EAN-13 barcode — primary product identification key for upsert matching. */
     ean: text('ean', { length: 13 }),
+    /**
+     * Product weight in grams — optional transport-estimation input (falls
+     * back to the volume-based estimate when absent). Nullable by ingestion
+     * contract: feeds that carry no weight leave it null; no backfill, no
+     * default (change alks-feed-and-import-vat task 2.1).
+     */
+    weightGrams: integer('weight_grams'),
     createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
     updatedAt: text('updated_at').default(ISO_8601_NOW).notNull(),
   },

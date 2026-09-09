@@ -134,6 +134,13 @@
       "when": 1788689139733,
       "tag": "0018_calculation_records_alko_benchmark",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788969413584,
+      "tag": "0019_product_weight_grams",
+      "breakpoints": true
     }
   ]
 }

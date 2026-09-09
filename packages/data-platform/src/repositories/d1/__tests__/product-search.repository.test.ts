@@ -387,6 +387,8 @@ describe('D1ProductSearchRepository — contract row shapes', () => {
       regulatoryClassification: 'beer',
       depositSystemStatus: true,
       ean: '0641000111111',
+      // Seed row carries no weight — the nullable column maps to null.
+      weightGrams: null,
       createdAt: expect.any(Date),
       updatedAt: expect.any(Date),
     });
