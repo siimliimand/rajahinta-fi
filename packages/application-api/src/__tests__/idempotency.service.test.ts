@@ -146,6 +146,32 @@ describe('hashInput', () => {
     const h2 = hashInput(inputRefreshed);
     expect(h1).not.toEqual(h2);
   });
+
+  // The import-VAT label reaches this array via findActiveVersionLabels()
+  // once seeded (taxType is not filtered there) — pin that it changes the key.
+  it('produces a different hash with vs without the import-VAT version label', () => {
+    const withoutVat: CacheKeyInput = {
+      productId: 1, quantity: 1, destination: 'FI',
+      datasetVersions: ['v3.0-2026', 'transport-v1'],
+    };
+    const withVat: CacheKeyInput = {
+      productId: 1, quantity: 1, destination: 'FI',
+      datasetVersions: ['v3.0-2026', 'transport-v1', 'import-vat-2024.2'],
+    };
+    expect(hashInput(withoutVat)).not.toEqual(hashInput(withVat));
+  });
+
+  it('produces a different hash when the import-VAT version bumps (2024.1 → 2024.2)', () => {
+    const v2024_1: CacheKeyInput = {
+      productId: 42, quantity: 2, destination: 'FI',
+      datasetVersions: ['v3.0-2026', 'transport-v1', 'import-vat-2024.1'],
+    };
+    const v2024_2: CacheKeyInput = {
+      productId: 42, quantity: 2, destination: 'FI',
+      datasetVersions: ['v3.0-2026', 'transport-v1', 'import-vat-2024.2'],
+    };
+    expect(hashInput(v2024_1)).not.toEqual(hashInput(v2024_2));
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -365,6 +391,19 @@ describe('IdempotencyService', () => {
 
     await service.store(key, result);
     await service.invalidateOnVersionChange(['tax-v1']);
+
+    expect(await service.lookup(key)).toBeNull();
+  });
+
+  it('invalidates entries when the import-VAT dataset version changes', async () => {
+    const input: CacheKeyInput = { productId: 1, quantity: 1, destination: 'FI' };
+    const key = service.getCacheKey(input);
+    const result = makeResult({
+      metadata: { datasetVersions: ['tax-v1', 'import-vat-2024.2'] },
+    } as any);
+
+    await service.store(key, result);
+    await service.invalidateOnVersionChange(['import-vat-2024.2']);
 
     expect(await service.lookup(key)).toBeNull();
   });

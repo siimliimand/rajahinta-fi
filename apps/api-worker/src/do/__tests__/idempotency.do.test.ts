@@ -158,6 +158,29 @@ describe('hashCacheKey — key material (hashInput parity)', () => {
     expect(await hashCacheKey(before)).not.toBe(await hashCacheKey(after));
   });
 
+  // The import-VAT label reaches this array via findActiveVersionLabels()
+  // once seeded (taxType is not filtered there) — pin that it changes the key.
+  it('changes with vs without the import-VAT version label', async () => {
+    const withoutVat: CacheKeyInput = { ...baseInput, datasetVersions: ['v3.0-2026', 'transport-v1'] };
+    const withVat: CacheKeyInput = {
+      ...baseInput,
+      datasetVersions: ['v3.0-2026', 'transport-v1', 'import-vat-2024.2'],
+    };
+    expect(await hashCacheKey(withoutVat)).not.toBe(await hashCacheKey(withVat));
+  });
+
+  it('changes when the import-VAT version bumps (2024.1 → 2024.2)', async () => {
+    const v2024_1: CacheKeyInput = {
+      ...baseInput,
+      datasetVersions: ['v3.0-2026', 'transport-v1', 'import-vat-2024.1'],
+    };
+    const v2024_2: CacheKeyInput = {
+      ...baseInput,
+      datasetVersions: ['v3.0-2026', 'transport-v1', 'import-vat-2024.2'],
+    };
+    expect(await hashCacheKey(v2024_1)).not.toBe(await hashCacheKey(v2024_2));
+  });
+
   it('hashes basket items per item, replacing the single-product dimension', async () => {
     const basket: CacheKeyInput = {
       ...baseInput,
@@ -414,6 +437,25 @@ describe('IdempotencyDO — version invalidation (invalidateOnVersionChange pari
     const { deleted } = await callDo<InvalidateResponse>(cache, {
       op: 'invalidateVersions',
       versions: ['v2', 'v99'],
+      nowMs: T0,
+    });
+    expect(deleted).toBe(1);
+    expect((await callDo<GetResponse>(cache, { op: 'get', input: k1, nowMs: T0 })).found).toBe(false);
+    expect((await callDo<GetResponse>(cache, { op: 'get', input: k2, nowMs: T0 })).found).toBe(true);
+  });
+
+  it('invalidates entries when the import-VAT dataset version changes', async () => {
+    const k1: CacheKeyInput = { ...baseInput, datasetVersions: ['tax-v1', 'import-vat-2024.2'] };
+    const k2: CacheKeyInput = {
+      ...baseInput, productId: 7,
+      datasetVersions: ['tax-v1', 'import-vat-2024.1'],
+    };
+    await callDo(cache, { op: 'put', input: k1, result: makeResult(['tax-v1', 'import-vat-2024.2']), nowMs: T0 });
+    await callDo(cache, { op: 'put', input: k2, result: makeResult(['tax-v1', 'import-vat-2024.1']), nowMs: T0 });
+
+    const { deleted } = await callDo<InvalidateResponse>(cache, {
+      op: 'invalidateVersions',
+      versions: ['import-vat-2024.2'],
       nowMs: T0,
     });
     expect(deleted).toBe(1);
