@@ -48,13 +48,23 @@ function toInt(value: boolean | null | undefined): number | null {
   return value === null || value === undefined ? null : value ? 1 : 0;
 }
 
+/**
+ * Feed weight arrives on the mapped product (the MappedPair widening,
+ * change alks-feed-and-import-vat); plain UpsertProductInput callers
+ * carry none. Absent or non-finite reads as null — the Alko shape.
+ */
+function weightGramsOf(input: UpsertProductInput): number | null {
+  const raw = (input as { weightGrams?: unknown }).weightGrams;
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
+}
+
 const FIND_BY_EAN_SQL = `SELECT id FROM product_master WHERE ean = ? LIMIT 1`;
 
 const UPDATE_BY_EAN_SQL = `
   UPDATE product_master SET
     name = ?, manufacturer = ?, brand = ?, category = ?, alcohol_by_volume = ?,
     unit_volume = ?, container_type = ?, regulatory_classification = ?,
-    deposit_system_status = ?, updated_at = ?
+    deposit_system_status = ?, weight_grams = ?, updated_at = ?
   WHERE id = ?`;
 
 const FIND_BY_COMPOUND_SQL = `
@@ -70,8 +80,9 @@ const UPDATE_COMPOUND_SQL = `
 const INSERT_PRODUCT_SQL = `
   INSERT INTO product_master (
     name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
-    container_type, regulatory_classification, deposit_system_status, ean
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    container_type, regulatory_classification, deposit_system_status,
+    weight_grams, ean
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   RETURNING id`;
 
 const LATEST_OFFER_PRICE_SQL = `
@@ -96,6 +107,7 @@ export class D1UpsertRepository implements IUpsertRepository {
     const alcoholByVolume = toReal(input.alcoholByVolume);
     const unitVolume = toRealRequired(input.unitVolume);
     const depositSystemStatus = toInt(input.depositSystemStatus);
+    const weightGrams = weightGramsOf(input);
 
     // ---- Tier 1: Match by EAN — refresh every mutable field --------------
     if (input.ean) {
@@ -115,6 +127,7 @@ export class D1UpsertRepository implements IUpsertRepository {
             input.containerType,
             input.regulatoryClassification,
             depositSystemStatus,
+            weightGrams,
             updatedAt,
             byEan.id,
           )
@@ -149,6 +162,7 @@ export class D1UpsertRepository implements IUpsertRepository {
         input.containerType,
         input.regulatoryClassification,
         depositSystemStatus,
+        weightGrams,
         input.ean ?? null,
       )
       .first<{ id: number }>();
