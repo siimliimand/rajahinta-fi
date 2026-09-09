@@ -50,7 +50,8 @@
  * Guard-free surfaces with no rate limit (reviewed-safe public reads and
  * token-capability exchanges): GET /api/v1/health(+/ready), GET
  * /api/v1/accuracy (trust-and-reach-roadmap 3.3), GET /api/v1/blog/posts
- * (+:/:slug, 5.1), GET /api/v1/share/:publicId (6.1), POST
+ * (+:/:slug, 5.1) + GET /api/v1/guides (insight-surfaces 5.1), GET
+ * /api/v1/share/:publicId (6.1), POST
  * /api/v1/analytics/click, GET /api/v1/newsletter/confirm +
  * /unsubscribe (5.3, emailed token IS the capability), POST
  * /api/v1/account/password/reset + /verify-email/confirm (same
@@ -68,7 +69,6 @@
  *
  * @module guards
  */
-
 import type { Hono, MiddlewareHandler } from 'hono';
 import type { AppEnv } from '../env';
 import { ageGate } from './age-gate';

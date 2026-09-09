@@ -357,6 +357,10 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/api/v1/account/verify-email/request', ['POST'], '— (sessionAuth)'],
   // Trust-and-reach public trust statistic (task 3.3) — no guard, no limit.
   ['/api/v1/accuracy', ['GET'], '—'],
+  // Traveller allowances (insight-surfaces 4.1) — route-local DEFAULT +
+  // ageGate (PUBLISHED dataset reads).
+  ['/api/v1/allowances', ['GET'], 'DEFAULT + ageGate'],
+  ['/api/v1/allowances/versions', ['GET'], 'DEFAULT + ageGate'],
   // Click analytics — write-behind counter, no guard.
   ['/api/v1/analytics/click', ['POST'], '—'],
   // Basket optimizer — BASKET prefix profile at index.ts.
@@ -384,6 +388,8 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/api/v1/group-orders/:shareToken/items', ['POST'], '— (share token)'],
   ['/api/v1/group-orders/:shareToken/join', ['POST'], '— (share token)'],
   ['/api/v1/group-orders/:shareToken/ledger', ['POST'], '— (share token)'],
+  // Guides public read (insight-surfaces 5.1) — PUBLISHED GUIDE only, no guard.
+  ['/api/v1/guides', ['GET'], '—'],
   // Health — process liveness + dependency readiness, unguarded.
   ['/api/v1/health', ['GET'], '—'],
   ['/api/v1/health/ready', ['GET'], '—'],
@@ -430,6 +436,8 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/ops/console/blacklist/appeals', ['GET'], 'opsAccess'],
   ['/ops/console/blacklist/entries', ['GET'], 'opsAccess'],
   ['/ops/console/blacklist/publish', ['POST'], 'opsAccess'],
+  ['/ops/console/blog/guides', ['POST'], 'opsAccess'],
+  ['/ops/console/blog/guides/:id', ['POST'], 'opsAccess'],
   ['/ops/console/blog/posts', ['GET'], 'opsAccess'],
   ['/ops/console/blog/posts/:id/publish', ['POST'], 'opsAccess'],
   ['/ops/console/confirmations', ['GET'], 'opsAccess'],

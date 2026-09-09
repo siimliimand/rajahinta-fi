@@ -292,3 +292,91 @@ export function notifySubscribers(
     body: JSON.stringify(body),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Blog/guide drafts (insight-surfaces 5.1) — guide drafts are created and
+// edited here (kind GUIDE, no rate-version provenance) and published
+// through the shared blog publish transition. Response types are local to
+// the console API module (lib/types.ts is shared surface).
+// ---------------------------------------------------------------------------
+
+/** One blog post in the console view — every status, both locales. */
+export interface OpsBlogPostItem {
+  id: number;
+  slug: string;
+  locale: string;
+  title: string;
+  kind: string;
+  status: string;
+  rateDatasetVersion: string | null;
+  publishedAt: string | null;
+  createdAt: string;
+}
+
+export interface OpsBlogPostListResponse {
+  items: OpsBlogPostItem[];
+  total: number;
+}
+
+export function listBlogPosts(
+  token: string,
+  kind?: 'RATE_CHANGE' | 'GUIDE',
+): Promise<OpsBlogPostListResponse> {
+  const suffix = kind === undefined ? '' : `?kind=${kind}`;
+  return opsFetch<OpsBlogPostListResponse>(token, `/ops/console/blog/posts${suffix}`);
+}
+
+export interface OpsGuideMutationResponse {
+  id: number;
+  slug: string;
+  locale: string;
+  kind: string;
+  status: string;
+}
+
+export function createGuideDraft(
+  token: string,
+  body: {
+    operator: string;
+    slug: string;
+    locale: 'fi' | 'en';
+    title: string;
+    bodyMarkdown: string;
+    note?: string;
+  },
+): Promise<OpsGuideMutationResponse> {
+  return opsFetch<OpsGuideMutationResponse>(token, '/ops/console/blog/guides', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function editGuideDraft(
+  token: string,
+  id: number,
+  body: { operator: string; title?: string; bodyMarkdown?: string; note?: string },
+): Promise<OpsGuideMutationResponse> {
+  return opsFetch<OpsGuideMutationResponse>(token, `/ops/console/blog/guides/${id}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export interface OpsBlogPublishResponse {
+  id: number;
+  slug: string;
+  locale: string;
+  status: string;
+  publishedAt: string | null;
+}
+
+export function publishBlogPost(
+  token: string,
+  id: number,
+  body: { operator: string; note?: string },
+): Promise<OpsBlogPublishResponse> {
+  return opsFetch<OpsBlogPublishResponse>(token, `/ops/console/blog/posts/${id}/publish`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}

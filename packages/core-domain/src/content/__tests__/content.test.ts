@@ -158,3 +158,24 @@ describe('content-lint coverage of post bodies (spec: bodies pass the lint)', ()
     }
   });
 });
+
+describe('content-lint coverage of GUIDE bodies (insight-surfaces 5.1)', () => {
+  it('admits a clean guide body in both locales', () => {
+    expect(
+      passesContentPolicy(
+        'Tämä opas käsittelee hintarakenteen ja arvioiden rajat. Arvio on arvio, ei lopullinen verovelka.',
+      ),
+    ).toBe(true);
+    expect(
+      passesContentPolicy(
+        'This guide explains the price structure and the estimate boundary. The estimate is not a final tax liability.',
+      ),
+    ).toBe(true);
+  });
+
+  it('blocks an advice-phrased guide body in both locales before publication', () => {
+    // The same gate the ops publish route runs for every post kind.
+    expect(passesContentPolicy('Tämä on paras opas – tarjous joka hetkeksi.')).toBe(false);
+    expect(passesContentPolicy('Follow this guide for the cheapest route to stock up.')).toBe(false);
+  });
+});
