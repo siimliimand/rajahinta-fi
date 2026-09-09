@@ -27,10 +27,11 @@ export interface MerchantRegistrySeedRow {
 }
 
 /**
- * The initial merchant set — Alko only. The foreign-catalog merchant was
- * removed with its adapter (change drop-sweden-eur-only-alko-benchmark);
- * the merchant-removal purge script under scripts/ removes its rows from
- * environments that ingested it.
+ * The bootstrap merchant set. The foreign-catalog merchant was removed
+ * with its adapter (change drop-sweden-eur-only-alko-benchmark); the
+ * merchant-removal purge script under scripts/ removes its rows from
+ * environments that ingested it. `alks` joined via change
+ * alks-feed-and-import-vat (task 2.2).
  */
 export const MERCHANT_REGISTRY_SEED: readonly MerchantRegistrySeedRow[] = [
   {
@@ -40,6 +41,14 @@ export const MERCHANT_REGISTRY_SEED: readonly MerchantRegistrySeedRow[] = [
     // Adapter pending (task 7.5) — empty feed URL is skipped by the
     // pipeline, matching the static config's convention.
     feedUrl: '',
+    feedFormat: 'json',
+    pollingIntervalMs: 3_600_000,
+  },
+  {
+    merchantId: 'alks',
+    name: 'Alks',
+    country: 'DE',
+    feedUrl: 'https://alks.fi',
     feedFormat: 'json',
     pollingIntervalMs: 3_600_000,
   },
