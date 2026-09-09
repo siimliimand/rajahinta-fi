@@ -160,6 +160,8 @@ Plain, hook-free React components over Tailwind utilities — usable from both s
 | `compare/components/MerchantFreshnessSection.tsx` | `/compare` | Per-merchant data-freshness/reliability display — informational only, never affects ranking (flag-gated) |
 | `components/MerchantWarningNotice.tsx` | `/products/[id]`, `/compare`, `/calculator` | Additive published-blacklist warning notice (error-token group, triangle icon) rendered wherever a warned merchant appears; links the ranking-methodology page; never removes or reorders offers |
 | `components/AccuracyStat.tsx` | `/` (trust row), `/ranking#accuracy` | User-reported accuracy statistic — count + within-margin share + as-of, sample size always shown, API-supplied label verbatim, honest zero state |
+| `savings/components/SavingsListing.tsx` | `/savings` | Client-fetched category listing — rows with landed total, Alko reference, gap, reliability + confidence badges; header carries as-of + coverage counts even at zero rows |
+| `products/[id]/components/ProductPriceContextLine.tsx` | `/products/[id]` | One factual sentence: current best price vs 90-day median delta in cents, window + as-of included; insufficient history renders an honest no-percentage state; never contradicts the price panel (same currentBestPriceCents source) |
 | `account/components/OutcomeReportForm.tsx` | `/account` | Report-outcome form on history records within the 60-day window — euro input, within/outside-margin confirmations, calm duplicate/window error mapping |
 | `trip/components/TripFillForm.tsx` | `/trip` | Fill-mode input — allowance, candidate selection with per-candidate quantity bounds (1–99, 10-line cap) |
 | `trip/components/TripFillResult.tsx` | `/trip` | Fill result itemization — per-line contribution/consumed volume/running headroom, per-category headroom, dataset-version provenance, structural disclaimer, display-only ferry block |
@@ -197,7 +199,11 @@ Feature-component paths above are relative to `apps/frontend/src/app/[locale]/`.
 | `/account/reset` | Password reset form consuming the emailed single-use token |
 | `/age-gate` | Age verification page |
 | `/value` | €/g value page — per-category deterministic ranking table with standard status badges; informational copy only |
-| `/blog` | Blog index — rate-change posts (PUBLISHED only, locale-aware); entries in sitemap |
+| `/savings` | Daily materialized landed-cost gap listing per category — as-of + coverage counts in the header, reliability and confidence badges, ordering rule stated in the copy, honest zero state |
+| `/allowances` | Date-addressable traveller-allowance explorer — native date picker defaulting to today, verbatim citations as evidence links, version label + effective window, version-history section, guidance-not-legal-advice framing |
+| `/guides` | Guides index — PUBLISHED GUIDE-kind posts only, locale-aware, cross-links to /allowances and /trip; entries in sitemap |
+| `/guides/[slug]` | Individual guide — same rendering treatment as blog posts, no rate-version provenance block |
+| `/blog` | Blog index — rate-change posts (RATE_CHANGE kind, PUBLISHED only, locale-aware); entries in sitemap |
 | `/blog/[slug]` | Individual blog post — escaped body rendering; drafts render as unknown (notFound) |
 | `/share/[publicId]` | Frozen share-snapshot view — DisclaimerBanner on every render, OG card metadata from snapshot fields, accuracy-stat cross-link, notFound with no identifier echo |
 | `/embed/calculator` | Chrome-less embeddable calculator — minimal chrome, iframe-friendly headers, age gate and disclaimers intact, submissions through the normal API path |
@@ -227,4 +233,4 @@ The platform is positioned as a trustworthy, explainable financial/tax-intellige
 - Consider shadcn/ui or similar component library if component count grows significantly (D5 keeps this in force)
 - Swap the SiteFooter's hand-rolled card surface for the Card primitive once the primitive carries the React import the classic-JSX test runtime needs (noted in SiteFooter.tsx)
 
-<!-- Last updated: 2026-09-08 (trust-and-reach-roadmap: warning notices, accuracy stat, trip fill mode, blog, newsletter form, share page, embed calculator, value page); prior: 2026-09-06 -->
+<!-- Last updated: 2026-09-09 (insight-surfaces: savings, allowances explorer, guides hub, product price-context line); prior: 2026-09-08 (trust-and-reach-roadmap) -->
