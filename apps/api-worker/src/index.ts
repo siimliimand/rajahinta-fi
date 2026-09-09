@@ -43,6 +43,7 @@ import { registerBasketRoutes } from './routes/basket.routes';
 import { registerEventCalcRoutes } from './routes/event-calc.routes';
 import { registerTripFeasibilityRoutes } from './routes/trip-feasibility.routes';
 import { registerTripRoutes } from './routes/trip.routes';
+import { registerAllowancesRoutes } from './routes/allowances.routes';
 import { registerCuratedListsRoutes } from './routes/curated-lists.routes';
 import { registerHistoricalRoutes } from './routes/historical.routes';
 import { registerReportsRoutes } from './routes/reports.routes';
@@ -157,6 +158,7 @@ export function createApp(): Hono<AppEnv> {
   registerEventCalcRoutes(app);
   registerTripFeasibilityRoutes(app);
   registerTripRoutes(app);
+  registerAllowancesRoutes(app);
   registerCuratedListsRoutes(app);
   registerHistoricalRoutes(app);
   registerReportsRoutes(app);

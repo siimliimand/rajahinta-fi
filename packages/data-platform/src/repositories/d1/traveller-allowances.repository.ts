@@ -225,6 +225,16 @@ const FIND_PENDING_SQL = `
    WHERE status = 'PENDING_CONFIRMATION'
    ORDER BY created_at ASC, version_label ASC`;
 
+/**
+ * The full published history — every PUBLISHED version including
+ * superseded ones, newest effectiveFrom first (version_label breaks
+ * ties deterministically). The read-side version listing.
+ */
+const LIST_PUBLISHED_SQL = `
+  SELECT ${DATASET_COLUMNS} FROM traveller_allowance_datasets
+   WHERE status = 'PUBLISHED'
+   ORDER BY effective_from DESC, version_label ASC`;
+
 /** Limit rows of one version whose own effective window covers the date. */
 const FIND_LIMITS_FOR_DATASET_ON_SQL = `
   SELECT ${LIMIT_COLUMNS} FROM traveller_allowance_limits
@@ -314,6 +324,14 @@ export abstract class TravellerAllowancesRepository {
 
   /** Datasets awaiting operator confirmation, oldest first (the review queue). */
   abstract findPending(): Promise<TravellerAllowanceDatasetWithLimits[]>;
+
+  /**
+   * The published version history — every PUBLISHED version with its
+   * full (unfiltered) limit rows, superseded ones included, newest
+   * effectiveFrom first (version label breaks ties). Read-side only:
+   * pending versions never appear.
+   */
+  abstract listPublished(): Promise<TravellerAllowanceDatasetWithLimits[]>;
 
   /**
    * The PUBLISHED allowance dataset effective on the travel date (newest
@@ -450,6 +468,20 @@ export class D1TravellerAllowancesRepository extends TravellerAllowancesReposito
       );
     }
     return pending;
+  }
+
+  /** @inheritdoc */
+  async listPublished(): Promise<TravellerAllowanceDatasetWithLimits[]> {
+    const rows = (
+      await this.d1.prepare(LIST_PUBLISHED_SQL).all<D1DatasetRow>()
+    ).results;
+    const published: TravellerAllowanceDatasetWithLimits[] = [];
+    for (const row of rows) {
+      published.push(
+        await this.toDatasetWithLimits(toContractDataset(row), false, null),
+      );
+    }
+    return published;
   }
 
   /** @inheritdoc */
