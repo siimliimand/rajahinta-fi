@@ -17,6 +17,8 @@
  *   4. generateMetadata builds the OG card from the snapshot fields
  *      (product name, quantity, destination, total) and the fallback
  *      card carries no identifier echo.
+ *   5. The import-VAT line localizes through the canonical catalog;
+ *      a snapshot without the line renders no VAT row at all.
  *
  * @module SharePageTest
  */
@@ -158,6 +160,23 @@ const SNAPSHOT_OK = {
   },
 };
 
+const SNAPSHOT_WITH_IMPORT_VAT = {
+  ...SNAPSHOT_OK,
+  snapshot: {
+    ...SNAPSHOT_OK.snapshot,
+    totalCents: 5280,
+    breakdown: [
+      ...SNAPSHOT_OK.snapshot.breakdown,
+      {
+        label: 'Import VAT',
+        category: 'importVatEstimate',
+        cents: 720,
+        reliability: 'ESTIMATED',
+      },
+    ],
+  },
+};
+
 function apiError(status: number): ApiError {
   return {
     statusCode: status,
@@ -204,6 +223,27 @@ describe('SharePage', () => {
     mockedRequest.mockResolvedValue(SNAPSHOT_OK);
     const html = await renderPage();
     expect(html).toContain('Arvioitu kokonaishinta on arvio, ei lopullinen verovelka.');
+  });
+
+  it('localizes the import-VAT line through the canonical catalog', async () => {
+    mockedRequest.mockResolvedValue(SNAPSHOT_WITH_IMPORT_VAT);
+
+    const html = await renderPage();
+
+    expect(html).toContain('Arvio tuonnin arvonlisäverosta');
+    expect(html).toContain('7,20 €');
+    // The stored label is the fallback for non-canonical lines only — a
+    // whitelisted category must never surface the raw stored copy.
+    expect(html).not.toContain('Import VAT');
+  });
+
+  it('renders no VAT row for a snapshot without the import-VAT line', async () => {
+    mockedRequest.mockResolvedValue(SNAPSHOT_OK);
+
+    const html = await renderPage();
+
+    expect(html).not.toContain('Arvio tuonnin arvonlisäverosta');
+    expect(html).not.toContain('importVatEstimate');
   });
 
   it('degrades to the fallback disclaimer copy on a corrupt disclaimer', async () => {

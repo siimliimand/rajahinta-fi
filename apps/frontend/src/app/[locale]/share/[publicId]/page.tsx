@@ -18,12 +18,13 @@ interface SharePageProps {
 // Snapshot-field helpers (defensive — the snapshot is stored JSON)
 // ---------------------------------------------------------------------------
 
-/** The four canonical cost categories (core-domain CostCategory). */
+/** The five canonical cost categories (core-domain CostCategory). */
 const COST_CATEGORIES: ReadonlySet<string> = new Set([
   'foreignRetailPrice',
   'transportCost',
   'alcoholExciseEstimate',
   'containerDutyEstimate',
+  'importVatEstimate',
 ]);
 
 interface BreakdownLine {
