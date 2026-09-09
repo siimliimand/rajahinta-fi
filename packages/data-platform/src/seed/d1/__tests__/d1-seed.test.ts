@@ -141,6 +141,10 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
     return join(workDir, 'seed-test.sqlite');
   }
 
+  // The seed applies 20 migrations plus the full seed SQL; the vitest
+  // default 5s budget is too tight on loaded CI runners.
+  const DB_TEST_TIMEOUT_MS = 30_000;
+
   it('applies migrations then seed to a fresh database and verification passes', () => {
     const result = applySeedToSqlite(freshDatabasePath(), {
       migrationsDir: MIGRATIONS_DIR,
@@ -158,7 +162,7 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
     expect(result.verification['transport_offers_total']).toBe(expectations.transportOffers);
     expect(result.verification['staging_reviews_total']).toBe(expectations.stagingReviews);
     expect(result.verification['spot_beer_rate_rows']).toBe(1);
-  });
+  }, DB_TEST_TIMEOUT_MS);
 
   it('is idempotent: re-applying the seed never duplicates or changes counts', () => {
     const dbPath = freshDatabasePath();
@@ -168,7 +172,7 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
     // Schema already present → migrations skipped, seed re-applied anyway.
     expect(second.migrationsApplied).toEqual([]);
     expect(second.verification).toEqual(first.verification);
-  });
+  }, DB_TEST_TIMEOUT_MS);
 
   it('verifies version presence per label, not just the total', () => {
     const dbPath = freshDatabasePath();
@@ -187,7 +191,7 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
     } finally {
       db.close();
     }
-  });
+  }, DB_TEST_TIMEOUT_MS);
 
   it('fails loudly when a drifted version label is present (append-only: no repair)', () => {
     const dbPath = freshDatabasePath();
@@ -206,7 +210,7 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
     expect(() =>
       applySeedToSqlite(dbPath, { migrationsDir: MIGRATIONS_DIR, seedSqlFiles: seedFiles }),
     ).toThrow(SeedVerificationError);
-  });
+  }, DB_TEST_TIMEOUT_MS);
 
   it('fails loudly when staging rows are missing from the seeded database', () => {
     const db = new DatabaseSync(':memory:');
@@ -219,7 +223,7 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
       applySeedAndVerify(db, seedFiles.filter((f) => f.name === 'tax-rules.d1.sql')),
     ).toThrow();
     db.close();
-  });
+  }, DB_TEST_TIMEOUT_MS);
 });
 
 /** Local helper so each generation test re-generates independently. */
