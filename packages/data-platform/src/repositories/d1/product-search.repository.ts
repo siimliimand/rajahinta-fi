@@ -55,7 +55,7 @@ type RetailOfferRecord = typeof retailOffers.$inferSelect;
 const PRODUCT_COLUMNS = `
   id, name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
   container_type, regulatory_classification, deposit_system_status, ean,
-  created_at, updated_at`;
+  weight_grams, created_at, updated_at`;
 
 /** Raw D1 product_master row (snake_case, REAL numbers, ISO-8601 TEXT). */
 interface D1ProductRow {
@@ -70,6 +70,7 @@ interface D1ProductRow {
   readonly regulatory_classification: string;
   readonly deposit_system_status: number | null;
   readonly ean: string | null;
+  readonly weight_grams: number | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -175,6 +176,7 @@ function toContractProduct(row: D1ProductRow): ProductRecord {
     regulatoryClassification: row.regulatory_classification,
     depositSystemStatus: intToBoolean(row.deposit_system_status),
     ean: row.ean,
+    weightGrams: row.weight_grams,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
@@ -212,6 +214,9 @@ function insertParams(record: ProductInsert): unknown[] {
     record.regulatoryClassification,
     booleanToInt(record.depositSystemStatus),
     record.ean ?? null,
+    // Feed weight (design D7, change alks-feed-and-import-vat): absent
+    // → null column, never an error.
+    record.weightGrams ?? null,
     record.createdAt?.toISOString() ?? new Date().toISOString(),
     record.updatedAt?.toISOString() ?? new Date().toISOString(),
   ];
@@ -226,7 +231,7 @@ const FTS_SEARCH_SQL = `
   SELECT p.id, p.name, p.manufacturer, p.brand, p.category,
          p.alcohol_by_volume, p.unit_volume, p.container_type,
          p.regulatory_classification, p.deposit_system_status, p.ean,
-         p.created_at, p.updated_at
+         p.weight_grams, p.created_at, p.updated_at
     FROM product_master_fts f
     JOIN product_master p ON p.id = f.rowid
    WHERE product_master_fts MATCH ?
@@ -257,16 +262,16 @@ const INSERT_SQL = `
   INSERT INTO product_master (
     name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
     container_type, regulatory_classification, deposit_system_status, ean,
-    created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    weight_grams, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   RETURNING ${PRODUCT_COLUMNS}`;
 
 const INSERT_WITH_ID_SQL = `
   INSERT INTO product_master (
     id, name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
     container_type, regulatory_classification, deposit_system_status, ean,
-    created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    weight_grams, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   RETURNING ${PRODUCT_COLUMNS}`;
 
 /** Upsert-by-Ean update — preserves id and createdAt, exactly like pg. */
@@ -274,7 +279,7 @@ const UPDATE_BY_EAN_SQL = `
   UPDATE product_master SET
     name = ?, manufacturer = ?, brand = ?, category = ?, alcohol_by_volume = ?,
     unit_volume = ?, container_type = ?, regulatory_classification = ?,
-    deposit_system_status = ?, updated_at = ?
+    deposit_system_status = ?, weight_grams = ?, updated_at = ?
   WHERE ean = ?
   RETURNING ${PRODUCT_COLUMNS}`;
 
@@ -452,6 +457,9 @@ export class D1ProductSearchRepository extends ProductRepository {
           record.containerType,
           record.regulatoryClassification,
           booleanToInt(record.depositSystemStatus),
+          // Feed weight refreshes with the other mutable fields; a
+          // weight-less feed persists null (design D7).
+          record.weightGrams ?? null,
           record.updatedAt?.toISOString() ?? new Date().toISOString(),
           record.ean,
         )

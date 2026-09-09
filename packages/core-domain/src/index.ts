@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import type { Disclaimer } from './calculator/calculator.types';
 import type { ReliabilityStatus } from './reliability/reliability.types';
+import type { ImportVatResult } from './vat';
 import { TaxModule, type TaxModuleOptions } from './tax/tax.module';
 import { NormalizationModule } from './normalization/normalization.module';
 import { SourceGovernanceModule } from './governance/governance.module';
@@ -115,6 +116,34 @@ export type { TaxType, TaxCategory } from './tax/index';
 export { normaliseCategory } from './tax/index';
 
 // ---------------------------------------------------------------------------
+// Import VAT — versioned rate dataset + base rule (tax subdomain, design D5)
+// Re-exported through the barrel so data-platform seeds and API packages
+// import `@rajahinta/core-domain` (the seed must not bypass the vitest
+// alias with a /dist path).
+// ---------------------------------------------------------------------------
+
+export {
+  IMPORT_VAT_TAX_TYPE,
+  IMPORT_VAT_FORMULA,
+  IMPORT_VAT_VERSION_V1,
+  IMPORT_VAT_VERSION_V2,
+  IMPORT_VAT_DATASET,
+  ImportVatService,
+  VatModule,
+  resolveImportVatVersion,
+  calculateImportVat,
+  sumBaseComponents,
+} from './vat';
+export type {
+  ImportVatVersion,
+  VatBaseComponent,
+  VatComponentAmounts,
+  VatBaseComponentAmount,
+  ImportVatInput,
+  ImportVatResult,
+} from './vat';
+
+// ---------------------------------------------------------------------------
 // Documentation section markers
 // ---------------------------------------------------------------------------
 
@@ -135,6 +164,13 @@ export interface LandedCostResult {
   readonly transportCostCents: number;
   readonly exciseDuty: ExciseCalculation | null;
   readonly containerDuty: ContainerDutyCalculation | null;
+  /**
+   * Import VAT when the posted seller country differs from the destination
+   * (FI) — the legacy landed-cost endpoint's optional VAT term (task 4.3,
+   * design D6). `null` for domestic transactions and for callers that omit
+   * `sellerCountry`; a null/absent key means zero contribution.
+   */
+  readonly importVat?: ImportVatResult | null;
   readonly totalCostCents: number;
   readonly currency: 'EUR';
   readonly disclaimer: Disclaimer;

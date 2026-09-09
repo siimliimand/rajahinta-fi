@@ -180,10 +180,26 @@ interface CalcResponseJson {
  * clock read, and the per-database record id (see module docs for the
  * byte-proxy decision).
  */
+/**
+ * The itemised lines minus the per-run clock read the import-VAT line
+ * carries (`calculatedAt`, task 4.3) — the same legitimate variance
+ * category as the metadata timestamp.  The rate version, base breakdown,
+ * and every figure byte stay compared.
+ */
+function costLinesWithoutClock(body: CalcResponseJson): Array<Record<string, unknown>> {
+  return (body.itemizedCosts as unknown as Array<Record<string, unknown>>).map(
+    ({ calculatedAt: _vatTs, ...line }) => line,
+  );
+}
+
 function calculationBytes(body: CalcResponseJson): string {
   const { alkoBenchmark: _bench, calculationRecordId: _id, metadata, ...stable } = body;
   const { calculationTimestamp: _ts, ...stableMetadata } = metadata;
-  return JSON.stringify({ ...stable, metadata: stableMetadata });
+  return JSON.stringify({
+    ...stable,
+    itemizedCosts: costLinesWithoutClock(body),
+    metadata: stableMetadata,
+  });
 }
 
 /** The metadata fields a ranking mapping reads from, clock read removed. */
@@ -234,7 +250,7 @@ describe('calculation output vs Alko reference-row count (fresh compute per comp
     // the metadata every ranking input maps from.
     for (const run of [one, many]) {
       expect(run.totalCents).toBe(zero.totalCents);
-      expect(run.itemizedCosts).toEqual(zero.itemizedCosts);
+      expect(costLinesWithoutClock(run)).toEqual(costLinesWithoutClock(zero));
       expect(run.confidence).toBe(zero.confidence);
       expect(rankingMetadata(run)).toEqual(rankingMetadata(zero));
     }

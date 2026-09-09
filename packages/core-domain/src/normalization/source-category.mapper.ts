@@ -36,7 +36,10 @@ export interface SourceCategoryMapping {
 
 /**
  * Swedish source-category tokens (Systembolaget assortment groups and
- * their common sub-group names) → canonical categories.
+ * their common sub-group names) → canonical categories, extended with
+ * the live alks.fi catalog vocabulary (sweep decision 2026-09-09,
+ * change alks-feed-and-import-vat): Finnish/English beverage-type
+ * terms and plural forms the Systembolaget rows do not cover.
  *
  * Keys are lowercase; matching is exact after trim/lowercase because
  * assortment groups are controlled vocabulary, not free text.
@@ -70,6 +73,42 @@ export const SWEDISH_SOURCE_CATEGORY_MAP: Readonly<Record<string, CanonicalCateg
   // Alkoholfritt assortment group
   alkoholfritt: 'non-alcoholic',
   alkoholfri: 'non-alcoholic',
+
+  // --- alks.fi catalog vocabulary (sweep decision 2026-09-09, change
+  // alks-feed-and-import-vat). Additive only: every term maps to an
+  // existing canonical category. Merchandising groups with no beverage
+  // meaning (seasonal and country categories, "upcoming products",
+  // syrup) stay unmapped on purpose — those rows belong in the
+  // correction queue, never in a guessed category.
+  //
+  // Strong-alcohol departments (väkevä = "strong", ee-str = the
+  // Estonian shop's strong group) and spirit-type nouns.
+  'väkevä': 'spirits',
+  'ee-str': 'spirits',
+  akvavit: 'spirits', // Swedish/Danish spelling; 'aquavit'/'akvaviitti' already map
+  rommi: 'spirits',
+  viski: 'spirits',
+  calvados: 'spirits',
+  armagnac: 'spirits',
+  rakija: 'spirits',
+  // Finnish wine-type nouns ('red wine'/'white wine' exist as English).
+  punaviini: 'wine',
+  valkoviini: 'wine',
+  'kuohuviini ja samppanja': 'sparkling-wine',
+  // Finnish vermouth spelling; 'vermouth' already maps.
+  vermutti: 'fortified-wine',
+  // Plural / shop-group beer terms ('olut' singular already maps).
+  oluet: 'beer',
+  'ee-olutit': 'beer',
+  // Plural of 'cocktail' and the Finnish "drink mix" (premixed RTD)
+  // term — same long-drink family as their singulars.
+  cocktails: 'long-drink',
+  juomasekoitus: 'long-drink',
+  // Non-alcoholic beverage groups.
+  virvoitusjuomat: 'non-alcoholic',
+  'soft drinks': 'non-alcoholic',
+  'energy drink': 'non-alcoholic',
+  'alkoholittomat juomat': 'non-alcoholic',
 };
 
 /** Explicit "other" tokens in the sources we ingest — mappable, unlike garbage. */
@@ -77,6 +116,11 @@ const EXPLICIT_OTHER_TOKENS: ReadonlySet<string> = new Set([
   'other',
   'annat', // SE
   'muu', // FI
+  // alks.fi explicit-other spellings (sweep decision 2026-09-09) —
+  // same treatment as 'muu': honest 'other', never a guessed beverage type.
+  'muut', // FI plural
+  'muut juomat', // FI "other drinks"
+  'other drinks', // EN
 ]);
 
 /**

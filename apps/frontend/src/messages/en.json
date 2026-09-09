@@ -190,7 +190,8 @@
       "foreignRetailPrice": "Foreign retail price",
       "transportCost": "Transport cost",
       "alcoholExciseEstimate": "Alcohol excise estimate",
-      "containerDutyEstimate": "Container duty estimate"
+      "containerDutyEstimate": "Container duty estimate",
+      "importVatEstimate": "Import VAT estimate"
     }
   },
   "DisclaimerBanner": {

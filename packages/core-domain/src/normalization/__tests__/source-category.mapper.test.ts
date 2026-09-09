@@ -90,6 +90,86 @@ describe('mapSourceCategory — non-Swedish sources keep working', () => {
   });
 });
 
+describe('mapSourceCategory — alks.fi catalog vocabulary (sweep patch 2026-09-09)', () => {
+  it('maps the strong-alcohol departments and spirit nouns to spirits', () => {
+    for (const term of [
+      'Väkevä',
+      'EE-str',
+      'Akvavit',
+      'Rommi',
+      'Viski',
+      'Calvados',
+      'Armagnac',
+      'Rakija',
+    ]) {
+      const result = mapSourceCategory(term);
+      expect(result, `term "${term}" must map`).not.toBeNull();
+      expect(result!.canonicalCategory).toBe('spirits');
+      expect(result!.taxCategory).toBe('spirits');
+    }
+  });
+
+  it('maps Finnish wine nouns and the sparkling group to the wine family', () => {
+    expect(mapSourceCategory('Punaviini')).toEqual({
+      canonicalCategory: 'wine',
+      taxCategory: 'wine_still',
+    });
+    expect(mapSourceCategory('Valkoviini')).toEqual({
+      canonicalCategory: 'wine',
+      taxCategory: 'wine_still',
+    });
+    expect(mapSourceCategory('Kuohuviini ja samppanja')).toEqual({
+      canonicalCategory: 'sparkling-wine',
+      taxCategory: 'wine_sparkling',
+    });
+  });
+
+  it('maps the Finnish vermouth spelling to fortified wine', () => {
+    expect(mapSourceCategory('Vermutti')).toEqual({
+      canonicalCategory: 'fortified-wine',
+      taxCategory: 'intermediate_products',
+    });
+  });
+
+  it('maps plural and shop-group beer terms like their singular', () => {
+    expect(mapSourceCategory('Oluet')!.canonicalCategory).toBe('beer');
+    expect(mapSourceCategory('Oluet')!.taxCategory).toBe('beer');
+    expect(mapSourceCategory('EE-olutit')!.taxCategory).toBe('beer');
+  });
+
+  it('maps the plural "Cocktails" and "Juomasekoitus" like their singular — long drink', () => {
+    expect(mapSourceCategory('Cocktails')).toEqual({
+      canonicalCategory: 'long-drink',
+      taxCategory: 'other_fermented',
+    });
+    expect(mapSourceCategory('Juomasekoitus')!.canonicalCategory).toBe('long-drink');
+  });
+
+  it('maps non-alcoholic beverage groups to non-alcoholic', () => {
+    for (const term of [
+      'Virvoitusjuomat',
+      'Soft drinks',
+      'Energy drink',
+      'Alkoholittomat juomat',
+    ]) {
+      expect(mapSourceCategory(term)!.canonicalCategory).toBe('non-alcoholic');
+    }
+  });
+
+  it('maps the explicit "other drinks" spellings to other — never a guessed type', () => {
+    for (const term of ['Muut', 'Muut juomat', 'Other drinks']) {
+      expect(mapSourceCategory(term)!.canonicalCategory).toBe('other');
+      expect(mapSourceCategory(term)!.taxCategory).toBe('other_fermented');
+    }
+  });
+
+  it('still refuses merchandising groups with no beverage meaning', () => {
+    for (const term of ['Joulutuotteet', 'Tulevat tuotteet', 'Countries', 'Siirappi']) {
+      expect(mapSourceCategory(term), `term "${term}" must stay unmapped`).toBeNull();
+    }
+  });
+});
+
 describe('mapSourceCategory — unmappable categories', () => {
   it('returns null for an unrecognized string — flagged, never fallback-assigned', () => {
     expect(mapSourceCategory('Kaffe')).toBeNull();

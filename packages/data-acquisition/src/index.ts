@@ -81,6 +81,9 @@ export { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
 
 export { AlkoFeedAdapter, parseAlkoAssortment } from './adapters/alko.adapter';
 
+export { AlksFeedAdapter } from './adapters/alks.adapter';
+export { parseAlksStoreProducts } from './adapters/alks.parser';
+
 export type { IUpsertRepository, UpsertProductInput, UpsertOfferInput, UpsertResult, UpsertOfferResult } from './interfaces/upsert-port.interface';
 export { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
 
@@ -152,6 +155,7 @@ import { FEED_ADAPTERS_TOKEN } from './interfaces/feed-adapter.interface';
 import { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
 import type { IFeedAdapter } from './interfaces/feed-adapter.interface';
 import { AlkoFeedAdapter } from './adapters/alko.adapter';
+import { AlksFeedAdapter } from './adapters/alks.adapter';
 import { DrizzleUpsertRepository } from './adapters/upsert-port.adapter';
 import { PipelinePriceIngestionAdapter } from './adapters/pipeline-price-ingestion.adapter';
 import { PipelineTransportRateAdapter } from './adapters/pipeline-transport-rate.adapter';
@@ -187,20 +191,27 @@ import type { ICarrierRateSource } from './interfaces/carrier-rate-source.port';
     DataQualityService,
     ContentLintService,
 
-    // Feed adapter — registered as a Map keyed by merchantId.
-    // Alko-only (change drop-sweden-eur-only-alko-benchmark): the
-    // domestic reference merchant through the same adapter surface and
-    // governance gate. Its registry row keeps an empty feedUrl until a
-    // live feed is entitled — the golden fixture pins the parser.
+    // Feed adapters — registered as a Map keyed by merchantId.
+    // alko (change drop-sweden-eur-only-alko-benchmark): the domestic
+    // reference merchant through the same adapter surface and governance
+    // gate; its registry row keeps an empty feedUrl until a live feed is
+    // entitled — the golden fixture pins the parser. alks (change
+    // alks-feed-and-import-vat): the alks.fi store as the second row,
+    // resolved through the same map.
     AlkoFeedAdapter,
+    AlksFeedAdapter,
     {
       provide: FEED_ADAPTERS_TOKEN,
-      useFactory: (alko: AlkoFeedAdapter): Map<string, IFeedAdapter> => {
+      useFactory: (
+        alko: AlkoFeedAdapter,
+        alks: AlksFeedAdapter,
+      ): Map<string, IFeedAdapter> => {
         const map = new Map<string, IFeedAdapter>();
         map.set(alko.merchantId, alko);
+        map.set(alks.merchantId, alks);
         return map;
       },
-      inject: [AlkoFeedAdapter],
+      inject: [AlkoFeedAdapter, AlksFeedAdapter],
     },
 
     // Rate-review scheduler with default 24h interval

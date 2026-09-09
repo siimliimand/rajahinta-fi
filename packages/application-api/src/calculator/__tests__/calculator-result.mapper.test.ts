@@ -123,6 +123,7 @@ function makeProduct(
     regulatoryClassification: 'beer',
     depositSystemStatus: true,
     ean: null,
+    weightGrams: null,
     createdAt: CALCULATED_AT,
     updatedAt: CALCULATED_AT,
     ...overrides,
@@ -354,6 +355,63 @@ describe('mapCalculationRecordToResult', () => {
       containerVersionLabel: null,
     });
     expect(result.metadata.datasetVersions).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // Import-VAT line (task 4.3, design D6)
+  // -------------------------------------------------------------------------
+
+  /** The VAT line the orchestrator persists for a foreign-seller record. */
+  const PERSISTED_VAT_LINE: ItemizedCost = {
+    label: 'Import VAT (estimated)',
+    category: 'importVatEstimate',
+    cents: 918,
+    reliability: 'VERIFIED',
+    rateVersionId: 'import-vat-2024.2',
+    calculatedAt: '2026-08-20T12:34:56.789Z',
+    breakdown: [
+      { label: 'Retail price', category: 'foreignRetailPrice', cents: 2460, reliability: 'VERIFIED' },
+      { label: 'Transport', category: 'transportCost', cents: 1490, reliability: 'VERIFIED' },
+      { label: 'Alcohol excise', category: 'alcoholExciseEstimate', cents: 1160, reliability: 'VERIFIED' },
+      { label: 'Container duty', category: 'containerDutyEstimate', cents: 34, reliability: 'VERIFIED' },
+    ],
+  };
+
+  it('carries the import-VAT line verbatim with provenance, base breakdown, and the flat figure', () => {
+    const result = mapCalculationRecordToResult({
+      record: makeRecord({
+        breakdown: [...PERSISTED_BREAKDOWN, PERSISTED_VAT_LINE],
+        totalCents: 5144 + 918,
+      }),
+      product: makeProduct(),
+      exciseVersionLabel: 'v3.0-2026',
+      containerVersionLabel: 'v2.0-2025',
+    });
+
+    const vatLine = result.itemizedCosts.find(
+      (c) => c.category === 'importVatEstimate',
+    );
+    expect(vatLine).toEqual(PERSISTED_VAT_LINE);
+    expect(result.importVatEstimate).toBe(918);
+    // The nested base breakdown survives the round-trip.
+    expect(vatLine!.breakdown).toHaveLength(4);
+    expect(vatLine!.breakdown!.every((b) => b.category !== undefined)).toBe(
+      true,
+    );
+  });
+
+  it('serves a pre-change record without an importVatEstimate key (absence is normal)', () => {
+    const result = mapCalculationRecordToResult({
+      record: makeRecord(),
+      product: makeProduct(),
+      exciseVersionLabel: 'v3.0-2026',
+      containerVersionLabel: 'v2.0-2025',
+    });
+
+    expect(
+      result.itemizedCosts.some((c) => c.category === 'importVatEstimate'),
+    ).toBe(false);
+    expect('importVatEstimate' in result).toBe(false);
   });
 
   it('serves a pre-change record with no alkoBenchmark key (spec application-api benchmark scenario)', () => {

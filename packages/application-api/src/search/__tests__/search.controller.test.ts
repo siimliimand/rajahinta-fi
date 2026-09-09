@@ -45,6 +45,7 @@ const PROD_Z = {
   regulatoryClassification: 'beer',
   depositSystemStatus: false,
   ean: '0642000123456',
+  weightGrams: 520, // 0.33 l glass bottle, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 };
@@ -61,6 +62,7 @@ const PROD_A = {
   regulatoryClassification: 'beer',
   depositSystemStatus: false,
   ean: '0642000654321',
+  weightGrams: 720, // 0.50 l glass bottle, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 };
@@ -80,6 +82,7 @@ const PROD_KARHU_NAME = {
   regulatoryClassification: 'beer',
   depositSystemStatus: true,
   ean: '0641000111111',
+  weightGrams: 345, // 0.33 l can, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 };
@@ -96,6 +99,7 @@ const PROD_KARHU_BRAND = {
   regulatoryClassification: 'beer',
   depositSystemStatus: true,
   ean: '0641000222222',
+  weightGrams: 345, // 0.33 l can, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 };

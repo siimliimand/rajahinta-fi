@@ -76,7 +76,7 @@ async function goldenCalculate(
 // ---------------------------------------------------------------------------
 
 describe('Golden over HTTP — golden-dataset.test.ts', () => {
-  it('Case 1 — beer qty=1 carrierA: total 441 = 200 + 150 + 91 + 0, DistanceSelling HIGH, MEDIUM confidence', async () => {
+  it('Case 1 — beer qty=1 carrierA: base 441 = 200 + 150 + 91 + 0, import VAT 112, total 553, DistanceSelling HIGH, MEDIUM confidence', async () => {
     const { db, d1 } = openMigratedD1();
     seedGoldenDataset(db);
     seedGoldenTransport(db, [OFFER_CARRIER_A]);
@@ -92,7 +92,8 @@ describe('Golden over HTTP — golden-dataset.test.ts', () => {
     expect(result.transportCost).toBe(150);
     expect(result.alcoholExciseEstimate).toBe(91);
     expect(result.containerDutyEstimate).toBe(0);
-    expect(result.totalCents).toBe(441);
+    expect(result.importVatEstimate).toBe(112); // round(441 × 0.255), half-up
+    expect(result.totalCents).toBe(553); // base 441 + import VAT 112
     expect(result.currency).toBe('EUR');
     expect(result.classification).toMatchObject({
       classification: 'DistanceSelling',
@@ -110,6 +111,7 @@ describe('Golden over HTTP — golden-dataset.test.ts', () => {
       transportOfferId: 900,
     });
     expect(result.metadata.datasetVersions).toContain('v1.0-2024');
+    expect(result.metadata.datasetVersions).toContain('import-vat-2024.2');
   });
 
   it('Case 1b — the persisted golden result reconstructs over GET /calculator/result/:id', async () => {
@@ -133,13 +135,13 @@ describe('Golden over HTTP — golden-dataset.test.ts', () => {
     );
     expect(res.status).toBe(200);
     const reconstructed = (await res.json()) as Record<string, any>;
-    expect(reconstructed.totalCents).toBe(441);
+    expect(reconstructed.totalCents).toBe(553); // base 441 + import VAT 112
     expect(reconstructed.alcoholExciseEstimate).toBe(91);
     expect(reconstructed.containerDutyEstimate).toBe(0);
     expect(reconstructed.calculationRecordId).toBe(posted.calculationRecordId);
   });
 
-  it('Case 2 — wine qty=3 carrierB: retail 900, excise 1026, transport 200 (unscaled), total 2126, DistanceBuying', async () => {
+  it('Case 2 — wine qty=3 carrierB: retail 900, excise 1026, transport 200 (unscaled), base 2126 + VAT 542 = 2668, DistanceBuying', async () => {
     const { db, d1 } = openMigratedD1();
     seedGoldenDataset(db);
     seedGoldenTransport(db, [OFFER_CARRIER_B]);
@@ -155,12 +157,13 @@ describe('Golden over HTTP — golden-dataset.test.ts', () => {
     expect(result.alcoholExciseEstimate).toBe(1026); // 342 × 3
     expect(result.containerDutyEstimate).toBe(0);
     expect(result.transportCost).toBe(200); // per-shipment, not × 3
-    expect(result.totalCents).toBe(2126);
+    expect(result.importVatEstimate).toBe(542); // round(2126 × 0.255), half-up; transport enters the base once
+    expect(result.totalCents).toBe(2668); // base 2126 + import VAT 542
     expect(result.classification).toMatchObject({ classification: 'DistanceBuying' });
     expect(result.confidence).toBe('MEDIUM');
   });
 
-  it('Case 3 — spirits qty=1, transport unavailable: transport 0, total 2034, LOW confidence', async () => {
+  it('Case 3 — spirits qty=1, transport unavailable: transport 0, base 2034 + VAT 519 = 2553, LOW confidence', async () => {
     const { db, d1 } = openMigratedD1();
     seedGoldenDataset(db);
     // No transport rows at all — the graceful-degradation path.
@@ -173,7 +176,7 @@ describe('Golden over HTTP — golden-dataset.test.ts', () => {
     );
 
     expect(result.transportCost).toBe(0);
-    expect(result.totalCents).toBe(2034); // 500 + 0 + 1534 + 0
+    expect(result.totalCents).toBe(2553); // base 500 + 0 + 1534 + 0 = 2034, import VAT round(2034 × 0.255) = 519
     expect(result.metadata.transportOfferId).toBeNull();
     expect(result.classification).toMatchObject({ classification: 'DistanceBuying' });
     expect(result.confidence).toBe('LOW');
@@ -198,7 +201,7 @@ describe('Golden over HTTP — golden-dataset.test.ts', () => {
     expect(String(body.reason)).toContain('classification');
   });
 
-  it('Case 5 — multiple EUR offers: cheapest wins (112), no exclusion path, total 441 EUR', async () => {
+  it('Case 5 — multiple EUR offers: cheapest wins (112), no exclusion path, base 441 + VAT 112 = 553 EUR', async () => {
     const { db, d1 } = openMigratedD1();
     seedGoldenDataset(db);
     seedGoldenTransport(db, [OFFER_CARRIER_A]);
@@ -212,7 +215,7 @@ describe('Golden over HTTP — golden-dataset.test.ts', () => {
 
     expect(result.metadata.retailOfferIds).toEqual([112]);
     expect(result.foreignRetailPrice).toBe(200);
-    expect(result.totalCents).toBe(441); // 200 + 150 + 91 + 0
+    expect(result.totalCents).toBe(553); // base 200 + 150 + 91 + 0 = 441, import VAT 112
     expect(result.currency).toBe('EUR');
     // EUR-only means the exclusion concept is gone from the result
     // (design D3, change drop-sweden-eur-only-alko-benchmark).
@@ -245,9 +248,12 @@ interface PerCategoryCase {
   /** Closed-form golden values (per-category.test.ts oracle). */
   readonly expectExciseCents: number;
   readonly expectContainerCents: number;
-  /** retail + transport + excise + container. */
+  /** retail + transport + excise + container (the VAT base), then import VAT at 25.5% (half-up) on top. */
   readonly expectTotalCents: number;
 }
+
+/** Every per-category case is a foreign seller into FI, so the total carries import VAT. */
+const withImportVat = (baseCents: number): number => baseCents + Math.round(baseCents * 0.255);
 
 const PER_CATEGORY_CASES: PerCategoryCase[] = [
   {
@@ -259,7 +265,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     transportPriceCents: 100,
     expectExciseCents: 25, // round(28.35 × 0.027 × 0.33 × 100)
     expectContainerCents: 0, // deposit system → exempt
-    expectTotalCents: 150 + 100 + 25 + 0,
+    expectTotalCents: withImportVat(150 + 100 + 25 + 0),
   },
   {
     name: '8.5% beer → BEER_FULL band: excise 102',
@@ -270,7 +276,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     transportPriceCents: 100,
     expectExciseCents: 102, // round(36.20 × 0.085 × 0.33 × 100)
     expectContainerCents: 0,
-    expectTotalCents: 250 + 100 + 102 + 0,
+    expectTotalCents: withImportVat(250 + 100 + 102 + 0),
   },
   {
     name: '11% sparkling wine → wine bands: excise 342',
@@ -281,7 +287,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     transportPriceCents: 200,
     expectExciseCents: 342, // round(4.56 × 0.75 × 100)
     expectContainerCents: 0,
-    expectTotalCents: 800 + 200 + 342 + 0,
+    expectTotalCents: withImportVat(800 + 200 + 342 + 0),
   },
   {
     name: '15% intermediate → INTERMEDIATE_LOW: excise 284',
@@ -292,7 +298,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     transportPriceCents: 200,
     expectExciseCents: 284, // round(5.68 × 0.5 × 100)
     expectContainerCents: 0,
-    expectTotalCents: 600 + 200 + 284 + 0,
+    expectTotalCents: withImportVat(600 + 200 + 284 + 0),
   },
   {
     name: "5% other fermented → OTHER_BAND_2: excise 99",
@@ -303,7 +309,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     transportPriceCents: 150,
     expectExciseCents: 99, // round(1.98 × 0.5 × 100)
     expectContainerCents: 0,
-    expectTotalCents: 350 + 150 + 99 + 0,
+    expectTotalCents: withImportVat(350 + 150 + 99 + 0),
   },
   {
     name: 'no-deposit beer → container duty 26',
@@ -314,7 +320,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     transportPriceCents: 150,
     expectExciseCents: 91,
     expectContainerCents: 26, // round(0.51 × 0.5 × 100)
-    expectTotalCents: 180 + 150 + 91 + 26,
+    expectTotalCents: withImportVat(180 + 150 + 91 + 26),
   },
   {
     name: '0% ABV beer → excise 0',
@@ -325,7 +331,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     transportPriceCents: 100,
     expectExciseCents: 0,
     expectContainerCents: 0,
-    expectTotalCents: 120 + 100 + 0 + 0,
+    expectTotalCents: withImportVat(120 + 100 + 0 + 0),
   },
   {
     name: 'null-deposit beer → container duty 26 ESTIMATED',
@@ -336,7 +342,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     transportPriceCents: 150,
     expectExciseCents: 91,
     expectContainerCents: 26,
-    expectTotalCents: 190 + 150 + 91 + 26,
+    expectTotalCents: withImportVat(190 + 150 + 91 + 26),
   },
 ];
 

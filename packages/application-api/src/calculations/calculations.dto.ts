@@ -40,4 +40,12 @@ export class CalculateLandedCostDto {
   /** Whether the packaging participates in the Finnish deposit-return system. */
   depositSystemVerified!: boolean;
   transactionClass!: 'distance-selling' | 'distance-buying' | 'traveller-import';
+  /**
+   * Optional import-VAT input (task 4.3, design D6): the seller's ISO
+   * 3166-1 alpha-2 country. When present and not 'FI', the response gains
+   * an import-VAT term computed on the same versioned base the main
+   * calculator uses; when absent or 'FI' (domestic), the term is null and
+   * contributes nothing — the pre-change behavior.
+   */
+  sellerCountry?: string | null;
 }

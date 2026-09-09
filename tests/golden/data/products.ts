@@ -1,11 +1,17 @@
 /**
- * Golden-dataset mock product data — v2.2.
+ * Golden-dataset mock product data — v3.0.
  *
  * Every product in the golden dataset has a fixed ID, known input
  * parameters, and manually verified expected outputs.  These values
  * should never change without a version bump and a corresponding update
  * to every test assertion in golden-dataset.test.ts.
  *
+ * @version 3.0
+ *   2026-09-09: import-VAT golden vectors (task 4.4, change
+ *   alks-feed-and-import-vat) — foreign-seller totals include the VAT
+ *   line, so Case 1/2/3/5 expected totals grow by the 25.5 % VAT amount;
+ *   domestic offer (FI) added for the byte-identity baseline, where the
+ *   VAT line is absent exactly as before the change.
  * @version 2.2
  *   2026-09-06: EUR-only offers (change drop-sweden-eur-only-alko-benchmark,
  *   design D3) — the mixed-currency case becomes a multi-EUR-offer price
@@ -36,7 +42,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 /** Bump this when adding scenarios or changing expected values. */
-export const GOLDEN_DATASET_VERSION = '2.2' as const;
+export const GOLDEN_DATASET_VERSION = '3.0' as const;
 
 // ---------------------------------------------------------------------------
 // Product definitions
@@ -63,6 +69,22 @@ export const OFFER_BEER: CalculatorRetailOfferData = {
   priceCents: 200,
   merchant: 'beverage-de',
   country: 'DE',
+  reliabilityStatus: 'EXACT',
+};
+
+/**
+ * Domestic offer for product 1 — seller established in the destination
+ * market (FI → FI).  Used by the domestic byte-identity baseline (task
+ * 4.4): the import-VAT gate (`offer.country !== destination`) fails, so
+ * the result must carry no VAT line anywhere — exactly the pre-change
+ * shape.  Merchant is intentionally not 'alko' so no benchmark
+ * enrichment enters the pinned vector.
+ */
+export const OFFER_BEER_DOMESTIC: CalculatorRetailOfferData = {
+  id: 115,
+  priceCents: 340,
+  merchant: 'beverage-fi',
+  country: 'FI',
   reliabilityStatus: 'EXACT',
 };
 

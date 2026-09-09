@@ -374,7 +374,9 @@ describe('Composition smoke — forRoot chain (CoreDomain.forRoot)', () => {
       //   container: deposit exempt → 0¢
       //   transport: DE→FI, carrierA, 150¢
       //   retail: 200¢
-      //   total: 200 + 150 + 91 + 0 + 0 = 441
+      //   base: 200 + 150 + 91 + 0 + 0 = 441
+      //   import VAT (foreign seller, 25.5%): round(441 × 0.255) = 112
+      //   total: 441 + 112 = 553
       expect(result.foreignRetailPrice).toBe(200);
       expect(result.transportCost).toBe(150);
       expect(result.alcoholExciseEstimate).toBe(91);
@@ -382,7 +384,8 @@ describe('Composition smoke — forRoot chain (CoreDomain.forRoot)', () => {
       // Task 10.3 removed otherCharges from the result shape — the key
       // must be absent, not zero.
       expect('otherCharges' in result).toBe(false);
-      expect(result.totalCents).toBe(441);
+      expect(result.importVatEstimate).toBe(112);
+      expect(result.totalCents).toBe(553);
 
       // EUR-only contract (drop-sweden-eur-only-alko-benchmark): the
       // exclusion path and provenance fields no longer exist — the keys

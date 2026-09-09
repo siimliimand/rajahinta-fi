@@ -387,6 +387,8 @@ describe('D1ProductSearchRepository — contract row shapes', () => {
       regulatoryClassification: 'beer',
       depositSystemStatus: true,
       ean: '0641000111111',
+      // Seed row carries no weight — the nullable column maps to null.
+      weightGrams: null,
       createdAt: expect.any(Date),
       updatedAt: expect.any(Date),
     });
@@ -491,6 +493,96 @@ describe('D1ProductSearchRepository — contract row shapes', () => {
         ean: null,
       }),
     ).rejects.toBeInstanceOf(TypeError);
+  });
+
+  // -------------------------------------------------------------------------
+  // Feed weight persistence (task 3.1, design D7, change
+  // alks-feed-and-import-vat)
+  // -------------------------------------------------------------------------
+
+  it('spec: weight 0.53 kg → product master row stores weight_grams = 530', async () => {
+    const created = await repo.create({
+      name: 'Herb Liqueur 35% 0.5 l PET',
+      manufacturer: 'Alks Partner',
+      brand: 'Herb Liqueur',
+      category: 'spirits',
+      alcoholByVolume: '0.350',
+      unitVolume: '0.50',
+      containerType: 'plastic',
+      regulatoryClassification: 'spirits',
+      depositSystemStatus: false,
+      ean: '0474007700591',
+      weightGrams: 530,
+    });
+
+    expect(created.weightGrams).toBe(530);
+    const reread = await repo.findById(created.id);
+    expect(reread?.weightGrams).toBe(530);
+  });
+
+  it('spec: absent weight → weight_grams stays null and no error is reported', async () => {
+    const created = await repo.create({
+      name: 'German Pilsner 4.8% 0,5 l',
+      manufacturer: 'Kulbrau',
+      brand: 'Kulbrau',
+      category: 'beer',
+      alcoholByVolume: '0.048',
+      unitVolume: '0.50',
+      containerType: 'glass',
+      regulatoryClassification: 'beer',
+      depositSystemStatus: false,
+      ean: '0426012345678',
+    });
+
+    expect(created.weightGrams).toBeNull();
+  });
+
+  it('upsertByEan refresh overwrites the stored weight, including back to null', async () => {
+    const ean = '0474007700592';
+    await repo.create({
+      name: 'Weighted Klone',
+      manufacturer: 'Alks Partner',
+      brand: 'Weighted',
+      category: 'beer',
+      alcoholByVolume: '0.050',
+      unitVolume: '0.33',
+      containerType: 'can',
+      regulatoryClassification: 'beer',
+      depositSystemStatus: false,
+      ean,
+      weightGrams: 1250,
+    });
+
+    const heavier = await repo.upsertByEan({
+      name: 'Weighted Klone',
+      manufacturer: 'Alks Partner',
+      brand: 'Weighted',
+      category: 'beer',
+      alcoholByVolume: '0.050',
+      unitVolume: '0.33',
+      containerType: 'can',
+      regulatoryClassification: 'beer',
+      depositSystemStatus: false,
+      ean,
+      weightGrams: 530,
+    });
+    expect(heavier.weightGrams).toBe(530);
+
+    // A weight-less refresh of the same product persists null — the feed
+    // is the source of truth for the column (design D7).
+    const weightless = await repo.upsertByEan({
+      name: 'Weighted Klone',
+      manufacturer: 'Alks Partner',
+      brand: 'Weighted',
+      category: 'beer',
+      alcoholByVolume: '0.050',
+      unitVolume: '0.33',
+      containerType: 'can',
+      regulatoryClassification: 'beer',
+      depositSystemStatus: false,
+      ean,
+    });
+    expect(weightless.weightGrams).toBeNull();
   });
 
   it('keeps the raw shim database handle usable for direct SQL assertions', () => {

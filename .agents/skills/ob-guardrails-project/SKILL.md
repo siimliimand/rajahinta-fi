@@ -31,7 +31,8 @@ license: MIT
 - **Unknown deposit status = ESTIMATED.** If deposit-system status cannot be determined, the container-duty calculation must be explicitly flagged as ESTIMATED, never silently assumed either way.
 - **Rates are never auto-published.** A recurring job checks for newly published official rate changes and creates a task for manual/legal confirmation before any new dataset version goes live.
 - **No feature flags.** The flag and launch-gate systems were removed (2026-09-07, owner decision): every feature ships unconditionally enabled, and no `FF_*`/`LAUNCH_GATE_*` env var may gate behavior. Rollback is `wrangler rollback`, not a flag flip. Do not reintroduce flag-gating without an explicit owner decision.
-- **Every number is explainable.** Every calculated figure (excise, container duty, transport, total) must be traceable to the exact input values, rate dataset version, and timestamp that produced it.
+- **Every number is explainable.** Every calculated figure (excise, container duty, transport, import VAT, total) must be traceable to the exact input values, rate dataset version, and timestamp that produced it.
+- **Import VAT is foreign-seller-only and domestically absent.** The import-VAT line applies only when the seller country differs from the destination, using the same seller/buyer signal transaction classification consumes; domestic results carry no VAT surface anywhere (absence, not a displayed zero), pinned byte-identical to the pre-VAT engine. The VAT base composition is part of the versioned dataset, never inline code.
 - **Insight surfaces are display-only and factual.** Savings snapshots, price-context figures, allowance citations, and guides never feed calculator, ranking, or basket inputs (compliance tests pin byte-identity), and the content lint bans advice phrasing ("best deal", "good time to buy", "buy now") on all public surfaces.
 
 ## Git Workflow

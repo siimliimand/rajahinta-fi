@@ -55,6 +55,12 @@ export interface RawFeedRecord {
   readonly availability: string;
   /** Direct URL to the product page. */
   readonly sourceUrl: string | null;
+  /**
+   * Feed product weight in grams — optional transport-estimation input
+   * (design D7, change alks-feed-and-import-vat). Feeds that carry no
+   * weight omit the field; the mapping persists null without an error.
+   */
+  readonly weightGrams?: number | null;
 }
 
 /**

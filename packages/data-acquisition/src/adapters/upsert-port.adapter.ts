@@ -41,6 +41,16 @@ import type {
   UpsertOfferResult,
 } from '../interfaces/upsert-port.interface';
 
+/**
+ * Feed weight arrives on the mapped product (the MappedPair widening,
+ * change alks-feed-and-import-vat); plain UpsertProductInput callers
+ * carry none. Absent or non-finite reads as null — the Alko shape.
+ */
+function weightGramsOf(input: UpsertProductInput): number | null {
+  const raw = (input as { weightGrams?: unknown }).weightGrams;
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
+}
+
 @Injectable()
 export class DrizzleUpsertRepository implements IUpsertRepository {
   constructor(
@@ -73,6 +83,7 @@ export class DrizzleUpsertRepository implements IUpsertRepository {
             containerType: input.containerType,
             regulatoryClassification: input.regulatoryClassification,
             depositSystemStatus: input.depositSystemStatus,
+            weightGrams: weightGramsOf(input),
             updatedAt: new Date(),
           })
           .where(eq(productMaster.id, existing[0].id));
@@ -126,6 +137,7 @@ export class DrizzleUpsertRepository implements IUpsertRepository {
         containerType: input.containerType,
         regulatoryClassification: input.regulatoryClassification,
         depositSystemStatus: input.depositSystemStatus,
+        weightGrams: weightGramsOf(input),
         ean: input.ean,
       })
       .returning({ id: productMaster.id });

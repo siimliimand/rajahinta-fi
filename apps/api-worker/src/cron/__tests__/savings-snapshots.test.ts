@@ -170,7 +170,11 @@ describe('handleSavingsSnapshots', () => {
     });
     expect(row.gap_cents).toBe(expectedGap.gapCents);
     expect(row.gap_basis_points).toBe(expectedGap.gapBasisPoints);
-    expect(row.tax_dataset_version).toBe('v1.0-2024+v2.0-2025');
+    // Task 4.3: the landed figure now includes import VAT for the DE
+    // seller, so its provenance names the VAT dataset version too.
+    expect(row.tax_dataset_version).toBe(
+      'v1.0-2024+v2.0-2025+import-vat-2024.2',
+    );
   });
 
   it('writes no row for products without a qualifying Alko reference', async () => {

@@ -10,6 +10,11 @@ export type {
   WeightBracket,
 } from './transport-offer.type';
 export type {
+  TransportWeightBasis,
+  ResolvedEstimationWeight,
+} from './estimation-weight';
+export { resolveEstimationWeight } from './estimation-weight';
+export type {
   BasketItem,
   BasketShippingResult,
   BasketShippingThresholdCheck,

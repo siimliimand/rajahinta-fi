@@ -956,8 +956,17 @@ describe('BasketOptimizerService', () => {
       const r1 = await service.optimize(input);
       const r2 = await service.optimize(input);
 
-      // Same recommended
-      expect(r1.shipments).toEqual(r2.shipments);
+      // Same recommended. The import-VAT line (task 4.3) carries the wall
+      // clock of its computation, which legitimately differs between the
+      // two runs — strip it so the comparison pins ORDER determinism,
+      // which is what this test exists for.
+      const withoutVatTimestamp = (shipments: typeof r1.shipments) =>
+        JSON.parse(JSON.stringify(shipments), (key, value) =>
+          key === 'calculatedAt' ? undefined : value,
+        );
+      expect(withoutVatTimestamp(r1.shipments)).toEqual(
+        withoutVatTimestamp(r2.shipments),
+      );
       // Same alternatives order (merchant-b, merchant-c lexicographically after merchant-a)
       expect(r1.alternatives.map((a) => a.shipments[0].merchant)).toEqual(
         r2.alternatives.map((a) => a.shipments[0].merchant),

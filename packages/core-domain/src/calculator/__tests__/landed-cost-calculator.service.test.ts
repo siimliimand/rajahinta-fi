@@ -65,6 +65,9 @@ const DEFAULT_INPUT: CalculatorInput = {
   quantity: 1,
   destination: 'FI',
   sessionId: 'test-session-1',
+  // Pinned so the import-VAT rate resolution is deterministic (the
+  // effective-date lookup defaults to now, which a v3 seed could move).
+  transactionDate: '2026-03-15T12:00:00.000Z',
 };
 
 // ---------------------------------------------------------------------------
@@ -561,7 +564,7 @@ describe('LandedCostCalculatorService', () => {
       expect(result.calculationRecordId).toBe(42);
     });
 
-    it('includes four itemized cost lines with categories (otherCharges removed, task 10.3)', async () => {
+    it('includes five itemized cost lines for an import (otherCharges removed, task 10.3)', async () => {
       const { service } = createService();
 
       const result = await service.calculate(DEFAULT_INPUT);
@@ -576,6 +579,9 @@ describe('LandedCostCalculatorService', () => {
       expect(byLabel.get('Container duty')!.category).toBe(
         'containerDutyEstimate',
       );
+      expect(byLabel.get('Import VAT (estimated)')!.category).toBe(
+        'importVatEstimate',
+      );
 
       // Every top-level line item carries one of the canonical categories;
       // no line resurrects the removed dead contract.
@@ -584,6 +590,7 @@ describe('LandedCostCalculatorService', () => {
         'transportCost',
         'alcoholExciseEstimate',
         'containerDutyEstimate',
+        'importVatEstimate',
       ]);
       for (const cost of result.itemizedCosts) {
         expect(canonical.has(cost.category)).toBe(true);
@@ -600,11 +607,14 @@ describe('LandedCostCalculatorService', () => {
       expect(result.transportCost).toBe(150);
       expect(result.alcoholExciseEstimate).toBe(30);
       expect(result.containerDutyEstimate).toBe(26);
+      // Import: 200 + 150 + 30 + 26 = 406 base; 25.5 % → 103.53 → 104.
+      expect(result.importVatEstimate).toBe(104);
       expect(result.totalCents).toBe(
         result.foreignRetailPrice +
           result.transportCost +
           result.alcoholExciseEstimate +
-          result.containerDutyEstimate,
+          result.containerDutyEstimate +
+          result.importVatEstimate!,
       );
     });
 
@@ -714,7 +724,13 @@ describe('LandedCostCalculatorService', () => {
 
       const result = await service.calculate(DEFAULT_INPUT);
 
-      expect(result.metadata.datasetVersions).toEqual(['v1', 'v1']);
+      // Excise + container duty mocks, plus the import-VAT version the
+      // consignment resolved (idempotency/cache keys derive from these).
+      expect(result.metadata.datasetVersions).toEqual([
+        'v1',
+        'v1',
+        'import-vat-2024.2',
+      ]);
     });
   });
 
@@ -844,6 +860,148 @@ describe('LandedCostCalculatorService', () => {
       const result = await service.calculate(DEFAULT_INPUT);
 
       expect('alkoBenchmark' in result).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Import VAT — itemized line, domestic exclusion, date resolution
+  // (task 4.3, design D6; landed-cost-calculator spec scenarios)
+  // ---------------------------------------------------------------------------
+
+  describe('import VAT (task 4.3, design D6)', () => {
+    /** Base with the default fixtures: 200 + 150 + 30 + 26 = 406. */
+    const BASE_CENTS = 406;
+
+    it('carries the VAT line with amount, rate version, base breakdown, and reliability for a foreign seller', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      const vatLine = result.itemizedCosts.find(
+        (c) => c.category === 'importVatEstimate',
+      );
+      expect(vatLine).toBeDefined();
+      // 406 × 25.5 % = 103.53 → round HALF-UP → 104.
+      expect(vatLine!.cents).toBe(104);
+      expect(vatLine!.rateVersionId).toBe('import-vat-2024.2');
+      expect(vatLine!.reliability).toBe('VERIFIED');
+      expect(vatLine!.calculatedAt).toBe('2026-03-15T12:00:00.000Z');
+
+      // The base breakdown names each component with its own amount —
+      // traceable to the exact inputs (transport enters once, unscaled).
+      const base = new Map(vatLine!.breakdown!.map((b) => [b.label, b.cents]));
+      expect(base.get('Retail price')).toBe(200);
+      expect(base.get('Transport')).toBe(150);
+      expect(base.get('Alcohol excise')).toBe(30);
+      expect(base.get('Container duty')).toBe(26);
+      expect([...base.values()].reduce((s, v) => s + v, 0)).toBe(BASE_CENTS);
+    });
+
+    it('includes the VAT amount in totalCents exactly when the line is present', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.totalCents).toBe(BASE_CENTS + 104);
+      expect(result.importVatEstimate).toBe(104);
+    });
+
+    it('adds the VAT dataset version to datasetVersions', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.metadata.datasetVersions).toContain('import-vat-2024.2');
+    });
+
+    it('persists the VAT line inside the record breakdown', async () => {
+      const calculationRecords = createMockCalculationRecordPort();
+      const { service, mocks } = createService({ calculationRecords });
+
+      await service.calculate(DEFAULT_INPUT);
+
+      const createCall = (mocks.calculationRecords.create as ReturnType<typeof vi.fn>)
+        .mock.calls[0][0];
+      const persisted = createCall.breakdown as Array<{ category: string }>;
+      expect(
+        persisted.some((c) => c.category === 'importVatEstimate'),
+      ).toBe(true);
+      expect(createCall.totalCents).toBe(BASE_CENTS + 104);
+    });
+
+    it('omits the line entirely for a domestic offer — absence, not a displayed zero', async () => {
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue([
+          {
+            id: 100,
+            priceCents: 200,
+            merchant: 'alko',
+            country: 'FI',
+            reliabilityStatus: 'VERIFIED',
+          },
+        ]),
+      });
+      const calculationRecords = createMockCalculationRecordPort();
+      const { service, mocks } = createService({
+        productData,
+        calculationRecords,
+      });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(
+        result.itemizedCosts.some((c) => c.category === 'importVatEstimate'),
+      ).toBe(false);
+      expect('importVatEstimate' in result).toBe(false);
+      // The total equals the pre-change engine's component sum.
+      expect(result.totalCents).toBe(BASE_CENTS);
+      expect(result.metadata.datasetVersions).toEqual(['v1', 'v1']);
+
+      const createCall = (mocks.calculationRecords.create as ReturnType<typeof vi.fn>)
+        .mock.calls[0][0];
+      const persisted = createCall.breakdown as Array<{ category: string }>;
+      expect(persisted.some((c) => c.category === 'importVatEstimate')).toBe(
+        false,
+      );
+    });
+
+    it('resolves the rate version by the transaction date (2024-08-15 → 24 %, 2024-09-15 → 25.5 %)', async () => {
+      const { service } = createService();
+
+      const before = await service.calculate({
+        ...DEFAULT_INPUT,
+        transactionDate: '2024-08-15T10:00:00.000Z',
+      });
+      const after = await service.calculate({
+        ...DEFAULT_INPUT,
+        transactionDate: '2024-09-15T10:00:00.000Z',
+      });
+
+      const beforeLine = before.itemizedCosts.find(
+        (c) => c.category === 'importVatEstimate',
+      );
+      const afterLine = after.itemizedCosts.find(
+        (c) => c.category === 'importVatEstimate',
+      );
+
+      // 406 × 24 % = 97.44 → 97; 406 × 25.5 % = 103.53 → 104.
+      expect(beforeLine!.rateVersionId).toBe('import-vat-2024.1');
+      expect(beforeLine!.cents).toBe(97);
+      expect(afterLine!.rateVersionId).toBe('import-vat-2024.2');
+      expect(afterLine!.cents).toBe(104);
+    });
+
+    it('scales retail and per-unit taxes into the base but keeps transport once', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate({ ...DEFAULT_INPUT, quantity: 3 });
+
+      // Base: 600 + 150 + 90 + 78 = 918; 918 × 25.5 % = 234.09 → 234.
+      const vatLine = result.itemizedCosts.find(
+        (c) => c.category === 'importVatEstimate',
+      );
+      expect(vatLine!.cents).toBe(234);
+      expect(result.totalCents).toBe(918 + 234);
     });
   });
 });
