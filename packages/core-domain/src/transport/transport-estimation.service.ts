@@ -1,6 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ITransportOfferQuery, TRANSPORT_OFFER_QUERY } from './transport-offer-query.interface';
 import { selectBestBracketOffer } from './bracket-selection';
+import { resolveEstimationWeight } from './estimation-weight';
 import type { TransportEstimate, TransportOffer } from './transport-offer.type';
 
 // ---------------------------------------------------------------------------
@@ -26,6 +27,13 @@ export class TransportEstimationService {
    * If no weight bracket matches exactly the result carries
    * `reliabilityStatus: 'ESTIMATED'` and uses the closest bracket.
    * An exact weight match carries `reliabilityStatus: 'VERIFIED'`.
+   *
+   * Weight basis (design D7): when `storedWeightGrams` carries the product
+   * master's stored weight, the lookup uses it (grams → kg) and the result
+   * states `weightBasis: 'STORED_PRODUCT_WEIGHT'`; otherwise the lookup
+   * falls back to `weightKg` (the caller's volume-based estimate) with
+   * `weightBasis: 'VOLUME_ESTIMATE'`, unchanged from the pre-D7 behaviour.
+   * `lookupWeightKg` carries whichever weight produced the selection.
    */
   async estimate(
     carrier: string,
@@ -33,7 +41,10 @@ export class TransportEstimationService {
     destination: string,
     weightKg: number,
     packageType: string,
+    storedWeightGrams?: number | null,
   ): Promise<TransportEstimate> {
+    const weight = resolveEstimationWeight(storedWeightGrams, weightKg);
+
     const offers = await this.offerQuery.findByCarrier(carrier);
 
     const candidates = offers.filter(
@@ -47,12 +58,15 @@ export class TransportEstimationService {
       throw new NotFoundError(carrier, origin, destination, packageType);
     }
 
-    const selection = selectBestBracketOffer(candidates, weightKg)!;
+    const selection = selectBestBracketOffer(candidates, weight.weightKg)!;
 
     return {
       offer: selection.offer,
       matchedWeightBracket: selection.offer.weightBracket,
       reliabilityStatus: selection.reliability === 'EXACT' ? 'VERIFIED' : 'ESTIMATED',
+      weightBasis: weight.basis,
+      lookupWeightKg: weight.weightKg,
+      storedWeightGrams: weight.storedWeightGrams,
     };
   }
 

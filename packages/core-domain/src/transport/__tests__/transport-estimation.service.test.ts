@@ -250,6 +250,120 @@ describe('TransportEstimationService', () => {
   });
 
   // -----------------------------------------------------------------------
+  // estimate() — weight basis (task 5.1, design D7)
+  // -----------------------------------------------------------------------
+
+  describe('estimate — weight basis', () => {
+    // Bracket A [0, 0.5] kg and bracket B [0.5, 1] kg — a 0.75 kg volume
+    // estimate selects B, a 480 g stored weight (0.48 kg) selects A, so the
+    // tests prove which weight actually drove the lookup.
+    function makeBracketOffers(): TransportOffer[] {
+      return [
+        makeOffer({
+          id: 1,
+          carrier: 'posti',
+          originCountry: 'DE',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 0, maxKg: 0.5 },
+          priceCents: 1000,
+        }),
+        makeOffer({
+          id: 2,
+          carrier: 'posti',
+          originCountry: 'DE',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 0.5, maxKg: 1 },
+          priceCents: 2000,
+        }),
+      ];
+    }
+
+    it('uses the stored product weight (grams → kg) and states the basis', async () => {
+      const service = new TransportEstimationService(
+        new StubQuery(makeBracketOffers()),
+      );
+
+      const result = await service.estimate(
+        'posti',
+        'DE',
+        'FI',
+        0.75, // volume-based estimate — must NOT drive the lookup
+        'parcel',
+        480, // stored weight → 0.48 kg → bracket A
+      );
+
+      expect(result.weightBasis).toBe('STORED_PRODUCT_WEIGHT');
+      expect(result.lookupWeightKg).toBe(0.48);
+      expect(result.storedWeightGrams).toBe(480);
+      expect(result.offer.priceCents).toBe(1000);
+      expect(result.reliabilityStatus).toBe('VERIFIED');
+    });
+
+    it('falls back to the volume-based estimate when no weight is stored', async () => {
+      const service = new TransportEstimationService(
+        new StubQuery(makeBracketOffers()),
+      );
+
+      const result = await service.estimate('posti', 'DE', 'FI', 0.75, 'parcel');
+
+      expect(result.weightBasis).toBe('VOLUME_ESTIMATE');
+      expect(result.lookupWeightKg).toBe(0.75);
+      expect(result.storedWeightGrams).toBeNull();
+      expect(result.offer.priceCents).toBe(2000);
+    });
+
+    it('treats an explicit null stored weight like an omitted one', async () => {
+      const service = new TransportEstimationService(
+        new StubQuery(makeBracketOffers()),
+      );
+
+      const result = await service.estimate(
+        'posti',
+        'DE',
+        'FI',
+        0.75,
+        'parcel',
+        null,
+      );
+
+      expect(result.weightBasis).toBe('VOLUME_ESTIMATE');
+      expect(result.lookupWeightKg).toBe(0.75);
+      expect(result.storedWeightGrams).toBeNull();
+      expect(result.offer.priceCents).toBe(2000);
+    });
+
+    it('states the stored-weight basis also on the closest-bracket fallback', async () => {
+      const offers = [
+        makeOffer({
+          id: 1,
+          carrier: 'posti',
+          originCountry: 'DE',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 5, maxKg: 10 },
+          priceCents: 3000,
+        }),
+      ];
+      const service = new TransportEstimationService(new StubQuery(offers));
+
+      const result = await service.estimate(
+        'posti',
+        'DE',
+        'FI',
+        0.75,
+        'parcel',
+        480,
+      );
+
+      expect(result.weightBasis).toBe('STORED_PRODUCT_WEIGHT');
+      expect(result.lookupWeightKg).toBe(0.48);
+      expect(result.reliabilityStatus).toBe('ESTIMATED');
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // findOffers()
   // -----------------------------------------------------------------------
 

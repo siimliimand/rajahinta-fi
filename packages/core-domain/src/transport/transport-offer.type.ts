@@ -8,6 +8,7 @@
  */
 
 import type { ReliabilityStatus } from '../reliability/reliability.types';
+import type { TransportWeightBasis } from './estimation-weight';
 
 /** Weight bracket for a transport offer. Either bound may be null (open-ended). */
 export interface WeightBracket {
@@ -36,4 +37,13 @@ export interface TransportEstimate {
   readonly offer: TransportOffer;
   readonly matchedWeightBracket: WeightBracket;
   readonly reliabilityStatus: ReliabilityStatus;
+  /** Which weight produced the carrier-rate lookup (design D7). */
+  readonly weightBasis: TransportWeightBasis;
+  /** The kg value fed to bracket matching — the number the lookup is traceable to. */
+  readonly lookupWeightKg: number;
+  /**
+   * Product-master grams behind `lookupWeightKg`; null when the basis is
+   * the volume estimate (no stored weight exists).
+   */
+  readonly storedWeightGrams: number | null;
 }
