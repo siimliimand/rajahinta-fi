@@ -19,8 +19,17 @@ import type { MetadataRoute } from 'next';
 import { getServerProductListing, SITE_URL, BASE_URL } from '@/lib/api';
 import { routing } from '@/i18n/routing';
 
-/** Static destinations every locale offers (header navigation surface). */
-const STATIC_PATHS = ['', '/calculator', '/compare', '/basket', '/ranking', '/blog'];
+/** Static destinations every locale offers (header navigation surface;
+ * /allowances added by insight-surfaces task 4.2). */
+const STATIC_PATHS = [
+  '',
+  '/calculator',
+  '/compare',
+  '/basket',
+  '/ranking',
+  '/blog',
+  '/allowances',
+];
 
 /** One catalog row — slug + display title (criteria live per slug). */
 interface CuratedCatalogList {
