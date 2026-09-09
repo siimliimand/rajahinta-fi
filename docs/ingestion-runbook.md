@@ -19,6 +19,7 @@ Every artifact this runbook references is in the repository:
 | Pipeline permission gate | `packages/data-acquisition/src/services/pipeline-orchestrator.service.ts` |
 | Merchant registry seed (incl. `alks`) | `packages/data-platform/src/seed/merchant-registry.seed.ts` |
 | alks adapter | `packages/data-acquisition/src/adapters/alks.adapter.ts` |
+| Full-catalog sweep (read-only audit) | `scripts/alks-catalog-sweep.ts` |
 
 Roles: the **ops lead** executes grants and revocations; the
 **platform engineer** owns the adapter, the registry seed, and the
@@ -230,7 +231,66 @@ recorded in the audit trail.
 
 ---
 
-## 4. Verification checklist (per environment)
+## 4. Catalog sweep (`scripts/alks-catalog-sweep.ts`)
+
+A manual, read-only audit of the live alks catalog (task 7.1). It
+walks the Store API exactly as the adapter does — sequential pages,
+`per_page` 100, `X-WP-TotalPages` bound — and pushes every raw row
+through the production parser (`parseAlksStoreProducts`), so its
+numbers describe what the next ingestion pass would produce. It
+issues GET requests only: no database, no writes, no ingestion. The
+governance gate does not apply to it — running the sweep against a
+PENDING or REVOKED merchant is expected and harmless, and running it
+is never a substitute for a grant.
+
+Run from the repo root (the path is relative to the `data-platform`
+package cwd, same convention as `scripts/seed-d1.ts`):
+
+```bash
+pnpm --filter @rajahinta/data-platform exec tsx ../../scripts/alks-catalog-sweep.ts
+```
+
+Reading the report:
+
+- **Catalog walk.** `X-WP-Total` versus raw rows seen, pages fetched
+  ok, page failures. A `WARNING: rows seen ... differ from
+  X-WP-Total` line means pagination drift or a catalog change
+  mid-walk; re-run before trusting the shares. The script prints
+  `sweep COMPLETE` only with zero page failures and a non-empty walk;
+  otherwise it exits 1 and the shares are not trustworthy.
+- **EAN pattern coverage.** Share of SKUs matching
+  `^[a-z]{2}-\d{13}$`, measured on raw rows so missing or empty SKUs
+  stay in the denominator. Non-matching SKUs are kept by the parser
+  without an EAN and land in the correction queue (design D1); a low
+  share is the signal to reconsider EAN matching for this merchant.
+- **ESTIMATED share.** Parsed records whose ABV (null) or volume
+  (0 ml) could not be parsed from the name — exactly the offers that
+  ingest as ESTIMATED (design D3). A rising share means the name
+  parser needs another iteration.
+- **Category disagreements and drop buckets.** Name-vs-category
+  beverage-type contradictions, the other adapter-level drop
+  categories (no canonical beverage category, non-EUR price, invalid
+  minor-unit price, missing product name), and the KEPT
+  non-matching-SKU bucket. `records parsed + rows dropped` should
+  reconcile with raw rows seen; parse errors matching no known
+  category print a WARNING — the classifier vocabulary has drifted
+  from the parser's wording and the sweep table needs updating.
+
+Treat the numbers as sweep outputs to re-measure, never as pinned
+values. The first full sweep (2026-09-09) reported 2,856 rows, EAN
+coverage 91.3 % before the mapper-vocabulary patch for
+`akvavit`/plural forms landing in parallel, an ESTIMATED share around
+2 %, and category disagreements around 0.6 %.
+
+Re-run the sweep when a parser or category-mapper vocabulary change
+lands (confirm the drop buckets actually shrink), before and after a
+production grant (record the baseline for that environment's
+catalog), or when the correction queue shows an unexplained spike.
+Nothing schedules the sweep — it runs when an operator runs it.
+
+---
+
+## 5. Verification checklist (per environment)
 
 - [ ] Pre-grant: producer skips the merchant, no fetch, no data
       persisted (§0 fail-closed contract).
@@ -239,5 +299,8 @@ recorded in the audit trail.
 - [ ] Audit entry recorded with operator identity and reason.
 - [ ] Next hourly pass enqueues the merchant; first run upserts offers
       and appends observations to R2.
+- [ ] Catalog sweep run against the live Store API (§4) and its
+      EAN / ESTIMATED / disagreement numbers recorded in the change
+      notes or an ops note.
 - [ ] Revocation path exercised once (staging): producer skips the
       merchant again after `REVOKED`.
