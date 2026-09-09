@@ -611,7 +611,11 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
         // container: depositSystem=true → EXEMPTED → 0¢
         // transport: DE→FI, carrierA, 150¢
         // retail: 200¢
-        // total: 200 + 150 + 91 + 0 + 0 = 441
+        // base: 200 + 150 + 91 + 0 + 0 = 441
+        // import VAT: seller DE ≠ FI → 441 × 25.5 % = 112.455 → 112
+        // (half-up; the open version import-vat-2024.2 is effective on
+        // the run date — task 4.3 / design D6)
+        // total: 441 + 112 = 553
         expect(result.foreignRetailPrice).toBe(200);
         expect(result.transportCost).toBe(150);
         expect(result.alcoholExciseEstimate).toBe(91);
@@ -622,7 +626,46 @@ describe('Calculator e2e — HTTP layer with guard enforcement', () => {
         // are gone from the response — keys absent, not empty values.
         expect('excludedOffers' in result).toBe(false);
         expect('originalRetailPrice' in result).toBe(false);
-        expect(result.totalCents).toBe(441);
+        expect(result.totalCents).toBe(553);
+
+        // Import-VAT traceability (mirrors tests/integration/
+        // basket-calculator-consistency.test.ts and the golden suite):
+        // exactly one versioned VAT line, appended last, naming its
+        // dataset version and breaking the 441 base into the four
+        // rule-named components the rate applies to.
+        const vatLines = result.itemizedCosts.filter(
+          (item: { category: string }) => item.category === 'importVatEstimate',
+        );
+        expect(vatLines).toHaveLength(1);
+        const vat = vatLines[0];
+        // The VAT line is appended last in the itemised array.
+        expect(result.itemizedCosts[result.itemizedCosts.length - 1]).toBe(vat);
+        expect(vat.cents).toBe(112);
+        expect(vat.rateVersionId).toBe('import-vat-2024.2');
+
+        // Base breakdown: four named components, in rule order — the
+        // consignment aggregate (transport enters once, not × quantity) —
+        // summing to the 441 base the 25.5 % rate applies to.
+        expect(vat.breakdown.map((b: { category: string }) => b.category)).toEqual([
+          'foreignRetailPrice',
+          'transportCost',
+          'alcoholExciseEstimate',
+          'containerDutyEstimate',
+        ]);
+        expect(vat.breakdown.map((b: { cents: number }) => b.cents)).toEqual([
+          200, 150, 91, 0,
+        ]);
+        const baseCents = vat.breakdown.reduce(
+          (sum: number, b: { cents: number }) => sum + b.cents,
+          0,
+        );
+        expect(baseCents).toBe(441);
+        expect(vat.cents).toBe(Math.round((baseCents * 25.5) / 100));
+
+        // Headline total identity: base + VAT exactly, and the VAT
+        // dataset version travels in the metadata provenance.
+        expect(result.totalCents).toBe(baseCents + vat.cents);
+        expect(result.metadata.datasetVersions).toContain('import-vat-2024.2');
       });
 
       it('classifies the transaction', async () => {
