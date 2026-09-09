@@ -51,6 +51,7 @@ const PRODUCT = {
   regulatoryClassification: 'beer',
   depositSystemStatus: false,
   ean: '0642000123456',
+  weightGrams: 520, // 0.33 l glass bottle, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 };

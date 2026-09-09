@@ -50,3 +50,49 @@ gaps ("Aalborg Taffel Akvavit 41%" has no `akvavit` mapping, "Shaker
 Lemon & Lime 10%" sits under the plural "Cocktails"), which shrinks
 the catalog by dropping records contrary to design D3 and needs a
 mapping iteration or an explicit scope decision.
+
+## Sweep decisions (2026-09-09, owner-approved)
+
+1. Mapper vocabulary patched
+   (`packages/core-domain/src/normalization/source-category.mapper.ts`),
+   additive source terms only, every term mapped to an existing
+   canonical category:
+   - spirits: `väkevä`, `ee-str`, `akvavit`, `rommi`, `viski`,
+     `calvados`, `armagnac`, `rakija`
+   - wine family: `punaviini`, `valkoviini` (wine), `kuohuviini ja
+     samppanja` (sparkling-wine), `vermutti` (fortified-wine)
+   - beer: `oluet`, `ee-olutit`
+   - long drink: `cocktails` (plural of the already-mapped singular),
+     `juomasekoitus`
+   - non-alcoholic: `virvoitusjuomat`, `soft drinks`, `energy drink`,
+     `alkoholittomat juomat`
+   - explicit-other tokens: `muut`, `muut juomat`, `other drinks`
+     (same honest `other` treatment as `muu`/`annat`)
+
+   Post-patch sweep vs the pre-patch numbers above: 2801 of 2856
+   records parsed (98.1%, was 2570 / 90.0%); rows dropped 55 (1.9%,
+   was 286 / 10.0%). The "no canonical beverage category" bucket fell
+   from 270 (9.5%) to 35 (1.2%); the remaining 35 are the deliberately
+   unmapped merchandising groups (seasonal "Joulutuotteet" including a
+   spinning-arrow game, "Tulevat tuotteet", "Siirappi", country
+   categories), which stay in the correction queue per spec.
+   Disagreements rose from 16 (0.6%) to 20 (0.7%): rows whose name
+   tokens disagree with the newly mapped categories (e.g. name implies
+   `intermediate_products` or `wine_still` but categories say
+   `spirits`) are flagged, never silently resolved. ESTIMATED share
+   rose from 52 of 2570 (2.0%) to 105 of 2801 (3.7%) because the newly
+   kept rows include ABV-less soft drinks and energy drinks (ABV null
+   103, volume 0 ml 9, both 7). EAN coverage unchanged: 2607 of 2856
+   (91.3%). One operational note: the sweep resolves the built
+   core-domain `dist`, so rebuild `@rajahinta/core-domain` before
+   re-running it.
+
+2. The EAN rule stays strict per spec: no fabrication. The pack-variant
+   `de-…-1` SKUs and 12-digit UPC rows ingest with a null EAN into the
+   correction queue (249 rows, 8.7% at sweep time, unchanged by this
+   patch).
+
+3. The staging ingestion smoke is blocked by the pre-existing missing
+   durable D1 source_governance store (follow-up from
+   migrate-to-cloudflare 2.5). The runbook steps are ready; the smoke
+   runs once the store lands.
