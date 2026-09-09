@@ -244,6 +244,70 @@ describe('CalculationController — POST /calculations/landed-cost', () => {
     expect(result.totalCostCents).toBe(1500);
   });
 
+  // -------------------------------------------------------------------------
+  // Optional import-VAT input (task 4.3, design D6)
+  // -------------------------------------------------------------------------
+
+  it('carries the import-VAT term when sellerCountry differs from FI, and the total includes it', async () => {
+    const controller = createController();
+
+    const result = await controller.calculateLandedCost({
+      ...FULL_DTO,
+      sellerCountry: 'DE',
+    });
+
+    const exciseCents = expectedBeerExciseCents(0.047, 3.3); // 6
+    const dutyCents = Math.round(0.51 * 3.3 * 100); // 168
+    const baseCents = 1000 + 500 + exciseCents + dutyCents; // 1674
+
+    expect(result.importVat).not.toBeNull();
+    // 1674 × 25.5 % = 426.87 → 427 (round HALF-UP), current version.
+    expect(result.importVat!.vatCents).toBe(427);
+    expect(result.importVat!.baseCents).toBe(baseCents);
+    expect(result.importVat!.rateVersionId).toBe('import-vat-2024.2');
+    expect(result.importVat!.reliability).toBe('VERIFIED');
+    expect(result.importVat!.baseBreakdown.map((b) => b.component)).toEqual([
+      'retailPrice',
+      'transport',
+      'alcoholExcise',
+      'containerDuty',
+    ]);
+    expect(result.totalCostCents).toBe(baseCents + 427);
+  });
+
+  it('keeps importVat null (pre-change total) for a domestic seller', async () => {
+    const controller = createController();
+
+    const result = await controller.calculateLandedCost({
+      ...FULL_DTO,
+      sellerCountry: 'FI',
+    });
+
+    expect(result.importVat).toBeNull();
+    const exciseCents = expectedBeerExciseCents(0.047, 3.3);
+    const dutyCents = Math.round(0.51 * 3.3 * 100);
+    expect(result.totalCostCents).toBe(1000 + 500 + exciseCents + dutyCents);
+  });
+
+  it('keeps importVat null when sellerCountry is omitted', async () => {
+    const controller = createController();
+
+    const result = await controller.calculateLandedCost(FULL_DTO);
+
+    expect(result.importVat).toBeNull();
+  });
+
+  it('rejects a malformed sellerCountry with 400', async () => {
+    const controller = createController();
+
+    await expect(
+      controller.calculateLandedCost({
+        ...FULL_DTO,
+        sellerCountry: 'DEU',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it.each([
     [
       'containerType without containerVolumeLitres',

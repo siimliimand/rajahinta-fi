@@ -78,6 +78,7 @@ const COST_CATEGORIES: readonly CostCategory[] = [
   'transportCost',
   'alcoholExciseEstimate',
   'containerDutyEstimate',
+  'importVatEstimate',
 ];
 
 const CONFIDENCE_LEVELS: readonly ConfidenceLevel[] = ['HIGH', 'MEDIUM', 'LOW'];
@@ -143,19 +144,32 @@ function toItemizedCost(raw: unknown): ItemizedCost | null {
       ? entry.cents
       : 0;
 
-  // Nested sub-lines (e.g. the retail line's per-unit breakdown) pass
-  // through verbatim when well-formed.
+  // Nested sub-lines (e.g. the retail line's per-unit breakdown, the
+  // import-VAT line's base breakdown) pass through verbatim when
+  // well-formed.
   const nested = Array.isArray(entry.breakdown)
     ? entry.breakdown
         .map(toItemizedCost)
         .filter((c): c is ItemizedCost => c !== null)
     : undefined;
 
+  // Versioned-dataset provenance (import-VAT line, task 4.3): echoed
+  // verbatim when well-formed; pre-change records never carry the keys.
+  const rateVersionId =
+    typeof entry.rateVersionId === 'string' ? entry.rateVersionId : undefined;
+  const calculatedAt =
+    typeof entry.calculatedAt === 'string' &&
+    !Number.isNaN(new Date(entry.calculatedAt).getTime())
+      ? entry.calculatedAt
+      : undefined;
+
   return {
     label: typeof entry.label === 'string' ? entry.label : '',
     category: entry.category,
     cents,
     reliability,
+    ...(rateVersionId !== undefined ? { rateVersionId } : {}),
+    ...(calculatedAt !== undefined ? { calculatedAt } : {}),
     ...(nested !== undefined && nested.length > 0 ? { breakdown: nested } : {}),
   };
 }
@@ -277,6 +291,17 @@ export function mapCalculationRecordToResult(
   const itemizedCosts = parseItemizedCosts(record.breakdown);
   const alkoBenchmark = parseAlkoBenchmark(record.alkoBenchmark);
 
+  // Import VAT (task 4.3): the flat convenience figure exists exactly when
+  // the persisted breakdown carries the line — pre-change records emit NO
+  // key, the same render-nothing state as alkoBenchmark absence.
+  const importVatLines = itemizedCosts.filter(
+    (c) => c.category === 'importVatEstimate',
+  );
+  const importVatEstimate =
+    importVatLines.length > 0
+      ? importVatLines.reduce((sum, c) => sum + c.cents, 0)
+      : null;
+
   const datasetVersions: string[] = [];
   if (input.exciseVersionLabel !== null) {
     datasetVersions.push(input.exciseVersionLabel);
@@ -294,6 +319,7 @@ export function mapCalculationRecordToResult(
     transportCost: sumCategory(itemizedCosts, 'transportCost'),
     alcoholExciseEstimate: sumCategory(itemizedCosts, 'alcoholExciseEstimate'),
     containerDutyEstimate: sumCategory(itemizedCosts, 'containerDutyEstimate'),
+    ...(importVatEstimate !== null ? { importVatEstimate } : {}),
     totalCents: record.totalCents,
     currency: 'EUR',
     confidence: toConfidenceLevel(record.confidence),

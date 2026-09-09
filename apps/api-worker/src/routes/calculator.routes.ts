@@ -43,6 +43,8 @@ import type { CalculatorResult } from '../../../../packages/core-domain/src/calc
 import type { ITaxRuleRepositoryPort } from '../../../../packages/core-domain/src/tax/ports/tax-rule-repository.port';
 import type { ExciseResult } from '../../../../packages/core-domain/src/tax/services/alcohol-excise.service';
 import type { ContainerDutyResult } from '../../../../packages/core-domain/src/tax/services/container-duty.service';
+import { ImportVatService } from '../../../../packages/core-domain/src/vat';
+import type { ImportVatResult } from '../../../../packages/core-domain/src/vat';
 import {
   D1ProductDataPort,
   D1TransportOfferQuery,
@@ -229,6 +231,9 @@ const EXCISE_CATEGORIES = ['beer', 'wine', 'spirits', 'intermediate', 'other'] a
 const CONTAINER_TYPES = ['glass', 'plastic', 'metal', 'carton', 'other'] as const;
 const TRANSACTION_CLASSES = ['distance-selling', 'distance-buying', 'traveller-import'] as const;
 
+/** The platform's only buyer destination — legacy endpoint has no destination input. */
+const DESTINATION_FI = 'FI';
+
 const exciseBaseSchema = z.object({
   category: z.enum(EXCISE_CATEGORIES, {
     errorMap: () => ({
@@ -305,6 +310,19 @@ const landedCostSchema = z.object({
       message: `transactionClass must be one of: ${TRANSACTION_CLASSES.join(', ')}`,
     }),
   }),
+  // Optional import-VAT input (task 4.3, design D6) — controller parity:
+  // present and not 'FI' → the response carries the import-VAT term.
+  sellerCountry: z
+    .string({
+      invalid_type_error:
+        'sellerCountry must be a 2-letter ISO 3166-1 alpha-2 country code, or null',
+    })
+    .length(
+      2,
+      'sellerCountry must be a 2-letter ISO 3166-1 alpha-2 country code, or null',
+    )
+    .nullable()
+    .optional(),
 });
 
 /** Domain results → the published ExciseCalculation shape (controller parity). */
@@ -434,16 +452,35 @@ async function calculateLandedCost(c: Context<AppEnv>): Promise<Response> {
         )
       : null;
 
+  // Optional import-VAT term — controller parity (task 4.3, design D6):
+  // same versioned base, applied when the seller country differs from the
+  // destination, null for domestic / omitted input.
+  const importVat: ImportVatResult | null =
+    dto.sellerCountry != null && dto.sellerCountry !== DESTINATION_FI
+      ? new ImportVatService().calculate({
+          retailPriceCents: dto.retailPriceCents,
+          transportCents: dto.transportCostCents,
+          alcoholExciseCents:
+            (exciseDuty as { exciseAmountCents: number } | null)
+              ?.exciseAmountCents ?? 0,
+          containerDutyCents:
+            (containerDuty as { dutyAmountCents: number } | null)
+              ?.dutyAmountCents ?? 0,
+        })
+      : null;
+
   return c.json({
     retailPriceCents: dto.retailPriceCents,
     transportCostCents: dto.transportCostCents,
     exciseDuty,
     containerDuty,
+    importVat,
     totalCostCents:
       dto.retailPriceCents +
       dto.transportCostCents +
       ((exciseDuty as { exciseAmountCents: number } | null)?.exciseAmountCents ?? 0) +
-      ((containerDuty as { dutyAmountCents: number } | null)?.dutyAmountCents ?? 0),
+      ((containerDuty as { dutyAmountCents: number } | null)?.dutyAmountCents ?? 0) +
+      (importVat?.vatCents ?? 0),
     currency: 'EUR',
     disclaimer: DISCLAIMER_FI,
     calculationTimestamp: new Date(),

@@ -49,12 +49,22 @@ import {
 } from './calculator.types';
 import type { ReliabilityStatus } from '../reliability/reliability.types';
 import type { ClassificationInput } from '../classification/classification.types';
+import { ImportVatService, type ImportVatResult } from '../vat';
 
 /** Merchant id of the domestic reference feed (design D6). */
 const ALKO_MERCHANT = 'alko';
 
 @Injectable()
 export class LandedCostCalculatorService {
+  /**
+   * Import-VAT engine (design D5/D6, task 4.3). Pure and dataset-backed —
+   * no ports to inject — so it is a field initializer rather than a
+   * constructor parameter: every existing construction site (worker
+   * routes, test harnesses, spikes) keeps compiling unchanged, and the
+   * dataset version travels in the result, not in the wiring.
+   */
+  private readonly importVat = new ImportVatService();
+
   constructor(
     // --- Gate ---
     private readonly classificationGate: ClassificationGateService,
@@ -154,6 +164,7 @@ export class LandedCostCalculatorService {
             sellerInvolvementIndicator:
               transportResult.offer.sellerInvolvementIndicator,
             carrierId: input.transportMethod ?? bestOffer.merchant,
+            transportCents: transportCostCents,
           }
         : null;
 
@@ -184,7 +195,8 @@ export class LandedCostCalculatorService {
       computed.retailTotal +
       transportCostCents +
       computed.exciseTotal +
-      computed.containerDutyTotal;
+      computed.containerDutyTotal +
+      (computed.importVatTotal ?? 0);
 
     // -----------------------------------------------------------------------
     // 8. Persist calculation record
@@ -216,6 +228,9 @@ export class LandedCostCalculatorService {
       transportCost: transportCostCents,
       alcoholExciseEstimate: computed.exciseTotal,
       containerDutyEstimate: computed.containerDutyTotal,
+      ...(computed.importVatTotal !== undefined
+        ? { importVatEstimate: computed.importVatTotal }
+        : {}),
       totalCents,
       currency: 'EUR',
       confidence: computed.confidenceOverall,
@@ -312,6 +327,38 @@ export class LandedCostCalculatorService {
       await this.transactionClassification.classify(classificationInput);
 
     // -----------------------------------------------------------------------
+    // Import VAT — design D6 gate
+    // -----------------------------------------------------------------------
+
+    // The SAME seller/buyer country signal transaction classification
+    // consumes (classificationInput.sellerCountry/buyerCountry above):
+    // the VAT line exists exactly when the seller is established outside
+    // the destination. No separate boolean, no classification-label
+    // coupling — domestic (alko) offers fail this comparison and skip
+    // the line entirely; absence is the zero-contribution state.
+    const isImport = offer.country !== input.destination;
+
+    let importVat: ImportVatResult | null = null;
+    if (isImport) {
+      // The base is the consignment aggregate (price + transport + excise
+      // + container duty for the whole line) — the same composition the
+      // itemized breakdown below shows. Transport enters once (it is not
+      // quantity-scaled); 0 when no transport context exists — the basket
+      // path's consolidated shipping resolves after item costs.
+      importVat = this.importVat.calculate(
+        {
+          retailPriceCents: offer.priceCents * input.quantity,
+          transportCents: transportCtx?.transportCents ?? 0,
+          alcoholExciseCents: exciseResult.taxCents * input.quantity,
+          containerDutyCents: containerDutyResult.dutyCents * input.quantity,
+        },
+        input.transactionDate !== undefined
+          ? new Date(input.transactionDate)
+          : undefined,
+      );
+    }
+
+    // -----------------------------------------------------------------------
     // Per-input reliability statuses
     // -----------------------------------------------------------------------
 
@@ -350,6 +397,7 @@ export class LandedCostCalculatorService {
       datasetVersions.push(exciseResult.taxDatasetVersion);
     if (containerDutyResult.taxDatasetVersion)
       datasetVersions.push(containerDutyResult.taxDatasetVersion);
+    if (importVat !== null) datasetVersions.push(importVat.rateVersionId);
 
     // -----------------------------------------------------------------------
     // Itemized costs (transport excluded — caller adds it)
@@ -383,6 +431,48 @@ export class LandedCostCalculatorService {
       },
     ];
 
+    // The import-VAT line (design D6): amount, rate version, per-component
+    // base breakdown, reliability, timestamp. The structural disclaimer
+    // already carried by every calculation result covers this line — the
+    // figure is an estimate, not the final legal tax liability.
+    if (importVat !== null) {
+      const baseLines: readonly ItemizedCost[] = [
+        {
+          label: 'Retail price',
+          category: 'foreignRetailPrice',
+          cents: retailTotal,
+          reliability: importVat.reliability,
+        },
+        {
+          label: 'Transport',
+          category: 'transportCost',
+          cents: transportCtx?.transportCents ?? 0,
+          reliability: importVat.reliability,
+        },
+        {
+          label: 'Alcohol excise',
+          category: 'alcoholExciseEstimate',
+          cents: exciseTotal,
+          reliability: importVat.reliability,
+        },
+        {
+          label: 'Container duty',
+          category: 'containerDutyEstimate',
+          cents: containerDutyTotal,
+          reliability: importVat.reliability,
+        },
+      ];
+      itemizedCosts.push({
+        label: 'Import VAT (estimated)',
+        category: 'importVatEstimate',
+        cents: importVat.vatCents,
+        reliability: importVat.reliability,
+        rateVersionId: importVat.rateVersionId,
+        calculatedAt: importVat.calculatedAt.toISOString(),
+        breakdown: baseLines,
+      });
+    }
+
     return {
       retailTotal,
       retailStatus,
@@ -397,6 +487,13 @@ export class LandedCostCalculatorService {
       confidenceOverall: confidenceReport.overall,
       confidenceBreakdown: confidenceReport.breakdown,
       datasetVersions,
+      ...(importVat !== null
+        ? {
+            importVatTotal: importVat.vatCents,
+            importVatStatus: importVat.reliability,
+            importVatRateVersionId: importVat.rateVersionId,
+          }
+        : {}),
       itemizedCosts,
     };
   }

@@ -34,7 +34,7 @@ import {
   IMPORT_VAT_DATASET,
   IMPORT_VAT_FORMULA,
   IMPORT_VAT_TAX_TYPE,
-} from '@rajahinta/core-domain/dist/vat';
+} from '@rajahinta/core-domain';
 import { validateEffectiveRanges } from '../repositories/effective-range-validator';
 
 // ---------------------------------------------------------------------------

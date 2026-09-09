@@ -28,10 +28,12 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import {
   AlcoholExciseService,
   ContainerDutyService,
+  ImportVatService,
   type ExciseResult,
   type ContainerDutyResult,
   type ExciseCalculation,
   type ContainerDutyCalculation,
+  type ImportVatResult,
   type LandedCostResult,
   DISCLAIMER_FI,
 } from '@rajahinta/core-domain';
@@ -58,10 +60,20 @@ const TRANSACTION_CLASSES = [
   'traveller-import',
 ] as const;
 
+/** The platform's only buyer destination — legacy endpoint has no destination input. */
+const DESTINATION_FI = 'FI';
+
 @ApiTags('calculations')
 @Controller('api/v1/calculations')
 @UseGuards(RateLimitGuard, AgeGateGuard)
 export class CalculationController {
+  /**
+   * Pure, dataset-backed engine — no ports — so it is a field initializer
+   * instead of a constructor parameter: the published controller contract
+   * (and every composition root providing it) stays unchanged.
+   */
+  private readonly importVatService = new ImportVatService();
+
   constructor(
     private readonly exciseService: AlcoholExciseService,
     private readonly containerDutyService: ContainerDutyService,
@@ -130,16 +142,33 @@ export class CalculationController {
           )
         : null;
 
+    // Optional import-VAT term (task 4.3, design D6): applied when the
+    // seller country differs from the destination, null otherwise. The
+    // base matches the main calculator's versioned rule (price + transport
+    // + excise + container duty); the rate resolves by the version
+    // effective now (the legacy endpoint carries no transaction date).
+    const importVat: ImportVatResult | null =
+      dto.sellerCountry != null && dto.sellerCountry !== DESTINATION_FI
+        ? this.importVatService.calculate({
+            retailPriceCents: dto.retailPriceCents,
+            transportCents: dto.transportCostCents,
+            alcoholExciseCents: exciseDuty?.exciseAmountCents ?? 0,
+            containerDutyCents: containerDuty?.dutyAmountCents ?? 0,
+          })
+        : null;
+
     return {
       retailPriceCents: dto.retailPriceCents,
       transportCostCents: dto.transportCostCents,
       exciseDuty,
       containerDuty,
+      importVat,
       totalCostCents:
         dto.retailPriceCents +
         dto.transportCostCents +
         (exciseDuty?.exciseAmountCents ?? 0) +
-        (containerDuty?.dutyAmountCents ?? 0),
+        (containerDuty?.dutyAmountCents ?? 0) +
+        (importVat?.vatCents ?? 0),
       currency: 'EUR',
       disclaimer: DISCLAIMER_FI,
       calculationTimestamp: new Date(),
@@ -237,6 +266,15 @@ function validateLandedCostRequest(dto: CalculateLandedCostDto): void {
   }
   if (!TRANSACTION_CLASSES.includes(dto.transactionClass)) {
     errors.push(`transactionClass must be one of: ${TRANSACTION_CLASSES.join(', ')}`);
+  }
+  if (
+    dto.sellerCountry !== undefined &&
+    dto.sellerCountry !== null &&
+    (typeof dto.sellerCountry !== 'string' || dto.sellerCountry.length !== 2)
+  ) {
+    errors.push(
+      'sellerCountry must be a 2-letter ISO 3166-1 alpha-2 country code, or null',
+    );
   }
   if (dto.containerType !== null && !CONTAINER_TYPES.includes(dto.containerType)) {
     errors.push(`containerType must be one of: ${CONTAINER_TYPES.join(', ')}, or null`);

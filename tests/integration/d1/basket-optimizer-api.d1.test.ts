@@ -520,6 +520,17 @@ describe('POST /api/v1/basket/optimize on D1', () => {
   // =========================================================================
 
   describe('idempotency', () => {
+    /**
+     * The import-VAT line (task 4.3) carries the wall clock of its
+     * computation, which legitimately differs between two runs — strip it
+     * so these comparisons pin what idempotency actually guarantees
+     * (same totals, same shipments) rather than identical timestamps.
+     */
+    const withoutVatTimestamp = (shipments: unknown) =>
+      JSON.parse(JSON.stringify(shipments), (key, value) =>
+        key === 'calculatedAt' ? undefined : value,
+      );
+
     it('same request twice returns the same total (idempotent)', async () => {
       const cache = new InMemoryIdempotencyCache();
       const ctrl = createController(createRealOptimizer(), undefined, cache);
@@ -529,7 +540,9 @@ describe('POST /api/v1/basket/optimize on D1', () => {
 
       // Same input → same total (idempotent by business logic)
       expect(result2.totalCents).toBe(result1.totalCents);
-      expect(result2.shipments).toEqual(result1.shipments);
+      expect(withoutVatTimestamp(result2.shipments)).toEqual(
+        withoutVatTimestamp(result1.shipments),
+      );
     });
 
     it('idempotency-key returns consistent results across calls', async () => {
@@ -544,7 +557,9 @@ describe('POST /api/v1/basket/optimize on D1', () => {
 
       // Same input → same total (idempotent)
       expect(result2.totalCents).toBe(result1.totalCents);
-      expect(result2.shipments).toEqual(result1.shipments);
+      expect(withoutVatTimestamp(result2.shipments)).toEqual(
+        withoutVatTimestamp(result1.shipments),
+      );
     });
 
     it('different baskets produce different totals', async () => {

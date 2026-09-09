@@ -493,4 +493,92 @@ describe('POST /api/v1/calculations/landed-cost', () => {
       error: 'ValidationError',
     });
   });
+
+  it('carries the import-VAT term when sellerCountry differs from FI, and the total includes it', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedTaxRule(db, {
+      taxType: 'excise',
+      productCategory: 'beer',
+      rate: 0.365,
+    });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/calculations/landed-cost', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AGE },
+      body: JSON.stringify({
+        retailPriceCents: 350,
+        transportCostCents: 500,
+        exciseBase: { category: 'beer', volumeLitres: 0.33, alcoholByVolume: 0.047 },
+        containerType: null,
+        transactionClass: 'distance-selling',
+        sellerCountry: 'DE',
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, any>;
+
+    const exciseCents = expectedBeerExciseCents(0.047, 0.33); // 1
+    const baseCents = 350 + 500 + exciseCents; // 851
+    expect(body.importVat).not.toBeNull();
+    // 851 × 25.5 % = 217.005 → 217 (round HALF-UP), current version.
+    expect(body.importVat.vatCents).toBe(217);
+    expect(body.importVat.baseCents).toBe(baseCents);
+    expect(body.importVat.rateVersionId).toBe('import-vat-2024.2');
+    expect(body.importVat.reliability).toBe('VERIFIED');
+    expect(body.totalCostCents).toBe(baseCents + 217);
+  });
+
+  it('keeps importVat null for a domestic seller and when sellerCountry is omitted', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedTaxRule(db, {
+      taxType: 'excise',
+      productCategory: 'beer',
+      rate: 0.365,
+    });
+    const app = buildApp();
+    const baseBody = {
+      retailPriceCents: 350,
+      transportCostCents: 500,
+      exciseBase: { category: 'beer', volumeLitres: 0.33, alcoholByVolume: 0.047 },
+      containerType: null,
+      transactionClass: 'distance-selling',
+    };
+
+    const domestic = await request(app, permissiveEnv(d1), '/api/v1/calculations/landed-cost', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AGE },
+      body: JSON.stringify({ ...baseBody, sellerCountry: 'FI' }),
+    });
+    expect(domestic.status).toBe(200);
+    const domesticBody = (await domestic.json()) as Record<string, any>;
+    expect(domesticBody.importVat).toBeNull();
+
+    const omitted = await request(app, permissiveEnv(d1), '/api/v1/calculations/landed-cost', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AGE },
+      body: JSON.stringify(baseBody),
+    });
+    expect(omitted.status).toBe(200);
+    const omittedBody = (await omitted.json()) as Record<string, any>;
+    expect(omittedBody.importVat).toBeNull();
+  });
+
+  it('rejects a malformed sellerCountry with 400', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const res = await request(app, permissiveEnv(d1), '/api/v1/calculations/landed-cost', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AGE },
+      body: JSON.stringify({
+        retailPriceCents: 350,
+        transportCostCents: 500,
+        exciseBase: null,
+        containerType: null,
+        transactionClass: 'distance-selling',
+        sellerCountry: 'DEU',
+      }),
+    });
+    await expectEnvelope(res, 400, { error: 'ValidationError' });
+  });
 });

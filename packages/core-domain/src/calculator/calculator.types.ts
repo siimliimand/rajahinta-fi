@@ -68,6 +68,14 @@ export interface ComputeItemCostsTransportContext {
   readonly sellerInvolvementIndicator: boolean;
   /** Carrier identifier (defaults to offer.merchant when absent). */
   readonly carrierId: string;
+  /**
+   * Transport amount in euro-cents for the consignment — a component of the
+   * versioned import-VAT base (design D5/D6). Absent (basket candidate
+   * enumeration, transport unavailable) contributes 0: the consolidated
+   * basket shipping is resolved after per-item costs, so that surface's
+   * VAT base names transport as 0 rather than guessing a figure.
+   */
+  readonly transportCents?: number;
 }
 
 /**
@@ -99,8 +107,21 @@ export interface ComputedItemCostsResult {
   readonly datasetVersions: readonly string[];
 
   /**
-   * Itemized costs excluding transport: [retail, excise, container duty].
-   * The caller splices in the transport line at position 1.
+   * Import VAT for the consignment when the offer's seller country differs
+   * from the destination (design D6), in euro-cents. Key absent for
+   * domestic offers — absence is the zero-contribution state, never a
+   * displayed zero.
+   */
+  readonly importVatTotal?: number;
+  /** Reliability of the import-VAT figure; present exactly when importVatTotal is. */
+  readonly importVatStatus?: ReliabilityStatus;
+  /** Import-VAT dataset version that produced the figure; same presence contract. */
+  readonly importVatRateVersionId?: string;
+
+  /**
+   * Itemized costs excluding transport: [retail, excise, container duty]
+   * plus the import-VAT line when the transaction is an import. The
+   * caller splices in the transport line at position 1.
    */
   readonly itemizedCosts: readonly ItemizedCost[];
 }
@@ -137,6 +158,14 @@ export interface CalculatorInput {
 
   /** Optional session identifier for grouping calculations in audit trail. */
   readonly sessionId?: string;
+
+  /**
+   * When the import transaction occurs, ISO 8601 — the effective-date
+   * lookup for the versioned import-VAT dataset (design D5). Absent means
+   * the version effective now. Only figures whose dataset is
+   * date-resolved (import VAT) consume it.
+   */
+  readonly transactionDate?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +233,8 @@ export type CostCategory =
   | 'foreignRetailPrice'
   | 'transportCost'
   | 'alcoholExciseEstimate'
-  | 'containerDutyEstimate';
+  | 'containerDutyEstimate'
+  | 'importVatEstimate';
 
 /**
  * A single itemized cost line in the calculation result.
@@ -220,6 +250,17 @@ export interface ItemizedCost {
   readonly reliability: ReliabilityStatus;
   /** Optional sub-items for further breakdown. */
   readonly breakdown?: readonly ItemizedCost[];
+  /**
+   * Versioned tax dataset identity that produced this line (e.g.
+   * "import-vat-2024.2"). Present only on lines whose figure is resolved
+   * against a versioned dataset.
+   */
+  readonly rateVersionId?: string;
+  /**
+   * When the figure was computed, ISO 8601 — JSON-stable so the persisted
+   * breakdown replays verbatim (same convention as AlkoBenchmarkSnapshot).
+   */
+  readonly calculatedAt?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -262,6 +303,14 @@ export interface CalculatorResult {
   readonly alcoholExciseEstimate: number;
   /** Estimated container duty, in euro-cents. */
   readonly containerDutyEstimate: number;
+
+  /**
+   * Import VAT for the consignment, in euro-cents. Present only when the
+   * offer's seller country differs from the destination — key absent for
+   * domestic offers (render-nothing, never a displayed zero). The
+   * authoritative line lives in `itemizedCosts` with its base breakdown.
+   */
+  readonly importVatEstimate?: number;
 
   /** Sum of all costs in euro-cents at the top level. */
   readonly totalCents: number;
