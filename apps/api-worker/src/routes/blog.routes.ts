@@ -1,16 +1,19 @@
 /**
- * Public blog routes (task 5.1, change trust-and-reach-roadmap; spec
- * content-publication) — PUBLISHED posts only, never drafts.
+ * Public blog + guides routes (task 5.1, changes trust-and-reach-roadmap
+ * and insight-surfaces; spec content-publication) — PUBLISHED posts only,
+ * never drafts, and kinds never mix: the blog index lists RATE_CHANGE
+ * only, the guides index GUIDE only.
  *
- *   GET /api/v1/blog/posts           index for one locale (?locale=fi|en)
- *   GET /api/v1/blog/posts/:slug     one post's body for one locale
+ *   GET /api/v1/blog/posts           rate-change index for one locale (?locale=fi|en)
+ *   GET /api/v1/blog/posts/:slug     one post's body for one locale (either kind)
+ *   GET /api/v1/guides               guides index for one locale (?locale=fi|en)
  *
  * Drafts are invisible publicly: a DRAFT or unknown slug answers the
  * SAME 404 — no existence leakage (spec scenario "Drafts invisible
- * publicly" + the share-link 404 parity). The list endpoint returns
- * PUBLISHED rows only, via the repository's status-filtered read (the
- * (locale, status) index). No guard: both reads are public (the ops
- * publish action rides the /ops/console prefix instead).
+ * publicly" + the share-link 404 parity). The list endpoints return
+ * PUBLISHED rows only, via the repository's (locale, kind, status) read.
+ * No guard: all reads are public (the ops publish action rides the
+ * /ops/console prefix instead).
  *
  * @module BlogRoutes
  */
@@ -59,11 +62,22 @@ function toFullPost(post: BlogPostRecord): Record<string, unknown> {
 
 async function listPosts(c: Context<AppEnv>): Promise<Response> {
   const locale = resolveLocale(c);
-  const posts = await new D1BlogPostRepository(c.env.DB).listByLocale(
+  const posts = await new D1BlogPostRepository(c.env.DB).listByLocaleAndKind(
     locale,
+    'RATE_CHANGE',
     'PUBLISHED',
   );
   return c.json({ items: posts.map(toIndexItem), total: posts.length });
+}
+
+async function listGuides(c: Context<AppEnv>): Promise<Response> {
+  const locale = resolveLocale(c);
+  const guides = await new D1BlogPostRepository(c.env.DB).listByLocaleAndKind(
+    locale,
+    'GUIDE',
+    'PUBLISHED',
+  );
+  return c.json({ items: guides.map(toIndexItem), total: guides.length });
 }
 
 async function getPost(c: Context<AppEnv>): Promise<Response> {
@@ -84,9 +98,10 @@ async function getPost(c: Context<AppEnv>): Promise<Response> {
   return c.json(toFullPost(post));
 }
 
-/** Register the public blog handlers (no guards — public reads). */
+/** Register the public blog/guide handlers (no guards — public reads). */
 export function registerBlogRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.get('/api/v1/blog/posts', listPosts);
   app.get('/api/v1/blog/posts/:slug', getPost);
+  app.get('/api/v1/guides', listGuides);
   return app;
 }

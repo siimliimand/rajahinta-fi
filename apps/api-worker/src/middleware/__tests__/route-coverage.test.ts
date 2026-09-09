@@ -328,9 +328,10 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
 /**
  * Every registered (path, methods) with its rate-limit profile. Profiles:
  * AUTH 10 req/5 min/IP (public writes), CALCULATOR 10/min/IP, BASKET
- * 5/min/IP, HISTORICAL 30/min/IP, DECLARATION 20/min/IP, DEFAULT 60/min/IP
- * (requireAccountRateLimit keys the same profile on the resolved account).
- * "—" = no rate limit (public read / token-capability exchange).
+ * 5/min/IP, HISTORICAL 30/min/IP, DECLARATION 20/min/IP, SAVINGS 30/min/IP,
+ * DEFAULT 60/min/IP (requireAccountRateLimit keys the same profile on the
+ * resolved account). "—" = no rate limit (public read / token-capability
+ * exchange).
  */
 const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[] = [
   // Price alerts — sessionAuth + per-account DEFAULT on the handlers.
@@ -357,6 +358,10 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/api/v1/account/verify-email/request', ['POST'], '— (sessionAuth)'],
   // Trust-and-reach public trust statistic (task 3.3) — no guard, no limit.
   ['/api/v1/accuracy', ['GET'], '—'],
+  // Traveller allowances (insight-surfaces 4.1) — route-local DEFAULT +
+  // ageGate (PUBLISHED dataset reads).
+  ['/api/v1/allowances', ['GET'], 'DEFAULT + ageGate'],
+  ['/api/v1/allowances/versions', ['GET'], 'DEFAULT + ageGate'],
   // Click analytics — write-behind counter, no guard.
   ['/api/v1/analytics/click', ['POST'], '—'],
   // Basket optimizer — BASKET prefix profile at index.ts.
@@ -384,6 +389,8 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/api/v1/group-orders/:shareToken/items', ['POST'], '— (share token)'],
   ['/api/v1/group-orders/:shareToken/join', ['POST'], '— (share token)'],
   ['/api/v1/group-orders/:shareToken/ledger', ['POST'], '— (share token)'],
+  // Guides public read (insight-surfaces 5.1) — PUBLISHED GUIDE only, no guard.
+  ['/api/v1/guides', ['GET'], '—'],
   // Health — process liveness + dependency readiness, unguarded.
   ['/api/v1/health', ['GET'], '—'],
   ['/api/v1/health/ready', ['GET'], '—'],
@@ -404,6 +411,9 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/api/v1/products/:id', ['GET'], '— + ageGate'],
   // Product dupes — route-local DEFAULT.
   ['/api/v1/products/:id/dupes', ['GET'], 'DEFAULT'],
+  // Price context (insight-surfaces 3.2) — HISTORICAL at index.ts +
+  // route-local ageGate (price-history parity).
+  ['/api/v1/products/:id/price-context', ['GET'], 'HISTORICAL + ageGate'],
   // Price history — HISTORICAL at index.ts + route-local ageGate.
   ['/api/v1/products/:id/price-history', ['GET'], 'HISTORICAL + ageGate'],
   // Shop-report submission (task 2.2) — AUTH then sessionAuth.
@@ -411,6 +421,9 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   // Calculation-record export — DECLARATION at index.ts + ageGate +
   // optional session + entitlement, per-route.
   ['/api/v1/reports/:recordId', ['GET'], 'DECLARATION + ageGate + entitlement'],
+  // Savings discovery listing (insight-surfaces 2.3) — route-local
+  // ageGate + SAVINGS.
+  ['/api/v1/savings', ['GET'], 'SAVINGS + ageGate'],
   // Share permalink read (task 6.1) — public, frozen snapshot.
   ['/api/v1/share/:publicId', ['GET'], '—'],
   // Trip feasibility — route-local CALCULATOR (anonymous surface).
@@ -430,6 +443,8 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/ops/console/blacklist/appeals', ['GET'], 'opsAccess'],
   ['/ops/console/blacklist/entries', ['GET'], 'opsAccess'],
   ['/ops/console/blacklist/publish', ['POST'], 'opsAccess'],
+  ['/ops/console/blog/guides', ['POST'], 'opsAccess'],
+  ['/ops/console/blog/guides/:id', ['POST'], 'opsAccess'],
   ['/ops/console/blog/posts', ['GET'], 'opsAccess'],
   ['/ops/console/blog/posts/:id/publish', ['POST'], 'opsAccess'],
   ['/ops/console/confirmations', ['GET'], 'opsAccess'],

@@ -43,6 +43,9 @@ import { registerBasketRoutes } from './routes/basket.routes';
 import { registerEventCalcRoutes } from './routes/event-calc.routes';
 import { registerTripFeasibilityRoutes } from './routes/trip-feasibility.routes';
 import { registerTripRoutes } from './routes/trip.routes';
+import { registerAllowancesRoutes } from './routes/allowances.routes';
+import { registerSavingsRoutes } from './routes/savings.routes';
+import { registerPriceContextRoutes } from './routes/price-context.routes';
 import { registerCuratedListsRoutes } from './routes/curated-lists.routes';
 import { registerHistoricalRoutes } from './routes/historical.routes';
 import { registerReportsRoutes } from './routes/reports.routes';
@@ -140,6 +143,7 @@ export function createApp(): Hono<AppEnv> {
   app.use('/api/v1/calculations/*', requireRateLimit('CALCULATOR'));
   app.use('/api/v1/basket/*', requireRateLimit('BASKET'));
   app.use('/api/v1/products/:id/price-history', requireRateLimit('HISTORICAL'));
+  app.use('/api/v1/products/:id/price-context', requireRateLimit('HISTORICAL'));
   // Narrowed to the report-EXPORT path (task 2.2): the submission route
   // POST /api/v1/reports must carry ONLY its AUTH profile, and Hono's
   // `/reports/*` pattern matches the bare path too.
@@ -157,6 +161,9 @@ export function createApp(): Hono<AppEnv> {
   registerEventCalcRoutes(app);
   registerTripFeasibilityRoutes(app);
   registerTripRoutes(app);
+  registerAllowancesRoutes(app);
+  registerSavingsRoutes(app);
+  registerPriceContextRoutes(app);
   registerCuratedListsRoutes(app);
   registerHistoricalRoutes(app);
   registerReportsRoutes(app);

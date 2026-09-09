@@ -24,11 +24,14 @@ import {
   BlogPostRepository,
   type BlogPostCreateInput,
   type BlogPostDraftPatch,
+  type BlogPostKind,
   type BlogPostRecord,
   type BlogPostStatus,
 } from '../../abstracts';
 
 const POST_STATUSES: readonly BlogPostStatus[] = ['DRAFT', 'PUBLISHED'];
+
+const POST_KINDS: readonly BlogPostKind[] = ['RATE_CHANGE', 'GUIDE'];
 
 /** Raw D1 blog_posts row. */
 interface D1BlogPostRow {
@@ -38,6 +41,7 @@ interface D1BlogPostRow {
   readonly title: string;
   readonly body_markdown: string;
   readonly status: string;
+  readonly kind: string;
   readonly rate_dataset_version: string | null;
   readonly published_at: string | null;
   readonly created_at: string;
@@ -53,6 +57,16 @@ function toStatus(value: string): BlogPostStatus {
   return value as BlogPostStatus;
 }
 
+/** Narrow the kind column onto the content-kind union — defense in depth. */
+function toKind(value: string): BlogPostKind {
+  if (!POST_KINDS.includes(value as BlogPostKind)) {
+    throw new Error(
+      `blog_posts.kind "${value}" is not a known blog-post content kind`,
+    );
+  }
+  return value as BlogPostKind;
+}
+
 function toContractPost(row: D1BlogPostRow): BlogPostRecord {
   return {
     id: row.id,
@@ -61,6 +75,7 @@ function toContractPost(row: D1BlogPostRow): BlogPostRecord {
     title: row.title,
     bodyMarkdown: row.body_markdown,
     status: toStatus(row.status),
+    kind: toKind(row.kind),
     rateDatasetVersion: row.rate_dataset_version,
     publishedAt: row.published_at === null ? null : new Date(row.published_at),
     createdAt: new Date(row.created_at),
@@ -68,12 +83,14 @@ function toContractPost(row: D1BlogPostRow): BlogPostRecord {
 }
 
 const POST_COLUMNS = `
-  id, slug, locale, title, body_markdown, status, rate_dataset_version,
-  published_at, created_at`;
+  id, slug, locale, title, body_markdown, status, kind,
+  rate_dataset_version, published_at, created_at`;
 
+// Omitted kind takes the column default RATE_CHANGE — the pre-kind row
+// interpretation, so pre-existing create call sites behave unchanged.
 const INSERT_SQL = `
-  INSERT INTO blog_posts (slug, locale, title, body_markdown, rate_dataset_version, status)
-  VALUES (?, ?, ?, ?, ?, 'DRAFT')
+  INSERT INTO blog_posts (slug, locale, title, body_markdown, kind, rate_dataset_version, status)
+  VALUES (?, ?, ?, ?, ?, ?, 'DRAFT')
   RETURNING ${POST_COLUMNS}`;
 
 const FIND_BY_ID_SQL = `
@@ -87,6 +104,14 @@ const LIST_BY_LOCALE_SQL = `
 
 const LIST_BY_LOCALE_AND_STATUS_SQL = `
   SELECT ${POST_COLUMNS} FROM blog_posts WHERE locale = ? AND status = ?
+  ORDER BY id ASC`;
+
+const LIST_BY_LOCALE_AND_KIND_SQL = `
+  SELECT ${POST_COLUMNS} FROM blog_posts WHERE locale = ? AND kind = ?
+  ORDER BY id ASC`;
+
+const LIST_BY_LOCALE_AND_KIND_AND_STATUS_SQL = `
+  SELECT ${POST_COLUMNS} FROM blog_posts WHERE locale = ? AND kind = ? AND status = ?
   ORDER BY id ASC`;
 
 // COALESCE keeps absent patch keys at their current values; the DRAFT
@@ -123,6 +148,7 @@ export class D1BlogPostRepository extends BlogPostRepository {
         input.locale,
         input.title,
         input.bodyMarkdown,
+        input.kind ?? 'RATE_CHANGE',
         input.rateDatasetVersion ?? null,
       )
       .first<D1BlogPostRow>();
@@ -169,6 +195,28 @@ export class D1BlogPostRepository extends BlogPostRepository {
           await this.d1
             .prepare(LIST_BY_LOCALE_SQL)
             .bind(locale)
+            .all<D1BlogPostRow>()
+        ).results;
+    return rows.map(toContractPost);
+  }
+
+  /** @inheritdoc */
+  async listByLocaleAndKind(
+    locale: string,
+    kind: BlogPostKind,
+    status?: BlogPostStatus,
+  ): Promise<BlogPostRecord[]> {
+    const rows = status
+      ? (
+          await this.d1
+            .prepare(LIST_BY_LOCALE_AND_KIND_AND_STATUS_SQL)
+            .bind(locale, kind, status)
+            .all<D1BlogPostRow>()
+        ).results
+      : (
+          await this.d1
+            .prepare(LIST_BY_LOCALE_AND_KIND_SQL)
+            .bind(locale, kind)
             .all<D1BlogPostRow>()
         ).results;
     return rows.map(toContractPost);

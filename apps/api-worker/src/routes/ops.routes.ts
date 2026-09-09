@@ -62,6 +62,7 @@ import {
   evidenceLinksSchema,
 } from '../../../../packages/data-platform/src/repositories/d1/curated-entries.repository';
 import { D1BlogPostRepository } from '../../../../packages/data-platform/src/repositories/d1/blog-post.repository';
+import type { BlogPostKind } from '../../../../packages/data-platform/src/abstracts';
 import { D1ShopReportRepository } from '../../../../packages/data-platform/src/repositories/d1/shop-report.repository';
 import { D1BlacklistRepository } from '../../../../packages/data-platform/src/repositories/d1/blacklist.repository';
 import type { ShopReportRecord } from '../../../../packages/data-platform/src/abstracts';
@@ -1186,25 +1187,194 @@ async function resolveCorrection(c: Context<AppEnv>): Promise<Response> {
 // trust-and-reach-roadmap): the rate-confirmation hook lands DRAFTs; only
 // this console action makes one public, and only when the body passes the
 // content-policy lint (spec content-publication).
+//
+// Guide drafts (task 5.1, change insight-surfaces; spec guides-hub) are
+// created and edited here as an explicit operator action — kind GUIDE,
+// with NO rate-dataset-version provenance — and published through the
+// same lint-gated DRAFT-to-PUBLISHED path below, appended to the same
+// audit trail.
 // ---------------------------------------------------------------------------
 
+/** Validate the optional kind filter (kinds never mix in listings). */
+function parseKindFilter(raw: string | undefined): BlogPostKind | undefined {
+  if (raw === undefined) return undefined;
+  if (raw !== 'RATE_CHANGE' && raw !== 'GUIDE') {
+    throw new ApiHttpError(400, {
+      statusCode: 400,
+      message: 'kind must be one of: RATE_CHANGE, GUIDE',
+      error: 'ValidationError',
+    });
+  }
+  return raw;
+}
+
 async function listBlogPosts(c: Context<AppEnv>): Promise<Response> {
-  const posts = await new D1BlogPostRepository(c.env.DB).listByLocale(
-    // The console manages the launch locales as one list.
-    'fi',
-  );
-  const en = await new D1BlogPostRepository(c.env.DB).listByLocale('en');
-  const items = [...posts, ...en].map((post) => ({
+  const kind = parseKindFilter(c.req.query('kind'));
+  const repo = new D1BlogPostRepository(c.env.DB);
+  // The console manages the launch locales as one list.
+  const posts =
+    kind === undefined
+      ? [...(await repo.listByLocale('fi')), ...(await repo.listByLocale('en'))]
+      : [...(await repo.listByLocaleAndKind('fi', kind)), ...(await repo.listByLocaleAndKind('en', kind))];
+  const items = posts.map((post) => ({
     id: post.id,
     slug: post.slug,
     locale: post.locale,
     title: post.title,
+    kind: post.kind,
     status: post.status,
     rateDatasetVersion: post.rateDatasetVersion,
     publishedAt: post.publishedAt?.toISOString() ?? null,
     createdAt: post.createdAt.toISOString(),
   }));
   return c.json({ items, total: items.length });
+}
+
+const guideCreateSchema = z.object({
+  slug: z
+    .string({ required_error: 'slug is required', invalid_type_error: 'slug is required' })
+    .min(1, 'slug is required')
+    .max(200, 'slug must be at most 200 characters')
+    .regex(
+      /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+      'slug must be a lowercase URL slug (a-z, 0-9, hyphens)',
+    ),
+  locale: z.enum(['fi', 'en'], {
+    required_error: 'locale must be one of: fi, en',
+    invalid_type_error: 'locale must be one of: fi, en',
+    message: 'locale must be one of: fi, en',
+  }),
+  title: z
+    .string({ required_error: 'title is required', invalid_type_error: 'title is required' })
+    .min(1, 'title is required')
+    .max(255, 'title must be at most 255 characters'),
+  bodyMarkdown: z
+    .string({ required_error: 'bodyMarkdown is required', invalid_type_error: 'bodyMarkdown is required' })
+    .min(1, 'bodyMarkdown is required'),
+});
+
+/**
+ * POST /ops/console/blog/guides — create a GUIDE-kind draft. The draft
+ * lands with kind GUIDE and rateDatasetVersion absent (guides carry no
+ * rate-version provenance — the schema deliberately offers no such
+ * field); publication is a separate human action below.
+ */
+async function createGuideDraft(c: Context<AppEnv>): Promise<Response> {
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const content = parseConsoleContent(guideCreateSchema, dto);
+
+  const repo = new D1BlogPostRepository(c.env.DB);
+  // The (slug, locale) unique key is the idempotency boundary — surface a
+  // conflict instead of the driver's constraint error.
+  const existing = await repo.findBySlugAndLocale(content.slug, content.locale);
+  if (existing !== null) {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `A post with slug "${content.slug}" already exists for locale ${content.locale}`,
+      error: 'SlugConflict',
+    });
+  }
+
+  const created = await repo.create({
+    slug: content.slug,
+    locale: content.locale,
+    title: content.title,
+    bodyMarkdown: content.bodyMarkdown,
+    kind: 'GUIDE',
+  });
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'blog_post',
+    entityId: String(created.id),
+    action: 'created',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      `Guide draft created via operator console (${created.slug}/${created.locale})`,
+    newValue: { kind: created.kind, slug: created.slug, locale: created.locale, status: created.status },
+  });
+
+  return c.json(
+    {
+      id: created.id,
+      slug: created.slug,
+      locale: created.locale,
+      kind: created.kind,
+      status: created.status,
+    },
+    201,
+  );
+}
+
+const guideUpdateSchema = z.object({
+  title: z
+    .string({ invalid_type_error: 'title must be a string' })
+    .min(1, 'title must not be empty')
+    .max(255, 'title must be at most 255 characters')
+    .optional(),
+  bodyMarkdown: z
+    .string({ invalid_type_error: 'bodyMarkdown must be a string' })
+    .min(1, 'bodyMarkdown must not be empty')
+    .optional(),
+});
+
+/**
+ * POST /ops/console/blog/guides/:id — edit a GUIDE draft's title/body.
+ * Only DRAFT rows are editable (what the public saw is immutable), and
+ * the patch carries no rate-dataset-version field — a guide cannot grow
+ * provenance it must never carry.
+ */
+async function editGuideDraft(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  const actor = requireOperator(dto);
+  const content = parseConsoleContent(guideUpdateSchema, dto);
+
+  const repo = new D1BlogPostRepository(c.env.DB);
+  const existing = await repo.findById(id);
+  if (existing === null) {
+    throw new ApiHttpError(404, `Blog post ${id} not found`);
+  }
+  if (existing.status !== 'DRAFT') {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `Blog post ${id} is not a draft (published posts are immutable)`,
+      error: 'InvalidTransition',
+    });
+  }
+
+  const updated = await repo.updateDraft(id, {
+    title: content.title,
+    bodyMarkdown: content.bodyMarkdown,
+  });
+  if (updated === null) {
+    throw new ApiHttpError(409, {
+      statusCode: 409,
+      message: `Blog post ${id} is not a draft (published posts are immutable)`,
+      error: 'InvalidTransition',
+    });
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'blog_post',
+    entityId: String(id),
+    action: 'updated',
+    author: actor,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      `Guide draft edited via operator console (${updated.slug}/${updated.locale})`,
+    previousValue: { title: existing.title, status: existing.status },
+    newValue: { title: updated.title, status: updated.status },
+  });
+
+  return c.json({
+    id: updated.id,
+    slug: updated.slug,
+    locale: updated.locale,
+    kind: updated.kind,
+    status: updated.status,
+  });
 }
 
 async function publishBlogPost(c: Context<AppEnv>): Promise<Response> {
@@ -1835,8 +2005,13 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   // Blog posts (task 5.1, trust-and-reach-roadmap) — the human
   // publication gate over the rate-confirmation hook's drafts. Console
   // read + audited publish; there is deliberately NO auto-publish path.
+  // Guides (task 5.1, insight-surfaces) add the operator create/edit
+  // draft actions — kind GUIDE, no rate-version provenance — publishing
+  // through the same /posts/:id/publish transition.
   app.get('/ops/console/blog/posts', listBlogPosts);
   app.post('/ops/console/blog/posts/:id/publish', publishBlogPost);
+  app.post('/ops/console/blog/guides', createGuideDraft);
+  app.post('/ops/console/blog/guides/:id', editGuideDraft);
 
   // Shop-report moderation + blacklist (task 2.3, trust-and-reach-roadmap)
   // — the review queue (OPEN + evidence, link/reject), the publish

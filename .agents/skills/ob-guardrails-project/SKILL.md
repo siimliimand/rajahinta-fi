@@ -22,7 +22,7 @@ license: MIT
 
 ## File Organization
 
-- No application source code exists yet (greenfield). When added, split files by domain/feature (e.g., `excise-engine.ts`, `container-duty.ts`, `transaction-classifier.ts`) rather than catch-all files like `utils.ts` or `constants.ts`.
+- Application source code is split by domain/feature (e.g., `excise-engine.ts`, `savings/gap.ts`, `price-context/window-stats.ts`) rather than catch-all files like `utils.ts` or `constants.ts`.
 - A file that imports from 5+ unrelated modules is a sign it should be split.
 
 ## Domain-Specific Rules
@@ -32,6 +32,7 @@ license: MIT
 - **Rates are never auto-published.** A recurring job checks for newly published official rate changes and creates a task for manual/legal confirmation before any new dataset version goes live.
 - **No feature flags.** The flag and launch-gate systems were removed (2026-09-07, owner decision): every feature ships unconditionally enabled, and no `FF_*`/`LAUNCH_GATE_*` env var may gate behavior. Rollback is `wrangler rollback`, not a flag flip. Do not reintroduce flag-gating without an explicit owner decision.
 - **Every number is explainable.** Every calculated figure (excise, container duty, transport, total) must be traceable to the exact input values, rate dataset version, and timestamp that produced it.
+- **Insight surfaces are display-only and factual.** Savings snapshots, price-context figures, allowance citations, and guides never feed calculator, ranking, or basket inputs (compliance tests pin byte-identity), and the content lint bans advice phrasing ("best deal", "good time to buy", "buy now") on all public surfaces.
 
 ## Git Workflow
 
@@ -44,4 +45,4 @@ license: MIT
 - Project tooling dependencies are managed via `.opencode/package.json` (opencode plugins, browser automation, quota plugin). No application-level package manager is selected yet.
 - Lockfile: `skills-lock.json` pins externally installed agent skills.
 
-<!-- Last updated: 2026-09-07 (feature-flag and launch-gate removal) -->
+<!-- Last updated: 2026-09-09 (insight-surfaces: display-only insight surfaces, advice-phrasing lint ban, greenfield note removed) -->

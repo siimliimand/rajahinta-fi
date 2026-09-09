@@ -1131,6 +1131,13 @@ export abstract class CalculationOutcomeRepository {
 /** Publication state of a blog post — DRAFT until the operator publish. */
 export type BlogPostStatus = 'DRAFT' | 'PUBLISHED';
 
+/**
+ * Content kind of a blog post (change insight-surfaces, task 2): the
+ * rate-change explainer stream vs evergreen guides. Existing rows keep
+ * RATE_CHANGE via the column default — no backfill (design D3).
+ */
+export type BlogPostKind = 'RATE_CHANGE' | 'GUIDE';
+
 /** Persisted blog-post row — camelCase projection of the snake_case D1 row. */
 export interface BlogPostRecord {
   readonly id: number;
@@ -1142,6 +1149,8 @@ export interface BlogPostRecord {
   /** Markdown body — must pass the content-policy lint before publication. */
   readonly bodyMarkdown: string;
   readonly status: BlogPostStatus;
+  /** Content kind — RATE_CHANGE explainers vs GUIDE evergreen content. */
+  readonly kind: BlogPostKind;
   /** Rate dataset version the post explains (version_label vocabulary); null without a rate tie-in. */
   readonly rateDatasetVersion: string | null;
   /** When published — null while DRAFT. */
@@ -1156,6 +1165,12 @@ export interface BlogPostCreateInput {
   readonly title: string;
   readonly bodyMarkdown: string;
   readonly rateDatasetVersion?: string | null;
+  /**
+   * Content kind — defaults to RATE_CHANGE (the column default, the
+   * pre-kind row interpretation), so existing create call sites keep
+   * their behavior unchanged.
+   */
+  readonly kind?: BlogPostKind;
 }
 
 /** Editable fields of a DRAFT post. Slug/locale/status are not editable. */
@@ -1196,6 +1211,19 @@ export abstract class BlogPostRepository {
   ): Promise<BlogPostRecord[]>;
 
   /**
+   * Posts of one locale filtered to one content kind, id ASC — the blog
+   * index lists RATE_CHANGE only, the guides surface lists GUIDE only.
+   * With {@code status} — only that status (public endpoints pass
+   * PUBLISHED); without — every status (the ops view). Kind never
+   * widens a status filter; it only narrows the stream.
+   */
+  abstract listByLocaleAndKind(
+    locale: string,
+    kind: BlogPostKind,
+    status?: BlogPostStatus,
+  ): Promise<BlogPostRecord[]>;
+
+  /**
    * Patch a DRAFT post's editable fields (COALESCE semantics — absent
    * keys keep their values). Null when absent or already PUBLISHED:
    * what the public saw is immutable.
@@ -1213,6 +1241,125 @@ export abstract class BlogPostRepository {
 
   /** Remove a post; false when absent. */
   abstract delete(id: number): Promise<boolean>;
+}
+
+// ---------------------------------------------------------------------------
+// Savings-snapshot repository abstraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Reliability status of a snapshot's landed total — the exact core-domain
+ * ReliabilityStatus value set (packages/core-domain/src/reliability/
+ * reliability.types.ts), shared with the column's SQL CHECK.
+ */
+export type SavingsReliabilityStatus = 'VERIFIED' | 'ESTIMATED' | 'STALE' | 'UNAVAILABLE';
+
+/**
+ * Aggregate confidence grade of a snapshot — the exact core-domain
+ * ConfidenceLevel value set (packages/core-domain/src/reliability/
+ * confidence-framework.types.ts), shared with the column's SQL CHECK.
+ */
+export type SavingsConfidenceGrade = 'HIGH' | 'MEDIUM' | 'LOW';
+
+/** Persisted savings-snapshot row — camelCase projection of the snake_case D1 row. */
+export interface SavingsSnapshotRecord {
+  readonly id: number;
+  /** Snapshot day, 'YYYY-MM-DD' — half of the upsert idempotency key. */
+  readonly asOf: string;
+  /** Canonical product the snapshot belongs to. */
+  readonly productId: number;
+  /** Product category (matches product_master.category). */
+  readonly category: string;
+  /** Merchant of the day's best foreign offer. */
+  readonly bestMerchant: string;
+  /** Country the best offer ships from (ISO 3166-1 alpha-2). */
+  readonly bestMerchantCountry: string;
+  /** Best foreign offer price for one unit, in euro-cents (design D4). */
+  readonly bestPriceCents: number;
+  /** When the best offer was observed. */
+  readonly bestObservedAt: Date;
+  /** Alko reference price for one unit, in euro-cents — null when not observed that day. */
+  readonly alkoReferenceCents: number | null;
+  /** When the Alko reference was observed — null with the reference. */
+  readonly alkoObservedAt: Date | null;
+  /** Estimated landed total for one unit, in euro-cents. */
+  readonly landedTotalCents: number;
+  /** Reliability of the landed-total composition. */
+  readonly landedReliability: SavingsReliabilityStatus;
+  /** Aggregate confidence grade of the snapshot. */
+  readonly confidence: SavingsConfidenceGrade;
+  /** Best-offer vs Alko-reference gap in euro-cents (sign carries the direction). */
+  readonly gapCents: number;
+  /** The same gap in INTEGER basis points — the float-free ranking key (design D4). */
+  readonly gapBasisPoints: number;
+  /** Tax-dataset version the landed total was computed against (version_label vocabulary). */
+  readonly taxDatasetVersion: string;
+}
+
+/**
+ * Upsert input — one fully computed daily snapshot. The daily insight
+ * job resolves the day's best offer and Alko reference, computes the
+ * landed total and the gap, then calls
+ * {@link SavingsSnapshotRepository.upsertSnapshot}.
+ */
+export interface SavingsSnapshotUpsertInput {
+  readonly asOf: string;
+  readonly productId: number;
+  readonly category: string;
+  readonly bestMerchant: string;
+  readonly bestMerchantCountry: string;
+  readonly bestPriceCents: number;
+  readonly bestObservedAt: Date;
+  readonly alkoReferenceCents: number | null;
+  readonly alkoObservedAt: Date | null;
+  readonly landedTotalCents: number;
+  readonly landedReliability: SavingsReliabilityStatus;
+  readonly confidence: SavingsConfidenceGrade;
+  readonly gapCents: number;
+  readonly gapBasisPoints: number;
+  readonly taxDatasetVersion: string;
+}
+
+/**
+ * Savings-snapshot repository — one materialized row per product per
+ * day, the read model behind the savings insight surface. Written
+ * exclusively by the daily insight background job; never on the request
+ * path.
+ *
+ * ## Upsert idempotency (design D2)
+ *
+ * {@link upsertSnapshot} converges on the key {@code (as_of, product_id)}
+ * — re-running a day overwrites the computed columns (last write wins)
+ * instead of duplicating rows, mirroring the price-history-summary
+ * bucket-key contract.
+ */
+@Injectable()
+export abstract class SavingsSnapshotRepository {
+  /**
+   * Insert or overwrite one day's snapshot keyed by (asOf, productId).
+   * Returns the row id (existing id on conflict — the key columns never
+   * change).
+   */
+  abstract upsertSnapshot(
+    snapshot: SavingsSnapshotUpsertInput,
+  ): Promise<{ id: number }>;
+
+  /**
+   * All snapshots of the most recent asOf day present, product_id
+   * ascending. Empty when no snapshot has been written yet.
+   */
+  abstract findLatestDay(): Promise<SavingsSnapshotRecord[]>;
+
+  /**
+   * Closed [from, to] asOf range for one category, asOf then product_id
+   * ascending — the per-category insight history read (date bounds are
+   * ISO 'YYYY-MM-DD' strings, closed like the summary range reads).
+   */
+  abstract findByCategoryRange(
+    category: string,
+    from: string,
+    to: string,
+  ): Promise<SavingsSnapshotRecord[]>;
 }
 
 /** Consent lifecycle of a newsletter subscriber. UNSUBSCRIBED is terminal. */

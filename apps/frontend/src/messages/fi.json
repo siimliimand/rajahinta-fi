@@ -1024,6 +1024,38 @@
     "emptyTitle": "Ei näytettäviä rivejä",
     "emptyBody": "Tässä hintaluokassa ei ole yhtään tarjousta, jolle €/g-arvoa voisi laskea."
   },
+  "SavingsPage": {
+    "metaTitle": "Kokonaishinta-ero Alko-viitehintaan",
+    "metaDescription": "Ulkomaisten tarjousten arvioidut kokonaishinnat Suomeen ja niiden erot Alko-viitehintaan, päivittäin materialisoituna. Tiedollinen luettelo.",
+    "title": "Kokonaishinta-ero Alko-viitehintaan",
+    "subtitle": "Jokainen rivi näyttää ulkomaisen tarjouksen arvioidun kokonaishinnan Suomeen (sisältäen tullit, verot ja kuljetuksen) ja sen eron saman tuotteen Alko-viitehintaan. Rivit on järjestetty suurimman eron mukaan ensin, ja tasatilanteissa ratkaisee tuotenimen aakkosjärjestys.",
+    "informationalNote": "Luettelo on tiedollinen: se esittää lasketut erot sellaisenaan. Järjestys on deterministinen (suurin ero ensin, tasan olevat tuotteet nimen aakkosjärjestykseen) eikä se vaikuta hakuun, muihin listauksiin tai laskuriin. Luvut pohjautuvat päivittäin materialisoituun tilannekuvaan.",
+    "categorySelectorLabel": "Tuoteryhmä",
+    "category": {
+      "beer": "Olut",
+      "wine_still": "Makuuviini",
+      "wine_sparkling": "Kuohuviini",
+      "intermediate_products": "Välituotteet (esim. vermutti)",
+      "other_fermented": "Siideri ja pitkäjuoma",
+      "spirits": "Väkevät alkoholijuomat"
+    },
+    "tableCaption": "Tuoteryhmän {category} tuotteet kokonaishintaeron mukaan suurimmasta alkaen",
+    "columnPosition": "#",
+    "columnProduct": "Tuote",
+    "columnLandedTotal": "Arvioitu kokonaishinta",
+    "columnAlkoReference": "Alko-viitehinta",
+    "columnGap": "Ero",
+    "columnReliability": "Luotettavuus",
+    "gapBasisPoints": "{value} bp",
+    "asOfLabel": "Tilanne {date}",
+    "asOfNone": "Päivittäistä tilannekuvaa ei ole vielä muodostettu.",
+    "coverageLabel": "Arvioituja tuotteita: {evaluated} · Viitehinta löytyy: {withReference} · Listattuja: {listed}",
+    "loading": "Luetteloa haetaan…",
+    "errorTitle": "Luetteloa ei saatu haettua",
+    "errorBody": "Taustajärjestelmä ei vastannut. Voit yrittää uudelleen.",
+    "emptyTitle": "Ei näytettäviä rivejä",
+    "emptyBody": "Tälle tuoteryhmälle ei ole vielä materialisoitunut yhtään riviä, jolla on vertailukelpoinen Alko-viitehinta. Rivit ilmestyvät tänne, kun päivittäinen erä tuottaa niitä."
+  },
   "ContentSafetyBadge": {
     "promotional": "Mainoskieltä havaittu: \"{pattern}\" ({language})",
     "violations": "{count, plural, one {# sisältöpolitiikan loukkaus} other {# sisältöpolitiikan loukkausta}}"
@@ -1056,6 +1088,13 @@
     "siblingLink": "Tuotesivu #{id}",
     "sourceLink": "Lähde"
   },
+  "ProductPriceContext": {
+    "title": "Nykyhinta ja 90 päivän mediaani",
+    "above": "Tuotteen matalin nykyinen myyntihinta ({current}) on {delta} 90 päivän mediaanin ({median}) yläpuolella — havaintoja {count} päivältä, tilanne {asOf}.",
+    "below": "Tuotteen matalin nykyinen myyntihinta ({current}) on {delta} 90 päivän mediaanin ({median}) alapuolella — havaintoja {count} päivältä, tilanne {asOf}.",
+    "flat": "Tuotteen matalin nykyinen myyntihinta ({current}) on yhtä suuri kuin 90 päivän mediaani ({median}) — havaintoja {count} päivältä, tilanne {asOf}.",
+    "insufficientHistory": "Vertailua ei vielä näytetä, koska hintahistoriaa ei ole riittävästi — havaintoja {count} päivältä, tilanne {asOf}."
+  },
   "ListsPage": {
     "metaTitle": "{title} — kuratoitu listaus",
     "metaDescription": "{title} — jokaisella listauksella toimituksellinen perustelu ja todistelulinkit. Valintakriteerit näkyvät sivulla.",
@@ -1074,6 +1113,42 @@
     "externalRefLabel": "Ulkoinen tunniste",
     "unavailableTitle": "Listausta ei ole saatavilla",
     "unavailableBody": "Tämä listaus ei ole nyt luettavissa. Voit yrittää myöhemmin uudelleen."
+  },
+  "AllowancesPage": {
+    "metaTitle": "Matkustajan tullivapaat alkoholimäärät",
+    "metaDescription": "Matkustajan tullivapaat alkoholimäärät päivittäin julkaistuine lähdeviittauksineen ja versiohistorioineen. Tiedollinen yhteenveto — ei oikeudellista neuvontaa.",
+    "title": "Matkustajan tullivapaat alkoholimäärät",
+    "subtitle": "Valitun päivän kohdalla voimassa olevat tullivapaat määrät tuoteryhmittäin: aineistoversio, voimassaoloaika ja jokaisen määrän alkuperäinen lähdeviite sellaisenaan kuin se on tallennettu.",
+    "informationalNote": "Tämä sivu on tiedollinen yhteenveto julkaistuista tullimääristä niiden lähdeviittauksineen. Sisältö on ohjeistusta, ei oikeudellista neuvontaa, eikä se korvaa viranomaisten määräyksiä — tarkista aina voimassa olevat rajat viranomaislähteestä.",
+    "datePickerLabel": "Päivämäärä",
+    "dateSubmit": "Näytä määrät",
+    "capsTitle": "Määrät päivälle {date}",
+    "datasetVersionLabel": "Aineistoversio: {label}",
+    "datasetCitationLabel": "Lähde (alkuperäinen viite)",
+    "columnCategory": "Tuoteryhmä",
+    "columnVolume": "Tilavuusraja (litraa)",
+    "columnQuantity": "Kappaleenraja (kpl)",
+    "columnWindow": "Voimassaolo",
+    "columnCitation": "Lähdeviite (alkuperäinen teksti)",
+    "capsTableCaption": "Tullivapaat määrät tuoteryhmittäin päivälle {date}",
+    "effectiveWindow": "{from} – {to}",
+    "effectiveWindowOpen": "{from} alkaen, toistaiseksi",
+    "notFoundTitle": "Ei julkaistua versiota tälle päivälle",
+    "notFoundBody": "Valittua päivää kattavaa julkaistua aineistoversiota ei ole. Versiohistoria alla näyttää julkaistut kattavuusjaksot.",
+    "unavailableTitle": "Tietoja ei ole nyt saatavilla",
+    "unavailableBody": "Tullimääriä ei saatu luettua. Yritä myöhemmin uudelleen.",
+    "versionsTitle": "Versiohistoria",
+    "versionsIntro": "Julkaistut aineistoversiot uusimmasta voimaantulopäivästä alkaen. Korvatut versiot säilyvät listattuina.",
+    "versionsEmpty": "Ei julkaistuja versioita.",
+    "versionsUnavailable": "Versiohistoriaa ei saatu luettua.",
+    "category": {
+      "beer": "Olut",
+      "wine_still": "Makuuviini",
+      "wine_sparkling": "Kuohuviini",
+      "intermediate_products": "Välituotteet (esim. vermutti)",
+      "other_fermented": "Siideri ja pitkäjuoma",
+      "spirits": "Väkevät alkoholijuomat"
+    }
   },
   "OperatorConsole": {
     "title": "Operaattorin konsoli",
@@ -1266,6 +1341,26 @@
     "backToBlog": "\u2190 Kaikki julkaisut",
     "postMetaTitle": "{title} \u2014 blogi",
     "postMetaDescription": "Julkaistu {date} Rajahinta.fi:ss\u00e4."
+  },
+  "GuidesPage": {
+    "metaTitle": "Oppaat",
+    "metaDescription": "Tiedolliset oppaat matkustamisesta, tullivapaista m\u00e4\u00e4rist\u00e4 ja kokonaishintojen arvioinnista \u2014 ei oikeudellista neuvontaa.",
+    "title": "Oppaat",
+    "subtitle": "Ikuisesti ajankohtaiset oppaat matkustamisesta, tullivapaista m\u00e4\u00e4r\u00e4ist\u00e4 ja kokonaishintojen arvioinnista. Oppaat ovat tiedollisia \u2014 ne eiv\u00e4t ole oikeudellista neuvontaa.",
+    "publishedLabel": "Julkaistu {date}",
+    "readMore": "Lue opas",
+    "emptyTitle": "Ei viel\u00e4 oppaita",
+    "emptyBody": "Oppaita ei ole viel\u00e4 julkaistu. Ne ilmestyv\u00e4t t\u00e4nne, kun operaattori julkaisee ne.",
+    "unavailableTitle": "Oppaita ei ole juuri nyt saatavilla",
+    "unavailableBody": "Oppaita ei voitu ladata. Kokeile hetken kuluttua uudelleen.",
+    "backToGuides": "\u2190 Kaikki oppaat",
+    "guideMetaTitle": "{title} \u2014 opas",
+    "guideMetaDescription": "Julkaistu {date} Rajahinta.fi:ss\u00e4.",
+    "relatedTitle": "Aiheeseen liittyv\u00e4t ty\u00f6kalut",
+    "relatedAllowances": "Matkustajan tullivapaat m\u00e4\u00e4r\u00e4t",
+    "relatedAllowancesBody": "Valitun p\u00e4iv\u00e4n voimassa olevat tullivapaat m\u00e4\u00e4r\u00e4t l\u00e4hdeviitteineen \u2014 ohjeistusta, ei oikeudellista neuvontaa.",
+    "relatedTrip": "Matkalaskuri",
+    "relatedTripBody": "Oman ajoreitin ja ostojen arvioitujen kokonaishintojen vertailu."
   },
   "SharePage": {
     "metaTitle": "Jaettu kokonaishinta-arvio: {name}",

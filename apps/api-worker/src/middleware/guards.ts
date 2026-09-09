@@ -38,6 +38,8 @@
  * | Route (file) | Chain in registration order | Rate-limit profile |
  * |---|---|---|
  * | GET /api/v1/products/:id/price-history (historical.routes.ts) | requireRateLimit('HISTORICAL') at index.ts → ageGate() per-route | HISTORICAL |
+ * | GET /api/v1/products/:id/price-context (insight-surfaces 3.2, price-context.routes.ts) | requireRateLimit('HISTORICAL') at index.ts → ageGate() per-route | HISTORICAL |
+ * | GET /api/v1/savings (insight-surfaces 2.3, savings.routes.ts) | ageGate() → requireRateLimit('SAVINGS') per-route | SAVINGS |
  * | GET /api/v1/reports/:recordId calculation-record export (reports.routes.ts) | requireRateLimit('DECLARATION') at index.ts → ageGate() → attachOptionalSession → requireFeature('calculation:export') per-route | DECLARATION |
  * | GET /api/v1/unitprice/ranking (trust-and-reach-roadmap 7.2, unitprice.routes.ts) | ageGate() per-route (product-surface parity: alcoholic-beverage listing) | none (public read) |
  * | POST /api/v1/trip/fill (trust-and-reach-roadmap 8.2, trip.routes.ts) | requireRateLimit('CALCULATOR') → sessionAuth() → requireFeature('calculation:basic') per-route (spec: authenticated users only; entitlement is the calculation-surface paywall seam) | CALCULATOR |
@@ -50,7 +52,8 @@
  * Guard-free surfaces with no rate limit (reviewed-safe public reads and
  * token-capability exchanges): GET /api/v1/health(+/ready), GET
  * /api/v1/accuracy (trust-and-reach-roadmap 3.3), GET /api/v1/blog/posts
- * (+:/:slug, 5.1), GET /api/v1/share/:publicId (6.1), POST
+ * (+:/:slug, 5.1) + GET /api/v1/guides (insight-surfaces 5.1), GET
+ * /api/v1/share/:publicId (6.1), POST
  * /api/v1/analytics/click, GET /api/v1/newsletter/confirm +
  * /unsubscribe (5.3, emailed token IS the capability), POST
  * /api/v1/account/password/reset + /verify-email/confirm (same
@@ -60,7 +63,8 @@
  * Rate limiting composes ahead of the guards (RateLimiterDO wiring,
  * task 3.3): prefix profiles register at index.ts
  * (/api/v1/calculator/*, /api/v1/calculations/*, /api/v1/basket/*,
- * /api/v1/products/:id/price-history, /api/v1/reports/:recordId — the
+ * /api/v1/products/:id/price-history,
+ * /api/v1/products/:id/price-context, /api/v1/reports/:recordId — the
  * latter two narrowed so POST /api/v1/reports carries ONLY its AUTH
  * profile), route-local profiles register in the route files listed
  * above, and the AUTH-profile public writes register in GUARDED_ROUTES
@@ -68,7 +72,6 @@
  *
  * @module guards
  */
-
 import type { Hono, MiddlewareHandler } from 'hono';
 import type { AppEnv } from '../env';
 import { ageGate } from './age-gate';

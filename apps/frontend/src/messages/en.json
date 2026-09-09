@@ -1024,6 +1024,38 @@
     "emptyTitle": "No rows to show",
     "emptyBody": "No offer in this price category currently has a computable €/g value."
   },
+  "SavingsPage": {
+    "metaTitle": "Landed-cost gap versus the Alko reference",
+    "metaDescription": "Estimated landed costs in Finland for foreign offers and their gaps against the Alko reference price, materialized daily. Informational listing.",
+    "title": "Landed-cost gap versus the Alko reference",
+    "subtitle": "Each row shows a foreign offer's estimated landed cost in Finland (including duties, taxes, and transport) and its gap against the Alko reference price for the same product. Rows are ordered by the largest gap first; ties are broken by product name in alphabetical order.",
+    "informationalNote": "This listing is informational: it presents the computed gaps as they are. The order is deterministic (largest gap first, ties by product name) and does not affect search, other listings, or the calculator. The figures come from the daily materialized snapshot.",
+    "categorySelectorLabel": "Category",
+    "category": {
+      "beer": "Beer",
+      "wine_still": "Still wine",
+      "wine_sparkling": "Sparkling wine",
+      "intermediate_products": "Intermediate products (e.g. vermouth)",
+      "other_fermented": "Cider and long drink",
+      "spirits": "Spirits"
+    },
+    "tableCaption": "Products in the {category} price category by landed-cost gap, largest first",
+    "columnPosition": "#",
+    "columnProduct": "Product",
+    "columnLandedTotal": "Estimated landed total",
+    "columnAlkoReference": "Alko reference price",
+    "columnGap": "Gap",
+    "columnReliability": "Reliability",
+    "gapBasisPoints": "{value} bp",
+    "asOfLabel": "As of {date}",
+    "asOfNone": "The daily snapshot has not been produced yet.",
+    "coverageLabel": "Products evaluated: {evaluated} · With a reference: {withReference} · Listed: {listed}",
+    "loading": "Loading the listing…",
+    "errorTitle": "The listing could not be loaded",
+    "errorBody": "The backend did not respond. You can try again.",
+    "emptyTitle": "No rows to show",
+    "emptyBody": "No rows with a comparable Alko reference price have been materialized for this category yet. Rows appear here once the daily pass produces them."
+  },
   "ContentSafetyBadge": {
     "promotional": "Promotional language detected: \"{pattern}\" ({language})",
     "violations": "{count, plural, one {# content-policy violation found} other {# content-policy violations found}}"
@@ -1056,6 +1088,13 @@
     "siblingLink": "Product page #{id}",
     "sourceLink": "Source"
   },
+  "ProductPriceContext": {
+    "title": "Current price and the 90-day median",
+    "above": "The product's lowest current offer price ({current}) is {delta} above the 90-day median ({median}) — {count} days of observations, as of {asOf}.",
+    "below": "The product's lowest current offer price ({current}) is {delta} below the 90-day median ({median}) — {count} days of observations, as of {asOf}.",
+    "flat": "The product's lowest current offer price ({current}) equals the 90-day median ({median}) — {count} days of observations, as of {asOf}.",
+    "insufficientHistory": "The comparison is not shown yet because the price history is not sufficient — {count} days of observations, as of {asOf}."
+  },
   "ListsPage": {
     "metaTitle": "{title} — curated list",
     "metaDescription": "{title} — every entry carries an editorial rationale and evidence links. The curation criteria are shown on the page.",
@@ -1074,6 +1113,42 @@
     "externalRefLabel": "External reference",
     "unavailableTitle": "This list is not available",
     "unavailableBody": "This list cannot be read right now. Please try again later."
+  },
+  "AllowancesPage": {
+    "metaTitle": "Traveller duty-free alcohol allowances",
+    "metaDescription": "Traveller duty-free alcohol allowances by date, with the published source citations and version history. Informational reference — not legal advice.",
+    "title": "Traveller duty-free alcohol allowances",
+    "subtitle": "The published traveller allowances effective on the chosen date, by category: the dataset version, its effective window, and each cap's source citation exactly as stored.",
+    "informationalNote": "This page is an informational summary of published allowances together with their source citations. It is guidance, not legal advice, and does not replace official rules — always verify current limits with the authorities.",
+    "datePickerLabel": "Date",
+    "dateSubmit": "Show allowances",
+    "capsTitle": "Allowances on {date}",
+    "datasetVersionLabel": "Dataset version: {label}",
+    "datasetCitationLabel": "Source (verbatim citation)",
+    "columnCategory": "Category",
+    "columnVolume": "Volume cap (litres)",
+    "columnQuantity": "Quantity cap (units)",
+    "columnWindow": "Effective window",
+    "columnCitation": "Source citation (verbatim)",
+    "capsTableCaption": "Traveller allowances by category on {date}",
+    "effectiveWindow": "{from} – {to}",
+    "effectiveWindowOpen": "from {from}, open-ended",
+    "notFoundTitle": "No published version covers this date",
+    "notFoundBody": "No published dataset version is effective on the selected date. The version history below lists the published coverage windows.",
+    "unavailableTitle": "This information is not available right now",
+    "unavailableBody": "The allowances could not be read. Please try again later.",
+    "versionsTitle": "Version history",
+    "versionsIntro": "Published dataset versions, newest effective window first. Superseded versions remain listed.",
+    "versionsEmpty": "No published versions.",
+    "versionsUnavailable": "The version history could not be read.",
+    "category": {
+      "beer": "Beer",
+      "wine_still": "Still wine",
+      "wine_sparkling": "Sparkling wine",
+      "intermediate_products": "Intermediate products (e.g. vermouth)",
+      "other_fermented": "Cider and long drink",
+      "spirits": "Spirits"
+    }
   },
   "OperatorConsole": {
     "title": "Operator console",
@@ -1266,6 +1341,26 @@
     "backToBlog": "\u2190 All posts",
     "postMetaTitle": "{title} \u2014 blog",
     "postMetaDescription": "Published {date} on Rajahinta.fi."
+  },
+  "GuidesPage": {
+    "metaTitle": "Guides",
+    "metaDescription": "Informational guides to travelling, duty-free allowances, and estimating landed costs \u2014 not legal advice.",
+    "title": "Guides",
+    "subtitle": "Evergreen guides to travelling, duty-free allowances, and estimating landed costs. The guides are informational \u2014 they are not legal advice.",
+    "publishedLabel": "Published {date}",
+    "readMore": "Read the guide",
+    "emptyTitle": "No guides yet",
+    "emptyBody": "No guides have been published yet. They will appear here once an operator publishes them.",
+    "unavailableTitle": "Guides are not available right now",
+    "unavailableBody": "The guides could not be loaded. Please try again in a moment.",
+    "backToGuides": "\u2190 All guides",
+    "guideMetaTitle": "{title} \u2014 guide",
+    "guideMetaDescription": "Published {date} on Rajahinta.fi.",
+    "relatedTitle": "Related tools",
+    "relatedAllowances": "Traveller duty-free allowances",
+    "relatedAllowancesBody": "The allowances effective on a chosen date with their source citations \u2014 guidance, not legal advice.",
+    "relatedTrip": "Trip calculator",
+    "relatedTripBody": "Compare the estimated landed costs of a shopping trip by route and purchases."
   },
   "SharePage": {
     "metaTitle": "Shared landed-cost estimate: {name}",

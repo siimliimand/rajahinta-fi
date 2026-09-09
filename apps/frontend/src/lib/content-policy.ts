@@ -80,6 +80,12 @@ export const FORBIDDEN_ADJECTIVES: ReadonlyMap<string, string | undefined> =
     ['top', undefined],
     ['lowest price', 'use "lowest landed cost" for total comparison'],
     ['lowest cost', undefined],
+    // Purchase advice — banned across the insight-surfaces surfaces
+    // (savings, price-context, allowances, guides): state the observed
+    // figures, never advise a purchase or its timing.
+    ['best deal', 'state the price difference as a fact'],
+    ['good time to buy', 'state the observed prices; never advise timing'],
+    ['buy now', 'state the observed prices; never advise timing'],
     // Finnish (mirrors the backend ContentLintService vocabulary)
     ['paras', 'käytä neutraalia kuvausta tai jätä arvio pois'],
     ['edullisin', 'käytä "matalin kokonaiskustannus" tai "matalin hinta"'],
@@ -89,6 +95,10 @@ export const FORBIDDEN_ADJECTIVES: ReadonlyMap<string, string | undefined> =
     ['täydellinen', undefined],
     ['haitaton', 'alcohol is not harmless; state facts only'],
     ['turvallisin', undefined],
+    // Purchase advice, Finnish equivalents.
+    ['paras tarjous', 'ilmoita hintaero tosiasiana'],
+    ['hyvä aika ostaa', 'esitä havainnot sellaisenaan; älä neuvo ostoajankohdasta'],
+    ['osta nyt', 'esitä havainnot sellaisenaan; älä neuvo ostoajankohdasta'],
   ]);
 
 const CONTEXT_CHARS = 40;

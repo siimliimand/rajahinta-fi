@@ -588,3 +588,83 @@ describe('D1TravellerAllowancesRepository — the review queue', () => {
     expect(listed.limits[0].category).toBe('spirits');
   });
 });
+
+describe('D1TravellerAllowancesRepository — published version history (read-side listing)', () => {
+  it('lists every PUBLISHED version newest-effectiveFrom-first with full limit rows; pending stays invisible', async () => {
+    // Region 2047+ — disjoint from every other test's calendar coverage
+    // (the file shares one D1 instance; see the module docstring).
+    const older = await repo.createPendingVersion(
+      dataset({
+        versionLabel: 'allowances-history-2047',
+        effectiveFrom: '2047-01-01',
+        effectiveTo: '2049-01-01',
+      }),
+      [
+        limit({
+          category: 'beer',
+          volumeCapLitres: 110,
+          effectiveFrom: '2047-01-01',
+          effectiveTo: '2049-01-01',
+        }),
+      ],
+    );
+    await repo.publish(older.dataset.id, 'ops');
+
+    const newer = await repo.createPendingVersion(
+      dataset({
+        versionLabel: 'allowances-history-2049',
+        effectiveFrom: '2049-01-01',
+        effectiveTo: null,
+      }),
+      [
+        limit({
+          category: 'beer',
+          volumeCapLitres: 108,
+          effectiveFrom: '2049-01-01',
+          effectiveTo: null,
+        }),
+        limit({
+          category: 'spirits',
+          volumeCapLitres: 10,
+          effectiveFrom: '2049-01-01',
+          effectiveTo: null,
+        }),
+      ],
+    );
+    await repo.publish(newer.dataset.id, 'ops');
+
+    await repo.createPendingVersion(
+      dataset({
+        versionLabel: 'allowances-history-pending',
+        effectiveFrom: '2051-01-01',
+      }),
+      [limit({ effectiveFrom: '2051-01-01' })],
+    );
+
+    const published = await repo.listPublished();
+    const labels = published.map((v) => v.dataset.versionLabel);
+    expect(labels).not.toContain('allowances-history-pending');
+    expect(labels).toContain('allowances-history-2047');
+    expect(labels).toContain('allowances-history-2049');
+
+    // Deterministic order: the superseded version comes after the newer one.
+    expect(labels.indexOf('allowances-history-2049')).toBeLessThan(
+      labels.indexOf('allowances-history-2047'),
+    );
+
+    // Full version view — every limit row, not a date-filtered slice.
+    const listed = published.find(
+      (v) => v.dataset.versionLabel === 'allowances-history-2049',
+    )!;
+    expect(listed.dataset.status).toBe('PUBLISHED');
+    expect(listed.dataset.effectiveFrom).toBe('2049-01-01');
+    expect(listed.dataset.effectiveTo).toBeNull();
+    expect(listed.limits.map((l) => l.category).sort()).toEqual([
+      'beer',
+      'spirits',
+    ]);
+    expect(listed.limits.find((l) => l.category === 'beer')!.volumeCapLitres).toBe(
+      108,
+    );
+  });
+});

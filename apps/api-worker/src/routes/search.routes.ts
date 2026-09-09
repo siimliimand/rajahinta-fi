@@ -40,6 +40,7 @@ import {
   merchantsForProducts,
 } from '../services/merchant-warnings';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
+import { lowestCurrentOfferPriceCents } from './current-best-price';
 
 /** Default page size for product listing (controller parity). */
 const DEFAULT_PAGE_SIZE = 20;
@@ -277,6 +278,12 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
 
     const offers = await repo.findOffers(id);
 
+    // The product page's best price (spec price-context / design D5):
+    // the shared lowest-current-offer rule — the exact figure the
+    // price-context route computes against, so the two surfaces can
+    // never contradict each other.
+    const currentBestPriceCents = lowestCurrentOfferPriceCents(offers);
+
     // Each offer carries the eurPerGram embed. The embed never reorders
     // the offers — it maps in place.
     // Physical inputs are per-product: parsed once and shared by every
@@ -325,6 +332,7 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
           toReliabilityStatus(o.reliabilityStatus),
         ),
       })),
+      currentBestPriceCents,
     };
 
     // Informational per-merchant scores. The embed never reorders the

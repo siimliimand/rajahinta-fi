@@ -48,6 +48,12 @@ export const RATE_LIMIT_PROFILES = {
   SEARCH: { limit: 30, windowMs: 60_000 },
   DECLARATION: { limit: 20, windowMs: 60_000 },
   HISTORICAL: { limit: 30, windowMs: 60_000 },
+  /**
+   * Savings discovery listing (insight-surfaces 2.3): SEARCH parity —
+   * a public read over the materialized snapshot day. Its own profile
+   * so the discovery surface's budget stays isolated from search's.
+   */
+  SAVINGS: { limit: 30, windowMs: 60_000 },
 } as const;
 
 export type RateLimitProfileName = keyof typeof RATE_LIMIT_PROFILES;
