@@ -1,0 +1,11 @@
+-- Task 1.2 (change insight-surfaces, design D3): blog_posts gains `kind`
+-- (RATE_CHANGE | GUIDE), additive with DEFAULT 'RATE_CHANGE' — existing
+-- rows keep their rate-change-explainer interpretation via the default
+-- and no backfill runs. Slug uniqueness stays per (slug, locale): the
+-- unique index is untouched and kind is part of no key.
+--
+-- SQLite cannot add a NAMED table-level CHECK via ALTER TABLE, so the
+-- value set rides on the column definition: it is enforced identically
+-- on every subsequent write, and the existing rows take the default,
+-- which is a member of the set (verified against node:sqlite).
+ALTER TABLE `blog_posts` ADD `kind` text(16) DEFAULT 'RATE_CHANGE' NOT NULL CHECK(`blog_posts`.`kind` IN ('RATE_CHANGE','GUIDE'));

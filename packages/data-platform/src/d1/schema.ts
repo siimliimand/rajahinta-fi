@@ -1808,6 +1808,14 @@ export const blogPosts = sqliteTable(
     bodyMarkdown: text('body_markdown').notNull(),
     /** Lifecycle: DRAFT until the audited operator publish; public endpoints return PUBLISHED only. */
     status: text('status', { length: 16 }).default('DRAFT').notNull(),
+    /**
+     * Content kind (change insight-surfaces, task 1.2): RATE_CHANGE
+     * explainers vs GUIDE evergreen content. Additive with the
+     * RATE_CHANGE default — pre-kind rows keep their interpretation
+     * without a backfill (design D3), and slug uniqueness stays per
+     * (slug, locale), untouched by kind.
+     */
+    kind: text('kind', { length: 16 }).default('RATE_CHANGE').notNull(),
     /** Rate dataset version the post explains (version_label vocabulary) — null for posts without a rate tie-in. */
     rateDatasetVersion: text('rate_dataset_version', { length: 64 }),
     /** When published — null while DRAFT. */
@@ -1821,10 +1829,74 @@ export const blogPosts = sqliteTable(
     index('blog_posts_locale_status_idx').on(table.locale, table.status),
     unique('blog_posts_slug_locale_unique').on(table.slug, table.locale),
     check('blog_posts_status_check', sql`${table.status} IN ('DRAFT', 'PUBLISHED')`),
+    check('blog_posts_kind_check', sql`${table.kind} IN ('RATE_CHANGE', 'GUIDE')`),
     // A blank slug/title is a draft-builder bug, not a post (the
     // producer_links non-empty CHECK precedent).
     check('blog_posts_slug_check', sql`${table.slug} <> ''`),
     check('blog_posts_title_check', sql`${table.title} <> ''`),
+  ],
+);
+
+/**
+ * Savings snapshots — one materialized row per product per as-of day
+ * (change insight-surfaces, task 1.1): the day's best foreign offer, the
+ * Alko reference, the estimated landed total, and the resulting gap.
+ *
+ * The daily insight job writes idempotently keyed by
+ * unique(as_of, product_id): re-running a day converges, last write wins
+ * (design D2 — the price-history-summary bucket-key pattern). Every money
+ * amount is INTEGER euro cents and the gap magnitude is INTEGER basis
+ * points (1/10 000) — floats never touch money or percentages (design
+ * D4). `tax_dataset_version` is a version_label reference, not an FK (the
+ * blog rate_dataset_version convention): versions are append-only rows
+ * across the rule tables, not keyed lookups. The Alko columns are null
+ * when no Alko reference was observed that day — absence is
+ * representable, a sentinel zero is not ("every number is explainable").
+ */
+export const savingsSnapshots = sqliteTable(
+  'savings_snapshots',
+  {
+    id: integer('id').primaryKey(),
+    /** Snapshot day, TEXT 'YYYY-MM-DD' — half of the upsert idempotency key. */
+    asOf: text('as_of').notNull(),
+    /** FK to product_master — the snapshot's canonical product. */
+    productId: integer('product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /** Product category (matches product_master.category) — the per-category range read's filter. */
+    category: text('category', { length: 32 }).notNull(),
+    /** Merchant of the day's best foreign offer. */
+    bestMerchant: text('best_merchant', { length: 128 }).notNull(),
+    /** Country the best offer ships from (ISO 3166-1 alpha-2). */
+    bestMerchantCountry: text('best_merchant_country', { length: 2 }).notNull(),
+    /** Best foreign offer price for one unit, in euro-cents (design D4). */
+    bestPriceCents: integer('best_price_cents').notNull(),
+    /** When the best offer was observed (ingestion time, ISO-8601). */
+    bestObservedAt: text('best_observed_at').notNull(),
+    /** Alko reference price for one unit, in euro-cents — null when not observed that day. */
+    alkoReferenceCents: integer('alko_reference_cents'),
+    /** When the Alko reference was observed — null with the reference. */
+    alkoObservedAt: text('alko_observed_at'),
+    /** Estimated landed total (taxes + transport included) for one unit, in euro-cents. */
+    landedTotalCents: integer('landed_total_cents').notNull(),
+    /** Reliability of the landed-total composition (core-domain ReliabilityStatus value set). */
+    landedReliability: text('landed_reliability', { length: 16 }).notNull(),
+    /** Aggregate confidence grade of the snapshot (core-domain ConfidenceLevel value set). */
+    confidence: text('confidence', { length: 16 }).notNull(),
+    /** Best-offer vs Alko-reference gap in euro-cents (sign carries the direction). */
+    gapCents: integer('gap_cents').notNull(),
+    /** The same gap in INTEGER basis points — the sortable, float-free ranking key (design D4). */
+    gapBasisPoints: integer('gap_basis_points').notNull(),
+    /** Tax-dataset version the landed total was computed against (version_label vocabulary). */
+    taxDatasetVersion: text('tax_dataset_version', { length: 64 }).notNull(),
+  },
+  (table) => [
+    // Idempotency key of the daily insight job's upsert (design D2).
+    unique('savings_snapshots_as_of_product_id_unique').on(table.asOf, table.productId),
+    // Serves the per-category closed-range read (category + as_of bounds).
+    index('savings_snapshots_category_as_of_idx').on(table.category, table.asOf),
+    check('savings_snapshots_landed_reliability_check', sql`${table.landedReliability} IN ${RELIABILITY_VALUES}`),
+    check('savings_snapshots_confidence_check', sql`${table.confidence} IN ${CONFIDENCE_VALUES}`),
   ],
 );
 
@@ -2005,6 +2077,7 @@ export const d1Schema = {
   blacklistEntries,
   calculationOutcomes,
   blogPosts,
+  savingsSnapshots,
   newsletterSubscribers,
   newsletterNotifications,
   shareSnapshots,

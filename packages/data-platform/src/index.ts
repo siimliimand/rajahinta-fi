@@ -149,6 +149,24 @@ export type {
 } from './repositories/d1/newsletter-notification.repository';
 
 // ---------------------------------------------------------------------------
+// Savings snapshots — D1-only materialized insight table (task 1.1, change
+// insight-surfaces); abstract in abstracts.ts, D1 implementation co-located
+// in the repository file (blog-post precedent: no pg counterpart, so no
+// Drizzle-module registration — D1 repositories take the raw binding)
+// ---------------------------------------------------------------------------
+
+export { D1SavingsSnapshotRepository } from './repositories/d1/savings-snapshot.repository';
+export {
+  SavingsSnapshotRepository,
+} from './abstracts';
+export type {
+  SavingsSnapshotRecord,
+  SavingsSnapshotUpsertInput,
+  SavingsReliabilityStatus,
+  SavingsConfidenceGrade,
+} from './abstracts';
+
+// ---------------------------------------------------------------------------
 // Product dimensions + carrier box types — D1-only tables (task 3.1, change
 // product-roadmap-phases-1-4); abstract + concrete are co-located in the
 // repository files (price-alert precedent; no pg counterpart)
