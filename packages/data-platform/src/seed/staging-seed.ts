@@ -26,6 +26,7 @@ import {
   transportOffers,
 } from '../index';
 import { SEED_RULES } from './tax-rules.seed';
+import { IMPORT_VAT_SEED_RULES } from './import-vat-rules.seed';
 
 // ---------------------------------------------------------------------------
 // Product seed data
@@ -303,10 +304,11 @@ export async function seedStagingDatabase(
 
   // -----------------------------------------------------------------------
   // 2. Tax rules — the OFFICIAL versioned dataset (v1.0-2024 …
-  // v3.0-2026, official vero.fi rates) plus clearly-marked staging
-  // placeholders that never collide with it (own version label).
+  // v3.0-2026, official vero.fi rates), the import-VAT dataset
+  // (import-vat-2024.1 …), plus clearly-marked staging
+  // placeholders that never collide with either (own version label).
   // -----------------------------------------------------------------------
-  const allTaxSeed = [...SEED_RULES, ...STAGING_TAX_RULES];
+  const allTaxSeed = [...SEED_RULES, ...IMPORT_VAT_SEED_RULES, ...STAGING_TAX_RULES];
   const existingTaxLabels = await db
     .select({ versionLabel: taxRules.versionLabel })
     .from(taxRules)
