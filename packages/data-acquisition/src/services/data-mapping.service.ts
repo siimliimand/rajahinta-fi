@@ -17,7 +17,14 @@ import type { RawFeedRecord } from '../interfaces/feed-adapter.interface';
 
 /** Paired upsert inputs for a single feed record. */
 export interface MappedPair {
-  readonly product: UpsertProductInput;
+  /**
+   * Product upsert input widened with the feed weight (design D7,
+   * change alks-feed-and-import-vat): the mapping persists the feed's
+   * `weightGrams` onto the product master — null when the feed carries
+   * no weight (Alko). Weight-unaware upsert implementations stay
+   * source-compatible; weight-aware ones read the field.
+   */
+  readonly product: UpsertProductInput & { readonly weightGrams: number | null };
   readonly offerInput: Omit<UpsertOfferInput, 'productId'>;
 }
 
@@ -45,7 +52,7 @@ export class DataMappingService {
     // source-category normalization (task 7.1) — the adapter maps the
     // source-market string to the canonical tax-rule key. Placeholders
     // here would be rejected by the classification gate downstream.
-    const product: UpsertProductInput = {
+    const product: MappedPair['product'] = {
       id: 0, // placeholder; the upsert adapter resolves the canonical ID
       name: record.productName,
       manufacturer: record.brand, // placeholder — feed adapter may provide actual manufacturer
@@ -60,6 +67,10 @@ export class DataMappingService {
       ean: record.ean,
       regulatoryClassification: record.regulatoryClassification,
       depositSystemStatus: false,
+      // D7 (alks-feed-and-import-vat): the feed weight lands on the
+      // product master; a feed without weight persists null, never an
+      // error.
+      weightGrams: record.weightGrams ?? null,
     };
 
     const offerInput: Omit<UpsertOfferInput, 'productId'> = {
@@ -72,6 +83,13 @@ export class DataMappingService {
       availability: 'in_stock',
       sourceUrl: record.sourceUrl,
       observedAt: new Date(),
+      // D3 (alks-feed-and-import-vat): an offer whose ABV or volume the
+      // feed left unresolved — null ABV or the parser's 0-ml encoding —
+      // is keyed ESTIMATED so the calculator surfaces the uncertainty
+      // instead of hiding the product. A fully-parsed scraped price is
+      // also ESTIMATED at ingestion (ingestion never self-certifies
+      // VERIFIED; the Alko flow pins that), so the keyed unresolved path
+      // can never be silently promoted by a future resolved-path change.
       reliabilityStatus: 'ESTIMATED',
     };
 

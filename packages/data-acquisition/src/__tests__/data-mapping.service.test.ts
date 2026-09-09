@@ -134,3 +134,91 @@ describe('DataMappingService — product and offer mapping', () => {
     expect(pairs[1].product.name).toBe('Lapin Kulta');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Feed weight on the product master (task 3.1, design D7,
+// change alks-feed-and-import-vat)
+// ---------------------------------------------------------------------------
+
+describe('DataMappingService — feed weight on the product master (task 3.1, design D7)', () => {
+  const service = new DataMappingService();
+
+  it('spec: weight 0.53 kg → weightGrams 530 on the product input', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ weightGrams: 530 }),
+      'alks',
+      'DE',
+    );
+
+    expect(product.weightGrams).toBe(530);
+  });
+
+  it('spec: absent weight → weightGrams null, no error', () => {
+    // Alko-shaped record: RawFeedRecord.weightGrams is optional and the
+    // Alko feed never sends it.
+    const { product } = service.mapToProductAndOffer(eurRecord(), 'alko', 'FI');
+
+    expect(product.weightGrams).toBeNull();
+  });
+
+  it('an explicit null weight (the parser\'s absent encoding) maps to null', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ weightGrams: null }),
+      'alks',
+      'DE',
+    );
+
+    expect(product.weightGrams).toBeNull();
+  });
+
+  it('mapBatch carries each record\'s weight record-for-record', () => {
+    const pairs = service.mapBatch(
+      [eurRecord({ weightGrams: 1250 }), eurRecord()],
+      'alks',
+      'DE',
+    );
+
+    expect(pairs[0].product.weightGrams).toBe(1250);
+    expect(pairs[1].product.weightGrams).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ESTIMATED offer on unresolved alcohol fields (task 3.1, design D3,
+// change alks-feed-and-import-vat) — keyed off the parser's encoding:
+// null ABV / 0 ml
+// ---------------------------------------------------------------------------
+
+describe('DataMappingService — ESTIMATED offer on unresolved alcohol fields (task 3.1, design D3)', () => {
+  const service = new DataMappingService();
+
+  it('spec: null ABV → the offer carries ESTIMATED', () => {
+    const { offerInput } = service.mapToProductAndOffer(
+      eurRecord({ alcoholByVolume: null }),
+      'alks',
+      'DE',
+    );
+
+    expect(offerInput.reliabilityStatus).toBe('ESTIMATED');
+  });
+
+  it('spec: 0 volume (the parser\'s absent-volume encoding) → the offer carries ESTIMATED', () => {
+    const { offerInput } = service.mapToProductAndOffer(
+      eurRecord({ volumeMl: 0 }),
+      'alks',
+      'DE',
+    );
+
+    expect(offerInput.reliabilityStatus).toBe('ESTIMATED');
+  });
+
+  it('a fully parsed record stays ESTIMATED — ingestion never self-certifies VERIFIED', () => {
+    const { offerInput } = service.mapToProductAndOffer(
+      eurRecord({ alcoholByVolume: 0.05, volumeMl: 330 }),
+      'alks',
+      'DE',
+    );
+
+    expect(offerInput.reliabilityStatus).toBe('ESTIMATED');
+  });
+});

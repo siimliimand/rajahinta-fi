@@ -214,6 +214,9 @@ function insertParams(record: ProductInsert): unknown[] {
     record.regulatoryClassification,
     booleanToInt(record.depositSystemStatus),
     record.ean ?? null,
+    // Feed weight (design D7, change alks-feed-and-import-vat): absent
+    // → null column, never an error.
+    record.weightGrams ?? null,
     record.createdAt?.toISOString() ?? new Date().toISOString(),
     record.updatedAt?.toISOString() ?? new Date().toISOString(),
   ];
@@ -259,16 +262,16 @@ const INSERT_SQL = `
   INSERT INTO product_master (
     name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
     container_type, regulatory_classification, deposit_system_status, ean,
-    created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    weight_grams, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   RETURNING ${PRODUCT_COLUMNS}`;
 
 const INSERT_WITH_ID_SQL = `
   INSERT INTO product_master (
     id, name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
     container_type, regulatory_classification, deposit_system_status, ean,
-    created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    weight_grams, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   RETURNING ${PRODUCT_COLUMNS}`;
 
 /** Upsert-by-Ean update — preserves id and createdAt, exactly like pg. */
@@ -276,7 +279,7 @@ const UPDATE_BY_EAN_SQL = `
   UPDATE product_master SET
     name = ?, manufacturer = ?, brand = ?, category = ?, alcohol_by_volume = ?,
     unit_volume = ?, container_type = ?, regulatory_classification = ?,
-    deposit_system_status = ?, updated_at = ?
+    deposit_system_status = ?, weight_grams = ?, updated_at = ?
   WHERE ean = ?
   RETURNING ${PRODUCT_COLUMNS}`;
 
@@ -454,6 +457,9 @@ export class D1ProductSearchRepository extends ProductRepository {
           record.containerType,
           record.regulatoryClassification,
           booleanToInt(record.depositSystemStatus),
+          // Feed weight refreshes with the other mutable fields; a
+          // weight-less feed persists null (design D7).
+          record.weightGrams ?? null,
           record.updatedAt?.toISOString() ?? new Date().toISOString(),
           record.ean,
         )
