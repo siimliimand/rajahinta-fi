@@ -380,6 +380,42 @@ export type {
 } from './unitprice/unitprice.types';
 
 // ---------------------------------------------------------------------------
+// Savings — daily landed-cost gap vs the Alko reference (pure, display-only;
+// spec savings-discovery)
+// ---------------------------------------------------------------------------
+
+export { computeSavingsGap, isSavingsGapValue } from './savings/gap';
+export { compareSavingsRows, sortSavingsRows } from './savings/ordering';
+export type {
+  SavingsGapResult,
+  SavingsGapValue,
+  SavingsGapUnavailable,
+  SavingsGapStatus,
+  SavingsGapUnavailableReason,
+  SavingsGapInput,
+} from './savings/savings.types';
+
+// ---------------------------------------------------------------------------
+// Price context — trailing-window statistics over daily price buckets
+// (pure, display-only; spec price-context)
+// ---------------------------------------------------------------------------
+
+export {
+  computePriceContextWindow,
+  isPriceContextValue,
+  PRICE_CONTEXT_WINDOW_DAYS,
+  PRICE_CONTEXT_MIN_BUCKETS,
+} from './price-context/window-stats';
+export { InvalidPriceContextInputError } from './price-context/price-context.types';
+export type {
+  PriceContextResult,
+  PriceContextValue,
+  PriceContextUnavailable,
+  PriceContextUnavailableReason,
+  PriceContextInput,
+} from './price-context/price-context.types';
+
+// ---------------------------------------------------------------------------
 // Packing — deterministic carrier box suggestion (FFD, mixing warning)
 // ---------------------------------------------------------------------------
 
