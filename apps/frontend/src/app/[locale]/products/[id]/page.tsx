@@ -22,6 +22,7 @@ import type { ProductDetailResponse } from '@/lib/types';
 import MerchantWarningNotice from '../../components/MerchantWarningNotice';
 import ProductAlertAction from './components/ProductAlertAction';
 import ProductDupesPanel from './components/ProductDupesPanel';
+import ProductPriceContextLine from './components/ProductPriceContextLine';
 
 interface ProductPageProps {
   params: Promise<{ locale: string; id: string }>;
@@ -214,6 +215,12 @@ export default async function ProductPage({ params }: ProductPageProps) {
           </table>
         )}
       </section>
+
+      {/* ── Price-context line (insight-surfaces 3.3) — derives from the
+          API's same current-best-price selection as the offers above, so
+          the sentence and the panel cannot contradict each other; absent
+          from the HTML when the context is unavailable ── */}
+      <ProductPriceContextLine productId={productId} />
 
       {/* ── Producer dupe panel — absent from the HTML when no curated
           links exist (design R9) ── */}

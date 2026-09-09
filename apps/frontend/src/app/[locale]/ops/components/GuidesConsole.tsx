@@ -42,7 +42,11 @@ export default function GuidesConsole({ locale }: { locale: string }) {
       draftsTitle: 'Oppaat',
       noGuides: 'Ei oppaita vielä.',
       edit: 'Muokkaa',
+      editorTitle: 'Muokkaa luonnosta',
+      editBodyHint:
+        'Tyhjäksi jätetty kenttä säilyttää tallennetun leipätekstin muuttumattomana — konsoli ei näytä tallennettua leipätekstiä.',
       save: 'Tallenna',
+      saving: 'Tallennetaan…',
       cancel: 'Peruuta',
       publish: 'Julkaise',
       publishedAt: 'julkaistu',
@@ -68,7 +72,11 @@ export default function GuidesConsole({ locale }: { locale: string }) {
       draftsTitle: 'Guides',
       noGuides: 'No guides yet.',
       edit: 'Edit',
+      editorTitle: 'Edit draft',
+      editBodyHint:
+        'Leave the field empty to keep the stored body unchanged — the console does not display the stored body.',
       save: 'Save',
+      saving: 'Saving…',
       cancel: 'Cancel',
       publish: 'Publish',
       publishedAt: 'published',
@@ -90,10 +98,15 @@ export default function GuidesConsole({ locale }: { locale: string }) {
   const [body, setBody] = useState('');
   const [creating, setCreating] = useState(false);
 
-  // The one draft being edited inline (id + current field values).
+  // The one draft being edited inline (id + current field values). The
+  // list endpoint carries no body field and no single-draft read
+  // exists, so the body textarea starts empty and an empty field means
+  // "keep the stored body" (the PATCH-shaped edit endpoint omits absent
+  // fields) — the hint below the field states this to the operator.
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editBody, setEditBody] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const ready = operator.trim() !== '' && token.trim() !== '';
 
@@ -110,13 +123,21 @@ export default function GuidesConsole({ locale }: { locale: string }) {
     }
   }, [t.actionFailed, token]);
 
-  const run = async (action: () => Promise<unknown>) => {
+  /**
+   * Runs one mutation and refreshes the list afterwards. Returns whether
+   * the action succeeded so callers can keep the editor open (with the
+   * error shown) instead of silently discarding the operator's input on
+   * a failed save.
+   */
+  const run = async (action: () => Promise<unknown>): Promise<boolean> => {
     setError(null);
     try {
       await action();
       await refresh();
+      return true;
     } catch (err) {
       setError(err instanceof OpsApiError || err instanceof Error ? err.message : t.actionFailed);
+      return false;
     }
   };
 
@@ -135,6 +156,28 @@ export default function GuidesConsole({ locale }: { locale: string }) {
     setSlug('');
     setTitle('');
     setBody('');
+  };
+
+  /**
+   * Saves the open editor: absent/empty title is rejected by the button's
+   * disabled state; an empty body field is omitted so the endpoint keeps
+   * the stored body. The editor closes only on success.
+   */
+  const saveDraft = async (id: number) => {
+    setSaving(true);
+    const ok = await run(() =>
+      editGuideDraft(token, id, {
+        operator: operator.trim(),
+        title: editTitle.trim(),
+        ...(editBody.trim() === '' ? {} : { bodyMarkdown: editBody }),
+      }),
+    );
+    setSaving(false);
+    if (ok) {
+      setEditingId(null);
+      setEditTitle('');
+      setEditBody('');
+    }
   };
 
   const guides = items ?? [];
@@ -295,7 +338,16 @@ export default function GuidesConsole({ locale }: { locale: string }) {
                   </div>
                 </div>
                 {editingId === guide.id && (
-                  <div className="mt-3 space-y-2">
+                  <form
+                    className="mt-3 space-y-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void saveDraft(guide.id);
+                    }}
+                  >
+                    <p className="text-xs font-semibold text-gray-700">
+                      {t.editorTitle}
+                    </p>
                     <label className="block text-xs font-medium text-gray-700">
                       {t.titleLabel}
                       <input
@@ -314,23 +366,25 @@ export default function GuidesConsole({ locale }: { locale: string }) {
                         className={inputClass}
                       />
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void run(() =>
-                          editGuideDraft(token, guide.id, {
-                            operator: operator.trim(),
-                            ...(editTitle.trim() === '' ? {} : { title: editTitle.trim() }),
-                            ...(editBody.trim() === '' ? {} : { bodyMarkdown: editBody }),
-                          }),
-                        ).then(() => setEditingId(null));
-                      }}
-                      disabled={!ready}
-                      className="rounded bg-primary-600 px-3 py-1.5 font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-                    >
-                      {t.save}
-                    </button>
-                  </div>
+                    <p className="text-[11px] text-gray-400">{t.editBodyHint}</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        disabled={!ready || saving || editTitle.trim() === ''}
+                        className="rounded bg-primary-600 px-3 py-1.5 font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+                      >
+                        {saving ? t.saving : t.save}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(null)}
+                        disabled={saving}
+                        className="rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {t.cancel}
+                      </button>
+                    </div>
+                  </form>
                 )}
               </li>
             ))}

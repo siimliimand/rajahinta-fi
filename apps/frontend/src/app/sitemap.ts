@@ -1,13 +1,14 @@
 /**
  * Sitemap (task 9.5; curated lists added by task 7.2, blog by
- * trust-and-reach-roadmap task 5.2).
+ * trust-and-reach-roadmap task 5.2, savings + guides by insight-surfaces
+ * tasks 2.4/5.2).
  *
  * Static destinations per locale plus per-product URLs drawn from the
  * product listing via the shared API client, one URL per published
  * curated list drawn from the list catalog, and one URL per published
- * blog post per locale. Finnish serves from the unprefixed paths,
- * English under /en (localePrefix: 'as-needed'). Backend reads are
- * cached; an unreachable backend degrades to a static-routes-only
+ * blog post and guide per locale. Finnish serves from the unprefixed
+ * paths, English under /en (localePrefix: 'as-needed'). Backend reads
+ * are cached; an unreachable backend degrades to a static-routes-only
  * sitemap rather than a failed one. The catalog only ever advertises
  * URLs that serve: a fetch failure or a catalog without published
  * entries yields zero dynamic URLs (the sitemap degrades to inert).
@@ -20,7 +21,8 @@ import { getServerProductListing, SITE_URL, BASE_URL } from '@/lib/api';
 import { routing } from '@/i18n/routing';
 
 /** Static destinations every locale offers (header navigation surface;
- * /allowances added by insight-surfaces task 4.2). */
+ * /allowances added by insight-surfaces task 4.2; /savings and /guides
+ * by insight-surfaces tasks 2.4/5.2). */
 const STATIC_PATHS = [
   '',
   '/calculator',
@@ -28,7 +30,9 @@ const STATIC_PATHS = [
   '/basket',
   '/ranking',
   '/blog',
+  '/guides',
   '/allowances',
+  '/savings',
 ];
 
 /** One catalog row — slug + display title (criteria live per slug). */
@@ -95,16 +99,50 @@ async function getServerBlogSlugs(locale: string): Promise<string[]> {
   }
 }
 
+/**
+ * Published guide slugs for one locale (GET /api/v1/guides?locale=,
+ * insight-surfaces task 5.2). The endpoint serves PUBLISHED GUIDE rows
+ * only, so anything it returns is advertiseable. Same degradation
+ * contract as the blog slugs.
+ */
+async function getServerGuideSlugs(locale: string): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/api/v1/guides?locale=${encodeURIComponent(locale)}`,
+      {
+        headers: { accept: 'application/json' },
+        next: { revalidate: 900 },
+      },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as { items?: Array<{ slug?: unknown }> };
+    const slugs = Array.isArray(body.items)
+      ? body.items
+          .map((guide) => guide?.slug)
+          .filter((slug): slug is string => typeof slug === 'string' && SLUG_PATTERN.test(slug))
+      : [];
+    return slugs;
+  } catch {
+    return [];
+  }
+}
+
 export const revalidate = 900;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [products, listSlugs, ...blogSlugLists] = await Promise.all([
+  const [products, listSlugs, ...slugLists] = await Promise.all([
     getServerProductListing(),
     getServerCuratedListSlugs(),
-    ...routing.locales.map((locale) => getServerBlogSlugs(locale)),
+    ...routing.locales.flatMap((locale) => [
+      getServerBlogSlugs(locale),
+      getServerGuideSlugs(locale),
+    ]),
   ]);
   const blogSlugsByLocale = new Map(
-    routing.locales.map((locale, index) => [locale, blogSlugLists[index]]),
+    routing.locales.map((locale, index) => [locale, slugLists[index * 2]]),
+  );
+  const guideSlugsByLocale = new Map(
+    routing.locales.map((locale, index) => [locale, slugLists[index * 2 + 1]]),
   );
 
   const entries: MetadataRoute.Sitemap = [];
@@ -143,6 +181,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     for (const slug of blogSlugsByLocale.get(locale) ?? []) {
       entries.push({
         url: `${SITE_URL}${prefix}/blog/${slug}`,
+        changeFrequency: 'weekly',
+        priority: 0.6,
+      });
+    }
+
+    // Published guides (insight-surfaces task 5.2) — per-locale, blog
+    // parity, PUBLISHED rows only.
+    for (const slug of guideSlugsByLocale.get(locale) ?? []) {
+      entries.push({
+        url: `${SITE_URL}${prefix}/guides/${slug}`,
         changeFrequency: 'weekly',
         priority: 0.6,
       });
