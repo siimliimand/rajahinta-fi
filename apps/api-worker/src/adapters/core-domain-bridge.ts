@@ -36,6 +36,7 @@ export type { ReliabilityStatus } from '../../../../packages/core-domain/src/rel
 
 // Feed mapping
 export { mapSourceCategory } from '../../../../packages/core-domain/src/normalization/source-category.mapper';
+export { standardizeContainerType } from '../../../../packages/core-domain/src/normalization/normalization.service';
 
 // Calculator engines + port contracts (offer-change recorder chain)
 export { ClassificationGateService } from '../../../../packages/core-domain/src/normalization/classification-gate.service';
