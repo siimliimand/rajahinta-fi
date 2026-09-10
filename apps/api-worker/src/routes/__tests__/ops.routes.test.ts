@@ -4,8 +4,9 @@
  * Expectations ported from the ops suites:
  * - packages/application-api/src/ops/__tests__/ops-console.access.test.ts
  *   (deny-before-data: ops access),
- * - ops-governance.service.test.ts (list shape; mutations here fail
- *   closed — documented 3.8 scope note),
+ * - ops-governance.service.test.ts (list shape; grant/revoke/list now
+ *   read/write the durable D1 source_governance store — covered in depth
+ *   by ops.routes.governance.test.ts, task 2.2),
  * - ops-dataset-confirmation.service.test.ts (queue shape, tax review
  *   resolution, audit write),
  * - ops-correction-queue.service.test.ts / ops-audit-trail.service.test.ts
@@ -80,48 +81,6 @@ describe('GET/POST /ops/console/governance', () => {
       expect(item.sourceCount).toBe(0);
       expect(item.hasWarnings).toBe(false);
     }
-  });
-
-  it('fails grant/revoke closed with 503 (no D1 governance store)', async () => {
-    const { db, d1 } = openMigratedD1();
-    seedRegistryMerchant(db, { merchantId: 'alko', name: 'Alko', country: 'FI' });
-    const app = buildApp();
-
-    const grant = await request(app, authedEnv(d1), '/ops/console/governance/alko/grant', {
-      method: 'POST',
-      headers: JSON_HDRS,
-      body: JSON.stringify({
-        operator: 'ops-1',
-        acquisitionMethod: 'RETAILER_API',
-        sourceUrl: 'https://alko.example/api',
-      }),
-    });
-    const grantBody = await expectEnvelope(grant, 503, { error: 'StoreUnavailable' });
-    expect(grantBody.message).toContain('no D1 counterpart');
-
-    // Validation still precedes the unavailable store (controller parity).
-    const badGrant = await request(app, authedEnv(d1), '/ops/console/governance/alko/grant', {
-      method: 'POST',
-      headers: JSON_HDRS,
-      body: JSON.stringify({ operator: 'ops-1', acquisitionMethod: 'SCRAPING' }),
-    });
-    await expectEnvelope(badGrant, 400, {
-      message: expect.stringContaining('acquisitionMethod must be one of'),
-    });
-
-    const revoke = await request(app, authedEnv(d1), '/ops/console/governance/alko/revoke', {
-      method: 'POST',
-      headers: JSON_HDRS,
-      body: JSON.stringify({ operator: 'ops-1', reason: 'legal hold' }),
-    });
-    await expectEnvelope(revoke, 503, { error: 'StoreUnavailable' });
-
-    const noReason = await request(app, authedEnv(d1), '/ops/console/governance/alko/revoke', {
-      method: 'POST',
-      headers: JSON_HDRS,
-      body: JSON.stringify({ operator: 'ops-1' }),
-    });
-    await expectEnvelope(noReason, 400, { message: 'reason is required for revocation' });
   });
 });
 
