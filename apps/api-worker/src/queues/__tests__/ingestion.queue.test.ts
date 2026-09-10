@@ -22,6 +22,7 @@ import {
 } from '../../do/__tests__/memory-do-storage';
 import { composeMerchantRegistry } from '../pipeline';
 import { openMigratedD1 } from '../../analytics/__tests__/fake-d1';
+import { D1SourceGovernanceRepository } from '../../../../../packages/data-platform/src/repositories/d1/source-governance.repository';
 import { createLogger } from '../../logger';
 import type { Env } from '../../env';
 
@@ -210,5 +211,66 @@ describe('runIngestion — registry resolution at run time', () => {
     );
     expect(result.productsIngested).toBe(0);
     expect(result.errors[0]).toMatch(/unsupported feed format/);
+  });
+});
+
+describe('runIngestion — D1 governance default (task 2.1)', () => {
+  /**
+   * Migrated D1 plus the OBSERVATION_LOG stub the pipeline composition
+   * requires — the gated path never writes an observation, so the stub
+   * only has to exist.
+   */
+  function composedEnv(): Env {
+    const { d1 } = openMigratedD1();
+    return { DB: d1, OBSERVATION_LOG: {} } as unknown as Env;
+  }
+
+  async function seedAlkoRegistry(env: Env): Promise<void> {
+    await composeMerchantRegistry(env).upsert({
+      merchantId: 'alko',
+      name: 'Alko',
+      country: 'FI',
+      // Closed local port — a fetch ATTEMPT fails fast into errors[].
+      feedUrl: 'http://127.0.0.1:9/api',
+      feedFormat: 'json',
+      pollingIntervalMs: 3_600_000,
+    });
+  }
+
+  it('gates fail-closed over an empty source_governance table — identical to the old in-memory default', async () => {
+    const env = composedEnv();
+    await seedAlkoRegistry(env);
+
+    const result = await runIngestion(
+      { merchantId: 'alko', sourceUrl: 'https://alko.example/api' },
+      { env, log: LOG },
+    );
+
+    // The empty D1 table aggregates to PENDING: zero products and EMPTY
+    // errors — no fetch was attempted (a fetch attempt against the
+    // closed port would surface its failure in errors[]).
+    expect(result).toEqual({ productsIngested: 0, errors: [] });
+  });
+
+  it('reads the durable grant once it exists — the gate admits and the fetch attempt happens', async () => {
+    const env = composedEnv();
+    await seedAlkoRegistry(env);
+    await new D1SourceGovernanceRepository(env.DB).create({
+      merchantId: 'alko',
+      acquisitionMethod: 'RETAILER_API',
+      permissionStatus: 'GRANTED',
+      sourceUrl: 'https://alko.example/api',
+    });
+
+    const result = await runIngestion(
+      { merchantId: 'alko', sourceUrl: 'https://alko.example/api' },
+      { env, log: LOG },
+    );
+
+    // The D1-backed gate admitted the merchant, so the fetch ran and
+    // failed against the closed port — non-empty errors prove the gate
+    // opened (the fail-closed run above produced empty errors).
+    expect(result.productsIngested).toBe(0);
+    expect(result.errors.length).toBeGreaterThan(0);
   });
 });

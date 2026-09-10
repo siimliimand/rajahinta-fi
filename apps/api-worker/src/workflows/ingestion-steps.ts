@@ -80,9 +80,9 @@ import type {
   UpsertProductInput,
 } from '../../../../packages/data-acquisition/src/interfaces/upsert-port.interface';
 import type { IOfferChangeHook } from '../../../../packages/data-acquisition/src/interfaces/offer-change-hook.interface';
-import { InMemorySourceGovernanceRepository } from '../../../../packages/application-api/src/ops/governance/in-memory-source-governance.repository';
 import { D1MerchantRegistryRepository } from '../../../../packages/data-platform/src/repositories/d1/merchant-registry.repository';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
+import { D1SourceGovernanceRepository } from '../../../../packages/data-platform/src/repositories/d1/source-governance.repository';
 import { D1TaxRuleRepositoryAdapter } from '../../../../packages/data-platform/src/repositories/d1/tax-rate.repository';
 import { D1TransportOfferRepository } from '../../../../packages/data-platform/src/repositories/d1/transport-offer.repository';
 import { R2PriceObservationPort } from '../../../../packages/data-platform/src/repositories/d1/price-observation.repository';
@@ -184,7 +184,7 @@ export interface IngestionStageServices {
 
 /** Composition overrides (tests / alternative backing stores). */
 export interface IngestionStageCompositionOptions {
-  /** Governance backing; default is the process-local fail-closed store. */
+  /** Governance backing; default is the durable D1 source_governance store (fail-closed when empty). */
   readonly governanceRepository?: ISourceGovernanceRepository;
   /** Observation log binding override (tests use an in-memory store). */
   readonly observationStoreOverride?: ObservationLogStore;
@@ -218,7 +218,7 @@ export function composeIngestionStageServices(
   const upsertRepository =
     options.upsertRepositoryOverride ?? new D1UpsertRepository(env.DB);
   const governance = new SourceGovernanceService(
-    options.governanceRepository ?? new InMemorySourceGovernanceRepository(),
+    options.governanceRepository ?? new D1SourceGovernanceRepository(env.DB),
   );
 
   // Offer-change hook → core-domain recorder → R2 observation log
