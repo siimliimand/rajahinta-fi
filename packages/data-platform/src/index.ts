@@ -20,6 +20,7 @@ export {
   auditEvents,
   clickCounterSnapshots,
   merchantRegistry,
+  sourceGovernance,
 } from './schema';
 
 // ---------------------------------------------------------------------------
@@ -246,6 +247,15 @@ export type {
   GroupOrderSessionView,
   GroupOrderParticipantSummary,
 } from './repositories/d1/group-order.repository';
+
+// ---------------------------------------------------------------------------
+// Source governance — the durable store behind the core-domain
+// ISourceGovernanceRepository port (task 1.2, change
+// durable-source-governance-store); no abstract — the core-domain port IS
+// the contract this D1 repository implements (the composition root binds it)
+// ---------------------------------------------------------------------------
+
+export { D1SourceGovernanceRepository } from './repositories/d1/source-governance.repository';
 
 // ---------------------------------------------------------------------------
 // Module boundary — pure interfaces for cross-layer contracts

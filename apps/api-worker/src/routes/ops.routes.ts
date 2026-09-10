@@ -25,14 +25,18 @@
  *
  * ## Fail-closed stores (documented scope note, task 3.8)
  *
- * - Tax rate-review entries and the source-governance table have NO D1
- *   counterpart yet (2.5 ported sessions, audit, watermarks, registry).
- *   The permission state therefore cannot resolve from storage, so
- *   governance reads fail closed to PENDING (permission never overstated
- *   — identical to the Nest service's unwired-port path) and the
- *   rate-review / governance / correction WRITES reject with 503 rather
- *   than fabricating persistence. This mirrors the phase-1 backend, where
- *   the same stores are in-memory or null-ported.
+ * - Tax rate-review entries have NO D1 counterpart yet (2.5 ported
+ *   sessions, audit, watermarks, registry), so the rate-review and
+ *   correction WRITES still reject with 503 rather than fabricating
+ *   persistence — mirroring the phase-1 backend, where the same stores
+ *   are in-memory or null-ported.
+ * - Source governance (task 2.2, change durable-source-governance-store)
+ *   is DURABLE now: the list joins the merchant registry with the
+ *   D1SourceGovernanceRepository's aggregated `checkPermission` (never
+ *   overstated), and grant/revoke mutate the `source_governance` table
+ *   with the Nest OpsGovernanceService semantics, auditing through
+ *   WorkerAuditService. The former governanceUnavailable() 503 is gone —
+ *   the console has no known-unservable governance mutation.
  *
  * @module OpsRoutes
  */
@@ -45,6 +49,12 @@ import { ApiHttpError } from '../errors';
 import { parseIntParam } from './support';
 import { WorkerAuditService } from '../adapters/audit';
 import { D1MerchantRegistryRepository } from '../../../../packages/data-platform/src/repositories/d1/merchant-registry.repository';
+import { D1SourceGovernanceRepository } from '../../../../packages/data-platform/src/repositories/d1/source-governance.repository';
+import type {
+  AcquisitionMethod,
+  PermissionStatus,
+  SourceGovernanceRecord,
+} from '../../../../packages/core-domain/src/governance/source-governance.types';
 import {
   D1ConsumptionNormsRepository,
   MissingNormSourceCitationError,
@@ -121,42 +131,73 @@ async function readBody(c: Context): Promise<Record<string, unknown>> {
 }
 
 // ---------------------------------------------------------------------------
-// Governance — fail-closed reads, unwritable store
+// Governance — durable source_governance store (task 2.2, change
+// durable-source-governance-store; Nest OpsGovernanceService semantics)
 // ---------------------------------------------------------------------------
 
+/**
+ * Aggregate statuses with the port's first-match-wins priority — the same
+ * ordering D1SourceGovernanceRepository.checkPermission applies. Only
+ * called with non-empty record sets (snapshot/revoke paths), so the
+ * fallback never fires in practice.
+ */
+function aggregateGovernanceStatus(
+  records: readonly SourceGovernanceRecord[],
+): PermissionStatus {
+  const priority = ['GRANTED', 'PENDING', 'EXPIRED', 'REVOKED'] as const;
+  return (
+    priority.find((candidate) =>
+      records.some((record) => record.permissionStatus === candidate),
+    ) ?? 'PENDING'
+  );
+}
+
+/**
+ * GET /ops/console/governance — registry merchants joined with their
+ * aggregated governance state, the console's grant/revoke worklist.
+ * Merchants without governance records surface as PENDING with zero
+ * sources (never overstated).
+ */
 async function listGovernance(c: Context<AppEnv>): Promise<Response> {
+  const governance = new D1SourceGovernanceRepository(c.env.DB);
   const merchants = await new D1MerchantRegistryRepository(c.env.DB).list();
 
-  // Fail-closed permission state: without a governance store every
-  // merchant surfaces as PENDING with zero sources (never overstated) —
-  // the same shape SourceGovernanceService.checkPermission returns for a
-  // merchant with no registered sources.
-  return c.json({
-    items: merchants.map((merchant) => ({
+  // The console item shape (OpsGovernanceMerchant / ops.dto.ts parity) —
+  // the exact keys the frontend's governance types render.
+  const items: {
+    merchantId: string;
+    name: string;
+    country: string;
+    feedUrl: string;
+    permissionStatus: PermissionStatus;
+    sourceCount: number;
+    hasWarnings: boolean;
+  }[] = [];
+  for (const merchant of merchants) {
+    const check = await governance.checkPermission(merchant.merchantId);
+    items.push({
       merchantId: merchant.merchantId,
       name: merchant.name,
       country: merchant.country,
       feedUrl: merchant.feedUrl,
-      permissionStatus: 'PENDING',
-      sourceCount: 0,
-      hasWarnings: false,
-    })),
-    total: merchants.length,
-  });
+      permissionStatus: check.permissionStatus,
+      sourceCount: check.sources.length,
+      hasWarnings: check.hasWarnings,
+    });
+  }
+  return c.json({ items, total: items.length });
 }
 
-function governanceUnavailable(): never {
-  throw new ApiHttpError(503, {
-    statusCode: 503,
-    message:
-      'Governance mutations are unavailable: the source-governance store has no ' +
-      'D1 counterpart yet (no table was ported in migrate-to-cloudflare 2.5). ' +
-      'Failing closed rather than writing to a non-durable store.',
-    error: 'StoreUnavailable',
-  });
-}
-
+/**
+ * POST /ops/console/governance/:merchantId/grant — Nest
+ * OpsGovernanceService.grantPermission parity: the first PENDING or
+ * EXPIRED record transitions to GRANTED; a merchant with no records gets
+ * a new GRANTED source registered; an already-fully-granted merchant is a
+ * no-op (`changed: false`, nothing audited). Every state change appends a
+ * `source_governance` audit row (operator identity, before/after, note).
+ */
 async function grantGovernance(c: Context<AppEnv>): Promise<Response> {
+  const merchantId = c.req.param('merchantId') ?? '';
   const dto = await readBody(c);
   validateOperator(dto);
   if (!ACQUISITION_METHODS.includes(dto.acquisitionMethod as string)) {
@@ -168,16 +209,131 @@ async function grantGovernance(c: Context<AppEnv>): Promise<Response> {
   if (typeof dto.sourceUrl !== 'string' || dto.sourceUrl.trim() === '') {
     throw new ApiHttpError(400, 'sourceUrl must be a non-empty string');
   }
-  governanceUnavailable();
+
+  const merchant = await new D1MerchantRegistryRepository(c.env.DB).findByMerchantId(
+    merchantId,
+  );
+  if (merchant === null) {
+    throw new ApiHttpError(404, `Merchant "${merchantId}" is not in the registry`);
+  }
+
+  const repo = new D1SourceGovernanceRepository(c.env.DB);
+  const records = await repo.findByMerchantId(merchantId);
+  const note = (dto.note as string | undefined)?.trim() || undefined;
+
+  const transitionable = records.find(
+    (record) =>
+      record.permissionStatus === 'PENDING' || record.permissionStatus === 'EXPIRED',
+  );
+
+  let action: 'created' | 'updated';
+  let granted: SourceGovernanceRecord;
+  let previousStatus: PermissionStatus | undefined;
+
+  if (transitionable !== undefined) {
+    previousStatus = transitionable.permissionStatus;
+    const updated = await repo.updateStatus(transitionable.id, 'GRANTED', note);
+    if (updated === null) {
+      throw new ApiHttpError(
+        404,
+        `Governance record ${transitionable.id} disappeared mid-grant`,
+      );
+    }
+    granted = updated;
+    action = 'updated';
+  } else if (records.length === 0) {
+    granted = await repo.create({
+      merchantId,
+      acquisitionMethod: dto.acquisitionMethod as AcquisitionMethod,
+      permissionStatus: 'GRANTED',
+      sourceUrl: dto.sourceUrl as string,
+    });
+    action = 'created';
+  } else {
+    // Every source already GRANTED — the requested state already holds.
+    return c.json({
+      merchantId,
+      permissionStatus: aggregateGovernanceStatus(records),
+      updatedSources: 0,
+      changed: false,
+    });
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'source_governance',
+    entityId: merchantId,
+    action,
+    author: dto.operator as string,
+    reason: note ?? 'Governance permission granted via operator console',
+    ...(previousStatus !== undefined
+      ? { previousValue: { permissionStatus: previousStatus } }
+      : {}),
+    newValue: {
+      permissionStatus: 'GRANTED',
+      acquisitionMethod: granted.acquisitionMethod,
+      sourceUrl: granted.sourceUrl,
+    },
+  });
+
+  const check = await repo.checkPermission(merchantId);
+  return c.json({
+    merchantId,
+    permissionStatus: check.permissionStatus,
+    updatedSources: 1,
+    changed: true,
+  });
 }
 
+/**
+ * POST /ops/console/governance/:merchantId/revoke — the primary
+ * revocation path (Nest revokePermission parity): reason mandatory,
+ * unknown merchants and merchants without records 404, every non-REVOKED
+ * source ends, and the decision is audited with the aggregated before
+ * status and the revoked count.
+ */
 async function revokeGovernance(c: Context<AppEnv>): Promise<Response> {
+  const merchantId = c.req.param('merchantId') ?? '';
   const dto = await readBody(c);
   validateOperator(dto);
   if (typeof dto.reason !== 'string' || dto.reason.trim() === '') {
     throw new ApiHttpError(400, 'reason is required for revocation');
   }
-  governanceUnavailable();
+
+  const merchant = await new D1MerchantRegistryRepository(c.env.DB).findByMerchantId(
+    merchantId,
+  );
+  if (merchant === null) {
+    throw new ApiHttpError(404, `Merchant "${merchantId}" is not in the registry`);
+  }
+
+  const repo = new D1SourceGovernanceRepository(c.env.DB);
+  const records = await repo.findByMerchantId(merchantId);
+  if (records.length === 0) {
+    throw new ApiHttpError(
+      404,
+      `Merchant "${merchantId}" has no governance records to revoke`,
+    );
+  }
+
+  const reason = dto.reason.trim();
+  const revokedCount = await repo.revokeAllByMerchantId(merchantId, reason);
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'source_governance',
+    entityId: merchantId,
+    action: 'updated',
+    author: dto.operator as string,
+    reason,
+    previousValue: { permissionStatus: aggregateGovernanceStatus(records) },
+    newValue: { permissionStatus: 'REVOKED', revokedSources: revokedCount },
+  });
+
+  return c.json({
+    merchantId,
+    permissionStatus: 'REVOKED' as PermissionStatus,
+    updatedSources: revokedCount,
+    changed: revokedCount > 0,
+  });
 }
 
 // ---------------------------------------------------------------------------

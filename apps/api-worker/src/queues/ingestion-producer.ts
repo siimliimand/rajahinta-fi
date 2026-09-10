@@ -32,6 +32,7 @@ import {
   composeGovernanceService,
   composeMerchantRegistry,
 } from './pipeline';
+import { D1SourceGovernanceRepository } from '../../../../packages/data-platform/src/repositories/d1/source-governance.repository';
 import type { Env } from '../env';
 
 /** The cron pattern the producer registers under (wrangler triggers.crons). */
@@ -112,7 +113,10 @@ export async function isMerchantPermitted(
  * permitted merchant out.
  *
  * `deps` is a test seam (queue send + governance check); production
- * composes the D1 registry, the governance service, and `env.INGESTION_QUEUE`.
+ * composes the D1 registry, the governance service over the durable
+ * D1SourceGovernanceRepository — an empty source_governance table
+ * aggregates to PENDING (fail-closed), so a console grant reaches this
+ * gate without a deploy — and `env.INGESTION_QUEUE`.
  * The queue seam is the structural send surface — not the workers-types
  * Queue — so tests need no binding-shaped stubs.
  */
@@ -128,7 +132,13 @@ export async function schedulePriceIngestions(
   const now = deps.now ?? new Date();
   const log = deps.log ?? createLogger(env.LOG_LEVEL);
   const queue = deps.queue ?? ingestionQueue(env);
-  const governance = composeGovernanceService();
+  // Durable governance default (task 2.1) — the same D1-backed gate the
+  // pipeline and the consumer compose: an empty source_governance table
+  // aggregates to PENDING (fail-closed); a console GRANTED row opens the
+  // merchant without a deploy. `deps.checkPermission` still overrides.
+  const governance = composeGovernanceService(
+    new D1SourceGovernanceRepository(env.DB),
+  );
   const checkPermission =
     deps.checkPermission ?? ((id: string) => governance.checkPermission(id));
 

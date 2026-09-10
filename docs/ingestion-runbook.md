@@ -76,16 +76,22 @@ reason. There is no auto-grant or config-file grant path.
       IPs/CIDRs). If neither is configured, every ops route is denied
       (403) by design. Requests carry
       `Authorization: Bearer $OPS_BEARER_TOKEN`.
-- [ ] **Durable governance store wired.** Current status: the
-      source-governance store has no D1 counterpart yet (no table was
-      ported in `migrate-to-cloudflare` 2.5), so console governance
-      mutations fail closed with `503 StoreUnavailable` rather than
-      write to a non-durable store, and the console list reports every
-      merchant as `PENDING` with zero sources. This is a prerequisite
-      for the grant steps below to take effect, owned by the platform
-      engineer. **A 503 is the fail-closed stop, not a failed grant —
-      do not work around it with manual database writes** (the absence
-      of a governance table is itself part of the gate).
+- [ ] **Migration 0021 applied to the environment's D1 database.** The
+      durable `source_governance` table (D1 migration
+      `packages/data-platform/src/d1/migrations/0021_source_governance.sql`)
+      must exist before granting is possible — grant, revoke, list, and
+      both ingestion gates read it, and granting is possible only
+      through the console once it does. The staging deploy pipeline
+      applies it automatically (`wrangler d1 migrations apply` over the
+      shared drizzle-kit migration dir, before seed and rollout);
+      production applies migrations in the gated
+      `deploy-production.yml`. Verify:
+      `GET $STAGING_API_URL/ops/console/governance` lists every
+      merchant as `PENDING` with zero sources. An un-granted merchant
+      stays fail-closed (`PENDING`) exactly as before. **Do not work
+      around a missing table with manual database writes** — apply the
+      migration through the pipeline; grants themselves are console
+      actions (§2.2).
 
 ---
 

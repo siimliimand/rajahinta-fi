@@ -7,6 +7,7 @@
  *
  * @module Schema
  */
+import { sql } from 'drizzle-orm';
 import {
   pgTable,
   serial,
@@ -21,6 +22,7 @@ import {
   date,
   unique,
   primaryKey,
+  check,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
@@ -739,3 +741,59 @@ export const merchantRegistry = pgTable('merchant_registry', {
   /** When the registry row last changed — onboarding audit trail. */
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+/**
+ * Source governance — merchant data-source permission records (task 1.1,
+ * change durable-source-governance-store).
+ *
+ * One row per registered merchant data source, mirroring the core-domain
+ * `SourceGovernanceRecord` (packages/core-domain/src/governance/
+ * source-governance.types.ts) — the durable store behind
+ * `ISourceGovernanceRepository`. Permission state is the fail-closed gate
+ * in front of every feed fetch: a merchant with no row (or no GRANTED
+ * row) is not ingested. Registration is append-only (a merchant accrues
+ * sources; `checkPermission` aggregates); status changes UPDATE the row
+ * in place — forward-only transitions (PENDING/EXPIRED → GRANTED →
+ * REVOKED) are enforced by the repository layer, not by triggers, and the
+ * audit event carries the history. Rows are never deleted. Operator-
+ * created runtime data only — never seeded.
+ */
+export const sourceGovernance = pgTable(
+  'source_governance',
+  {
+    id: serial('id').primaryKey(),
+    /** Stable merchant identifier — join key to merchant_registry.merchant_id. */
+    merchantId: varchar('merchant_id', { length: 128 }).notNull(),
+    /** How this source is acquired — core-domain AcquisitionMethod value set (CHECK below). */
+    acquisitionMethod: varchar('acquisition_method', { length: 32 }).notNull(),
+    /** Current permission/compliance state — core-domain PermissionStatus value set (CHECK below). */
+    permissionStatus: varchar('permission_status', { length: 16 }).notNull(),
+    /** URL or reference identifying the origin of this source. */
+    sourceUrl: text('source_url').notNull(),
+    /**
+     * Reason for the current status. Nullable at the schema level: the
+     * repository materializes it as required for REVOKED rows; optional
+     * otherwise (mirrors `SourceGovernanceRecord.statusReason: string |
+     * null`).
+     */
+    statusReason: text('status_reason'),
+    /** Date of the last permission verification — domain timestamp, supplied by the repository. */
+    lastVerifiedAt: timestamp('last_verified_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    /** When the status last changed — in-place status updates refresh it. */
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    // Closed value sets from core-domain source-governance.types.ts —
+    // an invalid method or status is unrepresentable at rest (the D1
+    // schema's CHECK discipline; first pg table that needs it).
+    check(
+      'source_governance_acquisition_method_check',
+      sql`${table.acquisitionMethod} IN ('PERMITTED_FEED', 'RETAILER_API', 'STRUCTURED_MERCHANT_FEED', 'LICENSED_PROVIDER', 'COMPLIANT_CRAWLING', 'MANUAL_VERIFICATION')`,
+    ),
+    check(
+      'source_governance_permission_status_check',
+      sql`${table.permissionStatus} IN ('GRANTED', 'PENDING', 'EXPIRED', 'REVOKED')`,
+    ),
+  ],
+);

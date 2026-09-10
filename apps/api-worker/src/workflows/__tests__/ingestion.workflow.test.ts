@@ -15,6 +15,7 @@ import type { Server } from 'node:http';
 import http from 'node:http';
 import {
   INGESTION_STEP_RETRY,
+  composeIngestionStageServices,
   runIngestionWorkflow,
   type IngestionStageServices,
   type IngestionWorkflowParams,
@@ -23,11 +24,13 @@ import {
 } from '../ingestion-steps';
 import { ensureWorkflowInstance } from '../handoff';
 import { processIngestionMessage } from '../../queues/ingestion.queue';
+import { composeMerchantRegistry } from '../../queues/pipeline';
 import {
   ReliabilityService,
   SourceGovernanceService,
 } from '@rajahinta/core-domain';
 import { InMemorySourceGovernanceRepository } from '../../../../../packages/application-api/src/ops/governance/in-memory-source-governance.repository';
+import { D1SourceGovernanceRepository } from '../../../../../packages/data-platform/src/repositories/d1/source-governance.repository';
 import { DataMappingService } from '../../../../../packages/data-acquisition/src/services/data-mapping.service';
 import { DataQualityService } from '../../../../../packages/data-acquisition/src/services/data-quality.service';
 import { FeedIngestionService } from '../../../../../packages/data-acquisition/src/services/feed-ingestion.service';
@@ -449,6 +452,142 @@ function workerEnv(): { env: Env; db: import('node:sqlite').DatabaseSync } {
   const { db, d1 } = openMigratedD1();
   return { env: { DB: d1 } as unknown as Env, db };
 }
+
+// ---------------------------------------------------------------------------
+// D1 governance default (task 2.1) — composition over the durable store
+// ---------------------------------------------------------------------------
+
+/**
+ * Env for the composed stage services: migrated D1 plus the
+ * OBSERVATION_LOG stub the composition requires — the gated paths never
+ * write an observation, so the stub only has to exist.
+ */
+function composedEnv(): Env {
+  const { d1 } = openMigratedD1();
+  return { DB: d1, OBSERVATION_LOG: {} } as unknown as Env;
+}
+
+async function seedAlkoRegistry(env: Env): Promise<void> {
+  await composeMerchantRegistry(env).upsert({
+    merchantId: 'alko',
+    name: 'Alko',
+    country: 'FI',
+    feedUrl: 'https://alko.example/api',
+    feedFormat: 'json',
+    pollingIntervalMs: 3_600_000,
+  });
+}
+
+/** Feed adapter that counts fetch attempts and returns one mappable record. */
+function recordingAdapter(): IFeedAdapter & { fetchCalls: number } {
+  const adapter = {
+    merchantId: 'alko',
+    fetchCalls: 0,
+    fetch: async () => {
+      adapter.fetchCalls++;
+      return { records: [feedRecord()], errors: [] };
+    },
+  };
+  return adapter;
+}
+
+describe('composeIngestionStageServices — D1 governance default (task 2.1)', () => {
+  const claims = {
+    complete: vi.fn(async () => undefined),
+    release: vi.fn(async () => undefined),
+  };
+
+  it('gates fail-closed over an empty migrated source_governance table — the fetch step never runs', async () => {
+    const env = composedEnv();
+    await seedAlkoRegistry(env);
+    const adapter = recordingAdapter();
+
+    const result = (await runIngestionWorkflow(workflowParams(), {
+      env,
+      step: new FakeWorkflowStep(),
+      NonRetryableError: FakeNonRetryableError,
+      // No services, no governanceRepository override — the D1 default.
+      stageOptions: { feedAdaptersOverride: new Map([['alko', adapter]]) },
+      claims,
+      log: LOG,
+    })) as { productsIngested: number; errors: string[] };
+
+    expect(result).toEqual({ productsIngested: 0, errors: [] });
+    expect(adapter.fetchCalls).toBe(0);
+
+    // The composed gate's raw verdict over the empty table — the exact
+    // PENDING / no-warnings shape the old in-memory default produced.
+    const check = await composeIngestionStageServices(
+      env,
+    ).governance.checkPermission('alko');
+    expect(check.permissionStatus).toBe('PENDING');
+    expect(check.sources).toEqual([]);
+    expect(check.hasWarnings).toBe(false);
+  });
+
+  it('admits the run once a GRANTED row lives in the durable table — the gate reads D1, not process memory', async () => {
+    const env = composedEnv();
+    await seedAlkoRegistry(env);
+    await new D1SourceGovernanceRepository(env.DB).create({
+      merchantId: 'alko',
+      acquisitionMethod: 'RETAILER_API',
+      permissionStatus: 'GRANTED',
+      sourceUrl: 'https://alko.example/api',
+    });
+    const adapter = recordingAdapter();
+
+    const result = (await runIngestionWorkflow(workflowParams(), {
+      env,
+      step: new FakeWorkflowStep(),
+      NonRetryableError: FakeNonRetryableError,
+      stageOptions: {
+        feedAdaptersOverride: new Map([['alko', adapter]]),
+        upsertRepositoryOverride: fakeUpserts(),
+      },
+      claims,
+      log: LOG,
+    })) as { productsIngested: number; errors: string[] };
+
+    expect(adapter.fetchCalls).toBe(1);
+    expect(result.productsIngested).toBe(1);
+    const check = await composeIngestionStageServices(
+      env,
+    ).governance.checkPermission('alko');
+    expect(check.permissionStatus).toBe('GRANTED');
+    expect(check.hasWarnings).toBe(false);
+  });
+
+  it('still honors an explicit governanceRepository override over the D1 default', async () => {
+    const env = composedEnv();
+    await seedAlkoRegistry(env);
+    const governanceRepository = new InMemorySourceGovernanceRepository();
+    void governanceRepository.create({
+      merchantId: 'alko',
+      acquisitionMethod: 'RETAILER_API',
+      permissionStatus: 'GRANTED',
+      sourceUrl: 'https://alko.example/api',
+    });
+    const adapter = recordingAdapter();
+
+    const result = (await runIngestionWorkflow(workflowParams(), {
+      env,
+      step: new FakeWorkflowStep(),
+      NonRetryableError: FakeNonRetryableError,
+      stageOptions: {
+        governanceRepository,
+        feedAdaptersOverride: new Map([['alko', adapter]]),
+        upsertRepositoryOverride: fakeUpserts(),
+      },
+      claims,
+      log: LOG,
+    })) as { productsIngested: number; errors: string[] };
+
+    // The D1 table is empty — only the in-memory override can admit
+    // this run.
+    expect(adapter.fetchCalls).toBe(1);
+    expect(result.productsIngested).toBe(1);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Queue → Workflow handoff (idempotent instance id = dedupe key)

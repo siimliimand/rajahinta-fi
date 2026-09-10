@@ -2,8 +2,10 @@
  * Price-ingestion producer tests (task 4.1) — dedupe-key shape, the
  * GRANTED-only governance gate, empty-feedUrl skip, and enqueue-failure
  * isolation. The registry runs on the real D1 repository over the fake-D1
- * harness (node:sqlite + committed migrations); governance is the real
- * in-memory repository seeded through its public create().
+ * harness (node:sqlite + committed migrations); gate-side tests use the
+ * `checkPermission` seam over the in-memory reference repository, and the
+ * task-2.1 pins exercise the production D1 governance default on the same
+ * migrated harness (seeded through the D1 repository's create()).
  *
  * @module IngestionProducerTest
  */
@@ -16,6 +18,7 @@ import {
 } from '../ingestion-producer';
 import type { IngestionMessageBody } from '../ingestion-message';
 import { InMemorySourceGovernanceRepository } from '../../../../../packages/application-api/src/ops/governance/in-memory-source-governance.repository';
+import { D1SourceGovernanceRepository } from '../../../../../packages/data-platform/src/repositories/d1/source-governance.repository';
 import { composeMerchantRegistry } from '../pipeline';
 import { openMigratedD1 } from '../../analytics/__tests__/fake-d1';
 import { createLogger } from '../../logger';
@@ -215,5 +218,60 @@ describe('schedulePriceIngestions', () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0].dedupeKey).toBe('price-ingestion-new-entrant-2026-08-30-17');
+  });
+});
+
+describe('schedulePriceIngestions — D1 governance default (task 2.1)', () => {
+  // Neither test passes the checkPermission seam: the production default
+  // (composeGovernanceService over D1SourceGovernanceRepository(env.DB))
+  // is the code under test.
+  it('fails closed on an empty source_governance table — every merchant skipped as not-permitted, zero enqueued', async () => {
+    const { env } = createEnv();
+    await seedMerchant(env, 'alko', 'https://alko.example/api');
+    await seedMerchant(env, 'eu-import', 'https://sb.example/json');
+
+    const sent: IngestionMessageBody[] = [];
+    const result = await schedulePriceIngestions(env, {
+      now: new Date('2026-08-30T18:00:00.000Z'),
+      queue: { send: async (body) => void sent.push(body) },
+    });
+
+    // The empty durable store aggregates to PENDING — identical to the
+    // old in-memory default, nothing reaches the queue.
+    expect(result).toEqual({
+      merchants: 2,
+      enqueued: 0,
+      skippedNoFeedUrl: 0,
+      skippedNotPermitted: 2,
+      enqueueErrors: 0,
+    });
+    expect(sent).toEqual([]);
+  });
+
+  it('enqueues a registry merchant from a GRANTED source_governance row — the console grant reaches the producer without a deploy', async () => {
+    const { env } = createEnv();
+    await seedMerchant(env, 'alko', 'https://alko.example/api');
+    await new D1SourceGovernanceRepository(env.DB).create({
+      merchantId: 'alko',
+      acquisitionMethod: 'RETAILER_API',
+      permissionStatus: 'GRANTED',
+      sourceUrl: 'https://alko.example/api',
+    });
+
+    const sent: IngestionMessageBody[] = [];
+    const result = await schedulePriceIngestions(env, {
+      now: new Date('2026-08-30T19:00:00.000Z'),
+      queue: { send: async (body) => void sent.push(body) },
+    });
+
+    expect(result.enqueued).toBe(1);
+    expect(result.skippedNotPermitted).toBe(0);
+    expect(sent).toEqual([
+      {
+        dedupeKey: 'price-ingestion-alko-2026-08-30-19',
+        merchantId: 'alko',
+        sourceUrl: 'https://alko.example/api',
+      },
+    ]);
   });
 });

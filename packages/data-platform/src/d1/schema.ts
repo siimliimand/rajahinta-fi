@@ -2047,6 +2047,59 @@ export const shareSnapshots = sqliteTable(
 );
 
 /**
+ * Source governance — merchant data-source permission records (task 1.1,
+ * change durable-source-governance-store).
+ *
+ * One row per registered merchant data source, mirroring the core-domain
+ * `SourceGovernanceRecord` (packages/core-domain/src/governance/
+ * source-governance.types.ts) — the durable store behind
+ * `ISourceGovernanceRepository`. Permission state is the fail-closed gate
+ * in front of every feed fetch: a merchant with no row (or no GRANTED
+ * row) is not ingested. Registration is append-only (a merchant accrues
+ * sources; `checkPermission` aggregates); status changes UPDATE the row
+ * in place — forward-only transitions (PENDING/EXPIRED → GRANTED →
+ * REVOKED) are enforced by the repository layer, not by triggers, and the
+ * audit event carries the history. Rows are never deleted. Operator-
+ * created runtime data only — never seeded.
+ */
+export const sourceGovernance = sqliteTable(
+  'source_governance',
+  {
+    id: integer('id').primaryKey(),
+    /** Stable merchant identifier — join key to merchant_registry.merchant_id. */
+    merchantId: text('merchant_id', { length: 128 }).notNull(),
+    /** How this source is acquired — core-domain AcquisitionMethod value set (CHECK below). */
+    acquisitionMethod: text('acquisition_method', { length: 32 }).notNull(),
+    /** Current permission/compliance state — core-domain PermissionStatus value set (CHECK below). */
+    permissionStatus: text('permission_status', { length: 16 }).notNull(),
+    /** URL or reference identifying the origin of this source. */
+    sourceUrl: text('source_url').notNull(),
+    /**
+     * Reason for the current status. Nullable at the schema level: the
+     * repository materializes it as required for REVOKED rows; optional
+     * otherwise (mirrors `SourceGovernanceRecord.statusReason: string |
+     * null`).
+     */
+    statusReason: text('status_reason'),
+    /** Date of the last permission verification — domain timestamp, supplied by the repository. */
+    lastVerifiedAt: text('last_verified_at').notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+    /** When the status last changed — in-place status updates refresh it. */
+    updatedAt: text('updated_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    check(
+      'source_governance_acquisition_method_check',
+      sql`${table.acquisitionMethod} IN ('PERMITTED_FEED', 'RETAILER_API', 'STRUCTURED_MERCHANT_FEED', 'LICENSED_PROVIDER', 'COMPLIANT_CRAWLING', 'MANUAL_VERIFICATION')`,
+    ),
+    check(
+      'source_governance_permission_status_check',
+      sql`${table.permissionStatus} IN ('GRANTED', 'PENDING', 'EXPIRED', 'REVOKED')`,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -2088,5 +2141,6 @@ export const d1Schema = {
   newsletterSubscribers,
   newsletterNotifications,
   shareSnapshots,
+  sourceGovernance,
   emailTokens,
 };

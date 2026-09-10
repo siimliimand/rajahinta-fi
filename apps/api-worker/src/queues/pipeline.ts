@@ -12,11 +12,11 @@
  * Workflow behind the same {@link runIngestion} interface.
  *
  * Governance stays fail-closed (the SourceGovernanceService semantics of
- * the BullMQ scheduler): the default repository is the process-local
- * in-memory store (no governance table exists in the schema yet — the
- * same Phase-1 state as the backend), so absent records, a governance
- * error, or any status other than GRANTED gate the merchant out before
- * any fetch or persistence.
+ * the BullMQ scheduler): the default repository is the durable
+ * D1SourceGovernanceRepository over env.DB — an empty source_governance
+ * table aggregates to PENDING (not granted), so absent records, a
+ * governance error, or any status other than GRANTED gate the merchant
+ * out before any fetch or persistence.
  *
  * @module IngestionPipeline
  */
@@ -47,6 +47,7 @@ import { merchantConfigFromRegistry } from '../../../../packages/data-acquisitio
 import { InMemorySourceGovernanceRepository } from '../../../../packages/application-api/src/ops/governance/in-memory-source-governance.repository';
 import { D1MerchantRegistryRepository } from '../../../../packages/data-platform/src/repositories/d1/merchant-registry.repository';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
+import { D1SourceGovernanceRepository } from '../../../../packages/data-platform/src/repositories/d1/source-governance.repository';
 import { D1TaxRuleRepositoryAdapter } from '../../../../packages/data-platform/src/repositories/d1/tax-rate.repository';
 import { D1TransportOfferRepository } from '../../../../packages/data-platform/src/repositories/d1/transport-offer.repository';
 import { R2PriceObservationPort } from '../../../../packages/data-platform/src/repositories/d1/price-observation.repository';
@@ -72,7 +73,7 @@ export interface IngestionPipeline {
 
 /** Composition seam for tests — swap any store/repository backing. */
 export interface PipelineCompositionOptions {
-  /** Governance backing; default is the process-local in-memory store. */
+  /** Governance backing; default is the durable D1 source_governance store (fail-closed when empty). */
   readonly governanceRepository?: ISourceGovernanceRepository;
   /** Observation log binding override (tests use an in-memory store). */
   readonly observationStoreOverride?: ObservationLogStore;
@@ -118,7 +119,9 @@ export function composeIngestionPipeline(
 
   // Write port + governance gate
   const upsertRepository = new D1UpsertRepository(env.DB);
-  const governance = composeGovernanceService(options.governanceRepository);
+  const governance = composeGovernanceService(
+    options.governanceRepository ?? new D1SourceGovernanceRepository(env.DB),
+  );
 
   // Offer-change hook → core-domain recorder → R2 observation log
   const gate = new ClassificationGateService();
