@@ -20,6 +20,7 @@ export {
   auditEvents,
   clickCounterSnapshots,
   merchantRegistry,
+  sourceGovernance,
 } from './schema';
 
 // ---------------------------------------------------------------------------
