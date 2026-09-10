@@ -14,5 +14,5 @@
 
 ## 3. Documentation and verification
 
-- [ ] 3.1 Runbook: §1 prerequisite section rewritten (the 503 stop no longer exists; migration 0021 must be applied before granting) and §2 staging steps confirmed executable as written; ARCHITECTURE.md operator-console description updated to the durable store <!-- agent: platform-engineer.fast, depends_on: [2.2], touches: [docs/ingestion-runbook.md, ARCHITECTURE.md] -->
-- [ ] 3.2 Full verification: typecheck, lint, unit suites (data-platform, api-worker, application-api), test:d1, integration; plus confirmation that deploy-staging applies migration 0021 (the grant itself stays an operator action after deploy, per the runbook) <!-- agent: platform-engineer.build, depends_on: [2.1, 2.2, 3.1], touches: [] -->
+- [x] 3.1 Runbook: §1 prerequisite section rewritten (the 503 stop no longer exists; migration 0021 must be applied before granting) and §2 staging steps confirmed executable as written; ARCHITECTURE.md operator-console description updated to the durable store <!-- agent: platform-engineer.fast, depends_on: [2.2], touches: [docs/ingestion-runbook.md, ARCHITECTURE.md] -->
+- [x] 3.2 Full verification: typecheck, lint, unit suites (data-platform, api-worker, application-api), test:d1, integration; plus confirmation that deploy-staging applies migration 0021 (the grant itself stays an operator action after deploy, per the runbook) <!-- agent: platform-engineer.build, depends_on: [2.1, 2.2, 3.1], touches: [] -->
