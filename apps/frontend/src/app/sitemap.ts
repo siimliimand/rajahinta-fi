@@ -3,10 +3,11 @@
  * trust-and-reach-roadmap task 5.2, savings + guides by insight-surfaces
  * tasks 2.4/5.2).
  *
- * Static destinations per locale plus per-product URLs drawn from the
- * product listing via the shared API client, one URL per published
- * curated list drawn from the list catalog, and one URL per published
- * blog post and guide per locale. Finnish serves from the unprefixed
+ * Static destinations per locale plus the six catalog category URLs
+ * (product-catalog task 3.2), per-product URLs drawn from the product
+ * listing via the shared API client, one URL per published curated list
+ * drawn from the list catalog, and one URL per published blog post and
+ * guide per locale. Finnish serves from the unprefixed
  * paths, English under /en (localePrefix: 'as-needed'). Backend reads
  * are cached; an unreachable backend degrades to a static-routes-only
  * sitemap rather than a failed one. The catalog only ever advertises
@@ -22,18 +23,33 @@ import { routing } from '@/i18n/routing';
 
 /** Static destinations every locale offers (header navigation surface;
  * /allowances added by insight-surfaces task 4.2; /savings and /guides
- * by insight-surfaces tasks 2.4/5.2). */
+ * by insight-surfaces tasks 2.4/5.2; /products by product-catalog task
+ * 3.2). */
 const STATIC_PATHS = [
   '',
   '/calculator',
   '/compare',
   '/basket',
+  '/products',
   '/ranking',
   '/blog',
   '/guides',
   '/allowances',
   '/savings',
 ];
+
+/** Canonical product categories — mirrors PRODUCT_CATEGORIES in the D1
+ *  schema (packages/data-platform), the set the API validates
+ *  ?category= against; the frontend cannot import that module (worker
+ *  bindings). Only these six values are advertiseable. */
+const CATALOG_CATEGORIES = [
+  'beer',
+  'wine_still',
+  'wine_sparkling',
+  'intermediate_products',
+  'other_fermented',
+  'spirits',
+] as const;
 
 /** One catalog row — slug + display title (criteria live per slug). */
 interface CuratedCatalogList {
@@ -155,6 +171,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         url: `${SITE_URL}${prefix}${path}`,
         changeFrequency: path === '' ? 'daily' : 'weekly',
         priority: path === '' ? 1 : 0.7,
+      });
+    }
+
+    // Catalog category views (product-catalog task 3.2) — page-1 state
+    // only, matching each state's canonical URL. Page ≥ 2 states stay
+    // out of the sitemap: an infinite parameter space with no uniquely
+    // indexable value (design D6).
+    for (const category of CATALOG_CATEGORIES) {
+      entries.push({
+        url: `${SITE_URL}${prefix}/products?category=${category}`,
+        changeFrequency: 'weekly',
+        priority: 0.6,
       });
     }
 

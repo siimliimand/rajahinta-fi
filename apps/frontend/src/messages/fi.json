@@ -62,6 +62,7 @@
     "calculator": "Laskuri",
     "compare": "Vertailu",
     "basket": "Ostoskori",
+    "products": "Tuotteet",
     "event": "Tilaisuuslaskuri",
     "trip": "Matkalaskuri",
     "whatIf": "Mitä jos -laskuri",
@@ -1418,5 +1419,26 @@
     "invalidHint": "Tarkista, että avasit viestissä olleen linkin sellaisenaan.",
     "errorBody": "Peruutus epäonnistui — yritä ladata sivu uudelleen.",
     "toHome": "Etusivulle"
+  },
+  "ProductsPage": {
+    "metaTitle": "Tuotteet — havaitut hinnat",
+    "metaDescription": "Tuoteluettelo havaittuine hintoineen ja myyjämäärineen, järjestettynä aakkosjärjestykseen.",
+    "metaCategoryTitle": "{category} — havaitut hinnat",
+    "metaCategoryDescription": "Tuoteluettelo tuoteryhmästä {category}: havaitut hinnat ja myyjämäärät, järjestetty aakkosjärjestykseen.",
+    "heading": "Tuotteet",
+    "intro": "Rajahintalaskuriin sisältyvä tuoteluettelo havaittuine hintoineen.",
+    "filterNavLabel": "Tuoteryhmä",
+    "allProducts": "Kaikki tuotteet",
+    "fromPriceLabel": "Halvin havaittu hinta",
+    "noPrice": "Ei havaittuja hintoja",
+    "merchantCount": "Myyjiä: {count}",
+    "paginationNavLabel": "Sivutus",
+    "prevPage": "Edellinen sivu",
+    "nextPage": "Seuraava sivu",
+    "pageStatus": "Sivu {page} / {totalPages}",
+    "emptyTitle": "Ei näytettäviä tuotteita",
+    "emptyBody": "Tähän näkymään ei ole tallentunut yhtään tuotetta.",
+    "unavailableTitle": "Tuoteluetteloa ei voida näyttää juuri nyt",
+    "unavailableBody": "Tuotetietojen haku ei onnistunut. Kokeile myöhemmin uudelleen."
   }
 }

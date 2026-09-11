@@ -2,6 +2,7 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
+import type { Metadata } from 'next';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import { request } from '@/lib/api';
@@ -25,12 +26,14 @@ import { Badge, Card, EmptyState } from '@/components/ui';
  * (400 on unknown values), so the page resolves the parameter BEFORE
  * fetching and never sends a value the contract rejects.
  *
- * Copy note (task scope): the message catalogs belong to task 3.2, so
- * the catalog's new copy lives in the module-local FI/EN record below
- * and 3.2 migrates it. The category labels reuse the vocabulary already
- * established in the catalogs (EventPage.drinkType, the only place the
- * six canonical values carry both locales), and the ABV line reuses the
- * existing Common.abvValue key.
+ * Copy note (task 3.2): all catalog copy lives in the message catalogs
+ * under the ProductsPage namespace; the category labels reuse the
+ * vocabulary already established in the catalogs (EventPage.drinkType,
+ * the only place the six canonical values carry both locales), and the
+ * ABV line reuses the existing Common.abvValue key. Discoverability
+ * (design D6): generateMetadata renders per-category FI/EN titles and
+ * descriptions, and every (category, page) state emits a canonical URL
+ * so parameter permutations do not fragment the index.
  *
  * @module CatalogPage
  */
@@ -60,7 +63,11 @@ const CATALOG_REVALIDATE_SECONDS = 900;
 
 /**
  * Category labels — the established FI/EN vocabulary from the message
- * catalogs (EventPage.drinkType); 3.2 relocates the catalog's own copy.
+ * catalogs (EventPage.drinkType). Kept as a structural constant rather
+ * than catalog keys because the same labels feed the filter links, the
+ * card badges, and the per-category metadata titles, and the flat
+ * canonical-key → localized-label mapping is not user-visible copy of
+ * its own.
  */
 const CATEGORY_LABELS: Record<CanonicalCategory, Record<CatalogLocale, string>> = {
   beer: { fi: 'Olut', en: 'Beer' },
@@ -72,63 +79,6 @@ const CATEGORY_LABELS: Record<CanonicalCategory, Record<CatalogLocale, string>> 
   },
   other_fermented: { fi: 'Siideri ja pitkäjuoma', en: 'Cider and long drink' },
   spirits: { fi: 'Väkevät alkoholijuomat', en: 'Spirits' },
-};
-
-/** Catalog copy — factual statements only; the content-policy lint
- *  polices the vocabulary (design D6). */
-interface CatalogCopy {
-  readonly heading: string;
-  readonly intro: string;
-  readonly filterNavLabel: string;
-  readonly allProducts: string;
-  readonly fromPriceLabel: string;
-  readonly noPrice: string;
-  readonly merchantCount: string;
-  readonly paginationNavLabel: string;
-  readonly prevPage: string;
-  readonly nextPage: string;
-  readonly pageStatus: string;
-  readonly emptyTitle: string;
-  readonly emptyBody: string;
-  readonly unavailableTitle: string;
-  readonly unavailableBody: string;
-}
-
-const CATALOG_COPY: Record<CatalogLocale, CatalogCopy> = {
-  fi: {
-    heading: 'Tuotteet',
-    intro: 'Rajahintalaskuriin sisältyvä tuoteluettelo havaittuine hintoineen.',
-    filterNavLabel: 'Tuoteryhmä',
-    allProducts: 'Kaikki tuotteet',
-    fromPriceLabel: 'Halvin havaittu hinta',
-    noPrice: 'Ei havaittuja hintoja',
-    merchantCount: 'Myyjiä: {count}',
-    paginationNavLabel: 'Sivutus',
-    prevPage: 'Edellinen sivu',
-    nextPage: 'Seuraava sivu',
-    pageStatus: 'Sivu {page} / {totalPages}',
-    emptyTitle: 'Ei näytettäviä tuotteita',
-    emptyBody: 'Tähän näkymään ei ole tallentunut yhtään tuotetta.',
-    unavailableTitle: 'Tuoteluetteloa ei voida näyttää juuri nyt',
-    unavailableBody: 'Tuotetietojen haku ei onnistunut. Kokeile myöhemmin uudelleen.',
-  },
-  en: {
-    heading: 'Products',
-    intro: 'The product catalog behind the landed-cost calculator, with observed prices.',
-    filterNavLabel: 'Category',
-    allProducts: 'All products',
-    fromPriceLabel: 'Lowest observed price',
-    noPrice: 'No observed prices',
-    merchantCount: 'Merchants: {count}',
-    paginationNavLabel: 'Pagination',
-    prevPage: 'Previous page',
-    nextPage: 'Next page',
-    pageStatus: 'Page {page} / {totalPages}',
-    emptyTitle: 'No products to show',
-    emptyBody: 'No products have been recorded for this view.',
-    unavailableTitle: 'The catalog is not available right now',
-    unavailableBody: 'The product data lookup did not succeed. Try again later.',
-  },
 };
 
 /**
@@ -198,16 +148,6 @@ function formatEuro(cents: number, locale: CatalogLocale): string {
   }
 }
 
-/** Minimal {param} interpolation for the module-local copy record. */
-function fill(
-  template: string,
-  values: Record<string, number | string>,
-): string {
-  return template.replace(/\{(\w+)\}/g, (_, key: string) =>
-    values[key] === undefined ? `{${key}}` : String(values[key]),
-  );
-}
-
 /** Localized label for a card's category; the raw value is the fallback
  *  so an out-of-vocabulary value can never render as an empty badge. */
 function categoryLabel(category: string, locale: CatalogLocale): string {
@@ -238,6 +178,63 @@ const PAGE_SPAN_CLASSES =
 const PAGE_CURRENT_CLASSES =
   'inline-flex items-center rounded-md border border-primary-600 bg-primary-600 px-3 py-1.5 text-sm font-medium text-white';
 
+/**
+ * Canonical path for one (category, page) state (design D6): the clean
+ * URL of the state, so parameter permutations do not fragment the index.
+ * Page 1 canonicalizes without the page parameter, and nothing else from
+ * the query string survives. The layout's metadataBase resolves the path
+ * to the absolute URL; English lives under /en (localePrefix 'as-needed').
+ */
+function catalogCanonicalPath(
+  locale: CatalogLocale,
+  category: CanonicalCategory | undefined,
+  page: number,
+): string {
+  const prefix = locale === 'en' ? '/en' : '';
+  const params = new URLSearchParams();
+  if (category !== undefined) params.set('category', category);
+  if (page > 1) params.set('page', String(page));
+  const search = params.toString();
+  return `${prefix}/products${search === '' ? '' : `?${search}`}`;
+}
+
+/**
+ * Per-state metadata (design D6): the unfiltered view and each category
+ * view carry their own localized title and description, plus the
+ * canonical URL for the resolved state. Unknown category values never
+ * reach this function — the same forgiving resolution as the page body
+ * maps them to the unfiltered view before the fetch.
+ */
+export async function generateMetadata({
+  params,
+  searchParams,
+}: ProductsPageProps): Promise<Metadata> {
+  const { locale: rawLocale } = await params;
+  const locale: CatalogLocale = rawLocale === 'en' ? 'en' : 'fi';
+
+  const query = await searchParams;
+  const category = resolveCategoryParam(query.category);
+  const page = resolvePageParam(query.page);
+
+  const t = await getTranslations({ locale, namespace: 'ProductsPage' });
+  const categoryLabel =
+    category !== undefined ? CATEGORY_LABELS[category][locale] : null;
+
+  return {
+    title:
+      categoryLabel !== null
+        ? t('metaCategoryTitle', { category: categoryLabel })
+        : t('metaTitle'),
+    description:
+      categoryLabel !== null
+        ? t('metaCategoryDescription', { category: categoryLabel })
+        : t('metaDescription'),
+    alternates: {
+      canonical: catalogCanonicalPath(locale, category, page),
+    },
+  };
+}
+
 export default async function ProductsPage({
   params,
   searchParams,
@@ -250,7 +247,7 @@ export default async function ProductsPage({
   const category = resolveCategoryParam(query.category);
   const page = resolvePageParam(query.page);
 
-  const copy = CATALOG_COPY[locale];
+  const t = await getTranslations({ locale, namespace: 'ProductsPage' });
   const tCommon = await getTranslations({ locale, namespace: 'Common' });
 
   const result = await getServerCatalogPage(category, page);
@@ -259,9 +256,9 @@ export default async function ProductsPage({
     return (
       <main className="mx-auto min-h-screen max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
         <h1 className="mb-2 text-2xl font-bold text-primary-700">
-          {copy.heading}
+          {t('heading')}
         </h1>
-        <EmptyState title={copy.unavailableTitle} description={copy.unavailableBody} />
+        <EmptyState title={t('unavailableTitle')} description={t('unavailableBody')} />
       </main>
     );
   }
@@ -276,13 +273,13 @@ export default async function ProductsPage({
 
   return (
     <main className="mx-auto min-h-screen max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-      <h1 className="mb-2 text-2xl font-bold text-primary-700">{copy.heading}</h1>
-      <p className="mb-6 text-sm leading-relaxed text-gray-500">{copy.intro}</p>
+      <h1 className="mb-2 text-2xl font-bold text-primary-700">{t('heading')}</h1>
+      <p className="mb-6 text-sm leading-relaxed text-gray-500">{t('intro')}</p>
 
       {/* ── Category filter — URL state as plain links; every category
           link targets page 1 of that category (no page param) ── */}
       <nav
-        aria-label={copy.filterNavLabel}
+        aria-label={t('filterNavLabel')}
         data-testid="catalog-filter-row"
         className="mb-8 flex flex-wrap gap-2"
       >
@@ -293,7 +290,7 @@ export default async function ProductsPage({
             category === undefined ? FILTER_ACTIVE_CLASSES : FILTER_LINK_CLASSES.join(' ')
           }
         >
-          {copy.allProducts}
+          {t('allProducts')}
         </Link>
         {CANONICAL_CATEGORIES.map((key) => {
           const active = category === key;
@@ -313,7 +310,7 @@ export default async function ProductsPage({
       {items.length === 0 ? (
         /* ── Honest empty state — a zero-result category (or a page
             beyond the range) is an answer, not an error ── */
-        <EmptyState title={copy.emptyTitle} description={copy.emptyBody} />
+        <EmptyState title={t('emptyTitle')} description={t('emptyBody')} />
       ) : (
         <>
           {/* ── Card grid — name, brand, category, ABV, volume, lowest
@@ -355,16 +352,16 @@ export default async function ProductsPage({
                   <div className="mt-auto border-t border-gray-100 pt-2 text-sm">
                     {item.lowestPriceCents !== null ? (
                       <>
-                        <p className="text-gray-500">{copy.fromPriceLabel}</p>
+                        <p className="text-gray-500">{t('fromPriceLabel')}</p>
                         <p className="font-medium text-gray-900">
                           {formatEuro(item.lowestPriceCents, locale)}
                         </p>
                       </>
                     ) : (
-                      <p className="text-gray-500">{copy.noPrice}</p>
+                      <p className="text-gray-500">{t('noPrice')}</p>
                     )}
                     <p className="text-gray-500">
-                      {fill(copy.merchantCount, { count: item.merchantCount })}
+                      {t('merchantCount', { count: item.merchantCount })}
                     </p>
                   </div>
                 </Card>
@@ -377,17 +374,17 @@ export default async function ProductsPage({
               numbered set is exactly 1..totalPages) ── */}
           {totalPages > 1 ? (
             <nav
-              aria-label={copy.paginationNavLabel}
+              aria-label={t('paginationNavLabel')}
               data-testid="catalog-pagination"
               className="mt-8 flex flex-wrap items-center gap-2"
             >
               {page > 1 ? (
                 <Link href={pageHref(page - 1)} className={PAGE_LINK_CLASSES}>
-                  {copy.prevPage}
+                  {t('prevPage')}
                 </Link>
               ) : (
                 <span aria-disabled="true" className={PAGE_SPAN_CLASSES}>
-                  {copy.prevPage}
+                  {t('prevPage')}
                 </span>
               )}
               {Array.from({ length: totalPages }, (_, index) => index + 1).map(
@@ -412,15 +409,15 @@ export default async function ProductsPage({
               )}
               {page < totalPages ? (
                 <Link href={pageHref(page + 1)} className={PAGE_LINK_CLASSES}>
-                  {copy.nextPage}
+                  {t('nextPage')}
                 </Link>
               ) : (
                 <span aria-disabled="true" className={PAGE_SPAN_CLASSES}>
-                  {copy.nextPage}
+                  {t('nextPage')}
                 </span>
               )}
               <p className="ml-2 text-sm text-gray-500">
-                {fill(copy.pageStatus, { page, totalPages })}
+                {t('pageStatus', { page, totalPages })}
               </p>
             </nav>
           ) : null}
