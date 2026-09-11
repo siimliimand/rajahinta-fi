@@ -337,6 +337,145 @@ async function revokeGovernance(c: Context<AppEnv>): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
+// Merchant registration — the "add a site" console action. Owner policy
+// (2026-09-11): registering a merchant asserts permission for its public
+// feed, so the registration auto-grants. Revocation stays the kill
+// switch — explicit records are never overwritten by re-registration.
+// ---------------------------------------------------------------------------
+
+/** Defaults for the optional registration fields. */
+const DEFAULT_FEED_FORMAT = 'json';
+const DEFAULT_POLLING_INTERVAL_MS = 3_600_000;
+// Merchant sites onboard through their public store APIs (the alks
+// pattern — WooCommerce Store API, source type RETAILER_API), so that is
+// the default acquisition method; the body can override it.
+const DEFAULT_ACQUISITION_METHOD = 'RETAILER_API';
+
+/**
+ * POST /ops/console/merchants — upsert the registry row and apply the
+ * owner's blanket permission policy: a merchant with NO governance
+ * records is auto-granted (GRANTED source over the registered feed URL),
+ * so the next producer pass starts ingesting without a second console
+ * action. Existing records — GRANTED, PENDING, EXPIRED, or REVOKED — are
+ * never touched: revocation must survive re-registration. Both the
+ * registry change and the auto-grant append audit rows.
+ */
+async function registerMerchant(c: Context<AppEnv>): Promise<Response> {
+  const dto = await readBody(c);
+  validateOperator(dto);
+  for (const field of ['merchantId', 'name', 'country', 'feedUrl'] as const) {
+    const value = dto[field];
+    if (typeof value !== 'string' || value.trim() === '') {
+      throw new ApiHttpError(400, `${field} must be a non-empty string`);
+    }
+  }
+  const acquisitionMethod =
+    dto.acquisitionMethod === undefined
+      ? DEFAULT_ACQUISITION_METHOD
+      : dto.acquisitionMethod;
+  if (!ACQUISITION_METHODS.includes(acquisitionMethod as string)) {
+    throw new ApiHttpError(
+      400,
+      `acquisitionMethod must be one of: ${ACQUISITION_METHODS.join(', ')}`,
+    );
+  }
+  const pollingIntervalMs =
+    dto.pollingIntervalMs === undefined
+      ? DEFAULT_POLLING_INTERVAL_MS
+      : dto.pollingIntervalMs;
+  if (
+    typeof pollingIntervalMs !== 'number' ||
+    !Number.isInteger(pollingIntervalMs) ||
+    pollingIntervalMs <= 0
+  ) {
+    throw new ApiHttpError(
+      400,
+      'pollingIntervalMs must be a positive integer (milliseconds)',
+    );
+  }
+  const feedFormat =
+    dto.feedFormat === undefined ? DEFAULT_FEED_FORMAT : dto.feedFormat;
+  if (typeof feedFormat !== 'string' || feedFormat.trim() === '') {
+    throw new ApiHttpError(400, 'feedFormat must be a non-empty string');
+  }
+
+  const merchantId = (dto.merchantId as string).trim();
+  const feedUrl = (dto.feedUrl as string).trim();
+  const registry = new D1MerchantRegistryRepository(c.env.DB);
+  const existing = await registry.findByMerchantId(merchantId);
+
+  const merchant = await registry.upsert({
+    merchantId,
+    name: (dto.name as string).trim(),
+    country: (dto.country as string).trim(),
+    feedUrl,
+    feedFormat: (feedFormat as string).trim(),
+    pollingIntervalMs,
+  });
+
+  const governance = new D1SourceGovernanceRepository(c.env.DB);
+  const audit = new WorkerAuditService(c.env.DB);
+  const operator = dto.operator as string;
+  const note = (dto.note as string | undefined)?.trim();
+
+  await audit.logChange({
+    entityType: 'merchant_registry',
+    entityId: merchantId,
+    action: existing === null ? 'created' : 'updated',
+    author: operator,
+    reason: note ?? 'Merchant registered via operator console',
+    ...(existing !== null
+      ? {
+          previousValue: {
+            name: existing.name,
+            country: existing.country,
+            feedUrl: existing.feedUrl,
+          },
+        }
+      : {}),
+    newValue: { name: merchant.name, country: merchant.country, feedUrl },
+  });
+
+  // The auto-grant fires only on an empty governance slate — an explicit
+  // record (a revocation in particular) always wins over registration.
+  const records = await governance.findByMerchantId(merchantId);
+  let autoGranted = false;
+  if (records.length === 0) {
+    await governance.create({
+      merchantId,
+      acquisitionMethod: acquisitionMethod as AcquisitionMethod,
+      permissionStatus: 'GRANTED',
+      sourceUrl: feedUrl,
+    });
+    autoGranted = true;
+    await audit.logChange({
+      entityType: 'source_governance',
+      entityId: merchantId,
+      action: 'created',
+      author: operator,
+      reason:
+        note ??
+        'Auto-granted on registration (owner blanket policy: registering a merchant asserts permission for its public feed)',
+      newValue: {
+        permissionStatus: 'GRANTED',
+        acquisitionMethod,
+        sourceUrl: feedUrl,
+      },
+    });
+  }
+
+  const check = await governance.checkPermission(merchantId);
+  return c.json({
+    merchantId,
+    name: merchant.name,
+    registered: existing === null ? 'created' : 'updated',
+    autoGranted,
+    permissionStatus: check.permissionStatus,
+    sourceCount: check.sources.length,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Dataset confirmations — tax reviews fail-closed
 // ---------------------------------------------------------------------------
 
@@ -2111,6 +2250,7 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.get('/ops/console/governance', listGovernance);
   app.post('/ops/console/governance/:merchantId/grant', grantGovernance);
   app.post('/ops/console/governance/:merchantId/revoke', revokeGovernance);
+  app.post('/ops/console/merchants', registerMerchant);
 
   app.get('/ops/console/confirmations', listConfirmations);
   app.post(
