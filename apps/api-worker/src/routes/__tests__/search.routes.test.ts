@@ -146,6 +146,152 @@ describe('GET /api/v1/products (search)', () => {
   });
 });
 
+describe('GET /api/v1/products — catalog browse (task 2.1, change product-catalog)', () => {
+  it('filters by a canonical category with deterministic FI order', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III', category: 'beer' });
+    seedProduct(db, { id: 2, name: 'Franzia', category: 'wine_still' });
+    seedProduct(db, { id: 3, name: 'Apijo', category: 'wine_still' });
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      permissiveEnv(d1),
+      '/api/v1/products?category=wine_still',
+      { headers: AGE },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: Array<{ id: number; category: string }>;
+      total: number;
+      totalPages: number;
+    };
+    expect(body.total).toBe(2);
+    expect(body.totalPages).toBe(1);
+    expect(body.items.map((i) => i.id)).toEqual([3, 2]); // Apijo < Franzia
+    expect(body.items.every((i) => i.category === 'wine_still')).toBe(true);
+  });
+
+  it('rejects an unknown category with 400 — never an unfiltered fallback', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III' });
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      permissiveEnv(d1),
+      '/api/v1/products?category=mead',
+      { headers: AGE },
+    );
+    await expectEnvelope(res, 400, {
+      message:
+        "Unknown category 'mead'. Valid categories: beer, wine_still, wine_sparkling, intermediate_products, other_fermented, spirits.",
+    });
+  });
+
+  it('treats a blank category as absent (unfiltered browse)', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III', category: 'beer' });
+    seedProduct(db, { id: 2, name: 'Franzia', category: 'wine_still' });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products?category=', {
+      headers: AGE,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { total: number };
+    expect(body.total).toBe(2);
+  });
+
+  it('reports exact totals beyond the legacy 100-row fetch cap', async () => {
+    const { db, d1 } = openMigratedD1();
+    for (let i = 1; i <= 105; i++) {
+      seedProduct(db, { id: i, name: `Product ${String(i).padStart(3, '0')}` });
+    }
+    const app = buildApp();
+
+    const first = await request(app, permissiveEnv(d1), '/api/v1/products?limit=100', {
+      headers: AGE,
+    });
+    const firstBody = (await first.json()) as {
+      items: unknown[];
+      total: number;
+      totalPages: number;
+    };
+    // The legacy path fetched at most MAX_PAGE_SIZE rows and reported the
+    // capped subset size; the browse total is the exact catalog size.
+    expect(firstBody.total).toBe(105);
+    expect(firstBody.totalPages).toBe(2);
+    expect(firstBody.items).toHaveLength(100);
+
+    const second = await request(
+      app,
+      permissiveEnv(d1),
+      '/api/v1/products?limit=100&page=2',
+      { headers: AGE },
+    );
+    const secondBody = (await second.json()) as {
+      items: Array<{ id: number }>;
+      total: number;
+    };
+    expect(secondBody.total).toBe(105);
+    expect(secondBody.items).toHaveLength(5);
+  });
+
+  it('populates lowestPriceCents and merchantCount; offer-less products stay null/0', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III' });
+    seedOffer(db, { id: 11, productId: 1, priceCents: 420, merchant: 'eu-import' });
+    seedOffer(db, { id: 12, productId: 1, priceCents: 350, merchant: 'alko' });
+    // Same merchant as offer 12 — counted once (distinct merchants).
+    seedOffer(db, { id: 13, productId: 1, priceCents: 390, merchant: 'alko' });
+    seedProduct(db, { id: 2, name: 'Offerless Olut' });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products', {
+      headers: AGE,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: Array<{ id: number; lowestPriceCents: number | null; merchantCount: number }>;
+    };
+    const karhu = body.items.find((i) => i.id === 1)!;
+    expect(karhu.lowestPriceCents).toBe(350); // minimum across offers
+    expect(karhu.merchantCount).toBe(2); // distinct merchants
+    const offerless = body.items.find((i) => i.id === 2)!;
+    // Honest absence — no guessed price (design D4).
+    expect(offerless.lowestPriceCents).toBeNull();
+    expect(offerless.merchantCount).toBe(0);
+  });
+
+  it('keeps the ids and ranked-q contracts: null price fields despite offers', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III' });
+    seedOffer(db, { id: 11, productId: 1, priceCents: 350 });
+    const app = buildApp();
+
+    const qRes = await request(app, permissiveEnv(d1), '/api/v1/products?q=karhu', {
+      headers: AGE,
+    });
+    const qBody = (await qRes.json()) as {
+      items: Array<{ id: number; lowestPriceCents: number | null; merchantCount: number }>;
+    };
+    expect(qBody.items[0]!.id).toBe(1);
+    expect(qBody.items[0]!.lowestPriceCents).toBeNull();
+    expect(qBody.items[0]!.merchantCount).toBe(0);
+
+    const idsRes = await request(app, permissiveEnv(d1), '/api/v1/products?ids=1', {
+      headers: AGE,
+    });
+    const idsBody = (await idsRes.json()) as {
+      items: Array<{ id: number; lowestPriceCents: number | null; merchantCount: number }>;
+    };
+    expect(idsBody.items[0]!.id).toBe(1);
+    expect(idsBody.items[0]!.lowestPriceCents).toBeNull();
+    expect(idsBody.items[0]!.merchantCount).toBe(0);
+  });
+});
+
 describe('GET /api/v1/products/:id (detail)', () => {
   it('returns the product with its offers, ISO timestamps, and default deposit status', async () => {
     const { db, d1 } = openMigratedD1();
