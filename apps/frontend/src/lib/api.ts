@@ -692,10 +692,10 @@ export const SITE_URL: string =
  * The catalog endpoints are age-gated, but crawlers cannot click a gate —
  * and the Phase 1 gate is explicit self-attestation (any non-empty token
  * passes by design). This token only ever reads public catalog data
- * server-side for metadata and the sitemap; it grants no session and no
- * account-scoped access.
+ * server-side (page rendering, metadata, the sitemap); it grants no
+ * session and no account-scoped access.
  */
-const SERVER_AGE_CONFIRMATION_TOKEN = 'server-prerender';
+export const SERVER_AGE_CONFIRMATION_TOKEN = 'server-prerender';
 
 /**
  * Fetch a product with its offers on the server, or null when unavailable

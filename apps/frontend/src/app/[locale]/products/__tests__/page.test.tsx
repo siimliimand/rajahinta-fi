@@ -221,7 +221,10 @@ describe('ProductsPage cards', () => {
     expect(mockedRequest).toHaveBeenCalledTimes(1);
     expect(mockedRequest).toHaveBeenCalledWith(
       '/api/v1/products?page=1&limit=24',
-      { next: { revalidate: 900 } },
+      {
+        headers: { 'x-age-confirmed': 'server-prerender' },
+        next: { revalidate: 900 },
+      },
     );
   });
 
@@ -234,7 +237,10 @@ describe('ProductsPage cards', () => {
 
     expect(mockedRequest).toHaveBeenCalledWith(
       '/api/v1/products?category=beer&page=2&limit=24',
-      { next: { revalidate: 900 } },
+      {
+        headers: { 'x-age-confirmed': 'server-prerender' },
+        next: { revalidate: 900 },
+      },
     );
   });
 });
@@ -413,7 +419,10 @@ describe('ProductsPage empty state and forgiveness', () => {
     // BEFORE fetching, so the listing request is the unfiltered one.
     expect(mockedRequest).toHaveBeenCalledWith(
       '/api/v1/products?page=1&limit=24',
-      { next: { revalidate: 900 } },
+      {
+        headers: { 'x-age-confirmed': 'server-prerender' },
+        next: { revalidate: 900 },
+      },
     );
     const row = screen.getByTestId('catalog-filter-row');
     expect(within(row).getByRole('link', { name: 'Kaikki tuotteet' })).toHaveAttribute(

@@ -5,7 +5,7 @@ import * as React from 'react';
 import type { Metadata } from 'next';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
-import { request } from '@/lib/api';
+import { request, SERVER_AGE_CONFIRMATION_TOKEN } from '@/lib/api';
 import type { ProductSearchItem, ProductSearchResult } from '@/lib/types';
 import { Badge, Card, EmptyState } from '@/components/ui';
 
@@ -129,6 +129,7 @@ async function getServerCatalogPage(
 ): Promise<ProductSearchResult | null> {
   try {
     return await request<ProductSearchResult>(catalogQueryPath(category, page), {
+      headers: { 'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN },
       next: { revalidate: CATALOG_REVALIDATE_SECONDS },
     });
   } catch {
