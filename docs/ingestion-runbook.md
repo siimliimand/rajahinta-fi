@@ -59,7 +59,14 @@ Not scheduling merchant "alks": no governance records — defaulting to PENDING
 
 Every grant and revocation is a human console action, recorded in the
 durable `audit_events` table with the operator identity, target, and
-reason. There is no auto-grant or config-file grant path.
+reason. The one exception to the two-step sequence is registration
+itself: per owner policy (2026-09-11, blanket permission for every
+merchant feed the owner registers), `POST /ops/console/merchants`
+auto-grants a merchant that has NO governance records — registering a
+merchant asserts permission for its feed. Explicit records are never
+touched by registration: a `REVOKED` merchant stays revoked after
+re-registration (revocation remains the kill switch), and there is no
+config-file grant path.
 
 ---
 
@@ -96,6 +103,41 @@ reason. There is no auto-grant or config-file grant path.
 ---
 
 ## 2. Staging: register and grant the `alks` source
+
+### 2.0 One-step alternative: register + auto-grant (preferred)
+
+For a NEW merchant the two steps collapse into one console call — the
+registration upserts the registry row and auto-grants the feed URL in
+the same request (two audit entries: `merchant_registry` created and
+`source_governance` created):
+
+```bash
+curl -X POST "$STAGING_API_URL/ops/console/merchants" \
+  -H "Authorization: Bearer $OPS_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "merchantId": "alks",
+        "name": "Alks",
+        "country": "DE",
+        "feedUrl": "https://alks.fi",
+        "operator": "ops-lead-name",
+        "note": "owner blanket permission policy"
+      }'
+```
+
+Optional fields: `acquisitionMethod` (default `RETAILER_API` — the
+public store-API pattern), `feedFormat` (default `json`),
+`pollingIntervalMs` (default 3600000). The response carries
+`registered: created|updated`, `autoGranted: true|false`, and the
+effective aggregated `permissionStatus` — `autoGranted` is `false` and
+governance untouched when the merchant already has records (a
+`REVOKED` merchant stays revoked). This also replaces §3's manual
+production registry insert: against the production API the same call
+registers and grants in one audited action.
+
+The worked example below keeps the original two-step sequence (seeded
+registry row + explicit grant) for environments where the row already
+exists.
 
 ### 2.1 Confirm the fail-closed state before the grant
 

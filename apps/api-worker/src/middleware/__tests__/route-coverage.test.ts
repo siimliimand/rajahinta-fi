@@ -465,6 +465,7 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/ops/console/governance', ['GET'], 'opsAccess'],
   ['/ops/console/governance/:merchantId/grant', ['POST'], 'opsAccess'],
   ['/ops/console/governance/:merchantId/revoke', ['POST'], 'opsAccess'],
+  ['/ops/console/merchants', ['POST'], 'opsAccess'],
   ['/ops/console/newsletter/notify', ['POST'], 'opsAccess'],
   ['/ops/console/producer-links', ['GET', 'POST'], 'opsAccess'],
   ['/ops/console/producer-links/:id', ['POST'], 'opsAccess'],
