@@ -28,6 +28,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   SeedVerificationError,
+  assertVerificationRow,
   buildExpectations,
   generateSeedSqlFiles,
   generateStagingSql,
@@ -224,6 +225,69 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
     ).toThrow();
     db.close();
   }, DB_TEST_TIMEOUT_MS);
+});
+
+describe('assertVerificationRow count semantics', () => {
+  const expectations = buildExpectations();
+
+  // Mirror of generate.ts's private versionFieldName (label → SQL field).
+  const versionField = (label: string) =>
+    `tax_rules_${label.replace(/[^A-Za-z0-9]/g, '_')}`;
+
+  /** A fully-seeded row, overridable per field. */
+  function verificationRow(
+    overrides: Record<string, number> = {},
+  ): Record<string, number> {
+    return {
+      tax_rules_total: expectations.taxRulesTotal,
+      ...Object.fromEntries(
+        Object.entries(expectations.taxRulesPerVersion).map(([label, count]) => [
+          versionField(label),
+          count,
+        ]),
+      ),
+      spot_beer_rate_rows: 1,
+      merchant_registry_total: expectations.merchantRegistry,
+      transport_offers_total: expectations.transportOffers,
+      product_master_total: expectations.productMaster,
+      retail_offers_total: expectations.retailOffers,
+      staging_reviews_total: expectations.stagingReviews,
+      fts_indexed_products: expectations.ftsIndexedProducts,
+      ...overrides,
+    };
+  }
+
+  it('accepts exact counts (fresh database)', () => {
+    expect(() => assertVerificationRow(verificationRow())).not.toThrow();
+  });
+
+  it('tolerates ingested growth above the fixture floor (staging producer)', () => {
+    expect(() =>
+      assertVerificationRow(
+        verificationRow({
+          product_master_total: expectations.productMaster + 2353,
+          retail_offers_total: expectations.retailOffers + 14261,
+          fts_indexed_products: expectations.ftsIndexedProducts + 2353,
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('still fails when ingestion-shared tables fall below the fixture floor', () => {
+    expect(() =>
+      assertVerificationRow(
+        verificationRow({ product_master_total: expectations.productMaster - 1 }),
+      ),
+    ).toThrow(/product_master_total/);
+  });
+
+  it('still fails on exact-count drift in seed-owned tables', () => {
+    expect(() =>
+      assertVerificationRow(
+        verificationRow({ merchant_registry_total: expectations.merchantRegistry + 1 }),
+      ),
+    ).toThrow(/merchant_registry_total/);
+  });
 });
 
 /** Local helper so each generation test re-generates independently. */

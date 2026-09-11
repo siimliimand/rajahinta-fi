@@ -497,9 +497,24 @@ ${perVersionSelects},
 }
 
 /**
+ * Tables that ingestion also writes. The seed owns its fixture rows as a
+ * floor there: staging's hourly producer (merchant feeds) legitimately
+ * grows product_master, retail_offers and the FTS index past the fixture
+ * counts, so exact equality would fail on every post-ingestion deploy.
+ * Seed-owned tables (tax rules, merchant registry, transport offers,
+ * staging reviews) stay exact — drift there is seed loss, not growth.
+ */
+const INGESTION_FLOOR_FIELDS: ReadonlySet<string> = new Set([
+  'product_master_total',
+  'retail_offers_total',
+  'fts_indexed_products',
+]);
+
+/**
  * Assert a verification row (field → actual count) against the expected
- * counts. Throws a SeedVerificationError listing EVERY mismatch — the
- * loud-failure contract of the seed pipeline.
+ * counts. Exact for seed-owned tables, at-least for ingestion-shared ones
+ * (see INGESTION_FLOOR_FIELDS). Throws a SeedVerificationError listing
+ * EVERY mismatch — the loud-failure contract of the seed pipeline.
  */
 export function assertVerificationRow(row: Record<string, unknown>): void {
   const expectations = buildExpectations();
@@ -523,8 +538,18 @@ export function assertVerificationRow(row: Record<string, unknown>): void {
   const mismatches: string[] = [];
   for (const [field, want] of Object.entries(expected)) {
     const got = row[field];
-    if (typeof got !== 'number' || got !== want) {
+    if (typeof got !== 'number') {
       mismatches.push(`  ${field}: expected ${want}, got ${String(got)}`);
+      continue;
+    }
+    if (INGESTION_FLOOR_FIELDS.has(field)) {
+      // Below the fixture count the seed is incomplete; above it, the
+      // hourly ingestion producer has appended real rows — legitimate.
+      if (got < want) {
+        mismatches.push(`  ${field}: expected at least ${want}, got ${got}`);
+      }
+    } else if (got !== want) {
+      mismatches.push(`  ${field}: expected ${want}, got ${got}`);
     }
   }
   // Unknown extra fields are fine (forward compatibility), missing ones are
