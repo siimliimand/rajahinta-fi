@@ -15,6 +15,7 @@ import type { Server } from 'node:http';
 import http from 'node:http';
 import {
   INGESTION_STEP_RETRY,
+  UPSERT_CHUNK_SIZE,
   composeIngestionStageServices,
   runIngestionWorkflow,
   type IngestionStageServices,
@@ -322,11 +323,31 @@ describe('runIngestionWorkflow — staged pipeline', () => {
       'governance-gate',
       'fetch-feed',
       'map-records',
-      'upsert-offers',
+      'upsert-offers-1',
       'data-quality',
       'complete-job-claim',
     ]);
     expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('splits the upsert stage into one step per UPSERT_CHUNK_SIZE pairs', async () => {
+    const records = Array.from({ length: UPSERT_CHUNK_SIZE + 1 }, (_, i) =>
+      feedRecord({ productId: `alko-${i}`, ean: null }),
+    );
+    const services = stageServices({ feedRecords: records });
+    const { step, promise } = runWorkflow(services, {
+      complete: noopClaim,
+      release: noopClaim,
+    });
+
+    const result = (await promise) as { productsIngested: number };
+
+    expect(result.productsIngested).toBe(UPSERT_CHUNK_SIZE + 1);
+    const names = step.invocations.map((i) => i.name);
+    expect(names).toContain('upsert-offers-1');
+    expect(names).toContain('upsert-offers-2');
+    // Exactly two upsert steps: 250 pairs in chunk 1, the remainder in 2.
+    expect(names.filter((n) => n.startsWith('upsert-offers-'))).toHaveLength(2);
   });
 
   it('reports a zero-product run with the registry error and still completes the claim (runIngestion parity)', async () => {

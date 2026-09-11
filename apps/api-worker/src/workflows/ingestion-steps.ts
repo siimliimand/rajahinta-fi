@@ -424,11 +424,26 @@ export async function mapRecordsStep(
   };
 }
 
-/** upsert-offers — the orchestrator's upsert loop + offer-change hook. */
-export async function upsertOffersStep(
+/**
+ * Pairs per upsert step. The engine kills a step at its default 10-minute
+ * timeout; ~250 pairs × a handful of sequential D1 round-trips leaves an
+ * order of magnitude of headroom while keeping the number of steps per
+ * run in the low tens for a full alks catalog.
+ */
+export const UPSERT_CHUNK_SIZE = 250;
+
+/**
+ * upsert-offers chunk — the orchestrator's upsert loop + offer-change
+ * hook over ONE chunk of the mapped pairs (the workflow slices
+ * `map-records` output into {@link UPSERT_CHUNK_SIZE} steps). Idempotent
+ * under replay: products refresh by EAN/compound key, and an
+ * already-persisted offer with the same observed-at instant is a no-op
+ * (its changed-offer hook does not refire).
+ */
+export async function upsertOffersChunkStep(
   services: IngestionStageServices,
   config: MerchantConfig,
-  mapped: MappedRecords,
+  pairs: readonly SerializedMappedPair[],
 ): Promise<UpsertOutcome> {
   let recordsAdded = 0;
   let recordsUpdated = 0;
@@ -436,7 +451,7 @@ export async function upsertOffersStep(
   const upsertErrors: string[] = [];
   const upsertedOffers: SerializedQualityOffer[] = [];
 
-  for (const pair of mapped.pairs) {
+  for (const pair of pairs) {
     try {
       const upsertResult = await services.upserts.upsertProduct(pair.product);
       if (upsertResult.created) {
@@ -626,10 +641,38 @@ export async function runIngestionWorkflow(
       });
     }
 
-    // -- Step 5: upsert (+ offer-change hook) ------------------------------
-    const upserts = await step.do('upsert-offers', INGESTION_STEP_RETRY, () =>
-      upsertOffersStep(services, config, mapped),
-    );
+    // -- Step 5: upsert (+ offer-change hook), chunked ----------------------
+    // The engine's default step timeout is 10 minutes and one pair costs
+    // several sequential D1 round-trips — a full alks catalog (~2,900
+    // pairs) cannot fit a single attempt (staging 2026-09-11: two 600s
+    // WorkflowTimeoutErrors). Each chunk runs as its own step: replayed
+    // from its saved output on re-invoke, retried independently, and
+    // idempotent under replay (EAN/compound refresh + same-instant offer
+    // no-ops), so a timed-out chunk re-runs cleanly.
+    let upserts: UpsertOutcome = {
+      recordsAdded: 0,
+      recordsUpdated: 0,
+      offersChanged: 0,
+      upsertErrors: [],
+      upsertedOffers: [],
+    };
+    for (
+      let offset = 0, index = 1;
+      offset < mapped.pairs.length;
+      offset += UPSERT_CHUNK_SIZE, index++
+    ) {
+      const chunk = mapped.pairs.slice(offset, offset + UPSERT_CHUNK_SIZE);
+      const part = await step.do(`upsert-offers-${index}`, INGESTION_STEP_RETRY, () =>
+        upsertOffersChunkStep(services, config, chunk),
+      );
+      upserts = {
+        recordsAdded: upserts.recordsAdded + part.recordsAdded,
+        recordsUpdated: upserts.recordsUpdated + part.recordsUpdated,
+        offersChanged: upserts.offersChanged + part.offersChanged,
+        upsertErrors: [...upserts.upsertErrors, ...part.upsertErrors],
+        upsertedOffers: [...upserts.upsertedOffers, ...part.upsertedOffers],
+      };
+    }
 
     // -- Step 6: data quality ----------------------------------------------
     await step.do('data-quality', INGESTION_STEP_RETRY, () =>
