@@ -599,3 +599,214 @@ describe('D1ProductSearchRepository — contract row shapes', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Catalog listing (task 1.1, change product-catalog — design D1 keys-then-
+// page, D4 per-page offer aggregation)
+// ---------------------------------------------------------------------------
+
+/**
+ * The catalog fixture: 110 wine_still products — 107 zero-padded numbered
+ * names plus three specials pinning the 'fi' collation tail (under Finnish
+ * collation the numbered names sort first, then z, then ä, then ö). The
+ * fixture is deliberately larger than MAX_PAGE_SIZE (100), the legacy
+ * in-memory fetch cap, so uncapped totals cannot pass by accident.
+ */
+const CATALOG_FIXTURE_COUNT = 110;
+const SPECIAL_CATALOG_IDS = {
+  zibart: 2107,
+  agras: 2108,
+  oylatti: 2109,
+} as const;
+
+/** Fixture id → name, accumulated while seeding (the expected order's source). */
+const catalogNamesById = new Map<number, string>();
+
+/** The fixture's expected Finnish-collation order (the contract comparator, mirrored). */
+function expectedCatalogOrder(): number[] {
+  return [...catalogNamesById.entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'fi') || a.id - b.id)
+    .map((key) => key.id);
+}
+
+describe('D1ProductSearchRepository.listCatalogPage — catalog listing (design D1/D4)', () => {
+  beforeAll(async () => {
+    for (let i = 0; i < 107; i++) {
+      catalogNamesById.set(2000 + i, `Koekappale Olut ${String(i).padStart(3, '0')}`);
+    }
+    catalogNamesById.set(SPECIAL_CATALOG_IDS.zibart, 'Zibart Punaviini');
+    catalogNamesById.set(SPECIAL_CATALOG_IDS.agras, 'Ägräs Akvavit');
+    catalogNamesById.set(SPECIAL_CATALOG_IDS.oylatti, 'Öylatti Erityis');
+
+    for (const [id, name] of catalogNamesById) {
+      await repo.create({
+        id,
+        name,
+        manufacturer: 'Katalogi Panimo',
+        brand: 'Koekappale',
+        category: 'wine_still',
+        alcoholByVolume: null,
+        unitVolume: '0.75',
+        containerType: 'glass',
+        regulatoryClassification: 'wine',
+        depositSystemStatus: null,
+        ean: null,
+      });
+    }
+
+    // Offer fixtures (design D4):
+    // - 2000: two distinct merchants → min 250, count 2.
+    // - 2001: one merchant, two prices → MIN 199, DISTINCT-merchant count 1.
+    // - 2002: offer-less → null / 0 (asserted below; honest absence).
+    await d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+            observed_at, reliability_status)
+         VALUES (600, 'alko', 'FI', 2000, 299, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (601, 'eu-import', 'EE', 2000, 250, '2026-09-01T10:00:00.000Z', 'ESTIMATED'),
+                (602, 'alko', 'FI', 2001, 350, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (603, 'alko', 'FI', 2001, 199, '2026-09-02T10:00:00.000Z', 'VERIFIED')`,
+      )
+      .run();
+  });
+
+  it('reports the exact total of the category-filtered catalog, uncapped by the legacy fetch limit', async () => {
+    const result = await repo.listCatalogPage(1, 100, 'wine_still');
+    expect(result.total).toBe(CATALOG_FIXTURE_COUNT);
+    // The fixture exceeds MAX_PAGE_SIZE — a fetch-capped total would be
+    // 100, never 110 (spec: "Totals beyond the legacy cap").
+    expect(result.total).toBeGreaterThan(MAX_PAGE_SIZE);
+    expect(result.page).toBe(1);
+    expect(result.pageSize).toBe(100);
+    expect(result.items).toHaveLength(100);
+  });
+
+  it('serves deep pages beyond the legacy fetch cap, total intact', async () => {
+    const expected = expectedCatalogOrder();
+    const page2 = await repo.listCatalogPage(2, 100, 'wine_still');
+    expect(page2.total).toBe(CATALOG_FIXTURE_COUNT);
+    expect(page2.items.map((item) => item.product.id)).toEqual(
+      expected.slice(100),
+    );
+
+    const pastEnd = await repo.listCatalogPage(3, 100, 'wine_still');
+    expect(pastEnd.items).toEqual([]);
+    expect(pastEnd.total).toBe(CATALOG_FIXTURE_COUNT);
+  });
+
+  it('orders deterministically under the Finnish collation (ä/ö after z)', async () => {
+    // Pages 1+2 concatenated must equal the mirrored contract comparator's
+    // order over the whole fixture.
+    const expected = expectedCatalogOrder();
+    const collected: number[] = [];
+    for (let p = 1; p <= 2; p++) {
+      const result = await repo.listCatalogPage(p, 100, 'wine_still');
+      collected.push(...result.items.map((item) => item.product.id));
+    }
+    expect(collected).toEqual(expected);
+
+    // Pin the 'fi' tail explicitly: K-names first, then z < ä < ö — the
+    // documented contract that SQL BINARY ORDER BY cannot reproduce.
+    expect(expected.slice(-3)).toEqual([
+      SPECIAL_CATALOG_IDS.zibart,
+      SPECIAL_CATALOG_IDS.agras,
+      SPECIAL_CATALOG_IDS.oylatti,
+    ]);
+
+    // Determinism: identical request → identical order (spec: "Repeated
+    // request → identical order").
+    const first = await repo.listCatalogPage(2, 100, 'wine_still');
+    const second = await repo.listCatalogPage(2, 100, 'wine_still');
+    expect(first.items.map((item) => item.product.id)).toEqual(
+      second.items.map((item) => item.product.id),
+    );
+  });
+
+  it('slices pages exactly — middle, last, and past-the-end', async () => {
+    const expected = expectedCatalogOrder();
+    const middle = await repo.listCatalogPage(10, 7, 'wine_still');
+    expect(middle.items.map((item) => item.product.id)).toEqual(
+      expected.slice(63, 70),
+    );
+    expect(middle.total).toBe(CATALOG_FIXTURE_COUNT);
+
+    const last = await repo.listCatalogPage(16, 7, 'wine_still');
+    expect(last.items.map((item) => item.product.id)).toEqual(
+      expected.slice(105),
+    );
+
+    const past = await repo.listCatalogPage(17, 7, 'wine_still');
+    expect(past.items).toEqual([]);
+    expect(past.total).toBe(CATALOG_FIXTURE_COUNT);
+  });
+
+  it('filters by category exactly, on the fixture and on the earlier describes\' rows', async () => {
+    const wine = await repo.listCatalogPage(1, 100, 'wine_still');
+    expect(wine.items.every((item) => item.product.category === 'wine_still')).toBe(true);
+    expect(wine.total).toBe(CATALOG_FIXTURE_COUNT);
+
+    // Exact total against the stored rows for a category the fixture does
+    // not touch — beer rows accumulated by the earlier test blocks.
+    const beerCount = await d1
+      .prepare(`SELECT count(*) AS n FROM product_master WHERE category = 'beer'`)
+      .first<{ n: number }>();
+    const beer = await repo.listCatalogPage(1, 100, 'beer');
+    expect(beer.total).toBe(beerCount?.n);
+    expect(beer.items.every((item) => item.product.category === 'beer')).toBe(true);
+  });
+
+  it('populates the per-page offer aggregates; offer-less products stay null/0 (design D4)', async () => {
+    const result = await repo.listCatalogPage(1, 100, 'wine_still');
+    const itemsById = new Map(result.items.map((item) => [item.product.id, item]));
+
+    // Two distinct merchants → lowest across both, count 2.
+    expect(itemsById.get(2000)?.lowestPriceCents).toBe(250);
+    expect(itemsById.get(2000)?.merchantCount).toBe(2);
+    // Two prices, one merchant → MIN over prices, COUNT(DISTINCT merchant) = 1.
+    expect(itemsById.get(2001)?.lowestPriceCents).toBe(199);
+    expect(itemsById.get(2001)?.merchantCount).toBe(1);
+    // No offers at all → honest absence, never a guessed price.
+    expect(itemsById.get(2002)?.lowestPriceCents).toBeNull();
+    expect(itemsById.get(2002)?.merchantCount).toBe(0);
+  });
+
+  it('returns full contract product rows on the listing items', async () => {
+    const result = await repo.listCatalogPage(1, 100, 'wine_still');
+    const item = result.items.find(
+      (candidate) => candidate.product.id === 2000,
+    );
+    expect(item?.product).toEqual({
+      id: 2000,
+      name: 'Koekappale Olut 000',
+      manufacturer: 'Katalogi Panimo',
+      brand: 'Koekappale',
+      category: 'wine_still',
+      alcoholByVolume: null,
+      unitVolume: '0.7500', // numeric(10,4) text scale, like the pg contract
+      containerType: 'glass',
+      regulatoryClassification: 'wine',
+      depositSystemStatus: null,
+      ean: null,
+      weightGrams: null,
+      createdAt: expect.any(Date),
+      updatedAt: expect.any(Date),
+    });
+  });
+
+  it('returns zero rows for a canonical category with no products', async () => {
+    const result = await repo.listCatalogPage(1, 24, 'intermediate_products');
+    expect(result.items).toEqual([]);
+    expect(result.total).toBe(0);
+    expect(result.page).toBe(1);
+    expect(result.pageSize).toBe(24);
+  });
+
+  it('treats an unknown category value as a strict filter, never a fallback', async () => {
+    // The API route 400s unknown values (design D2); the repository's own
+    // contract is equally strict in effect — exact equality, zero rows.
+    const result = await repo.listCatalogPage(1, 24, 'mead');
+    expect(result.items).toEqual([]);
+    expect(result.total).toBe(0);
+  });
+});

@@ -69,6 +69,31 @@ const RELIABILITY_VALUES = sql`('VERIFIED', 'ESTIMATED', 'STALE', 'UNAVAILABLE')
 const CONFIDENCE_VALUES = sql`('HIGH', 'MEDIUM', 'LOW')`;
 
 /**
+ * Canonical product-category value set — the tax-rule category keys every
+ * product-category column shares (design D2, change product-catalog).
+ * Exported so schema CHECKs and route validation read ONE definition and
+ * cannot drift; every category CHECK in this module is built from it.
+ */
+export const PRODUCT_CATEGORIES = [
+  'beer',
+  'wine_still',
+  'wine_sparkling',
+  'intermediate_products',
+  'other_fermented',
+  'spirits',
+] as const;
+
+export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
+
+/**
+ * SQL IN-list fragment rendered from {@link PRODUCT_CATEGORIES} — raw text
+ * because a CHECK expression cannot carry bind parameters.
+ */
+const PRODUCT_CATEGORY_VALUES = sql.raw(
+  `(${PRODUCT_CATEGORIES.map((c) => `'${c}'`).join(', ')})`,
+);
+
+/**
  * Product Master — canonical product records.
  *
  * One row per unique beverage product. Fields are driven by the
@@ -130,6 +155,14 @@ export const productMaster = sqliteTable(
     check(
       'product_master_container_type_check',
       sql`${table.containerType} IN ('glass', 'plastic', 'metal', 'carton', 'other', 'can', 'bottle')`,
+    ),
+    // Category CHECK from the shared PRODUCT_CATEGORIES constant (design
+    // D2, change product-catalog). The migration history (0000/0002)
+    // predates it — this declaration is the target shape the next table
+    // rebuild carries, and the route validates against the same constant.
+    check(
+      'product_master_category_check',
+      sql`${table.category} IN ${PRODUCT_CATEGORY_VALUES}`,
     ),
   ],
 );
@@ -1141,7 +1174,9 @@ export const consumptionNorms = sqliteTable(
     ),
     check(
       'consumption_norms_drink_type_check',
-      sql`${table.drinkType} IN ('beer', 'wine_still', 'wine_sparkling', 'intermediate_products', 'other_fermented', 'spirits')`,
+      // Same canonical value set as product_master.category — one shared
+      // PRODUCT_CATEGORIES definition (design D2, change product-catalog).
+      sql`${table.drinkType} IN ${PRODUCT_CATEGORY_VALUES}`,
     ),
     check(
       'consumption_norms_event_profile_check',
@@ -1257,7 +1292,11 @@ export const travellerAllowanceLimits = sqliteTable(
     ),
     check(
       'traveller_allowance_limits_category_check',
-      sql`${table.category} IN ('beer', 'wine_still', 'wine_sparkling', 'intermediate_products', 'other_fermented', 'spirits')`,
+      // Same canonical value set as product_master.category — one shared
+      // PRODUCT_CATEGORIES definition (design D2, change product-catalog).
+      // Migration 0007 carries this CHECK with the values inline; the
+      // rendered SQL is identical, only the source of truth moved.
+      sql`${table.category} IN ${PRODUCT_CATEGORY_VALUES}`,
     ),
     check(
       'traveller_allowance_limits_cap_present_check',

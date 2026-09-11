@@ -89,6 +89,19 @@ interface D1RetailOfferRow {
   readonly reliability_status: string;
 }
 
+/** Raw D1 catalog key row — the narrow (id, name) selection of the keys-then-page read. */
+interface D1CatalogKeyRow {
+  readonly id: number;
+  readonly name: string;
+}
+
+/** Raw D1 per-product offer aggregate row (design D4). */
+interface D1OfferAggregateRow {
+  readonly product_id: number;
+  readonly min_price_cents: number;
+  readonly merchant_count: number;
+}
+
 // ---------------------------------------------------------------------------
 // Spike-ported query helpers (search-parity reference implementation)
 // ---------------------------------------------------------------------------
@@ -258,6 +271,15 @@ const NAME_LIKE_SQL = `
    WHERE name LIKE ? ESCAPE '\\'
    ORDER BY id ASC`;
 
+/**
+ * Catalog key read (design D1) — deliberately narrow: only the columns
+ * the app-side FI sort needs. Category filtering (exact equality) is
+ * appended by {@link D1ProductSearchRepository.listCatalogPage}.
+ */
+const CATALOG_KEYS_SQL = `
+  SELECT id, name
+    FROM product_master`;
+
 const INSERT_SQL = `
   INSERT INTO product_master (
     name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
@@ -286,6 +308,34 @@ const UPDATE_BY_EAN_SQL = `
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
+
+/**
+ * One catalog listing item: the full contract product plus the offer
+ * aggregates of its page (design D4, change product-catalog).
+ */
+export interface CatalogProductListItem {
+  /** Full product row in the canonical contract shape (see the module header). */
+  readonly product: ProductRecord;
+  /**
+   * Lowest observed offer price in EUR cents — null when the product has
+   * no offers. Honest absence, never a guessed price.
+   */
+  readonly lowestPriceCents: number | null;
+  /** Distinct merchants with an observed offer — 0 when the product has no offers. */
+  readonly merchantCount: number;
+}
+
+/**
+ * One page of the catalog listing — exact totals, Finnish-collation order
+ * (design D1).
+ */
+export interface CatalogProductListPage {
+  readonly items: readonly CatalogProductListItem[];
+  /** Exact size of the filtered catalog — never a fetch-capped subset. */
+  readonly total: number;
+  readonly page: number;
+  readonly pageSize: number;
+}
 
 @Injectable()
 export class D1ProductSearchRepository extends ProductRepository {
@@ -411,6 +461,127 @@ export class D1ProductSearchRepository extends ProductRepository {
     return row ? toContractOffer(row) : null;
   }
 
+  /**
+   * Catalog listing page — category-filtered, exact-total,
+   * Finnish-collation pagination (design D1 "keys-then-page", change
+   * product-catalog). D1 ships no Finnish collation and no custom
+   * collations, so:
+   *
+   * 1. SELECT only `(id, name)` — optionally category-filtered;
+   * 2. sort app-side with the same `localeCompare(…, 'fi') || id`
+   *    comparator as the existing contract ({@link sortAlphabetical});
+   * 3. slice the page — `total` is the exact key-list length, uncapped by
+   *    any fetch limit;
+   * 4. fetch full rows for the page's ids only, re-ordered to the sorted
+   *    key order;
+   * 5. fill the per-page offer aggregates with one grouped query over the
+   *    page's ids (design D4) — bounded by pageSize regardless of catalog
+   *    size. Offer-less products keep `lowestPriceCents: null` and
+   *    `merchantCount: 0`; no availability filtering in v1 (documented
+   *    deferral — the aggregate reflects observed offers).
+   *
+   * `category` must be validated against `PRODUCT_CATEGORIES` by the
+   * caller (design D2: the API route 400s unknown values). Any
+   * non-undefined value filters by exact equality — an unknown value
+   * yields zero rows, never a silent fallback to the unfiltered listing.
+   *
+   * Kept on the D1 concrete class only (no abstract counterpart yet):
+   * the route binds the concrete type (the D1-only repository precedent).
+   */
+  async listCatalogPage(
+    page: number,
+    pageSize: number,
+    category?: string,
+  ): Promise<CatalogProductListPage> {
+    // A negative/zero page would slice from the list's tail (negative
+    // offset) — silently wrong content instead of an error.
+    if (!Number.isInteger(page) || page < 1) {
+      throw new TypeError(`page must be a positive integer, got ${page}`);
+    }
+    if (!Number.isInteger(pageSize) || pageSize < 1) {
+      throw new TypeError(
+        `pageSize must be a positive integer, got ${pageSize}`,
+      );
+    }
+
+    const filtered = category !== undefined;
+    const keys = (
+      await this.d1
+        .prepare(
+          filtered
+            ? `${CATALOG_KEYS_SQL} WHERE category = ?`
+            : CATALOG_KEYS_SQL,
+        )
+        .bind(...(filtered ? [category] : []))
+        .all<D1CatalogKeyRow>()
+    ).results;
+
+    // Exact total — the full filtered key list, before slicing (design D1).
+    const total = keys.length;
+    const pageKeys = sortAlphabetical(keys).slice(
+      (page - 1) * pageSize,
+      page * pageSize,
+    );
+    if (pageKeys.length === 0) {
+      return { items: [], total, page, pageSize };
+    }
+
+    const inList = Array.from({ length: pageKeys.length }, () => '?').join(
+      ', ',
+    );
+    const pageIds = pageKeys.map((key) => key.id);
+
+    const rows = (
+      await this.d1
+        .prepare(
+          `SELECT ${PRODUCT_COLUMNS} FROM product_master WHERE id IN (${inList})`,
+        )
+        .bind(...pageIds)
+        .all<D1ProductRow>()
+    ).results;
+    const productById = new Map(
+      rows.map((row) => [row.id, toContractProduct(row)]),
+    );
+
+    const aggregates = (
+      await this.d1
+        .prepare(
+          `SELECT product_id,
+                  MIN(price_cents) AS min_price_cents,
+                  COUNT(DISTINCT merchant) AS merchant_count
+             FROM retail_offers
+            WHERE product_id IN (${inList})
+            GROUP BY product_id`,
+        )
+        .bind(...pageIds)
+        .all<D1OfferAggregateRow>()
+    ).results;
+    const aggregateByProductId = new Map(
+      aggregates.map((aggregate) => [aggregate.product_id, aggregate]),
+    );
+
+    // Re-order to the sorted key order — the IN reads carry no order.
+    const items = pageKeys.map((key) => {
+      const product = productById.get(key.id);
+      if (!product) {
+        // Keys are authoritative for identity: a row vanishing between
+        // the key read and the row read is a data bug, not a skippable
+        // page item.
+        throw new Error(
+          `product_master row ${key.id} vanished between key and row reads`,
+        );
+      }
+      const aggregate = aggregateByProductId.get(key.id);
+      return {
+        product,
+        lowestPriceCents: aggregate ? aggregate.min_price_cents : null,
+        merchantCount: aggregate ? aggregate.merchant_count : 0,
+      };
+    });
+
+    return { items, total, page, pageSize };
+  }
+
   /** @inheritdoc */
   async create(record: ProductInsert): Promise<ProductRecord> {
     const row =
@@ -493,8 +664,14 @@ export class D1ProductSearchRepository extends ProductRepository {
   }
 }
 
-/** Total, deterministic Finnish collation order: name, then id ASC. */
-function sortAlphabetical(rows: D1ProductRow[]): D1ProductRow[] {
+/**
+ * Total, deterministic Finnish collation order: name, then id ASC. Shared
+ * by the full-row listing and the catalog key list (design D1) — one
+ * comparator, one contract.
+ */
+function sortAlphabetical<
+  T extends { readonly id: number; readonly name: string },
+>(rows: readonly T[]): T[] {
   return [...rows].sort(
     (a, b) => a.name.localeCompare(b.name, 'fi') || a.id - b.id,
   );
