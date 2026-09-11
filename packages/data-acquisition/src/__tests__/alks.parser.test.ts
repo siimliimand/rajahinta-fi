@@ -42,23 +42,23 @@ describe('parseAlksStoreProducts — golden dataset', () => {
         regulatoryClassification: 'spirits',
         alcoholByVolume: 35 / 100,
         volumeMl: 500,
-        containerType: 'plastic-bottle',
+        containerType: 'plastic',
         priceCents: 699,
         weightGrams: 530,
         availability: 'in_stock',
         sourceUrl: 'https://alks.fi/product/herb-liqueur-35-0-5-l-pet/',
       }),
-      // Comma-decimal volume form, no container token, no weight.
-      expect.objectContaining({
-        productId: 'de-4260123456789',
-        ean: '4260123456789',
-        category: 'beer',
-        alcoholByVolume: 4.8 / 100,
-        volumeMl: 500,
-        containerType: 'unknown',
-        weightGrams: null,
-        brand: 'Kulbrau',
-      }),
+        // Comma-decimal volume form, no container token, no weight.
+        expect.objectContaining({
+          productId: 'de-4260123456789',
+          ean: '4260123456789',
+          category: 'beer',
+          alcoholByVolume: 4.8 / 100,
+          volumeMl: 500,
+          containerType: 'other',
+          weightGrams: null,
+          brand: 'Kulbrau',
+        }),
       // Non-matching SKU: record kept, ean null, correction error.
       expect.objectContaining({
         productId: 'promo-123',
@@ -75,7 +75,7 @@ describe('parseAlksStoreProducts — golden dataset', () => {
         category: 'beer',
         alcoholByVolume: null,
         volumeMl: 0,
-        containerType: 'unknown',
+        containerType: 'other',
         availability: 'out_of_stock',
         weightGrams: null,
       }),
@@ -114,6 +114,24 @@ describe('parseAlksStoreProducts — golden dataset', () => {
       expect(
         mapped.has(product.sku) || reported.has(String(product.id)),
       ).toBe(true);
+    }
+  });
+
+  it('containerType stays inside the product_master CHECK vocabulary (migration 0002)', () => {
+    // 'plastic-bottle' / 'metal-can' / 'unknown' (core-domain kebab-case
+    // canonicals) violate product_master_container_type_check and bounce
+    // every INSERT of the run — the vocabulary here is the schema's.
+    const ALLOWED = new Set([
+      'glass',
+      'plastic',
+      'metal',
+      'carton',
+      'other',
+      'can',
+      'bottle',
+    ]);
+    for (const record of records) {
+      expect(ALLOWED.has(record.containerType)).toBe(true);
     }
   });
 });
@@ -221,7 +239,7 @@ describe('parseAlksStoreProducts — contract guards', () => {
       is_in_stock: true,
     });
     expect(errors).toEqual([]);
-    expect(record?.containerType).toBe('metal-can');
+    expect(record?.containerType).toBe('can');
     expect(record?.category).toBe('other_fermented');
     expect(record?.volumeMl).toBe(500);
   });

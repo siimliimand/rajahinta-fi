@@ -15,7 +15,8 @@
  *   a null EAN and a per-row correction error names the SKU (design D1).
  * - ABV and volume come from the product name by rule-based regex
  *   ("35%", "0,5 l" / "0.5 l" / "500 ml"); container type from name
- *   tokens (PET, pullo, tölkki) through `standardizeContainerType`.
+ *   tokens (PET, pullo, tölkki) through `alksContainerType` into the
+ *   product_master vocabulary.
  *   The beverage category comes from the row's categories through
  *   `mapSourceCategory`, with name tokens as the second source. When
  *   both sources yield a beverage type on different tax-rule keys, the
@@ -35,7 +36,6 @@
 
 import {
   mapSourceCategory,
-  standardizeContainerType,
 } from '@rajahinta/core-domain';
 import type { RawFeedRecord } from '../interfaces/feed-adapter.interface';
 
@@ -162,8 +162,8 @@ function parseVolumeMl(name: string): number | null {
 /**
  * Packaging tokens the store uses in names, checked word-bounded in
  * priority order (muovi/pet before pullo so "muovipullo" stays
- * plastic). Only tokens `standardizeContainerType` maps are listed;
- * the canonical mapping itself stays in core-domain.
+ * plastic). Tokens are resolved to the product_master vocabulary by
+ * {@link alksContainerType}.
  */
 const CONTAINER_TOKENS = [
   'pet',
@@ -238,6 +238,41 @@ function findContainerToken(name: string): string | null {
     if (pattern.test(lowered)) return token;
   }
   return null;
+}
+
+/**
+ * Token → product_master `container_type` value — the exact set the
+ * schema CHECK pins (migration 0002: 'glass', 'plastic', 'metal',
+ * 'carton', 'other', 'can', 'bottle'). This is deliberately NOT
+ * core-domain's `standardizeContainerType`: its kebab-case canonicals
+ * ('plastic-bottle', 'metal-can', …) violate the CHECK and bounce every
+ * INSERT (staging incident 2026-09-11). Finnish tokens mirror the
+ * standardize rules (pet/muovi → plastic, pullo/lasi → bottle, tölkki →
+ * can, kartonki → carton, tynnyri/keg → metal).
+ */
+function alksContainerType(token: string): string {
+  switch (token) {
+    case 'pet':
+    case 'muovi':
+    case 'plastic':
+      return 'plastic';
+    case 'pullo':
+    case 'lasi':
+    case 'glass':
+    case 'bottle':
+      return 'bottle';
+    case 'tölkki':
+    case 'can':
+      return 'can';
+    case 'kartonki':
+    case 'carton':
+      return 'carton';
+    case 'tynnyri':
+    case 'keg':
+      return 'metal';
+    default:
+      return 'other';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -397,8 +432,16 @@ export function parseAlksStoreProduct(row: unknown): AlksProductParseResult {
     category: mapping.taxCategory,
     alcoholByVolume: abvPercent !== null ? abvPercent / 100 : null,
     volumeMl: volumeMl ?? 0,
+    // product_master vocabulary (the schema CHECK's value set), NOT the
+    // core-domain kebab-case canonicals — migration 0002 pins
+    // ('glass','plastic','metal','carton','other','can','bottle'), and a
+    // kebab-case value bounces every INSERT of the run
+    // (product_master_container_type_check). No name token → 'other',
+    // never 'unknown' (also outside the CHECK).
     containerType:
-      containerToken !== null ? standardizeContainerType(containerToken) : 'unknown',
+      containerToken !== null
+        ? alksContainerType(containerToken)
+        : 'other',
     regulatoryClassification: mapping.taxCategory,
     // Cross-border container: Finnish pantti membership is unknown at
     // the feed level, never assumed true for a foreign merchant.
