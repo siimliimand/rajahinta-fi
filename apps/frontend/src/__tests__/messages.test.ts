@@ -137,6 +137,7 @@ describe('layout and navigation catalog completeness', () => {
       'calculator',
       'compare',
       'basket',
+      'products',
       'event',
       'trip',
       'whatIf',

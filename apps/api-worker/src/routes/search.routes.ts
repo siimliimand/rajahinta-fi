@@ -39,13 +39,30 @@ import {
   getMerchantWarnings,
   merchantsForProducts,
 } from '../services/merchant-warnings';
-import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
+import {
+  D1ProductSearchRepository,
+  type CatalogProductListItem,
+  type CatalogProductListPage,
+} from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
+// Deep source import (route-file parity — see the header comment): the
+// canonical category set is defined ONCE in the D1 schema module (design
+// D2, change product-catalog), so route validation and the column CHECK
+// cannot drift.
+import {
+  PRODUCT_CATEGORIES,
+  type ProductCategory,
+} from '../../../../packages/data-platform/src/d1/schema';
 import { lowestCurrentOfferPriceCents } from './current-best-price';
 
 /** Default page size for product listing (controller parity). */
 const DEFAULT_PAGE_SIZE = 20;
 /** Maximum page size to prevent abuse. */
 const MAX_PAGE_SIZE = 100;
+
+/** Canonical-category membership — the one shared value set (design D2). */
+function isCanonicalCategory(value: string): value is ProductCategory {
+  return (PRODUCT_CATEGORIES as readonly string[]).includes(value);
+}
 
 /** Alphabetical comparison by Finnish-collated name (controller parity). */
 function compareByName(
@@ -156,15 +173,17 @@ function unitPriceInputs(p: ProductRow): UnitPriceInputs {
 }
 
 /**
- * The €/g metric embed for a search item. The Phase 1 search path loads
- * no offers (lowestPriceCents is null), so there is no price to derive
- * from: the price input is NaN and the module reports the metric
- * unavailable — naming the first missing physical input (volume before
- * alcohol fraction, module precedence) so the item still says WHY it has
- * no €/g. The union has no MISSING_PRICE reason, so a product with
- * complete physical data degrades to INVALID_PRICE (the price input is
- * genuinely unusable here). No value is silently substituted (spec
- * unit-price-metrics).
+ * The €/g metric embed for a search item. The metric derives from the
+ * physical inputs only — never from the listing's aggregate price: a
+ * `lowestPriceCents` minimum across observed offers is not any single
+ * offer's price, and per-offer metrics live on the detail route. The
+ * price input is therefore NaN on every listing path and the module
+ * reports the metric unavailable — naming the first missing physical
+ * input (volume before alcohol fraction, module precedence) so the item
+ * still says WHY it has no €/g. The union has no MISSING_PRICE reason,
+ * so a product with complete physical data degrades to INVALID_PRICE
+ * (the price input is genuinely unusable here). No value is silently
+ * substituted (spec unit-price-metrics).
  */
 function searchItemUnitPrice(inputs: UnitPriceInputs): UnitPriceResult {
   return eurPerGram(Number.NaN, inputs.unitVolumeL, inputs.alcoholFraction);
@@ -175,6 +194,20 @@ function toSearchItemResponse(p: ProductRow): SearchItemResponse {
   return {
     ...toSearchItem(p),
     eurPerGram: searchItemUnitPrice(unitPriceInputs(p)),
+  };
+}
+
+/**
+ * Map a catalog listing entry to the response shape with the page's real
+ * offer aggregates (design D4, change product-catalog). The spread
+ * overrides keep the legacy key order — lowestPriceCents/merchantCount
+ * already exist in the base shape, so only their values change.
+ */
+function toCatalogItem(entry: CatalogProductListItem): SearchItemResponse {
+  return {
+    ...toSearchItemResponse(entry.product),
+    lowestPriceCents: entry.lowestPriceCents,
+    merchantCount: entry.merchantCount,
   };
 }
 
@@ -189,6 +222,7 @@ async function search(c: Context<AppEnv>): Promise<Response> {
   const ids = c.req.query('ids');
   const q = c.req.query('q');
   const sort = c.req.query('sort');
+  const category = c.req.query('category');
   const page = c.req.query('page');
   const limit = c.req.query('limit');
 
@@ -203,10 +237,31 @@ async function search(c: Context<AppEnv>): Promise<Response> {
     );
   }
 
+  // Category validation against the shared canonical set (design D2,
+  // change product-catalog): an unknown value is a contract-level
+  // parameter error — silently ignoring it is how the ignored-category
+  // debt started. Blank counts as absent (unfiltered browse), matching
+  // the q/ids blankness handling. Raised outside the try below so the
+  // parameter error renders as its own 400, never a wrapped 500.
+  const categoryParam =
+    category !== undefined && category.trim().length > 0
+      ? category
+      : undefined;
+  if (categoryParam !== undefined && !isCanonicalCategory(categoryParam)) {
+    throw new ApiHttpError(
+      400,
+      `Unknown category '${categoryParam}'. Valid categories: ${PRODUCT_CATEGORIES.join(', ')}.`,
+    );
+  }
+
   try {
     const repo = new D1ProductSearchRepository(c.env.DB);
     let items: SearchItemResponse[] = [];
     const query = q !== undefined ? q.trim() : '';
+    // Set only on the browse path, where the repository owns pagination
+    // (true totals, design D3); the ids and ranked-q paths keep
+    // fetch-and-slice below.
+    let catalogPage: CatalogProductListPage | undefined;
 
     if (ids !== undefined && ids.trim().length > 0) {
       // ID lookup takes precedence over free-text search (q ignored).
@@ -229,14 +284,21 @@ async function search(c: Context<AppEnv>): Promise<Response> {
         items.sort(compareByNameThenId);
       }
     } else {
-      // Blank or absent q — the repository lists products alphabetically.
-      const products = await repo.searchByName(q ?? null, MAX_PAGE_SIZE);
-      items = products.map((p) => toSearchItemResponse(p));
-      items.sort(compareByName);
+      // Blank or absent q — the catalog listing (design D3, change
+      // product-catalog): the repository paginates (exact totals, FI
+      // collation) and aggregates the page's offers (design D4).
+      catalogPage = await repo.listCatalogPage(
+        pageNum,
+        limitNum,
+        categoryParam,
+      );
+      items = catalogPage.items.map(toCatalogItem);
     }
 
     const start = (pageNum - 1) * limitNum;
-    const paginated = items.slice(start, start + limitNum);
+    const paginated =
+      catalogPage !== undefined ? items : items.slice(start, start + limitNum);
+    const total = catalogPage !== undefined ? catalogPage.total : items.length;
 
     // Additive merchantWarnings join (task 2.2): the merchants of this
     // page's products' offers, matched against PUBLISHED blacklist
@@ -250,10 +312,10 @@ async function search(c: Context<AppEnv>): Promise<Response> {
 
     const payload: Record<string, unknown> = {
       items: paginated,
-      total: items.length,
+      total,
       page: pageNum,
       limit: limitNum,
-      totalPages: Math.ceil(items.length / limitNum),
+      totalPages: Math.ceil(total / limitNum),
     };
     if (warnings !== undefined) {
       payload.merchantWarnings = warnings;

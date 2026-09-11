@@ -38,6 +38,7 @@ const NAV_ITEMS = [
   { href: '/calculator', messageKey: 'calculator' },
   { href: '/compare', messageKey: 'compare' },
   { href: '/basket', messageKey: 'basket' },
+  { href: '/products', messageKey: 'products' },
   { href: '/event', messageKey: 'event' },
   { href: '/trip', messageKey: 'trip' },
   { href: '/what-if', messageKey: 'whatIf' },

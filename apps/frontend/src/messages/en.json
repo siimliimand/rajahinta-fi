@@ -62,6 +62,7 @@
     "calculator": "Calculator",
     "compare": "Compare",
     "basket": "Basket",
+    "products": "Products",
     "event": "Event calculator",
     "trip": "Trip calculator",
     "whatIf": "What-if calculator",
@@ -1418,5 +1419,26 @@
     "invalidHint": "Check that you opened the link from the email exactly as it was sent.",
     "errorBody": "The unsubscribe failed — try reloading the page.",
     "toHome": "To the front page"
+  },
+  "ProductsPage": {
+    "metaTitle": "Products — observed prices",
+    "metaDescription": "The product catalog with observed prices and merchant counts, in alphabetical order.",
+    "metaCategoryTitle": "{category} — observed prices",
+    "metaCategoryDescription": "Product catalog for the {category} category: observed prices and merchant counts, in alphabetical order.",
+    "heading": "Products",
+    "intro": "The product catalog behind the landed-cost calculator, with observed prices.",
+    "filterNavLabel": "Category",
+    "allProducts": "All products",
+    "fromPriceLabel": "Lowest observed price",
+    "noPrice": "No observed prices",
+    "merchantCount": "Merchants: {count}",
+    "paginationNavLabel": "Pagination",
+    "prevPage": "Previous page",
+    "nextPage": "Next page",
+    "pageStatus": "Page {page} / {totalPages}",
+    "emptyTitle": "No products to show",
+    "emptyBody": "No products have been recorded for this view.",
+    "unavailableTitle": "The catalog is not available right now",
+    "unavailableBody": "The product data lookup did not succeed. Try again later."
   }
 }
