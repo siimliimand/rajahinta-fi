@@ -157,9 +157,9 @@ describe('ReliabilityService', () => {
   // -------------------------------------------------------------------------
 
   describe('stalenessThresholdFor', () => {
-    it('returns 24h for price domain by default', () => {
+    it('returns 48h for price domain by default', () => {
       const threshold = service.stalenessThresholdFor('price');
-      expect(threshold.milliseconds).toBe(24 * HOUR.milliseconds);
+      expect(threshold.milliseconds).toBe(48 * HOUR.milliseconds);
     });
 
     it('returns 7d for transport domain by default', () => {
@@ -183,7 +183,7 @@ describe('ReliabilityService', () => {
       const threshold = service.stalenessThresholdFor('price', {
         transport: { milliseconds: 1 * HOUR.milliseconds },
       });
-      expect(threshold.milliseconds).toBe(24 * HOUR.milliseconds);
+      expect(threshold.milliseconds).toBe(48 * HOUR.milliseconds);
     });
 
     it('returns the default when overrides is undefined', () => {

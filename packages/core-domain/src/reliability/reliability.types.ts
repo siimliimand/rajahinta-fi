@@ -84,13 +84,19 @@ export const WEEK: Duration = { milliseconds: 604_800_000 };
 /**
  * Default staleness thresholds per domain.
  *
- * - **price**:          24 hours — prices change frequently.
+ * - **price**:          48 hours — 2× the once-daily scrape cadence (merchant
+ *                         registry pollingIntervalMs). A threshold equal to
+ *                         the cadence is a boundary collision: scheduling
+ *                         jitter alone would flip every offer STALE daily.
+ *                         2× the cadence gives one full missed run of margin —
+ *                         a single failed daily run stays VERIFIED, two
+ *                         consecutive misses go STALE honestly.
  * - **transport**:      7 days   — carrier rates are more stable.
  * - **classification**: 30 days  — regulatory classification rules
  *                         change on legislative cycles.
  */
 export const DEFAULT_STALENESS_THRESHOLDS: Record<ReliabilityDomain, Duration> = {
-  price: { milliseconds: 24 * HOUR.milliseconds },
+  price: { milliseconds: 48 * HOUR.milliseconds },
   transport: { milliseconds: 7 * DAY.milliseconds },
   classification: { milliseconds: 30 * DAY.milliseconds },
 };

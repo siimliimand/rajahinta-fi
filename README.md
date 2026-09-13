@@ -25,7 +25,7 @@ Reliability vocabulary used everywhere (prices, transport, classifications):
 | STALE | Was verified/estimated but exceeded its freshness threshold |
 | UNAVAILABLE | No data exists |
 
-Staleness thresholds: prices 24 h, transport rates 7 days, classifications 30 days.
+Staleness thresholds: prices 48 h, transport rates 7 days, classifications 30 days.
 
 ## Repository layout
 
