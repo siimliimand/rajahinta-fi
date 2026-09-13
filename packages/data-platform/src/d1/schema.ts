@@ -295,7 +295,7 @@ export const transportOffers = sqliteTable(
     /** When carrier rates were last refreshed — separate from observedAt for batch refresh tracking. */
     refreshedAt: text('refreshed_at').default(ISO_8601_NOW).notNull(),
     /** Data freshness indicator (VERIFIED/ESTIMATED/STALE/UNAVAILABLE) — surfaced to user per architecture rule.
-     *  Staleness thresholds per domain: price=24h, transport=7d, classification=30d
+     *  Staleness thresholds per domain: price=48h, transport=7d, classification=30d
      *  (configured in packages/core-domain/src/reliability/reliability.types.ts). */
     reliabilityStatus: text('reliability_status', { length: 16 })
       .default('ESTIMATED')

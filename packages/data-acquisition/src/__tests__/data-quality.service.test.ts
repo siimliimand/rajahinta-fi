@@ -51,7 +51,7 @@ describe('DataQualityService', () => {
   // -------------------------------------------------------------------------
 
   describe('checkOfferFreshness', () => {
-    it('returns VERIFIED for price offer observed within 24h threshold', () => {
+    it('returns VERIFIED for price offer observed within 48h threshold', () => {
       const now = fixedNow();
       const offer = makeOffer({ observedAt: new Date(now.getTime() - 12 * HOUR.milliseconds) });
 
@@ -65,9 +65,9 @@ describe('DataQualityService', () => {
       }
     });
 
-    it('returns STALE for price offer older than 24h', () => {
+    it('returns STALE for price offer older than 48h', () => {
       const now = fixedNow();
-      const offer = makeOffer({ observedAt: new Date(now.getTime() - 25 * HOUR.milliseconds) });
+      const offer = makeOffer({ observedAt: new Date(now.getTime() - 49 * HOUR.milliseconds) });
 
       vi.useFakeTimers();
       vi.setSystemTime(now);
@@ -80,7 +80,9 @@ describe('DataQualityService', () => {
 
     it('returns VERIFIED at exact threshold boundary for price', () => {
       const now = fixedNow();
-      const offer = makeOffer({ observedAt: new Date(now.getTime() - DAY.milliseconds) });
+      const offer = makeOffer({
+        observedAt: new Date(now.getTime() - 48 * HOUR.milliseconds),
+      });
 
       vi.useFakeTimers();
       vi.setSystemTime(now);
@@ -240,7 +242,7 @@ describe('DataQualityService', () => {
     it('counts a stale offer and does NOT flag it as silent-VERIFIED when stored as ESTIMATED', () => {
       const now = fixedNow();
       const offer = makeOffer({
-        observedAt: new Date(now.getTime() - 48 * HOUR.milliseconds),
+        observedAt: new Date(now.getTime() - 72 * HOUR.milliseconds),
         reliabilityStatus: 'ESTIMATED',
       });
 
@@ -263,7 +265,7 @@ describe('DataQualityService', () => {
       const offer = makeOffer({
         merchant: 'alko',
         productId: 42,
-        observedAt: new Date(now.getTime() - 48 * HOUR.milliseconds),
+        observedAt: new Date(now.getTime() - 72 * HOUR.milliseconds),
         reliabilityStatus: 'VERIFIED',
       });
 
@@ -298,7 +300,7 @@ describe('DataQualityService', () => {
       const staleEstimated = makeOffer({
         merchant: 'merchant-b',
         productId: 2,
-        observedAt: new Date(now.getTime() - 48 * HOUR.milliseconds),
+        observedAt: new Date(now.getTime() - 72 * HOUR.milliseconds),
         reliabilityStatus: 'ESTIMATED',
       });
 

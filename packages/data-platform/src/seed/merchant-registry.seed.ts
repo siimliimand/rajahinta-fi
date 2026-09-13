@@ -32,6 +32,13 @@ export interface MerchantRegistrySeedRow {
  * merchant-removal purge script under scripts/ removes its rows from
  * environments that ingested it. `alks` joined via change
  * alks-feed-and-import-vat (task 2.2).
+ *
+ * Both rows run a daily cadence (change
+ * daily-scrape-cadence-current-offers, task 2.1): the hourly producer
+ * tick honors pollingIntervalMs via interval buckets, so 3,600,000 ms
+ * (1 h) is the minimum a row can actually get — 86,400,000 ms (24 h)
+ * fires on the 00:00 UTC pass. Existing environments keep their current
+ * row until the operator updates it through the ops console.
  */
 export const MERCHANT_REGISTRY_SEED: readonly MerchantRegistrySeedRow[] = [
   {
@@ -42,7 +49,7 @@ export const MERCHANT_REGISTRY_SEED: readonly MerchantRegistrySeedRow[] = [
     // pipeline, matching the static config's convention.
     feedUrl: '',
     feedFormat: 'json',
-    pollingIntervalMs: 3_600_000,
+    pollingIntervalMs: 86_400_000,
   },
   {
     merchantId: 'alks',
@@ -50,7 +57,7 @@ export const MERCHANT_REGISTRY_SEED: readonly MerchantRegistrySeedRow[] = [
     country: 'DE',
     feedUrl: 'https://alks.fi',
     feedFormat: 'json',
-    pollingIntervalMs: 3_600_000,
+    pollingIntervalMs: 86_400_000,
   },
 ];
 

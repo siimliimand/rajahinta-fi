@@ -384,12 +384,15 @@ export const OFFER_BEER_MULTI_A: CalculatorRetailOfferData = {
   reliabilityStatus: 'VERIFIED',
 };
 
-/** Pricier EUR offer from the same market. */
+/** Pricier EUR offer from the same market — a distinct merchant: findOffers
+ * collapses scrape history to the latest row per (product, merchant), so a
+ * second row for beverage-de would supersede the cheapest offer instead of
+ * losing the price race. */
 export const OFFER_BEER_MULTI_B: CalculatorRetailOfferData = {
   id: 113,
   priceCents: 260,
   currency: 'EUR',
-  merchant: 'beverage-de',
+  merchant: 'markt-de',
   country: 'DE',
   reliabilityStatus: 'VERIFIED',
 };

@@ -553,3 +553,44 @@ describe('SearchController — merchant reliability embed', () => {
     expect(result.offers).toHaveLength(2);
   });
 });
+// ---------------------------------------------------------------------------
+// Product detail over the deduped offer set (task 4.3,
+// change 2026-09-13-daily-scrape-cadence-current-offers)
+//
+// findOffers now returns the LATEST row per (product, merchant); the SQL
+// dedup itself is pinned by the repository tests. Here the stubbed
+// repository feeds an ALREADY-deduped array and the contract under test
+// is the controller's mapping: one response offer per repository row
+// (no resurrection of superseded shapes), ISO observation dates, and
+// field passthrough.
+// ---------------------------------------------------------------------------
+
+describe('SearchController — getProduct over the deduped offer set (task 4.3)', () => {
+  it('maps one response offer per already-deduped repository row with ISO observation dates', async () => {
+    const mockRepo = createMockProductRepository();
+    // One row per merchant, latest observation per row — the exact shape
+    // the deduped findOffers delivers.
+    const deduped: MockOffer[] = [
+      { ...OFFER_ALKO, id: 201, observedAt: new Date('2026-09-10T06:00:00Z') },
+      { ...OFFER_EU_IMPORT, id: 202, observedAt: new Date('2026-09-05T06:00:00Z') },
+    ];
+    mockRepo.findOffers = vi.fn(async () => deduped);
+    const controller = new SearchController(
+      mockRepo as unknown as ProductRepository,
+      { getReliabilityScoreMap: vi.fn() } as unknown as MerchantReliabilityService,
+    );
+
+    const result = await controller.getProduct(PROD_A.id);
+
+    expect(mockRepo.findOffers).toHaveBeenCalledWith(PROD_A.id);
+    // 1:1 mapping — no expansion, no reordering.
+    expect(result.offers).toHaveLength(2);
+    expect(result.offers.map((o) => o.id)).toEqual([201, 202]);
+    expect(result.offers.map((o) => o.merchant)).toEqual(['alko', 'eu-import']);
+    expect(result.offers.map((o) => o.observedAt)).toEqual([
+      '2026-09-10T06:00:00.000Z',
+      '2026-09-05T06:00:00.000Z',
+    ]);
+    expect(result.offers.map((o) => o.priceCents)).toEqual([249, 199]);
+  });
+});

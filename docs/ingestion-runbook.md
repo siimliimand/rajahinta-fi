@@ -48,6 +48,15 @@ configured to default open:
 3. **Console reads**: `GET /ops/console/governance` never overstates
    permission; a merchant without records surfaces as `PENDING`.
 
+**Cadence and the hourly tick.** The producer runs once per hour
+(cron `0 * * * *`, UTC) and honors each registry row's
+`pollingIntervalMs` by comparing epoch-aligned interval buckets
+between consecutive ticks (`intervalBucketFires`). The minimum
+schedulable interval is therefore 3,600,000 ms (1 h) — a row cannot
+fire more than once per hour no matter how small its interval. The
+seed's daily value, 86,400,000 ms (24 h), fires on the 00:00 UTC pass
+— the first hourly tick of the UTC day.
+
 Before a grant, the gate's behavior for the merchant is exactly the
 spec's fail-closed scenario: **the pipeline performs no fetch for it
 and persists no data**. The producer log line for an ungranted
@@ -120,6 +129,8 @@ curl -X POST "$STAGING_API_URL/ops/console/merchants" \
         "name": "Alks",
         "country": "DE",
         "feedUrl": "https://alks.fi",
+        "feedFormat": "json",
+        "pollingIntervalMs": 86400000,
         "operator": "ops-lead-name",
         "note": "owner blanket permission policy"
       }'
@@ -127,7 +138,11 @@ curl -X POST "$STAGING_API_URL/ops/console/merchants" \
 
 Optional fields: `acquisitionMethod` (default `RETAILER_API` — the
 public store-API pattern), `feedFormat` (default `json`),
-`pollingIntervalMs` (default 3600000). The response carries
+`pollingIntervalMs` (default 3600000). Pin `feedFormat` and
+`pollingIntervalMs` explicitly when UPDATING an existing row: the
+upsert overwrites the whole registry row, so an update that omits
+`pollingIntervalMs` silently resets the cadence to the hourly default
+— the seed's alks cadence is daily, 86400000. The response carries
 `registered: created|updated`, `autoGranted: true|false`, and the
 effective aggregated `permissionStatus` — `autoGranted` is `false` and
 governance untouched when the merchant already has records (a
@@ -249,10 +264,10 @@ preconditions:
    cd apps/api-worker
    wrangler d1 execute DB --remote --env production --command "\
      INSERT INTO merchant_registry (merchant_id, name, country, feed_url, feed_format, polling_interval_ms) \
-     VALUES ('alks', 'Alks', 'DE', 'https://alks.fi', 'json', 3600000) \
+     VALUES ('alks', 'Alks', 'DE', 'https://alks.fi', 'json', 86400000) \
      ON CONFLICT (merchant_id) DO UPDATE SET \
        name = 'Alks', country = 'DE', feed_url = 'https://alks.fi', \
-       feed_format = 'json', polling_interval_ms = 3600000, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')" -y
+       feed_format = 'json', polling_interval_ms = 86400000, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')" -y
    ```
 
    Verify with `GET https://api.rajahinta.fi/ops/console/governance`

@@ -324,7 +324,7 @@ Is the total what I will actually pay?
 It is an estimate. Retail prices and carrier rates change, and your actual tax liability depends on circumstances the calculator cannot see. The disclaimer exists for exactly this reason.
 
 Why does a price say STALE?
-The last verified observation is older than the freshness threshold for that data type. Prices go stale after 24 hours, transport rates after 7 days.
+The last verified observation is older than the freshness threshold for that data type. Prices go stale after 48 hours, transport rates after 7 days.
 
 Why is a product excluded from calculation?
 Products without a regulatory classification are excluded. A guessed classification could produce a wrong tax figure, which is worse than no figure.

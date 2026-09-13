@@ -7,7 +7,7 @@
  * @module DrizzleProductRepository
  */
 import { Injectable, Inject } from '@nestjs/common';
-import { eq, ilike, or, asc, desc, sql } from 'drizzle-orm';
+import { asc, desc, eq, ilike, inArray, max, or, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDatabase } from '../db/drizzle.provider';
 import {
   ProductRepository,
@@ -93,10 +93,24 @@ export class DrizzleProductRepository extends ProductRepository {
   async findOffers(
     productId: number,
   ): Promise<typeof retailOffers.$inferSelect[]> {
+    // retail_offers is append-per-scrape: upsertOffer inserts a new row per
+    // run and rows are never updated, so the latest observation for a
+    // (product, merchant) pair is the max id — the same recency the
+    // upsertOffer change detection resolves via (observed_at, id)
+    // descending, collapsed to the monotonic surrogate key.
+    // Single-column projection: pg rejects an IN sub-query returning more
+    // than one column, and the merchant group key is already implied by
+    // taking max(id) per group.
+    const latestPerMerchant = this.db
+      .select({ id: max(retailOffers.id) })
+      .from(retailOffers)
+      .where(eq(retailOffers.productId, productId))
+      .groupBy(retailOffers.merchant);
     return this.db
       .select()
       .from(retailOffers)
-      .where(eq(retailOffers.productId, productId));
+      .where(inArray(retailOffers.id, latestPerMerchant))
+      .orderBy(asc(retailOffers.id));
   }
 
   /** @inheritdoc */

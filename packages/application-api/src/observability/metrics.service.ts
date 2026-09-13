@@ -59,7 +59,7 @@ export class PrometheusMetricsService implements OnApplicationBootstrap, OnAppli
 
   private readonly stalePriceShare = new client.Gauge({
     name: STALE_PRICE_SHARE_METRIC,
-    help: 'Share of audited retail offers whose actual recency status is STALE (24h price-domain threshold); 0 when none audited. Updated after each ingestion quality check.',
+    help: 'Share of audited retail offers whose actual recency status is STALE (48h price-domain threshold); 0 when none audited. Updated after each ingestion quality check.',
     registers: [this.registry],
   });
 

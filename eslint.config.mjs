@@ -10,7 +10,7 @@ export default tseslint.config(
   // .wrangler/.open-next are wrangler build/dev artifact dirs — their
   // bundled JS is minified workerd output, never hand-written code, and
   // local `wrangler dev` runs recreate them (absent in CI checkouts).
-  { ignores: ['**/dist/', '**/.next/', '**/node_modules/', '**/*.d.ts', '**/.wrangler/', '**/.open-next/', '*.config.*', '.opencode/'] },
+  { ignores: ['**/dist/', '**/.next/', '**/node_modules/', '**/*.d.ts', '**/.wrangler/', '**/.open-next/', '**/playwright-report*/', '*.config.*', '.opencode/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

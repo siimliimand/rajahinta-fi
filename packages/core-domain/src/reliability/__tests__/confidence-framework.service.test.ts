@@ -395,7 +395,7 @@ describe('ConfidenceFrameworkService', () => {
       expect(service.formatConfidenceDetail('Price', 'ESTIMATED')).toContain(
         'category averages',
       );
-      expect(service.formatConfidenceDetail('Price', 'STALE')).toContain('24 hours');
+      expect(service.formatConfidenceDetail('Price', 'STALE')).toContain('48 hours');
       expect(service.formatConfidenceDetail('Price', 'UNAVAILABLE')).toBe(
         'Price data is not available for this product',
       );

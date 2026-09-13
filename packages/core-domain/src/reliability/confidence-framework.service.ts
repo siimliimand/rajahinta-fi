@@ -257,7 +257,7 @@ export class ConfidenceFrameworkService {
       }
       case 'STALE': {
         if (name === 'Price') {
-          return `${name} data is stale (last refreshed over 24 hours ago)`;
+          return `${name} data is stale (last refreshed over 48 hours ago)`;
         }
         if (name === 'Transport') {
           return `${name} estimate is stale (last refreshed over 7 days ago)`;
