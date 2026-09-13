@@ -98,8 +98,11 @@ export class DrizzleProductRepository extends ProductRepository {
     // (product, merchant) pair is the max id — the same recency the
     // upsertOffer change detection resolves via (observed_at, id)
     // descending, collapsed to the monotonic surrogate key.
+    // Single-column projection: pg rejects an IN sub-query returning more
+    // than one column, and the merchant group key is already implied by
+    // taking max(id) per group.
     const latestPerMerchant = this.db
-      .select({ merchant: retailOffers.merchant, id: max(retailOffers.id) })
+      .select({ id: max(retailOffers.id) })
       .from(retailOffers)
       .where(eq(retailOffers.productId, productId))
       .groupBy(retailOffers.merchant);

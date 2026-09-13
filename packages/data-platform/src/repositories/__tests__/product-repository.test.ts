@@ -125,7 +125,7 @@ function expectLatestPerMerchantSubquery(
 ): void {
   const { sql, params } = renderSql(run);
   expect(sql).toBe(
-    'select "merchant", max("id") from "retail_offers" ' +
+    'select max("id") from "retail_offers" ' +
       'where "retail_offers"."product_id" = $1 ' +
       'group by "retail_offers"."merchant"',
   );
@@ -160,7 +160,7 @@ describe('DrizzleProductRepository.findOffers — latest row per (product, merch
     expectLatestPerMerchantSubquery(subquery, 31);
     const { sql } = renderSql(outer);
     expect(sql).toContain(
-      '"retail_offers"."id" in (select "merchant", max("id") from "retail_offers" ' +
+      '"retail_offers"."id" in (select max("id") from "retail_offers" ' +
         'where "retail_offers"."product_id" = $1 group by "retail_offers"."merchant")',
     );
     expect(sql).toContain('order by "retail_offers"."id" asc');
