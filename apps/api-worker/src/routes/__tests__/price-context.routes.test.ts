@@ -170,6 +170,38 @@ describe('GET /api/v1/products/:id/price-context — computed window', () => {
   });
 });
 
+describe('GET /api/v1/products/:id/price-context — current-offer collapse (task 4.3)', () => {
+  it('computes currentBestPriceCents from the current offers only — a superseded cheaper scrape cannot drag it down', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    seedOffer(db, {
+      id: 11,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 1799,
+      observedAt: '2026-09-01T06:00:00.000Z',
+    });
+    seedOffer(db, {
+      id: 12,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 1999,
+      observedAt: '2026-09-10T06:00:00.000Z',
+    });
+    seedOffer(db, { id: 13, productId: 1, merchant: 'saksoinet', priceCents: 2100 });
+    const app = priceContextApp();
+
+    const res = await request(app, priceContextEnv(d1), '/api/v1/products/1/price-context', {
+      headers: AGE_OK,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ContextJson;
+    // Deduped set {1999, 2100} → 1999; the superseded 1799 (the full
+    // scrape-log minimum) must not leak into the shared best-price figure.
+    expect(body.currentBestPriceCents).toBe(1999);
+  });
+});
+
 describe('GET /api/v1/products/:id/price-context — insufficient history', () => {
   it('returns the explicit unavailable state with no percentage over a thin window', async () => {
     const { db, d1 } = openMigratedD1();

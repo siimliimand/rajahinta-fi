@@ -14,6 +14,9 @@
  * @module ProductPage
  */
 
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (products/page.tsx precedent), so the component scope needs React.
+import * as React from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';

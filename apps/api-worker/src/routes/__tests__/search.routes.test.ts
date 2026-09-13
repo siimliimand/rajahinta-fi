@@ -337,6 +337,106 @@ describe('GET /api/v1/products/:id (detail)', () => {
   });
 });
 
+describe('GET /api/v1/products/:id — current-offer collapse (task 4.3)', () => {
+  it('collapses repeated scrapes of an unchanged price into one offer carrying the last-observed date', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    seedOffer(db, {
+      id: 11,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 350,
+      observedAt: '2026-09-01T06:00:00.000Z',
+    });
+    seedOffer(db, {
+      id: 12,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 350,
+      observedAt: '2026-09-10T06:00:00.000Z',
+    });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products/1', { headers: AGE });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      offers: Array<{ id: number; merchant: string; priceCents: number; observedAt: string }>;
+      currentBestPriceCents: number | null;
+    };
+    expect(body.offers).toHaveLength(1);
+    expect(body.offers[0]).toMatchObject({
+      id: 12,
+      merchant: 'alko',
+      priceCents: 350,
+      observedAt: '2026-09-10T06:00:00.000Z',
+    });
+    expect(body.currentBestPriceCents).toBe(350);
+  });
+
+  it('supersedes a price move — the newer row wins and the superseded cheaper row cannot drag the best price down', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    seedOffer(db, {
+      id: 11,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 1799,
+      observedAt: '2026-09-01T06:00:00.000Z',
+    });
+    seedOffer(db, {
+      id: 12,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 1999,
+      observedAt: '2026-09-10T06:00:00.000Z',
+    });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products/1', { headers: AGE });
+    const body = (await res.json()) as {
+      offers: Array<{ id: number; priceCents: number; observedAt: string }>;
+      currentBestPriceCents: number | null;
+    };
+    expect(body.offers).toHaveLength(1);
+    expect(body.offers[0]).toMatchObject({ id: 12, priceCents: 1999 });
+    // The shared lowest-current-offer rule over the deduped set is 1999 —
+    // the all-time-low 1799 scrape log row must not resurface here.
+    expect(body.currentBestPriceCents).toBe(1999);
+  });
+
+  it('keeps every merchant — dedup is per (product, merchant), not global', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    seedOffer(db, {
+      id: 11,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 1799,
+      observedAt: '2026-09-01T06:00:00.000Z',
+    });
+    seedOffer(db, {
+      id: 12,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 1999,
+      observedAt: '2026-09-10T06:00:00.000Z',
+    });
+    seedOffer(db, { id: 13, productId: 1, merchant: 'saksoinet', priceCents: 2100 });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products/1', { headers: AGE });
+    const body = (await res.json()) as {
+      offers: Array<{ id: number; merchant: string; observedAt: string }>;
+      currentBestPriceCents: number | null;
+    };
+    expect(body.offers).toHaveLength(2);
+    const byMerchant = new Map(body.offers.map((o) => [o.merchant, o]));
+    expect(byMerchant.get('alko')).toMatchObject({ id: 12 });
+    expect(byMerchant.get('saksoinet')).toMatchObject({ id: 13 });
+    expect(body.currentBestPriceCents).toBe(1999);
+  });
+});
+
 describe('eurPerGram embed', () => {
   // The base shapes — the embed key appends to these exact key lists,
   // in this order.

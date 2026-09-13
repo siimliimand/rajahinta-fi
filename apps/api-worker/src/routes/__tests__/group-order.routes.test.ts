@@ -615,6 +615,53 @@ describe('POST /api/v1/group-orders/:shareToken/ledger', () => {
     expect(body.ledger.note.text.length).toBeGreaterThan(0);
   });
 
+  it('values a product from its current offers only — a superseded cheaper scrape cannot lower the unit value (task 4.3)', async () => {
+    const s = await setupWithLiveSession();
+    seedProduct(s.db, { id: 1 });
+    seedOffer(s.db, {
+      id: 11,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 1500,
+      reliabilityStatus: 'VERIFIED',
+      observedAt: '2026-09-01T06:00:00.000Z',
+    });
+    seedOffer(s.db, {
+      id: 12,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 1799,
+      reliabilityStatus: 'VERIFIED',
+      observedAt: '2026-09-10T06:00:00.000Z',
+    });
+    seedOffer(s.db, {
+      id: 13,
+      productId: 1,
+      merchant: 'saksoinet',
+      priceCents: 1600,
+      reliabilityStatus: 'VERIFIED',
+    });
+    await addItem(s, s.shareToken, 'A', 1, 2);
+
+    const res = await request(
+      s.app,
+      s.env,
+      `/api/v1/group-orders/${s.shareToken}/ledger`,
+      tokenPost({}),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as LedgerResponse;
+    // resolveUnitValues sees the deduped per-merchant set {1799, 1600} →
+    // the cheapest-VERIFIED-EUR rule picks 1600. The superseded 1500 alko
+    // scrape-log row must not win the valuation.
+    expect(body.itemValuations[0]).toEqual({
+      productId: 1,
+      quantity: 2,
+      unitValueCents: 1600,
+      itemValueCents: 3200,
+    });
+  });
+
   it('reports an unvalued product as a stated null gap while valued items allocate', async () => {
     const s = await setupWithLiveSession();
     seedProduct(s.db, { id: 1 });

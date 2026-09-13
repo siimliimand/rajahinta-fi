@@ -213,6 +213,37 @@ describe('GET /api/v1/unitprice/ranking — omission', () => {
   });
 });
 
+describe('GET /api/v1/unitprice/ranking — current-offer collapse (task 4.3)', () => {
+  it('ranks the current offer only — the superseded cheaper scrape adds no phantom candidate', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III', category: 'beer' });
+    seedOffer(db, {
+      id: 11,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 250,
+      observedAt: '2026-09-01T06:00:00.000Z',
+    });
+    seedOffer(db, {
+      id: 12,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 300,
+      observedAt: '2026-09-10T06:00:00.000Z',
+    });
+    seedOffer(db, { id: 13, productId: 1, merchant: 'saksoinet', priceCents: 320 });
+
+    const res = await getRanking(d1, '?category=beer');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as RankingBody;
+    // Deduped candidates {300, 320} → 300 wins. offerId 11 (~20.43 ¢/g)
+    // would betray full-scrape-log math leaking into the ranking.
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]!.offerId).toBe(12);
+    expect(body.items[0]!.centsPerGram).toBeCloseTo(24.5150313915, 4);
+  });
+});
+
 describe('GET /api/v1/unitprice/ranking — status carriage', () => {
   it('labels VERIFIED-price rows VERIFIED and ESTIMATED-price rows ESTIMATED', async () => {
     const { db, d1 } = openMigratedD1();
