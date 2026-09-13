@@ -72,12 +72,25 @@ export class JobsSchedulerService implements OnModuleInit {
    * The permission check is the pipeline's own fail-closed rule: no
    * governance records, a governance outage, or any status other than
    * GRANTED skips the merchant (default-off).
+   *
+   * The cadence gate (task 1.2, design D1) honors each merchant's
+   * registry `pollingIntervalMs`: a merchant is enqueued on a tick only
+   * when an interval boundary was crossed since the previous tick. The
+   * cron stays hourly; hourly-interval merchants fire every tick and
+   * keep today's behavior exactly.
    */
   @Cron(CronExpression.EVERY_HOUR)
   async schedulePriceIngestion(): Promise<void> {
     const cfg = JOB_REGISTRY[QUEUES.PRICE_INGESTION];
 
     const merchants = await this.merchantRegistry.list();
+
+    // Cadence-gate clock anchor (design D1): the tick is hourly, so the
+    // previous tick is exactly one hour back. Comparing epoch-aligned
+    // buckets is stateless — no persistence, and missed ticks self-heal
+    // at the next boundary.
+    const now = new Date();
+    const previousTick = new Date(now.getTime() - 3_600_000);
 
     let enqueued = 0;
     for (const merchant of merchants) {
@@ -92,6 +105,15 @@ export class JobsSchedulerService implements OnModuleInit {
 
       const permitted = await this.isMerchantPermitted(merchant.merchantId);
       if (!permitted) {
+        continue;
+      }
+
+      if (!this.intervalBucketFires(merchant.pollingIntervalMs, now, previousTick)) {
+        this.logger.log(
+          `Skipping merchant "${merchant.merchantId}": ` +
+            `polling interval boundary not crossed since previous tick ` +
+            `(pollingIntervalMs=${merchant.pollingIntervalMs})`,
+        );
         continue;
       }
 
@@ -212,6 +234,31 @@ export class JobsSchedulerService implements OnModuleInit {
   // -----------------------------------------------------------------------
   // Helpers — deterministic job IDs for idempotent enqueue
   // -----------------------------------------------------------------------
+
+  /**
+   * Cadence gate (design D1): did the merchant's polling interval cross
+   * a boundary between the previous tick and now?
+   *
+   * Epoch-aligned buckets — `floor(t / pollingIntervalMs)` — keep the
+   * comparison stateless: 3,600,000 ms fires every hourly tick (today's
+   * behavior), 86,400,000 ms fires at the first tick after 00:00 UTC,
+   * and a missed tick self-heals at the next boundary instead of
+   * starving the merchant. Sub-hourly intervals cannot be honored by an
+   * hourly tick; 3,600,000 ms is the documented registry minimum.
+   *
+   * Mirrors the api-worker producer's identical helper (task 1.1) —
+   * deliberate duplication between hosts, like isMerchantPermitted.
+   */
+  private intervalBucketFires(
+    pollingIntervalMs: number,
+    now: Date,
+    previousTick: Date,
+  ): boolean {
+    return (
+      Math.floor(now.getTime() / pollingIntervalMs) !==
+      Math.floor(previousTick.getTime() / pollingIntervalMs)
+    );
+  }
 
   /** Bucket key: YYYY-MM-DDTHH (UTC). */
   private hourlyBucket(): string {

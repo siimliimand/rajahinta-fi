@@ -252,3 +252,127 @@ describe('JobsSchedulerService.schedulePriceIngestion (task 7.3)', () => {
     ).toContain('enqueued 1/2');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cadence gate (task 1.2, design D1) — mirrors the api-worker producer
+// tests (task 1.1): synthetic clocks over consecutive hourly ticks, the
+// same interval-bucket cases per merchant pollingIntervalMs.
+// ---------------------------------------------------------------------------
+
+describe('JobsSchedulerService.schedulePriceIngestion cadence gate (task 1.2)', () => {
+  /** UTC hour stamp within the synthetic day 2026-09-13. */
+  const at = (hour: number): string =>
+    `2026-09-13T${String(hour).padStart(2, '0')}:00:00.000Z`;
+
+  /** Pin the clock to `iso`, then run one hourly tick. */
+  async function tick(scheduler: JobsSchedulerService, iso: string): Promise<void> {
+    vi.setSystemTime(new Date(iso));
+    await scheduler.schedulePriceIngestion();
+  }
+
+  function cadenceScheduler(
+    rows: MerchantRegistryRecord[],
+  ): { scheduler: JobsSchedulerService; adds: CapturedAdd[] } {
+    const { queue, adds } = captureQueue();
+    const scheduler = createScheduler(
+      fakeRegistry(rows),
+      fakeGovernance(async () => granted()),
+      queue,
+    );
+    return { scheduler, adds };
+  }
+
+  beforeEach(() => {
+    vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    vi.useFakeTimers({ now: new Date(at(0)), toFake: ['Date'] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('enqueues an hourly-interval merchant on every tick (behavior unchanged)', async () => {
+    const { scheduler, adds } = cadenceScheduler([registryRow('alko')]);
+
+    for (const hour of [0, 1, 2, 3]) {
+      await tick(scheduler, at(hour));
+    }
+
+    expect(adds).toHaveLength(4);
+    // jobId shape unchanged by the gate — one distinct hour bucket per tick.
+    expect(adds.map((a) => a.opts.jobId)).toEqual([
+      'price-ingestion-alko-2026-09-13-00',
+      'price-ingestion-alko-2026-09-13-01',
+      'price-ingestion-alko-2026-09-13-02',
+      'price-ingestion-alko-2026-09-13-03',
+    ]);
+  });
+
+  it('enqueues a daily-interval merchant exactly once across 24 consecutive ticks, at the first tick after 00:00 UTC', async () => {
+    const { scheduler, adds } = cadenceScheduler([
+      registryRow('alks', { pollingIntervalMs: 86_400_000 }),
+    ]);
+
+    for (let hour = 0; hour < 24; hour++) {
+      await tick(scheduler, at(hour));
+    }
+
+    expect(adds).toHaveLength(1);
+    expect(adds[0].data.merchantId).toBe('alks');
+    expect(adds[0].opts.jobId).toBe('price-ingestion-alks-2026-09-13-00');
+  });
+
+  it('enqueues a 6-hour merchant at 00/06/12/18 UTC only', async () => {
+    const { scheduler, adds } = cadenceScheduler([
+      registryRow('alko', { pollingIntervalMs: 21_600_000 }),
+    ]);
+
+    for (let hour = 0; hour < 24; hour++) {
+      await tick(scheduler, at(hour));
+    }
+
+    expect(adds.map((a) => a.opts.jobId)).toEqual([
+      'price-ingestion-alko-2026-09-13-00',
+      'price-ingestion-alko-2026-09-13-06',
+      'price-ingestion-alko-2026-09-13-12',
+      'price-ingestion-alko-2026-09-13-18',
+    ]);
+  });
+
+  it('fires exactly on an interval boundary, not one millisecond before', async () => {
+    const { scheduler, adds } = cadenceScheduler([
+      registryRow('alks', { pollingIntervalMs: 86_400_000 }),
+    ]);
+
+    await tick(scheduler, '2026-09-12T23:59:59.999Z');
+    expect(adds).toHaveLength(0);
+
+    await tick(scheduler, '2026-09-13T00:00:00.000Z');
+    expect(adds).toHaveLength(1);
+    expect(adds[0].opts.jobId).toBe('price-ingestion-alks-2026-09-13-00');
+  });
+
+  it('self-heals a missed boundary at the next boundary, with no mid-bucket catch-up', async () => {
+    // 6-hour boundaries at 00/06/12/18: the 06:00 tick is missed, the
+    // stateless epoch-aligned gate refuses to fire mid-bucket (no stale
+    // catch-up burst) and resumes exactly at the 12:00 boundary.
+    const { scheduler, adds } = cadenceScheduler([
+      registryRow('alko', { pollingIntervalMs: 21_600_000 }),
+    ]);
+
+    await tick(scheduler, at(0));
+    expect(adds).toHaveLength(1);
+
+    // 06:00 boundary tick missed; every later tick inside [06, 12) is inert.
+    for (const hour of [7, 8, 9, 10, 11]) {
+      await tick(scheduler, at(hour));
+    }
+    expect(adds).toHaveLength(1);
+
+    await tick(scheduler, at(12));
+    expect(adds).toHaveLength(2);
+    expect(adds[1].opts.jobId).toBe('price-ingestion-alko-2026-09-13-12');
+  });
+});
