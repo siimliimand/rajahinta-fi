@@ -18,6 +18,10 @@
  *   enqueue by jobId; Cloudflare Queues has no server-side dedupe, so
  *   the key carries into the message and the CONSUMER enforces it
  *   (idempotent skip — see ingestion.queue.ts).
+ * - Cadence gate (task 1.1, design D1): a merchant enqueues only when
+ *   its registry `pollingIntervalMs` epoch-aligned bucket boundary was
+ *   crossed since the prior tick ({@link intervalBucketFires}) — the
+ *   hourly cron pattern itself is unchanged.
  * - One merchant's enqueue failure must not starve the remaining
  *   merchants' schedules (per-merchant try/catch, error count returned).
  *
@@ -38,15 +42,26 @@ import type { Env } from '../env';
 /** The cron pattern the producer registers under (wrangler triggers.crons). */
 export const INGESTION_PRODUCER_CRON = '0 * * * *';
 
+/**
+ * One producer tick — INGESTION_PRODUCER_CRON is hourly by construction,
+ * so the previous tick is always `now` minus this constant. Also the
+ * minimum interval the hourly tick can honor: sub-hourly
+ * `pollingIntervalMs` values cannot fire more than once per hour
+ * (registry rows are operator-controlled; no runtime validation).
+ */
+const PRODUCER_TICK_MS = 3_600_000;
+
 /** Outcome of one hourly scheduling pass — logged by the cron dispatch. */
 export interface ProducerResult {
   /** Registry rows considered. */
   readonly merchants: number;
   /** Messages enqueued (one per permitted merchant). */
   readonly enqueued: number;
-  /** Skips by reason (governance gate, empty feed URL, enqueue error). */
+  /** Skips by reason (governance gate, empty feed URL, not due, enqueue error). */
   readonly skippedNoFeedUrl: number;
   readonly skippedNotPermitted: number;
+  /** Permitted merchants whose interval boundary was not crossed this tick. */
+  readonly skippedNotDue: number;
   readonly enqueueErrors: number;
 }
 
@@ -57,6 +72,35 @@ export interface ProducerResult {
 export function ingestionDedupeKey(merchantId: string, at: Date): string {
   const hourBucket = at.toISOString().slice(0, 13).replace('T', '-');
   return `price-ingestion-${merchantId}-${hourBucket}`;
+}
+
+/**
+ * Cadence gate (task 1.1, design D1) — pure, stateless: true when at
+ * least one `pollingIntervalMs` epoch-aligned bucket boundary was
+ * crossed between the previous tick and now.
+ *
+ * `previousTick` is the prior cron tick, i.e. `now` minus one hour: the
+ * producer's cron is hourly by construction (INGESTION_PRODUCER_CRON =
+ * '0 * * * *'), so the caller derives it arithmetically — no state, no
+ * clock anchor. Epoch-aligned buckets give:
+ * - 3,600,000 ms → fires every tick (byte-identical to pre-gate behavior);
+ * - 86,400,000 ms → first tick at/after 00:00 UTC;
+ * - 21,600,000 ms → 00/06/12/18 UTC.
+ * A missed tick self-heals on the next tick whose previous tick lies
+ * before the boundary (the bucket still differs), and the hourly dedupe
+ * key keeps enqueue idempotency. Sub-hourly intervals cannot be honored
+ * by an hourly tick — the documented minimum is 3,600,000 ms; no runtime
+ * validation (registry rows are operator-controlled via the ops console).
+ */
+export function intervalBucketFires(
+  pollingIntervalMs: number,
+  now: Date,
+  previousTick: Date,
+): boolean {
+  return (
+    Math.floor(now.getTime() / pollingIntervalMs) !==
+    Math.floor(previousTick.getTime() / pollingIntervalMs)
+  );
 }
 
 /** Throw-on-use accessor — mirrors the DO client convention for bindings. */
@@ -130,6 +174,10 @@ export async function schedulePriceIngestions(
   } = {},
 ): Promise<ProducerResult> {
   const now = deps.now ?? new Date();
+  // The cron tick is hourly by construction (INGESTION_PRODUCER_CRON),
+  // so the previous tick is derived arithmetically — the cadence gate
+  // needs no persisted state (design D1).
+  const previousTick = new Date(now.getTime() - PRODUCER_TICK_MS);
   const log = deps.log ?? createLogger(env.LOG_LEVEL);
   const queue = deps.queue ?? ingestionQueue(env);
   // Durable governance default (task 2.1) — the same D1-backed gate the
@@ -151,6 +199,7 @@ export async function schedulePriceIngestions(
     enqueued: 0,
     skippedNoFeedUrl: 0,
     skippedNotPermitted: 0,
+    skippedNotDue: 0,
     enqueueErrors: 0,
   };
 
@@ -168,6 +217,14 @@ export async function schedulePriceIngestions(
 
     if (!(await isMerchantPermitted(checkPermission, merchant.merchantId, log))) {
       counts.skippedNotPermitted++;
+      continue;
+    }
+
+    // Cadence gate (design D1): only permitted merchants whose interval
+    // boundary was crossed since the prior tick enqueue this pass. An
+    // hourly interval fires on every tick — today's behavior unchanged.
+    if (!intervalBucketFires(merchant.pollingIntervalMs, now, previousTick)) {
+      counts.skippedNotDue++;
       continue;
     }
 
@@ -195,9 +252,11 @@ export async function schedulePriceIngestions(
   log.info({
     message:
       `Hourly price ingestion: enqueued ${counts.enqueued}/${merchants.length} ` +
-      `registry merchant message(s) — one message per permitted merchant`,
+      `registry merchant message(s) — one message per permitted merchant due ` +
+      `on its interval (${counts.skippedNotDue} not due this tick)`,
     enqueued: counts.enqueued,
     merchants: merchants.length,
+    skippedNotDue: counts.skippedNotDue,
   });
 
   return counts;

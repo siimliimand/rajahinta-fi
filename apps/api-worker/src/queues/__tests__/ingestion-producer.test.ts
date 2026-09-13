@@ -1,11 +1,14 @@
 /**
  * Price-ingestion producer tests (task 4.1) — dedupe-key shape, the
  * GRANTED-only governance gate, empty-feedUrl skip, and enqueue-failure
- * isolation. The registry runs on the real D1 repository over the fake-D1
- * harness (node:sqlite + committed migrations); gate-side tests use the
- * `checkPermission` seam over the in-memory reference repository, and the
- * task-2.1 pins exercise the production D1 governance default on the same
- * migrated harness (seeded through the D1 repository's create()).
+ * isolation. Task 1.1 adds the interval-bucket cadence gate
+ * (intervalBucketFires, design D1) with synthetic-clock cases: hourly,
+ * daily, 6 h, missed-tick self-heal, exactly-on-boundary. The registry
+ * runs on the real D1 repository over the fake-D1 harness (node:sqlite +
+ * committed migrations); gate-side tests use the `checkPermission` seam
+ * over the in-memory reference repository, and the task-2.1 pins
+ * exercise the production D1 governance default on the same migrated
+ * harness (seeded through the D1 repository's create()).
  *
  * @module IngestionProducerTest
  */
@@ -13,6 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ingestionDedupeKey,
+  intervalBucketFires,
   isMerchantPermitted,
   schedulePriceIngestions,
 } from '../ingestion-producer';
@@ -36,6 +40,7 @@ async function seedMerchant(
   env: Env,
   merchantId: string,
   feedUrl: string | null,
+  pollingIntervalMs = 3_600_000,
 ): Promise<void> {
   await composeMerchantRegistry(env).upsert({
     merchantId,
@@ -43,7 +48,7 @@ async function seedMerchant(
     country: 'SE',
     feedUrl: feedUrl ?? '',
     feedFormat: 'json',
-    pollingIntervalMs: 3_600_000,
+    pollingIntervalMs,
   });
 }
 
@@ -76,6 +81,81 @@ describe('ingestionDedupeKey', () => {
     expect(
       ingestionDedupeKey('eu-import', new Date('2026-01-01T00:30:00.000Z')),
     ).toBe('price-ingestion-eu-import-2026-01-01-00');
+  });
+});
+
+describe('intervalBucketFires (cadence gate, task 1.1 / design D1)', () => {
+  const HOUR = 3_600_000;
+  const SIX_HOURS = 21_600_000;
+  const DAY = 86_400_000;
+  /** previousTick exactly as the producer derives it: now minus 1 h. */
+  const previousTickOf = (now: Date): Date => new Date(now.getTime() - HOUR);
+
+  it('fires an hourly merchant on every consecutive tick', () => {
+    for (let h = 0; h < 24; h++) {
+      const now = new Date(Date.UTC(2026, 7, 30, h));
+      expect(intervalBucketFires(HOUR, now, previousTickOf(now))).toBe(true);
+    }
+  });
+
+  it('fires a daily merchant exactly once across 24 consecutive hourly ticks — the first tick at/after 00:00 UTC', () => {
+    const firedHours: number[] = [];
+    for (let h = 0; h < 24; h++) {
+      const now = new Date(Date.UTC(2026, 7, 30, h));
+      if (intervalBucketFires(DAY, now, previousTickOf(now))) {
+        firedHours.push(h);
+      }
+    }
+    expect(firedHours).toEqual([0]);
+  });
+
+  it('fires a 6 h merchant only at 00/06/12/18 UTC', () => {
+    const firedHours: number[] = [];
+    for (let h = 0; h < 24; h++) {
+      const now = new Date(Date.UTC(2026, 7, 30, h));
+      if (intervalBucketFires(SIX_HOURS, now, previousTickOf(now))) {
+        firedHours.push(h);
+      }
+    }
+    expect(firedHours).toEqual([0, 6, 12, 18]);
+  });
+
+  it('fires a tick exactly on an interval boundary', () => {
+    expect(
+      intervalBucketFires(
+        DAY,
+        new Date('2026-08-30T00:00:00.000Z'),
+        new Date('2026-08-29T23:00:00.000Z'),
+      ),
+    ).toBe(true);
+    expect(
+      intervalBucketFires(
+        SIX_HOURS,
+        new Date('2026-08-30T06:00:00.000Z'),
+        new Date('2026-08-30T05:00:00.000Z'),
+      ),
+    ).toBe(true);
+    // A non-boundary tick between boundaries stays silent.
+    expect(
+      intervalBucketFires(
+        DAY,
+        new Date('2026-08-30T12:00:00.000Z'),
+        new Date('2026-08-30T11:00:00.000Z'),
+      ),
+    ).toBe(false);
+  });
+
+  it('self-heals a missed boundary: previousTick two hours back spanning it still fires once on the next tick', () => {
+    // The 00:00 UTC tick was missed entirely (worker outage); the 01:00
+    // tick's previous tick (23:00) still lies before the day boundary,
+    // so the bucket differs and the merchant fires.
+    expect(
+      intervalBucketFires(
+        DAY,
+        new Date('2026-08-30T01:00:00.000Z'),
+        new Date('2026-08-29T23:00:00.000Z'),
+      ),
+    ).toBe(true);
   });
 });
 
@@ -139,6 +219,7 @@ describe('schedulePriceIngestions', () => {
       enqueued: 2,
       skippedNoFeedUrl: 0,
       skippedNotPermitted: 0,
+      skippedNotDue: 0,
       enqueueErrors: 0,
     });
     expect([...sent].sort((a, b) => a.merchantId.localeCompare(b.merchantId))).toEqual([
@@ -243,6 +324,7 @@ describe('schedulePriceIngestions — D1 governance default (task 2.1)', () => {
       enqueued: 0,
       skippedNoFeedUrl: 0,
       skippedNotPermitted: 2,
+      skippedNotDue: 0,
       enqueueErrors: 0,
     });
     expect(sent).toEqual([]);
@@ -269,6 +351,73 @@ describe('schedulePriceIngestions — D1 governance default (task 2.1)', () => {
     expect(sent).toEqual([
       {
         dedupeKey: 'price-ingestion-alko-2026-08-30-19',
+        merchantId: 'alko',
+        sourceUrl: 'https://alko.example/api',
+      },
+    ]);
+  });
+});
+
+describe('schedulePriceIngestions — interval cadence gate (task 1.1)', () => {
+  it('enqueues hourly merchants every tick, 6 h merchants at 00/06/12/18, and daily merchants once per day', async () => {
+    const { env } = createEnv();
+    await seedMerchant(env, 'hourly', 'https://hourly.example/feed', 3_600_000);
+    await seedMerchant(env, 'six-hourly', 'https://six.example/feed', 21_600_000);
+    await seedMerchant(env, 'daily', 'https://daily.example/feed', 86_400_000);
+    const grants = governanceRepo({
+      hourly: 'GRANTED',
+      'six-hourly': 'GRANTED',
+      daily: 'GRANTED',
+    });
+
+    const sent: IngestionMessageBody[] = [];
+    let skippedNotDue = 0;
+    // 24 consecutive synthetic hourly ticks across one UTC day.
+    for (let h = 0; h < 24; h++) {
+      const result = await schedulePriceIngestions(env, {
+        now: new Date(Date.UTC(2026, 7, 30, h)),
+        queue: { send: async (body) => void sent.push(body) },
+        checkPermission: checkPermissionOf(grants),
+      });
+      skippedNotDue += result.skippedNotDue;
+    }
+
+    const keysFor = (merchantId: string): string[] =>
+      sent.filter((m) => m.merchantId === merchantId).map((m) => m.dedupeKey);
+    expect(keysFor('hourly')).toHaveLength(24);
+    expect(keysFor('six-hourly')).toEqual([
+      'price-ingestion-six-hourly-2026-08-30-00',
+      'price-ingestion-six-hourly-2026-08-30-06',
+      'price-ingestion-six-hourly-2026-08-30-12',
+      'price-ingestion-six-hourly-2026-08-30-18',
+    ]);
+    expect(keysFor('daily')).toEqual(['price-ingestion-daily-2026-08-30-00']);
+    // Not-due skips: hourly 0, six-hourly 20, daily 23.
+    expect(skippedNotDue).toBe(43);
+  });
+
+  it('keeps hourly-interval behavior unchanged: a permitted merchant enqueues on a mid-hour tick as before', async () => {
+    const { env } = createEnv();
+    await seedMerchant(env, 'alko', 'https://alko.example/api');
+
+    const sent: IngestionMessageBody[] = [];
+    const result = await schedulePriceIngestions(env, {
+      now: new Date('2026-08-30T14:37:00.000Z'),
+      queue: { send: async (body) => void sent.push(body) },
+      checkPermission: checkPermissionOf(governanceRepo({ alko: 'GRANTED' })),
+    });
+
+    expect(result).toEqual({
+      merchants: 1,
+      enqueued: 1,
+      skippedNoFeedUrl: 0,
+      skippedNotPermitted: 0,
+      skippedNotDue: 0,
+      enqueueErrors: 0,
+    });
+    expect(sent).toEqual([
+      {
+        dedupeKey: 'price-ingestion-alko-2026-08-30-14',
         merchantId: 'alko',
         sourceUrl: 'https://alko.example/api',
       },
