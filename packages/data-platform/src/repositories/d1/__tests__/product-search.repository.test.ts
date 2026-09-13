@@ -424,6 +424,73 @@ describe('D1ProductSearchRepository — contract row shapes', () => {
     expect(await repo.findRetailOfferById(999_999)).toBeNull();
   });
 
+  // -------------------------------------------------------------------------
+  // findOffers — latest row per (product, merchant) (task 4.1, change
+  // 2026-09-13-daily-scrape-cadence-current-offers). The table is
+  // append-per-scrape, so findOffers must collapse the scrape history to one
+  // row per merchant: the max id, matching the (observed_at, id) recency
+  // upsertOffer change detection uses.
+  // -------------------------------------------------------------------------
+
+  it('findOffers returns a single row per merchant on duplicate scrapes — the later id', async () => {
+    // Two scrape runs, same (product 31, merchant alko), same price.
+    await d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+            observed_at, reliability_status)
+         VALUES (510, 'alko', 'FI', 31, 249, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (511, 'alko', 'FI', 31, 249, '2026-09-02T10:00:00.000Z', 'VERIFIED')`,
+      )
+      .run();
+
+    const offers = await repo.findOffers(31);
+    expect(offers.map((o) => o.id)).toEqual([511]);
+  });
+
+  it('findOffers supersedes the older row when the price moves', async () => {
+    // Price moved 17.99 → 19.99 between scrapes; only the current price row.
+    await d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+            observed_at, reliability_status)
+         VALUES (520, 'alko', 'FI', 40, 1799, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (521, 'alko', 'FI', 40, 1999, '2026-09-02T10:00:00.000Z', 'VERIFIED')`,
+      )
+      .run();
+
+    const offers = await repo.findOffers(40);
+    expect(offers).toHaveLength(1);
+    expect(offers[0].id).toBe(521);
+    expect(offers[0].priceCents).toBe(1999);
+  });
+
+  it('findOffers returns one latest row for each of two merchants on one product', async () => {
+    // alko scraped twice (latest 531), eu-import once (532) — one row per
+    // merchant, alko's being its latest scrape.
+    await d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+            observed_at, reliability_status)
+         VALUES (530, 'alko', 'FI', 41, 250, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (531, 'alko', 'FI', 41, 299, '2026-09-02T10:00:00.000Z', 'VERIFIED'),
+                (532, 'eu-import', 'EE', 41, 350, '2026-09-02T10:00:00.000Z', 'ESTIMATED')`,
+      )
+      .run();
+
+    const offers = await repo.findOffers(41);
+    expect(offers.map((o) => o.id)).toEqual([531, 532]); // deterministic o.id ASC
+    expect(
+      Object.fromEntries(offers.map((o) => [o.merchant, o.priceCents])),
+    ).toEqual({ alko: 299, 'eu-import': 350 });
+  });
+
+  it('findOffers does not leak other products\' offers', async () => {
+    // Products 31/40/41 carry scrape history at this point; product 42 has
+    // none and must stay empty.
+    const offers = await repo.findOffers(42);
+    expect(offers).toEqual([]);
+  });
+
   it('upsertByEan inserts, then updates in place preserving id and createdAt', async () => {
     const created = await repo.create({
       name: 'Lada Kolikko',

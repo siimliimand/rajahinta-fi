@@ -433,14 +433,24 @@ export class D1ProductSearchRepository extends ProductRepository {
 
   /** @inheritdoc */
   async findOffers(productId: number): Promise<RetailOfferRecord[]> {
+    // retail_offers is append-per-scrape: upsertOffer inserts a new row per
+    // run and rows are never updated, so the latest observation for a
+    // (product, merchant) pair is the max id — the same recency the
+    // upsertOffer change detection resolves via (observed_at, id)
+    // descending, collapsed to the monotonic surrogate key.
     const rows = (
       await this.d1
         .prepare(
-          `SELECT id, merchant, country, product_id, price_cents, currency,
-                  availability, source_url, observed_at, reliability_status
-             FROM retail_offers
-            WHERE product_id = ?
-            ORDER BY id ASC`,
+          `SELECT o.id, o.merchant, o.country, o.product_id, o.price_cents,
+                  o.currency, o.availability, o.source_url, o.observed_at,
+                  o.reliability_status
+             FROM retail_offers o
+             JOIN (SELECT merchant, MAX(id) AS id
+                     FROM retail_offers
+                    WHERE product_id = ?
+                 GROUP BY merchant) m
+               ON m.id = o.id
+            ORDER BY o.id ASC`,
         )
         .bind(productId)
         .all<D1RetailOfferRow>()
