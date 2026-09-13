@@ -80,3 +80,11 @@ would overwrite operator edits, so existing environments are never
 reseeded. Staging keeps its current hourly row until the command above
 runs, and production is never seeded at all (`deploy-production.yml`
 has no seed step) — the ops call is the only path there.
+
+## Verification (task 5.1)
+
+Local sweep 2026-09-13, all exit 0: `pnpm lint`, `pnpm typecheck`, `pnpm lint:content`, `pnpm -r test` (frontend 782, api-worker 913, data-platform 647, data-acquisition 218, application-api 725+3 skipped, backend 19), `test:golden`, `test:data-quality`, `test:compliance`, `test:d1`, `test:integration`, `test:e2e`.
+
+One pre-existing repo hygiene fix made during the sweep: `tests/e2e-browser/playwright-report-workers/` (generated Playwright trace residue, git-ignored as `playwright-report/` but not the `-workers` variant) was linted and failed eslint; the stale directory was deleted and `**/playwright-report*/` added to the eslint flat-config ignores.
+
+Staging evidence is BLOCKED until deploy: it needs (1) the task-2.2 registry edit applied to staging (`pollingIntervalMs` 86400000 for alks — command in the section above), then (2) two daily producer passes observed in Worker Logs (one `price-ingestion-alks-<day>` enqueue per 24 h, `skippedNotDue` incrementing on the other 23 hourly ticks), and (3) a product page check showing a single Retail prices row for alks. Post-deploy operator step, not a code task.
