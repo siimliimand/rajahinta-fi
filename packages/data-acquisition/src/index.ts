@@ -84,6 +84,11 @@ export { AlkoFeedAdapter, parseAlkoAssortment } from './adapters/alko.adapter';
 export { AlksFeedAdapter } from './adapters/alks.adapter';
 export { parseAlksStoreProducts } from './adapters/alks.parser';
 
+// longero.fi Store API adapter — thin mirror of the alks walk reusing
+// parseAlksStoreProducts (task 2.1, change onboard-longero-merchant).
+// Composition (adapter maps) is wired in task 2.2, not here.
+export { LongeroFeedAdapter } from './adapters/longero.adapter';
+
 export type { IUpsertRepository, UpsertProductInput, UpsertOfferInput, UpsertResult, UpsertOfferResult } from './interfaces/upsert-port.interface';
 export { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
 
