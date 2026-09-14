@@ -164,3 +164,29 @@ Executed 2026-09-14, 17:11–17:51 UTC. Staging D1 writes explicitly approved by
 
 - Manual staging D1 inserts bypass `audit_events`; the ops path (console + `OPS_BEARER_TOKEN`) is the audit-complete route — production 5.2 must use it.
 - `complete-job-claim` burned 5 retries on Worker subrequest limits during the 986-offer upsert (recovered via instance-level retry). Borderline at longero scale, likely terminal at alks scale — chunk-size tuning is a separate follow-up, not this change.
+
+## Task 5.1 production deploy
+
+Date: 2026-09-14. Gated workflow dispatch, production deploy explicitly approved by the operator. No data written to production D1 (registry/governance is 5.2); health endpoint GETs only.
+
+### Commands + run
+
+- `gh workflow run deploy-production.yml --ref master -f confirm_deploy=yes` — accepted (workflow `Deploy Production`, id 339194919; single required input `confirm_deploy`, ref passed as `--ref master`; no separate ref input in the workflow).
+- Run: **34877547091** (`workflow_dispatch`, master, created 17:54:20Z) — watched via `gh run watch 34877547091 --exit-status` → **conclusion: `success`** (~2 min 25 s).
+- Jobs both green: `Production deploy (gated, migrate → deploy)` ✅, `Rollback availability (wrangler rollback)` ✅.
+
+### Deploy steps (from run log)
+
+- Require confirmation → passed (confirm_deploy=yes).
+- Build frontend (OpenNext) ✅.
+- `Apply D1 migrations (production)`: `wrangler d1 migrations apply DB --remote --env production` → ✅ **No migrations to apply** (production already at head; no schema change in this change).
+- Deploy API Worker → `rajahinta-api-production`, Version `0080116f-f37c-49fb-8c66-8ba681bd3d6d`, triggers api.rajahinta.fi + crons + ingestion workflow/queue bindings.
+- Deploy email Worker → `rajahinta-email-production`, Version `7ff991dc-1782-434e-b075-1b4037c17ec6`.
+- Deploy frontend Worker → `rajahinta-frontend-production`, Version `0be117a8-bca9-49bd-9844-49c1ccb47c1d`, triggers rajahinta.fi + www.rajahinta.fi.
+
+### Health gate evidence
+
+- Workflow gate ("Health gate — production readiness", gating on `https://api.rajahinta.fi/api/v1/health/ready`): **`Readiness OK on attempt 1`** — HTTP 200, `{"status":"ok","timestamp":"2026-09-14T17:56:23.013Z",...}`.
+- Independent local GET after the run (17:57:09Z): **HTTP 200 in 0.90 s** — `{"status":"ok","checks":{"d1":{"status":"up","latencyMs":19},"durableObjects":{"status":"up","latencyMs":293}}}`.
+
+**Result**: production deployed from master via the gated workflow, health gate green on first attempt (workflow-internal and independently re-verified), previous Workers Versions remain available for instant `wrangler rollback`. No production D1 data writes; 5.2 owns registry/governance.
