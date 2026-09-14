@@ -87,6 +87,12 @@ jobs:
       # produces a deploy artifact (apps/frontend/.open-next/).
       - name: Build frontend (OpenNext)
         run: pnpm --filter @rajahinta/frontend run build:worker
+        env:
+          # NEXT_PUBLIC_* is inlined by `next build` (OPENNEXT.md) — without
+          # this the server-side API calls fall back to localhost:3000 and
+          # every SSR read (catalog, product pages, sitemap) renders its
+          # degraded state. Mirrors deploy-staging.yml.
+          NEXT_PUBLIC_API_URL: ${{ vars.PRODUCTION_API_URL }}
 
       # ── Migrate (before rollout — spec ordering; NO seed step here) ────
       - name: Apply D1 migrations (production)
