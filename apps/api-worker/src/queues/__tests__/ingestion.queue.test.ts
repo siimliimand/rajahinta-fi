@@ -20,7 +20,11 @@ import {
   createMemoryDoState,
   createMemoryDoStorage,
 } from '../../do/__tests__/memory-do-storage';
-import { composeMerchantRegistry } from '../pipeline';
+import {
+  composeIngestionPipeline,
+  composeMerchantRegistry,
+} from '../pipeline';
+import { InMemorySourceGovernanceRepository } from '../../../../../packages/application-api/src/ops/governance/in-memory-source-governance.repository';
 import { openMigratedD1 } from '../../analytics/__tests__/fake-d1';
 import { D1SourceGovernanceRepository } from '../../../../../packages/data-platform/src/repositories/d1/source-governance.repository';
 import { createLogger } from '../../logger';
@@ -272,5 +276,65 @@ describe('runIngestion — D1 governance default (task 2.1)', () => {
     // opened (the fail-closed run above produced empty errors).
     expect(result.productsIngested).toBe(0);
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe('composeIngestionPipeline — live feed adapters (task 2.2)', () => {
+  /** Migrated D1 plus the OBSERVATION_LOG stub the composition requires. */
+  function composedEnv(): Env {
+    const { d1 } = openMigratedD1();
+    return { DB: d1, OBSERVATION_LOG: {} } as unknown as Env;
+  }
+
+  function merchantConfig(merchantId: string): Parameters<
+    ReturnType<typeof composeIngestionPipeline>['runForMerchant']
+  >[0] {
+    return {
+      merchantId,
+      name: merchantId,
+      country: 'FI',
+      // Closed local port — a fetch ATTEMPT fails fast into errors[].
+      feedUrl: 'http://127.0.0.1:9/api',
+      feedFormat: 'json',
+      pollingIntervalMs: 3_600_000,
+    };
+  }
+
+  it('registers three live adapters — alko, alks, and longero all resolve by merchantId', async () => {
+    // In-memory governance grants admit all lookups without the durable
+    // table; the gated path never writes an observation.
+    const governanceRepository = new InMemorySourceGovernanceRepository();
+    for (const merchantId of ['alko', 'alks', 'longero', 'no-such-adapter']) {
+      await governanceRepository.create({
+        merchantId,
+        acquisitionMethod: 'RETAILER_API',
+        permissionStatus: 'GRANTED',
+        sourceUrl: `https://${merchantId}.example/api`,
+      });
+    }
+    const pipeline = composeIngestionPipeline(composedEnv(), {
+      governanceRepository,
+    });
+
+    // Negative control: governance admits "no-such-adapter" (so the gate
+    // cannot mask the result) but the map has no such key — the lookup
+    // sentinel proves the assertions below exercise the real map.
+    const missing = await pipeline.runForMerchant(
+      merchantConfig('no-such-adapter'),
+    );
+    expect(missing.errors).toContain(
+      'No feed adapter registered for merchant "no-such-adapter"',
+    );
+
+    // Closed local port: a RESOLVED adapter attempts the fetch and
+    // fails fast into errors[] — any error but the sentinel proves the
+    // map resolves the merchantId.
+    for (const merchantId of ['alko', 'alks', 'longero']) {
+      const result = await pipeline.runForMerchant(merchantConfig(merchantId));
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors).not.toContain(
+        `No feed adapter registered for merchant "${merchantId}"`,
+      );
+    }
   });
 });

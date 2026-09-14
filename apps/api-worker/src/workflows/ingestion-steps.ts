@@ -70,6 +70,7 @@ import { FeedIngestionService } from '../../../../packages/data-acquisition/src/
 import type { PermissionGateResult } from '../../../../packages/data-acquisition/src/services/pipeline-orchestrator.service';
 import { AlkoFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/alko.adapter';
 import { AlksFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/alks.adapter';
+import { LongeroFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/longero.adapter';
 import type { IFeedAdapter } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { RawFeedRecord } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { MerchantConfig } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
@@ -188,7 +189,7 @@ export interface IngestionStageCompositionOptions {
   readonly governanceRepository?: ISourceGovernanceRepository;
   /** Observation log binding override (tests use an in-memory store). */
   readonly observationStoreOverride?: ObservationLogStore;
-  /** Feed adapters; default registers the Alko and alks feed adapters as pipeline.ts does. */
+  /** Feed adapters; default registers the Alko, alks, and longero feed adapters as pipeline.ts does. */
   readonly feedAdaptersOverride?: Map<string, IFeedAdapter>;
   /** Write-port override (tests force upsert failures through it). */
   readonly upsertRepositoryOverride?: IUpsertRepository;
@@ -212,6 +213,8 @@ export function composeIngestionStageServices(
       map.set(alko.merchantId, alko);
       const alks = new AlksFeedAdapter();
       map.set(alks.merchantId, alks);
+      const longero = new LongeroFeedAdapter();
+      map.set(longero.merchantId, longero);
       return map;
     })();
 

@@ -610,6 +610,38 @@ describe('composeIngestionStageServices — D1 governance default (task 2.1)', (
   });
 });
 
+describe('composeIngestionStageServices — live feed adapters (task 2.2)', () => {
+  it('registers three live adapters — alko, alks, and longero all resolve by merchantId', async () => {
+    const { feeds } = composeIngestionStageServices(composedEnv());
+
+    // Negative control: an unregistered merchantId produces the lookup
+    // sentinel, proving the assertions below exercise the real map.
+    const missing = await feeds.fetchFromMerchant(
+      'no-such-merchant',
+      'http://127.0.0.1:9/api',
+      'json',
+    );
+    expect(missing.errors).toEqual([
+      'No feed adapter registered for merchant "no-such-merchant"',
+    ]);
+
+    // Closed local port: a RESOLVED adapter attempts the fetch and
+    // fails fast into errors[] — any error but the sentinel proves the
+    // default map resolves the merchantId.
+    for (const merchantId of ['alko', 'alks', 'longero']) {
+      const result = await feeds.fetchFromMerchant(
+        merchantId,
+        'http://127.0.0.1:9/api',
+        'json',
+      );
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors).not.toContain(
+        `No feed adapter registered for merchant "${merchantId}"`,
+      );
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Queue → Workflow handoff (idempotent instance id = dedupe key)
 // ---------------------------------------------------------------------------
