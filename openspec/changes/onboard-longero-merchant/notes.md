@@ -64,3 +64,9 @@ Country terms `Germany` / `USA` / `Italy` verified to return null from `mapSourc
 ### Go/no-go for task 1.2
 
 **GO** — the gate condition is met: the sweep shows real category-driven drops (9 rows, 0.9%), and at least one (id 1914, `Roseeviini`) is directly recoverable by the exact candidate list. **But scope 1.2 accordingly**: six of the seven candidates already map, so the effective extension is `roseeviini` → wine (consider the plural `roseeviinit` too — the mapper is exact-match); adding the other six as explicit keys is a no-op documentation choice, not a behavior change. The lead may also want to rule on `alkoholiton olut` → non-alcoholic (2 further drops), which is outside the listed candidates.
+
+## Lead rulings (apply stage)
+
+- Task 1.2 scope: `roseeviini`/`roseeviinit` → wine only (the six other probe candidates already mapped). `Alkoholiton olut` (2 drops) is outside the annotated candidate list — recorded as a follow-up; needs an owner decision before mapping (non-alcoholic → `non-alcoholic`/other_fermented is plausible but not plan-sanctioned).
+- Task 2.2 touches drift: annotation says `packages/data-acquisition/src/pipeline.ts`, which does not exist; the data-acquisition-side composition site is `apps/api-worker/src/queues/pipeline.ts` (`composeIngestionPipeline`). Applied there.
+- Note for 6.1: rebuild `@rajahinta/core-domain` before the full test sweep or stale `dist` causes false mapper failures (hit during 2.1 verification).
