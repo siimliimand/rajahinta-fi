@@ -170,6 +170,29 @@ describe('mapSourceCategory — alks.fi catalog vocabulary (sweep patch 2026-09-
   });
 });
 
+describe('mapSourceCategory — longero.fi catalog vocabulary (sweep patch 2026-09-14)', () => {
+  it('maps the Finnish rosé spellings to still wine — the sweep\'s only vocabulary-driven drop', () => {
+    expect(mapSourceCategory('Roseeviini')).toEqual({
+      canonicalCategory: 'wine',
+      taxCategory: 'wine_still',
+    });
+    expect(mapSourceCategory('roseeviini')).toEqual({
+      canonicalCategory: 'wine',
+      taxCategory: 'wine_still',
+    });
+    expect(mapSourceCategory('Roseeviinit')).toEqual({
+      canonicalCategory: 'wine',
+      taxCategory: 'wine_still',
+    });
+  });
+
+  it('keeps country merchandising terms unmapped — first-mappable-in-payload-order rule', () => {
+    for (const term of ['Germany', 'USA', 'Italy']) {
+      expect(mapSourceCategory(term), `term "${term}" must stay unmapped`).toBeNull();
+    }
+  });
+});
+
 describe('mapSourceCategory — unmappable categories', () => {
   it('returns null for an unrecognized string — flagged, never fallback-assigned', () => {
     expect(mapSourceCategory('Kaffe')).toBeNull();

@@ -94,6 +94,13 @@ export const SWEDISH_SOURCE_CATEGORY_MAP: Readonly<Record<string, CanonicalCateg
   // Finnish wine-type nouns ('red wine'/'white wine' exist as English).
   punaviini: 'wine',
   valkoviini: 'wine',
+  // Longero sweep decision 2026-09-14 (change onboard-longero-merchant):
+  // the only probe candidate with no mapping — 37 live rows dropped on
+  // this exact term. The Swedish 'rosévin'/'rosevin' above do not match
+  // the Finnish double-e spellings, and matching is exact, so the plural
+  // needs its own key.
+  roseeviini: 'wine',
+  roseeviinit: 'wine',
   'kuohuviini ja samppanja': 'sparkling-wine',
   // Finnish vermouth spelling; 'vermouth' already maps.
   vermutti: 'fortified-wine',
