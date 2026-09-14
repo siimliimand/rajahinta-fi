@@ -124,13 +124,20 @@
   // the instance's final step completes the IdempotencyDO job claim.
   // Top-level binding like the durable_objects above (the class is
   // env-independent; per-env workflow naming follows the deploy target).
+  // Workflow names are ACCOUNT-level resources: sharing one name across
+  // envs lets the last-deployed env own the workflow while the other
+  // env's queue messages still create instances in it — those instances
+  // then execute with the OWNER's bindings (2026-09-14 incident: staging's
+  // hourly messages ran production ingestion). Every env therefore gets
+  // its own suffixed workflow name, same rule as the per-env worker/DO
+  // names (6.5 finding).
   // The IngestionWorkflow class must be exported from the worker entry
   // — src/index.ts re-exports it from src/workflows (lead follow-up
   // recorded in src/workflows/index.ts).
   "workflows": [
     {
       "binding": "INGESTION_WORKFLOW",
-      "name": "rajahinta-price-ingestion",
+      "name": "rajahinta-price-ingestion-dev",
       "class_name": "IngestionWorkflow"
     }
   ],
@@ -243,7 +250,7 @@
       },
       "workflows": [
         {
-          "name": "rajahinta-price-ingestion",
+          "name": "rajahinta-price-ingestion-dev",
           "binding": "INGESTION_WORKFLOW",
           "class_name": "IngestionWorkflow"
         }
@@ -306,7 +313,7 @@
       },
       "workflows": [
         {
-          "name": "rajahinta-price-ingestion",
+          "name": "rajahinta-price-ingestion-staging",
           "binding": "INGESTION_WORKFLOW",
           "class_name": "IngestionWorkflow"
         }
@@ -369,7 +376,7 @@
       },
       "workflows": [
         {
-          "name": "rajahinta-price-ingestion",
+          "name": "rajahinta-price-ingestion-production",
           "binding": "INGESTION_WORKFLOW",
           "class_name": "IngestionWorkflow"
         }
