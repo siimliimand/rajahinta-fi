@@ -18,7 +18,7 @@
 
 ## 4. Staging rollout
 
-- [ ] 4.1 Merge the feature branch; staging auto-deploys the api-worker; CI green <!-- agent: devops-engineer.fast, depends_on: [2.2], touches: [] -->
+- [x] 4.1 Merge the feature branch; staging auto-deploys the api-worker; CI green <!-- agent: devops-engineer.fast, depends_on: [2.2], touches: [] -->
 - [ ] 4.2 Staging registry row + `RETAILER_API`/`GRANTED` governance via the ops path (or direct D1 by the operator); verify the first ingest end-to-end (workflow instance created, `retail_offers` populated, API returns longero products); staging alks governance stays `REVOKED` — record executed commands in the change notes <!-- agent: devops-engineer.fast, depends_on: [4.1], touches: [] -->
 
 ## 5. Production rollout

@@ -104,3 +104,17 @@ Country terms `Germany` / `USA` / `Italy` verified to return null from `mapSourc
 - Tonight's real 00:00 UTC pass will generate the same dedupe key (`price-ingestion-longero-2026-09-15-00`); the consumer will find the instance complete and skip (designed idempotency). The next real local ingest is 2026-09-16 00:00 UTC.
 - The local alks row is still hourly (3,600,000) — out of scope here (no existing row may be modified), but it means a locally GRANTED alks would fire every tick; the fail-closed governance gate is the only thing keeping it off locally.
 - Environment cleanup: temporary vitest harness file and the `@rajahinta/core-domain` node_modules symlink used by the harness were removed; nothing in tracked files changed except this notes section.
+
+## Task 4.1 merge + staging deploy
+
+Executed 2026-09-14, with explicit user approval for merge+push.
+
+1. Pre-check: working tree clean on `feature/onboard-longero-merchant`; 7 commits ahead of local `master` (`ad015ea`) — the 6 work commits plus the change-plan doc commit `2e29dff`. Merge-base = `ad015ea`, so ff was possible.
+2. `git checkout master && git merge --ff-only feature/onboard-longero-merchant` — **fast-forward `ad015ea..9d075b8` succeeded** (16 files, +1374/−4; no merge commit needed).
+3. `git push origin master` — **pushed `ad015ea..9d075b8`**. Remote reported: `Bypassed rule violations for refs/heads/master: Required status check "CI / ci-pass" is expected.` — direct push bypasses the branch-protection gate by permission; CI was still watched to green below.
+4. CI on `9d075b8` (push triggered three workflows):
+   - **CI** run `34872382039` — ✅ success, all 14 jobs green (Lint, Worker checks, D1 suite, Wrangler config validation, Build, Content policy, Golden-dataset, Unit tests, Compliance, E2E tests, Integration, Composition smoke, Data-quality, `CI / ci-pass`). Only pre-existing Node.js 20 deprecation annotations, no failures.
+   - **E2E browser** run `34872382135` — ✅ success.
+   - **Deploy Staging** run `34872382193` — ✅ success. Job `Staging deploy (migrate → seed → deploy)` passed in 2m49s. Mechanism per `.github/workflows/deploy-staging.yml`: auto-fires on push to `master`, deploys the api-worker to staging (migrate → seed → deploy).
+
+**Result**: merge = ff, push accepted, CI green on the merge commit, staging api-worker auto-deploy succeeded. No blockers.
