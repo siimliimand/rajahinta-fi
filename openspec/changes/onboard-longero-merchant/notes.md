@@ -118,3 +118,49 @@ Executed 2026-09-14, with explicit user approval for merge+push.
    - **Deploy Staging** run `34872382193` — ✅ success. Job `Staging deploy (migrate → seed → deploy)` passed in 2m49s. Mechanism per `.github/workflows/deploy-staging.yml`: auto-fires on push to `master`, deploys the api-worker to staging (migrate → seed → deploy).
 
 **Result**: merge = ff, push accepted, CI green on the merge commit, staging api-worker auto-deploy succeeded. No blockers.
+
+## Task 4.2 staging rollout
+
+Executed 2026-09-14, 17:11–17:51 UTC. Staging D1 writes explicitly approved by the task. Nothing committed; the operator's pre-existing `wrangler tail rajahinta-api-production` session was left untouched.
+
+### Path decision
+
+- Established ops path = operator console (`POST /ops/console/merchants` register+auto-grant, per `docs/ingestion-runbook.md` §2.0). It requires the staging `OPS_BEARER_TOKEN` Cloudflare secret — not present in any local env file, and reading/exposing it is out of scope. No ops script exists in `scripts/`. **Fell back to direct staging D1 via `wrangler d1 execute DB --remote --env staging`** (sanctioned by the task: "or direct D1 by the operator"). Note: this means no `audit_events` entry exists for these two inserts — console grants are the audited path; recorded here as a deviation for the lead.
+- Ingest trigger: producer cron is hourly but the daily 86,400,000 ms bucket only crosses on the 00:00 UTC pass (~6¾ h away). Manual paths evaluated:
+  - `wrangler workflows instances create` — removed in wrangler (missing in both the pinned 4.127.1 and npx 4.131.2; only list/describe/send-event/terminate/restart/pause/resume/delete remain).
+  - `wrangler dev --remote --env staging` + scheduled-handler endpoint — dead end: "Queues are not yet supported in wrangler dev remote mode", so `queue.send` cannot reach the real staging queue.
+  - **Used: Workflows REST API** `POST /accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances` with body `{"id":"price-ingestion-longero-2026-09-14-17","params":{"merchantId":"longero","sourceUrl":"https://longero.fi","dedupeKey":"price-ingestion-longero-2026-09-14-17"}}` → `{"success":true,"status":"queued"}`. The per-instance path form (`POST …/instances/{id}`) returns `workflows.api.error.not_found` — the collection form with `id` in the body is the current contract (verify: `GET …/instances/{id}` works with the returned UUID, not the custom id; wrangler 4.127.1's `instances describe` uses the custom-id path form and 404s — tooling gap worth knowing). Auth: wrangler's own stored OAuth token (no `workflows` scope listed, but workers_scripts covers these endpoints); token handled via a 0600 temp header file, never printed, deleted after.
+
+### Pre-checks (read-only, before any write)
+
+- `merchant_registry`: exactly `alko` (empty feed_url, hourly) + `alks` (DE, daily 86,400,000). No longero anywhere.
+- `source_governance`: exactly 1 row — id 1, alks, RETAILER_API, **`REVOKED`** ("Paused by operator 2026-09-14 — staging scraping halt; production unaffected"). **STOP-condition clear.**
+- `retail_offers` for longero: 0.
+
+### Writes (idempotent; verified by read-back)
+
+- Registry (unique index makes re-runs no-ops): `INSERT INTO merchant_registry (merchant_id, name, country, feed_url, feed_format, polling_interval_ms) VALUES ('longero','Longero','EE','https://longero.fi','json',86400000) ON CONFLICT (merchant_id) DO NOTHING` — `changes: 1`, row read back exactly per task spec (id 3, created/updated 17:13:54Z). alko/alks rows untouched (timestamps identical).
+- Governance (no unique key — `NOT EXISTS` is the idempotency guard, same pattern as local 3.1): `INSERT INTO source_governance (merchant_id, acquisition_method, permission_status, source_url, status_reason, last_verified_at) SELECT 'longero','RETAILER_API','GRANTED','https://longero.fi/wp-json/wc/store/v1/products','onboard-longero-merchant task 4.2: owner blanket permission policy — staging grant for first-ingest verification', strftime(...) WHERE NOT EXISTS (…)` — `changes: 1`, row id 2. **alks id 1 byte-identical before and after (still REVOKED, updated_at 12:09:17.113Z).**
+
+### First ingest end-to-end
+
+- Instance `price-ingestion-longero-2026-09-14-17` (workflow `rajahinta-price-ingestion-staging`, internal uuid `334dc0d0-8222-4017-8912-34eac910ad70`), trigger `api` — the workflow's **first instance ever** (`triggered_on: null` before it).
+- All pipeline steps succeeded on first attempt: resolve-merchant → governance-gate (GRANTED honored) → fetch-feed (live longero.fi, ~7 s) → map-records → upsert-offers-1…4 (~3 min/chunk; staging D1 latency) → data-quality.
+- **Incident, resolved by the engine**: `complete-job-claim-1` failed 5× with `Too many API requests by single Worker invocation` — the ~985-product upsert's cumulative D1 subrequests exhaust the invocation budget exactly at the final claim call, and step retries re-run inside the same exhausted invocation. The instance then parked in `waiting` (instance-level retry) and attempt 6 succeeded in a **fresh invocation** (cached-step replay is free) → **instance `complete`, `success: true`, end 17:50:42Z**. No queue message ever carried this dedupe key (API-triggered), so the claim was pure bookkeeping — zero data impact either way. **Follow-up for the lead**: chunk size (~250 pairs × several D1 statements) vs the ~1000-subrequest invocation cap is borderline by design; a bigger catalog (alks ≈ 2,900) would very likely strand real queue-driven runs the same way. Consider smaller `UPSERT_CHUNK_SIZE` or per-chunk invocation isolation.
+- `retail_offers` after: **985 longero rows, 926 distinct products**, min 249 / max 21,730 cents, all EUR / EE / `in_stock` / `ESTIMATED`, `observed_at` 17:22:16Z (= fetch step). Reconciles with the 1.1 sweep (985 parsed) and local 3.1 (986/927 — live catalog drifts by a hair). No other merchant's offer rows changed (per-merchant counts: alks 67,600 + seed rows, longero 985 new).
+
+### API verification (staging `rajahinta-api-staging.siim-liimand.workers.dev`)
+
+- Negative control: `GET /api/v1/products/496` without header → `403 AGE_GATE_REQUIRED` ✅.
+- `GET /api/v1/products/496` with `x-age-confirmed: confirmed` → offer `merchant: "longero"`, `country: "EE"`, `priceCents: 1799`, `availability: in_stock`, `sourceUrl: https://longero.fi/tuote/vestfyen-neipa-5-24x0-33-l/`, `observedAt: 2026-09-14T17:22:16.128Z`, provenance + €/g metric; merchant aggregate block shows `longero` offerCount 926, all ESTIMATED ✅.
+
+### Post-checks
+
+- `source_governance` final: 2 rows — alks **`REVOKED`** (unchanged), longero `GRANTED`. Registry: 3 rows, only longero added. Production untouched; no redeploys (the `wrangler dev --remote` probe ran a preview session only and was killed after it proved unusable).
+
+**Result**: registry row + `RETAILER_API`/`GRANTED` governance in place via direct D1 (console token unavailable), first ingest verified end-to-end (workflow `complete`, 985 offers, API returns longero with age gate enforced), staging alks governance `REVOKED` before and after. One deviation (no audit_events for the manual inserts) and one follow-up (invocation subrequest budget vs upsert chunking) for the lead.
+
+## Lead follow-ups (from 4.2, out of change scope)
+
+- Manual staging D1 inserts bypass `audit_events`; the ops path (console + `OPS_BEARER_TOKEN`) is the audit-complete route — production 5.2 must use it.
+- `complete-job-claim` burned 5 retries on Worker subrequest limits during the 986-offer upsert (recovered via instance-level retry). Borderline at longero scale, likely terminal at alks scale — chunk-size tuning is a separate follow-up, not this change.
