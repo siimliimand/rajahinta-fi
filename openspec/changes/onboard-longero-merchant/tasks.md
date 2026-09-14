@@ -10,11 +10,11 @@
 ## 2. Adapter + wiring
 
 - [x] 2.1 `LongeroFeedAdapter` (`merchantId: 'longero'`): thin mirror of the alks adapter's walk (sequential pages, `per_page=100`, first usable `X-WP-TotalPages` caps the walk, missing/malformed header stops after the current page, per-page/per-row errors collected never thrown) reusing `parseAlksStoreProducts` unchanged; export from the package index; unit tests with fetched-page fixtures <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [packages/data-acquisition/src/adapters/longero.adapter.ts, packages/data-acquisition/src/__tests__/longero.adapter.test.ts, packages/data-acquisition/src/index.ts] -->
-- [ ] 2.2 Register `LongeroFeedAdapter` in both composition sites — `composeIngestionStageServices` (apps/api-worker ingestion-steps adapter map) and `composeIngestionPipeline` (data-acquisition pipeline); composition tests assert three live adapters resolve by merchantId <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [apps/api-worker/src/workflows/ingestion-steps.ts, apps/api-worker/src/workflows/__tests__/**, packages/data-acquisition/src/pipeline.ts] -->
+- [x] 2.2 Register `LongeroFeedAdapter` in both composition sites — `composeIngestionStageServices` (apps/api-worker ingestion-steps adapter map) and `composeIngestionPipeline` (data-acquisition pipeline); composition tests assert three live adapters resolve by merchantId <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [apps/api-worker/src/workflows/ingestion-steps.ts, apps/api-worker/src/workflows/__tests__/**, packages/data-acquisition/src/pipeline.ts] -->
 
 ## 3. Local rollout
 
-- [ ] 3.1 Local D1: registry row (`longero`, name `Longero`, country `EE`, feedUrl `https://longero.fi`, json, `86_400_000`) + governance record (`RETAILER_API`, `GRANTED`, sourceUrl `https://longero.fi/wp-json/wc/store/v1/products`); run the producer tick + ingestion workflow end-to-end locally; verify `retail_offers` rows land and the API serves longero products <!-- agent: platform-engineer.fast, depends_on: [2.2], touches: [] -->
+- [x] 3.1 Local D1: registry row (`longero`, name `Longero`, country `EE`, feedUrl `https://longero.fi`, json, `86_400_000`) + governance record (`RETAILER_API`, `GRANTED`, sourceUrl `https://longero.fi/wp-json/wc/store/v1/products`); run the producer tick + ingestion workflow end-to-end locally; verify `retail_offers` rows land and the API serves longero products <!-- agent: platform-engineer.fast, depends_on: [2.2], touches: [] -->
 
 ## 4. Staging rollout
 

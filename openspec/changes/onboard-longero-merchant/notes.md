@@ -70,3 +70,37 @@ Country terms `Germany` / `USA` / `Italy` verified to return null from `mapSourc
 - Task 1.2 scope: `roseeviini`/`roseeviinit` → wine only (the six other probe candidates already mapped). `Alkoholiton olut` (2 drops) is outside the annotated candidate list — recorded as a follow-up; needs an owner decision before mapping (non-alcoholic → `non-alcoholic`/other_fermented is plausible but not plan-sanctioned).
 - Task 2.2 touches drift: annotation says `packages/data-acquisition/src/pipeline.ts`, which does not exist; the data-acquisition-side composition site is `apps/api-worker/src/queues/pipeline.ts` (`composeIngestionPipeline`). Applied there.
 - Note for 6.1: rebuild `@rajahinta/core-domain` before the full test sweep or stale `dist` causes false mapper failures (hit during 2.1 verification).
+
+## Task 3.1 local rollout
+
+**Date**: 2026-09-14. All steps LOCAL (`wrangler dev` on port 8788 — 8787 is occupied by an unrelated local service; `wrangler d1 execute DB --local`); live **read-only GETs** to longero.fi; zero staging/production contact.
+
+**Local D1 state found (read-only probes before any write)**: migrations `0000`–`0021` applied; `merchant_registry` = alko + alks (alks **hourly** 3,600,000 ms locally — the daily-cadence operator command from `daily-scrape-cadence-current-offers` was never run here); `source_governance` **empty** (everything fail-closed PENDING); `retail_offers` had seed/test rows only, none for alks or longero.
+
+### Step 2 — registry + governance inserts (idempotent, no existing row touched)
+
+- `INSERT INTO merchant_registry (...) VALUES ('longero','Longero','EE','https://longero.fi','json',86400000) ON CONFLICT (merchant_id) DO NOTHING` — unique index makes re-runs no-ops.
+- `INSERT INTO source_governance (...) SELECT 'longero','RETAILER_API','GRANTED','https://longero.fi/wp-json/wc/store/v1/products', strftime(...) WHERE NOT EXISTS (SELECT 1 FROM source_governance WHERE merchant_id='longero' AND acquisition_method='RETAILER_API' AND permission_status='GRANTED' AND source_url=...)` — the table has no unique key, so the `NOT EXISTS` guard is the idempotency mechanism.
+- Verified after: registry row exactly as specified (task values), governance row id 1 = the table's first row ever locally. alks untouched: still hourly, still no governance records, still zero offers.
+
+### Step 3 — producer tick + ingestion workflow end-to-end
+
+1. **Real-clock tick** (`wrangler dev` + `curl "http://localhost:8788/cdn-cgi/handler/scheduled?cron=0+*+*+*+*"`; `/__scheduled` is gone in wrangler 4.127): producer logged `Skipping merchant "alko": registry feed URL is empty`, `Not scheduling merchant "alks": no governance records — defaulting to PENDING`, `enqueued 0/3 … (1 not due this tick)`. longero was **recognized as permitted** (the governance grant works) and **correctly deferred** by the interval-bucket gate: the daily 86,400,000 ms bucket only crosses on the 00:00 UTC pass.
+2. **Due-tick**: ran the unmodified `schedulePriceIngestions` against the real local bindings with `now` = the next pass's clock (2026-09-15T00:30Z, inside the daily window) — via a temporary vitest harness (deleted after) calling `wrangler.getPlatformProxy` over the same `.wrangler/state`. Result: `enqueued 1/3 … (0 not due this tick)`, dedupe key `price-ingestion-longero-2026-09-15-00`; alko no-URL skip + alks fail-closed skip unchanged. The queue `send` itself executed, but `getPlatformProxy` is a documented no-go for Workflows/DOs locally (bindings absent), so the consumer could not process the message there.
+3. **Consumer handoff → workflow**: performed the consumer's exact handoff (`ensureWorkflowInstance` = `workflow.create({ id: dedupeKey, params })`) on the live `wrangler dev` worker through wrangler 4.127's Local Explorer API: `POST /cdn-cgi/local/explorer/api/workflows/rajahinta-price-ingestion-dev/instances` with the same id + params. The **only** hop not exercised for real is the Queue delivery + IdempotencyDO job claim (local queue state is in-memory; getPlatformProxy can't wire DOs); every downstream stage ran unmodified in workerd: resolve → governance gate (read the local D1 GRANTED row) → live fetch (10 pages, read-only GETs) → map → upsert → quality → complete.
+
+**Workflow result**: instance `price-ingestion-longero-2026-09-15-00` `complete` (13:36:31→13:36:59Z), `productsIngested: 986`. The error list is exactly the task 1.1 sweep's known correction-queue buckets — non-EAN SKUs (`V1-`/`V2-`, 12-digit, date-like) kept EAN-less, and the same category-drop ids the notes already dispositioned (1196, 1227, 1766, 1854, 1874…). No new error categories.
+
+### Step 4 — verification
+
+- **`retail_offers`**: **986 longero rows** over **927 distinct products**, all EUR minor-unit, `in_stock`, reliability `ESTIMATED` (the ingest default for foreign retail offers — seed fixtures are `VERIFIED`; the data-quality pass reclassifies on its own cadence). Instance output reconciles with the sweep (985 parsed then; live catalog +1).
+- **API** (local worker, age gate verified both ways):
+  - Without `x-age-confirmed`: `403 AGE_GATE_REQUIRED`.
+  - `GET /api/v1/products/9067` with the header: longero offer — `merchant: "longero"`, `country: "EE"`, `priceCents: 999`, `availability: in_stock`, `sourceUrl: https://longero.fi/tuote/…`, provenance (`observedAt`, `reliabilityStatus`) and the €/g metric.
+  - Browse path (no `q`): longero products carry real aggregates (`merchantCount: 1`, `lowestPriceCents` 499–1349 range observed).
+  - Ranked `q` search returns longero products with the base shape (`merchantCount: 0` there is the endpoint's design — offer aggregates only apply to browse/detail paths).
+
+**Follow-up notes for the lead**:
+- Tonight's real 00:00 UTC pass will generate the same dedupe key (`price-ingestion-longero-2026-09-15-00`); the consumer will find the instance complete and skip (designed idempotency). The next real local ingest is 2026-09-16 00:00 UTC.
+- The local alks row is still hourly (3,600,000) — out of scope here (no existing row may be modified), but it means a locally GRANTED alks would fire every tick; the fail-closed governance gate is the only thing keeping it off locally.
+- Environment cleanup: temporary vitest harness file and the `@rajahinta/core-domain` node_modules symlink used by the harness were removed; nothing in tracked files changed except this notes section.
