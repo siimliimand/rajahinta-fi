@@ -171,3 +171,66 @@ resolve-merchant → governance-gate (GRANTED honored) → fetch-feed (live www.
 3. EAN-match share 111/636 (17.5%) vs local 39/636 (6.1%) — richer pre-existing staging catalog (alks DE + longero EE), all joins tier-1 EAN.
 4. Read-model `governancePermissionStatus: PENDING` in the merchant aggregate despite the `GRANTED` D1 row — observation recorded, not a blocker.
 5. First REST POST mis-routed on an empty account-id path segment (variable not persisted across invocations) and was re-issued; zero side effects.
+
+## 5.2 — Production rollout
+
+Executed 2026-09-15, 09:31–09:49 UTC. Nothing committed; `tasks.md` untouched. Production context: master `6d4f3c8` deployed by this change's 5.1 (run 34952231254, health gate green, D1 migrations at head, zero production kippis rows before this task).
+
+### Path decision (same blocker as longero 4.2/5.2 and kippis 4.2)
+
+The audited ops path (`POST /ops/console/merchants`, docs/ingestion-runbook.md §2.0) needs the production `OPS_BEARER_TOKEN` Cloudflare secret — absent from every local env file (checked by variable NAME only; values never printed). **Fell back to direct production D1 via `wrangler d1 execute DB --remote --env production`** (sanctioned by the task text), i.e. the same `audit_events` deviation as longero 4.2/5.2 and kippis 4.2: **these two inserts have no `audit_events` entry — the console is the audited route; the lead should backfill or accept the gap.**
+
+### Pre-checks (read-only, before any write)
+
+- `merchant_registry`: exactly 2 rows — id 1 alks (DE, daily), id 2 longero (EE, daily, from longero 5.2). No kippis row; production has never had an alko row. STOP-condition clear.
+- `source_governance`: exactly 2 rows — id 1 alks **`GRANTED`** (production unaffected by the staging REVOKED halt), id 2 longero `GRANTED`. STOP-condition clear.
+- `retail_offers`: alks 6,100 / 2,799 products · longero 985 / 926 · **kippis 0**.
+- `product_master`: **3,209 rows, max id 3209** (2,779 with EAN) — the EAN-match-share baseline (ingest-created products get ids > 3209).
+
+### Writes (idempotent; verified by read-back)
+
+- Registry: the 4.2 `INSERT … VALUES ('kippis','Kippis','FI','https://www.kippis.net','json',86400000) ON CONFLICT (merchant_id) DO NOTHING` — `changes: 1`, row **id 3**, created/updated 2026-09-15T09:39:18.767Z, values exactly per task spec.
+- Governance: the 4.2 `NOT EXISTS`-guarded INSERT (no unique key on the table) — `changes: 1`, row **id 3**, `RETAILER_API`/`GRANTED`, sourceUrl `https://www.kippis.net/wp-json/wc/store/v1/products`, D5 reason ("owner blanket-permission policy — documented scraping right (longero precedent); production grant for first-ingest verification").
+- **alks/longero unchanged: YES** — full-table dumps before vs after diffed programmatically: every non-kippis registry and governance row **byte-identical** (all columns, timestamps included); exactly 1 row added per table.
+
+### First ingest via the Workflows REST API (longero 4.2/5.2 method)
+
+- Auth: wrangler's stored OAuth token → 0600 temp header file under /tmp/opencode (value never printed, file deleted after the run); account id from `wrangler whoami` captured into a shell variable **in the same invocation as the POST** (the 4.2 empty-`{account}`-segment lesson), never emitted.
+- `POST /accounts/{account}/workflows/rajahinta-price-ingestion-production/instances` body `{"id":"price-ingestion-kippis-2026-09-15-manual","params":{"merchantId":"kippis","sourceUrl":"https://www.kippis.net","dedupeKey":"price-ingestion-kippis-2026-09-15-manual"}}` → `{"success":true}` at 09:40:09Z; internal uuid `8afa7b79-9c92-487c-ac2f-d4f782a9932c`, trigger `{source: 'api'}`. The `-manual` suffix cannot collide with the producer's real daily key (`price-ingestion-kippis-2026-09-16-00`).
+- Status polled via `GET …/instances/{uuid}` (the custom-id path form still 404s, per 4.2): `running` 09:40:30Z → **`complete` 09:46:42Z (≈6.5 min)**, `success: true`, `error: null`. **No `waiting` park, no step retries** — the staging 4.2 good shape (kippis stays under the invocation-subrequest budget; the longero-scale incident absent).
+
+### Workflow result
+
+Output **`productsIngested: 636`**; error list 94 unique lines (zero duplicates), reconciling exactly with 3.1/4.2: **53 kept-EAN-less SKU errors** (the sweep's "other" bucket: 12-digit numerics, internal codes, suffixed `…/3` variants; D2 no-guessing) + **41 map drops** (36 `no canonical beverage category` + 5 name/category contradiction drops) → 677 raw − 41 = **636** ✓. Error labels carry the shared parser's `alks product …` prefix, as before.
+
+### Verification
+
+- **`retail_offers`**: **636 kippis rows over 635 distinct products**, min 177 / max 279,000 cents (the `24 x 33cl` multipack case price — sweep's accepted risk), single value sets EUR / FI / `in_stock` / `ESTIMATED`, single `observed_at` 2026-09-15T09:40:19.660Z (= fetch step). **No other merchant changed** — post-run per-merchant counts identical to baseline (alks 6,100/2,799 · longero 985/926).
+- **`product_master`**: 3,209 → **3,733 (+524 products created by this run**, exact — the same +524 as staging).
+- **EAN matching into the EXISTING production catalog: 111 of 636 kippis offers (17.5%) sit on pre-existing `product_master` rows (id ≤ 3209) — all 111 on EAN-populated rows, zero on EAN-less**; tier-1 EAN matching is the demonstrated join mechanism. Production's join share is **identical to staging's (111/636 = 17.5%)**: production's pre-existing master (alks DE 2,799 + longero EE 926 products) matches staging's composition, and the identical 111 is coincidence of the same two catalogs. Example join: `Tapio PET 39% 0.5L` (EAN 6420614681008) → pre-existing product **1169** carrying four alks/longero offers.
+- **Public API** (`https://api.rajahinta.fi`, product **1169**):
+  - Negative control: `GET /api/v1/products/1169` without header → **HTTP 403 `AGE_GATE_REQUIRED`** ✅.
+  - With `x-age-confirmed: confirmed` → HTTP 200 with a **three-way cross-border offer set**: `alks` DE 529¢ · `longero` EE 599¢ · **`kippis` FI 990¢** — all EUR / `in_stock` / `ESTIMATED`; kippis `sourceUrl: https://www.kippis.net/product/viinat-netista/tapio-pet-39-0-5l/`, `observedAt: 2026-09-15T09:40:19.660Z` (= fetch step) ✅.
+  - Merchant aggregate block: **`kippis` offerCount 635, all ESTIMATED, freshestObservedAt = fetch step** ✅.
+- **Public product page** (`https://rajahinta.fi/products/1169`, HTTP 200): the server-rendered RSC payload contains the kippis offer table row (row key 38513): `kippis`, **9.90 €** — the page serves kippis items without client fetches (longero 5.2 method).
+- **Readiness post-ingest**: `GET /api/v1/health/ready` → HTTP 200 (`d1` up, `durableObjects` up); frontend `https://rajahinta.fi/` → HTTP 200.
+
+### Commands executed (names)
+
+`npx wrangler d1 execute DB --remote --env production --json --command "<read-only pre-check probes>"` (registry · governance · per-merchant offer counts · product_master count/max-id/EAN count · kippis offers) · same with the two `INSERT` statements · same for read-backs, byte-identity re-dumps, and post-verification queries · `npx wrangler whoami --json` (account id into a same-invocation shell variable, never emitted) · `curl -X POST /accounts/{account}/workflows/rajahinta-price-ingestion-production/instances` (auth: 0600 temp header file from wrangler's stored OAuth token — value never printed, file deleted after the run) · `curl …/instances/8afa7b79-…` (status + output polls) · `curl /api/v1/products/1169` ± `x-age-confirmed: confirmed` · `curl https://rajahinta.fi/products/1169` · `curl /api/v1/health/ready` · `curl https://rajahinta.fi/`.
+
+### Deviations / notes
+
+1. **`audit_events` deviation (explicit, for the lead)**: the two production kippis rows were inserted via direct D1, not the ops console — no `audit_events` entries exist for them. The console token (`OPS_BEARER_TOKEN`) is unavailable locally; identical deviation to longero 4.2/5.2 and kippis 4.2. Backfill or accept.
+2. Read-model artifact (out of scope, same as staging 4.2): the merchant aggregate reports kippis `governancePermissionStatus: "PENDING"` while the D1 `source_governance` row is `GRANTED` and the workflow gate honored it. Not investigated.
+3. Production D1 writes were exactly the two kippis rows; alko(n/a)/alks/longero rows untouched (byte-identity diffed); no redeploys; nothing committed.
+4. First workflow trigger succeeded first attempt — the 4.2 mis-routed POST (empty `{account}` segment) did not recur (account id captured in the same shell invocation).
+
+### FOLLOW-UP CHECKLIST — next scheduled boundary 2026-09-16 00:00 UTC
+
+The manual instance above is trigger `api` with a `-manual` id; the producer's first real kippis pass is the hourly tick at/after the boundary. Verify at/after the boundary (task 6.1 references this checklist):
+
+- [ ] **Exactly one `kippis` enqueue** from the producer tick: one queue message with dedupe key **`price-ingestion-kippis-2026-09-16-00`** — the daily 86,400,000 ms interval-bucket gate fires on the 00:00 UTC pass (staging D1 cadence math; longero's own daily message `price-ingestion-longero-2026-09-16-00` is due the same tick and is a separate, expected second message).
+- [ ] **Exactly one new kippis workflow instance** in `rajahinta-price-ingestion-production`, id `price-ingestion-kippis-2026-09-16-00` (no duplicate instances; the `-manual` instance above must NOT re-run).
+- [ ] **Offers refreshed**: kippis rows re-upserted at a fresh `observed_at` ≈ the boundary (offer rows are per-observation — expect row-count growth, per 3.1 deviation note 4); alks/longero offer rows untouched by the kippis run.
+- [ ] Recorded 2026-09-15 ~09:50 UTC, ~14 h before the boundary — observation of the boundary is deliberately NOT blocking this task.
