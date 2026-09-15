@@ -244,3 +244,89 @@ describe('parseAlksStoreProducts — contract guards', () => {
     expect(record?.volumeMl).toBe(500);
   });
 });
+
+describe('parseAlksStoreProduct — accepted SKU shape set (onboard-kippis-merchant 2.1)', () => {
+  // Minimal row builder: the name parses cleanly so the only variable
+  // under test is the SKU shape.
+  const rowWithSku = (id: number, sku?: string) => ({
+    id,
+    name: 'Sisu Vodka 40% 500 ml',
+    ...(sku === undefined ? {} : { sku }),
+    permalink: `https://alks.fi/product/sku-shape-${id}/`,
+    prices: { price: '1899', currency_code: 'EUR' },
+    categories: [{ name: 'Väkevä' }],
+    is_in_stock: true,
+  });
+
+  it('prefixed SKU — de-4740077005916 yields EAN 4740077005916 with no correction', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowWithSku(756340, 'de-4740077005916'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.ean).toBe('4740077005916');
+  });
+
+  it('bare 13-digit SKU — 6410405217457 yields itself as EAN with no correction', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowWithSku(756341, '6410405217457'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.ean).toBe('6410405217457');
+  });
+
+  it('GTIN-14 SKU — 06412700071701 yields the leading zero stripped', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowWithSku(756342, '06412700071701'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.ean).toBe('6412700071701');
+  });
+
+  it('internal code — 1038480 keeps the record EAN-less with a correction error naming the new shape set', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowWithSku(756343, '1038480'),
+    );
+    expect(record).not.toBeNull();
+    expect(record?.ean).toBeNull();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('1038480');
+    expect(errors[0]).toContain('does not match any accepted');
+    expect(errors[0]).toContain('^\\d{13}$');
+    expect(errors[0]).toContain('^0\\d{13}$');
+    expect(errors[0]).toContain('correction queue');
+  });
+
+  it('empty and missing SKU — record kept EAN-less with no correction error', () => {
+    const empty = parseAlksStoreProduct(rowWithSku(756344, ''));
+    expect(empty.record?.ean).toBeNull();
+    expect(empty.errors).toEqual([]);
+
+    const missing = parseAlksStoreProduct(rowWithSku(756345));
+    expect(missing.record?.ean).toBeNull();
+    expect(missing.errors).toEqual([]);
+  });
+
+  it('12-digit SKU — 641040521745 is rejected, never zero-padded', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowWithSku(756346, '641040521745'),
+    );
+    expect(record).not.toBeNull();
+    expect(record?.ean).toBeNull();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('641040521745');
+    expect(errors[0]).toContain('does not match any accepted');
+    expect(errors[0]).toContain('correction queue');
+  });
+
+  it('suffixed variant — 4740019769500/3 is rejected, never suffix-stripped', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowWithSku(756347, '4740019769500/3'),
+    );
+    expect(record).not.toBeNull();
+    expect(record?.ean).toBeNull();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('4740019769500/3');
+    expect(errors[0]).toContain('does not match any accepted');
+    expect(errors[0]).toContain('correction queue');
+  });
+});
