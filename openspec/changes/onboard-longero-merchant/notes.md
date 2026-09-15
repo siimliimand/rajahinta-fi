@@ -190,3 +190,43 @@ Date: 2026-09-14. Gated workflow dispatch, production deploy explicitly approved
 - Independent local GET after the run (17:57:09Z): **HTTP 200 in 0.90 s** — `{"status":"ok","checks":{"d1":{"status":"up","latencyMs":19},"durableObjects":{"status":"up","latencyMs":293}}}`.
 
 **Result**: production deployed from master via the gated workflow, health gate green on first attempt (workflow-internal and independently re-verified), previous Workers Versions remain available for instant `wrangler rollback`. No production D1 data writes; 5.2 owns registry/governance.
+
+## Task 5.2 production rollout
+
+Executed 2026-09-15, 04:34–05:07 UTC. Nothing committed; `tasks.md` untouched.
+
+### User-approved adaptations (recorded per task)
+
+- **Ops console → direct production D1** (`wrangler d1 execute DB --remote --env production`, the 4.2 method): the ops console needs the production `OPS_BEARER_TOKEN` Cloudflare secret, not available locally. Follow-up: these two inserts have **no `audit_events` entry** — the console path is the audited route; the lead should backfill or accept the gap.
+- **00:00 UTC ingest → manual instance now**: production workflow triggered via the Workflows REST API (4.2's method, instance id pattern `price-ingestion-longero-<date>-manual`, trigger `api`). **Follow-up checklist item — verify exactly-one longero enqueue at the next real boundary, 2026-09-16 00:00 UTC**: exactly one queue message with dedupe key `price-ingestion-longero-2026-09-16-00`, exactly one workflow instance for it, `retail_offers` refreshed (and the missing `Xante Sparkling Rose & Pear` row below restored by the full-catalog upsert).
+
+### Pre-checks (read-only, before any write)
+
+- `merchant_registry`: exactly 1 row — `alks` (Alks, DE, json, https://alks.fi, daily 86,400,000 ms). **No alko row in production** (unlike staging) and no longero row. STOP-condition clear.
+- `source_governance`: exactly 1 row — id 1, alks, RETAILER_API, **`GRANTED`** (production was untouched by the staging REVOKED halt, as 4.2 recorded). This GRANTED row is the byte-identity constraint target. STOP-condition clear.
+- `retail_offers` for longero: **0**.
+
+### Writes (idempotent; verified by read-back, 04:36:59Z)
+
+- Registry: `INSERT … VALUES ('longero','Longero','EE','https://longero.fi','json',86400000) ON CONFLICT (merchant_id) DO NOTHING` — `changes: 1`, row id 2, timestamps 2026-09-15T04:36:59.636Z, values exactly per task spec.
+- Governance: 4.2's `NOT EXISTS`-guarded INSERT (no unique key on the table) — `changes: 1`, row id 2, `RETAILER_API`/`GRANTED`, sourceUrl `https://longero.fi/wp-json/wc/store/v1/products`, status_reason references task 5.2.
+- **alks unchanged: YES** — full-table JSON dumps before vs after diffed programmatically: alks registry row and alks governance row both **byte-identical** (every column, timestamps included); exactly 1 row added per table, no other row modified.
+
+### Manual production workflow instance
+
+- `POST /accounts/{account}/workflows/rajahinta-price-ingestion-production/instances` body `{"id":"price-ingestion-longero-2026-09-15-manual","params":{"merchantId":"longero","sourceUrl":"https://longero.fi","dedupeKey":"price-ingestion-longero-2026-09-15-manual"}}` → `{"success":true,"status":"queued"}` at 04:37:46Z. Auth via wrangler's stored OAuth token in a 0600 temp header file (never printed, deleted after; same handling as 4.2).
+- Instance id `price-ingestion-longero-2026-09-15-manual`, internal uuid `b81b8253-f5ee-4532-b34d-856c28735d75`, trigger `api`.
+- **Status: `complete`, success — duration ≈ 23 min 47 s** (created 04:37:46Z → complete observed 05:01:33Z). Parked in `waiting` ~04:58–05:01 (the 4.2 incident shape: `complete-job-claim` invocation-subrequest exhaustion → instance-level retry in a fresh invocation; engine recovered on its own, no operator action).
+- Output: `productsIngested: 985`; error list reconciles exactly with the 1.1 sweep — 349 non-EAN SKUs (kept EAN-less, correction queue; not drops), 6 no-canonical-category drops (1196, 1227, 1766, 1854, 1874 + one more), 2 disagreement drops (4281, 1903) → 8 drops (one fewer than 1.1's 9: Roseeviini id 1914 now maps via 1.2's `roseeviini` → wine), plus **1 transient upsert error** (`Xante Sparkling Rose & Pear 10% 0.75 l`: `Too many API requests by single Worker invocation` during the budget-strained attempt). 994 raw − 8 map-drops − 1 = **985 rows**, and `Xante` is confirmed absent from the DB (the 4.2 chunking follow-up manifests: the retried final chunk dropped one row; next 00:00 UTC full-catalog upsert restores it).
+
+### Verification
+
+- **`retail_offers`**: **985 longero rows over 926 distinct products**, min 249 / max 21,730 cents, all EUR / `in_stock` / `ESTIMATED`, single `observed_at` 2026-09-15T04:37:59.136Z (the fetch step). Identical shape to staging 4.2 (985/926, same min/max). Roseeviini rows present (1.2 mapper recovery confirmed in production). Per-merchant counts after: longero 985 (new), alks 6,100 (pre-existing, untouched — zero offer rows written by this task).
+- **Public API** (`api.rajahinta.fi`, product 451):
+  - Without `x-age-confirmed`: `403 AGE_GATE_REQUIRED` ✅.
+  - With header: longero offer — `merchant: "longero"`, `country: "EE"`, `priceCents: 1799`, `availability: in_stock`, `sourceUrl: https://longero.fi/tuote/vestfyen-neipa-5-24x0-33-l/`, `observedAt: 2026-09-15T04:37:59.136Z`, `reliabilityStatus: ESTIMATED` + €/g metric ✅.
+  - Merchant aggregate block (`merchantReliability`): **`longero` offerCount 926**, all ESTIMATED ✅.
+- **Public product page** (`https://rajahinta.fi/products/451`, HTTP 200): server-rendered RSC payload contains the longero offer table row (row key 38322 = the API offer id): `longero`, **17.99 €**, "Viro", 15.9.2026 — the page serves longero items without client fetches. Catalog page HTML is client-rendered (0 longero occurrences server-side) — its data comes from the same public API verified above.
+- **Readiness post-ingest**: `GET /api/v1/health/ready` → **HTTP 200** `{"status":"ok","checks":{"d1":{"status":"up","latencyMs":26},"durableObjects":{"status":"up","latencyMs":427}}}`; frontend `https://rajahinta.fi/` → HTTP 200.
+
+**Result**: production registry row + `RETAILER_API`/`GRANTED` governance in place via direct D1 (user-approved console bypass), manual production ingest verified end-to-end (instance `complete`, 985 offers, API + server-rendered product page serving longero with the age gate enforced, production alks `GRANTED` row byte-identical before/after, readiness green). Two follow-ups carried to the lead: (1) verify exactly-one enqueue at the 2026-09-16 00:00 UTC boundary (checklist at top), (2) `audit_events` bypass for these manual inserts. Plus the standing 4.2 chunking follow-up, which cost exactly one transient row (`Xante`) here.

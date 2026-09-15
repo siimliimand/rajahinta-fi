@@ -24,7 +24,7 @@
 ## 5. Production rollout
 
 - [x] 5.1 Production deploy via the gated workflow (`gh workflow run` with `confirm_deploy=yes`); health gate green <!-- agent: devops-engineer.fast, depends_on: [4.2], touches: [] -->
-- [ ] 5.2 Production registry row + `RETAILER_API`/`GRANTED` governance via the ops console; verify the first 00:00 UTC ingest (exactly one `longero` enqueue, workflow instance, `retail_offers` populated) and the public API + product page serving longero items <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [] -->
+- [x] 5.2 Production registry row + `RETAILER_API`/`GRANTED` governance via the ops console; verify the first 00:00 UTC ingest (exactly one `longero` enqueue, workflow instance, `retail_offers` populated) and the public API + product page serving longero items <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [] -->
 
 ## 6. Verification
 
