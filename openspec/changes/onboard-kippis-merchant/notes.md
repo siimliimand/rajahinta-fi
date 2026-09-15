@@ -234,3 +234,54 @@ The manual instance above is trigger `api` with a `-manual` id; the producer's f
 - [ ] **Exactly one new kippis workflow instance** in `rajahinta-price-ingestion-production`, id `price-ingestion-kippis-2026-09-16-00` (no duplicate instances; the `-manual` instance above must NOT re-run).
 - [ ] **Offers refreshed**: kippis rows re-upserted at a fresh `observed_at` ≈ the boundary (offer rows are per-observation — expect row-count growth, per 3.1 deviation note 4); alks/longero offer rows untouched by the kippis run.
 - [ ] Recorded 2026-09-15 ~09:50 UTC, ~14 h before the boundary — observation of the boundary is deliberately NOT blocking this task.
+
+## 6.1 — Verification sweep
+
+Executed 2026-09-15, ~12:45–14:10 UTC (local). Read-only with respect to all environments: local suite runs + public GETs only; no code, config, or remote-state changes; only this notes file touched. `@rajahinta/core-domain` rebuilt first per the task (`pnpm --filter @rajahinta/core-domain build`, the 3.1 stale-`dist` lesson — the 1.2 sweep-scoped category map reaches downstream suites through `dist`). `pnpm install --frozen-lockfile` ran clean at sweep start. Suite set mirrors PR #61 CI job-for-job.
+
+### Suite inventory — every command exit 0
+
+| CI job (PR #61) | Local command | Result | Headline counts |
+|---|---|---|---|
+| — (task-required first step) | `pnpm --filter @rajahinta/core-domain build` | PASS | tsc clean |
+| — (CI parity) | `pnpm install --frozen-lockfile` | PASS | lockfile already coherent, 4.7 s |
+| Build (incl. typecheck) + explicit typecheck | `pnpm run typecheck` then `pnpm run build` | PASS | all 8 workspaces typecheck clean; 7 workspace builds clean |
+| Lint | `pnpm run lint` | PASS | `eslint .` clean, zero findings |
+| Content policy | `pnpm run lint:content` | PASS | content-policy linter clean |
+| Unit tests | `pnpm run test` | PASS | **4,816 passed + 3 skipped in 330 files** across 8 workspaces (core-domain 1,385 · api-worker 915 · frontend 782 · application-api 725 · data-platform 647 · data-acquisition 260 · email-worker 83 · backend 19) |
+| Golden-dataset | `DATABASE_URL=… bash scripts/test-golden-dataset.sh` | PASS | 2 files / 43 tests |
+| Data-quality | `DATABASE_URL=… bash scripts/test-data-quality.sh` | PASS | drizzle migrations applied, SEED_RULES tax rules loaded, all 5 expected tables present; 17 files / 260 tests |
+| Compliance | `DATABASE_URL=… COMPLIANCE_ENFORCED=true bash scripts/test-compliance.sh` | PASS | audit-log + rate-versioning SQL checks ran; 12 files / 106 tests |
+| E2E tests | `pnpm run test:e2e` | PASS | 1 file / 15 tests |
+| Composition smoke | `pnpm vitest run --config apps/backend/tests/composition/vitest.config.ts` | PASS | 1 file / 5 tests |
+| Integration | `DATABASE_URL=… TEST_REDIS_URL=redis://localhost:6379 pnpm vitest run --config tests/integration/vitest.config.ts` | PASS | 223 passed + 25 skipped in 19 passed + 2 skipped files |
+| D1 suite | `pnpm run test:d1` | PASS | 14 files / 148 tests |
+| Worker checks — api-worker e2e | `pnpm --filter @rajahinta/api-worker run test:e2e` | PASS | 3 files / 25 tests (full `createApp()` over the fake-D1 harness) |
+| Worker checks — frontend worker build | `pnpm --filter @rajahinta/frontend run build:worker` | PASS | OpenNext worker built |
+| Worker checks — frontend compile check | `wrangler deploy --dry-run --env staging` (frontend) | PASS | Total Upload 9,391.88 KiB / gzip 2,070.36 KiB |
+| Wrangler config validation | 5 × `wrangler deploy --dry-run` | PASS | api-worker dev/staging/production + email-worker staging/production, all clean |
+| Browser E2E | `SKIP_BUILD=1 BACKEND_PORT=3200 bash tests/e2e-browser/boot-stack.sh` → `pnpm run test:e2e-browser` → `boot-stack.sh --down` | PASS | **8/8 journeys passed (36.6 s)** — age gate, calculator flow, compare sorting, account export |
+
+Skips are all pre-existing, CI-identical design skips, not sweep artifacts: the 3 application-api unit skips are `it.skip('requires TEST_DATABASE_URL — all tests skipped')` (CI unit job sets no `TEST_DATABASE_URL`); the 25 integration skips are `describe.skipIf(!PG_URL)` in `data-lifecycle.test.ts` + `durability-restart.test.ts` (CI integration job sets no `PG_URL` either).
+
+Local-harness notes (no repo changes): the DB-backed suites ran against the repo's own docker-compose stores with a fresh `rajahinta_test` database (dropped + recreated read-back — CI's service container always hands the suites a fresh DB). No `psql` client on this host, so `test-data-quality.sh`/`test-compliance.sh` ran with a throwaway psql shim on `PATH` that executes the timescale image's own psql (the exact client CI uses) with the repo and `/tmp` mounted read-only — the SQL checks were genuinely exercised, not degraded (first data-quality attempt omitted the exported `DATABASE_URL`, hit the script's psql-fallback path, and was re-run CI-identical after exporting it; the clean run applied drizzle-kit migrations directly). Browser-E2E stack booted with `BACKEND_PORT=3200` because host :3000 is occupied by an unrelated local service (3.1's port-8787 situation, different port); the playwright config drives the frontend default :3001 and the API URL is inlined at dev-server start, so the journey topology is unchanged. `SKIP_BUILD=1` used the dist artifacts the full build had just produced (fresh runner is a CI-only concern, per boot-stack.sh's own comment).
+
+### Live evidence re-verification (public GETs + read-only local D1)
+
+- **Staging API** (`https://rajahinta-api-staging.siim-liimand.workers.dev`, product 1214): without `x-age-confirmed` → **HTTP 403 `AGE_GATE_REQUIRED`** ✅; with header → kippis offer `990¢ / FI` on the product and merchant aggregate **`kippis` offerCount 635, all ESTIMATED, freshestObservedAt `2026-09-15T09:08:53.532Z` (= the §4.2 fetch step)** ✅ — §4.2 re-verified byte-consistent.
+- **Production API** (`https://api.rajahinta.fi`, product 1169, EAN 6420614681008 — itself the §5.2 tier-1 EAN-join example): without header → **HTTP 403 `AGE_GATE_REQUIRED`** ✅; with header → kippis offer `990¢ / FI` and merchant aggregate **`kippis` offerCount 635, all ESTIMATED, freshestObservedAt `2026-09-15T09:40:19.660Z` (= the §5.2 fetch step)** ✅ — §5.2 re-verified.
+- **Production product page** `https://rajahinta.fi/products/1169` → **HTTP 200**; server-rendered payload contains the kippis offer row at **9.90 €** (no client fetch needed) ✅.
+- **EAN-match share into the existing catalog**: production **111/636 = 17.5%** and staging **111/636 = 17.5%** as recorded in §5.2/§4.2 — remote D1 deliberately NOT re-queried (read-only sweep constraint); re-verified instead through the public API surfaces above, both of which serve kippis through EAN-joined pre-existing products. **Local 39/636 = 6.1% reproduced read-only** against the local D1 sqlite (`mode=ro`): 39 kippis offer rows on the 974 pre-existing `product_master` rows (created_at < the ingest), **all 39 via populated `ean`, zero on EAN-less rows**, and 974 + 596 kippis-created = 1,570 exact — §3.1 re-verified. (Baseline footnote for future sweeps: locally 974 is the pre-run *row count*, not the max id — match pre-existing rows by `created_at`, not `id <= 974`.) The read-model `governancePermissionStatus: "PENDING"` artifact noted in 4.2/5.2 is still present in both aggregates (unchanged, out of scope).
+- **Producer dry-run shape** (from §3.1, unchanged): the due-tick harness already demonstrated the daily gate firing **exactly one** kippis message keyed `price-ingestion-kippis-2026-09-16-00` at the boundary pass, alongside longero's separate daily message.
+
+### Daily-single-enqueue at the 2026-09-16 00:00 UTC boundary — **PENDING** (the change's single open verification item)
+
+The first scheduled boundary is ~14 h after rollout and has NOT yet been observed; the manual §5.2 instance is trigger `api` with a `-manual` id, so the producer's first real kippis pass is unverified until then. Observe per the §5.2 checklist (pointer above): at/after the boundary,
+
+1. **exactly one `kippis` enqueue** from the producer tick — one queue message with dedupe key `price-ingestion-kippis-2026-09-16-00` (longero's `price-ingestion-longero-2026-09-16-00` is a separate, expected second message; local §3.1 already proved the two-messages shape);
+2. **exactly one new workflow instance** `price-ingestion-kippis-2026-09-16-00` in `rajahinta-price-ingestion-production` — no duplicates, and the `-manual` instance must NOT re-run;
+3. **offers refreshed** — kippis rows re-upserted at a fresh `observed_at` ≈ the boundary (per-observation growth expected, 3.1 deviation note 4), alks/longero rows untouched by the kippis run.
+
+How: producer/consumer logs (`wrangler tail` on the production api-worker across the tick, or the Workers logs dashboard) for the enqueue + handoff lines; the workflow instance list (`GET /accounts/{account}/workflows/rajahinta-price-ingestion-production/instances` or the dashboard) for the single-instance check; a read-only `retail_offers` `observed_at` probe for the refresh check. This is the only item blocking full change closure; everything else in 6.1 is complete and green.
+
+**Environment cleanup**: compose postgres/redis stopped (data volume kept, as boot-stack leaves it), browser-E2E stack torn down (`boot-stack.sh --down`), temporary psql shim under `/tmp/opencode` left out of the repo, playwright/worker build outputs confined to their normal untracked paths. Nothing committed; no file other than this notes section touched.
