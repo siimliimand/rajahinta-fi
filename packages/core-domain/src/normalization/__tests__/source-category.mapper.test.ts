@@ -193,6 +193,92 @@ describe('mapSourceCategory — longero.fi catalog vocabulary (sweep patch 2026-
   });
 });
 
+describe('mapSourceCategory — kippis.fi catalog vocabulary (sweep patch 2026-09-15)', () => {
+  it('maps the wine-department plurals to still wine — never the fallback rate', () => {
+    expect(mapSourceCategory('Punaviinit')).toEqual({
+      canonicalCategory: 'wine',
+      taxCategory: 'wine_still',
+    });
+    expect(mapSourceCategory('valkoviinit')).toEqual({
+      canonicalCategory: 'wine',
+      taxCategory: 'wine_still',
+    });
+  });
+
+  it('maps the sparkling-department plural like the Swedish mousserande terms', () => {
+    expect(mapSourceCategory('Kuohuviinit')).toEqual({
+      canonicalCategory: 'sparkling-wine',
+      taxCategory: 'wine_sparkling',
+    });
+  });
+
+  it('maps the spirit-department plurals and the vodka-and-viina department to spirits', () => {
+    for (const term of ['Viskit', 'Rommit', 'Konjakit', 'Ginit', 'Vodkat ja Viinat']) {
+      const result = mapSourceCategory(term);
+      expect(result, `term "${term}" must map`).not.toBeNull();
+      expect(result!.canonicalCategory).toBe('spirits');
+      expect(result!.taxCategory).toBe('spirits');
+    }
+  });
+
+  it('maps the liqueur plural like its singular — liqueur canonical, spirits tax', () => {
+    expect(mapSourceCategory('Liköörit')).toEqual({
+      canonicalCategory: 'liqueur',
+      taxCategory: 'spirits',
+    });
+  });
+
+  it('maps the aperitif department to fortified wine like the Swedish aperitif entries', () => {
+    expect(mapSourceCategory('Aperitiivit')).toEqual({
+      canonicalCategory: 'fortified-wine',
+      taxCategory: 'intermediate_products',
+    });
+  });
+
+  it('maps the cider-long-drink-seltzer department like "Cider och blanddrycker"', () => {
+    expect(mapSourceCategory('Siiderit lonkerot ja seltzerit')).toEqual({
+      canonicalCategory: 'cider',
+      taxCategory: 'other_fermented',
+    });
+  });
+
+  it('maps the non-alcoholic departments like their existing singular terms', () => {
+    for (const term of ['Virvoitusjuomat ja mikserit', 'Energiajuomat']) {
+      expect(mapSourceCategory(term)!.canonicalCategory).toBe('non-alcoholic');
+      expect(mapSourceCategory(term)!.taxCategory).toBe('other_fermented');
+    }
+  });
+
+  it('matches the live feed\'s inconsistent casing and whitespace', () => {
+    expect(mapSourceCategory('  valkoviinit ')).toEqual(mapSourceCategory('Valkoviinit'));
+    expect(mapSourceCategory('vodkat ja viinat')).toEqual(mapSourceCategory('Vodkat ja Viinat'));
+  });
+
+  it('leaves gift cards and the upsell group unmapped — merchandising, never a guess', () => {
+    expect(mapSourceCategory('Lahjakortti')).toBeNull();
+    expect(mapSourceCategory('Upsell')).toBeNull();
+  });
+
+  it('changes no existing mapping — singulars and Swedish terms behave as before', () => {
+    expect(mapSourceCategory('Valkoviini')).toEqual({
+      canonicalCategory: 'wine',
+      taxCategory: 'wine_still',
+    });
+    expect(mapSourceCategory('Viski')).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+    });
+    expect(mapSourceCategory('Likör')).toEqual({
+      canonicalCategory: 'liqueur',
+      taxCategory: 'spirits',
+    });
+    expect(mapSourceCategory('Mousserande vin')).toEqual({
+      canonicalCategory: 'sparkling-wine',
+      taxCategory: 'wine_sparkling',
+    });
+  });
+});
+
 describe('mapSourceCategory — unmappable categories', () => {
   it('returns null for an unrecognized string — flagged, never fallback-assigned', () => {
     expect(mapSourceCategory('Kaffe')).toBeNull();
