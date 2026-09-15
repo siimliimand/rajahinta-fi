@@ -18,8 +18,8 @@
 
 ## 4. Staging rollout
 
-- [ ] 4.1 Open PR from the feature branch; CI green (all required checks); merge; staging auto-deploys the api-worker <!-- agent: devops-engineer.fast, depends_on: [3.1], touches: [] -->
-- [ ] 4.2 Staging registry row + `RETAILER_API`/`GRANTED` governance via the ops path (or direct D1 by the operator); trigger the first ingest via the Workflows REST API; verify end-to-end (workflow instance `complete`, `retail_offers` populated with EAN matches into the existing catalog, API returns kippis offers); staging alks governance stays `REVOKED` — record executed commands in the change notes <!-- agent: devops-engineer.fast, depends_on: [4.1], touches: [openspec/changes/onboard-kippis-merchant/notes.md] -->
+- [x] 4.1 Open PR from the feature branch; CI green (all required checks); merge; staging auto-deploys the api-worker <!-- agent: devops-engineer.fast, depends_on: [3.1], touches: [] -->
+- [x] 4.2 Staging registry row + `RETAILER_API`/`GRANTED` governance via the ops path (or direct D1 by the operator); trigger the first ingest via the Workflows REST API; verify end-to-end (workflow instance `complete`, `retail_offers` populated with EAN matches into the existing catalog, API returns kippis offers); staging alks governance stays `REVOKED` — record executed commands in the change notes <!-- agent: devops-engineer.fast, depends_on: [4.1], touches: [openspec/changes/onboard-kippis-merchant/notes.md] -->
 
 ## 5. Production rollout
 

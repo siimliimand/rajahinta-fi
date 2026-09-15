@@ -113,3 +113,61 @@ Verification: script typechecked (`tsc --noEmit` with the repo's base compiler f
 4. Follow-up observation for the lead: offer rows are per-observation (a re-run adds rows at a new `observed_at` — longero went 986 → 1,972 after its due re-run); data-quality/freshness consumers should expect per-observation growth, consistent with the time-series design.
 
 **Environment cleanup**: temporary harness file deleted; `/tmp` seed + probe JSON removed; `wrangler dev` stopped. No tracked file changed except this notes section (the pre-existing uncommitted `tasks.md` 2.2 checkbox tick was left exactly as found).
+
+## 4.2 — Staging rollout
+
+Executed 2026-09-15, 09:06–09:18 UTC. Staging D1 writes explicitly approved by the task. Worker context: the live staging api-worker is from the 4.1 merge — master `6d4f3c8`, Deploy Staging run **34949960871 GREEN**. **PR #62 context**: the seed-gate fix (staging deploy verifies the merchant registry by *seeded-row presence*, not row count) is why the deploy went green and why these operator-added rows will not break future staging deploys. Nothing committed; only `notes.md` touched in the repo (the pre-existing uncommitted `tasks.md` 4.1 tick left exactly as found).
+
+### Path decision (same blocker as longero 4.2)
+
+The established ops path (`POST /ops/console/merchants` register+auto-grant per `docs/ingestion-runbook.md` §2.0) needs the staging `OPS_BEARER_TOKEN` Cloudflare secret — not present in any local env file (checked; values never printed). **Fell back to direct staging D1 via `wrangler d1 execute DB --remote --env staging`** (sanctioned by the task text), i.e. the same `audit_events` deviation as longero 4.2: these two inserts have no audit entry; the console is the audited route — production 5.2 must use it or record the gap.
+
+### Pre-checks (read-only, before any write)
+
+- `merchant_registry`: exactly 3 rows — alko (id 1, empty feed URL, hourly), alks (id 2, DE, daily), longero (id 3, EE, daily). No kippis anywhere.
+- `source_governance`: exactly 2 rows — id 1 alks **`REVOKED`** ("Paused by operator 2026-09-14 — staging scraping halt; production unaffected", `updated_at` 2026-09-14T12:09:17.113Z), id 2 longero `GRANTED`. **STOP-condition clear.**
+- `retail_offers` for kippis: 0. Per-merchant baseline: alks 67,600 · longero 2,221/927 products · 5 seed/test merchants 8–10 each.
+- `product_master`: **3,255 rows, max id 3255** (2,824 with EAN) — the pre-ingest baseline for the EAN-match share (new products created by the ingest get ids > 3255).
+
+### Writes (idempotent; verified by read-back)
+
+- Registry (unique index makes re-runs no-ops): `INSERT INTO merchant_registry (merchant_id, name, country, feed_url, feed_format, polling_interval_ms) VALUES ('kippis','Kippis','FI','https://www.kippis.net','json',86400000) ON CONFLICT (merchant_id) DO NOTHING` — `changes: 1`, row read back exactly per task/design D5 spec (**id 4**, created/updated 2026-09-15T09:07:07.459Z). alko/alks/longero rows byte-identical before/after.
+- Governance (no unique key — `NOT EXISTS` guard is the idempotency mechanism, longero 3.1/4.2 pattern): `INSERT INTO source_governance (merchant_id, acquisition_method, permission_status, source_url, status_reason, last_verified_at) SELECT 'kippis','RETAILER_API','GRANTED','https://www.kippis.net/wp-json/wc/store/v1/products','onboard-kippis-merchant task 4.2: owner blanket-permission policy — documented scraping right (longero precedent); staging grant for first-ingest verification',strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE NOT EXISTS (…)` — `changes: 1`, row **id 3**, all fields exact (D5 reason). **alks id 1 byte-identical before and after (still `REVOKED`, same `updated_at`).**
+
+### First ingest via the Workflows REST API (longero 4.2 method)
+
+- Auth: wrangler's own stored OAuth token written to a **0600 temp header file** under `/tmp/opencode` (never printed, `unset` after use, **deleted** after the run); account id captured from `wrangler whoami` into a shell variable, never emitted.
+- `POST /accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances` body `{"id":"price-ingestion-kippis-2026-09-15-09","params":{"merchantId":"kippis","sourceUrl":"https://www.kippis.net","dedupeKey":"price-ingestion-kippis-2026-09-15-09"}}` → `{"success":true,…,"result":{"id":"39f08a61-b9b1-41bd-812e-f10adeb422ec",…,"status":"queued"}}` at 09:08:34Z (collection form with `id` in the body, per the longero 4.2 contract note; the key pattern `price-ingestion-<merchant>-<date>-<hour>` cannot collide with the real producer, whose daily kippis key only exists at the 00:00 UTC boundary → `price-ingestion-kippis-2026-09-16-00`).
+- Tooling hiccup (no side effect): the first POST went out with an empty `{account}` path segment (shell variable set in a prior tool invocation did not persist) → CF error `7003 Could not route`; re-issued with the id captured in the same invocation and succeeded. The failed request never reached a workflow route.
+- Instance `price-ingestion-kippis-2026-09-15-09` (internal uuid `39f08a61-b9b1-41bd-812e-f10adeb422ec`), trigger `{source: 'api'}`. Polled via `GET …/instances/{uuid}` (the custom-id path form still 404s, per the longero 4.2 tooling note): `running` 09:09–09:15, **`complete` at 09:15:28Z (≈6.7 min)**.
+
+### Workflow result — all 9 steps first-attempt success
+
+resolve-merchant → governance-gate (GRANTED honored) → fetch-feed (live www.kippis.net, 6.3 s, read-only GETs) → map-records → upsert-offers-1/2/3 (~2.2 min each, staging D1 latency) → data-quality → complete-job-claim. Output: **`productsIngested: 636`**, error list 94 unique lines (zero duplicates): **36 `no canonical beverage category` + 5 name/category contradiction drops = 41 map drops**, plus **53 kept-EAN-less SKU errors** — exactly the local 3.1 shape and the sweep's 53-row "other" bucket (12-digit numerics, internal codes, suffixed `…/3`; D2 no-guessing). Reconciliation: 677 raw − 41 = **636** ✓. **Deviation from the longero playbook (a good one): no `complete-job-claim` subrequest incident** — the instance never parked in `waiting` and no step retried (kippis 636 products < longero 985; the budget risk longero 4.2/5.2 hit did not materialize at this scale).
+
+### Verification
+
+- **`retail_offers`**: **636 kippis rows over 635 distinct products**, min 177 / max 279,000 cents (the max is a `24 x 33cl` multipack case price — sweep's accepted risk), single value sets EUR / FI / `in_stock` / `ESTIMATED`, single `observed_at` 2026-09-15T09:08:53.532Z (= fetch step). No other merchant changed (post-run per-merchant counts identical to baseline).
+- **`product_master`**: 3,255 → **3,779 (+524 products created by this run**, exact).
+- **EAN matching into the EXISTING staging catalog: 111 of 636 kippis offers (17.5%) sit on pre-existing `product_master` rows (id ≤ 3255)** — **all 111 on EAN-populated rows, zero on EAN-less rows**, i.e. tier-1 EAN matching is the demonstrated join mechanism. Reporting honestly per task: staging's join share is ~3× the local run's (39/636 = 6.1%) because staging's existing master carries longero's full EE catalog (927 products) and alks's DE catalog (2,799 products) versus local's seed+longero-only master — the predicted direction, the actual number is 111. Example joins: `Suomi viina PET 32% 0.5L` (6420614689707) → product 1215, `Koskenkorva Liqueur Passionfruit` (6412700335414) → product 2228.
+- **API** (`https://rajahinta-api-staging.siim-liimand.workers.dev`, product **1214** `Tapio PET 39% 0.5L`, EAN 6420614681008 — chosen because it EAN-joined a pre-existing product with a live longero offer):
+  - Negative control: `GET /api/v1/products/1214` without header → **HTTP 403 `AGE_GATE_REQUIRED`** ✅.
+  - With `x-age-confirmed: confirmed` → HTTP 200 with a **three-way cross-border offer set**: `alks` DE 529¢ · `longero` EE 599¢ · **`kippis` FI 990¢** — all EUR / `in_stock` / `ESTIMATED`; kippis `sourceUrl: https://www.kippis.net/product/viinat-netista/tapio-pet-39-0-5l/`, `observedAt: 2026-09-15T09:08:53.532Z` (= fetch step) ✅. Merchant aggregate block: **`kippis` offerCount 635, all ESTIMATED, freshestObservedAt = fetch step** ✅.
+  - Observation for the lead (out of scope): the same aggregate block reports kippis `governancePermissionStatus: "PENDING"` while the `source_governance` row is `GRANTED` (read back directly; the workflow gate honored it). Read-model artifact, not investigated further.
+
+### Post-checks
+
+- `source_governance` final: 3 rows — alks **`REVOKED` unchanged** (`updated_at` still 2026-09-14T12:09:17.113Z), longero `GRANTED` unchanged, kippis `GRANTED` (new id 3). **Kippis did not un-pause staging alks.**
+- Registry final: 4 rows, only kippis added. Production untouched throughout; no redeploys.
+
+### Commands executed (names)
+
+`npx wrangler d1 execute DB --remote --env staging --json --command "<read-only pre-check probes>"` (registry · governance · per-merchant offer counts · product_master count/max-id/EAN count · kippis offers) · same with the two `INSERT` statements · same for read-backs and post-checks · `npx wrangler whoami` (token refresh; account id into shell var) · `curl -X POST /accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances` (auth: 0600 temp header file from wrangler's stored OAuth token — value never printed, file deleted after) · `curl …/instances/39f08a61-b9b1-41bd-812e-f10adeb422ec` (status poll loop, 30 s interval) · `curl /api/v1/products/1214` ± `x-age-confirmed: confirmed`.
+
+### Deviations / notes vs the longero 4.2 playbook
+
+1. Same ops-path blocker and same sanctioned fallback (direct D1; `OPS_BEARER_TOKEN` absent locally) → same `audit_events` deviation for the lead.
+2. No `waiting` park / no step retries — kippis's catalog stayed under the invocation subrequest budget (longero's recurring incident shape absent).
+3. EAN-match share 111/636 (17.5%) vs local 39/636 (6.1%) — richer pre-existing staging catalog (alks DE + longero EE), all joins tier-1 EAN.
+4. Read-model `governancePermissionStatus: PENDING` in the merchant aggregate despite the `GRANTED` D1 row — observation recorded, not a blocker.
+5. First REST POST mis-routed on an empty account-id path segment (variable not persisted across invocations) and was re-issued; zero side effects.
