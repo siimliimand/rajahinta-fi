@@ -230,3 +230,31 @@ Executed 2026-09-15, 04:34–05:07 UTC. Nothing committed; `tasks.md` untouched.
 - **Readiness post-ingest**: `GET /api/v1/health/ready` → **HTTP 200** `{"status":"ok","checks":{"d1":{"status":"up","latencyMs":26},"durableObjects":{"status":"up","latencyMs":427}}}`; frontend `https://rajahinta.fi/` → HTTP 200.
 
 **Result**: production registry row + `RETAILER_API`/`GRANTED` governance in place via direct D1 (user-approved console bypass), manual production ingest verified end-to-end (instance `complete`, 985 offers, API + server-rendered product page serving longero with the age gate enforced, production alks `GRANTED` row byte-identical before/after, readiness green). Two follow-ups carried to the lead: (1) verify exactly-one enqueue at the 2026-09-16 00:00 UTC boundary (checklist at top), (2) `audit_events` bypass for these manual inserts. Plus the standing 4.2 chunking follow-up, which cost exactly one transient row (`Xante`) here.
+
+## Task 6.1 verification
+
+Executed 2026-09-15 on `master` @ `93163c6` (clean tree). Full sweep mirroring the CI command set (`.github/workflows/ci.yml`): typecheck, lint, content lint, unit suites, e2e, D1 suites. Per the 2.1 lesson (lead ruling note above), `@rajahinta/core-domain` was rebuilt first (`pnpm --filter @rajahinta/core-domain build` — clean `tsc`), then `pnpm run typecheck` ran on top.
+
+### Sweep results (all commands pass, exit 0)
+
+| Command | Result |
+|---|---|
+| `pnpm --filter @rajahinta/core-domain build` | ✅ pass (pre-test rebuild, see 2.1 note) |
+| `pnpm run typecheck` | ✅ pass — all 8 workspace projects `Done` (core-domain, data-platform, data-acquisition, application-api, backend, api-worker, frontend, email-worker) |
+| `pnpm run lint` (`eslint .`) | ✅ pass — no findings |
+| `pnpm run lint:content` | ✅ pass — frontend `lint-content-policy.ts` clean |
+| `pnpm run test` (unit suites) | ✅ pass — **4,779 passed / 3 skipped / 0 failed**: core-domain 1375, frontend 782, api-worker 915, data-platform 647, data-acquisition 233, application-api 725 (+3 skipped of 728 — DB-gated, `TEST_DATABASE_URL` not set, same as CI's non-Postgres path), email-worker 83, backend 19 |
+| `pnpm run test:e2e` | ✅ pass — 1 file, 15 tests |
+| `pnpm run test:d1` | ✅ pass — 14 files, 148 tests |
+
+No failures anywhere; nothing fixed or adjusted during the sweep. The broader CI matrix beyond this task's six commands (build, golden/data-quality/compliance Postgres suites, integration, composition smoke, wrangler dry-runs, api-worker e2e) ran green on this change at merge: all 14 jobs on `9d075b8` (4.1 evidence).
+
+### Evidence inventory (recorded by earlier tasks — referenced, not redone)
+
+- **Staging API/merchant serving the longero catalog**: task 4.2 — staging product 496 returns the longero offer (EE, EUR, in-stock, provenance) with the age gate enforced both ways; 985 offers over 926 products.
+- **Production API + product page serving the longero catalog**: task 5.2 — `api.rajahinta.fi` product 451 (403 without `x-age-confirmed`, longero offer with header; merchant aggregate offerCount 926), `https://rajahinta.fi/products/451` HTTP 200 with the longero offer row server-rendered in the RSC payload; readiness green post-ingest.
+- **Local end-to-end + single-enqueue producer behavior**: task 3.1 — due-tick run enqueued **1/3** merchants (longero only; alko no-URL skip, alks fail-closed skip) with dedupe key `price-ingestion-longero-2026-09-15-00`, and the workflow instance `complete` with 986 products ingested.
+- **Daily-single-enqueue unit evidence** (producer suite `apps/api-worker/src/queues/__tests__/ingestion-producer.test.ts`, passing in the api-worker 915): `intervalBucketFires` — *"fires a daily merchant exactly once across 24 consecutive hourly ticks — the first tick at/after 00:00 UTC"* (fired hours `=== [0]`), *"fires a tick exactly on an interval boundary"*, *"self-heals a missed boundary…"*; `schedulePriceIngestions — interval cadence gate` — *"enqueues hourly merchants every tick, 6 h merchants at 00/06/12/18, and daily merchants once per day"* (daily keys exactly `['price-ingestion-daily-2026-08-30-00']`, 23/24 ticks not-due); `ingestionDedupeKey` date-hour bucket (`…-2026-01-01-00` from a 00:30 tick).
+- **Deferred live check (stated explicitly, not waited on)**: the real "exactly one enqueue at 00:00 UTC" production observation is the recorded 5.2 follow-up — next boundary **2026-09-16 00:00 UTC** (exactly one queue message with dedupe key `price-ingestion-longero-2026-09-16-00`, exactly one workflow instance, offers refreshed). The unit + local evidence above is what is available before that boundary passes.
+
+**Result**: sweep fully green on the task's six command categories; catalog-serving and single-enqueue behavior evidenced from 4.2 / 5.2 / 3.1 plus the producer unit suite; the 00:00 UTC production enqueue check remains the explicit post-boundary follow-up.
