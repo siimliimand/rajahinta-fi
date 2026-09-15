@@ -409,13 +409,25 @@ function versionFieldName(versionLabel: string): string {
   return `tax_rules_${versionLabel.replace(/[^A-Za-z0-9]/g, '_')}`;
 }
 
+/** Sanitize a merchant id into a SQL result field name ("merchant_registry_alko"). */
+function merchantRegistryFieldName(merchantId: string): string {
+  return `merchant_registry_${merchantId.replace(/[^A-Za-z0-9]/g, '_')}`;
+}
+
 /** Expected row counts, derived from the same sources as the emitted SQL. */
 export interface SeedExpectations {
   /** Total tax_rules rows across all version labels. */
   taxRulesTotal: number;
   /** Per-version-label tax_rules counts (append-only dataset policy). */
   taxRulesPerVersion: Record<string, number>;
-  merchantRegistry: number;
+  /**
+   * Per-seed-merchant expected presence (merchantId → 1). The registry is
+   * verified by seeded-row presence, not table total: operator-added rows
+   * via the documented ops path (longero 4.2, kippis 4.2/5.2) legitimately
+   * grow the table past the seed set, and an exact-total gate would fail
+   * every post-onboarding deploy.
+   */
+  merchantRegistryRows: Record<string, number>;
   transportOffers: number;
   productMaster: number;
   retailOffers: number;
@@ -436,10 +448,15 @@ export function buildExpectations(): SeedExpectations {
     perVersion[rule.versionLabel] = (perVersion[rule.versionLabel] ?? 0) + 1;
   }
 
+  const merchantRows: Record<string, number> = {};
+  for (const merchant of MERCHANT_REGISTRY_SEED) {
+    merchantRows[merchant.merchantId] = 1;
+  }
+
   return {
     taxRulesTotal: SEED_RULES.length,
     taxRulesPerVersion: perVersion,
-    merchantRegistry: MERCHANT_REGISTRY_SEED.length,
+    merchantRegistryRows: merchantRows,
     transportOffers: STAGING_TRANSPORT_OFFERS.length,
     productMaster: STAGING_PRODUCTS.length,
     retailOffers: STAGING_RETAIL_OFFERS.length,
@@ -483,12 +500,20 @@ export function buildVerifySql(): string {
         `  (SELECT COUNT(*) FROM "tax_rules" WHERE "version_label" = ${sqlString(label)}) AS "${versionFieldName(label)}"`,
     )
     .join(',\n');
+  // Per-seed-merchant presence, not a table total: operator-added registry
+  // rows (the documented ops path) must not fail the deploy gate.
+  const perMerchantSelects = Object.keys(expectations.merchantRegistryRows)
+    .map(
+      (merchantId) =>
+        `  (SELECT COUNT(*) FROM "merchant_registry" WHERE "merchant_id" = ${sqlString(merchantId)}) AS "${merchantRegistryFieldName(merchantId)}"`,
+    )
+    .join(',\n');
 
   return `SELECT
   (SELECT COUNT(*) FROM "tax_rules") AS "tax_rules_total",
 ${perVersionSelects},
   (SELECT COUNT(*) FROM "tax_rules" WHERE "version_label" = ${sqlString(spot.latestLabel)} AND "product_category" = 'beer' AND "rate" = ${spot.beerRate}) AS "spot_beer_rate_rows",
-  (SELECT COUNT(*) FROM "merchant_registry") AS "merchant_registry_total",
+${perMerchantSelects},
   (SELECT COUNT(*) FROM "transport_offers") AS "transport_offers_total",
   (SELECT COUNT(*) FROM "product_master") AS "product_master_total",
   (SELECT COUNT(*) FROM "retail_offers") AS "retail_offers_total",
@@ -501,8 +526,11 @@ ${perVersionSelects},
  * floor there: staging's hourly producer (merchant feeds) legitimately
  * grows product_master, retail_offers and the FTS index past the fixture
  * counts, so exact equality would fail on every post-ingestion deploy.
- * Seed-owned tables (tax rules, merchant registry, transport offers,
- * staging reviews) stay exact — drift there is seed loss, not growth.
+ * Seed-owned tables (tax rules, transport offers, staging reviews) stay
+ * exact — drift there is seed loss, not growth. The merchant registry is
+ * neither: the seed verifies its own rows by presence (per merchantId),
+ * while operator-added rows via the documented ops path (longero 4.2,
+ * kippis 4.2/5.2 onboarding) legitimately grow the table.
  */
 const INGESTION_FLOOR_FIELDS: ReadonlySet<string> = new Set([
   'product_master_total',
@@ -513,8 +541,9 @@ const INGESTION_FLOOR_FIELDS: ReadonlySet<string> = new Set([
 /**
  * Assert a verification row (field → actual count) against the expected
  * counts. Exact for seed-owned tables, at-least for ingestion-shared ones
- * (see INGESTION_FLOOR_FIELDS). Throws a SeedVerificationError listing
- * EVERY mismatch — the loud-failure contract of the seed pipeline.
+ * (see INGESTION_FLOOR_FIELDS), and per-seeded-row presence for the
+ * merchant registry. Throws a SeedVerificationError listing EVERY
+ * mismatch — the loud-failure contract of the seed pipeline.
  */
 export function assertVerificationRow(row: Record<string, unknown>): void {
   const expectations = buildExpectations();
@@ -527,7 +556,12 @@ export function assertVerificationRow(row: Record<string, unknown>): void {
       ]),
     ),
     spot_beer_rate_rows: expectations.spotBeerRateRows.expected,
-    merchant_registry_total: expectations.merchantRegistry,
+    ...Object.fromEntries(
+      Object.entries(expectations.merchantRegistryRows).map(([merchantId, count]) => [
+        merchantRegistryFieldName(merchantId),
+        count,
+      ]),
+    ),
     transport_offers_total: expectations.transportOffers,
     product_master_total: expectations.productMaster,
     retail_offers_total: expectations.retailOffers,

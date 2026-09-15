@@ -30,6 +30,7 @@ import {
   SeedVerificationError,
   assertVerificationRow,
   buildExpectations,
+  buildVerifySql,
   generateSeedSqlFiles,
   generateStagingSql,
   generateTaxRulesSql,
@@ -157,7 +158,9 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
 
     const expectations = buildExpectations();
     expect(result.verification['tax_rules_total']).toBe(expectations.taxRulesTotal);
-    expect(result.verification['merchant_registry_total']).toBe(expectations.merchantRegistry);
+    for (const [merchantId, count] of Object.entries(expectations.merchantRegistryRows)) {
+      expect(result.verification[`merchant_registry_${merchantId.replace(/[^A-Za-z0-9]/g, '_')}`]).toBe(count);
+    }
     expect(result.verification['product_master_total']).toBe(expectations.productMaster);
     expect(result.verification['retail_offers_total']).toBe(expectations.retailOffers);
     expect(result.verification['transport_offers_total']).toBe(expectations.transportOffers);
@@ -213,6 +216,28 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
     ).toThrow(SeedVerificationError);
   }, DB_TEST_TIMEOUT_MS);
 
+  it('tolerates operator-added merchant registry rows (ops-path onboarding)', () => {
+    // The longero 4.2 / kippis 4.2 precedent: merchants onboarded through
+    // the documented ops path grow merchant_registry past the seed set.
+    // The gate verifies seeded-row PRESENCE, so an operator row must not
+    // fail verification (the old exact-total gate broke every deploy
+    // after such an onboarding).
+    const dbPath = freshDatabasePath();
+    applySeedToSqlite(dbPath, { migrationsDir: MIGRATIONS_DIR, seedSqlFiles: seedFiles });
+
+    const db = new DatabaseSync(dbPath);
+    try {
+      db.exec(
+        `INSERT INTO merchant_registry (merchant_id, name, country, feed_url, feed_format, polling_interval_ms)
+         VALUES ('longero', 'Longero', 'EE', 'https://longero.fi', 'json', 86400000)`,
+      );
+      const row = db.prepare(buildVerifySql()).get() as Record<string, unknown>;
+      expect(() => assertVerificationRow(row)).not.toThrow();
+    } finally {
+      db.close();
+    }
+  }, DB_TEST_TIMEOUT_MS);
+
   it('fails loudly when staging rows are missing from the seeded database', () => {
     const db = new DatabaseSync(':memory:');
     for (const file of listMigrationFiles(MIGRATIONS_DIR)) {
@@ -247,7 +272,12 @@ describe('assertVerificationRow count semantics', () => {
         ]),
       ),
       spot_beer_rate_rows: 1,
-      merchant_registry_total: expectations.merchantRegistry,
+      ...Object.fromEntries(
+        Object.entries(expectations.merchantRegistryRows).map(([merchantId, count]) => [
+          `merchant_registry_${merchantId.replace(/[^A-Za-z0-9]/g, '_')}`,
+          count,
+        ]),
+      ),
       transport_offers_total: expectations.transportOffers,
       product_master_total: expectations.productMaster,
       retail_offers_total: expectations.retailOffers,
@@ -281,12 +311,22 @@ describe('assertVerificationRow count semantics', () => {
     ).toThrow(/product_master_total/);
   });
 
+  it('still fails when a seeded merchant row is missing (seed loss)', () => {
+    const firstSeeded = Object.keys(expectations.merchantRegistryRows)[0];
+    const field = `merchant_registry_${firstSeeded.replace(/[^A-Za-z0-9]/g, '_')}`;
+    expect(() =>
+      assertVerificationRow(
+        verificationRow({ [field]: 0 }),
+      ),
+    ).toThrow(new RegExp(field));
+  });
+
   it('still fails on exact-count drift in seed-owned tables', () => {
     expect(() =>
       assertVerificationRow(
-        verificationRow({ merchant_registry_total: expectations.merchantRegistry + 1 }),
+        verificationRow({ transport_offers_total: expectations.transportOffers + 1 }),
       ),
-    ).toThrow(/merchant_registry_total/);
+    ).toThrow(/transport_offers_total/);
   });
 });
 
