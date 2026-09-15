@@ -39,7 +39,10 @@ export interface SourceCategoryMapping {
  * their common sub-group names) → canonical categories, extended with
  * the live alks.fi catalog vocabulary (sweep decision 2026-09-09,
  * change alks-feed-and-import-vat): Finnish/English beverage-type
- * terms and plural forms the Systembolaget rows do not cover.
+ * terms and plural forms the Systembolaget rows do not cover — and the
+ * kippis.fi department vocabulary (sweep decision 2026-09-15, change
+ * onboard-kippis-merchant): the 13 department terms that drive 100 %
+ * of that catalog's category-driven drops.
  *
  * Keys are lowercase; matching is exact after trim/lowercase because
  * assortment groups are controlled vocabulary, not free text.
@@ -116,6 +119,39 @@ export const SWEDISH_SOURCE_CATEGORY_MAP: Readonly<Record<string, CanonicalCateg
   'soft drinks': 'non-alcoholic',
   'energy drink': 'non-alcoholic',
   'alkoholittomat juomat': 'non-alcoholic',
+
+  // --- kippis.fi catalog vocabulary (sweep decision 2026-09-15, change
+  // onboard-kippis-merchant). Additive only: all 13 live department
+  // terms map to existing canonical categories, and they are the whole
+  // of that feed's current category-driven drops. Merchandising groups
+  // ("Lahjakortti" gift cards, "Upsell") stay unmapped on purpose.
+  //
+  // Wine-department plurals — still vs sparkling exactly like their
+  // singulars ('punaviini'/'valkoviini' → wine, 'mousserande' and
+  // 'kuohuviini ja samppanja' → sparkling-wine).
+  punaviinit: 'wine',
+  valkoviinit: 'wine',
+  kuohuviinit: 'sparkling-wine',
+  // Spirit-department plurals and type nouns, mirroring their singulars
+  // ('viski', 'rommi') and the cognac-family entries ('calvados',
+  // 'armagnac'); the vodka-and-viina department is spirits by definition.
+  viskit: 'spirits',
+  rommit: 'spirits',
+  konjakit: 'spirits',
+  ginit: 'spirits',
+  'vodkat ja viinat': 'spirits',
+  // Plural of 'likör' — liqueur, like its singular.
+  liköörit: 'liqueur',
+  // Aperitif department — same fortified/aromatised family as the
+  // Swedish 'aperitif' / 'aperitif och dessert' entries.
+  aperitiivit: 'fortified-wine',
+  // Ciders, long drinks and seltzers — the Finnish counterpart of the
+  // Swedish 'cider och blanddrycker' group.
+  'siiderit lonkerot ja seltzerit': 'cider',
+  // Non-alcoholic mixers and energy drinks ('virvoitusjuomat' and
+  // 'energy drink' already map the same way).
+  'virvoitusjuomat ja mikserit': 'non-alcoholic',
+  energiajuomat: 'non-alcoholic',
 };
 
 /** Explicit "other" tokens in the sources we ingest — mappable, unlike garbage. */

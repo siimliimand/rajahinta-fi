@@ -9,10 +9,12 @@
  * Contract, pinned by the golden fixture
  * (adapters/__fixtures__/alks-store-products.fixture.ts):
  *
- * - EAN from the SKU: the raw SKU must match `^[a-z]{2}-\d{13}$`; the
- *   two-letter prefix is stripped and the remainder is the EAN. A
- *   non-matching SKU is never guessed around — the record is kept with
- *   a null EAN and a per-row correction error names the SKU (design D1).
+ * - EAN from the SKU: the raw SKU must match one of three accepted
+ *   forms — `^[a-z]{2}-\d{13}$` (two-letter prefix stripped),
+ *   `^\d{13}$` (bare 13-digit EAN), or `^0\d{13}$` (GTIN-14 of a
+ *   13-digit EAN, leading zero stripped). Any other SKU is never
+ *   guessed around — the record is kept with a null EAN and a per-row
+ *   correction error names the SKU (design D1).
  * - ABV and volume come from the product name by rule-based regex
  *   ("35%", "0,5 l" / "0.5 l" / "500 ml"); container type from name
  *   tokens (PET, pullo, tölkki) through `alksContainerType` into the
@@ -311,11 +313,25 @@ function nameImpliedMapping(name: string): SourceCategoryMapping | null {
 
 /** Raw SKU shape: two-letter country prefix + the 13-digit EAN. */
 const SKU_PATTERN = /^[a-z]{2}-\d{13}$/;
+/** Raw SKU shape: bare 13-digit EAN, no prefix. */
+const BARE_EAN_PATTERN = /^\d{13}$/;
+/** Raw SKU shape: GTIN-14 form of a 13-digit EAN (leading zero). */
+const GTIN14_PATTERN = /^0\d{13}$/;
 
-/** 'de-4740077005916' → '4740077005916'; null for any non-matching SKU. */
+/**
+ * The EAN carried by a raw SKU, in one of three accepted forms:
+ * 'de-4740077005916' → '4740077005916' (prefix stripped),
+ * '6412700071701' → itself (bare EAN-13),
+ * '06412700071701' → '6412700071701' (GTIN-14, leading zero stripped).
+ * Null for any other SKU — 12-digit numerics are not zero-padded and
+ * internal or suffixed codes are never guessed around.
+ */
 function readEanFromSku(sku: string | null): string | null {
-  if (sku === null || !SKU_PATTERN.test(sku)) return null;
-  return sku.slice(3);
+  if (sku === null) return null;
+  if (SKU_PATTERN.test(sku)) return sku.slice(3);
+  if (BARE_EAN_PATTERN.test(sku)) return sku;
+  if (GTIN14_PATTERN.test(sku)) return sku.slice(1);
+  return null;
 }
 
 /**
@@ -378,7 +394,8 @@ export function parseAlksStoreProduct(row: unknown): AlksProductParseResult {
   const ean = readEanFromSku(sku);
   if (sku !== null && ean === null) {
     errors.push(
-      `Failed to map ${label}: SKU "${sku}" does not match ^[a-z]{2}-\\d{13}$ — ` +
+      `Failed to map ${label}: SKU "${sku}" does not match any accepted ` +
+        'EAN SKU form (^[a-z]{2}-\\d{13}$, ^\\d{13}$, ^0\\d{13}$) — ' +
         'record kept without an EAN, flagged for the correction queue',
     );
   }

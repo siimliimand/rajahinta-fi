@@ -611,7 +611,7 @@ describe('composeIngestionStageServices — D1 governance default (task 2.1)', (
 });
 
 describe('composeIngestionStageServices — live feed adapters (task 2.2)', () => {
-  it('registers three live adapters — alko, alks, and longero all resolve by merchantId', async () => {
+  it('registers four live adapters — alko, alks, longero, and kippis all resolve by merchantId', async () => {
     const { feeds } = composeIngestionStageServices(composedEnv());
 
     // Negative control: an unregistered merchantId produces the lookup
@@ -628,7 +628,7 @@ describe('composeIngestionStageServices — live feed adapters (task 2.2)', () =
     // Closed local port: a RESOLVED adapter attempts the fetch and
     // fails fast into errors[] — any error but the sentinel proves the
     // default map resolves the merchantId.
-    for (const merchantId of ['alko', 'alks', 'longero']) {
+    for (const merchantId of ['alko', 'alks', 'longero', 'kippis']) {
       const result = await feeds.fetchFromMerchant(
         merchantId,
         'http://127.0.0.1:9/api',

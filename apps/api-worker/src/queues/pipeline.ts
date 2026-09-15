@@ -41,6 +41,7 @@ import { FeedIngestionService } from '../../../../packages/data-acquisition/src/
 import { PipelineOrchestratorService } from '../../../../packages/data-acquisition/src/services/pipeline-orchestrator.service';
 import { AlkoFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/alko.adapter';
 import { AlksFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/alks.adapter';
+import { KippisFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/kippis.adapter';
 import { LongeroFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/longero.adapter';
 import type { IFeedAdapter } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { MerchantConfig } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
@@ -100,7 +101,7 @@ export function composeGovernanceService(
  * Compose the ingestion pipeline over the Worker bindings.
  *
  * Feed adapters register under their merchantId exactly as the
- * DataAcquisitionModule factory did (alko, alks, longero); the
+ * DataAcquisitionModule factory did (alko, alks, longero, kippis); the
  * offer-change hook appends one R2 observation per changed offer.
  */
 export function composeIngestionPipeline(
@@ -115,6 +116,8 @@ export function composeIngestionPipeline(
   adapters.set(alks.merchantId, alks);
   const longero = new LongeroFeedAdapter();
   adapters.set(longero.merchantId, longero);
+  const kippis = new KippisFeedAdapter();
+  adapters.set(kippis.merchantId, kippis);
   const feedIngestion = new FeedIngestionService(adapters);
   const dataMapping = new DataMappingService();
   const dataQuality = new DataQualityService(new ReliabilityService());

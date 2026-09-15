@@ -84,10 +84,17 @@ export { AlkoFeedAdapter, parseAlkoAssortment } from './adapters/alko.adapter';
 export { AlksFeedAdapter } from './adapters/alks.adapter';
 export { parseAlksStoreProducts } from './adapters/alks.parser';
 
-// longero.fi Store API adapter — thin mirror of the alks walk reusing
-// parseAlksStoreProducts (task 2.1, change onboard-longero-merchant).
-// Composition (adapter maps) is wired in task 2.2, not here.
+// longero.fi Store API adapter — thin subclass of the shared WooCommerce
+// Store API walk (woo-store.adapter) reusing parseAlksStoreProducts
+// (task 2.1 change onboard-longero-merchant; generalized in task 2.2
+// change onboard-kippis-merchant). Composition (adapter maps) is wired
+// in the api-worker compositions, not here.
 export { LongeroFeedAdapter } from './adapters/longero.adapter';
+
+// kippis.net Store API adapter — the third WooCommerce merchant that
+// triggered the shared walk extraction (task 2.2, change
+// onboard-kippis-merchant).
+export { KippisFeedAdapter } from './adapters/kippis.adapter';
 
 export type { IUpsertRepository, UpsertProductInput, UpsertOfferInput, UpsertResult, UpsertOfferResult } from './interfaces/upsert-port.interface';
 export { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
