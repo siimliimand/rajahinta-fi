@@ -28,4 +28,4 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Full sweep: rebuild `@rajahinta/core-domain` first, then typecheck, lint, content lint, unit suites, e2e, D1 suites; evidence recorded — staging and production API/product pages serving the kippis catalog, EAN-match share into the existing catalog, daily-single-enqueue behavior from the producer logs <!-- agent: platform-engineer.fast, depends_on: [1.1, 1.2, 2.1, 2.2, 3.1, 4.2, 5.2], touches: [openspec/changes/onboard-kippis-merchant/notes.md] -->
+- [x] 6.1 Full sweep: rebuild `@rajahinta/core-domain` first, then typecheck, lint, content lint, unit suites, e2e, D1 suites; evidence recorded — staging and production API/product pages serving the kippis catalog, EAN-match share into the existing catalog, daily-single-enqueue behavior from the producer logs <!-- agent: platform-engineer.fast, depends_on: [1.1, 1.2, 2.1, 2.2, 3.1, 4.2, 5.2], touches: [openspec/changes/onboard-kippis-merchant/notes.md] -->
