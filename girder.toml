@@ -1,0 +1,5 @@
+# girder per-project config
+[project]
+stack = "node-22"
+test_command = ["bash", "-c", "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pnpm install --frozen-lockfile --offline --store-dir=/cache/pnpm && pnpm --filter \"@rajahinta/core-domain\" --filter \"@rajahinta/application-api\" --filter \"@rajahinta/data-platform\" --filter \"@rajahinta/data-acquisition\" run build && pnpm exec vitest run --config vitest.config.girder.ts --reporter=junit --outputFile=/workspace/{report_xml}"]
+test_signal_patterns = ["**/*.test.ts", "**/*.test.js", "**/*.spec.ts", "**/*.spec.js", "vitest.config.*"]
