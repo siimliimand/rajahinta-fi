@@ -181,6 +181,10 @@
   //                 both handlers fire on this pattern
 //   0 2 * * *     tax-dataset review — BullMQ fired 02:00 Europe/Helsinki
 //   30 3 * * *    calculation-record retention sweep — BullMQ 03:30 Helsinki
+//   0 5 1 * *     Fransberg rate refresh — monthly; the dataset is curated
+//                 in-repo (no live carrier feed), the tick syncs the DB
+//                 with the source file and skips unchanged data
+//                 (src/cron/fransberg-rate-refresh.ts)
 //
 // TIMEZONE NOTE: wrangler crons are UTC-only, so the two daily jobs
 // fire at their BullMQ CLOCK HOURS in UTC, i.e. two hours earlier than
@@ -195,7 +199,8 @@
       "*/30 * * * *",
       "0 */6 * * *",
       "0 2 * * *",
-      "30 3 * * *"
+      "30 3 * * *",
+      "0 5 1 * *"
     ]
   },
   // Observability (task 6.2, design D8): Workers Logs carry the log

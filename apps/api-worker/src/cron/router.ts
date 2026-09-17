@@ -12,6 +12,10 @@
  * others on the same tick, and a throw inside one waitUntil must not
  * mark the whole invocation dead.
  *
+ * The monthly `0 5 1 * *` pattern carries the Fransberg curated-dataset
+ * sync (no BullMQ parity — the dataset is edited in-repo, there is no
+ * live carrier feed to mirror a repeat schedule of).
+ *
  * Cadences mirror the BullMQ repeat schedules where the jobs code
  * documents them (see wrangler.jsonc for the mapping and the UTC-vs-
  * Helsinki note). Cron-handled jobs are idempotent by design (upserts,
@@ -26,6 +30,10 @@ import type { Env } from '../env';
 import { createLogger, type Logger } from '../logger';
 import { flushClickCounters } from '../analytics/click-counter-flusher';
 import { handleTransportRateRefresh, TRANSPORT_REFRESH_CRON } from './transport-rate-refresh';
+import {
+  handleFransbergRateRefresh,
+  FRANSBERG_REFRESH_CRON,
+} from './fransberg-rate-refresh';
 import { handleTaxDatasetReview, TAX_REVIEW_CRON } from './tax-dataset-review';
 import {
   handleTimeSeriesAggregation,
@@ -71,6 +79,13 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   add(TRANSPORT_REFRESH_CRON, {
     name: 'transport-rate-refresh',
     run: (env, log) => handleTransportRateRefresh(env, log),
+  });
+  // The Fransberg dataset is curated in-repo (no live feed) — this
+  // monthly tick syncs the database with the source file and skips the
+  // append while the dataset is unchanged (fransberg-rate-refresh.ts).
+  add(FRANSBERG_REFRESH_CRON, {
+    name: 'fransberg-rate-refresh',
+    run: (env, log) => handleFransbergRateRefresh(env, log),
   });
   // The task-3.4 click-counter flush shares the 6-hourly pattern.
   add(TRANSPORT_REFRESH_CRON, {
