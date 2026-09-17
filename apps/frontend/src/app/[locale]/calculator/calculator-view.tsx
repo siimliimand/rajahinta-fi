@@ -26,7 +26,7 @@ import ProductSearch from './components/ProductSearch';
 import ProductSelector from './components/ProductSelector';
 import MerchantWarningNotice from '../components/MerchantWarningNotice';
 import QuantitySelector from './components/QuantitySelector';
-import CalculatorResultView from './components/CalculatorResult';
+import ResultCard from './components/ResultCard';
 import ProductHistoryPanel from './components/ProductHistoryPanel';
 import ScenarioControls from './components/ScenarioControls';
 import StepIndicator from './components/StepIndicator';
@@ -580,7 +580,11 @@ export default function CalculatorView() {
               <h2 className="text-sm font-semibold text-gray-800">{t('stepResult')}</h2>
             </div>
             <div className="p-5">
-              <CalculatorResultView result={result} />
+              {/* Answer-first result card (task 4.1): estimated landed
+                  cost, Finland comparison with explicit cheaper/dearer
+                  text, breakdown beneath, reliability + timestamp, and
+                  the structural disclaimer from the result object. */}
+              <ResultCard result={result} />
               {/* Historical charts */}
               <div className="mt-6">
                 <ProductHistoryPanel
