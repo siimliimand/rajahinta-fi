@@ -111,14 +111,15 @@
     "trustReliabilityTitle": "Reliability statuses",
     "trustReliabilityBody": "Every number shown carries a reliability status and a timestamp, so the certainty and age of the data are always visible.",
     "trustMethodologyTitle": "Methodology",
-    "trustMethodologyBody": "The calculation model, the tax sources in use, and the ranking criteria are documented openly."
+    "trustMethodologyBody": "The calculation model, the tax sources in use, and the ranking criteria are documented openly.",
+    "faqHeading": "Frequently asked questions"
   },
   "AgeGate": {
     "title": "Age verification",
     "body": "This site contains alcohol-related content. Are you 18 or older?",
     "confirm": "Yes, I am 18+",
     "deny": "No",
-    "note": "No personal data is collected. A local flag is stored in your browser.",
+    "note": "We use your browser's local storage to remember your choice. No personal data is collected.",
     "recoveryTitle": "Age confirmation needed",
     "recoveryDescription": "Your age confirmation has expired. Please confirm your age again to continue."
   },
@@ -154,7 +155,11 @@
     "searchNoResultsDescription": "No products found for \"{query}\". Check the spelling or try another product name.",
     "calculationErrorTitle": "Calculation failed",
     "rateLimitedDescription": "The number of calculations is temporarily limited.",
-    "rateLimitRetryAfter": "Wait {seconds, plural, one {# second} other {# seconds}} and try again."
+    "rateLimitRetryAfter": "Wait {seconds, plural, one {# second} other {# seconds}} and try again.",
+    "metaTitle": "Cross-border cost calculator",
+    "metaDescription": "Search a product, choose a quantity, and get an itemized estimate of the total cost of importing alcohol to Finland: retail price, transport, and Finnish excise duty and container tax.",
+    "howTitle": "How this calculation works",
+    "howBody": "Search for a product, select a quantity, and calculate: the estimate combines the product's retail price with a transport estimate and the Finnish excise duty and container tax for the destination. Every figure carries a reliability status, and the result is an estimate — not tax or customs advice."
   },
   "ProductSearch": {
     "placeholder": "Search products…",
@@ -585,7 +590,7 @@
   },
   "Register": {
     "title": "Create an account",
-    "subtitle": "Register with an email address and a password. After registering we send a verification link to your email address.",
+    "subtitle": "Register with an email address and a password. After registering we send a verification link to your email address. An account lets you compare total costs to save money, track your purchases, and get price alerts.",
     "submit": "Create an account",
     "submitting": "Creating the account…",
     "emailTaken": "This email address is already registered.",

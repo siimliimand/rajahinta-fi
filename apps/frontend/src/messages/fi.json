@@ -111,14 +111,15 @@
     "trustReliabilityTitle": "Luotettavuusmerkinnät",
     "trustReliabilityBody": "Jokainen näytetty luku kantaa luotettavuusmerkinnän ja aikaleiman, joten tiedon varmuus ja ikä ovat aina näkyvissä.",
     "trustMethodologyTitle": "Menetelmä",
-    "trustMethodologyBody": "Laskentamalli, käytetyt verolähteet ja järjestämisen perusteet on dokumentoitu avoimesti."
+    "trustMethodologyBody": "Laskentamalli, käytetyt verolähteet ja järjestämisen perusteet on dokumentoitu avoimesti.",
+    "faqHeading": "Usein kysytyt kysymykset"
   },
   "AgeGate": {
     "title": "Ikätarkistus",
     "body": "Tämä sivusto sisältää alkoholiin liittyvää sisältöä. Oletko vähintään 18-vuotias?",
     "confirm": "Olen 18 vuotta täyttänyt",
     "deny": "En",
-    "note": "Henkilötietoja ei kerätä. Vahvistus tallennetaan selaimeesi paikallisena merkintänä.",
+    "note": "Käytämme selaimesi paikallista tallennustilaa valintasi muistamiseen. Henkilötietoja ei kerätä.",
     "recoveryTitle": "Ikävahvistus tarvitaan",
     "recoveryDescription": "Ikävahvistuksesi on vanhentunut. Vahvista ikäsi jatkaaksesi."
   },
@@ -154,7 +155,11 @@
     "searchNoResultsDescription": "Tuotteita ei löytynyt haulla \"{query}\". Tarkista kirjoitusasu tai kokeile toista tuotenimeä.",
     "calculationErrorTitle": "Laskenta epäonnistui",
     "rateLimitedDescription": "Laskentojen määrää on rajoitettu väliaikaisesti.",
-    "rateLimitRetryAfter": "Odota {seconds, plural, one {# sekunti} other {# sekuntia}} ja yritä sitten uudelleen."
+    "rateLimitRetryAfter": "Odota {seconds, plural, one {# sekunti} other {# sekuntia}} ja yritä sitten uudelleen.",
+    "metaTitle": "Rajat ylittävä kustannuslaskuri",
+    "metaDescription": "Hae tuote, valitse määrä ja saat eritelty arvion alkoholin tuonnin kokonaiskustannuksesta Suomeen: vähittäishinta, kuljetus sekä Suomen valmistevero ja pakkausvero.",
+    "howTitle": "Miten laskenta toimii",
+    "howBody": "Hae tuote, valitse määrä ja laske: arvio yhdistää tuotteen vähittäishintaan kuljetusarvion sekä kohteena olevan Suomen valmisteveron ja pakkausveron. Jokainen luku kantaa luotettavuusmerkinnän, ja tulos on aina arvio — ei vero- tai tullineuvontaa."
   },
   "ProductSearch": {
     "placeholder": "Hae tuotteita…",
@@ -585,7 +590,7 @@
   },
   "Register": {
     "title": "Luo tili",
-    "subtitle": "Rekisteröidy sähköpostiosoitteella ja salasanalla. Rekisteröinnin jälkeen lähetämme vahvistuslinkin sähköpostiisi.",
+    "subtitle": "Rekisteröidy sähköpostiosoitteella ja salasanalla. Rekisteröinnin jälkeen lähetämme vahvistuslinkin sähköpostiisi. Tilin avulla voit vertailla kokonaiskustannuksia ja säästää rahaa, seurata ostojasi sekä saada hintaherätyksiä.",
     "submit": "Luo tili",
     "submitting": "Luodaan tiliä…",
     "emailTaken": "Sähköpostiosoite on jo rekisteröity.",

@@ -6,6 +6,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import { RELIABILITY_STATUS_META } from '@/lib/design/status';
 import type { ReliabilityStatus } from '@/lib/types';
+import { getServerGuidesIndex } from './guides/guides.server';
 import AccuracyStat from './components/AccuracyStat';
 
 /**
@@ -23,11 +24,14 @@ const TRUST_ROW_STATUSES = [
  * Homepage (OpenSpec: design-system-foundation, tasks 4.1 + 4.2;
  * trust-and-reach-roadmap task 3.3 extends the trust row).
  *
- * Static catalog copy only (D6): gradient hero with a floating search
- * card as the primary CTA, a "Why Rajahinta.fi" feature section surfacing
- * the platform's genuine differentiators, and the existing trust row
- * (data sources, reliability model, accuracy statistic, methodology).
- * No API calls on this page; AccuracyStat is a self-contained client island.
+ * Static catalog copy plus one server-side guides read (D6, D4): the
+ * gradient hero with a floating search card as the primary CTA, a
+ * "Why Rajahinta.fi" feature section surfacing the platform's genuine
+ * differentiators, the trust row (data sources, reliability model,
+ * accuracy statistic, methodology), and a FAQ section linking PUBLISHED
+ * guide entries. The FAQ fetch follows the sitemap degradation contract:
+ * a fetch failure or no published entries renders NO section at all.
+ * AccuracyStat is a self-contained client island.
  */
 export default async function HomePage({
   params,
@@ -42,6 +46,12 @@ export default async function HomePage({
   // Root-scoped so the status labels resolve through the canonical
   // labelKey contract in RELIABILITY_STATUS_META.
   const tAll = await getTranslations();
+
+  // Published guide entries for the FAQ section (task 3.4, D4). The
+  // guides endpoint serves PUBLISHED rows for one locale; a fetch
+  // failure or an empty index degrades to no section, never an error —
+  // the same inert-degradation contract as the sitemap's guide slugs.
+  const guides = await getServerGuidesIndex(locale);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -307,6 +317,39 @@ export default async function HomePage({
           </div>
         </div>
       </section>
+
+      {/* ── FAQ section (task 3.4, D4) ──────────────────────────────────
+          Links the PUBLISHED guide entries authored through the ops
+          guides console. Renders NOTHING while none exist (fetch
+          failure or empty index) — the section first appears when the
+          entries are published (task 5.3). */}
+      {guides.kind === 'ok' && guides.items.length > 0 && (
+        <section
+          aria-labelledby="home-faq-heading"
+          className="border-t border-gray-100 bg-white px-4 py-16 sm:px-6"
+        >
+          <div className="mx-auto max-w-5xl">
+            <h2
+              id="home-faq-heading"
+              className="mb-8 text-center text-2xl font-bold tracking-tight text-gray-900"
+            >
+              {t('faqHeading')}
+            </h2>
+            <ul className="mx-auto max-w-2xl space-y-3">
+              {guides.items.map((guide) => (
+                <li key={guide.slug}>
+                  <Link
+                    href={`/guides/${guide.slug}`}
+                    className="text-sm font-medium text-primary-700 transition-colors hover:text-primary-800"
+                  >
+                    {guide.title}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
