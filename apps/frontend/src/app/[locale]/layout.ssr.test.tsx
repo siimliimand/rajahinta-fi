@@ -293,6 +293,21 @@ describe('[locale] layout SSR — composition', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('ships the WebApplication JSON-LD in the first HTML, both locales', async () => {
+    // The layout emits the structured-data script (task 9.5) for every
+    // route it wraps — pinned here so the SEO surface (task 6.2) cannot
+    // silently drop it.
+    for (const locale of ['fi', 'en'] as const) {
+      const html = await renderLayout(locale);
+      expect(html).toContain('type="application/ld+json"');
+      expect(html).toContain('"@type":"WebApplication"');
+      expect(html).toContain('"name":"Rajahinta.fi"');
+      // The structured data carries the SITE_URL the layout consumes
+      // (the @/lib/api mock in this file).
+      expect(html).toContain('"url":"https://rajahinta.test"');
+    }
+  });
+
   it('the [locale] layout is the chrome for every page route in the app', () => {
     // Next applies the [locale] layout to every route below it; the
     // assertions above prove the layout renders the chrome slots. Pin the
