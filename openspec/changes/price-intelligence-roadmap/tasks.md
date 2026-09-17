@@ -43,4 +43,4 @@
 ## 6. Verification
 
 - [x] 6.1 Full check suite: `pnpm typecheck && pnpm lint && pnpm test && pnpm test:e2e-browser`; fix or file follow-ups for any red <!-- agent: platform-engineer.fast, depends_on: [1.3, 2.5, 3.4, 4.7, 5.2, 5.3], touches: [] -->
-- [ ] 6.2 SEO smoke: unique title + description per public route (calculator, compare, basket, trip, event, what-if, ranking, value, about, contact, products, blog, guides); sitemap covers about/contact and new routes; robots and JSON-LD intact; cookie-less crawlability checks from 1.3 repeat green on the production build <!-- agent: platform-engineer.fast, depends_on: [6.1], touches: [] -->
+- [x] 6.2 SEO smoke: unique title + description per public route (calculator, compare, basket, trip, event, what-if, ranking, value, about, contact, products, blog, guides); sitemap covers about/contact and new routes; robots and JSON-LD intact; cookie-less crawlability checks from 1.3 repeat green on the production build <!-- agent: platform-engineer.fast, depends_on: [6.1], touches: [] -->
