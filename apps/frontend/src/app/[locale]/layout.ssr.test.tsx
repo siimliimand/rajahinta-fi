@@ -128,7 +128,7 @@ const DESTINATIONS = [
   { href: '/basket', fi: 'Ostoskori', en: 'Basket' },
   { href: '/event', fi: 'Tilaisuuslaskuri', en: 'Event calculator' },
   { href: '/trip', fi: 'Matkalaskuri', en: 'Trip calculator' },
-  { href: '/what-if', fi: 'Mitä jos -laskuri', en: 'What-if calculator' },
+  { href: '/what-if', fi: 'Skenaariolaskuri', en: 'Scenario calculator' },
   { href: '/account', fi: 'Oma tili', en: 'My account' },
   { href: '/ranking', fi: 'Miten järjestäminen toimii', en: 'How ranking works' },
 ] as const;

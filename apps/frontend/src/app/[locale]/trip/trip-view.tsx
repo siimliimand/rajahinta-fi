@@ -19,6 +19,8 @@ import type {
   TripFillResponse,
   TripVehicleType,
 } from './trip.types';
+import { TRIP_ROUTE_PRESETS } from './presets';
+import type { TripRoutePreset } from './presets';
 import TripForm from './components/TripForm';
 import TripBreakEvenResult from './components/TripBreakEvenResult';
 import TripFillForm from './components/TripFillForm';
@@ -92,6 +94,26 @@ export default function TripView() {
 
   // Guard against duplicate submits (either mode)
   const submitInFlight = useRef(false);
+
+  // ── Route preset (task 4.3) ──
+  // Applying a preset remounts the break-even form with the preset's
+  // values as ordinary initial state; the application counter in the key
+  // makes re-applying the same preset re-fill edited fields. The prefill
+  // is a starting point only: every field stays editable and the
+  // estimate always derives from the current inputs at submit time.
+  const [appliedPreset, setAppliedPreset] = useState<{
+    seq: number;
+    preset: TripRoutePreset;
+  } | null>(null);
+
+  const applyPreset = useCallback((preset: TripRoutePreset) => {
+    setAppliedPreset((prev) => ({ seq: (prev?.seq ?? 0) + 1, preset }));
+    // The inputs are about to change — a result computed from the
+    // previous values no longer matches what is on screen, so drop it.
+    setResult(null);
+    setFillResult(null);
+    setErrorKind(null);
+  }, []);
 
   const clearForSubmit = useCallback(() => {
     submitInFlight.current = true;
@@ -199,8 +221,43 @@ export default function TripView() {
       {/* ── Form ── */}
       <section className="mb-8">
         <Card>
+          {mode === 'breakeven' && (
+            <div className="mb-6" data-testid="trip-presets">
+              <p className="text-sm font-medium text-gray-700">
+                {t('presets.heading')}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {TRIP_ROUTE_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    data-testid={`trip-preset-${preset.id}`}
+                    onClick={() => applyPreset(preset)}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-2 text-left transition-colors hover:border-primary-300 hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                  >
+                    <span className="block text-sm font-medium text-gray-900">
+                      {t(`presets.${preset.labelKey}`)}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-gray-500">
+                      {t(`presets.${preset.descriptionKey}`)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-gray-500">{t('presets.hint')}</p>
+            </div>
+          )}
           {mode === 'breakeven' ? (
-            <TripForm onSubmit={handleSubmit} submitting={submitting} />
+            <TripForm
+              key={
+                appliedPreset
+                  ? `preset-${appliedPreset.preset.id}-${appliedPreset.seq}`
+                  : 'trip-form'
+              }
+              onSubmit={handleSubmit}
+              submitting={submitting}
+              {...(appliedPreset ? { prefill: appliedPreset.preset.prefill } : {})}
+            />
           ) : (
             <TripFillForm onSubmit={handleFillSubmit} submitting={submitting} />
           )}

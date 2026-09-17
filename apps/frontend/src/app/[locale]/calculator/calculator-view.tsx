@@ -47,6 +47,33 @@ const SEARCH_DEBOUNCE_MS = 300;
 /** Default destination country (Finland). */
 const DEFAULT_DESTINATION = 'FI';
 
+/**
+ * Quick-path destination options (task 4.2) — the same cross-border list
+ * the basket builder offers. Names render through `Common.countries.*`.
+ */
+const DESTINATION_COUNTRIES: readonly string[] = [
+  'FI',
+  'EE',
+  'LV',
+  'LT',
+  'SE',
+  'DE',
+  'DK',
+  'PL',
+  'NL',
+  'BE',
+  'FR',
+  'ES',
+  'IT',
+  'AT',
+  'CZ',
+];
+
+/** Format cents to a euro string (shared frontend convention). */
+function formatEur(cents: number): string {
+  return `€${(cents / 100).toFixed(2)}`;
+}
+
 // ---------------------------------------------------------------------------
 // Calculation error classification (task 5.3)
 // ---------------------------------------------------------------------------
@@ -154,6 +181,13 @@ export default function CalculatorView() {
   // Destination is Finland-scoped by default; a loaded scenario can
   // repopulate it from its stored inputs.
   const [destination, setDestination] = useState(DEFAULT_DESTINATION);
+  // Optional transport-side override (task 4.2, advanced path). Empty
+  // means the published transport dataset — the request then omits the
+  // field entirely, byte-identical to the pre-4.2 payload.
+  const [transportMethod, setTransportMethod] = useState('');
+  // Quick/advanced disclosure (task 4.2): the quick path is visible by
+  // default; the advanced options exist behind an explicit control.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // ── Calculation state ──
   const [calculating, setCalculating] = useState(false);
@@ -259,6 +293,12 @@ export default function CalculatorView() {
         productId: selectedProduct.id,
         quantity,
         destination,
+        // The carrier override rides along only when set — an untouched
+        // advanced path keeps the payload identical to the quick path's
+        // (task 4.2 parity).
+        ...(transportMethod.trim() !== ''
+          ? { transportMethod: transportMethod.trim() }
+          : {}),
       });
       setResult(res);
 
@@ -275,7 +315,7 @@ export default function CalculatorView() {
     } finally {
       setCalculating(false);
     }
-  }, [selectedProduct, quantity, destination, t]);
+  }, [selectedProduct, quantity, destination, transportMethod, t]);
 
   // ── Save-scenario handler (delegated to the scenario controls) ──
   const handleSaveScenario = useCallback(
@@ -289,10 +329,13 @@ export default function CalculatorView() {
           productId: selectedProduct.id,
           quantity,
           destination,
+          ...(transportMethod.trim() !== ''
+            ? { transportMethod: transportMethod.trim() }
+            : {}),
         },
       });
     },
-    [selectedProduct, quantity, destination, t],
+    [selectedProduct, quantity, destination, transportMethod, t],
   );
 
   // ── Load-scenario handler: repopulate inputs and re-run the calculation
@@ -303,6 +346,7 @@ export default function CalculatorView() {
 
     setQuantity(inputs.quantity);
     setDestination(inputs.destination);
+    setTransportMethod(inputs.transportMethod ?? '');
     setResult(null);
     setCalcError(null);
     setCalculating(true);
@@ -353,6 +397,7 @@ export default function CalculatorView() {
     setResult(null);
     setCalcError(null);
     setDestination(DEFAULT_DESTINATION);
+    setTransportMethod('');
   }, []);
 
   // ── Render ──
@@ -385,8 +430,13 @@ export default function CalculatorView() {
       {/* ── Step progress indicator ── */}
       <StepIndicator steps={stepLabels} currentStep={activeStep} />
 
-      <>
-        {/* ── Step 1: Search ── */}
+      {/* ── Two-column layout (task 4.5): on desktop (lg) the inputs form
+          the left column and the summary card sticks in the right column;
+          below lg everything stays the existing single column in the same
+          order (steps → scenario → result → history). ── */}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start lg:gap-8">
+        <div className="min-w-0">
+          {/* ── Step 1: Search ── */}
         <div className="mb-5 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-3.5">
             <span
@@ -469,7 +519,8 @@ export default function CalculatorView() {
               <h2 className="text-sm font-semibold text-gray-800">{t('stepConfigure')}</h2>
             </div>
             <div className="px-5 py-4">
-              {/* Selected product summary */}
+              {/* Selected product summary — product and its observed price
+                  are quick-path elements (task 4.2): visible by default. */}
               <div className="mb-4 flex items-start justify-between">
                 <div>
                   <p className="font-semibold text-gray-900">
@@ -484,6 +535,16 @@ export default function CalculatorView() {
                       ? ` · ${selectedProduct.unitVolume}`
                       : ''}
                   </p>
+                  {selectedProduct.lowestPriceCents !== null && (
+                    <p
+                      className="mt-1 text-sm text-gray-700"
+                      data-testid="observed-price"
+                    >
+                      {t('observedPrice', {
+                        price: formatEur(selectedProduct.lowestPriceCents),
+                      })}
+                    </p>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -494,8 +555,90 @@ export default function CalculatorView() {
                 </button>
               </div>
 
+              {/* Quick path: destination country and quantity (task 4.2) */}
+              <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="calc-destination"
+                    className="mb-1 block text-sm font-medium text-gray-700"
+                  >
+                    {t('countryLabel')}
+                  </label>
+                  <select
+                    id="calc-destination"
+                    data-testid="calc-destination"
+                    value={destination}
+                    onChange={(e) => setDestination(e.target.value)}
+                    className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  >
+                    {DESTINATION_COUNTRIES.map((code) => (
+                      <option key={code} value={code}>
+                        {tCommon(`countries.${code}`)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end pb-1">
+                  <QuantitySelector value={quantity} onChange={setQuantity} />
+                </div>
+              </div>
+
+              {/* ── Advanced options (task 4.2): collapsed by default —
+                  an explicit control discloses the transport-side inputs.
+                  Toggling changes visibility only: the calculation always
+                  runs from the same single input state, so identical
+                  values produce identical results on both paths. ── */}
               <div className="mb-5">
-                <QuantitySelector value={quantity} onChange={setQuantity} />
+                <button
+                  type="button"
+                  data-testid="advanced-toggle"
+                  aria-expanded={advancedOpen}
+                  aria-controls="calculator-advanced"
+                  onClick={() => setAdvancedOpen((open) => !open)}
+                  className="inline-flex items-center gap-1 rounded-md text-sm font-medium text-primary-600 hover:text-primary-800 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                >
+                  <svg
+                    aria-hidden="true"
+                    focusable="false"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`h-3.5 w-3.5 transition-transform ${
+                      advancedOpen ? 'rotate-180' : ''
+                    }`}
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                  {t('advancedToggle')}
+                </button>
+                {advancedOpen && (
+                  <div
+                    id="calculator-advanced"
+                    data-testid="calculator-advanced"
+                    className="mt-3 rounded-md border border-gray-200 p-3"
+                  >
+                    <label
+                      htmlFor="calc-transport-method"
+                      className="mb-1 block text-sm font-medium text-gray-700"
+                    >
+                      {t('transportMethodLabel')}
+                    </label>
+                    <input
+                      id="calc-transport-method"
+                      data-testid="calc-transport-method"
+                      type="text"
+                      value={transportMethod}
+                      onChange={(e) => setTransportMethod(e.target.value)}
+                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      {t('transportMethodHint')}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Calculate button */}
@@ -567,35 +710,52 @@ export default function CalculatorView() {
             onLoadScenario={handleLoadScenario}
           />
         </div>
-
-        {/* ── Step 3: Result ── */}
-        {result && (
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-3.5">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-600 text-xs font-bold text-white">
-                <svg aria-hidden="true" focusable="false" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-              </span>
-              <h2 className="text-sm font-semibold text-gray-800">{t('stepResult')}</h2>
-            </div>
-            <div className="p-5">
-              {/* Answer-first result card (task 4.1): estimated landed
-                  cost, Finland comparison with explicit cheaper/dearer
-                  text, breakdown beneath, reliability + timestamp, and
-                  the structural disclaimer from the result object. */}
-              <ResultCard result={result} />
-              {/* Historical charts */}
-              <div className="mt-6">
-                <ProductHistoryPanel
-                  productId={result.metadata.input.productId}
-                  showMerchantFilter
-                />
+        </div>        {/* ── Sticky summary column (task 4.5): the 4.1 answer-first card
+            stays visible while the visitor scrolls or edits inputs on
+            desktop; below lg it renders in the normal flow. ── */}
+        <aside
+          data-testid="calculator-summary"
+          className="mt-5 lg:sticky lg:[inset-block-start:5rem] lg:mt-0 lg:self-start"
+        >
+          {result ? (
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+              <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-3.5">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-600 text-xs font-bold text-white">
+                  <svg aria-hidden="true" focusable="false" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                </span>
+                <h2 className="text-sm font-semibold text-gray-800">{t('stepResult')}</h2>
+              </div>
+              <div className="p-5">
+                {/* Answer-first result card (task 4.1): estimated landed
+                    cost, Finland comparison with explicit cheaper/dearer
+                    text, breakdown beneath, reliability + timestamp, and
+                    the structural disclaimer from the result object. */}
+                <ResultCard result={result} />
               </div>
             </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-5">
+              <p className="text-sm text-gray-500">
+                {t('summaryPlaceholder')}
+              </p>
+            </div>
+          )}
+        </aside>
+      </div>
+
+      {/* ── Historical charts — full width beneath both columns ── */}
+      {result && (
+        <div className="mt-8 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="p-5">
+            <ProductHistoryPanel
+              productId={result.metadata.input.productId}
+              showMerchantFilter
+            />
           </div>
-        )}
-      </>
+        </div>
+      )}
     </>
   );
 }

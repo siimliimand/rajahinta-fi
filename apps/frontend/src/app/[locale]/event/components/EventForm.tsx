@@ -87,6 +87,17 @@ interface PriceRow {
 
 const EMPTY_ROW: PriceRow = { domestic: '', foreign: '' };
 
+/**
+ * Editable starting values for the simple-mode fields (task 4.3 occasion
+ * templates). Applied once at mount; afterwards the fields are the
+ * form's ordinary editable state — a prefill never locks anything.
+ */
+export interface EventFormPrefill {
+  readonly guests: string;
+  readonly durationHours: string;
+  readonly eventProfile: EventProfile;
+}
+
 interface EventFormProps {
   /** Raised with parsed, in-cap values once the inputs validate. */
   readonly onSubmit: (input: {
@@ -100,6 +111,12 @@ interface EventFormProps {
   readonly submitting: boolean;
   /** Whether the packing-recommendations opt-in is offered. */
   readonly packingAvailable?: boolean;
+  /**
+   * Optional editable starting values (task 4.3 occasion templates). The
+   * view remounts the form with a new key per application, so these land
+   * as initial state; every estimate still derives from the edited inputs.
+   */
+  readonly prefill?: EventFormPrefill;
 }
 
 /**
@@ -122,13 +139,18 @@ export default function EventForm({
   onSubmit,
   submitting,
   packingAvailable = false,
+  prefill,
 }: EventFormProps) {
   const t = useTranslations('EventPage');
 
   // ── Field state (strings — parse and clamp at the submit boundary) ──
-  const [guests, setGuests] = useState('10');
-  const [durationHours, setDurationHours] = useState('4');
-  const [eventProfile, setEventProfile] = useState<EventProfile>('casual_gathering');
+  const [guests, setGuests] = useState(prefill?.guests ?? '10');
+  const [durationHours, setDurationHours] = useState(
+    prefill?.durationHours ?? '4',
+  );
+  const [eventProfile, setEventProfile] = useState<EventProfile>(
+    prefill?.eventProfile ?? 'casual_gathering',
+  );
 
   // ── Sourcing mode (V2) ──
   const [sourcingEnabled, setSourcingEnabled] = useState(false);

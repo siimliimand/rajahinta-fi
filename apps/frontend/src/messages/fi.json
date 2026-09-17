@@ -34,6 +34,7 @@
     "offerCount": "{count, plural, one {# tarjous} other {# tarjousta}}",
     "countries": {
       "FI": "Suomi",
+      "SE": "Ruotsi",
       "EE": "Viro",
       "LV": "Latvia",
       "LT": "Liettua",
@@ -65,7 +66,7 @@
     "products": "Tuotteet",
     "event": "Tilaisuuslaskuri",
     "trip": "Matkalaskuri",
-    "whatIf": "Mitä jos -laskuri",
+    "whatIf": "Skenaariolaskuri",
     "account": "Oma tili",
     "ranking": "Miten järjestäminen toimii",
     "planning": "Suunnittelu",
@@ -160,6 +161,12 @@
     "searchResults": "Hakutulokset",
     "selectedProduct": "Valittu tuote",
     "change": "Vaihda",
+    "countryLabel": "Kohdemaa",
+    "observedPrice": "Havaittu hinta: {price}",
+    "advancedToggle": "Lisäasetukset",
+    "transportMethodLabel": "Kuljetusyhtiö (valinnainen)",
+    "transportMethodHint": "Jätä tyhjäksi, jotta arvio käyttää julkaistua kuljetusaineistoa.",
+    "summaryPlaceholder": "Arvioitu kokonaiskustannus näkyy tässä laskennan jälkeen.",
     "calculate": "Laske kokonaiskustannus",
     "calculating": "Lasketaan…",
     "searchFailed": "Haku epäonnistui. Yritä uudelleen.",
@@ -462,6 +469,12 @@
     "howBody": "Lisää ostoskoriin tuotteita määrineen ja valitse kohdemaa sekä kuljetusjärjestely: laskelma yhdistää tuotteiden hinnat, kuljetusarvion ja Suomen verot ja maksut kokonaiskustannusarvioksi sekä ehdottaa myyjäyhdistelmän, joka tuottaa matalan arvion. Tulos on aina arvio, jonka jokainen luku kantaa luotettavuusmerkintää.",
     "optimize": "Optimoi ostoskori",
     "optimizing": "Optimoidaan…",
+    "summary": {
+      "heading": "Yhteenveto",
+      "crossBorderTotal": "Rajat ylittävä yhteensä",
+      "transportTotal": "Kuljetusarvio yhteensä",
+      "netAfterTripCosts": "Tuotteet ja verot ilman kuljetusta"
+    },
     "errors": {
       "validation": "Tarkista syöttämäsi tiedot. Ostoskorissa voi olla enintään 10 tuotetta, ja kunkin määrän tulee olla 1–99.",
       "not-found": "Tuotetta ei löytynyt. Tarkista hakusanasi ja yritä uudelleen.",
@@ -710,6 +723,14 @@
       "dinner_party": "Päivälliskutsut",
       "celebration": "Juhlat"
     },
+    "templates": {
+      "heading": "Valmiit tilaisuudet",
+      "hint": "Esimerkkiarvot täyttävät lomakkeen — vieraiden määrä, kesto ja tilaisuuden tyyppi jäävät vapaasti muokattaviksi, ja ostoslista lasketaan aina syötettyjen arvojen perusteella.",
+      "wedding": "Häät",
+      "birthday": "Syntymäpäivät",
+      "companyParty": "Yritystilaisuus",
+      "graduation": "Valmistujaiset"
+    },
     "submit": "Laske ostoslista",
     "submitting": "Lasketaan…",
     "result": {
@@ -792,6 +813,18 @@
     "vehicle": {
       "car": "Henkilöauto",
       "van": "Pakettiauto"
+    },
+    "presets": {
+      "heading": "Valmiit reitit",
+      "hint": "Esimerkkiarvot täyttävät lomakkeen — kaikkia kenttiä voi muokata vapaasti, ja arvio lasketaan aina syötettyjen arvojen perusteella.",
+      "helsinkiTallinnCar": {
+        "label": "Helsinki–Tallinna · henkilöauto",
+        "description": "Esimerkki: paluuliput autolla ja 2 matkustajalla n. 120 €; polttoaine n. 55 € (n. 400 km, 7 l/100 km, 1,95 €/l)."
+      },
+      "helsinkiTallinnVan": {
+        "label": "Helsinki–Tallinna · pakettiauto",
+        "description": "Esimerkki: paluuliput pakettiautolla ja 3 matkustajalla n. 220 €; polttoaine n. 95 € (n. 500 km, 9,5 l/100 km, 2,00 €/l)."
+      }
     },
     "category": {
       "beer": "Olut",
@@ -882,9 +915,9 @@
     }
   },
   "WhatIfPage": {
-    "title": "Mitä jos -laskuri",
+    "title": "Skenaariolaskuri",
     "subtitle": "Korvaa alkoholiveron verokanta valitsemallasi arvolla ja vertaa tuotteiden kokonaishintoja kiinteässä vertailuaineistossa. Laskelma on hypoteettinen.",
-    "metaTitle": "Mitä jos -laskuri: hypoteettinen verokanta",
+    "metaTitle": "Skenaariolaskuri: hypoteettinen verokanta",
     "metaDescription": "Kokeile, miten muuttuva alkoholiveron verokanta tai tuotteen hinta muuttaisi tuonnin kokonaishintoja kiinteässä vertailuaineistossa. Hypoteettinen laskelma, ei ennuste.",
     "examplesTitle": "Esimerkkikysymyksiä, joita voit kokeilla",
     "example1": "Mitä jos alkoholiveron verokanta laski 20 eurosta 15 euroon kaava-yksikköä kohti?",

@@ -25,6 +25,11 @@ const DEFAULT_DESTINATION = 'FI';
 /** Minimum query length before firing a product search. */
 const MIN_QUERY_LENGTH = 2;
 
+/** Format cents to a euro string (shared frontend convention). */
+function formatEur(cents: number): string {
+  return `€${(cents / 100).toFixed(2)}`;
+}
+
 // ---------------------------------------------------------------------------
 // View component
 // ---------------------------------------------------------------------------
@@ -144,46 +149,120 @@ export default function BasketView() {
 
   const canOptimize = items.length > 0 && !optimizing;
 
+  // ── Summary figures (task 4.5) — presentation over the result object:
+  // the grand total includes the consolidated transport, so the transport
+  // total and the net (goods + taxes) figure derive exactly from the two
+  // totals the API returns. The transport lines render only when trip
+  // costs are present (transport > 0).
+  const transportTotalCents = result ? result.totalCents - result.itemizedTotals : 0;
+
   return (
-    <>
-      {/* ── Builder section ── */}
-      <section className="mb-8">
-        <BasketBuilder
-          items={items}
-          maxItems={MAX_ITEMS}
-          minQueryLength={MIN_QUERY_LENGTH}
-          destination={destination}
-          transportArrangement={transportArrangement}
-          onAddItem={handleAddItem}
-          onUpdateQuantity={handleUpdateQuantity}
-          onRemoveItem={handleRemoveItem}
-          onDestinationChange={setDestination}
-          onTransportArrangementChange={setTransportArrangement}
-        />
-      </section>
-
-      {/* ── Submit ── */}
-      <section className="mb-8">
-        <button
-          type="button"
-          onClick={handleOptimize}
-          disabled={!canOptimize}
-          className="inline-flex w-full items-center justify-center rounded-md bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {optimizing ? t('optimizing') : t('optimize')}
-        </button>
-
-        {error && (
-          <p className="mt-2 text-sm text-red-600">{error}</p>
-        )}
-      </section>
-
-      {/* ── Results ── */}
-      {result && (
-        <section>
-          <BasketResults result={result} productNames={productNames} />
+    // ── Two-column layout (task 4.5): on desktop (lg) the sticky summary
+    // card sits beside the builder and results; below lg everything stays
+    // the existing single column (builder → optimize → results), with the
+    // summary flowing between the submit and the detailed results once a
+    // result exists. Before the first optimization the layout is
+    // unchanged on every viewport.
+    <div
+      className={
+        result
+          ? 'lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start lg:gap-8'
+          : 'block'
+      }
+    >
+      <div className="min-w-0">
+        {/* ── Builder section ── */}
+        <section className="mb-8">
+          <BasketBuilder
+            items={items}
+            maxItems={MAX_ITEMS}
+            minQueryLength={MIN_QUERY_LENGTH}
+            destination={destination}
+            transportArrangement={transportArrangement}
+            onAddItem={handleAddItem}
+            onUpdateQuantity={handleUpdateQuantity}
+            onRemoveItem={handleRemoveItem}
+            onDestinationChange={setDestination}
+            onTransportArrangementChange={setTransportArrangement}
+          />
         </section>
+
+        {/* ── Submit ── */}
+        <section className="mb-8">
+          <button
+            type="button"
+            onClick={handleOptimize}
+            disabled={!canOptimize}
+            className="inline-flex w-full items-center justify-center rounded-md bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {optimizing ? t('optimizing') : t('optimize')}
+          </button>
+
+          {error && (
+            <p className="mt-2 text-sm text-red-600">{error}</p>
+          )}
+        </section>
+
+        {/* ── Results ── */}
+        {result && (
+          <section>
+            <BasketResults result={result} productNames={productNames} />
+          </section>
+        )}
+      </div>
+
+      {/* ── Sticky summary column (task 4.5): Finland-context totals from
+          the result object — the cross-border grand total, the transport
+          estimate total, and, when trip costs are present, the net after
+          transport. Desktop pins it beside the flow. ── */}
+      {result && (
+        <aside
+          data-testid="basket-summary"
+          className="mt-8 lg:sticky lg:[inset-block-start:5rem] lg:mt-0 lg:self-start"
+        >
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              {t('summary.heading')}
+            </h2>
+            <p
+              data-testid="basket-summary-cross-border-total"
+              className="tabular-money mt-2 text-3xl font-extrabold text-gray-900"
+            >
+              {formatEur(result.totalCents)}
+            </p>
+            <p className="mt-0.5 text-sm font-medium text-gray-600">
+              {t('summary.crossBorderTotal')}
+            </p>
+
+            {transportTotalCents > 0 && (
+              <dl className="mt-4 space-y-2 border-t border-gray-100 pt-4">
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-sm text-gray-600">
+                    {t('summary.transportTotal')}
+                  </dt>
+                  <dd
+                    data-testid="basket-summary-transport-total"
+                    className="text-sm tabular-nums text-gray-700"
+                  >
+                    {formatEur(transportTotalCents)}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-sm text-gray-600">
+                    {t('summary.netAfterTripCosts')}
+                  </dt>
+                  <dd
+                    data-testid="basket-summary-net-after-trip-costs"
+                    className="text-sm font-semibold tabular-nums text-gray-900"
+                  >
+                    {formatEur(result.itemizedTotals)}
+                  </dd>
+                </div>
+              </dl>
+            )}
+          </div>
+        </aside>
       )}
-    </>
+    </div>
   );
 }

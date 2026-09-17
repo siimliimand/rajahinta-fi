@@ -17,6 +17,8 @@ import type {
   EventProfile,
   SourcingRequest,
 } from './event.types';
+import { EVENT_OCCASION_TEMPLATES } from './templates';
+import type { EventOccasionTemplate } from './templates';
 import EventForm from './components/EventForm';
 import EventShoppingListResult from './components/EventShoppingListResult';
 
@@ -73,6 +75,25 @@ export default function EventView() {
   // Guard against duplicate submits
   const submitInFlight = useRef(false);
 
+  // ── Occasion template (task 4.3) ──
+  // Applying a template remounts the form with the template's values as
+  // ordinary initial state; the application counter in the key makes
+  // re-applying the same template re-fill edited fields. The prefill is
+  // a starting point only: every field stays editable and the estimate
+  // always derives from the current inputs at submit time.
+  const [appliedTemplate, setAppliedTemplate] = useState<{
+    seq: number;
+    template: EventOccasionTemplate;
+  } | null>(null);
+
+  const applyTemplate = useCallback((template: EventOccasionTemplate) => {
+    setAppliedTemplate((prev) => ({ seq: (prev?.seq ?? 0) + 1, template }));
+    // The inputs are about to change — a result computed from the
+    // previous values no longer matches what is on screen, so drop it.
+    setResult(null);
+    setErrorKind(null);
+  }, []);
+
   const handleSubmit = useCallback(
     async (input: {
       guests: number;
@@ -109,7 +130,38 @@ export default function EventView() {
       {/* ── Simple-mode form (with the V2 sourcing section) ── */}
       <section className="mb-8">
         <Card>
-          <EventForm onSubmit={handleSubmit} submitting={submitting} packingAvailable />
+          <div className="mb-6" data-testid="event-templates">
+            <p className="text-sm font-medium text-gray-700">
+              {t('templates.heading')}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {EVENT_OCCASION_TEMPLATES.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  data-testid={`event-template-${template.id}`}
+                  onClick={() => applyTemplate(template)}
+                  className="rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm font-medium text-gray-900 transition-colors hover:border-primary-300 hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                >
+                  {t(`templates.${template.labelKey}`)}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-gray-500">{t('templates.hint')}</p>
+          </div>
+          <EventForm
+            key={
+              appliedTemplate
+                ? `template-${appliedTemplate.template.id}-${appliedTemplate.seq}`
+                : 'event-form'
+            }
+            onSubmit={handleSubmit}
+            submitting={submitting}
+            packingAvailable
+            {...(appliedTemplate
+              ? { prefill: appliedTemplate.template.prefill }
+              : {})}
+          />
         </Card>
       </section>
 

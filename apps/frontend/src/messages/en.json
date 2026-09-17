@@ -34,6 +34,7 @@
     "offerCount": "{count, plural, one {# offer} other {# offers}}",
     "countries": {
       "FI": "Finland",
+      "SE": "Sweden",
       "EE": "Estonia",
       "LV": "Latvia",
       "LT": "Lithuania",
@@ -65,7 +66,7 @@
     "products": "Products",
     "event": "Event calculator",
     "trip": "Trip calculator",
-    "whatIf": "What-if calculator",
+    "whatIf": "Scenario calculator",
     "account": "My account",
     "ranking": "How ranking works",
     "planning": "Planning",
@@ -160,6 +161,12 @@
     "searchResults": "Search results",
     "selectedProduct": "Selected product",
     "change": "Change",
+    "countryLabel": "Destination country",
+    "observedPrice": "Observed price: {price}",
+    "advancedToggle": "Advanced options",
+    "transportMethodLabel": "Carrier (optional)",
+    "transportMethodHint": "Leave empty to use the published transport dataset.",
+    "summaryPlaceholder": "The estimated landed cost appears here after you calculate.",
     "calculate": "Calculate landed cost",
     "calculating": "Calculating…",
     "searchFailed": "Search failed. Please try again.",
@@ -462,6 +469,12 @@
     "howBody": "Add products with quantities to the basket and choose the destination and transport arrangement: the calculation combines the product prices, a transport estimate, and Finnish taxes and fees into a total landed-cost estimate, and suggests the store combination that yields the lowest estimate. The result is always an estimate, and every figure carries a reliability status.",
     "optimize": "Optimize basket",
     "optimizing": "Optimizing…",
+    "summary": {
+      "heading": "Summary",
+      "crossBorderTotal": "Cross-border total",
+      "transportTotal": "Transport estimate total",
+      "netAfterTripCosts": "Goods and taxes net of transport"
+    },
     "errors": {
       "validation": "Check the entered details. A basket can hold at most 10 products, and each quantity must be 1–99.",
       "not-found": "The product was not found. Check your search terms and try again.",
@@ -710,6 +723,14 @@
       "dinner_party": "Dinner party",
       "celebration": "Celebration"
     },
+    "templates": {
+      "heading": "Ready-made occasions",
+      "hint": "Example values fill the form — the guest count, duration, and event type stay freely editable, and the shopping list is always calculated from the entered values.",
+      "wedding": "Wedding",
+      "birthday": "Birthday",
+      "companyParty": "Company party",
+      "graduation": "Graduation"
+    },
     "submit": "Calculate shopping list",
     "submitting": "Calculating…",
     "result": {
@@ -792,6 +813,18 @@
     "vehicle": {
       "car": "Car",
       "van": "Van"
+    },
+    "presets": {
+      "heading": "Ready-made routes",
+      "hint": "Example values fill the form — every field stays freely editable, and the estimate is always calculated from the entered values.",
+      "helsinkiTallinnCar": {
+        "label": "Helsinki–Tallinn · car",
+        "description": "Example: return tickets for a car and 2 passengers approx. €120; fuel approx. €55 (approx. 400 km at 7 l/100 km, €1.95/l)."
+      },
+      "helsinkiTallinnVan": {
+        "label": "Helsinki–Tallinn · van",
+        "description": "Example: return tickets for a van and 3 passengers approx. €220; fuel approx. €95 (approx. 500 km at 9.5 l/100 km, €2.00/l)."
+      }
     },
     "category": {
       "beer": "Beer",
@@ -882,9 +915,9 @@
     }
   },
   "WhatIfPage": {
-    "title": "What-if calculator",
+    "title": "Scenario calculator",
     "subtitle": "Substitute the alcohol excise rate with a value of your choice and compare product totals within a fixed baseline dataset. The calculation is hypothetical.",
-    "metaTitle": "What-if calculator: hypothetical duty rate",
+    "metaTitle": "Scenario calculator: hypothetical duty rate",
     "metaDescription": "Explore how a changed alcohol-duty rate or product price would alter import totals against a fixed baseline dataset. A hypothetical calculation, not a forecast.",
     "examplesTitle": "Example questions you can explore",
     "example1": "What if the alcohol-duty rate fell from €20 to €15 per formula unit?",

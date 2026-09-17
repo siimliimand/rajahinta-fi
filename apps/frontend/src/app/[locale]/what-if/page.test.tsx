@@ -454,7 +454,7 @@ describe('WhatIfPage server shell (task 2.4)', () => {
     const meta = await whatIfMetadata({
       params: Promise.resolve({ locale: 'fi' }),
     });
-    expect(meta.title).toBe('Mitä jos -laskuri: hypoteettinen verokanta');
+    expect(meta.title).toBe('Skenaariolaskuri: hypoteettinen verokanta');
     expect(meta.description).toContain('Hypoteettinen');
     // Unique against the site-default metadata title, not a restatement.
     const root = (await import('@/messages/fi.json')).default as {
@@ -473,7 +473,7 @@ describe('WhatIfPage server shell (task 2.4)', () => {
       </NextIntlClientProvider>,
     );
 
-    expect(html).toContain('Mitä jos -laskuri');
+    expect(html).toContain('Skenaariolaskuri');
     // Illustrative scenario questions: a duty-rate change and a price
     // change scenario, crawlable in the server HTML.
     expect(html).toContain('Esimerkkikysymyksiä');

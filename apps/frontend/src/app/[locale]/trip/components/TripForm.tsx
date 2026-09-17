@@ -75,6 +75,18 @@ interface PriceRow {
 
 const EMPTY_ROW: PriceRow = { domestic: '', foreign: '' };
 
+/**
+ * Editable starting values for the travel-side fields (task 4.3 route
+ * presets). Applied once at mount; afterwards the fields are the form's
+ * ordinary editable state — a prefill never locks anything.
+ */
+export interface TripFormPrefill {
+  readonly passengers: string;
+  readonly vehicleType: TripVehicleType;
+  readonly ticketEur: string;
+  readonly fuelEur: string;
+}
+
 interface TripFormProps {
   /** Raised with parsed, in-cap values once the inputs validate. */
   readonly onSubmit: (input: {
@@ -90,6 +102,12 @@ interface TripFormProps {
   }) => void;
   /** Disables the submit control while a calculation is in flight. */
   readonly submitting: boolean;
+  /**
+   * Optional editable starting values (task 4.3 route presets). The view
+   * remounts the form with a new key per application, so these land as
+   * initial state; every estimate still derives from the edited inputs.
+   */
+  readonly prefill?: TripFormPrefill;
 }
 
 /**
@@ -107,14 +125,16 @@ interface TripFormProps {
  *
  * @module TripForm
  */
-export default function TripForm({ onSubmit, submitting }: TripFormProps) {
+export default function TripForm({ onSubmit, submitting, prefill }: TripFormProps) {
   const t = useTranslations('TripPage');
 
   // ── Field state (strings — parse and clamp at the submit boundary) ──
-  const [passengers, setPassengers] = useState('2');
-  const [vehicleType, setVehicleType] = useState<TripVehicleType>('car');
-  const [ticketEur, setTicketEur] = useState('');
-  const [fuelEur, setFuelEur] = useState('');
+  const [passengers, setPassengers] = useState(prefill?.passengers ?? '2');
+  const [vehicleType, setVehicleType] = useState<TripVehicleType>(
+    prefill?.vehicleType ?? 'car',
+  );
+  const [ticketEur, setTicketEur] = useState(prefill?.ticketEur ?? '');
+  const [fuelEur, setFuelEur] = useState(prefill?.fuelEur ?? '');
   const [prices, setPrices] = useState<ReadonlyMap<TripCategoryKey, PriceRow>>(
     new Map(CATEGORIES.map((category) => [category, EMPTY_ROW])),
   );
