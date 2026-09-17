@@ -274,6 +274,79 @@ export interface BasketOptimizationAlternate {
   readonly metadata: BasketOptimizationMetadata;
 }
 
+// ---------------------------------------------------------------------------
+// Finland reference total (task 4.8 addendum)
+// ---------------------------------------------------------------------------
+
+/**
+ * One chosen basket line's Finland reference contribution (task 4.8).
+ *
+ * The reference price is the product's newest Alko (merchant `'alko'`)
+ * observation, selected by the same deterministic rule the single-product
+ * calculator's benchmark uses — never a guessed or averaged figure. The
+ * full provenance (offer id, observation timestamp, reliability) travels
+ * on the line so the aggregate total traces to exact reference rows.
+ */
+export interface BasketReferenceLine {
+  /** Product identity — echoes the input line. */
+  readonly productId: number;
+  /** Ordered quantity — echoes the input line. */
+  readonly quantity: number;
+  /** Finland reference unit price in euro-cents (newest Alko observation). */
+  readonly referenceUnitPriceCents: number;
+  /** `referenceUnitPriceCents × quantity` — the line's contribution. */
+  readonly lineReferenceCents: number;
+  /** Id of the exact Alko retail-offer row the reference was taken from. */
+  readonly referenceOfferId: number;
+  /** ISO 8601 observation timestamp of that Alko row. */
+  readonly referenceObservedAt: string;
+  /** Reliability of that Alko observation. */
+  readonly referenceReliability: ReliabilityStatus;
+}
+
+/**
+ * A chosen basket line with no Finland reference offer (no Alko row with
+ * an observation timestamp). Its contribution is explicitly absent from
+ * the reference total — never treated as zero.
+ */
+export interface BasketReferenceMissingLine {
+  /** Product identity — echoes the input line. */
+  readonly productId: number;
+  /** Ordered quantity — echoes the input line. */
+  readonly quantity: number;
+}
+
+/**
+ * Finland reference total for the chosen basket (task 4.8 addendum).
+ *
+ * - `available`: at least one chosen line carries a Finland reference.
+ *   `totalCents` sums ONLY the included lines; `missingLines` names the
+ *   excluded remainder so a partial total can never read as complete.
+ * - `unavailable`: no chosen line has any Finland reference — there is
+ *   no total to state, and the reason says so instead of a zero.
+ *
+ * Deliberately NOT computed per alternative: the sticky summary compares
+ * the recommended combination against Finland, and the alternatives are
+ * neutral cost orderings without their own summary surface.
+ */
+export type BasketFinlandReference =
+  | {
+      readonly status: 'available';
+      /** Sum of the included lines' `lineReferenceCents` in euro-cents. */
+      readonly totalCents: number;
+      /** Chosen lines WITH a Finland reference, in input order. */
+      readonly lines: readonly BasketReferenceLine[];
+      /** Chosen lines WITHOUT a Finland reference, in input order. */
+      readonly missingLines: readonly BasketReferenceMissingLine[];
+    }
+  | {
+      readonly status: 'unavailable';
+      /** Why no total exists — no chosen line has a reference price. */
+      readonly reason: 'NO_REFERENCE_PRICES';
+      readonly lines: readonly BasketReferenceLine[];
+      readonly missingLines: readonly BasketReferenceMissingLine[];
+    };
+
 /**
  * Full result from the basket optimization engine.
  *
@@ -307,4 +380,11 @@ export interface BasketOptimizationResult {
 
   /** Calculation metadata including input echo and dataset provenance. */
   readonly metadata: BasketOptimizationMetadata;
+
+  /**
+   * Finland (Alko) reference total for the chosen basket (task 4.8).
+   * Appended last — purely additive over the pre-4.8 result shape; the
+   * summands and their provenance are on `lines`/`missingLines`.
+   */
+  readonly finlandReference: BasketFinlandReference;
 }

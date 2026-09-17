@@ -476,7 +476,14 @@
       "heading": "Summary",
       "crossBorderTotal": "Cross-border total",
       "transportTotal": "Transport estimate total",
-      "netAfterTripCosts": "Goods and taxes net of transport"
+      "netAfterTripCosts": "Goods and taxes net of transport",
+      "finlandTotal": "Finland reference total (Alko)",
+      "finlandDifferenceLabel": "Compared to Finland",
+      "finlandCheaper": "{difference} cheaper than in Finland",
+      "finlandDearer": "{difference} more expensive than in Finland",
+      "finlandSame": "The same price as in Finland",
+      "finlandMissingLines": "{count, plural, one {Excludes # product with no Finland reference price} other {Excludes # products with no Finland reference price}}",
+      "finlandUnavailable": "Finland reference total unavailable: these products have no reference prices"
     },
     "errors": {
       "validation": "Check the entered details. A basket can hold at most 10 products, and each quantity must be 1–99.",

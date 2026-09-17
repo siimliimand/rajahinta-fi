@@ -476,7 +476,14 @@
       "heading": "Yhteenveto",
       "crossBorderTotal": "Rajat ylittävä yhteensä",
       "transportTotal": "Kuljetusarvio yhteensä",
-      "netAfterTripCosts": "Tuotteet ja verot ilman kuljetusta"
+      "netAfterTripCosts": "Tuotteet ja verot ilman kuljetusta",
+      "finlandTotal": "Suomen vertailuhinta yhteensä (Alko)",
+      "finlandDifferenceLabel": "Verrattuna Suomeen",
+      "finlandCheaper": "{difference} edullisempi kuin Suomessa",
+      "finlandDearer": "{difference} kalliimpi kuin Suomessa",
+      "finlandSame": "Sama hinta kuin Suomessa",
+      "finlandMissingLines": "{count, plural, one {Jättää pois # tuotteen, jolla ei ole Suomen vertailuhintaa} other {Jättää pois # tuotetta, joilla ei ole Suomen vertailuhintaa}}",
+      "finlandUnavailable": "Suomen vertailuhinta ei saatavilla: tuotteilla ei ole vertailuhintoja"
     },
     "errors": {
       "validation": "Tarkista syöttämäsi tiedot. Ostoskorissa voi olla enintään 10 tuotetta, ja kunkin määrän tulee olla 1–99.",

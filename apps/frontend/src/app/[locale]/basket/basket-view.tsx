@@ -156,6 +156,27 @@ export default function BasketView() {
   // costs are present (transport > 0).
   const transportTotalCents = result ? result.totalCents - result.itemizedTotals : 0;
 
+  // ── Finland reference comparison (task 4.8 addendum). The reference
+  // total comes from the optimizer (newest Alko observation per product;
+  // per-line provenance lives in `finlandReference.lines`) and covers
+  // only the lines that carry a reference — the missing-lines note says
+  // so, and with no references at all the section says "unavailable",
+  // never zero. The difference is stated as explicit cheaper/dearer
+  // wording WITH the figure (never color alone), computed against the
+  // grand total that the summary shows above.
+  const finlandReference = result?.finlandReference;
+  let finlandDifferenceText: string | null = null;
+  if (finlandReference?.status === 'available' && result) {
+    const differenceCents = result.totalCents - finlandReference.totalCents;
+    const difference = formatEur(Math.abs(differenceCents));
+    finlandDifferenceText =
+      differenceCents < 0
+        ? t('summary.finlandCheaper', { difference })
+        : differenceCents > 0
+          ? t('summary.finlandDearer', { difference })
+          : t('summary.finlandSame');
+  }
+
   return (
     // ── Two-column layout (task 4.5): on desktop (lg) the sticky summary
     // card sits beside the builder and results; below lg everything stays
@@ -258,6 +279,61 @@ export default function BasketView() {
                     {formatEur(result.itemizedTotals)}
                   </dd>
                 </div>
+              </dl>
+            )}
+
+            {/* ── Finland reference (task 4.8): the total and the explicit
+                cheaper/dearer difference. Absent key (pre-4.8 cached
+                result) renders nothing; `unavailable` renders the note. ── */}
+            {finlandReference && (
+              <dl className="mt-4 space-y-2 border-t border-gray-100 pt-4">
+                {finlandReference.status === 'available' ? (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <dt className="text-sm text-gray-600">
+                        {t('summary.finlandTotal')}
+                      </dt>
+                      <dd
+                        data-testid="basket-summary-finland-total"
+                        className="text-sm tabular-nums text-gray-700"
+                      >
+                        {formatEur(finlandReference.totalCents)}
+                      </dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <dt className="text-sm text-gray-600">
+                        {t('summary.finlandDifferenceLabel')}
+                      </dt>
+                      <dd
+                        data-testid="basket-summary-finland-difference"
+                        className="text-sm font-semibold tabular-nums text-gray-900"
+                      >
+                        {finlandDifferenceText}
+                      </dd>
+                    </div>
+                    {finlandReference.missingLines.length > 0 && (
+                      <div>
+                        <dd
+                          data-testid="basket-summary-finland-missing-lines"
+                          className="text-xs text-gray-500"
+                        >
+                          {t('summary.finlandMissingLines', {
+                            count: finlandReference.missingLines.length,
+                          })}
+                        </dd>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div>
+                    <dd
+                      data-testid="basket-summary-finland-unavailable"
+                      className="text-xs text-gray-500"
+                    >
+                      {t('summary.finlandUnavailable')}
+                    </dd>
+                  </div>
+                )}
               </dl>
             )}
           </div>
