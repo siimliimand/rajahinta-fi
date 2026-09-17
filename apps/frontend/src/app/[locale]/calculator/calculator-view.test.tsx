@@ -296,3 +296,74 @@ describe('CalculatorView quick/full-path parity (task 4.2)', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Form pass (task 4.7): units, numeric keyboards, specific validation,
+// reset affordance — at the view level
+// ---------------------------------------------------------------------------
+
+describe('CalculatorView form pass (task 4.7)', () => {
+  it('renders the unit beside the quantity field and inputMode on it', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    const hit = await screen.findByText('Renat');
+    await user.click(hit.closest('button') as HTMLButtonElement);
+
+    // Unit as plain text beside the numeric field…
+    expect(screen.getByTestId('quantity-unit')).toHaveTextContent('kpl');
+    // …and a numeric keyboard intent on the input itself.
+    const quantity = screen.getByLabelText('Määrä') as HTMLInputElement;
+    expect(quantity.inputMode).toBe('numeric');
+    expect(quantity.type).toBe('number');
+  });
+
+  it('shows a specific inline message when the search term is too short', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    // One character is below the search's minimum — the message must
+    // name the minimum, not just say "invalid". No request fires.
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'r');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+
+    expect(screen.getByTestId('calc-query-error')).toHaveTextContent(
+      'Hakusanan on oltava vähintään 2 merkkiä pitkä.',
+    );
+    expect(mockedSearchProducts).not.toHaveBeenCalled();
+
+    // Further typing supersedes the notice.
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'e');
+    expect(screen.queryByTestId('calc-query-error')).toBeNull();
+  });
+
+  it('the reset affordance restores every input to its default', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    // Drive every input away from its default.
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    const hit = await screen.findByText('Renat');
+    await user.click(hit.closest('button') as HTMLButtonElement);
+    await user.click(screen.getByRole('button', { name: 'Lisää määrää' }));
+    await user.click(screen.getByTestId('advanced-toggle'));
+    await user.type(screen.getByTestId('calc-transport-method'), 'Viking Line');
+    expect(screen.getByTestId('calc-destination')).toHaveValue('FI');
+
+    await user.click(screen.getByTestId('calculator-reset'));
+
+    // Defaults: the search term is cleared and the configuration card
+    // (product, quantity, destination, carrier, advanced) is gone.
+    const search = screen.getByPlaceholderText(
+      'Hae tuotteita…',
+    ) as HTMLInputElement;
+    expect(search.value).toBe('');
+    expect(screen.queryByTestId('calc-destination')).toBeNull();
+    expect(screen.queryByTestId('calc-transport-method')).toBeNull();
+    expect(screen.queryByTestId('advanced-toggle')).toBeNull();
+    expect(mockedCalculateLandedCost).not.toHaveBeenCalled();
+  });
+});

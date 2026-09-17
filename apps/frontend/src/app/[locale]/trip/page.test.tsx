@@ -72,6 +72,14 @@ vi.mock('next-intl/server', () => ({
 const mockedRequest = vi.mocked(request);
 const mockedSearchProducts = vi.mocked(searchProducts);
 
+// The break-even card's allowance hint renders through the i18n
+// navigation Link; stub it with the plain-anchor shape the other view
+// tests use.
+vi.mock('@/i18n/navigation', () => ({
+  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
+    React.createElement('a', props),
+}));
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------

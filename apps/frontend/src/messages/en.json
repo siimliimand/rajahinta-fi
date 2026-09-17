@@ -161,6 +161,9 @@
     "searchResults": "Search results",
     "selectedProduct": "Selected product",
     "change": "Change",
+    "queryTooShort": "The search term must be at least {min} characters.",
+    "resetForm": "Clear form",
+    "quantityUnit": "pcs",
     "countryLabel": "Destination country",
     "observedPrice": "Observed price: {price}",
     "advancedToggle": "Advanced options",
@@ -698,8 +701,12 @@
     "howBody": "Enter the guest count, the duration, and the event type: the calculation combines published consumption norms with per-product prices into a shopping list where each line shows the need, the suggested purchase quantity, and the surplus. The result is always an estimate — not tax or customs advice.",
     "form": {
       "guests": "Number of guests",
+      "guestsError": "The number of guests must be a whole number between 1 and 500.",
       "duration": "Duration (hours)",
+      "durationError": "The duration must be a whole number of hours between 1 and 72.",
       "profile": "Event type",
+      "budgetError": "The budget must be a whole number of euros (e.g. 200).",
+      "resetForm": "Clear form",
       "sourcing": {
         "toggle": "Compare with foreign stores (V2)",
         "country": "Comparison country",
@@ -808,7 +815,11 @@
       "domesticPrice": "{category} — Finland (€/l)",
       "foreignPrice": "Abroad (€/l)",
       "priceHint": "Enter a domestic and a foreign price for at least one category.",
-      "priceError": "Check the prices: use numbers (e.g. 2.50) and fill every started row with both prices."
+      "priceError": "Check the prices: use numbers (e.g. 2.50) and fill every started row with both prices.",
+      "passengersError": "Passengers must be a whole number between 1 and 9.",
+      "ticketError": "Tickets total must be an amount above €0 with at most two decimals (e.g. 120.50).",
+      "fuelError": "Fuel total must be an amount above €0 with at most two decimals (e.g. 80.50).",
+      "resetForm": "Clear form"
     },
     "vehicle": {
       "car": "Car",
@@ -898,6 +909,22 @@
       "perTraveller": "Per traveller: {amount} ({passengers} travellers)",
       "allowanceVersion": "Allowance dataset version: {version}"
     },
+    "breakEvenCard": {
+      "heading": "Break-even baskets",
+      "transport": "Transport (tickets + fuel)",
+      "other": "Other trip costs",
+      "otherNote": "The form does not collect other trip costs — counted as €0.00.",
+      "saving": "Saving per basket",
+      "compositionHeading": "Basket contents: the suggested duty-free volumes",
+      "compositionLine": "{litres} × {difference}/l = {saving}",
+      "excludedNote": "Not part of the basket (no statable suggested volume): {categories}.",
+      "formula": "( {transport} + {other} ) ÷ {saving} = {baskets}",
+      "baskets": "{count} baskets",
+      "notPayingOff": "This trip does not pay for itself",
+      "notPayingOffBody": "The suggested duty-free volumes save nothing against the Finnish prices, so no number of baskets recovers the transport cost.",
+      "allowanceHint": "Check the current allowance limits before you travel:",
+      "allowanceLink": "View allowances"
+    },
     "partners": {
       "label": "Partner links"
     },
@@ -941,7 +968,11 @@
       "addRow": "Add a product row",
       "removeRowAria": "Remove product row {index}",
       "recalculate": "Recalculate",
-      "invalidHint": "Fill in every field of every product row. Results update once the inputs are valid."
+      "invalidHint": "Fill in every field of every product row. Results update once the inputs are valid.",
+      "abvError": "Alcohol by volume must be a number between 0 and 100 (%).",
+      "volumeError": "Volume must be a number between 0 and 10,000 (litres).",
+      "priceError": "The price must be an amount between €0 and €100,000 with at most two decimals.",
+      "resetForm": "Clear form"
     },
     "category": {
       "beer": "Beer",

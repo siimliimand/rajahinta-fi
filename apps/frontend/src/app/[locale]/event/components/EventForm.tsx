@@ -98,6 +98,20 @@ export interface EventFormPrefill {
   readonly eventProfile: EventProfile;
 }
 
+/**
+ * Field-specific inline validation messages (task 4.7 form pass), owned
+ * by the view and passed down — the parse state they react to lives in
+ * this form, but the copy belongs to the view's translation scope. A
+ * message renders under its field only when that field holds a started
+ * but invalid value; untouched fields stay calm (the native `required`
+ * hint covers empties).
+ */
+export interface EventFormValidationMessages {
+  readonly guests?: string;
+  readonly duration?: string;
+  readonly budget?: string;
+}
+
 interface EventFormProps {
   /** Raised with parsed, in-cap values once the inputs validate. */
   readonly onSubmit: (input: {
@@ -117,6 +131,11 @@ interface EventFormProps {
    * as initial state; every estimate still derives from the edited inputs.
    */
   readonly prefill?: EventFormPrefill;
+  /**
+   * Field-specific validation copy (task 4.7 form pass) — see
+   * {@link EventFormValidationMessages}.
+   */
+  readonly validationMessages?: EventFormValidationMessages;
 }
 
 /**
@@ -140,6 +159,7 @@ export default function EventForm({
   submitting,
   packingAvailable = false,
   prefill,
+  validationMessages,
 }: EventFormProps) {
   const t = useTranslations('EventPage');
 
@@ -170,6 +190,26 @@ export default function EventForm({
     Number.isInteger(durationCount) &&
     durationCount >= MIN_DURATION_HOURS &&
     durationCount <= MAX_DURATION_HOURS;
+  // Task 4.7: a started-but-invalid field names itself and its window —
+  // an untouched field stays calm (native `required` covers empties).
+  const guestsError =
+    guests.trim() !== '' &&
+    !(
+      Number.isInteger(guestsCount) &&
+      guestsCount >= MIN_GUESTS &&
+      guestsCount <= MAX_GUESTS
+    )
+      ? validationMessages?.guests
+      : undefined;
+  const durationError =
+    durationHours.trim() !== '' &&
+    !(
+      Number.isInteger(durationCount) &&
+      durationCount >= MIN_DURATION_HOURS &&
+      durationCount <= MAX_DURATION_HOURS
+    )
+      ? validationMessages?.duration
+      : undefined;
 
   // Sourcing validity: at least one priced row; a row with a foreign
   // price needs its domestic basis (the plan compares against it).
@@ -198,6 +238,12 @@ export default function EventForm({
   const budgetCents = sourcingEnabled ? parseCount(budgetEur) * 100 : 0;
   // Budget is optional: an empty field is fine, a malformed one is not.
   const budgetValid = !sourcingEnabled || budgetEur.trim() === '' || Number.isInteger(budgetCents);
+  const budgetError =
+    sourcingEnabled &&
+    budgetEur.trim() !== '' &&
+    !Number.isInteger(budgetCents)
+      ? validationMessages?.budget
+      : undefined;
 
   const valid = baseValid && sourcingValid && budgetValid;
 
@@ -268,6 +314,7 @@ export default function EventForm({
         step={1}
         value={guests}
         onChange={(e) => setGuests(e.target.value)}
+        error={guestsError}
         required
       />
       <Input
@@ -280,6 +327,7 @@ export default function EventForm({
         step={1}
         value={durationHours}
         onChange={(e) => setDurationHours(e.target.value)}
+        error={durationError}
         required
       />
       <div>
@@ -349,6 +397,7 @@ export default function EventForm({
                 value={budgetEur}
                 onChange={(e) => setBudgetEur(e.target.value)}
                 placeholder="200"
+                error={budgetError}
               />
             </div>
 

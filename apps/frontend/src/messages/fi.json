@@ -161,6 +161,9 @@
     "searchResults": "Hakutulokset",
     "selectedProduct": "Valittu tuote",
     "change": "Vaihda",
+    "queryTooShort": "Hakusanan on oltava vähintään {min} merkkiä pitkä.",
+    "resetForm": "Tyhjennä lomake",
+    "quantityUnit": "kpl",
     "countryLabel": "Kohdemaa",
     "observedPrice": "Havaittu hinta: {price}",
     "advancedToggle": "Lisäasetukset",
@@ -698,8 +701,12 @@
     "howBody": "Syötä vieraiden määrä, kesto ja tilaisuuden tyyppi: laskelma yhdistää julkaistut kulutusnormit ja tuotekohtaiset hinnat ostoslistaksi, jossa jokainen rivi näyttää tarpeen, ehdotetun ostomäärän ja ylijäämän. Tulos on aina arvio — ei vero- tai tullineuvontaa.",
     "form": {
       "guests": "Vieraiden määrä (kpl)",
+      "guestsError": "Vieraiden määrän on oltava kokonaisluku väliltä 1–500.",
       "duration": "Kesto (tuntia)",
+      "durationError": "Keston on oltava kokonaisluku tunteja väliltä 1–72.",
       "profile": "Tilaisuuden tyyppi",
+      "budgetError": "Budjetin on oltava kokonaisluku euroja (esim. 200).",
+      "resetForm": "Tyhjennä lomake",
       "sourcing": {
         "toggle": "Vertaa ulkomaisiin kauppoihin (V2)",
         "country": "Vertailumaa",
@@ -808,7 +815,11 @@
       "domesticPrice": "{category} — Suomi (€/l)",
       "foreignPrice": "Ulkomaat (€/l)",
       "priceHint": "Syötä kotimainen ja ulkomainen hinta vähintään yhdelle kategorialle.",
-      "priceError": "Tarkista hinnat: käytä numeroita (esim. 2,50) ja täytä jokainen aloitettu rivi molemmin hinnoin."
+      "priceError": "Tarkista hinnat: käytä numeroita (esim. 2,50) ja täytä jokainen aloitettu rivi molemmin hinnoin.",
+      "passengersError": "Matkustajien määrän on oltava kokonaisluku väliltä 1–9.",
+      "ticketError": "Matkalippujen yhteissumman on oltava yli 0 € ja enintään kahdella desimaalilla (esim. 120,50).",
+      "fuelError": "Polttoaineen yhteissumman on oltava yli 0 € ja enintään kahdella desimaalilla (esim. 80,50).",
+      "resetForm": "Tyhjennä lomake"
     },
     "vehicle": {
       "car": "Henkilöauto",
@@ -898,6 +909,22 @@
       "perTraveller": "Matkustajaa kohden: {amount} ({passengers} matkustajaa)",
       "allowanceVersion": "Tullimäärärajojen aineistoversio: {version}"
     },
+    "breakEvenCard": {
+      "heading": "Kannattavuus koreittain",
+      "transport": "Matkakustannus (liput + polttoaine)",
+      "other": "Muut matkakustannukset",
+      "otherNote": "Lomake ei kerää muita matkakustannuksia — käytetään arvoa 0,00 €.",
+      "saving": "Säästö per kori",
+      "compositionHeading": "Korin sisältö: suositellut tullittomat määrät",
+      "compositionLine": "{litres} × {difference}/l = {saving}",
+      "excludedNote": "Ei kuulu koriin (esitettävää suositeltua määrää ei ole): {categories}.",
+      "formula": "( {transport} + {other} ) ÷ {saving} = {baskets}",
+      "baskets": "{count} koria",
+      "notPayingOff": "Matka ei maksa itseään takaisin",
+      "notPayingOffBody": "Suositellut tullittomat määrät eivät säästä mitään Suomen hintoihin verrattuna, joten mikään korimäärä ei korjaa matkakustannusta.",
+      "allowanceHint": "Tarkista voimassa olevat määrärajat ennen matkaa:",
+      "allowanceLink": "Katso määrärajat"
+    },
     "partners": {
       "label": "Kumppanilinkit"
     },
@@ -941,7 +968,11 @@
       "addRow": "Lisää tuoterivi",
       "removeRowAria": "Poista tuoterivi {index}",
       "recalculate": "Laske uudelleen",
-      "invalidHint": "Täytä jokaisen tuoterivin kaikki kentät. Tulokset päivittyvät, kun syötteet ovat kelvolliset."
+      "invalidHint": "Täytä jokaisen tuoterivin kaikki kentät. Tulokset päivittyvät, kun syötteet ovat kelvolliset.",
+      "abvError": "Alkoholipitoisuuden on oltava luku välillä 0–100 (%).",
+      "volumeError": "Määrän on oltava luku välillä 0–10 000 (litraa).",
+      "priceError": "Hinnan on oltava summa välillä 0–100 000 € ja enintään kahdella desimaalilla.",
+      "resetForm": "Tyhjennä lomake"
     },
     "category": {
       "beer": "Olut",

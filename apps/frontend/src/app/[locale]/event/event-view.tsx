@@ -86,10 +86,23 @@ export default function EventView() {
     template: EventOccasionTemplate;
   } | null>(null);
 
+  // ── Clear-form affordance (task 4.7) ──
+  // The form owns its field state, so a reset remounts it (fresh
+  // initial state) and drops the template and everything derived from
+  // the previous inputs.
+  const [formResetSeq, setFormResetSeq] = useState(0);
+
   const applyTemplate = useCallback((template: EventOccasionTemplate) => {
     setAppliedTemplate((prev) => ({ seq: (prev?.seq ?? 0) + 1, template }));
     // The inputs are about to change — a result computed from the
     // previous values no longer matches what is on screen, so drop it.
+    setResult(null);
+    setErrorKind(null);
+  }, []);
+
+  const handleResetForm = useCallback(() => {
+    setFormResetSeq((seq) => seq + 1);
+    setAppliedTemplate(null);
     setResult(null);
     setErrorKind(null);
   }, []);
@@ -151,9 +164,9 @@ export default function EventView() {
           </div>
           <EventForm
             key={
-              appliedTemplate
+              (appliedTemplate
                 ? `template-${appliedTemplate.template.id}-${appliedTemplate.seq}`
-                : 'event-form'
+                : 'event-form') + `-reset-${formResetSeq}`
             }
             onSubmit={handleSubmit}
             submitting={submitting}
@@ -161,7 +174,25 @@ export default function EventView() {
             {...(appliedTemplate
               ? { prefill: appliedTemplate.template.prefill }
               : {})}
+            // Field-specific validation copy (task 4.7 form pass).
+            validationMessages={{
+              guests: t('form.guestsError'),
+              duration: t('form.durationError'),
+              budget: t('form.budgetError'),
+            }}
           />
+          {/* ── Reset affordance (task 4.7): every input back to its
+              default ── */}
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              data-testid="event-reset"
+              onClick={handleResetForm}
+              className="rounded-md px-2 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+            >
+              {t('form.resetForm')}
+            </button>
+          </div>
         </Card>
       </section>
 

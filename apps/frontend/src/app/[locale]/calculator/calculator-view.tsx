@@ -170,6 +170,10 @@ export default function CalculatorView() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  // Task 4.7: a search submitted with a too-short term is a specific,
+  // inline validation case — named with its minimum length, not a
+  // generic failure.
+  const [shortQuery, setShortQuery] = useState(false);
   // Display-only merchant warnings joined into the search response
   // (task 2.4) — advisory for the results panel, never a filter.
   const [searchWarnings, setSearchWarnings] = useState<readonly MerchantWarning[]>([]);
@@ -259,6 +263,8 @@ export default function CalculatorView() {
   const handleQueryChange = useCallback(
     (q: string) => {
       setQuery(q);
+      // Further typing supersedes the too-short notice.
+      setShortQuery(false);
       debouncedSearch.run(q);
     },
     [debouncedSearch],
@@ -268,6 +274,12 @@ export default function CalculatorView() {
   const handleSearch = useCallback(
     (q: string) => {
       debouncedSearch.cancel();
+      const trimmed = q.trim();
+      if (trimmed.length > 0 && trimmed.length < MIN_QUERY_LENGTH) {
+        setShortQuery(true);
+        return;
+      }
+      setShortQuery(false);
       runSearch(q);
     },
     [debouncedSearch, runSearch],
@@ -391,13 +403,33 @@ export default function CalculatorView() {
     })();
   }, [t]);
 
-  // ── Reset handler ──
+  // ── Reset handler (the selected-product "change" affordance): keeps
+  // the search list so another product can be picked directly. ──
   const handleReset = useCallback(() => {
     setSelectedProduct(null);
     setResult(null);
     setCalcError(null);
     setDestination(DEFAULT_DESTINATION);
     setTransportMethod('');
+  }, []);
+
+  // ── Clear-form affordance (task 4.7): every input back to its
+  // default — search, selection, quantity, destination, carrier,
+  // advanced disclosure, and all results/errors. ──
+  const handleClearForm = useCallback(() => {
+    setQuery('');
+    setSearchResults([]);
+    setSearchError(null);
+    setHasSearched(false);
+    setSearchWarnings([]);
+    setShortQuery(false);
+    setSelectedProduct(null);
+    setQuantity(1);
+    setDestination(DEFAULT_DESTINATION);
+    setTransportMethod('');
+    setAdvancedOpen(false);
+    setResult(null);
+    setCalcError(null);
   }, []);
 
   // ── Render ──
@@ -454,6 +486,14 @@ export default function CalculatorView() {
               ) : '1'}
             </span>
             <h2 className="text-sm font-semibold text-gray-800">{t('stepSearch')}</h2>
+            <button
+              type="button"
+              data-testid="calculator-reset"
+              onClick={handleClearForm}
+              className="ml-auto rounded-md px-2 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+            >
+              {t('resetForm')}
+            </button>
           </div>
           <div className="px-5 py-4">
             <ProductSearch
@@ -463,6 +503,17 @@ export default function CalculatorView() {
               loading={searchLoading}
               error={searchError}
             />
+
+            {/* ── Too-short search term: inline, specific (task 4.7) ── */}
+            {shortQuery && (
+              <p
+                role="alert"
+                data-testid="calc-query-error"
+                className="mt-2 text-xs font-medium text-red-600"
+              >
+                {t('queryTooShort', { min: MIN_QUERY_LENGTH })}
+              </p>
+            )}
 
             {/* ── Search results ── */}
             {hasSearched && (
@@ -579,7 +630,12 @@ export default function CalculatorView() {
                   </select>
                 </div>
                 <div className="flex items-end pb-1">
-                  <QuantitySelector value={quantity} onChange={setQuantity} />
+                  {/* Unit beside the numeric field (task 4.7). */}
+                  <QuantitySelector
+                    value={quantity}
+                    onChange={setQuantity}
+                    unit={t('quantityUnit')}
+                  />
                 </div>
               </div>
 

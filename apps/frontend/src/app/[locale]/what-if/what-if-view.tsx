@@ -18,8 +18,13 @@ import {
   buildScenarioRequest,
   draftRowsFromScenario,
   newProductDraft,
+  parseAbvPercent,
+  parseEurToCents,
+  parseVolumeLitres,
+  RATE_SLIDER,
   type ProductDraft,
 } from './scenario-draft';
+import type { ProductRowFieldErrors } from './components/WhatIfForm';
 import { decodeWhatIfShareToken } from './share-token';
 import type { WhatIfResponse } from './what-if.types';
 import WhatIfForm from './components/WhatIfForm';
@@ -227,6 +232,55 @@ export default function WhatIfView() {
     );
   }, []);
 
+  // ── Clear-form affordance (task 4.7): the draft back to its defaults
+  // (default rate, one empty row). The view owns the draft state, so
+  // this is a plain state reset; the automatic recalculation then shows
+  // the designed empty state for the blank draft. ──
+  const handleResetForm = useCallback(() => {
+    setRate(RATE_SLIDER.defaultValue);
+    setRows([newProductDraft('product-1')]);
+    rowCounter.current = 1;
+    setErrorKind(null);
+  }, []);
+
+  // ── Field-specific validation copy (task 4.7 form pass) ──
+  // A started-but-invalid field names itself and its bounds, using the
+  // same parse rules the request build applies; untouched fields stay
+  // calm (the aggregate hint covers the blank-draft case).
+  const rowFieldErrors = React.useMemo(() => {
+    const map = new Map<string, ProductRowFieldErrors>();
+    for (const row of rows) {
+      // Built mutably, then stored read-only.
+      const errors: {
+        abv?: string;
+        volume?: string;
+        alkoPrice?: string;
+        importPrice?: string;
+      } = {};
+      if (row.abvPercent.trim() !== '' && parseAbvPercent(row.abvPercent) === null) {
+        errors.abv = t('form.abvError');
+      }
+      if (row.volumeLitres.trim() !== '' && parseVolumeLitres(row.volumeLitres) === null) {
+        errors.volume = t('form.volumeError');
+      }
+      if (row.alkoPriceEur.trim() !== '' && parseEurToCents(row.alkoPriceEur) === null) {
+        errors.alkoPrice = t('form.priceError');
+      }
+      if (row.importPriceEur.trim() !== '' && parseEurToCents(row.importPriceEur) === null) {
+        errors.importPrice = t('form.priceError');
+      }
+      if (
+        errors.abv !== undefined ||
+        errors.volume !== undefined ||
+        errors.alkoPrice !== undefined ||
+        errors.importPrice !== undefined
+      ) {
+        map.set(row.key, errors);
+      }
+    }
+    return map;
+  }, [rows, t]);
+
   const handleRecalculate = useCallback(() => {
     scheduleRecalc.cancel();
     void runRecalc();
@@ -242,6 +296,7 @@ export default function WhatIfView() {
             rows={rows}
             invalidNotice={invalidInputs && result !== null}
             throttled={throttleSeconds !== null}
+            rowFieldErrors={rowFieldErrors}
             onRateChange={handleRateChange}
             onRowChange={handleRowChange}
             onAddRow={handleAddRow}
@@ -249,6 +304,18 @@ export default function WhatIfView() {
             onRecalculate={handleRecalculate}
           />
         </Card>
+        {/* ── Reset affordance (task 4.7): the draft back to its
+            defaults ── */}
+        <div className="mt-3 flex justify-end">
+          <button
+            type="button"
+            data-testid="what-if-reset"
+            onClick={handleResetForm}
+            className="rounded-md px-2 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+          >
+            {t('form.resetForm')}
+          </button>
+        </div>
       </section>
 
       {/* ── Invalid share token: calm note, blank form ── */}

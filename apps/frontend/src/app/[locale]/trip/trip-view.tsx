@@ -25,6 +25,7 @@ import TripForm from './components/TripForm';
 import TripBreakEvenResult from './components/TripBreakEvenResult';
 import TripFillForm from './components/TripFillForm';
 import TripFillResult from './components/TripFillResult';
+import BreakEvenCard, { tripPerBasketSavingCents } from './BreakEvenCard';
 
 /** The page's two calculation modes. */
 type TripMode = 'breakeven' | 'fill';
@@ -106,12 +107,27 @@ export default function TripView() {
     preset: TripRoutePreset;
   } | null>(null);
 
+  // ── Clear-form affordance (task 4.7) ──
+  // The forms own their field state, so a reset remounts the active
+  // form (fresh initial state) and drops everything derived from the
+  // previous inputs — presets, results, and errors included.
+  const [formResetSeq, setFormResetSeq] = useState(0);
+
   const applyPreset = useCallback((preset: TripRoutePreset) => {
     setAppliedPreset((prev) => ({ seq: (prev?.seq ?? 0) + 1, preset }));
     // The inputs are about to change — a result computed from the
     // previous values no longer matches what is on screen, so drop it.
     setResult(null);
     setFillResult(null);
+    setErrorKind(null);
+  }, []);
+
+  const handleResetForm = useCallback(() => {
+    setFormResetSeq((seq) => seq + 1);
+    setAppliedPreset(null);
+    setResult(null);
+    setFillResult(null);
+    setFillProductNames(new Map());
     setErrorKind(null);
   }, []);
 
@@ -250,17 +266,39 @@ export default function TripView() {
           {mode === 'breakeven' ? (
             <TripForm
               key={
-                appliedPreset
+                (appliedPreset
                   ? `preset-${appliedPreset.preset.id}-${appliedPreset.seq}`
-                  : 'trip-form'
+                  : 'trip-form') + `-reset-${formResetSeq}`
               }
               onSubmit={handleSubmit}
               submitting={submitting}
               {...(appliedPreset ? { prefill: appliedPreset.preset.prefill } : {})}
+              // Field-specific validation copy (task 4.7 form pass).
+              validationMessages={{
+                passengers: t('form.passengersError'),
+                ticket: t('form.ticketError'),
+                fuel: t('form.fuelError'),
+              }}
             />
           ) : (
-            <TripFillForm onSubmit={handleFillSubmit} submitting={submitting} />
+            <TripFillForm
+              key={`trip-fill-reset-${formResetSeq}`}
+              onSubmit={handleFillSubmit}
+              submitting={submitting}
+            />
           )}
+          {/* ── Reset affordance (task 4.7): every input back to its
+              default, in either mode ── */}
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              data-testid="trip-reset"
+              onClick={handleResetForm}
+              className="rounded-md px-2 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+            >
+              {t('form.resetForm')}
+            </button>
+          </div>
         </Card>
       </section>
 
@@ -282,8 +320,19 @@ export default function TripView() {
         </p>
       )}
 
-      {/* ── Result: break-even lines + citation + disclaimer + partners ── */}
-      {mode === 'breakeven' && result && <TripBreakEvenResult result={result} />}
+      {/* ── Result: break-even lines + citation + disclaimer + partners,
+              followed by the D5 break-even-basket derivation card ── */}
+      {mode === 'breakeven' && result && (
+        <>
+          <TripBreakEvenResult result={result} />
+          {/* Other trip costs are not collected by any trip input, so the
+              card counts €0.00 and says so (D5 gap, see BreakEvenCard). */}
+          <BreakEvenCard
+            transportCostCents={result.travelCostCents}
+            basketSaving={tripPerBasketSavingCents(result.lines)}
+          />
+        </>
+      )}
 
       {/* ── Result: fill itemization + citation + disclaimer + partners ── */}
       {mode === 'fill' && fillResult && (

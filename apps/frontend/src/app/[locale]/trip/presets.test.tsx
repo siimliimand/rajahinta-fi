@@ -35,6 +35,14 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
+// The break-even card's allowance hint renders through the i18n
+// navigation Link; stub it with the plain-anchor shape every other page
+// test uses.
+vi.mock('@/i18n/navigation', () => ({
+  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
+    React.createElement('a', props),
+}));
+
 const mockedRequest = vi.mocked(request);
 
 const CAR_PRESET = TRIP_ROUTE_PRESETS[0]!;
@@ -142,5 +150,89 @@ describe('TripView route presets (task 4.3)', () => {
       (scope.getByLabelText('Matkaliput yhteensä (€)') as HTMLInputElement)
         .value,
     ).toBe(CAR_PRESET.prefill.ticketEur);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Form pass (task 4.7): units, numeric keyboards, specific validation,
+// reset affordance — at the view level
+// ---------------------------------------------------------------------------
+
+describe('TripView form pass (task 4.7)', () => {
+  it('renders the units beside the numeric fields', () => {
+    const { container } = renderWithIntl(<TripView />);
+    const scope = within(container);
+
+    expect(scope.getByLabelText('Matkustajat (kpl)')).toBeInTheDocument();
+    expect(scope.getByLabelText('Matkaliput yhteensä (€)')).toBeInTheDocument();
+    expect(scope.getByLabelText('Polttoaine yhteensä (€)')).toBeInTheDocument();
+    expect(
+      scope.getByLabelText('Olut — Suomi (€/l)'),
+    ).toBeInTheDocument();
+  });
+
+  it('carries inputMode on the numeric fields for numeric keyboards', () => {
+    const { container } = renderWithIntl(<TripView />);
+
+    expect(
+      (container.querySelector('#trip-ticket') as HTMLInputElement)
+        .inputMode,
+    ).toBe('decimal');
+    expect(
+      (container.querySelector('#trip-fuel') as HTMLInputElement).inputMode,
+    ).toBe('decimal');
+    expect(
+      (container.querySelector('#trip-passengers') as HTMLInputElement)
+        .inputMode,
+    ).toBe('numeric');
+  });
+
+  it('shows a specific inline validation message for a bad ticket value', async () => {
+    const user = userEvent.setup();
+    const { container } = renderWithIntl(<TripView />);
+    const scope = within(container);
+
+    // A zero ticket cost is out of the form's window — the message must
+    // name the field and its format, not just say "invalid".
+    await user.type(scope.getByLabelText('Matkaliput yhteensä (€)'), '0,00');
+
+    expect(
+      scope.getByText(
+        'Matkalippujen yhteissumman on oltava yli 0 € ja enintään kahdella desimaalilla (esim. 120,50).',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      (scope.getByLabelText('Matkaliput yhteensä (€)') as HTMLInputElement)
+        .getAttribute('aria-invalid'),
+    ).toBe('true');
+  });
+
+  it('the reset affordance restores every input to its default', async () => {
+    const user = userEvent.setup();
+    const { container } = renderWithIntl(<TripView />);
+    const scope = within(container);
+
+    // Start from a preset (non-default values), then edit a field.
+    await user.click(scope.getByTestId(`trip-preset-${CAR_PRESET.id}`));
+    const ticket = scope.getByLabelText('Matkaliput yhteensä (€)');
+    await user.clear(ticket);
+    await user.type(ticket, '99,00');
+    expect(ticket).toHaveValue('99,00');
+
+    await user.click(scope.getByTestId('trip-reset'));
+
+    // Defaults: the passenger default, empty cost fields — the preset is
+    // gone too.
+    expect(
+      (scope.getByLabelText('Matkustajat (kpl)') as HTMLInputElement).value,
+    ).toBe('2');
+    expect(
+      (scope.getByLabelText('Matkaliput yhteensä (€)') as HTMLInputElement)
+        .value,
+    ).toBe('');
+    expect(
+      (scope.getByLabelText('Polttoaine yhteensä (€)') as HTMLInputElement)
+        .value,
+    ).toBe('');
   });
 });
