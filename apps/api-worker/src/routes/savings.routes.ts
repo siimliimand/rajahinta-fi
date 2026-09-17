@@ -62,6 +62,121 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 
 /**
+ * Largest observed cross-border difference within one category — the
+ * objective euro delta |gapCents| (the sign carries the direction, the
+ * absolute value the magnitude), with the fixed deterministic tie-break
+ * of productId ascending. No editorial picks, no trending, no boost:
+ * the same input always selects the same row.
+ */
+function selectLargestDifference(
+  candidates: readonly (SavingsSnapshotRecord & {
+    alkoReferenceCents: number;
+    productName: string;
+  })[],
+): (SavingsSnapshotRecord & {
+  alkoReferenceCents: number;
+  productName: string;
+}) | null {
+  let best: (SavingsSnapshotRecord & {
+    alkoReferenceCents: number;
+    productName: string;
+  }) | null = null;
+  for (const candidate of candidates) {
+    if (best === null) {
+      best = candidate;
+      continue;
+    }
+    const magnitude = Math.abs(candidate.gapCents);
+    const bestMagnitude = Math.abs(best.gapCents);
+    if (
+      magnitude > bestMagnitude ||
+      (magnitude === bestMagnitude && candidate.productId < best.productId)
+    ) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+/**
+ * Cross-category market overview (task 5.2, change
+ * price-intelligence-roadmap) — GET /api/v1/savings/overview.
+ *
+ * Deterministic aggregates over the same single-day snapshot read as the
+ * listing, per category, over rows with sufficient data only (a computed
+ * reference AND a product name the registry still resolves — the
+ * listing's staleness defense):
+ *
+ *  - `averageObservedPriceCents` — the mean of the day's best observed
+ *    foreign prices, in integer euro-cents (Math.round on the exact
+ *    integer sum; no floats in the aggregate).
+ *  - `largestDifference` — the row with the largest |gapCents|, ties
+ *    broken by productId ascending (see
+ *    {@link selectLargestDifference}); the signed figures travel along so
+ *    the client can state cheaper/dearer explicitly.
+ *  - `productCount` — the qualifying rows aggregated.
+ *
+ * A category with no qualifying rows is omitted — an empty aggregate is
+ * never manufactured. Categories sort by code-unit name ascending and the
+ * JSON key order is fixed by construction: the same D1 state yields a
+ * byte-identical body on every request. Read-only, behind the same
+ * per-route age gate and the SAVINGS limiter as the listing.
+ */
+async function getSavingsOverview(c: Context<AppEnv>): Promise<Response> {
+  const [products, latestDay] = await Promise.all([
+    new D1ProductSearchRepository(c.env.DB).searchByName(
+      null,
+      Number.MAX_SAFE_INTEGER,
+    ),
+    new D1SavingsSnapshotRepository(c.env.DB).findLatestDay(),
+  ]);
+  const nameByProductId = new Map(products.map((p) => [p.id, p.name]));
+
+  const asOf: string | null = latestDay.length > 0 ? latestDay[0]!.asOf : null;
+
+  // Group the sufficient-data rows by the stored category.
+  const byCategory = new Map<
+    string,
+    (SavingsSnapshotRecord & { alkoReferenceCents: number; productName: string })[]
+  >();
+  for (const row of latestDay) {
+    if (row.alkoReferenceCents === null) continue;
+    const productName = nameByProductId.get(row.productId);
+    if (productName === undefined) continue;
+    const group = byCategory.get(row.category) ?? [];
+    group.push({ ...row, alkoReferenceCents: row.alkoReferenceCents, productName });
+    byCategory.set(row.category, group);
+  }
+
+  const categories = [...byCategory.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const payload = {
+    asOf,
+    categories: categories.map((category) => {
+      const rows = byCategory.get(category)!;
+      const sum = rows.reduce((total, row) => total + row.bestPriceCents, 0);
+      const largest = selectLargestDifference(rows)!;
+      return {
+        category,
+        productCount: rows.length,
+        averageObservedPriceCents: Math.round(sum / rows.length),
+        largestDifference: {
+          productId: largest.productId,
+          productName: largest.productName,
+          merchant: largest.bestMerchant,
+          merchantCountry: largest.bestMerchantCountry,
+          observedPriceCents: largest.bestPriceCents,
+          referenceCents: largest.alkoReferenceCents,
+          gapCents: largest.gapCents,
+          gapBasisPoints: largest.gapBasisPoints,
+        },
+      };
+    }),
+  };
+
+  return c.json(payload);
+}
+
+/**
  * Absent/blank/invalid limit values fall back to DEFAULT (search-route
  * parsePositiveInt parity — a malformed limit never 400s a read); a
  * present valid value is clamped to MAX.
@@ -186,9 +301,17 @@ async function getSavings(c: Context<AppEnv>): Promise<Response> {
   });
 }
 
-/** Register the savings listing behind its gate and limiter. */
+/** Register the savings routes behind their gate and limiter. */
 export function registerSavingsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.on('GET', '/api/v1/savings', ageGate());
   app.get('/api/v1/savings', requireRateLimit('SAVINGS'), getSavings);
+  // Market overview (task 5.2) — read-only, same guard chain as the
+  // listing: per-route age gate plus the SAVINGS limiter.
+  app.on('GET', '/api/v1/savings/overview', ageGate());
+  app.get(
+    '/api/v1/savings/overview',
+    requireRateLimit('SAVINGS'),
+    getSavingsOverview,
+  );
   return app;
 }

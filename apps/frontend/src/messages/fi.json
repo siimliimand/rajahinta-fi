@@ -67,7 +67,9 @@
     "trip": "Matkalaskuri",
     "whatIf": "Mitä jos -laskuri",
     "account": "Oma tili",
-    "ranking": "Miten järjestäminen toimii"
+    "ranking": "Miten järjestäminen toimii",
+    "planning": "Suunnittelu",
+    "localeSwitcherLabel": "Vaihda kieltä"
   },
   "SiteFooter": {
     "disclaimer": "Rajahinta.fi on riippumaton hintavertailu- ja kokonaiskustannuslaskuri. Kaikki hinnat, verot ja maksut ovat arvioita eivätkä virallisia tietoja. Palvelu ei tarjoa vero- tai tullineuvontaa. Tarkista ajantasaiset tiedot aina viranomaislähteistä.",
@@ -82,7 +84,9 @@
     "linkEvent": "Tilaisuuslaskuri",
     "linkValue": "Arvo (€/g alkoholi)",
     "linkBlog": "Blogi",
-    "copyright": "© Rajahinta.fi"
+    "copyright": "© Rajahinta.fi",
+    "linkAbout": "Tietoja Rajahinta.fi:stä",
+    "linkContact": "Yhteystiedot"
   },
   "Home": {
     "subtitle": "Rajat ylittävien juomien kokonaiskustannuslaskuri Suomeen",
@@ -1440,5 +1444,63 @@
     "emptyBody": "Tähän näkymään ei ole tallentunut yhtään tuotetta.",
     "unavailableTitle": "Tuoteluetteloa ei voida näyttää juuri nyt",
     "unavailableBody": "Tuotetietojen haku ei onnistunut. Kokeile myöhemmin uudelleen."
+  },
+  "AboutPage": {
+    "metaTitle": "Tietoja Rajahinta.fi:stä",
+    "metaDescription": "Mikä Rajahinta.fi on, mistä tiedot tulevat ja miten arviot lasketaan.",
+    "title": "Tietoja Rajahinta.fi:stä",
+    "subtitle": "Suomalainen rajat ylittävä juomahintaindeksi ja kokonaiskustannuslaskuri.",
+    "whatTitle": "Mitä palvelu tekee",
+    "whatBody": "Rajahinta.fi kerää julkisesti havaittuja vähittäishintoja ulkomaisista verkkokaupoista ja Alkon hintalistalta, ja arvioi juoman tuomisen kokonaiskustannuksen Suomeen: vähittäishinta, kuljetus, valmistevero ja pantti yhdessä eritellyssä laskelmassa.",
+    "dataTitle": "Mistä tiedot tulevat",
+    "dataBody": "Hinnat ovat havaintoja automatisoiduista keruuajoista. Jokainen havainto sisältää havaintoajankohdan ja luotettavuustilan. Veroprosentit seuraavat Verohallinnon julkaisemia veroasteita, versioituna jokaisen aineistojulkaisun yhteydessä.",
+    "neutralityTitle": "Arvioita, ei neuvontaa",
+    "neutralityBody": "Kaikki palvelun hinnat, verot ja maksut ovat arvioita eivätkä virallisia tietoja. Palvelu ei tarjoa vero- tai tullineuvontaa, eikä mikään tuote esitetä hyvänä tai kannattavana ostoksena. Tarkista ajantasaiset tiedot aina viranomaislähteistä."
+  },
+  "ContactPage": {
+    "metaTitle": "Yhteystiedot",
+    "metaDescription": "Näin ilmoitat tietojen oikaisusta Rajahinta.fi:ssä ja mihin viranomaisasiat kuuluvat.",
+    "title": "Yhteystiedot",
+    "subtitle": "Tietojen oikaisut, palaute ja palvelun rajat.",
+    "correctionsTitle": "Ilmoita tietojen oikaisusta",
+    "correctionsBody": "Jos laskelma tai hinta näyttää väärältä, käytä laskusivulla olevaa ”Ilmoita virheestä” -painiketta. Se lähettää oikaisuilmoituksen, jonka mukana lähtee laskelman tiedot.",
+    "correctionsReview": "Oikaisuilmoitukset kerääntyvät toimituksen tarkastusjonoon. Jokainen ilmoitus käsitellään operaattorin tunnuksella ja aikaleimalla, joten jokaisen oikaisun käsittelystä jää valvontajälki.",
+    "generalTitle": "Palaute ja muut asiat",
+    "generalBody": "Palvelu ei tarjoa vero- tai tullineuvontaa: ota omiin tuonteihisi tai tullausilmoituksiisi liittyvissä kysymyksissä yhteyttä viranomaisiin. Palvelua itseään koskevan palautteen voi jättää saman oikaisumekanismin kautta."
+  },
+  "PriceHistoryChart": {
+    "ariaLabel": "Hintahistoria",
+    "heading": "Hintahistoria",
+    "metricLabel": "ulkoinen vähittäishinta",
+    "bucketsLine": "Havainnot {from} – {to} · {buckets} päivää · {observations} havaintoa",
+    "availableFrom": "Tietoja saatavilla {date} alkaen.",
+    "rangeGroup": "Valitse näytettävä aikaväli",
+    "range": {
+      "30": "30 päivää",
+      "90": "90 päivää",
+      "365": "365 päivää"
+    },
+    "chartTitle": "Viivakaavio havaitusta vähittäishinnasta",
+    "chartDesc": "Yksi päiväkatos per havaintopäivä, {buckets} päivää aikavälillä {from} – {to}. Alue näyttää päivän alhaisimman ja korkeimman havaitun hinnan; viiva näyttää päivän keskihinnan.",
+    "tableSummary": "Näytä samat luvut taulukkona",
+    "tableCaption": "Havaitut hinnat päivittäin — samat luvut kuin yllä olevassa kaaviossa.",
+    "columnDate": "Havainto",
+    "columnAverage": "Keskiarvo",
+    "columnMin": "Alhaisin",
+    "columnMax": "Korkein",
+    "columnObservations": "Havainnot"
+  },
+  "SavingsOverview": {
+    "heading": "Markkinakatsaus",
+    "asOfLine": "Laskettu viimeisimmästä havaintopäivästä ({date}).",
+    "methodLine": "Keskiarvo on kategorian tuotteiden alhaisimpien havaittujen ulkomaalaishintojen keskiarvo havaintopäivänä. Suurin ero on yksittäinen tuote, jonka arvioidun kokonaiskustannuksen ja Alkon vertailuhinnan välinen ero on suurin — ilmaistuna erikseen halvempana tai kalliimpana.",
+    "countLine": "Havaittuja tuotteita: {count}",
+    "averageLine": "Keskimääräinen havaittu hinta: {average}",
+    "largestLine": "Suurin ero: {product}, {figure} {direction}",
+    "direction": {
+      "cheaper": "halvempi kuin Alkon vertailuhinta",
+      "dearer": "kalliimpi kuin Alkon vertailuhinta",
+      "equal": "sama kuin Alkon vertailuhinta"
+    }
   }
 }

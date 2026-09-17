@@ -24,7 +24,7 @@ import { routing } from '@/i18n/routing';
 /** Static destinations every locale offers (header navigation surface;
  * /allowances added by insight-surfaces task 4.2; /savings and /guides
  * by insight-surfaces tasks 2.4/5.2; /products by product-catalog task
- * 3.2). */
+ * 3.2; /about and /contact by price-intelligence-roadmap task 3.3). */
 const STATIC_PATHS = [
   '',
   '/calculator',
@@ -36,6 +36,8 @@ const STATIC_PATHS = [
   '/guides',
   '/allowances',
   '/savings',
+  '/about',
+  '/contact',
 ];
 
 /** Canonical product categories — mirrors PRODUCT_CATEGORIES in the D1
