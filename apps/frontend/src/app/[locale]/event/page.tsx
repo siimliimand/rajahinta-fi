@@ -1,128 +1,67 @@
-'use client';
-
 // Namespace import: vitest's esbuild transform emits classic JSX
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useCallback, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
-import { Card } from '@/components/ui';
-import {
-  calculateEventPlan,
-  classifyEventCalcError,
-  type EventCalcErrorKind,
-} from './event.client';
-import type {
-  EventCalcResponse,
-  EventProfile,
-  SourcingRequest,
-} from './event.types';
-import EventForm from './components/EventForm';
-import EventShoppingListResult from './components/EventShoppingListResult';
+import type { Metadata } from 'next';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+import EventView from './event-view';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Today as an ISO `YYYY-MM-DD` calendar date in the user's local time.
- *
- * The API requires a date because norms resolve by effective window, but
- * the MVP simple mode has no date input — the event is assumed upcoming,
- * so the page supplies today. Local components (not UTC) so the date is
- * the calendar day the user is on.
- */
-function todayIsoDate(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${now.getFullYear()}-${month}-${day}`;
+interface EventPageProps {
+  params: Promise<{ locale: string }>;
 }
 
-// ---------------------------------------------------------------------------
-// Page component
-// ---------------------------------------------------------------------------
+/**
+ * Unique, descriptive metadata for the event route
+ * (price-intelligence-roadmap task 2.3): event drink-need estimation and
+ * shopping-list framing, distinct from the site-default and every other
+ * page title.
+ */
+export async function generateMetadata({
+  params,
+}: EventPageProps): Promise<Metadata> {
+  const { locale } = await params;
+  const t = await getTranslations({ locale, namespace: 'EventPage' });
+  return {
+    title: t('metaTitle'),
+    description: t('metaDescription'),
+  };
+}
 
 /**
- * Event calculator page — MVP simple mode + V2 sourcing (tasks 4.4/4.5,
- * change product-roadmap-phases-1-4).
+ * Event calculator page (price-intelligence-roadmap task 2.3, the D2
+ * server-shell + client-view split).
  *
- * Behaviour:
- *  - Submit posts to `/api/v1/event-calc`; both 200 states render:
- *    COMPUTED as a shopping list with per-line surplus, and
- *    NO_PUBLISHED_NORMS as a calm explanation.
- *  - The COMPUTED response additionally carries the V2 sourcing plan —
- *    per-line source assignment, totals, explicit budget state, and the
- *    optional packing panel (offered by the form).
- *  - The structural disclaimer from the response is rendered with the
- *    result — never a UI-only string.
- *
- * @module EventPage
+ * The server shell owns everything that does not need the visitor's
+ * interaction state: the unique metadata above, the intro copy, and the
+ * "how this calculation works" summary — all crawlable in the server
+ * HTML. The calculation flow is the client view in `event-view.tsx`,
+ * unchanged in behavior.
  */
-export default function EventPage() {
-  const t = useTranslations('EventPage');
+export default async function EventPage({ params }: EventPageProps) {
+  const { locale } = await params;
+  setRequestLocale(locale);
 
-  // ── Submission state ──
-  const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<EventCalcResponse | null>(null);
-  const [errorKind, setErrorKind] = useState<EventCalcErrorKind | null>(null);
+  const t = await getTranslations('EventPage');
 
-  // Guard against duplicate submits
-  const submitInFlight = useRef(false);
-
-  const handleSubmit = useCallback(
-    async (input: {
-      guests: number;
-      durationHours: number;
-      eventProfile: EventProfile;
-      sourcing?: SourcingRequest;
-    }) => {
-      if (submitInFlight.current) return;
-
-      submitInFlight.current = true;
-      setSubmitting(true);
-      setErrorKind(null);
-      setResult(null);
-
-      try {
-        const res = await calculateEventPlan({
-          ...input,
-          eventDate: todayIsoDate(),
-        });
-        setResult(res);
-      } catch (err: unknown) {
-        setErrorKind(classifyEventCalcError(err).kind);
-      } finally {
-        setSubmitting(false);
-        submitInFlight.current = false;
-      }
-    },
-    [],
-  );
-
-  // ── Hidden state: none — the page renders unconditionally ──
   return (
     <main className="mx-auto min-h-screen max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* ── Header ── */}
+      {/* ── Intro copy (server-rendered) ── */}
       <h1 className="mb-1 text-2xl font-bold text-primary-700">{t('title')}</h1>
       <p className="mb-8 text-sm text-gray-500">{t('subtitle')}</p>
 
-      {/* ── Simple-mode form (with the V2 sourcing section) ── */}
-      <section className="mb-8">
-        <Card>
-          <EventForm onSubmit={handleSubmit} submitting={submitting} packingAvailable />
-        </Card>
+      {/* ── How this calculation works (server-rendered summary) ── */}
+      <section
+        aria-labelledby="event-how-heading"
+        className="mb-8 rounded-lg border border-gray-200 bg-gray-50 p-5"
+      >
+        <h2 id="event-how-heading" className="mb-2 text-base font-semibold text-gray-900">
+          {t('howTitle')}
+        </h2>
+        <p className="text-sm leading-relaxed text-gray-600">{t('howBody')}</p>
       </section>
 
-      {/* ── Error (classified failure; degrade, never crash) ── */}
-      {errorKind && (
-        <p role="alert" className="mb-8 text-sm text-red-600">
-          {t(`errors.${errorKind}`)}
-        </p>
-      )}
-
-      {/* ── Result: shopping list or the no-published-norms state ── */}
-      {result && <EventShoppingListResult result={result} />}
+      {/* ── Interactive flow (client view) ── */}
+      <EventView />
     </main>
   );
 }

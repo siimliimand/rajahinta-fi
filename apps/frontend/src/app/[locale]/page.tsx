@@ -25,12 +25,14 @@ const TRUST_ROW_STATUSES = [
  * trust-and-reach-roadmap task 3.3 extends the trust row).
  *
  * Static catalog copy plus one server-side guides read (D6, D4): the
- * gradient hero with a floating search card as the primary CTA, a
- * "Why Rajahinta.fi" feature section surfacing the platform's genuine
- * differentiators, the trust row (data sources, reliability model,
- * accuracy statistic, methodology), and a FAQ section linking PUBLISHED
- * guide entries. The FAQ fetch follows the sitemap degradation contract:
- * a fetch failure or no published entries renders NO section at all.
+ * gradient hero with a floating search card as the primary CTA, a fixed
+ * worked example labeled as an example (task 3.1, D7 — no API call, the
+ * figures cannot drift with live data), a "Why Rajahinta.fi" feature
+ * section surfacing the platform's genuine differentiators, the trust
+ * row (data sources, reliability model, accuracy statistic,
+ * methodology), and a FAQ section linking PUBLISHED guide entries. The
+ * FAQ fetch follows the sitemap degradation contract: a fetch failure or
+ * no published entries renders NO section at all.
  * AccuracyStat is a self-contained client island.
  */
 export default async function HomePage({
@@ -133,6 +135,82 @@ export default async function HomePage({
           {/* Micro trust badges below the card */}
           <p className="mt-4 text-center text-xs text-blue-300">
             {t('heroTrustLine')}
+          </p>
+        </div>
+      </section>
+
+      {/* ── Worked example (task 3.1, D7) ───────────────────────────────
+          A fixed, illustrative breakdown labeled as an example — no API
+          call, fully crawlable, cannot drift with live data. Live
+          sophistication stays with the AccuracyStat island and the trust
+          row. The difference line spells out cheaper/dearer in words;
+          color alone never carries the comparison. */}
+      <section
+        aria-labelledby="home-example-heading"
+        className="border-b border-gray-100 bg-gray-50 px-4 py-16 sm:px-6"
+      >
+        <div className="mx-auto max-w-3xl">
+          <div className="mb-4 text-center">
+            <span className="inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary-800">
+              {t('exampleBadge')}
+            </span>
+          </div>
+
+          <h2
+            id="home-example-heading"
+            className="mb-2 text-center text-2xl font-bold tracking-tight text-gray-900"
+          >
+            {t('exampleTitle')}
+          </h2>
+          <p className="mx-auto mb-8 max-w-2xl text-center text-sm leading-relaxed text-gray-600">
+            {t('exampleIntro')}
+          </p>
+
+          <dl className="mx-auto max-w-xl divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white p-5">
+            <div className="flex items-baseline justify-between gap-4 py-2">
+              <dt className="text-sm text-gray-600">
+                {t('exampleForeignPriceLabel')}
+              </dt>
+              <dd className="text-sm font-semibold text-gray-900">
+                {t('exampleForeignPriceValue')}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-4 py-2">
+              <dt className="text-sm text-gray-600">
+                {t('exampleTransportLabel')}
+              </dt>
+              <dd className="text-sm font-semibold text-gray-900">
+                {t('exampleTransportValue')}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-4 py-2">
+              <dt className="text-sm font-medium text-gray-900">
+                {t('exampleLandedLabel')}
+              </dt>
+              <dd className="text-sm font-semibold text-gray-900">
+                {t('exampleLandedValue')}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-4 py-2">
+              <dt className="text-sm text-gray-600">
+                {t('exampleReferenceLabel')}
+              </dt>
+              <dd className="text-sm font-semibold text-gray-900">
+                {t('exampleReferenceValue')}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-4 py-2">
+              <dt className="text-sm font-medium text-gray-900">
+                {t('exampleDifferenceLabel')}
+              </dt>
+              <dd className="text-sm font-semibold text-gray-900">
+                {t('exampleDifferenceValue')}
+              </dd>
+            </div>
+          </dl>
+
+          <p className="mx-auto mt-4 max-w-xl text-center text-xs leading-relaxed text-gray-500">
+            {t('exampleNote')}
           </p>
         </div>
       </section>

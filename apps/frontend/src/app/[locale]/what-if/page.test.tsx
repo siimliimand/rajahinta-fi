@@ -27,7 +27,8 @@
 import * as React from 'react';
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import WhatIfPage from './page';
+import WhatIfPage, { generateMetadata as whatIfMetadata } from './page';
+import WhatIfView from './what-if-view';
 import { RECALCULATION_DEBOUNCE_MS } from './what-if.constants';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import { apiFetch, ApiFetchError } from '@/lib/api';
@@ -41,6 +42,26 @@ vi.mock('@/lib/api', async (importOriginal) => {
     apiFetch: vi.fn(),
   };
 });
+
+// The server shell (page.tsx) resolves its copy through next-intl/server;
+// resolve straight from the Finnish catalog (calculator test precedent).
+// The client view uses next-intl's provider instead and is unaffected.
+vi.mock('next-intl/server', () => ({
+  setRequestLocale: () => undefined,
+  getTranslations: async (
+    opts?: string | { locale?: string; namespace?: string },
+  ) => {
+    const ns = typeof opts === 'string' ? opts : (opts?.namespace ?? '');
+    const table = (await import('@/messages/fi.json')).default as Record<
+      string,
+      unknown
+    >;
+    return (key: string) => {
+      const value = (table[ns] as Record<string, unknown> | undefined)?.[key];
+      return typeof value === 'string' ? value : `__MISSING_${ns}.${key}__`;
+    };
+  },
+}));
 
 const mockedApiFetch = vi.mocked(apiFetch);
 
@@ -153,7 +174,7 @@ afterEach(() => {
 
 describe('WhatIfPage — recalculation discipline', () => {
   it('fires no request while the form is blank and shows the empty state', async () => {
-    renderWithIntl(<WhatIfPage />);
+    renderWithIntl(<WhatIfView />);
     await flushEffects();
 
     expect(mockedApiFetch).not.toHaveBeenCalled();
@@ -165,7 +186,7 @@ describe('WhatIfPage — recalculation discipline', () => {
 
   it('sends parsed comma-decimal inputs (integer cents, ABV fraction) once the row is valid', async () => {
     mockedApiFetch.mockResolvedValueOnce(jsonResponse(RESULT_A));
-    const { container } = renderWithIntl(<WhatIfPage />);
+    const { container } = renderWithIntl(<WhatIfView />);
     await flushEffects();
 
     fillValidRow(container);
@@ -191,7 +212,7 @@ describe('WhatIfPage — recalculation discipline', () => {
 
   it('DEBOUNCE PIN: rapid slider edits coalesce into one request after the quiet window', async () => {
     mockedApiFetch.mockResolvedValue(jsonResponse(RESULT_A));
-    const { container } = renderWithIntl(<WhatIfPage />);
+    const { container } = renderWithIntl(<WhatIfView />);
     await flushEffects();
     fillValidRow(container);
     await advance(RECALCULATION_DEBOUNCE_MS);
@@ -215,7 +236,7 @@ describe('WhatIfPage — recalculation discipline', () => {
 
   it('still fires exactly one request for the manual recalculate action', async () => {
     mockedApiFetch.mockResolvedValue(jsonResponse(RESULT_A));
-    const { container } = renderWithIntl(<WhatIfPage />);
+    const { container } = renderWithIntl(<WhatIfView />);
     await flushEffects();
     fillValidRow(container);
     await advance(RECALCULATION_DEBOUNCE_MS);
@@ -234,7 +255,7 @@ describe('WhatIfPage — recalculation discipline', () => {
 describe('WhatIfPage — result rendering', () => {
   async function renderWithResult(): Promise<HTMLElement> {
     mockedApiFetch.mockResolvedValue(jsonResponse(RESULT_A));
-    const { container } = renderWithIntl(<WhatIfPage />);
+    const { container } = renderWithIntl(<WhatIfView />);
     await flushEffects();
     fillValidRow(container);
     await advance(RECALCULATION_DEBOUNCE_MS);
@@ -311,7 +332,7 @@ describe('WhatIfPage — throttle discipline', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ ...RESULT_A, hypotheticalRate: 50 })); // auto-retry
 
-    const { container } = renderWithIntl(<WhatIfPage />);
+    const { container } = renderWithIntl(<WhatIfView />);
     await flushEffects();
     fillValidRow(container);
     await advance(RECALCULATION_DEBOUNCE_MS);
@@ -367,7 +388,7 @@ describe('WhatIfPage — failure degradation', () => {
         path: '/api/v1/what-if/excise',
       }),
     );
-    const { container } = renderWithIntl(<WhatIfPage />);
+    const { container } = renderWithIntl(<WhatIfView />);
     await flushEffects();
     fillValidRow(container);
     await advance(RECALCULATION_DEBOUNCE_MS);
@@ -387,7 +408,7 @@ describe('WhatIfPage — share token prefill', () => {
     mockedApiFetch.mockResolvedValueOnce(jsonResponse(RESULT_A));
     window.history.replaceState(null, '', `/?token=${RESULT_A.shareToken}`);
 
-    renderWithIntl(<WhatIfPage />);
+    renderWithIntl(<WhatIfView />);
     await advance(RECALCULATION_DEBOUNCE_MS);
 
     // First and only request: the decoded inputs, immediately (no debounce
@@ -414,11 +435,52 @@ describe('WhatIfPage — share token prefill', () => {
 
   it('degrades an invalid token to a calm note with a blank form and no request', async () => {
     window.history.replaceState(null, '', '/?token=not-a-real-token');
-    const { container } = renderWithIntl(<WhatIfPage />);
+    const { container } = renderWithIntl(<WhatIfView />);
     await flushEffects();
 
     expect(screen.getByTestId('what-if-invalid-token')).toBeInTheDocument();
     expect(mockedApiFetch).not.toHaveBeenCalled();
     expect(container).toHaveTextContent('Tuoterivi 1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Server shell (task 2.4, D2): unique metadata + SSR intro with example
+// scenario questions + method summary
+// ---------------------------------------------------------------------------
+
+describe('WhatIfPage server shell (task 2.4)', () => {
+  it('emits unique metadata with the hypothetical duty-rate framing', async () => {
+    const meta = await whatIfMetadata({
+      params: Promise.resolve({ locale: 'fi' }),
+    });
+    expect(meta.title).toBe('Mitä jos -laskuri: hypoteettinen verokanta');
+    expect(meta.description).toContain('Hypoteettinen');
+    // Unique against the site-default metadata title, not a restatement.
+    const root = (await import('@/messages/fi.json')).default as {
+      Metadata: { title: string };
+    };
+    expect(meta.title).not.toBe(root.Metadata.title);
+  });
+
+  it('server-renders the intro carrying the example scenario questions and the method summary', async () => {
+    const { renderToString } = await import('react-dom/server');
+    const { NextIntlClientProvider } = await import('next-intl');
+    const messages = (await import('@/messages/fi.json')).default;
+    const html = renderToString(
+      <NextIntlClientProvider locale="fi" messages={messages}>
+        {await WhatIfPage({ params: Promise.resolve({ locale: 'fi' }) })}
+      </NextIntlClientProvider>,
+    );
+
+    expect(html).toContain('Mitä jos -laskuri');
+    // Illustrative scenario questions: a duty-rate change and a price
+    // change scenario, crawlable in the server HTML.
+    expect(html).toContain('Esimerkkikysymyksiä');
+    expect(html).toContain('verokanta laski 20 eurosta 15 euroon');
+    expect(html).toContain('tuonnin vähittäishinta');
+    // The summary is content, not advice — the hypothetical stance holds.
+    expect(html).toContain('Miten mitä jos -laskenta toimii');
+    expect(html).toContain('ei ole vero- tai tullineuvontaa');
   });
 });

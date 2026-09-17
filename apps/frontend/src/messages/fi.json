@@ -112,7 +112,21 @@
     "trustReliabilityBody": "Jokainen näytetty luku kantaa luotettavuusmerkinnän ja aikaleiman, joten tiedon varmuus ja ikä ovat aina näkyvissä.",
     "trustMethodologyTitle": "Menetelmä",
     "trustMethodologyBody": "Laskentamalli, käytetyt verolähteet ja järjestämisen perusteet on dokumentoitu avoimesti.",
-    "faqHeading": "Usein kysytyt kysymykset"
+    "faqHeading": "Usein kysytyt kysymykset",
+    "exampleBadge": "Esimerkkilaskelma",
+    "exampleTitle": "Näin kokonaishinta muodostuu: 6 pulloa viiniä Tallinnasta",
+    "exampleIntro": "Alla on kiinteä esimerkki, joka havainnollistaa laskelman rakennetta: ulkomainen vähittäishinta, kuljetuksen osuus ja verot yhdistyvät arvioiduksi kokonaishinnaksi, jota verrataan Suomen vertailuhintaan. Luvut ovat kuvitteellisia esimerkkiarvoja — ei reaaliaikaisia hintoja.",
+    "exampleForeignPriceLabel": "Ulkomainen vähittäishinta (6 × 8,00 €)",
+    "exampleForeignPriceValue": "48,00 €",
+    "exampleTransportLabel": "Kuljetuksen osuus korista",
+    "exampleTransportValue": "15,00 €",
+    "exampleLandedLabel": "Arvioitu kokonaishinta Suomeen",
+    "exampleLandedValue": "63,00 €",
+    "exampleReferenceLabel": "Suomen vertailuhinta (6 × 16,00 €)",
+    "exampleReferenceValue": "96,00 €",
+    "exampleDifferenceLabel": "Ero Suomen vertailuhintaan",
+    "exampleDifferenceValue": "Esimerkissä tuonti on noin 33,00 € edullisempi",
+    "exampleNote": "Esimerkkilaskelma käyttää kiinteitä kuvitteellisia lukuja eikä hae tietoja. Vain kokonaishintoja verrataan: ero voi kääntyä myös toisin, jolloin tuonti on vertailuhintaa kalliimpi. Veron määrä vaihtelee juomatyypin ja vahvuuden mukaan."
   },
   "AgeGate": {
     "title": "Ikätarkistus",
@@ -364,6 +378,10 @@
   "Compare": {
     "title": "Tuotevertailu",
     "subtitle": "Vertaile juomien kokonaiskustannuksia rinnakkain. Kaikki järjestäminen on objektiivista ja neutraalia.",
+    "metaTitle": "Tuotevertailu: kokonaiskustannukset rinnakkain",
+    "metaDescription": "Lisää juomia vertailuun ja näe niiden arvioidut kokonaiskustannukset Suomeen rinnakkain: vähittäishinta, kuljetus, verot ja luotettavuusmerkinnät tuotteittain.",
+    "howTitle": "Miten vertailu toimii",
+    "howBody": "Hae tuote ja lisää se vertailuun: jokainen sarake näyttää tuotteen arvioidun kokonaiskustannuksen Suomeen eriteltyinä maina sekä hintatiedon luotettavuusmerkinnän. Sarakejärjestys noudattaa valitsemaasi järjestystä, ja kaikki järjestykset ovat objektiivisia ja neutraaleja — mikään sija ei perustu kaupallisiin tekijöihin.",
     "addProduct": "Lisää tuote",
     "addProductTitle": "Lisää tuote",
     "aboutTitle": "Tästä vertailusta",
@@ -438,6 +456,10 @@
   "BasketPage": {
     "title": "Ostoskorin optimointi",
     "subtitle": "Lisää useita tuotteita ja näe optimaalinen myyjäyhdistelmä sekä kokonaiskustannusarvio Suomeen.",
+    "metaTitle": "Ostoskorin optimointi: usean tuotteen kokonaiskustannus",
+    "metaDescription": "Kokoa usean tuotteen ostoskori ja saat arvion optimaalisesta myyjäyhdistelmästä ja kokonaiskustannuksista Suomeen, mukaan lukien kuljetus- ja verotuserittely.",
+    "howTitle": "Miten optimointi toimii",
+    "howBody": "Lisää ostoskoriin tuotteita määrineen ja valitse kohdemaa sekä kuljetusjärjestely: laskelma yhdistää tuotteiden hinnat, kuljetusarvion ja Suomen verot ja maksut kokonaiskustannusarvioksi sekä ehdottaa myyjäyhdistelmän, joka tuottaa matalan arvion. Tulos on aina arvio, jonka jokainen luku kantaa luotettavuusmerkintää.",
     "optimize": "Optimoi ostoskori",
     "optimizing": "Optimoidaan…",
     "errors": {
@@ -657,6 +679,10 @@
   "EventPage": {
     "title": "Tilaisuuslaskuri",
     "subtitle": "Arvioi juonetarve vieraiden määrän, keston ja tilaisuustyypin perusteella. Tuloksena on ostoslista, jonka jokainen rivi näyttää tarpeen, ehdotetun ostomäärän ja ylijäämän.",
+    "metaTitle": "Tilaisuuslaskuri: juonetarve ja ostoslista",
+    "metaDescription": "Arvioi tilaisuuden juonetarve vieraiden määrän ja keston perusteella ja saat ostoslistan tarpeesta, ehdotetusta ostomäärästä ja ylijäämästä — myös vertailuna ulkomaisiin kauppoihin.",
+    "howTitle": "Miten tilaisuuslaskenta toimii",
+    "howBody": "Syötä vieraiden määrä, kesto ja tilaisuuden tyyppi: laskelma yhdistää julkaistut kulutusnormit ja tuotekohtaiset hinnat ostoslistaksi, jossa jokainen rivi näyttää tarpeen, ehdotetun ostomäärän ja ylijäämän. Tulos on aina arvio — ei vero- tai tullineuvontaa.",
     "form": {
       "guests": "Vieraiden määrä (kpl)",
       "duration": "Kesto (tuntia)",
@@ -748,6 +774,10 @@
   "TripPage": {
     "title": "Matkalaskuri",
     "subtitle": "Laske, kuinka monta litraa kannattaa tuoda matkalla: jaettu matkakustannus, hintaero kategorioittain ja tullimäärärajojen ylittymiskohta. Jokainen rivi näyttää kannattavan tuontimäärän ja tullimäärärajan vaikutuksen.",
+    "metaTitle": "Matkalaskuri: kannattava tuontimäärä rajalla",
+    "metaDescription": "Laske, kuinka monta litraa kannattaa tuoda ulkomailta: jaettu matkakustannus, hintaero kategorioittain ja tullimäärärajojen vaikutus — arvio ennen matkaa.",
+    "howTitle": "Miten matkalaskenta toimii",
+    "howBody": "Syötä matkan kustannukset ja hinnat kategorioittain: laskelma jakaa matkakustannuksen matkustajien kesken, vertaa kotimaista ja ulkomaista hintaa sekä näyttää, kuinka monta litraa kannattaa tuoda ennen tullimäärärajan ylittymistä. Tulos on aina arvio — ei vero- tai tullineuvontaa.",
     "form": {
       "passengers": "Matkustajat (kpl)",
       "vehicle": "Ajoneuvo",
@@ -854,6 +884,14 @@
   "WhatIfPage": {
     "title": "Mitä jos -laskuri",
     "subtitle": "Korvaa alkoholiveron verokanta valitsemallasi arvolla ja vertaa tuotteiden kokonaishintoja kiinteässä vertailuaineistossa. Laskelma on hypoteettinen.",
+    "metaTitle": "Mitä jos -laskuri: hypoteettinen verokanta",
+    "metaDescription": "Kokeile, miten muuttuva alkoholiveron verokanta tai tuotteen hinta muuttaisi tuonnin kokonaishintoja kiinteässä vertailuaineistossa. Hypoteettinen laskelma, ei ennuste.",
+    "examplesTitle": "Esimerkkikysymyksiä, joita voit kokeilla",
+    "example1": "Mitä jos alkoholiveron verokanta laski 20 eurosta 15 euroon kaava-yksikköä kohti?",
+    "example2": "Mitä jos verokanta nousi kaksinkertaiseksi nykyisestä?",
+    "example3": "Mitä jos tuonnin vähittäishinta oli 5 euroa, kun kotimainen vertailuhinta on 12 euroa?",
+    "howTitle": "Miten mitä jos -laskenta toimii",
+    "howBody": "Valitse hypoteettinen verokanta ja lisää tuoterivejä: laskelma vertaa nykyisen ja hypoteettisen verokannan vaikutusta tuonnin hintaan kiinteässä vertailuaineistossa. Laskelma on aina hypoteettinen — se ei ole vero- tai tullineuvontaa.",
     "recalculating": "Lasketaan…",
     "form": {
       "rateLabel": "Hypoteettinen verokanta (€ kaava-yksikköä kohti)",
@@ -989,6 +1027,10 @@
   "Ranking": {
     "title": "Miten järjestäminen toimii",
     "subtitle": "Objektiivinen, avoin ja kaupallisista intresseistä vapaa.",
+    "metaTitle": "Järjestäminen: objektiivinen, avoin ja neutraali",
+    "metaDescription": "Kaikki tuotteiden järjestykset perustuvat vain objektiivisiin tekijöihin: tutki käytettävissä olevat järjestykset, tasapistesäännöt ja sen, miten neutraaliutta valvotaan koodissa.",
+    "howTitle": "Miten järjestykset muodostuvat",
+    "howBody": "Jokainen järjestys käyttää vain objektiivisia lajitteluarvoja (kuten kokonaiskustannus, litrahinta ja alkoholipitoisuus) ja tuotenimeä tasapisteiden ratkaisijaan. Sama aineisto tuottaa aina saman järjestyksen, eikä mikään myyjän maksu tai manuaalinen korostus voi vaikuttaa sijaintiin.",
     "neutralityTitle": "Neutraaliuslupaus",
     "neutralityStatement": "Rajahinta käyttää tuotteiden järjestämiseen vain objektiivisia, ei-kaupallisia tekijöitä. Mikään myyjän maksu, mainoslippu tai manuaalinen korostus voi vaikuttaa tuotteen sijaintiin.",
     "tiebreakerTitle": "Tasapisteet ja determinismi",
@@ -1011,6 +1053,8 @@
   },
   "ValuePage": {
     "title": "Etanoli-€/g hintaluokittain",
+    "metaTitle": "Etanoli-€/g hintaluokittain: yksikköhinta-listaus",
+    "metaDescription": "Katso, mitä yksi gramma puhdasta etanolia maksaa tuotteiden myyntihinnasta laskettuna, hintaluokittain alimmasta alkaen. Tiedollinen luettelo, jossa jokainen arvo on laskettu samalla kaavalla.",
     "subtitle": "Jokainen rivi kertoo, mitä yksi gramma puhdasta etanolia maksaa tuotteen myyntihinnasta laskettuna. Arvo lasketaan samalla kaavalla kuin vertailunäkymässä, ja luettelo on järjestetty €/g-arvon mukaan alimmasta alkaen.",
     "informationalNote": "Luettelo on tiedollinen: se esittää lasketut arvot sellaisenaan. Tässä näkyvä järjestys on erillinen lukunäkymä, joka ei vaikuta hakuun, muihin listauksiin tai laskuriin.",
     "categorySelectorLabel": "Hintaluokka",

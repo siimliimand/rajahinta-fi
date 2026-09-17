@@ -30,7 +30,8 @@ import * as React from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import TripPage from './page';
+import TripPage, { generateMetadata as tripMetadata } from './page';
+import TripView from './trip-view';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import { ApiFetchError, request, searchProducts } from '@/lib/api';
 import type { ProductSearchResult } from '@/lib/types';
@@ -47,6 +48,26 @@ vi.mock('@/lib/api', async (importOriginal) => {
     searchProducts: vi.fn(),
   };
 });
+
+// The server shell (page.tsx) resolves its copy through next-intl/server;
+// resolve straight from the Finnish catalog (calculator test precedent).
+// The client view uses next-intl's provider instead and is unaffected.
+vi.mock('next-intl/server', () => ({
+  setRequestLocale: () => undefined,
+  getTranslations: async (
+    opts?: string | { locale?: string; namespace?: string },
+  ) => {
+    const ns = typeof opts === 'string' ? opts : (opts?.namespace ?? '');
+    const table = (await import('@/messages/fi.json')).default as Record<
+      string,
+      unknown
+    >;
+    return (key: string) => {
+      const value = (table[ns] as Record<string, unknown> | undefined)?.[key];
+      return typeof value === 'string' ? value : `__MISSING_${ns}.${key}__`;
+    };
+  },
+}));
 
 const mockedRequest = vi.mocked(request);
 const mockedSearchProducts = vi.mocked(searchProducts);
@@ -269,7 +290,7 @@ async function submitForm(
     mockedRequest.mockResolvedValueOnce(response);
   }
   const user = userEvent.setup();
-  const { container } = renderWithIntl(<TripPage />);
+  const { container } = renderWithIntl(<TripView />);
   await fillValidForm(user, container);
   await user.click(
     within(container).getByRole('button', {
@@ -334,15 +355,19 @@ beforeEach(() => {
 
 describe('TripPage', () => {
   it('renders the page content by default', () => {
-    const { container } = renderWithIntl(<TripPage />);
+    const { container } = renderWithIntl(<TripView />);
 
     expect(container).not.toBeEmptyDOMElement();
-    expect(container.querySelector('h1')).not.toBeNull();
+    // The h1 lives in the server shell (task 2.3); the view owns the
+    // interactive flow — the mode toggle is its entry point.
+    expect(
+      container.querySelector('[data-testid="trip-mode-toggle"]'),
+    ).not.toBeNull();
   });
 
   it('submits the form values parsed to integer cents, with today as the travel date', async () => {
     const user = userEvent.setup();
-    const { container } = renderWithIntl(<TripPage />);
+    const { container } = renderWithIntl(<TripView />);
     await fillValidForm(user, container);
 
     const scope = within(container);
@@ -449,7 +474,7 @@ describe('TripPage', () => {
     ): Promise<string> {
       mockedRequest.mockResolvedValueOnce(response);
       const user = userEvent.setup();
-      const view = renderWithIntl(<TripPage />);
+      const view = renderWithIntl(<TripView />);
       await fillValidForm(user, view.container);
       await user.click(
         within(view.container).getByRole('button', {
@@ -517,7 +542,7 @@ describe('TripPage fill mode', () => {
 
   it('shows the break-even form by default and swaps forms with the mode toggle', async () => {
     const user = userEvent.setup();
-    const { container } = renderWithIntl(<TripPage />);
+    const { container } = renderWithIntl(<TripView />);
     const scope = within(container);
 
     expect(scope.getByTestId('trip-form')).toBeInTheDocument();
@@ -535,7 +560,7 @@ describe('TripPage fill mode', () => {
   it('submits the selected candidates and quantity bounds to /api/v1/trip/fill with today as the travel date', async () => {
     mockFillExchange(FILL_RESULT);
     const user = userEvent.setup();
-    const { container } = renderWithIntl(<TripPage />);
+    const { container } = renderWithIntl(<TripView />);
 
     await selectFillCandidates(user, container);
     await user.click(
@@ -562,7 +587,7 @@ describe('TripPage fill mode', () => {
   it('renders the fill itemization: totals, per-line contribution and headroom, provenance, disclaimer, and the partner block', async () => {
     mockFillExchange(FILL_RESULT);
     const user = userEvent.setup();
-    const { container } = renderWithIntl(<TripPage />);
+    const { container } = renderWithIntl(<TripView />);
 
     await selectFillCandidates(user, container);
     await user.click(
@@ -615,7 +640,7 @@ describe('TripPage fill mode', () => {
   it('renders BOUND_EXHAUSTED as an explained value state, never an error', async () => {
     mockFillExchange(FILL_BOUND_EXHAUSTED);
     const user = userEvent.setup();
-    const { container } = renderWithIntl(<TripPage />);
+    const { container } = renderWithIntl(<TripView />);
 
     await selectFillCandidates(user, container);
     await user.click(
@@ -632,7 +657,7 @@ describe('TripPage fill mode', () => {
   it('ignores duplicate candidate clicks, blocks the submit without candidates, and allows removal', async () => {
     mockFillExchange(FILL_RESULT);
     const user = userEvent.setup();
-    const { container } = renderWithIntl(<TripPage />);
+    const { container } = renderWithIntl(<TripView />);
     const scope = within(container);
 
     await user.click(scope.getByTestId('trip-mode-fill'));
@@ -674,7 +699,7 @@ describe('TripPage fill mode', () => {
       }),
     );
     const user = userEvent.setup();
-    const { container } = renderWithIntl(<TripPage />);
+    const { container } = renderWithIntl(<TripView />);
 
     await selectFillCandidates(user, container);
     await user.click(
@@ -698,7 +723,7 @@ describe('TripPage fill mode', () => {
       }),
     );
     const user = userEvent.setup();
-    const { container } = renderWithIntl(<TripPage />);
+    const { container } = renderWithIntl(<TripView />);
 
     await selectFillCandidates(user, container);
     await user.click(
@@ -709,5 +734,40 @@ describe('TripPage fill mode', () => {
       await screen.findByText('Ei julkaistuja tullimäärärajoja'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Server shell (task 2.3, D2): unique metadata + SSR intro / method summary
+// ---------------------------------------------------------------------------
+
+describe('TripPage server shell (task 2.3)', () => {
+  it('emits unique metadata with the trip break-even framing', async () => {
+    const meta = await tripMetadata({
+      params: Promise.resolve({ locale: 'fi' }),
+    });
+    expect(meta.title).toBe('Matkalaskuri: kannattava tuontimäärä rajalla');
+    expect(meta.description).toContain('tullimäärärajojen');
+    // Unique against the site-default metadata title, not a restatement.
+    const root = (await import('@/messages/fi.json')).default as {
+      Metadata: { title: string };
+    };
+    expect(meta.title).not.toBe(root.Metadata.title);
+  });
+
+  it('server-renders the intro and the how-this-calculation-works summary', async () => {
+    const { renderToString } = await import('react-dom/server');
+    const { NextIntlClientProvider } = await import('next-intl');
+    const messages = (await import('@/messages/fi.json')).default;
+    const html = renderToString(
+      <NextIntlClientProvider locale="fi" messages={messages}>
+        {await TripPage({ params: Promise.resolve({ locale: 'fi' }) })}
+      </NextIntlClientProvider>,
+    );
+
+    expect(html).toContain('Matkalaskuri');
+    expect(html).toContain('Miten matkalaskenta toimii');
+    // The summary is content, not advice — the estimates stance holds.
+    expect(html).toContain('ei vero- tai tullineuvontaa');
   });
 });

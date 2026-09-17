@@ -112,7 +112,21 @@
     "trustReliabilityBody": "Every number shown carries a reliability status and a timestamp, so the certainty and age of the data are always visible.",
     "trustMethodologyTitle": "Methodology",
     "trustMethodologyBody": "The calculation model, the tax sources in use, and the ranking criteria are documented openly.",
-    "faqHeading": "Frequently asked questions"
+    "faqHeading": "Frequently asked questions",
+    "exampleBadge": "Example calculation",
+    "exampleTitle": "How the landed total adds up: 6 bottles of wine from Tallinn",
+    "exampleIntro": "Below is a fixed example illustrating the structure of the calculation: a foreign retail price, the transport share, and taxes combine into an estimated landed total, compared against the Finland reference price. The figures are illustrative example values — not live prices.",
+    "exampleForeignPriceLabel": "Foreign retail price (6 × €8.00)",
+    "exampleForeignPriceValue": "€48.00",
+    "exampleTransportLabel": "Transport share of the trip",
+    "exampleTransportValue": "€15.00",
+    "exampleLandedLabel": "Estimated landed total in Finland",
+    "exampleLandedValue": "€63.00",
+    "exampleReferenceLabel": "Finland reference price (6 × €16.00)",
+    "exampleReferenceValue": "€96.00",
+    "exampleDifferenceLabel": "Difference against the Finland reference price",
+    "exampleDifferenceValue": "In this example importing is about €33.00 cheaper",
+    "exampleNote": "The example calculation uses fixed, illustrative figures and fetches no data. Only totals are compared: the difference can also turn the other way, making importing dearer than the reference price. Duty varies by beverage type and strength."
   },
   "AgeGate": {
     "title": "Age verification",
@@ -364,6 +378,10 @@
   "Compare": {
     "title": "Product comparison",
     "subtitle": "Compare landed costs of beverage products side by side. All rankings are objective and neutral.",
+    "metaTitle": "Product comparison: landed costs side by side",
+    "metaDescription": "Add beverages to a side-by-side comparison of their estimated landed costs to Finland: retail price, transport, taxes, and per-product reliability statuses.",
+    "howTitle": "How this comparison works",
+    "howBody": "Search for a product and add it to the comparison: each column shows the product's estimated landed cost to Finland itemized by component, together with a reliability status for the price data. Column order follows your selected sort, and every sort is objective and neutral — no position is based on commercial factors.",
     "addProduct": "Add product",
     "addProductTitle": "Add a product",
     "aboutTitle": "About this comparison",
@@ -438,6 +456,10 @@
   "BasketPage": {
     "title": "Basket optimization",
     "subtitle": "Add multiple products to find the optimal store combination and landed-cost estimate for Finland.",
+    "metaTitle": "Basket optimization: multi-item landed cost",
+    "metaDescription": "Build a multi-item basket and get an estimate of the optimal store combination and total landed cost to Finland, including transport and tax breakdowns.",
+    "howTitle": "How this optimization works",
+    "howBody": "Add products with quantities to the basket and choose the destination and transport arrangement: the calculation combines the product prices, a transport estimate, and Finnish taxes and fees into a total landed-cost estimate, and suggests the store combination that yields the lowest estimate. The result is always an estimate, and every figure carries a reliability status.",
     "optimize": "Optimize basket",
     "optimizing": "Optimizing…",
     "errors": {
@@ -657,6 +679,10 @@
   "EventPage": {
     "title": "Event calculator",
     "subtitle": "Estimate the drink requirement from the number of guests, the duration, and the event type. Each line of the resulting shopping list shows the need, the suggested purchase, and the surplus.",
+    "metaTitle": "Event calculator: drink need and shopping list",
+    "metaDescription": "Estimate your event's drink requirement from the guest count and duration, and get a shopping list showing the need, the suggested purchase, and the surplus — also compared against foreign stores.",
+    "howTitle": "How this calculation works",
+    "howBody": "Enter the guest count, the duration, and the event type: the calculation combines published consumption norms with per-product prices into a shopping list where each line shows the need, the suggested purchase quantity, and the surplus. The result is always an estimate — not tax or customs advice.",
     "form": {
       "guests": "Number of guests",
       "duration": "Duration (hours)",
@@ -748,6 +774,10 @@
   "TripPage": {
     "title": "Trip calculator",
     "subtitle": "Calculate how many litres are worth importing on a trip: the shared travel cost, the per-category price difference, and where the traveller allowance caps bite. Each line shows the break-even import volume and the effect of the allowance cap.",
+    "metaTitle": "Trip calculator: break-even import at the border",
+    "metaDescription": "Work out how many litres are worth bringing back from abroad: the shared travel cost, the per-category price difference, and the effect of customs allowance limits — an estimate before you travel.",
+    "howTitle": "How this calculation works",
+    "howBody": "Enter the trip costs and the per-category prices: the calculation splits the travel cost across travellers, compares domestic and foreign prices, and shows how many litres are worth bringing before the customs allowance cap is crossed. The result is always an estimate — not tax or customs advice.",
     "form": {
       "passengers": "Passengers",
       "vehicle": "Vehicle",
@@ -854,6 +884,14 @@
   "WhatIfPage": {
     "title": "What-if calculator",
     "subtitle": "Substitute the alcohol excise rate with a value of your choice and compare product totals within a fixed baseline dataset. The calculation is hypothetical.",
+    "metaTitle": "What-if calculator: hypothetical duty rate",
+    "metaDescription": "Explore how a changed alcohol-duty rate or product price would alter import totals against a fixed baseline dataset. A hypothetical calculation, not a forecast.",
+    "examplesTitle": "Example questions you can explore",
+    "example1": "What if the alcohol-duty rate fell from €20 to €15 per formula unit?",
+    "example2": "What if the duty rate doubled from its current level?",
+    "example3": "What if the import retail price was €5 while the domestic reference price is €12?",
+    "howTitle": "How this calculation works",
+    "howBody": "Pick a hypothetical rate and add product rows: the calculation compares the effect of the current and the hypothetical rate on import prices against a fixed baseline dataset. The calculation is always hypothetical — it is not tax or customs advice.",
     "recalculating": "Calculating…",
     "form": {
       "rateLabel": "Hypothetical excise rate (€ per formula unit)",
@@ -989,6 +1027,10 @@
   "Ranking": {
     "title": "How ranking works",
     "subtitle": "Objective, transparent, and free of commercial influence.",
+    "metaTitle": "Ranking: objective, open, and neutral",
+    "metaDescription": "Every product ordering is based only on objective factors: explore the available sort orders, the tiebreaker rules, and how neutrality is enforced in code.",
+    "howTitle": "How the orderings are formed",
+    "howBody": "Every ordering uses only objective sort values (such as landed cost, price per litre, and alcohol percentage) with the product name as the tiebreaker. The same data always produces the same order, and no merchant payment or manual promotion can affect a position.",
     "neutralityTitle": "Neutrality guarantee",
     "neutralityStatement": "Rajahinta uses only objective, non-commercial factors to sort products. No merchant payment, promotional flag, or manual boost can affect the position of any product.",
     "tiebreakerTitle": "Tiebreaker & determinism",
@@ -1011,6 +1053,8 @@
   },
   "ValuePage": {
     "title": "Ethanol €/g by category",
+    "metaTitle": "Ethanol €/g by category: unit-price listing",
+    "metaDescription": "See what one gram of pure ethanol costs when computed from product offer prices, by category and ascending. An informational listing where every value uses the same formula.",
     "subtitle": "Each row states what one gram of pure ethanol costs when computed from the product's offer price. The value uses the same formula as the comparison view, and the listing is ordered by the €/g value, ascending.",
     "informationalNote": "This listing is informational: it presents the computed values as they are. The order shown here is a separate read-only view and does not affect search, other listings, or the calculator.",
     "categorySelectorLabel": "Price category",
