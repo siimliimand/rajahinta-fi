@@ -1,6 +1,6 @@
 # savings-discovery Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Market overview aggregates
 

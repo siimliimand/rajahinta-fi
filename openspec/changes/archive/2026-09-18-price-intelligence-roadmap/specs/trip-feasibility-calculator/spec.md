@@ -1,6 +1,6 @@
 # trip-feasibility-calculator Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Route presets
 

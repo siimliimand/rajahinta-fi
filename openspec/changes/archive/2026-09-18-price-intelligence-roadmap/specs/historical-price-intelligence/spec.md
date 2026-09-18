@@ -1,6 +1,6 @@
 # historical-price-intelligence Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Product page price history
 

@@ -1,6 +1,6 @@
 # landed-cost-calculator Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Result presentation
 

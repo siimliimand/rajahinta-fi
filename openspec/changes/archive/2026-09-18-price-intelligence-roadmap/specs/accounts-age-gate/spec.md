@@ -1,6 +1,12 @@
 # accounts-age-gate Specification
 
-## MODIFIED Requirements
+## REMOVED Requirements
+
+### Requirement: Age gate renders no restricted content server-side
+
+**Reason**: Superseded by the presentation-layer gate. Server-side content rendering is now REQUIRED for crawlability; the enforcement point is the API boundary, which keeps its 403s.
+
+## ADDED Requirements
 
 ### Requirement: Gate presentation
 

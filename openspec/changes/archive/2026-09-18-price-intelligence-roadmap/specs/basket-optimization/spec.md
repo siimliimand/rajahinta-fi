@@ -1,6 +1,6 @@
 # basket-optimization Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Sticky basket summary
 

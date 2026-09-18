@@ -1,6 +1,6 @@
 # event-calculator Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Event templates
 

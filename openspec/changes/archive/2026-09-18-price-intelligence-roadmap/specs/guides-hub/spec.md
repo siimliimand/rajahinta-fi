@@ -1,6 +1,6 @@
 # guides-hub Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: FAQ entries
 

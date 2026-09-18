@@ -1,6 +1,6 @@
 # excise-what-if-simulator Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Scenario labeling
 

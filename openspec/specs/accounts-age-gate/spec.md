@@ -158,15 +158,6 @@ Outside test environments, the account service SHALL fail fast if its persistenc
 - **WHEN** the account service is constructed without repositories in a test environment
 - **THEN** the in-memory harness SHALL continue to function as before
 
-### Requirement: Age gate renders no restricted content server-side
-
-During SSR and before hydration, the age gate wrapper SHALL render a placeholder, not the gated children. Restricted content SHALL NOT be present in server-rendered DOM.
-
-#### Scenario: SSR shows placeholder
-
-- **WHEN** a gated page is server-rendered or fetched without JavaScript
-- **THEN** the response HTML SHALL contain the age-gate placeholder and not the restricted content
-
 ### Requirement: Neutral decline destination
 
 Declining the age gate SHALL redirect to a neutral in-house page, not an external site, so the redirect neither looks broken nor leaks a referrer.
@@ -217,4 +208,38 @@ WHEN a client-side request to a gated endpoint is rejected with the age-gate rej
 
 - **WHEN** the age-gate rejection is surfaced in an error state
 - **THEN** the title and description SHALL be localized (Finnish and English), not the backend's raw message string
+
+### Requirement: Gate presentation
+
+The age gate SHALL be a presentation-layer overlay, not a content replacement. The server SHALL read the `age_confirmed` cookie during rendering and pass the decision to the gate component as initial state. Page content SHALL always be present in the server HTML. Visitors without a confirmed cookie SHALL see the confirmation modal as a fixed overlay above the content; interaction with the page remains blocked until confirmation. The API-side gate SHALL be unchanged: gated endpoints SHALL keep returning 403 `AGE_GATE_REQUIRED` without a valid confirmation token, and server-side data fetches SHALL keep presenting the server confirmation token.
+
+#### Scenario: Cookie-less fetch still receives content
+
+- **WHEN** a client requests any public page without an `age_confirmed` cookie
+- **THEN** the server HTML contains the page's content (header, footer, and the page body), and the confirmation modal is present as an overlay
+
+#### Scenario: Unconfirmed browser sees the overlay
+
+- **WHEN** a visitor without a confirmed cookie loads a page
+- **THEN** the modal renders above the content, focus moves into it, and page interaction is blocked until confirmation
+
+#### Scenario: Confirm stores the decision
+
+- **WHEN** the visitor confirms
+- **THEN** the `age_confirmed` cookie is stored with the 90-day TTL, the overlay closes, and the content beneath is usable without a reload
+
+#### Scenario: Decline leaves via the neutral page
+
+- **WHEN** the visitor declines
+- **THEN** the cookie is cleared and the visitor navigates to `/age-gate/declined`, which remains reachable without re-asking the question
+
+#### Scenario: Expired cookie recovery
+
+- **WHEN** a gated API request returns 403 `AGE_GATE_REQUIRED` after hydration
+- **THEN** the overlay re-opens in place through the existing recovery event
+
+#### Scenario: Gate copy states the storage plainly
+
+- **WHEN** the gate copy renders in either locale
+- **THEN** it describes browser local storage in standard terms and states that no personal data is collected, with no "local flag" phrasing
 
