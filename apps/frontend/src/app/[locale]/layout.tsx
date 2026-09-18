@@ -2,6 +2,7 @@ import React from 'react';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { notFound } from 'next/navigation';
+import { cookies } from 'next/headers';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, getTranslations, setRequestLocale } from 'next-intl/server';
 import { routing } from '@/i18n/routing';
@@ -84,6 +85,13 @@ const jsonLd = {
   inLanguage: ['fi', 'en'],
 };
 
+/**
+ * Same cookie the AgeGate component and the API client use. Restated
+ * here because importing a plain constant across the 'use client'
+ * boundary hands the server a client reference, not the string.
+ */
+const AGE_CONFIRMATION_COOKIE = 'age_confirmed';
+
 export default async function RootLayout({
   children,
   params,
@@ -96,6 +104,12 @@ export default async function RootLayout({
     notFound();
   }
   setRequestLocale(locale);
+
+  // Server-side gate decision (design D1): the same `age_confirmed`
+  // cookie the API client presents decides whether the first HTML ships
+  // the gate overlay. Reading cookies() makes the route dynamic — the
+  // change accepts that in exchange for a correct first-paint state.
+  const ageConfirmed = (await cookies()).get(AGE_CONFIRMATION_COOKIE)?.value;
 
   // Messages are inherited by every client component below the provider.
   const messages = await getMessages();
@@ -115,7 +129,9 @@ export default async function RootLayout({
           <div className="flex min-h-screen flex-col">
             <SiteHeader />
             <div className="flex-1">
-              <AgeGate>{children}</AgeGate>
+              <AgeGate initialVerified={(ageConfirmed?.length ?? 0) > 0}>
+                {children}
+              </AgeGate>
             </div>
             <SiteFooter />
           </div>

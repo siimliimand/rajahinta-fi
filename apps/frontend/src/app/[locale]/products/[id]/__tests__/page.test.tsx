@@ -18,11 +18,12 @@
  */
 // @vitest-environment jsdom
 
+import * as React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductPage from '../page';
 import { getServerProductDetail } from '@/lib/api';
-import type { ProductDetailResponse } from '@/lib/types';
+import type { PriceHistoryResponse, ProductDetailResponse } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Mocked Next server plumbing — next-intl/server resolved from the fi
@@ -71,6 +72,18 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
+// The price-history section (task 5.1) is a client island fed by a
+// server fetch; its contract has its own test file. The mock keeps the
+// pass-through observable via the testid below.
+vi.mock('../components/PriceHistoryChart', () => ({
+  default: ({ history }: { history: PriceHistoryResponse }) =>
+    history.series.length === 0
+      ? null
+      : React.createElement('section', {
+          'data-testid': 'price-history-section',
+        }),
+}));
+
 // Three levels up: the notice lives in [locale]/components/, sibling of products/.
 vi.mock('../../../components/MerchantWarningNotice', () => ({
   default: () => null,
@@ -82,6 +95,36 @@ vi.mock('../components/ProductPriceContextLine', () => ({
 }));
 
 const mockedGetServerProductDetail = vi.mocked(getServerProductDetail);
+
+/** A price-history payload the page can pass straight through. */
+function historyResponse(days: number): PriceHistoryResponse {
+  const to = '2026-09-10';
+  return {
+    productId: 42,
+    merchant: null,
+    metric: 'price',
+    granularity: 'day',
+    from: to,
+    to,
+    series:
+      days === 0
+        ? []
+        : [
+            {
+              periodStart: to,
+              openCents: 500,
+              closeCents: 500,
+              minCents: 450,
+              maxCents: 550,
+              avgCents: 500,
+              observationCount: 2,
+              reliability: 'VERIFIED' as const,
+            },
+          ],
+    attribution: [],
+    earliestAvailableObservationDate: days === 0 ? null : to,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -128,6 +171,52 @@ function offer(
 
 beforeEach(() => {
   mockedGetServerProductDetail.mockReset();
+  // The server-side price-history read rides global fetch; default to
+  // the degradation path (section absent) — history tests override it.
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockRejectedValue(new Error('history fetch not mocked')),
+  );
+});
+
+describe('ProductPage price-history section (task 5.1)', () => {
+  it('renders the section when the server fetch delivers history', async () => {
+    mockedGetServerProductDetail.mockResolvedValue(detailResponse([offer()]));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => historyResponse(1),
+      }),
+    );
+
+    render(
+      await ProductPage({ params: Promise.resolve({ locale: 'fi', id: '42' }) }),
+    );
+
+    expect(screen.getByTestId('price-history-section')).toBeInTheDocument();
+  });
+
+  it('renders WITHOUT the section when the history fetch fails or is empty', async () => {
+    mockedGetServerProductDetail.mockResolvedValue(detailResponse([offer()]));
+
+    render(
+      await ProductPage({ params: Promise.resolve({ locale: 'fi', id: '42' }) }),
+    );
+    expect(screen.queryByTestId('price-history-section')).not.toBeInTheDocument();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => historyResponse(0),
+      }),
+    );
+    render(
+      await ProductPage({ params: Promise.resolve({ locale: 'fi', id: '42' }) }),
+    );
+    expect(screen.queryByTestId('price-history-section')).not.toBeInTheDocument();
+  });
 });
 
 describe('ProductPage Retail prices table', () => {

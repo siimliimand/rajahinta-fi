@@ -79,6 +79,8 @@ export default async function SiteFooter() {
               {[
                 { href: '/ranking', labelKey: 'methodology' },
                 { href: '/blog',    labelKey: 'linkBlog' },
+                { href: '/about',   labelKey: 'linkAbout' },
+                { href: '/contact', labelKey: 'linkContact' },
               ].map(({ href, labelKey }) => (
                 <li key={href}>
                   <Link

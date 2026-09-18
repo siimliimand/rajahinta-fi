@@ -1,8 +1,10 @@
 /**
- * Calculator page state-wiring tests (OpenSpec: design-system-foundation,
- * task 5.3).
+ * Calculator page tests (OpenSpec: design-system-foundation, task 5.3;
+ * price-intelligence-roadmap tasks 2.1).
  *
- * Pins the designed states wired into the real search → calculate flow:
+ * State-wiring tests pin the designed states wired into the real
+ * search → calculate flow, rendered through the client view
+ * (`calculator-view.tsx`, the D2 server-shell conversion):
  *   1. A settled search with zero results renders the EmptyState (not
  *      the selector's inline note).
  *   2. A failed search keeps the inline error and does NOT render the
@@ -15,15 +17,22 @@
  *      the localized AgeGate recovery copy instead of the raw backend
  *      message, with retry still available (age-gate-recovery 3.4).
  *
+ * Server-shell tests (2.1) pin the reference conversion: the page owns
+ * unique metadata and server-renders the intro + "how this calculation
+ * works" summary (about-contact test precedent).
+ *
  * @module CalculatorPageTest
  */
 // @vitest-environment jsdom
 
 import React from 'react';
+import { renderToString } from 'react-dom/server';
+import { NextIntlClientProvider } from 'next-intl';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import CalculatorPage from './page';
+import CalculatorPage, { generateMetadata as calculatorMetadata } from './page';
+import CalculatorView from './calculator-view';
 import {
   ApiFetchError,
   searchProducts,
@@ -32,6 +41,32 @@ import {
 } from '@/lib/api';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import type { ProductSearchItem } from '@/lib/types';
+
+// The server shell (page.tsx) resolves its copy through next-intl/server;
+// resolve straight from the Finnish catalog with {param} interpolation
+// (about-contact test precedent). The client view uses next-intl's
+// provider instead and is unaffected by this mock.
+vi.mock('next-intl/server', () => ({
+  setRequestLocale: () => undefined,
+  getTranslations: async (
+    opts?: string | { locale?: string; namespace?: string },
+  ) => {
+    const ns = typeof opts === 'string' ? opts : (opts?.namespace ?? '');
+    const table = (await import('@/messages/fi.json')).default as Record<
+      string,
+      unknown
+    >;
+    return (key: string, values?: Record<string, unknown>) => {
+      const value = (table[ns] as Record<string, unknown> | undefined)?.[key];
+      if (typeof value !== 'string') return `__MISSING_${ns}.${key}__`;
+      return values === undefined
+        ? value
+        : value.replace(/\{(\w+)\}/g, (_, k: string) =>
+            values[k] === undefined ? `{${k}}` : String(values[k]),
+          );
+    };
+  },
+}));
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
@@ -120,7 +155,7 @@ describe('CalculatorPage search no-results state (task 5.3)', () => {
     mockedSearchProducts.mockResolvedValue(searchResponse([]));
     const user = userEvent.setup();
 
-    renderWithIntl(<CalculatorPage />);
+    renderWithIntl(<CalculatorView />);
 
     await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'absintti');
     await user.click(screen.getByRole('button', { name: 'Hae' }));
@@ -142,7 +177,7 @@ describe('CalculatorPage search no-results state (task 5.3)', () => {
     mockedSearchProducts.mockRejectedValue(new Error('search backend down'));
     const user = userEvent.setup();
 
-    renderWithIntl(<CalculatorPage />);
+    renderWithIntl(<CalculatorView />);
 
     await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'olut');
     await user.click(screen.getByRole('button', { name: 'Hae' }));
@@ -162,7 +197,7 @@ describe('CalculatorPage rate-limited calculation state (task 5.3)', () => {
     mockedCalculateLandedCost.mockRejectedValue(rateLimited());
     const user = userEvent.setup();
 
-    renderWithIntl(<CalculatorPage />);
+    renderWithIntl(<CalculatorView />);
 
     // Search → select the hit.
     await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
@@ -205,7 +240,7 @@ describe('CalculatorPage age-gate recovery state (age-gate-recovery 3.4)', () =>
     mockedCalculateLandedCost.mockRejectedValue(ageGateRequired());
     const user = userEvent.setup();
 
-    renderWithIntl(<CalculatorPage />);
+    renderWithIntl(<CalculatorView />);
 
     // Search → select the hit.
     await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
@@ -238,5 +273,38 @@ describe('CalculatorPage age-gate recovery state (age-gate-recovery 3.4)', () =>
     expect(
       screen.getByRole('button', { name: 'Yritä uudelleen' }),
     ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Server shell (task 2.1, D2): unique metadata + SSR intro / method summary
+// ---------------------------------------------------------------------------
+
+describe('CalculatorPage server shell (task 2.1)', () => {
+  it('emits unique metadata with the cross-border calculator framing', async () => {
+    const meta = await calculatorMetadata({
+      params: Promise.resolve({ locale: 'fi' }),
+    });
+    expect(meta.title).toBe('Rajat ylittävä kustannuslaskuri');
+    expect(meta.description).toContain('kokonaiskustannuksesta Suomeen');
+    // Unique against the site-default metadata title, not a restatement.
+    const root = (await import('@/messages/fi.json')).default as {
+      Metadata: { title: string };
+    };
+    expect(meta.title).not.toBe(root.Metadata.title);
+  });
+
+  it('server-renders the intro and the how-this-calculation-works summary', async () => {
+    const messages = (await import('@/messages/fi.json')).default;
+    const html = renderToString(
+      <NextIntlClientProvider locale="fi" messages={messages}>
+        {await CalculatorPage({ params: Promise.resolve({ locale: 'fi' }) })}
+      </NextIntlClientProvider>,
+    );
+
+    expect(html).toContain('Kokonaiskustannuslaskuri');
+    expect(html).toContain('Miten laskenta toimii');
+    // The summary is content, not advice — the estimates stance holds.
+    expect(html).toContain('ei vero- tai tullineuvontaa');
   });
 });

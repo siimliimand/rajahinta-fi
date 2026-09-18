@@ -25,7 +25,14 @@ import * as React from 'react';
 import { renderToString } from 'react-dom/server';
 import { render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import SavingsPage from './page';
 import SavingsListing from './components/SavingsListing';
 import { request } from '@/lib/api';
@@ -62,7 +69,16 @@ vi.mock('next-intl/server', () => ({
       unknown
     >;
     return (key: string, values?: Record<string, unknown>) => {
-      const value = (table[ns] as Record<string, unknown> | undefined)?.[key];
+      // Walk dot-paths so nested keys (SavingsPage.category.beer)
+      // resolve like the real next-intl lookup.
+      let value: unknown = table[ns];
+      for (const part of key.split('.')) {
+        if (typeof value !== 'object' || value === null) {
+          value = undefined;
+          break;
+        }
+        value = (value as Record<string, unknown>)[part];
+      }
       if (typeof value !== 'string') return `__MISSING_${ns}.${key}__`;
       return values === undefined
         ? value
@@ -101,6 +117,17 @@ const mockedRequest = vi.mocked(request);
 
 beforeEach(() => {
   mockedRequest.mockReset();
+  // The market overview (task 5.2) is a server-side fetch through
+  // global fetch; default to the degradation path (section absent) —
+  // the overview tests override it. Keeps every render hermetic.
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockRejectedValue(new Error('overview fetch not mocked')),
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 // ---------------------------------------------------------------------------
@@ -112,6 +139,34 @@ const EMPTY_OK = {
   category: 'beer',
   coverage: { evaluated: 42, withReference: 7, listed: 0 },
   rows: [],
+};
+
+/** Market-overview payload (task 5.2) as the endpoint serves it. */
+const OVERVIEW_OK = {
+  asOf: '2026-09-08',
+  categories: [
+    {
+      category: 'beer',
+      productCount: 12,
+      averageObservedPriceCents: 325,
+      largestDifference: {
+        productId: 7,
+        productName: 'Testia olut 0,5 l',
+        merchant: 'Viro-kauppa',
+        merchantCountry: 'EE',
+        observedPriceCents: 150,
+        referenceCents: 3500,
+        gapCents: -2266,
+        gapBasisPoints: -64742,
+      },
+    },
+    {
+      category: 'wine_still',
+      productCount: 4,
+      averageObservedPriceCents: 890,
+      largestDifference: null,
+    },
+  ],
 };
 
 function savingsRow(overrides: Partial<Record<string, unknown>> = {}) {
@@ -157,6 +212,62 @@ describe('SavingsPage shell', () => {
     // URL-state category links.
     expect(html).toContain('href="/savings?category=beer"');
     expect(html).toContain('href="/savings?category=spirits"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Market overview (task 5.2) — server-rendered section
+// ---------------------------------------------------------------------------
+
+describe('SavingsPage market overview (task 5.2)', () => {
+  async function renderShell(): Promise<string> {
+    const element = await SavingsPage({
+      params: Promise.resolve({ locale: 'fi' }),
+      searchParams: Promise.resolve({}),
+    });
+    return renderToString(
+      <NextIntlClientProvider locale="fi" messages={(await import('@/messages/fi.json')).default}>
+        {element}
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('renders the overview section with traceable aggregates and explicit direction wording', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => OVERVIEW_OK,
+      }),
+    );
+    const html = await renderShell();
+
+    expect(html).toContain('data-testid="savings-overview"');
+    // What the aggregates are and over what — stated in copy.
+    expect(html).toContain('Markkinakatsaus');
+    expect(html).toContain('viimeisimmästä havaintopäivästä');
+    // Average observed price per category (integer cents → the listing's
+    // euro form).
+    expect(html).toContain('3.25 €');
+    expect(html).toContain('Havaittuja tuotteita: 12');
+    // Largest difference carries the product, the figure, and the
+    // explicit cheaper/dearer wording (gap < 0 → cheaper abroad).
+    expect(html).toContain('Testia olut 0,5 l');
+    expect(html).toContain('22.66 €');
+    expect(html).toContain('halvempi kuin Alkon vertailuhinta');
+    // Canonical categories reuse the listing's established labels.
+    expect(html).toContain('Makuuviini');
+    // A category without a qualifying largestDifference row still shows
+    // its aggregates.
+    expect(html).toContain('8.90 €');
+  });
+
+  it('renders WITHOUT the section when the overview fetch fails', async () => {
+    const html = await renderShell();
+
+    expect(html).not.toContain('data-testid="savings-overview"');
+    // The rest of the shell is intact.
+    expect(html).toContain('href="/savings?category=beer"');
   });
 });
 

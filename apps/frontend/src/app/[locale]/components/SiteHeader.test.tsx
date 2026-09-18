@@ -15,8 +15,9 @@
 // @vitest-environment jsdom
 
 import * as React from 'react';
-import { screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { NextIntlClientProvider } from 'next-intl';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SiteHeader from './SiteHeader';
 import { renderWithIntl } from '@/lib/testing/test-intl';
@@ -25,10 +26,13 @@ import type { SessionStatus } from '@/lib/types';
 
 const replaceMock = vi.fn();
 
+/** The pathname the mocked i18n navigation reports — set per test. */
+let mockPathname = '/';
+
 vi.mock('@/i18n/navigation', () => ({
   Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
     React.createElement('a', props),
-  usePathname: () => '/',
+  usePathname: () => mockPathname,
   useRouter: () => ({ replace: replaceMock }),
 }));
 
@@ -52,6 +56,7 @@ const SESSION: SessionStatus = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockPathname = '/';
   // The nav destinations also render a plain /account link — keep the
   // assertions on the auth-action testids specific.
 });
@@ -122,5 +127,142 @@ describe('SiteHeader auth actions', () => {
       'href',
       '/register',
     );
+  });
+});
+
+describe('SiteHeader planning dropdown (task 3.2)', () => {
+  async function renderHeader(): Promise<HTMLElement> {
+    mockedEnsureSession.mockRejectedValue(new Error('401'));
+    renderWithIntl(<SiteHeader />);
+    await screen.findByTestId('header-sign-in');
+    return screen.getByTestId('planning-dropdown-menu');
+  }
+
+  it('opens with Enter and lists the trip, event, and scenario destinations', async () => {
+    const user = userEvent.setup();
+    await renderHeader();
+    const trigger = screen.getByTestId('planning-dropdown-trigger');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveAttribute('aria-controls', 'site-header-planning-menu');
+
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    const menu = screen.getByTestId('planning-dropdown-menu');
+    const hrefs = within(menu)
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href'));
+    expect(hrefs).toEqual(['/trip', '/event', '/what-if']);
+  });
+
+  it('moves focus into the items with ArrowDown/ArrowUp and closes on Escape back to the trigger', async () => {
+    const user = userEvent.setup();
+    await renderHeader();
+    const trigger = screen.getByTestId('planning-dropdown-trigger');
+
+    trigger.focus();
+    await user.keyboard('{ArrowDown}');
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const items = within(screen.getByTestId('planning-dropdown-menu')).getAllByRole(
+      'link',
+    );
+    expect(document.activeElement).toBe(items[0]);
+
+    await user.keyboard('{ArrowUp}');
+    // Wrap: ArrowUp from the first item lands on the last.
+    expect(document.activeElement).toBe(items[items.length - 1]);
+
+    await user.keyboard('{Escape}');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('closes on tab-out', async () => {
+    const user = userEvent.setup();
+    await renderHeader();
+    const trigger = screen.getByTestId('planning-dropdown-trigger');
+
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    // Focus leaves the dropdown wrapper entirely.
+    (screen.getByTestId('header-sign-in') as HTMLElement).focus();
+    await waitFor(() =>
+      expect(trigger).toHaveAttribute('aria-expanded', 'false'),
+    );
+  });
+
+  it('marks the trigger active while a planning route is current', async () => {
+    mockPathname = '/trip';
+    await renderHeader();
+
+    const trigger = screen.getByTestId('planning-dropdown-trigger');
+    expect(trigger.className).toContain('font-semibold');
+    const active = within(screen.getByTestId('planning-dropdown-menu'))
+      .getAllByRole('link')
+      .find((link) => link.getAttribute('href') === '/trip');
+    expect(active).toHaveAttribute('aria-current', 'page');
+  });
+});
+
+describe('SiteHeader locale switcher (task 3.2)', () => {
+  it('switches to EN preserving the current pathname', async () => {
+    mockPathname = '/calculator';
+    const user = userEvent.setup();
+    mockedEnsureSession.mockRejectedValue(new Error('401'));
+    renderWithIntl(<SiteHeader />);
+    await screen.findByTestId('header-sign-in');
+
+    await user.click(screen.getByTestId('locale-switch-en'));
+    expect(replaceMock).toHaveBeenCalledWith('/calculator', { locale: 'en' });
+  });
+
+  it('switches back to FI on the same preserved path from an EN page', async () => {
+    // The FI provider makes FI the active locale, so the FI switch only
+    // acts from an EN context — mirrored here with the EN catalog.
+    mockPathname = '/ranking';
+    const user = userEvent.setup();
+    mockedEnsureSession.mockRejectedValue(new Error('401'));
+    render(
+      <NextIntlClientProvider
+        locale="en"
+        messages={(await import('@/messages/en.json')).default}
+      >
+        <SiteHeader />
+      </NextIntlClientProvider>,
+    );
+    await screen.findByTestId('header-sign-in');
+
+    expect(screen.getByTestId('locale-switch-en')).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+    await user.click(screen.getByTestId('locale-switch-fi'));
+    expect(replaceMock).toHaveBeenCalledWith('/ranking', { locale: 'fi' });
+  });
+
+  it('marks the active locale for assistive tech, labelled as a group', () => {
+    mockedEnsureSession.mockRejectedValue(new Error('401'));
+    renderWithIntl(<SiteHeader />);
+
+    const switcher = screen.getByTestId('locale-switcher');
+    expect(switcher).toHaveAttribute('aria-label', 'Vaihda kieltä');
+    expect(screen.getByTestId('locale-switch-fi')).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+    expect(screen.getByTestId('locale-switch-en')).not.toHaveAttribute(
+      'aria-current',
+    );
+  });
+
+  it('exists for mobile users inside the mobile panel', () => {
+    mockedEnsureSession.mockRejectedValue(new Error('401'));
+    renderWithIntl(<SiteHeader />);
+
+    expect(screen.getByTestId('locale-switcher-mobile')).toBeInTheDocument();
+    expect(screen.getByTestId('locale-switch-fi-mobile')).toBeInTheDocument();
+    expect(screen.getByTestId('locale-switch-en-mobile')).toBeInTheDocument();
   });
 });

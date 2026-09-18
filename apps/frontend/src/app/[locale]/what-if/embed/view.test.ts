@@ -145,7 +145,7 @@ describe('helpers', () => {
   });
 
   it('embedMessage falls back to the key for missing paths', () => {
-    expect(embedMessage('fi', 'WhatIfPage.title')).toBe('Mitä jos -laskuri');
+    expect(embedMessage('fi', 'WhatIfPage.title')).toBe('Skenaariolaskuri');
     expect(embedMessage('fi', 'WhatIfPage.does.not.exist')).toBe('WhatIfPage.does.not.exist');
   });
 });

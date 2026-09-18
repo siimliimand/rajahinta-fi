@@ -19,7 +19,8 @@ import * as React from 'react';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import EventPage from './page';
+import EventPage, { generateMetadata as eventMetadata } from './page';
+import EventView from './event-view';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import { ApiFetchError, request } from '@/lib/api';
 import type { EventCalcResponse } from './event.types';
@@ -31,6 +32,26 @@ vi.mock('@/lib/api', async (importOriginal) => {
     request: vi.fn(),
   };
 });
+
+// The server shell (page.tsx) resolves its copy through next-intl/server;
+// resolve straight from the Finnish catalog (calculator test precedent).
+// The client view uses next-intl's provider instead and is unaffected.
+vi.mock('next-intl/server', () => ({
+  setRequestLocale: () => undefined,
+  getTranslations: async (
+    opts?: string | { locale?: string; namespace?: string },
+  ) => {
+    const ns = typeof opts === 'string' ? opts : (opts?.namespace ?? '');
+    const table = (await import('@/messages/fi.json')).default as Record<
+      string,
+      unknown
+    >;
+    return (key: string) => {
+      const value = (table[ns] as Record<string, unknown> | undefined)?.[key];
+      return typeof value === 'string' ? value : `__MISSING_${ns}.${key}__`;
+    };
+  },
+}));
 
 const mockedRequest = vi.mocked(request);
 
@@ -101,17 +122,21 @@ beforeEach(() => {
 
 describe('EventPage', () => {
   it('renders the page content by default', () => {
-    const { container } = renderWithIntl(<EventPage />);
+    const { container } = renderWithIntl(<EventView />);
 
     expect(container).not.toBeEmptyDOMElement();
-    expect(screen.getByRole('heading')).toBeInTheDocument();
+    // The h1 lives in the server shell (task 2.3); the view owns the
+    // interactive flow — the form is its entry point.
+    expect(
+      container.querySelector('input[id="event-guests"]'),
+    ).not.toBeNull();
   });
 
   it('submits the form values with today as the event date', async () => {
     mockedRequest.mockResolvedValueOnce(COMPUTED);
 
     const user = userEvent.setup();
-    renderWithIntl(<EventPage />);
+    renderWithIntl(<EventView />);
 
     const guests = screen.getByLabelText('Vieraiden määrä (kpl)');
     await user.clear(guests);
@@ -139,7 +164,7 @@ describe('EventPage', () => {
     mockedRequest.mockResolvedValueOnce(COMPUTED);
 
     const user = userEvent.setup();
-    renderWithIntl(<EventPage />);
+    renderWithIntl(<EventView />);
 
     await user.click(
       screen.getByRole('button', { name: 'Laske ostoslista' }),
@@ -167,7 +192,7 @@ describe('EventPage', () => {
     mockedRequest.mockResolvedValueOnce(NO_NORMS);
 
     const user = userEvent.setup();
-    renderWithIntl(<EventPage />);
+    renderWithIntl(<EventView />);
 
     await user.click(
       screen.getByRole('button', { name: 'Laske ostoslista' }),
@@ -196,7 +221,7 @@ describe('EventPage', () => {
     );
 
     const user = userEvent.setup();
-    renderWithIntl(<EventPage />);
+    renderWithIntl(<EventView />);
 
     await user.click(
       screen.getByRole('button', { name: 'Laske ostoslista' }),
@@ -290,7 +315,7 @@ describe('EventPage — V2 sourcing', () => {
     response: EventCalcResponse,
   ): Promise<void> {
     mockedRequest.mockResolvedValueOnce(response);
-    const { container } = renderWithIntl(<EventPage />);
+    const { container } = renderWithIntl(<EventView />);
 
     await user.click(screen.getByTestId('event-sourcing-toggle'));
     await user.type(screen.getByLabelText('Olut — Suomi (€/l)'), '5,00');
@@ -356,7 +381,7 @@ describe('EventPage — V2 sourcing', () => {
   it('offers the packing opt-in and posts packing=true when toggled', async () => {
     const user = userEvent.setup();
     mockedRequest.mockResolvedValueOnce(COMPUTED_WITH_PLAN);
-    const { container } = renderWithIntl(<EventPage />);
+    const { container } = renderWithIntl(<EventView />);
 
     await user.click(screen.getByTestId('event-sourcing-toggle'));
     await user.type(screen.getByLabelText('Olut — Suomi (€/l)'), '5,00');
@@ -374,5 +399,40 @@ describe('EventPage — V2 sourcing', () => {
       (mockedRequest.mock.calls[0]![1] as { body: string }).body,
     ) as { sourcing?: { packing?: boolean } };
     expect(body.sourcing!.packing).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Server shell (task 2.3, D2): unique metadata + SSR intro / method summary
+// ---------------------------------------------------------------------------
+
+describe('EventPage server shell (task 2.3)', () => {
+  it('emits unique metadata with the event shopping-list framing', async () => {
+    const meta = await eventMetadata({
+      params: Promise.resolve({ locale: 'fi' }),
+    });
+    expect(meta.title).toBe('Tilaisuuslaskuri: juonetarve ja ostoslista');
+    expect(meta.description).toContain('ostoslistan');
+    // Unique against the site-default metadata title, not a restatement.
+    const root = (await import('@/messages/fi.json')).default as {
+      Metadata: { title: string };
+    };
+    expect(meta.title).not.toBe(root.Metadata.title);
+  });
+
+  it('server-renders the intro and the how-this-calculation-works summary', async () => {
+    const { renderToString } = await import('react-dom/server');
+    const { NextIntlClientProvider } = await import('next-intl');
+    const messages = (await import('@/messages/fi.json')).default;
+    const html = renderToString(
+      <NextIntlClientProvider locale="fi" messages={messages}>
+        {await EventPage({ params: Promise.resolve({ locale: 'fi' }) })}
+      </NextIntlClientProvider>,
+    );
+
+    expect(html).toContain('Tilaisuuslaskuri');
+    expect(html).toContain('Miten tilaisuuslaskenta toimii');
+    // The summary is content, not advice — the estimates stance holds.
+    expect(html).toContain('ei vero- tai tullineuvontaa');
   });
 });

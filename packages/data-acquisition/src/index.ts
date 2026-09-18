@@ -131,6 +131,19 @@ export {
 } from './adapters/posti-rate.source';
 export type { RateFeedFetcher } from './adapters/posti-rate.source';
 
+// Fransberg (fransberg.eu) — manually curated dataset source (no live
+// feed to fetch). Ingestion is owned by the api-worker's monthly
+// fransberg-rate-refresh cron, NOT the CARRIER_RATE_SOURCES map below:
+// that map feeds the '*' wildcard refresh, which would re-append the
+// static dataset every six hours.
+export {
+  FransbergCarrierRateSource,
+  buildFransbergRates,
+  FRANSBERG_OBSERVED_AT,
+  FRANSBERG_MAX_PARCEL_KG,
+  FRANSBERG_PALLET_KG,
+} from './adapters/fransberg-rate.source';
+
 export { DrizzleTransportOfferWriteAdapter } from './adapters/transport-offer-write.adapter';
 
 // ---------------------------------------------------------------------------

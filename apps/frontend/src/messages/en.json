@@ -34,6 +34,7 @@
     "offerCount": "{count, plural, one {# offer} other {# offers}}",
     "countries": {
       "FI": "Finland",
+      "SE": "Sweden",
       "EE": "Estonia",
       "LV": "Latvia",
       "LT": "Lithuania",
@@ -65,9 +66,11 @@
     "products": "Products",
     "event": "Event calculator",
     "trip": "Trip calculator",
-    "whatIf": "What-if calculator",
+    "whatIf": "Scenario calculator",
     "account": "My account",
-    "ranking": "How ranking works"
+    "ranking": "How ranking works",
+    "planning": "Planning",
+    "localeSwitcherLabel": "Switch language"
   },
   "SiteFooter": {
     "disclaimer": "Rajahinta.fi is an independent price comparison and landed-cost calculator. All prices, taxes, and duties are estimates rather than official figures. The service does not provide tax or customs advice. Always verify current details with official sources.",
@@ -82,7 +85,9 @@
     "linkEvent": "Event calculator",
     "linkValue": "Value (€/g ethanol)",
     "linkBlog": "Blog",
-    "copyright": "© Rajahinta.fi"
+    "copyright": "© Rajahinta.fi",
+    "linkAbout": "About Rajahinta.fi",
+    "linkContact": "Contact"
   },
   "Home": {
     "subtitle": "Finnish cross-border beverage landed-cost calculator",
@@ -107,14 +112,29 @@
     "trustReliabilityTitle": "Reliability statuses",
     "trustReliabilityBody": "Every number shown carries a reliability status and a timestamp, so the certainty and age of the data are always visible.",
     "trustMethodologyTitle": "Methodology",
-    "trustMethodologyBody": "The calculation model, the tax sources in use, and the ranking criteria are documented openly."
+    "trustMethodologyBody": "The calculation model, the tax sources in use, and the ranking criteria are documented openly.",
+    "faqHeading": "Frequently asked questions",
+    "exampleBadge": "Example calculation",
+    "exampleTitle": "How the landed total adds up: 6 bottles of wine from Tallinn",
+    "exampleIntro": "Below is a fixed example illustrating the structure of the calculation: a foreign retail price, the transport share, and taxes combine into an estimated landed total, compared against the Finland reference price. The figures are illustrative example values — not live prices.",
+    "exampleForeignPriceLabel": "Foreign retail price (6 × €8.00)",
+    "exampleForeignPriceValue": "€48.00",
+    "exampleTransportLabel": "Transport share of the trip",
+    "exampleTransportValue": "€15.00",
+    "exampleLandedLabel": "Estimated landed total in Finland",
+    "exampleLandedValue": "€63.00",
+    "exampleReferenceLabel": "Finland reference price (6 × €16.00)",
+    "exampleReferenceValue": "€96.00",
+    "exampleDifferenceLabel": "Difference against the Finland reference price",
+    "exampleDifferenceValue": "In this example importing is about €33.00 cheaper",
+    "exampleNote": "The example calculation uses fixed, illustrative figures and fetches no data. Only totals are compared: the difference can also turn the other way, making importing dearer than the reference price. Duty varies by beverage type and strength."
   },
   "AgeGate": {
     "title": "Age verification",
     "body": "This site contains alcohol-related content. Are you 18 or older?",
     "confirm": "Yes, I am 18+",
     "deny": "No",
-    "note": "No personal data is collected. A local flag is stored in your browser.",
+    "note": "We use your browser's local storage to remember your choice. No personal data is collected.",
     "recoveryTitle": "Age confirmation needed",
     "recoveryDescription": "Your age confirmation has expired. Please confirm your age again to continue."
   },
@@ -141,6 +161,15 @@
     "searchResults": "Search results",
     "selectedProduct": "Selected product",
     "change": "Change",
+    "queryTooShort": "The search term must be at least {min} characters.",
+    "resetForm": "Clear form",
+    "quantityUnit": "pcs",
+    "countryLabel": "Destination country",
+    "observedPrice": "Observed price: {price}",
+    "advancedToggle": "Advanced options",
+    "transportMethodLabel": "Carrier (optional)",
+    "transportMethodHint": "Leave empty to use the published transport dataset.",
+    "summaryPlaceholder": "The estimated landed cost appears here after you calculate.",
     "calculate": "Calculate landed cost",
     "calculating": "Calculating…",
     "searchFailed": "Search failed. Please try again.",
@@ -150,7 +179,11 @@
     "searchNoResultsDescription": "No products found for \"{query}\". Check the spelling or try another product name.",
     "calculationErrorTitle": "Calculation failed",
     "rateLimitedDescription": "The number of calculations is temporarily limited.",
-    "rateLimitRetryAfter": "Wait {seconds, plural, one {# second} other {# seconds}} and try again."
+    "rateLimitRetryAfter": "Wait {seconds, plural, one {# second} other {# seconds}} and try again.",
+    "metaTitle": "Cross-border cost calculator",
+    "metaDescription": "Search a product, choose a quantity, and get an itemized estimate of the total cost of importing alcohol to Finland: retail price, transport, and Finnish excise duty and container tax.",
+    "howTitle": "How this calculation works",
+    "howBody": "Search for a product, select a quantity, and calculate: the estimate combines the product's retail price with a transport estimate and the Finnish excise duty and container tax for the destination. Every figure carries a reliability status, and the result is an estimate — not tax or customs advice."
   },
   "ProductSearch": {
     "placeholder": "Search products…",
@@ -355,6 +388,10 @@
   "Compare": {
     "title": "Product comparison",
     "subtitle": "Compare landed costs of beverage products side by side. All rankings are objective and neutral.",
+    "metaTitle": "Product comparison: landed costs side by side",
+    "metaDescription": "Add beverages to a side-by-side comparison of their estimated landed costs to Finland: retail price, transport, taxes, and per-product reliability statuses.",
+    "howTitle": "How this comparison works",
+    "howBody": "Search for a product and add it to the comparison: each column shows the product's estimated landed cost to Finland itemized by component, together with a reliability status for the price data. Column order follows your selected sort, and every sort is objective and neutral — no position is based on commercial factors.",
     "addProduct": "Add product",
     "addProductTitle": "Add a product",
     "aboutTitle": "About this comparison",
@@ -429,8 +466,25 @@
   "BasketPage": {
     "title": "Basket optimization",
     "subtitle": "Add multiple products to find the optimal store combination and landed-cost estimate for Finland.",
+    "metaTitle": "Basket optimization: multi-item landed cost",
+    "metaDescription": "Build a multi-item basket and get an estimate of the optimal store combination and total landed cost to Finland, including transport and tax breakdowns.",
+    "howTitle": "How this optimization works",
+    "howBody": "Add products with quantities to the basket and choose the destination and transport arrangement: the calculation combines the product prices, a transport estimate, and Finnish taxes and fees into a total landed-cost estimate, and suggests the store combination that yields the lowest estimate. The result is always an estimate, and every figure carries a reliability status.",
     "optimize": "Optimize basket",
     "optimizing": "Optimizing…",
+    "summary": {
+      "heading": "Summary",
+      "crossBorderTotal": "Cross-border total",
+      "transportTotal": "Transport estimate total",
+      "netAfterTripCosts": "Goods and taxes net of transport",
+      "finlandTotal": "Finland reference total (Alko)",
+      "finlandDifferenceLabel": "Compared to Finland",
+      "finlandCheaper": "{difference} cheaper than in Finland",
+      "finlandDearer": "{difference} more expensive than in Finland",
+      "finlandSame": "The same price as in Finland",
+      "finlandMissingLines": "{count, plural, one {Excludes # product with no Finland reference price} other {Excludes # products with no Finland reference price}}",
+      "finlandUnavailable": "Finland reference total unavailable: these products have no reference prices"
+    },
     "errors": {
       "validation": "Check the entered details. A basket can hold at most 10 products, and each quantity must be 1–99.",
       "not-found": "The product was not found. Check your search terms and try again.",
@@ -581,7 +635,7 @@
   },
   "Register": {
     "title": "Create an account",
-    "subtitle": "Register with an email address and a password. After registering we send a verification link to your email address.",
+    "subtitle": "Register with an email address and a password. After registering we send a verification link to your email address. An account lets you compare total costs to save money, track your purchases, and get price alerts.",
     "submit": "Create an account",
     "submitting": "Creating the account…",
     "emailTaken": "This email address is already registered.",
@@ -648,10 +702,18 @@
   "EventPage": {
     "title": "Event calculator",
     "subtitle": "Estimate the drink requirement from the number of guests, the duration, and the event type. Each line of the resulting shopping list shows the need, the suggested purchase, and the surplus.",
+    "metaTitle": "Event calculator: drink need and shopping list",
+    "metaDescription": "Estimate your event's drink requirement from the guest count and duration, and get a shopping list showing the need, the suggested purchase, and the surplus — also compared against foreign stores.",
+    "howTitle": "How this calculation works",
+    "howBody": "Enter the guest count, the duration, and the event type: the calculation combines published consumption norms with per-product prices into a shopping list where each line shows the need, the suggested purchase quantity, and the surplus. The result is always an estimate — not tax or customs advice.",
     "form": {
       "guests": "Number of guests",
+      "guestsError": "The number of guests must be a whole number between 1 and 500.",
       "duration": "Duration (hours)",
+      "durationError": "The duration must be a whole number of hours between 1 and 72.",
       "profile": "Event type",
+      "budgetError": "The budget must be a whole number of euros (e.g. 200).",
+      "resetForm": "Clear form",
       "sourcing": {
         "toggle": "Compare with foreign stores (V2)",
         "country": "Comparison country",
@@ -674,6 +736,14 @@
       "casual_gathering": "Casual gathering",
       "dinner_party": "Dinner party",
       "celebration": "Celebration"
+    },
+    "templates": {
+      "heading": "Ready-made occasions",
+      "hint": "Example values fill the form — the guest count, duration, and event type stay freely editable, and the shopping list is always calculated from the entered values.",
+      "wedding": "Wedding",
+      "birthday": "Birthday",
+      "companyParty": "Company party",
+      "graduation": "Graduation"
     },
     "submit": "Calculate shopping list",
     "submitting": "Calculating…",
@@ -739,6 +809,10 @@
   "TripPage": {
     "title": "Trip calculator",
     "subtitle": "Calculate how many litres are worth importing on a trip: the shared travel cost, the per-category price difference, and where the traveller allowance caps bite. Each line shows the break-even import volume and the effect of the allowance cap.",
+    "metaTitle": "Trip calculator: break-even import at the border",
+    "metaDescription": "Work out how many litres are worth bringing back from abroad: the shared travel cost, the per-category price difference, and the effect of customs allowance limits — an estimate before you travel.",
+    "howTitle": "How this calculation works",
+    "howBody": "Enter the trip costs and the per-category prices: the calculation splits the travel cost across travellers, compares domestic and foreign prices, and shows how many litres are worth bringing before the customs allowance cap is crossed. The result is always an estimate — not tax or customs advice.",
     "form": {
       "passengers": "Passengers",
       "vehicle": "Vehicle",
@@ -748,11 +822,27 @@
       "domesticPrice": "{category} — Finland (€/l)",
       "foreignPrice": "Abroad (€/l)",
       "priceHint": "Enter a domestic and a foreign price for at least one category.",
-      "priceError": "Check the prices: use numbers (e.g. 2.50) and fill every started row with both prices."
+      "priceError": "Check the prices: use numbers (e.g. 2.50) and fill every started row with both prices.",
+      "passengersError": "Passengers must be a whole number between 1 and 9.",
+      "ticketError": "Tickets total must be an amount above €0 with at most two decimals (e.g. 120.50).",
+      "fuelError": "Fuel total must be an amount above €0 with at most two decimals (e.g. 80.50).",
+      "resetForm": "Clear form"
     },
     "vehicle": {
       "car": "Car",
       "van": "Van"
+    },
+    "presets": {
+      "heading": "Ready-made routes",
+      "hint": "Example values fill the form — every field stays freely editable, and the estimate is always calculated from the entered values.",
+      "helsinkiTallinnCar": {
+        "label": "Helsinki–Tallinn · car",
+        "description": "Example: return tickets for a car and 2 passengers approx. €120; fuel approx. €55 (approx. 400 km at 7 l/100 km, €1.95/l)."
+      },
+      "helsinkiTallinnVan": {
+        "label": "Helsinki–Tallinn · van",
+        "description": "Example: return tickets for a van and 3 passengers approx. €220; fuel approx. €95 (approx. 500 km at 9.5 l/100 km, €2.00/l)."
+      }
     },
     "category": {
       "beer": "Beer",
@@ -826,6 +916,22 @@
       "perTraveller": "Per traveller: {amount} ({passengers} travellers)",
       "allowanceVersion": "Allowance dataset version: {version}"
     },
+    "breakEvenCard": {
+      "heading": "Break-even baskets",
+      "transport": "Transport (tickets + fuel)",
+      "other": "Other trip costs",
+      "otherNote": "The form does not collect other trip costs — counted as €0.00.",
+      "saving": "Saving per basket",
+      "compositionHeading": "Basket contents: the suggested duty-free volumes",
+      "compositionLine": "{litres} × {difference}/l = {saving}",
+      "excludedNote": "Not part of the basket (no statable suggested volume): {categories}.",
+      "formula": "( {transport} + {other} ) ÷ {saving} = {baskets}",
+      "baskets": "{count} baskets",
+      "notPayingOff": "This trip does not pay for itself",
+      "notPayingOffBody": "The suggested duty-free volumes save nothing against the Finnish prices, so no number of baskets recovers the transport cost.",
+      "allowanceHint": "Check the current allowance limits before you travel:",
+      "allowanceLink": "View allowances"
+    },
     "partners": {
       "label": "Partner links"
     },
@@ -843,8 +949,16 @@
     }
   },
   "WhatIfPage": {
-    "title": "What-if calculator",
+    "title": "Scenario calculator",
     "subtitle": "Substitute the alcohol excise rate with a value of your choice and compare product totals within a fixed baseline dataset. The calculation is hypothetical.",
+    "metaTitle": "Scenario calculator: hypothetical duty rate",
+    "metaDescription": "Explore how a changed alcohol-duty rate or product price would alter import totals against a fixed baseline dataset. A hypothetical calculation, not a forecast.",
+    "examplesTitle": "Example questions you can explore",
+    "example1": "What if the alcohol-duty rate fell from €20 to €15 per formula unit?",
+    "example2": "What if the duty rate doubled from its current level?",
+    "example3": "What if the import retail price was €5 while the domestic reference price is €12?",
+    "howTitle": "How this calculation works",
+    "howBody": "Pick a hypothetical rate and add product rows: the calculation compares the effect of the current and the hypothetical rate on import prices against a fixed baseline dataset. The calculation is always hypothetical — it is not tax or customs advice.",
     "recalculating": "Calculating…",
     "form": {
       "rateLabel": "Hypothetical excise rate (€ per formula unit)",
@@ -861,7 +975,11 @@
       "addRow": "Add a product row",
       "removeRowAria": "Remove product row {index}",
       "recalculate": "Recalculate",
-      "invalidHint": "Fill in every field of every product row. Results update once the inputs are valid."
+      "invalidHint": "Fill in every field of every product row. Results update once the inputs are valid.",
+      "abvError": "Alcohol by volume must be a number between 0 and 100 (%).",
+      "volumeError": "Volume must be a number between 0 and 10,000 (litres).",
+      "priceError": "The price must be an amount between €0 and €100,000 with at most two decimals.",
+      "resetForm": "Clear form"
     },
     "category": {
       "beer": "Beer",
@@ -980,6 +1098,10 @@
   "Ranking": {
     "title": "How ranking works",
     "subtitle": "Objective, transparent, and free of commercial influence.",
+    "metaTitle": "Ranking: objective, open, and neutral",
+    "metaDescription": "Every product ordering is based only on objective factors: explore the available sort orders, the tiebreaker rules, and how neutrality is enforced in code.",
+    "howTitle": "How the orderings are formed",
+    "howBody": "Every ordering uses only objective sort values (such as landed cost, price per litre, and alcohol percentage) with the product name as the tiebreaker. The same data always produces the same order, and no merchant payment or manual promotion can affect a position.",
     "neutralityTitle": "Neutrality guarantee",
     "neutralityStatement": "Rajahinta uses only objective, non-commercial factors to sort products. No merchant payment, promotional flag, or manual boost can affect the position of any product.",
     "tiebreakerTitle": "Tiebreaker & determinism",
@@ -1002,6 +1124,8 @@
   },
   "ValuePage": {
     "title": "Ethanol €/g by category",
+    "metaTitle": "Ethanol €/g by category: unit-price listing",
+    "metaDescription": "See what one gram of pure ethanol costs when computed from product offer prices, by category and ascending. An informational listing where every value uses the same formula.",
     "subtitle": "Each row states what one gram of pure ethanol costs when computed from the product's offer price. The value uses the same formula as the comparison view, and the listing is ordered by the €/g value, ascending.",
     "informationalNote": "This listing is informational: it presents the computed values as they are. The order shown here is a separate read-only view and does not affect search, other listings, or the calculator.",
     "categorySelectorLabel": "Price category",
@@ -1440,5 +1564,63 @@
     "emptyBody": "No products have been recorded for this view.",
     "unavailableTitle": "The catalog is not available right now",
     "unavailableBody": "The product data lookup did not succeed. Try again later."
+  },
+  "AboutPage": {
+    "metaTitle": "About Rajahinta.fi",
+    "metaDescription": "What Rajahinta.fi is, where the data comes from, and how the estimates are produced.",
+    "title": "About Rajahinta.fi",
+    "subtitle": "A Finnish cross-border beverage price index and landed-cost calculator.",
+    "whatTitle": "What the service does",
+    "whatBody": "Rajahinta.fi collects publicly observed retail prices from foreign online stores and the Alko price list, and estimates the total cost of bringing a beverage to Finland: retail price, transport, excise duty, and container deposit in one itemized breakdown.",
+    "dataTitle": "Where the data comes from",
+    "dataBody": "Prices are observations from automated collection runs. Every observation carries its observation date and a reliability status. Tax rates follow the rates published by the Finnish Tax Administration, versioned with each dataset release.",
+    "neutralityTitle": "Estimates, not advice",
+    "neutralityBody": "All prices, taxes, and duties on this site are estimates rather than official figures. The service does not provide tax or customs advice, and no product is presented as a good or worthwhile purchase. Always verify current details with official sources."
+  },
+  "ContactPage": {
+    "metaTitle": "Contact",
+    "metaDescription": "How to report a data correction on Rajahinta.fi and where authority matters belong.",
+    "title": "Contact",
+    "subtitle": "Data corrections, feedback, and the limits of the service.",
+    "correctionsTitle": "Report a data correction",
+    "correctionsBody": "If a calculation or a price looks wrong, use the “Flag a problem” control on the calculator result page. It sends a correction report with the calculation context attached.",
+    "correctionsReview": "Correction reports are collected in an editorial review queue. Each report is resolved with an operator identity and a timestamp, so the handling of every correction leaves an audit trail.",
+    "generalTitle": "Feedback and other matters",
+    "generalBody": "The service does not provide tax or customs advice: for questions about your own imports or declarations, contact the official authorities. Feedback about the service itself can be reported through the same correction mechanism."
+  },
+  "PriceHistoryChart": {
+    "ariaLabel": "Price history",
+    "heading": "Price history",
+    "metricLabel": "foreign retail price",
+    "bucketsLine": "Observations {from} – {to} · {buckets} daily buckets · {observations} observations",
+    "availableFrom": "Data available from {date}.",
+    "rangeGroup": "Select the range shown",
+    "range": {
+      "30": "30 days",
+      "90": "90 days",
+      "365": "365 days"
+    },
+    "chartTitle": "Line chart of the observed foreign retail price",
+    "chartDesc": "One daily bucket per observation day, {buckets} buckets from {from} to {to}. The band shows the lowest and highest observed price per day; the line shows the day's average.",
+    "tableSummary": "View the same figures as a table",
+    "tableCaption": "Observed prices per day — the same figures as the chart above.",
+    "columnDate": "Observed",
+    "columnAverage": "Average",
+    "columnMin": "Lowest",
+    "columnMax": "Highest",
+    "columnObservations": "Observations"
+  },
+  "SavingsOverview": {
+    "heading": "Market overview",
+    "asOfLine": "Computed from the latest observation day, {date}.",
+    "methodLine": "The average is the mean of the day's lowest observed foreign prices of the category's products. The largest difference is the single product with the biggest observed gap between its estimated landed total and the Alko reference price — stated explicitly as cheaper or more expensive.",
+    "countLine": "Observed products: {count}",
+    "averageLine": "Average observed price: {average}",
+    "largestLine": "Largest difference: {product}, {figure} {direction}",
+    "direction": {
+      "cheaper": "cheaper than the Alko reference price",
+      "dearer": "more expensive than the Alko reference price",
+      "equal": "equal to the Alko reference price"
+    }
   }
 }

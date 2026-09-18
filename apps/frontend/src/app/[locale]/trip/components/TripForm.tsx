@@ -75,6 +75,32 @@ interface PriceRow {
 
 const EMPTY_ROW: PriceRow = { domestic: '', foreign: '' };
 
+/**
+ * Editable starting values for the travel-side fields (task 4.3 route
+ * presets). Applied once at mount; afterwards the fields are the form's
+ * ordinary editable state — a prefill never locks anything.
+ */
+export interface TripFormPrefill {
+  readonly passengers: string;
+  readonly vehicleType: TripVehicleType;
+  readonly ticketEur: string;
+  readonly fuelEur: string;
+}
+
+/**
+ * Field-specific inline validation messages (task 4.7 form pass), owned
+ * by the view and passed down — the parse state they react to lives in
+ * this form, but the copy belongs to the view's translation scope.
+ * A message renders under its field only when that field holds a
+ * started but invalid value; untouched fields stay calm (the native
+ * `required` hint covers empties).
+ */
+export interface TripFormValidationMessages {
+  readonly passengers?: string;
+  readonly ticket?: string;
+  readonly fuel?: string;
+}
+
 interface TripFormProps {
   /** Raised with parsed, in-cap values once the inputs validate. */
   readonly onSubmit: (input: {
@@ -90,6 +116,17 @@ interface TripFormProps {
   }) => void;
   /** Disables the submit control while a calculation is in flight. */
   readonly submitting: boolean;
+  /**
+   * Optional editable starting values (task 4.3 route presets). The view
+   * remounts the form with a new key per application, so these land as
+   * initial state; every estimate still derives from the edited inputs.
+   */
+  readonly prefill?: TripFormPrefill;
+  /**
+   * Field-specific validation copy (task 4.7 form pass) — see
+   * {@link TripFormValidationMessages}.
+   */
+  readonly validationMessages?: TripFormValidationMessages;
 }
 
 /**
@@ -107,14 +144,21 @@ interface TripFormProps {
  *
  * @module TripForm
  */
-export default function TripForm({ onSubmit, submitting }: TripFormProps) {
+export default function TripForm({
+  onSubmit,
+  submitting,
+  prefill,
+  validationMessages,
+}: TripFormProps) {
   const t = useTranslations('TripPage');
 
   // ── Field state (strings — parse and clamp at the submit boundary) ──
-  const [passengers, setPassengers] = useState('2');
-  const [vehicleType, setVehicleType] = useState<TripVehicleType>('car');
-  const [ticketEur, setTicketEur] = useState('');
-  const [fuelEur, setFuelEur] = useState('');
+  const [passengers, setPassengers] = useState(prefill?.passengers ?? '2');
+  const [vehicleType, setVehicleType] = useState<TripVehicleType>(
+    prefill?.vehicleType ?? 'car',
+  );
+  const [ticketEur, setTicketEur] = useState(prefill?.ticketEur ?? '');
+  const [fuelEur, setFuelEur] = useState(prefill?.fuelEur ?? '');
   const [prices, setPrices] = useState<ReadonlyMap<TripCategoryKey, PriceRow>>(
     new Map(CATEGORIES.map((category) => [category, EMPTY_ROW])),
   );
@@ -124,12 +168,26 @@ export default function TripForm({ onSubmit, submitting }: TripFormProps) {
     Number.isInteger(passengerCount) &&
     passengerCount >= MIN_PASSENGERS &&
     passengerCount <= MAX_PASSENGERS;
+  // Task 4.7: a started-but-invalid field names itself and its window —
+  // an untouched field stays calm (native `required` covers empties).
+  const passengersError =
+    passengers.trim() !== '' && !passengersValid
+      ? validationMessages?.passengers
+      : undefined;
 
   // Trip costs must be positive — a zero-cost trip is a caller bug (the
   // server rejects it with 400), so the form demands ≥ €0.01.
   const ticketCents = parseEuroToCents(ticketEur, 1);
   const fuelCents = parseEuroToCents(fuelEur, 1);
   const costsValid = Number.isInteger(ticketCents) && Number.isInteger(fuelCents);
+  const ticketError =
+    ticketEur.trim() !== '' && !Number.isInteger(ticketCents)
+      ? validationMessages?.ticket
+      : undefined;
+  const fuelError =
+    fuelEur.trim() !== '' && !Number.isInteger(fuelCents)
+      ? validationMessages?.fuel
+      : undefined;
 
   // Price validity: a row counts only when BOTH bases are filled; a
   // partially filled row is malformed, not ignorable.
@@ -202,6 +260,7 @@ export default function TripForm({ onSubmit, submitting }: TripFormProps) {
           step={1}
           value={passengers}
           onChange={(e) => setPassengers(e.target.value)}
+          error={passengersError}
           required
         />
         <div>
@@ -234,6 +293,7 @@ export default function TripForm({ onSubmit, submitting }: TripFormProps) {
           value={ticketEur}
           onChange={(e) => setTicketEur(e.target.value)}
           placeholder="120,00"
+          error={ticketError}
           required
         />
         <Input
@@ -243,6 +303,7 @@ export default function TripForm({ onSubmit, submitting }: TripFormProps) {
           value={fuelEur}
           onChange={(e) => setFuelEur(e.target.value)}
           placeholder="80,00"
+          error={fuelError}
           required
         />
       </div>
