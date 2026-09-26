@@ -1,0 +1,289 @@
+'use client';
+
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
+import { useTranslations } from 'next-intl';
+import { Link } from '@/i18n/navigation';
+import type {
+  CompareSortOrder,
+  ComparisonProduct,
+  MerchantWarning,
+  ProductSearchItem,
+} from '@/lib/types';
+import { searchProducts, calculateLandedCost, getProductDetail } from '@/lib/api';
+import SortSelector from './components/SortSelector';
+import ComparisonView from './components/ComparisonView';
+import BasketComparisonSection from './components/BasketComparisonSection';
+import MerchantWarningNotice from '../components/MerchantWarningNotice';
+import ProductSearch from '../calculator/components/ProductSearch';
+import ProductSelector from '../calculator/components/ProductSelector';
+import { sortComparisonProducts } from './sort-products';
+import { bestOfferUnitPrice } from './unit-price';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const MIN_QUERY_LENGTH = 2;
+const DEFAULT_SORT: CompareSortOrder = 'LOWEST_LANDED_COST';
+const DEFAULT_DESTINATION = 'FI';
+
+// ---------------------------------------------------------------------------
+// View component
+// ---------------------------------------------------------------------------
+
+/**
+ * Product comparison view (price-intelligence-roadmap task 2.2, the D2
+ * server-shell conversion): the interactive comparison flow moved intact
+ * from the former single-file page. The server shell in `page.tsx` owns
+ * the metadata, intro copy, and the method summary; this view renders
+ * everything that needs the visitor's interaction state.
+ */
+export default function CompareView() {
+  const t = useTranslations('Compare');
+  const tCalc = useTranslations('Calculator');
+  const tCommon = useTranslations('Common');
+  const tSorts = useTranslations('SortOrders');
+
+  // ── Search state ──
+  const [query, setQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<ProductSearchItem[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
+  // Merchant warnings joined additively into the search response
+  // (task 2.4) — display-only advisory for the results panel.
+  const [searchWarnings, setSearchWarnings] = useState<readonly MerchantWarning[]>([]);
+
+  // ── Comparison state ──
+  const [sortBy, setSortBy] = useState<CompareSortOrder>(DEFAULT_SORT);
+  const [products, setProducts] = useState<ComparisonProduct[]>([]);
+  const [calcLoading, setCalcLoading] = useState(false);
+  const [calcError, setCalcError] = useState<string | null>(null);
+
+  // Guard against duplicate submissions
+  const searchInFlight = useRef(false);
+
+  // ── Search handler ──
+  const handleSearch = useCallback(async (q: string) => {
+    const trimmed = q.trim();
+    if (trimmed.length < MIN_QUERY_LENGTH || searchInFlight.current) return;
+
+    searchInFlight.current = true;
+    setSearchLoading(true);
+    setSearchError(null);
+
+    try {
+      const res = await searchProducts(trimmed);
+      setSearchResults(res.items);
+      setSearchWarnings(res.merchantWarnings ?? []);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : tCalc('searchFailed');
+      setSearchError(message);
+      setSearchResults([]);
+      setSearchWarnings([]);
+    } finally {
+      setSearchLoading(false);
+      searchInFlight.current = false;
+    }
+  }, [tCalc]);
+
+  // ── Open search panel ──
+  const handleAddProduct = useCallback(() => {
+    setShowSearch(true);
+    setQuery('');
+    setSearchResults([]);
+    setSearchWarnings([]);
+    setSearchError(null);
+  }, []);
+
+  // ── Select product and calculate ──
+  const handleSelectProduct = useCallback(
+    async (item: ProductSearchItem) => {
+      setShowSearch(false);
+      setCalcLoading(true);
+      setCalcError(null);
+
+      try {
+        // The product detail resolves the offering merchants in parallel
+        // with the calculation; it feeds the factual data-freshness
+        // display only and never affects ordering. A failed detail fetch
+        // degrades to no freshness rows for this column. The same detail
+        // payload also supplies each offer's €/g metric (the best offer
+        // becomes the column value).
+        const [result, detail] = await Promise.all([
+          calculateLandedCost({
+            productId: item.id,
+            quantity: 1,
+            destination: DEFAULT_DESTINATION,
+          }),
+          getProductDetail(item.id).catch(() => null),
+        ]);
+
+        const merchants =
+          detail !== null
+            ? [...new Set(detail.offers.map((o) => o.merchant))].sort()
+            : [];
+
+        const unitPrice =
+          detail !== null ? bestOfferUnitPrice(detail.offers) : undefined;
+
+        const comparisonProduct: ComparisonProduct = {
+          id: item.id,
+          name: item.name,
+          brand: item.brand,
+          category: item.category,
+          unitVolume: item.unitVolume,
+          alcoholByVolume: item.alcoholByVolume,
+          totalCents: result.totalCents,
+          itemizedCosts: result.itemizedCosts,
+          confidence: result.confidence,
+          reliability: result.itemizedCosts.length > 0
+            ? result.itemizedCosts[0].reliability
+            : 'UNAVAILABLE',
+          merchants,
+          // Display-only blacklist warnings joined from the detail
+          // payload (task 2.4) — rendered per column, ordering untouched.
+          merchantWarnings: detail?.merchantWarnings ?? [],
+          // Present only when the detail payload resolved — mirrors the
+          // API's key-absent-when-unresolved contract; undefined renders
+          // as no value.
+          ...(unitPrice !== undefined ? { eurPerGram: unitPrice } : {}),
+        };
+
+        setProducts((prev) => [...prev, comparisonProduct]);
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : tCalc('calculationFailed');
+        setCalcError(message);
+      } finally {
+        setCalcLoading(false);
+      }
+    },
+    [tCalc],
+  );
+
+  // ── Sort change handler ──
+  const handleSortChange = useCallback(async (sort: CompareSortOrder) => {
+    setSortBy(sort);
+  }, []);
+
+  // ── Column order follows the selected sort (deterministic, neutral —
+  //    the same comparator semantics as the backend RankingService;
+  //    EUR_PER_GRAM orders by metric value with product id as
+  //    tiebreaker) ──
+  const sortedProducts = useMemo(
+    () => sortComparisonProducts(products, sortBy),
+    [products, sortBy],
+  );
+
+  // ── Render ──
+  return (
+    <>
+      {/* ── Toolbar ── */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <SortSelector
+          value={sortBy}
+          onChange={handleSortChange}
+          disabled={calcLoading}
+        />
+        <button
+          type="button"
+          onClick={handleAddProduct}
+          disabled={calcLoading || showSearch}
+          className="inline-flex items-center rounded-md bg-primary-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          + {t('addProduct')}
+        </button>
+      </div>
+
+      {/* ── Search panel (shown when adding) ── */}
+      {showSearch && (
+        <section className="mb-8 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-700">
+              {t('addProductTitle')}
+            </h2>
+            <button
+              type="button"
+              onClick={() => setShowSearch(false)}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              {tCommon('cancel')}
+            </button>
+          </div>
+
+          <div className="mb-4">
+            <ProductSearch
+              value={query}
+              onChange={setQuery}
+              onSubmit={handleSearch}
+              loading={searchLoading}
+              error={searchError}
+            />
+          </div>
+
+          <ProductSelector
+            items={searchResults}
+            selectedId={null}
+            onSelect={handleSelectProduct}
+            loading={searchLoading}
+            query={query}
+          />
+
+          {/* Display-only merchant warnings for this result set
+              (task 2.4) — the results themselves are untouched. */}
+          {searchResults.length > 0 && (
+            <div className="mt-3">
+              <MerchantWarningNotice warnings={searchWarnings} compact />
+            </div>
+          )}
+
+          {calcError && (
+            <p className="mt-3 text-sm text-red-600">{calcError}</p>
+          )}
+        </section>
+      )}
+
+      {/* ── Comparison view ── */}
+      <ComparisonView
+        products={sortedProducts}
+        sortBy={sortBy}
+        loading={calcLoading}
+        onAddProduct={handleAddProduct}
+      />
+
+      {/* ── Empty / minimal state guidance ── */}
+      {products.length > 0 && (
+        <section className="mt-8 rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            {t('aboutTitle')}
+          </h2>
+          <p className="text-xs leading-relaxed text-gray-500">
+            {t.rich('aboutBody', {
+              sort:
+                sortBy === 'EUR_PER_GRAM'
+                  ? t('eurPerGram.sortOptionLabel')
+                  : tSorts(`${sortBy}.label`),
+              link: (chunks) => (
+                <Link
+                  href="/ranking"
+                  className="text-primary-600 underline hover:text-primary-800"
+                >
+                  {chunks}
+                </Link>
+              ),
+            })}
+          </p>
+        </section>
+      )}
+
+      {/* ── Multi-store basket comparison ── */}
+      <BasketComparisonSection />
+    </>
+  );
+}

@@ -13,7 +13,9 @@ export default function AgeGatePage() {
   const t = useTranslations('AgeGatePage');
 
   return (
-    <AgeGate>
+    // Client page: no server gate decision exists here, so null lets the
+    // gate fall back to the mount-time cookie re-read.
+    <AgeGate initialVerified={null}>
       <main className="flex min-h-screen flex-col items-center justify-center p-8">
         <h1 className="text-3xl font-bold text-primary-700">{t('title')}</h1>
         <p className="mt-4 text-gray-600">{t('body')}</p>

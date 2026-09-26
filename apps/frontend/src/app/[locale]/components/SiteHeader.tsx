@@ -5,8 +5,9 @@
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
+import { routing } from '@/i18n/routing';
 import Logo from './Logo';
 import { Button } from '@/components/ui';
 import { ensureSession, revokeSession } from '@/lib/api';
@@ -48,6 +49,8 @@ const NAV_ITEMS = [
 
 const MOBILE_NAV_ID = 'site-header-mobile-nav';
 
+const PLANNING_MENU_ID = 'site-header-planning-menu';
+
 const AUTH_STATE_CHANGED_EVENT = 'auth:state-changed';
 
 /**
@@ -59,20 +62,42 @@ function isRouteActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+/**
+ * The planning tools (task 3.2, price-intelligence-roadmap) — grouped
+ * behind one desktop dropdown instead of three flat links. The scenario
+ * item is the what-if calculator's established destination.
+ */
+const PLANNING_ITEMS = [
+  { href: '/trip', messageKey: 'trip' },
+  { href: '/event', messageKey: 'event' },
+  { href: '/what-if', messageKey: 'whatIf' },
+] as const;
+
+const PLANNING_HREFS = PLANNING_ITEMS.map((item) => item.href);
+
+/** Desktop meta links that trail the Planning dropdown, in display order. */
+const META_TAIL_HREFS = ['/account', '/ranking'];
+
 export default function SiteHeader() {
   const t = useTranslations('SiteHeader');
   const tAuth = useTranslations('AuthNav');
+  const locale = useLocale();
   const pathname = usePathname();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const [planningOpen, setPlanningOpen] = useState(false);
+  const planningRef = useRef<HTMLDivElement>(null);
+  const planningTriggerRef = useRef<HTMLButtonElement>(null);
   const [session, setSession] = useState<SessionStatus | null>(null);
   const [signingOut, setSigningOut] = useState(false);
 
   // Following a nav link must close the menu — otherwise the panel stays
-  // open over the page the visitor just navigated to.
+  // open over the page the visitor just navigated to. Same for the
+  // Planning dropdown.
   useEffect(() => {
     setMenuOpen(false);
+    setPlanningOpen(false);
   }, [pathname]);
 
   useEffect(() => {
@@ -115,6 +140,65 @@ export default function SiteHeader() {
     if (event.key === 'Escape' && menuOpen) {
       setMenuOpen(false);
       toggleRef.current?.focus();
+    }
+    if (event.key === 'Escape' && planningOpen) {
+      setPlanningOpen(false);
+      planningTriggerRef.current?.focus();
+    }
+  };
+
+  /**
+   * Focus the n-th Planning menu item (wrapped): ArrowDown from the
+   * trigger enters at 0, ArrowUp at the last item — items keep their
+   * natural tab order inside the open dropdown.
+   */
+  const focusPlanningItem = (index: number) => {
+    const items =
+      planningRef.current?.querySelectorAll<HTMLAnchorElement>('a');
+    if (!items || items.length === 0) return;
+    const next = ((index % items.length) + items.length) % items.length;
+    items[next]!.focus();
+  };
+
+  const handlePlanningTriggerKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setPlanningOpen(true);
+      focusPlanningItem(0);
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setPlanningOpen(true);
+      focusPlanningItem(-1);
+    }
+  };
+
+  const handlePlanningItemKeyDown = (
+    index: number,
+    event: React.KeyboardEvent<HTMLElement>,
+  ) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      focusPlanningItem(index + 1);
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      focusPlanningItem(index - 1);
+    }
+  };
+
+  // Tab-out closes: focus leaving the dropdown wrapper (relatedTarget
+  // outside it, including a null relatedTarget when focus reaches the
+  // page body) collapses the menu without stranding an open panel.
+  const handlePlanningBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    if (
+      planningOpen &&
+      (event.relatedTarget === null ||
+        !planningRef.current?.contains(event.relatedTarget as Node))
+    ) {
+      setPlanningOpen(false);
     }
   };
 
@@ -194,6 +278,131 @@ export default function SiteHeader() {
     );
   };
 
+  /**
+   * Desktop Planning dropdown (disclosure pattern): a real button opens
+   * a panel of real links. Enter/Space activation is the button's
+   * native behaviour; ArrowDown/ArrowUp move focus among the items;
+   * Escape (header-level handler) and tab-out close it. Focus is always
+   * visible (`focus-visible` ring, never `outline: none` alone) and the
+   * open state is carried by `aria-expanded`, not by color.
+   */
+  const renderPlanningDropdown = () => {
+    const planningActive = PLANNING_ITEMS.some((item) =>
+      isRouteActive(pathname, item.href),
+    );
+    return (
+      <div
+        ref={planningRef}
+        className="relative"
+        data-testid="planning-dropdown"
+        onBlur={handlePlanningBlur}
+      >
+        <button
+          type="button"
+          ref={planningTriggerRef}
+          data-testid="planning-dropdown-trigger"
+          aria-haspopup="true"
+          aria-expanded={planningOpen}
+          aria-controls={PLANNING_MENU_ID}
+          onClick={() => setPlanningOpen((open) => !open)}
+          onKeyDown={handlePlanningTriggerKeyDown}
+          className={[
+            'border-b-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+            planningActive
+              ? 'border-primary-700 font-semibold text-gray-900'
+              : 'border-transparent font-medium text-gray-600 hover:text-primary-700',
+          ].join(' ')}
+        >
+          {t('planning')}
+          <svg
+            aria-hidden="true"
+            focusable="false"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="ml-1 inline-block h-3 w-3"
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </button>
+        <div
+          id={PLANNING_MENU_ID}
+          data-testid="planning-dropdown-menu"
+          className={`${
+            planningOpen ? 'block' : 'hidden'
+          } absolute left-0 [inset-block-start:100%] z-50 mt-1 w-56 rounded-md border border-gray-200 bg-white py-1 shadow-lg`}
+        >
+          {PLANNING_ITEMS.map((item, index) => {
+            const itemActive = isRouteActive(pathname, item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                {...(itemActive ? { 'aria-current': 'page' as const } : {})}
+                onClick={() => setPlanningOpen(false)}
+                onKeyDown={(event) => handlePlanningItemKeyDown(index, event)}
+                className={[
+                  'block px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500',
+                  itemActive
+                    ? 'bg-primary-50 font-semibold text-gray-900'
+                    : 'font-medium text-gray-600 hover:bg-gray-50 hover:text-primary-700',
+                ].join(' ')}
+              >
+                {t(item.messageKey)}
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  /**
+   * `FI | EN` locale switcher (task 3.2): swaps the locale while keeping
+   * the current pathname — next-intl's router rewrites the prefix, so a
+   * visitor on /en/calculator lands on /calculator and vice versa. The
+   * active locale is marked with `aria-current`, never by color alone.
+   */
+  const renderLocaleSwitcher = (mobile: boolean) => (
+    <div
+      role="group"
+      aria-label={t('localeSwitcherLabel')}
+      data-testid={mobile ? 'locale-switcher-mobile' : 'locale-switcher'}
+      className="flex items-center gap-1 text-sm"
+    >
+      {routing.locales.map((switchLocale, index) => (
+        <React.Fragment key={switchLocale}>
+          {index > 0 && (
+            <span aria-hidden="true" className="text-gray-300">
+              |
+            </span>
+          )}
+          <button
+            type="button"
+            data-testid={`locale-switch-${switchLocale}${mobile ? '-mobile' : ''}`}
+            aria-current={locale === switchLocale ? 'true' : undefined}
+            onClick={() => {
+              if (locale !== switchLocale) {
+                router.replace(pathname, { locale: switchLocale });
+              }
+            }}
+            className={[
+              'rounded px-1.5 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+              locale === switchLocale
+                ? 'font-semibold text-primary-700'
+                : 'font-medium text-gray-500 hover:text-primary-700',
+            ].join(' ')}
+          >
+            {switchLocale.toUpperCase()}
+          </button>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+
   return (
     <header className="sticky [inset-block-start:0] z-40 border-b border-gray-200 bg-white/95 backdrop-blur-sm" onKeyDown={handleKeyDown}>
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-x-4 px-4 py-3 sm:px-6 lg:px-8">
@@ -242,14 +451,27 @@ export default function SiteHeader() {
           {/* ── Separator ── */}
           <span aria-hidden="true" className="mx-2 h-4 w-px bg-gray-200" />
 
-          {/* ── Secondary / meta group ── */}
-          {NAV_ITEMS.filter((item) =>
-            !['/calculator', '/compare', '/basket'].includes(item.href)
+          {/* ── Secondary / meta group ──
+              The planning tools (trip / event / what-if scenario) live
+              behind the Planning dropdown; account and ranking trail it. */}
+          {NAV_ITEMS.filter(
+            (item) =>
+              !['/calculator', '/compare', '/basket', ...PLANNING_HREFS].includes(
+                item.href,
+              ) && !META_TAIL_HREFS.includes(item.href),
           ).map((item) => renderNavLink(item, false))}
+
+          {renderPlanningDropdown()}
+
+          {NAV_ITEMS.filter((item) => META_TAIL_HREFS.includes(item.href)).map(
+            (item) => renderNavLink(item, false),
+          )}
         </nav>
 
-        {/* Desktop auth actions — visible from md up. */}
+        {/* Desktop actions — visible from md up: locale switcher, then
+            the auth actions. */}
         <div className="hidden items-center gap-x-3 md:flex">
+          {renderLocaleSwitcher(false)}
           {renderAuthActions(false)}
         </div>
 
@@ -289,6 +511,7 @@ export default function SiteHeader() {
       >
         {NAV_ITEMS.map((item) => renderNavLink(item, true))}
         <div className="mt-2 flex items-center gap-2 border-t border-gray-200 pt-2">
+          {renderLocaleSwitcher(true)}
           {renderAuthActions(true)}
         </div>
       </nav>

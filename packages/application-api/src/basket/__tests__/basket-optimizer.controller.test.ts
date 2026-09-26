@@ -54,6 +54,14 @@ const MOCK_RESULT: BasketOptimizationResult = {
   ],
   totalCents: 4000,
   itemizedTotals: 2500,
+  // Empty fixture basket has no reference prices — the unavailable
+  // variant is the honest fixture for the 4.8 Finland reference.
+  finlandReference: {
+    status: 'unavailable',
+    reason: 'NO_REFERENCE_PRICES',
+    lines: [],
+    missingLines: [],
+  },
   confidence: 'HIGH' as const,
   confidenceBreakdown: [],
   disclaimer: {

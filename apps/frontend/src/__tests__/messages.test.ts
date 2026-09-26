@@ -143,6 +143,10 @@ describe('layout and navigation catalog completeness', () => {
       'whatIf',
       'account',
       'ranking',
+      // planning-dropdown: 3.2 adds the Planning disclosure label and the
+      // locale switcher's accessible label.
+      'planning',
+      'localeSwitcherLabel',
     ]);
     expectTranslated('SiteHeader');
   });
@@ -161,6 +165,9 @@ describe('layout and navigation catalog completeness', () => {
       'linkEvent',
       'linkValue',
       'linkBlog',
+      // about-contact: 3.3 adds both pages to the footer nav.
+      'linkAbout',
+      'linkContact',
       'copyright',
     ]);
     expectTranslated('SiteFooter', ['copyright']);

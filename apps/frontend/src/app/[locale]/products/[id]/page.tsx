@@ -20,15 +20,76 @@ import * as React from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { getServerProductDetail } from '@/lib/api';
-import type { ProductDetailResponse } from '@/lib/types';
+import {
+  BASE_URL,
+  SERVER_AGE_CONFIRMATION_TOKEN,
+  getServerProductDetail,
+} from '@/lib/api';
+import type { PriceHistoryResponse, ProductDetailResponse } from '@/lib/types';
 import MerchantWarningNotice from '../../components/MerchantWarningNotice';
 import ProductAlertAction from './components/ProductAlertAction';
 import ProductDupesPanel from './components/ProductDupesPanel';
 import ProductPriceContextLine from './components/ProductPriceContextLine';
+import PriceHistoryChart from './components/PriceHistoryChart';
 
 interface ProductPageProps {
   params: Promise<{ locale: string; id: string }>;
+}
+
+const DAY_MS = 86_400_000;
+
+/** The widest window the price-history endpoint accepts (365 days). */
+const HISTORY_RANGE_DAYS = 365;
+
+/** Format a Date as an ISO date 'YYYY-MM-DD' (UTC). */
+function toIsoDate(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
+ * Server-side price-history read (task 5.1): the endpoint is age-gated,
+ * so the server presents the fixed first-party prerender token — the
+ * getServerProductDetail precedent, expressed with a direct fetch here
+ * because the shared getPriceHistory client is the browser-side helper
+ * (cookie-based confirmation, no revalidate). Any failure or unexpected
+ * shape degrades to null and the page renders without the section.
+ */
+async function getServerPriceHistory(
+  productId: number,
+): Promise<PriceHistoryResponse | null> {
+  const todayMs = Date.UTC(
+    new Date().getUTCFullYear(),
+    new Date().getUTCMonth(),
+    new Date().getUTCDate(),
+  );
+  const params = new URLSearchParams({
+    metric: 'price',
+    granularity: 'day',
+    from: toIsoDate(todayMs - (HISTORY_RANGE_DAYS - 1) * DAY_MS),
+    to: toIsoDate(todayMs),
+  });
+  try {
+    const res = await fetch(
+      `${BASE_URL}/api/v1/products/${productId}/price-history?${params}`,
+      {
+        headers: { 'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN },
+        next: { revalidate: 900 },
+      },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as PriceHistoryResponse | null;
+    if (
+      body === null ||
+      typeof body !== 'object' ||
+      !Array.isArray(body.series) ||
+      typeof body.to !== 'string'
+    ) {
+      return null;
+    }
+    return body;
+  } catch {
+    return null;
+  }
 }
 
 /** Locale-appropriate date formatting for observation timestamps. */
@@ -118,6 +179,12 @@ export default async function ProductPage({ params }: ProductPageProps) {
   if (detail === null) {
     notFound();
   }
+
+  // Price history (task 5.1) — fetched once, widest window; null on any
+  // failure, and the chart component itself renders nothing for an
+  // empty series, so the section is absent exactly when there is no
+  // history to show.
+  const priceHistory = await getServerPriceHistory(productId);
 
   const { product, offers } = detail;
   const masterRows: Array<{ label: string; value: string }> = [
@@ -224,6 +291,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
           the sentence and the panel cannot contradict each other; absent
           from the HTML when the context is unavailable ── */}
       <ProductPriceContextLine productId={productId} />
+
+      {/* ── Price history (task 5.1) — server-fetched series, client
+          range views; renders NOTHING when there is no history ── */}
+      {priceHistory !== null && <PriceHistoryChart history={priceHistory} />}
 
       {/* ── Producer dupe panel — absent from the HTML when no curated
           links exist (design R9) ── */}

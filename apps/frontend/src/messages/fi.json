@@ -34,6 +34,7 @@
     "offerCount": "{count, plural, one {# tarjous} other {# tarjousta}}",
     "countries": {
       "FI": "Suomi",
+      "SE": "Ruotsi",
       "EE": "Viro",
       "LV": "Latvia",
       "LT": "Liettua",
@@ -65,9 +66,11 @@
     "products": "Tuotteet",
     "event": "Tilaisuuslaskuri",
     "trip": "Matkalaskuri",
-    "whatIf": "Mitä jos -laskuri",
+    "whatIf": "Skenaariolaskuri",
     "account": "Oma tili",
-    "ranking": "Miten järjestäminen toimii"
+    "ranking": "Miten järjestäminen toimii",
+    "planning": "Suunnittelu",
+    "localeSwitcherLabel": "Vaihda kieltä"
   },
   "SiteFooter": {
     "disclaimer": "Rajahinta.fi on riippumaton hintavertailu- ja kokonaiskustannuslaskuri. Kaikki hinnat, verot ja maksut ovat arvioita eivätkä virallisia tietoja. Palvelu ei tarjoa vero- tai tullineuvontaa. Tarkista ajantasaiset tiedot aina viranomaislähteistä.",
@@ -82,7 +85,9 @@
     "linkEvent": "Tilaisuuslaskuri",
     "linkValue": "Arvo (€/g alkoholi)",
     "linkBlog": "Blogi",
-    "copyright": "© Rajahinta.fi"
+    "copyright": "© Rajahinta.fi",
+    "linkAbout": "Tietoja Rajahinta.fi:stä",
+    "linkContact": "Yhteystiedot"
   },
   "Home": {
     "subtitle": "Rajat ylittävien juomien kokonaiskustannuslaskuri Suomeen",
@@ -107,14 +112,29 @@
     "trustReliabilityTitle": "Luotettavuusmerkinnät",
     "trustReliabilityBody": "Jokainen näytetty luku kantaa luotettavuusmerkinnän ja aikaleiman, joten tiedon varmuus ja ikä ovat aina näkyvissä.",
     "trustMethodologyTitle": "Menetelmä",
-    "trustMethodologyBody": "Laskentamalli, käytetyt verolähteet ja järjestämisen perusteet on dokumentoitu avoimesti."
+    "trustMethodologyBody": "Laskentamalli, käytetyt verolähteet ja järjestämisen perusteet on dokumentoitu avoimesti.",
+    "faqHeading": "Usein kysytyt kysymykset",
+    "exampleBadge": "Esimerkkilaskelma",
+    "exampleTitle": "Näin kokonaishinta muodostuu: 6 pulloa viiniä Tallinnasta",
+    "exampleIntro": "Alla on kiinteä esimerkki, joka havainnollistaa laskelman rakennetta: ulkomainen vähittäishinta, kuljetuksen osuus ja verot yhdistyvät arvioiduksi kokonaishinnaksi, jota verrataan Suomen vertailuhintaan. Luvut ovat kuvitteellisia esimerkkiarvoja — ei reaaliaikaisia hintoja.",
+    "exampleForeignPriceLabel": "Ulkomainen vähittäishinta (6 × 8,00 €)",
+    "exampleForeignPriceValue": "48,00 €",
+    "exampleTransportLabel": "Kuljetuksen osuus korista",
+    "exampleTransportValue": "15,00 €",
+    "exampleLandedLabel": "Arvioitu kokonaishinta Suomeen",
+    "exampleLandedValue": "63,00 €",
+    "exampleReferenceLabel": "Suomen vertailuhinta (6 × 16,00 €)",
+    "exampleReferenceValue": "96,00 €",
+    "exampleDifferenceLabel": "Ero Suomen vertailuhintaan",
+    "exampleDifferenceValue": "Esimerkissä tuonti on noin 33,00 € edullisempi",
+    "exampleNote": "Esimerkkilaskelma käyttää kiinteitä kuvitteellisia lukuja eikä hae tietoja. Vain kokonaishintoja verrataan: ero voi kääntyä myös toisin, jolloin tuonti on vertailuhintaa kalliimpi. Veron määrä vaihtelee juomatyypin ja vahvuuden mukaan."
   },
   "AgeGate": {
     "title": "Ikätarkistus",
     "body": "Tämä sivusto sisältää alkoholiin liittyvää sisältöä. Oletko vähintään 18-vuotias?",
     "confirm": "Olen 18 vuotta täyttänyt",
     "deny": "En",
-    "note": "Henkilötietoja ei kerätä. Vahvistus tallennetaan selaimeesi paikallisena merkintänä.",
+    "note": "Käytämme selaimesi paikallista tallennustilaa valintasi muistamiseen. Henkilötietoja ei kerätä.",
     "recoveryTitle": "Ikävahvistus tarvitaan",
     "recoveryDescription": "Ikävahvistuksesi on vanhentunut. Vahvista ikäsi jatkaaksesi."
   },
@@ -141,6 +161,15 @@
     "searchResults": "Hakutulokset",
     "selectedProduct": "Valittu tuote",
     "change": "Vaihda",
+    "queryTooShort": "Hakusanan on oltava vähintään {min} merkkiä pitkä.",
+    "resetForm": "Tyhjennä lomake",
+    "quantityUnit": "kpl",
+    "countryLabel": "Kohdemaa",
+    "observedPrice": "Havaittu hinta: {price}",
+    "advancedToggle": "Lisäasetukset",
+    "transportMethodLabel": "Kuljetusyhtiö (valinnainen)",
+    "transportMethodHint": "Jätä tyhjäksi, jotta arvio käyttää julkaistua kuljetusaineistoa.",
+    "summaryPlaceholder": "Arvioitu kokonaiskustannus näkyy tässä laskennan jälkeen.",
     "calculate": "Laske kokonaiskustannus",
     "calculating": "Lasketaan…",
     "searchFailed": "Haku epäonnistui. Yritä uudelleen.",
@@ -150,7 +179,11 @@
     "searchNoResultsDescription": "Tuotteita ei löytynyt haulla \"{query}\". Tarkista kirjoitusasu tai kokeile toista tuotenimeä.",
     "calculationErrorTitle": "Laskenta epäonnistui",
     "rateLimitedDescription": "Laskentojen määrää on rajoitettu väliaikaisesti.",
-    "rateLimitRetryAfter": "Odota {seconds, plural, one {# sekunti} other {# sekuntia}} ja yritä sitten uudelleen."
+    "rateLimitRetryAfter": "Odota {seconds, plural, one {# sekunti} other {# sekuntia}} ja yritä sitten uudelleen.",
+    "metaTitle": "Rajat ylittävä kustannuslaskuri",
+    "metaDescription": "Hae tuote, valitse määrä ja saat eritelty arvion alkoholin tuonnin kokonaiskustannuksesta Suomeen: vähittäishinta, kuljetus sekä Suomen valmistevero ja pakkausvero.",
+    "howTitle": "Miten laskenta toimii",
+    "howBody": "Hae tuote, valitse määrä ja laske: arvio yhdistää tuotteen vähittäishintaan kuljetusarvion sekä kohteena olevan Suomen valmisteveron ja pakkausveron. Jokainen luku kantaa luotettavuusmerkinnän, ja tulos on aina arvio — ei vero- tai tullineuvontaa."
   },
   "ProductSearch": {
     "placeholder": "Hae tuotteita…",
@@ -355,6 +388,10 @@
   "Compare": {
     "title": "Tuotevertailu",
     "subtitle": "Vertaile juomien kokonaiskustannuksia rinnakkain. Kaikki järjestäminen on objektiivista ja neutraalia.",
+    "metaTitle": "Tuotevertailu: kokonaiskustannukset rinnakkain",
+    "metaDescription": "Lisää juomia vertailuun ja näe niiden arvioidut kokonaiskustannukset Suomeen rinnakkain: vähittäishinta, kuljetus, verot ja luotettavuusmerkinnät tuotteittain.",
+    "howTitle": "Miten vertailu toimii",
+    "howBody": "Hae tuote ja lisää se vertailuun: jokainen sarake näyttää tuotteen arvioidun kokonaiskustannuksen Suomeen eriteltyinä maina sekä hintatiedon luotettavuusmerkinnän. Sarakejärjestys noudattaa valitsemaasi järjestystä, ja kaikki järjestykset ovat objektiivisia ja neutraaleja — mikään sija ei perustu kaupallisiin tekijöihin.",
     "addProduct": "Lisää tuote",
     "addProductTitle": "Lisää tuote",
     "aboutTitle": "Tästä vertailusta",
@@ -429,8 +466,25 @@
   "BasketPage": {
     "title": "Ostoskorin optimointi",
     "subtitle": "Lisää useita tuotteita ja näe optimaalinen myyjäyhdistelmä sekä kokonaiskustannusarvio Suomeen.",
+    "metaTitle": "Ostoskorin optimointi: usean tuotteen kokonaiskustannus",
+    "metaDescription": "Kokoa usean tuotteen ostoskori ja saat arvion optimaalisesta myyjäyhdistelmästä ja kokonaiskustannuksista Suomeen, mukaan lukien kuljetus- ja verotuserittely.",
+    "howTitle": "Miten optimointi toimii",
+    "howBody": "Lisää ostoskoriin tuotteita määrineen ja valitse kohdemaa sekä kuljetusjärjestely: laskelma yhdistää tuotteiden hinnat, kuljetusarvion ja Suomen verot ja maksut kokonaiskustannusarvioksi sekä ehdottaa myyjäyhdistelmän, joka tuottaa matalan arvion. Tulos on aina arvio, jonka jokainen luku kantaa luotettavuusmerkintää.",
     "optimize": "Optimoi ostoskori",
     "optimizing": "Optimoidaan…",
+    "summary": {
+      "heading": "Yhteenveto",
+      "crossBorderTotal": "Rajat ylittävä yhteensä",
+      "transportTotal": "Kuljetusarvio yhteensä",
+      "netAfterTripCosts": "Tuotteet ja verot ilman kuljetusta",
+      "finlandTotal": "Suomen vertailuhinta yhteensä (Alko)",
+      "finlandDifferenceLabel": "Verrattuna Suomeen",
+      "finlandCheaper": "{difference} edullisempi kuin Suomessa",
+      "finlandDearer": "{difference} kalliimpi kuin Suomessa",
+      "finlandSame": "Sama hinta kuin Suomessa",
+      "finlandMissingLines": "{count, plural, one {Jättää pois # tuotteen, jolla ei ole Suomen vertailuhintaa} other {Jättää pois # tuotetta, joilla ei ole Suomen vertailuhintaa}}",
+      "finlandUnavailable": "Suomen vertailuhinta ei saatavilla: tuotteilla ei ole vertailuhintoja"
+    },
     "errors": {
       "validation": "Tarkista syöttämäsi tiedot. Ostoskorissa voi olla enintään 10 tuotetta, ja kunkin määrän tulee olla 1–99.",
       "not-found": "Tuotetta ei löytynyt. Tarkista hakusanasi ja yritä uudelleen.",
@@ -581,7 +635,7 @@
   },
   "Register": {
     "title": "Luo tili",
-    "subtitle": "Rekisteröidy sähköpostiosoitteella ja salasanalla. Rekisteröinnin jälkeen lähetämme vahvistuslinkin sähköpostiisi.",
+    "subtitle": "Rekisteröidy sähköpostiosoitteella ja salasanalla. Rekisteröinnin jälkeen lähetämme vahvistuslinkin sähköpostiisi. Tilin avulla voit vertailla kokonaiskustannuksia ja säästää rahaa, seurata ostojasi sekä saada hintaherätyksiä.",
     "submit": "Luo tili",
     "submitting": "Luodaan tiliä…",
     "emailTaken": "Sähköpostiosoite on jo rekisteröity.",
@@ -648,10 +702,18 @@
   "EventPage": {
     "title": "Tilaisuuslaskuri",
     "subtitle": "Arvioi juonetarve vieraiden määrän, keston ja tilaisuustyypin perusteella. Tuloksena on ostoslista, jonka jokainen rivi näyttää tarpeen, ehdotetun ostomäärän ja ylijäämän.",
+    "metaTitle": "Tilaisuuslaskuri: juonetarve ja ostoslista",
+    "metaDescription": "Arvioi tilaisuuden juonetarve vieraiden määrän ja keston perusteella ja saat ostoslistan tarpeesta, ehdotetusta ostomäärästä ja ylijäämästä — myös vertailuna ulkomaisiin kauppoihin.",
+    "howTitle": "Miten tilaisuuslaskenta toimii",
+    "howBody": "Syötä vieraiden määrä, kesto ja tilaisuuden tyyppi: laskelma yhdistää julkaistut kulutusnormit ja tuotekohtaiset hinnat ostoslistaksi, jossa jokainen rivi näyttää tarpeen, ehdotetun ostomäärän ja ylijäämän. Tulos on aina arvio — ei vero- tai tullineuvontaa.",
     "form": {
       "guests": "Vieraiden määrä (kpl)",
+      "guestsError": "Vieraiden määrän on oltava kokonaisluku väliltä 1–500.",
       "duration": "Kesto (tuntia)",
+      "durationError": "Keston on oltava kokonaisluku tunteja väliltä 1–72.",
       "profile": "Tilaisuuden tyyppi",
+      "budgetError": "Budjetin on oltava kokonaisluku euroja (esim. 200).",
+      "resetForm": "Tyhjennä lomake",
       "sourcing": {
         "toggle": "Vertaa ulkomaisiin kauppoihin (V2)",
         "country": "Vertailumaa",
@@ -674,6 +736,14 @@
       "casual_gathering": "Rentoutunut kokoontuminen",
       "dinner_party": "Päivälliskutsut",
       "celebration": "Juhlat"
+    },
+    "templates": {
+      "heading": "Valmiit tilaisuudet",
+      "hint": "Esimerkkiarvot täyttävät lomakkeen — vieraiden määrä, kesto ja tilaisuuden tyyppi jäävät vapaasti muokattaviksi, ja ostoslista lasketaan aina syötettyjen arvojen perusteella.",
+      "wedding": "Häät",
+      "birthday": "Syntymäpäivät",
+      "companyParty": "Yritystilaisuus",
+      "graduation": "Valmistujaiset"
     },
     "submit": "Laske ostoslista",
     "submitting": "Lasketaan…",
@@ -739,6 +809,10 @@
   "TripPage": {
     "title": "Matkalaskuri",
     "subtitle": "Laske, kuinka monta litraa kannattaa tuoda matkalla: jaettu matkakustannus, hintaero kategorioittain ja tullimäärärajojen ylittymiskohta. Jokainen rivi näyttää kannattavan tuontimäärän ja tullimäärärajan vaikutuksen.",
+    "metaTitle": "Matkalaskuri: kannattava tuontimäärä rajalla",
+    "metaDescription": "Laske, kuinka monta litraa kannattaa tuoda ulkomailta: jaettu matkakustannus, hintaero kategorioittain ja tullimäärärajojen vaikutus — arvio ennen matkaa.",
+    "howTitle": "Miten matkalaskenta toimii",
+    "howBody": "Syötä matkan kustannukset ja hinnat kategorioittain: laskelma jakaa matkakustannuksen matkustajien kesken, vertaa kotimaista ja ulkomaista hintaa sekä näyttää, kuinka monta litraa kannattaa tuoda ennen tullimäärärajan ylittymistä. Tulos on aina arvio — ei vero- tai tullineuvontaa.",
     "form": {
       "passengers": "Matkustajat (kpl)",
       "vehicle": "Ajoneuvo",
@@ -748,11 +822,27 @@
       "domesticPrice": "{category} — Suomi (€/l)",
       "foreignPrice": "Ulkomaat (€/l)",
       "priceHint": "Syötä kotimainen ja ulkomainen hinta vähintään yhdelle kategorialle.",
-      "priceError": "Tarkista hinnat: käytä numeroita (esim. 2,50) ja täytä jokainen aloitettu rivi molemmin hinnoin."
+      "priceError": "Tarkista hinnat: käytä numeroita (esim. 2,50) ja täytä jokainen aloitettu rivi molemmin hinnoin.",
+      "passengersError": "Matkustajien määrän on oltava kokonaisluku väliltä 1–9.",
+      "ticketError": "Matkalippujen yhteissumman on oltava yli 0 € ja enintään kahdella desimaalilla (esim. 120,50).",
+      "fuelError": "Polttoaineen yhteissumman on oltava yli 0 € ja enintään kahdella desimaalilla (esim. 80,50).",
+      "resetForm": "Tyhjennä lomake"
     },
     "vehicle": {
       "car": "Henkilöauto",
       "van": "Pakettiauto"
+    },
+    "presets": {
+      "heading": "Valmiit reitit",
+      "hint": "Esimerkkiarvot täyttävät lomakkeen — kaikkia kenttiä voi muokata vapaasti, ja arvio lasketaan aina syötettyjen arvojen perusteella.",
+      "helsinkiTallinnCar": {
+        "label": "Helsinki–Tallinna · henkilöauto",
+        "description": "Esimerkki: paluuliput autolla ja 2 matkustajalla n. 120 €; polttoaine n. 55 € (n. 400 km, 7 l/100 km, 1,95 €/l)."
+      },
+      "helsinkiTallinnVan": {
+        "label": "Helsinki–Tallinna · pakettiauto",
+        "description": "Esimerkki: paluuliput pakettiautolla ja 3 matkustajalla n. 220 €; polttoaine n. 95 € (n. 500 km, 9,5 l/100 km, 2,00 €/l)."
+      }
     },
     "category": {
       "beer": "Olut",
@@ -826,6 +916,22 @@
       "perTraveller": "Matkustajaa kohden: {amount} ({passengers} matkustajaa)",
       "allowanceVersion": "Tullimäärärajojen aineistoversio: {version}"
     },
+    "breakEvenCard": {
+      "heading": "Kannattavuus koreittain",
+      "transport": "Matkakustannus (liput + polttoaine)",
+      "other": "Muut matkakustannukset",
+      "otherNote": "Lomake ei kerää muita matkakustannuksia — käytetään arvoa 0,00 €.",
+      "saving": "Säästö per kori",
+      "compositionHeading": "Korin sisältö: suositellut tullittomat määrät",
+      "compositionLine": "{litres} × {difference}/l = {saving}",
+      "excludedNote": "Ei kuulu koriin (esitettävää suositeltua määrää ei ole): {categories}.",
+      "formula": "( {transport} + {other} ) ÷ {saving} = {baskets}",
+      "baskets": "{count} koria",
+      "notPayingOff": "Matka ei maksa itseään takaisin",
+      "notPayingOffBody": "Suositellut tullittomat määrät eivät säästä mitään Suomen hintoihin verrattuna, joten mikään korimäärä ei korjaa matkakustannusta.",
+      "allowanceHint": "Tarkista voimassa olevat määrärajat ennen matkaa:",
+      "allowanceLink": "Katso määrärajat"
+    },
     "partners": {
       "label": "Kumppanilinkit"
     },
@@ -843,8 +949,16 @@
     }
   },
   "WhatIfPage": {
-    "title": "Mitä jos -laskuri",
+    "title": "Skenaariolaskuri",
     "subtitle": "Korvaa alkoholiveron verokanta valitsemallasi arvolla ja vertaa tuotteiden kokonaishintoja kiinteässä vertailuaineistossa. Laskelma on hypoteettinen.",
+    "metaTitle": "Skenaariolaskuri: hypoteettinen verokanta",
+    "metaDescription": "Kokeile, miten muuttuva alkoholiveron verokanta tai tuotteen hinta muuttaisi tuonnin kokonaishintoja kiinteässä vertailuaineistossa. Hypoteettinen laskelma, ei ennuste.",
+    "examplesTitle": "Esimerkkikysymyksiä, joita voit kokeilla",
+    "example1": "Mitä jos alkoholiveron verokanta laski 20 eurosta 15 euroon kaava-yksikköä kohti?",
+    "example2": "Mitä jos verokanta nousi kaksinkertaiseksi nykyisestä?",
+    "example3": "Mitä jos tuonnin vähittäishinta oli 5 euroa, kun kotimainen vertailuhinta on 12 euroa?",
+    "howTitle": "Miten mitä jos -laskenta toimii",
+    "howBody": "Valitse hypoteettinen verokanta ja lisää tuoterivejä: laskelma vertaa nykyisen ja hypoteettisen verokannan vaikutusta tuonnin hintaan kiinteässä vertailuaineistossa. Laskelma on aina hypoteettinen — se ei ole vero- tai tullineuvontaa.",
     "recalculating": "Lasketaan…",
     "form": {
       "rateLabel": "Hypoteettinen verokanta (€ kaava-yksikköä kohti)",
@@ -861,7 +975,11 @@
       "addRow": "Lisää tuoterivi",
       "removeRowAria": "Poista tuoterivi {index}",
       "recalculate": "Laske uudelleen",
-      "invalidHint": "Täytä jokaisen tuoterivin kaikki kentät. Tulokset päivittyvät, kun syötteet ovat kelvolliset."
+      "invalidHint": "Täytä jokaisen tuoterivin kaikki kentät. Tulokset päivittyvät, kun syötteet ovat kelvolliset.",
+      "abvError": "Alkoholipitoisuuden on oltava luku välillä 0–100 (%).",
+      "volumeError": "Määrän on oltava luku välillä 0–10 000 (litraa).",
+      "priceError": "Hinnan on oltava summa välillä 0–100 000 € ja enintään kahdella desimaalilla.",
+      "resetForm": "Tyhjennä lomake"
     },
     "category": {
       "beer": "Olut",
@@ -980,6 +1098,10 @@
   "Ranking": {
     "title": "Miten järjestäminen toimii",
     "subtitle": "Objektiivinen, avoin ja kaupallisista intresseistä vapaa.",
+    "metaTitle": "Järjestäminen: objektiivinen, avoin ja neutraali",
+    "metaDescription": "Kaikki tuotteiden järjestykset perustuvat vain objektiivisiin tekijöihin: tutki käytettävissä olevat järjestykset, tasapistesäännöt ja sen, miten neutraaliutta valvotaan koodissa.",
+    "howTitle": "Miten järjestykset muodostuvat",
+    "howBody": "Jokainen järjestys käyttää vain objektiivisia lajitteluarvoja (kuten kokonaiskustannus, litrahinta ja alkoholipitoisuus) ja tuotenimeä tasapisteiden ratkaisijaan. Sama aineisto tuottaa aina saman järjestyksen, eikä mikään myyjän maksu tai manuaalinen korostus voi vaikuttaa sijaintiin.",
     "neutralityTitle": "Neutraaliuslupaus",
     "neutralityStatement": "Rajahinta käyttää tuotteiden järjestämiseen vain objektiivisia, ei-kaupallisia tekijöitä. Mikään myyjän maksu, mainoslippu tai manuaalinen korostus voi vaikuttaa tuotteen sijaintiin.",
     "tiebreakerTitle": "Tasapisteet ja determinismi",
@@ -1002,6 +1124,8 @@
   },
   "ValuePage": {
     "title": "Etanoli-€/g hintaluokittain",
+    "metaTitle": "Etanoli-€/g hintaluokittain: yksikköhinta-listaus",
+    "metaDescription": "Katso, mitä yksi gramma puhdasta etanolia maksaa tuotteiden myyntihinnasta laskettuna, hintaluokittain alimmasta alkaen. Tiedollinen luettelo, jossa jokainen arvo on laskettu samalla kaavalla.",
     "subtitle": "Jokainen rivi kertoo, mitä yksi gramma puhdasta etanolia maksaa tuotteen myyntihinnasta laskettuna. Arvo lasketaan samalla kaavalla kuin vertailunäkymässä, ja luettelo on järjestetty €/g-arvon mukaan alimmasta alkaen.",
     "informationalNote": "Luettelo on tiedollinen: se esittää lasketut arvot sellaisenaan. Tässä näkyvä järjestys on erillinen lukunäkymä, joka ei vaikuta hakuun, muihin listauksiin tai laskuriin.",
     "categorySelectorLabel": "Hintaluokka",
@@ -1440,5 +1564,63 @@
     "emptyBody": "Tähän näkymään ei ole tallentunut yhtään tuotetta.",
     "unavailableTitle": "Tuoteluetteloa ei voida näyttää juuri nyt",
     "unavailableBody": "Tuotetietojen haku ei onnistunut. Kokeile myöhemmin uudelleen."
+  },
+  "AboutPage": {
+    "metaTitle": "Tietoja Rajahinta.fi:stä",
+    "metaDescription": "Mikä Rajahinta.fi on, mistä tiedot tulevat ja miten arviot lasketaan.",
+    "title": "Tietoja Rajahinta.fi:stä",
+    "subtitle": "Suomalainen rajat ylittävä juomahintaindeksi ja kokonaiskustannuslaskuri.",
+    "whatTitle": "Mitä palvelu tekee",
+    "whatBody": "Rajahinta.fi kerää julkisesti havaittuja vähittäishintoja ulkomaisista verkkokaupoista ja Alkon hintalistalta, ja arvioi juoman tuomisen kokonaiskustannuksen Suomeen: vähittäishinta, kuljetus, valmistevero ja pantti yhdessä eritellyssä laskelmassa.",
+    "dataTitle": "Mistä tiedot tulevat",
+    "dataBody": "Hinnat ovat havaintoja automatisoiduista keruuajoista. Jokainen havainto sisältää havaintoajankohdan ja luotettavuustilan. Veroprosentit seuraavat Verohallinnon julkaisemia veroasteita, versioituna jokaisen aineistojulkaisun yhteydessä.",
+    "neutralityTitle": "Arvioita, ei neuvontaa",
+    "neutralityBody": "Kaikki palvelun hinnat, verot ja maksut ovat arvioita eivätkä virallisia tietoja. Palvelu ei tarjoa vero- tai tullineuvontaa, eikä mikään tuote esitetä hyvänä tai kannattavana ostoksena. Tarkista ajantasaiset tiedot aina viranomaislähteistä."
+  },
+  "ContactPage": {
+    "metaTitle": "Yhteystiedot",
+    "metaDescription": "Näin ilmoitat tietojen oikaisusta Rajahinta.fi:ssä ja mihin viranomaisasiat kuuluvat.",
+    "title": "Yhteystiedot",
+    "subtitle": "Tietojen oikaisut, palaute ja palvelun rajat.",
+    "correctionsTitle": "Ilmoita tietojen oikaisusta",
+    "correctionsBody": "Jos laskelma tai hinta näyttää väärältä, käytä laskusivulla olevaa ”Ilmoita virheestä” -painiketta. Se lähettää oikaisuilmoituksen, jonka mukana lähtee laskelman tiedot.",
+    "correctionsReview": "Oikaisuilmoitukset kerääntyvät toimituksen tarkastusjonoon. Jokainen ilmoitus käsitellään operaattorin tunnuksella ja aikaleimalla, joten jokaisen oikaisun käsittelystä jää valvontajälki.",
+    "generalTitle": "Palaute ja muut asiat",
+    "generalBody": "Palvelu ei tarjoa vero- tai tullineuvontaa: ota omiin tuonteihisi tai tullausilmoituksiisi liittyvissä kysymyksissä yhteyttä viranomaisiin. Palvelua itseään koskevan palautteen voi jättää saman oikaisumekanismin kautta."
+  },
+  "PriceHistoryChart": {
+    "ariaLabel": "Hintahistoria",
+    "heading": "Hintahistoria",
+    "metricLabel": "ulkoinen vähittäishinta",
+    "bucketsLine": "Havainnot {from} – {to} · {buckets} päivää · {observations} havaintoa",
+    "availableFrom": "Tietoja saatavilla {date} alkaen.",
+    "rangeGroup": "Valitse näytettävä aikaväli",
+    "range": {
+      "30": "30 päivää",
+      "90": "90 päivää",
+      "365": "365 päivää"
+    },
+    "chartTitle": "Viivakaavio havaitusta vähittäishinnasta",
+    "chartDesc": "Yksi päiväkatos per havaintopäivä, {buckets} päivää aikavälillä {from} – {to}. Alue näyttää päivän alhaisimman ja korkeimman havaitun hinnan; viiva näyttää päivän keskihinnan.",
+    "tableSummary": "Näytä samat luvut taulukkona",
+    "tableCaption": "Havaitut hinnat päivittäin — samat luvut kuin yllä olevassa kaaviossa.",
+    "columnDate": "Havainto",
+    "columnAverage": "Keskiarvo",
+    "columnMin": "Alhaisin",
+    "columnMax": "Korkein",
+    "columnObservations": "Havainnot"
+  },
+  "SavingsOverview": {
+    "heading": "Markkinakatsaus",
+    "asOfLine": "Laskettu viimeisimmästä havaintopäivästä ({date}).",
+    "methodLine": "Keskiarvo on kategorian tuotteiden alhaisimpien havaittujen ulkomaalaishintojen keskiarvo havaintopäivänä. Suurin ero on yksittäinen tuote, jonka arvioidun kokonaiskustannuksen ja Alkon vertailuhinnan välinen ero on suurin — ilmaistuna erikseen halvempana tai kalliimpana.",
+    "countLine": "Havaittuja tuotteita: {count}",
+    "averageLine": "Keskimääräinen havaittu hinta: {average}",
+    "largestLine": "Suurin ero: {product}, {figure} {direction}",
+    "direction": {
+      "cheaper": "halvempi kuin Alkon vertailuhinta",
+      "dearer": "kalliimpi kuin Alkon vertailuhinta",
+      "equal": "sama kuin Alkon vertailuhinta"
+    }
   }
 }

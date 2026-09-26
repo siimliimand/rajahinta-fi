@@ -20,10 +20,14 @@ const DENY_TEXT = 'En';
 
 // The gate navigates and reads the pathname through next-intl navigation,
 // which needs a Next.js router context that unit tests do not have.
-const { replaceMock } = vi.hoisted(() => ({ replaceMock: vi.fn() }));
+// pathname is steerable so the declined-path exclusion is reachable.
+const { replaceMock, pathnameState } = vi.hoisted(() => ({
+  replaceMock: vi.fn(),
+  pathnameState: { value: '/' },
+}));
 vi.mock('@/i18n/navigation', () => ({
   useRouter: () => ({ replace: replaceMock }),
-  usePathname: () => '/',
+  usePathname: () => pathnameState.value,
   Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
     React.createElement('a', props),
 }));
@@ -33,16 +37,40 @@ function seedConfirmedCookie(): void {
 }
 
 /** Render the gate around a marked restricted child, app conventions. */
-function renderGate(): void {
-  renderWithIntl(<AgeGate><div>content</div></AgeGate>);
+function renderGate(initialVerified: boolean | null = false): void {
+  renderWithIntl(
+    <AgeGate initialVerified={initialVerified}>
+      <div>content</div>
+    </AgeGate>,
+  );
 }
 
 /** Render to an HTML string the way the server would. */
-function renderToHtml(ui: React.ReactElement): string {
+function renderToHtml(
+  initialVerified: boolean,
+  children: React.ReactNode,
+): string {
   return renderToString(
     <NextIntlClientProvider locale="fi" messages={fiMessages}>
-      {ui}
+      <AgeGate initialVerified={initialVerified}>{children}</AgeGate>
     </NextIntlClientProvider>,
+  );
+}
+
+function queryOverlay(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-age-gate-overlay]');
+}
+
+/** Dispatch a Tab keydown from the current activeElement (jsdom has no
+    default tab navigation, so the trap's wrap is what moves focus). */
+function pressTab(shift = false): void {
+  (document.activeElement ?? document.body).dispatchEvent(
+    new KeyboardEvent('keydown', {
+      key: 'Tab',
+      shiftKey: shift,
+      bubbles: true,
+      cancelable: true,
+    }),
   );
 }
 
@@ -52,24 +80,30 @@ describe('AgeGate', () => {
     // Clear any cookie set by previous tests (seeded with path=/).
     document.cookie = `${COOKIE_NAME}=; path=/; max-age=0`;
     replaceMock.mockClear();
+    pathnameState.value = '/';
   });
 
-  it('renders the prompt with confirm/deny when the cookie is missing or expired', () => {
-    renderGate();
+  it('renders children behind the overlay prompt when unconfirmed', () => {
+    renderGate(false);
 
     expect(screen.getByText(CONFIRM_TEXT)).toBeTruthy();
     expect(screen.getByText(DENY_TEXT)).toBeTruthy();
-    // Unconfirmed: restricted content stays behind the modal.
-    expect(screen.queryByText('content')).toBeNull();
+    // Overlay, not replacement: restricted content stays in the DOM
+    // behind the fixed overlay (crawlability without cloaking).
+    expect(screen.getByText('content')).toBeTruthy();
+    const overlay = queryOverlay();
+    expect(overlay).not.toBeNull();
+    expect(overlay?.className).toContain('fixed');
   });
 
-  it('confirm sets the age_confirmed cookie and shows the content', async () => {
+  it('confirm sets the age_confirmed cookie, closes the overlay, keeps the content', async () => {
     const user = userEvent.setup();
-    renderGate();
+    renderGate(false);
 
     await user.click(screen.getByText(CONFIRM_TEXT));
 
     expect(document.cookie).toContain(`${COOKIE_NAME}=true`);
+    expect(queryOverlay()).toBeNull();
     expect(screen.getByText('content')).toBeTruthy();
 
     // jsdom cannot read max-age back from document.cookie, so the 90-day
@@ -80,7 +114,7 @@ describe('AgeGate', () => {
   it('deny clears the cookie and redirects to the declined path', async () => {
     // No cookie (expired/absent) → the modal is what offers deny.
     const user = userEvent.setup();
-    renderGate();
+    renderGate(false);
     expect(screen.getByText(CONFIRM_TEXT)).toBeTruthy();
 
     await user.click(screen.getByText(DENY_TEXT));
@@ -92,51 +126,161 @@ describe('AgeGate', () => {
 
   it('ignores and removes the stale legacy localStorage key when there is no cookie', () => {
     localStorage.setItem(COOKIE_NAME, 'true');
-    renderGate();
+    renderGate(false);
 
     // localStorage is no longer a gate input: without a cookie the modal
-    // still renders, and the stale key is cleaned up on mount.
+    // still overlays the content, and the stale key is cleaned up on mount.
     expect(screen.getByText(CONFIRM_TEXT)).toBeTruthy();
-    expect(screen.queryByText('content')).toBeNull();
+    expect(screen.getByText('content')).toBeTruthy();
+    expect(queryOverlay()).not.toBeNull();
     expect(localStorage.getItem(COOKIE_NAME)).toBeNull();
   });
 
-  it('renders the placeholder and no restricted content in SSR output', () => {
+  it('unconfirmed SSR carries the restricted content AND the overlay dialog', () => {
     const html = renderToHtml(
-      <AgeGate>
-        <div data-testid="restricted">RESTRICTED-CONTENT-MARKER</div>
-      </AgeGate>,
+      false,
+      <div data-testid="restricted">RESTRICTED-CONTENT-MARKER</div>,
     );
 
-    expect(html).toContain('data-age-gate-placeholder');
-    expect(html).not.toContain('RESTRICTED-CONTENT-MARKER');
+    expect(html).toContain('RESTRICTED-CONTENT-MARKER');
+    expect(html).toContain('data-age-gate-overlay');
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('aria-labelledby="age-gate-title"');
+    // The inert placeholder branch is gone.
+    expect(html).not.toContain('data-age-gate-placeholder');
   });
 
-  it('re-opens the prompt when the api client dispatches age-gate:required', () => {
-    seedConfirmedCookie();
-    renderGate();
+  it('confirmed SSR carries the content and ships no overlay', () => {
+    const html = renderToHtml(
+      true,
+      <div data-testid="restricted">RESTRICTED-CONTENT-MARKER</div>,
+    );
+
+    expect(html).toContain('RESTRICTED-CONTENT-MARKER');
+    expect(html).not.toContain('data-age-gate-overlay');
+    expect(html).not.toContain('role="dialog"');
+    expect(html).not.toContain('Ikätarkistus');
+  });
+
+  it('hydrates the unconfirmed server HTML with no hydration mismatch', async () => {
+    const serverHtml = renderToHtml(false, <div>content</div>);
+    const container = document.createElement('div');
+    container.innerHTML = serverHtml;
+    document.body.appendChild(container);
+
+    const hydrationErrors: unknown[] = [];
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      hydrationErrors.push(args);
+    });
+
+    const { hydrateRoot } = await import('react-dom/client');
+    act(() => {
+      hydrateRoot(
+        container,
+        <NextIntlClientProvider locale="fi" messages={fiMessages}>
+          <AgeGate initialVerified={false}>
+            <div>content</div>
+          </AgeGate>
+        </NextIntlClientProvider>,
+      );
+    });
+
+    errorSpy.mockRestore();
+    const flat = JSON.stringify(hydrationErrors);
+    expect(flat).not.toMatch(/hydrat|mismatch/i);
+
+    // The decision the server made still holds after hydration.
+    expect(queryOverlay()).not.toBeNull();
     expect(screen.getByText('content')).toBeTruthy();
+    container.remove();
+  });
+
+  it('re-opens the overlay when the api client dispatches age-gate:required', () => {
+    seedConfirmedCookie();
+    renderGate(true);
+    expect(queryOverlay()).toBeNull();
 
     act(() => {
       window.dispatchEvent(new CustomEvent(AGE_GATE_REQUIRED_EVENT));
     });
 
-    expect(screen.getByText(CONFIRM_TEXT)).toBeTruthy();
-    expect(screen.queryByText('content')).toBeNull();
+    expect(queryOverlay()).not.toBeNull();
+    // Overlay, not replacement — the content is still in the DOM.
+    expect(screen.getByText('content')).toBeTruthy();
   });
 
   it('confirming from the recovery modal closes it and sets the cookie', async () => {
     seedConfirmedCookie();
     const user = userEvent.setup();
-    renderGate();
+    renderGate(true);
 
     act(() => {
       window.dispatchEvent(new CustomEvent(AGE_GATE_REQUIRED_EVENT));
     });
     await user.click(screen.getByText(CONFIRM_TEXT));
 
-    expect(screen.queryByText(CONFIRM_TEXT)).toBeNull();
+    expect(queryOverlay()).toBeNull();
     expect(document.cookie).toContain(`${COOKIE_NAME}=true`);
+    expect(screen.getByText('content')).toBeTruthy();
+  });
+
+  it('the declined path renders children with no overlay (exclusion unchanged)', () => {
+    pathnameState.value = DECLINED_PATH;
+    renderGate(false);
+
+    expect(queryOverlay()).toBeNull();
+    expect(screen.getByText('content')).toBeTruthy();
+  });
+
+  it('moves focus into the dialog when the overlay opens', () => {
+    renderGate(false);
+
+    expect(document.activeElement).toBe(screen.getByText(CONFIRM_TEXT));
+  });
+
+  it('traps Tab focus inside the dialog while the overlay is open', () => {
+    renderGate(false);
+    const confirm = screen.getByText(CONFIRM_TEXT);
+    const deny = screen.getByText(DENY_TEXT);
+    expect(document.activeElement).toBe(confirm);
+
+    // Tab on the last control wraps to the first.
+    deny.focus();
+    pressTab();
+    expect(document.activeElement).toBe(confirm);
+
+    // Shift+Tab on the first control wraps to the last.
+    pressTab(true);
+    expect(document.activeElement).toBe(deny);
+  });
+
+  it('returns focus to the triggering element after confirming the recovery modal', async () => {
+    seedConfirmedCookie();
+    const user = userEvent.setup();
+    renderWithIntl(
+      <AgeGate initialVerified={true}>
+        <button
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent(AGE_GATE_REQUIRED_EVENT))
+          }
+        >
+          open-gate
+        </button>
+        <div>content</div>
+      </AgeGate>,
+    );
+    const trigger = screen.getByText('open-gate');
+
+    await user.click(trigger);
+    // The recovery-opened dialog owns focus.
+    expect(document.activeElement).toBe(screen.getByText(CONFIRM_TEXT));
+
+    await user.click(screen.getByText(CONFIRM_TEXT));
+
+    // Focus handed back to the flow that opened the gate.
+    expect(queryOverlay()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
     expect(screen.getByText('content')).toBeTruthy();
   });
 });

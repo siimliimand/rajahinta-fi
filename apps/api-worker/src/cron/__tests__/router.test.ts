@@ -64,6 +64,10 @@ describe('cron routing table (task 4.3 — BullMQ repeat-schedule parity)', () =
     expect(handlerNames('30 3 * * *')).toEqual(['retention-sweep']);
   });
 
+  it('routes the monthly Fransberg curated-dataset refresh', () => {
+    expect(handlerNames('0 5 1 * *')).toEqual(['fransberg-rate-refresh']);
+  });
+
   it('routes nothing for unknown patterns', () => {
     expect(handlerNames('0 0 1 1 *')).toEqual([]);
   });

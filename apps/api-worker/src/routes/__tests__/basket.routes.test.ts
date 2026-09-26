@@ -187,6 +187,84 @@ describe('POST /api/v1/basket/optimize — composed guards + idempotency', () =>
 });
 
 // ---------------------------------------------------------------------------
+// Finland reference total (task 4.8 addendum) — field presence, value,
+// and provenance on the optimize response.
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/basket/optimize — Finland reference total (task 4.8)', () => {
+  it('carries the Finland reference total with per-line provenance', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedOptimizableProducts(db, [1]);
+    // The optimizable fixture already seeds the Alko (FI) reference row
+    // (merchant 'alko', 350¢, VERIFIED). Add a cheaper cross-border offer
+    // so the assignment wins away from the reference merchant.
+    seedOffer(db, {
+      id: 12,
+      productId: 1,
+      merchant: 'systembolaget',
+      country: 'SE',
+      priceCents: 200,
+    });
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      permissiveEnv(d1),
+      '/api/v1/basket/optimize',
+      { method: 'POST', headers: JSON_HDRS, body: JSON.stringify(VALID_REQUEST) },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, any>;
+
+    const finlandReference = body.finlandReference as Record<string, any>;
+    expect(finlandReference.status).toBe('available');
+    // Quantity 2 × the Alko row's 350¢ — the exact seeded reference price.
+    expect(finlandReference.totalCents).toBe(700);
+    expect(finlandReference.missingLines).toEqual([]);
+    expect(finlandReference.lines).toEqual([
+      {
+        productId: 1,
+        quantity: 2,
+        referenceUnitPriceCents: 350,
+        lineReferenceCents: 700,
+        referenceOfferId: 11, // seedOffer default id for product 1
+        referenceObservedAt: expect.any(String),
+        referenceReliability: 'VERIFIED',
+      },
+    ]);
+  });
+
+  it('reports the total as unavailable — never zero — with no Alko reference rows', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedOptimizableProducts(db, [1]);
+    // Replace the default Alko fixture row with a cross-border-only offer set.
+    db.prepare('DELETE FROM retail_offers WHERE merchant = ?').run('alko');
+    seedOffer(db, {
+      productId: 1,
+      merchant: 'systembolaget',
+      country: 'SE',
+      priceCents: 200,
+    });
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      permissiveEnv(d1),
+      '/api/v1/basket/optimize',
+      { method: 'POST', headers: JSON_HDRS, body: JSON.stringify(VALID_REQUEST) },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, any>;
+    expect(body.finlandReference).toEqual({
+      status: 'unavailable',
+      reason: 'NO_REFERENCE_PRICES',
+      lines: [],
+      missingLines: [{ productId: 1, quantity: 2 }],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Packing section (task 3.3) — advisory section always attached. Shape
 // expectations follow the eurPerGram-embed precedent: legacy keys +
 // `packing` appended last.
@@ -202,6 +280,9 @@ const LEGACY_OPTIMIZE_KEYS = [
   'disclaimer',
   'alternatives',
   'metadata',
+  // Task 4.8 addendum: Finland reference total on the optimizer result,
+  // appended after metadata — before the per-request packing section.
+  'finlandReference',
 ];
 
 /** Insert a product_dimensions row (task 3.1 table). */

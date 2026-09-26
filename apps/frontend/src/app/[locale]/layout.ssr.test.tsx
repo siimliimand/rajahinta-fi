@@ -15,8 +15,9 @@
  *   2. Layout composition — the REAL [locale] layout renders with the
  *      chrome replaced by markers (async components cannot pass through
  *      renderToString), pinning that every route's initial HTML carries
- *      the chrome slots, the correct `lang` attribute, and the age-gate
- *      placeholder instead of page content.
+ *      the chrome slots, the correct `lang` attribute, and the
+ *      server-side age-gate decision: page content always renders, and
+ *      the gate dialog ships as an overlay only while unconfirmed.
  *
  * @module LayoutSsrTest
  */
@@ -40,6 +41,18 @@ const state = vi.hoisted(() => ({
   // Steers the mocked usePathname — SiteHeader marks the active
   // destination from it.
   pathname: '/' as string,
+  // Steers the mocked cookies() — the age_confirmed cookie value the
+  // layout reads for the server-side gate decision (null = no cookie).
+  ageCookie: null as string | null,
+}));
+
+vi.mock('next/headers', () => ({
+  cookies: async () => ({
+    get: (name: string) =>
+      name === 'age_confirmed' && state.ageCookie !== null
+        ? { name, value: state.ageCookie }
+        : undefined,
+  }),
 }));
 
 vi.mock('next-intl/server', () => ({
@@ -115,18 +128,24 @@ const DESTINATIONS = [
   { href: '/basket', fi: 'Ostoskori', en: 'Basket' },
   { href: '/event', fi: 'Tilaisuuslaskuri', en: 'Event calculator' },
   { href: '/trip', fi: 'Matkalaskuri', en: 'Trip calculator' },
-  { href: '/what-if', fi: 'Mitä jos -laskuri', en: 'What-if calculator' },
+  { href: '/what-if', fi: 'Skenaariolaskuri', en: 'Scenario calculator' },
   { href: '/account', fi: 'Oma tili', en: 'My account' },
   { href: '/ranking', fi: 'Miten järjestäminen toimii', en: 'How ranking works' },
 ] as const;
 
-/** Render the real layout for a locale, the way the server would. */
+/**
+ * Render the real layout for a locale, the way the server would. The
+ * optional cookie value steers the mocked cookies() exactly like the
+ * request's Cookie header would.
+ */
 async function renderLayout(
   locale: 'fi' | 'en',
+  ageCookie: string | null = null,
   children: React.ReactNode = <div data-testid="page-body">PAGE-BODY-MARKER</div>,
 ): Promise<string> {
   state.locale = locale;
   state.pathname = '/';
+  state.ageCookie = ageCookie;
   return renderToString(
     await RootLayout({ children, params: Promise.resolve({ locale }) }),
   );
@@ -274,6 +293,21 @@ describe('[locale] layout SSR — composition', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('ships the WebApplication JSON-LD in the first HTML, both locales', async () => {
+    // The layout emits the structured-data script (task 9.5) for every
+    // route it wraps — pinned here so the SEO surface (task 6.2) cannot
+    // silently drop it.
+    for (const locale of ['fi', 'en'] as const) {
+      const html = await renderLayout(locale);
+      expect(html).toContain('type="application/ld+json"');
+      expect(html).toContain('"@type":"WebApplication"');
+      expect(html).toContain('"name":"Rajahinta.fi"');
+      // The structured data carries the SITE_URL the layout consumes
+      // (the @/lib/api mock in this file).
+      expect(html).toContain('"url":"https://rajahinta.test"');
+    }
+  });
+
   it('the [locale] layout is the chrome for every page route in the app', () => {
     // Next applies the [locale] layout to every route below it; the
     // assertions above prove the layout renders the chrome slots. Pin the
@@ -297,21 +331,44 @@ describe('[locale] layout SSR — composition', () => {
   });
 });
 
-describe('[locale] layout SSR — age gate leaks nothing', () => {
-  it.each(['fi', 'en'] as const)('page content is absent and the placeholder is present (%s)', async (locale) => {
+describe('[locale] layout SSR — server-side age-gate decision', () => {
+  it.each(['fi', 'en'] as const)('unconfirmed: page content AND the gate overlay are both in the HTML (%s)', async (locale) => {
     const html = await renderLayout(locale);
 
-    expect(html).toContain('data-age-gate-placeholder');
-    expect(html).not.toContain('PAGE-BODY-MARKER');
+    // Content ships for crawlers — the gate is a fixed overlay, never a
+    // replacement (crawlability without cloaking; enforcement stays in
+    // the gated APIs' 403s).
+    expect(html).toContain('PAGE-BODY-MARKER');
+    expect(html).toContain('data-age-gate-overlay');
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    // The inert placeholder branch is gone.
+    expect(html).not.toContain('data-age-gate-placeholder');
   });
 
-  it('the age-gate dialog copy itself is absent from the SSR output', async () => {
-    // Not even the gate question ships in the server payload — only the
-    // inert placeholder does. The gate renders after mount, client-side.
-    const html = await renderLayout('fi');
+  it.each(['fi', 'en'] as const)('confirmed: page content renders and no overlay ships (%s)', async (locale) => {
+    const html = await renderLayout(locale, 'true');
 
-    expect(html).not.toContain('Ikätarkistus');
-    expect(html).not.toContain('Olen 18 vuotta täyttänyt');
+    expect(html).toContain('PAGE-BODY-MARKER');
+    expect(html).not.toContain('data-age-gate-overlay');
+    expect(html).not.toContain('role="dialog"');
+  });
+
+  it('the unconfirmed HTML carries the localized dialog copy, the confirmed HTML does not', async () => {
+    const unconfirmed = await renderLayout('fi');
+    expect(unconfirmed).toContain('Ikätarkistus');
+    expect(unconfirmed).toContain('Olen 18 vuotta täyttänyt');
+
+    const confirmed = await renderLayout('fi', 'true');
+    expect(confirmed).not.toContain('Ikätarkistus');
+    expect(confirmed).not.toContain('Olen 18 vuotta täyttänyt');
+  });
+
+  it('an empty cookie value counts as unconfirmed (client-parse parity)', async () => {
+    const html = await renderLayout('fi', '');
+
+    expect(html).toContain('PAGE-BODY-MARKER');
+    expect(html).toContain('data-age-gate-overlay');
   });
 });
 

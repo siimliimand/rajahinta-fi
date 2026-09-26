@@ -3,8 +3,9 @@
  *
  * First visit shows the gate over restricted content; accepting unlocks
  * the calculator (and persists across reloads); declining lands on the
- * neutral in-house page. Also proves the SSR placeholder contract:
- * restricted content is absent from the server-rendered HTML.
+ * neutral in-house page. Also proves the SSR overlay contract: the
+ * restricted content stays in the server-rendered HTML (crawlable) and
+ * the gate overlays it in the same document.
  *
  * @module AgeGateJourney
  */
@@ -18,14 +19,16 @@ test.describe('age gate journey', () => {
   }) => {
     const response = await page.goto('/calculator');
 
-    // Restricted content is absent from the server-rendered document —
-    // the SSR placeholder contract (task landing 608564a). The assertion
-    // targets rendered markup: the fi message catalog (which contains
-    // every copy string) is legitimately inlined in the RSC payload, so
-    // a raw substring check would always match.
+    // The server-rendered document serves the restricted content with
+    // the gate as an overlay on top — not a placeholder replacement
+    // (task landing d1479e8, roadmap 1.1/1.3): content stays crawlable,
+    // the overlay ships in the same SSR payload, and gated data remains
+    // server-enforced via the APIs' 403s. The assertion targets rendered
+    // markup, not the raw payload (the fi message catalog is inlined in
+    // the RSC payload, so a raw substring check would always match).
     const html = await response!.text();
-    expect(html).toContain('data-age-gate-placeholder');
-    expect(html).not.toMatch(
+    expect(html).toContain('data-age-gate-overlay');
+    expect(html).toMatch(
       new RegExp(`<h1[^>]*>\\s*${COPY.calculatorTitle}\\s*</h1>`),
     );
 

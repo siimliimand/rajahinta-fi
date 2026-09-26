@@ -119,9 +119,9 @@ Plain, hook-free React components over Tailwind utilities — usable from both s
 | `apps/frontend/src/app/[locale]/components/Logo.tsx` | Typographic wordmark — "Rajahinta" in gray-900 with ".fi" in primary-700; optional rounded-square initial mark. Server-compatible |
 | `apps/frontend/src/app/icon.svg` | Favicon: the initial on a primary-700 square; colors hardcoded to token values (renders outside CSS-variable scope) |
 | `apps/frontend/src/app/opengraph-image.tsx` | OG image: wordmark + the fi catalog description on white, built with next/og (Inter deliberately not fetched at build); token values mirrored as inline-style literals |
-| `apps/frontend/src/app/[locale]/components/SiteHeader.tsx` | Five primary destinations (calculator, compare, basket, account, ranking) on every page, outside the age gate. Three additional flag-gated destinations (`/event`, `/trip`, `/what-if`) are inserted at fixed positions only when their server-resolved flags are on — absent from first render when off. Group order and curated lists are deliberately not in the nav (share-link and sitemap discovery). Active page shown by underline (desktop) / left bar (mobile) plus `aria-current="page"` — never color alone. Mobile menu is a disclosure panel: closed means `display:none` (no focus trap), Escape closes and returns focus to the toggle, navigation closes the panel |
-| `apps/frontend/src/app/[locale]/components/SiteFooter.tsx` | Structured legal layout: visually distinct disclaimer block on a white surface, methodology link, locale note naming the content languages; hosts the newsletter subscribe form (explicit consent checkbox, separate from price alerts) |
-| `apps/frontend/src/app/[locale]/components/AgeGate.tsx` | Age verification wrapper rendered on every page inside the locale layout; header/footer stay outside the gate |
+| `apps/frontend/src/app/[locale]/components/SiteHeader.tsx` | Primary destinations (calculator, compare, basket, account, ranking) plus a Planning dropdown grouping trip, event, and scenario (the `/what-if` URL) — desktop disclosure with Enter/Space open, arrow cycling, Escape closes and refocuses the trigger, tab-out closes; `FI | EN` locale switcher (desktop row + mobile panel) preserves the current path via next-intl. Active page shown by underline (desktop) / left bar (mobile) plus `aria-current="page"` — never color alone. Mobile menu is a disclosure panel: closed means `display:none` (no focus trap), Escape closes and returns focus to the toggle, navigation closes the panel |
+| `apps/frontend/src/app/[locale]/components/SiteFooter.tsx` | Structured legal layout: visually distinct disclaimer block on a white surface, methodology link, locale note naming the content languages; About and Contact links in the About column; hosts the newsletter subscribe form (explicit consent checkbox, separate from price alerts) |
+| `apps/frontend/src/app/[locale]/components/AgeGate.tsx` | Soft age gate rendered on every page inside the locale layout: `{children}` render unconditionally in server HTML, and unconfirmed visitors get a fixed, focus-trapped overlay dialog (`data-age-gate-overlay`) above the content; declined path keeps its exclusion, the recovery event re-opens the overlay; header/footer stay outside the gate |
 
 ### Homepage
 
@@ -140,6 +140,7 @@ Plain, hook-free React components over Tailwind utilities — usable from both s
 
 | Component file | Route | Purpose |
 |---|---|---|
+| `calculator/components/ResultCard.tsx` | `/calculator` | Answer-first result card: estimated landed cost as the primary figure, explicit cheaper/dearer wording with the Finland comparison (never color-alone), itemized breakdown beneath, reliability status + timestamp via `RELIABILITY_STATUS_META`, structural disclaimer consumed from the result object |
 | `calculator/components/ProductSearch.tsx` | `/calculator` | Product search input |
 | `calculator/components/ProductSelector.tsx` | `/calculator` | Product selection from results |
 | `calculator/components/QuantitySelector.tsx` | `/calculator` | Quantity input for calculation |
@@ -162,6 +163,8 @@ Plain, hook-free React components over Tailwind utilities — usable from both s
 | `components/AccuracyStat.tsx` | `/` (trust row), `/ranking#accuracy` | User-reported accuracy statistic — count + within-margin share + as-of, sample size always shown, API-supplied label verbatim, honest zero state |
 | `savings/components/SavingsListing.tsx` | `/savings` | Client-fetched category listing — rows with landed total, Alko reference, gap, reliability + confidence badges; header carries as-of + coverage counts even at zero rows |
 | `products/[id]/components/ProductPriceContextLine.tsx` | `/products/[id]` | One factual sentence: current best price vs 90-day median delta in cents, window + as-of included; insufficient history renders an honest no-percentage state; never contradicts the price panel (same currentBestPriceCents source) |
+| `products/[id]/components/PriceHistoryChart.tsx` | `/products/[id]` | 30/90/365-day price-history section — inline SVG chart with a full accessible data-table alternative (one row per plotted bucket, observation dates stated); section absent when the series is empty or the fetch fails |
+| `trip/components/BreakEvenCard.tsx` | `/trip` | Displayed derivation: `(transport + other costs) / per-basket saving` with the formula and its input values shown; zero/negative saving renders the "trip does not pay for itself" state; allowance hint links `/allowances` |
 | `account/components/OutcomeReportForm.tsx` | `/account` | Report-outcome form on history records within the 60-day window — euro input, within/outside-margin confirmations, calm duplicate/window error mapping |
 | `trip/components/TripFillForm.tsx` | `/trip` | Fill-mode input — allowance, candidate selection with per-candidate quantity bounds (1–99, 10-line cap) |
 | `trip/components/TripFillResult.tsx` | `/trip` | Fill result itemization — per-line contribution/consumed volume/running headroom, per-category headroom, dataset-version provenance, structural disclaimer, display-only ferry block |
@@ -175,17 +178,17 @@ Feature-component paths above are relative to `apps/frontend/src/app/[locale]/`.
 
 | Route | Purpose |
 |---|---|
-| `/` | Homepage — value proposition, calculator CTA, trust row (static copy + user-reported accuracy statistic with honest zero state) |
-| `/calculator` | Landed-cost calculator with product search, selection, quantity, result; designed empty/error/gate-closed states |
+| `/` | Homepage — value proposition, calculator CTA, trust row (static copy + user-reported accuracy statistic with honest zero state), static worked-example section after the hero (example-labeled Finland-vs-cross-border figures, no API call), FAQ section linking PUBLISHED guide entries (renders nothing when none exist) |
+| `/calculator` | Server shell (unique metadata, SSR intro, "How this calculation works" summary) over the client view: product search, selection, quantity, answer-first result card, quick/advanced disclosure, sticky desktop summary; designed empty/error/gate-closed states |
 | `/calculator/result/[recordId]` | Individual calculation result page |
 | `/compare` | Product comparison with multiple sort orders; flag-gated multi-store comparison |
-| `/basket` | Basket builder and optimization results (hidden when `enable_basket_optimization` is off) |
+| `/basket` | Server shell over the client view: basket builder and optimization results with neutral cost-ordered alternatives; sticky desktop summary (cross-border total, transport total, Finland goods reference with cheaper/dearer difference from the optimizer's `finlandReference`, net after trip costs when present) |
 | `/ranking` | Explanation of ranking methodology and neutrality enforcement |
-| `/event` | Excursion alcohol calculator — MVP landed-cost estimate plus V2 deterministic cross-border sourcing plan (flag-gated) |
-| `/trip` | Trip feasibility — break-even math plus allowance-fill mode (best basket inside the traveller allowance, per-line itemization) and neutral ferry-offer block excluded from all calculation input |
-| `/what-if` | Hypothetical excise what-if simulator — pure recalculation, ephemeral share token, HYPOTHETICAL disclaimer (flag-gated) |
+| `/event` | Server shell over the client view: excursion alcohol calculator — occasion templates (wedding, birthday, company party, graduation) prefilling editable inputs, MVP landed-cost estimate plus V2 deterministic cross-border sourcing plan |
+| `/trip` | Server shell over the client view: trip feasibility — route presets (Helsinki–Tallinn ferry patterns) prefilling editable inputs, break-even math plus the break-even card, allowance-fill mode (best basket inside the traveller allowance, per-line itemization) and neutral ferry-offer block excluded from all calculation input |
+| `/what-if` | "Scenario calculator" (label only; URL unchanged) — hypothetical excise simulator with example scenario questions in the server-shell intro — pure recalculation, ephemeral share token, HYPOTHETICAL disclaimer |
 | `/what-if/embed` | Chrome-less embeddable what-if widget for third-party sites |
-| `/products/[id]` | Server-rendered per-product page with crawler-facing product metadata (age-gated catalog read via first-party prerender token); includes the flag-gated evidence-backed dupe-alternatives panel |
+| `/products/[id]` | Server-rendered per-product page with crawler-facing product metadata (age-gated catalog read via first-party prerender token); price-history section (30/90/365-day chart + data-table alternative, absent when no history); includes the flag-gated evidence-backed dupe-alternatives panel |
 | `/lists/[slug]` | Curated editorial product lists with JSON-LD; entries in sitemap (flag-gated) |
 | `/group-order` | Group order session creation — create form and scope selection (flag-gated) |
 | `/group-order/[token]` | Shared group order session view via opaque token — participants, item valuations, transfers breakdown, accounting-only boundary note; noindexed, 410 after expiry (flag-gated) |
@@ -199,7 +202,9 @@ Feature-component paths above are relative to `apps/frontend/src/app/[locale]/`.
 | `/account/reset` | Password reset form consuming the emailed single-use token |
 | `/age-gate` | Age verification page |
 | `/value` | €/g value page — per-category deterministic ranking table with standard status badges; informational copy only |
-| `/savings` | Daily materialized landed-cost gap listing per category — as-of + coverage counts in the header, reliability and confidence badges, ordering rule stated in the copy, honest zero state |
+| `/about` | About page — server shell with unique metadata, both locales; footer link; sitemap-included |
+| `/contact` | Contact page — server shell with unique metadata, both locales; names the correction mechanism for data errors; footer link; sitemap-included |
+| `/savings` | Daily materialized landed-cost gap listing per category — as-of + coverage counts in the header, reliability and confidence badges, ordering rule stated in the copy, honest zero state; market-overview section with deterministic aggregates (average observed price per category, largest observed cross-border difference, observed product count) served by `GET /api/v1/savings/overview`, degrading to nothing on fetch failure |
 | `/allowances` | Date-addressable traveller-allowance explorer — native date picker defaulting to today, verbatim citations as evidence links, version label + effective window, version-history section, guidance-not-legal-advice framing |
 | `/guides` | Guides index — PUBLISHED GUIDE-kind posts only, locale-aware, cross-links to /allowances and /trip; entries in sitemap |
 | `/guides/[slug]` | Individual guide — same rendering treatment as blog posts, no rate-version provenance block |

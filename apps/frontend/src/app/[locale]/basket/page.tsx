@@ -1,199 +1,66 @@
-'use client';
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
+import type { Metadata } from 'next';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+import BasketView from './basket-view';
+
+interface BasketPageProps {
+  params: Promise<{ locale: string }>;
+}
 
 /**
- * Basket optimization page.
- *
- * Orchestrates the product-search → builder → optimize → results flow for
- * multi-item cross-border beverage cost optimization.
- *
- * All user-visible copy comes from the message catalogs; error messages
- * per classified {@link classifyBasketError} kind live under
- * `BasketPage.errors.*`.
- *
- * @module BasketPage
+ * Unique, descriptive metadata for the basket route
+ * (price-intelligence-roadmap task 2.2): multi-item basket optimization
+ * framing, distinct from the site-default and every other page title.
  */
-
-import { useState, useCallback, useRef, useMemo } from 'react';
-import { useTranslations } from 'next-intl';
-import type { BasketOptimizationResult, BasketItemInput } from '@/lib/basket.types';
-import { optimizeBasket, classifyBasketError } from '@/lib/basket.client';
-import type { TransportArrangement } from '@/lib/basket.types';
-import BasketBuilder from './components/BasketBuilder';
-import BasketResults from './components/BasketResults';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/** Maximum items the builder allows (server-side cap is also 10). */
-const MAX_ITEMS = 10;
-
-/** Default destination country (Finland). */
-const DEFAULT_DESTINATION = 'FI';
-
-/** Minimum query length before firing a product search. */
-const MIN_QUERY_LENGTH = 2;
-
-// ---------------------------------------------------------------------------
-// Page component
-// ---------------------------------------------------------------------------
+export async function generateMetadata({
+  params,
+}: BasketPageProps): Promise<Metadata> {
+  const { locale } = await params;
+  const t = await getTranslations({ locale, namespace: 'BasketPage' });
+  return {
+    title: t('metaTitle'),
+    description: t('metaDescription'),
+  };
+}
 
 /**
- * Basket optimization page — multi-item landed-cost optimizer.
+ * Basket optimization page (price-intelligence-roadmap task 2.2, the D2
+ * server-shell + client-view split).
  *
- * Behaviour:
- *  - Builder allows adding up to 10 products with quantities.
- *  - Submit calls {@link optimizeBasket} and renders the result with
- *    per-store breakdowns, confidence, disclaimer, and alternatives.
+ * The server shell owns everything that does not need the visitor's
+ * interaction state: the unique metadata above, the intro copy, and the
+ * "how this optimization works" summary — all crawlable in the server
+ * HTML. The builder → optimize → results flow is the client view in
+ * `basket-view.tsx`, unchanged in behavior.
  */
-export default function BasketPage() {
-  const t = useTranslations('BasketPage');
+export default async function BasketPage({ params }: BasketPageProps) {
+  const { locale } = await params;
+  setRequestLocale(locale);
 
-  // ── Basket builder state ──
-  const [items, setItems] = useState<
-    { productId: number; productName: string; quantity: number }[]
-  >([]);
-  const [destination, setDestination] = useState(DEFAULT_DESTINATION);
-  const [transportArrangement, setTransportArrangement] =
-    useState<TransportArrangement>('SELLER_ARRANGED');
-
-  // ── Optimization state ──
-  const [optimizing, setOptimizing] = useState(false);
-  const [result, setResult] = useState<BasketOptimizationResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // Guard against duplicate submits
-  const optimizeInFlight = useRef(false);
-
-  /**
-   * Product names by ID for the packing section — it names excluded
-   * products and box contents instead of bare product IDs.
-   */
-  const productNames = useMemo(
-    () => new Map(items.map((i) => [i.productId, i.productName])),
-    [items],
-  );
-
-  // ── Handlers ──
-
-  /** Add a product to the basket (from search selection). */
-  const handleAddItem = useCallback(
-    (productId: number, productName: string) => {
-      setItems((prev) => {
-        if (prev.length >= MAX_ITEMS) return prev;
-        // If already in the basket, increment quantity instead of duplicating.
-        const existing = prev.find((i) => i.productId === productId);
-        if (existing) {
-          return prev.map((i) =>
-            i.productId === productId
-              ? { ...i, quantity: Math.min(i.quantity + 1, 99) }
-              : i,
-          );
-        }
-        return [...prev, { productId, productName, quantity: 1 }];
-      });
-      setResult(null);
-      setError(null);
-    },
-    [],
-  );
-
-  /** Update quantity for an existing item. */
-  const handleUpdateQuantity = useCallback(
-    (productId: number, quantity: number) => {
-      setItems((prev) =>
-        prev.map((i) =>
-          i.productId === productId
-            ? { ...i, quantity: Math.max(1, Math.min(99, quantity)) }
-            : i,
-        ),
-      );
-    },
-    [],
-  );
-
-  /** Remove an item from the basket. */
-  const handleRemoveItem = useCallback((productId: number) => {
-    setItems((prev) => prev.filter((i) => i.productId !== productId));
-    setResult(null);
-    setError(null);
-  }, []);
-
-  /** Submit the basket for optimization. */
-  const handleOptimize = useCallback(async () => {
-    if (items.length === 0 || optimizeInFlight.current) return;
-
-    optimizeInFlight.current = true;
-    setOptimizing(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const input: BasketItemInput[] = items.map((i) => ({
-        productId: i.productId,
-        quantity: i.quantity,
-      }));
-      const res = await optimizeBasket({
-        items: input,
-        destination,
-        transportArrangement,
-      });
-      setResult(res);
-    } catch (err: unknown) {
-      const { kind } = classifyBasketError(err);
-      setError(t(`errors.${kind}`));
-    } finally {
-      setOptimizing(false);
-      optimizeInFlight.current = false;
-    }
-  }, [items, destination, transportArrangement, t]);
-
-  const canOptimize = items.length > 0 && !optimizing;
+  const t = await getTranslations('BasketPage');
 
   return (
     <main className="mx-auto min-h-screen max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* ── Header ── */}
+      {/* ── Intro copy (server-rendered) ── */}
       <h1 className="mb-1 text-2xl font-bold text-primary-700">{t('title')}</h1>
       <p className="mb-8 text-sm text-gray-500">{t('subtitle')}</p>
 
-      {/* ── Builder section ── */}
-      <section className="mb-8">
-        <BasketBuilder
-          items={items}
-          maxItems={MAX_ITEMS}
-          minQueryLength={MIN_QUERY_LENGTH}
-          destination={destination}
-          transportArrangement={transportArrangement}
-          onAddItem={handleAddItem}
-          onUpdateQuantity={handleUpdateQuantity}
-          onRemoveItem={handleRemoveItem}
-          onDestinationChange={setDestination}
-          onTransportArrangementChange={setTransportArrangement}
-        />
+      {/* ── How this optimization works (server-rendered summary) ── */}
+      <section
+        aria-labelledby="basket-how-heading"
+        className="mb-8 rounded-lg border border-gray-200 bg-gray-50 p-5"
+      >
+        <h2 id="basket-how-heading" className="mb-2 text-base font-semibold text-gray-900">
+          {t('howTitle')}
+        </h2>
+        <p className="text-sm leading-relaxed text-gray-600">{t('howBody')}</p>
       </section>
 
-      {/* ── Submit ── */}
-      <section className="mb-8">
-        <button
-          type="button"
-          onClick={handleOptimize}
-          disabled={!canOptimize}
-          className="inline-flex w-full items-center justify-center rounded-md bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {optimizing ? t('optimizing') : t('optimize')}
-        </button>
-
-        {error && (
-          <p className="mt-2 text-sm text-red-600">{error}</p>
-        )}
-      </section>
-
-      {/* ── Results ── */}
-      {result && (
-        <section>
-          <BasketResults result={result} productNames={productNames} />
-        </section>
-      )}
+      {/* ── Interactive flow (client view) ── */}
+      <BasketView />
     </main>
   );
 }

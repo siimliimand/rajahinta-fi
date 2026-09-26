@@ -19,6 +19,11 @@ interface QuantitySelectorProps {
   min?: number;
   /** Maximum allowed value (default 99). */
   max?: number;
+  /**
+   * Unit rendered beside the numeric field (task 4.7 form pass), e.g.
+   * "kpl" — plain text, never carried by the control alone.
+   */
+  unit?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -35,6 +40,7 @@ export default function QuantitySelector({
   onChange,
   min = 1,
   max = 99,
+  unit,
 }: QuantitySelectorProps) {
   const t = useTranslations('QuantitySelector');
 
@@ -78,6 +84,7 @@ export default function QuantitySelector({
         <input
           id="quantity"
           type="number"
+          inputMode="numeric"
           value={value}
           onChange={handleChange}
           min={min}
@@ -94,6 +101,11 @@ export default function QuantitySelector({
           +
         </button>
       </div>
+      {unit ? (
+        <span data-testid="quantity-unit" className="text-xs text-gray-500">
+          {unit}
+        </span>
+      ) : null}
       <span className="text-xs text-gray-400">{t('range', { max })}</span>
     </div>
   );

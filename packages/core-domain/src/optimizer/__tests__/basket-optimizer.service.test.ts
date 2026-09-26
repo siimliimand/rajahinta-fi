@@ -1656,4 +1656,195 @@ describe('BasketOptimizerService', () => {
       });
     }
   });
+
+  // -------------------------------------------------------------------------
+  // Finland reference total — task 4.8 addendum
+  // -------------------------------------------------------------------------
+
+  describe('Finland reference total (task 4.8)', () => {
+    /** Cross-border offers plus an Alko (FI) reference row per product. */
+    function referenceFixtureOffersByProduct(): Record<
+      number,
+      CalculatorRetailOfferData[]
+    > {
+      return {
+        // Product 101 candidates (Alko priced above the cross-border rows
+        // so the domestic reference never wins the assignment).
+        101: [
+          { id: 201, priceCents: 200, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+          { id: 202, priceCents: 220, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+          {
+            id: 210,
+            priceCents: 300,
+            merchant: 'alko',
+            country: 'FI',
+            reliabilityStatus: 'VERIFIED',
+            observedAt: new Date('2026-09-01T06:00:00Z'),
+          },
+        ],
+        // Product 102 candidates.
+        102: [
+          { id: 301, priceCents: 500, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED' },
+          {
+            id: 310,
+            priceCents: 700,
+            merchant: 'alko',
+            country: 'FI',
+            reliabilityStatus: 'VERIFIED',
+            observedAt: new Date('2026-09-02T06:00:00Z'),
+          },
+        ],
+      };
+    }
+
+    function referenceFixtureOptimizer(
+      offersByProduct = referenceFixtureOffersByProduct(),
+    ): BasketOptimizerService {
+      const productData = createMockProductDataPort({
+        findProductById: vi.fn().mockImplementation(async (id: number) => {
+          if (id === 102) return PRODUCT_2;
+          return PRODUCT_1;
+        }),
+        findRetailOffers: vi.fn().mockImplementation(async (id: number) =>
+          offersByProduct[id] ?? [],
+        ),
+      });
+      return createOptimizer({ productData });
+    }
+
+    it('reference total equals the sum of the chosen lines\' reference prices, with provenance', async () => {
+      const service = referenceFixtureOptimizer();
+      const result = await service.optimize({
+        items: [
+          { productId: 101, quantity: 2 },
+          { productId: 102, quantity: 1 },
+        ],
+        destination: 'FI',
+      });
+
+      expect(result.finlandReference.status).toBe('available');
+      if (result.finlandReference.status !== 'available') return;
+
+      // 2 × 300 (product 101) + 1 × 700 (product 102) = 1300
+      expect(result.finlandReference.totalCents).toBe(1300);
+      expect(result.finlandReference.lines).toHaveLength(2);
+      expect(result.finlandReference.missingLines).toEqual([]);
+
+      const line101 = result.finlandReference.lines.find((l) => l.productId === 101)!;
+      expect(line101).toEqual({
+        productId: 101,
+        quantity: 2,
+        referenceUnitPriceCents: 300,
+        lineReferenceCents: 600,
+        referenceOfferId: 210,
+        referenceObservedAt: '2026-09-01T06:00:00.000Z',
+        referenceReliability: 'VERIFIED',
+      });
+      const line102 = result.finlandReference.lines.find((l) => l.productId === 102)!;
+      expect(line102.referenceUnitPriceCents).toBe(700);
+      expect(line102.lineReferenceCents).toBe(700);
+    });
+
+    it('selects the newest Alko observation — the calculator benchmark rule', async () => {
+      const offers: CalculatorRetailOfferData[] = [
+        { id: 201, priceCents: 200, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        // Older reference: cheaper, but superseded by observation time.
+        {
+          id: 211,
+          priceCents: 250,
+          merchant: 'alko',
+          country: 'FI',
+          reliabilityStatus: 'VERIFIED',
+          observedAt: new Date('2026-08-01T06:00:00Z'),
+        },
+        // Newest reference: the one that must be used.
+        {
+          id: 212,
+          priceCents: 320,
+          merchant: 'alko',
+          country: 'FI',
+          reliabilityStatus: 'ESTIMATED',
+          observedAt: new Date('2026-09-10T06:00:00Z'),
+        },
+      ];
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue(offers),
+      });
+      const service = createOptimizer({ productData });
+
+      const result = await service.optimize({
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      });
+
+      expect(result.finlandReference.status).toBe('available');
+      if (result.finlandReference.status !== 'available') return;
+      expect(result.finlandReference.totalCents).toBe(320);
+      expect(result.finlandReference.lines[0]).toMatchObject({
+        referenceUnitPriceCents: 320,
+        referenceOfferId: 212,
+        referenceObservedAt: '2026-09-10T06:00:00.000Z',
+        referenceReliability: 'ESTIMATED',
+      });
+    });
+
+    it('excludes reference-less lines from the total and names them explicitly', async () => {
+      // Product 102 served WITHOUT any Alko row.
+      const offersByProduct = referenceFixtureOffersByProduct();
+      offersByProduct[102] = offersByProduct[102].filter((o) => o.merchant !== 'alko');
+      const service = referenceFixtureOptimizer(offersByProduct);
+
+      const result = await service.optimize({
+        items: [
+          { productId: 101, quantity: 2 },
+          { productId: 102, quantity: 1 },
+        ],
+        destination: 'FI',
+      });
+
+      expect(result.finlandReference.status).toBe('available');
+      if (result.finlandReference.status !== 'available') return;
+      // Only product 101 contributes — never a zero for product 102.
+      expect(result.finlandReference.totalCents).toBe(600);
+      expect(result.finlandReference.lines.map((l) => l.productId)).toEqual([101]);
+      expect(result.finlandReference.missingLines).toEqual([
+        { productId: 102, quantity: 1 },
+      ]);
+    });
+
+    it('is unavailable — with a reason, never a zero — when no line has a reference', async () => {
+      const service = createOptimizer();
+      const result = await service.optimize({
+        items: [{ productId: 101, quantity: 1 }],
+        destination: 'FI',
+      });
+
+      expect(result.finlandReference).toEqual({
+        status: 'unavailable',
+        reason: 'NO_REFERENCE_PRICES',
+        lines: [],
+        missingLines: [{ productId: 101, quantity: 1 }],
+      });
+    });
+
+    it('does not depend on which merchant won the assignment', async () => {
+      const service = referenceFixtureOptimizer();
+      const input: BasketOptimizationInput = {
+        items: [
+          { productId: 101, quantity: 1 },
+          { productId: 102, quantity: 1 },
+        ],
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      // Whatever assignment won (single-store B or the split), every input
+      // line is in the chosen basket, so the reference total is identical.
+      expect(result.finlandReference.status).toBe('available');
+      if (result.finlandReference.status !== 'available') return;
+      expect(result.finlandReference.totalCents).toBe(1000);
+      expect(result.finlandReference.lines).toHaveLength(2);
+    });
+  });
 });

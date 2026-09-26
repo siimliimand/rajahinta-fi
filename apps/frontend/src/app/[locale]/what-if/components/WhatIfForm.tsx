@@ -17,6 +17,19 @@ import {
 // Props
 // ---------------------------------------------------------------------------
 
+/**
+ * Per-field inline validation messages for one product row (task 4.7
+ * form pass). The view computes them from the draft's parse rules and
+ * passes the copy down — the fields render inside this form, so the
+ * messages could not reach them otherwise.
+ */
+export interface ProductRowFieldErrors {
+  readonly abv?: string;
+  readonly volume?: string;
+  readonly alkoPrice?: string;
+  readonly importPrice?: string;
+}
+
 export interface WhatIfFormProps {
   /** Hypothetical rate (€ per formula unit) — the slider value. */
   readonly rate: number;
@@ -27,6 +40,12 @@ export interface WhatIfFormProps {
   readonly invalidNotice: boolean;
   /** True while a rate-limit countdown suppresses recomputation. */
   readonly throttled: boolean;
+  /**
+   * Field-specific validation copy keyed by row key (task 4.7 form
+   * pass); a message renders under its field, linked via
+   * aria-describedby.
+   */
+  readonly rowFieldErrors?: ReadonlyMap<string, ProductRowFieldErrors>;
   readonly onRateChange: (rate: number) => void;
   readonly onRowChange: (key: string, patch: Partial<Omit<ProductDraft, 'key'>>) => void;
   readonly onAddRow: () => void;
@@ -54,6 +73,7 @@ export default function WhatIfForm({
   rows,
   invalidNotice,
   throttled,
+  rowFieldErrors,
   onRateChange,
   onRowChange,
   onAddRow,
@@ -114,6 +134,23 @@ export default function WhatIfForm({
           const id = (field: string) => `what-if-${field}-${row.key}`;
           const change = (patch: Partial<Omit<ProductDraft, 'key'>>) =>
             onRowChange(row.key, patch);
+          // Task 4.7: this row's field-specific validation copy.
+          const errors = rowFieldErrors?.get(row.key);
+          const errorAria = (field: string, message?: string) =>
+            message
+              ? {
+                  'aria-invalid': 'true' as const,
+                  'aria-describedby': `${id(field)}-error`,
+                }
+              : {};
+          const ErrorNote = ({ field, message }: { field: string; message: string }) => (
+            <p
+              id={`${id(field)}-error`}
+              className="mt-1 text-xs font-medium text-red-600"
+            >
+              {message}
+            </p>
+          );
           return (
             <Card key={row.key} muted padding="sm" data-testid={`what-if-row-${row.key}`}>
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -158,8 +195,12 @@ export default function WhatIfForm({
                     inputMode="decimal"
                     value={row.abvPercent}
                     onChange={(event) => change({ abvPercent: event.target.value })}
+                    {...errorAria('abv', errors?.abv)}
                     className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm focus:outline-none focus:ring-1 focus:border-primary-500 focus:ring-primary-500"
                   />
+                  {errors?.abv && (
+                    <ErrorNote field="abv" message={errors.abv} />
+                  )}
                 </div>
                 <div>
                   <label htmlFor={id('volume')} className="mb-1 block text-xs font-medium text-gray-600">
@@ -171,8 +212,12 @@ export default function WhatIfForm({
                     inputMode="decimal"
                     value={row.volumeLitres}
                     onChange={(event) => change({ volumeLitres: event.target.value })}
+                    {...errorAria('volume', errors?.volume)}
                     className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm focus:outline-none focus:ring-1 focus:border-primary-500 focus:ring-primary-500"
                   />
+                  {errors?.volume && (
+                    <ErrorNote field="volume" message={errors.volume} />
+                  )}
                 </div>
                 <div>
                   <label htmlFor={id('alko')} className="mb-1 block text-xs font-medium text-gray-600">
@@ -184,8 +229,12 @@ export default function WhatIfForm({
                     inputMode="decimal"
                     value={row.alkoPriceEur}
                     onChange={(event) => change({ alkoPriceEur: event.target.value })}
+                    {...errorAria('alko', errors?.alkoPrice)}
                     className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm focus:outline-none focus:ring-1 focus:border-primary-500 focus:ring-primary-500"
                   />
+                  {errors?.alkoPrice && (
+                    <ErrorNote field="alko" message={errors.alkoPrice} />
+                  )}
                 </div>
                 <div>
                   <label htmlFor={id('import')} className="mb-1 block text-xs font-medium text-gray-600">
@@ -197,8 +246,12 @@ export default function WhatIfForm({
                     inputMode="decimal"
                     value={row.importPriceEur}
                     onChange={(event) => change({ importPriceEur: event.target.value })}
+                    {...errorAria('import', errors?.importPrice)}
                     className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm focus:outline-none focus:ring-1 focus:border-primary-500 focus:ring-primary-500"
                   />
+                  {errors?.importPrice && (
+                    <ErrorNote field="import" message={errors.importPrice} />
+                  )}
                 </div>
               </div>
             </Card>

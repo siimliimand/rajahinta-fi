@@ -30,6 +30,8 @@ import { LandedCostCalculatorService } from '../../calculator/landed-cost-calcul
 import { BasketShippingCalculator } from '../../transport/basket-shipping-calculator.service';
 import { ConfidenceFrameworkService } from '../../reliability/confidence-framework.service';
 import { DISCLAIMER_FI } from '../../disclaimer';
+import { computeAlkoBenchmark } from '../../benchmark/alko-benchmark';
+import type { AlkoReferenceOffer } from '../../benchmark/benchmark.types';
 import { PRODUCT_DATA_PORT } from '../../calculator/calculator.types';
 import { MERCHANT_TERMS_PORT } from '../ports/merchant-terms.port';
 import { BASKET_CALCULATION_RECORD_PORT } from '../ports/basket-calculation-record.port';
@@ -49,6 +51,9 @@ import type {
   ConsolidatedTransport,
   MinimumOrderThresholdCheck,
   BasketInputItem,
+  BasketFinlandReference,
+  BasketReferenceLine,
+  BasketReferenceMissingLine,
 } from '../optimizer.types';
 import type {
   IProductDataPort,
@@ -110,6 +115,15 @@ const RELIABILITY_ORDER: readonly ReliabilityStatus[] = [
   'STALE',
   'UNAVAILABLE',
 ];
+
+/**
+ * The Finland reference merchant — the same literal the single-product
+ * calculator's benchmark resolution matches (landed-cost-calculator
+ * service) and the savings cron qualifies on. A domestic reference is an
+ * Alko row WITH an observation timestamp; anything else is not a
+ * reference, never a stand-in.
+ */
+const ALKO_MERCHANT = 'alko';
 
 // ---------------------------------------------------------------------------
 // Service
@@ -316,6 +330,11 @@ export class BasketOptimizerService {
       calculationRecordId = persisted.id;
     }
 
+    // 5e. Finland reference total (task 4.8 addendum) — every input item
+    // is assigned in a feasible result, so the chosen basket is exactly
+    // the input lines; references come from the already-resolved offers.
+    const finlandReference = this.buildFinlandReference(items, resolvedItems);
+
     return {
       shipments: best.shipments,
       totalCents: best.totalCents,
@@ -336,6 +355,7 @@ export class BasketOptimizerService {
         datasetVersions,
         calculationRecordId,
       },
+      finlandReference,
     };
   }
 
@@ -497,6 +517,106 @@ export class BasketOptimizerService {
       }
     }
     return map;
+  }
+
+  /**
+   * Finland reference total for the chosen basket (task 4.8 addendum).
+   *
+   * For each input line, the reference is the product's newest Alko
+   * observation, selected by {@link computeAlkoBenchmark} — the exact
+   * engine and selection rule the single-product calculator uses, so a
+   * basket line's reference equals the reference the calculator would
+   * report for that product. The engine's difference output is computed
+   * against the line's first resolved offer price and deliberately
+   * discarded: only the deterministic newest-reference selection is
+   * consumed here.
+   *
+   * Lines without a qualifying Alko row are named in `missingLines` and
+   * contribute nothing (never a zero price). When no line has a
+   * reference the whole total is `unavailable` — absence is stated, not
+   * rendered as zero. Pure aggregation of already-resolved offers: no
+   * new I/O, no schema, deterministic in input order.
+   */
+  private buildFinlandReference(
+    items: readonly BasketInputItem[],
+    resolvedItems: readonly ResolvedItem[],
+  ): BasketFinlandReference {
+    const lines: BasketReferenceLine[] = [];
+    const missingLines: BasketReferenceMissingLine[] = [];
+
+    for (let itemIdx = 0; itemIdx < items.length; itemIdx++) {
+      const item = items[itemIdx];
+      const resolved = resolvedItems[itemIdx];
+
+      // Keep each qualifying Alko row paired with its source offer so the
+      // provenance id survives the engine's value-only output.
+      const alkoCandidates: {
+        readonly source: CalculatorRetailOfferData;
+        readonly reference: AlkoReferenceOffer;
+      }[] = [];
+      for (const offer of resolved.offers) {
+        if (offer.merchant !== ALKO_MERCHANT || offer.observedAt === undefined) {
+          continue;
+        }
+        alkoCandidates.push({
+          source: offer,
+          reference: {
+            id: offer.id,
+            priceCents: offer.priceCents,
+            reliabilityStatus: offer.reliabilityStatus,
+            observedAt: offer.observedAt,
+          },
+        });
+      }
+
+      if (alkoCandidates.length === 0) {
+        missingLines.push({ productId: item.productId, quantity: item.quantity });
+        continue;
+      }
+
+      const benchmark = computeAlkoBenchmark({
+        calculatedPriceCents: resolved.offers[0].priceCents,
+        alkoOffers: alkoCandidates.map((c) => c.reference),
+      });
+      if (benchmark.status !== 'available') {
+        // Invalid reference data (defensive: the rows already passed the
+        // boundary validity checks) — excluded like any non-reference
+        // line, never guessed around.
+        missingLines.push({ productId: item.productId, quantity: item.quantity });
+        continue;
+      }
+
+      // The engine's values come from one of the candidate rows; match on
+      // its own output to recover that row's id for provenance.
+      const selected = alkoCandidates.find(
+        (c) =>
+          c.reference.priceCents === benchmark.referencePriceCents &&
+          c.reference.observedAt.getTime() === benchmark.observedAt.getTime() &&
+          c.reference.reliabilityStatus === benchmark.reliabilityStatus,
+      )!;
+
+      lines.push({
+        productId: item.productId,
+        quantity: item.quantity,
+        referenceUnitPriceCents: benchmark.referencePriceCents,
+        lineReferenceCents: benchmark.referencePriceCents * item.quantity,
+        referenceOfferId: selected.source.id,
+        referenceObservedAt: benchmark.observedAt.toISOString(),
+        referenceReliability: benchmark.reliabilityStatus,
+      });
+    }
+
+    if (lines.length === 0) {
+      return {
+        status: 'unavailable',
+        reason: 'NO_REFERENCE_PRICES',
+        lines: [],
+        missingLines,
+      };
+    }
+
+    const totalCents = lines.reduce((sum, line) => sum + line.lineReferenceCents, 0);
+    return { status: 'available', totalCents, lines, missingLines };
   }
 
   // ---------------------------------------------------------------------------

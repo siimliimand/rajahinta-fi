@@ -2,6 +2,7 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
+import type { Metadata } from 'next';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import ValueRanking from './components/ValueRanking';
@@ -14,6 +15,23 @@ import {
 interface ValuePageProps {
   params: Promise<{ locale: string }>;
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}
+
+/**
+ * Unique, descriptive metadata for the €/g value route
+ * (price-intelligence-roadmap task 2.5): unit-price listing framing,
+ * distinct from the site-default and every other page title. The page
+ * content and `?category=` handling are unchanged.
+ */
+export async function generateMetadata({
+  params,
+}: ValuePageProps): Promise<Metadata> {
+  const { locale } = await params;
+  const t = await getTranslations({ locale, namespace: 'ValuePage' });
+  return {
+    title: t('metaTitle'),
+    description: t('metaDescription'),
+  };
 }
 
 /**
