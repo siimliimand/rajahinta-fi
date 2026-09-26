@@ -23,7 +23,7 @@
 ## 4. Display formatting
 
 - [x] 4.1 `formatAbv` (fraction × 100, ≤ 1 decimal — kills `14.499999999999998%`) and `formatVolume` (canonical litres → trimmed `0.5 l` / `50 cl` rendering with unit label) helpers in the frontend lib; applied across calculator search rows, products listing, product detail, calculator configure/summary, and compare <!-- agent: platform-engineer.build, depends_on: [1.3], touches: [apps/frontend/src/lib/**, apps/frontend/src/app/[locale]/**] -->
-- [ ] 4.2 Enum label translations: category and containerType render through message catalogs (reuse existing category filter keys; add container-type keys), fi/en parity pinned by the messages test <!-- agent: platform-engineer.fast, depends_on: [4.1], touches: [apps/frontend/src/messages/en.json, apps/frontend/src/messages/fi.json, apps/frontend/src/app/[locale]/products/[id]/page.tsx] -->
+- [x] 4.2 Enum label translations: category and containerType render through message catalogs (reuse existing category filter keys; add container-type keys), fi/en parity pinned by the messages test <!-- agent: platform-engineer.fast, depends_on: [4.1], touches: [apps/frontend/src/messages/en.json, apps/frontend/src/messages/fi.json, apps/frontend/src/app/[locale]/products/[id]/page.tsx] -->
 
 ## 5. Verification + rollout
 
