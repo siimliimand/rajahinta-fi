@@ -8,6 +8,15 @@ import { useTranslations } from 'next-intl';
 import type { ProductSearchItem } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Format cents to a euro string (shared frontend convention). */
+function formatEur(cents: number): string {
+  return `€${(cents / 100).toFixed(2)}`;
+}
+
+// ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
@@ -98,6 +107,20 @@ export default function ProductSelector({
                   ? ` · ${tCommon('abvValue', { value: product.alcoholByVolume })}`
                   : ''}
               </span>
+              {/* ── Lowest observed price (change
+                  unit-integrity-and-result-trust, task 3.2): rendered only
+                  when the product has offers — an offer-less row stays
+                  honestly empty, never a displayed €0.00. ── */}
+              {product.lowestPriceCents !== null && (
+                <span
+                  className="mt-0.5 block text-xs font-medium text-gray-700"
+                  data-testid="row-lowest-price"
+                >
+                  {t('lowestPrice', {
+                    price: formatEur(product.lowestPriceCents),
+                  })}
+                </span>
+              )}
             </button>
           </li>
         );

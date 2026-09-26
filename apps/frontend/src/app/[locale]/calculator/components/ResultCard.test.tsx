@@ -114,6 +114,32 @@ function resultWithBenchmark(
   } as CalculatorResultType;
 }
 
+/**
+ * Result whose plausibility sanity rail tripped (task 2.1): overall
+ * confidence LOW, machine-readable notes naming the breach. The key is
+ * absent on plausible results — the block must render nothing then.
+ */
+function resultWithSanityNotes(): CalculatorResultType {
+  return {
+    ...baseResult(),
+    confidence: 'LOW',
+    sanityNotes: [
+      {
+        code: 'LINE_EXCISE_EXCEEDS_RETAIL_PLAUSIBILITY',
+        component: 'alcoholExciseEstimate',
+        detail:
+          'Line alcohol excise 65000 cents exceeds 5× the line retail ' +
+          'price 4000 cents — a genuine Finnish duty outcome never does.',
+        figures: {
+          lineComponentCents: 65000,
+          lineRetailPriceCents: 4000,
+          thresholdMultiple: 5,
+        },
+      },
+    ],
+  };
+}
+
 /** The breakdown section heading, for order assertions. */
 function breakdownHeading() {
   return screen.getByText('Kustannuserittely');
@@ -284,6 +310,40 @@ describe('ResultCard price-data reliability and timestamp (task 4.1)', () => {
     expect(reliability.textContent).toContain(
       `Laskettu ${new Date('2026-08-31T12:00:00.000Z').toLocaleString('fi-FI')}`,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sanity-note degraded state — visible only when notes are present
+// ---------------------------------------------------------------------------
+
+describe('ResultCard sanity-note degraded state (task 2.2)', () => {
+  it('renders the visible LOW-confidence note block when the result carries sanityNotes', () => {
+    renderWithIntl(<ResultCard result={resultWithSanityNotes()} />);
+
+    const note = screen.getByTestId('sanity-note');
+    expect(note).toBeVisible();
+    // The heading states the degradation factually — confidence downgraded,
+    // the result is an estimate.
+    expect(
+      within(note).getByText('Luotettavuus alennettu: tulos on arvio'),
+    ).toBeInTheDocument();
+    // Each note lists the affected component via the shared category
+    // label, plus the API's own detail string naming the breach —
+    // figures verbatim, never reworded UI copy.
+    expect(
+      within(note).getByText('Arvio alkoholin valmisteverosta'),
+    ).toBeInTheDocument();
+    expect(note.textContent).toContain(
+      'Line alcohol excise 65000 cents exceeds 5× the line retail price 4000 cents',
+    );
+  });
+
+  it('renders no note block when the result carries no sanityNotes', () => {
+    const { container } = renderWithIntl(<ResultCard result={baseResult()} />);
+
+    expect(screen.queryByTestId('sanity-note')).toBeNull();
+    expect(container.textContent).not.toContain('Luotettavuus alennettu');
   });
 });
 

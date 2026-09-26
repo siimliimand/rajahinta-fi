@@ -165,7 +165,7 @@
     "resetForm": "Clear form",
     "quantityUnit": "pcs",
     "countryLabel": "Destination country",
-    "observedPrice": "Observed price: {price}",
+    "observedPrice": "Best current price: {price}",
     "advancedToggle": "Advanced options",
     "transportMethodLabel": "Carrier (optional)",
     "transportMethodHint": "Leave empty to use the published transport dataset.",
@@ -192,7 +192,8 @@
   },
   "ProductSelector": {
     "typeToSearch": "Type a product name to start searching.",
-    "noResults": "No products found for \"{query}\"."
+    "noResults": "No products found for \"{query}\".",
+    "lowestPrice": "Lowest observed price: {price}"
   },
   "QuantitySelector": {
     "label": "Quantity",
@@ -219,6 +220,9 @@
       "importCheaper": "Importing is cheaper",
       "samePrice": "The price is the same",
       "observedAt": "Observed: {timestamp}"
+    },
+    "sanityNote": {
+      "label": "Confidence downgraded: the result is an estimate"
     },
     "category": {
       "foreignRetailPrice": "Foreign retail price",

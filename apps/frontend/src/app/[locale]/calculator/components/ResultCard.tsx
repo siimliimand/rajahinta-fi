@@ -13,6 +13,7 @@ import type {
 import { RELIABILITY_STATUS_META } from '@/lib/design/status';
 import { ReliabilityBadge } from '@/components/ui';
 import DisclaimerBanner from './DisclaimerBanner';
+import SanityNoteList from './SanityNoteList';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -148,6 +149,13 @@ export default function ResultCard({ result }: ResultCardProps) {
             </time>
           </span>
         </div>
+      )}
+
+      {/* ── Degraded state: plausibility-rail trip notes. Rendered only
+          when the result carries `sanityNotes` — key absent (plausible
+          calculation) renders nothing, per the render-nothing convention. ── */}
+      {result.sanityNotes && result.sanityNotes.length > 0 && (
+        <SanityNoteList notes={result.sanityNotes} />
       )}
 
       {/* ── Finland comparison — display-only, never a cost line: explicit

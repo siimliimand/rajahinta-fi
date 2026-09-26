@@ -19,6 +19,7 @@ import { ConfidenceBadge, ReliabilityBadge } from '@/components/ui';
 import { MerchantLink } from '../../compare/components/MerchantLink';
 import DisclaimerBanner from './DisclaimerBanner';
 import ReportExportActions from './ReportExportActions';
+import SanityNoteList from './SanityNoteList';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -236,6 +237,14 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
           {tAll(CONFIDENCE_LEVEL_META[result.confidence].labelKey)}
         </ConfidenceBadge>
       </div>
+
+      {/* ── Degraded state: plausibility-rail trip notes, beside the
+          confidence badge they explain. Rendered only when the result
+          carries `sanityNotes` — key absent (plausible calculation)
+          renders nothing, per the render-nothing convention. ── */}
+      {result.sanityNotes && result.sanityNotes.length > 0 && (
+        <SanityNoteList notes={result.sanityNotes} />
+      )}
 
       {/* ── Itemized costs ── */}
       <div>

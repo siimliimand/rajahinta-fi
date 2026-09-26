@@ -65,6 +65,19 @@ const HIT: ProductSearchItem = {
   merchantCount: 1,
 };
 
+/** Genuinely offer-less product — null price, zero merchants. */
+const NO_OFFER_HIT: ProductSearchItem = {
+  id: 7,
+  name: 'Tarjouskotilo',
+  brand: 'Hiljainen',
+  category: 'Vodka',
+  alcoholByVolume: 37.5,
+  unitVolume: '0,5 l',
+  containerType: 'BOTTLE',
+  lowestPriceCents: null,
+  merchantCount: 0,
+};
+
 /** Minimal valid result — enough for the rendered answer-first figure. */
 function baseResult(): CalculatorResultType {
   return {
@@ -294,6 +307,58 @@ describe('CalculatorView quick/full-path parity (task 4.2)', () => {
       destination: 'FI',
       transportMethod: 'Viking Line',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Price before calculation (task 3.2, unit-integrity-and-result-trust):
+// rows carry the lowest observed price; the Configure step shows the
+// selected product's best current price before the first calculation.
+// ---------------------------------------------------------------------------
+
+describe('CalculatorView price-before-calculation (task 3.2)', () => {
+  it('renders the lowest observed price on rows with offers and nothing on offer-less rows', async () => {
+    mockedSearchProducts.mockResolvedValue(
+      searchResponse([HIT, NO_OFFER_HIT]),
+    );
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+
+    // Priced row: the lowest observed price renders in euros.
+    const pricedRow = (
+      await screen.findByText('Renat')
+    ).closest('li') as HTMLElement;
+    expect(
+      within(pricedRow).getByTestId('row-lowest-price'),
+    ).toHaveTextContent('Halvin havaittu hinta: €9.99');
+
+    // Offer-less row: honestly empty — no price element, never €0.00.
+    const emptyRow = screen
+      .getByText('Tarjouskotilo')
+      .closest('li') as HTMLElement;
+    expect(within(emptyRow).queryByTestId('row-lowest-price')).toBeNull();
+    expect(emptyRow.textContent).not.toContain('€');
+  });
+
+  it('shows the selected product best current price on the Configure step before any calculation', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    const hit = await screen.findByText('Renat');
+    await user.click(hit.closest('button') as HTMLButtonElement);
+
+    // The price comes from the selected search item's aggregates — shown
+    // before any calculation runs, and never from a result object.
+    expect(screen.getByTestId('observed-price')).toHaveTextContent(
+      'Paras ajankohtainen hinta: €9.99',
+    );
+    expect(mockedCalculateLandedCost).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('result-card')).toBeNull();
   });
 });
 

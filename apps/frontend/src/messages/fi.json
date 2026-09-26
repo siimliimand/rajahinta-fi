@@ -165,7 +165,7 @@
     "resetForm": "Tyhjennä lomake",
     "quantityUnit": "kpl",
     "countryLabel": "Kohdemaa",
-    "observedPrice": "Havaittu hinta: {price}",
+    "observedPrice": "Paras ajankohtainen hinta: {price}",
     "advancedToggle": "Lisäasetukset",
     "transportMethodLabel": "Kuljetusyhtiö (valinnainen)",
     "transportMethodHint": "Jätä tyhjäksi, jotta arvio käyttää julkaistua kuljetusaineistoa.",
@@ -192,7 +192,8 @@
   },
   "ProductSelector": {
     "typeToSearch": "Kirjoita tuotteen nimi aloittaaksesi haun.",
-    "noResults": "Tuotteita ei löytynyt haulla \"{query}\"."
+    "noResults": "Tuotteita ei löytynyt haulla \"{query}\".",
+    "lowestPrice": "Halvin havaittu hinta: {price}"
   },
   "QuantitySelector": {
     "label": "Määrä",
@@ -219,6 +220,9 @@
       "importCheaper": "Tuonti on edullisempaa",
       "samePrice": "Hinta on sama",
       "observedAt": "Havainto: {timestamp}"
+    },
+    "sanityNote": {
+      "label": "Luotettavuus alennettu: tulos on arvio"
     },
     "category": {
       "foreignRetailPrice": "Ulkomainen vähittäishinta",

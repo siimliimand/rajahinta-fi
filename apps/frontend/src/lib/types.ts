@@ -455,6 +455,43 @@ export interface AlkoBenchmark {
   readonly observedAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Plausibility sanity rail (mirrors core-domain calculator.types, change
+// unit-integrity-and-result-trust, task 2.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Machine-readable code identifying which plausibility rail tripped.
+ * One code per rail — the stable join key for consumers; never parsed
+ * out of prose.
+ */
+export type SanityNoteCode =
+  | 'LINE_EXCISE_EXCEEDS_RETAIL_PLAUSIBILITY'
+  | 'LINE_CONTAINER_DUTY_EXCEEDS_RETAIL_PLAUSIBILITY';
+
+/**
+ * A single plausibility-rail trip record. The rail never alters amounts —
+ * a note explains a reliability/confidence downgrade by naming the actual
+ * figures that breached the threshold.
+ */
+export interface SanityNote {
+  /** Which rail tripped. */
+  readonly code: SanityNoteCode;
+  /** The result component the downgrade applies to. */
+  readonly component: 'alcoholExciseEstimate' | 'containerDutyEstimate';
+  /** Human-readable explanation naming the actual figures and threshold. */
+  readonly detail: string;
+  /** The figures behind the breach, in euro-cents. */
+  readonly figures: {
+    /** The implausible component's line amount (quantity-multiplied). */
+    readonly lineComponentCents: number;
+    /** The line's foreign retail price (quantity-multiplied). */
+    readonly lineRetailPriceCents: number;
+    /** The multiple above which a component is implausible. */
+    readonly thresholdMultiple: number;
+  };
+}
+
 export interface CalculatorResult {
   readonly itemizedCosts: readonly ItemizedCost[];
   /** Offers excluded for lacking a valid EUR conversion (task 1.5). */
@@ -474,6 +511,13 @@ export interface CalculatorResult {
   readonly currency: 'EUR';
   readonly confidence: ConfidenceLevel;
   readonly confidenceBreakdown: readonly ConfidenceDetail[];
+  /**
+   * Plausibility-rail trip notes when a line's duty component breached
+   * the plausibility threshold against the line's retail price (mirrors
+   * core-domain). Key absent for a plausible calculation — render-nothing,
+   * never null, never a placeholder.
+   */
+  readonly sanityNotes?: readonly SanityNote[];
   readonly disclaimer: Disclaimer;
   readonly classification: ClassificationResult;
   readonly metadata: {
