@@ -4,7 +4,9 @@
  * `apps/backend/src/adapters/*`, ported onto the D1 repositories of task
  * 2.5. Mappings are 1:1 ports; value-normalization rules (numeric-string
  * parsing, weight estimation, reliability narrowing) are copied verbatim
- * so parity does not drift.
+ * so parity does not drift. One deliberate deviation: the product port's
+ * implausible-volume guard (task 1.5) degrades reliability instead of
+ * transforming values.
  *
  * @module D1DomainPorts
  */
@@ -74,8 +76,50 @@ function toReliabilityStatus(value: string): ReliabilityStatus {
     : 'ESTIMATED';
 }
 
+/**
+ * Volume-guard bound (proposal D1, change
+ * unit-integrity-and-result-trust): `unit_volume` is litre-denominated and
+ * the data-quality invariant keeps it below this bound, so a read at or
+ * above it is a unit regression, never a real beverage.
+ */
+const IMPLAUSIBLE_VOLUME_LITRES = 100;
+
+/** Metric-contract invariant name (greppable continuity with Prometheus). */
+export const IMPLAUSIBLE_VOLUME_METRIC = 'rajahinta_implausible_volume_rows_total';
+
+/**
+ * Guard trips in this isolate. The worker's metric path is the Analytics
+ * Engine METRICS binding, which only request/cron call sites can reach —
+ * this per-isolate counter plus the warn line below is the smallest
+ * observable counter from inside the adapter.
+ */
+let implausibleVolumeRows = 0;
+
+/** Current guard-trip count of this isolate (health/read access). */
+export function implausibleVolumeRowCount(): number {
+  return implausibleVolumeRows;
+}
+
+/** Test isolation only — production code never resets the counter. */
+export function resetImplausibleVolumeRowCount(): void {
+  implausibleVolumeRows = 0;
+}
+
+/**
+ * Downgrade-only degradation for a guard trip: VERIFIED loses its badge;
+ * STALE/UNAVAILABLE stay put — the guard never upgrades a stricter status.
+ */
+function degradeForImplausibleVolume(
+  status: ReliabilityStatus,
+): ReliabilityStatus {
+  return status === 'VERIFIED' ? 'ESTIMATED' : status;
+}
+
 /** Calculator product/offers reads over the D1 product repository. */
 export class D1ProductDataPort implements IProductDataPort {
+  /** Products whose parsed volume tripped the guard on this instance. */
+  private readonly volumeGuardTrips = new Set<number>();
+
   constructor(private readonly repo: ProductRepository) {}
 
   /** @inheritdoc */
@@ -83,7 +127,16 @@ export class D1ProductDataPort implements IProductDataPort {
     const record = await this.repo.findById(id);
     if (record === null) return null;
 
+    // Litres pass through untouched — canonical end-to-end (proposal D1):
+    // the guard degrades visibility, it never divides or multiplies.
     const volumeLitres = parseNumeric(record.unitVolume);
+    if (volumeLitres >= IMPLAUSIBLE_VOLUME_LITRES) {
+      this.volumeGuardTrips.add(id);
+      implausibleVolumeRows += 1;
+      console.warn(
+        `${IMPLAUSIBLE_VOLUME_METRIC} product_id=${id} unit_volume=${String(record.unitVolume)}`,
+      );
+    }
 
     return {
       id: record.id,
@@ -117,16 +170,25 @@ export class D1ProductDataPort implements IProductDataPort {
    */
   async findRetailOffers(productId: number): Promise<CalculatorRetailOfferData[]> {
     const offers = await this.repo.findOffers(productId);
+    // A tripped product poisons every downstream figure computed from its
+    // volume, so its offers — the port's only reliability surface — carry
+    // the degradation into the calculator's worst-status composition.
+    const degrade = this.volumeGuardTrips.has(productId);
 
-    return offers.map((o) => ({
-      id: o.id,
-      priceCents: o.priceCents,
-      ...(o.currency === 'EUR' ? { currency: o.currency } : {}),
-      merchant: o.merchant,
-      country: o.country,
-      reliabilityStatus: toReliabilityStatus(o.reliabilityStatus),
-      observedAt: o.observedAt,
-    }));
+    return offers.map((o) => {
+      const reliabilityStatus = degrade
+        ? degradeForImplausibleVolume(toReliabilityStatus(o.reliabilityStatus))
+        : toReliabilityStatus(o.reliabilityStatus);
+      return {
+        id: o.id,
+        priceCents: o.priceCents,
+        ...(o.currency === 'EUR' ? { currency: o.currency } : {}),
+        merchant: o.merchant,
+        country: o.country,
+        reliabilityStatus,
+        observedAt: o.observedAt,
+      };
+    });
   }
 }
 

@@ -165,7 +165,7 @@
     "resetForm": "Tyhjennä lomake",
     "quantityUnit": "kpl",
     "countryLabel": "Kohdemaa",
-    "observedPrice": "Havaittu hinta: {price}",
+    "observedPrice": "Alin havaittu hinta: {price}",
     "advancedToggle": "Lisäasetukset",
     "transportMethodLabel": "Kuljetusyhtiö (valinnainen)",
     "transportMethodHint": "Jätä tyhjäksi, jotta arvio käyttää julkaistua kuljetusaineistoa.",
@@ -192,7 +192,8 @@
   },
   "ProductSelector": {
     "typeToSearch": "Kirjoita tuotteen nimi aloittaaksesi haun.",
-    "noResults": "Tuotteita ei löytynyt haulla \"{query}\"."
+    "noResults": "Tuotteita ei löytynyt haulla \"{query}\".",
+    "lowestPrice": "Halvin havaittu hinta: {price}"
   },
   "QuantitySelector": {
     "label": "Määrä",
@@ -219,6 +220,9 @@
       "importCheaper": "Tuonti on edullisempaa",
       "samePrice": "Hinta on sama",
       "observedAt": "Havainto: {timestamp}"
+    },
+    "sanityNote": {
+      "label": "Luotettavuus alennettu: tulos on arvio"
     },
     "category": {
       "foreignRetailPrice": "Ulkomainen vähittäishinta",
@@ -1196,6 +1200,23 @@
     "categoryLabel": "Kategoria",
     "volumeLabel": "Pakkauskoko",
     "containerLabel": "Pakkaustyyppi",
+    "category": {
+      "beer": "Olut",
+      "wine_still": "Makuuviini",
+      "wine_sparkling": "Kuohuviini",
+      "intermediate_products": "Välituotteet (esim. vermutti)",
+      "other_fermented": "Siideri ja pitkäjuoma",
+      "spirits": "Väkevät alkoholijuomat"
+    },
+    "containerType": {
+      "glass": "Lasi",
+      "plastic": "Muovi",
+      "metal": "Metalli",
+      "carton": "Kartonki",
+      "can": "Tölkki",
+      "bottle": "Pullo",
+      "other": "Muu"
+    },
     "eanLabel": "EAN-koodi",
     "offersTitle": "Myyntihinnat",
     "merchantHeader": "Myyjä",

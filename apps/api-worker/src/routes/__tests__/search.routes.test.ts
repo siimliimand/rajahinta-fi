@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import type { DatabaseSync } from 'node:sqlite';
 import { Hono } from 'hono';
 import {
   buildApp,
@@ -30,7 +31,7 @@ import {
 } from './harness';
 import { registerDeclarationRoutes } from '../declaration.routes';
 import { respondToError } from '../../errors';
-import type { AppEnv } from '../../env';
+import type { AppEnv, Env } from '../../env';
 import { errorBoundary } from '../../middleware/error-boundary';
 import { openMigratedD1 as freshD1 } from '../../analytics/__tests__/fake-d1';
 
@@ -264,31 +265,125 @@ describe('GET /api/v1/products — catalog browse (task 2.1, change product-cata
     expect(offerless.merchantCount).toBe(0);
   });
 
-  it('keeps the ids and ranked-q contracts: null price fields despite offers', async () => {
+  it('keeps the catalog browse contract intact alongside the search-row aggregates', async () => {
+    // Catalog browse keeps the repository's own all-rows aggregate: a
+    // superseded cheaper scrape still counts there (repository scope),
+    // while the ids/ranked-q rows match the detail endpoint (below).
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1, name: 'Karhu III' });
     seedOffer(db, { id: 11, productId: 1, priceCents: 350 });
     const app = buildApp();
 
-    const qRes = await request(app, permissiveEnv(d1), '/api/v1/products?q=karhu', {
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products', {
       headers: AGE,
     });
-    const qBody = (await qRes.json()) as {
+    const body = (await res.json()) as {
       items: Array<{ id: number; lowestPriceCents: number | null; merchantCount: number }>;
     };
-    expect(qBody.items[0]!.id).toBe(1);
-    expect(qBody.items[0]!.lowestPriceCents).toBeNull();
-    expect(qBody.items[0]!.merchantCount).toBe(0);
+    expect(body.items[0]!).toMatchObject({ id: 1, lowestPriceCents: 350, merchantCount: 1 });
+  });
+});
 
-    const idsRes = await request(app, permissiveEnv(d1), '/api/v1/products?ids=1', {
-      headers: AGE,
+describe('GET /api/v1/products — search-row offer aggregates (task 3.1, change unit-integrity-and-result-trust)', () => {
+  // Kippis-shaped fixture: a cider whose merchant rescraped a price and a
+  // second merchant — the shape that reported null/0 on the ids/ranked-q
+  // rows while the detail endpoint listed offers for the same id. The
+  // superseded alko scrape (300) must stay invisible: the detail endpoint
+  // does not list it, so the row aggregate must not price it in either.
+  function seedKippis(db: DatabaseSync): void {
+    seedProduct(db, {
+      id: 1,
+      name: 'Kippis Lingonberry',
+      brand: 'Kippis',
+      category: 'other_fermented',
     });
-    const idsBody = (await idsRes.json()) as {
+    seedOffer(db, {
+      id: 11,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 300,
+      observedAt: '2026-09-01T06:00:00.000Z',
+    });
+    seedOffer(db, {
+      id: 12,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 320,
+      observedAt: '2026-09-10T06:00:00.000Z',
+    });
+    seedOffer(db, { id: 13, productId: 1, merchant: 'saksoinet', priceCents: 420 });
+    seedProduct(db, { id: 2, name: 'Offerless Siideri', category: 'other_fermented' });
+  }
+
+  async function detailSummary(
+    app: ReturnType<typeof buildApp>,
+    env: Env,
+  ): Promise<{ offerCount: number; bestPrice: number | null }> {
+    const res = await request(app, env, '/api/v1/products/1', { headers: AGE });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      offers: Array<{ priceCents: number }>;
+      currentBestPriceCents: number | null;
+    };
+    return { offerCount: body.offers.length, bestPrice: body.currentBestPriceCents };
+  }
+
+  it('ranked-q row reports the same offer set as the detail endpoint', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedKippis(db);
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const detail = await detailSummary(app, env);
+
+    const res = await request(app, env, '/api/v1/products?q=kippis', { headers: AGE });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
       items: Array<{ id: number; lowestPriceCents: number | null; merchantCount: number }>;
     };
-    expect(idsBody.items[0]!.id).toBe(1);
-    expect(idsBody.items[0]!.lowestPriceCents).toBeNull();
-    expect(idsBody.items[0]!.merchantCount).toBe(0);
+    const kippis = body.items.find((i) => i.id === 1)!;
+    // Same minimum and same merchant count as the detail response — and
+    // never the superseded all-time-low 300.
+    expect(kippis.lowestPriceCents).toBe(detail.bestPrice);
+    expect(kippis.merchantCount).toBe(detail.offerCount);
+    expect(kippis.lowestPriceCents).toBe(320);
+    expect(kippis.merchantCount).toBe(2);
+
+    // Offer-less product found by the same query mechanics stays honestly
+    // empty (honest absence, never a guessed price).
+    const offerlessRes = await request(app, env, '/api/v1/products?q=offerless', {
+      headers: AGE,
+    });
+    const offerlessBody = (await offerlessRes.json()) as {
+      items: Array<{ id: number; lowestPriceCents: number | null; merchantCount: number }>;
+    };
+    const offerless = offerlessBody.items.find((i) => i.id === 2)!;
+    expect(offerless.lowestPriceCents).toBeNull();
+    expect(offerless.merchantCount).toBe(0);
+  });
+
+  it('ids-path row reports the same offer set as the detail endpoint', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedKippis(db);
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const detail = await detailSummary(app, env);
+
+    const res = await request(app, env, '/api/v1/products?ids=1,2', { headers: AGE });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: Array<{ id: number; lowestPriceCents: number | null; merchantCount: number }>;
+    };
+    const kippis = body.items.find((i) => i.id === 1)!;
+    expect(kippis.lowestPriceCents).toBe(detail.bestPrice);
+    expect(kippis.merchantCount).toBe(detail.offerCount);
+    expect(kippis.lowestPriceCents).toBe(320);
+    expect(kippis.merchantCount).toBe(2);
+
+    const offerless = body.items.find((i) => i.id === 2)!;
+    expect(offerless.lowestPriceCents).toBeNull();
+    expect(offerless.merchantCount).toBe(0);
   });
 });
 

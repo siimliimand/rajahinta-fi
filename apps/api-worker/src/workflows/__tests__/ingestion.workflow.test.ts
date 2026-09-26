@@ -17,9 +17,13 @@ import {
   INGESTION_STEP_RETRY,
   UPSERT_CHUNK_SIZE,
   composeIngestionStageServices,
+  dataQualityStep,
   runIngestionWorkflow,
+  UNIT_VOLUME_LITRES_MAX,
+  unitVolumeViolations,
   type IngestionStageServices,
   type IngestionWorkflowParams,
+  type SerializedQualityOffer,
   type StepRetryConfig,
   type WorkflowStepLike,
 } from '../ingestion-steps';
@@ -472,6 +476,135 @@ describe('runIngestionWorkflow — staged pipeline', () => {
 function workerEnv(): { env: Env; db: import('node:sqlite').DatabaseSync } {
   const { db, d1 } = openMigratedD1();
   return { env: { DB: d1 } as unknown as Env, db };
+}
+
+/** Serialized quality-offer fixture (unit-window invariant tests, task 1.4). */
+function qualityOffer(
+  overrides?: Partial<SerializedQualityOffer>,
+): SerializedQualityOffer {
+  return {
+    merchant: 'alko',
+    productId: 1,
+    observedAtIso: '2026-09-26T10:00:00.000Z',
+    reliabilityStatus: 'ESTIMATED',
+    unitVolume: '0.5',
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Unit-window data-quality invariant (task 1.4, unit-integrity-and-result-trust)
+// ---------------------------------------------------------------------------
+
+describe('unit-window invariant — unitVolumeViolations predicate', () => {
+  it('passes in-window volumes; the bounds are exclusive at both ends', () => {
+    expect(
+      unitVolumeViolations([
+        qualityOffer({ productId: 1, unitVolume: '0.001' }),
+        qualityOffer({ productId: 2, unitVolume: '0.5' }),
+        qualityOffer({ productId: 3, unitVolume: '15' }), // 15 l BIB — litres, in-window
+        qualityOffer({ productId: 4, unitVolume: '99.9' }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('flags >= 100 as data errors — the boundary itself included', () => {
+    const violations = unitVolumeViolations([
+      qualityOffer({ productId: 7, unitVolume: String(UNIT_VOLUME_LITRES_MAX) }),
+      qualityOffer({ productId: 8, unitVolume: '500' }),
+    ]);
+
+    expect(violations).toHaveLength(2);
+    expect(violations[0]).toContain('unit_volume 100');
+    expect(violations[0]).toContain('product 7');
+    expect(violations[1]).toContain('unit_volume 500');
+  });
+
+  it('flags <= 0 — the parser’s unresolved-volume 0 included — and non-numeric values', () => {
+    const violations = unitVolumeViolations([
+      qualityOffer({ productId: 9, unitVolume: '0' }),
+      qualityOffer({ productId: 10, unitVolume: '-0.5' }),
+      qualityOffer({ productId: 11, unitVolume: 'not-a-number' }),
+    ]);
+
+    expect(violations).toHaveLength(3);
+    expect(violations[0]).toContain('unit_volume 0');
+  });
+});
+
+describe('unit-window invariant — dataQualityStep', () => {
+  it('flags violations on the report AND the outcome — the check fails', async () => {
+    const outcome = await dataQualityStep(
+      stageServices(),
+      qualityOffers(['0.5', '500', '0']),
+    );
+
+    expect(outcome).not.toBeNull();
+    expect(outcome!.unitVolumeViolations).toHaveLength(2);
+    // Flagged as data errors on the DataQualityReport surface too.
+    for (const violation of outcome!.unitVolumeViolations) {
+      expect(outcome!.report.flaggedIssues).toContain(violation);
+    }
+    expect(outcome!.report.totalOffers).toBe(3);
+  });
+
+  it('returns no violations for a fully in-window batch', async () => {
+    const outcome = await dataQualityStep(
+      stageServices(),
+      qualityOffers(['0.33']),
+    );
+
+    expect(outcome!.unitVolumeViolations).toEqual([]);
+    expect(outcome!.report.flaggedIssues).toEqual([]);
+  });
+});
+
+describe('unit-window invariant — staged pipeline flow', () => {
+  it('a 0-volume feed record persists ESTIMATED and the run completes WITH the data error', async () => {
+    const upserts = fakeUpserts();
+    const services = stageServices({
+      // volumeMl 0 is the parser's unresolved-volume encoding ("33CLx24"
+      // names): the mapper persists litres "0" keyed ESTIMATED by design.
+      feedRecords: [feedRecord({ volumeMl: 0 })],
+      upserts,
+    });
+    const complete = vi.fn(noopClaim);
+    const { promise } = runWorkflow(services, { complete, release: vi.fn(noopClaim) });
+
+    const result = (await promise) as { productsIngested: number; errors: string[] };
+
+    // Persisted by design (visible estimate, never a silent drop)…
+    expect(result.productsIngested).toBe(1);
+    expect(upserts.upsertedProducts[0]?.unitVolume).toBe('0');
+    // …and the invariant rejects it as plausible-volume data: the check
+    // fails at run level, no second unit convention applied anywhere.
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatch(/canonical litre window/);
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('an ml-shaped feed volume (500 l claim) fails the run’s check with a data error', async () => {
+    const services = stageServices({
+      feedRecords: [feedRecord({ volumeMl: 500_000 })],
+    });
+    const { promise } = runWorkflow(services, {
+      complete: noopClaim,
+      release: noopClaim,
+    });
+
+    const result = (await promise) as { productsIngested: number; errors: string[] };
+
+    expect(result.productsIngested).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatch(/unit_volume 500/);
+  });
+});
+
+/** Quality offers with sequential ids and the given unit volumes. */
+function qualityOffers(unitVolumes: string[]): SerializedQualityOffer[] {
+  return unitVolumes.map((unitVolume, i) =>
+    qualityOffer({ productId: i + 1, unitVolume }),
+  );
 }
 
 // ---------------------------------------------------------------------------

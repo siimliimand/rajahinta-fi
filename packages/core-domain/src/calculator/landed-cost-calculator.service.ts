@@ -24,6 +24,11 @@ import { AlcoholExciseService } from '../tax/services/alcohol-excise.service';
 import { ContainerDutyService } from '../tax/services/container-duty.service';
 import { TransactionClassificationService } from '../classification/transaction-classification.service';
 import { ConfidenceFrameworkService } from '../reliability/confidence-framework.service';
+import type {
+  ConfidenceLevel,
+  ConfidenceDetail,
+} from '../reliability/confidence-framework.types';
+import { evaluateLineSanityRail, atMostEstimated } from './sanity-rail';
 import { TransportEstimationService } from '../transport/transport-estimation.service';
 import { DISCLAIMER_FI } from '../disclaimer';
 import { computeAlkoBenchmark } from '../benchmark/alko-benchmark';
@@ -235,6 +240,9 @@ export class LandedCostCalculatorService {
       currency: 'EUR',
       confidence: computed.confidenceOverall,
       confidenceBreakdown: computed.confidenceBreakdown,
+      ...(computed.sanityNotes !== undefined
+        ? { sanityNotes: computed.sanityNotes }
+        : {}),
       disclaimer: DISCLAIMER_FI,
       classification: computed.classificationResult,
       ...(alkoBenchmark !== undefined ? { alkoBenchmark } : {}),
@@ -362,10 +370,34 @@ export class LandedCostCalculatorService {
     // Per-input reliability statuses
     // -----------------------------------------------------------------------
 
+    // Plausibility sanity rail (task 2.1, change
+    // unit-integrity-and-result-trust): reads the already-computed line
+    // figures and downgrades LABELS only — never an amount. A duty
+    // component beyond RETAIL_PLAUSIBILITY_THRESHOLD_MULTIPLE × the
+    // line's retail price indicates a unit-conversion or classification
+    // regression, so the affected component loses VERIFIED (downgrade
+    // only — worse statuses stay) and the overall confidence is forced
+    // LOW in the confidence block below.
+    const lineRetailPriceCents = offer.priceCents * input.quantity;
+    const sanityNotes = evaluateLineSanityRail({
+      lineRetailPriceCents,
+      lineExciseCents: exciseResult.taxCents * input.quantity,
+      lineContainerDutyCents: containerDutyResult.dutyCents * input.quantity,
+    });
+    const exciseRailTripped = sanityNotes.some(
+      (note) => note.component === 'alcoholExciseEstimate',
+    );
+    const containerDutyRailTripped = sanityNotes.some(
+      (note) => note.component === 'containerDutyEstimate',
+    );
+
     const retailStatus = this.resolveRetailOfferStatus(offer);
-    const exciseStatus: ReliabilityStatus = exciseResult.reliability;
-    const containerDutyStatus: ReliabilityStatus =
-      containerDutyResult.reliability;
+    const exciseStatus: ReliabilityStatus = exciseRailTripped
+      ? atMostEstimated(exciseResult.reliability)
+      : exciseResult.reliability;
+    const containerDutyStatus: ReliabilityStatus = containerDutyRailTripped
+      ? atMostEstimated(containerDutyResult.reliability)
+      : containerDutyResult.reliability;
     const classificationStatus: ReliabilityStatus =
       classificationResult.confidence === 'HIGH' ? 'VERIFIED' : 'ESTIMATED';
 
@@ -383,6 +415,30 @@ export class LandedCostCalculatorService {
       { status: containerDutyStatus, label: 'containerDuty' },
       { status: classificationStatus, label: 'classification' },
     ]);
+
+    // Rail override (task 2.1): the downgraded ESTIMATED status alone
+    // would only yield MEDIUM — a plausibility breach is a suspected
+    // data regression, so the result reads LOW regardless of the
+    // remaining composition. The breach explanations travel both as
+    // machine-readable sanityNotes and as breakdown entries (which the
+    // UI already renders) so the downgrade is explainable in place.
+    const confidenceOverall: ConfidenceLevel =
+      sanityNotes.length > 0 ? 'LOW' : confidenceReport.overall;
+
+    const confidenceBreakdown: readonly ConfidenceDetail[] =
+      sanityNotes.length > 0
+        ? [
+            ...confidenceReport.breakdown,
+            ...sanityNotes.map((note) => ({
+              status:
+                note.component === 'alcoholExciseEstimate'
+                  ? exciseStatus
+                  : containerDutyStatus,
+              detail: note.detail,
+              inputName: note.component,
+            })),
+          ]
+        : confidenceReport.breakdown;
 
     // -----------------------------------------------------------------------
     // Quantities and derived totals
@@ -484,8 +540,9 @@ export class LandedCostCalculatorService {
       containerDutyRuleVersionId: containerDutyResult.ruleId,
       classificationResult,
       classificationStatus,
-      confidenceOverall: confidenceReport.overall,
-      confidenceBreakdown: confidenceReport.breakdown,
+      confidenceOverall,
+      confidenceBreakdown,
+      ...(sanityNotes.length > 0 ? { sanityNotes } : {}),
       datasetVersions,
       ...(importVat !== null
         ? {

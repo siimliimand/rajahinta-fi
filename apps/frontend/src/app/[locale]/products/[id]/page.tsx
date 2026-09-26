@@ -25,6 +25,7 @@ import {
   SERVER_AGE_CONFIRMATION_TOKEN,
   getServerProductDetail,
 } from '@/lib/api';
+import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import type { PriceHistoryResponse, ProductDetailResponse } from '@/lib/types';
 import MerchantWarningNotice from '../../components/MerchantWarningNotice';
 import ProductAlertAction from './components/ProductAlertAction';
@@ -40,6 +41,43 @@ const DAY_MS = 86_400_000;
 
 /** The widest window the price-history endpoint accepts (365 days). */
 const HISTORY_RANGE_DAYS = 365;
+
+/**
+ * Enum value sets rendered through localized catalog labels (task 4.2).
+ * Both mirror a database CHECK one-to-one — CATEGORY_KEYS the
+ * `PRODUCT_CATEGORIES` constant behind `product_master_category_check`,
+ * CONTAINER_TYPE_KEYS the `product_master_container_type_check` value set
+ * — so an unknown storage key can never reach the catalog lookup and
+ * surface as raw text.
+ */
+const CATEGORY_KEYS = [
+  'beer',
+  'wine_still',
+  'wine_sparkling',
+  'intermediate_products',
+  'other_fermented',
+  'spirits',
+] as const;
+
+const CONTAINER_TYPE_KEYS = [
+  'glass',
+  'plastic',
+  'metal',
+  'carton',
+  'can',
+  'bottle',
+  'other',
+] as const;
+
+function isCategoryKey(value: string): value is (typeof CATEGORY_KEYS)[number] {
+  return (CATEGORY_KEYS as readonly string[]).includes(value);
+}
+
+function isContainerTypeKey(
+  value: string,
+): value is (typeof CONTAINER_TYPE_KEYS)[number] {
+  return (CONTAINER_TYPE_KEYS as readonly string[]).includes(value);
+}
 
 /** Format a Date as an ISO date 'YYYY-MM-DD' (UTC). */
 function toIsoDate(ms: number): string {
@@ -117,18 +155,22 @@ function countryName(code: string, locale: string): string {
   }
 }
 
-/** Factual detail string (brand, category, volume, ABV) for metadata. */
+/**
+ * Factual detail string (brand, category, volume, ABV) for metadata. The
+ * attributes render through the shared formatters (task 4.1) and the
+ * category through its localized catalog label (task 4.2) — never a raw
+ * storage key. The caller pre-resolves the label (it owns the
+ * translator); an unknown or absent category contributes no part.
+ */
 function detailParts(
   detail: ProductDetailResponse,
-  abvLabel: (value: number) => string,
+  categoryLabel: string | null,
 ): string {
   return [
     detail.product.brand,
-    detail.product.category,
-    detail.product.unitVolume,
-    detail.product.alcoholByVolume !== null
-      ? abvLabel(detail.product.alcoholByVolume)
-      : null,
+    categoryLabel,
+    formatVolume(detail.product.unitVolume),
+    formatAbv(detail.product.alcoholByVolume),
   ]
     .filter((part): part is string => part !== null && part !== '')
     .join(' · ');
@@ -139,7 +181,6 @@ export async function generateMetadata({
 }: ProductPageProps): Promise<Metadata> {
   const { locale, id } = await params;
   const t = await getTranslations({ locale, namespace: 'ProductPage' });
-  const tCommon = await getTranslations({ locale, namespace: 'Common' });
 
   const productId = Number.parseInt(id, 10);
   const detail =
@@ -156,11 +197,15 @@ export async function generateMetadata({
     };
   }
 
+  const categoryLabel = isCategoryKey(detail.product.category)
+    ? t(`category.${detail.product.category}`)
+    : null;
+
   return {
     title: t('metaTitle', { name: detail.product.name }),
     description: t('metaDescription', {
       name: detail.product.name,
-      details: detailParts(detail, (value) => tCommon('abvValue', { value })),
+      details: detailParts(detail, categoryLabel),
     }),
   };
 }
@@ -187,21 +232,27 @@ export default async function ProductPage({ params }: ProductPageProps) {
   const priceHistory = await getServerPriceHistory(productId);
 
   const { product, offers } = detail;
+  // Shared attribute formatters (task 4.1): labelled volume ("50 cl")
+  // and percentage ABV ("4.7 %"); a corrupt value renders no row, never
+  // a placeholder.
+  const volume = formatVolume(product.unitVolume);
+  const abv = formatAbv(product.alcoholByVolume);
+  // Enum values render through localized catalog labels (task 4.2);
+  // unknown or absent values drop the row — never a raw storage key.
+  const category = isCategoryKey(product.category)
+    ? t(`category.${product.category}`)
+    : null;
+  const container = isContainerTypeKey(product.containerType)
+    ? t(`containerType.${product.containerType}`)
+    : null;
   const masterRows: Array<{ label: string; value: string }> = [
     { label: t('brandLabel'), value: product.brand },
-    ...(product.category ? [{ label: t('categoryLabel'), value: product.category }] : []),
-    ...(product.unitVolume ? [{ label: t('volumeLabel'), value: product.unitVolume }] : []),
-    ...(product.containerType
-      ? [{ label: t('containerLabel'), value: product.containerType }]
+    ...(category ? [{ label: t('categoryLabel'), value: category }] : []),
+    ...(volume ? [{ label: t('volumeLabel'), value: volume }] : []),
+    ...(container
+      ? [{ label: t('containerLabel'), value: container }]
       : []),
-    ...(product.alcoholByVolume !== null
-      ? [
-          {
-            label: tCommon('abvLabel'),
-            value: tCommon('abvValue', { value: product.alcoholByVolume }),
-          },
-        ]
-      : []),
+    ...(abv ? [{ label: tCommon('abvLabel'), value: abv }] : []),
     ...(product.ean ? [{ label: t('eanLabel'), value: product.ean }] : []),
   ];
 
@@ -211,7 +262,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
         {product.name}
       </h1>
       <p className="mb-8 text-sm text-gray-500">
-        {detailParts(detail, (value) => tCommon('abvValue', { value }))}
+        {detailParts(detail, category)}
       </p>
 
       {/* ── Master data ── */}

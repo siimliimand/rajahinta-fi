@@ -286,12 +286,18 @@ export interface MappedRecords {
   readonly contentViolations: readonly ContentViolation[];
 }
 
-/** Per-offer state the quality step consumes (observedAt serialized). */
+/**
+ * Per-offer state the quality step consumes (observedAt serialized).
+ * `unitVolume` is the product's stored `unit_volume` verbatim — the
+ * litres string the mapper wrote — so the quality step can evaluate the
+ * unit-window invariant without re-reading D1.
+ */
 export interface SerializedQualityOffer {
   readonly merchant: string;
   readonly productId: number;
   readonly observedAtIso: string;
   readonly reliabilityStatus: string;
+  readonly unitVolume: string;
 }
 
 /** upsert-offers step output. */
@@ -479,6 +485,7 @@ export async function upsertOffersChunkStep(
         productId: upsertResult.productId,
         observedAtIso: pair.offerInput.observedAtIso,
         reliabilityStatus: pair.offerInput.reliabilityStatus,
+        unitVolume: pair.product.unitVolume,
       });
 
       // Changed-offer hook: fires exactly once per CHANGED offer, after
@@ -521,13 +528,59 @@ export async function upsertOffersChunkStep(
   return { recordsAdded, recordsUpdated, offersChanged, upsertErrors, upsertedOffers };
 }
 
+// ---------------------------------------------------------------------------
+// Unit-window invariant (task 1.4, unit-integrity-and-result-trust)
+// ---------------------------------------------------------------------------
+
+/**
+ * Exclusive upper bound of the canonical litre window (product-data-model):
+ * a stored `unit_volume` is litres and must satisfy `0 < unit_volume < 100`.
+ * Values >= 100 are ml-shaped feed data the pipeline never re-interprets
+ * with a second unit convention; 0 is the parser's unresolved-volume
+ * encoding, whose record persists keyed ESTIMATED (visible estimate, not
+ * a silent drop) — the invariant guarantees such rows can never pass as
+ * plausible-volume data.
+ */
+export const UNIT_VOLUME_LITRES_MAX = 100;
+
+/**
+ * One data-error entry per upserted offer whose product's stored unit
+ * volume violates the canonical window — the spec's "flagged as a data
+ * error". Pure so the D1 data-quality suite can pin the same predicate.
+ */
+export function unitVolumeViolations(
+  upserted: readonly SerializedQualityOffer[],
+): string[] {
+  const violations: string[] = [];
+  for (const offer of upserted) {
+    const volume = Number(offer.unitVolume);
+    if (
+      !(Number.isFinite(volume) && volume > 0 && volume < UNIT_VOLUME_LITRES_MAX)
+    ) {
+      violations.push(
+        `Data error: unit_volume ${offer.unitVolume} (product ${offer.productId}, ` +
+          `merchant "${offer.merchant}") is outside the canonical litre window ` +
+          `(0, ${UNIT_VOLUME_LITRES_MAX})`,
+      );
+    }
+  }
+  return violations;
+}
+
+/** data-quality step output — freshness report plus the unit-window errors. */
+export interface DataQualityOutcome {
+  readonly report: DataQualityReport;
+  /** Rows outside `0 < unit_volume < 100` — the failed check's data errors. */
+  readonly unitVolumeViolations: readonly string[];
+}
+
 /** data-quality step — run only when at least one offer was upserted. */
 export async function dataQualityStep(
   services: IngestionStageServices,
   upserted: readonly SerializedQualityOffer[],
-): Promise<DataQualityReport | null> {
+): Promise<DataQualityOutcome | null> {
   if (upserted.length === 0) return null;
-  return services.dataQuality.runQualityCheck(
+  const report = services.dataQuality.runQualityCheck(
     upserted.map((offer) => ({
       merchant: offer.merchant,
       productId: offer.productId,
@@ -535,6 +588,16 @@ export async function dataQualityStep(
       reliabilityStatus: offer.reliabilityStatus,
     })),
   );
+
+  // Rows outside the canonical window fail the check: they are flagged on
+  // the report AND returned so the orchestration surfaces them as run-level
+  // errors. Enforcement is assessment-only (post-upsert, orchestrator
+  // parity with content lint) — the row itself was persisted by the
+  // committed mapper design, so "rejected" here means never trusted and
+  // never re-interpreted, not silently dropped.
+  const unitViolations = unitVolumeViolations(upserted);
+  report.flaggedIssues.push(...unitViolations);
+  return { report, unitVolumeViolations: unitViolations };
 }
 
 // ---------------------------------------------------------------------------
@@ -681,9 +744,18 @@ export async function runIngestionWorkflow(
     }
 
     // -- Step 6: data quality ----------------------------------------------
-    await step.do('data-quality', INGESTION_STEP_RETRY, () =>
+    const quality = await step.do('data-quality', INGESTION_STEP_RETRY, () =>
       dataQualityStep(services, upserts.upsertedOffers),
     );
+    if (quality !== null && quality.unitVolumeViolations.length > 0) {
+      log?.warn({
+        message:
+          `Unit-window data errors for "${config.merchantId}": ` +
+          `${quality.unitVolumeViolations.length} offer(s) outside ` +
+          `(0, ${UNIT_VOLUME_LITRES_MAX}) litres`,
+        merchantId: config.merchantId,
+      });
+    }
 
     log?.info({
       message: `Workflow pipeline run for "${config.merchantId}": ` +
@@ -696,7 +768,14 @@ export async function runIngestionWorkflow(
 
     return await finalize({
       productsIngested: upserts.recordsAdded + upserts.recordsUpdated,
-      errors: [...fetched.errors, ...upserts.upsertErrors],
+      errors: [
+        ...fetched.errors,
+        ...upserts.upsertErrors,
+        // The failed unit-window check lands in the run's error list — a
+        // completed-with-errors run (retry cannot fix feed data), matching
+        // the in-band error pattern of upsert failures.
+        ...(quality?.unitVolumeViolations ?? []),
+      ],
     });
   } catch (err) {
     // Terminal failure (a step exhausted its retries and the error

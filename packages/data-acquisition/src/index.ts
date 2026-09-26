@@ -52,6 +52,11 @@ export { FeedIngestionService } from './services/feed-ingestion.service';
 export { DataMappingService } from './services/data-mapping.service';
 export type { MappedPair } from './services/data-mapping.service';
 
+// Feed display-text entity decoder — reused by the entity backfill
+// (scripts/seed-d1.ts) so persisted rows decode with the same rules
+// ingestion used.
+export { decodeHtmlEntities } from './services/html-entities';
+
 export { DataQualityService } from './services/data-quality.service';
 export { DataQualityModule } from './services/data-quality.module';
 export type { DataQualityReport, QualityCheckOffer, OfferFreshnessResult } from './services/data-quality.service';

@@ -103,7 +103,8 @@ function catalogItem(
     brand: 'Panimo A',
     category: 'beer',
     alcoholByVolume: 0.047,
-    unitVolume: '0.5 l',
+    // Canonical litre-denominated text (unit-integrity task 1.3).
+    unitVolume: '0.5',
     containerType: 'can',
     lowestPriceCents: 199,
     merchantCount: 2,
@@ -169,16 +170,18 @@ describe('ProductsPage cards', () => {
     const beerCard = within(grid).getByText('Kotikalja 0.5 l').closest('article');
     expect(beerCard).toHaveTextContent('Panimo A');
     expect(beerCard).toHaveTextContent('Olut');
-    expect(beerCard).toHaveTextContent('0.5 l');
-    // ABV fraction × 100 through the existing Common.abvValue key.
-    expect(beerCard).toHaveTextContent('4,7 til-%');
+    // Volume renders labelled in cl below a litre (formatVolume, task 4.1).
+    expect(beerCard).toHaveTextContent('50 cl');
+    // ABV renders as a percentage via formatAbv (task 4.1) — the stored
+    // fraction 0.047 never leaks raw, and no float artifact survives.
+    expect(beerCard).toHaveTextContent('4.7 %');
     expect(beerCard).toHaveTextContent('Halvin havaittu hinta');
     expect(beerCard).toHaveTextContent('1,99 €');
     expect(beerCard).toHaveTextContent('Myyjiä: 2');
 
     const ginCard = within(grid).getByText('Clear Gin 0.5 l').closest('article');
     expect(ginCard).toHaveTextContent('Väkevät alkoholijuomat');
-    expect(ginCard).toHaveTextContent('40 til-%');
+    expect(ginCard).toHaveTextContent('40 %');
     expect(ginCard).toHaveTextContent('24,90 €');
   });
 

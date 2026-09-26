@@ -98,6 +98,32 @@ function resultWithBenchmark(
   } as CalculatorResultType;
 }
 
+/**
+ * Result whose plausibility sanity rail tripped (task 2.1): overall
+ * confidence LOW, machine-readable notes naming the breach. The key is
+ * absent on plausible results — the block must render nothing then.
+ */
+function resultWithSanityNotes(): CalculatorResultType {
+  return {
+    ...baseResult(),
+    confidence: 'LOW',
+    sanityNotes: [
+      {
+        code: 'LINE_EXCISE_EXCEEDS_RETAIL_PLAUSIBILITY',
+        component: 'alcoholExciseEstimate',
+        detail:
+          'Line alcohol excise 65000 cents exceeds 5× the line retail ' +
+          'price 4000 cents — a genuine Finnish duty outcome never does.',
+        figures: {
+          lineComponentCents: 65000,
+          lineRetailPriceCents: 4000,
+          thresholdMultiple: 5,
+        },
+      },
+    ],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Benchmark present → factual line below the breakdown
 // ---------------------------------------------------------------------------
@@ -177,6 +203,47 @@ describe('CalculatorResult alkoBenchmark line (task 4.3)', () => {
     const line = screen.getByTestId('alko-benchmark');
     expect(line.textContent).toContain('Ero: €0.00 (0.0 %)');
     expect(line.textContent).toContain('Hinta on sama');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sanity-note degraded state — visible only when notes are present
+// ---------------------------------------------------------------------------
+
+describe('CalculatorResult sanity-note degraded state (task 2.2)', () => {
+  it('renders the visible LOW-confidence note block when the result carries sanityNotes', () => {
+    renderWithIntl(<CalculatorResult result={resultWithSanityNotes()} />);
+
+    const note = screen.getByTestId('sanity-note');
+    expect(note).toBeVisible();
+    // The heading states the degradation factually — confidence downgraded,
+    // the result is an estimate.
+    expect(
+      within(note).getByText('Luotettavuus alennettu: tulos on arvio'),
+    ).toBeInTheDocument();
+    // Component label via the shared category keys plus the API's own
+    // detail string — figures verbatim, never reworded UI copy.
+    expect(
+      within(note).getByText('Arvio alkoholin valmisteverosta'),
+    ).toBeInTheDocument();
+    expect(note.textContent).toContain(
+      'Line alcohol excise 65000 cents exceeds 5× the line retail price 4000 cents',
+    );
+    // The note sits beside the confidence badge it explains (before the
+    // itemized breakdown it qualifies).
+    const badge = screen.getByText('Yhteensä');
+    expect(
+      note.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('renders no note block when the result carries no sanityNotes', () => {
+    const { container } = renderWithIntl(
+      <CalculatorResult result={baseResult()} />,
+    );
+
+    expect(screen.queryByTestId('sanity-note')).toBeNull();
+    expect(container.textContent).not.toContain('Luotettavuus alennettu');
   });
 });
 

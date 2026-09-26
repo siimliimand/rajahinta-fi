@@ -100,8 +100,9 @@ const HIT: ProductSearchItem = {
   name: 'Renat',
   brand: 'Sprit',
   category: 'Vodka',
-  alcoholByVolume: 37.5,
-  unitVolume: '0,7 l',
+  // Fraction and canonical litre text, as the API ships (task 1.3).
+  alcoholByVolume: 0.375,
+  unitVolume: '0.7',
   containerType: 'BOTTLE',
   lowestPriceCents: 999,
   merchantCount: 1,

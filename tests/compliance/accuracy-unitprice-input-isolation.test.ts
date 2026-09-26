@@ -445,6 +445,17 @@ interface ListingJson {
 
 function stripVolatile(body: Record<string, unknown>): string {
   const { merchantWarnings: _w, calculationTimestamp: _t, ...rest } = body;
+  // Offer aggregates on listing rows (lowestPriceCents/merchantCount)
+  // track the offer table by design since unit-integrity-and-result-trust
+  // (task 3.1): they are offer data, not €/g metric output, so a price
+  // flip moves them without violating input isolation. They are stripped
+  // from the identity check; the flip itself is pinned as a non-vacuity
+  // assertion below.
+  if (Array.isArray(rest.items)) {
+    rest.items = (rest.items as Record<string, unknown>[]).map(
+      ({ lowestPriceCents: _p, merchantCount: _m, ...item }) => item,
+    );
+  }
   return JSON.stringify(rest).replaceAll(/"computedAt":"[^"]*"/g, '"computedAt":"<READ-TIME>"');
 }
 
@@ -627,6 +638,18 @@ describe('€/g ranking flip vs default ordering (fresh composition per price st
     const orderAfter = rankingAfter.items.map((i) => i.productId);
     expect(orderAfter).not.toEqual(orderBefore);
     expect(orderAfter).toEqual([2, 4, 5, 3, 1]);
+
+    // The ids/q search rows carry real offer aggregates (task 3.1,
+    // unit-integrity-and-result-trust): the flip must move them —
+    // guards a silent regression to the old null/0 placeholders.
+    const row2Before = searchBefore.items.find((i) => i.id === 2) as {
+      lowestPriceCents: number | null;
+    };
+    const row2After = searchAfter.items.find((i) => i.id === 2) as {
+      lowestPriceCents: number | null;
+    };
+    expect(row2Before.lowestPriceCents).toBe(500);
+    expect(row2After.lowestPriceCents).toBe(100);
 
     // The default ordering followed the product data, never the metric:
     // identical id order AND identical bytes (informational embeds

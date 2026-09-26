@@ -21,6 +21,7 @@ import {
   ApiFetchError,
 } from '@/lib/api';
 import { useDebouncedCallback } from '@/lib/use-debounced-callback';
+import { formatVolume } from '@/lib/format/product-attributes';
 import { EmptyState, ErrorState } from '@/components/ui';
 import ProductSearch from './components/ProductSearch';
 import ProductSelector from './components/ProductSelector';
@@ -451,6 +452,12 @@ export default function CalculatorView() {
   //   Step 2 — result
   const activeStep = result ? 2 : selectedProduct ? 1 : 0;
 
+  // Configure-step summary line (task 4.1): labelled volume ("50 cl"),
+  // never the bare stored litre text; corrupt data renders no segment.
+  const selectedUnitVolume = selectedProduct
+    ? formatVolume(selectedProduct.unitVolume)
+    : null;
+
   const stepLabels = [
     t('stepSearch'),
     t('stepConfigure'),
@@ -582,9 +589,7 @@ export default function CalculatorView() {
                     {selectedProduct.category
                       ? ` · ${selectedProduct.category}`
                       : ''}
-                    {selectedProduct.unitVolume
-                      ? ` · ${selectedProduct.unitVolume}`
-                      : ''}
+                    {selectedUnitVolume ? ` · ${selectedUnitVolume}` : ''}
                   </p>
                   {selectedProduct.lowestPriceCents !== null && (
                     <p

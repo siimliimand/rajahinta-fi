@@ -19,8 +19,14 @@
  * @module D1DomainPortsProductTest
  */
 
-import { describe, it, expect } from 'vitest';
-import { D1CalculationRecordPort, D1ProductDataPort } from '../d1-domain-ports';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  D1CalculationRecordPort,
+  D1ProductDataPort,
+  IMPLAUSIBLE_VOLUME_METRIC,
+  implausibleVolumeRowCount,
+  resetImplausibleVolumeRowCount,
+} from '../d1-domain-ports';
 import type { CreateCalculationRecordInput } from '@rajahinta/core-domain';
 import type { ProductRepository } from '../../../../../packages/data-platform/src/abstracts';
 import type { RetailOfferRecord } from '../../../../../packages/data-platform/src/interfaces/repository-registry.interface';
@@ -99,6 +105,121 @@ describe('D1ProductDataPort.findRetailOffers', () => {
     ]).findRetailOffers(1);
 
     expect(offers[0].reliabilityStatus).toBe('ESTIMATED');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Volume guard (task 1.5, proposal D1) — litres canonical, ≥ 100 L degrades
+// ---------------------------------------------------------------------------
+
+/** Minimal product_master contract row — the fields the port reads. */
+function productRow(
+  overrides: Partial<Record<'id' | 'name' | 'unitVolume' | 'alcoholByVolume', string | number>> = {},
+): Record<string, unknown> {
+  return {
+    id: 1,
+    name: 'Koskenkorva 38% 50cl PET',
+    manufacturer: 'Anora',
+    brand: 'Koskenkorva',
+    category: 'vodka',
+    alcoholByVolume: '0.38',
+    unitVolume: '0.5',
+    containerType: 'plastic',
+    regulatoryClassification: 'vodka',
+    depositSystemStatus: null,
+    ...overrides,
+  };
+}
+
+function portWithProduct(
+  findById: (id: number) => Record<string, unknown> | null,
+  offers: RetailOfferRecord[] = [offerRow()],
+): D1ProductDataPort {
+  const repo = {
+    findById: async (id: number) => findById(id),
+    findOffers: async () => offers,
+  };
+  return new D1ProductDataPort(repo as unknown as ProductRepository);
+}
+
+describe('D1ProductDataPort volume guard (task 1.5, proposal D1)', () => {
+  beforeEach(() => resetImplausibleVolumeRowCount());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('reads the Koskenkorva 0.5 L row as litres — status untouched, no metric', async () => {
+    const port = portWithProduct(() => productRow());
+
+    const product = await port.findProductById(1);
+    expect(product?.volumeLitres).toBe(0.5);
+    expect(product?.weightKg).toBe(0.5);
+
+    const offers = await port.findRetailOffers(1);
+    expect(offers[0].reliabilityStatus).toBe('VERIFIED');
+    expect(implausibleVolumeRowCount()).toBe(0);
+  });
+
+  it('passes an implausible row through UNDIVIDED, degrades its offers, counts the row', async () => {
+    const warn = vi.spyOn(console, 'warn');
+    const port = portWithProduct(() => productRow({ unitVolume: '500' }));
+
+    // Passthrough: the guard degrades visibility, it never divides.
+    const product = await port.findProductById(1);
+    expect(product?.volumeLitres).toBe(500);
+
+    const offers = await port.findRetailOffers(1);
+    expect(offers[0].reliabilityStatus).toBe('ESTIMATED');
+    expect(implausibleVolumeRowCount()).toBe(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(IMPLAUSIBLE_VOLUME_METRIC),
+    );
+  });
+
+  it('is downgrade-only: STALE and UNAVAILABLE offers keep the stricter status', async () => {
+    const port = portWithProduct(() => productRow({ unitVolume: '500' }), [
+      offerRow({ id: 21, reliabilityStatus: 'STALE' }),
+      offerRow({ id: 22, reliabilityStatus: 'UNAVAILABLE' }),
+    ]);
+    await port.findProductById(1);
+
+    const offers = await port.findRetailOffers(1);
+    expect(offers.map((o) => o.reliabilityStatus)).toEqual([
+      'STALE',
+      'UNAVAILABLE',
+    ]);
+  });
+
+  it('trips at exactly 100 L — the guard is ≥', async () => {
+    const port = portWithProduct(() => productRow({ unitVolume: '100' }));
+    await port.findProductById(1);
+
+    expect(implausibleVolumeRowCount()).toBe(1);
+    expect((await port.findRetailOffers(1))[0].reliabilityStatus).toBe(
+      'ESTIMATED',
+    );
+  });
+
+  it('does not trip just below the boundary (99.9 L)', async () => {
+    const port = portWithProduct(() => productRow({ unitVolume: '99.9' }));
+    await port.findProductById(1);
+
+    expect(implausibleVolumeRowCount()).toBe(0);
+    expect((await port.findRetailOffers(1))[0].reliabilityStatus).toBe(
+      'VERIFIED',
+    );
+  });
+
+  it('scopes degradation to the tripped product id', async () => {
+    const port = portWithProduct((id) =>
+      id === 1 ? productRow({ unitVolume: '500' }) : productRow({ id: 2, unitVolume: '0.33' }),
+    );
+    await port.findProductById(1);
+
+    expect((await port.findRetailOffers(2))[0].reliabilityStatus).toBe(
+      'VERIFIED',
+    );
+    expect((await port.findRetailOffers(1))[0].reliabilityStatus).toBe(
+      'ESTIMATED',
+    );
   });
 });
 

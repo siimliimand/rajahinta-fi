@@ -208,3 +208,54 @@ describe('layout and navigation catalog completeness', () => {
     expect(fiKeys.get('Metadata.description')!.length).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Product-page enum labels (unit-integrity task 4.2): category and
+// containerType render through these keys, so both locales must carry
+// exactly the storage value sets — the D1 schema's PRODUCT_CATEGORIES and
+// the product_master_container_type_check CHECK — no more, no fewer.
+// ---------------------------------------------------------------------------
+
+describe('ProductPage enum label key parity', () => {
+  const catalog = (locale: 'fi' | 'en'): Record<string, unknown> =>
+    (locale === 'fi' ? fi : en) as unknown as Record<string, unknown>;
+
+  const expectedCategoryKeys = [
+    'beer',
+    'wine_still',
+    'wine_sparkling',
+    'intermediate_products',
+    'other_fermented',
+    'spirits',
+  ];
+  const expectedContainerTypeKeys = [
+    'glass',
+    'plastic',
+    'metal',
+    'carton',
+    'can',
+    'bottle',
+    'other',
+  ];
+
+  function expectEnumKeySet(group: 'category' | 'containerType', keys: readonly string[]): void {
+    for (const locale of ['fi', 'en'] as const) {
+      const table = (catalog(locale).ProductPage ?? {}) as Record<
+        string,
+        Record<string, unknown>
+      >;
+      expect(Object.keys(table[group] ?? {}).sort()).toEqual([...keys].sort());
+      for (const key of keys) {
+        expect(typeof table[group]?.[key]).toBe('string');
+      }
+    }
+  }
+
+  it('ProductPage.category covers exactly the canonical categories in both locales', () => {
+    expectEnumKeySet('category', expectedCategoryKeys);
+  });
+
+  it('ProductPage.containerType covers exactly the container-type CHECK values in both locales', () => {
+    expectEnumKeySet('containerType', expectedContainerTypeKeys);
+  });
+});

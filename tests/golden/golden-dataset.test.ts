@@ -44,6 +44,7 @@ import type { ITransportOfferQuery } from '@rajahinta/core-domain/transport/tran
 import type { TransportOffer } from '@rajahinta/core-domain/transport/transport-offer.type';
 import type {
   CalculatorInput,
+  CalculatorRetailOfferData,
   IProductDataPort,
   ICalculationRecordPort,
 } from '@rajahinta/core-domain';
@@ -893,6 +894,97 @@ describe('Golden dataset', () => {
       expect(serialized).not.toContain('importVatEstimate');
       expect(serialized).not.toContain('import-vat-');
       expect(result.totalCents).toBe(431);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Case 8: Koskenkorva-shape plausibility rail (change
+  // unit-integrity-and-result-trust, task 2.1).
+  //
+  // The real Koskenkorva regression produced ≈108× excise-to-retail
+  // (€10,693 on a €98.70 basket). This shape test uses the REAL spirits
+  // engine (excise 1534 ¢, same as Case 3) against a €1.00 offer —
+  // 15.34×, past the 5× plausibility threshold. Fixture amounts are
+  // unchanged: the existing golden vectors stay byte-identical (none of
+  // them trips the rail — worst legitimate ratio is Case 3 at ≈3.1×).
+  // Asserts the SHAPE only (confidence, statuses, notes): the result
+  // must degrade instead of passing excise as VERIFIED, and every
+  // monetary figure must equal the rail-less engine output.
+  // -----------------------------------------------------------------------
+
+  describe('Case 8 — Koskenkorva-shape plausibility rail (task 2.1)', () => {
+    /** €1.00 offer — puts the 1534 ¢ spirits excise at 15.34× retail. */
+    const KOSKENKORVA_OFFER: CalculatorRetailOfferData = {
+      id: 116,
+      priceCents: 100,
+      merchant: 'kiosk-de',
+      country: 'DE',
+      reliabilityStatus: 'EXACT',
+    };
+
+    /** Glass-matching transport (PRODUCT_SPIRITS is glass, 1.0 kg). */
+    const OFFER_CARRIER_GLASS: TransportOffer = {
+      id: 902,
+      carrier: 'carrierA',
+      originCountry: 'DE',
+      destinationCountry: 'FI',
+      weightBracket: { minKg: 0, maxKg: 5 },
+      packageTier: 'glass',
+      priceCents: 150,
+      currency: 'EUR',
+      sellerInvolvementIndicator: true,
+      observedAt: NOW,
+      refreshedAt: NOW,
+      reliabilityStatus: 'EXACT',
+    };
+
+    const INPUT: CalculatorInput = {
+      productId: 3,
+      quantity: 1,
+      destination: 'FI',
+      transportMethod: 'carrierA',
+    };
+
+    const service = createGoldenService({
+      product: PRODUCT_SPIRITS,
+      offers: [KOSKENKORVA_OFFER],
+      transportOffers: [OFFER_CARRIER_GLASS],
+    });
+
+    it('degrades the implausible line (LOW + ESTIMATED + notes) instead of passing VERIFIED — amounts unchanged', async () => {
+      const result = await service.calculate(INPUT);
+
+      // ── Amounts: exactly the rail-less engine output ──
+      // retail(100) + transport(150) + excise(1534) + container(0)
+      //   = base 1784; + VAT 25.5 % = 455 → 2239
+      expect(result.foreignRetailPrice).toBe(100);
+      expect(result.transportCost).toBe(150);
+      expect(result.alcoholExciseEstimate).toBe(1534);
+      expect(result.containerDutyEstimate).toBe(0);
+      expect(result.totalCents).toBe(2239);
+
+      // ── The degrade: excise must NOT pass VERIFIED ──
+      expect(result.confidence).toBe('LOW');
+      const exciseLine = result.itemizedCosts.find(
+        (l) => l.category === 'alcoholExciseEstimate',
+      )!;
+      expect(exciseLine.reliability).toBe('ESTIMATED');
+
+      // ── Machine-readable sanity notes name the breach ──
+      expect(result.sanityNotes).toHaveLength(1);
+      expect(result.sanityNotes![0]).toMatchObject({
+        code: 'LINE_EXCISE_EXCEEDS_RETAIL_PLAUSIBILITY',
+        component: 'alcoholExciseEstimate',
+        figures: {
+          lineComponentCents: 1534,
+          lineRetailPriceCents: 100,
+          thresholdMultiple: 5,
+        },
+      });
+      // The note's figure matches the itemized amount byte-for-byte.
+      expect(result.sanityNotes![0].figures.lineComponentCents).toBe(
+        exciseLine.cents,
+      );
     });
   });
 });

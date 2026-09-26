@@ -165,7 +165,7 @@
     "resetForm": "Clear form",
     "quantityUnit": "pcs",
     "countryLabel": "Destination country",
-    "observedPrice": "Observed price: {price}",
+    "observedPrice": "Lowest observed price: {price}",
     "advancedToggle": "Advanced options",
     "transportMethodLabel": "Carrier (optional)",
     "transportMethodHint": "Leave empty to use the published transport dataset.",
@@ -192,7 +192,8 @@
   },
   "ProductSelector": {
     "typeToSearch": "Type a product name to start searching.",
-    "noResults": "No products found for \"{query}\"."
+    "noResults": "No products found for \"{query}\".",
+    "lowestPrice": "Lowest observed price: {price}"
   },
   "QuantitySelector": {
     "label": "Quantity",
@@ -219,6 +220,9 @@
       "importCheaper": "Importing is cheaper",
       "samePrice": "The price is the same",
       "observedAt": "Observed: {timestamp}"
+    },
+    "sanityNote": {
+      "label": "Confidence downgraded: the result is an estimate"
     },
     "category": {
       "foreignRetailPrice": "Foreign retail price",
@@ -1196,6 +1200,23 @@
     "categoryLabel": "Category",
     "volumeLabel": "Package size",
     "containerLabel": "Container type",
+    "category": {
+      "beer": "Beer",
+      "wine_still": "Still wine",
+      "wine_sparkling": "Sparkling wine",
+      "intermediate_products": "Intermediate products (e.g. vermouth)",
+      "other_fermented": "Cider and long drink",
+      "spirits": "Spirits"
+    },
+    "containerType": {
+      "glass": "Glass",
+      "plastic": "Plastic",
+      "metal": "Metal",
+      "carton": "Carton",
+      "can": "Can",
+      "bottle": "Bottle",
+      "other": "Other"
+    },
     "eanLabel": "EAN code",
     "offersTitle": "Retail prices",
     "merchantHeader": "Merchant",

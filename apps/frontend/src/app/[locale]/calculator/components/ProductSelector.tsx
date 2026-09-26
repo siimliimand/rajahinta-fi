@@ -5,7 +5,17 @@
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
+import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import type { ProductSearchItem } from '@/lib/types';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Format cents to a euro string (shared frontend convention). */
+function formatEur(cents: number): string {
+  return `€${(cents / 100).toFixed(2)}`;
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -42,7 +52,6 @@ export default function ProductSelector({
   query,
 }: ProductSelectorProps) {
   const t = useTranslations('ProductSelector');
-  const tCommon = useTranslations('Common');
 
   // Loading state
   if (loading) {
@@ -76,6 +85,12 @@ export default function ProductSelector({
     <ul className="divide-y divide-gray-200 rounded-md border border-gray-200">
       {items.map((product) => {
         const isSelected = product.id === selectedId;
+        // Shared attribute formatters (task 4.1): the volume carries an
+        // explicit unit label and the ABV renders as a percentage — the
+        // raw `abvValue` interpolation leaked stored fractions as
+        // "0.047% ABV".
+        const volume = formatVolume(product.unitVolume);
+        const abv = formatAbv(product.alcoholByVolume);
         return (
           <li key={product.id}>
             <button
@@ -93,11 +108,23 @@ export default function ProductSelector({
               <span className="block text-xs text-gray-500">
                 {product.brand}
                 {product.category ? ` · ${product.category}` : ''}
-                {product.unitVolume ? ` · ${product.unitVolume}` : ''}
-                {product.alcoholByVolume !== null
-                  ? ` · ${tCommon('abvValue', { value: product.alcoholByVolume })}`
-                  : ''}
+                {volume ? ` · ${volume}` : ''}
+                {abv ? ` · ${abv}` : ''}
               </span>
+              {/* ── Lowest observed price (change
+                  unit-integrity-and-result-trust, task 3.2): rendered only
+                  when the product has offers — an offer-less row stays
+                  honestly empty, never a displayed €0.00. ── */}
+              {product.lowestPriceCents !== null && (
+                <span
+                  className="mt-0.5 block text-xs font-medium text-gray-700"
+                  data-testid="row-lowest-price"
+                >
+                  {t('lowestPrice', {
+                    price: formatEur(product.lowestPriceCents),
+                  })}
+                </span>
+              )}
             </button>
           </li>
         );

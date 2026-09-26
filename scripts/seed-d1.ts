@@ -49,6 +49,8 @@ import {
   writeSeedSqlFiles,
 } from '../packages/data-platform/src/seed/d1/generate';
 import { applySeedToSqlite } from '../packages/data-platform/src/seed/d1/apply-node-sqlite';
+import { STAGING_PRODUCTS } from '../packages/data-platform/src/seed/d1/staging-fixtures';
+import { decodeHtmlEntities } from '../packages/data-acquisition/src/services/html-entities';
 
 // ---------------------------------------------------------------------------
 // Repo layout — resolved from the invoked script path (process.argv[1]),
@@ -267,11 +269,61 @@ function runDbFile(options: CliOptions, seedFiles: ReturnType<typeof writeSeedSq
 }
 
 // ---------------------------------------------------------------------------
+// Seed-data integrity gate — canonical litres + decoded display text
+// ---------------------------------------------------------------------------
+
+/**
+ * The product fixtures are emitted into staging.d1.sql verbatim
+ * (generate.ts writes String(unitVolume) and the raw name/brand strings),
+ * and the ingestion mapper (change unit-integrity-and-result-trust,
+ * tasks 1.1/1.2) is the fix point that stores litres and decodes feed
+ * entities. This gate closes the remaining path: a fixture authored with
+ * ml-shaped volumes or entity-bearing text would re-introduce the exact
+ * catalog state the unit-integrity backfill had to repair. Volumes must
+ * sit in the canonical plausibility band (0, 100) litres — the same
+ * invariant the ingestion quality stage enforces — and display text must
+ * already be decoded, checked with the ingestion decoder itself (single
+ * source of decoding truth; this script never keeps a second entity map).
+ */
+function assertSeedProductIntegrity(): void {
+  const offenders: string[] = [];
+  for (const product of STAGING_PRODUCTS) {
+    if (!(product.unitVolume > 0 && product.unitVolume < 100)) {
+      offenders.push(
+        `  product ${product.id}: unitVolume ${product.unitVolume} is outside the canonical litre band (0, 100)`,
+      );
+    }
+    for (const field of ['name', 'manufacturer', 'brand'] as const) {
+      const value = product[field];
+      if (decodeHtmlEntities(value) !== value) {
+        offenders.push(
+          `  product ${product.id}: ${field} carries HTML entities: ${JSON.stringify(value)}`,
+        );
+      }
+    }
+  }
+  if (offenders.length > 0) {
+    console.error(
+      `FATAL: product fixtures are not canon-normalized (litres in (0, 100), entity-free text) — ` +
+        `fix the fixtures; reseeding would write the pre-backfill defect:\n${offenders.join('\n')}`,
+    );
+    process.exit(2);
+  }
+  console.log(
+    `[seed-d1] fixture integrity gate passed (${STAGING_PRODUCTS.length} products — litres, decoded text)`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 function main(): void {
   const options = parseArgs(process.argv.slice(2));
+
+  // 0. Fixture gate — run in every mode (the emitted files are consumed
+  //    by all of them, including --emit-sql-only CI images).
+  assertSeedProductIntegrity();
 
   // 1. Generate — byte-deterministic; sha256 logged for reproducibility.
   const seedFiles = writeSeedSqlFiles(options.outDir);
