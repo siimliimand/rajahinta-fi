@@ -201,6 +201,60 @@ describe('POST /api/v1/calculator', () => {
     });
   });
 
+  it('pins the Koskenkorva 0.5 L case through the calculator mapping (task 1.4)', async () => {
+    const { db, d1 } = openMigratedD1();
+    // The seed fixture id 2 shape (packages/data-platform/src/seed/d1/
+    // staging-fixtures.ts): the Koskenkorva row the 1.3 backfill and the
+    // sweep both landed on — 0.5 stored litres, canonical end to end.
+    seedProduct(db, {
+      id: 2,
+      name: 'Koskenkorva 38% 50cl PET x 10 pullon laatikko',
+      manufacturer: 'Koskenkorva',
+      brand: 'Koskenkorva',
+      category: 'spirits',
+      alcoholByVolume: 0.38,
+      unitVolume: 0.5,
+      containerType: 'plastic',
+      regulatoryClassification: 'spirits',
+      depositSystemStatus: 0,
+    });
+    seedOffer(db, { productId: 2, merchant: 'alks', country: 'EE', priceCents: 9870 });
+    seedTaxRule(db, {
+      taxType: 'excise',
+      productCategory: 'spirits',
+      rate: 4.43, // €/cl ethanol — the litres under test are what matter
+    });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+      verified: false,
+      versionLabel: 'v2.0-2025',
+    });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/calculator', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AGE },
+      body: JSON.stringify({ productId: 2, quantity: 1, destination: 'FI' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, any>;
+
+    // The stored 0.5 reaches the engines as 0.5 litres — not 500.
+    expect(body.metadata.volumeLitres).toBe(0.5);
+    // Excise: 4.43 €/cl × 38 % × 0.5 l = 84.17 ¢ → 84. The ml-shaped
+    // regression (500 as "litres") produced 1000× this line.
+    expect(body.alcoholExciseEstimate).toBe(Math.round(4.43 * 0.38 * 0.5 * 100));
+    expect(body.alcoholExciseEstimate).toBe(84);
+    // Container duty: 0.51 €/l × 0.5 l = 25.5 ¢ → 26 (ml bug: 2550).
+    expect(body.containerDutyEstimate).toBe(26);
+    // Plausibility: excise stays far below the €98.70 retail line — the
+    // ≈108× artifact the plausibility rail exists for cannot appear.
+    expect(body.alcoholExciseEstimate).toBeLessThan(0.05 * 9870);
+  });
+
   it('gives a client-supplied idempotency key a verbatim cache entry', async () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1 });
