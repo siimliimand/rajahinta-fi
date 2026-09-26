@@ -1200,6 +1200,23 @@
     "categoryLabel": "Category",
     "volumeLabel": "Package size",
     "containerLabel": "Container type",
+    "category": {
+      "beer": "Beer",
+      "wine_still": "Still wine",
+      "wine_sparkling": "Sparkling wine",
+      "intermediate_products": "Intermediate products (e.g. vermouth)",
+      "other_fermented": "Cider and long drink",
+      "spirits": "Spirits"
+    },
+    "containerType": {
+      "glass": "Glass",
+      "plastic": "Plastic",
+      "metal": "Metal",
+      "carton": "Carton",
+      "can": "Can",
+      "bottle": "Bottle",
+      "other": "Other"
+    },
     "eanLabel": "EAN code",
     "offersTitle": "Retail prices",
     "merchantHeader": "Merchant",

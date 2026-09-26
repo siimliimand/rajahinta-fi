@@ -1200,6 +1200,23 @@
     "categoryLabel": "Kategoria",
     "volumeLabel": "Pakkauskoko",
     "containerLabel": "Pakkaustyyppi",
+    "category": {
+      "beer": "Olut",
+      "wine_still": "Makuuviini",
+      "wine_sparkling": "Kuohuviini",
+      "intermediate_products": "Välituotteet (esim. vermutti)",
+      "other_fermented": "Siideri ja pitkäjuoma",
+      "spirits": "Väkevät alkoholijuomat"
+    },
+    "containerType": {
+      "glass": "Lasi",
+      "plastic": "Muovi",
+      "metal": "Metalli",
+      "carton": "Kartonki",
+      "can": "Tölkki",
+      "bottle": "Pullo",
+      "other": "Muu"
+    },
     "eanLabel": "EAN-koodi",
     "offersTitle": "Myyntihinnat",
     "merchantHeader": "Myyjä",

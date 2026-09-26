@@ -21,7 +21,7 @@
 import * as React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import ProductPage from '../page';
+import ProductPage, { generateMetadata } from '../page';
 import { getServerProductDetail } from '@/lib/api';
 import type { PriceHistoryResponse, ProductDetailResponse } from '@/lib/types';
 
@@ -48,7 +48,15 @@ vi.mock('next-intl/server', () => ({
         const count = typeof values?.count === 'number' ? values.count : 0;
         return count === 1 ? '1 tarjous' : `${count} tarjousta`;
       }
-      const value = (table[ns] as Record<string, unknown> | undefined)?.[key];
+      const value = key
+        .split('.')
+        .reduce<unknown>(
+          (node, part) =>
+            node !== null && typeof node === 'object'
+              ? (node as Record<string, unknown>)[part]
+              : undefined,
+          table[ns],
+        );
       if (typeof value !== 'string') return `__MISSING_${ns}.${key}__`;
       if (values === undefined) return value;
       return value.replace(/\{(\w+)\}/g, (_, k: string) => {
@@ -170,6 +178,14 @@ function offer(
   };
 }
 
+/** The default detail payload with product fields overridden. */
+function detailWith(
+  product: Partial<ProductDetailResponse['product']>,
+): ProductDetailResponse {
+  const base = detailResponse([offer()]);
+  return { ...base, product: { ...base.product, ...product } };
+}
+
 beforeEach(() => {
   mockedGetServerProductDetail.mockReset();
   // The server-side price-history read rides global fetch; default to
@@ -234,6 +250,66 @@ describe('ProductPage master data', () => {
     // raw fraction, and carries the localized Alkoholipitoisuus label.
     expect(screen.getByText('4.7 %')).toBeInTheDocument();
     expect(screen.getByText('Alkoholipitoisuus')).toBeInTheDocument();
+  });
+
+  it('renders category and container type through the catalog labels (task 4.2)', async () => {
+    // Fixture product: category 'beer', containerType 'can'.
+    mockedGetServerProductDetail.mockResolvedValue(detailResponse([offer()]));
+
+    render(
+      await ProductPage({ params: Promise.resolve({ locale: 'fi', id: '42' }) }),
+    );
+
+    expect(screen.getByText('Olut')).toBeInTheDocument();
+    expect(screen.getByText('Tölkki')).toBeInTheDocument();
+    // The raw storage keys never surface as values.
+    expect(screen.queryByText('beer')).not.toBeInTheDocument();
+    expect(screen.queryByText('can')).not.toBeInTheDocument();
+  });
+
+  it('renders the spec-scenario enums localized (other_fermented / plastic)', async () => {
+    mockedGetServerProductDetail.mockResolvedValue(
+      detailWith({ category: 'other_fermented', containerType: 'plastic' }),
+    );
+
+    render(
+      await ProductPage({ params: Promise.resolve({ locale: 'fi', id: '42' }) }),
+    );
+
+    expect(screen.getByText('Siideri ja pitkäjuoma')).toBeInTheDocument();
+    expect(screen.getByText('Muovi')).toBeInTheDocument();
+  });
+
+  it('drops the category and container rows for unknown storage keys — no raw-key fallback', async () => {
+    mockedGetServerProductDetail.mockResolvedValue(
+      detailWith({ category: 'mystery_category', containerType: 'drum' }),
+    );
+
+    render(
+      await ProductPage({ params: Promise.resolve({ locale: 'fi', id: '42' }) }),
+    );
+
+    expect(screen.queryByText('mystery_category')).not.toBeInTheDocument();
+    expect(screen.queryByText('drum')).not.toBeInTheDocument();
+    // The labelled rows are absent; the other master rows still render.
+    expect(screen.queryByText('Kategoria')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pakkaustyyppi')).not.toBeInTheDocument();
+    expect(screen.getByText('Tuotemerkki')).toBeInTheDocument();
+  });
+});
+
+describe('ProductPage metadata (task 4.2)', () => {
+  it('describes the product with the localized category label, never the raw key', async () => {
+    mockedGetServerProductDetail.mockResolvedValue(
+      detailWith({ category: 'other_fermented' }),
+    );
+
+    const meta = await generateMetadata({
+      params: Promise.resolve({ locale: 'fi', id: '42' }),
+    });
+
+    expect(meta.description).toContain('Siideri ja pitkäjuoma');
+    expect(meta.description).not.toContain('other_fermented');
   });
 });
 
