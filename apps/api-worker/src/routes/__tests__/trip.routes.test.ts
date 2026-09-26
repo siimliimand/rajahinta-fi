@@ -4,10 +4,11 @@
  * with the real D1 port adapters (fake-D1 harness + committed
  * migrations), trip-feasibility.routes.test.ts parity:
  *
- * - session/entitlement guards: anonymous callers get the standard 401;
- *   the requireFeature paywall seam rejects when the tier gate is
- *   raised (every tier is FREE today, so the pin raises the map entry
- *   and restores it).
+ * - anonymous admission (change client-experience-improvement, D2):
+ *   the route needs no identity — a request with no session cookie, a
+ *   request with a garbage cookie, and a request under a raised
+ *   entitlement gate are all admitted; the former session/entitlement
+ *   guards are gone.
  * - CALCULATOR rate-limit profile (the trip calculator's own).
  * - the ferry block's display-only isolation: the fill bytes are
  *   identical with zero, one, and many published ferry rows (spec:
@@ -40,9 +41,9 @@ import type { Env } from '../../env';
 import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
 
 /**
- * index.ts registers the fill handler behind its guard chain (rate
- * limit → session auth → entitlement); the test composition mirrors
- * that exactly.
+ * index.ts registers the fill handler behind its CALCULATOR rate
+ * limiter (anonymous route — D2); the test composition mirrors that
+ * exactly.
  */
 function fillApp(): ReturnType<typeof buildApp> {
   const app = buildApp();
@@ -205,53 +206,50 @@ async function seedPublishedFerry(
 }
 
 // ---------------------------------------------------------------------------
-// Guards — session auth and the entitlement seam
+// Anonymous admission — the route carries no identity requirement (D2)
 // ---------------------------------------------------------------------------
 
-describe('POST /api/v1/trip/fill — guards', () => {
-  it('rejects an unauthenticated caller with the standard 401 auth envelope', async () => {
-    const { d1 } = openMigratedD1();
-    const app = fillApp();
-    await expectEnvelope(await postFill(app, fillEnv(d1)), 401, {
-      error: 'SessionRequired',
-    });
-  });
-
-  it('rejects an unknown session token with 401', async () => {
-    const { d1 } = openMigratedD1();
-    const app = fillApp();
-    await expectEnvelope(
-      await postFill(app, fillEnv(d1), FILL, 'not-a-real-token'),
-      401,
-      { error: 'InvalidSession' },
-    );
-  });
-
-  it('enforces the entitlement seam: a raised tier gate rejects a FREE session with 403', async () => {
+describe('POST /api/v1/trip/fill — anonymous admission', () => {
+  it('admits a request with no session cookie and returns the fill', async () => {
     const { db, d1 } = openMigratedD1();
     await seedPublishedFillAllowances(d1);
     await seedFillProducts(db);
-    const token = await seedFreeSession(d1, db);
+    const app = fillApp();
+    const res = await postFill(app, fillEnv(d1));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as FillJson;
+    expect(body.status).toBe('FILLED');
+    expect(body.ferryOffers).toEqual([]);
+  });
+
+  it('ignores a garbage session cookie (no session guard on the route)', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedFillAllowances(d1);
+    await seedFillProducts(db);
+    const app = fillApp();
+    const res = await postFill(app, fillEnv(d1), FILL, 'not-a-real-token');
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as FillJson).status).toBe('FILLED');
+  });
+
+  it('admits even with the entitlement gate raised (no requireFeature seam)', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedFillAllowances(d1);
+    await seedFillProducts(db);
     const app = fillApp();
     const env = fillEnv(d1);
 
-    // Every feature is FREE today — raise this feature's gate to pin the
-    // 403 payload, then restore so no other test sees the paywall.
+    // The entitlement seam is dropped — raising this feature's gate
+    // must not reject; restore so no other test observes the mutation.
     const original = FEATURE_TIER_MAP['calculation:basic'];
     FEATURE_TIER_MAP['calculation:basic'] = 'PROFESSIONAL';
     try {
-      await expectEnvelope(await postFill(app, env, FILL, token), 403, {
-        error: 'InsufficientEntitlement',
-        requiredTier: 'calculation:basic',
-        currentTier: 'FREE',
-      });
+      const res = await postFill(app, env, FILL);
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as FillJson).status).toBe('FILLED');
     } finally {
       FEATURE_TIER_MAP['calculation:basic'] = original;
     }
-
-    // Restored gate: the same FREE session is admitted.
-    const res = await postFill(app, env, FILL, token);
-    expect(res.status).toBe(200);
   });
 });
 
@@ -649,22 +647,21 @@ describe('POST /api/v1/trip/fill — ferry block isolation', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST /api/v1/trip/fill — version-aware idempotency', () => {
-  it('serves a byte-identical repeat (X-Cache HIT) and a fresh fill after an allowance bump', async () => {
+  it('serves an anonymous repeat byte-identically (X-Cache HIT) and a fresh fill after an allowance bump', async () => {
     const { db, d1 } = openMigratedD1();
     await seedPublishedFillAllowances(d1);
     await seedFillProducts(db);
-    const token = await seedFreeSession(d1, db);
     const app = fillApp();
     const env = fillEnv(d1);
 
-    const first = await postFill(app, env, FILL, token);
+    const first = await postFill(app, env, FILL);
     expect(first.headers.get('X-Cache')).toBe('MISS');
     const firstBody = (await first.json()) as FillJson;
     expect(firstBody.allowanceDatasetVersion).toBe('allowances-fill-2026.1');
     const firstHash = first.headers.get('X-Content-Hash');
     expect(firstHash).not.toBeNull();
 
-    const repeat = await postFill(app, env, FILL, token);
+    const repeat = await postFill(app, env, FILL);
     expect(repeat.headers.get('X-Cache')).toBe('HIT');
     expect(repeat.headers.get('X-Content-Hash')).toBe(firstHash);
     expect(await repeat.json()).toEqual(firstBody);
@@ -680,7 +677,7 @@ describe('POST /api/v1/trip/fill — version-aware idempotency', () => {
       ],
     });
 
-    const afterBump = await postFill(app, env, FILL, token);
+    const afterBump = await postFill(app, env, FILL);
     expect(afterBump.headers.get('X-Cache')).toBe('MISS');
     const bumpBody = (await afterBump.json()) as FillJson;
     expect(bumpBody.allowanceDatasetVersion).toBe('allowances-fill-2026.2');
@@ -696,11 +693,10 @@ describe('POST /api/v1/trip/fill — version-aware idempotency', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST /api/v1/trip/fill — rate-limit profile', () => {
-  it('admits ten requests per minute per IP (CALCULATOR) and rejects the eleventh with 429', async () => {
+  it('admits ten anonymous requests per minute per IP (CALCULATOR) and rejects the eleventh with 429', async () => {
     const { db, d1 } = openMigratedD1();
     await seedPublishedFillAllowances(d1);
     await seedFillProducts(db);
-    const token = await seedFreeSession(d1, db);
     const app = fillApp();
     const env = fillEnv(d1); // one shared env = one shared DO limiter bucket
 
@@ -710,14 +706,14 @@ describe('POST /api/v1/trip/fill — rate-limit profile', () => {
       const res = await postFill(app, env, {
         travelDate: '2026-06-01',
         items: [{ productId: 1, maxQuantity: i + 1 }],
-      }, token);
+      });
       expect(res.status).toBe(200);
     }
 
     const eleventh = await postFill(app, env, {
       travelDate: '2026-06-01',
       items: [{ productId: 1, maxQuantity: 11 }],
-    }, token);
+    });
     await expectEnvelope(eleventh, 429, { error: 'TooManyRequests' });
     expect(eleventh.headers.get('Retry-After')).not.toBeNull();
   });
