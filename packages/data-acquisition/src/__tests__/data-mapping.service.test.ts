@@ -77,7 +77,7 @@ describe('DataMappingService — product and offer mapping', () => {
     expect(product.brand).toBe('Lapin Kulta');
     expect(product.category).toBe('beer');
     expect(product.regulatoryClassification).toBe('beer');
-    expect(product.unitVolume).toBe('500');
+    expect(product.unitVolume).toBe('0.5');
     expect(product.alcoholByVolume).toBe('0.047');
     expect(product.containerType).toBe('can');
     expect(product.ean).toBeNull();
@@ -132,6 +132,118 @@ describe('DataMappingService — product and offer mapping', () => {
     expect(pairs[0].offerInput.priceCents).toBe(149);
     expect(pairs[1].offerInput.priceCents).toBe(259);
     expect(pairs[1].product.name).toBe('Lapin Kulta');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Canonical litres on unitVolume (task 1.1, change
+// unit-integrity-and-result-trust) — source millilitres divide by 1000 at
+// ingestion, the persisted string carries the litres shape
+// ---------------------------------------------------------------------------
+
+describe('DataMappingService — unitVolume in litres (task 1.1)', () => {
+  const service = new DataMappingService();
+
+  it('maps a standard 500 ml can to "0.5"', () => {
+    const { product } = service.mapToProductAndOffer(eurRecord({ volumeMl: 500 }), 'alko', 'FI');
+
+    expect(product.unitVolume).toBe('0.5');
+  });
+
+  it('maps a standard 750 ml bottle to "0.75"', () => {
+    const { product } = service.mapToProductAndOffer(eurRecord({ volumeMl: 750 }), 'alko', 'FI');
+
+    expect(product.unitVolume).toBe('0.75');
+  });
+
+  it('maps a 3 l BIB to "3"', () => {
+    const { product } = service.mapToProductAndOffer(eurRecord({ volumeMl: 3000 }), 'alks', 'DE');
+
+    expect(product.unitVolume).toBe('3');
+  });
+
+  it('maps a 150 ml miniature to "0.15" — no float artifacts', () => {
+    const { product } = service.mapToProductAndOffer(eurRecord({ volumeMl: 150 }), 'alko', 'FI');
+
+    expect(product.unitVolume).toBe('0.15');
+  });
+
+  it('maps the parser\'s 0-ml absent-volume encoding to "0"', () => {
+    const { product } = service.mapToProductAndOffer(eurRecord({ volumeMl: 0 }), 'alko', 'FI');
+
+    expect(product.unitVolume).toBe('0');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HTML entity decoding on feed display text (task 1.2, change
+// unit-integrity-and-result-trust) — decoded at ingestion; render-time
+// output escaping elsewhere is unchanged
+// ---------------------------------------------------------------------------
+
+describe('DataMappingService — feed display-text entity decoding (task 1.2)', () => {
+  const service = new DataMappingService();
+
+  it('spec: name containing &#038; persists "&" — no entity literal', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Gin &#038; Tonic' }),
+      'alks',
+      'DE',
+    );
+
+    expect(product.name).toBe('Gin & Tonic');
+    expect(product.name).not.toContain('&#038;');
+  });
+
+  it('spec: name containing &#8221; persists the typographic quote', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Koskenkorva &#8221;Sisu&#8221;' }),
+      'alks',
+      'DE',
+    );
+
+    expect(product.name).toBe('Koskenkorva \u201DSisu\u201D');
+  });
+
+  it('spec: name containing &#215; persists "×"', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Long Drink &#215; 24' }),
+      'alks',
+      'DE',
+    );
+
+    expect(product.name).toBe('Long Drink \u00D7 24');
+  });
+
+  it('spec: plain-text name passes through byte-identical', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Lapin Kulta IVA 4,7% 0,33 l' }),
+      'alko',
+      'FI',
+    );
+
+    expect(product.name).toBe('Lapin Kulta IVA 4,7% 0,33 l');
+  });
+
+  it('spec: an already-decoded "&" is not double-decoded or corrupted', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Fish & Chips' }),
+      'alko',
+      'FI',
+    );
+
+    expect(product.name).toBe('Fish & Chips');
+  });
+
+  it('decodes the brand into both brand and manufacturer fields', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ brand: 'Harboe &#038; Co' }),
+      'alks',
+      'DE',
+    );
+
+    expect(product.brand).toBe('Harboe & Co');
+    expect(product.manufacturer).toBe('Harboe & Co');
   });
 });
 

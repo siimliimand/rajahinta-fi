@@ -14,6 +14,7 @@
 import { Injectable } from '@nestjs/common';
 import type { UpsertProductInput, UpsertOfferInput } from '../interfaces/upsert-port.interface';
 import type { RawFeedRecord } from '../interfaces/feed-adapter.interface';
+import { decodeHtmlEntities } from './html-entities';
 
 /** Paired upsert inputs for a single feed record. */
 export interface MappedPair {
@@ -48,18 +49,28 @@ export class DataMappingService {
     merchantId: string,
     country?: string,
   ): MappedPair {
+    // WooCommerce feeds carry HTML-encoded display text (&#038;, &#8221;,
+    // &#215;, …) — decoded once here at ingestion; render-time output
+    // escaping elsewhere is unchanged (design D2). Single-pass decoding
+    // keeps plain text and already-decoded input byte-identical.
+    const productName = decodeHtmlEntities(record.productName);
+    const brand = decodeHtmlEntities(record.brand);
+
     // Category + regulatory classification come from the feed adapter's
     // source-category normalization (task 7.1) — the adapter maps the
     // source-market string to the canonical tax-rule key. Placeholders
     // here would be rejected by the classification gate downstream.
     const product: MappedPair['product'] = {
       id: 0, // placeholder; the upsert adapter resolves the canonical ID
-      name: record.productName,
-      manufacturer: record.brand, // placeholder — feed adapter may provide actual manufacturer
-      brand: record.brand,
+      name: productName,
+      manufacturer: brand, // placeholder — feed adapter may provide actual manufacturer
+      brand,
       category: record.category,
       containerType: record.containerType,
-      unitVolume: String(record.volumeMl),
+      // Canonical litres at ingestion (design D1) — String of the quotient
+      // keeps the pinned shapes ("0.5", "0.75", "3", "0.15"); integer ml
+      // inputs never produce exponent notation.
+      unitVolume: String(record.volumeMl / 1000),
       alcoholByVolume:
         record.alcoholByVolume !== null
           ? String(record.alcoholByVolume)
