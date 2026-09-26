@@ -1004,4 +1004,203 @@ describe('LandedCostCalculatorService', () => {
       expect(result.totalCents).toBe(918 + 234);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Plausibility sanity rail (task 2.1, change
+  // unit-integrity-and-result-trust): labels degrade, amounts never move.
+  // ---------------------------------------------------------------------------
+
+  describe('plausibility sanity rail (task 2.1)', () => {
+    /** Koskenkorva unit-bug shape: €98.70 basket, €10,693 excise (≈108×). */
+    const KOSKENKORVA_OFFER: CalculatorRetailOfferData = {
+      id: 100,
+      priceCents: 9870,
+      merchant: 'test-merchant-de',
+      country: 'DE',
+      reliabilityStatus: 'VERIFIED',
+    };
+
+    function createKoskenkorvaService(options?: {
+      calculationRecords?: ICalculationRecordPort;
+    }) {
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue([KOSKENKORVA_OFFER]),
+      });
+      const created = createService({
+        productData,
+        calculationRecords: options?.calculationRecords,
+      });
+      (created.mocks.alcoholExcise.calculate as ReturnType<typeof vi.fn>)
+        .mockResolvedValue({
+          category: 'beer',
+          abv: 0.05,
+          volumeLitres: 0.5,
+          rateApplied: 0.0,
+          taxCents: 1069300,
+          taxDatasetVersion: 'v1',
+          reliability: 'VERIFIED' as const,
+          ruleId: null,
+        });
+      return created;
+    }
+
+    function exciseLineOf(result: Awaited<ReturnType<LandedCostCalculatorService['calculate']>>) {
+      return result.itemizedCosts.find(
+        (c) => c.category === 'alcoholExciseEstimate',
+      )!;
+    }
+
+    it('leaves a plausible calculation untouched — no notes, normal confidence', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect('sanityNotes' in result).toBe(false);
+      expect(result.confidence).toBe('HIGH');
+      expect(result.confidenceBreakdown).toHaveLength(5);
+      expect(exciseLineOf(result).reliability).toBe('VERIFIED');
+    });
+
+    it('degrades the Koskenkorva shape: LOW confidence, ESTIMATED excise, sanityNotes', async () => {
+      const { service } = createKoskenkorvaService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.confidence).toBe('LOW');
+      // The downgrade would only yield MEDIUM from status composition —
+      // LOW proves the rail override applied.
+      expect(exciseLineOf(result).reliability).toBe('ESTIMATED');
+
+      expect(result.sanityNotes).toHaveLength(1);
+      expect(result.sanityNotes![0]).toMatchObject({
+        code: 'LINE_EXCISE_EXCEEDS_RETAIL_PLAUSIBILITY',
+        component: 'alcoholExciseEstimate',
+        figures: {
+          lineComponentCents: 1069300,
+          lineRetailPriceCents: 9870,
+          thresholdMultiple: 5,
+        },
+      });
+      // The downgrade is explainable in the breakdown the UI renders,
+      // next to the machine-readable notes on the result.
+      expect(
+        result.confidenceBreakdown.some((d) => d.detail.includes('1069300')),
+      ).toBe(true);
+    });
+
+    it('downgrades only the implausible component — retail and duty keep their statuses', async () => {
+      const { service } = createKoskenkorvaService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      const retailLine = result.itemizedCosts.find(
+        (c) => c.category === 'foreignRetailPrice',
+      )!;
+      const dutyLine = result.itemizedCosts.find(
+        (c) => c.category === 'containerDutyEstimate',
+      )!;
+      expect(retailLine.reliability).toBe('VERIFIED');
+      expect(dutyLine.reliability).toBe('VERIFIED');
+    });
+
+    it('changes no amount when the rail trips — figures identical to the rail-less engine output', async () => {
+      const { service } = createKoskenkorvaService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      // Exact rail-less figures: retail 9870 + transport 150 + excise
+      // 1069300 + duty 26 = base 1079346; VAT 25.5 % → 275233;
+      // total 1354579. The rail only relabels.
+      expect(result.foreignRetailPrice).toBe(9870);
+      expect(result.transportCost).toBe(150);
+      expect(result.alcoholExciseEstimate).toBe(1069300);
+      expect(result.containerDutyEstimate).toBe(26);
+      expect(result.importVatEstimate).toBe(275233);
+      expect(result.totalCents).toBe(1354579);
+      // The note's figures match the itemized amounts byte-for-byte.
+      expect(result.sanityNotes![0].figures.lineComponentCents).toBe(
+        result.alcoholExciseEstimate,
+      );
+    });
+
+    it('evaluates the quantity-multiplied line — note figures scale with quantity', async () => {
+      const { service } = createKoskenkorvaService();
+
+      const result = await service.calculate({ ...DEFAULT_INPUT, quantity: 2 });
+
+      expect(result.sanityNotes![0].figures).toEqual({
+        lineComponentCents: 2138600,
+        lineRetailPriceCents: 19740,
+        thresholdMultiple: 5,
+      });
+      expect(result.alcoholExciseEstimate).toBe(2138600);
+      expect(result.confidence).toBe('LOW');
+    });
+
+    it('never upgrades — an already-STALE excise keeps the worse status', async () => {
+      const { service, mocks } = createKoskenkorvaService();
+      (mocks.alcoholExcise.calculate as ReturnType<typeof vi.fn>).mockResolvedValue({
+        category: 'beer',
+        abv: 0.05,
+        volumeLitres: 0.5,
+        rateApplied: 0.0,
+        taxCents: 1069300,
+        taxDatasetVersion: 'v1',
+        reliability: 'STALE' as const,
+        ruleId: null,
+      });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(exciseLineOf(result).reliability).toBe('STALE');
+      expect(result.confidence).toBe('LOW');
+      expect(result.sanityNotes).toHaveLength(1);
+    });
+
+    it('downgrades container duty when duty alone breaches the threshold', async () => {
+      const { service, mocks } = createService();
+      (mocks.containerDuty.calculate as ReturnType<typeof vi.fn>).mockResolvedValue({
+        volumeLitres: 0.5,
+        ratePerLitre: 0.51,
+        dutyCents: 5000, // 25× the 200-cent retail price
+        taxDatasetVersion: 'v1',
+        reliability: 'VERIFIED' as const,
+        ruleId: null,
+      });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      const dutyLine = result.itemizedCosts.find(
+        (c) => c.category === 'containerDutyEstimate',
+      )!;
+      expect(dutyLine.reliability).toBe('ESTIMATED');
+      expect(exciseLineOf(result).reliability).toBe('VERIFIED');
+      expect(result.confidence).toBe('LOW');
+      expect(result.sanityNotes!.map((n) => n.code)).toEqual([
+        'LINE_CONTAINER_DUTY_EXCEEDS_RETAIL_PLAUSIBILITY',
+      ]);
+    });
+
+    it('persists the downgraded confidence and labels with unchanged amounts', async () => {
+      const calculationRecords = createMockCalculationRecordPort();
+      const { service, mocks } = createKoskenkorvaService({
+        calculationRecords,
+      });
+
+      await service.calculate(DEFAULT_INPUT);
+
+      const createCall = (mocks.calculationRecords.create as ReturnType<typeof vi.fn>)
+        .mock.calls[0][0];
+      expect(createCall.confidence).toBe('LOW');
+      expect(createCall.totalCents).toBe(1354579);
+      const persisted = createCall.breakdown as Array<{
+        category: string;
+        reliability: string;
+      }>;
+      const exciseLine = persisted.find(
+        (c) => c.category === 'alcoholExciseEstimate',
+      )!;
+      expect(exciseLine.reliability).toBe('ESTIMATED');
+    });
+  });
 });

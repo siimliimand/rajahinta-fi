@@ -104,6 +104,15 @@ export interface ComputedItemCostsResult {
   readonly confidenceOverall: ConfidenceLevel;
   readonly confidenceBreakdown: readonly ConfidenceDetail[];
 
+  /**
+   * Plausibility-rail trip notes when a line's duty component exceeded
+   * the plausibility threshold against the line's retail price. Key
+   * absent for a plausible calculation — absence is the healthy state,
+   * never an empty list. Explains a confidence/reliability downgrade;
+   * never accompanies an amount change.
+   */
+  readonly sanityNotes?: readonly SanityNote[];
+
   readonly datasetVersions: readonly string[];
 
   /**
@@ -264,6 +273,46 @@ export interface ItemizedCost {
 }
 
 // ---------------------------------------------------------------------------
+// Plausibility sanity rail (change unit-integrity-and-result-trust, task 2.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Machine-readable code identifying which plausibility rail tripped.
+ * One code per rail — the code is the stable join key for consumers;
+ * never parse it out of prose.
+ */
+export type SanityNoteCode =
+  | 'LINE_EXCISE_EXCEEDS_RETAIL_PLAUSIBILITY'
+  | 'LINE_CONTAINER_DUTY_EXCEEDS_RETAIL_PLAUSIBILITY';
+
+/**
+ * A single plausibility-rail trip record.
+ *
+ * The rail never alters amounts — a note explains a reliability/confidence
+ * downgrade by naming the actual figures that breached the threshold
+ * ("every number is explainable"). `component` joins to
+ * {@link ItemizedCost.category}; `figures.lineComponentCents` matches the
+ * amount on that itemized line byte-for-byte.
+ */
+export interface SanityNote {
+  /** Which rail tripped. */
+  readonly code: SanityNoteCode;
+  /** The result component the downgrade applies to. */
+  readonly component: 'alcoholExciseEstimate' | 'containerDutyEstimate';
+  /** Human-readable explanation naming the actual figures and threshold. */
+  readonly detail: string;
+  /** The figures behind the breach, in euro-cents. */
+  readonly figures: {
+    /** The implausible component's line amount (quantity-multiplied). */
+    readonly lineComponentCents: number;
+    /** The line's foreign retail price (quantity-multiplied). */
+    readonly lineRetailPriceCents: number;
+    /** The multiple above which a component is implausible. */
+    readonly thresholdMultiple: number;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Output
 // ---------------------------------------------------------------------------
 
@@ -320,6 +369,17 @@ export interface CalculatorResult {
   readonly confidence: ConfidenceLevel;
   /** Per-data-point confidence breakdown with explanations. */
   readonly confidenceBreakdown: readonly ConfidenceDetail[];
+
+  /**
+   * Plausibility-rail trip notes when a line's duty component breached
+   * the plausibility threshold against the line's retail price (the
+   * confidence/excise downgrade's machine-readable explanation). Key
+   * absent for a plausible calculation — same presence contract as
+   * `alkoBenchmark`: render-nothing, never null, never a placeholder.
+   * Every figure in a note is identical to the corresponding itemized
+   * amount — the rail never alters any computed amount.
+   */
+  readonly sanityNotes?: readonly SanityNote[];
 
   /** The standing legal disclaimer. */
   readonly disclaimer: Disclaimer;
