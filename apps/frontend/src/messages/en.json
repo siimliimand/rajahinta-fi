@@ -165,7 +165,7 @@
     "resetForm": "Clear form",
     "quantityUnit": "pcs",
     "countryLabel": "Destination country",
-    "observedPrice": "Best current price: {price}",
+    "observedPrice": "Lowest observed price: {price}",
     "advancedToggle": "Advanced options",
     "transportMethodLabel": "Carrier (optional)",
     "transportMethodHint": "Leave empty to use the published transport dataset.",

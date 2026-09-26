@@ -165,7 +165,7 @@
     "resetForm": "Tyhjennä lomake",
     "quantityUnit": "kpl",
     "countryLabel": "Kohdemaa",
-    "observedPrice": "Paras ajankohtainen hinta: {price}",
+    "observedPrice": "Alin havaittu hinta: {price}",
     "advancedToggle": "Lisäasetukset",
     "transportMethodLabel": "Kuljetusyhtiö (valinnainen)",
     "transportMethodHint": "Jätä tyhjäksi, jotta arvio käyttää julkaistua kuljetusaineistoa.",

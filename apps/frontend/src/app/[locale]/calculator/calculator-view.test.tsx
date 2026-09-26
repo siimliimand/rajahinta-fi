@@ -314,7 +314,7 @@ describe('CalculatorView quick/full-path parity (task 4.2)', () => {
 // ---------------------------------------------------------------------------
 // Price before calculation (task 3.2, unit-integrity-and-result-trust):
 // rows carry the lowest observed price; the Configure step shows the
-// selected product's best current price before the first calculation.
+// selected product's lowest observed price before the first calculation.
 // ---------------------------------------------------------------------------
 
 describe('CalculatorView price-before-calculation (task 3.2)', () => {
@@ -344,7 +344,7 @@ describe('CalculatorView price-before-calculation (task 3.2)', () => {
     expect(emptyRow.textContent).not.toContain('€');
   });
 
-  it('shows the selected product best current price on the Configure step before any calculation', async () => {
+  it('shows the selected product lowest observed price on the Configure step before any calculation', async () => {
     const user = userEvent.setup();
     renderWithIntl(<CalculatorView />);
 
@@ -356,7 +356,7 @@ describe('CalculatorView price-before-calculation (task 3.2)', () => {
     // The price comes from the selected search item's aggregates — shown
     // before any calculation runs, and never from a result object.
     expect(screen.getByTestId('observed-price')).toHaveTextContent(
-      'Paras ajankohtainen hinta: €9.99',
+      'Alin havaittu hinta: €9.99',
     );
     expect(mockedCalculateLandedCost).not.toHaveBeenCalled();
     expect(screen.queryByTestId('result-card')).toBeNull();
