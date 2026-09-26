@@ -246,3 +246,75 @@ artifact, not a page defect.
   never survive locally; basket-shape verification against swept data belongs in golden
   or seed fixtures, not the local stack.
 - Optional: clean up the stale workerd pid 3366745 on :8787.
+
+## 5.2 Production rollout (2026-09-26)
+
+Deploy user-approved in advance; branch `feature/unit-integrity-and-result-trust`
+pushed to origin for the gated dispatch. Workflow `deploy-production.yml`
+(input `confirm_deploy=yes`); production worker `rajahinta-api-production` on
+`api.rajahinta.fi`; remote D1 `rajahinta-api-production`. Pre-flight found only the
+pre-existing local `girder.toml` edit (verify-preflight block, not from this task,
+untouched).
+
+### Deploy
+
+Run **36236755734** → **success** (migrate → api/email/frontend workers → health gate
+green on `/api/v1/health/ready`). API worker went live ≈10:49:20Z; backfill finished
+≈10:50:40Z — the degraded-ESTIMATED window between deploy and backfill was ≈80 s.
+
+### Remote backfill — run ONCE (2026-09-26, ≈10:50 UTC)
+
+`backfill.sql` via `wrangler d1 execute rajahinta-api-production --remote`: exit 0,
+3 queries, 12,933 rows written (includes index writes). Never re-run.
+
+### Counts (product_master, remote)
+
+| measure | before | after |
+|---|---|---|
+| total rows | 3,775 | 3,775 |
+| ml-like (`unit_volume >= 5`) | 3,746 | 19 |
+| `unit_volume >= 100` | 3,640 | **1** — see deviation |
+| `unit_volume < 0` | 0 | 0 |
+| zero-volume residue | — | 28 (same known class as local's 20) |
+| entity-bearing `name` | 565 | 0 |
+| entity-bearing `brand` | 0 | 0 |
+
+Production scale differs from the local 1.3 snapshot (3,775 vs 1,570 rows) — the
+catalog kept growing after the local snapshot.
+
+The 19 post-backfill `>= 5` rows are correct litre values, not misses: eleven 5 l
+BIBs, two "1500cl BIB" rows → 15 l (local analogs), three 24×33 l cases → 33 l, and
+two "0. 7 l" feed typos (Benriach/Gagliano; the old parser stored 7,000 ml from the
+broken token, now 7.0 per the division contract — parse fix is task-1.4 territory).
+
+### Post-condition deviation: 1 row `>= 100`
+
+Row **952** "Pepsi Classic Original Taste 240.33 l" (non-alcohol, container `other`):
+pre 240,330 ml → 240.33, which byte-matches its own feed name. The pass did exactly
+its contract; this is feed-artifact residue of the same family as the zero-volume
+rows. NOT hand-fixed per the no-improvisation rule. Live check (below) confirms the
+≥ 100 L port guard degrades it — the designed path, not silent multiplication.
+Follow-up for the lead: task-1.4 invariant will flag the row; a name/parser-level
+correction is a separate decision.
+
+No double-division victims: all sub-0.1 l rows (miniatures 0.015–0.05 l) sit below
+the `>= 5.0` guard, untouched by the pass.
+
+### Live verification (production, `x-age-confirmed: 1`)
+
+- **Sweep product 2394** (38 %, 0.5 l, 37 offers, min €5.99) via POST
+  `https://api.rajahinta.fi/api/v1/calculator` `{"productId":2394,"quantity":1,
+  "destination":"FI"}`: alcohol excise **€10.69** (0.5 l × 38 % = 0.19 LPA ×
+  €56.25/LPA) VERIFIED — tens-of-euros scale, plausible vs €5.99 retail; container
+  duty €0.26 VERIFIED; import VAT €4.32 VERIFIED (`import-vat-2024.2`); total €21.26.
+  `sanityNotes` ABSENT — rail not armed on the plausible case. Confidence LOW only
+  from transport UNAVAILABLE. Structural disclaimer present.
+- **Port guard live on row 952** (240.33 l): `meta.volumeLitres` reads 240.33
+  canonically; container duty degraded to ESTIMATED and sanity note
+  `LINE_CONTAINER_DUTY_EXCEEDS_RETAIL_PLAUSIBILITY` fired (€122.57 deposit-scaled
+  duty vs €10.99 retail) — rail armed, LOW confidence, amounts not silently
+  multiplied by the pre-backfill ml value.
+- **Search aggregates** `GET /api/v1/products?q=Koskenkorva`: ids 1194
+  (€20.99, 1 l), 3727 (€19.03, 1 l), 241 (€7.99, 0.5 l), 1548 (€10.99, 0.5 l) —
+  `lowestPriceCents`/`merchantCount` non-null on every row (task 3.1 live),
+  `unitVolume` litre-canonical strings.
