@@ -28,6 +28,7 @@ import ProductSelector from './components/ProductSelector';
 import MerchantWarningNotice from '../components/MerchantWarningNotice';
 import QuantitySelector from './components/QuantitySelector';
 import ResultCard from './components/ResultCard';
+import ShareResultAction from './components/ShareResultAction';
 import ProductHistoryPanel from './components/ProductHistoryPanel';
 import ScenarioControls from './components/ScenarioControls';
 import StepIndicator from './components/StepIndicator';
@@ -285,6 +286,24 @@ export default function CalculatorView() {
     },
     [debouncedSearch, runSearch],
   );
+
+  // ── Hero-search handoff (task 1.1) ──
+  // The homepage hero form submits to /calculator?q={term}; on mount the
+  // view reads that parameter, pre-fills the search field, and runs the
+  // search immediately (no debounce). Empty and too-short values
+  // pre-fill only — no failed-search state appears.
+  const initialQueryAppliedRef = useRef(false);
+  useEffect(() => {
+    if (initialQueryAppliedRef.current) return;
+    initialQueryAppliedRef.current = true;
+    const q = new URLSearchParams(window.location.search).get('q') ?? '';
+    const trimmed = q.trim();
+    if (trimmed.length === 0) return;
+    setQuery(q);
+    if (trimmed.length >= MIN_QUERY_LENGTH) {
+      runSearch(q);
+    }
+  }, [runSearch]);
 
   // ── Select handler ──
   const handleSelect = useCallback((product: ProductSearchItem) => {
@@ -794,6 +813,11 @@ export default function CalculatorView() {
                     text, breakdown beneath, reliability + timestamp, and
                     the structural disclaimer from the result object. */}
                 <ResultCard result={result} />
+                {/* Share action (task 5.2): frozen snapshot + copyable
+                    /share/[publicId] link for this record. */}
+                <div className="mt-4">
+                  <ShareResultAction recordId={result.calculationRecordId} />
+                </div>
               </div>
             </div>
           ) : (

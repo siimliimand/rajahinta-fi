@@ -19,6 +19,12 @@ export interface MerchantLinkProps {
   readonly onClick?: () => void;
   /** Optional additional CSS classes */
   readonly className?: string;
+  /**
+   * Visual treatment: 'link' (default) is the neutral inline text link the
+   * compare and calculator views use; 'cta' is the labelled outbound
+   * call-to-action the product-detail offers render ("Katso kaupassa →").
+   */
+  readonly variant?: 'link' | 'cta';
 }
 
 /**
@@ -44,8 +50,16 @@ export function MerchantLink({
   offerId,
   onClick,
   className,
+  variant = 'link',
 }: MerchantLinkProps) {
   const href = `${BASE_URL}/api/v1/outbound/${offerId}`;
+
+  // The CTA treatment is the products detail surface's labelled outbound
+  // affordance; the plain link stays the compare/calculator default.
+  const variantClasses =
+    variant === 'cta'
+      ? 'inline-flex items-center gap-1 rounded-lg border border-primary-200 bg-primary-50 px-3 py-1.5 text-xs font-semibold text-primary-700 transition-colors hover:bg-primary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2'
+      : undefined;
 
   return (
     <a
@@ -53,7 +67,7 @@ export function MerchantLink({
       target="_blank"
       rel="nofollow noopener"
       onClick={onClick}
-      className={className}
+      className={variantClasses ?? className}
     >
       {label}
     </a>

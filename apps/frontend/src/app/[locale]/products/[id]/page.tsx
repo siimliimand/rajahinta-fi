@@ -28,6 +28,7 @@ import {
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import type { PriceHistoryResponse, ProductDetailResponse } from '@/lib/types';
 import MerchantWarningNotice from '../../components/MerchantWarningNotice';
+import { MerchantLink } from '../../compare/components/MerchantLink';
 import ProductAlertAction from './components/ProductAlertAction';
 import ProductDupesPanel from './components/ProductDupesPanel';
 import ProductPriceContextLine from './components/ProductPriceContextLine';
@@ -319,6 +320,21 @@ export default async function ProductPage({ params }: ProductPageProps) {
                 <tr key={offer.id}>
                   <td className="py-2 pr-4 font-medium text-gray-900">
                     {offer.merchant}
+                    {/* Outbound CTA (task 2.2): routes through the shared
+                        /api/v1/outbound/:offerId redirect controller, the
+                        same click-recording path the compare page uses —
+                        the redirect records the click server-side, so no
+                        client callback rides along. Offers without a
+                        source URL stay plain text. */}
+                    {offer.sourceUrl && (
+                      <span className="mt-1.5 block">
+                        <MerchantLink
+                          label={t('viewAtStore')}
+                          offerId={offer.id}
+                          variant="cta"
+                        />
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 pr-4 text-gray-700">
                     {(offer.priceCents / 100).toFixed(2)}{' '}

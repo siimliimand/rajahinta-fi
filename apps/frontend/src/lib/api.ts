@@ -577,6 +577,69 @@ export async function getCalculationResult(
 }
 
 // ---------------------------------------------------------------------------
+// Share permalinks (POST /api/v1/calculations/:id/share)
+// ---------------------------------------------------------------------------
+
+/** Response of POST /api/v1/calculations/:id/share — the frozen copy's address. */
+export interface CalculationShareResult {
+  readonly publicId: string;
+  readonly createdAt: string;
+}
+
+/**
+ * Create a frozen share snapshot of one owned calculation record and
+ * return its public id; the permalink is `/share/{publicId}`. The
+ * endpoint is session-scoped: anonymous callers receive 401, and a
+ * record the signed-in account does not own answers the same 404 as an
+ * unknown record (no existence oracle — share.routes.ts contract).
+ */
+export async function createCalculationShare(
+  recordId: number,
+): Promise<CalculationShareResult> {
+  return request<CalculationShareResult>(
+    `/api/v1/calculations/${recordId}/share`,
+    { method: 'POST' },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Savings snapshot listing (GET /api/v1/savings?category=…)
+// ---------------------------------------------------------------------------
+
+/** One listed row of the category savings snapshot (fields the UI consumes). */
+export interface CategorySavingsRow {
+  readonly productId: number;
+  /** Seller country of the row's best observed offer. */
+  readonly merchantCountry: string;
+  /**
+   * Landed total minus the Alko reference as basis points of the
+   * reference — negative means the cross-border total is lower.
+   */
+  readonly gapBasisPoints: number;
+}
+
+/** Response of GET /api/v1/savings?category=… — the latest materialized day. */
+export interface CategorySavingsResult {
+  /** ISO date of the snapshot day, or null while no day has materialized. */
+  readonly asOf: string | null;
+  readonly category: string;
+  readonly rows: readonly CategorySavingsRow[];
+}
+
+/**
+ * Fetch the latest daily savings-snapshot listing for one category.
+ * Display-only read (the trip page's factual suggestion); failures
+ * propagate so callers can degrade to nothing.
+ */
+export async function getCategorySavings(
+  category: string,
+  limit: number = 100,
+): Promise<CategorySavingsResult> {
+  const params = new URLSearchParams({ category, limit: String(limit) });
+  return request<CategorySavingsResult>(`/api/v1/savings?${params}`);
+}
+
+// ---------------------------------------------------------------------------
 // Verified outcomes (trust-and-reach-roadmap tasks 3.2/3.3)
 // ---------------------------------------------------------------------------
 

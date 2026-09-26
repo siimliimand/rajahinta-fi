@@ -95,6 +95,8 @@
     "heroSubline": "Foreign retail price, transport, and estimates of excise duty and container tax — in one itemized breakdown.",
     "heroPillBadge": "Neutral · Transparent · Finnish Tax Administration rates",
     "heroSearchPlaceholder": "Search products… e.g. Koskenkorva, IPA, Rioja",
+    "heroSearchLabel": "Search products",
+    "heroSearchSubmit": "Search",
     "heroTrustLine": "🏛 Official tax sources · 📊 Price index · 🔒 WCAG AA accessible",
     "whyTitle": "Why Rajahinta.fi?",
     "feature1Title": "True total landed cost",
@@ -145,7 +147,9 @@
   },
   "AgeGateDeclined": {
     "title": "Access restricted",
-    "body": "You indicated that you are under 18. This service is intended for adults only, so its content is not available."
+    "body": "You indicated that you are under 18. This service is intended for adults only, so its content is not available.",
+    "recoveryIntro": "No worries — if that click was an accident, you can safely go back and answer again.",
+    "recoveryAction": "I clicked by accident — try again"
   },
   "NotFound": {
     "title": "Page not found",
@@ -178,7 +182,7 @@
     "searchNoResultsTitle": "No search results",
     "searchNoResultsDescription": "No products found for \"{query}\". Check the spelling or try another product name.",
     "calculationErrorTitle": "Calculation failed",
-    "rateLimitedDescription": "The number of calculations is temporarily limited.",
+    "rateLimitedDescription": "One moment — we're still calculating the previous request.",
     "rateLimitRetryAfter": "Wait {seconds, plural, one {# second} other {# seconds}} and try again.",
     "metaTitle": "Cross-border cost calculator",
     "metaDescription": "Search a product, choose a quantity, and get an itemized estimate of the total cost of importing alcohol to Finland: retail price, transport, and Finnish excise duty and container tax.",
@@ -220,6 +224,10 @@
       "importCheaper": "Importing is cheaper",
       "samePrice": "The price is the same",
       "observedAt": "Observed: {timestamp}"
+    },
+    "savingsSummary": {
+      "title": "Ordering from abroad saves an estimated {amount} compared with the Alko price.",
+      "asOf": "The comparison is based on the Alko price observation from {date}."
     },
     "sanityNote": {
       "label": "Confidence downgraded: the result is an estimate"
@@ -490,7 +498,7 @@
       "finlandUnavailable": "Finland reference total unavailable: these products have no reference prices"
     },
     "errors": {
-      "validation": "Check the entered details. A basket can hold at most 10 products, and each quantity must be 1–99.",
+      "validation": "Check the entered details. A basket can hold at most 30 products, and each quantity must be 1–99.",
       "not-found": "The product was not found. Check your search terms and try again.",
       "gate-rejected": "One or more products cannot currently be processed. Try another product.",
       "rate-limited": "The service is temporarily busy. Wait a moment and try again.",
@@ -939,6 +947,9 @@
     "partners": {
       "label": "Partner links"
     },
+    "suggestion": {
+      "stat": "On the latest observation day ({date}), beers ordered from webstores in {country} were on average {percent}% below the Alko reference price."
+    },
     "noAllowances": {
       "title": "No published traveller allowances",
       "body": "There is no published allowance dataset version effective on the selected date, so the calculation cannot be produced. Try again later."
@@ -1224,6 +1235,7 @@
     "countryHeader": "Country",
     "observedHeader": "Observed",
     "noOffers": "No active price observations.",
+    "viewAtStore": "View at store →",
     "dataNote": "Prices are collected observations, not merchant offers.",
     "landingNote": "The landed cost for Finland includes the price plus taxes, duties, and transport — calculate it in the calculator."
   },
@@ -1643,5 +1655,16 @@
       "dearer": "more expensive than the Alko reference price",
       "equal": "equal to the Alko reference price"
     }
+  },
+  "ShareResult": {
+    "share": "Share result",
+    "sharing": "Creating the share link…",
+    "linkHeading": "Share link",
+    "linkLabel": "Shareable address",
+    "copy": "Copy link",
+    "copied": "Copied",
+    "frozenNote": "The link opens a frozen copy of the calculation — later changes do not alter it.",
+    "authRequired": "Sharing requires signing in.",
+    "failed": "Creating the share link failed. Please try again."
   }
 }

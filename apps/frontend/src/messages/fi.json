@@ -95,6 +95,8 @@
     "heroSubline": "Ulkomainen vähittäishinta, kuljetus ja arviot valmisteverosta ja pakkausverosta — yhdessä eritelyssä laskelmassa.",
     "heroPillBadge": "Puolueeton · Läpinäkyvä · Verohallinnon verotaulukot",
     "heroSearchPlaceholder": "Hae tuotetta… esim. Koskenkorva, IPA, Rioja",
+    "heroSearchLabel": "Hae tuotteita",
+    "heroSearchSubmit": "Hae",
     "heroTrustLine": "🏛 Viralliset verolähteet · 📊 Hintaindeksi · 🔒 WCAG AA -saavutettava",
     "whyTitle": "Miksi Rajahinta.fi?",
     "feature1Title": "Todellinen kokonaishinta",
@@ -145,7 +147,9 @@
   },
   "AgeGateDeclined": {
     "title": "Pääsy rajattu",
-    "body": "Ilmoitit, ettet ole vähintään 18-vuotias. Tämä palvelu on tarkoitettu vain täysi-ikäisille, joten palvelun sisältö ei ole käytettävissä."
+    "body": "Ilmoitit, ettet ole vähintään 18-vuotias. Tämä palvelu on tarkoitettu vain täysi-ikäisille, joten palvelun sisältö ei ole käytettävissä.",
+    "recoveryIntro": "Ei hätää — jos valinta meni vahingossa, voit palata turvallisesti ja vastata uudelleen.",
+    "recoveryAction": "Painoin vahingossa — yritä uudelleen"
   },
   "NotFound": {
     "title": "Sivua ei löytynyt",
@@ -178,7 +182,7 @@
     "searchNoResultsTitle": "Ei hakutuloksia",
     "searchNoResultsDescription": "Tuotteita ei löytynyt haulla \"{query}\". Tarkista kirjoitusasu tai kokeile toista tuotenimeä.",
     "calculationErrorTitle": "Laskenta epäonnistui",
-    "rateLimitedDescription": "Laskentojen määrää on rajoitettu väliaikaisesti.",
+    "rateLimitedDescription": "Hetkinen — lasketaan vielä edellistä.",
     "rateLimitRetryAfter": "Odota {seconds, plural, one {# sekunti} other {# sekuntia}} ja yritä sitten uudelleen.",
     "metaTitle": "Rajat ylittävä kustannuslaskuri",
     "metaDescription": "Hae tuote, valitse määrä ja saat eritelty arvion alkoholin tuonnin kokonaiskustannuksesta Suomeen: vähittäishinta, kuljetus sekä Suomen valmistevero ja pakkausvero.",
@@ -220,6 +224,10 @@
       "importCheaper": "Tuonti on edullisempaa",
       "samePrice": "Hinta on sama",
       "observedAt": "Havainto: {timestamp}"
+    },
+    "savingsSummary": {
+      "title": "Tilaamalla ulkomailta säästät arviolta {amount} verrattuna Alkon hintaan.",
+      "asOf": "Vertailu perustuu Alkon {date} hintahavaintoon."
     },
     "sanityNote": {
       "label": "Luotettavuus alennettu: tulos on arvio"
@@ -490,7 +498,7 @@
       "finlandUnavailable": "Suomen vertailuhinta ei saatavilla: tuotteilla ei ole vertailuhintoja"
     },
     "errors": {
-      "validation": "Tarkista syöttämäsi tiedot. Ostoskorissa voi olla enintään 10 tuotetta, ja kunkin määrän tulee olla 1–99.",
+      "validation": "Tarkista syöttämäsi tiedot. Ostoskorissa voi olla enintään 30 tuotetta, ja kunkin määrän tulee olla 1–99.",
       "not-found": "Tuotetta ei löytynyt. Tarkista hakusanasi ja yritä uudelleen.",
       "gate-rejected": "Yhtä tai useampaa tuotetta ei voida tällä hetkellä käsitellä. Kokeile toista tuotetta.",
       "rate-limited": "Palvelu on tilapäisesti ruuhkautunut. Odota hetki ja yritä uudelleen.",
@@ -939,6 +947,9 @@
     "partners": {
       "label": "Kumppanilinkit"
     },
+    "suggestion": {
+      "stat": "Tuoreimman havaintopäivän ({date}) mukaan {country}-verkkokaupoista tilatut oluet olivat keskimäärin {percent} % Alkon vertailuhintaa edullisempia."
+    },
     "noAllowances": {
       "title": "Ei julkaistuja tullimäärärajoja",
       "body": "Valitulle päivälle ei löydy julkaistua tullimääräraja-aineiston versiota, joten laskentaa ei voida tehdä. Kokeile uudelleen myöhemmin."
@@ -1224,6 +1235,7 @@
     "countryHeader": "Maa",
     "observedHeader": "Havaittu",
     "noOffers": "Ei aktiivisia hintahavaintoja.",
+    "viewAtStore": "Katso kaupassa →",
     "dataNote": "Hinnat ovat kerättyjä havaintoja, eivät myyjien tarjouksia.",
     "landingNote": "Kokonaiskustannus Suomeen sisältää hinnan lisäksi verot, tullit ja kuljetuksen — laske se laskurissa."
   },
@@ -1643,5 +1655,16 @@
       "dearer": "kalliimpi kuin Alkon vertailuhinta",
       "equal": "sama kuin Alkon vertailuhinta"
     }
+  },
+  "ShareResult": {
+    "share": "Jaa tulos",
+    "sharing": "Luodaan jakolinkkiä…",
+    "linkHeading": "Jakolinkki",
+    "linkLabel": "Jaettava osoite",
+    "copy": "Kopioi linkki",
+    "copied": "Kopioitu",
+    "frozenNote": "Linkki avaa jäädytetyn kopion laskelmasta — myöhemmät muutokset eivät sitä muuta.",
+    "authRequired": "Jakaminen vaatii kirjautumisen.",
+    "failed": "Jakolinkin luominen epäonnistui. Yritä uudelleen."
   }
 }
