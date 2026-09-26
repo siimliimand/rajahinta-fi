@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { Link } from '@/i18n/navigation';
+import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import type { CalculatorResult as CalculatorResultType } from '@/lib/types';
 import { ApiFetchError, getCalculationResult } from '@/lib/api';
 import { EmptyState, ErrorState } from '@/components/ui';
@@ -209,15 +210,18 @@ export default function CalculationResultPage() {
               <div className="flex justify-between">
                 <dt>{t('volume')}</dt>
                 <dd className="tabular-nums">
-                  {t('volumeValue', {
-                    value: result.metadata.volumeLitres.toFixed(3),
-                  })}
+                  {/* Shared formatter (task 4.1): labelled volume
+                      ("50 cl"), never a bare "0.500" figure. */}
+                  {formatVolume(result.metadata.volumeLitres)}
                 </dd>
               </div>
               <div className="flex justify-between">
                 <dt>{tCommon('abvLabel')}</dt>
                 <dd className="tabular-nums">
-                  {result.metadata.alcoholByVolume}%
+                  {/* Shared formatter (task 4.1): the metadata ABV is a
+                      stored fraction — the previous raw render leaked it
+                      as "0.047%". */}
+                  {formatAbv(result.metadata.alcoholByVolume)}
                 </dd>
               </div>
             </dl>

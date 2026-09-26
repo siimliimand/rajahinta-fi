@@ -9,6 +9,7 @@ import {
   CONFIDENCE_LEVEL_META,
   RELIABILITY_STATUS_META,
 } from '@/lib/design/status';
+import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import { Button, Card } from '@/components/ui';
 import { logClick } from '@/lib/api';
 import { MerchantLink } from './MerchantLink';
@@ -58,7 +59,11 @@ function ProductColumn({
   product: ComparisonProduct;
 }) {
   const t = useTranslations('Compare');
-  const tCommon = useTranslations('Common');
+  // Shared attribute formatters (task 4.1): labelled volume and
+  // percentage ABV — the raw `abvValue` interpolation leaked stored
+  // fractions as "0.047% ABV".
+  const volume = formatVolume(product.unitVolume);
+  const abv = formatAbv(product.alcoholByVolume);
   // Same source of truth as the calculator result view: cost categories map
   // to localized labels (fi catalog primary) — the API's own itemized
   // `label` strings are English and never rendered directly.
@@ -71,12 +76,10 @@ function ProductColumn({
       <p className="mt-0.5 text-xs text-gray-500">
         {product.brand}
         {product.category ? ` · ${product.category}` : ''}
-        {product.unitVolume ? ` · ${product.unitVolume}` : ''}
+        {volume ? ` · ${volume}` : ''}
       </p>
-      {product.alcoholByVolume !== null && (
-        <p className="mt-0.5 text-xs text-gray-400">
-          {tCommon('abvValue', { value: product.alcoholByVolume })}
-        </p>
+      {abv !== null && (
+        <p className="mt-0.5 text-xs text-gray-400">{abv}</p>
       )}
 
       {/* Separator */}

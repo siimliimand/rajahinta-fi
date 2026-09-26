@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import { request, SERVER_AGE_CONFIRMATION_TOKEN } from '@/lib/api';
+import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import type { ProductSearchItem, ProductSearchResult } from '@/lib/types';
 import { Badge, Card, EmptyState } from '@/components/ui';
 
@@ -249,7 +250,6 @@ export default async function ProductsPage({
   const page = resolvePageParam(query.page);
 
   const t = await getTranslations({ locale, namespace: 'ProductsPage' });
-  const tCommon = await getTranslations({ locale, namespace: 'Common' });
 
   const result = await getServerCatalogPage(category, page);
 
@@ -342,10 +342,13 @@ export default async function ProductsPage({
                   ) : null}
                   <p className="text-sm text-gray-700">
                     {[
-                      item.unitVolume,
-                      item.alcoholByVolume !== null
-                        ? tCommon('abvValue', { value: item.alcoholByVolume * 100 })
-                        : null,
+                      // Shared attribute formatters (task 4.1): labelled
+                      // volume ("50 cl") and percentage ABV ("4.7 %") —
+                      // the previous `× 100` interpolation rendered float
+                      // artifacts and the raw text leaked the bare litre
+                      // value without a unit.
+                      formatVolume(item.unitVolume),
+                      formatAbv(item.alcoholByVolume),
                     ]
                       .filter((part): part is string => part !== null && part !== '')
                       .join(' · ')}

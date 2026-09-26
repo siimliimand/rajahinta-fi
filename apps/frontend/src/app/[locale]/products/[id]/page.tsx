@@ -25,6 +25,7 @@ import {
   SERVER_AGE_CONFIRMATION_TOKEN,
   getServerProductDetail,
 } from '@/lib/api';
+import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import type { PriceHistoryResponse, ProductDetailResponse } from '@/lib/types';
 import MerchantWarningNotice from '../../components/MerchantWarningNotice';
 import ProductAlertAction from './components/ProductAlertAction';
@@ -117,18 +118,17 @@ function countryName(code: string, locale: string): string {
   }
 }
 
-/** Factual detail string (brand, category, volume, ABV) for metadata. */
-function detailParts(
-  detail: ProductDetailResponse,
-  abvLabel: (value: number) => string,
-): string {
+/**
+ * Factual detail string (brand, category, volume, ABV) for metadata. The
+ * attributes render through the shared formatters (task 4.1): labelled
+ * volume and percentage ABV, never the raw stored litre text or fraction.
+ */
+function detailParts(detail: ProductDetailResponse): string {
   return [
     detail.product.brand,
     detail.product.category,
-    detail.product.unitVolume,
-    detail.product.alcoholByVolume !== null
-      ? abvLabel(detail.product.alcoholByVolume)
-      : null,
+    formatVolume(detail.product.unitVolume),
+    formatAbv(detail.product.alcoholByVolume),
   ]
     .filter((part): part is string => part !== null && part !== '')
     .join(' · ');
@@ -139,7 +139,6 @@ export async function generateMetadata({
 }: ProductPageProps): Promise<Metadata> {
   const { locale, id } = await params;
   const t = await getTranslations({ locale, namespace: 'ProductPage' });
-  const tCommon = await getTranslations({ locale, namespace: 'Common' });
 
   const productId = Number.parseInt(id, 10);
   const detail =
@@ -160,7 +159,7 @@ export async function generateMetadata({
     title: t('metaTitle', { name: detail.product.name }),
     description: t('metaDescription', {
       name: detail.product.name,
-      details: detailParts(detail, (value) => tCommon('abvValue', { value })),
+      details: detailParts(detail),
     }),
   };
 }
@@ -187,21 +186,19 @@ export default async function ProductPage({ params }: ProductPageProps) {
   const priceHistory = await getServerPriceHistory(productId);
 
   const { product, offers } = detail;
+  // Shared attribute formatters (task 4.1): labelled volume ("50 cl")
+  // and percentage ABV ("4.7 %"); a corrupt value renders no row, never
+  // a placeholder.
+  const volume = formatVolume(product.unitVolume);
+  const abv = formatAbv(product.alcoholByVolume);
   const masterRows: Array<{ label: string; value: string }> = [
     { label: t('brandLabel'), value: product.brand },
     ...(product.category ? [{ label: t('categoryLabel'), value: product.category }] : []),
-    ...(product.unitVolume ? [{ label: t('volumeLabel'), value: product.unitVolume }] : []),
+    ...(volume ? [{ label: t('volumeLabel'), value: volume }] : []),
     ...(product.containerType
       ? [{ label: t('containerLabel'), value: product.containerType }]
       : []),
-    ...(product.alcoholByVolume !== null
-      ? [
-          {
-            label: tCommon('abvLabel'),
-            value: tCommon('abvValue', { value: product.alcoholByVolume }),
-          },
-        ]
-      : []),
+    ...(abv ? [{ label: tCommon('abvLabel'), value: abv }] : []),
     ...(product.ean ? [{ label: t('eanLabel'), value: product.ean }] : []),
   ];
 
@@ -211,7 +208,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
         {product.name}
       </h1>
       <p className="mb-8 text-sm text-gray-500">
-        {detailParts(detail, (value) => tCommon('abvValue', { value }))}
+        {detailParts(detail)}
       </p>
 
       {/* ── Master data ── */}

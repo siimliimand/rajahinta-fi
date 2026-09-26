@@ -142,7 +142,8 @@ function detailResponse(
       brand: 'Panimo A',
       category: 'beer',
       alcoholByVolume: 0.047,
-      unitVolume: '0.5 l',
+      // Canonical litre-denominated text (unit-integrity task 1.3).
+      unitVolume: '0.5',
       containerType: 'can',
       regulatoryClassification: 'beer',
       depositSystemStatus: false,
@@ -216,6 +217,23 @@ describe('ProductPage price-history section (task 5.1)', () => {
       await ProductPage({ params: Promise.resolve({ locale: 'fi', id: '42' }) }),
     );
     expect(screen.queryByTestId('price-history-section')).not.toBeInTheDocument();
+  });
+});
+
+describe('ProductPage master data', () => {
+  it('renders volume and ABV through the shared formatters (task 4.1)', async () => {
+    mockedGetServerProductDetail.mockResolvedValue(detailResponse([offer()]));
+
+    render(
+      await ProductPage({ params: Promise.resolve({ locale: 'fi', id: '42' }) }),
+    );
+
+    // formatVolume: sub-litre canonical text renders labelled in cl.
+    expect(screen.getByText('50 cl')).toBeInTheDocument();
+    // formatAbv: the stored fraction 0.047 renders "4.7 %", never the
+    // raw fraction, and carries the localized Alkoholipitoisuus label.
+    expect(screen.getByText('4.7 %')).toBeInTheDocument();
+    expect(screen.getByText('Alkoholipitoisuus')).toBeInTheDocument();
   });
 });
 
