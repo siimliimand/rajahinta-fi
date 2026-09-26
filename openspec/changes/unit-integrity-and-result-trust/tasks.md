@@ -28,4 +28,4 @@
 ## 5. Verification + rollout
 
 - [x] 5.1 Full local verification: typecheck, lint, content lint, unit, golden, e2e, D1 suites; browser pass recording evidence in change notes — Koskenkorva case total lands in the plausible range (price ≈ €98.70 + excise ≈ €107 + duty ≈ €2.55 + transport 0), value ranking loses the tonne-scale ethanol artifact, search rows show prices <!-- agent: platform-engineer.fast, depends_on: [1.4, 1.5, 2.2, 3.2, 4.2], touches: [] -->
-- [ ] 5.2 Production: gated worker deploy (`gh workflow run` with `confirm_deploy=yes`), remote D1 backfill with before/after counts recorded in change notes, verify a sweep product's live calculator result shows plausible excise with the sanity rail armed <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [] -->
+- [x] 5.2 Production: gated worker deploy (`gh workflow run` with `confirm_deploy=yes`), remote D1 backfill with before/after counts recorded in change notes, verify a sweep product's live calculator result shows plausible excise with the sanity rail armed <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [] -->
