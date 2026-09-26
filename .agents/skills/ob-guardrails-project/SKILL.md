@@ -20,6 +20,9 @@ license: MIT
 - **Disclaimer is structural.** The "estimated total cost in Finland, not final legal tax liability" disclaimer must be a structural part of every result object, not a UI-only string.
 - **Background jobs off the request path.** Price ingestion, transport-rate refresh, tax-dataset review, and time-series aggregation run as scheduled/queued jobs separate from the user-facing request/response path.
 
+- **Unit volume is canonical litres, one convention.** `product_master.unit_volume` stores per-unit beverage volume in litres (feed millilitres ÷ 1000 at mapping, seeded litres, backfilled once 2026-09-26) and MUST satisfy `0 < unit_volume < 100`. No write or read path may reinterpret it as millilitres; the ingestion quality stage flags out-of-window rows, and the D1 port degrades reads ≥ 100 L to ESTIMATED with a metric rather than converting.
+- **The calculator sanity rail never changes amounts.** When a line's excise exceeds 5× its retail price, the rail may only lower confidence/statuses (LOW / ESTIMATED) and add `sanityNotes`; every monetary figure stays byte-identical. Golden fixtures stay rail-free.
+
 ## File Organization
 
 - Application source code is split by domain/feature (e.g., `excise-engine.ts`, `savings/gap.ts`, `price-context/window-stats.ts`) rather than catch-all files like `utils.ts` or `constants.ts`.

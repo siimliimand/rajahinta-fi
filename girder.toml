@@ -3,3 +3,10 @@
 stack = "node-22"
 test_command = ["bash", "-c", "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pnpm install --frozen-lockfile --offline --store-dir=/cache/pnpm && pnpm --filter \"@rajahinta/core-domain\" --filter \"@rajahinta/application-api\" --filter \"@rajahinta/data-platform\" --filter \"@rajahinta/data-acquisition\" run build && pnpm exec vitest run --config vitest.config.girder.ts --reporter=junit --outputFile=/workspace/{report_xml}"]
 test_signal_patterns = ["**/*.test.ts", "**/*.test.js", "**/*.spec.ts", "**/*.spec.js", "vitest.config.*"]
+
+[verify]
+# Completion preflight must mirror the suite's own scope: full offline
+# install (self-heals a half-installed worktree), then build only the 4
+# packages verification depends on. apps/frontend is intentionally NOT
+# built — attempt containers don't install it and `next` is unavailable.
+preflight_command = ["bash", "-c", "pnpm install --frozen-lockfile --offline --store-dir=/cache/pnpm && pnpm --filter \"@rajahinta/core-domain\" --filter \"@rajahinta/application-api\" --filter \"@rajahinta/data-platform\" --filter \"@rajahinta/data-acquisition\" run build"]

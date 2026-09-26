@@ -1,6 +1,6 @@
 # data-acquisition Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Feed record mapping
 

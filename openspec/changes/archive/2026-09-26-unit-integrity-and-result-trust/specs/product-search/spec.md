@@ -1,6 +1,6 @@
 # product-search Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Search result rows carry offer aggregates
 

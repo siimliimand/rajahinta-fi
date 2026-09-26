@@ -1,6 +1,6 @@
 # unit-price-metrics Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Ethanol grams derive from canonical litres
 

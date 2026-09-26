@@ -1,6 +1,6 @@
 # web-application Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Product data display formatting
 

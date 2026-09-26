@@ -1,6 +1,6 @@
 # product-data-model Specification
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Canonical unit volume
 
