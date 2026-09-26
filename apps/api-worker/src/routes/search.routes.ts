@@ -211,6 +211,75 @@ function toCatalogItem(entry: CatalogProductListItem): SearchItemResponse {
   };
 }
 
+/** One grouped aggregate row: per-product min price + merchant count. */
+interface OfferAggregateRow {
+  readonly product_id: number;
+  readonly min_price_cents: number;
+  readonly merchant_count: number;
+}
+
+/**
+ * Detail-parity offer aggregates for the given product ids — ONE grouped
+ * query for the page (the ranked path returns up to MAX_PAGE_SIZE rows;
+ * per-id findOffers calls would be N+1).
+ *
+ * The offer set is deliberately the SAME one the detail endpoint serves
+ * (repo findOffers): retail_offers is append-per-scrape, so the latest
+ * observation per (product, merchant) pair is its MAX(id) row. A
+ * superseded cheaper scrape must not drag the row's minimum below what
+ * the detail page lists (task 4.3 collapse parity). Over that set,
+ * COUNT(DISTINCT merchant) equals the detail response's offers.length
+ * and MIN(price_cents) equals its currentBestPriceCents. The catalog
+ * browse path keeps the repository's own all-rows aggregate
+ * (listCatalogPage — outside this change's scope).
+ */
+async function offerAggregatesByProductId(
+  db: D1Database,
+  productIds: readonly number[],
+): Promise<Map<number, OfferAggregateRow>> {
+  if (productIds.length === 0) return new Map();
+  const inList = Array.from({ length: productIds.length }, () => '?').join(', ');
+  const rows = (
+    await db
+      .prepare(
+        `SELECT o.product_id AS product_id,
+                MIN(o.price_cents) AS min_price_cents,
+                COUNT(DISTINCT o.merchant) AS merchant_count
+           FROM retail_offers o
+           JOIN (SELECT product_id, merchant, MAX(id) AS id
+                   FROM retail_offers
+                  WHERE product_id IN (${inList})
+               GROUP BY product_id, merchant) m
+             ON m.id = o.id
+       GROUP BY o.product_id`,
+      )
+      .bind(...productIds)
+      .all<OfferAggregateRow>()
+  ).results;
+  return new Map(rows.map((row) => [row.product_id, row]));
+}
+
+/**
+ * Merge the aggregates into mapped items. Offer-less products keep the
+ * base shape's honest absence (null/0) — only products with a latest
+ * offer row are overridden.
+ */
+function withOfferAggregates(
+  items: SearchItemResponse[],
+  aggregates: Map<number, OfferAggregateRow>,
+): SearchItemResponse[] {
+  return items.map((item) => {
+    const aggregate = aggregates.get(item.id);
+    return aggregate
+      ? {
+          ...item,
+          lowestPriceCents: aggregate.min_price_cents,
+          merchantCount: aggregate.merchant_count,
+        }
+      : item;
+  });
+}
+
 /** parsePositiveInt parity — invalid/absent values fall back. */
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw === '') return fallback;
@@ -296,9 +365,26 @@ async function search(c: Context<AppEnv>): Promise<Response> {
     }
 
     const start = (pageNum - 1) * limitNum;
-    const paginated =
+    let paginated =
       catalogPage !== undefined ? items : items.slice(start, start + limitNum);
     const total = catalogPage !== undefined ? catalogPage.total : items.length;
+
+    // Search-row offer aggregates (task 3.1, change
+    // unit-integrity-and-result-trust): the ids and ranked-q paths map
+    // plain product rows whose placeholders (null/0) contradicted the
+    // detail endpoint for the same id — a kippis row reported null/0
+    // while detail listed its offers. The merge covers exactly this
+    // page's rows (bounded IN list); the catalog browse path keeps the
+    // repository's own page aggregates untouched.
+    if (catalogPage === undefined) {
+      paginated = withOfferAggregates(
+        paginated,
+        await offerAggregatesByProductId(
+          c.env.DB,
+          paginated.map((item) => item.id),
+        ),
+      );
+    }
 
     // Additive merchantWarnings join (task 2.2): the merchants of this
     // page's products' offers, matched against PUBLISHED blacklist
