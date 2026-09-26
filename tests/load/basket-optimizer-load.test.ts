@@ -16,9 +16,28 @@
  * **Scenarios:**
  *   - typical:  4 items × 4 candidate merchants  (4^4   = 256
  *     assignments per call) — the expected interactive basket shape.
- *   - max-cap:  10 items (MAX_BASKET_ITEMS) × 3 shared merchants
- *     (3^10 = 59 049 assignments per call) — the documented input-cap
- *     worst case that stays feasible to enumerate.
+ *   - max-cap:  10 items × 3 shared merchants (3^10 = 59 049
+ *     assignments per call) — the enumeration-heaviest shape measured
+ *     at the pre-cap-30 input cap, retained as the regression
+ *     reference for the DFS cost.
+ *   - cap-30 feasible: 30 items (MAX_BASKET_ITEMS since change
+ *     client-experience-improvement) × distinct single-candidate
+ *     merchants — the raised input cap exercised end-to-end within the
+ *     combinations guard.
+ *   - cap-30 guard: 30 items × 3 shared merchants → 3^30 combinations,
+ *     rejected by the MAX_TOTAL_COMBINATIONS guard before enumeration;
+ *     the test pins the fast-fail bound.
+ *
+ *   **Guard coverage note:** MAX_TOTAL_COMBINATIONS bounds the
+ *   merchant-assignment enumeration (DFS leaves). It does NOT bound the
+ *   per-merchant shipping prefetch (basket-optimizer.service.ts step
+ *   2f), which enumerates 2^(coverable items) subsets per merchant
+ *   before the DFS. A 30-item basket covered by a single merchant
+ *   passes the guard (Cartesian product 1) yet would enumerate 2^30
+ *   shipping subsets — the feasible cap-30 scenario below therefore
+ *   uses distinct single-candidate merchants, the shape the caps +
+ *   guard demonstrably bound. The prefetch powerset is a known gap
+ *   flagged to the lead during task 2.4 verification.
  *
  * **Thresholds** (explicit; measured against the historical K8s-era
  * resource envelope, kept as the regression reference — see the run
@@ -59,7 +78,10 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 import {
   BasketOptimizerService,
   BasketShippingCalculator,
+  BasketCombinationLimitError,
   LandedCostCalculatorService,
+  MAX_BASKET_ITEMS,
+  MAX_TOTAL_COMBINATIONS,
 } from '@rajahinta/core-domain';
 import type {
   BasketOptimizationInput,
@@ -106,6 +128,20 @@ const TYPICAL_WARMUP_RUNS = 3;
 const TYPICAL_MEASURED_RUNS = 3;
 const MAX_CAP_WARMUP_RUNS = 1;
 const MAX_CAP_MEASURED_RUNS = 3;
+
+/** Cap-30 feasible scenario: concurrency, threshold, and rounds. The
+ * shape is light (distinct single-candidate merchants → 1 assignment),
+ * so the typical-class p95 threshold applies. */
+const CAP30_CONCURRENCY = 10;
+const CAP30_P95_THRESHOLD_MS = 2_000;
+const CAP30_WARMUP_RUNS = 1;
+const CAP30_MEASURED_RUNS = 3;
+
+/** Bound for the guard fast-fail at 30 items × 3 merchants: the guard
+ * check itself is a 30-factor multiplication before any enumeration, so
+ * even slow CI finishes in milliseconds — a full enumeration of 3^30
+ * would not finish in years. */
+const CAP30_GUARD_FAIL_BOUND_MS = 1_000;
 
 // ---------------------------------------------------------------------------
 // Fixtures — merchants, products, offers
@@ -165,6 +201,16 @@ const PRODUCTS_BY_ID: Record<number, CalculatorProductData> = Object.fromEntries
   PRODUCTS.map((p) => [p.id, p]),
 );
 
+/**
+ * 30 distinct products for the raised input cap (MAX_BASKET_ITEMS).
+ * Attributes cycle the three base profiles; ids are unique per line so
+ * the basket matches the spec's "30 distinct items" scenario.
+ */
+const CAP30_PRODUCTS: CalculatorProductData[] = Array.from(
+  { length: MAX_BASKET_ITEMS },
+  (_, i) => ({ ...PRODUCTS[i % PRODUCTS.length], id: i + 1 }),
+);
+
 /** Deterministic offer price per (product, merchant) — varied but stable. */
 function offerPriceCents(productId: number, merchantIdx: number): number {
   return 180 + productId * 37 + merchantIdx * 53;
@@ -176,8 +222,8 @@ function offerPriceCents(productId: number, merchantIdx: number): number {
  * - typical: every product is offered by the first 4 merchants of the
  *   pool (4 candidates per item, mixed countries → multi-store splits).
  * - max-cap: every product is offered by the first 3 merchants (shared
- *   across all 10 items → 3^10 assignments, the worst case at the
- *   input caps that still terminates).
+ *   across all items — 3^itemCount assignments, the heaviest shape
+ *   measured at the pre-cap-30 input cap that still terminates).
  */
 function buildOffersByProduct(candidatesPerItem: number): Record<
   number,
@@ -198,6 +244,57 @@ function buildOffersByProduct(candidatesPerItem: number): Record<
 
 const TYPICAL_OFFERS = buildOffersByProduct(4);
 const MAX_CAP_OFFERS = buildOffersByProduct(3);
+
+/**
+ * Cap-30 guard-shape offers: all 30 products share the first 3 pool
+ * merchants → the Cartesian product is 3^30, far above
+ * MAX_TOTAL_COMBINATIONS, so the guard must fire before enumeration.
+ */
+function buildCap30Offers(candidatesPerItem: number): Record<
+  number,
+  CalculatorRetailOfferData[]
+> {
+  const map: Record<number, CalculatorRetailOfferData[]> = {};
+  for (const product of CAP30_PRODUCTS) {
+    map[product.id] = MERCHANTS.slice(0, candidatesPerItem).map((m, idx) => ({
+      id: product.id * 100 + idx,
+      priceCents: offerPriceCents(product.id, idx),
+      merchant: m.id,
+      country: m.country,
+      reliabilityStatus: 'EXACT',
+    }));
+  }
+  return map;
+}
+
+const CAP30_GUARD_OFFERS = buildCap30Offers(3);
+
+/**
+ * Cap-30 feasible-shape offers: 30 products, each from its own distinct
+ * merchant (one candidate per item). The Cartesian product is 1, well
+ * inside the guard, and the per-merchant shipping prefetch stays at one
+ * subset per merchant — the basket shape the caps + guard demonstrably
+ * bound at the raised input cap. Merchant countries cycle the pool so
+ * the transport fixtures cover every origin.
+ */
+function buildCap30DisjointOffers(): Record<number, CalculatorRetailOfferData[]> {
+  const map: Record<number, CalculatorRetailOfferData[]> = {};
+  for (const product of CAP30_PRODUCTS) {
+    const pool = MERCHANTS[(product.id - 1) % MERCHANTS.length];
+    map[product.id] = [
+      {
+        id: product.id * 10,
+        priceCents: offerPriceCents(product.id, 0),
+        merchant: `cap30-shop-${product.id}`,
+        country: pool.country,
+        reliabilityStatus: 'EXACT',
+      },
+    ];
+  }
+  return map;
+}
+
+const CAP30_FEASIBLE_OFFERS = buildCap30DisjointOffers();
 
 // ---------------------------------------------------------------------------
 // Fixtures — transport offers for the (real) BasketShippingCalculator
@@ -241,14 +338,17 @@ const TRANSPORT_OFFERS = buildTransportOffers();
 // Service factory — real optimizer + real shipping + mocked engines/ports
 // ---------------------------------------------------------------------------
 
-function createBasketOptimizerService(offersByProduct: Record<
-  number,
-  CalculatorRetailOfferData[]
->): BasketOptimizerService {
+function createBasketOptimizerService(
+  offersByProduct: Record<number, CalculatorRetailOfferData[]>,
+  products: CalculatorProductData[] = PRODUCTS,
+): BasketOptimizerService {
   // --- Mock I/O ports ---
+  const productsById: Record<number, CalculatorProductData> = Object.fromEntries(
+    products.map((p) => [p.id, p]),
+  );
   const productData: IProductDataPort = {
     findProductById: vi.fn().mockImplementation(async (id: number) =>
-      PRODUCTS_BY_ID[id] ?? null,
+      productsById[id] ?? null,
     ),
     findRetailOffers: vi.fn().mockImplementation(
       async (id: number) => offersByProduct[id] ?? [],
@@ -406,7 +506,7 @@ interface BenchmarkResult {
   failureCount: number;
 }
 
-type ScenarioName = 'typical' | 'max-cap';
+type ScenarioName = 'typical' | 'max-cap' | 'cap-30-feasible' | 'cap-30-guard';
 
 interface ScenarioSpec {
   name: ScenarioName;
@@ -417,12 +517,28 @@ interface ScenarioSpec {
 const SCENARIOS: Record<ScenarioName, ScenarioSpec> = {
   typical: { name: 'typical', itemCount: 4, candidatesPerItem: 4 },
   'max-cap': { name: 'max-cap', itemCount: 10, candidatesPerItem: 3 },
-};
+  'cap-30-feasible': {
+    name: 'cap-30-feasible',
+    itemCount: MAX_BASKET_ITEMS,
+    candidatesPerItem: 1,
+  },
+  'cap-30-guard': {
+    name: 'cap-30-guard',
+    itemCount: MAX_BASKET_ITEMS,
+    candidatesPerItem: 3,
+  },
+}
+
+/** Whether the scenario draws its lines from the 30-product cap set. */
+function isCap30Scenario(name: ScenarioName): boolean {
+  return name === 'cap-30-feasible' || name === 'cap-30-guard';
+}
 
 /** Deterministic basket for a call index: cycles products, varies quantity. */
 function buildBasketInput(scenario: ScenarioSpec, callIdx: number): BasketOptimizationInput {
+  const catalog = isCap30Scenario(scenario.name) ? CAP30_PRODUCTS : PRODUCTS;
   const items = Array.from({ length: scenario.itemCount }, (_, i) => {
-    const product = PRODUCTS[(callIdx + i) % PRODUCTS.length];
+    const product = catalog[i % catalog.length];
     return {
       productId: product.id,
       quantity: ((callIdx + i) % 5) + 1, // 1–5, varied to defeat caching
@@ -494,6 +610,14 @@ async function runConcurrentBenchmark(
 describe('BasketOptimizer — load/performance under 256m/512Mi-shaped load', () => {
   const typicalService = createBasketOptimizerService(TYPICAL_OFFERS);
   const maxCapService = createBasketOptimizerService(MAX_CAP_OFFERS);
+  const cap30FeasibleService = createBasketOptimizerService(
+    CAP30_FEASIBLE_OFFERS,
+    CAP30_PRODUCTS,
+  );
+  const cap30GuardService = createBasketOptimizerService(
+    CAP30_GUARD_OFFERS,
+    CAP30_PRODUCTS,
+  );
 
   beforeAll(() => {
     // Services are constructed synchronously in the describe body;
@@ -521,6 +645,39 @@ describe('BasketOptimizer — load/performance under 256m/512Mi-shaped load', ()
     expect(result.totalCents).toBeGreaterThan(0);
     expect(result.shipments.length).toBeGreaterThanOrEqual(1);
     expect(result.metadata.input.items.length).toBe(10);
+  });
+
+  // -----------------------------------------------------------------------
+  // Raised input cap (MAX_BASKET_ITEMS = 30, change
+  // client-experience-improvement): the full item cap optimizes inside
+  // the combinations guard, and guard-exceeding shapes fail fast.
+  // -----------------------------------------------------------------------
+
+  it('produces a feasible optimal split for a full-cap basket (30 distinct items)', async () => {
+    const result = await cap30FeasibleService.optimize(
+      buildBasketInput(SCENARIOS['cap-30-feasible'], 0),
+    );
+    expect(result.metadata.input.items.length).toBe(MAX_BASKET_ITEMS);
+    expect(result.totalCents).toBeGreaterThan(0);
+    expect(result.shipments.length).toBeGreaterThanOrEqual(1);
+    expect(result.shipments.every((s) => s.items.length > 0)).toBe(true);
+  });
+
+  it('fails fast at the full cap when the combinations guard trips: 30 items × 3 merchants', async () => {
+    // 3^30 ≈ 2.06e14 assignments — the guard must reject BEFORE any
+    // enumeration work (and long before this bound could be mistaken
+    // for a completed enumeration).
+    const start = performance.now();
+    const err = await cap30GuardService
+      .optimize(buildBasketInput(SCENARIOS['cap-30-guard'], 0))
+      .then(() => null, (e: unknown) => e);
+    const elapsed = performance.now() - start;
+
+    expect(err).toBeInstanceOf(BasketCombinationLimitError);
+    const limitError = err as BasketCombinationLimitError;
+    expect(limitError.totalCombinations).toBe(3 ** MAX_BASKET_ITEMS);
+    expect(limitError.limit).toBe(MAX_TOTAL_COMBINATIONS);
+    expect(elapsed).toBeLessThan(CAP30_GUARD_FAIL_BOUND_MS);
   });
 
   // -----------------------------------------------------------------------
@@ -576,7 +733,8 @@ describe('BasketOptimizer — load/performance under 256m/512Mi-shaped load', ()
   );
 
   // -----------------------------------------------------------------------
-  // Max-cap scenario — 10 items × 3 merchants (input-cap worst case)
+  // Max-cap scenario — 10 items × 3 merchants (pre-cap-30 reference shape
+  // for the enumeration-heaviest feasible load)
   // -----------------------------------------------------------------------
 
   it(
@@ -605,7 +763,7 @@ describe('BasketOptimizer — load/performance under 256m/512Mi-shaped load', ()
       console.log(`
         ┌─ Basket Optimizer Load Test — max-cap (10 items × 3 merchants) ─────
         │  Concurrency:    ${MAX_CAP_CONCURRENCY} × ${MAX_CAP_MEASURED_RUNS} rounds
-        │  Assignments:    3^10 = 59 049 per call (input-cap worst case)
+        │  Assignments:    3^10 = 59 049 per call (pre-cap-30 reference shape)
         │  Total calls:    ${combined.length}
         │  Successful:     ${totalSuccess}
         │  Failed:         ${totalFailure}
@@ -619,9 +777,9 @@ describe('BasketOptimizer — load/performance under 256m/512Mi-shaped load', ()
         │  mean:           ${(combined.reduce((s, d) => s + d, 0) / combined.length).toFixed(2)} ms
         │
         │  Memory note: each call materialises all 59 049 assignments
-        │  before selection — peak heap scales with concurrency. This is
-        │  the workload the planned total-combinations guard (422) is
-        │  meant to bound at the API layer.
+        │  before selection — peak heap scales with concurrency. The
+        │  total-combinations guard (422) bounds this enumeration at
+        │  the API layer.
         └──────────────────────────────────────────────────────────────────────
       `);
 
@@ -630,5 +788,61 @@ describe('BasketOptimizer — load/performance under 256m/512Mi-shaped load', ()
       expect(worstP95).toBeLessThan(MAX_CAP_P95_THRESHOLD_MS);
     },
     600_000,
+  );
+
+  // -----------------------------------------------------------------------
+  // Cap-30 feasible scenario — 30 items × distinct single-candidate
+  // merchants: the raised input cap under concurrent load, inside the
+  // combinations guard (guard-trip timing pinned separately above).
+  // -----------------------------------------------------------------------
+
+  it(
+    `cap-30 feasible: ${CAP30_CONCURRENCY} concurrent ${MAX_BASKET_ITEMS}-item baskets ` +
+    `with p95 < ${CAP30_P95_THRESHOLD_MS} ms and error rate < ${(MAX_ERROR_RATE * 100).toFixed(0)}%`,
+    async () => {
+      for (let i = 0; i < CAP30_WARMUP_RUNS; i++) {
+        await runConcurrentBenchmark(
+          cap30FeasibleService, SCENARIOS['cap-30-feasible'], CAP30_CONCURRENCY,
+        );
+      }
+
+      const results: BenchmarkResult[] = [];
+      for (let i = 0; i < CAP30_MEASURED_RUNS; i++) {
+        results.push(
+          await runConcurrentBenchmark(
+            cap30FeasibleService, SCENARIOS['cap-30-feasible'], CAP30_CONCURRENCY,
+          ),
+        );
+      }
+
+      const worstP95 = Math.max(...results.map((r) => r.p95));
+      const worstP99 = Math.max(...results.map((r) => r.p99));
+      const combined = results.flatMap((r) => r.durations).sort((a, b) => a - b);
+      const totalSuccess = results.reduce((s, r) => r.successCount, 0);
+      const totalFailure = results.reduce((s, r) => r.failureCount, 0);
+      const totalCalls = totalSuccess + totalFailure;
+      const errorRate = totalCalls > 0 ? totalFailure / totalCalls : 0;
+
+      console.log(`
+        ┌─ Basket Optimizer Load Test — cap-30 feasible (${MAX_BASKET_ITEMS} items × 1 merchant) ─
+        │  Concurrency:    ${CAP30_CONCURRENCY} × ${CAP30_MEASURED_RUNS} rounds
+        │  Assignments:    1 per call (single-candidate shape, guard slack)
+        │  Total calls:    ${combined.length}
+        │  Successful:     ${totalSuccess}
+        │  Failed:         ${totalFailure}
+        │  Error rate:     ${(errorRate * 100).toFixed(2)}%   (threshold: ${(MAX_ERROR_RATE * 100).toFixed(0)}%)
+        │
+        │  p50 (median):   ${percentile(combined, 50).toFixed(2)} ms
+        │  p95:            ${worstP95.toFixed(2)} ms    (threshold: ${CAP30_P95_THRESHOLD_MS} ms)
+        │  p99:            ${worstP99.toFixed(2)} ms
+        │  max:            ${combined[combined.length - 1]?.toFixed(2) ?? '0'} ms
+        └──────────────────────────────────────────────────────────────────────
+      `);
+
+      expect(totalFailure).toBe(0);
+      expect(errorRate).toBeLessThan(MAX_ERROR_RATE);
+      expect(worstP95).toBeLessThan(CAP30_P95_THRESHOLD_MS);
+    },
+    120_000,
   );
 });

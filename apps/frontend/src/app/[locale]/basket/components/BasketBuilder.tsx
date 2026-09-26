@@ -19,6 +19,10 @@
  */
 
 import { useState, useCallback, useRef } from 'react';
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import type { ProductSearchItem } from '@/lib/types';
 import { searchProducts } from '@/lib/api';
@@ -265,6 +269,17 @@ export default function BasketBuilder({
           <h2 className="text-sm font-semibold text-gray-700">
             {t('basketTitle', { count: items.length, max: maxItems })}
           </h2>
+          {/* Literal used/capacity counter — the numbers render as-is so
+              the cap is visible before it is hit; the localized heading
+              above carries the same counts for assistive tech, so the
+              duplicate digit pair stays hidden from it. */}
+          <span
+            data-testid="basket-item-progress"
+            aria-hidden="true"
+            className="text-xs font-medium tabular-nums text-gray-500"
+          >
+            {items.length}/{maxItems}
+          </span>
         </div>
 
         {items.length === 0 ? (

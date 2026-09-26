@@ -5,7 +5,7 @@
  *
  * ## Phase constraints
  *
- * - Caps: MAX_BASKET_ITEMS (10) items, MAX_CANDIDATE_MERCHANTS_PER_ITEM (8)
+ * - Caps: MAX_BASKET_ITEMS (30) items, MAX_CANDIDATE_MERCHANTS_PER_ITEM (8)
  *   candidates per item.  Exceeding either throws BasketValidationError.
  * - Total-combinations guard: the Cartesian product of per-item candidates
  *   is capped at MAX_TOTAL_COMBINATIONS; exceeding it throws

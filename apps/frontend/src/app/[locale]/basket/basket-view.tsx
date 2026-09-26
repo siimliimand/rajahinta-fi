@@ -16,8 +16,8 @@ import BasketResults from './components/BasketResults';
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Maximum items the builder allows (server-side cap is also 10). */
-const MAX_ITEMS = 10;
+/** Maximum items the builder allows (server-side cap is also 30). */
+const MAX_ITEMS = 30;
 
 /** Default destination country (Finland). */
 const DEFAULT_DESTINATION = 'FI';

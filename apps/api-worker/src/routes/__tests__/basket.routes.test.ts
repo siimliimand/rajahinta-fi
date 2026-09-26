@@ -52,14 +52,14 @@ describe('POST /api/v1/basket/optimize — validation (controller parity)', () =
   it('rejects more than MAX_BASKET_ITEMS items', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
-    const items = Array.from({ length: 11 }, (_, i) => ({ productId: i + 1, quantity: 1 }));
+    const items = Array.from({ length: 31 }, (_, i) => ({ productId: i + 1, quantity: 1 }));
     const res = await request(app, permissiveEnv(d1), '/api/v1/basket/optimize', {
       method: 'POST',
       headers: JSON_HDRS,
       body: JSON.stringify({ items, destination: 'FI' }),
     });
     await expectEnvelope(res, 400, {
-      message: 'items must contain at most 10 items',
+      message: 'items must contain at most 30 items',
       error: 'ValidationError',
     });
   });
