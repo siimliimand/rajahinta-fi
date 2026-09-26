@@ -11,7 +11,10 @@
  *
  * Reads go through the D1 product-search repository (FTS5 + LIKE
  * fallback, task 2.2); the alphabetical sort and pagination semantics are
- * copied verbatim. The detail response embeds per-merchant reliability
+ * copied verbatim, extended by the objective server-side sort orders
+ * (task 1.2, change client-experience-improvement: ALPHABETICAL default,
+ * LOWEST_PRICE, ALCOHOL_PERCENTAGE — unknown values 400 like unknown
+ * categories). The detail response embeds per-merchant reliability
  * scores (informational only — see src/services/merchant-reliability.ts).
  * Search items and detail offers carry the read-time €/g metric
  * (`eurPerGram`) with its status.
@@ -40,9 +43,11 @@ import {
   merchantsForProducts,
 } from '../services/merchant-warnings';
 import {
+  CATALOG_SORT_ORDERS,
   D1ProductSearchRepository,
   type CatalogProductListItem,
   type CatalogProductListPage,
+  type CatalogSortOrder,
 } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 // Deep source import (route-file parity — see the header comment): the
 // canonical category set is defined ONCE in the D1 schema module (design
@@ -64,6 +69,26 @@ function isCanonicalCategory(value: string): value is ProductCategory {
   return (PRODUCT_CATEGORIES as readonly string[]).includes(value);
 }
 
+/**
+ * `sort` parameter (task 1.2, change client-experience-improvement) —
+ * parsed against the repository's shared order set. Blank counts as
+ * absent (default alphabetical), matching the q/ids/category blankness
+ * handling; an unknown value is a contract-level parameter error — a 400
+ * with the same shape as the unknown-category treatment, never a silent
+ * fallback (proposal decision D3).
+ */
+function parseSortOrder(raw: string | undefined): CatalogSortOrder {
+  const trimmed = raw?.trim() ?? '';
+  if (trimmed.length === 0) return 'ALPHABETICAL';
+  if ((CATALOG_SORT_ORDERS as readonly string[]).includes(trimmed)) {
+    return trimmed as CatalogSortOrder;
+  }
+  throw new ApiHttpError(
+    400,
+    `Unknown sort '${trimmed}'. Valid sort orders: ${CATALOG_SORT_ORDERS.join(', ')}.`,
+  );
+}
+
 /** Alphabetical comparison by Finnish-collated name (controller parity). */
 function compareByName(
   a: { name: string },
@@ -78,6 +103,50 @@ function compareByNameThenId(
   b: { name: string; id: number },
 ): number {
   return compareByName(a, b) || a.id - b.id;
+}
+
+/**
+ * Lowest-price ordering (task 1.2): ascending by the lowest observed
+ * offer price, products without offers last (honest absence is not a
+ * price), product id as the deterministic tie.
+ */
+function compareByLowestPriceThenId(a: SearchItem, b: SearchItem): number {
+  if (a.lowestPriceCents === null || b.lowestPriceCents === null) {
+    if (a.lowestPriceCents === b.lowestPriceCents) return a.id - b.id;
+    return a.lowestPriceCents === null ? 1 : -1;
+  }
+  return a.lowestPriceCents - b.lowestPriceCents || a.id - b.id;
+}
+
+/**
+ * ABV ordering (task 1.2): descending alcohol by volume, products with
+ * unknown ABV last, product id as the deterministic tie.
+ */
+function compareByAlcoholDescThenId(a: SearchItem, b: SearchItem): number {
+  if (a.alcoholByVolume === null || b.alcoholByVolume === null) {
+    if (a.alcoholByVolume === b.alcoholByVolume) return a.id - b.id;
+    return a.alcoholByVolume === null ? 1 : -1;
+  }
+  return b.alcoholByVolume - a.alcoholByVolume || a.id - b.id;
+}
+
+/**
+ * The item comparator for an explicit sort over the ids/ranked-q paths
+ * (task 1.2). These paths fetch product rows without the repository's
+ * SQL key ordering, so the same objective order is applied app-side over
+ * the fetched set.
+ */
+function compareBySortOrder(
+  sortBy: CatalogSortOrder,
+): (a: SearchItem, b: SearchItem) => number {
+  switch (sortBy) {
+    case 'LOWEST_PRICE':
+      return compareByLowestPriceThenId;
+    case 'ALCOHOL_PERCENTAGE':
+      return compareByAlcoholDescThenId;
+    default:
+      return compareByNameThenId;
+  }
 }
 
 /** Product row projection used by the search item mapping. */
@@ -297,14 +366,9 @@ async function search(c: Context<AppEnv>): Promise<Response> {
 
   const pageNum = parsePositiveInt(page, 1);
   const limitNum = Math.min(parsePositiveInt(limit, DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
-  const sortBy = sort ?? 'ALPHABETICAL';
-
-  if (sortBy !== 'ALPHABETICAL') {
-    throw new ApiHttpError(
-      400,
-      `Sort order '${sortBy}' is not supported in Phase 1. Only ALPHABETICAL is available.`,
-    );
-  }
+  // Raised outside the try below so the parameter error renders as its own
+  // 400, never a wrapped 500 (unknown-category treatment parity).
+  const sortBy = parseSortOrder(sort);
 
   // Category validation against the shared canonical set (design D2,
   // change product-catalog): an unknown value is a contract-level
@@ -343,48 +407,51 @@ async function search(c: Context<AppEnv>): Promise<Response> {
       items = products
         .filter((p): p is NonNullable<typeof p> => p !== null)
         .map((p) => toSearchItemResponse(p));
-      items.sort(compareByName);
+      // Aggregates merge BEFORE ordering — LOWEST_PRICE sorts on them
+      // (task 1.2). Order-neutral for ALPHABETICAL.
+      items = withOfferAggregates(
+        items,
+        await offerAggregatesByProductId(c.env.DB, items.map((item) => item.id)),
+      );
+      items.sort(
+        sortBy === 'ALPHABETICAL' ? compareByName : compareBySortOrder(sortBy),
+      );
     } else if (query.length > 0) {
       // Ranked search — the repository ranks (relevance order); an
       // explicit sort is honored over the filtered set.
       const products = await repo.searchRanked(query, MAX_PAGE_SIZE);
       items = products.map((p) => toSearchItemResponse(p));
+      // Same pre-ordering aggregate merge as the ids path — the sort key
+      // must be the real offer figure, never the null/0 placeholder.
+      items = withOfferAggregates(
+        items,
+        await offerAggregatesByProductId(c.env.DB, items.map((item) => item.id)),
+      );
       if (sort !== undefined) {
-        items.sort(compareByNameThenId);
+        items.sort(compareBySortOrder(sortBy));
       }
     } else {
       // Blank or absent q — the catalog listing (design D3, change
       // product-catalog): the repository paginates (exact totals, FI
-      // collation) and aggregates the page's offers (design D4).
+      // collation; task 1.2 adds the objective sort orders) and
+      // aggregates the page's offers (design D4).
       catalogPage = await repo.listCatalogPage(
         pageNum,
         limitNum,
         categoryParam,
+        sortBy,
       );
       items = catalogPage.items.map(toCatalogItem);
     }
 
     const start = (pageNum - 1) * limitNum;
-    let paginated =
+    const paginated =
       catalogPage !== undefined ? items : items.slice(start, start + limitNum);
     const total = catalogPage !== undefined ? catalogPage.total : items.length;
 
-    // Search-row offer aggregates (task 3.1, change
-    // unit-integrity-and-result-trust): the ids and ranked-q paths map
-    // plain product rows whose placeholders (null/0) contradicted the
-    // detail endpoint for the same id — a kippis row reported null/0
-    // while detail listed its offers. The merge covers exactly this
-    // page's rows (bounded IN list); the catalog browse path keeps the
-    // repository's own page aggregates untouched.
-    if (catalogPage === undefined) {
-      paginated = withOfferAggregates(
-        paginated,
-        await offerAggregatesByProductId(
-          c.env.DB,
-          paginated.map((item) => item.id),
-        ),
-      );
-    }
+    // The ids/ranked-q paths merged their offer aggregates before the
+    // sort above (bounded IN list over the fetched rows); the catalog
+    // browse path keeps the repository's own page aggregates untouched.
 
     // Additive merchantWarnings join (task 2.2): the merchants of this
     // page's products' offers, matched against PUBLISHED blacklist

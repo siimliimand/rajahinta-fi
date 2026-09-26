@@ -131,7 +131,7 @@ describe('GET /api/v1/products (search)', () => {
     expect(cappedBody.limit).toBe(100);
   });
 
-  it('rejects non-alphabetical sort orders with the Phase 1 message', async () => {
+  it('rejects an unknown sort value with 400 — never a silent fallback (task 1.2)', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
     const res = await request(
@@ -140,10 +140,176 @@ describe('GET /api/v1/products (search)', () => {
       '/api/v1/products?sort=LOWEST_LANDED_COST',
       { headers: AGE },
     );
+    // The unknown-sort treatment matches the unknown-category contract:
+    // unified envelope, the offending value echoed, the valid set named.
     await expectEnvelope(res, 400, {
       message:
-        "Sort order 'LOWEST_LANDED_COST' is not supported in Phase 1. Only ALPHABETICAL is available.",
+        "Unknown sort 'LOWEST_LANDED_COST'. Valid sort orders: ALPHABETICAL, LOWEST_PRICE, ALCOHOL_PERCENTAGE.",
     });
+  });
+
+  it('rejects the spec-name unknown sort value (PROMOTED) the same way', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products?sort=PROMOTED', {
+      headers: AGE,
+    });
+    await expectEnvelope(res, 400, {
+      message:
+        "Unknown sort 'PROMOTED'. Valid sort orders: ALPHABETICAL, LOWEST_PRICE, ALCOHOL_PERCENTAGE.",
+    });
+  });
+});
+
+describe('GET /api/v1/products — server-side sort (task 1.2, change client-experience-improvement)', () => {
+  /**
+   * Catalog fixture: four priced products with distinct lowest prices, a
+   * price tie (ids 5/6) and one offer-less product — the offer-less row
+   * must sort LAST, never fabricated into the priced order.
+   */
+  function seedSortCatalog(db: DatabaseSync): void {
+    seedProduct(db, { id: 1, name: 'Karhu III', alcoholByVolume: 0.047, unitVolume: 0.33 });
+    seedOffer(db, { id: 11, productId: 1, merchant: 'alko', priceCents: 350 });
+    seedProduct(db, { id: 2, name: 'Koff III', alcoholByVolume: 0.035, unitVolume: 0.33 });
+    seedOffer(db, { id: 21, productId: 2, merchant: 'alko', priceCents: 250 });
+    seedProduct(db, { id: 3, name: 'Sandels IVA', alcoholByVolume: 0.053, unitVolume: 0.5 });
+    seedOffer(db, { id: 31, productId: 3, merchant: 'alko', priceCents: 480 });
+    seedProduct(db, { id: 4, name: 'Lapin Kulta', alcoholByVolume: 0.043, unitVolume: 0.33 });
+    seedOffer(db, { id: 41, productId: 4, merchant: 'alko', priceCents: 350 });
+    seedProduct(db, { id: 5, name: 'Olvi I', alcoholByVolume: 0.047, unitVolume: 0.33 });
+    seedOffer(db, { id: 51, productId: 5, merchant: 'alko', priceCents: 290 });
+    seedProduct(db, { id: 6, name: 'Olvi II', alcoholByVolume: 0.047, unitVolume: 0.33 });
+    seedOffer(db, { id: 61, productId: 6, merchant: 'alko', priceCents: 290 });
+    seedProduct(db, { id: 7, name: 'Offerless Olut', alcoholByVolume: 0.047, unitVolume: 0.33 });
+  }
+
+  async function listIds(
+    app: ReturnType<typeof buildApp>,
+    env: ReturnType<typeof permissiveEnv>,
+    query: string,
+  ): Promise<{ body: Record<string, unknown>; ids: number[] }> {
+    const res = await request(app, env, `/api/v1/products?${query}`, { headers: AGE });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: Array<{ id: number }>;
+      [key: string]: unknown;
+    };
+    return { body, ids: body.items.map((i) => i.id) };
+  }
+
+  it('LOWEST_PRICE orders ascending by lowest observed price, offer-less products last', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedSortCatalog(db);
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const { ids } = await listIds(app, env, 'sort=LOWEST_PRICE');
+    // 250 (2) < 290 = 290 (5, 6 — id tie) < 350 = 350 (1, 4 — id tie) < 480 (3);
+    // product 7 has no offers — after every priced row.
+    expect(ids).toEqual([2, 5, 6, 1, 4, 3, 7]);
+  });
+
+  it('LOWEST_PRICE is deterministic — the same data yields the same order on every request', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedSortCatalog(db);
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const first = await listIds(app, env, 'sort=LOWEST_PRICE');
+    const second = await listIds(app, env, 'sort=LOWEST_PRICE');
+    expect(second.ids).toEqual(first.ids);
+    // And across a separate composition over identical seeds.
+    const other = openMigratedD1();
+    seedSortCatalog(other.db);
+    const third = await listIds(buildApp(), permissiveEnv(other.d1), 'sort=LOWEST_PRICE');
+    expect(third.ids).toEqual(first.ids);
+  });
+
+  it('ALCOHOL_PERCENTAGE orders descending with unknown ABV last and the id tiebreaker', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Vahva Olut', alcoholByVolume: 0.085 });
+    seedProduct(db, { id: 2, name: 'Keski Olut', alcoholByVolume: 0.047 });
+    seedProduct(db, { id: 3, name: 'Kevyt Olut', alcoholByVolume: 0.035 });
+    // Two rows share the ABV — the id tiebreak resolves them deterministically.
+    seedProduct(db, { id: 4, name: 'Tasu A', alcoholByVolume: 0.053 });
+    seedProduct(db, { id: 5, name: 'Tasu B', alcoholByVolume: 0.053 });
+    seedProduct(db, { id: 6, name: 'Tuntematon', alcoholByVolume: null });
+    const app = buildApp();
+
+    const { ids } = await listIds(buildApp(), permissiveEnv(d1), 'sort=ALCOHOL_PERCENTAGE');
+    expect(ids).toEqual([1, 4, 5, 2, 3, 6]);
+  });
+
+  it('ALCOHOL_PERCENTAGE is deterministic across repeat requests', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'A', alcoholByVolume: 0.05 });
+    seedProduct(db, { id: 2, name: 'B', alcoholByVolume: 0.04 });
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const first = await listIds(app, env, 'sort=ALCOHOL_PERCENTAGE');
+    const second = await listIds(app, env, 'sort=ALCOHOL_PERCENTAGE');
+    expect(second.ids).toEqual(first.ids);
+  });
+
+  it('LOWEST_PRICE composes with the category filter and keeps the exact total', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III', category: 'beer' });
+    seedOffer(db, { id: 11, productId: 1, merchant: 'alko', priceCents: 350 });
+    seedProduct(db, { id: 2, name: 'Franzia', category: 'wine_still' });
+    seedOffer(db, { id: 21, productId: 2, merchant: 'alko', priceCents: 900 });
+    seedProduct(db, { id: 3, name: 'Apijo', category: 'wine_still' });
+    seedOffer(db, { id: 31, productId: 3, merchant: 'alko', priceCents: 700 });
+    seedProduct(db, { id: 4, name: 'Offerless Viini', category: 'wine_still' });
+    const app = buildApp();
+
+    const { body, ids } = await listIds(
+      buildApp(),
+      permissiveEnv(d1),
+      'category=wine_still&sort=LOWEST_PRICE',
+    );
+    expect(body.total).toBe(3); // exact filtered total, not the priced subset
+    expect(ids).toEqual([3, 2, 4]); // price asc within the category, offer-less last
+  });
+
+  it('the ranked-q path honors LOWEST_PRICE over real offer aggregates', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III' });
+    seedOffer(db, { id: 11, productId: 1, merchant: 'alko', priceCents: 350 });
+    seedProduct(db, { id: 2, name: 'Koff III' });
+    seedOffer(db, { id: 21, productId: 2, merchant: 'alko', priceCents: 250 });
+    seedProduct(db, { id: 3, name: 'Offerless III' });
+    const app = buildApp();
+
+    const { ids } = await listIds(app, permissiveEnv(d1), 'q=iii&sort=LOWEST_PRICE');
+    // The ranked fetch returns all three rows (name match); the sort
+    // reorders by the merged aggregate — offer-less row last.
+    expect([...ids].sort((a, b) => a - b)).toEqual([1, 2, 3]);
+    expect(ids[ids.length - 1]).toBe(3);
+  });
+
+  it('the ids path honors ALCOHOL_PERCENTAGE instead of name order', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III', alcoholByVolume: 0.047 });
+    seedProduct(db, { id: 2, name: 'Bock Svec', alcoholByVolume: 0.085 });
+    const app = buildApp();
+
+    const { ids } = await listIds(
+      app,
+      permissiveEnv(d1),
+      'ids=1,2&sort=ALCOHOL_PERCENTAGE',
+    );
+    expect(ids).toEqual([2, 1]);
+  });
+
+  it('an omitted sort keeps the alphabetical default unchanged', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedSortCatalog(db);
+    const app = buildApp();
+
+    const { ids } = await listIds(app, permissiveEnv(d1), '');
+    // FI-collation name order of the seven fixtures.
+    expect(ids).toEqual([1, 2, 4, 7, 5, 6, 3]);
   });
 });
 
