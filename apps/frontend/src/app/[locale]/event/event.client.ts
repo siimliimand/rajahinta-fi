@@ -71,3 +71,39 @@ export async function calculateEventPlan(
     body: JSON.stringify(input),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Category price benchmarks (task 3.2, change client-experience-improvement)
+// ---------------------------------------------------------------------------
+
+/** One segment figure of the category-averages benchmark. */
+export interface CategoryBenchmarkFigures {
+  readonly averageCentsPerLitre: number;
+  readonly offerCount: number;
+  readonly productCount: number;
+  readonly asOf: string;
+  readonly reliabilityStatus: string;
+}
+
+/** One category's benchmark row — a segment without coverage is null. */
+export interface CategoryBenchmarkRow {
+  readonly category: string;
+  readonly alko: CategoryBenchmarkFigures | null;
+  readonly crossBorder: CategoryBenchmarkFigures | null;
+}
+
+/**
+ * Fetch the per-category average €/l benchmarks
+ * (GET /api/v1/benchmarks/category-averages). PRE-FILL DISPLAY ONLY:
+ * the figures ever serve as ordinary editable form defaults — they never
+ * enter a calculation on their own (spec price-benchmarks: benchmarks
+ * are display-only).
+ *
+ * @throws {@link ApiFetchError} on non-2xx.
+ */
+export async function fetchCategoryAverages(): Promise<CategoryBenchmarkRow[]> {
+  const body = await request<{ categories: CategoryBenchmarkRow[] }>(
+    '/api/v1/benchmarks/category-averages',
+  );
+  return body.categories;
+}

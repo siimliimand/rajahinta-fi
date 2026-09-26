@@ -27,8 +27,10 @@ import {
 } from '@/lib/api';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import type { PriceHistoryResponse, ProductDetailResponse } from '@/lib/types';
+import { Badge, type BadgeTone } from '@/components/ui';
 import MerchantWarningNotice from '../../components/MerchantWarningNotice';
 import { MerchantLink } from '../../compare/components/MerchantLink';
+import { SellingDistanceBadge } from '../../compare/components/SellingDistanceBadge';
 import ProductAlertAction from './components/ProductAlertAction';
 import ProductDupesPanel from './components/ProductDupesPanel';
 import ProductPriceContextLine from './components/ProductPriceContextLine';
@@ -79,6 +81,34 @@ function isContainerTypeKey(
 ): value is (typeof CONTAINER_TYPE_KEYS)[number] {
   return (CONTAINER_TYPE_KEYS as readonly string[]).includes(value);
 }
+
+// ── Stock availability display (task 4.1, change
+//    client-experience-improvement) ──
+
+/**
+ * Stock states the availability badge renders — exactly the
+ * `retail_offers.availability` states the feeds write. Any other value
+ * ('unknown' or an unrecognized state) renders NO badge: honest absence,
+ * never a guessed stock state (the design ladder's absence principle).
+ */
+const AVAILABILITY_STATES = ['in_stock', 'low_stock', 'out_of_stock'] as const;
+
+type AvailabilityState = (typeof AVAILABILITY_STATES)[number];
+
+function isAvailabilityState(value: string): value is AvailabilityState {
+  return (AVAILABILITY_STATES as readonly string[]).includes(value);
+}
+
+/**
+ * Badge tone per stock state — the canonical ladder: observed-in-stock is
+ * VERIFIED green, low stock is STALE amber, and out-of-stock is
+ * UNAVAILABLE gray (absence, not danger — red stays reserved for errors).
+ */
+const AVAILABILITY_TONES = {
+  in_stock: 'verified',
+  low_stock: 'stale',
+  out_of_stock: 'unavailable',
+} as const satisfies Record<AvailabilityState, BadgeTone>;
 
 /** Format a Date as an ISO date 'YYYY-MM-DD' (UTC). */
 function toIsoDate(ms: number): string {
@@ -311,46 +341,90 @@ export default async function ProductPage({ params }: ProductPageProps) {
               <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
                 <th className="pb-2 pr-4 font-medium">{t('merchantHeader')}</th>
                 <th className="pb-2 pr-4 font-medium">{t('priceHeader')}</th>
+                <th className="pb-2 pr-4 font-medium">{t('availabilityHeader')}</th>
                 <th className="pb-2 pr-4 font-medium">{t('countryHeader')}</th>
                 <th className="pb-2 font-medium">{t('observedHeader')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {offers.map((offer) => (
-                <tr key={offer.id}>
-                  <td className="py-2 pr-4 font-medium text-gray-900">
-                    {offer.merchant}
-                    {/* Outbound CTA (task 2.2): routes through the shared
-                        /api/v1/outbound/:offerId redirect controller, the
-                        same click-recording path the compare page uses —
-                        the redirect records the click server-side, so no
-                        client callback rides along. Offers without a
-                        source URL stay plain text. */}
-                    {offer.sourceUrl && (
+              {offers.map((offer) => {
+                // Stock badge (task 4.1): the last observed availability as
+                // a localized badge; an unknown state renders no badge.
+                // Out-of-stock rows stay visible (price-history context)
+                // but de-emphasized.
+                const outOfStock = offer.availability === 'out_of_stock';
+                const rowClasses = outOfStock
+                  ? 'opacity-60'
+                  : undefined;
+                return (
+                  <tr key={offer.id} className={rowClasses}>
+                    <td className="py-2 pr-4 font-medium text-gray-900">
+                      {offer.merchant}
+                      {/* Outbound CTA (task 2.2): routes through the shared
+                          /api/v1/outbound/:offerId redirect controller, the
+                          same click-recording path the compare page uses —
+                          the redirect records the click server-side, so no
+                          client callback rides along. Offers without a
+                          source URL stay plain text. */}
+                      {offer.sourceUrl && (
+                        <span className="mt-1.5 block">
+                          <MerchantLink
+                            label={t('viewAtStore')}
+                            offerId={offer.id}
+                            variant="cta"
+                          />
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-4 text-gray-700">
+                      {(offer.priceCents / 100).toFixed(2)}{' '}
+                      {offer.currency === 'EUR' ? '€' : offer.currency}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {isAvailabilityState(offer.availability) ? (
+                        <Badge
+                          tone={AVAILABILITY_TONES[offer.availability]}
+                          size="sm"
+                        >
+                          {t(`availability.${offer.availability}`)}
+                        </Badge>
+                      ) : null}
+                    </td>
+                    <td className="py-2 pr-4 text-gray-500">
+                      {countryName(offer.country, locale)}
+                      {/* Distance-selling status badge (task 4.2):
+                          derived from the seller-country signal only —
+                          FI seller → Etämyynti, foreign → Etäosto with
+                          the guides link. Additive display field: it
+                          never enters a calculation or ranking input,
+                          and the framing note below states the general-
+                          information, not-legal-advice boundary. */}
                       <span className="mt-1.5 block">
-                        <MerchantLink
-                          label={t('viewAtStore')}
-                          offerId={offer.id}
-                          variant="cta"
+                        <SellingDistanceBadge
+                          country={offer.country}
+                          sellingLabel={t('distanceSellingBadge')}
+                          buyingLabel={t('distanceBuyingBadge')}
+                          guideHref={locale === 'en' ? '/en/guides' : '/guides'}
                         />
                       </span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4 text-gray-700">
-                    {(offer.priceCents / 100).toFixed(2)}{' '}
-                    {offer.currency === 'EUR' ? '€' : offer.currency}
-                  </td>
-                  <td className="py-2 pr-4 text-gray-500">
-                    {countryName(offer.country, locale)}
-                  </td>
-                  <td className="py-2 text-gray-500">
-                    {formatObserved(offer.observedAt, locale)}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="py-2 text-gray-500">
+                      {formatObserved(offer.observedAt, locale)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
+
+        {/* ── Distance-selling framing (task 4.2): general information,
+            not legal advice — empowering, never a warning. ── */}
+        {offers.length > 0 ? (
+          <p className="mt-3 text-xs text-gray-400">
+            {t('distanceSellingNote')}
+          </p>
+        ) : null}
       </section>
 
       {/* ── Price-context line (insight-surfaces 3.3) — derives from the

@@ -1080,3 +1080,92 @@ describe('D1ProductSearchRepository.listCatalogPage — objective sort orders (t
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Combined category + keyword search (task 2.1, change
+// client-experience-improvement) — isolated fixture DB so the shared-
+// database describes above are untouched. Spec product-search: when both
+// q and category are present the result set contains only keyword matches
+// whose category equals the value — the category is never silently
+// ignored because a keyword is present.
+// ---------------------------------------------------------------------------
+
+describe('D1ProductSearchRepository.searchRanked — combined category + keyword (task 2.1)', () => {
+  const combDb = openMigratedD1();
+  const combRepo = new D1ProductSearchRepository(combDb.d1);
+
+  beforeAll(async () => {
+    // Two beer rows and one wine row that ALL match 'karhu', plus a beer
+    // row that does not match — the combined path must exclude exactly
+    // the cross-category match, never the in-category non-match's
+    // siblings.
+    const rows = [
+      { id: 4001, name: 'Karhu Pinta', brand: 'Karhu', category: 'beer' },
+      { id: 4002, name: 'Karhu III Velvet', brand: 'Karhu', category: 'beer' },
+      { id: 4003, name: 'Karhuvuori Punaviini', brand: 'Karhuvuori', category: 'wine_still' },
+      { id: 4004, name: 'Koff III', brand: 'Koff', category: 'beer' },
+    ];
+    for (const r of rows) {
+      await combRepo.create({
+        id: r.id,
+        name: r.name,
+        manufacturer: 'Yhdistelmä Panimo',
+        brand: r.brand,
+        category: r.category,
+        alcoholByVolume: '0.047',
+        unitVolume: '0.33',
+        containerType: 'can',
+        regulatoryClassification: r.category,
+        depositSystemStatus: true,
+        ean: null,
+      });
+    }
+  });
+
+  it('applies the category together with q — only keyword matches in the category', async () => {
+    const combined = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'beer');
+    expect(combined).toHaveLength(2);
+    expect(combined.map((r) => r.id)).toEqual(expect.arrayContaining([4001, 4002]));
+    expect(combined.every((r) => r.category === 'beer')).toBe(true);
+  });
+
+  it('never silently ignores the category — the unfiltered ranking contains the excluded row', async () => {
+    const unfiltered = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE);
+    expect(unfiltered.map((r) => r.id)).toEqual(
+      expect.arrayContaining([4001, 4002, 4003]),
+    );
+    const combined = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'beer');
+    expect(combined.map((r) => r.id)).not.toContain(4003);
+  });
+
+  it('the LIKE recall path respects the combined filter too', async () => {
+    // 'karhuvuor' is a mid-token substring — FTS prefix cannot express
+    // it; only the LIKE merge finds the row. With the category filter it
+    // survives in wine_still and is excluded from beer.
+    const wine = await combRepo.searchRanked('karhuvuor', MAX_PAGE_SIZE, 'wine_still');
+    expect(wine.map((r) => r.id)).toEqual([4003]);
+    const beer = await combRepo.searchRanked('karhuvuor', MAX_PAGE_SIZE, 'beer');
+    expect(beer).toEqual([]);
+  });
+
+  it('zero combined matches is an honest empty set, not a fallback', async () => {
+    // Karhu matches exist, but none in spirits — no silent unfiltered
+    // fallback, no other-category rows.
+    const none = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'spirits');
+    expect(none).toEqual([]);
+  });
+
+  it('the limit applies to the combined set — a prefix of the combined order', async () => {
+    const full = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'beer');
+    for (const k of [1, 2]) {
+      const sliced = await combRepo.searchRanked('karhu', k, 'beer');
+      expect(sliced.map((r) => r.id)).toEqual(full.slice(0, k).map((r) => r.id));
+    }
+  });
+
+  it('is deterministic across repeated combined calls', async () => {
+    const first = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'beer');
+    const second = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'beer');
+    expect(first.map((r) => r.id)).toEqual(second.map((r) => r.id));
+  });
+});

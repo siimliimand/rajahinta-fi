@@ -417,9 +417,17 @@ async function search(c: Context<AppEnv>): Promise<Response> {
         sortBy === 'ALPHABETICAL' ? compareByName : compareBySortOrder(sortBy),
       );
     } else if (query.length > 0) {
-      // Ranked search — the repository ranks (relevance order); an
-      // explicit sort is honored over the filtered set.
-      const products = await repo.searchRanked(query, MAX_PAGE_SIZE);
+      // Ranked search — combined category+q filtering (task 2.1, change
+      // client-experience-improvement): the repository applies the
+      // category together with the keyword, so the result set contains
+      // only keyword matches in the category. The category is NEVER
+      // silently ignored because q is present (spec product-search); an
+      // explicit sort honors over the filtered set.
+      const products = await repo.searchRanked(
+        query,
+        MAX_PAGE_SIZE,
+        categoryParam,
+      );
       items = products.map((p) => toSearchItemResponse(p));
       // Same pre-ordering aggregate merge as the ids path — the sort key
       // must be the real offer figure, never the null/0 placeholder.

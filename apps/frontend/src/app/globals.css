@@ -171,6 +171,19 @@
 
 @layer utilities {
   /*
+   * ≥44 px effective touch target (web-application spec, mobile-first
+   * interaction standards, task 5.4): apply to pill links, pagination
+   * controls, quantity steppers, sort/filter controls, and any other
+   * compact interactive element so thumbs land reliably on small
+   * viewports. Combine with the element's own padding; this utility only
+   * floors the box dimensions.
+   */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /*
    * Euro amounts render with tabular numerals so digits occupy stable
    * widths — money columns and totals stay aligned (D3). Apply to any
    * element that renders a monetary value.

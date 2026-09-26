@@ -313,6 +313,102 @@ describe('GET /api/v1/products — server-side sort (task 1.2, change client-exp
   });
 });
 
+describe('GET /api/v1/products — combined category + keyword (task 2.1, change client-experience-improvement)', () => {
+  /**
+   * Three rows ALL matching 'karhu' across two categories, plus a
+   * same-category non-match: the combined path must exclude exactly the
+   * cross-category match and nothing else.
+   */
+  function seedCombined(db: DatabaseSync): void {
+    seedProduct(db, { id: 1, name: 'Karhu III', brand: 'Karhu', category: 'beer' });
+    seedProduct(db, {
+      id: 2,
+      name: 'Karhuvuori Vaalea',
+      brand: 'Karhuvuori',
+      category: 'wine_still',
+    });
+    seedProduct(db, { id: 3, name: 'Karhu IV', brand: 'Karhu', category: 'beer' });
+    seedProduct(db, { id: 4, name: 'Koff III', brand: 'Koff', category: 'beer' });
+  }
+
+  it('applies the category together with q — only keyword matches in the category', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedCombined(db);
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      permissiveEnv(d1),
+      '/api/v1/products?q=karhu&category=beer',
+      { headers: AGE },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: Array<{ id: number; category: string }>;
+      total: number;
+    };
+    expect(body.total).toBe(2);
+    expect(body.items.map((i) => i.id).sort((a, b) => a - b)).toEqual([1, 3]);
+    expect(body.items.every((i) => i.category === 'beer')).toBe(true);
+  });
+
+  it('never silently ignores the category — the same q without it finds the wine row', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedCombined(db);
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products?q=karhu', {
+      headers: AGE,
+    });
+    const body = (await res.json()) as { items: Array<{ id: number }>; total: number };
+    expect(body.total).toBe(3);
+    expect(body.items.map((i) => i.id)).toContain(2);
+  });
+
+  it('a combined q+category with zero matches renders as an honest empty set', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedCombined(db);
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      permissiveEnv(d1),
+      '/api/v1/products?q=karhu&category=spirits',
+      { headers: AGE },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: unknown[]; total: number };
+    expect(body.total).toBe(0);
+    expect(body.items).toEqual([]);
+  });
+
+  it('an explicit sort composes with the combined filter — it orders the filtered set only', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedCombined(db);
+    // The wine row is the CHEAPEST karhu match — LOWEST_PRICE over the
+    // combined beer set must never let it in or displace the beer order.
+    seedOffer(db, { id: 11, productId: 1, merchant: 'alko', priceCents: 350 });
+    seedOffer(db, { id: 21, productId: 2, merchant: 'alko', priceCents: 100 });
+    seedOffer(db, { id: 31, productId: 3, merchant: 'alko', priceCents: 250 });
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      permissiveEnv(d1),
+      '/api/v1/products?q=karhu&category=beer&sort=LOWEST_PRICE',
+      { headers: AGE },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: Array<{ id: number; lowestPriceCents: number | null }>;
+      total: number;
+    };
+    expect(body.total).toBe(2);
+    expect(body.items.map((i) => i.id)).toEqual([3, 1]); // 250 < 350, offer shape intact
+    expect(body.items.map((i) => i.lowestPriceCents)).toEqual([250, 350]);
+  });
+});
+
 describe('GET /api/v1/products — catalog browse (task 2.1, change product-catalog)', () => {
   it('filters by a canonical category with deterministic FI order', async () => {
     const { db, d1 } = openMigratedD1();

@@ -72,11 +72,13 @@ export default function QuantitySelector({
         {t('label')}
       </label>
       <div className="flex items-center">
+        {/* 44 px steppers (task 5.4): the ± controls are the quantity
+            touch targets on small viewports. */}
         <button
           type="button"
           onClick={decrement}
           disabled={value <= min}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-l-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-l-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
           aria-label={t('decrease')}
         >
           −
@@ -89,13 +91,13 @@ export default function QuantitySelector({
           onChange={handleChange}
           min={min}
           max={max}
-          className="h-8 w-16 border-y border-gray-300 text-center text-sm [-moz-appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="h-11 w-16 border-y border-gray-300 text-center text-sm [-moz-appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
         <button
           type="button"
           onClick={increment}
           disabled={value >= max}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-r-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-r-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
           aria-label={t('increase')}
         >
           +

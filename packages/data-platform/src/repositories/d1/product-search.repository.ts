@@ -251,6 +251,24 @@ const FTS_SEARCH_SQL = `
    ORDER BY ${BM25_COLUMN_WEIGHTS} ASC, p.id ASC
    LIMIT ?`;
 
+/**
+ * FTS candidates narrowed by a category filter (task 2.1, change
+ * client-experience-improvement) — the combined q+category path. The
+ * category predicate lives INSIDE the candidate query, before LIMIT, so
+ * the ranked fetch can never evict an in-category match in favor of an
+ * out-of-category one; the limit applies to the combined result set.
+ */
+const FTS_SEARCH_IN_CATEGORY_SQL = `
+  SELECT p.id, p.name, p.manufacturer, p.brand, p.category,
+         p.alcohol_by_volume, p.unit_volume, p.container_type,
+         p.regulatory_classification, p.deposit_system_status, p.ean,
+         p.weight_grams, p.created_at, p.updated_at
+    FROM product_master_fts f
+    JOIN product_master p ON p.id = f.rowid
+   WHERE product_master_fts MATCH ? AND p.category = ?
+   ORDER BY ${BM25_COLUMN_WEIGHTS} ASC, p.id ASC
+   LIMIT ?`;
+
 /** LIKE candidates — the ILIKE recall analogue; catches mid-token
  *  substrings ('arhu') the token-prefix match cannot express. LIKE is
  *  case-insensitive for ASCII in SQLite; non-ASCII case folding is
@@ -261,6 +279,21 @@ const RANKED_LIKE_SQL = `
    WHERE name LIKE ? ESCAPE '\\'
       OR brand LIKE ? ESCAPE '\\'
       OR manufacturer LIKE ? ESCAPE '\\'
+   ORDER BY id ASC
+   LIMIT ?`;
+
+/**
+ * LIKE candidates narrowed by a category filter (task 2.1) — the
+ * combined q+category recall path; the OR group is parenthesized so the
+ * category predicate conjoins the whole group, not the last arm.
+ */
+const RANKED_LIKE_IN_CATEGORY_SQL = `
+  SELECT ${PRODUCT_COLUMNS}
+    FROM product_master
+   WHERE (name LIKE ? ESCAPE '\\'
+       OR brand LIKE ? ESCAPE '\\'
+       OR manufacturer LIKE ? ESCAPE '\\')
+     AND category = ?
    ORDER BY id ASC
    LIMIT ?`;
 
@@ -423,22 +456,43 @@ export class D1ProductSearchRepository extends ProductRepository {
    * of the pg repository; blank/whitespace queries fall through to the
    * unfiltered alphabetical listing (defensive total-order parity with
    * the spike, which never throws on whitespace).
+   *
+   * `category` (task 2.1, change client-experience-improvement) narrows
+   * BOTH candidate paths with an exact-equality predicate, so the result
+   * contains only keyword matches whose category equals the value — the
+   * category is never silently ignored because a keyword is present
+   * (spec product-search). The value must be validated against
+   * PRODUCT_CATEGORIES by the caller (the API route 400s unknown values);
+   * like {@link D1ProductSearchRepository.listCatalogPage}, an
+   * unvalidated value filters strictly and yields zero rows. The limit
+   * applies to the combined result set: the candidate queries carry the
+   * category predicate before their LIMIT.
    */
   override async searchRanked(
     query: string,
     limit: number,
+    category?: string,
   ): Promise<ProductRecord[]> {
     const trimmed = query.trim();
     const tokens = tokenize(trimmed);
     if (tokens.length === 0) {
+      // Blank-query defensive path only — the route sends non-blank
+      // queries here and blanks to listCatalogPage, which owns category
+      // filtering for the browse shape.
       return this.listAlphabetical(limit);
     }
 
-    // 1) FTS5 candidates.
+    const filtered = category !== undefined;
+
+    // 1) FTS candidates.
     const ftsRows = (
       await this.d1
-        .prepare(FTS_SEARCH_SQL)
-        .bind(buildMatchExpression(tokens), limit)
+        .prepare(filtered ? FTS_SEARCH_IN_CATEGORY_SQL : FTS_SEARCH_SQL)
+        .bind(
+          buildMatchExpression(tokens),
+          ...(filtered ? [category] : []),
+          limit,
+        )
         .all<D1ProductRow>()
     ).results;
 
@@ -446,8 +500,14 @@ export class D1ProductSearchRepository extends ProductRepository {
     const pattern = likePattern(trimmed);
     const likeRows = (
       await this.d1
-        .prepare(RANKED_LIKE_SQL)
-        .bind(pattern, pattern, pattern, limit)
+        .prepare(filtered ? RANKED_LIKE_IN_CATEGORY_SQL : RANKED_LIKE_SQL)
+        .bind(
+          pattern,
+          pattern,
+          pattern,
+          ...(filtered ? [category] : []),
+          limit,
+        )
         .all<D1ProductRow>()
     ).results;
 
