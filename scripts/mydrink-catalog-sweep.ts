@@ -148,15 +148,6 @@ function categoryNamesOf(row: unknown): string[] {
   return names;
 }
 
-/** The row's trimmed name, or null when absent/empty (parser parity). */
-function rawNameOf(row: unknown): string | null {
-  if (typeof row !== 'object' || row === null) return null;
-  const name = (row as { name?: unknown }).name;
-  if (typeof name !== 'string') return null;
-  const trimmed = name.trim();
-  return trimmed === '' ? null : trimmed;
-}
-
 /** The row's `type` field, or '(missing)' — the per-type census key. */
 function rawTypeOf(row: unknown): string {
   if (typeof row !== 'object' || row === null) return '(missing)';
