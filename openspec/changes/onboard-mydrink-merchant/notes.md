@@ -72,7 +72,44 @@ The 12 disagreement rows: name tokens imply wine_sparkling while the category pa
 
 ## Task 3.1 — Local rollout
 
-(recorded by the implementing agent)
+**Date**: 2026-09-27. All steps LOCAL (`wrangler dev --port 8788`, `wrangler d1 execute DB --local` from apps/api-worker); live **read-only GETs** to mydrink.ee only; zero staging/production contact. `@rajahinta/core-domain` rebuilt first (`pnpm --filter @rajahinta/core-domain build` — the kippis 3.1 stale-dist lesson). Nothing committed; only this notes section touched.
+
+**Local D1 state found (read-only probes before any write)**: the local store had been **re-seeded since the kippis era** — registry = alko (empty feed URL, id 1) + alks (DE, **daily** 86,400,000, id 2), no longero/kippis rows; `source_governance` = 0 rows; `retail_offers` = 48 seed rows, zero mydrink; `product_master` = **47 rows** (baseline count; ids are sparse — seed rows carry high explicit ids, so match pre-existing rows by count/created_at, not `id <= 47`).
+
+### Registry + governance inserts (idempotent, no existing row touched)
+
+- Registry: `INSERT INTO merchant_registry (…) VALUES ('mydrink','MyDrink','EE','https://mydrink.ee','json',86400000) ON CONFLICT (merchant_id) DO NOTHING` — read-back row **id 3**, all fields exact per D5.
+- Governance: `NOT EXISTS`-guarded INSERT (no unique key — kippis/longero 3.1 pattern), `RETAILER_API`/`GRANTED`, sourceUrl `https://mydrink.ee/wp-json/wc/store/v1/products`, reason: "owner-operated site — documented scraping right (kippis/longero precedent); local GRANT for first-ingest verification". Read-back row **id 1**, all fields exact. alko/alks rows untouched; `depositSystem` not part of either table row (parser hardcodes false for foreign merchants — D5).
+
+### Producer tick + ingestion end-to-end (kippis 3.1 playbook)
+
+1. **Real-clock tick**: `curl /cdn-cgi/handler/scheduled?cron=0+*+*+*+*` → `enqueued 0/3 … (1 not due)` — alko no-URL skip + alks fail-closed skip (zero governance rows since the reseed) unchanged; mydrink **recognized as permitted and deferred by the daily interval-bucket gate** at 14:47 UTC.
+2. **Due-tick**: temporary vitest harness (deleted after the run) running the unmodified `schedulePriceIngestions` against real local bindings via `wrangler.getPlatformProxy` over the same `.wrangler/state`, with `now` = the next daily boundary pass (2026-09-28T00:30Z) and a send-spy wrapping the real queue binding. Result: `enqueued 1/3`, exactly one message `{"dedupeKey":"price-ingestion-mydrink-2026-09-28-00","merchantId":"mydrink","sourceUrl":"https://mydrink.ee"}` (asserted). First run-2 attempt at 01:30Z (same day bucket) correctly enqueued 0 — boundary not crossed; the faithful second-run shape is the next boundary pass.
+3. **Consumer handoff**: the running dev worker's queue consumer delivered the message itself (log: `Ingesting prices for merchant mydrink (dedupe key price-ingestion-mydrink-2026-09-28-00)` → `Handed off … to Workflow instance`) — no manual handoff needed.
+4. **Run 2**: same harness, `now` = 2026-09-29T00:30Z → key `price-ingestion-mydrink-2026-09-29-00`; consumer handoff identical. Instance list after both runs: exactly **one instance per key, both `complete`**.
+
+### Workflow results + idempotency evidence
+
+| | Run 1 (`…2026-09-28-00`) | Run 2 (`…2026-09-29-00`) |
+|---|---|---|
+| Instance status | complete, ≈30 s | complete |
+| `productsIngested` | **643** | **643** |
+| Error lines | 771 (all unique) | 771 (all unique) |
+| `retail_offers` mydrink | **643 rows / 643 products**, min 71 / max 175,026 c | 643 rows appended → **1,286 / 643 products**, exactly **2 `observed_at` batches** (14:50:21.702Z, 14:54:23.322Z = each run's fetch step) |
+| `product_master` | 47 → **690 (+643**, exact) | **690 — unchanged** |
+
+- Reconciliation both runs: 707 raw − 52 `no canonical beverage category` − 12 name/category disagreement (`wine_sparkling` name vs spirits categories) = **643** ✓ — the exact task-1.2 numbers. The remaining 707 error lines are one kept-without-EAN correction per row (every mydrink SKU is an internal code — the accepted D2 log noise). Error labels carry the shared parser's `alks product …` prefix (same accepted quirk kippis/longero recorded).
+- **Compound-key idempotency holds**: run 2 matched all 643 of mydrink's own rows by (name, `''` brand, containerType, unitVolume) — zero new `product_master` rows, offers upserted as a fresh per-observation batch (row-count growth is the designed time-series shape; kippis 3.1 deviation note 4).
+- **Parallel catalog (D4) confirmed**: all 643 offers sit on mydrink-created rows (+643 exact — zero compound matches against the pre-existing 47 seed rows; no EAN join, as the owner-confirmed no-EAN data implies).
+
+### API verification (local worker, product **9022** `RARE LE CONTRASTE MILLESIME 1985 & MILLESIME 2015 12% 2x75CL`)
+
+- Without `x-age-confirmed`: **403 `AGE_GATE_REQUIRED`** ✅.
+- With header: mydrink offer — `merchant: "mydrink"`, `country: "EE"`, `priceCents: 175026`, `in_stock`, `sourceUrl: https://mydrink.ee/et/toode/rare-le-contraste-millesime-1985-millesime-2015-12-2x75cl/`, `reliabilityStatus: ESTIMATED`, `observedAt: 2026-09-27T14:54:23.322Z` (= run-2 fetch step) ✅.
+- Merchant aggregate: **`mydrink offerCount 643`, freshestObservedAt = run-2 fetch step** ✅. Browse-path aggregates present (`merchantCount`, `lowestPriceCents`); ranked search serves mydrink-created products (`q=Trijol` → 13 results, first hit a mydrink-created row) ✅.
+- Same read-model artifact as kippis 4.2/5.2: aggregate reports `governancePermissionStatus: "PENDING"` while the D1 row is `GRANTED` (the workflow gate honored the grant) — observation recorded, not investigated.
+
+**Environment cleanup**: temporary harness file deleted; `/tmp` artifacts removed; `wrangler dev` stopped. No tracked file changed except this notes section.
 
 ## Task 4.2 — Staging rollout
 

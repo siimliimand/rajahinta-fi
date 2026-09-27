@@ -13,7 +13,7 @@
 
 ## 3. Local rollout
 
-- [ ] 3.1 Local D1: registry row (`mydrink`, name `MyDrink`, country `EE`, feedUrl `https://mydrink.ee`, json, `86_400_000`) + governance record (`RETAILER_API`, `GRANTED`, sourceUrl `https://mydrink.ee/wp-json/wc/store/v1/products`); run the producer tick + ingestion workflow end-to-end locally against the live feed (read-only GETs); verify `retail_offers` rows land, compound-key matching is idempotent across a second run (no duplicate `product_master` rows), and the API serves mydrink offers <!-- agent: platform-engineer.fast, depends_on: [2.1], touches: [openspec/changes/onboard-mydrink-merchant/notes.md] -->
+- [x] 3.1 Local D1: registry row (`mydrink`, name `MyDrink`, country `EE`, feedUrl `https://mydrink.ee`, json, `86_400_000`) + governance record (`RETAILER_API`, `GRANTED`, sourceUrl `https://mydrink.ee/wp-json/wc/store/v1/products`); run the producer tick + ingestion workflow end-to-end locally against the live feed (read-only GETs); verify `retail_offers` rows land, compound-key matching is idempotent across a second run (no duplicate `product_master` rows), and the API serves mydrink offers <!-- agent: platform-engineer.fast, depends_on: [2.1], touches: [openspec/changes/onboard-mydrink-merchant/notes.md] -->
 
 ## 4. Staging rollout
 
