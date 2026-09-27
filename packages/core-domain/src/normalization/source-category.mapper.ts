@@ -152,6 +152,52 @@ export const SWEDISH_SOURCE_CATEGORY_MAP: Readonly<Record<string, CanonicalCateg
   // 'energy drink' already map the same way).
   'virvoitusjuomat ja mikserit': 'non-alcoholic',
   energiajuomat: 'non-alcoholic',
+
+  // --- mydrink.ee catalog vocabulary (sweep decision 2026-09-27,
+  // change onboard-mydrink-merchant). Additive only: every term maps to
+  // an existing canonical category. The sweep's beverage terms not
+  // already covered are added here — they carry the beverage rows behind
+  // most of that catalog's 443 category-driven drops (707-row sweep,
+  // design D3).
+  // 'viski' already maps above; the Estonian double-ö 'liköör' does not
+  // match the single-ö Swedish 'likör' under exact matching and needs
+  // its own key. The store decorates expandable sections with a
+  // trailing ' ▾'; that decoration is part of the raw term and
+  // therefore of the key.
+  //
+  // Deliberately NOT mapped:
+  // - 'veinid ▾' (wine parent, 152 rows): category mapping takes the
+  //   first mappable term in payload order, so mapping the parent would
+  //   misfile Vahuveinid/Shampanjad rows as still wine whenever the
+  //   parent sorts first — still vs sparkling carry different excise
+  //   rates. Sparkling resolves only from its own leaves; wine rows with
+  //   no leaf stay unmapped (correction queue; measured by the 1.2
+  //   re-sweep).
+  // - 'kokteilijoogid' / 'kokteil' (RTD cocktails): span spirits-based
+  //   and fermented-based taxation; no grounded canonical exists, so
+  //   the rows stay unmapped rather than guessed.
+  // - Promo/decorative/navigational terms ('☝️ Lahja alkohol',
+  //   '☝️ Kange', '☝️ Pakkumised ▾', 'Kingiideed ▾', 'Avaleht',
+  //   'Pandipakend', country names): not beverage categories.
+  'kange alkohol ▾': 'spirits',
+  vodka: 'spirits',
+  konjak: 'spirits',
+  rumm: 'spirits',
+  gin: 'spirits',
+  liköör: 'liqueur',
+  // Still-wine leaves ('punane'/'valge' = red/white; 'pakiveinid' =
+  // bag-in-box wine) — the leaf-first counterparts of 'veinid ▾'.
+  punased: 'wine',
+  valged: 'wine',
+  pakiveinid: 'wine',
+  // Sparkling leaves — kept separate from still wine for the excise
+  // split, exactly like 'mousserande vin' above.
+  vahuveinid: 'sparkling-wine',
+  shampanjad: 'sparkling-wine',
+  'õlu ▾': 'beer',
+  siider: 'cider',
+  'alkoholivaba ▾': 'non-alcoholic',
+  karastusjoogid: 'non-alcoholic',
 };
 
 /** Explicit "other" tokens in the sources we ingest — mappable, unlike garbage. */
