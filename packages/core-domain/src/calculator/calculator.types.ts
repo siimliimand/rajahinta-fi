@@ -199,6 +199,28 @@ export interface CalculatorProductData {
 }
 
 /**
+ * Stock state of a retail offer, as persisted on `retail_offers.availability`.
+ * The column is a free string in every store, so read models narrow it onto
+ * this union; anything unrecognized reads as 'unknown' (the column default).
+ */
+export type RetailOfferAvailability =
+  | 'in_stock'
+  | 'low_stock'
+  | 'out_of_stock'
+  | 'unknown';
+
+/**
+ * True only for a CONFIRMED out-of-stock offer. 'unknown' and 'low_stock'
+ * stay eligible — default selection degrades on evidence, never on absence
+ * of it.
+ */
+export function isOfferOutOfStock(
+  availability: RetailOfferAvailability | undefined,
+): boolean {
+  return availability === 'out_of_stock';
+}
+
+/**
  * A single retail offer for the product.
  *
  * Offers are EUR-only (design D3, change
@@ -218,6 +240,12 @@ export interface CalculatorRetailOfferData {
   readonly merchant: string;
   readonly country: string;
   readonly reliabilityStatus: ReliabilityStatus;
+  /**
+   * Last observed stock state. Absent means unknown (legacy read models
+   * that do not carry the column), which never excludes an offer — only a
+   * persisted `out_of_stock` keeps it out of default selection (task 4.1).
+   */
+  readonly availability?: RetailOfferAvailability;
   /**
    * When the offer was observed. Alko reference rows carry it — the
    * benchmark's newest-reference selection needs the observation axis —

@@ -329,17 +329,6 @@ const CATALOG_KEYS_BY_PRICE_SQL = `
              GROUP BY product_id) a
       ON a.product_id = p.id`;
 
-/**
- * ABV-ordered catalog keys (task 1.2): descending alcohol by volume with
- * the id ASC tie; the explicit `(… IS NULL)` term keeps products with
- * unknown ABV last — an unknown value is honest absence, never a rank
- * position above a known one (SQLite would otherwise put NULLs first in
- * a DESC sort only by engine convention; the predicate pins it).
- */
-const CATALOG_KEYS_BY_ABV_SQL = `
-  SELECT id, name
-    FROM product_master`;
-
 const INSERT_SQL = `
   INSERT INTO product_master (
     name, manufacturer, brand, category, alcohol_by_volume, unit_volume,

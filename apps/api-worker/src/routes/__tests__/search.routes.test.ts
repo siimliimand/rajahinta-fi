@@ -234,8 +234,6 @@ describe('GET /api/v1/products — server-side sort (task 1.2, change client-exp
     seedProduct(db, { id: 4, name: 'Tasu A', alcoholByVolume: 0.053 });
     seedProduct(db, { id: 5, name: 'Tasu B', alcoholByVolume: 0.053 });
     seedProduct(db, { id: 6, name: 'Tuntematon', alcoholByVolume: null });
-    const app = buildApp();
-
     const { ids } = await listIds(buildApp(), permissiveEnv(d1), 'sort=ALCOHOL_PERCENTAGE');
     expect(ids).toEqual([1, 4, 5, 2, 3, 6]);
   });
@@ -261,7 +259,6 @@ describe('GET /api/v1/products — server-side sort (task 1.2, change client-exp
     seedProduct(db, { id: 3, name: 'Apijo', category: 'wine_still' });
     seedOffer(db, { id: 31, productId: 3, merchant: 'alko', priceCents: 700 });
     seedProduct(db, { id: 4, name: 'Offerless Viini', category: 'wine_still' });
-    const app = buildApp();
 
     const { body, ids } = await listIds(
       buildApp(),

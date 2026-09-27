@@ -9,9 +9,9 @@
  * pattern as calculator-load.test.ts), and a REAL
  * BasketShippingCalculator over a mocked transport-offer query — so the
  * measurement covers the optimizer's full CPU cost: candidate building,
- * per-(item, merchant) cost computation, merchant-subset shipping
- * prefetch, DFS enumeration of merchant assignments, deterministic
- * sorting, and result assembly.
+ * per-(item, merchant) cost computation, DFS enumeration of merchant
+ * assignments with lazy merchant-subset shipping memoization,
+ * deterministic sorting, and result assembly.
  *
  * **Scenarios:**
  *   - typical:  4 items × 4 candidate merchants  (4^4   = 256
@@ -27,17 +27,19 @@
  *   - cap-30 guard: 30 items × 3 shared merchants → 3^30 combinations,
  *     rejected by the MAX_TOTAL_COMBINATIONS guard before enumeration;
  *     the test pins the fast-fail bound.
+ *   - cap-30 single-merchant: 30 items covered by ONE merchant — the
+ *     Cartesian product is 1 (guard passes) and shipping is computed
+ *     lazily inside the DFS, so exactly ONE shipping call serves the
+ *     whole optimization. The earlier powerset prefetch would have
+ *     attempted 2^30 awaited calls here; the test pins the bounded
+ *     behaviour with a counting shipping calculator.
  *
- *   **Guard coverage note:** MAX_TOTAL_COMBINATIONS bounds the
- *   merchant-assignment enumeration (DFS leaves). It does NOT bound the
- *   per-merchant shipping prefetch (basket-optimizer.service.ts step
- *   2f), which enumerates 2^(coverable items) subsets per merchant
- *   before the DFS. A 30-item basket covered by a single merchant
- *   passes the guard (Cartesian product 1) yet would enumerate 2^30
- *   shipping subsets — the feasible cap-30 scenario below therefore
- *   uses distinct single-candidate merchants, the shape the caps +
- *   guard demonstrably bound. The prefetch powerset is a known gap
- *   flagged to the lead during task 2.4 verification.
+ *   **Guard coverage note:** MAX_TOTAL_COMBINATIONS bounds the whole
+ *   optimization — the merchant-assignment DFS and every shipping
+ *   computation. Shipping is memoized per (merchant, item-subset) key on
+ *   first need inside the guarded DFS (basket-optimizer.service.ts), so
+ *   no shipping key can exist outside a guarded leaf and the guard
+ *   bounds total work.
  *
  * **Thresholds** (explicit; measured against the historical K8s-era
  * resource envelope, kept as the regression reference — see the run
@@ -296,6 +298,30 @@ function buildCap30DisjointOffers(): Record<number, CalculatorRetailOfferData[]>
 
 const CAP30_FEASIBLE_OFFERS = buildCap30DisjointOffers();
 
+/**
+ * Cap-30 single-merchant worst-case offers: 30 products, ALL from one
+ * shared merchant. The Cartesian product is 1 — the guard passes — so
+ * every shipping key the DFS can ever need is the full 30-item subset of
+ * that merchant: exactly ONE shipping computation per optimize call once
+ * shipping is lazily memoized (the removed powerset prefetch attempted
+ * 2^30 here).
+ */
+const CAP30_SINGLE_OFFERS: Record<number, CalculatorRetailOfferData[]> =
+  Object.fromEntries(
+    CAP30_PRODUCTS.map((product) => [
+      product.id,
+      [
+        {
+          id: product.id * 10,
+          priceCents: offerPriceCents(product.id, 0),
+          merchant: 'solo-merchant',
+          country: 'DE',
+          reliabilityStatus: 'EXACT',
+        },
+      ],
+    ]),
+  );
+
 // ---------------------------------------------------------------------------
 // Fixtures — transport offers for the (real) BasketShippingCalculator
 // ---------------------------------------------------------------------------
@@ -338,9 +364,40 @@ const TRANSPORT_OFFERS = buildTransportOffers();
 // Service factory — real optimizer + real shipping + mocked engines/ports
 // ---------------------------------------------------------------------------
 
+/** Mocked transport-offer query backing the (real) shipping calculator. */
+function createTransportQueryMock(): ITransportOfferQuery {
+  return {
+    findAllActive: vi.fn().mockResolvedValue(TRANSPORT_OFFERS),
+    findByCarrier: vi.fn().mockImplementation(async (carrierId: string) =>
+      TRANSPORT_OFFERS.filter((o) => o.carrier === carrierId),
+    ),
+  };
+}
+
+/**
+ * Real shipping behaviour with a call counter — the counter proves the
+ * shipping computation is bounded (never a powerset) without changing
+ * what is computed.
+ */
+class CountingShippingCalculator extends BasketShippingCalculator {
+  calculateBasketCalls = 0;
+
+  constructor(query: ITransportOfferQuery) {
+    super(query);
+  }
+
+  override async calculateBasket(
+    ...args: Parameters<BasketShippingCalculator['calculateBasket']>
+  ): Promise<Awaited<ReturnType<BasketShippingCalculator['calculateBasket']>>> {
+    this.calculateBasketCalls += 1;
+    return super.calculateBasket(...args);
+  }
+}
+
 function createBasketOptimizerService(
   offersByProduct: Record<number, CalculatorRetailOfferData[]>,
   products: CalculatorProductData[] = PRODUCTS,
+  shipping?: BasketShippingCalculator,
 ): BasketOptimizerService {
   // --- Mock I/O ports ---
   const productsById: Record<number, CalculatorProductData> = Object.fromEntries(
@@ -359,12 +416,7 @@ function createBasketOptimizerService(
     create: vi.fn().mockResolvedValue({ id: 9999 }),
   };
 
-  const transportOfferQuery: ITransportOfferQuery = {
-    findAllActive: vi.fn().mockResolvedValue(TRANSPORT_OFFERS),
-    findByCarrier: vi.fn().mockImplementation(async (carrierId: string) =>
-      TRANSPORT_OFFERS.filter((o) => o.carrier === carrierId),
-    ),
-  };
+  const transportOfferQuery = createTransportQueryMock();
 
   // No minimum-order thresholds — every merchant assignment stays
   // feasible so the DFS enumerates the full combination space.
@@ -465,7 +517,7 @@ function createBasketOptimizerService(
     calculationRecords,
   );
 
-  const basketShipping = new BasketShippingCalculator(transportOfferQuery);
+  const basketShipping = shipping ?? new BasketShippingCalculator(transportOfferQuery);
 
   // calculationRecordPort is Optional and null by default — persistence
   // stays out of the measured path (matching the module's null default).
@@ -678,6 +730,47 @@ describe('BasketOptimizer — load/performance under 256m/512Mi-shaped load', ()
     expect(limitError.totalCombinations).toBe(3 ** MAX_BASKET_ITEMS);
     expect(limitError.limit).toBe(MAX_TOTAL_COMBINATIONS);
     expect(elapsed).toBeLessThan(CAP30_GUARD_FAIL_BOUND_MS);
+  });
+
+  it('bounds shipping for the single-merchant worst case: 30 items, one merchant, ONE shipping call', async () => {
+    // 2^30 ≈ 1.07e9 subsets — the shape the removed powerset prefetch
+    // would have enumerated before the DFS (the Cartesian product is 1,
+    // so the combinations guard passes). With lazy memoization the DFS
+    // needs exactly one (merchant, item-subset) key: the full basket.
+    const shipping = new CountingShippingCalculator(createTransportQueryMock());
+    const singleMerchantService = createBasketOptimizerService(
+      CAP30_SINGLE_OFFERS,
+      CAP30_PRODUCTS,
+      shipping,
+    );
+
+    const input: BasketOptimizationInput = {
+      items: CAP30_PRODUCTS.map((p) => ({ productId: p.id, quantity: 1 })),
+      destination: 'FI',
+      transportArrangement: 'SELLER_ARRANGED',
+      sessionId: 'basket-load-cap-30-single-merchant',
+    };
+
+    const start = performance.now();
+    const result = await singleMerchantService.optimize(input);
+    const elapsed = performance.now() - start;
+
+    // Feasible, single-store result.
+    expect(result.totalCents).toBeGreaterThan(0);
+    expect(result.shipments).toHaveLength(1);
+    expect(result.shipments[0].merchant).toBe('solo-merchant');
+    // Shipment items are itemized cost lines (retail, excise, container
+    // duty, import VAT) across all 30 lines — every basket line assigned.
+    expect(result.shipments[0].items.length).toBeGreaterThanOrEqual(MAX_BASKET_ITEMS);
+
+    // The bound: one merchant covering all 30 items needs exactly one
+    // shipping computation — not 2^30, and not even one per item.
+    expect(shipping.calculateBasketCalls).toBe(1);
+
+    // Wall time stays in the interactive class (a second optimize call
+    // reuses nothing across calls — the memo is per-call — so the bound
+    // holds for cold requests).
+    expect(elapsed).toBeLessThan(CAP30_P95_THRESHOLD_MS);
   });
 
   // -----------------------------------------------------------------------

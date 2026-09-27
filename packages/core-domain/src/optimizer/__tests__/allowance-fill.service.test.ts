@@ -599,6 +599,87 @@ describe('AllowanceFillService', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Out-of-stock default selection (task 4.1): the fill's per-line default
+  // offer follows the calculator rule — confirmed out_of_stock offers stay
+  // out of the pick, every other state (and the field's absence) stays
+  // eligible, and an all-out-of-stock product falls back to the current
+  // pick instead of failing the request.
+  // -------------------------------------------------------------------------
+
+  describe('out-of-stock default selection (task 4.1)', () => {
+    it('skips a cheaper out-of-stock offer and fills from the purchasable one', async () => {
+      const offersByProduct: Record<number, CalculatorRetailOfferData[]> = {
+        [BEER_CAN.id]: [
+          { id: 1, priceCents: 100, merchant: 'merchant-cheap', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'out_of_stock' },
+          { id: 2, priceCents: 500, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'in_stock' },
+        ],
+      };
+
+      const service = createFillService({
+        productData: createMockProductDataPort(offersByProduct),
+      });
+      const result = await service.fill(
+        fillInput([{ productId: BEER_CAN.id, maxQuantity: 5 }]),
+      );
+
+      const line = result.lines.find((l) => l.productId === BEER_CAN.id);
+      expect(line).toMatchObject({
+        merchant: 'merchant-a',
+        unitPriceCents: 500,
+        status: 'FILLED',
+      });
+    });
+
+    it('keeps low_stock and unknown eligible — only confirmed out_of_stock is excluded', async () => {
+      const offersByProduct: Record<number, CalculatorRetailOfferData[]> = {
+        [BEER_CAN.id]: [
+          { id: 1, priceCents: 100, merchant: 'merchant-low', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'low_stock' },
+          { id: 2, priceCents: 200, merchant: 'merchant-unknown', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'unknown' },
+          { id: 3, priceCents: 300, merchant: 'merchant-legacy', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        ],
+      };
+
+      const service = createFillService({
+        productData: createMockProductDataPort(offersByProduct),
+      });
+      const result = await service.fill(
+        fillInput([{ productId: BEER_CAN.id, maxQuantity: 5 }]),
+      );
+
+      const line = result.lines.find((l) => l.productId === BEER_CAN.id);
+      expect(line).toMatchObject({
+        merchant: 'merchant-low',
+        unitPriceCents: 100,
+      });
+    });
+
+    it('falls back to the current pick when EVERY offer is out of stock', async () => {
+      const offersByProduct: Record<number, CalculatorRetailOfferData[]> = {
+        [BEER_CAN.id]: [
+          { id: 1, priceCents: 300, merchant: 'merchant-a', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'out_of_stock' },
+          { id: 2, priceCents: 200, merchant: 'merchant-b', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'out_of_stock' },
+        ],
+      };
+
+      const service = createFillService({
+        productData: createMockProductDataPort(offersByProduct),
+      });
+
+      // No new error surface: the line fills on best-known data.
+      const result = await service.fill(
+        fillInput([{ productId: BEER_CAN.id, maxQuantity: 5 }]),
+      );
+
+      const line = result.lines.find((l) => l.productId === BEER_CAN.id);
+      expect(line).toMatchObject({
+        merchant: 'merchant-b',
+        unitPriceCents: 200,
+        status: 'FILLED',
+      });
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Provenance carriage
   // -------------------------------------------------------------------------
 

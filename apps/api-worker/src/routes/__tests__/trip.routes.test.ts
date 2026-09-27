@@ -34,6 +34,7 @@ import {
   seedProduct,
 } from './harness';
 import { registerTripRoutes } from '../trip.routes';
+import { RATE_LIMIT_PROFILES } from '../../middleware/rate-limit';
 import { D1TravellerAllowancesRepository } from '../../../../../packages/data-platform/src/repositories/d1/traveller-allowances.repository';
 import { D1FerryOffersRepository } from '../../../../../packages/data-platform/src/repositories/d1/ferry-offers.repository';
 import { FEATURE_TIER_MAP } from '../../../../../packages/core-domain/src/entitlement/entitlement.types';
@@ -423,6 +424,34 @@ describe('POST /api/v1/trip/fill — computed fill', () => {
     expect(body.ferryOffers).toEqual([]);
   });
 
+  it('excludes a persisted out_of_stock offer from the default fill pick (task 4.1)', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedFillAllowances(d1);
+    await seedFillProducts(db);
+    // A cheaper product-1 offer, but out of stock — the fill must pick the
+    // in-stock alko offer at 250 instead of this 150-cent row.
+    seedOffer(db, {
+      id: 13,
+      productId: 1,
+      merchant: 'cheap-oos',
+      priceCents: 150,
+      availability: 'out_of_stock',
+    });
+    const token = await seedFreeSession(d1, db);
+    const app = fillApp();
+    const res = await postFill(app, fillEnv(d1), FILL, token);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as FillJson;
+
+    const beer = body.lines![0]!;
+    expect(beer).toMatchObject({
+      productId: 1,
+      merchant: 'alko',
+      unitPriceCents: 250,
+      status: 'FILLED',
+    });
+  });
+
   it('responds 409 NoPublishedAllowances when no published dataset covers the travel date', async () => {
     const { db, d1 } = openMigratedD1();
     await seedFillProducts(db);
@@ -689,18 +718,21 @@ describe('POST /api/v1/trip/fill — version-aware idempotency', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Rate limiting — the per-IP CALCULATOR profile (10/min), trip calculator parity
+// Rate limiting — the per-IP CALCULATOR profile, trip calculator parity.
+// Profile-driven: the loop exhausts whatever the middleware currently
+// admits (task 2.5 raised it 10 → 60/min) so the pin survives limit tunes.
 // ---------------------------------------------------------------------------
 
 describe('POST /api/v1/trip/fill — rate-limit profile', () => {
-  it('admits ten anonymous requests per minute per IP (CALCULATOR) and rejects the eleventh with 429', async () => {
+  it('admits the CALCULATOR profile allowance per minute per IP and rejects the next request with 429', async () => {
     const { db, d1 } = openMigratedD1();
     await seedPublishedFillAllowances(d1);
     await seedFillProducts(db);
     const app = fillApp();
     const env = fillEnv(d1); // one shared env = one shared DO limiter bucket
+    const limit = RATE_LIMIT_PROFILES.CALCULATOR.limit;
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < limit; i++) {
       // Distinct payloads so idempotency never short-circuits the limiter's
       // admission path (the limiter runs FIRST either way — that is the pin).
       const res = await postFill(app, env, {
@@ -710,11 +742,11 @@ describe('POST /api/v1/trip/fill — rate-limit profile', () => {
       expect(res.status).toBe(200);
     }
 
-    const eleventh = await postFill(app, env, {
+    const overLimit = await postFill(app, env, {
       travelDate: '2026-06-01',
-      items: [{ productId: 1, maxQuantity: 11 }],
+      items: [{ productId: 1, maxQuantity: limit + 1 }],
     });
-    await expectEnvelope(eleventh, 429, { error: 'TooManyRequests' });
-    expect(eleventh.headers.get('Retry-After')).not.toBeNull();
+    await expectEnvelope(overLimit, 429, { error: 'TooManyRequests' });
+    expect(overLimit.headers.get('Retry-After')).not.toBeNull();
   });
 });

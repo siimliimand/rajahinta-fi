@@ -106,6 +106,28 @@ describe('D1ProductDataPort.findRetailOffers', () => {
 
     expect(offers[0].reliabilityStatus).toBe('ESTIMATED');
   });
+
+  it('carries the persisted stock state through (task 4.1)', async () => {
+    const offers = await portWith([
+      offerRow({ id: 11, availability: 'in_stock' }),
+      offerRow({ id: 12, availability: 'out_of_stock' }),
+      offerRow({ id: 13, availability: 'low_stock' }),
+    ]).findRetailOffers(1);
+
+    expect(offers.map((o) => o.availability)).toEqual([
+      'in_stock',
+      'out_of_stock',
+      'low_stock',
+    ]);
+  });
+
+  it('degrades unknown availability values to unknown — never an exclusion on legacy data', async () => {
+    const offers = await portWith([
+      offerRow({ availability: 'SOME_LEGACY_VALUE' }),
+    ]).findRetailOffers(1);
+
+    expect(offers[0].availability).toBe('unknown');
+  });
 });
 
 // ---------------------------------------------------------------------------
