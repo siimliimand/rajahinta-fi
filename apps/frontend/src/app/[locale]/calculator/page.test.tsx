@@ -217,7 +217,7 @@ describe('CalculatorPage rate-limited calculation state (task 5.3)', () => {
     expect(alert).toHaveAttribute('data-state', 'error');
     expect(screen.getByText('Laskenta epäonnistui')).toBeInTheDocument();
     expect(
-      screen.getByText('Laskentojen määrää on rajoitettu väliaikaisesti.'),
+      screen.getByText('Hetkinen — lasketaan vielä edellistä.'),
     ).toBeInTheDocument();
     expect(screen.getByTestId('calc-retry-after')).toHaveTextContent(
       'Odota 30 sekuntia ja yritä sitten uudelleen.',

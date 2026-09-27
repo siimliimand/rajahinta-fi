@@ -68,10 +68,14 @@ export interface IRateLimiter {
 export const RATE_LIMIT_PROFILES = {
   /** Default: 60 requests/min per IP/user. */
   DEFAULT: { limit: 60, windowMs: 60_000 },
-  /** Calculator: 10 requests/min (higher cost per request). */
-  CALCULATOR: { limit: 10, windowMs: 60_000 },
-  /** Basket optimization: 10 requests/min (computationally expensive). */
-  BASKET: { limit: 10, windowMs: 60_000 },
+  /**
+   * Interactive-use profiles (change client-experience-improvement):
+   * 60 req/min per client so normal interactive use (adjusting
+   * quantities, retrying calculations) does not hit 429s. Parity with
+   * the Worker middleware's RATE_LIMIT_PROFILES is exact.
+   */
+  CALCULATOR: { limit: 60, windowMs: 60_000 },
+  BASKET: { limit: 60, windowMs: 60_000 },
   /** Search: 30 requests/min. */
   SEARCH: { limit: 30, windowMs: 60_000 },
   /** Declaration: 20 requests/min. */

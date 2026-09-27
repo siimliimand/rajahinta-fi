@@ -312,6 +312,106 @@ describe('LandedCostCalculatorService', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Out-of-stock default selection (task 4.1): a persisted out_of_stock
+  // availability keeps an offer out of default selection; every other state
+  // (and the field's absence on legacy read models) stays eligible. When
+  // every offer is out of stock, selection falls back to the full set —
+  // the request succeeds on best-known data instead of failing.
+  // ---------------------------------------------------------------------------
+
+  describe('out-of-stock default selection (task 4.1)', () => {
+    it('skips a single out-of-stock offer even when it is the cheapest', async () => {
+      const offers: CalculatorRetailOfferData[] = [
+        { id: 1, priceCents: 100, merchant: 'shop-a', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'out_of_stock' },
+        { id: 2, priceCents: 300, merchant: 'shop-b', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'in_stock' },
+      ];
+
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue(offers),
+      });
+
+      const { service } = createService({ productData });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.metadata.retailOfferIds).toContain(2);
+    });
+
+    it('skips many out-of-stock offers and picks the cheapest purchasable one', async () => {
+      const offers: CalculatorRetailOfferData[] = [
+        { id: 1, priceCents: 100, merchant: 'shop-a', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'out_of_stock' },
+        { id: 2, priceCents: 150, merchant: 'shop-b', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'out_of_stock' },
+        { id: 3, priceCents: 250, merchant: 'shop-c', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'out_of_stock' },
+        { id: 4, priceCents: 400, merchant: 'shop-d', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'in_stock' },
+        { id: 5, priceCents: 450, merchant: 'shop-e', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'low_stock' },
+      ];
+
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue(offers),
+      });
+
+      const { service } = createService({ productData });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.metadata.retailOfferIds).toContain(4);
+    });
+
+    it('keeps low_stock and unknown eligible — only confirmed out_of_stock is excluded', async () => {
+      const offers: CalculatorRetailOfferData[] = [
+        { id: 1, priceCents: 100, merchant: 'shop-a', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'low_stock' },
+        { id: 2, priceCents: 120, merchant: 'shop-b', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'unknown' },
+        { id: 3, priceCents: 140, merchant: 'shop-c', country: 'DE', reliabilityStatus: 'VERIFIED' },
+      ];
+
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue(offers),
+      });
+
+      const { service } = createService({ productData });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.metadata.retailOfferIds).toContain(1);
+    });
+
+    it('falls back to the current pick when EVERY offer is out of stock', async () => {
+      const offers: CalculatorRetailOfferData[] = [
+        { id: 1, priceCents: 300, merchant: 'shop-a', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'out_of_stock' },
+        { id: 2, priceCents: 200, merchant: 'shop-b', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'out_of_stock' },
+      ];
+
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue(offers),
+      });
+
+      const { service } = createService({ productData });
+
+      // No new error surface: the request succeeds with the pre-4.1 pick.
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.metadata.retailOfferIds).toContain(2);
+    });
+
+    it('treats a legacy offer without the availability field as eligible', async () => {
+      const offers: CalculatorRetailOfferData[] = [
+        { id: 1, priceCents: 100, merchant: 'shop-a', country: 'DE', reliabilityStatus: 'VERIFIED' },
+        { id: 2, priceCents: 200, merchant: 'shop-b', country: 'DE', reliabilityStatus: 'VERIFIED', availability: 'in_stock' },
+      ];
+
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue(offers),
+      });
+
+      const { service } = createService({ productData });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.metadata.retailOfferIds).toContain(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Transport estimation
   // ---------------------------------------------------------------------------
 

@@ -4,7 +4,7 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button, Input } from '@/components/ui';
 import type {
@@ -14,6 +14,10 @@ import type {
   SourcingLineRequest,
   SourcingRequest,
 } from '../event.types';
+import {
+  fetchCategoryAverages,
+  type CategoryBenchmarkFigures,
+} from '../event.client';
 
 // ---------------------------------------------------------------------------
 // Caps — mirror the server-side zod caps (event-calc.routes.ts, tasks 4.3/4.5)
@@ -86,6 +90,25 @@ interface PriceRow {
 }
 
 const EMPTY_ROW: PriceRow = { domestic: '', foreign: '' };
+
+// ---------------------------------------------------------------------------
+// Benchmark pre-fill (task 3.2, change client-experience-improvement)
+// ---------------------------------------------------------------------------
+
+/** Where a benchmark row's figures map onto the form's two price bases. */
+interface BenchmarkPair {
+  readonly domestic: CategoryBenchmarkFigures;
+  readonly foreign: CategoryBenchmarkFigures;
+}
+
+/** Cents per litre → the field's decimal-comma string ("2,35"). */
+function centsToEuroInput(cents: number): string {
+  return (cents / 100).toFixed(2).replace('.', ',');
+}
+
+/** Price-source mode behind the explicit toggle (spec: benchmark
+ *  defaults vs manual entry). */
+type PriceMode = 'benchmarks' | 'manual';
 
 /**
  * Editable starting values for the simple-mode fields (task 4.3 occasion
@@ -180,6 +203,92 @@ export default function EventForm({
   const [prices, setPrices] = useState<ReadonlyMap<EventDrinkType, PriceRow>>(
     new Map(DRINK_TYPES.map((drinkType) => [drinkType, EMPTY_ROW])),
   );
+
+  // ── Benchmark pre-fill state (task 3.2) — fetched when the sourcing
+  // section first opens; the benchmarks are sourcing-input defaults. ──
+  const [priceMode, setPriceMode] = useState<PriceMode>('benchmarks');
+  const [benchmarks, setBenchmarks] = useState<
+    ReadonlyMap<EventDrinkType, BenchmarkPair>
+  >(new Map());
+  const [benchmarkStatus, setBenchmarkStatus] = useState<
+    'idle' | 'loading' | 'ready' | 'unavailable'
+  >('idle');
+
+  // One fetch per session; a failure is a quiet degrade to manual entry —
+  // a benchmark outage must never block the calculator (the toggle is a
+  // default-source switch, not a dependency).
+  const benchmarkFetchStarted = useRef(false);
+  useEffect(() => {
+    if (!sourcingEnabled || benchmarkFetchStarted.current) return;
+    benchmarkFetchStarted.current = true;
+    setBenchmarkStatus('loading');
+    let cancelled = false;
+    fetchCategoryAverages()
+      .then((rows) => {
+        if (cancelled) return;
+        const map = new Map<EventDrinkType, BenchmarkPair>();
+        for (const row of rows) {
+          if (
+            (DRINK_TYPES as readonly string[]).includes(row.category) &&
+            row.alko !== null &&
+            row.crossBorder !== null
+          ) {
+            map.set(row.category as EventDrinkType, {
+              domestic: row.alko,
+              foreign: row.crossBorder,
+            });
+          }
+        }
+        setBenchmarks(map);
+        if (map.size === 0) {
+          // Honest absence: no covering offers — manual entry, calm note.
+          setBenchmarkStatus('unavailable');
+          setPriceMode('manual');
+          return;
+        }
+        setBenchmarkStatus('ready');
+        // Pre-fill only rows the visitor has not started typing into.
+        setPrices((prev) => {
+          const next = new Map(prev);
+          for (const [drinkType, pair] of map) {
+            const current = prev.get(drinkType) ?? EMPTY_ROW;
+            if (current.domestic.trim() === '' && current.foreign.trim() === '') {
+              next.set(drinkType, {
+                domestic: centsToEuroInput(pair.domestic.averageCentsPerLitre),
+                foreign: centsToEuroInput(pair.foreign.averageCentsPerLitre),
+              });
+            }
+          }
+          return next;
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setBenchmarkStatus('unavailable');
+        setPriceMode('manual');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sourcingEnabled]);
+
+  /** Toggle handler — switching back to averages re-applies them over
+   *  every covered row (the explicit "use averages" action); switching
+   *  to manual keeps the current values editable, never clears them. */
+  const handlePriceMode = useCallback((mode: PriceMode) => {
+    setPriceMode(mode);
+    if (mode !== 'benchmarks') return;
+    setPrices((prev) => {
+      const next = new Map(prev);
+      for (const [drinkType, pair] of benchmarks) {
+        next.set(drinkType, {
+          domestic: centsToEuroInput(pair.domestic.averageCentsPerLitre),
+          foreign: centsToEuroInput(pair.foreign.averageCentsPerLitre),
+        });
+      }
+      return next;
+    });
+  }, [benchmarks]);
 
   const guestsCount = parseCount(guests);
   const durationCount = parseCount(durationHours);
@@ -416,8 +525,70 @@ export default function EventForm({
 
             <div className="space-y-2">
               <p className="text-sm font-medium text-gray-700">{t('form.sourcing.pricesHeading')}</p>
+
+              {/* ── Benchmark source toggle (task 3.2): explicit, both
+                  states labelled — benchmark defaults vs manual entry. ── */}
+              <fieldset
+                data-testid="event-price-mode"
+                className="flex flex-wrap gap-2"
+              >
+                <legend className="sr-only">{t('form.sourcing.pricesHeading')}</legend>
+                <label className="inline-flex cursor-pointer items-center">
+                  <input
+                    type="radio"
+                    name="event-price-mode"
+                    value="benchmarks"
+                    checked={priceMode === 'benchmarks'}
+                    onChange={() => handlePriceMode('benchmarks')}
+                    disabled={benchmarkStatus !== 'ready'}
+                    className="peer sr-only"
+                  />
+                  <span className="inline-flex min-h-[44px] items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 peer-checked:border-primary-600 peer-checked:bg-primary-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-primary-500 peer-disabled:cursor-not-allowed peer-disabled:text-gray-400">
+                    {t('form.sourcing.useBenchmarks')}
+                  </span>
+                </label>
+                <label className="inline-flex cursor-pointer items-center">
+                  <input
+                    type="radio"
+                    name="event-price-mode"
+                    value="manual"
+                    checked={priceMode === 'manual'}
+                    onChange={() => handlePriceMode('manual')}
+                    className="peer sr-only"
+                  />
+                  <span className="inline-flex min-h-[44px] items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 peer-checked:border-primary-600 peer-checked:bg-primary-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-primary-500">
+                    {t('form.sourcing.useOwnPrices')}
+                  </span>
+                </label>
+              </fieldset>
+
+              {benchmarkStatus === 'ready' && benchmarks.size > 0
+                ? (() => {
+                    let latestAsOf = '';
+                    for (const pair of benchmarks.values()) {
+                      if (pair.domestic.asOf > latestAsOf) latestAsOf = pair.domestic.asOf;
+                      if (pair.foreign.asOf > latestAsOf) latestAsOf = pair.foreign.asOf;
+                    }
+                    return (
+                      <p className="text-xs text-gray-500">
+                        {t('form.sourcing.benchmarkNote', { asOf: latestAsOf })}
+                      </p>
+                    );
+                  })()
+                : null}
+              {benchmarkStatus === 'unavailable' ? (
+                <p className="text-xs text-gray-500">
+                  {t('form.sourcing.benchmarkUnavailable')}
+                </p>
+              ) : null}
+
               {DRINK_TYPES.map((drinkType) => {
                 const row = prices.get(drinkType) ?? EMPTY_ROW;
+                // Benchmark-covered rows are read-only defaults while the
+                // averages source is active — switching to manual
+                // releases them with their values intact.
+                const covered =
+                  priceMode === 'benchmarks' && benchmarks.has(drinkType);
                 return (
                   <div key={drinkType} className="grid grid-cols-2 gap-2">
                     <Input
@@ -429,6 +600,8 @@ export default function EventForm({
                       value={row.domestic}
                       onChange={(e) => setRow(drinkType, { domestic: e.target.value })}
                       placeholder="5,00"
+                      readOnly={covered}
+                      className={covered ? 'bg-gray-50' : undefined}
                     />
                     <Input
                       id={`price-foreign-${drinkType}`}
@@ -437,6 +610,8 @@ export default function EventForm({
                       value={row.foreign}
                       onChange={(e) => setRow(drinkType, { foreign: e.target.value })}
                       placeholder="2,00"
+                      readOnly={covered}
+                      className={covered ? 'bg-gray-50' : undefined}
                     />
                   </div>
                 );

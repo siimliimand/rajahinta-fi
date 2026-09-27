@@ -15,6 +15,7 @@ import type {
   IProductDataPort,
   CalculatorProductData,
   CalculatorRetailOfferData,
+  RetailOfferAvailability,
   ReliabilityStatus,
   ITransportOfferQuery,
   TransportOffer,
@@ -74,6 +75,18 @@ function toReliabilityStatus(value: string): ReliabilityStatus {
   return value === 'VERIFIED' || value === 'STALE' || value === 'UNAVAILABLE'
     ? value
     : 'ESTIMATED';
+}
+
+/**
+ * Narrow the free-string `retail_offers.availability` column onto the
+ * domain's stock-state union — the same degrade-on-unknown shape as
+ * {@link toReliabilityStatus}. Unrecognized or legacy values read as
+ * 'unknown', which never excludes an offer from default selection.
+ */
+function toAvailability(value: string): RetailOfferAvailability {
+  return value === 'in_stock' || value === 'low_stock' || value === 'out_of_stock'
+    ? value
+    : 'unknown';
 }
 
 /**
@@ -186,6 +199,7 @@ export class D1ProductDataPort implements IProductDataPort {
         merchant: o.merchant,
         country: o.country,
         reliabilityStatus,
+        availability: toAvailability(o.availability),
         observedAt: o.observedAt,
       };
     });

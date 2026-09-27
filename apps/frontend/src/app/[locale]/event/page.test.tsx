@@ -33,6 +33,18 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
+// The benchmark pre-fill (task 3.2) fetches when the sourcing section
+// opens — pin it to an empty catalog so sourcing tests exercise the
+// manual-entry path and the queued `request` mocks stay reserved for the
+// calculation endpoints.
+vi.mock('./event.client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./event.client')>();
+  return {
+    ...actual,
+    fetchCategoryAverages: vi.fn(async () => []),
+  };
+});
+
 // The server shell (page.tsx) resolves its copy through next-intl/server;
 // resolve straight from the Finnish catalog (calculator test precedent).
 // The client view uses next-intl's provider instead and is unaffected.
@@ -373,7 +385,8 @@ describe('EventPage — V2 sourcing', () => {
 
     expect(await screen.findByTestId('event-plan')).toBeInTheDocument();
     expect(screen.getByTestId('event-plan-source')).toHaveTextContent('Osta Suomesta');
-    expect(screen.getByTestId('event-plan-unpriced')).toHaveTextContent('Makuuviini');
+    // Task 3.2: the consumer label vocabulary ("Viini", not "Makuuviini").
+    expect(screen.getByTestId('event-plan-unpriced')).toHaveTextContent('Viini');
     expect(screen.getByTestId('event-plan-budget-met')).toHaveTextContent('Budjetti riittää');
     expect(screen.queryByTestId('event-plan-packing')).not.toBeInTheDocument();
   });

@@ -20,6 +20,7 @@ import { MerchantLink } from '../../compare/components/MerchantLink';
 import DisclaimerBanner from './DisclaimerBanner';
 import ReportExportActions from './ReportExportActions';
 import SanityNoteList from './SanityNoteList';
+import ShareResultAction from './ShareResultAction';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -218,6 +219,18 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
   const freshnessEntries = useFreshnessEntries(result);
   const benchmark = result.alkoBenchmark;
 
+  // ── Savings summary (task 5.1) ──
+  // Display-only, factual: a prominent estimated-saving statement built
+  // from the benchmark figures already on the result. It renders only
+  // when a benchmark exists AND the calculated offer sits below the
+  // reference (differenceCents < 0 — a saving). No benchmark, or an
+  // offer priced at/above the reference, renders nothing — never a
+  // placeholder figure or a negative "saving".
+  const showSavingsSummary =
+    benchmark !== undefined &&
+    benchmark.status === 'available' &&
+    benchmark.differenceCents < 0;
+
   return (
     <div className="space-y-6 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
       {/* ── Heading ── */}
@@ -272,6 +285,28 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
           </p>
         </div>
       </div>
+
+      {/* ── Savings summary (task 5.1) — display-only: prominent factual
+          statement derived from the alkoBenchmark above; never a cost
+          line, never a calculation or ranking input. Present only when
+          the comparison yields an actual estimated saving. ── */}
+      {showSavingsSummary && benchmark.status === 'available' && (
+        <div
+          data-testid="savings-summary"
+          className="rounded-lg border border-primary-200 bg-primary-50 px-4 py-3"
+        >
+          <p className="text-sm font-semibold text-primary-900">
+            {t('savingsSummary.title', {
+              amount: formatEur(-benchmark.differenceCents),
+            })}
+          </p>
+          <p className="mt-1 text-xs text-primary-800">
+            {t('savingsSummary.asOf', {
+              date: new Date(benchmark.observedAt).toLocaleDateString('fi-FI'),
+            })}
+          </p>
+        </div>
+      )}
 
       {/* ── Alko benchmark — display-only comparison, not a cost line:
           renders nothing when the result carries no reference ── */}
@@ -389,6 +424,10 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
 
       {/* ── Report export actions ── */}
       <ReportExportActions recordId={result.calculationRecordId} />
+
+      {/* ── Share action (task 5.2) — frozen snapshot + copyable
+          /share/[publicId] link for this record ── */}
+      <ShareResultAction recordId={result.calculationRecordId} />
 
       {/* ── Disclaimer ── */}
       <DisclaimerBanner disclaimer={result.disclaimer} />

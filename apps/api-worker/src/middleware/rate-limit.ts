@@ -4,8 +4,9 @@
  * port task 3.5; the RateLimiterDO backend landed in task 3.3).
  *
  * Profiles, limits, and the 429 payload mirror the Nest guard exactly:
- * DEFAULT 60/min, CALCULATOR 10/min, BASKET 10/min, SEARCH 30/min,
- * DECLARATION 20/min, HISTORICAL 30/min. The client key is the edge-attested
+ * DEFAULT 60/min, CALCULATOR 60/min, BASKET 60/min, SEARCH 30/min,
+ * DECLARATION 20/min, HISTORICAL 30/min, AUTH 10/5min (unchanged). The
+ * client key is the edge-attested
  * `CF-Connecting-IP` (design D5 — RATE_LIMIT_TRUST_PROXY semantics were
  * removed with task 3.3; X-Forwarded-For is never read), windowed per
  * profile like the Nest service's `${profile}:${key}` composition.
@@ -43,8 +44,14 @@ export const RATE_LIMIT_PROFILES = {
    * of the API. Its own DO window — profile keys are isolated per client.
    */
   AUTH: { limit: 10, windowMs: 300_000 },
-  CALCULATOR: { limit: 10, windowMs: 60_000 },
-  BASKET: { limit: 10, windowMs: 60_000 },
+  /**
+   * Interactive-use profiles (change client-experience-improvement):
+   * 60 req/min per client so normal interactive use (adjusting
+   * quantities, retrying calculations) does not hit 429s. The 429
+   * envelope with Retry-After is unchanged.
+   */
+  CALCULATOR: { limit: 60, windowMs: 60_000 },
+  BASKET: { limit: 60, windowMs: 60_000 },
   SEARCH: { limit: 30, windowMs: 60_000 },
   DECLARATION: { limit: 20, windowMs: 60_000 },
   HISTORICAL: { limit: 30, windowMs: 60_000 },

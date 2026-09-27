@@ -40,7 +40,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ClassificationGateService } from '../../normalization/classification-gate.service';
 import { DISCLAIMER_FI } from '../../disclaimer';
-import { PRODUCT_DATA_PORT } from '../../calculator/calculator.types';
+import { isOfferOutOfStock, PRODUCT_DATA_PORT } from '../../calculator/calculator.types';
 import { normaliseCategory } from '../../tax/services/alcohol-excise.math';
 import {
   MAX_TOTAL_COMBINATIONS,
@@ -372,8 +372,13 @@ export class AllowanceFillService {
       }
 
       // Cheapest offer, deterministic tie-break — the same comparator the
-      // basket optimizer's candidate builder applies.
-      const best = [...offers].sort((a, b) => {
+      // basket optimizer's candidate builder applies. Confirmed
+      // out-of-stock offers stay out of the default pick (task 4.1, the
+      // calculator rule); when every offer is out of stock the pick falls
+      // back to the full set so the line stays fillable on best-known data.
+      const purchasable = offers.filter((o) => !isOfferOutOfStock(o.availability));
+      const selectable = purchasable.length > 0 ? purchasable : offers;
+      const best = [...selectable].sort((a, b) => {
         if (a.priceCents !== b.priceCents) return a.priceCents - b.priceCents;
         return a.merchant.localeCompare(b.merchant);
       })[0];

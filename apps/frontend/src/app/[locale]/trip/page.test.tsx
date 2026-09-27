@@ -49,6 +49,17 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
+// The benchmark pre-fill (task 3.2) fetches on form mount — pin it to an
+// empty catalog so form tests exercise the manual-entry path and the
+// queued `request` mocks stay reserved for the calculation endpoints.
+vi.mock('./trip.client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./trip.client')>();
+  return {
+    ...actual,
+    fetchCategoryAverages: vi.fn(async () => []),
+  };
+});
+
 // The server shell (page.tsx) resolves its copy through next-intl/server;
 // resolve straight from the Finnish catalog (calculator test precedent).
 // The client view uses next-intl's provider instead and is unaffected.

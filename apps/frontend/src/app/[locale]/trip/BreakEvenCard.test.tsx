@@ -183,7 +183,8 @@ describe('BreakEvenCard positive saving (task 4.4)', () => {
     // The per-line trace of the basket saving.
     expect(screen.getByText(/Olut: 60 l × €2\.50\/l = €150\.00/))
       .toBeInTheDocument();
-    expect(screen.getByText(/Makuuviini: 90 l × €2\.00\/l = €180\.00/))
+    // "Viini" — TripPage.category.wine_still (consumer labels, 0b98cce).
+    expect(screen.getByText(/Viini: 90 l × €2\.00\/l = €180\.00/))
       .toBeInTheDocument();
     // The excluded category is named, not silently dropped.
     expect(

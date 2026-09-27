@@ -55,6 +55,11 @@ export default async function HomePage({
   // the same inert-degradation contract as the sitemap's guide slugs.
   const guides = await getServerGuidesIndex(locale);
 
+  // The hero form is plain HTML (GET), so it navigates before hydration.
+  // next-intl's `as-needed` prefixing: Finnish serves the bare path,
+  // every other locale the prefixed one.
+  const searchAction = locale === 'fi' ? '/calculator' : `/${locale}/calculator`;
+
   return (
     <div className="flex min-h-screen flex-col">
       {/* ── Hero section ──────────────────────────────────────────────── */}
@@ -89,48 +94,60 @@ export default async function HomePage({
             {t('heroSubline')}
           </p>
 
-          {/* ── Floating search / CTA card ── */}
-          <div className="mx-auto mt-10 max-w-xl rounded-2xl bg-white p-3 shadow-xl ring-1 ring-white/10">
-            <div className="flex items-center gap-3">
-              {/* Decorative search field — clicking anywhere opens the calculator */}
-              <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl bg-gray-50 px-4 py-2.5 ring-1 ring-gray-200">
-                <svg
-                  aria-hidden="true"
-                  focusable="false"
-                  className="h-4 w-4 shrink-0 text-gray-400"
-                  viewBox="0 0 20 20"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <circle cx="9" cy="9" r="6" />
-                  <path d="M15 15l3 3" strokeLinecap="round" />
-                </svg>
-                <span className="select-none text-sm text-gray-400">
-                  {t('heroSearchPlaceholder')}
-                </span>
-              </div>
-              <Link
-                href="/calculator"
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+          {/* ── Real hero search (task 1.1) ──
+              A functional GET form: submission navigates to
+              /calculator?q={term}, where the calculator pre-fills and
+              runs the product search. Plain HTML — no JS required. ── */}
+          <form
+            method="get"
+            action={searchAction}
+            className="mx-auto mt-10 flex max-w-xl flex-col gap-3 rounded-2xl bg-white p-3 shadow-xl ring-1 ring-white/10 sm:flex-row sm:items-center"
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl bg-gray-50 px-4 py-2.5 ring-1 ring-gray-200 focus-within:ring-2 focus-within:ring-primary-500">
+              <svg
+                aria-hidden="true"
+                focusable="false"
+                className="h-4 w-4 shrink-0 text-gray-400"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
               >
-                {tNav('openCalculator')}
-                <svg
-                  aria-hidden="true"
-                  focusable="false"
-                  className="h-4 w-4"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </Link>
+                <circle cx="9" cy="9" r="6" />
+                <path d="M15 15l3 3" strokeLinecap="round" />
+              </svg>
+              <label htmlFor="hero-search" className="sr-only">
+                {t('heroSearchLabel')}
+              </label>
+              <input
+                id="hero-search"
+                name="q"
+                type="search"
+                placeholder={t('heroSearchPlaceholder')}
+                aria-label={t('heroSearchLabel')}
+                className="w-full bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
+              />
             </div>
-          </div>
+            <button
+              type="submit"
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+            >
+              {t('heroSearchSubmit')}
+              <svg
+                aria-hidden="true"
+                focusable="false"
+                className="h-4 w-4"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+          </form>
 
           {/* Micro trust badges below the card */}
           <p className="mt-4 text-center text-xs text-blue-300">

@@ -45,6 +45,7 @@ import { registerTripFeasibilityRoutes } from './routes/trip-feasibility.routes'
 import { registerTripRoutes } from './routes/trip.routes';
 import { registerAllowancesRoutes } from './routes/allowances.routes';
 import { registerSavingsRoutes } from './routes/savings.routes';
+import { registerBenchmarksRoutes } from './routes/benchmarks.routes';
 import { registerPriceContextRoutes } from './routes/price-context.routes';
 import { registerCuratedListsRoutes } from './routes/curated-lists.routes';
 import { registerHistoricalRoutes } from './routes/historical.routes';
@@ -163,6 +164,7 @@ export function createApp(): Hono<AppEnv> {
   registerTripRoutes(app);
   registerAllowancesRoutes(app);
   registerSavingsRoutes(app);
+  registerBenchmarksRoutes(app);
   registerPriceContextRoutes(app);
   registerCuratedListsRoutes(app);
   registerHistoricalRoutes(app);

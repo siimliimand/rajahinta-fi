@@ -25,6 +25,7 @@ import TripForm from './components/TripForm';
 import TripBreakEvenResult from './components/TripBreakEvenResult';
 import TripFillForm from './components/TripFillForm';
 import TripFillResult from './components/TripFillResult';
+import TripSuggestionStat from './components/TripSuggestionStat';
 import BreakEvenCard, { tripPerBasketSavingCents } from './BreakEvenCard';
 
 /** The page's two calculation modes. */
@@ -338,6 +339,11 @@ export default function TripView() {
       {mode === 'fill' && fillResult && (
         <TripFillResult result={fillResult} productNames={fillProductNames} />
       )}
+
+      {/* ── Factual savings-snapshot suggestion (task 5.3) — display-only
+          island that renders itself away when no snapshot data covers a
+          country and period; never a calculation or ranking input. ── */}
+      {(result !== null || fillResult !== null) && <TripSuggestionStat />}
     </>
   );
 }

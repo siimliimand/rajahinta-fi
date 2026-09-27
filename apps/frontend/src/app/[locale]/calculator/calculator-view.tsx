@@ -22,12 +22,14 @@ import {
 } from '@/lib/api';
 import { useDebouncedCallback } from '@/lib/use-debounced-callback';
 import { formatVolume } from '@/lib/format/product-attributes';
+import { Link } from '@/i18n/navigation';
 import { EmptyState, ErrorState } from '@/components/ui';
 import ProductSearch from './components/ProductSearch';
 import ProductSelector from './components/ProductSelector';
 import MerchantWarningNotice from '../components/MerchantWarningNotice';
 import QuantitySelector from './components/QuantitySelector';
 import ResultCard from './components/ResultCard';
+import ShareResultAction from './components/ShareResultAction';
 import ProductHistoryPanel from './components/ProductHistoryPanel';
 import ScenarioControls from './components/ScenarioControls';
 import StepIndicator from './components/StepIndicator';
@@ -47,6 +49,21 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 /** Default destination country (Finland). */
 const DEFAULT_DESTINATION = 'FI';
+
+/**
+ * Canonical categories for the empty-search browse links (task 3.3) —
+ * the labels render through the ProductPage.category catalog keys the
+ * messages parity test pins; the links lead to the catalog's category
+ * views.
+ */
+const CATALOG_CATEGORY_KEYS = [
+  'beer',
+  'wine_still',
+  'wine_sparkling',
+  'intermediate_products',
+  'other_fermented',
+  'spirits',
+] as const;
 
 /**
  * Quick-path destination options (task 4.2) — the same cross-border list
@@ -164,12 +181,22 @@ export default function CalculatorView() {
   const t = useTranslations('Calculator');
   const tCommon = useTranslations('Common');
   const tAgeGate = useTranslations('AgeGate');
+  const tProductPage = useTranslations('ProductPage');
 
   // ── Search state ──
   const [query, setQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ProductSearchItem[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  // Task 3.3: search failures render human states — a 429 as the
+  // friendly throttled notice, a 5xx as a retryable server-error state;
+  // anything else keeps the plain inline error line.
+  const [searchErrorKind, setSearchErrorKind] = useState<
+    'plain' | 'rate-limited' | 'server' | null
+  >(null);
+  const [searchRetryAfterSeconds, setSearchRetryAfterSeconds] = useState<
+    number | null
+  >(null);
   const [hasSearched, setHasSearched] = useState(false);
   // Task 4.7: a search submitted with a too-short term is a specific,
   // inline validation case — named with its minimum length, not a
@@ -225,6 +252,8 @@ export default function CalculatorView() {
 
       setSearchLoading(true);
       setSearchError(null);
+      setSearchErrorKind(null);
+      setSearchRetryAfterSeconds(null);
       setHasSearched(true);
       setSelectedProduct(null);
       setResult(null);
@@ -244,9 +273,26 @@ export default function CalculatorView() {
       } catch (err: unknown) {
         // Superseded searches leave the newer one's state untouched.
         if (controller.signal.aborted) return;
-        const message =
-          err instanceof Error ? err.message : t('searchFailed');
-        setSearchError(message);
+        if (err instanceof ApiFetchError && err.status === 429) {
+          // The friendly throttled state (task 3.3) — never a raw 429.
+          setSearchErrorKind('rate-limited');
+          setSearchError(null);
+          setSearchRetryAfterSeconds(
+            typeof err.body?.retryAfterSeconds === 'number'
+              ? err.body.retryAfterSeconds
+              : null,
+          );
+        } else if (err instanceof ApiFetchError && err.status >= 500) {
+          // Human server-error state with a retry (task 3.3) — the raw
+          // status code and server message never render.
+          setSearchErrorKind('server');
+          setSearchError(null);
+        } else {
+          setSearchErrorKind('plain');
+          const message =
+            err instanceof Error ? err.message : t('searchFailed');
+          setSearchError(message);
+        }
         setSearchResults([]);
         setSearchWarnings([]);
       } finally {
@@ -285,6 +331,24 @@ export default function CalculatorView() {
     },
     [debouncedSearch, runSearch],
   );
+
+  // ── Hero-search handoff (task 1.1) ──
+  // The homepage hero form submits to /calculator?q={term}; on mount the
+  // view reads that parameter, pre-fills the search field, and runs the
+  // search immediately (no debounce). Empty and too-short values
+  // pre-fill only — no failed-search state appears.
+  const initialQueryAppliedRef = useRef(false);
+  useEffect(() => {
+    if (initialQueryAppliedRef.current) return;
+    initialQueryAppliedRef.current = true;
+    const q = new URLSearchParams(window.location.search).get('q') ?? '';
+    const trimmed = q.trim();
+    if (trimmed.length === 0) return;
+    setQuery(q);
+    if (trimmed.length >= MIN_QUERY_LENGTH) {
+      runSearch(q);
+    }
+  }, [runSearch]);
 
   // ── Select handler ──
   const handleSelect = useCallback((product: ProductSearchItem) => {
@@ -421,6 +485,8 @@ export default function CalculatorView() {
     setQuery('');
     setSearchResults([]);
     setSearchError(null);
+    setSearchErrorKind(null);
+    setSearchRetryAfterSeconds(null);
     setHasSearched(false);
     setSearchWarnings([]);
     setShortQuery(false);
@@ -528,12 +594,57 @@ export default function CalculatorView() {
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
                   {selectedProduct ? t('selectedProduct') : t('searchResults')}
                 </p>
-                {searchSettledEmpty ? (
+                {searchErrorKind === 'rate-limited' ? (
+                  /* ── Friendly throttled state (task 3.3) ── */
+                  <ErrorState title={t('rateLimitedDescription')}>
+                    {searchRetryAfterSeconds !== null ? (
+                      <p
+                        data-testid="search-retry-after"
+                        className="text-sm text-gray-600"
+                      >
+                        {t('rateLimitRetryAfter', {
+                          seconds: searchRetryAfterSeconds,
+                        })}
+                      </p>
+                    ) : null}
+                  </ErrorState>
+                ) : searchErrorKind === 'server' ? (
+                  /* ── Human server-error state with retry (task 3.3) ── */
+                  <ErrorState
+                    title={t('serverErrorTitle')}
+                    description={t('serverErrorBody')}
+                    onRetry={() => runSearch(query)}
+                    retryLabel={tCommon('retry')}
+                  />
+                ) : searchSettledEmpty ? (
+                  /* ── Empty search (task 3.3): names the query, suggests
+                      a broader term, and offers category browse links ── */
                   <EmptyState
                     title={t('searchNoResultsTitle')}
-                    description={t('searchNoResultsDescription', {
-                      query: query.trim(),
-                    })}
+                    description={
+                      <>
+                        {t('searchNoResultsDescription', {
+                          query: query.trim(),
+                        })}{' '}
+                        {t('broaderSearchHint')}
+                      </>
+                    }
+                    action={
+                      <nav
+                        aria-label={t('browseCategories')}
+                        className="flex flex-wrap justify-center gap-2"
+                      >
+                        {CATALOG_CATEGORY_KEYS.map((key) => (
+                          <Link
+                            key={key}
+                            href={`/products?category=${key}`}
+                            className="touch-target inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            {tProductPage(`category.${key}`)}
+                          </Link>
+                        ))}
+                      </nav>
+                    }
                   />
                 ) : (
                   <>
@@ -794,6 +905,11 @@ export default function CalculatorView() {
                     text, breakdown beneath, reliability + timestamp, and
                     the structural disclaimer from the result object. */}
                 <ResultCard result={result} />
+                {/* Share action (task 5.2): frozen snapshot + copyable
+                    /share/[publicId] link for this record. */}
+                <div className="mt-4">
+                  <ShareResultAction recordId={result.calculationRecordId} />
+                </div>
               </div>
             </div>
           ) : (

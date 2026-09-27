@@ -226,20 +226,20 @@ describe('POST /api/v1/what-if/excise — rate limiting over createApp() (task 8
     db.close();
   });
 
-  it('admits ten per minute per IP (CALCULATOR) and rejects the eleventh with 429 + Retry-After', async () => {
+  it('admits sixty per minute per IP (CALCULATOR) and rejects the sixty-first with 429 + Retry-After', async () => {
     const env = whatIfEnv(d1); // one shared env = one shared DO limiter bucket
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 60; i++) {
       const res = await request(app, env, WHAT_IF_PATH, jsonInit(SCENARIO));
       expect(res.status).toBe(200);
     }
 
-    const eleventh = await request(app, env, WHAT_IF_PATH, jsonInit(SCENARIO));
-    await expectEnvelope(eleventh, 429, {
+    const sixtyFirst = await request(app, env, WHAT_IF_PATH, jsonInit(SCENARIO));
+    await expectEnvelope(sixtyFirst, 429, {
       error: 'TooManyRequests',
       message: expect.stringContaining('Rate limit exceeded'),
     });
-    const retryAfter = Number(eleventh.headers.get('Retry-After'));
+    const retryAfter = Number(sixtyFirst.headers.get('Retry-After'));
     expect(Number.isInteger(retryAfter)).toBe(true);
     expect(retryAfter).toBeGreaterThanOrEqual(0);
   });
@@ -256,15 +256,15 @@ describe('POST /api/v1/what-if/excise — rate limiting over createApp() (task 8
       expect(res.status).toBe(400);
     }
 
-    // Six what-if admits: 4 + 6 = 10 — the CALCULATOR budget is spent.
-    for (let i = 0; i < 6; i++) {
+    // Fifty-six what-if admits: 4 + 56 = 60 — the CALCULATOR budget is spent.
+    for (let i = 0; i < 56; i++) {
       const res = await request(app, env, WHAT_IF_PATH, jsonInit(SCENARIO));
       expect(res.status).toBe(200);
     }
 
-    // The seventh what-if crosses the shared pool…
-    const seventh = await request(app, env, WHAT_IF_PATH, jsonInit(SCENARIO));
-    await expectEnvelope(seventh, 429, { error: 'TooManyRequests' });
+    // The fifty-seventh what-if crosses the shared pool…
+    const fiftySeventh = await request(app, env, WHAT_IF_PATH, jsonInit(SCENARIO));
+    await expectEnvelope(fiftySeventh, 429, { error: 'TooManyRequests' });
 
     // …and so does the calculator sibling on the same pool.
     const calculator = await request(app, env, '/api/v1/calculations/excise', jsonInit({}));

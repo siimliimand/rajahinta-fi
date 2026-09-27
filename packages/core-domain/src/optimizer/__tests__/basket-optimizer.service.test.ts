@@ -1234,9 +1234,54 @@ describe('BasketOptimizerService', () => {
 
   describe('input caps pinned', () => {
     it('pins the exact cap values — update this pin in the same commit as any deliberate change', () => {
-      expect(MAX_BASKET_ITEMS).toBe(10);
+      expect(MAX_BASKET_ITEMS).toBe(30);
       expect(MAX_CANDIDATE_MERCHANTS_PER_ITEM).toBe(8);
       expect(MAX_TOTAL_COMBINATIONS).toBe(100_000);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Event-scale capacity — the raised 30-item cap (client-experience-
+  // improvement, basket-optimization spec scenario "Thirty items optimize")
+  // -------------------------------------------------------------------------
+
+  describe('event-scale capacity', () => {
+    it('optimizes 30 distinct items without a cap error', async () => {
+      // 30 distinct products, each offered by exactly one distinct
+      // merchant — the Cartesian product stays at 1, so the
+      // total-combinations guard is not the binding constraint here.
+      const products: CalculatorProductData[] = Array.from(
+        { length: MAX_BASKET_ITEMS },
+        (_, i) => ({ ...PRODUCT_1, id: i + 1 }),
+      );
+      const productData = createMockProductDataPort({
+        findProductById: vi.fn().mockImplementation(async (id: number) =>
+          products.find((p) => p.id === id) ?? null,
+        ),
+        findRetailOffers: vi.fn().mockImplementation(async (id: number) =>
+          id >= 1 && id <= MAX_BASKET_ITEMS
+            ? [{
+                id: id * 10,
+                priceCents: 200 + id,
+                merchant: `event-merchant-${id}`,
+                country: 'DE',
+                reliabilityStatus: 'VERIFIED' as const,
+              }]
+            : [],
+        ),
+      });
+
+      const service = createOptimizer({ productData });
+      const input: BasketOptimizationInput = {
+        items: products.map((p) => ({ productId: p.id, quantity: 1 })),
+        destination: 'FI',
+      };
+
+      const result = await service.optimize(input);
+
+      expect(result.metadata.input.items).toHaveLength(MAX_BASKET_ITEMS);
+      expect(result.totalCents).toBeGreaterThan(0);
+      expect(result.shipments.length).toBeGreaterThanOrEqual(1);
     });
   });
 

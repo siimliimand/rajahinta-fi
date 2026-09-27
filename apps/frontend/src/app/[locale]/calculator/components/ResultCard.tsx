@@ -134,6 +134,32 @@ export default function ResultCard({ result }: ResultCardProps) {
         </p>
       </div>
 
+      {/* ── Savings summary (task 5.1 follow-through) — the same
+          display-only statement the result-record view renders: only
+          when a benchmark exists AND the calculated offer sits below the
+          reference (an actual estimated saving), same copy keys, never a
+          cost line or a calculation input. No benchmark, or an offer at
+          or above the reference, renders nothing. ── */}
+      {benchmark !== undefined &&
+        benchmark.status === 'available' &&
+        benchmark.differenceCents < 0 && (
+          <div
+            data-testid="savings-summary"
+            className="rounded-lg border border-primary-200 bg-primary-50 px-4 py-3"
+          >
+            <p className="text-sm font-semibold text-primary-900">
+              {t('savingsSummary.title', {
+                amount: formatEur(-benchmark.differenceCents),
+              })}
+            </p>
+            <p className="mt-1 text-xs text-primary-800">
+              {t('savingsSummary.asOf', {
+                date: new Date(benchmark.observedAt).toLocaleDateString('fi-FI'),
+              })}
+            </p>
+          </div>
+        )}
+
       {/* ── Price-data reliability + timestamp (status via the canonical
           meta map — label and icon carry the meaning, not hue) ── */}
       {priceLine && (

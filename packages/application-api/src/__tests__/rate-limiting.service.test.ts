@@ -111,16 +111,56 @@ describe('RateLimitingService', () => {
     expect(await service.isAllowed('test-user', profile)).toBe(false);
   });
 
-  it('allows requests within the CALCULATOR profile limit', async () => {
-    for (let i = 0; i < 10; i++) {
+  it('allows requests within the CALCULATOR profile limit (60/min — interactive use, change client-experience-improvement)', async () => {
+    // The interactive-use bump pins the profile itself: 60 requests per
+    // minute are admitted, the 61st is rejected.
+    expect(RATE_LIMIT_PROFILES.CALCULATOR).toEqual({
+      limit: 60,
+      windowMs: 60_000,
+    });
+    for (let i = 0; i < RATE_LIMIT_PROFILES.CALCULATOR.limit; i++) {
       expect(await service.isAllowed('calc-user', 'CALCULATOR')).toBe(true);
     }
     expect(await service.isAllowed('calc-user', 'CALCULATOR')).toBe(false);
   });
 
+  it('allows requests within the BASKET profile limit (60/min — interactive use, change client-experience-improvement)', async () => {
+    expect(RATE_LIMIT_PROFILES.BASKET).toEqual({
+      limit: 60,
+      windowMs: 60_000,
+    });
+    for (let i = 0; i < RATE_LIMIT_PROFILES.BASKET.limit; i++) {
+      expect(await service.isAllowed('basket-user', 'BASKET')).toBe(true);
+    }
+    expect(await service.isAllowed('basket-user', 'BASKET')).toBe(false);
+  });
+
+  it('profile parity pins — CALCULATOR and BASKET agree with the Worker middleware; stricter profiles unchanged', async () => {
+    // apps/api-worker/src/middleware/rate-limit.ts mirrors these exact
+    // values (its module docblock names this file as the parity source).
+    expect(RATE_LIMIT_PROFILES.DEFAULT).toEqual({ limit: 60, windowMs: 60_000 });
+    expect(RATE_LIMIT_PROFILES.CALCULATOR).toEqual({
+      limit: 60,
+      windowMs: 60_000,
+    });
+    expect(RATE_LIMIT_PROFILES.BASKET).toEqual({ limit: 60, windowMs: 60_000 });
+    // Unchanged stricter surfaces (the Worker's AUTH profile stays
+    // 10 per 5 minutes — this file carries no AUTH profile by design).
+    expect(RATE_LIMIT_PROFILES.SEARCH).toEqual({ limit: 30, windowMs: 60_000 });
+    expect(RATE_LIMIT_PROFILES.DECLARATION).toEqual({
+      limit: 20,
+      windowMs: 60_000,
+    });
+    expect(RATE_LIMIT_PROFILES.HISTORICAL).toEqual({
+      limit: 30,
+      windowMs: 60_000,
+    });
+  });
+
   it('treats different IPs independently', async () => {
-    // Exhaust ip-a
-    for (let i = 0; i < 10; i++) {
+    // Exhaust ip-a on the CALCULATOR profile (profile-driven: the limit
+    // is the interactive-use 60, not a hardcoded figure).
+    for (let i = 0; i < RATE_LIMIT_PROFILES.CALCULATOR.limit; i++) {
       await service.isAllowed('ip-a', 'CALCULATOR');
     }
     // ip-b should still be allowed
@@ -131,10 +171,13 @@ describe('RateLimitingService', () => {
     // Regression (browser-e2e wave): the window was keyed by client only,
     // so DEFAULT-profile requests (searches, product reads) filled the
     // shared window and throttled the calculator far below its own
-    // limit. Each profile is its own pool per client.
-    for (let i = 0; i < 15; i++) {
+    // limit. Each profile is its own pool per client. The loop fills the
+    // DEFAULT pool to its limit, so broken keying would fail the
+    // CALCULATOR assertion below.
+    for (let i = 0; i < RATE_LIMIT_PROFILES.DEFAULT.limit; i++) {
       expect(await service.isAllowed('shared-user', 'DEFAULT')).toBe(true);
     }
+    expect(await service.isAllowed('shared-user', 'DEFAULT')).toBe(false);
     expect(await service.isAllowed('shared-user', 'CALCULATOR')).toBe(true);
     expect(await service.isAllowed('shared-user', 'SEARCH')).toBe(true);
   });

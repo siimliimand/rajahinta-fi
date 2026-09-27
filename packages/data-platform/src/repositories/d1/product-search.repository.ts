@@ -251,6 +251,24 @@ const FTS_SEARCH_SQL = `
    ORDER BY ${BM25_COLUMN_WEIGHTS} ASC, p.id ASC
    LIMIT ?`;
 
+/**
+ * FTS candidates narrowed by a category filter (task 2.1, change
+ * client-experience-improvement) — the combined q+category path. The
+ * category predicate lives INSIDE the candidate query, before LIMIT, so
+ * the ranked fetch can never evict an in-category match in favor of an
+ * out-of-category one; the limit applies to the combined result set.
+ */
+const FTS_SEARCH_IN_CATEGORY_SQL = `
+  SELECT p.id, p.name, p.manufacturer, p.brand, p.category,
+         p.alcohol_by_volume, p.unit_volume, p.container_type,
+         p.regulatory_classification, p.deposit_system_status, p.ean,
+         p.weight_grams, p.created_at, p.updated_at
+    FROM product_master_fts f
+    JOIN product_master p ON p.id = f.rowid
+   WHERE product_master_fts MATCH ? AND p.category = ?
+   ORDER BY ${BM25_COLUMN_WEIGHTS} ASC, p.id ASC
+   LIMIT ?`;
+
 /** LIKE candidates — the ILIKE recall analogue; catches mid-token
  *  substrings ('arhu') the token-prefix match cannot express. LIKE is
  *  case-insensitive for ASCII in SQLite; non-ASCII case folding is
@@ -261,6 +279,21 @@ const RANKED_LIKE_SQL = `
    WHERE name LIKE ? ESCAPE '\\'
       OR brand LIKE ? ESCAPE '\\'
       OR manufacturer LIKE ? ESCAPE '\\'
+   ORDER BY id ASC
+   LIMIT ?`;
+
+/**
+ * LIKE candidates narrowed by a category filter (task 2.1) — the
+ * combined q+category recall path; the OR group is parenthesized so the
+ * category predicate conjoins the whole group, not the last arm.
+ */
+const RANKED_LIKE_IN_CATEGORY_SQL = `
+  SELECT ${PRODUCT_COLUMNS}
+    FROM product_master
+   WHERE (name LIKE ? ESCAPE '\\'
+       OR brand LIKE ? ESCAPE '\\'
+       OR manufacturer LIKE ? ESCAPE '\\')
+     AND category = ?
    ORDER BY id ASC
    LIMIT ?`;
 
@@ -279,6 +312,22 @@ const NAME_LIKE_SQL = `
 const CATALOG_KEYS_SQL = `
   SELECT id, name
     FROM product_master`;
+
+/**
+ * Price-ordered catalog keys (task 1.2): ascending by the product's
+ * lowest observed offer price — the same all-rows MIN the page renders
+ * (design D4), so the sort key IS the displayed price. LEFT JOIN keeps
+ * offer-less products in the listing; the `(… IS NULL)` term sends them
+ * last, and the id ASC tie makes the order total and deterministic
+ * (spec product-search: "Price sort orders by observed lowest price").
+ */
+const CATALOG_KEYS_BY_PRICE_SQL = `
+  SELECT p.id AS id, p.name AS name
+    FROM product_master p
+    LEFT JOIN (SELECT product_id, MIN(price_cents) AS min_price_cents
+                 FROM retail_offers
+             GROUP BY product_id) a
+      ON a.product_id = p.id`;
 
 const INSERT_SQL = `
   INSERT INTO product_master (
@@ -308,6 +357,21 @@ const UPDATE_BY_EAN_SQL = `
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
+
+/**
+ * Catalog sort orders (task 1.2, change client-experience-improvement) —
+ * the one shared value set for {@link D1ProductSearchRepository.listCatalogPage}
+ * and the API route's `sort` validation. Every order keys on objective
+ * product/offer fields only; no commercial or promotional signal can enter
+ * an ordering (proposal decision D3).
+ */
+export const CATALOG_SORT_ORDERS = [
+  'ALPHABETICAL',
+  'LOWEST_PRICE',
+  'ALCOHOL_PERCENTAGE',
+] as const;
+
+export type CatalogSortOrder = (typeof CATALOG_SORT_ORDERS)[number];
 
 /**
  * One catalog listing item: the full contract product plus the offer
@@ -381,22 +445,43 @@ export class D1ProductSearchRepository extends ProductRepository {
    * of the pg repository; blank/whitespace queries fall through to the
    * unfiltered alphabetical listing (defensive total-order parity with
    * the spike, which never throws on whitespace).
+   *
+   * `category` (task 2.1, change client-experience-improvement) narrows
+   * BOTH candidate paths with an exact-equality predicate, so the result
+   * contains only keyword matches whose category equals the value — the
+   * category is never silently ignored because a keyword is present
+   * (spec product-search). The value must be validated against
+   * PRODUCT_CATEGORIES by the caller (the API route 400s unknown values);
+   * like {@link D1ProductSearchRepository.listCatalogPage}, an
+   * unvalidated value filters strictly and yields zero rows. The limit
+   * applies to the combined result set: the candidate queries carry the
+   * category predicate before their LIMIT.
    */
   override async searchRanked(
     query: string,
     limit: number,
+    category?: string,
   ): Promise<ProductRecord[]> {
     const trimmed = query.trim();
     const tokens = tokenize(trimmed);
     if (tokens.length === 0) {
+      // Blank-query defensive path only — the route sends non-blank
+      // queries here and blanks to listCatalogPage, which owns category
+      // filtering for the browse shape.
       return this.listAlphabetical(limit);
     }
 
-    // 1) FTS5 candidates.
+    const filtered = category !== undefined;
+
+    // 1) FTS candidates.
     const ftsRows = (
       await this.d1
-        .prepare(FTS_SEARCH_SQL)
-        .bind(buildMatchExpression(tokens), limit)
+        .prepare(filtered ? FTS_SEARCH_IN_CATEGORY_SQL : FTS_SEARCH_SQL)
+        .bind(
+          buildMatchExpression(tokens),
+          ...(filtered ? [category] : []),
+          limit,
+        )
         .all<D1ProductRow>()
     ).results;
 
@@ -404,8 +489,14 @@ export class D1ProductSearchRepository extends ProductRepository {
     const pattern = likePattern(trimmed);
     const likeRows = (
       await this.d1
-        .prepare(RANKED_LIKE_SQL)
-        .bind(pattern, pattern, pattern, limit)
+        .prepare(filtered ? RANKED_LIKE_IN_CATEGORY_SQL : RANKED_LIKE_SQL)
+        .bind(
+          pattern,
+          pattern,
+          pattern,
+          ...(filtered ? [category] : []),
+          limit,
+        )
         .all<D1ProductRow>()
     ).results;
 
@@ -495,6 +586,13 @@ export class D1ProductSearchRepository extends ProductRepository {
    * non-undefined value filters by exact equality — an unknown value
    * yields zero rows, never a silent fallback to the unfiltered listing.
    *
+   * `sort` (task 1.2, change client-experience-improvement) orders the
+   * keys before pagination, so every page slices the SAME total order:
+   * ALPHABETICAL keeps the app-side FI collation; LOWEST_PRICE and
+   * ALCOHOL_PERCENTAGE order in SQL (numeric keys, id tie — total order,
+   * no collation needed) with offer-less / unknown-ABV products last.
+   * The value set is {@link CATALOG_SORT_ORDERS}; the route validates it.
+   *
    * Kept on the D1 concrete class only (no abstract counterpart yet):
    * the route binds the concrete type (the D1-only repository precedent).
    */
@@ -502,6 +600,7 @@ export class D1ProductSearchRepository extends ProductRepository {
     page: number,
     pageSize: number,
     category?: string,
+    sort: CatalogSortOrder = 'ALPHABETICAL',
   ): Promise<CatalogProductListPage> {
     // A negative/zero page would slice from the list's tail (negative
     // offset) — silently wrong content instead of an error.
@@ -515,20 +614,38 @@ export class D1ProductSearchRepository extends ProductRepository {
     }
 
     const filtered = category !== undefined;
+    let keysSql: string;
+    const keyParams: string[] = [];
+    if (sort === 'LOWEST_PRICE') {
+      keysSql = `${CATALOG_KEYS_BY_PRICE_SQL}${
+        filtered ? ' WHERE p.category = ?' : ''
+      }
+   ORDER BY (a.min_price_cents IS NULL) ASC, a.min_price_cents ASC, p.id ASC`;
+      if (filtered) keyParams.push(category);
+    } else if (sort === 'ALCOHOL_PERCENTAGE') {
+      keysSql = `SELECT id, name FROM product_master${
+        filtered ? ' WHERE category = ?' : ''
+      }
+   ORDER BY (alcohol_by_volume IS NULL) ASC, alcohol_by_volume DESC, id ASC`;
+      if (filtered) keyParams.push(category);
+    } else {
+      keysSql = `${CATALOG_KEYS_SQL}${filtered ? ' WHERE category = ?' : ''}`;
+      if (filtered) keyParams.push(category);
+    }
     const keys = (
       await this.d1
-        .prepare(
-          filtered
-            ? `${CATALOG_KEYS_SQL} WHERE category = ?`
-            : CATALOG_KEYS_SQL,
-        )
-        .bind(...(filtered ? [category] : []))
+        .prepare(keysSql)
+        .bind(...keyParams)
         .all<D1CatalogKeyRow>()
     ).results;
 
     // Exact total — the full filtered key list, before slicing (design D1).
     const total = keys.length;
-    const pageKeys = sortAlphabetical(keys).slice(
+    // The alphabetical contract sorts app-side (FI collation); the
+    // SQL-ordered sorts are already total — re-sorting would destroy them.
+    const orderedKeys =
+      sort === 'ALPHABETICAL' ? sortAlphabetical(keys) : keys;
+    const pageKeys = orderedKeys.slice(
       (page - 1) * pageSize,
       page * pageSize,
     );

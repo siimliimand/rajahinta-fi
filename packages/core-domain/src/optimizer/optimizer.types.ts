@@ -84,7 +84,7 @@ export class BasketCombinationLimitError extends Error {
 // ---------------------------------------------------------------------------
 
 /** Maximum number of distinct items in a basket optimization request. */
-export const MAX_BASKET_ITEMS = 10;
+export const MAX_BASKET_ITEMS = 30;
 
 /** Maximum candidate merchants per item. */
 export const MAX_CANDIDATE_MERCHANTS_PER_ITEM = 8;
@@ -93,8 +93,8 @@ export const MAX_CANDIDATE_MERCHANTS_PER_ITEM = 8;
  * Maximum total merchant-assignment combinations (Cartesian product of the
  * per-item candidate lists) the optimizer will enumerate.
  *
- * The input caps alone do not bound the search: 10 items at the full
- * 8-merchant cap reach 8^10 ≈ 1.07e9 leaves, far beyond the deployment
+ * The input caps alone do not bound the search: 30 items at the full
+ * 8-merchant cap reach 8^30 ≈ 1.15e27 leaves, far beyond the deployment
  * limits (256m CPU / 512Mi). This bound keeps DFS time sub-second and the
  * in-memory assignment list within the container budget.
  */

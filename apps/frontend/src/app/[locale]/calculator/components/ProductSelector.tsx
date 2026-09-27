@@ -6,6 +6,7 @@
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
+import { LoadingSkeleton } from '@/components/ui';
 import type { ProductSearchItem } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -53,19 +54,14 @@ export default function ProductSelector({
 }: ProductSelectorProps) {
   const t = useTranslations('ProductSelector');
 
-  // Loading state
+  // Loading state — the shared skeleton primitive plus a visible
+  // status line (task 3.3: never a blank screen; the skeleton itself is
+  // aria-hidden, so this text owns the loading announcement).
   if (loading) {
     return (
-      <div className="space-y-2">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div
-            key={i}
-            className="animate-pulse rounded-md border border-gray-200 p-3"
-          >
-            <div className="mb-1 h-4 w-3/4 rounded bg-gray-200" />
-            <div className="h-3 w-1/2 rounded bg-gray-100" />
-          </div>
-        ))}
+      <div role="status" data-testid="selector-loading">
+        <p className="mb-2 text-sm text-gray-500">{t('loading')}</p>
+        <LoadingSkeleton variant="card" count={3} />
       </div>
     );
   }

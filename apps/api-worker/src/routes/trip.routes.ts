@@ -34,22 +34,16 @@
  * X-Content-Hash covers the cached fill body, not the per-request ferry
  * block. The raw ferry url never crosses this boundary.
  *
- * Middleware chain per request (in registration order — Nest guard
- * order: RateLimitGuard first in every guard list, then class/method
- * guards):
+ * Middleware chain per request:
  *
- *   requireRateLimit('CALCULATOR') → sessionAuth() →
- *   requireFeature('calculation:basic') → handler
+ *   requireRateLimit('CALCULATOR') → handler
  *
- * The allowance-fill spec requires an AUTHENTICATED user ("An
- * authenticated user SHALL be able to request a basket fill"), so
- * unlike the anonymous trip-feasibility surface the route sits behind
- * sessionAuth — an anonymous caller gets the guard's standard 401. The
- * entitlement check is the platform's calculation-surface seam
- * (`requireFeature`, declaration/reports parity): every tier is FREE
- * today, so the check admits every signed-in caller while keeping the
- * paywall seam wired. Rate limit: the CALCULATOR profile, the trip
- * calculator's own (10/min).
+ * The route is ANONYMOUS (change client-experience-improvement, D2 —
+ * minimal personal data: the fill needs no identity), so the former
+ * sessionAuth and `requireFeature('calculation:basic')` guards are
+ * dropped. The CALCULATOR rate limit (the trip calculator's own,
+ * 10/min), the version-aware idempotency cache, and the ferry-offer
+ * neutrality contract are unchanged.
  *
  * Documented decisions:
  * - Validation bounds mirror the module's contracts exactly:
@@ -88,8 +82,6 @@ import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
 import { requireRateLimit } from '../middleware/rate-limit';
-import { sessionAuth } from '../middleware/session-auth';
-import { requireFeature } from '../middleware/entitlement';
 import { parseDto } from './support';
 import { AllowanceFillService } from '../../../../packages/core-domain/src/optimizer/services/allowance-fill.service';
 import {
@@ -318,16 +310,14 @@ async function withFerryBlock(
 // ---------------------------------------------------------------------------
 
 /**
- * Register the trip-fill handler behind its guard chain (rate limit →
- * session auth → entitlement — Nest guard order; the entitlement check
- * is the calculation surface's paywall seam).
+ * Register the trip-fill handler behind its CALCULATOR rate limiter —
+ * anonymous by design (D2); idempotency and the ferry block are
+ * unchanged.
  */
 export function registerTripRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.post(
     '/api/v1/trip/fill',
     requireRateLimit('CALCULATOR'),
-    sessionAuth(),
-    requireFeature('calculation:basic'),
     fillTripAllowance,
   );
   return app;

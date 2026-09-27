@@ -340,6 +340,7 @@ export type {
   CalculatorResult,
   CalculatorProductData,
   CalculatorRetailOfferData,
+  RetailOfferAvailability,
   AlkoBenchmarkSnapshot,
   CostCategory,
   ItemizedCost,
@@ -350,6 +351,7 @@ export type {
   ICalculationRecordPort,
 } from './calculator/calculator.types';
 export {
+  isOfferOutOfStock,
   PRODUCT_DATA_PORT,
   CALCULATION_RECORD_PORT,
   ClassificationGateRejectionError,

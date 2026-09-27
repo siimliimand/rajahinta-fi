@@ -121,9 +121,20 @@ describe('TripView route presets (task 4.3)', () => {
       scope.getByRole('button', { name: 'Laske kannattava tuontimäärä' }),
     );
 
-    await waitFor(() => expect(mockedRequest).toHaveBeenCalledTimes(1));
+    // The form's benchmark prefill fires its own GET per mount; wait for
+    // the SUBMIT call specifically, then assert on its body.
+    await waitFor(() =>
+      expect(
+        mockedRequest.mock.calls.some(
+          (call) => call[0] === '/api/v1/trip-feasibility',
+        ),
+      ).toBe(true),
+    );
+    const submitCall = mockedRequest.mock.calls.find(
+      (call) => call[0] === '/api/v1/trip-feasibility',
+    )!;
     const body = JSON.parse(
-      (mockedRequest.mock.calls[0]![1] as { body: string }).body,
+      (submitCall[1] as { body: string }).body,
     ) as { fuelCostCents: number; ticketCostCents: number; passengers: number; vehicleType: string };
     // The edited fuel value drives the estimate…
     expect(body.fuelCostCents).toBe(4000);

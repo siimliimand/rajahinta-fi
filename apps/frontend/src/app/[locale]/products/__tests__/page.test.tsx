@@ -336,9 +336,11 @@ describe('ProductsPage pagination', () => {
     await renderCatalog({ page: '2' });
 
     const nav = screen.getByTestId('catalog-pagination');
+    // Page 1 is the base URL — the page parameter is the default and is
+    // omitted (task 1.3 href builder).
     expect(within(nav).getByRole('link', { name: '1' })).toHaveAttribute(
       'href',
-      '/products?page=1',
+      '/products',
     );
     expect(within(nav).getByRole('link', { name: '3' })).toHaveAttribute(
       'href',
@@ -440,7 +442,13 @@ describe('ProductsPage empty state and forgiveness', () => {
 
     await renderCatalog();
 
-    expect(screen.getByText('Tuoteluetteloa ei voida näyttää juuri nyt')).toBeInTheDocument();
+    // Human server-error state (task 3.3): no raw error, a retry link
+    // targeting the same state.
+    expect(screen.getByText('Jokin meni pieleen')).toBeInTheDocument();
+    expect(screen.getByText('Yritä hetken kuluttua uudelleen.')).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Yritä uudelleen' }),
+    ).toHaveAttribute('href', '/products');
     expect(screen.queryByTestId('catalog-grid')).not.toBeInTheDocument();
   });
 });

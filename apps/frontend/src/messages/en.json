@@ -95,6 +95,8 @@
     "heroSubline": "Foreign retail price, transport, and estimates of excise duty and container tax — in one itemized breakdown.",
     "heroPillBadge": "Neutral · Transparent · Finnish Tax Administration rates",
     "heroSearchPlaceholder": "Search products… e.g. Koskenkorva, IPA, Rioja",
+    "heroSearchLabel": "Search products",
+    "heroSearchSubmit": "Search",
     "heroTrustLine": "🏛 Official tax sources · 📊 Price index · 🔒 WCAG AA accessible",
     "whyTitle": "Why Rajahinta.fi?",
     "feature1Title": "True total landed cost",
@@ -145,7 +147,9 @@
   },
   "AgeGateDeclined": {
     "title": "Access restricted",
-    "body": "You indicated that you are under 18. This service is intended for adults only, so its content is not available."
+    "body": "You indicated that you are under 18. This service is intended for adults only, so its content is not available.",
+    "recoveryIntro": "No worries — if that click was an accident, you can safely go back and answer again.",
+    "recoveryAction": "I clicked by accident — try again"
   },
   "NotFound": {
     "title": "Page not found",
@@ -178,7 +182,11 @@
     "searchNoResultsTitle": "No search results",
     "searchNoResultsDescription": "No products found for \"{query}\". Check the spelling or try another product name.",
     "calculationErrorTitle": "Calculation failed",
-    "rateLimitedDescription": "The number of calculations is temporarily limited.",
+    "rateLimitedDescription": "One moment — we're still calculating the previous request.",
+    "serverErrorTitle": "Something went wrong",
+    "serverErrorBody": "Try again in a moment.",
+    "broaderSearchHint": "Try a more general search term or browse by category.",
+    "browseCategories": "Browse categories",
     "rateLimitRetryAfter": "Wait {seconds, plural, one {# second} other {# seconds}} and try again.",
     "metaTitle": "Cross-border cost calculator",
     "metaDescription": "Search a product, choose a quantity, and get an itemized estimate of the total cost of importing alcohol to Finland: retail price, transport, and Finnish excise duty and container tax.",
@@ -193,7 +201,8 @@
   "ProductSelector": {
     "typeToSearch": "Type a product name to start searching.",
     "noResults": "No products found for \"{query}\".",
-    "lowestPrice": "Lowest observed price: {price}"
+    "lowestPrice": "Lowest observed price: {price}",
+    "loading": "Calculating…"
   },
   "QuantitySelector": {
     "label": "Quantity",
@@ -220,6 +229,10 @@
       "importCheaper": "Importing is cheaper",
       "samePrice": "The price is the same",
       "observedAt": "Observed: {timestamp}"
+    },
+    "savingsSummary": {
+      "title": "Ordering from abroad saves an estimated {amount} compared with the Alko price.",
+      "asOf": "The comparison is based on the Alko price observation from {date}."
     },
     "sanityNote": {
       "label": "Confidence downgraded: the result is an estimate"
@@ -404,8 +417,11 @@
     "productsCompared": "{count, plural, one {# product} other {# products}} compared",
     "empty": "No products added to comparison yet.",
     "totalLandedCost": "Total landed cost",
-    "dataConfidence": "Data confidence",
+    "dataConfidence": "Data reliability",
     "viewAt": "View at {merchant}",
+    "distanceSellingBadge": "Distance selling",
+    "distanceBuyingBadge": "Distance buying",
+    "distanceSellingNote": "The seller badges derive from the seller's country: with distance selling the merchant handles the Finnish alcohol taxes; with distance buying you arrange the transport and file the required declarations yourself. General information, not legal advice.",
     "eurPerGram": {
       "columnHeader": "€/g pure ethanol",
       "sortOptionLabel": "€/g ethanol (lowest first)",
@@ -490,7 +506,7 @@
       "finlandUnavailable": "Finland reference total unavailable: these products have no reference prices"
     },
     "errors": {
-      "validation": "Check the entered details. A basket can hold at most 10 products, and each quantity must be 1–99.",
+      "validation": "Check the entered details. A basket can hold at most 30 products, and each quantity must be 1–99.",
       "not-found": "The product was not found. Check your search terms and try again.",
       "gate-rejected": "One or more products cannot currently be processed. Try another product.",
       "rate-limited": "The service is temporarily busy. Wait a moment and try again.",
@@ -725,11 +741,16 @@
           "EE": "Estonia",
           "LV": "Latvia",
           "LT": "Lithuania",
-          "DE": "Germany"
+          "DE": "Germany",
+          "SE": "Sweden"
         },
         "budget": "Budget (€, optional)",
         "packing": "Suggest packing for the haul brought from abroad",
         "pricesHeading": "Price basis in euros per litre",
+        "useBenchmarks": "Use average prices",
+        "useOwnPrices": "Enter your own prices",
+        "benchmarkNote": "Average of observed prices: domestic Alko, abroad a cross-border webshop. Observations as of {asOf}.",
+        "benchmarkUnavailable": "Category averages are not available right now — enter prices manually.",
         "domesticPrice": "{type} — Finland (€/l)",
         "foreignPrice": "Abroad (€/l)",
         "priceHint": "Enter a per-litre price for at least one drink type. A foreign price always requires the domestic comparison price.",
@@ -766,10 +787,10 @@
     },
     "drinkType": {
       "beer": "Beer",
-      "wine_still": "Still wine",
+      "wine_still": "Wine",
       "wine_sparkling": "Sparkling wine",
-      "intermediate_products": "Intermediate products (e.g. vermouth)",
-      "other_fermented": "Cider and long drink",
+      "intermediate_products": "Fortified wines (vermouth, port)",
+      "other_fermented": "Long drinks and ciders",
       "spirits": "Spirits"
     },
     "errors": {
@@ -823,6 +844,10 @@
       "ticket": "Tickets total (€)",
       "fuel": "Fuel total (€)",
       "pricesHeading": "Prices in euros per litre",
+      "useBenchmarks": "Use average prices",
+      "useOwnPrices": "Enter your own prices",
+      "benchmarkNote": "Average of observed prices: domestic Alko, abroad a cross-border webshop. Observations as of {asOf}.",
+      "benchmarkUnavailable": "Category averages are not available right now — enter prices manually.",
       "domesticPrice": "{category} — Finland (€/l)",
       "foreignPrice": "Abroad (€/l)",
       "priceHint": "Enter a domestic and a foreign price for at least one category.",
@@ -850,13 +875,13 @@
     },
     "category": {
       "beer": "Beer",
-      "wine_still": "Still wine",
+      "wine_still": "Wine",
       "wine_sparkling": "Sparkling wine",
-      "intermediate_products": "Intermediate products (e.g. vermouth)",
-      "other_fermented": "Cider and long drink",
+      "intermediate_products": "Fortified wines (vermouth, port)",
+      "other_fermented": "Long drinks and ciders",
       "spirits": "Spirits"
     },
- "submit": "Calculate break-even volume",
+  "submit": "Calculate break-even volume",
  "submitting": "Calculating…",
  "mode": {
   "breakeven": "Break-even",
@@ -938,6 +963,9 @@
     },
     "partners": {
       "label": "Partner links"
+    },
+    "suggestion": {
+      "stat": "On the latest observation day ({date}), beers ordered from webstores in {country} were on average {percent}% below the Alko reference price."
     },
     "noAllowances": {
       "title": "No published traveller allowances",
@@ -1221,9 +1249,19 @@
     "offersTitle": "Retail prices",
     "merchantHeader": "Merchant",
     "priceHeader": "Retail price",
+    "availabilityHeader": "Availability",
     "countryHeader": "Country",
     "observedHeader": "Observed",
+    "availability": {
+      "in_stock": "In stock",
+      "low_stock": "Low stock",
+      "out_of_stock": "Out of stock"
+    },
+    "distanceSellingBadge": "Distance selling",
+    "distanceBuyingBadge": "Distance buying",
+    "distanceSellingNote": "The seller badge derives from the seller's country: with distance selling the merchant handles the Finnish alcohol taxes; with distance buying you arrange the transport and file the required declarations yourself. General information, not legal advice.",
     "noOffers": "No active price observations.",
+    "viewAtStore": "View at store →",
     "dataNote": "Prices are collected observations, not merchant offers.",
     "landingNote": "The landed cost for Finland includes the price plus taxes, duties, and transport — calculate it in the calculator."
   },
@@ -1567,13 +1605,22 @@
   },
   "ProductsPage": {
     "metaTitle": "Products — observed prices",
-    "metaDescription": "The product catalog with observed prices and merchant counts, in alphabetical order.",
+    "metaDescription": "The product catalog with observed prices and merchant counts.",
     "metaCategoryTitle": "{category} — observed prices",
-    "metaCategoryDescription": "Product catalog for the {category} category: observed prices and merchant counts, in alphabetical order.",
+    "metaCategoryDescription": "Product catalog for the {category} category: observed prices and merchant counts.",
     "heading": "Products",
     "intro": "The product catalog behind the landed-cost calculator, with observed prices.",
     "filterNavLabel": "Category",
     "allProducts": "All products",
+    "searchLabel": "Search",
+    "searchPlaceholder": "Search products by name, brand, or manufacturer",
+    "searchSubmit": "Search",
+    "searchClear": "Clear search",
+    "sortLabel": "Sort order",
+    "sortOptionAlphabetical": "Name (alphabetical)",
+    "sortOptionLowestPrice": "Lowest observed price first",
+    "sortOptionAlcoholPercentage": "Alcohol percentage (highest first)",
+    "sortApply": "Apply",
     "fromPriceLabel": "Lowest observed price",
     "noPrice": "No observed prices",
     "merchantCount": "Merchants: {count}",
@@ -1583,8 +1630,12 @@
     "pageStatus": "Page {page} / {totalPages}",
     "emptyTitle": "No products to show",
     "emptyBody": "No products have been recorded for this view.",
-    "unavailableTitle": "The catalog is not available right now",
-    "unavailableBody": "The product data lookup did not succeed. Try again later."
+    "searchEmptyTitle": "No results for \"{query}\"",
+    "searchEmptyBody": "Try a more general search term or browse by category.",
+    "browseCategoriesLabel": "Categories",
+    "retryLabel": "Try again",
+    "unavailableTitle": "Something went wrong",
+    "unavailableBody": "Try again in a moment."
   },
   "AboutPage": {
     "metaTitle": "About Rajahinta.fi",
@@ -1643,5 +1694,16 @@
       "dearer": "more expensive than the Alko reference price",
       "equal": "equal to the Alko reference price"
     }
+  },
+  "ShareResult": {
+    "share": "Share result",
+    "sharing": "Creating the share link…",
+    "linkHeading": "Share link",
+    "linkLabel": "Shareable address",
+    "copy": "Copy link",
+    "copied": "Copied",
+    "frozenNote": "The link opens a frozen copy of the calculation — later changes do not alter it.",
+    "authRequired": "Sharing requires signing in.",
+    "failed": "Creating the share link failed. Please try again."
   }
 }

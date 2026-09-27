@@ -38,6 +38,8 @@ license: MIT
 - **Every number is explainable.** Every calculated figure (excise, container duty, transport, import VAT, total) must be traceable to the exact input values, rate dataset version, and timestamp that produced it.
 - **Import VAT is foreign-seller-only and domestically absent.** The import-VAT line applies only when the seller country differs from the destination, using the same seller/buyer signal transaction classification consumes; domestic results carry no VAT surface anywhere (absence, not a displayed zero), pinned byte-identical to the pre-VAT engine. The VAT base composition is part of the versioned dataset, never inline code.
 - **Insight surfaces are display-only and factual.** Savings snapshots, price-context figures, allowance citations, and guides never feed calculator, ranking, or basket inputs (compliance tests pin byte-identity), and the content lint bans advice phrasing ("best deal", "good time to buy", "buy now") on all public surfaces.
+- **Out-of-stock offers never become defaults.** Calculator `selectBestOffer` and allowance-fill candidate picking skip persisted `out_of_stock` offers; if every offer is out-of-stock, fall back to current behavior rather than failing (offers stay in responses for price-history context). Benchmarks, stock badges, and Etämyynti/Etäosto badges are additive display fields pinned byte-identity by compliance tests.
+- **The basket guard bounds the whole optimization.** `MAX_TOTAL_COMBINATIONS` must bound the DFS and any per-merchant shipping work — compute shipping lazily (memoized per merchant-subset inside the search), never pre-enumerate powersets outside the guard; item-cap breaches stay a 400 ValidationError, 422 is reserved for the combinations guard.
 
 ## Git Workflow
 
@@ -50,4 +52,4 @@ license: MIT
 - Project tooling dependencies are managed via `.opencode/package.json` (opencode plugins, browser automation, quota plugin). No application-level package manager is selected yet.
 - Lockfile: `skills-lock.json` pins externally installed agent skills.
 
-<!-- Last updated: 2026-09-09 (insight-surfaces: display-only insight surfaces, advice-phrasing lint ban, greenfield note removed) -->
+<!-- Last updated: 2026-09-27 (client-experience-improvement: out-of-stock default exclusion with honest fallback, basket guard bounds shipping work incl. 400/422 contract); prior: 2026-09-09 (insight-surfaces: display-only insight surfaces, advice-phrasing lint ban, greenfield note removed) -->

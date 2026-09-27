@@ -366,6 +366,9 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/api/v1/analytics/click', ['POST'], '—'],
   // Basket optimizer — BASKET prefix profile at index.ts.
   ['/api/v1/basket/optimize', ['POST'], 'BASKET'],
+  // Category benchmarks (task 3.1, client-experience-improvement) —
+  // display-only read; route-local ageGate + SEARCH limiter.
+  ['/api/v1/benchmarks/category-averages', ['GET'], 'SEARCH + ageGate'],
   // Blog public reads (task 5.1) — PUBLISHED-only, no guard.
   ['/api/v1/blog/posts', ['GET'], '—'],
   ['/api/v1/blog/posts/:slug', ['GET'], '—'],

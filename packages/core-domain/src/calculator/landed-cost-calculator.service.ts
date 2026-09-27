@@ -46,6 +46,7 @@ import type {
   AlkoBenchmarkSnapshot,
 } from './calculator.types';
 import {
+  isOfferOutOfStock,
   PRODUCT_DATA_PORT,
   CALCULATION_RECORD_PORT,
   ClassificationGateRejectionError,
@@ -574,16 +575,23 @@ export class LandedCostCalculatorService {
   }
 
   /**
-   * Select the best retail offer — lowest price wins.
-   * This may be enriched with additional scoring in the future.
+   * Select the best retail offer — lowest price wins among offers that are
+   * not confirmed out of stock (task 4.1). A persisted `out_of_stock`
+   * availability keeps an offer out of default selection, but it stays in
+   * the response set for price-history context (proposal decision D6).
+   * When EVERY offer is out of stock, selection falls back to the full set
+   * — the request still succeeds on the best-known data instead of
+   * failing. This may be enriched with additional scoring in the future.
    */
   private selectBestOffer(
     offers: CalculatorRetailOfferData[],
   ): CalculatorRetailOfferData {
-    let best = offers[0];
-    for (let i = 1; i < offers.length; i++) {
-      if (offers[i].priceCents < best.priceCents) {
-        best = offers[i];
+    const purchasable = offers.filter((o) => !isOfferOutOfStock(o.availability));
+    const pool = purchasable.length > 0 ? purchasable : offers;
+    let best = pool[0];
+    for (let i = 1; i < pool.length; i++) {
+      if (pool[i].priceCents < best.priceCents) {
+        best = pool[i];
       }
     }
     return best;

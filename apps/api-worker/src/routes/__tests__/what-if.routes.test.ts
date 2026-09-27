@@ -448,23 +448,23 @@ describe('POST /api/v1/what-if/excise — ephemeral by design', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Rate-limit profile — CALCULATOR (10/min)
+// Rate-limit profile — CALCULATOR (60/min)
 // ---------------------------------------------------------------------------
 
 describe('POST /api/v1/what-if/excise — rate-limit profile', () => {
-  it('admits ten requests per minute per IP (CALCULATOR) and rejects the eleventh with 429', async () => {
+  it('admits sixty requests per minute per IP (CALCULATOR) and rejects the sixty-first with 429', async () => {
     const { db, d1 } = openMigratedD1();
     seedBeerRule(db);
     const app = whatIfApp();
     const env = whatIfEnv(d1); // one shared env = one shared DO limiter bucket
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 60; i++) {
       const res = await postWhatIf(app, env);
       expect(res.status).toBe(200);
     }
 
-    const eleventh = await postWhatIf(app, env);
-    await expectEnvelope(eleventh, 429, { error: 'TooManyRequests' });
-    expect(eleventh.headers.get('Retry-After')).not.toBeNull();
+    const sixtyFirst = await postWhatIf(app, env);
+    await expectEnvelope(sixtyFirst, 429, { error: 'TooManyRequests' });
+    expect(sixtyFirst.headers.get('Retry-After')).not.toBeNull();
   });
 });

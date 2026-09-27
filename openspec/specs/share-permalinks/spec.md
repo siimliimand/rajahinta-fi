@@ -3,9 +3,7 @@
 ## Purpose
 
 A calculation is worth sharing, and the share must survive the original. A user can freeze any of their calculation records into a snapshot under a random public identifier — no account identifiers inside — rendered on a public page with the structural disclaimer and Open Graph metadata. The same capability provides the embeddable calculator widget, which follows the existing what-if embed precedent: minimal chrome, iframe-friendly, and never a bypass of the age gate, disclaimers, or API guards.
-
 ## Requirements
-
 ### Requirement: Frozen share snapshots
 
 An authenticated user SHALL be able to create a share link for one of their calculation records. The system SHALL copy the result into a snapshot row under a random public identifier at share time. The snapshot SHALL contain no account identifiers, and later changes to the original record SHALL NOT affect the snapshot.
@@ -47,3 +45,18 @@ The frontend SHALL expose an embeddable calculator page with minimal chrome and 
 
 - **WHEN** a calculation is submitted from the embedded widget
 - **THEN** it SHALL pass through the same API guards, rate limits, and idempotency as the main application
+
+### Requirement: Share action on calculation results
+
+The calculation result view SHALL offer a share action that creates a frozen share snapshot through the existing sharing module and presents the `/share/[publicId]` link for copying. The snapshot assembler's personal-data strip assertion and the public share page's contract are unchanged.
+
+#### Scenario: Sharing a result
+
+- **WHEN** a visitor activates the share action on a calculation result
+- **THEN** a snapshot is created and the UI presents the public `/share/[publicId]` URL
+
+#### Scenario: Shared link renders the frozen snapshot
+
+- **WHEN** the copied link is opened
+- **THEN** the public share page renders the frozen snapshot with the disclaimer banner intact
+

@@ -176,6 +176,23 @@ describe('BasketOptimizerController', () => {
       await expect(ctrl.optimize(req)).rejects.toThrow(BadRequestException);
     });
 
+    it('accepts exactly MAX_BASKET_ITEMS items (the raised 30-item cap)', async () => {
+      const optimizer = createMockOptimizer();
+      const ctrl = createController(optimizer);
+      const items = Array.from({ length: MAX_BASKET_ITEMS }, (_, i) => ({
+        productId: i + 1,
+        quantity: 1,
+      }));
+      const req: BasketOptimizeRequest = { items, destination: 'FI' };
+
+      const result = await ctrl.optimize(req);
+
+      expect(result).toBe(MOCK_RESULT);
+      expect(optimizer.optimize).toHaveBeenCalledWith(
+        expect.objectContaining({ items, destination: 'FI' }),
+      );
+    });
+
     it('rejects non-integer productId', async () => {
       const ctrl = createController();
       const req = { items: [{ productId: 1.5, quantity: 1 }], destination: 'FI' } as unknown as BasketOptimizeRequest;

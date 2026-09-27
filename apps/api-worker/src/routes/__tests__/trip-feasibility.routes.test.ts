@@ -7,7 +7,7 @@
  *
  * Pinning here: the validation contract (positive costs, known vehicle
  * types, ISO date, per-category prices, duplicate rejection), the
- * per-IP CALCULATOR rate-limit profile (10/min → 429 on the 11th), the
+ * per-IP CALCULATOR rate-limit profile (60/min → 429 on the 61st), the
  * 409 when no published allowance version covers the travel date, the
  * STRUCTURAL indicative-limits disclaimer on every result,
  * version-aware idempotency — and the AFFILIATE-NEUTRALITY architecture
@@ -485,17 +485,17 @@ describe('POST /api/v1/trip-feasibility — version-aware idempotency', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Rate limiting — the per-IP CALCULATOR profile (10/min)
+// Rate limiting — the per-IP CALCULATOR profile (60/min)
 // ---------------------------------------------------------------------------
 
 describe('POST /api/v1/trip-feasibility — rate-limit profile', () => {
-  it('admits ten requests per minute per IP (CALCULATOR) and rejects the eleventh with 429', async () => {
+  it('admits sixty requests per minute per IP (CALCULATOR) and rejects the sixty-first with 429', async () => {
     const { d1 } = openMigratedD1();
     await seedPublishedAllowances(d1);
     const app = tripApp();
     const env = tripEnv(d1); // one shared env = one shared DO limiter bucket
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 60; i++) {
       // Distinct payloads so idempotency never short-circuits the limiter's
       // admission path (the limiter runs FIRST either way — that is the pin).
       const res = await postTrip(app, env, {
@@ -505,9 +505,9 @@ describe('POST /api/v1/trip-feasibility — rate-limit profile', () => {
       expect(res.status).toBe(200);
     }
 
-    const eleventh = await postTrip(app, env, { ...TRIP, ticketCostCents: 20_099 });
-    await expectEnvelope(eleventh, 429, { error: 'TooManyRequests' });
-    expect(eleventh.headers.get('Retry-After')).not.toBeNull();
+    const sixtyFirst = await postTrip(app, env, { ...TRIP, ticketCostCents: 20_099 });
+    await expectEnvelope(sixtyFirst, 429, { error: 'TooManyRequests' });
+    expect(sixtyFirst.headers.get('Retry-After')).not.toBeNull();
   });
 });
 

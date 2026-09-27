@@ -877,3 +877,295 @@ describe('D1ProductSearchRepository.listCatalogPage — catalog listing (design 
     expect(result.total).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Catalog sort orders (task 1.2, change client-experience-improvement) —
+// isolated fixture DB so the shared-database describes above are untouched.
+// ---------------------------------------------------------------------------
+
+describe('D1ProductSearchRepository.listCatalogPage — objective sort orders (task 1.2)', () => {
+  const priceRepoDb = openMigratedD1();
+  const priceRepo = new D1ProductSearchRepository(priceRepoDb.d1);
+
+  /**
+   * Price fixture: distinct minima (300, 400), a min-price tie (500 —
+   * ids 3001/3003, resolved by id ASC), an offer-less product (3005,
+   * last), and a superseded cheaper scrape (row 604 → MIN over ALL rows
+   * is the repository's page aggregate, so 3002's key price is 400 even
+   * though its current scrape shows 420 — the sort key IS the displayed
+   * price).
+   */
+  beforeAll(async () => {
+    const wine = [
+      { id: 3001, name: 'Koevi A' },
+      { id: 3002, name: 'Koevi B' },
+      { id: 3003, name: 'Koevi C' },
+      { id: 3004, name: 'Koevi D' },
+      { id: 3005, name: 'Koevi E' },
+    ];
+    for (const p of wine) {
+      await priceRepo.create({
+        id: p.id,
+        name: p.name,
+        manufacturer: 'Katalogi Panimo',
+        brand: 'Koekappale',
+        category: 'wine_still',
+        alcoholByVolume: '0.120',
+        unitVolume: '0.75',
+        containerType: 'glass',
+        regulatoryClassification: 'wine',
+        depositSystemStatus: null,
+        ean: null,
+      });
+    }
+    await priceRepoDb.d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+            observed_at, reliability_status)
+         VALUES (604, 'alko', 'FI', 3002, 400, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (605, 'alko', 'FI', 3002, 420, '2026-09-02T10:00:00.000Z', 'VERIFIED'),
+                (606, 'alko', 'FI', 3001, 500, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (607, 'alko', 'FI', 3003, 600, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (608, 'eu-import', 'EE', 3003, 500, '2026-09-01T10:00:00.000Z', 'ESTIMATED'),
+                (609, 'alko', 'FI', 3004, 300, '2026-09-01T10:00:00.000Z', 'VERIFIED')`,
+      )
+      .run();
+
+    // A second category with offers, for the category+sort composition.
+    for (const id of [3101, 3102]) {
+      await priceRepo.create({
+        id,
+        name: `Koevi Kalja ${id - 3100}`,
+        manufacturer: 'Katalogi Panimo',
+        brand: 'Koekappale',
+        category: 'beer',
+        alcoholByVolume: '0.047',
+        unitVolume: '0.33',
+        containerType: 'can',
+        regulatoryClassification: 'beer',
+        depositSystemStatus: true,
+        ean: null,
+      });
+    }
+    await priceRepoDb.d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+            observed_at, reliability_status)
+         VALUES (610, 'alko', 'FI', 3101, 350, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (611, 'alko', 'FI', 3102, 290, '2026-09-01T10:00:00.000Z', 'VERIFIED')`,
+      )
+      .run();
+  });
+
+  it('LOWEST_PRICE orders ascending, ties by id, offer-less products last', async () => {
+    const result = await priceRepo.listCatalogPage(1, 24, 'wine_still', 'LOWEST_PRICE');
+    expect(result.total).toBe(5);
+    expect(result.items.map((i) => i.product.id)).toEqual([
+      3004, // min 300
+      3002, // min 400 (all-rows aggregate, matching the rendered price)
+      3001, // min 500 — id tie ahead of 3003
+      3003, // min 500
+      3005, // no offers — after every priced row, never a guessed position
+    ]);
+    // The rendered aggregate equals the sort key on every row.
+    const mins = result.items.map((i) => i.lowestPriceCents);
+    expect(mins).toEqual([300, 400, 500, 500, null]);
+  });
+
+  it('LOWEST_PRICE paginates the same total order across pages', async () => {
+    const collected: number[] = [];
+    for (let p = 1; p <= 3; p++) {
+      const result = await priceRepo.listCatalogPage(p, 2, 'wine_still', 'LOWEST_PRICE');
+      collected.push(...result.items.map((i) => i.product.id));
+      expect(result.total).toBe(5);
+    }
+    expect(collected).toEqual([3004, 3002, 3001, 3003, 3005]);
+  });
+
+  it('LOWEST_PRICE is deterministic across repeat calls and separate compositions', async () => {
+    const first = await priceRepo.listCatalogPage(1, 24, 'wine_still', 'LOWEST_PRICE');
+    const second = await priceRepo.listCatalogPage(1, 24, 'wine_still', 'LOWEST_PRICE');
+    expect(second.items.map((i) => i.product.id)).toEqual(
+      first.items.map((i) => i.product.id),
+    );
+
+    const otherDb = openMigratedD1();
+    const otherRepo = new D1ProductSearchRepository(otherDb.d1);
+    await otherRepo.create({
+      id: 3004,
+      name: 'Koevi D',
+      manufacturer: 'Katalogi Panimo',
+      brand: 'Koekappale',
+      category: 'wine_still',
+      alcoholByVolume: '0.120',
+      unitVolume: '0.75',
+      containerType: 'glass',
+      regulatoryClassification: 'wine',
+      depositSystemStatus: null,
+      ean: null,
+    });
+    await otherRepo.create({
+      id: 3005,
+      name: 'Koevi E',
+      manufacturer: 'Katalogi Panimo',
+      brand: 'Koekappale',
+      category: 'wine_still',
+      alcoholByVolume: '0.120',
+      unitVolume: '0.75',
+      containerType: 'glass',
+      regulatoryClassification: 'wine',
+      depositSystemStatus: null,
+      ean: null,
+    });
+    const other = await otherRepo.listCatalogPage(1, 24, 'wine_still', 'LOWEST_PRICE');
+    expect(other.items.map((i) => i.product.id)).toEqual([3004, 3005]);
+  });
+
+  it('ALCOHOL_PERCENTAGE orders descending, ties by id, unknown ABV last', async () => {
+    const abvDb = openMigratedD1();
+    const abvRepo = new D1ProductSearchRepository(abvDb.d1);
+    const abvs: ReadonlyArray<{ id: number; name: string; abv: string | null }> = [
+      { id: 3201, name: 'Koevi Vahva', abv: '0.085' },
+      { id: 3202, name: 'Koevi Keski', abv: '0.047' },
+      { id: 3203, name: 'Koevi Kevyt', abv: '0.035' },
+      { id: 3204, name: 'Koevi Tasu A', abv: '0.053' },
+      { id: 3205, name: 'Koevi Tasu B', abv: '0.053' },
+      { id: 3206, name: 'Koevi Tuntematon', abv: null },
+    ];
+    for (const p of abvs) {
+      await abvRepo.create({
+        id: p.id,
+        name: p.name,
+        manufacturer: 'Katalogi Panimo',
+        brand: 'Koekappale',
+        category: 'beer',
+        alcoholByVolume: p.abv,
+        unitVolume: '0.33',
+        containerType: 'can',
+        regulatoryClassification: 'beer',
+        depositSystemStatus: true,
+        ean: null,
+      });
+    }
+
+    const result = await abvRepo.listCatalogPage(1, 24, 'beer', 'ALCOHOL_PERCENTAGE');
+    expect(result.items.map((i) => i.product.id)).toEqual([
+      3201, // 8.5 %
+      3204, // 5.3 % — id tie ahead of 3205
+      3205, // 5.3 %
+      3202, // 4.7 %
+      3203, // 3.5 %
+      3206, // unknown ABV — last, honest absence
+    ]);
+    expect(result.items[result.items.length - 1]!.product.alcoholByVolume).toBeNull();
+  });
+
+  it('LOWEST_PRICE composes with the category filter, total exact', async () => {
+    const result = await priceRepo.listCatalogPage(1, 24, 'beer', 'LOWEST_PRICE');
+    expect(result.total).toBe(2);
+    expect(result.items.map((i) => i.product.id)).toEqual([3102, 3101]);
+  });
+
+  it('the default sort stays alphabetical (contract unchanged)', async () => {
+    const explicit = await priceRepo.listCatalogPage(1, 24, 'wine_still', 'ALPHABETICAL');
+    const omitted = await priceRepo.listCatalogPage(1, 24, 'wine_still');
+    expect(omitted.items.map((i) => i.product.id)).toEqual(
+      explicit.items.map((i) => i.product.id),
+    );
+    // The FI-collation alphabetical order differs from the price order —
+    // proves the default really did not become a price sort.
+    const priced = await priceRepo.listCatalogPage(1, 24, 'wine_still', 'LOWEST_PRICE');
+    expect(omitted.items.map((i) => i.product.id)).not.toEqual(
+      priced.items.map((i) => i.product.id),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Combined category + keyword search (task 2.1, change
+// client-experience-improvement) — isolated fixture DB so the shared-
+// database describes above are untouched. Spec product-search: when both
+// q and category are present the result set contains only keyword matches
+// whose category equals the value — the category is never silently
+// ignored because a keyword is present.
+// ---------------------------------------------------------------------------
+
+describe('D1ProductSearchRepository.searchRanked — combined category + keyword (task 2.1)', () => {
+  const combDb = openMigratedD1();
+  const combRepo = new D1ProductSearchRepository(combDb.d1);
+
+  beforeAll(async () => {
+    // Two beer rows and one wine row that ALL match 'karhu', plus a beer
+    // row that does not match — the combined path must exclude exactly
+    // the cross-category match, never the in-category non-match's
+    // siblings.
+    const rows = [
+      { id: 4001, name: 'Karhu Pinta', brand: 'Karhu', category: 'beer' },
+      { id: 4002, name: 'Karhu III Velvet', brand: 'Karhu', category: 'beer' },
+      { id: 4003, name: 'Karhuvuori Punaviini', brand: 'Karhuvuori', category: 'wine_still' },
+      { id: 4004, name: 'Koff III', brand: 'Koff', category: 'beer' },
+    ];
+    for (const r of rows) {
+      await combRepo.create({
+        id: r.id,
+        name: r.name,
+        manufacturer: 'Yhdistelmä Panimo',
+        brand: r.brand,
+        category: r.category,
+        alcoholByVolume: '0.047',
+        unitVolume: '0.33',
+        containerType: 'can',
+        regulatoryClassification: r.category,
+        depositSystemStatus: true,
+        ean: null,
+      });
+    }
+  });
+
+  it('applies the category together with q — only keyword matches in the category', async () => {
+    const combined = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'beer');
+    expect(combined).toHaveLength(2);
+    expect(combined.map((r) => r.id)).toEqual(expect.arrayContaining([4001, 4002]));
+    expect(combined.every((r) => r.category === 'beer')).toBe(true);
+  });
+
+  it('never silently ignores the category — the unfiltered ranking contains the excluded row', async () => {
+    const unfiltered = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE);
+    expect(unfiltered.map((r) => r.id)).toEqual(
+      expect.arrayContaining([4001, 4002, 4003]),
+    );
+    const combined = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'beer');
+    expect(combined.map((r) => r.id)).not.toContain(4003);
+  });
+
+  it('the LIKE recall path respects the combined filter too', async () => {
+    // 'karhuvuor' is a mid-token substring — FTS prefix cannot express
+    // it; only the LIKE merge finds the row. With the category filter it
+    // survives in wine_still and is excluded from beer.
+    const wine = await combRepo.searchRanked('karhuvuor', MAX_PAGE_SIZE, 'wine_still');
+    expect(wine.map((r) => r.id)).toEqual([4003]);
+    const beer = await combRepo.searchRanked('karhuvuor', MAX_PAGE_SIZE, 'beer');
+    expect(beer).toEqual([]);
+  });
+
+  it('zero combined matches is an honest empty set, not a fallback', async () => {
+    // Karhu matches exist, but none in spirits — no silent unfiltered
+    // fallback, no other-category rows.
+    const none = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'spirits');
+    expect(none).toEqual([]);
+  });
+
+  it('the limit applies to the combined set — a prefix of the combined order', async () => {
+    const full = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'beer');
+    for (const k of [1, 2]) {
+      const sliced = await combRepo.searchRanked('karhu', k, 'beer');
+      expect(sliced.map((r) => r.id)).toEqual(full.slice(0, k).map((r) => r.id));
+    }
+  });
+
+  it('is deterministic across repeated combined calls', async () => {
+    const first = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'beer');
+    const second = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'beer');
+    expect(first.map((r) => r.id)).toEqual(second.map((r) => r.id));
+  });
+});

@@ -95,6 +95,8 @@
     "heroSubline": "Ulkomainen vähittäishinta, kuljetus ja arviot valmisteverosta ja pakkausverosta — yhdessä eritelyssä laskelmassa.",
     "heroPillBadge": "Puolueeton · Läpinäkyvä · Verohallinnon verotaulukot",
     "heroSearchPlaceholder": "Hae tuotetta… esim. Koskenkorva, IPA, Rioja",
+    "heroSearchLabel": "Hae tuotteita",
+    "heroSearchSubmit": "Hae",
     "heroTrustLine": "🏛 Viralliset verolähteet · 📊 Hintaindeksi · 🔒 WCAG AA -saavutettava",
     "whyTitle": "Miksi Rajahinta.fi?",
     "feature1Title": "Todellinen kokonaishinta",
@@ -145,7 +147,9 @@
   },
   "AgeGateDeclined": {
     "title": "Pääsy rajattu",
-    "body": "Ilmoitit, ettet ole vähintään 18-vuotias. Tämä palvelu on tarkoitettu vain täysi-ikäisille, joten palvelun sisältö ei ole käytettävissä."
+    "body": "Ilmoitit, ettet ole vähintään 18-vuotias. Tämä palvelu on tarkoitettu vain täysi-ikäisille, joten palvelun sisältö ei ole käytettävissä.",
+    "recoveryIntro": "Ei hätää — jos valinta meni vahingossa, voit palata turvallisesti ja vastata uudelleen.",
+    "recoveryAction": "Painoin vahingossa — yritä uudelleen"
   },
   "NotFound": {
     "title": "Sivua ei löytynyt",
@@ -178,7 +182,11 @@
     "searchNoResultsTitle": "Ei hakutuloksia",
     "searchNoResultsDescription": "Tuotteita ei löytynyt haulla \"{query}\". Tarkista kirjoitusasu tai kokeile toista tuotenimeä.",
     "calculationErrorTitle": "Laskenta epäonnistui",
-    "rateLimitedDescription": "Laskentojen määrää on rajoitettu väliaikaisesti.",
+    "rateLimitedDescription": "Hetkinen — lasketaan vielä edellistä.",
+    "serverErrorTitle": "Jokin meni pieleen",
+    "serverErrorBody": "Yritä hetken kuluttua uudelleen.",
+    "broaderSearchHint": "Kokeile yleisempää hakusanaa tai selaa tuoteryhmiä.",
+    "browseCategories": "Selaa tuoteryhmiä",
     "rateLimitRetryAfter": "Odota {seconds, plural, one {# sekunti} other {# sekuntia}} ja yritä sitten uudelleen.",
     "metaTitle": "Rajat ylittävä kustannuslaskuri",
     "metaDescription": "Hae tuote, valitse määrä ja saat eritelty arvion alkoholin tuonnin kokonaiskustannuksesta Suomeen: vähittäishinta, kuljetus sekä Suomen valmistevero ja pakkausvero.",
@@ -193,7 +201,8 @@
   "ProductSelector": {
     "typeToSearch": "Kirjoita tuotteen nimi aloittaaksesi haun.",
     "noResults": "Tuotteita ei löytynyt haulla \"{query}\".",
-    "lowestPrice": "Halvin havaittu hinta: {price}"
+    "lowestPrice": "Halvin havaittu hinta: {price}",
+    "loading": "Lasketaan…"
   },
   "QuantitySelector": {
     "label": "Määrä",
@@ -220,6 +229,10 @@
       "importCheaper": "Tuonti on edullisempaa",
       "samePrice": "Hinta on sama",
       "observedAt": "Havainto: {timestamp}"
+    },
+    "savingsSummary": {
+      "title": "Tilaamalla ulkomailta säästät arviolta {amount} verrattuna Alkon hintaan.",
+      "asOf": "Vertailu perustuu Alkon {date} hintahavaintoon."
     },
     "sanityNote": {
       "label": "Luotettavuus alennettu: tulos on arvio"
@@ -406,6 +419,9 @@
     "totalLandedCost": "Kokonaiskustannus yhteensä",
     "dataConfidence": "Tietojen luotettavuus",
     "viewAt": "Katso myyjältä {merchant}",
+    "distanceSellingBadge": "Etämyynti",
+    "distanceBuyingBadge": "Etäosto",
+    "distanceSellingNote": "Myyjämerkinnät perustuvat myyjän maahan: etämyynnissä myyjä hoitaa Suomen alkoholiverot, etäostossa järjestät kuljetuksen ja teet tarvittavat ilmoitukset itse. Yleistietoa, ei oikeudellista neuvontaa.",
     "eurPerGram": {
       "columnHeader": "€/g puhdasta etanolia",
       "sortOptionLabel": "Etanoli-€/g (matalin ensin)",
@@ -490,7 +506,7 @@
       "finlandUnavailable": "Suomen vertailuhinta ei saatavilla: tuotteilla ei ole vertailuhintoja"
     },
     "errors": {
-      "validation": "Tarkista syöttämäsi tiedot. Ostoskorissa voi olla enintään 10 tuotetta, ja kunkin määrän tulee olla 1–99.",
+      "validation": "Tarkista syöttämäsi tiedot. Ostoskorissa voi olla enintään 30 tuotetta, ja kunkin määrän tulee olla 1–99.",
       "not-found": "Tuotetta ei löytynyt. Tarkista hakusanasi ja yritä uudelleen.",
       "gate-rejected": "Yhtä tai useampaa tuotetta ei voida tällä hetkellä käsitellä. Kokeile toista tuotetta.",
       "rate-limited": "Palvelu on tilapäisesti ruuhkautunut. Odota hetki ja yritä uudelleen.",
@@ -725,11 +741,16 @@
           "EE": "Viro",
           "LV": "Latvia",
           "LT": "Liettua",
-          "DE": "Saksa"
+          "DE": "Saksa",
+          "SE": "Ruotsi"
         },
         "budget": "Budjetti (€, valinnainen)",
         "packing": "Ehdota pakkausta rajalta tuotaville juomille",
         "pricesHeading": "Hintaperuste euroa litralta",
+        "useBenchmarks": "Käytä keskihintoja",
+        "useOwnPrices": "Syötä omat hinnat",
+        "benchmarkNote": "Keskiarvo havaituista hinnoista: kotimaa Alko, ulkomaa rajat ylittävä verkkokauppa. Havainnot {asOf} asti.",
+        "benchmarkUnavailable": "Keskihintatietoja ei ole saatavilla juuri nyt — syötä hinnat itse.",
         "domesticPrice": "{type} — Suomi (€/l)",
         "foreignPrice": "Ulkomaa (€/l)",
         "priceHint": "Syötä hinta litralta vähintään yhdelle juomatyypille. Ulkomainen hinta vaatii aina kotimaisen vertailuhinnan.",
@@ -766,11 +787,11 @@
     },
     "drinkType": {
       "beer": "Olut",
-      "wine_still": "Makuuviini",
+      "wine_still": "Viini",
       "wine_sparkling": "Kuohuviini",
-      "intermediate_products": "Välituotteet (esim. vermutti)",
-      "other_fermented": "Siideri ja pitkäjuoma",
-      "spirits": "Väkevät alkoholijuomat"
+      "intermediate_products": "Väkevöidyt viinit (vermutti, portviini)",
+      "other_fermented": "Lonkerot ja siiderit",
+      "spirits": "Väkevät"
     },
     "errors": {
       "validation": "Tarkista syötteen arvot: vieraita 1–500, kestoa 1–72 tuntia.",
@@ -823,6 +844,10 @@
       "ticket": "Matkaliput yhteensä (€)",
       "fuel": "Polttoaine yhteensä (€)",
       "pricesHeading": "Hinnat euroa litralta",
+      "useBenchmarks": "Käytä keskihintoja",
+      "useOwnPrices": "Syötä omat hinnat",
+      "benchmarkNote": "Keskiarvo havaituista hinnoista: kotimaa Alko, ulkomaa rajat ylittävä verkkokauppa. Havainnot {asOf} asti.",
+      "benchmarkUnavailable": "Keskihintatietoja ei ole saatavilla juuri nyt — syötä hinnat itse.",
       "domesticPrice": "{category} — Suomi (€/l)",
       "foreignPrice": "Ulkomaat (€/l)",
       "priceHint": "Syötä kotimainen ja ulkomainen hinta vähintään yhdelle kategorialle.",
@@ -850,13 +875,13 @@
     },
     "category": {
       "beer": "Olut",
-      "wine_still": "Makuuviini",
+      "wine_still": "Viini",
       "wine_sparkling": "Kuohuviini",
-      "intermediate_products": "Välituotteet (esim. vermutti)",
-      "other_fermented": "Siideri ja pitkäjuoma",
-      "spirits": "Väkevät alkoholijuomat"
+      "intermediate_products": "Väkevöidyt viinit (vermutti, portviini)",
+      "other_fermented": "Lonkerot ja siiderit",
+      "spirits": "Väkevät"
     },
- "submit": "Laske kannattava tuontimäärä",
+  "submit": "Laske kannattava tuontimäärä",
  "submitting": "Lasketaan…",
  "mode": {
   "breakeven": "Kannattavuusrajat",
@@ -938,6 +963,9 @@
     },
     "partners": {
       "label": "Kumppanilinkit"
+    },
+    "suggestion": {
+      "stat": "Tuoreimman havaintopäivän ({date}) mukaan {country}-verkkokaupoista tilatut oluet olivat keskimäärin {percent} % Alkon vertailuhintaa edullisempia."
     },
     "noAllowances": {
       "title": "Ei julkaistuja tullimäärärajoja",
@@ -1221,9 +1249,19 @@
     "offersTitle": "Myyntihinnat",
     "merchantHeader": "Myyjä",
     "priceHeader": "Myyntihinta",
+    "availabilityHeader": "Varastotila",
     "countryHeader": "Maa",
     "observedHeader": "Havaittu",
+    "availability": {
+      "in_stock": "Varastossa",
+      "low_stock": "Vähissä",
+      "out_of_stock": "Loppu varastosta"
+    },
+    "distanceSellingBadge": "Etämyynti",
+    "distanceBuyingBadge": "Etäosto",
+    "distanceSellingNote": "Myyjämerkintä perustuu myyjän maahan: etämyynnissä myyjä hoitaa Suomen alkoholiverot, etäostossa järjestät kuljetuksen ja teet tarvittavat ilmoitukset itse. Yleistietoa, ei oikeudellista neuvontaa.",
     "noOffers": "Ei aktiivisia hintahavaintoja.",
+    "viewAtStore": "Katso kaupassa →",
     "dataNote": "Hinnat ovat kerättyjä havaintoja, eivät myyjien tarjouksia.",
     "landingNote": "Kokonaiskustannus Suomeen sisältää hinnan lisäksi verot, tullit ja kuljetuksen — laske se laskurissa."
   },
@@ -1567,13 +1605,22 @@
   },
   "ProductsPage": {
     "metaTitle": "Tuotteet — havaitut hinnat",
-    "metaDescription": "Tuoteluettelo havaittuine hintoineen ja myyjämäärineen, järjestettynä aakkosjärjestykseen.",
+    "metaDescription": "Tuoteluettelo havaittuine hintoineen ja myyjämäärineen.",
     "metaCategoryTitle": "{category} — havaitut hinnat",
-    "metaCategoryDescription": "Tuoteluettelo tuoteryhmästä {category}: havaitut hinnat ja myyjämäärät, järjestetty aakkosjärjestykseen.",
+    "metaCategoryDescription": "Tuoteluettelo tuoteryhmästä {category}: havaitut hinnat ja myyjämäärät.",
     "heading": "Tuotteet",
     "intro": "Rajahintalaskuriin sisältyvä tuoteluettelo havaittuine hintoineen.",
     "filterNavLabel": "Tuoteryhmä",
     "allProducts": "Kaikki tuotteet",
+    "searchLabel": "Haku",
+    "searchPlaceholder": "Hae tuotteita nimellä, merkillä tai valmistajalla",
+    "searchSubmit": "Hae",
+    "searchClear": "Tyhjennä haku",
+    "sortLabel": "Järjestys",
+    "sortOptionAlphabetical": "Nimi (aakkosjärjestys)",
+    "sortOptionLowestPrice": "Halvin hinta ensin",
+    "sortOptionAlcoholPercentage": "Alkoholiprosentti (suurin ensin)",
+    "sortApply": "Järjestä",
     "fromPriceLabel": "Halvin havaittu hinta",
     "noPrice": "Ei havaittuja hintoja",
     "merchantCount": "Myyjiä: {count}",
@@ -1583,8 +1630,12 @@
     "pageStatus": "Sivu {page} / {totalPages}",
     "emptyTitle": "Ei näytettäviä tuotteita",
     "emptyBody": "Tähän näkymään ei ole tallentunut yhtään tuotetta.",
-    "unavailableTitle": "Tuoteluetteloa ei voida näyttää juuri nyt",
-    "unavailableBody": "Tuotetietojen haku ei onnistunut. Kokeile myöhemmin uudelleen."
+    "searchEmptyTitle": "Ei tuloksia haulle \"{query}\"",
+    "searchEmptyBody": "Kokeile yleisempää hakusanaa tai selaa tuoteryhmiä.",
+    "browseCategoriesLabel": "Tuoteryhmät",
+    "retryLabel": "Yritä uudelleen",
+    "unavailableTitle": "Jokin meni pieleen",
+    "unavailableBody": "Yritä hetken kuluttua uudelleen."
   },
   "AboutPage": {
     "metaTitle": "Tietoja Rajahinta.fi:stä",
@@ -1643,5 +1694,16 @@
       "dearer": "kalliimpi kuin Alkon vertailuhinta",
       "equal": "sama kuin Alkon vertailuhinta"
     }
+  },
+  "ShareResult": {
+    "share": "Jaa tulos",
+    "sharing": "Luodaan jakolinkkiä…",
+    "linkHeading": "Jakolinkki",
+    "linkLabel": "Jaettava osoite",
+    "copy": "Kopioi linkki",
+    "copied": "Kopioitu",
+    "frozenNote": "Linkki avaa jäädytetyn kopion laskelmasta — myöhemmät muutokset eivät sitä muuta.",
+    "authRequired": "Jakaminen vaatii kirjautumisen.",
+    "failed": "Jakolinkin luominen epäonnistui. Yritä uudelleen."
   }
 }

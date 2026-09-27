@@ -24,11 +24,11 @@ export interface BasketItemInput {
 /**
  * POST /api/v1/basket/optimize — optimize a multi-item basket.
  *
- * Items are validated server-side: 1–10 items, quantity 1–99 per item.
+ * Items are validated server-side: 1–30 items, quantity 1–99 per item.
  * Destination is a 2-letter ISO 3166-1 alpha-2 country code.
  */
 export interface BasketOptimizeRequest {
-  /** Product lines in the basket (1–10 items). */
+  /** Product lines in the basket (1–30 items). */
   readonly items: BasketItemInput[];
   /** Destination country ISO 3166-1 alpha-2 (e.g. "FI"). */
   readonly destination: string;

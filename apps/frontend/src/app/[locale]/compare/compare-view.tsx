@@ -132,7 +132,16 @@ export default function CompareView() {
         const unitPrice =
           detail !== null ? bestOfferUnitPrice(detail.offers) : undefined;
 
-        const comparisonProduct: ComparisonProduct = {
+        // Distinct seller countries of the current offers (task 4.2) —
+        // display input for the distance-selling badges only.
+        const offerCountries =
+          detail !== null
+            ? [...new Set(detail.offers.map((o) => o.country))].sort()
+            : [];
+
+        const comparisonProduct: ComparisonProduct & {
+          offerCountries?: readonly string[];
+        } = {
           id: item.id,
           name: item.name,
           brand: item.brand,
@@ -146,6 +155,7 @@ export default function CompareView() {
             ? result.itemizedCosts[0].reliability
             : 'UNAVAILABLE',
           merchants,
+          offerCountries,
           // Display-only blacklist warnings joined from the detail
           // payload (task 2.4) — rendered per column, ordering untouched.
           merchantWarnings: detail?.merchantWarnings ?? [],

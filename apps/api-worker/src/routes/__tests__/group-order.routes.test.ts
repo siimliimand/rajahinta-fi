@@ -825,9 +825,9 @@ describe('group order rate limits', () => {
     expect(own.status).toBe(201);
   });
 
-  it('ledger: CALCULATOR profile admits 10/min and 429s the 11th', async () => {
+  it('ledger: CALCULATOR profile admits 60/min and 429s the 61st', async () => {
     const s = await setupWithLiveSession();
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 60; i++) {
       const res = await request(
         s.app,
         s.env,

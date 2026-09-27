@@ -5,15 +5,22 @@
  *
  * ## Phase constraints
  *
- * - Caps: MAX_BASKET_ITEMS (10) items, MAX_CANDIDATE_MERCHANTS_PER_ITEM (8)
+ * - Caps: MAX_BASKET_ITEMS (30) items, MAX_CANDIDATE_MERCHANTS_PER_ITEM (8)
  *   candidates per item.  Exceeding either throws BasketValidationError.
  * - Total-combinations guard: the Cartesian product of per-item candidates
  *   is capped at MAX_TOTAL_COMBINATIONS; exceeding it throws
  *   BasketCombinationLimitError (the API layer maps it to HTTP 422)
  *   before prefetch or enumeration runs.
- * - All I/O happens in a single prefetch phase before enumeration starts.
- * - The enumeration (DFS) is pure synchronous and uses precomputed maps for
- *   both item-level costs and store-group shipping.
+ * - All I/O happens in a single prefetch phase before enumeration starts:
+ *   product/offer resolution, merchant terms, and per-(item, merchant) item
+ *   costs. Consolidated shipping is NOT pre-enumerated — it is computed
+ *   lazily, per (merchant, item-subset) key, on first need inside the DFS
+ *   and memoized, so the total-combinations guard bounds ALL optimization
+ *   work including shipping (a powerset prefetch would let a single
+ *   merchant covering the whole basket attempt 2^N awaited calls).
+ * - The enumeration (DFS) uses precomputed maps for item-level costs and
+ *   the memoized map for store-group shipping. Shipping per subset is
+ *   deterministic, so memoization cannot alter any outcome.
  * - Threshold semantics per Decision 3: only VERIFIED threshold data can
  *   exclude a store assignment.  Non-VERIFIED data (ESTIMATED, STALE,
  *   UNAVAILABLE) keeps the store eligible and passes the reliability to
@@ -171,7 +178,8 @@ export class BasketOptimizerService {
     const { items, destination, transportArrangement, transportMethod, sessionId } = input;
 
     // =======================================================================
-    // 2. Prefetch phase — all I/O upfront
+    // 2. Prefetch phase — all deterministic I/O upfront (shipping is
+    //    computed lazily inside the bounded DFS, step 2f below)
     // =======================================================================
 
     // 2a. Resolve products, apply classification gate, fetch retail offers
@@ -194,58 +202,24 @@ export class BasketOptimizerService {
       destination, transportArrangement, transportMethod, sessionId,
     );
 
-    // 2f. Prefetch consolidated shipping for all possible store groups
+    // 2f. Consolidated shipping is computed LAZILY inside the DFS (step 3):
+    // the memo starts empty and each (merchant, item-subset) key is
+    // calculated on first need and reused after. Pre-enumerating the
+    // per-merchant powerset here would attempt 2^N awaited shipping calls
+    // for a single merchant covering N items — work the combinations
+    // guard does not bound. The DFS leaves are guarded, and every
+    // shipping key derives from a guarded leaf, so total work stays
+    // bounded.
     const shippingMemo = new Map<string, ConsolidatedTransport>();
-    for (const merchant of allMerchants) {
-      const coverableIndices: number[] = [];
-      for (let i = 0; i < candidatesPerItem.length; i++) {
-        if (candidatesPerItem[i].some((c) => c.merchant === merchant)) {
-          coverableIndices.push(i);
-        }
-      }
-      if (coverableIndices.length === 0) continue;
-
-      // Resolve origin country from the first offer for this merchant
-      const firstOffer = candidatesPerItem[coverableIndices[0]].find(
-        (c) => c.merchant === merchant,
-      );
-      const originCountry = firstOffer?.offer.country;
-
-      const n = coverableIndices.length;
-      for (let mask = 1; mask < 1 << n; mask++) {
-        const indices: number[] = [];
-        for (let b = 0; b < n; b++) {
-          if (mask & (1 << b)) indices.push(coverableIndices[b]);
-        }
-        indices.sort((a, b) => a - b);
-        const key = shippingKey(merchant, indices);
-        const basketItems: BasketItem[] = indices.map((idx) => ({
-          weightKg: resolvedItems[idx].product.weightKg * items[idx].quantity,
-          packageType: resolvedItems[idx].product.containerType,
-        }));
-        const shippingResult = await this.basketShipping.calculateBasket(
-          basketItems,
-          destination,
-          transportMethod,
-          originCountry,
-        );
-        shippingMemo.set(key, {
-          totalCents: shippingResult.totalCents,
-          weightTier: shippingResult.weightTier,
-          packageTier: shippingResult.packageTier,
-          reliability: shippingResult.reliability,
-        });
-      }
-    }
 
     // =======================================================================
-    // 3. Enumeration — pure synchronous DFS
+    // 3. Enumeration — DFS over the guarded Cartesian product
     // =======================================================================
 
     const assignments: AssignmentResult[] = [];
     const currentAssignment: number[] = [];
 
-    this.dfsEnumerate(
+    await this.dfsEnumerate(
       0,
       items,
       resolvedItems,
@@ -256,6 +230,8 @@ export class BasketOptimizerService {
       currentAssignment,
       assignments,
       transportArrangement ?? 'SELLER_ARRANGED',
+      destination,
+      transportMethod,
     );
 
     // =======================================================================
@@ -383,7 +359,7 @@ export class BasketOptimizerService {
   /**
    * Reject baskets whose Cartesian product of per-item candidate merchants
    * exceeds MAX_TOTAL_COMBINATIONS, before terms fetch, cost computation,
-   * shipping prefetch, or enumeration run.
+   * enumeration, or any shipping computation runs.
    *
    * Each factor is at most MAX_CANDIDATE_MERCHANTS_PER_ITEM and there are at
    * most MAX_BASKET_ITEMS of them, so the product stays far below
@@ -623,20 +599,22 @@ export class BasketOptimizerService {
   // Private: enumeration (DFS)
   // ---------------------------------------------------------------------------
 
-  private dfsEnumerate(
+  private async dfsEnumerate(
     itemIdx: number,
     items: readonly BasketInputItem[],
     resolvedItems: readonly ResolvedItem[],
     candidatesPerItem: readonly ItemCandidate[][],
     termsMap: ReadonlyMap<string, MerchantTerms | null>,
     itemCostMap: ReadonlyMap<string, ItemCostRecord>,
-    shippingMemo: ReadonlyMap<string, ConsolidatedTransport>,
+    shippingMemo: Map<string, ConsolidatedTransport>,
     currentAssignment: number[],
     assignments: AssignmentResult[],
     transportArrangement: string,
-  ): void {
+    destination: string,
+    transportMethod: string | undefined,
+  ): Promise<void> {
     if (itemIdx === items.length) {
-      const assignment = this.evaluateAssignment(
+      const assignment = await this.evaluateAssignment(
         items,
         resolvedItems,
         candidatesPerItem,
@@ -645,6 +623,8 @@ export class BasketOptimizerService {
         shippingMemo,
         currentAssignment,
         transportArrangement,
+        destination,
+        transportMethod,
       );
       if (assignment !== null) {
         assignments.push(assignment);
@@ -654,7 +634,7 @@ export class BasketOptimizerService {
 
     for (let cand = 0; cand < candidatesPerItem[itemIdx].length; cand++) {
       currentAssignment.push(cand);
-      this.dfsEnumerate(
+      await this.dfsEnumerate(
         itemIdx + 1,
         items,
         resolvedItems,
@@ -665,21 +645,25 @@ export class BasketOptimizerService {
         currentAssignment,
         assignments,
         transportArrangement,
+        destination,
+        transportMethod,
       );
       currentAssignment.pop();
     }
   }
 
-  private evaluateAssignment(
+  private async evaluateAssignment(
     items: readonly BasketInputItem[],
-    _resolvedItems: readonly ResolvedItem[],
+    resolvedItems: readonly ResolvedItem[],
     candidatesPerItem: readonly ItemCandidate[][],
     termsMap: ReadonlyMap<string, MerchantTerms | null>,
     itemCostMap: ReadonlyMap<string, ItemCostRecord>,
-    shippingMemo: ReadonlyMap<string, ConsolidatedTransport>,
+    shippingMemo: Map<string, ConsolidatedTransport>,
     assignment: readonly number[],
     transportArrangement: string,
-  ): AssignmentResult | null {
+    destination: string,
+    transportMethod: string | undefined,
+  ): Promise<AssignmentResult | null> {
     const merchantToIndices = new Map<string, number[]>();
     for (let i = 0; i < assignment.length; i++) {
       const merchant = candidatesPerItem[i][assignment[i]].merchant;
@@ -724,7 +708,29 @@ export class BasketOptimizerService {
       }
 
       const shipKey = shippingKey(merchant, indices);
-      const transport = shippingMemo.get(shipKey)!;
+      let transport = shippingMemo.get(shipKey);
+      if (transport === undefined) {
+        // First need for this (merchant, item-subset) inside the bounded
+        // search — compute, memoize, never recompute. The country is the
+        // shipment's origin, the same value the shipment row carries.
+        const basketItems: BasketItem[] = indices.map((idx) => ({
+          weightKg: resolvedItems[idx].product.weightKg * items[idx].quantity,
+          packageType: resolvedItems[idx].product.containerType,
+        }));
+        const shippingResult = await this.basketShipping.calculateBasket(
+          basketItems,
+          destination,
+          transportMethod,
+          country,
+        );
+        transport = {
+          totalCents: shippingResult.totalCents,
+          weightTier: shippingResult.weightTier,
+          packageTier: shippingResult.packageTier,
+          reliability: shippingResult.reliability,
+        };
+        shippingMemo.set(shipKey, transport);
+      }
 
       const shipmentItems: ItemizedCost[] = storeItems.flatMap((r) => [...r.itemizedCosts]);
 

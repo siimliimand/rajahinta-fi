@@ -27,6 +27,7 @@ import {
   lockedEnv,
 } from './harness';
 import { seedGoldenDataset } from './golden-fixtures';
+import { RATE_LIMIT_PROFILES } from '../../src/middleware/rate-limit';
 import {
   seedAccount,
   seedCalculationRecord,
@@ -234,7 +235,10 @@ describe('E2E — rate limiting (CALCULATOR burst → 429)', () => {
 
     const statuses: number[] = [];
     let rateLimited: Response | null = null;
-    for (let i = 0; i < 12 && rateLimited === null; i++) {
+    // Profile-driven ceiling (task 2.5 raised CALCULATOR 10 → 60/min): the
+    // burst exhausts whatever the middleware currently admits.
+    const ceiling = RATE_LIMIT_PROFILES.CALCULATOR.limit;
+    for (let i = 0; i <= ceiling && rateLimited === null; i++) {
       const res = await postJson(app, env, '/api/v1/calculator', body, {
         ...client,
         // Unique inputs so every admitted request is a MISS computation.
@@ -248,9 +252,9 @@ describe('E2E — rate limiting (CALCULATOR burst → 429)', () => {
     }
 
     expect(rateLimited).not.toBeNull();
-    // Exactly the CALCULATOR ceiling (10) was admitted before the burst
-    // hit the wall.
-    expect(statuses.filter((s) => s === 200).length).toBe(10);
+    // Exactly the CALCULATOR ceiling was admitted before the burst hit
+    // the wall.
+    expect(statuses.filter((s) => s === 200).length).toBe(ceiling);
     const res = rateLimited!;
     expect(res.headers.get('retry-after')).toMatch(/^\d+$/);
     const body429 = await expectEnvelope(res, 429, {

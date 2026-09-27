@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import type {
   ComparisonProduct,
   CompareSortOrder,
@@ -13,6 +13,9 @@ import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import { Button, Card } from '@/components/ui';
 import { logClick } from '@/lib/api';
 import { MerchantLink } from './MerchantLink';
+import {
+  SellingDistanceBadge,
+} from './SellingDistanceBadge';
 import MerchantFreshnessSection from './MerchantFreshnessSection';
 import MerchantWarningNotice from '../../components/MerchantWarningNotice';
 import ProductHistoryPanel from '../../calculator/components/ProductHistoryPanel';
@@ -31,9 +34,23 @@ function formatEur(cents: number): string {
 // Props
 // ---------------------------------------------------------------------------
 
+/**
+ * One compared product plus this view's display-only fields. Structurally
+ * a {@link ComparisonProduct}; the extra fields ride along from the
+ * detail payload and never affect ordering.
+ */
+interface CompareColumnProduct extends ComparisonProduct {
+  /**
+   * Distinct seller countries of the product's current offers (sorted) —
+   * drives the per-offer distance-selling badges (task 4.2). Absent when
+   * the detail payload resolved nothing.
+   */
+  readonly offerCountries?: readonly string[];
+}
+
 interface ComparisonViewProps {
   /** Products being compared. */
-  products: readonly ComparisonProduct[];
+  products: readonly CompareColumnProduct[];
   /** Currently selected sort order (displayed but not actionable here). */
   sortBy: CompareSortOrder;
   /** Whether a calculation is in progress for new products. */
@@ -56,9 +73,13 @@ interface ComparisonViewProps {
 function ProductColumn({
   product,
 }: {
-  product: ComparisonProduct;
+  product: CompareColumnProduct;
 }) {
   const t = useTranslations('Compare');
+  const locale = useLocale();
+  // Locale-prefixed guides path for the Etäosto badge link (fi serves
+  // unprefixed; en lives under /en).
+  const guidesHref = locale === 'en' ? '/en/guides' : '/guides';
   // Shared attribute formatters (task 4.1): labelled volume and
   // percentage ABV — the raw `abvValue` interpolation leaked stored
   // fractions as "0.047% ABV".
@@ -166,6 +187,24 @@ function ProductColumn({
         </div>
       )}
 
+      {/* Distance-selling status badges (task 4.2) — one per distinct
+          seller country of the product's current offers. Additive,
+          display-only: derived from the published country value and
+          never an ordering or calculation input. */}
+      {(product.offerCountries?.length ?? 0) > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {product.offerCountries!.map((country) => (
+            <SellingDistanceBadge
+              key={country}
+              country={country}
+              sellingLabel={t('distanceSellingBadge')}
+              buyingLabel={t('distanceBuyingBadge')}
+              guideHref={guidesHref}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Separator */}
       <hr className="my-3 border-gray-100" />
 
@@ -270,6 +309,14 @@ export default function ComparisonView({
           {t('addProduct')}
         </button>
       </div>
+
+      {/* Distance-selling framing (task 4.2): one note for the whole
+          grid — general information, not legal advice. */}
+      {products.length > 0 ? (
+        <p className="mt-3 text-xs text-gray-400">
+          {t('distanceSellingNote')}
+        </p>
+      ) : null}
     </div>
   );
 }
