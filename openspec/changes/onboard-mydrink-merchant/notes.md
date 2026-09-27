@@ -113,7 +113,61 @@ The 12 disagreement rows: name tokens imply wine_sparkling while the category pa
 
 ## Task 4.2 — Staging rollout
 
-(recorded by the implementing agent)
+Executed 2026-09-27, ~15:47–16:02 UTC. Staging D1 writes explicitly approved by the task (user-approved staging rollout). Worker context: the live staging api-worker is from the 4.1 merge — master `578036e` (PR #68 merged as 3a03fa0), Deploy Staging run **36330673942 GREEN** (polled from `in_progress` to `success` before any staging write). Nothing committed; only this notes section touched.
+
+### Path decision (same blocker as kippis/longero 4.2)
+
+The ops path (`POST /ops/console/merchants`, docs/ingestion-runbook.md §2.0) needs the staging `OPS_BEARER_TOKEN` Cloudflare secret — not present in any local env file. **Fell back to direct staging D1 via `wrangler d1 execute DB --remote --env staging`** (sanctioned by the task text): the same `audit_events` deviation as kippis/longero 4.2 — these two inserts have no audit entry; the console is the audited route; production 5.2 must use it or record the gap.
+
+### Pre-checks (read-only, before any write)
+
+- `merchant_registry`: exactly 4 rows — alko (id 1, empty feed URL, hourly), alks (id 2, DE, daily), longero (id 3, EE, daily), kippis (id 4, FI, daily). No mydrink anywhere.
+- `source_governance`: exactly 3 rows — id 1 alks **`REVOKED`** (staging halt unchanged, `last_verified_at` still 2026-09-11T09:21:55.000Z), id 2 longero `GRANTED`, id 3 kippis `GRANTED`. STOP-condition clear.
+- `retail_offers` mydrink: 0. Per-merchant baselines: alks 67,600 · longero 14,925/1,312 products · kippis 7,882/817 · 5 seed/test merchants 8–10 each (kippis/longero growth since their 4.2 is the designed per-observation accumulation).
+- `product_master`: **4,346 rows, max id 4346** — the pre-ingest baseline (ingest-created products get ids > 4346).
+
+### Writes (idempotent; verified by read-back)
+
+- Registry (unique index makes re-runs no-ops): kippis-4.2 `INSERT … ON CONFLICT (merchant_id) DO NOTHING` with the task VALUES `('mydrink','MyDrink','EE','https://mydrink.ee','json',86400000)` — `changes: 1`, row **id 5**, values exact, created/updated 2026-09-27T15:50:24.050Z.
+- Governance (no unique key — `NOT EXISTS` guard is the idempotency mechanism, kippis/longero pattern): guarded INSERT → `changes: 1`, row **id 4**, `RETAILER_API`/`GRANTED`, sourceUrl `https://mydrink.ee/wp-json/wc/store/v1/products`, reason "owner-operated site — documented scraping right (kippis/longero precedent); staging grant for first-ingest verification". **alks id 1 byte-identical before and after (still `REVOKED`)**; longero/kippis rows unchanged.
+
+### First ingest via the Workflows REST API (kippis 4.2 method)
+
+- Auth: wrangler's stored OAuth token → **0600 temp header file** under `/tmp/opencode` (never printed, **deleted** after the run); account id from `wrangler whoami --json` captured in the same invocation, never emitted.
+- `POST /accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances` body `{"id":"price-ingestion-mydrink-2026-09-27-15","params":{"merchantId":"mydrink","sourceUrl":"https://mydrink.ee","dedupeKey":"price-ingestion-mydrink-2026-09-27-15"}}` → `success: true`, internal uuid `d9f4fd9a-daff-49e8-9bab-876531a3af85`, `status: "queued"` at ~15:51Z, trigger `{source: 'api'}`. The `-<HH>` key cannot collide with the producer's daily key `price-ingestion-mydrink-2026-09-28-00` (mydrink is daily 86,400,000 ms; the boundary pass is 00:00 UTC).
+- Polled via `GET …/instances/{uuid}` (the custom-id path form still 404s, per the kippis 4.2 tooling note): `running` 15:51:56Z → **`complete` 15:59:33Z (≈8 min)**, `error: null`.
+
+### Workflow result
+
+Output **`productsIngested: 643`** — the exact 1.2 sweep reconciliation: 707 raw − 52 `no canonical beverage category` − 12 name/category disagreement = **643** ✓. Error list **771 unique lines, identical to local 3.1**: 707 kept-without-EAN correction lines (one per raw row — every mydrink SKU is an internal code; accepted D2 noise), plus the 52 + 12 drop lines. Error labels carry the shared parser's `alks product …` prefix (same accepted quirk as kippis/longero). No `waiting` park, no step retries — 643 products stay well under the invocation subrequest budget.
+
+### Verification
+
+- **`retail_offers`**: **643 mydrink rows over 643 distinct products**, min 71 / max 175,026 cents (max = `RARE LE CONTRASTE MILLESIME 1985 & MILLESIME 2015 12% 2x75CL` on product 4366 — a real 3-l BIB case price, same item as local 3.1's sample), single value set EUR / EE / `in_stock` / `ESTIMATED`, single `observed_at` 2026-09-27T15:51:54.827Z (= fetch step). No other merchant changed (post-run per-merchant counts identical to baseline).
+- **`product_master`**: 4,346 → **4,983 (+637 mydrink-created rows**, zero EANs on them — owner-confirmed no-EAN data).
+- **Parallel catalog + first compound-tier joins (D4)**: 637 of 643 mydrink products formed their own catalog rows. **6 offers compound-matched pre-existing (kippis-created) rows** — impossible locally (47-row seed master), but staging's richer catalog lets the compound tier fire: `EL MATADOR BLANCO 11% 1L TETRA` (3560), `EL MATADOR TINTO 11% 1L TETRA` (3561), `NORMINDIA GIN 41,4% 70CL` (3571) — EAN-populated rows — plus three EAN-less 300cl BIB rows (4104/4106/4115). Each now carries an FI kippis + EE mydrink offer pair — the cross-border same-product case the compound tier exists for. The merge-path "own catalog rows" expectation holds for the catalog at large (637/643); the 6 joins are designed behavior, recorded as the actual.
+- **API** (`https://rajahinta-api-staging.siim-liimand.workers.dev`, product **3560** `EL MATADOR BLANCO 11% 1L TETRA` — chosen because it compound-joined a pre-existing row with a live kippis offer):
+  - Negative control: `GET /api/v1/products/3560` without header → **HTTP 403 `AGE_GATE_REQUIRED`** ✅.
+  - With `x-age-confirmed: confirmed` → HTTP 200 with a **cross-border offer pair**: `kippis` (FI) · **`mydrink` EE 619¢** — EUR / `in_stock` / `ESTIMATED`; mydrink `sourceUrl: https://mydrink.ee/et/toode/el-matador-blanco-11-1l-tetra/`, `observedAt: 2026-09-27T15:51:54.827Z` (= fetch step) ✅.
+  - Merchant aggregate (`merchantReliability`): **`mydrink` offerCount 643, all ESTIMATED, freshestObservedAt = fetch step** ✅.
+  - Known read-model artifact (kippis 4.2/5.2 + local 3.1 precedent, recorded not chased): the aggregate reports `governancePermissionStatus: "PENDING"` while the D1 row is `GRANTED` (the workflow gate honored it).
+
+### Post-checks
+
+- `source_governance` final: 4 rows — alks **`REVOKED` unchanged**, longero/kippis `GRANTED` unchanged, mydrink `GRANTED` (new id 4, exactly one mydrink row). **Kippis's staging halt on alks was not lifted.**
+- Registry final: 5 rows, only mydrink added. Production untouched throughout; no redeploys.
+
+### Commands executed (names)
+
+`npx wrangler d1 execute DB --remote --env staging --json --command "<read-only pre-check probes>"` (registry · governance · per-merchant offer counts · product_master count/max-id · mydrink offers) · same with the two `INSERT` statements · same for read-backs, post-checks, and verification queries · `npx wrangler whoami --json` (account id into a same-invocation shell var, never emitted; OAuth token → 0600 temp header file under `/tmp/opencode`, never printed, deleted after the run) · `curl -X POST /accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances` · `curl …/instances/d9f4fd9a-…` (status + output polls, 30 s interval) · `curl /api/v1/products/3560` ± `x-age-confirmed: confirmed`.
+
+### Deviations / notes vs the kippis 4.2 playbook
+
+1. Same ops-path blocker and same sanctioned fallback (direct D1; `OPS_BEARER_TOKEN` absent locally) → same `audit_events` deviation for the lead.
+2. **First recorded mydrink compound-tier joins: 6/643 (0.9%)** onto kippis-created same-name rows — local 3.1 had zero (its master held only 47 seed rows). Pure addition to the parallel-catalog picture; no conflict with the merge-path facts.
+3. Read-model `governancePermissionStatus: "PENDING"` in the merchant aggregate despite the `GRANTED` D1 row — recurring artifact, unchanged.
+4. REST POST succeeded first attempt (same-invocation account-id capture; the kippis 4.2 empty-`{account}` mis-route did not recur).
+5. The producer's first real mydrink pass is the 2026-09-28T00:00Z boundary (expected key `price-ingestion-mydrink-2026-09-28-00`, exactly one enqueue/instance) — observation deliberately NOT blocking this task; 6.1 owns it.
 
 ## Task 5.2 — Production rollout
 
