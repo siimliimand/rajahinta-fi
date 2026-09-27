@@ -27,4 +27,4 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Full verification: rebuild `@rajahinta/core-domain` first, then typecheck, lint, content lint, unit suites, e2e, D1 suites; evidence recorded — staging and production API/product pages serving the mydrink catalog, compound-key idempotency across runs, daily-single-enqueue behavior from the producer logs <!-- agent: platform-engineer.fast, depends_on: [1.1, 1.2, 2.1, 3.1, 4.2, 5.2], touches: [openspec/changes/onboard-mydrink-merchant/notes.md] -->
+- [x] 6.1 Full verification: rebuild `@rajahinta/core-domain` first, then typecheck, lint, content lint, unit suites, e2e, D1 suites; evidence recorded — staging and production API/product pages serving the mydrink catalog, compound-key idempotency across runs, daily-single-enqueue behavior from the producer logs <!-- agent: platform-engineer.fast, depends_on: [1.1, 1.2, 2.1, 3.1, 4.2, 5.2], touches: [openspec/changes/onboard-mydrink-merchant/notes.md] -->

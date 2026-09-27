@@ -236,4 +236,44 @@ The manual instance above is trigger `api` with an hour-suffixed id; the produce
 
 ## Task 6.1 — Verification
 
-(recorded by the implementing agent)
+Executed 2026-09-27 on `master` @ `994938d` (clean tree). Read-only sweep: local suite runs only — zero staging/production contact (the rollout evidence is referenced from 4.2/5.2, not redone). Command list mirrors the previous change's verification (archive `2026-09-27-client-experience-improvement`, task 6.1; kippis archive 2026-09-26 as second reference). `@rajahinta/core-domain` rebuilt first — the 1.2/3.1 stale-`dist` lesson (downstream suites resolve the mapper vocabulary through dist). Nothing committed; only this notes section touched.
+
+### Sweep results (all commands pass, exit 0)
+
+| Command | Result |
+|---|---|
+| `pnpm --filter @rajahinta/core-domain build` | ✅ pass (task-required first step, tsc clean) |
+| `pnpm run typecheck` | ✅ pass — all 8 workspace projects `Done` (core-domain, data-platform, data-acquisition, application-api, backend, api-worker, frontend, email-worker) |
+| `pnpm run lint` (`eslint .`) | ✅ pass — 0 errors; 4 pre-existing warnings, all `no-explicit-any` in an untracked `.kilo/` worktree tooling file, zero findings in tracked source |
+| `pnpm run lint:content` | ✅ pass — frontend `lint-content-policy.ts` clean |
+| `pnpm run test` (unit suites) | ✅ pass — **5,177 passed / 3 skipped / 0 failed** in 361 files: core-domain 1,427 · frontend 970 · api-worker 968 · data-platform 673 · data-acquisition 309 · application-api 728 (+3 skipped of 731 — DB-gated, `TEST_DATABASE_URL` not set, same as CI's non-Postgres path) · email-worker 83 · backend 19 |
+| `pnpm run test:e2e` | ✅ pass — 1 file, 15 tests |
+| `pnpm run test:d1` | ✅ pass — 14 files, 148 tests |
+
+No failures anywhere; nothing fixed, nothing rerun. The application-api skips are pre-existing, CI-identical design skips. The broader CI matrix beyond these seven commands ran green on this change's merge commits (4.1/5.1 deploy runs health-gated; staging run 36330673942, production run 36332653409).
+
+### Evidence inventory (recorded by earlier tasks — referenced, not redone)
+
+| Evidence | Task | Fact |
+|---|---|---|
+| Staging API serving the mydrink catalog | 4.2 | product 3560: HTTP 403 `AGE_GATE_REQUIRED` without header; with `x-age-confirmed` a cross-border offer pair (kippis FI + mydrink EE 619¢, EUR / in_stock / ESTIMATED); merchant aggregate **mydrink offerCount 643** |
+| Production API + product page serving the mydrink catalog | 5.2 | `api.rajahinta.fi` product 3514: 403 without header; with header the kippis FI 654¢ + mydrink EE 619¢ pair; `https://rajahinta.fi/products/3514` HTTP 200 with the mydrink 6.19 € offer row server-rendered; readiness green post-ingest |
+| Compound-key idempotency across local runs 1→2 | 3.1 | `product_master` 47 → 690 (run 1), **690 unchanged** (run 2) — all 643 rows matched on (name, `''` brand, containerType, unitVolume); offers re-upserted as a fresh per-observation batch (exactly 2 `observed_at` batches) |
+| Production first ingest complete | 5.2 | instance `b238de93-…` `complete` ≈7 min, **`productsIngested: 643`** = the exact 1.2 reconciliation (707 − 52 − 12); 771 unique error lines identical across local 3.1 / staging 4.2 / production 5.2 |
+
+### Daily-single-enqueue at the 2026-09-28T00:00:00Z boundary — **PENDING** (the change's single open verification item)
+
+NOT yet observable: the first scheduled boundary after onboarding is **2026-09-28T00:00:00Z — after this session**. Recorded as pending; nothing extrapolated. What exists pre-boundary:
+
+- **Producer unit suite** (passing in the api-worker 968): `intervalBucketFires` — *"fires a daily merchant exactly once across 24 consecutive hourly ticks — the first tick at/after 00:00 UTC"*; `schedulePriceIngestions` cadence gate — daily merchants enqueue once per day.
+- **Local 3.1 harness**: the daily interval-bucket gate produced exactly one message keyed `price-ingestion-mydrink-2026-09-28-00`, and a same-day repeat tick correctly enqueued 0; the next-boundary pass produced exactly `price-ingestion-mydrink-2026-09-29-00` — one enqueue per key, zero duplicates.
+
+Observe at/after the boundary per the **5.2 FOLLOW-UP CHECKLIST** (this section references it):
+
+1. **Exactly one mydrink enqueue** — one queue message with dedupe key **`price-ingestion-mydrink-2026-09-28-00`** (kippis/longero daily keys are separate, expected messages).
+2. **Exactly one new workflow instance** `price-ingestion-mydrink-2026-09-28-00` in `rajahinta-price-ingestion-production` — no duplicates; the manual `-16` instance must NOT re-run.
+3. **New observed_at batch** ≈ the boundary (row-count growth 643 → ~1,286 expected, per 3.1 deviation note 4); other merchants untouched by the mydrink run.
+
+Check commands (from the 5.2 checklist): `npx wrangler tail --env production` across the tick (or the Workers logs dashboard) · `GET /accounts/{account}/workflows/rajahinta-price-ingestion-production/instances` (auth: 0600 temp header file from wrangler's stored OAuth token, deleted after) · read-only `npx wrangler d1 execute DB --remote --env production --json --command "SELECT observed_at, COUNT(*) FROM retail_offers WHERE merchant='mydrink' GROUP BY observed_at ORDER BY observed_at"`.
+
+**Result**: sweep fully green on the task's seven command categories; catalog-serving and compound-key idempotency evidenced from 4.2 / 5.2 / 3.1. The 2026-09-28T00:00Z production enqueue observation is the only item blocking full change closure; everything else in 6.1 is complete and green.
