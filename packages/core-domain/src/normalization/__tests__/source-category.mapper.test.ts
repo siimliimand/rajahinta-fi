@@ -279,6 +279,98 @@ describe('mapSourceCategory — kippis.fi catalog vocabulary (sweep patch 2026-0
   });
 });
 
+describe('mapSourceCategory — mydrink.ee catalog vocabulary (sweep patch 2026-09-27)', () => {
+  it('maps the strong-alcohol department and spirit nouns to spirits', () => {
+    for (const term of ['Kange alkohol ▾', 'Vodka', 'Konjak', 'Rumm', 'Gin']) {
+      const result = mapSourceCategory(term);
+      expect(result, `term "${term}" must map`).not.toBeNull();
+      expect(result!.canonicalCategory).toBe('spirits');
+      expect(result!.taxCategory).toBe('spirits');
+    }
+  });
+
+  it('maps the Estonian double-ö "Liköör" to liqueur — the Swedish single-ö key does not match it', () => {
+    expect(mapSourceCategory('Liköör')).toEqual({
+      canonicalCategory: 'liqueur',
+      taxCategory: 'spirits',
+    });
+    // Both spellings are distinct keys over the same canonical category.
+    expect(SWEDISH_SOURCE_CATEGORY_MAP['liköör']).toBe('liqueur');
+    expect(SWEDISH_SOURCE_CATEGORY_MAP['likör']).toBe('liqueur');
+  });
+
+  it('maps the still-wine leaves to still wine — never the fallback rate', () => {
+    for (const term of ['Punased', 'Valged', 'Pakiveinid']) {
+      expect(mapSourceCategory(term), `term "${term}" must map`).toEqual({
+        canonicalCategory: 'wine',
+        taxCategory: 'wine_still',
+      });
+    }
+  });
+
+  it('maps the sparkling leaves to sparkling wine — kept apart from still wine for the excise split', () => {
+    expect(mapSourceCategory('Vahuveinid')).toEqual({
+      canonicalCategory: 'sparkling-wine',
+      taxCategory: 'wine_sparkling',
+    });
+    expect(mapSourceCategory('Shampanjad')).toEqual({
+      canonicalCategory: 'sparkling-wine',
+      taxCategory: 'wine_sparkling',
+    });
+  });
+
+  it('maps the beer, cider and non-alcoholic departments', () => {
+    expect(mapSourceCategory('Õlu ▾')).toEqual({
+      canonicalCategory: 'beer',
+      taxCategory: 'beer',
+    });
+    expect(mapSourceCategory('Siider')).toEqual({
+      canonicalCategory: 'cider',
+      taxCategory: 'other_fermented',
+    });
+    expect(mapSourceCategory('Alkoholivaba ▾')).toEqual({
+      canonicalCategory: 'non-alcoholic',
+      taxCategory: 'other_fermented',
+    });
+    expect(mapSourceCategory('Karastusjoogid')).toEqual({
+      canonicalCategory: 'non-alcoholic',
+      taxCategory: 'other_fermented',
+    });
+  });
+
+  it('matches the ▾-decorated keys case-insensitively with surrounding whitespace', () => {
+    expect(mapSourceCategory('  kange alkohol ▾ ')).toEqual(mapSourceCategory('Kange alkohol ▾'));
+    expect(mapSourceCategory('  õlu ▾ ')).toEqual(mapSourceCategory('Õlu ▾'));
+    expect(mapSourceCategory('alkoholivaba ▾')).toEqual(mapSourceCategory('  Alkoholivaba ▾ '));
+  });
+
+  it('changes no existing mapping — the Swedish viski/likör keys behave as before', () => {
+    expect(mapSourceCategory('Viski')).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+    });
+    expect(mapSourceCategory('Likör')).toEqual({
+      canonicalCategory: 'liqueur',
+      taxCategory: 'spirits',
+    });
+  });
+
+  it('leaves the "Veinid ▾" wine parent unmapped — first-mappable-in-payload-order would misfile sparkling rows as still', () => {
+    expect(mapSourceCategory('Veinid ▾')).toBeNull();
+  });
+
+  it('leaves RTD cocktails unmapped — tax-ambiguous, the correction queue owns them', () => {
+    expect(mapSourceCategory('Kokteilijoogid')).toBeNull();
+    expect(mapSourceCategory('Kokteil')).toBeNull();
+  });
+
+  it('leaves promo and navigational terms unmapped — never a guessed category', () => {
+    for (const term of ['☝️ Lahja alkohol', '☝️ Kange', '☝️ Pakkumised ▾', 'Kingiideed ▾', 'Avaleht', 'Pandipakend', 'Prantsuse']) {
+      expect(mapSourceCategory(term), `term "${term}" must stay unmapped`).toBeNull();
+    }
+  });
+});
+
 describe('mapSourceCategory — unmappable categories', () => {
   it('returns null for an unrecognized string — flagged, never fallback-assigned', () => {
     expect(mapSourceCategory('Kaffe')).toBeNull();

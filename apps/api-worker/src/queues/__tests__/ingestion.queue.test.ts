@@ -300,11 +300,11 @@ describe('composeIngestionPipeline — live feed adapters (task 2.2)', () => {
     };
   }
 
-  it('registers four live adapters — alko, alks, longero, and kippis all resolve by merchantId', async () => {
+  it('registers five live adapters — alko, alks, longero, kippis, and mydrink all resolve by merchantId', async () => {
     // In-memory governance grants admit all lookups without the durable
     // table; the gated path never writes an observation.
     const governanceRepository = new InMemorySourceGovernanceRepository();
-    for (const merchantId of ['alko', 'alks', 'longero', 'kippis', 'no-such-adapter']) {
+    for (const merchantId of ['alko', 'alks', 'longero', 'kippis', 'mydrink', 'no-such-adapter']) {
       await governanceRepository.create({
         merchantId,
         acquisitionMethod: 'RETAILER_API',
@@ -329,7 +329,7 @@ describe('composeIngestionPipeline — live feed adapters (task 2.2)', () => {
     // Closed local port: a RESOLVED adapter attempts the fetch and
     // fails fast into errors[] — any error but the sentinel proves the
     // map resolves the merchantId.
-    for (const merchantId of ['alko', 'alks', 'longero', 'kippis']) {
+    for (const merchantId of ['alko', 'alks', 'longero', 'kippis', 'mydrink']) {
       const result = await pipeline.runForMerchant(merchantConfig(merchantId));
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors).not.toContain(
