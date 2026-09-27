@@ -1618,7 +1618,7 @@
     "searchClear": "Clear search",
     "sortLabel": "Sort order",
     "sortOptionAlphabetical": "Name (alphabetical)",
-    "sortOptionLowestPrice": "Lowest price first",
+    "sortOptionLowestPrice": "Lowest observed price first",
     "sortOptionAlcoholPercentage": "Alcohol percentage (highest first)",
     "sortApply": "Apply",
     "fromPriceLabel": "Lowest observed price",

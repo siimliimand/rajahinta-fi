@@ -199,10 +199,6 @@ const PRODUCTS: CalculatorProductData[] = [
   },
 ];
 
-const PRODUCTS_BY_ID: Record<number, CalculatorProductData> = Object.fromEntries(
-  PRODUCTS.map((p) => [p.id, p]),
-);
-
 /**
  * 30 distinct products for the raised input cap (MAX_BASKET_ITEMS).
  * Attributes cycle the three base profiles; ids are unique per line so

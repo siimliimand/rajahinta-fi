@@ -28,7 +28,7 @@ export interface TripSuggestionStatValue {
  * Derive the factual suggestion from one snapshot day (pure — unit
  * testable without a fetch).
  *
- * Coverage rule: the best-covered merchant country wins (most rows;
+ * Coverage rule: the most-covered merchant country wins (most rows;
  * alphabetical code breaks ties deterministically). Honesty rule: the
  * average gap across that country's rows must be an actual saving
  * (negative basis points) — anything else renders nothing, never a
@@ -52,21 +52,21 @@ export function deriveTripSuggestion(
     byCountry.set(row.merchantCountry, entry);
   }
 
-  let best: { country: string; count: number; avgGapBp: number } | null = null;
+  let leader: { country: string; count: number; avgGapBp: number } | null = null;
   for (const [country, { count, gapSumBp }] of byCountry) {
-    const better =
-      best === null ||
-      count > best.count ||
-      (count === best.count && country < best.country);
-    if (better) {
-      best = { country, count, avgGapBp: gapSumBp / count };
+    const leads =
+      leader === null ||
+      count > leader.count ||
+      (count === leader.count && country < leader.country);
+    if (leads) {
+      leader = { country, count, avgGapBp: gapSumBp / count };
     }
   }
 
-  if (best === null || best.avgGapBp >= 0) return null;
+  if (leader === null || leader.avgGapBp >= 0) return null;
   return {
-    country: best.country,
-    averageSavingPercent: Math.round((-best.avgGapBp / 100) * 10) / 10,
+    country: leader.country,
+    averageSavingPercent: Math.round((-leader.avgGapBp / 100) * 10) / 10,
     asOf,
   };
 }
