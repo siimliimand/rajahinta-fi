@@ -101,6 +101,12 @@ export { LongeroFeedAdapter } from './adapters/longero.adapter';
 // onboard-kippis-merchant).
 export { KippisFeedAdapter } from './adapters/kippis.adapter';
 
+// mydrink.ee Store API adapter — the fourth WooCommerce merchant
+// (task 2.1, change onboard-mydrink-merchant): a thin subclass of the
+// shared walk; the Estonian category vocabulary it consumes was mapped
+// additively in task 1.2.
+export { MydrinkFeedAdapter } from './adapters/mydrink.adapter';
+
 export type { IUpsertRepository, UpsertProductInput, UpsertOfferInput, UpsertResult, UpsertOfferResult } from './interfaces/upsert-port.interface';
 export { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
 
