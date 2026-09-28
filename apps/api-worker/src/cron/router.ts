@@ -31,9 +31,9 @@ import { createLogger, type Logger } from '../logger';
 import { flushClickCounters } from '../analytics/click-counter-flusher';
 import { handleTransportRateRefresh, TRANSPORT_REFRESH_CRON } from './transport-rate-refresh';
 import {
-  handleFransbergRateRefresh,
-  FRANSBERG_REFRESH_CRON,
-} from './fransberg-rate-refresh';
+  handleCuratedRateRefresh,
+  CURATED_REFRESH_CRON,
+} from './curated-rate-refresh';
 import { handleTaxDatasetReview, TAX_REVIEW_CRON } from './tax-dataset-review';
 import {
   handleTimeSeriesAggregation,
@@ -80,12 +80,12 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
     name: 'transport-rate-refresh',
     run: (env, log) => handleTransportRateRefresh(env, log),
   });
-  // The Fransberg dataset is curated in-repo (no live feed) — this
-  // monthly tick syncs the database with the source file and skips the
-  // append while the dataset is unchanged (fransberg-rate-refresh.ts).
-  add(FRANSBERG_REFRESH_CRON, {
-    name: 'fransberg-rate-refresh',
-    run: (env, log) => handleFransbergRateRefresh(env, log),
+  // The curated carriers (fransberg, posti) are in-repo datasets — this
+  // monthly tick syncs the database with the source files and skips the
+  // append while a dataset is unchanged (curated-rate-refresh.ts).
+  add(CURATED_REFRESH_CRON, {
+    name: 'curated-rate-refresh',
+    run: (env, log) => handleCuratedRateRefresh(env, log),
   });
   // The task-3.4 click-counter flush shares the 6-hourly pattern.
   add(TRANSPORT_REFRESH_CRON, {

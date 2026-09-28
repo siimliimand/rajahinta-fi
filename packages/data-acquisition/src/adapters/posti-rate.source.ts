@@ -1,226 +1,85 @@
 /**
- * Posti carrier rate source (task 7.4, design D6 — Posti first).
+ * Posti carrier rate source — manually curated dataset.
  *
- * Fetches Posti's parcel price table (JSON) and parses it into
- * {@link CarrierRateOffer} rows for the governance-gated transport-rate
- * pipeline. The parser is a pure exported function pinned by a golden
- * fixture test — Posti changes its payload without notice, and the
- * fixture is what makes that visible as a test failure instead of a
- * silent data outage.
+ * Posti's parcel price tables are transcribed into the curated dataset
+ * below and updated by hand, exactly like the Fransberg source
+ * (`fransberg-rate.source.ts`). The historical reason is access: the
+ * price-list JSON endpoint (www.posti.fi/api/price-list/parcels.json)
+ * sits behind a CDN that rejects datacenter and Cloudflare egress IPs
+ * (HTTP 403 / error 1031), so no Worker can fetch it; the endpoint had
+ * no Wayback captures either. If Posti ever grants API access, reintroduce
+ * the live fetch — the JSON parser lives in git history
+ * (posti-rate.source.ts before 2026-09-28) and its golden fixture with it.
  *
- * Payload contract (documented here because the endpoint is not a
- * versioned public API): a top-level object with `source`, `currency`,
- * `publishedAt` (ISO-8601 timestamp — the observation time every offer
- * carries) and a `products` array. Each product row names a lane
- * (origin/destination), a package tier, a weight bracket and a price
- * including VAT. Rows failing validation are reported per-row, never
- * guessed around.
+ * Admin procedure (same contract as Fransberg):
+ * 1. Read Posti's published parcel price table (posti.fi price pages).
+ * 2. Transcribe the rows relevant to the calculator's lanes (shipping
+ *    TO Finland) into POSTI_RATES below — one entry per lane + package
+ *    tier + weight bracket.
+ * 3. Bump POSTI_OBSERVED_AT to the review date.
+ * 4. Deploy — the monthly curated sync cron appends the new rows; the
+ *    per-carrier skip keeps an unchanged dataset from duplicating history.
+ *
+ * The dataset starts EMPTY (2026-09-28): no authoritative price source
+ * was reachable for the initial transcription, and illustrative fixture
+ * prices must never become production data. Until the first
+ * transcription, the transport offer table simply carries no Posti rows
+ * and the calculator degrades transport to ESTIMATED/UNAVAILABLE, as it
+ * already does with an empty table.
  *
  * @module PostiRateSource
  */
 
-import { Injectable, Optional } from '@nestjs/common';
-import {
-  POSTI_RATE_FEED_URL,
-  type CarrierRateOffer,
-  type ICarrierRateSource,
+import { Injectable } from '@nestjs/common';
+import type {
+  CarrierRateOffer,
+  ICarrierRateSource,
 } from '../interfaces/carrier-rate-source.port';
 
 // ---------------------------------------------------------------------------
-// Payload shapes (only the fields the parser consumes)
+// Curated dataset — edit here when transcribing Posti's price table
 // ---------------------------------------------------------------------------
 
-interface PostiWeightBracket {
-  minKg?: unknown;
-  maxKg?: unknown;
-}
-
-interface PostiProductRow {
-  productCode?: unknown;
-  originCountry?: unknown;
-  destinationCountry?: unknown;
-  packageTier?: unknown;
-  weightBracket?: PostiWeightBracket | null;
-  priceIncludingVat?: unknown;
-  sellerTransportPaid?: unknown;
-}
-
-interface PostiPriceList {
-  source?: unknown;
-  currency?: unknown;
-  publishedAt?: unknown;
-  priceListVersion?: unknown;
-  products?: unknown;
-}
-
-// ---------------------------------------------------------------------------
-// Pure parser
-// ---------------------------------------------------------------------------
-
-/** ISO-4217 code the pipeline ingests without FX conversion (task 1.4 owns conversion). */
-const SUPPORTED_CURRENCY = 'EUR';
-
-const PACKAGE_TIERS = new Set(['parcel', 'box', 'pallet']);
-
-function readNonEmptyString(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed === '' ? null : trimmed;
-}
-
-function readCountry(value: unknown): string | null {
-  const raw = readNonEmptyString(value);
-  if (raw === null) return null;
-  const upper = raw.toUpperCase();
-  return /^[A-Z]{2}$/.test(upper) ? upper : null;
-}
-
-function readWeight(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return -1;
-  return value;
-}
-
-function readPrice(value: unknown): number | null {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
-  return Math.round(value * 100);
-}
+/** Review date of the current transcription — the observation time every offer carries. */
+export const POSTI_OBSERVED_AT = new Date('2026-09-28T00:00:00Z');
 
 /**
- * Parse a Posti price-list payload into carrier rate offers.
+ * The transcribed Posti rate rows.
  *
- * Pure: no I/O, deterministic on its input. Every rejected row produces
- * an explanatory error entry; a non-EUR list or a missing publication
- * timestamp is a payload-level error (observedAt must reflect the
- * carrier's own publication time or freshness stops being honest).
+ * Row shape (see {@link CarrierRateOffer}): carrier is always 'posti';
+ * originCountry/destinationCountry name the shipping lane (ISO alpha-2);
+ * weightMinKg/weightMaxKg bound the bracket (null = no limit); priceCents
+ * is VAT-inclusive in EUR cents; sellerInvolvementIndicator is true only
+ * when the SELLER pays the transport (recipient-paid deliveries are
+ * false). Copy the observedAt from POSTI_OBSERVED_AT.
+ *
+ * Transcription targets when filling this in: Posti's published parcel
+ * price tables for shipping to Finland (posti.fi). The downstream
+ * calculator selects by lane + package tier (parcel/box/pallet) + weight
+ * bracket, so transcribe every tier the source publishes per lane.
  */
-export function parsePostiRates(payload: unknown): {
-  rates: CarrierRateOffer[];
-  errors: string[];
-} {
-  const rates: CarrierRateOffer[] = [];
-  const errors: string[] = [];
+const POSTI_RATES: readonly CarrierRateOffer[] = [];
 
-  if (typeof payload !== 'object' || payload === null) {
-    return { rates, errors: ['Posti payload is not a JSON object'] };
-  }
-  const list = payload as PostiPriceList;
-
-  const source = readNonEmptyString(list.source);
-  if (source === null || source.toLowerCase() !== 'posti') {
-    errors.push(`Unexpected payload source "${String(list.source)}" — expected "posti"`);
-    return { rates, errors };
-  }
-
-  const currency = readNonEmptyString(list.currency);
-  if (currency === null || currency.toUpperCase() !== SUPPORTED_CURRENCY) {
-    errors.push(
-      `Posti price list currency "${String(list.currency)}" is not ${SUPPORTED_CURRENCY}; ` +
-        'non-EUR carrier rates require FX conversion at ingestion (task 1.4) and are rejected here',
-    );
-    return { rates, errors };
-  }
-
-  const publishedAtRaw = readNonEmptyString(list.publishedAt);
-  const publishedMs = publishedAtRaw !== null ? Date.parse(publishedAtRaw) : NaN;
-  if (publishedAtRaw === null || Number.isNaN(publishedMs)) {
-    errors.push('Posti payload lacks a valid publishedAt timestamp — observation time is unknowable');
-    return { rates, errors };
-  }
-  const observedAt = new Date(publishedMs);
-
-  if (!Array.isArray(list.products)) {
-    errors.push('Posti payload has no products array');
-    return { rates, errors };
-  }
-
-  const rows = list.products as PostiProductRow[];
-  rows.forEach((row, index) => {
-    const label = `products[${index}] (${String(row.productCode ?? 'unnamed')})`;
-
-    const origin = readCountry(row.originCountry);
-    const destination = readCountry(row.destinationCountry);
-    if (origin === null || destination === null) {
-      errors.push(`${label}: invalid lane ${String(row.originCountry)}→${String(row.destinationCountry)}`);
-      return;
-    }
-
-    const packageTier = readNonEmptyString(row.packageTier)?.toLowerCase() ?? null;
-    if (packageTier === null || !PACKAGE_TIERS.has(packageTier)) {
-      errors.push(`${label}: unknown package tier "${String(row.packageTier)}"`);
-      return;
-    }
-
-    const bracket = row.weightBracket ?? {};
-    const minKg = readWeight(bracket.minKg);
-    const maxKg = readWeight(bracket.maxKg);
-    if (minKg === -1 || maxKg === -1) {
-      errors.push(`${label}: invalid weight bracket`);
-      return;
-    }
-    if (minKg !== null && maxKg !== null && maxKg <= minKg) {
-      errors.push(`${label}: weight bracket max ≤ min`);
-      return;
-    }
-
-    const priceCents = readPrice(row.priceIncludingVat);
-    if (priceCents === null) {
-      errors.push(`${label}: invalid price "${String(row.priceIncludingVat)}"`);
-      return;
-    }
-
-    rates.push({
-      carrier: 'posti',
-      originCountry: origin,
-      destinationCountry: destination,
-      weightMinKg: minKg,
-      weightMaxKg: maxKg,
-      packageTier,
-      priceCents,
-      currency: SUPPORTED_CURRENCY,
-      sellerInvolvementIndicator: row.sellerTransportPaid === true,
-      observedAt,
-    });
-  });
-
-  return { rates, errors };
+/** Build the curated Posti rate rows — pure, like the Fransberg builder. */
+export function buildPostiRates(): CarrierRateOffer[] {
+  return POSTI_RATES.map((rate) => ({ ...rate }));
 }
 
 // ---------------------------------------------------------------------------
-// HTTP source
+// Source adapter
 // ---------------------------------------------------------------------------
 
-/** Minimal fetcher contract so tests inject fixtures instead of the network. */
-export type RateFeedFetcher = (url: string) => Promise<unknown>;
-
-/** Default fetcher — standard fetch, JSON-decoded. */
-const jsonFetcher: RateFeedFetcher = async (url) => {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-  return response.json();
-};
-
+/**
+ * Curated Posti source — deterministic, no network. The pipeline appends
+ * the built rows verbatim with a VERIFIED reliability status; the
+ * curated sync cron's per-carrier skip prevents unchanged datasets from
+ * writing duplicate history.
+ */
 @Injectable()
 export class PostiCarrierRateSource implements ICarrierRateSource {
   readonly carrierId = 'posti';
 
-  constructor(
-    // Injectable for tests/alternative hosts; the default fetches the
-    // live endpoint. Live access may require entitlement — the golden
-    // fixture pins parser behaviour independently of the network.
-    @Optional() private readonly fetcher: RateFeedFetcher = jsonFetcher,
-    @Optional() private readonly feedUrl: string = POSTI_RATE_FEED_URL,
-  ) {}
-
   async fetchRates(): Promise<{ rates: CarrierRateOffer[]; errors: string[] }> {
-    try {
-      const payload = await this.fetcher(this.feedUrl);
-      return parsePostiRates(payload);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      return { rates: [], errors: [`Posti fetch failed: ${message}`] };
-    }
+    return { rates: buildPostiRates(), errors: [] };
   }
 }

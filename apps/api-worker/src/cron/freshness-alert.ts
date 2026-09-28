@@ -105,24 +105,31 @@ export const STALE_PRICE_SHARE_THRESHOLDS = {
 } as const;
 
 /**
- * Transport newest-offer-age thresholds (seconds), ported verbatim from
- * the replaced rules' expressions
- * (`rajahinta_transport_newest_offer_age_seconds > …`):
+ * Transport newest-offer-age thresholds (seconds).
  *
- * - `warning` replaces **RajahintaTransportOfferAgeWarning**
- *   (`expr: … > 432000` — 5 days, `for: 30m`) — early warning two days
- *   before the invariant breaks.
- * - `critical` replaces **RajahintaTransportOfferAgeCritical**
- *   (`expr: … > 604800` — the 7-day transport staleness threshold,
- *   `for: 15m`) — every offer stale, costs degrade to
- *   ESTIMATED/UNAVAILABLE.
+ * DEVIATION from the replaced rules (owner decision 2026-09-28): the
+ * original literals (432000/604800 s — 5/7 days) monitored LIVE carrier
+ * feeds. Both carriers are now manually curated in-repo datasets with a
+ * few-times-per-year admin review cadence (curated-rate-refresh.ts),
+ * against which a 7-day alert would fire permanently. The thresholds
+ * now track the review cadence instead — the alert means "the periodic
+ * manual re-verification is overdue", not "the feed broke":
+ *
+ * - `warning` at 45 days (3_888_000 s) — halfway to a missed quarterly
+ *   review; time to schedule the re-check.
+ * - `critical` at 90 days (7_776_000 s) — the quarterly review is
+ *   overdue; transport data is unverified for a full season.
+ *
+ * The user-facing reliability staleness threshold is a SEPARATE contract
+ * and stays at 7 days (core-domain DEFAULT_STALENESS_THRESHOLDS):
+ * transport rows honestly degrade to STALE between reviews.
  *
  * `forSeconds` documents the replaced window; it is not evaluated (see
  * the module doc — the cadence subsumes it per the spec contract).
  */
 export const TRANSPORT_AGE_THRESHOLDS = {
-  warning: { thresholdSeconds: 432_000, forSeconds: 30 * 60 },
-  critical: { thresholdSeconds: 604_800, forSeconds: 15 * 60 },
+  warning: { thresholdSeconds: 3_888_000, forSeconds: 30 * 60 },
+  critical: { thresholdSeconds: 7_776_000, forSeconds: 15 * 60 },
 } as const;
 
 /**

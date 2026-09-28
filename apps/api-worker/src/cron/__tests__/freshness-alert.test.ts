@@ -6,9 +6,11 @@
  * - a violation → one structured plain-text email per invariant through
  *   a FAKE global fetch, naming the invariant, measured value, and
  *   threshold, carrying the shared-secret header;
- * - threshold port fidelity: the ported constants stay pinned to the
- *   literal replaced PrometheusRule expressions (0.10/0.25 stale-share,
- *   432000/604800 s transport age); the source rules themselves were
+ * - threshold port fidelity: the stale-share constants stay pinned to the
+ *   literal replaced PrometheusRule expressions (0.10/0.25 stale-share);
+ *   the transport-age thresholds deliberately deviate (45/90 days, owner
+ *   decision 2026-09-28) because both carriers are curated datasets with
+ *   a few-times-per-year review cadence; the source rules themselves were
  *   deleted from the repo with the K8s stack (decommission, task 6.7
  *   of migrate-to-cloudflare);
  * - email Worker failure → logged, never thrown, claim released so the
@@ -78,10 +80,10 @@ const STALE_CRITICAL = {
   measureStaleShare: async () => ({ stale: 32, total: 100, share: 0.32 }),
 };
 
-/** Newest transport offer observed 8 days ago — breaches 604 800 s. */
+/** Newest transport offer observed 100 days ago — breaches 7 776 000 s (90 d). */
 const AGE_CRITICAL = {
   findNewestObservedAt: async () =>
-    new Date(NOW.getTime() - 8 * 86_400_000),
+    new Date(NOW.getTime() - 100 * 86_400_000),
 };
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -121,15 +123,18 @@ describe('threshold port fidelity (replaced PrometheusRule expressions)', () => 
   // deleted with the K8s stack at decommission (task 6.7); the literals
   // below are the exact expressions it carried, pinned here so any
   // drift on this side is a deliberate one-act change.
-  it('pins the ported constants to the replaced rule expressions', () => {
+  it('pins the ported constants to the replaced rule expressions (transport: owner-approved 2026-09-28 curated-model deviation)', () => {
     // RajahintaStalePriceShareWarning / Critical
     //   expr: rajahinta_data_quality_stale_price_share_ratio > 0.10 / > 0.25
     expect(STALE_PRICE_SHARE_THRESHOLDS.warning.threshold).toBe(0.1);
     expect(STALE_PRICE_SHARE_THRESHOLDS.critical.threshold).toBe(0.25);
-    // RajahintaTransportOfferAgeWarning / Critical
-    //   expr: rajahinta_transport_newest_offer_age_seconds > 432000 / > 604800
-    expect(TRANSPORT_AGE_THRESHOLDS.warning.thresholdSeconds).toBe(432_000);
-    expect(TRANSPORT_AGE_THRESHOLDS.critical.thresholdSeconds).toBe(604_800);
+    // Transport thresholds deliberately DEVIATE from the replaced
+    // RajahintaTransportOfferAge rules (> 432000 / > 604800 s): both
+    // carriers are curated datasets re-verified a few times per year,
+    // so the alert tracks the review cadence (45/90 days), not a live
+    // feed. See TRANSPORT_AGE_THRESHOLDS docblock.
+    expect(TRANSPORT_AGE_THRESHOLDS.warning.thresholdSeconds).toBe(3_888_000);
+    expect(TRANSPORT_AGE_THRESHOLDS.critical.thresholdSeconds).toBe(7_776_000);
   });
 
   it('keeps strict-> semantics: a value exactly AT a threshold does not fire that severity', () => {
@@ -138,15 +143,15 @@ describe('threshold port fidelity (replaced PrometheusRule expressions)', () => 
     // as the replaced Prometheus rules would behave.
     expect(evaluateStalePriceShare(0.1)).toBeNull();
     expect(evaluateStalePriceShare(0.25)?.severity).toBe('warning');
-    expect(evaluateTransportAge(432_000)).toBeNull();
-    expect(evaluateTransportAge(604_800)?.severity).toBe('warning');
+    expect(evaluateTransportAge(3_888_000)).toBeNull();
+    expect(evaluateTransportAge(7_776_000)?.severity).toBe('warning');
   });
 
   it('fires warning below critical and critical above it', () => {
     expect(evaluateStalePriceShare(0.100001)?.severity).toBe('warning');
     expect(evaluateStalePriceShare(0.250001)?.severity).toBe('critical');
-    expect(evaluateTransportAge(432_001)?.severity).toBe('warning');
-    expect(evaluateTransportAge(604_801)?.severity).toBe('critical');
+    expect(evaluateTransportAge(3_888_001)?.severity).toBe('warning');
+    expect(evaluateTransportAge(7_776_001)?.severity).toBe('critical');
   });
 
   it('treats the +Inf sentinel (no transport offers) as breaching every threshold', () => {
@@ -258,9 +263,9 @@ describe('handleFreshnessAlert', () => {
 
     expect(body.subject).toContain('rajahinta_transport_newest_offer_age_seconds');
     expect(body.text).toContain('rajahinta_transport_newest_offer_age_seconds');
-    // 8 days = 691 200 s under the frozen clock.
-    expect(body.text).toContain('691200 s (8.0 days)');
-    expect(body.text).toContain('> 604800 s (7.0 days)');
+    // 100 days = 8 640 000 s under the frozen clock.
+    expect(body.text).toContain('8640000 s (100.0 days)');
+    expect(body.text).toContain('> 7776000 s (90.0 days)');
     expect(body.text).toContain('RajahintaTransportOfferAgeCritical');
   });
 
@@ -462,11 +467,11 @@ describe('buildAlertEmail', () => {
   });
 
   it('renders a transport-age violation with its replaced rule named', () => {
-    const violation = evaluateTransportAge(691_200)!;
+    const violation = evaluateTransportAge(8_640_000)!;
     const email = buildAlertEmail(violation, NOW, 'ops@example.com');
 
     expect(email.text).toContain('RajahintaTransportOfferAgeCritical');
-    expect(email.text).toContain('691200 s (8.0 days)');
+    expect(email.text).toContain('8640000 s (100.0 days)');
   });
 });
 

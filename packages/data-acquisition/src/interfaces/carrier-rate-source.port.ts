@@ -56,7 +56,3 @@ export interface ICarrierRateSource {
 
 /** Injection token for the map of carrier rate sources, keyed by carrierId. */
 export const CARRIER_RATE_SOURCES_TOKEN = 'CARRIER_RATE_SOURCES';
-
-/** Posti's public rate-table endpoint — the default refresh source. */
-export const POSTI_RATE_FEED_URL =
-  'https://www.posti.fi/api/price-list/parcels.json';

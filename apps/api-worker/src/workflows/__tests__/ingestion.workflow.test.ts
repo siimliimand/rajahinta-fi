@@ -51,9 +51,7 @@ import { openMigratedD1 } from '../../analytics/__tests__/fake-d1';
 import { createLogger, type Logger } from '../../logger';
 import type { Env } from '../../env';
 import { AlkoFeedAdapter } from '../../../../../packages/data-acquisition/src/adapters/alko.adapter';
-import { PostiCarrierRateSource } from '../../../../../packages/data-acquisition/src/adapters/posti-rate.source';
 import { ALKO_GOLDEN_PAYLOAD } from '../../../../../packages/data-acquisition/src/adapters/__fixtures__/alko-assortment.fixture';
-import { POSTI_GOLDEN_PAYLOAD } from '../../../../../packages/data-acquisition/src/adapters/__fixtures__/posti-rates.fixture';
 
 const LOG: Logger = createLogger('error');
 
@@ -936,29 +934,19 @@ describe('adapter fetch-compat smoke (feed paths: standard fetch + JSON only)', 
     });
   }
 
-  it('runs the two feed paths against recorded fixtures over real HTTP', async () => {
+  it('runs the feed path against the recorded fixture over real HTTP', async () => {
     const baseUrl = await serve({
       '/alko': ALKO_GOLDEN_PAYLOAD,
-      '/posti': POSTI_GOLDEN_PAYLOAD,
     });
 
     // Alko — golden fixture payload through the real fetch path.
+    // (Posti no longer rides this path: its rates are a curated in-repo
+    // dataset pinned by posti-rate.source.test.ts.)
     const alko = await new AlkoFeedAdapter().fetch({
       feedUrl: `${baseUrl}/alko`,
       feedFormat: 'json',
     });
     expect(alko.records.length).toBeGreaterThan(0);
     expect(alko.records[0].currency).toBe('EUR');
-
-    // Posti — default fetcher, constructor-injected fixture URL.
-    const posti = await new PostiCarrierRateSource(
-      undefined,
-      `${baseUrl}/posti`,
-    ).fetchRates();
-    // The golden fixture deliberately includes invalid rows (BAD-LANE,
-    // BAD-PRICE) — the parser reports them per-row and keeps the rest.
-    expect(posti.rates.length).toBeGreaterThan(0);
-    expect(posti.errors.join(' ')).toMatch(/BAD-LANE/);
-    expect(posti.errors.join(' ')).toMatch(/BAD-PRICE/);
   });
 });

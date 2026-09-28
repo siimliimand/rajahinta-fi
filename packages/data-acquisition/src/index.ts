@@ -127,7 +127,7 @@ export type {
   ICarrierRateSource,
   CarrierRateOffer,
 } from './interfaces/carrier-rate-source.port';
-export { CARRIER_RATE_SOURCES_TOKEN, POSTI_RATE_FEED_URL } from './interfaces/carrier-rate-source.port';
+export { CARRIER_RATE_SOURCES_TOKEN } from './interfaces/carrier-rate-source.port';
 
 export type {
   ITransportOfferWritePort,
@@ -136,15 +136,15 @@ export type {
 } from './interfaces/transport-offer-write.port';
 export { TRANSPORT_OFFER_WRITE_PORT } from './interfaces/transport-offer-write.port';
 
-export {
-  PostiCarrierRateSource,
-  parsePostiRates,
-} from './adapters/posti-rate.source';
-export type { RateFeedFetcher } from './adapters/posti-rate.source';
+// Posti — manually curated dataset source (the price-list JSON endpoint
+// is CDN-blocked for datacenter/Cloudflare egress; see the module
+// docblock). Ingestion is owned by the api-worker's monthly curated
+// sync cron, NOT the CARRIER_RATE_SOURCES map below.
+export { PostiCarrierRateSource, buildPostiRates, POSTI_OBSERVED_AT } from './adapters/posti-rate.source';
 
 // Fransberg (fransberg.eu) — manually curated dataset source (no live
 // feed to fetch). Ingestion is owned by the api-worker's monthly
-// fransberg-rate-refresh cron, NOT the CARRIER_RATE_SOURCES map below:
+// curated-rate-refresh cron, NOT the CARRIER_RATE_SOURCES map below:
 // that map feeds the '*' wildcard refresh, which would re-append the
 // static dataset every six hours.
 export {
@@ -197,7 +197,6 @@ import { PipelinePriceIngestionAdapter } from './adapters/pipeline-price-ingesti
 import { PipelineTransportRateAdapter } from './adapters/pipeline-transport-rate.adapter';
 import { PipelineTaxDatasetReviewAdapter } from './adapters/pipeline-tax-dataset-review.adapter';
 import { InMemoryRateReviewRepository } from './adapters/rate-review-repository.adapter';
-import { PostiCarrierRateSource } from './adapters/posti-rate.source';
 import { DrizzleTransportOfferWriteAdapter } from './adapters/transport-offer-write.adapter';
 import { CARRIER_RATE_SOURCES_TOKEN } from './interfaces/carrier-rate-source.port';
 import { TRANSPORT_OFFER_WRITE_PORT } from './interfaces/transport-offer-write.port';
@@ -262,19 +261,16 @@ import type { ICarrierRateSource } from './interfaces/carrier-rate-source.port';
     DrizzleUpsertRepository,
     { provide: UPSERT_REPOSITORY_TOKEN, useClass: DrizzleUpsertRepository },
 
-    // Transport-rate refresh (task 7.4) — carrier sources keyed by
-    // carrierId (Posti first, design D6), the transport-offer write
-    // port, and the governance-gated refresh service behind the
-    // TransportRateService slot.
-    PostiCarrierRateSource,
+    // Transport-rate refresh (task 7.4) — LIVE carrier sources keyed by
+    // carrierId, the transport-offer write port, and the governance-gated
+    // refresh service behind the TransportRateService slot. The map is
+    // empty since 2026-09-28: both carriers (posti, fransberg) are
+    // curated in-repo datasets ingested by the api-worker's monthly
+    // curated-rate-refresh cron; a future entitled live feed re-registers
+    // its source here.
     {
       provide: CARRIER_RATE_SOURCES_TOKEN,
-      useFactory: (posti: PostiCarrierRateSource): Map<string, ICarrierRateSource> => {
-        const map = new Map<string, ICarrierRateSource>();
-        map.set(posti.carrierId, posti);
-        return map;
-      },
-      inject: [PostiCarrierRateSource],
+      useFactory: (): Map<string, ICarrierRateSource> => new Map<string, ICarrierRateSource>(),
     },
     DrizzleTransportOfferWriteAdapter,
     { provide: TRANSPORT_OFFER_WRITE_PORT, useClass: DrizzleTransportOfferWriteAdapter },
