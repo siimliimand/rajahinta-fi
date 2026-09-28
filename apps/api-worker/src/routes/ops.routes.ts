@@ -2170,14 +2170,18 @@ async function notifySubscribers(c: Context<AppEnv>): Promise<Response> {
   const config = {
     frontendOrigin:
       (c.env as { APP_PUBLIC_URL?: string }).APP_PUBLIC_URL ?? 'https://rajahinta.fi',
+    emailWorkerBinding: c.env.EMAIL_WORKER,
     emailWorkerUrl: c.env.EMAIL_WORKER_URL,
     emailSendSecret: c.env.EMAIL_SEND_SECRET,
   };
-  if (!config.emailWorkerUrl || !config.emailSendSecret) {
+  if (
+    !config.emailSendSecret ||
+    (!config.emailWorkerBinding && !config.emailWorkerUrl)
+  ) {
     throw new ApiHttpError(503, {
       statusCode: 503,
       message:
-        'newsletter delivery is not configured (EMAIL_WORKER_URL / EMAIL_SEND_SECRET)',
+        'newsletter delivery is not configured (EMAIL_WORKER binding or EMAIL_WORKER_URL / EMAIL_SEND_SECRET)',
       error: 'StoreUnavailable',
     });
   }

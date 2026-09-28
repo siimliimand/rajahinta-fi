@@ -69,6 +69,7 @@ import {
 } from '../observability/metrics';
 import { claimJob, completeJob, releaseJob } from '../do/client';
 import type { JobClaimOutcome } from '../do/idempotency.do';
+import { dispatchEmailToWorker, type EmailDispatchTarget } from '../services/email-send';
 import type { Env } from '../env';
 import type { Logger } from '../logger';
 
@@ -291,17 +292,6 @@ export function buildAlertEmail(
   return { to, subject, text };
 }
 
-/** Send-contract path on the email Worker (apps/email-worker, task 5.3). */
-const EMAIL_SEND_PATH = '/internal/email/send';
-
-/**
- * Shared-secret header — byte-parity with SEND_SECRET_HEADER in
- * apps/email-worker/src/app.ts. Duplicated on purpose: importing the
- * email Worker's Hono app into the API Worker bundle would drag the
- * whole application in for one string.
- */
-const EMAIL_SEND_SECRET_HEADER = 'x-email-send-secret';
-
 /**
  * POST one alert email to the email Worker's internal send contract.
  * Throws on transport or rejection — the CALLER owns the
@@ -309,26 +299,10 @@ const EMAIL_SEND_SECRET_HEADER = 'x-email-send-secret';
  * cron tick).
  */
 export async function sendAlertEmail(
-  baseUrl: string,
-  sendSecret: string,
+  target: EmailDispatchTarget,
   email: AlertEmail,
 ): Promise<void> {
-  const url = `${baseUrl.replace(/\/+$/, '')}${EMAIL_SEND_PATH}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      [EMAIL_SEND_SECRET_HEADER]: sendSecret,
-    },
-    body: JSON.stringify({
-      to: email.to,
-      subject: email.subject,
-      text: email.text,
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`email worker rejected the alert send: HTTP ${response.status}`);
-  }
+  await dispatchEmailToWorker(target, email);
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +311,7 @@ export async function sendAlertEmail(
 
 /** One run's outcome — logged by the cron dispatch, asserted by tests. */
 export interface FreshnessAlertResult {
-  /** False when the EMAIL_WORKER_URL / secret / recipient are unset. */
+  /** False when the EMAIL_WORKER binding/URL, secret, or recipient are unset. */
   readonly configured: boolean;
   /** Measured stale-price-share (null when unconfigured). */
   readonly staleShare: {
@@ -382,15 +356,15 @@ export async function handleFreshnessAlert(
   // Unconfigured = alerting off for the environment: skip the evaluation
   // reads entirely (no R2 scan, no D1 read) and say so once per tick.
   if (
-    !env.EMAIL_WORKER_URL ||
     !env.EMAIL_SEND_SECRET ||
+    (!env.EMAIL_WORKER && !env.EMAIL_WORKER_URL) ||
     !env.FRESHNESS_ALERT_EMAIL_TO
   ) {
     log.warn({
       message:
-        'Freshness alerting is not configured (EMAIL_WORKER_URL, ' +
-        'EMAIL_SEND_SECRET, FRESHNESS_ALERT_EMAIL_TO) — invariants not ' +
-        'evaluated this tick',
+        'Freshness alerting is not configured (EMAIL_WORKER binding or ' +
+        'EMAIL_WORKER_URL, EMAIL_SEND_SECRET, FRESHNESS_ALERT_EMAIL_TO) — ' +
+        'invariants not evaluated this tick',
     });
     return {
       configured: false,
@@ -404,9 +378,12 @@ export async function handleFreshnessAlert(
 
   const now = deps.now ?? (() => new Date());
   // Captured post-gate: closures (the default sender below) see plain
-  // `string` consts instead of re-reading optional properties.
-  const emailWorkerUrl = env.EMAIL_WORKER_URL;
-  const emailSendSecret = env.EMAIL_SEND_SECRET;
+  // values instead of re-reading optional properties.
+  const sendTarget: EmailDispatchTarget = {
+    binding: env.EMAIL_WORKER,
+    baseUrl: env.EMAIL_WORKER_URL,
+    sendSecret: env.EMAIL_SEND_SECRET,
+  };
   const alertRecipient = env.FRESHNESS_ALERT_EMAIL_TO;
 
   // -- Measure (the same computations the 4.3 handlers/gauges use) --------
@@ -454,9 +431,7 @@ export async function handleFreshnessAlert(
       completeJob(env, key, { ttlSeconds }));
   const release = deps.release ?? ((key: string) => releaseJob(env, key));
   const send =
-    deps.send ??
-    ((email: AlertEmail) =>
-      sendAlertEmail(emailWorkerUrl, emailSendSecret, email));
+    deps.send ?? ((email: AlertEmail) => sendAlertEmail(sendTarget, email));
 
   const alertsSent: string[] = [];
   const alertsSuppressed: string[] = [];

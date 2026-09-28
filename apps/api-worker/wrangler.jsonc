@@ -285,6 +285,15 @@
       // the real per-env Worker URL and ops recipient here. The shared
       // secret is NEVER a var: `wrangler secret put EMAIL_SEND_SECRET
       // --env <env>` (must match the email Worker's EMAIL_SEND_SECRET).
+      //
+      // Dispatch transport (2026-09-28): the EMAIL_WORKER service
+      // binding is the real path — Cloudflare blocks same-account
+      // Worker-to-Worker subrequests over workers.dev (error 1042), so
+      // the EMAIL_WORKER_URL var below only serves tests/local without
+      // the binding.
+      "services": [
+        { "binding": "EMAIL_WORKER", "service": "rajahinta-email-dev" }
+      ],
       "vars": {
         "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
         "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
@@ -340,7 +349,11 @@
       ],
       // Freshness alerting (task 6.3, design D7/D8) — PLACEHOLDERS; see the
       // dev block comment. Secret via `wrangler secret put EMAIL_SEND_SECRET
-      // --env staging`.
+      // --env staging`. The EMAIL_WORKER service binding carries the send
+      // contract in-account (workers.dev subrequests fail with 1042).
+      "services": [
+        { "binding": "EMAIL_WORKER", "service": "rajahinta-email-staging" }
+      ],
       "vars": {
         "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
         "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
@@ -402,11 +415,18 @@
         { "binding": "METRICS", "dataset": "rajahinta-api-metrics-production" }
       ],
       // Freshness alerting (task 6.3, design D7/D8): real production values
-      // (2026-09-07 go-live). EMAIL_WORKER_URL is the deployed email
-      // Worker's workers.dev hostname; the alert targets the operator
-      // inbox, which is also the send_email binding's pinned destination.
+      // (2026-09-07 go-live). The alert targets the operator inbox, which is
+      // also the send_email binding's pinned destination.
       // Shared secret via `wrangler secret put EMAIL_SEND_SECRET
       // --env production` (must match the email Worker's).
+      // Dispatch transport (2026-09-28): the EMAIL_WORKER service binding
+      // is the real path — Cloudflare rejects same-account Worker-to-Worker
+      // subrequests to workers.dev hostnames with 404/error 1042, which
+      // silently broke every alert email before the binding existed.
+      // EMAIL_WORKER_URL stays as the test/local fallback only.
+      "services": [
+        { "binding": "EMAIL_WORKER", "service": "rajahinta-email-production" }
+      ],
       "vars": {
         "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
         "EMAIL_WORKER_URL": "https://rajahinta-email-production.siim-liimand.workers.dev",

@@ -26,6 +26,7 @@ import { D1EmailTokenStore } from '../adapters/email-token-store';
 import { D1AccountStore, type AccountRow } from '../adapters/account-store';
 import { recordSecurityEvent } from '../routes/auth.helpers';
 import { createLogger, type Logger } from '../logger';
+import { dispatchEmailToWorker } from './email-send';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 
 /** Verification-token horizon (design D3). */
@@ -33,16 +34,6 @@ export const VERIFY_EMAIL_TOKEN_TTL_MS = 24 * 3_600_000;
 
 /** Password-reset-token horizon (design D3). */
 export const PASSWORD_RESET_TOKEN_TTL_MS = 3_600_000;
-
-/** Send-contract path on the email Worker (parity with the alert crons). */
-const EMAIL_SEND_PATH = '/internal/email/send';
-
-/**
- * Shared-secret header — byte-parity with SEND_SECRET_HEADER in
- * apps/email-worker/src/app.ts (duplicated there for the same reason the
- * alert crons duplicate it: one string is not worth the bundle).
- */
-const EMAIL_SEND_SECRET_HEADER = 'x-email-send-secret';
 
 /** The structured email the send contract accepts (text + html). */
 export interface OutgoingEmail {
@@ -56,6 +47,9 @@ export interface OutgoingEmail {
 export interface EmailTokenServiceConfig {
   /** Frontend origin the email links point at (/account/verify, /account/reset). */
   readonly frontendOrigin: string;
+  /** EMAIL_WORKER service binding — preferred in-account transport. */
+  readonly emailWorkerBinding?: Fetcher;
+  /** URL fallback (tests, local); workers.dev URLs fail with 404/1042. */
   readonly emailWorkerUrl?: string;
   readonly emailSendSecret?: string;
 }
@@ -179,26 +173,14 @@ export async function sendMailViaEmailWorker(
   config: EmailTokenServiceConfig,
   mail: OutgoingEmail,
 ): Promise<void> {
-  if (!config.emailWorkerUrl || !config.emailSendSecret) {
-    throw new Error('email worker is not configured (EMAIL_WORKER_URL / EMAIL_SEND_SECRET)');
-  }
-  const url = `${config.emailWorkerUrl.replace(/\/+$/, '')}${EMAIL_SEND_PATH}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      [EMAIL_SEND_SECRET_HEADER]: config.emailSendSecret,
+  await dispatchEmailToWorker(
+    {
+      binding: config.emailWorkerBinding,
+      baseUrl: config.emailWorkerUrl,
+      sendSecret: config.emailSendSecret,
     },
-    body: JSON.stringify({
-      to: mail.to,
-      subject: mail.subject,
-      text: mail.text,
-      html: mail.html,
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`email worker rejected the send: HTTP ${response.status}`);
-  }
+    mail,
+  );
 }
 
 export class EmailTokenService {

@@ -77,9 +77,19 @@ export interface Env {
   // -- Freshness alerting (task 6.3, design D7/D8) --------------------------
 
   /**
-   * Email Worker base URL (per-env wrangler var, design D9) — the
-   * freshness-alert cron POSTs to its internal send contract
+   * Email Worker service binding (per-env wrangler.jsonc `services`) —
+   * the PREFERRED transport for the internal send contract
    * (`POST /internal/email/send`, apps/email-worker, task 5.3).
+   * Cloudflare blocks same-account Worker-to-Worker subrequests over
+   * workers.dev hostnames (error 1042), so workers.dev URLs can only
+   * ever 404 from this Worker; the binding routes in-account.
+   */
+  readonly EMAIL_WORKER?: Fetcher;
+  /**
+   * Email Worker base URL (per-env wrangler var, design D9) — URL
+   * fallback for the send contract when the EMAIL_WORKER binding is
+   * absent (tests, local). Rejected at the edge with 404/1042 when it
+   * points at a workers.dev hostname.
    */
   readonly EMAIL_WORKER_URL?: string;
   /**

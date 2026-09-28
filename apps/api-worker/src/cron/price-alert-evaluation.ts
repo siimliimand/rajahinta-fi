@@ -65,6 +65,7 @@ import {
   type PriceAlertEvaluationCounters,
 } from '../observability/metrics';
 import { AGGREGATION_CRON } from './time-series-aggregation';
+import { dispatchEmailToWorker, type EmailDispatchTarget } from '../services/email-send';
 import type { Env } from '../env';
 import type { Logger } from '../logger';
 
@@ -102,17 +103,6 @@ export interface PriceAlertEmail {
   readonly subject: string;
   readonly text: string;
 }
-
-/** Send-contract path on the email Worker (apps/email-worker, task 5.3). */
-const EMAIL_SEND_PATH = '/internal/email/send';
-
-/**
- * Shared-secret header — byte-parity with SEND_SECRET_HEADER in
- * apps/email-worker/src/app.ts. Duplicated on purpose (freshness-alert
- * precedent): importing the email Worker's Hono app into the API Worker
- * bundle would drag the whole application in for one string.
- */
-const EMAIL_SEND_SECRET_HEADER = 'x-email-send-secret';
 
 /** Cents → "€12.34" for the email body. */
 function euroLabel(cents: number): string {
@@ -160,26 +150,10 @@ export function buildPriceAlertEmail(input: {
  * marking and counting.
  */
 export async function sendPriceAlertEmail(
-  baseUrl: string,
-  sendSecret: string,
+  target: EmailDispatchTarget,
   email: PriceAlertEmail,
 ): Promise<void> {
-  const url = `${baseUrl.replace(/\/+$/, '')}${EMAIL_SEND_PATH}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      [EMAIL_SEND_SECRET_HEADER]: sendSecret,
-    },
-    body: JSON.stringify({
-      to: email.to,
-      subject: email.subject,
-      text: email.text,
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`email worker rejected the price-alert send: HTTP ${response.status}`);
-  }
+  await dispatchEmailToWorker(target, email);
 }
 
 // ---------------------------------------------------------------------------
@@ -265,20 +239,27 @@ export async function handlePriceAlertEvaluation(
   // -- Email configuration gate -------------------------------------------
   // Without the send path no intent could ever complete; evaluating
   // would only strand pending rows. Same posture as the freshness alert.
-  if (!env.EMAIL_WORKER_URL || !env.EMAIL_SEND_SECRET) {
+  if (
+    !env.EMAIL_SEND_SECRET ||
+    (!env.EMAIL_WORKER && !env.EMAIL_WORKER_URL)
+  ) {
     log.warn({
       message:
-        'Price-alert email delivery is not configured (EMAIL_WORKER_URL, ' +
-        'EMAIL_SEND_SECRET) — alerts not evaluated this tick',
+        'Price-alert email delivery is not configured (EMAIL_WORKER binding ' +
+        'or EMAIL_WORKER_URL, EMAIL_SEND_SECRET) — alerts not evaluated ' +
+        'this tick',
     });
     return { configured: false, ...zeros };
   }
 
   const now = deps.now ?? (() => new Date());
   // Captured post-gate: closures (the default sender below) see plain
-  // string consts instead of re-reading optional properties.
-  const emailWorkerUrl = env.EMAIL_WORKER_URL;
-  const emailSendSecret = env.EMAIL_SEND_SECRET;
+  // values instead of re-reading optional properties.
+  const sendTarget: EmailDispatchTarget = {
+    binding: env.EMAIL_WORKER,
+    baseUrl: env.EMAIL_WORKER_URL,
+    sendSecret: env.EMAIL_SEND_SECRET,
+  };
 
   const alerts = deps.alerts ?? new D1PriceAlertRepository(env.DB);
   const notifications =
@@ -291,8 +272,7 @@ export async function handlePriceAlertEvaluation(
     ((accountId: number) => findAccountEmailDefault(env.DB, accountId));
   const send =
     deps.send ??
-    ((email: PriceAlertEmail) =>
-      sendPriceAlertEmail(emailWorkerUrl, emailSendSecret, email));
+    ((email: PriceAlertEmail) => sendPriceAlertEmail(sendTarget, email));
 
   const active = await alerts.findActive();
   const counters: MutablePriceAlertCounters = {

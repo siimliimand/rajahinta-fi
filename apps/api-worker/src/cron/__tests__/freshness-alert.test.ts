@@ -276,6 +276,56 @@ describe('handleFreshnessAlert', () => {
     expect(headers.get('content-type')).toBe('application/json');
   });
 
+  it('EMAIL_WORKER service binding → dispatches through the binding, not global fetch', async () => {
+    // Cloudflare blocks same-account Worker-to-Worker subrequests over
+    // workers.dev (error 1042 → HTTP 404), so the binding is the real
+    // production transport; this pins binding-first dispatch.
+    const fetchMock = stubFetch();
+    const bindingFetch = vi.fn(async (_request: Request): Promise<Response> =>
+      new Response(null, { status: 202 }),
+    );
+    const env = alertEnv({
+      EMAIL_WORKER: { fetch: bindingFetch } as unknown as Fetcher,
+      EMAIL_WORKER_URL: undefined,
+    });
+
+    const result = await handleFreshnessAlert(env, LOG, {
+      ...STALE_CRITICAL,
+      findNewestObservedAt: HEALTHY.findNewestObservedAt,
+    });
+
+    expect(result.alertsSent).toHaveLength(1);
+    expect(bindingFetch).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const request = bindingFetch.mock.calls[0]![0] as Request;
+    expect(new URL(request.url).pathname).toBe('/internal/email/send');
+    expect(request.headers.get('x-email-send-secret')).toBe('test-shared-secret');
+    expect(JSON.parse(await request.text())).toMatchObject({
+      to: 'ops@example.com',
+    });
+  });
+
+  it('binding rejection → logged, not thrown (same log-only policy as the URL path)', async () => {
+    const bindingFetch = vi.fn(async () => new Response('nope', { status: 404 }));
+    const { log, error } = errorSpy();
+    const env = alertEnv({
+      EMAIL_WORKER: { fetch: bindingFetch } as unknown as Fetcher,
+      EMAIL_WORKER_URL: undefined,
+    });
+
+    const result = await handleFreshnessAlert(env, log, {
+      ...STALE_CRITICAL,
+      findNewestObservedAt: HEALTHY.findNewestObservedAt,
+    });
+
+    expect(result.alertsSent).toEqual([]);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('HTTP 404'),
+      }),
+    );
+  });
+
   it('email Worker 500 → logged, not thrown; claim released so the next tick re-alerts', async () => {
     const fetchMock = stubFetch(new Response('nope', { status: 500 }));
     const { log, error } = errorSpy();

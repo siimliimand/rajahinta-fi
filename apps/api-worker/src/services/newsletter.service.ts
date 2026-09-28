@@ -37,16 +37,7 @@ import {
 } from '../../../../apps/email-worker/src/templates';
 import type { Logger } from '../logger';
 import { hashToken, opaqueToken } from '../routes/auth.helpers';
-
-/** Send-contract path on the email Worker (the alert crons' precedent). */
-const EMAIL_SEND_PATH = '/internal/email/send';
-
-/**
- * Shared-secret header — byte-parity with SEND_SECRET_HEADER in
- * apps/email-worker/src/app.ts (duplicated for the same reason the
- * alert crons duplicate it: one string is not worth the bundle).
- */
-const EMAIL_SEND_SECRET_HEADER = 'x-email-send-secret';
+import { dispatchEmailToWorker } from './email-send';
 
 /**
  * Redelivery cooldown (the PRICE_ALERT_COOLDOWN_MS rule applied to the
@@ -73,6 +64,9 @@ export function resolveNewsletterLocale(raw: unknown): 'fi' | 'en' {
 export interface NewsletterConfig {
   /** Frontend origin the mailed links point at (APP_PUBLIC_URL fallback parity). */
   readonly frontendOrigin: string;
+  /** EMAIL_WORKER service binding — preferred in-account transport. */
+  readonly emailWorkerBinding?: Fetcher;
+  /** URL fallback (tests, local); workers.dev URLs fail with 404/1042. */
   readonly emailWorkerUrl?: string;
   readonly emailSendSecret?: string;
 }
@@ -116,28 +110,14 @@ export async function sendNewsletterEmail(
   config: NewsletterConfig,
   mail: NewsletterOutgoingEmail,
 ): Promise<void> {
-  if (!config.emailWorkerUrl || !config.emailSendSecret) {
-    throw new Error(
-      'email worker is not configured (EMAIL_WORKER_URL / EMAIL_SEND_SECRET)',
-    );
-  }
-  const url = `${config.emailWorkerUrl.replace(/\/+$/, '')}${EMAIL_SEND_PATH}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      [EMAIL_SEND_SECRET_HEADER]: config.emailSendSecret,
+  await dispatchEmailToWorker(
+    {
+      binding: config.emailWorkerBinding,
+      baseUrl: config.emailWorkerUrl,
+      sendSecret: config.emailSendSecret,
     },
-    body: JSON.stringify({
-      to: mail.to,
-      subject: mail.subject,
-      text: mail.text,
-      html: mail.html,
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`email worker rejected the send: HTTP ${response.status}`);
-  }
+    mail,
+  );
 }
 
 // ---------------------------------------------------------------------------

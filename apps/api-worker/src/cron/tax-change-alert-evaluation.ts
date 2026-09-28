@@ -85,6 +85,7 @@ import {
   PRICE_ALERT_COOLDOWN_MS,
   sendPriceAlertEmail,
 } from './price-alert-evaluation';
+import type { EmailDispatchTarget } from '../services/email-send';
 
 // ---------------------------------------------------------------------------
 // Window + selection types
@@ -468,18 +469,25 @@ export async function handleTaxChangeAlertEvaluation(
   // -- Email configuration gate -------------------------------------------
   // Without the send path no intent could ever complete; evaluating
   // would only strand pending rows. Same posture as the PRICE sweep.
-  if (!env.EMAIL_WORKER_URL || !env.EMAIL_SEND_SECRET) {
+  if (
+    !env.EMAIL_SEND_SECRET ||
+    (!env.EMAIL_WORKER && !env.EMAIL_WORKER_URL)
+  ) {
     log.warn({
       message:
-        'Tax-change alert email delivery is not configured (EMAIL_WORKER_URL, ' +
-        'EMAIL_SEND_SECRET) — alerts not evaluated this run',
+        'Tax-change alert email delivery is not configured (EMAIL_WORKER ' +
+        'binding or EMAIL_WORKER_URL, EMAIL_SEND_SECRET) — alerts not ' +
+        'evaluated this run',
     });
     return { configured: false, ...zeros };
   }
 
   const now = deps.now ?? (() => new Date());
-  const emailWorkerUrl = env.EMAIL_WORKER_URL;
-  const emailSendSecret = env.EMAIL_SEND_SECRET;
+  const sendTarget: EmailDispatchTarget = {
+    binding: env.EMAIL_WORKER,
+    baseUrl: env.EMAIL_WORKER_URL,
+    sendSecret: env.EMAIL_SEND_SECRET,
+  };
 
   const notifications =
     deps.notifications ?? new D1AlertNotificationRepository(env.DB);
@@ -490,8 +498,7 @@ export async function handleTaxChangeAlertEvaluation(
     ((accountId: number) => findAccountEmailDefault(env.DB, accountId));
   const send =
     deps.send ??
-    ((email: TaxChangeAlertEmail) =>
-      sendPriceAlertEmail(emailWorkerUrl, emailSendSecret, email));
+    ((email: TaxChangeAlertEmail) => sendPriceAlertEmail(sendTarget, email));
   const readSteps =
     deps.readSteps ??
     ((productId: number, evaluatedAt: Date) =>

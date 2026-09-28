@@ -176,6 +176,7 @@ function emailTokenService(c: Context<AppEnv>): EmailTokenService {
       // wrangler var; the fallback is the production custom-domain origin.
       frontendOrigin:
         (c.env as { APP_PUBLIC_URL?: string }).APP_PUBLIC_URL ?? 'https://rajahinta.fi',
+      emailWorkerBinding: c.env.EMAIL_WORKER,
       emailWorkerUrl: c.env.EMAIL_WORKER_URL,
       emailSendSecret: c.env.EMAIL_SEND_SECRET,
     },

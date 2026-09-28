@@ -46,9 +46,13 @@ pipeline, and this document.
 - [ ] **Observation R2 bucket ready**: `rajahinta-observations-production`
       exists, EU jurisdiction, `OBSERVATION_LOG` binding live (task 6.5).
 - [ ] **Email-worker configuration present in staging + production**:
-      `EMAIL_WORKER_URL` and `FRESHNESS_ALERT_EMAIL_TO` set on the API
+      the `EMAIL_WORKER` service binding (or, for tests/local only,
+      `EMAIL_WORKER_URL`) and `FRESHNESS_ALERT_EMAIL_TO` set on the API
       Worker, `EMAIL_SEND_SECRET` shared with the email Worker, and
       `EMAIL_FROM` on the email Worker set to a verified sender address.
+      The binding is mandatory in deployed environments: Cloudflare
+      rejects same-account Worker-to-Worker subrequests over workers.dev
+      hostnames (error 1042 → HTTP 404), so the URL form cannot deliver.
       These are already required by the freshness-alert and price-alert
       mail; account verification and password-reset mail reuse the same
       `/internal/email/send` contract and the same variables, so no new

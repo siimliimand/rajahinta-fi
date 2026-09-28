@@ -601,8 +601,10 @@ describe('sendPriceAlertEmail (email Worker send contract)', () => {
     const fetchMock = stubFetch();
 
     await sendPriceAlertEmail(
-      'https://rajahinta-email-worker.example.workers.dev/',
-      'test-shared-secret',
+      {
+        baseUrl: 'https://rajahinta-email-worker.example.workers.dev/',
+        sendSecret: 'test-shared-secret',
+      },
       EMAIL,
     );
 
@@ -625,7 +627,7 @@ describe('sendPriceAlertEmail (email Worker send contract)', () => {
     stubFetch(new Response('nope', { status: 413 }));
 
     await expect(
-      sendPriceAlertEmail('https://email.example', 's', EMAIL),
+      sendPriceAlertEmail({ baseUrl: 'https://email.example', sendSecret: 's' }, EMAIL),
     ).rejects.toThrow('HTTP 413');
   });
 });

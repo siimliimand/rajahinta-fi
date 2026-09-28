@@ -99,6 +99,8 @@ worker_vars:                               # committed placeholders in wrangler.
   - RATE_SNAPSHOT_OBJECT_KEY               # config/rate-snapshot.json
   - EMAIL_WORKER_URL                       # real production email-worker URL (placeholder today)
   - FRESHNESS_ALERT_EMAIL_TO               # real ops recipient (placeholder today)
+worker_services:
+  - EMAIL_WORKER -> rajahinta-email-production   # send-contract transport (workers.dev subrequests fail 1042)
 
 # ── Feature-flag system removed (2026-09-07, owner decision) ──────────────
 # All features ship unconditionally; no FF_* vars exist. Instant rollback
