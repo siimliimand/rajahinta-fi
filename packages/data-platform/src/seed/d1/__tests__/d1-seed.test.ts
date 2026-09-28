@@ -291,13 +291,17 @@ describe('assertVerificationRow count semantics', () => {
     expect(() => assertVerificationRow(verificationRow())).not.toThrow();
   });
 
-  it('tolerates ingested growth above the fixture floor (staging producer)', () => {
+  it('tolerates ingested growth above the fixture floor (staging producer + curated sync)', () => {
     expect(() =>
       assertVerificationRow(
         verificationRow({
           product_master_total: expectations.productMaster + 2353,
           retail_offers_total: expectations.retailOffers + 14261,
           fts_indexed_products: expectations.ftsIndexedProducts + 2353,
+          // The monthly curated-rate-refresh cron legitimately appends
+          // curated carrier datasets (fransberg, posti) past the seed
+          // fixture's 12 demo rows.
+          transport_offers_total: expectations.transportOffers + 36,
         }),
       ),
     ).not.toThrow();
@@ -321,10 +325,10 @@ describe('assertVerificationRow count semantics', () => {
     ).toThrow(new RegExp(field));
   });
 
-  it('still fails on exact-count drift in seed-owned tables', () => {
+  it('still fails when a seed-owned table loses rows (seed loss)', () => {
     expect(() =>
       assertVerificationRow(
-        verificationRow({ transport_offers_total: expectations.transportOffers + 1 }),
+        verificationRow({ transport_offers_total: expectations.transportOffers - 1 }),
       ),
     ).toThrow(/transport_offers_total/);
   });

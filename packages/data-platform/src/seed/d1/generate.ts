@@ -522,27 +522,30 @@ ${perMerchantSelects},
 }
 
 /**
- * Tables that ingestion also writes. The seed owns its fixture rows as a
- * floor there: staging's hourly producer (merchant feeds) legitimately
- * grows product_master, retail_offers and the FTS index past the fixture
- * counts, so exact equality would fail on every post-ingestion deploy.
- * Seed-owned tables (tax rules, transport offers, staging reviews) stay
- * exact — drift there is seed loss, not growth. The merchant registry is
- * neither: the seed verifies its own rows by presence (per merchantId),
- * while operator-added rows via the documented ops path (longero 4.2,
- * kippis 4.2/5.2 onboarding) legitimately grow the table.
+ * Tables that ingestion or the curated sync also write. The seed owns its
+ * fixture rows as a floor there: staging's hourly producer (merchant
+ * feeds) legitimately grows product_master, retail_offers and the FTS
+ * index past the fixture counts, and the monthly curated-rate-refresh
+ * cron (2026-09-28) legitimately grows transport_offers with the curated
+ * carrier datasets — exact equality would fail on every post-sync deploy.
+ * Seed-owned tables (tax rules, staging reviews) stay exact — drift there
+ * is seed loss, not growth. The merchant registry is neither: the seed
+ * verifies its own rows by presence (per merchantId), while operator-added
+ * rows via the documented ops path (longero 4.2, kippis 4.2/5.2
+ * onboarding) legitimately grow the table.
  */
 const INGESTION_FLOOR_FIELDS: ReadonlySet<string> = new Set([
   'product_master_total',
   'retail_offers_total',
   'fts_indexed_products',
+  'transport_offers_total',
 ]);
 
 /**
  * Assert a verification row (field → actual count) against the expected
- * counts. Exact for seed-owned tables, at-least for ingestion-shared ones
- * (see INGESTION_FLOOR_FIELDS), and per-seeded-row presence for the
- * merchant registry. Throws a SeedVerificationError listing EVERY
+ * counts. Exact for seed-owned tables, at-least for ingestion/curated-sync
+ * shared ones (see INGESTION_FLOOR_FIELDS), and per-seeded-row presence for
+ * the merchant registry. Throws a SeedVerificationError listing EVERY
  * mismatch — the loud-failure contract of the seed pipeline.
  */
 export function assertVerificationRow(row: Record<string, unknown>): void {
