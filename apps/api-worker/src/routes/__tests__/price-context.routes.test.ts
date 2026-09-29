@@ -6,10 +6,12 @@
  *
  * Pinning here: the full computed payload over a populated 90-day window
  * (current best price, median/min/max, delta cents + basis points,
- * windowDays/bucketCount/asOf), the merchant-IS-NULL product-wide
+ * percentile rank + isWindowLow, windowDays/bucketCount/asOf), the
+ * merchant-IS-NULL product-wide
  * semantics (a merchant-tagged bucket never joins the window) and the
  * window boundary (a 100-day-old bucket never joins), the explicit
- * INSUFFICIENT_HISTORY state over a thin window (nulls, no percentage,
+ * INSUFFICIENT_HISTORY state over a thin window (nulls — including the
+ * rank and window-low fields —, no percentage,
  * window shape still present), the best-price consistency with the
  * product detail response (both via the shared lowest-current-offer
  * helper), the age gate, and the 404s (unknown product; known product
@@ -70,6 +72,8 @@ interface ContextJson {
     maxCents: number | null;
     deltaVsMedianCents: number | null;
     deltaVsMedianBasisPoints: number | null;
+    percentileRankBasisPoints: number | null;
+    isWindowLow: boolean | null;
     reason?: string;
     windowDays: number;
     bucketCount: number;
@@ -139,6 +143,10 @@ describe('GET /api/v1/products/:id/price-context — computed window', () => {
     expect(body.context.maxCents).toBe(2000);
     expect(body.context.deltaVsMedianCents).toBe(299 - 1000);
     expect(body.context.deltaVsMedianBasisPoints).toBe(-7010);
+    // All 15 buckets sit strictly above the 299 best price → 15/15.
+    expect(body.context.percentileRankBasisPoints).toBe(10000);
+    // 299 ≠ the 1000 window minimum — not the window's lowest.
+    expect(body.context.isWindowLow).toBe(false);
     expect(body.context.windowDays).toBe(90);
     expect(body.context.bucketCount).toBe(15);
     expect(body.context.asOf).toBe(todayIso());
@@ -227,6 +235,8 @@ describe('GET /api/v1/products/:id/price-context — insufficient history', () =
     expect(body.context.maxCents).toBeNull();
     expect(body.context.deltaVsMedianCents).toBeNull();
     expect(body.context.deltaVsMedianBasisPoints).toBeNull();
+    expect(body.context.percentileRankBasisPoints).toBeNull();
+    expect(body.context.isWindowLow).toBeNull();
     // The window shape travels even on the unavailable branch.
     expect(body.context.windowDays).toBe(90);
     expect(body.context.bucketCount).toBe(13);
