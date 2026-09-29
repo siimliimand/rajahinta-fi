@@ -23,8 +23,10 @@
  * genuine movement always produces fresh buckets (hourly ingestion).
  * The CATEGORY sweep reads the same window through the summary
  * repository's deterministic category-minimum query; the LANDED_COST
- * reader (task 2.1) mirrors the price reader on the landed-cost close
- * column, its branch landing with task 2.2.
+ * branch (task 2.2) reads the same window on the landed-cost close
+ * column and, when it notifies, cites the close's composition facts
+ * from the stored observation record (spec: landed-cost alert
+ * explainability — see {@link buildLandedCostAlertEmail}).
  *
  * ## Delivery pipeline (crash-safe, per matched alert)
  *
@@ -58,9 +60,14 @@
  * @module PriceAlertEvaluationCron
  */
 
+import type { ConfidenceLevel } from '@rajahinta/core-domain';
 import type { AlertChannel } from '../../../../packages/data-platform/src/repositories/d1/alert-notification.repository';
 import { D1AlertNotificationRepository } from '../../../../packages/data-platform/src/repositories/d1/alert-notification.repository';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
+import {
+  OBSERVATION_LOG_PREFIX,
+  parseObservationLog,
+} from '../../../../packages/data-platform/src/d1/observation-log';
 import { D1PriceAlertRepository } from '../../../../packages/data-platform/src/repositories/d1/price-alert.repository';
 import { D1PriceHistorySummaryRepository } from '../../../../packages/data-platform/src/repositories/d1/price-history-summary.repository';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
@@ -69,6 +76,7 @@ import {
   type PriceAlertEvaluationCounters,
 } from '../observability/metrics';
 import { AGGREGATION_CRON } from './time-series-aggregation';
+import { createR2ObservationLogStore } from '../adapters/r2-observation-log.store';
 import { dispatchEmailToWorker, type EmailDispatchTarget } from '../services/email-send';
 import type { Env } from '../env';
 import type { Logger } from '../logger';
@@ -193,6 +201,181 @@ export function buildCategoryAlertEmail(input: {
 }
 
 /**
+ * The composition facts behind one landed-cost close (task 2.2, spec:
+ * landed-cost alert explainability). Every field is read back verbatim
+ * from a stored record — the observation-log line that produced the
+ * close plus the reference rows its FKs name — never computed at send
+ * time.
+ */
+export interface LandedCostCompositionFacts {
+  /** The provenance observation's stored instant (ISO-8601 UTC). */
+  readonly observedAt: string;
+  /** The observed offer's stored foreign retail price (cents). */
+  readonly retailPriceCents: number;
+  /** The stored transport cost contribution (0 when no offer matched). */
+  readonly transportCostCents: number;
+  /** Route of the selected transport offer; all null when none recorded. */
+  readonly transportCarrier: string | null;
+  readonly transportOriginCountry: string | null;
+  readonly transportDestinationCountry: string | null;
+  /** Dataset version labels in effect on the observation; null = engine fallback stored no rule row. */
+  readonly exciseDatasetVersion: string | null;
+  readonly containerDutyDatasetVersion: string | null;
+  /** The confidence stored on the observation record. */
+  readonly confidence: ConfidenceLevel;
+}
+
+/**
+ * Render one triggered LANDED_COST alert (task 2.2). Every composition
+ * fact is cited verbatim from {@link LandedCostCompositionFacts} — the
+ * builder computes nothing — and the body carries the quantity=1
+ * baseline / not-a-live-quote statement. Factual content only; the
+ * content policy bans advice phrasing. Same hygiene contract as the
+ * price alert (via {@link emailProductName}).
+ */
+export function buildLandedCostAlertEmail(input: {
+  readonly to: string;
+  readonly productName: string | null;
+  readonly productId: number;
+  readonly observedLandedCostCents: number;
+  readonly thresholdCents: number;
+  readonly facts: LandedCostCompositionFacts;
+}): PriceAlertEmail {
+  const name = emailProductName(input.productName, input.productId);
+  const subject = `[rajahinta] Landed-cost alert: ${name} at ${euroLabel(input.observedLandedCostCents)}`;
+  const facts = input.facts;
+  const transport =
+    facts.transportCarrier === null
+      ? `${euroLabel(facts.transportCostCents)} (no offer recorded)`
+      : `${euroLabel(facts.transportCostCents)} (${facts.transportCarrier}, ${
+          facts.transportOriginCountry ?? 'unknown'
+        } → ${facts.transportDestinationCountry ?? 'unknown'})`;
+  const text = [
+    'Your rajahinta landed-cost alert was triggered.',
+    '',
+    `Product:                ${name} (#${input.productId})`,
+    `Observed landed cost:   ${euroLabel(input.observedLandedCostCents)}`,
+    `Your threshold:         ${euroLabel(input.thresholdCents)}`,
+    `Retail price:           ${euroLabel(facts.retailPriceCents)}`,
+    `Transport:              ${transport}`,
+    `Excise dataset:         ${facts.exciseDatasetVersion ?? 'unknown'}`,
+    `Container-duty dataset: ${facts.containerDutyDatasetVersion ?? 'unknown'}`,
+    `Confidence:             ${facts.confidence}`,
+    `Observed:               ${facts.observedAt}`,
+    '',
+    'The observed landed cost is the quantity=1 baseline from the',
+    "product's latest materialized daily summary, not a live quote. You",
+    'manage or pause your alerts in your rajahinta account.',
+    '',
+  ].join('\n');
+  return { to: input.to, subject, text };
+}
+
+/**
+ * The summary-bucket facts a LANDED_COST email needs for provenance:
+ * the newest product-wide daily close and the day whose observation-log
+ * partition holds the composition facts behind it.
+ */
+export interface LandedCostCloseBucket {
+  readonly periodStart: string;
+  readonly landedCostCloseCents: number;
+}
+
+/**
+ * Resolve the composition facts of one landed-cost close (task 2.2
+ * default read — cite-only, nothing recomputed). The product-wide daily
+ * close is the LAST observation's landed cost in the fold's series
+ * order (observed_at asc, id tie-break — summary-aggregation's own
+ * rule), so the provenance line lives in the bucket day's partition;
+ * its FKs name the transport-offer row (route) and the tax-rules rows
+ * (dataset version labels), all stored reads.
+ *
+ * Returns null — and the caller skips the alert, because the email
+ * SHALL cite the composition — when the facts are not retrievable from
+ * stored records: no OBSERVATION_LOG binding, a missing partition or
+ * product line, or a consistency mismatch. That mismatch means the
+ * bucket was rebuilt between the summary read and this read (a newer
+ * observation landed); citing the then-current line would attribute the
+ * close to the wrong composition, so the alert waits for the next tick's
+ * consistent materialization.
+ */
+async function resolveLandedCostCompositionFacts(
+  env: Env,
+  productId: number,
+  close: LandedCostCloseBucket,
+): Promise<LandedCostCompositionFacts | null> {
+  if (!env.OBSERVATION_LOG) {
+    return null;
+  }
+  const reader = createR2ObservationLogStore(env.OBSERVATION_LOG);
+  const body = await reader.readObject(
+    `${OBSERVATION_LOG_PREFIX}${close.periodStart}.jsonl`,
+  );
+  if (body === null) {
+    return null;
+  }
+  const observations = parseObservationLog(body).filter(
+    (record) => record.product_id === productId,
+  );
+  if (observations.length === 0) {
+    return null;
+  }
+  const ordered = [...observations].sort((a, b) =>
+    a.observed_at !== b.observed_at
+      ? a.observed_at < b.observed_at
+        ? -1
+        : 1
+      : a.id - b.id,
+  );
+  const closeSource = ordered[ordered.length - 1];
+  if (closeSource.landed_cost_cents !== close.landedCostCloseCents) {
+    return null;
+  }
+
+  const route =
+    closeSource.transport_offer_id === null
+      ? null
+      : await env.DB
+          .prepare(
+            'SELECT carrier, origin_country, destination_country FROM transport_offers WHERE id = ?',
+          )
+          .bind(closeSource.transport_offer_id)
+          .first<{
+            carrier: string;
+            origin_country: string;
+            destination_country: string;
+          }>();
+  const datasetVersion = async (
+    ruleVersionId: number | null,
+  ): Promise<string | null> => {
+    if (ruleVersionId === null) {
+      return null;
+    }
+    const row = await env.DB
+      .prepare('SELECT version_label FROM tax_rules WHERE id = ?')
+      .bind(ruleVersionId)
+      .first<{ version_label: string }>();
+    return row?.version_label ?? null;
+  };
+  const [exciseDatasetVersion, containerDutyDatasetVersion] = await Promise.all([
+    datasetVersion(closeSource.excise_rule_version_id),
+    datasetVersion(closeSource.container_duty_rule_version_id),
+  ]);
+
+  return {
+    observedAt: closeSource.observed_at,
+    retailPriceCents: closeSource.foreign_retail_price_cents,
+    transportCostCents: closeSource.transport_cost_cents,
+    transportCarrier: route?.carrier ?? null,
+    transportOriginCountry: route?.origin_country ?? null,
+    transportDestinationCountry: route?.destination_country ?? null,
+    exciseDatasetVersion,
+    containerDutyDatasetVersion,
+    confidence: closeSource.confidence,
+  };
+}
+
+/**
  * POST one price-alert email through the email Worker's internal send
  * contract. Throws on transport or rejection — the CALLER owns outcome
  * marking and counting.
@@ -223,6 +406,10 @@ export interface PriceAlertEvaluationDeps {
   summaries?: D1PriceHistorySummaryRepository;
   products?: D1ProductSearchRepository;
   findAccountEmail?: (accountId: number) => Promise<string | null>;
+  resolveLandedCostFacts?: (
+    productId: number,
+    close: LandedCostCloseBucket,
+  ) => Promise<LandedCostCompositionFacts | null>;
   send?: (email: PriceAlertEmail) => Promise<void>;
   now?: () => Date;
 }
@@ -267,10 +454,11 @@ async function latestMaterializedPriceCents(
  * Newest product-wide daily LANDED-COST close within the lookback
  * window, or null (task 2.1) — the price reader's protocol applied to
  * the landed-cost close column: same window, same ascending read, same
- * last-row-is-newest selection, so the LANDED_COST evaluator branch
- * (task 2.2) gets byte-for-byte the freshness behavior of PRICE.
- * Exported for the task-2.1 unit tests; that branch is its production
- * caller.
+ * last-row-is-newest selection. The LANDED_COST evaluator branch (task
+ * 2.2) reads the same window directly because its email also needs the
+ * bucket's period_start (the day whose observation-log partition holds
+ * the close's composition facts); this reader stays the exported
+ * contract reference and the task-2.1 unit tests' subject.
  */
 export async function latestMaterializedLandedCostCents(
   summaries: D1PriceHistorySummaryRepository,
@@ -350,6 +538,10 @@ export async function handlePriceAlertEvaluation(
   const findAccountEmail =
     deps.findAccountEmail ??
     ((accountId: number) => findAccountEmailDefault(env.DB, accountId));
+  const resolveLandedCostFacts =
+    deps.resolveLandedCostFacts ??
+    ((productId: number, close: LandedCostCloseBucket) =>
+      resolveLandedCostCompositionFacts(env, productId, close));
   const send =
     deps.send ??
     ((email: PriceAlertEmail) => sendPriceAlertEmail(sendTarget, email));
@@ -366,18 +558,18 @@ export async function handlePriceAlertEvaluation(
 
   for (const alert of active) {
     // Kind ownership (task 4.1 design D5; spec: kind-guarded ownership):
-    // each alert is evaluated ONLY by its kind's branch — foreign kinds
-    // skip BEFORE any read or counter. TAX_CHANGE rows belong to the
-    // tax-change evaluator; the LANDED_COST branch is task 2.2, whose
-    // rows skip cleanly here until it lands. Existing rows carry
-    // kind = 'PRICE' (migration 0016 backfill), so prior evaluations are
-    // unaffected.
-    if (alert.kind === 'TAX_CHANGE' || alert.kind === 'LANDED_COST') continue;
+    // each alert is evaluated ONLY by its kind's branch — the guard
+    // table is exhaustive, with CATEGORY, LANDED_COST, and PRICE each
+    // owned by exactly one branch below. TAX_CHANGE rows belong to the
+    // tax-change evaluator and skip here BEFORE any read or counter.
+    // Existing rows carry kind = 'PRICE' (migration 0016 backfill), so
+    // prior evaluations are unaffected.
+    if (alert.kind === 'TAX_CHANGE') continue;
     // Per-alert isolation: a failing alert counts failed, never aborts
     // the sweep.
     try {
       // Per-kind observation and match; the delivery pipeline below is
-      // kind-agnostic. Both threshold kinds share the 7-day lookback, the
+      // kind-agnostic. All threshold kinds share the 7-day lookback, the
       // `observed <= threshold` trigger, and the 24-hour cooldown (spec).
       let observedCents: number;
       let trippingProductId: number;
@@ -426,6 +618,64 @@ export async function handlePriceAlertEvaluation(
             observedPriceCents: minimum.priceCloseCents,
             thresholdCents,
             evaluatedAt,
+          });
+      } else if (alert.kind === 'LANDED_COST') {
+        const productId = alert.productId;
+        // A LANDED_COST row always carries a product (create contract);
+        // null would be a data anomaly that cannot be evaluated.
+        if (productId === null) {
+          log.warn({
+            message: `Alert ${alert.id}: LANDED_COST row without a product — skipped`,
+          });
+          continue;
+        }
+        const { fromDay, toDay } = lookbackWindow(evaluatedAt);
+        const rows = await summaries.findByProductRange(
+          productId,
+          'daily',
+          fromDay,
+          toDay,
+        );
+        const latest = rows[rows.length - 1];
+        if (latest === undefined) {
+          // Stale summaries never trigger — the PRICE reader's null
+          // posture: skipped with no evaluation counter and no email.
+          log.info({
+            message: `Alert ${alert.id}: no materialized daily summary for product ${productId} within ${SUMMARY_LOOKBACK_DAYS}d — skipped`,
+          });
+          continue;
+        }
+        // Composition before evaluation (spec: landed-cost alert
+        // explainability): the email SHALL cite the close's composition
+        // facts, so a close whose facts are not retrievable from stored
+        // records is not evaluated at all — no counter, no email.
+        const facts = await resolveLandedCostFacts(productId, {
+          periodStart: latest.periodStart,
+          landedCostCloseCents: latest.landedCostCloseCents,
+        });
+        if (facts === null) {
+          log.warn({
+            message: `Alert ${alert.id}: landed-cost composition for product ${productId} (${latest.periodStart}) not retrievable from the stored observation record — skipped`,
+          });
+          continue;
+        }
+        counters.evaluated++;
+
+        // Threshold semantics: observed <= threshold triggers — the
+        // same comparison every threshold kind uses.
+        const thresholdCents = alert.thresholdCents as number;
+        if (latest.landedCostCloseCents > thresholdCents) continue;
+        counters.matched++;
+        observedCents = latest.landedCostCloseCents;
+        trippingProductId = productId;
+        renderEmail = (to, productName) =>
+          buildLandedCostAlertEmail({
+            to,
+            productName,
+            productId,
+            observedLandedCostCents: latest.landedCostCloseCents,
+            thresholdCents,
+            facts,
           });
       } else {
         const productId = alert.productId;
