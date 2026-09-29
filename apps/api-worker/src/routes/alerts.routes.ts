@@ -18,13 +18,20 @@
  *   schema CHECK enforces > 0; the explicit zod max keeps absurd values
  *   out of the int column — €10,000 sits far above any tracked beverage
  *   unit price, so no legitimate alert is excluded.
- * - Alert kind (task 4.2, change trust-and-reach-roadmap): the wire kind
- *   is lowercase (`price` | `tax_change`, default `price`); the D1 column
- *   stores the uppercase enum. A PRICE alert requires a threshold; a
- *   TAX_CHANGE alert rejects one (a rate-change trigger has no threshold
- *   to compare against — spec price-alerts). Kind is part of the create
+ * - Alert kind (task 4.2, change trust-and-reach-roadmap; LANDED_COST +
+ *   CATEGORY task 1.2, change expand-alerts-accuracy-breakdowns): the wire
+ *   kind is lowercase (`price` | `tax_change` | `landed_cost` | `category`,
+ *   default `price`); the D1 column stores the uppercase enum. The create
+ *   matrix (design D1) is enforced in superRefine so each 400 names the
+ *   offending field: the product-scoped kinds (price/tax_change/
+ *   landed_cost) require a productId and forbid a category; CATEGORY
+ *   requires a canonical category — an unknown one answers the search
+ *   route's unknown-category 400 (one shared set, one shared phrasing) —
+ *   and forbids a productId; price/landed_cost/category require a positive
+ *   threshold and tax_change rejects one. Kind is part of the create
  *   identity and is NOT patchable, mirroring the repository's immutable
- *   (account, product, kind) unique index.
+ *   (account, product, kind) unique index. A threshold PATCH is rejected
+ *   on TAX_CHANGE rows only — the threshold kinds patch like PRICE.
  * - Duplicate (account, product, kind): 409 Conflict — the triple is
  *   guarded by a unique constraint and a second same-kind alert could
  *   only produce duplicate notifications; Conflict matches the ops-route
@@ -49,8 +56,13 @@ import type { AuthenticatedAccount } from '../auth/authenticated-account';
 import { D1PriceAlertRepository } from '../../../../packages/data-platform/src/repositories/d1/price-alert.repository';
 import type {
   PriceAlertCreate,
+  PriceAlertKind,
   PriceAlertRecord,
 } from '../../../../packages/data-platform/src/repositories/d1/price-alert.repository';
+import {
+  PRODUCT_CATEGORIES,
+  type ProductCategory,
+} from '../../../../packages/data-platform/src/d1/schema';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 
 /** Upper threshold bound: €10,000 in cents — see the module doc. */
@@ -69,6 +81,9 @@ function toAlertJson(row: PriceAlertRecord): Record<string, unknown> {
     id: row.id,
     productId: row.productId,
     kind: row.kind,
+    // CATEGORY rows carry the watched canonical category; product-scoped
+    // kinds serialize null so every kind shares one response shape.
+    category: row.category,
     thresholdCents: row.thresholdCents,
     status: row.status,
     createdAt: row.createdAt.toISOString(),
@@ -98,42 +113,125 @@ const thresholdSchema = z.number({
 );
 
 /**
+ * Canonical-category membership — the one shared value set (design D2),
+ * the same check the search route runs on its `category` parameter.
+ */
+function isCanonicalCategory(value: string): value is ProductCategory {
+  return (PRODUCT_CATEGORIES as readonly string[]).includes(value);
+}
+
+const CATEGORY_MESSAGE = 'category must be a canonical product category string';
+
+// Shape-only here: canonical membership is a kind-conditional rule and is
+// checked in the matrix below, where the 400 can name the shared set.
+const categorySchema = z.string({
+  required_error: CATEGORY_MESSAGE,
+  invalid_type_error: CATEGORY_MESSAGE,
+});
+
+/**
  * Wire kind — lowercase with the repository's uppercase enum mapped in
  * `toRepositoryKind`. Optional: an absent kind is the pre-kind PRICE
  * contract, byte-identical for existing clients.
  */
-const KIND_MESSAGE = "kind must be one of: price, tax_change";
+const KIND_MESSAGE = "kind must be one of: price, tax_change, landed_cost, category";
 
-const kindSchema = z.enum(['price', 'tax_change'], {
+const kindSchema = z.enum(['price', 'tax_change', 'landed_cost', 'category'], {
   errorMap: () => ({ message: KIND_MESSAGE }),
 });
 
-function toRepositoryKind(wire: z.infer<typeof kindSchema>): 'PRICE' | 'TAX_CHANGE' {
-  return wire === 'tax_change' ? 'TAX_CHANGE' : 'PRICE';
+function toRepositoryKind(wire: z.infer<typeof kindSchema>): PriceAlertKind {
+  switch (wire) {
+    case 'tax_change':
+      return 'TAX_CHANGE';
+    case 'landed_cost':
+      return 'LANDED_COST';
+    case 'category':
+      return 'CATEGORY';
+    default:
+      return 'PRICE';
+  }
 }
 
 const PRICE_REQUIRES_THRESHOLD_MESSAGE =
   'thresholdCents is required for kind "price" — without a threshold a price alert could never fire';
 
+const LANDED_COST_REQUIRES_THRESHOLD_MESSAGE =
+  'thresholdCents is required for kind "landed_cost" — without a threshold a landed-cost alert could never fire';
+
+const CATEGORY_REQUIRES_THRESHOLD_MESSAGE =
+  'thresholdCents is required for kind "category" — without a threshold a category alert could never fire';
+
 const TAX_CHANGE_REJECTS_THRESHOLD_MESSAGE =
   'thresholdCents is not allowed for kind "tax_change" — a rate-change trigger has no threshold to compare against';
 
+/** Required on every product-scoped kind — the watch targets one product. */
+const productIdRequiredMessage = (kind: string): string =>
+  `productId is required for kind "${kind}"`;
+
+/** A category-wide watch has no product: a productId contradicts the kind. */
+const CATEGORY_REJECTS_PRODUCT_MESSAGE =
+  'productId is not allowed for kind "category" — the watch targets a whole canonical category, not one product';
+
+/** A category-wide watch must name the canonical category it watches. */
+const CATEGORY_REQUIRES_CATEGORY_MESSAGE =
+  'category is required for kind "category" — the watch targets a canonical product category';
+
+/** Product-scoped kinds watch one product; a category field contradicts them. */
+const categoryForbiddenMessage = (kind: string): string =>
+  `category is not allowed for kind "${kind}" — the watch is scoped to a single product`;
+
+/** Search-route parity: the unknown-category 400 names the shared set. */
+const unknownCategoryMessage = (value: string): string =>
+  `Unknown category '${value}'. Valid categories: ${PRODUCT_CATEGORIES.join(', ')}.`;
+
 const createAlertSchema = z
   .object({
-    productId: productIdSchema,
+    // Optional at the schema level because CATEGORY rows watch no product;
+    // the per-kind requirement lives in the matrix below.
+    productId: productIdSchema.optional(),
+    category: categorySchema.optional(),
     thresholdCents: thresholdSchema.optional(),
     kind: kindSchema.optional(),
   })
-  // Kind-conditional threshold rules (spec price-alerts): PRICE carries a
-  // threshold, TAX_CHANGE rejects one. superRefine (not refine) attaches
+  // Kind-conditional matrix (design D1): productId, category, and threshold
+  // are required or forbidden per kind. superRefine (not refine) attaches
   // each issue to the offending field so the error names the key.
   .superRefine((body, ctx) => {
     const kind = body.kind ?? 'price';
-    if (kind === 'price' && body.thresholdCents === undefined) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['thresholdCents'], message: PRICE_REQUIRES_THRESHOLD_MESSAGE });
+
+    if (kind === 'category') {
+      if (body.productId !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['productId'], message: CATEGORY_REJECTS_PRODUCT_MESSAGE });
+      }
+    } else if (body.productId === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['productId'], message: productIdRequiredMessage(kind) });
     }
-    if (kind === 'tax_change' && body.thresholdCents !== undefined) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['thresholdCents'], message: TAX_CHANGE_REJECTS_THRESHOLD_MESSAGE });
+
+    if (kind === 'category') {
+      if (body.category === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['category'], message: CATEGORY_REQUIRES_CATEGORY_MESSAGE });
+      } else if (!isCanonicalCategory(body.category)) {
+        // The canonical-set 400 fires HERE — before the repository guard,
+        // whose raw error would render as a 500 (search-route parity).
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['category'], message: unknownCategoryMessage(body.category) });
+      }
+    } else if (body.category !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['category'], message: categoryForbiddenMessage(kind) });
+    }
+
+    if (kind === 'tax_change') {
+      if (body.thresholdCents !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['thresholdCents'], message: TAX_CHANGE_REJECTS_THRESHOLD_MESSAGE });
+      }
+    } else if (body.thresholdCents === undefined) {
+      const message =
+        kind === 'landed_cost'
+          ? LANDED_COST_REQUIRES_THRESHOLD_MESSAGE
+          : kind === 'category'
+            ? CATEGORY_REQUIRES_THRESHOLD_MESSAGE
+            : PRICE_REQUIRES_THRESHOLD_MESSAGE;
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['thresholdCents'], message });
     }
   });
 
@@ -168,37 +266,66 @@ async function listAlerts(c: Context<AppEnv>): Promise<Response> {
 async function createAlert(c: Context<AppEnv>): Promise<Response> {
   const user = requireUser(c);
   const body = await parseDto(c, createAlertSchema);
+  // Kind resolves before any I/O: CATEGORY watches no product, so the
+  // existence lookup below does not apply to it.
+  const kind = toRepositoryKind(body.kind ?? 'price');
 
   // Unknown products reject before the insert (404, not an FK error).
-  const product = await new D1ProductSearchRepository(c.env.DB).findById(
-    body.productId,
-  );
-  if (product === null) {
-    throw new ApiHttpError(404, {
-      statusCode: 404,
-      message: `Product "${body.productId}" not found`,
-      error: 'ProductNotFound',
-    });
+  if (kind !== 'CATEGORY') {
+    // The matrix above guarantees productId on the product-scoped kinds —
+    // parseDto would have answered 400 otherwise.
+    const product = await new D1ProductSearchRepository(c.env.DB).findById(
+      body.productId!,
+    );
+    if (product === null) {
+      throw new ApiHttpError(404, {
+        statusCode: 404,
+        message: `Product "${body.productId}" not found`,
+        error: 'ProductNotFound',
+      });
+    }
   }
 
   try {
-    // The union's two arms are built explicitly so the compile-time shape
-    // matches the repository contract (PRICE: threshold required;
-    // TAX_CHANGE: none). The schema guarantees thresholdCents is defined
-    // on the price arm — parseDto would have answered 400 otherwise.
-    const kind = toRepositoryKind(body.kind ?? 'price');
-    const createInput: PriceAlertCreate =
-      kind === 'TAX_CHANGE'
-        ? {
-            accountId: user.accountId,
-            productId: body.productId,
-            kind: 'TAX_CHANGE',
-          }
-        : {
-            accountId: user.accountId,
-            productId: body.productId,
-            thresholdCents: body.thresholdCents!,
-          };
+    // Each union arm is built explicitly so the compile-time shape matches
+    // the repository contract (PRICE/LANDED_COST: threshold required;
+    // TAX_CHANGE: none; CATEGORY: canonical category, no product). The
+    // schema's matrix guarantees each arm's fields — parseDto would have
+    // answered 400 otherwise.
+    let createInput: PriceAlertCreate;
+    switch (kind) {
+      case 'TAX_CHANGE':
+        createInput = {
+          accountId: user.accountId,
+          productId: body.productId!,
+          kind: 'TAX_CHANGE',
+        };
+        break;
+      case 'LANDED_COST':
+        createInput = {
+          accountId: user.accountId,
+          productId: body.productId!,
+          kind: 'LANDED_COST',
+          thresholdCents: body.thresholdCents!,
+        };
+        break;
+      case 'CATEGORY':
+        createInput = {
+          accountId: user.accountId,
+          kind: 'CATEGORY',
+          // The matrix checked canonical membership; the narrow type is
+          // the repository contract's.
+          category: body.category as ProductCategory,
+          thresholdCents: body.thresholdCents!,
+        };
+        break;
+      default:
+        createInput = {
+          accountId: user.accountId,
+          productId: body.productId!,
+          thresholdCents: body.thresholdCents!,
+        };
+    }
     const alert = await new D1PriceAlertRepository(c.env.DB).create(createInput);
     return c.json(toAlertJson(alert), 201);
   } catch (err) {
