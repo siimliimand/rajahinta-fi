@@ -164,6 +164,11 @@ export const productMaster = sqliteTable(
       'product_master_category_check',
       sql`${table.category} IN ${PRODUCT_CATEGORY_VALUES}`,
     ),
+    // Task 3.1 (change expand-alerts-accuracy-breakdowns): the CATEGORY
+    // sweep's minimum query filters this table by category — the filter
+    // must be index-bounded, not a per-sweep table scan. Migration 0023
+    // creates the index; this declaration mirrors it 1:1.
+    index('product_master_category_idx').on(table.category),
   ],
 );
 
