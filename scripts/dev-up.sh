@@ -61,7 +61,17 @@ echo "==> Applying Drizzle migrations…"
 (cd "$ROOT" && DATABASE_URL="$DB_URL" \
   pnpm --filter @rajahinta/data-platform exec drizzle-kit migrate)
 
-# --- 3. Seed data (products, official tax rules, transport + retail offers) -
+# --- 3. Build workspace packages (the backend runs from apps/backend but
+# consumes @rajahinta/* packages via their dist/ output). Must run before
+# seeding: the seed runner imports @rajahinta/core-domain from dist/.
+# Set SKIP_BUILD=1 during iteration if the packages are already built and
+# unchanged.
+if [ "${SKIP_BUILD:-0}" != "1" ]; then
+  echo "==> Building workspace packages…"
+  (cd "$ROOT" && pnpm build)
+fi
+
+# --- 4. Seed data (products, official tax rules, transport + retail offers) -
 # tsx is a data-platform devDependency — the seeding path must not depend
 # on an unrelated app's toolchain. --tsconfig is required so decorator
 # syntax compiles against data-platform's compiler options.
@@ -82,14 +92,6 @@ fi
 if port_busy "$FRONTEND_PORT"; then
   echo "!! Port $FRONTEND_PORT is already in use — using 3101 for the frontend instead."
   FRONTEND_PORT=3101
-fi
-
-# --- 4b. Build workspace packages (the backend runs from apps/backend but
-# consumes @rajahinta/* packages via their dist/ output). Set SKIP_BUILD=1
-# during iteration if the packages are already built and unchanged.
-if [ "${SKIP_BUILD:-0}" != "1" ]; then
-  echo "==> Building workspace packages…"
-  (cd "$ROOT" && pnpm build)
 fi
 
 # --- 5. Backend (NestJS) ------------------------------------------------------
