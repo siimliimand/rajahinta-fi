@@ -102,6 +102,16 @@ worker_vars:                               # committed placeholders in wrangler.
 worker_services:
   - EMAIL_WORKER -> rajahinta-email-staging      # send-contract transport (workers.dev subrequests fail 1042)
 
+# ── Frontend build-time vars (NEXT_PUBLIC_* — public client config) ────────
+# `next build` inlines NEXT_PUBLIC_*, so runtime worker_vars cannot change
+# them — these ride the frontend build env (Workers Builds build variables
+# / staging deploy workflow), like NEXT_PUBLIC_API_URL. The Faro collector
+# URL and app key are PUBLIC client config, not credentials: the browser
+# bundle carries both by design, so committed values are placeholders.
+frontend_build_vars:                       # URL absent = Faro full no-op
+  - NEXT_PUBLIC_FARO_URL                   # Grafana Cloud Faro collector URL (placeholder)
+  - NEXT_PUBLIC_FARO_APP_KEY               # Faro app key (public config — placeholder)
+
 # ── Feature-flag system removed (2026-09-07, owner decision) ──────────────
 # All roadmap features ship unconditionally; no FF_* vars exist. Rollback
 # is `wrangler rollback --env staging`, not a flag flip.

@@ -42,6 +42,16 @@ log:
   format: pretty  # pretty | json
   otel_enabled: false
 
+# Frontend RUM (Grafana Faro) — PUBLIC client config, not credentials.
+# Values are fed to the frontend build as NEXT_PUBLIC_FARO_URL /
+# NEXT_PUBLIC_FARO_APP_KEY; NEXT_PUBLIC_* is inlined by `next build`, so
+# these are build-time values (runtime vars cannot change them). An empty
+# URL keeps local builds a full no-op — the SDK never initializes and no
+# dev-machine traffic reaches the collector.
+faro:
+  url: ""      # placeholder — Grafana Cloud Faro collector URL when wired
+  app_key: ""  # placeholder — public config; real value lives in build vars
+
 # Feature-flag system removed (2026-09-07, owner decision): all roadmap
 # features ship unconditionally. Rollback is `wrangler rollback`, not flags.
 
