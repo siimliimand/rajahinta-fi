@@ -4,7 +4,8 @@
  *
  * The context is a display-only figure for the product page's factual
  * comparison line (spec price-context): where the current best price sits
- * versus the window median. It is derived at read time from buckets the
+ * versus the window median, its rank inside the window, and whether it is
+ * the window's lowest price. It is derived at read time from buckets the
  * aggregation already materialized, feeds nothing in the calculator,
  * ranking, or basket optimization, and never renders a percentage over
  * thin data — below the minimum-bucket gate the result is explicitly
@@ -71,6 +72,19 @@ export interface PriceContextValue {
    * {@link PriceContextValue.deltaVsMedianCents}.
    */
   readonly deltaVsMedianBasisPoints: number;
+  /**
+   * Share of the window's buckets strictly above the current best price,
+   * in basis points (1/10000): strictlyAboveCount / bucketCount × 10000,
+   * rounded half away from zero in exact integer arithmetic. Ties do not
+   * count — a bucket equal to the current best price is not above it.
+   */
+  readonly percentileRankBasisPoints: number;
+  /**
+   * True iff the current best price equals the window's lowest bucket
+   * ({@link PriceContextValue.minCents}). An exact-equality fact against
+   * the window minimum, not a rank threshold.
+   */
+  readonly isWindowLow: boolean;
   /** Window length in days — the constant, echoed for explainability. */
   readonly windowDays: number;
   /** How many daily buckets the window actually contained. */
@@ -87,6 +101,8 @@ export interface PriceContextUnavailable {
   readonly maxCents: null;
   readonly deltaVsMedianCents: null;
   readonly deltaVsMedianBasisPoints: null;
+  readonly percentileRankBasisPoints: null;
+  readonly isWindowLow: null;
   readonly reason: PriceContextUnavailableReason;
   /** Window length in days — travels even on the unavailable branch. */
   readonly windowDays: number;

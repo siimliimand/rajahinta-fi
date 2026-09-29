@@ -51,6 +51,8 @@ export const PRICE_CONTEXT_MIN_BUCKETS = 14;
  * medianCents            = integer median of the window's buckets
  * deltaVsMedianCents     = currentBestCents − medianCents
  * deltaVsMedianBasisPoints = round(deltaCents / medianCents × 10000)
+ * percentileRankBasisPoints = round(strictlyAboveCount / bucketCount × 10000)
+ * isWindowLow               = currentBestCents === minCents
  * ```
  *
  * Median convention for an even bucket count (design D4 forbids a
@@ -60,6 +62,12 @@ export const PRICE_CONTEXT_MIN_BUCKETS = 14;
  * deterministic, and the sub-cent residue is display-irrelevant since the
  * raw bucket cents remain available. Odd counts take the middle bucket
  * unchanged.
+ *
+ * Percentile-rank convention: only buckets STRICTLY above the current
+ * best price count — a bucket equal to it is not above it — and the
+ * count ratio rounds half away from zero in exact BigInt arithmetic, the
+ * same convention as the delta ratio. `isWindowLow` is the plain
+ * equality of the current best price and the window minimum.
  *
  * Validation policy:
  *
@@ -97,6 +105,7 @@ export function computePriceContextWindow(input: PriceContextInput): PriceContex
   const minCents = ordered[0];
   const maxCents = ordered[bucketCount - 1];
   const deltaVsMedianCents = input.currentBestCents - medianCents;
+  const strictlyAboveCount = countStrictlyAbove(ordered, input.currentBestCents);
 
   return {
     status: 'computed',
@@ -105,6 +114,8 @@ export function computePriceContextWindow(input: PriceContextInput): PriceContex
     maxCents,
     deltaVsMedianCents,
     deltaVsMedianBasisPoints: basisPointsOf(deltaVsMedianCents, medianCents),
+    percentileRankBasisPoints: basisPointsOf(strictlyAboveCount, bucketCount),
+    isWindowLow: input.currentBestCents === minCents,
     windowDays: PRICE_CONTEXT_WINDOW_DAYS,
     bucketCount,
     asOf: input.asOf,
@@ -129,6 +140,19 @@ function orderedMedian(ascending: readonly number[]): number {
   return Math.floor((ascending[middle - 1] + ascending[middle]) / 2);
 }
 
+/**
+ * Count of an ascending series' entries STRICTLY above `cents` — the tie
+ * rule of the percentile rank: a bucket equal to the current best price
+ * is not above it, so the series' equal-valued tail contributes nothing.
+ */
+function countStrictlyAbove(ascending: readonly number[], cents: number): number {
+  let count = 0;
+  for (let index = ascending.length - 1; index >= 0 && ascending[index] > cents; index -= 1) {
+    count += 1;
+  }
+  return count;
+}
+
 // ---------------------------------------------------------------------------
 // Basis points
 // ---------------------------------------------------------------------------
@@ -139,13 +163,16 @@ function orderedMedian(ascending: readonly number[]): number {
  * Exact BigInt arithmetic — a floating-point value never materializes on
  * the way to the returned integer (design D4: floats never touch money or
  * percentages, so a delta of −1/3 renders as −3333 bps, symmetric with
- * +1/3 → +3333). Callers must validate both arguments as integers; BigInt
- * construction throws on a fractional input, which this function treats
- * as a caller contract violation rather than a data state.
+ * +1/3 → +3333). Serves both money ratios (the delta versus the median)
+ * and count ratios (the percentile rank's strictly-above share). Callers
+ * must validate both arguments as integers and the denominator as
+ * positive; BigInt construction throws on a fractional input, which this
+ * function treats as a caller contract violation rather than a data
+ * state.
  */
-function basisPointsOf(numeratorCents: number, denominatorCents: number): number {
-  const dividend = BigInt(numeratorCents) * 10_000n;
-  const divisor = BigInt(denominatorCents);
+function basisPointsOf(numerator: number, denominator: number): number {
+  const dividend = BigInt(numerator) * 10_000n;
+  const divisor = BigInt(denominator);
   const sign = dividend < 0n ? -1n : 1n;
   const magnitude = dividend < 0n ? -dividend : dividend;
   const quotient = magnitude / divisor;
@@ -179,6 +206,8 @@ function unavailable(
     maxCents: null,
     deltaVsMedianCents: null,
     deltaVsMedianBasisPoints: null,
+    percentileRankBasisPoints: null,
+    isWindowLow: null,
     reason,
     windowDays: PRICE_CONTEXT_WINDOW_DAYS,
     bucketCount,
