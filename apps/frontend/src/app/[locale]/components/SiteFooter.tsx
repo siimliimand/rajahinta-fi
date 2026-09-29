@@ -12,6 +12,8 @@ import NewsletterSubscribeForm from './NewsletterSubscribeForm';
  * Structural contract (OpenSpec: design-system-foundation, task 3.2):
  * - The disclaimer stays byte-identical to the message catalog (pinned by
  *   the compliance tests) and renders on every page load.
+ * - The analytics disclosure line (funnel-evidence-and-value-surfaces,
+ *   task 1.4) rides under the disclaimer in the same subdued voice.
  * - The newsletter form (task 5.4, trust-and-reach-roadmap) sits in the
  *   brand column with the explicit consent checkbox visible.
  * - Hand-rolls the Card surface for the disclaimer strip because the Card
@@ -100,9 +102,17 @@ export default async function SiteFooter() {
       <div className="border-t border-gray-200 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <p className="max-w-2xl text-xs leading-relaxed text-gray-500">
-              {t('disclaimer')}
-            </p>
+            <div className="max-w-2xl">
+              <p className="text-xs leading-relaxed text-gray-500">
+                {t('disclaimer')}
+              </p>
+              {/* Analytics disclosure (funnel-evidence-and-value-surfaces
+                  1.4) — its own line under the disclaimer, same subdued
+                  voice, no links. */}
+              <p className="mt-2 text-xs leading-relaxed text-gray-500">
+                {t('privacyAnalytics')}
+              </p>
+            </div>
             <div className="shrink-0 text-right">
               {languageNames && (
                 <p className="text-xs text-gray-400">{languageNames.join(' · ')}</p>

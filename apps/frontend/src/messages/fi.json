@@ -74,6 +74,7 @@
   },
   "SiteFooter": {
     "disclaimer": "Rajahinta.fi on riippumaton hintavertailu- ja kokonaiskustannuslaskuri. Kaikki hinnat, verot ja maksut ovat arvioita eivätkä virallisia tietoja. Palvelu ei tarjoa vero- tai tullineuvontaa. Tarkista ajantasaiset tiedot aina viranomaislähteistä.",
+    "privacyAnalytics": "Tuoteanalytiikka on anonyymiä ja istuntokohtaista: se ei kerää käyttäjätunnisteita, tilitietoja tai lomakkeiden sisältöä. Analytiikkaa käytetään vain ominaisuuksien käytön ymmärtämiseen ryhmätasolla.",
     "methodology": "Miten järjestäminen toimii",
     "tagline": "Rajat ylittävien juomien hintaindeksi ja kokonaiskustannuslaskuri.",
     "servicesHeading": "Palvelut",

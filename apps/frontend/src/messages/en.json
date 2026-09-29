@@ -74,6 +74,7 @@
   },
   "SiteFooter": {
     "disclaimer": "Rajahinta.fi is an independent price comparison and landed-cost calculator. All prices, taxes, and duties are estimates rather than official figures. The service does not provide tax or customs advice. Always verify current details with official sources.",
+    "privacyAnalytics": "Product analytics are anonymous and session-scoped: they collect no user identifiers, no account data, and no form contents. They are used to understand feature usage at cohort level only.",
     "methodology": "How ranking works",
     "tagline": "Finnish cross-border beverage price index and landed-cost calculator.",
     "servicesHeading": "Services",
