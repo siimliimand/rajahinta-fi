@@ -146,8 +146,9 @@ const RANGE_READ_SQL = `
  * [from, to] window. Product-wide only (`merchant IS NULL` — the same
  * binary semantics as the range read) and bounded by the existing
  * summary key index (granularity, product_id, period_start) joined into
- * product_master's primary key; the product set is small (~10⁴, design
- * D3), so the category filter needs no dedicated index. The total order
+ * product_master's primary key; the category filter rides
+ * product_master_category_idx (migration 0023 — the spec's "product
+ * category index" bound). The total order
  * on (close, product_id) makes LIMIT 1 stable — equal minima resolve to
  * the lowest productId deterministically, and rows that tie on both
  * values are interchangeable.
