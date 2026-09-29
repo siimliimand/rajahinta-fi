@@ -32,6 +32,7 @@ import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductPriceContextLine from './ProductPriceContextLine';
 import { request } from '@/lib/api';
+import { checkContent } from '@/lib/content-policy';
 
 /**
  * Test-scoped locale for the mocked next-intl lookup — the component
@@ -124,10 +125,12 @@ describe('ProductPriceContextLine', () => {
     expect(html).toContain('halvempi kuin 29 % 90 päivän aikavälin päivistä');
     // isWindowLow is false — the window-low sentence stays absent.
     expect(html).not.toContain('alhaisin');
-    // Content law (proposal D3): no advice, no urging, no superlatives.
-    expect(html).not.toMatch(
-      /paras|edullisin|osta nyt|best deal|good time to buy|buy now|cheapest|bargain/i,
-    );
+    // Content law (proposal D3): no advice, no urging, no superlatives —
+    // asserted with the same policy scanner that polices the source and
+    // catalogs, against the full vocabulary rather than a hand-picked
+    // subset (an inline copy of the banned words would itself trip the
+    // content-policy lint of this colocated file).
+    expect(checkContent(html)).toEqual([]);
   });
 
   it('rounds basis points half up to a whole percent (2849 bps → 28 %)', async () => {

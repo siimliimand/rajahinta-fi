@@ -336,7 +336,12 @@ export default async function ProductPage({ params }: ProductPageProps) {
         {offers.length === 0 ? (
           <p className="text-sm text-gray-500">{t('noOffers')}</p>
         ) : (
-          <table className="w-full text-sm">
+          // Wide-table containment: five columns exceed a phone viewport,
+          // so the table scrolls inside its own container instead of
+          // widening the document (the mobile journeys pin the
+          // no-sideways-scroll invariant on this surface).
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
                 <th className="pb-2 pr-4 font-medium">{t('merchantHeader')}</th>
@@ -415,7 +420,8 @@ export default async function ProductPage({ params }: ProductPageProps) {
                 );
               })}
             </tbody>
-          </table>
+            </table>
+          </div>
         )}
 
         {/* ── Distance-selling framing (task 4.2): general information,
