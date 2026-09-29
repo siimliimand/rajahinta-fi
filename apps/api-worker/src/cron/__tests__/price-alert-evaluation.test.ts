@@ -15,6 +15,10 @@
  * - per-alert error isolation and the skip paths (no summary, no
  *   recipient);
  * - the unconfigured-email no-op with zero evaluations;
+ * - the task-2.1 LANDED_COST reader (newest product-wide daily
+ *   landed-cost close, null otherwise — price-reader parity);
+ * - the task-3.1 CATEGORY sweep (deterministic category minimum,
+ *   identical threshold/cooldown semantics, foreign kinds inert);
  * - counters exported via the observability module; router wiring on
  *   the shared 30-minute pattern.
  *
@@ -25,8 +29,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   PRICE_ALERT_COOLDOWN_MS,
   PRICE_ALERT_EVALUATION_CRON,
+  buildCategoryAlertEmail,
   buildPriceAlertEmail,
   handlePriceAlertEvaluation,
+  latestMaterializedLandedCostCents,
   sendPriceAlertEmail,
   type PriceAlertEmail,
   type PriceAlertEvaluationResult,
@@ -68,12 +74,27 @@ function alert(overrides: Partial<PriceAlertRecord> = {}): PriceAlertRecord {
     accountId: 7,
     productId: 123,
     kind: 'PRICE',
+    category: null,
     thresholdCents: 1500,
     status: 'active',
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,
   };
+}
+
+/** CATEGORY-kind fixture — null product, canonical category, threshold. */
+function categoryAlert(
+  overrides: Partial<PriceAlertRecord> = {},
+): PriceAlertRecord {
+  return alert({
+    id: 21,
+    productId: null,
+    kind: 'CATEGORY',
+    category: 'beer',
+    thresholdCents: 1500,
+    ...overrides,
+  });
 }
 
 function deliveredRow(
@@ -124,6 +145,7 @@ function makeEnv(overrides: Partial<Env> = {}): Env {
 interface World {
   findActive: ReturnType<typeof vi.fn>;
   findByProductRange: ReturnType<typeof vi.fn>;
+  findCategoryMinPriceCents: ReturnType<typeof vi.fn>;
   findLatestDeliveredByAlertId: ReturnType<typeof vi.fn>;
   createIntent: ReturnType<typeof vi.fn>;
   markDelivered: ReturnType<typeof vi.fn>;
@@ -138,6 +160,11 @@ interface WorldOptions {
   alerts?: PriceAlertRecord[];
   /** The newest daily close per call — null simulates "no summary". */
   closeCents?: number | null;
+  /**
+   * The category-minimum result — null simulates "no fresh product-wide
+   * summary for any product of the category" (the stale-skip path).
+   */
+  categoryMin?: { productId: number; priceCloseCents: number } | null;
   /** Pre-existing delivered notification rows, by alert id. */
   latestDelivered?: Map<number, AlertNotificationRecord>;
   /** The account-email read result (default: an address). */
@@ -158,6 +185,7 @@ function makeWorld(options: WorldOptions = {}): {
   const {
     alerts = [alert()],
     closeCents = 1499,
+    categoryMin = { productId: 123, priceCloseCents: 1499 },
     latestDelivered = new Map(),
     email = 'user@example.com',
     sendImpl,
@@ -171,6 +199,7 @@ function makeWorld(options: WorldOptions = {}): {
       ? []
       : [{ periodStart: '2026-08-30', priceCloseCents: closeCents }],
   );
+  const findCategoryMinPriceCents = vi.fn(async () => categoryMin);
   const findLatestDeliveredByAlertId = vi.fn(async (alertId: number) =>
     latestDelivered.get(alertId) ?? null,
   );
@@ -213,6 +242,7 @@ function makeWorld(options: WorldOptions = {}): {
     } as never as D1AlertNotificationRepository,
     summaries: {
       findByProductRange,
+      findCategoryMinPriceCents,
     } as never as D1PriceHistorySummaryRepository,
     products: { findById } as never as D1ProductSearchRepository,
     findAccountEmail,
@@ -222,6 +252,7 @@ function makeWorld(options: WorldOptions = {}): {
   const world: World = {
     findActive,
     findByProductRange,
+    findCategoryMinPriceCents,
     findLatestDeliveredByAlertId,
     createIntent,
     markDelivered,
@@ -458,6 +489,231 @@ describe('skip paths and per-alert isolation', () => {
 });
 
 // ---------------------------------------------------------------------------
+// latestMaterializedLandedCostCents — the LANDED_COST reader (task 2.1)
+// ---------------------------------------------------------------------------
+
+describe('latestMaterializedLandedCostCents (task 2.1 reader)', () => {
+  function summariesStub(
+    rows: Array<{ periodStart: string; landedCostCloseCents: number }>,
+  ): D1PriceHistorySummaryRepository {
+    return {
+      findByProductRange: vi.fn(async () => rows),
+    } as never as D1PriceHistorySummaryRepository;
+  }
+
+  it('returns the NEWEST bucket\'s landedCostCloseCents, reading the 7-day product-wide window', async () => {
+    const summaries = summariesStub([
+      { periodStart: '2026-08-28', landedCostCloseCents: 5300 },
+      { periodStart: '2026-08-29', landedCostCloseCents: 5100 },
+      { periodStart: '2026-08-30', landedCostCloseCents: 5250 },
+    ]);
+
+    const landed = await latestMaterializedLandedCostCents(summaries, 123, NOW);
+
+    // Price-reader parity: ascending read, LAST row is the newest bucket.
+    expect(landed).toBe(5250);
+    expect(summaries.findByProductRange).toHaveBeenCalledWith(
+      123,
+      'daily',
+      '2026-08-23', // NOW − 7d
+      '2026-08-30', // NOW
+    );
+  });
+
+  it('returns null when no bucket exists inside the lookback window', async () => {
+    const summaries = summariesStub([]);
+
+    const landed = await latestMaterializedLandedCostCents(summaries, 123, NOW);
+
+    expect(landed).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CATEGORY sweep — deterministic category minimum (task 3.1)
+// ---------------------------------------------------------------------------
+
+describe('CATEGORY sweep (task 3.1)', () => {
+  it('triggers on the category minimum at the threshold and sends the category email', async () => {
+    const { world, run } = makeWorld({
+      alerts: [categoryAlert({ thresholdCents: 1500 })],
+      categoryMin: { productId: 77, priceCloseCents: 1500 },
+    });
+
+    const result = await run();
+
+    // Equality triggers — the same `observed <= threshold` semantics as PRICE.
+    expect(result.evaluated).toBe(1);
+    expect(result.matched).toBe(1);
+    expect(result.notified).toBe(1);
+    // The sweep query stays parameterized: canonical category, daily
+    // granularity, the same 7-day window the PRICE reader uses.
+    expect(world.findCategoryMinPriceCents).toHaveBeenCalledWith(
+      'beer',
+      'daily',
+      '2026-08-23',
+      '2026-08-30',
+    );
+    // The email names the tripping product, its price, the category, and
+    // the threshold.
+    const email = world.send.mock.calls[0]![0] as PriceAlertEmail;
+    expect(email.subject).toContain('Keitele Senorita');
+    expect(email.subject).toContain('€15.00');
+    expect(email.text).toContain('beer');
+    expect(email.text).toContain('€15.00');
+    expect(email.text).toContain('#77');
+    // The intent row freezes the category minimum.
+    expect(world.createIntent).toHaveBeenCalledWith(
+      expect.objectContaining({ alertId: 21, observedPriceCents: 1500 }),
+    );
+  });
+
+  it('observed minimum above the threshold does not trigger', async () => {
+    const { world, run } = makeWorld({
+      alerts: [categoryAlert({ thresholdCents: 1400 })],
+      categoryMin: { productId: 77, priceCloseCents: 1499 },
+    });
+
+    const result = await run();
+
+    expect(result.evaluated).toBe(1);
+    expect(result.matched).toBe(0);
+    expect(world.send).not.toHaveBeenCalled();
+    expect(world.createIntent).not.toHaveBeenCalled();
+  });
+
+  it('no fresh summary in the category skips BEFORE the evaluation counter (stale never triggers)', async () => {
+    const { world, run } = makeWorld({
+      alerts: [categoryAlert()],
+      categoryMin: null,
+    });
+
+    const result = await run();
+
+    expect(world.findCategoryMinPriceCents).toHaveBeenCalledTimes(1);
+    expect(result.evaluated).toBe(0);
+    expect(result.matched).toBe(0);
+    expect(world.send).not.toHaveBeenCalled();
+    expect(world.createIntent).not.toHaveBeenCalled();
+  });
+
+  it('the 24h delivered-row cooldown applies identically to CATEGORY matches', async () => {
+    const { world, run } = makeWorld({
+      alerts: [categoryAlert()],
+      latestDelivered: new Map([
+        [21, deliveredRow(21, new Date(NOW.getTime() - (PRICE_ALERT_COOLDOWN_MS - 1)))],
+      ]),
+    });
+
+    const result = await run();
+
+    expect(result.matched).toBe(1);
+    expect(result.suppressed).toBe(1);
+    expect(result.notified).toBe(0);
+    expect(world.send).not.toHaveBeenCalled();
+    expect(world.createIntent).not.toHaveBeenCalled();
+  });
+
+  it('foreign kinds skip BEFORE any read or counter — LANDED_COST and TAX_CHANGE rows are inert', async () => {
+    const { world, run } = makeWorld({
+      alerts: [
+        alert({ id: 31, kind: 'TAX_CHANGE', thresholdCents: null }),
+        alert({ id: 32, kind: 'LANDED_COST', thresholdCents: 4500 }),
+      ],
+    });
+
+    const result = await run();
+
+    expect(result).toMatchObject({
+      evaluated: 0,
+      matched: 0,
+      notified: 0,
+      suppressed: 0,
+      failed: 0,
+    });
+    // Skipped before ANY read — neither the price reader nor the
+    // category-minimum query ran.
+    expect(world.findByProductRange).not.toHaveBeenCalled();
+    expect(world.findCategoryMinPriceCents).not.toHaveBeenCalled();
+    expect(world.send).not.toHaveBeenCalled();
+  });
+
+  it('a mixed sweep evaluates exactly the threshold kinds, each by its own branch', async () => {
+    const { world, run } = makeWorld({
+      alerts: [
+        alert({ id: 11 }), // PRICE
+        categoryAlert({ id: 21 }), // CATEGORY
+        alert({ id: 31, kind: 'TAX_CHANGE', thresholdCents: null }),
+        alert({ id: 32, kind: 'LANDED_COST', thresholdCents: 4500 }),
+      ],
+    });
+
+    const result = await run();
+
+    expect(result.evaluated).toBe(2);
+    expect(result.notified).toBe(2);
+    expect(world.findByProductRange).toHaveBeenCalledTimes(1);
+    expect(world.findCategoryMinPriceCents).toHaveBeenCalledTimes(1);
+    expect(world.send).toHaveBeenCalledTimes(2);
+    const subjects = world.send.mock.calls.map(
+      (call) => (call[0] as PriceAlertEmail).subject,
+    );
+    expect(subjects.some((s) => s.startsWith('[rajahinta] Price alert:'))).toBe(true);
+    expect(subjects.some((s) => s.startsWith('[rajahinta] Category alert:'))).toBe(true);
+  });
+
+  it('a PRICE row without a product is a data anomaly — skipped cleanly, no counters', async () => {
+    const { world, run } = makeWorld({
+      alerts: [alert({ id: 41, productId: null })],
+    });
+
+    const result = await run();
+
+    expect(result).toMatchObject({ evaluated: 0, matched: 0, failed: 0 });
+    expect(world.findByProductRange).not.toHaveBeenCalled();
+    expect(world.send).not.toHaveBeenCalled();
+  });
+
+  it('strips line breaks and truncates long names in the category email subject', async () => {
+    const { world, run } = makeWorld({
+      alerts: [categoryAlert()],
+      categoryMin: { productId: 77, priceCloseCents: 1400 },
+    });
+
+    await run(
+      {},
+      {
+        products: {
+          findById: async () => ({
+            name: `${'x'.repeat(400)}\n\rBCC: victim@example.com`,
+          }),
+        } as never,
+      },
+    );
+
+    const email = world.send.mock.calls[0]![0] as PriceAlertEmail;
+    expect(email.subject).not.toMatch(/[\r\n]/);
+    expect(email.subject).not.toContain('BCC');
+    expect(email.subject.length).toBeLessThanOrEqual(255);
+  });
+
+  it('the category email is factual — no advice phrasing (content policy)', async () => {
+    const { world, run } = makeWorld({
+      alerts: [categoryAlert()],
+      categoryMin: { productId: 77, priceCloseCents: 1400 },
+    });
+
+    await run();
+
+    const email = world.send.mock.calls[0]![0] as PriceAlertEmail;
+    for (const banned of ['good time to buy', 'best deal', 'buy now']) {
+      expect(email.text.toLowerCase()).not.toContain(banned);
+      expect(email.subject.toLowerCase()).not.toContain(banned);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Configuration gate
 // ---------------------------------------------------------------------------
 
@@ -566,6 +822,63 @@ describe('buildPriceAlertEmail', () => {
       to: 'user@example.com',
       productName: null,
       productId: 42,
+      observedPriceCents: 100,
+      thresholdCents: 200,
+      evaluatedAt: NOW,
+    });
+
+    expect(email.subject).toContain('Product #42');
+    expect(email.text).toContain('Product #42 (#42)');
+  });
+});
+
+describe('buildCategoryAlertEmail', () => {
+  it('renders the tripping product, price, category, and threshold within the email Worker contract', () => {
+    const email = buildCategoryAlertEmail({
+      to: 'user@example.com',
+      productName: 'Keitele Senorita',
+      productId: 77,
+      category: 'beer',
+      observedPriceCents: 1499,
+      thresholdCents: 1500,
+      evaluatedAt: NOW,
+    });
+
+    expect(email.to).toBe('user@example.com');
+    expect(email.subject).toContain('Keitele Senorita');
+    expect(email.subject).toContain('€14.99');
+    expect(email.subject).not.toMatch(/[\r\n]/);
+    expect(email.subject.length).toBeLessThanOrEqual(255);
+    expect(email.text).toContain('beer');
+    expect(email.text).toContain('€14.99'); // observed category minimum
+    expect(email.text).toContain('€15.00'); // the user's threshold
+    expect(email.text).toContain('#77');
+    expect(email.text).toContain(NOW.toISOString());
+  });
+
+  it('strips line breaks and caps long names in the body and subject', () => {
+    const email = buildCategoryAlertEmail({
+      to: 'user@example.com',
+      productName: `${'y'.repeat(400)}\nBCC: victim@example.com`,
+      productId: 42,
+      category: 'wine_still',
+      observedPriceCents: 100,
+      thresholdCents: 200,
+      evaluatedAt: NOW,
+    });
+
+    expect(email.subject).not.toMatch(/[\r\n]/);
+    expect(email.subject).not.toContain('BCC');
+    expect(email.subject.length).toBeLessThanOrEqual(255);
+    expect(email.text).not.toContain('BCC');
+  });
+
+  it('falls back to the product id when no product row resolves', () => {
+    const email = buildCategoryAlertEmail({
+      to: 'user@example.com',
+      productName: null,
+      productId: 42,
+      category: 'wine_still',
       observedPriceCents: 100,
       thresholdCents: 200,
       evaluatedAt: NOW,

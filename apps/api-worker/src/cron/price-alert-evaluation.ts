@@ -21,6 +21,10 @@
  * A product with no bucket inside the window is skipped, not evaluated:
  * a "price drop" must reflect a recent materialized observation, and a
  * genuine movement always produces fresh buckets (hourly ingestion).
+ * The CATEGORY sweep reads the same window through the summary
+ * repository's deterministic category-minimum query; the LANDED_COST
+ * reader (task 2.1) mirrors the price reader on the landed-cost close
+ * column, its branch landing with task 2.2.
  *
  * ## Delivery pipeline (crash-safe, per matched alert)
  *
@@ -110,10 +114,21 @@ function euroLabel(cents: number): string {
 }
 
 /**
- * Render one triggered alert into the plain-text user email. The
- * subject is capped and newline-stripped (product names are user-facing
- * data up to 512 chars; the email Worker rejects subjects over 255 or
- * carrying line breaks).
+ * Subject-safe product name (shared by both alert emails): newline-
+ * stripped and capped — product names are user-facing data up to 512
+ * chars; the email Worker rejects subjects over 255 or carrying line
+ * breaks.
+ */
+function emailProductName(name: string | null, productId: number): string {
+  return (name ?? `Product #${productId}`)
+    .replace(/[\r\n]+/g, ' ')
+    .trim()
+    .slice(0, 100);
+}
+
+/**
+ * Render one triggered alert into the plain-text user email. Hygiene
+ * (cap + newline strip) lives in {@link emailProductName}.
  */
 export function buildPriceAlertEmail(input: {
   readonly to: string;
@@ -123,10 +138,7 @@ export function buildPriceAlertEmail(input: {
   readonly thresholdCents: number;
   readonly evaluatedAt: Date;
 }): PriceAlertEmail {
-  const name = (input.productName ?? `Product #${input.productId}`)
-    .replace(/[\r\n]+/g, ' ')
-    .trim()
-    .slice(0, 100);
+  const name = emailProductName(input.productName, input.productId);
   const subject = `[rajahinta] Price alert: ${name} at ${euroLabel(input.observedPriceCents)}`;
   const text = [
     'Your rajahinta price alert was triggered.',
@@ -138,6 +150,42 @@ export function buildPriceAlertEmail(input: {
     '',
     'The observed price is the latest materialized price summary for the',
     'product, not a live quote. You manage or pause your alerts in your',
+    'rajahinta account.',
+    '',
+  ].join('\n');
+  return { to: input.to, subject, text };
+}
+
+/**
+ * Render one triggered CATEGORY alert (task 3.1). Factual content only —
+ * the tripping product, its observed price, the watched category, the
+ * threshold; the content policy bans advice phrasing, so the body states
+ * what was observed and nothing else. Same hygiene contract as the price
+ * alert (via {@link emailProductName}).
+ */
+export function buildCategoryAlertEmail(input: {
+  readonly to: string;
+  readonly productName: string | null;
+  readonly productId: number;
+  readonly category: string;
+  readonly observedPriceCents: number;
+  readonly thresholdCents: number;
+  readonly evaluatedAt: Date;
+}): PriceAlertEmail {
+  const name = emailProductName(input.productName, input.productId);
+  const subject = `[rajahinta] Category alert: ${name} at ${euroLabel(input.observedPriceCents)}`;
+  const text = [
+    'Your rajahinta category price alert was triggered.',
+    '',
+    `Category:           ${input.category}`,
+    `Tripping product:   ${name} (#${input.productId})`,
+    `Observed price:     ${euroLabel(input.observedPriceCents)}`,
+    `Your threshold:     ${euroLabel(input.thresholdCents)}`,
+    `Observed:           ${input.evaluatedAt.toISOString()} (materialized price summary)`,
+    '',
+    'The observed price is the lowest materialized daily product-wide',
+    "price summary across the category's products within the lookback",
+    'window, not a live quote. You manage or pause your alerts in your',
     'rajahinta account.',
     '',
   ].join('\n');
@@ -185,6 +233,21 @@ type MutablePriceAlertCounters = {
 };
 
 /**
+ * The closed [fromDay, toDay] daily-period window the summary lookback
+ * covers: whole-day anchors, the run day inclusive, exactly
+ * {@link SUMMARY_LOOKBACK_DAYS} days back — matching the closed-range
+ * semantics of `findByProductRange` and the category-minimum query.
+ */
+function lookbackWindow(now: Date): { fromDay: string; toDay: string } {
+  return {
+    toDay: now.toISOString().slice(0, 10),
+    fromDay: new Date(now.getTime() - SUMMARY_LOOKBACK_DAYS * 86_400_000)
+      .toISOString()
+      .slice(0, 10),
+  };
+}
+
+/**
  * Newest product-wide daily close within the lookback window, or null.
  * `findByProductRange` orders by period_start ASC, so the LAST row is
  * the newest bucket; its close is the most recent materialized price.
@@ -194,13 +257,30 @@ async function latestMaterializedPriceCents(
   productId: number,
   now: Date,
 ): Promise<number | null> {
-  const toDay = now.toISOString().slice(0, 10);
-  const fromDay = new Date(now.getTime() - SUMMARY_LOOKBACK_DAYS * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
+  const { fromDay, toDay } = lookbackWindow(now);
   const rows = await summaries.findByProductRange(productId, 'daily', fromDay, toDay);
   const latest = rows[rows.length - 1];
   return latest ? latest.priceCloseCents : null;
+}
+
+/**
+ * Newest product-wide daily LANDED-COST close within the lookback
+ * window, or null (task 2.1) — the price reader's protocol applied to
+ * the landed-cost close column: same window, same ascending read, same
+ * last-row-is-newest selection, so the LANDED_COST evaluator branch
+ * (task 2.2) gets byte-for-byte the freshness behavior of PRICE.
+ * Exported for the task-2.1 unit tests; that branch is its production
+ * caller.
+ */
+export async function latestMaterializedLandedCostCents(
+  summaries: D1PriceHistorySummaryRepository,
+  productId: number,
+  now: Date,
+): Promise<number | null> {
+  const { fromDay, toDay } = lookbackWindow(now);
+  const rows = await summaries.findByProductRange(productId, 'daily', fromDay, toDay);
+  const latest = rows[rows.length - 1];
+  return latest ? latest.landedCostCloseCents : null;
 }
 
 /** Direct account-email read (the session-resolver precedent — no D1 account repository exists worker-side). */
@@ -285,37 +365,110 @@ export async function handlePriceAlertEvaluation(
   const evaluatedAt = now();
 
   for (const alert of active) {
-    // Kind ownership (task 4.1, design D5): the kind-filtered repository
-    // read returns every kind, and TAX_CHANGE rows belong to the
-    // tax-change evaluator — the PRICE sweep skips them before any read
-    // or counter. Existing rows carry kind = 'PRICE' (migration 0016
-    // backfill), so prior evaluations are unaffected.
-    if (alert.kind !== 'PRICE') continue;
+    // Kind ownership (task 4.1 design D5; spec: kind-guarded ownership):
+    // each alert is evaluated ONLY by its kind's branch — foreign kinds
+    // skip BEFORE any read or counter. TAX_CHANGE rows belong to the
+    // tax-change evaluator; the LANDED_COST branch is task 2.2, whose
+    // rows skip cleanly here until it lands. Existing rows carry
+    // kind = 'PRICE' (migration 0016 backfill), so prior evaluations are
+    // unaffected.
+    if (alert.kind === 'TAX_CHANGE' || alert.kind === 'LANDED_COST') continue;
     // Per-alert isolation: a failing alert counts failed, never aborts
     // the sweep.
     try {
-      const observed = await latestMaterializedPriceCents(
-        summaries,
-        alert.productId,
-        evaluatedAt,
-      );
-      if (observed === null) {
-        log.info({
-          message: `Alert ${alert.id}: no materialized daily summary for product ${alert.productId} within ${SUMMARY_LOOKBACK_DAYS}d — skipped`,
-        });
-        continue;
+      // Per-kind observation and match; the delivery pipeline below is
+      // kind-agnostic. Both threshold kinds share the 7-day lookback, the
+      // `observed <= threshold` trigger, and the 24-hour cooldown (spec).
+      let observedCents: number;
+      let trippingProductId: number;
+      let renderEmail: (to: string, productName: string | null) => PriceAlertEmail;
+      if (alert.kind === 'CATEGORY') {
+        const category = alert.category;
+        // A CATEGORY row always carries a threshold — the kind-aware
+        // create contract requires it (threshold is nullable only for
+        // TAX_CHANGE, excluded by the guard above).
+        const thresholdCents = alert.thresholdCents as number;
+        if (category === null) {
+          // Unrepresentable per the create contract — a data anomaly that
+          // cannot be evaluated.
+          log.warn({
+            message: `Alert ${alert.id}: CATEGORY row without a category — skipped`,
+          });
+          continue;
+        }
+        const { fromDay, toDay } = lookbackWindow(evaluatedAt);
+        const minimum = await summaries.findCategoryMinPriceCents(
+          category,
+          'daily',
+          fromDay,
+          toDay,
+        );
+        if (minimum === null) {
+          // Stale summaries never trigger — the PRICE reader's null
+          // posture: skipped with no evaluation counter and no email.
+          log.info({
+            message: `Alert ${alert.id}: no fresh daily product-wide summary within ${SUMMARY_LOOKBACK_DAYS}d for category ${category} — skipped`,
+          });
+          continue;
+        }
+        counters.evaluated++;
+
+        if (minimum.priceCloseCents > thresholdCents) continue;
+        counters.matched++;
+        observedCents = minimum.priceCloseCents;
+        trippingProductId = minimum.productId;
+        renderEmail = (to, productName) =>
+          buildCategoryAlertEmail({
+            to,
+            productName,
+            productId: minimum.productId,
+            category,
+            observedPriceCents: minimum.priceCloseCents,
+            thresholdCents,
+            evaluatedAt,
+          });
+      } else {
+        const productId = alert.productId;
+        // A PRICE row always carries a product (create contract); null
+        // would be a data anomaly that cannot be evaluated.
+        if (productId === null) {
+          log.warn({
+            message: `Alert ${alert.id}: PRICE row without a product — skipped`,
+          });
+          continue;
+        }
+        const observed = await latestMaterializedPriceCents(
+          summaries,
+          productId,
+          evaluatedAt,
+        );
+        if (observed === null) {
+          log.info({
+            message: `Alert ${alert.id}: no materialized daily summary for product ${productId} within ${SUMMARY_LOOKBACK_DAYS}d — skipped`,
+          });
+          continue;
+        }
+        counters.evaluated++;
+
+        // Threshold semantics (design decision): observed <= threshold
+        // triggers.
+        const thresholdCents = alert.thresholdCents as number;
+        if (observed > thresholdCents) continue;
+        counters.matched++;
+        observedCents = observed;
+        trippingProductId = productId;
+        renderEmail = (to, productName) =>
+          buildPriceAlertEmail({
+            to,
+            productName,
+            productId,
+            observedPriceCents: observed,
+            thresholdCents,
+            evaluatedAt,
+          });
       }
-      counters.evaluated++;
 
-      // Threshold semantics (design decision): observed <= threshold
-      // triggers. A PRICE row always carries a threshold — the kind-aware
-      // create contract requires it (task 1.4 made the shared contract
-      // nullable only for TAX_CHANGE rows, which the kind guard above
-      // already excluded).
-      const thresholdCents = alert.thresholdCents as number;
-      if (observed > thresholdCents) continue;
-      counters.matched++;
-
+      // -- Kind-agnostic delivery pipeline --------------------------------
       // Cooldown from the latest DELIVERED row — the same read makes a
       // re-run after a crash skip what a previous run already delivered.
       const latestDelivered = await notifications.findLatestDeliveredByAlertId(alert.id);
@@ -339,20 +492,16 @@ export async function handlePriceAlertEvaluation(
         continue;
       }
 
+      // The tripping product's row names the email — for PRICE the
+      // watched product, for CATEGORY the product holding the minimum.
+      const product = await products.findById(trippingProductId);
+      const email = renderEmail(to, product?.name ?? null);
+
       // Intent row MUST exist before any dispatch attempt (spec:
       // delivery intent log).
-      const product = await products.findById(alert.productId);
-      const email = buildPriceAlertEmail({
-        to,
-        productName: product?.name ?? null,
-        productId: alert.productId,
-        observedPriceCents: observed,
-        thresholdCents,
-        evaluatedAt,
-      });
       const intent = await notifications.createIntent({
         alertId: alert.id,
-        observedPriceCents: observed,
+        observedPriceCents: observedCents,
         channel: ALERT_CHANNEL,
       });
 

@@ -139,6 +139,30 @@ const RANGE_READ_SQL = `
      AND merchant IS ?
    ORDER BY period_start ASC`;
 
+/**
+ * Deterministic category minimum (task 3.1, change
+ * expand-alerts-accuracy-breakdowns): the lowest product-wide close
+ * across the category's products having a bucket inside the closed
+ * [from, to] window. Product-wide only (`merchant IS NULL` — the same
+ * binary semantics as the range read) and bounded by the existing
+ * summary key index (granularity, product_id, period_start) joined into
+ * product_master's primary key; the product set is small (~10⁴, design
+ * D3), so the category filter needs no dedicated index. The total order
+ * on (close, product_id) makes LIMIT 1 stable — equal minima resolve to
+ * the lowest productId deterministically, and rows that tie on both
+ * values are interchangeable.
+ */
+const CATEGORY_MIN_SQL = `
+  SELECT s.product_id AS product_id, s.price_close_cents AS price_close_cents
+    FROM price_history_summaries s
+    JOIN product_master p ON p.id = s.product_id
+   WHERE s.granularity = ?
+     AND s.period_start >= ? AND s.period_start <= ?
+     AND s.merchant IS NULL
+     AND p.category = ?
+   ORDER BY s.price_close_cents ASC, s.product_id ASC
+   LIMIT 1`;
+
 @Injectable()
 export class D1PriceHistorySummaryRepository extends PriceHistorySummaryRepository {
   constructor(private readonly d1: D1DatabaseLike) {
@@ -219,5 +243,29 @@ export class D1PriceHistorySummaryRepository extends PriceHistorySummaryReposito
         .all<D1SummaryRow>()
     ).results;
     return rows.map(toContractRecord);
+  }
+
+  /**
+   * Deterministic minimum product-wide close for one canonical category
+   * at one granularity over the closed [from, to] period-start window
+   * (task 3.1): `{ productId, priceCloseCents }` of the tripping
+   * product — lowest productId among tied minima — or null when no
+   * product of the category has a bucket inside the window. Runs only
+   * for active CATEGORY alerts (caller-side); the method itself stays
+   * parameterized on category/granularity/window.
+   */
+  async findCategoryMinPriceCents(
+    category: string,
+    granularity: string,
+    from: string,
+    to: string,
+  ): Promise<{ productId: number; priceCloseCents: number } | null> {
+    const row = await this.d1
+      .prepare(CATEGORY_MIN_SQL)
+      .bind(granularity, from, to, category)
+      .first<{ product_id: number; price_close_cents: number }>();
+    return row
+      ? { productId: row.product_id, priceCloseCents: row.price_close_cents }
+      : null;
   }
 }
