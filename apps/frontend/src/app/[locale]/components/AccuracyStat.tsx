@@ -6,8 +6,14 @@
 import * as React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { getAccuracyStatistic } from '@/lib/api';
-import type { AccuracyStatistic } from '@/lib/types';
+import { getAccuracyBreakdown, getAccuracyStatistic } from '@/lib/api';
+import type {
+  AccuracyBreakdown,
+  AccuracyBreakdownCell,
+  AccuracyBreakdownDimension,
+  AccuracyStatistic,
+} from '@/lib/types';
+import { categoryLabel } from '../products/category-labels';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -23,9 +29,16 @@ interface AccuracyStatProps {
   variant?: AccuracyStatVariant;
 }
 
+/** The two split dimensions the breakdown endpoint accepts. */
+const DIMENSIONS: readonly AccuracyBreakdownDimension[] = [
+  'category',
+  'carrier',
+];
+
 /**
  * The public accuracy statistic (trust-and-reach-roadmap task 3.3, spec
- * calculation-outcomes "Public accuracy statistic labeled user-reported").
+ * calculation-outcomes "Public accuracy statistic labeled user-reported";
+ * breakdown task 5.2, change expand-alerts-accuracy-breakdowns).
  *
  * Hard rules, enforced here and not elsewhere:
  *   - The statistic is ALWAYS labeled with the API-supplied user-reported
@@ -36,6 +49,13 @@ interface AccuracyStatProps {
  *   - The empty state is honest: count 0 renders "no user-reported
  *     outcomes yet", never a percentage (share is null exactly when
  *     count is 0).
+ *
+ * Breakdown (section variant only): a category | carrier selector fetches
+ * `?groupBy=…` and renders one block per cell by its API-supplied state —
+ * `share` renders share + count, `count_only` renders the count with the
+ * suppression reason and NEVER a percentage (the share never enters the
+ * response below the floor), `empty` renders the honest empty state. The
+ * trust-row variant keeps the global figure and gains no selector.
  *
  * Fetch failures degrade to a quiet unavailable note — the statistic is
  * informational and must not block the page around it.
@@ -143,6 +163,12 @@ export default function AccuracyStat({
             </p>
           </div>
         )}
+
+        {/* ── Breakdown (task 5.2): the selector rides below the global
+                figure — the global statistic stays the default view, and
+                picking a dimension fetches its split. Picking the active
+                dimension again returns to the global figure. ── */}
+        {stat !== null && <AccuracyBreakdownPanel locale={locale} />}
       </section>
     );
   }
@@ -191,6 +217,208 @@ export default function AccuracyStat({
       )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Breakdown panel (section variant only, task 5.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * The category | carrier selector and its cells. Kept as a subcomponent
+ * so the fetch lifecycle rides the selected dimension alone — the global
+ * statistic above is untouched by breakdown loads and failures.
+ */
+function AccuracyBreakdownPanel({ locale }: { locale: string }) {
+  const t = useTranslations('AccuracyStat');
+  const tCommon = useTranslations('Common');
+
+  const [dimension, setDimension] = useState<AccuracyBreakdownDimension | null>(
+    null,
+  );
+  const [breakdown, setBreakdown] = useState<AccuracyBreakdown | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
+
+  useEffect(() => {
+    if (dimension === null) {
+      setBreakdown(null);
+      setFailed(false);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setFailed(false);
+    getAccuracyBreakdown(dimension)
+      .then((b) => {
+        if (!cancelled) setBreakdown(b);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dimension, reloadToken]);
+
+  const retry = useCallback(() => setReloadToken((n) => n + 1), []);
+
+  const toggleDimension = useCallback((next: AccuracyBreakdownDimension) => {
+    setDimension((prev) => (prev === next ? null : next));
+  }, []);
+
+  const breakdownLabel =
+    breakdown !== null
+      ? locale === 'fi'
+        ? breakdown.label.fi
+        : breakdown.label.en
+      : null;
+
+  const breakdownAsOf =
+    breakdown !== null && !Number.isNaN(Date.parse(breakdown.asOf))
+      ? new Date(breakdown.asOf).toLocaleDateString(
+          locale === 'fi' ? 'fi-FI' : 'en-GB',
+          { year: 'numeric', month: 'numeric', day: 'numeric' },
+        )
+      : null;
+
+  return (
+    <div
+      data-testid="accuracy-breakdown"
+      className="mt-4 border-t border-gray-100 pt-4"
+    >
+      <p className="text-xs font-medium text-gray-500">{t('dimensionLabel')}</p>
+      <div
+        role="group"
+        aria-label={t('dimensionLabel')}
+        className="mt-2 flex gap-2"
+      >
+        {DIMENSIONS.map((dim) => (
+          <button
+            key={dim}
+            type="button"
+            aria-pressed={dimension === dim}
+            data-testid={`accuracy-dimension-${dim}`}
+            onClick={() => toggleDimension(dim)}
+            className={
+              dimension === dim
+                ? 'rounded-md border border-primary-600 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700'
+                : 'rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50'
+            }
+          >
+            {dim === 'category' ? t('dimensionCategory') : t('dimensionCarrier')}
+          </button>
+        ))}
+      </div>
+
+      {dimension !== null && loading && (
+        <p className="mt-3 text-sm text-gray-400" aria-live="polite">
+          {t('loading')}
+        </p>
+      )}
+
+      {dimension !== null && failed && breakdown === null && (
+        <div className="mt-3">
+          <p role="alert" className="text-sm text-error">
+            {t('breakdownFailed')}
+          </p>
+          <button
+            type="button"
+            onClick={retry}
+            className="mt-2 inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            {tCommon('retry')}
+          </button>
+        </div>
+      )}
+
+      {breakdown !== null && (
+        <ul
+          data-testid="accuracy-breakdown-cells"
+          className="mt-3 divide-y divide-gray-100"
+        >
+          {breakdown.cells.map((cell) => (
+            <BreakdownCellRow
+              key={cell.key}
+              cell={cell}
+              locale={locale}
+            />
+          ))}
+        </ul>
+      )}
+
+      {breakdown !== null && (
+        <p className="mt-3 text-xs text-gray-400">
+          {breakdownLabel}
+          {breakdownAsOf !== null
+            ? ` · ${t('asOfLine', { date: breakdownAsOf })}`
+            : ''}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One breakdown cell by its API-supplied honesty state. The state comes
+ * from the endpoint (design D5): only `share` cells carry a numeric
+ * share, so a below-floor percentage cannot exist here even by accident.
+ */
+function BreakdownCellRow({
+  cell,
+  locale,
+}: {
+  cell: AccuracyBreakdownCell;
+  locale: string;
+}) {
+  const t = useTranslations('AccuracyStat');
+
+  return (
+    <li
+      data-testid="accuracy-breakdown-cell"
+      data-state={cell.state}
+      className="py-2"
+    >
+      <p className="text-xs font-medium text-gray-700">
+        {cellLabel(cell.key, locale)}
+      </p>
+      {cell.state === 'share' && (
+        <>
+          <p className="mt-0.5 text-sm text-gray-600">
+            {t('shareLine', {
+              share: formatShare(cell.withinMarginShare, locale),
+            })}
+          </p>
+          <p className="text-sm text-gray-700">
+            {t('countLine', { count: cell.count })}
+          </p>
+        </>
+      )}
+      {cell.state === 'count_only' && (
+        <>
+          {/* Count only — no share is rendered because none arrived. */}
+          <p className="mt-0.5 text-sm text-gray-700">
+            {t('countLine', { count: cell.count })}
+          </p>
+          <p className="text-xs text-gray-500">{t('countOnlyNote')}</p>
+        </>
+      )}
+      {cell.state === 'empty' && (
+        <p className="mt-0.5 text-sm text-gray-400">{t('cellEmpty')}</p>
+      )}
+    </li>
+  );
+}
+
+/** Localized label for a category cell key; carrier keys render verbatim
+ *  (they are the transport offers' carrier identifiers — factual values,
+ *  not vocabulary the catalogs carry). */
+function cellLabel(key: string, locale: string): string {
+  return categoryLabel(key, locale === 'fi' ? 'fi' : 'en');
 }
 
 /**

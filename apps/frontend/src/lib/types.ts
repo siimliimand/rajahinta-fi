@@ -683,19 +683,38 @@ export interface PriceHistoryResponse {
 export type PriceAlertStatus = 'active' | 'paused';
 
 /**
- * What triggers the alert (task 4.2, change trust-and-reach-roadmap):
- * PRICE is the original threshold watch; TAX_CHANGE fires when a
- * confirmed rate-version change moves the product's landed cost and
- * carries no threshold.
+ * What triggers the alert (task 4.2, change trust-and-reach-roadmap;
+ * LANDED_COST + CATEGORY task 1.2, change expand-alerts-accuracy-breakdowns):
+ * PRICE is the original threshold watch; TAX_CHANGE fires when a confirmed
+ * rate-version change moves the product's landed cost and carries no
+ * threshold; LANDED_COST watches the product-wide landed-cost close against
+ * a threshold; CATEGORY watches a whole canonical category's minimum shelf
+ * price and carries a category instead of a product.
  */
-export type PriceAlertKind = 'PRICE' | 'TAX_CHANGE';
+export type PriceAlertKind = 'PRICE' | 'TAX_CHANGE' | 'LANDED_COST' | 'CATEGORY';
+
+/**
+ * Canonical product categories the CATEGORY kind accepts (mirrors
+ * PRODUCT_CATEGORIES in the D1 schema; the API enforces the set and
+ * answers 400 naming it for unknown values).
+ */
+export type AlertCategory =
+  | 'beer'
+  | 'wine_still'
+  | 'wine_sparkling'
+  | 'intermediate_products'
+  | 'other_fermented'
+  | 'spirits';
 
 /** A price alert row as served by the account API (ISO timestamps). */
 export interface PriceAlert {
   readonly id: number;
-  readonly productId: number;
+  /** Product-scoped kinds only — CATEGORY rows watch no product (null). */
+  readonly productId: number | null;
   readonly kind: PriceAlertKind;
-  /** PRICE alerts: threshold in integer euro cents (1–1,000,000). TAX_CHANGE alerts: always null. */
+  /** CATEGORY rows carry the watched canonical category; product-scoped kinds serialize null. */
+  readonly category: string | null;
+  /** Threshold kinds (PRICE, LANDED_COST, CATEGORY): integer euro cents (1–1,000,000). TAX_CHANGE alerts: always null. */
   readonly thresholdCents: number | null;
   readonly status: PriceAlertStatus;
   readonly createdAt: string;
@@ -908,6 +927,37 @@ export interface AccuracyStatistic {
    * The exact user-reported wording per locale, supplied by the API —
    * the UI renders it verbatim and never invents its own label.
    */
+  readonly label: { readonly fi: string; readonly en: string };
+}
+
+/** The two split dimensions the accuracy breakdown endpoint accepts. */
+export type AccuracyBreakdownDimension = 'category' | 'carrier';
+
+/**
+ * Honesty state of one breakdown cell (change
+ * expand-alerts-accuracy-breakdowns, design D5): `share` (n ≥ 10) carries
+ * a numeric `withinMarginShare`; `count_only` (1–9) suppresses the share —
+ * the percentage never enters the response, so no client can render a
+ * below-floor percentage; `empty` (n = 0) is the honest empty state.
+ */
+export type AccuracyBreakdownCellState = 'share' | 'count_only' | 'empty';
+
+/** One cell of the accuracy breakdown (GET /api/v1/accuracy?groupBy=…). */
+export interface AccuracyBreakdownCell {
+  /** The dimension's raw value — a canonical category or a carrier. */
+  readonly key: string;
+  readonly count: number;
+  readonly withinMarginShare: number | null;
+  readonly state: AccuracyBreakdownCellState;
+}
+
+/** Response of GET /api/v1/accuracy?groupBy=category|carrier. */
+export interface AccuracyBreakdown {
+  readonly dimension: AccuracyBreakdownDimension;
+  readonly cells: readonly AccuracyBreakdownCell[];
+  /** ISO-8601 read time of the aggregation. */
+  readonly asOf: string;
+  /** Same API-supplied user-reported wording as the global statistic. */
   readonly label: { readonly fi: string; readonly en: string };
 }
 

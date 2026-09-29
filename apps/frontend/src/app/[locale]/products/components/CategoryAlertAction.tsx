@@ -9,7 +9,7 @@ import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import { ApiFetchError, apiFetch, request } from '@/lib/api';
 import { Button, Input } from '@/components/ui';
-import type { PriceAlert, PriceAlertKind } from '@/lib/types';
+import type { PriceAlert } from '@/lib/types';
 import { eurosToCents, formatCents } from '@/app/[locale]/account/alerts/threshold';
 
 /** Whole-panel state after (or during) the existence check. */
@@ -21,69 +21,43 @@ type LoadFailure = 'signin' | 'forbidden' | 'error' | null;
 /** In-flight row mutation (button labels + disabling). */
 type BusyAction = 'pause' | 'resume' | 'delete';
 
-/**
- * The kinds the product page offers for creation (task 5.1, change
- * expand-alerts-accuracy-breakdowns). The values are the wire kind values
- * the create endpoint accepts (alerts.routes.ts). TAX_CHANGE is
- * deliberately absent: it has no threshold to enter here, and the account
- * alerts page remains its only creation path (unchanged from task 4.2).
- */
-type ProductAlertKind = 'price' | 'landed_cost';
-
-interface ProductAlertActionProps {
-  /** The product page's resolved product id. */
-  readonly productId: number;
-}
-
-/** Localized kind label; every row names its kind so PRICE and
- *  LANDED_COST rows on the same product stay distinguishable. */
-function kindLabel(kind: PriceAlertKind, t: ReturnType<typeof useTranslations>): string {
-  switch (kind) {
-    case 'TAX_CHANGE':
-      return t('kindTaxChange');
-    case 'LANDED_COST':
-      return t('kindLandedCost');
-    case 'CATEGORY':
-      return t('kindCategory');
-    default:
-      return t('kindPrice');
-  }
+interface CategoryAlertActionProps {
+  /** The browsed page's canonical category (the watch target). */
+  readonly category: string;
+  /** The page's localized label for the category, resolved server-side. */
+  readonly categoryLabel: string;
 }
 
 /**
- * Product-page set-alert action (task 2.4, change
- * product-roadmap-phases-1-4; kind choice task 5.1, change
- * expand-alerts-accuracy-breakdowns).
+ * Category-browse set-alert entry (task 5.1, change
+ * expand-alerts-accuracy-breakdowns): the CATEGORY kind of the product
+ * page's alert panel (ProductAlertAction, same structure and failure
+ * handling). The watch targets the browsed canonical category — the POST
+ * carries `kind: 'category'` + `category` + a positive threshold and no
+ * productId, which the API's create matrix requires (a productId would
+ * 400). Duplicate CATEGORY rows are not deduped by the API's
+ * (account, product, kind) index (NULL product_id), so the 409 path is
+ * only defensive: the list re-read lands in the manage view.
  *
- * Behaviour: the panel checks the account's alert list on mount and
- * switches between create and manage views. The create view offers a
- * PRICE / LANDED_COST kind choice — both are threshold kinds, so the
- * input validates the same euro-cents bounds for either, with the
- * per-kind label naming what the threshold follows. The duplicate rule
- * is per product+kind on the API side, so a product can carry one alert
- * of each offered kind; the manage view renders every alert this product
- * has, each with its kind label (CATEGORY rows watch no product and can
- * never appear here, but the row renderer handles the kind for
- * type-completeness). A 409 on create re-reads the list and lands in the
- * manage view instead of surfacing an error. A 403 — the backend
- * rejecting the read — degrades the panel to nothing so no dead controls
- * render.
+ * The manage view lists every CATEGORY row watching this category, each
+ * with its threshold and status; CATEGORY rows carry no product, so no
+ * product reference renders anywhere in the panel.
  *
  * Units: euros in the UI, integer euro cents at the API boundary (see
  * account/alerts/threshold).
  *
- * @module ProductAlertAction
+ * @module CategoryAlertAction
  */
-export default function ProductAlertAction({
-  productId,
-}: ProductAlertActionProps) {
+export default function CategoryAlertAction({
+  category,
+  categoryLabel,
+}: CategoryAlertActionProps) {
   const t = useTranslations('PriceAlerts');
   const tCommon = useTranslations('Common');
 
   const [phase, setPhase] = useState<Phase>('loading');
   const [loadFailure, setLoadFailure] = useState<LoadFailure>(null);
   const [existing, setExisting] = useState<readonly PriceAlert[]>([]);
-  const [kind, setKind] = useState<ProductAlertKind>('price');
   const [threshold, setThreshold] = useState('');
   const [creating, setCreating] = useState(false);
   const [thresholdInvalid, setThresholdInvalid] = useState(false);
@@ -99,9 +73,9 @@ export default function ProductAlertAction({
     setLoadFailure(null);
     try {
       const rows = await request<PriceAlert[]>('/api/v1/account/alerts');
-      // CATEGORY rows carry a null productId and never match; a product
-      // can hold one alert per kind (the API's per product+kind rule).
-      const mine = rows.filter((row) => row.productId === productId);
+      const mine = rows.filter(
+        (row) => row.kind === 'CATEGORY' && row.category === category,
+      );
       setExisting(mine);
       setPhase(mine.length === 0 ? 'create' : 'manage');
     } catch (err) {
@@ -115,23 +89,14 @@ export default function ProductAlertAction({
         setLoadFailure('error');
       }
     }
-  }, [productId]);
+  }, [category]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const handleKindChange = useCallback((next: ProductAlertKind) => {
-    setKind(next);
-    setThresholdInvalid(false);
-    setCreateFailed(false);
-  }, []);
-
   const handleCreate = useCallback(async () => {
     if (creating) return;
-    // Both offered kinds are threshold kinds (the create matrix on the
-    // API rejects their absence), so the same euro-cents validation
-    // applies to either — only the label names a different quantity.
     const thresholdCents = eurosToCents(threshold);
     if (thresholdCents === null) {
       setThresholdInvalid(true);
@@ -141,17 +106,19 @@ export default function ProductAlertAction({
     setThresholdInvalid(false);
     setCreateFailed(false);
     try {
+      // Category kind: category + threshold, never a productId (the API's
+      // create matrix rejects the combination).
       const created = await request<PriceAlert>('/api/v1/account/alerts', {
         method: 'POST',
-        body: JSON.stringify({ productId, kind, thresholdCents }),
+        body: JSON.stringify({ kind: 'category', category, thresholdCents }),
       });
       setExisting((prev) => [...prev, created]);
       setThreshold('');
       setPhase('manage');
     } catch (err) {
       if (err instanceof ApiFetchError && err.status === 409) {
-        // An alert of this kind exists after all — switch to managing
-        // the product's alerts instead of showing a duplicate error.
+        // Defensive (the index does not dedupe CATEGORY rows) — re-read
+        // and manage whatever the account holds for this category.
         await load();
       } else {
         setCreateFailed(true);
@@ -159,7 +126,7 @@ export default function ProductAlertAction({
     } finally {
       setCreating(false);
     }
-  }, [creating, kind, load, productId, threshold]);
+  }, [category, creating, load, threshold]);
 
   const handleToggle = useCallback(async (alert: PriceAlert) => {
     if (busy !== null) return;
@@ -226,13 +193,19 @@ export default function ProductAlertAction({
 
   return (
     <section
-      data-testid="product-alert-action"
+      data-testid="category-alert-action"
       className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
     >
       <h2 className="text-lg font-semibold text-gray-900">
-        {t('productTitle')}
+        {t('categoryAlertTitle')}
       </h2>
-      <p className="mt-1 text-sm text-gray-600">{t('productBody')}</p>
+      <p className="mt-1 text-sm text-gray-600">{t('categoryAlertBody')}</p>
+      <p
+        className="mt-1 text-xs font-medium text-gray-500"
+        data-testid="category-alert-category"
+      >
+        {t('categoryValue', { category: categoryLabel })}
+      </p>
 
       {/* ── Sign-in prompt (401 after the session-mint retry) ── */}
       {loadFailure === 'signin' && (
@@ -261,9 +234,9 @@ export default function ProductAlertAction({
         </div>
       )}
 
-      {/* ── Existing alerts: manage (one row per kind the product has) ── */}
+      {/* ── Existing watches: manage ── */}
       {loadFailure === null && phase === 'manage' && existing.length > 0 && (
-        <div className="mt-4 space-y-4" data-testid="product-alert-manage">
+        <div className="mt-4 space-y-4" data-testid="category-alert-manage">
           {/* Panel-level failure state — one banner above the rows. */}
           {actionFailed !== null && (
             <p className="text-sm text-red-600">
@@ -277,31 +250,28 @@ export default function ProductAlertAction({
             return (
               <div
                 key={alert.id}
-                data-testid="product-alert-row"
+                data-testid="category-alert-row"
                 className="rounded-md border border-gray-100 p-3"
               >
                 <p className="text-sm text-gray-700">
                   <span
-                    data-testid="product-alert-kind-label"
+                    data-testid="category-alert-kind-label"
                     className="font-medium text-gray-900"
                   >
-                    {kindLabel(alert.kind, t)}
+                    {t('kindCategory')}
                   </span>
                   {' · '}
-                  {alert.kind === 'TAX_CHANGE' ? (
-                    t('taxChangeValue')
-                  ) : (
-                    // Threshold kinds carry a threshold by contract;
-                    // `?? 0` only satisfies the nullable union.
-                    <span className="font-medium text-gray-900">
-                      {t(
-                        alert.kind === 'LANDED_COST'
-                          ? 'landedCostThresholdValue'
-                          : 'thresholdValue',
-                        { euros: formatCents(alert.thresholdCents ?? 0) },
-                      )}
-                    </span>
-                  )}
+                  <span className="font-medium text-gray-900">
+                    {t('categoryValue', { category: categoryLabel })}
+                  </span>
+                  {' · '}
+                  {/* Threshold kinds carry a threshold by contract;
+                      `?? 0` only satisfies the nullable union. */}
+                  <span className="font-medium text-gray-900">
+                    {t('thresholdValue', {
+                      euros: formatCents(alert.thresholdCents ?? 0),
+                    })}
+                  </span>
                   {' · '}
                   <span
                     className={
@@ -316,11 +286,7 @@ export default function ProductAlertAction({
                   </span>
                 </p>
                 <p className="mt-1 text-xs text-gray-400">
-                  {alert.kind === 'TAX_CHANGE'
-                    ? t('existingTaxChangeAlert')
-                    : alert.kind === 'LANDED_COST'
-                      ? t('existingLandedCostAlert')
-                      : t('existingAlert')}
+                  {t('existingCategoryAlert')}
                 </p>
 
                 <div className="mt-3 flex items-center gap-2">
@@ -353,49 +319,12 @@ export default function ProductAlertAction({
         </div>
       )}
 
-      {/* ── No alert yet: create with the PRICE / LANDED_COST choice ── */}
+      {/* ── No watch yet: create ── */}
       {loadFailure === null && phase === 'create' && (
-        <div className="mt-4 max-w-xs" data-testid="product-alert-create">
-          <fieldset className="mb-3">
-            <legend className="mb-1 text-xs font-medium text-gray-500">
-              {t('kindLabel')}
-            </legend>
-            <div className="flex gap-2">
-              {(['price', 'landed_cost'] as const).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  aria-pressed={kind === option}
-                  data-testid={`product-alert-kind-option-${option}`}
-                  onClick={() => handleKindChange(option)}
-                  className={
-                    kind === option
-                      ? 'rounded-md border border-primary-600 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700'
-                      : 'rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50'
-                  }
-                >
-                  {option === 'price' ? t('kindPrice') : t('kindLandedCost')}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          {kind === 'landed_cost' && (
-            <p
-              data-testid="landed-cost-hint"
-              className="mb-3 text-xs text-gray-500"
-            >
-              {t('landedCostHint')}
-            </p>
-          )}
-
+        <div className="mt-4 max-w-xs" data-testid="category-alert-create">
           <Input
-            id="product-alert-threshold"
-            label={
-              kind === 'price'
-                ? t('thresholdLabel')
-                : t('landedCostThresholdLabel')
-            }
+            id="category-alert-threshold"
+            label={t('thresholdLabel')}
             type="text"
             inputMode="decimal"
             autoComplete="off"

@@ -32,6 +32,7 @@
 
 import * as React from 'react';
 import { render, screen, within } from '@testing-library/react';
+import { NextIntlClientProvider } from 'next-intl';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductsPage from '../page';
 import { request } from '@/lib/api';
@@ -130,17 +131,36 @@ async function renderCatalog(
   searchParams: Record<string, string | string[] | undefined> = {},
   locale = 'fi',
 ): Promise<void> {
+  // NextIntlClientProvider wraps the tree because category views embed
+  // the CategoryAlertAction client island (task 5.1), which reads the
+  // catalogs through useTranslations — the server-side getTranslations
+  // mock above does not cover it.
   render(
-    await ProductsPage({
-      params: Promise.resolve({ locale }),
-      searchParams: Promise.resolve(searchParams),
-    }),
+    <NextIntlClientProvider
+      locale={locale}
+      messages={
+        locale === 'en'
+          ? (await import('@/messages/en.json')).default
+          : (await import('@/messages/fi.json')).default
+      }
+    >
+      {await ProductsPage({
+        params: Promise.resolve({ locale }),
+        searchParams: Promise.resolve(searchParams),
+      })}
+    </NextIntlClientProvider>,
   );
 }
 
 beforeEach(() => {
   mockedRequest.mockReset();
-  mockedRequest.mockResolvedValue(catalogResult([catalogItem()]));
+  // The page renders the category-alert entry island (task 5.1) on
+  // category views; its account-alerts read is routed separately from
+  // the listing fetch.
+  mockedRequest.mockImplementation(async (path: string) => {
+    if (path.startsWith('/api/v1/account/alerts')) return [];
+    return catalogResult([catalogItem()]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -450,5 +470,63 @@ describe('ProductsPage empty state and forgiveness', () => {
       screen.getByRole('link', { name: 'Yritä uudelleen' }),
     ).toHaveAttribute('href', '/products');
     expect(screen.queryByTestId('catalog-grid')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Category alert entry (task 5.1, change expand-alerts-accuracy-breakdowns)
+// ---------------------------------------------------------------------------
+
+describe('ProductsPage category alert entry', () => {
+  it('renders the alert entry naming the browsed category, with the create form', async () => {
+    await renderCatalog({ category: 'beer' });
+
+    const entry = await screen.findByTestId('category-alert-action');
+    expect(
+      within(entry).getByTestId('category-alert-category'),
+    ).toHaveTextContent('Tuoteryhmä: Olut');
+    expect(
+      await within(entry).findByTestId('category-alert-create'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the manage view when the account already watches this category', async () => {
+    mockedRequest.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/v1/account/alerts')) {
+        return [
+          {
+            id: 31,
+            productId: null,
+            kind: 'CATEGORY',
+            category: 'beer',
+            thresholdCents: 1500,
+            status: 'active',
+            createdAt: '2026-08-01T10:00:00.000Z',
+            updatedAt: '2026-08-02T10:00:00.000Z',
+          },
+        ];
+      }
+      return catalogResult([catalogItem()]);
+    });
+
+    await renderCatalog({ category: 'beer' });
+
+    const entry = await screen.findByTestId('category-alert-action');
+    expect(
+      await within(entry).findByTestId('category-alert-manage'),
+    ).toBeInTheDocument();
+    expect(entry).toHaveTextContent('Hintaraja 15.00 €');
+  });
+
+  it('renders no alert entry on the unfiltered view', async () => {
+    await renderCatalog();
+
+    expect(screen.queryByTestId('category-alert-action')).not.toBeInTheDocument();
+  });
+
+  it('renders no alert entry for an unknown category (nothing is browsed)', async () => {
+    await renderCatalog({ category: 'moonshine' });
+
+    expect(screen.queryByTestId('category-alert-action')).not.toBeInTheDocument();
   });
 });

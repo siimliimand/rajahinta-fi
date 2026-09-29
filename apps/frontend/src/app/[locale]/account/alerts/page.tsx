@@ -56,6 +56,10 @@ function formatTimestamp(iso: string): string {
  * landed cost (no threshold — the trigger copy in the create form
  * explains this). The duplicate rule is per product+kind on the API
  * side; the create form picks the failure message by the selected kind.
+ * The list renders all four kinds the API serves (task 5.1, change
+ * expand-alerts-accuracy-breakdowns): LANDED_COST rows show their
+ * landed-cost threshold, CATEGORY rows name the watched category and
+ * carry no product reference (their productId is null).
  *
  * Gating: none — the view renders unconditionally. A 403 from the API
  * (the backend rejecting the read) degrades the whole view to nothing,
@@ -74,6 +78,69 @@ function formatTimestamp(iso: string): string {
 
 /** Wire kind values of the create endpoint (alerts.routes.ts). */
 type AlertKind = 'price' | 'tax_change';
+
+/**
+ * Localized label for a row's kind (task 5.1, change
+ * expand-alerts-accuracy-breakdowns): the list renders all four kinds the
+ * API serves, including the ones the create form does not offer here
+ * (LANDED_COST is created on the product page, CATEGORY on category
+ * browse).
+ */
+function kindLabel(
+  kind: PriceAlert['kind'],
+  t: ReturnType<typeof useTranslations>,
+): string {
+  switch (kind) {
+    case 'TAX_CHANGE':
+      return t('kindTaxChange');
+    case 'LANDED_COST':
+      return t('kindLandedCost');
+    case 'CATEGORY':
+      return t('kindCategory');
+    default:
+      return t('kindPrice');
+  }
+}
+
+/** Row value for the kinds' second line: what the watch compares against. */
+function kindValue(
+  alert: PriceAlert,
+  t: ReturnType<typeof useTranslations>,
+): string {
+  if (alert.kind === 'TAX_CHANGE') {
+    return t('taxChangeValue');
+  }
+  // Threshold kinds (PRICE, LANDED_COST, CATEGORY) carry a threshold by
+  // contract; `?? 0` only satisfies the nullable union.
+  return t(
+    alert.kind === 'LANDED_COST' ? 'landedCostThresholdValue' : 'thresholdValue',
+    { euros: formatCents(alert.thresholdCents ?? 0) },
+  );
+}
+
+/**
+ * Localized label for a CATEGORY row's watched category — the same
+ * vocabulary as the catalog page's filter links, keyed off the canonical
+ * value; an out-of-set value renders raw so the label never goes blank.
+ */
+const CATEGORY_LABEL_KEYS: Record<string, string> = {
+  beer: 'categoryBeer',
+  wine_still: 'categoryWineStill',
+  wine_sparkling: 'categoryWineSparkling',
+  intermediate_products: 'categoryIntermediateProducts',
+  other_fermented: 'categoryOtherFermented',
+  spirits: 'categorySpirits',
+};
+
+function alertCategoryLabel(
+  category: string | null,
+  t: ReturnType<typeof useTranslations>,
+): string {
+  if (category === null) return '–';
+  const key = CATEGORY_LABEL_KEYS[category];
+  return key !== undefined ? t(key) : category;
+}
+
 export default function AlertsPage() {
   const t = useTranslations('PriceAlerts');
   const tCommon = useTranslations('Common');
@@ -112,7 +179,14 @@ export default function AlertsPage() {
 
       // Resolve product names in one request; unresolved ids degrade to
       // the "#id" label. A failed name lookup must not discard the list.
-      const ids = [...new Set(rows.map((row) => row.productId))];
+      // CATEGORY rows watch no product (productId null) and are skipped.
+      const ids = [
+        ...new Set(
+          rows
+            .map((row) => row.productId)
+            .filter((id): id is number => id !== null),
+        ),
+      ];
       if (ids.length > 0) {
         try {
           const search = await fetchProductsByIds(ids);
@@ -183,10 +257,14 @@ export default function AlertsPage() {
         ),
       });
       setAlerts((prev) => [created, ...prev]);
-      setProductNames((prev) => ({
-        ...prev,
-        [created.productId]: selected.name,
-      }));
+      // CATEGORY rows carry no product — there is no name to remember.
+      const createdProductId = created.productId;
+      if (createdProductId !== null) {
+        setProductNames((prev) => ({
+          ...prev,
+          [createdProductId]: selected.name,
+        }));
+      }
       setSelected(null);
       setQuery('');
       setResults([]);
@@ -351,21 +429,26 @@ export default function AlertsPage() {
                     >
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-gray-900">
-                          {productNames[alert.productId] ??
-                            t('product', { id: alert.productId })}
+                          {alert.productId !== null ? (
+                            productNames[alert.productId] ??
+                            t('product', { id: alert.productId })
+                          ) : (
+                            // CATEGORY rows watch no product — the row
+                            // names the watched category instead and
+                            // carries no product reference.
+                            <span data-testid="alert-category-value">
+                              {t('categoryValue', {
+                                category: alertCategoryLabel(alert.category, t),
+                              })}
+                            </span>
+                          )}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {alert.kind === 'TAX_CHANGE' ? (
-                            <span data-testid="alert-kind-tax-change">
-                              {t('taxChangeValue')}
-                            </span>
-                          ) : (
-                            // PRICE rows carry a threshold by contract;
-                            // `?? 0` only satisfies the nullable union.
-                            t('thresholdValue', {
-                              euros: formatCents(alert.thresholdCents ?? 0),
-                            })
-                          )}
+                          <span data-testid={`alert-kind-${alert.kind.toLowerCase()}`}>
+                            {kindLabel(alert.kind, t)}
+                          </span>
+                          {' · '}
+                          {kindValue(alert, t)}
                           {' · '}
                           <span
                             className={
@@ -467,7 +550,7 @@ export default function AlertsPage() {
                         key={option}
                         type="button"
                         aria-pressed={kind === option}
-                        data-testid={`alert-kind-${option}`}
+                        data-testid={`create-kind-${option}`}
                         onClick={() => handleKindChange(option)}
                         className={
                           kind === option

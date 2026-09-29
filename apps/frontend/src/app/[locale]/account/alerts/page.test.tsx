@@ -78,6 +78,7 @@ function alert(overrides: Partial<PriceAlert> = {}): PriceAlert {
     id: 7,
     productId: 42,
     kind: 'PRICE',
+    category: null,
     thresholdCents: 1250,
     status: 'active',
     createdAt: '2026-08-01T10:00:00.000Z',
@@ -321,7 +322,7 @@ describe('AlertsPage', () => {
     expect(screen.getByLabelText('Hintaraja (€)')).toBeInTheDocument();
     expect(screen.queryByTestId('tax-change-hint')).not.toBeInTheDocument();
 
-    await user.click(screen.getByTestId('alert-kind-tax_change'));
+    await user.click(screen.getByTestId('create-kind-tax_change'));
 
     // Tax-change kind: threshold gone, trigger copy in its place.
     expect(screen.queryByLabelText('Hintaraja (€)')).not.toBeInTheDocument();
@@ -358,7 +359,7 @@ describe('AlertsPage', () => {
 
     renderWithIntl(<AlertsPage />);
     await selectProduct(user);
-    await user.click(screen.getByTestId('alert-kind-tax_change'));
+    await user.click(screen.getByTestId('create-kind-tax_change'));
     await user.click(screen.getByRole('button', { name: 'Lisää herätys' }));
 
     expect(
@@ -378,7 +379,7 @@ describe('AlertsPage', () => {
     renderWithIntl(<AlertsPage />);
     await selectProduct(user);
 
-    await user.click(screen.getByTestId('alert-kind-tax_change'));
+    await user.click(screen.getByTestId('create-kind-tax_change'));
     await user.click(screen.getByRole('button', { name: 'Lisää herätys' }));
     expect(
       await screen.findByText('Tälle tuotteelle on jo veromuutosherätys.'),
@@ -386,7 +387,7 @@ describe('AlertsPage', () => {
 
     // Back to price: the duplicate message for the other kind must not
     // linger, and the threshold input returns.
-    await user.click(screen.getByTestId('alert-kind-price'));
+    await user.click(screen.getByTestId('create-kind-price'));
     expect(
       screen.queryByText('Tälle tuotteelle on jo veromuutosherätys.'),
     ).not.toBeInTheDocument();
@@ -409,9 +410,62 @@ describe('AlertsPage', () => {
     renderWithIntl(<AlertsPage />);
 
     const rows = await screen.findAllByTestId('price-alert-row');
+    expect(
+      within(rows[0]).getByTestId('alert-kind-tax_change'),
+    ).toHaveTextContent('Veromuutosherätys');
     expect(rows[0]).toHaveTextContent('Laukaisee verotietojen muuttuessa');
     expect(rows[0]).not.toHaveTextContent('Hintaraja');
     expect(rows[1]).toHaveTextContent('Hintaraja 12.50 €');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Kind labels (task 5.1): all four kinds render, CATEGORY rows name the
+  // category and carry no product reference
+  // ---------------------------------------------------------------------------
+
+  it('labels a LANDED_COST row with the landed-cost kind and threshold', async () => {
+    mockedRequest.mockResolvedValue([
+      alert({ kind: 'LANDED_COST', thresholdCents: 3000 }),
+    ]);
+
+    renderWithIntl(<AlertsPage />);
+
+    const row = await screen.findByTestId('price-alert-row');
+    expect(
+      within(row).getByTestId('alert-kind-landed_cost'),
+    ).toHaveTextContent('Kokonaiskustannusherätys');
+    expect(row).toHaveTextContent('Kokonaiskustannusraja 30.00 €');
+    expect(row).not.toHaveTextContent('Hintaraja');
+  });
+
+  it('renders a CATEGORY row with the watched category and no product reference', async () => {
+    mockedRequest.mockResolvedValue([
+      alert(),
+      alert({
+        id: 11,
+        productId: null,
+        kind: 'CATEGORY',
+        category: 'beer',
+        thresholdCents: 1500,
+      }),
+    ]);
+
+    renderWithIntl(<AlertsPage />);
+
+    const rows = await screen.findAllByTestId('price-alert-row');
+    const categoryRow = rows[1];
+    expect(
+      within(categoryRow).getByTestId('alert-kind-category'),
+    ).toHaveTextContent('Tuoteryhmäherätys');
+    expect(
+      within(categoryRow).getByTestId('alert-category-value'),
+    ).toHaveTextContent('Tuoteryhmä: Olut');
+    expect(categoryRow).toHaveTextContent('Hintaraja 15.00 €');
+    // No product reference: neither a resolved name nor the "#id" fallback.
+    expect(categoryRow).not.toHaveTextContent('Kahvi 500 g');
+    expect(categoryRow).not.toHaveTextContent('Tuote #');
+    // The null productId never reaches the name-resolution request.
+    expect(mockedFetchProductsByIds).toHaveBeenCalledWith([42]);
   });
 
   // ---------------------------------------------------------------------------
