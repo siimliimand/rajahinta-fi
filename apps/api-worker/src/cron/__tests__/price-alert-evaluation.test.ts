@@ -24,7 +24,10 @@
  *   counters, cooldown parity, and the exhaustive kind-guard table —
  *   each kind evaluated exactly once by its own branch, TAX_CHANGE
  *   foreign);
- * - counters exported via the observability module; router wiring on
+ * - counters exported via the observability module — one stamped
+ *   point-set per alert kind present in the sweep (task 6.1, design
+ *   D7), honest zeros for a fully-skipped kind, the kindless aggregate
+ *   heartbeat for a sweep with no threshold-kind row; router wiring on
  *   the shared 30-minute pattern.
  *
  * @module PriceAlertEvaluationTest
@@ -946,6 +949,7 @@ describe('configuration gate', () => {
 
 // ---------------------------------------------------------------------------
 // Observability — counters exported through the metrics module
+// (task 6.1, design D7: one stamped point-set per kind present)
 // ---------------------------------------------------------------------------
 
 describe('counter export', () => {
@@ -970,6 +974,116 @@ describe('counter export', () => {
     // The second run: evaluated 1, matched 1, notified 0, failed 0,
     // suppressed 1 — the suppression is visible in the counters.
     expect(metrics.points.map((p) => p.doubles?.[0])).toEqual([1, 1, 0, 0, 1]);
+    // The run's sole present kind stamps every point (task 6.1).
+    for (const point of metrics.points) {
+      expect(point.blobs?.[2]).toBe('{"kind":"PRICE"}');
+    }
+  });
+
+  it('a mixed sweep emits one stamped point-set per kind present — in sweep order, the foreign kind none', async () => {
+    const metrics = fakeMetricsBinding();
+    const { run } = makeWorld({
+      alerts: [
+        alert({ id: 11 }), // PRICE
+        categoryAlert({ id: 21 }), // CATEGORY
+        alert({ id: 31, kind: 'TAX_CHANGE', thresholdCents: null }), // foreign
+        landedCostAlert({ id: 32 }), // LANDED_COST
+      ],
+    });
+
+    await run({ METRICS: metrics.binding });
+
+    // Three present kinds × five counters; the TAX_CHANGE row entered no
+    // bucket, so no TAX_CHANGE-stamped point exists.
+    expect(metrics.points).toHaveLength(15);
+    const kindLabel = (point: (typeof metrics.points)[number]): string | undefined => {
+      // AE blob values are string | ArrayBuffer; these are the emitter's
+      // JSON label strings.
+      const blob = point.blobs?.[2];
+      return typeof blob === 'string'
+        ? (JSON.parse(blob).kind as string | undefined)
+        : undefined;
+    };
+    const kinds = metrics.points.map(kindLabel);
+    expect(kinds).toEqual([
+      ...Array<string>(5).fill('PRICE'),
+      ...Array<string>(5).fill('CATEGORY'),
+      ...Array<string>(5).fill('LANDED_COST'),
+    ]);
+    // Per-kind buckets — each kind notified its one alert, all its own
+    // counters, never blended with another kind's.
+    for (let block = 0; block < 3; block += 1) {
+      expect(
+        metrics.points.slice(block * 5, block * 5 + 5).map((p) => p.doubles?.[0]),
+      ).toEqual([1, 1, 1, 0, 0]);
+    }
+  });
+
+  it('a kind whose alerts all skip still emits its zeros under its kind — never omitted', async () => {
+    const metrics = fakeMetricsBinding();
+    const { run } = makeWorld({
+      alerts: [categoryAlert()],
+      categoryMin: null, // the stale-summary skip path
+    });
+
+    const result = await run({ METRICS: metrics.binding });
+
+    // The pinned skip semantics hold — and the kind's point-set still
+    // went out, carrying the honest zeros (the metrics module's
+    // "records zeros, it is not omitted" posture).
+    expect(result.evaluated).toBe(0);
+    expect(metrics.points).toHaveLength(5);
+    expect(metrics.points[0].indexes?.[0]).toBe(PRICE_ALERT_EVALUATED_COUNTER);
+    expect(metrics.points[0].doubles?.[0]).toBe(0);
+    for (const point of metrics.points) {
+      expect(point.blobs?.[2]).toBe('{"kind":"CATEGORY"}');
+    }
+  });
+
+  it('a sweep with no threshold-kind row keeps the kindless aggregate heartbeat (zeros, no kind label)', async () => {
+    for (const alerts of [
+      [], // empty active set
+      [alert({ id: 31, kind: 'TAX_CHANGE', thresholdCents: null })], // foreign-only
+    ]) {
+      const metrics = fakeMetricsBinding();
+      const { run } = makeWorld({ alerts });
+
+      await run({ METRICS: metrics.binding });
+
+      // The run still produces its points — the METRICS.md canary
+      // ("evaluated 0 across a window") needs the heartbeat on the wire
+      // to stay distinguishable from a cron that stopped producing
+      // points — but nothing is attributed: no kind is present.
+      expect(metrics.points).toHaveLength(5);
+      expect(metrics.points[0].doubles?.[0]).toBe(0);
+      for (const point of metrics.points) {
+        expect(point.blobs?.[2]).toBe('{}');
+      }
+    }
+  });
+
+  it('a failing kind carries its kind on the failed point — the run-wide ladder breach stays attributable', async () => {
+    const metrics = fakeMetricsBinding();
+    const { run } = makeWorld({
+      alerts: [categoryAlert({ id: 21 }), alert({ id: 11 })],
+      email: null, // unresolvable recipient → failed in both kinds
+    });
+
+    const result = await run({ METRICS: metrics.binding });
+
+    expect(result.failed).toBe(2); // the run-wide aggregate
+    // CATEGORY bucket first (sweep order), PRICE second; the failed
+    // counter is the fourth point of each block.
+    const failedPoints = [metrics.points[3], metrics.points[8]];
+    expect(failedPoints.map((p) => p.indexes?.[0])).toEqual([
+      PRICE_ALERT_FAILED_COUNTER,
+      PRICE_ALERT_FAILED_COUNTER,
+    ]);
+    expect(failedPoints.map((p) => p.doubles?.[0])).toEqual([1, 1]);
+    expect(failedPoints.map((p) => p.blobs?.[2])).toEqual([
+      '{"kind":"CATEGORY"}',
+      '{"kind":"PRICE"}',
+    ]);
   });
 });
 

@@ -55,7 +55,12 @@
  * sweep continues. Counters (evaluated/matched/notified/failed plus
  * cooldown-suppressed) export through the observability module so
  * suppression is visible in the job's counters (spec: notification rate
- * limit).
+ * limit). Task 6.1 (design D7): the run emits one counter point-set per
+ * alert kind present in the sweep, each stamped with its kind as the AE
+ * label, so sweep activity is attributable per kind — a kind whose
+ * alerts all skipped still emits its zeros under its kind, and a sweep
+ * with no threshold-kind row at all keeps the legacy kindless aggregate
+ * point-set (the run's heartbeat).
  *
  * @module PriceAlertEvaluationCron
  */
@@ -69,6 +74,7 @@ import {
   parseObservationLog,
 } from '../../../../packages/data-platform/src/d1/observation-log';
 import { D1PriceAlertRepository } from '../../../../packages/data-platform/src/repositories/d1/price-alert.repository';
+import type { PriceAlertKind } from '../../../../packages/data-platform/src/repositories/d1/price-alert.repository';
 import { D1PriceHistorySummaryRepository } from '../../../../packages/data-platform/src/repositories/d1/price-history-summary.repository';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 import {
@@ -420,6 +426,13 @@ type MutablePriceAlertCounters = {
 };
 
 /**
+ * The threshold kinds this sweep evaluates — every alert kind except
+ * TAX_CHANGE, which the tax-change evaluator owns and whose rows skip
+ * here before any read or counter (the kind guard below).
+ */
+type PriceAlertSweepKind = Exclude<PriceAlertKind, 'TAX_CHANGE'>;
+
+/**
  * The closed [fromDay, toDay] daily-period window the summary lookback
  * covers: whole-day anchors, the run day inclusive, exactly
  * {@link SUMMARY_LOOKBACK_DAYS} days back — matching the closed-range
@@ -488,7 +501,10 @@ async function findAccountEmailDefault(
  * against its product's latest materialized price, enforce the 24-hour
  * delivered-row cooldown, and dispatch through the intent-log pipeline.
  * Never throws on per-alert failure (isolation) — the router's handler
- * boundary only sees failures of the scan itself.
+ * boundary only sees failures of the scan itself. Counters are kept per
+ * kind and emitted as one stamped point-set per kind present in the
+ * sweep (task 6.1, design D7); the returned/logged counters are their
+ * run-wide sum.
  */
 export async function handlePriceAlertEvaluation(
   env: Env,
@@ -547,12 +563,25 @@ export async function handlePriceAlertEvaluation(
     ((email: PriceAlertEmail) => sendPriceAlertEmail(sendTarget, email));
 
   const active = await alerts.findActive();
-  const counters: MutablePriceAlertCounters = {
-    evaluated: 0,
-    matched: 0,
-    notified: 0,
-    failed: 0,
-    suppressed: 0,
+  // Per-kind counter buckets (task 6.1, design D7): a bucket exists for
+  // each threshold kind PRESENT in the sweep — its row entered the
+  // counted loop below — and is emitted under its kind after the loop.
+  // A kind whose alerts all skipped therefore still emits its zeros
+  // under its kind (never omitted, never invented); kinds absent from
+  // the sweep get no fabricated point-set.
+  const kindBuckets = new Map<PriceAlertSweepKind, MutablePriceAlertCounters>();
+  const bucketFor = (kind: PriceAlertSweepKind): MutablePriceAlertCounters => {
+    const existing = kindBuckets.get(kind);
+    if (existing !== undefined) return existing;
+    const bucket: MutablePriceAlertCounters = {
+      evaluated: 0,
+      matched: 0,
+      notified: 0,
+      failed: 0,
+      suppressed: 0,
+    };
+    kindBuckets.set(kind, bucket);
+    return bucket;
   };
   const evaluatedAt = now();
 
@@ -565,6 +594,9 @@ export async function handlePriceAlertEvaluation(
     // Existing rows carry kind = 'PRICE' (migration 0016 backfill), so
     // prior evaluations are unaffected.
     if (alert.kind === 'TAX_CHANGE') continue;
+    // The run-local bucket this row's kind owns — the increments in the
+    // branches below are per kind; the run-wide aggregate is their sum.
+    const counters = bucketFor(alert.kind);
     // Per-alert isolation: a failing alert counts failed, never aborts
     // the sweep.
     try {
@@ -799,17 +831,47 @@ export async function handlePriceAlertEvaluation(
     }
   }
 
-  recordPriceAlertEvaluationCounters(env, counters);
+  // Run-wide aggregate = the sum of the per-kind buckets; every counted
+  // increment landed in exactly one of them.
+  const totals = {
+    evaluated: 0,
+    matched: 0,
+    notified: 0,
+    failed: 0,
+    suppressed: 0,
+  };
+  for (const bucket of kindBuckets.values()) {
+    totals.evaluated += bucket.evaluated;
+    totals.matched += bucket.matched;
+    totals.notified += bucket.notified;
+    totals.failed += bucket.failed;
+    totals.suppressed += bucket.suppressed;
+  }
+
+  // Per-kind emission (task 6.1, design D7): one stamped point-set per
+  // kind present in the sweep, so a failing kind's failed point carries
+  // its kind and the run-wide failure ladder stays attributable via the
+  // point's label. A sweep with no threshold-kind row at all (empty
+  // active set, or TAX_CHANGE-only) keeps the legacy kindless point-set
+  // — the run's heartbeat, so a zero-valued "cron produced its points"
+  // stays distinguishable from a cron that stopped producing points.
+  if (kindBuckets.size === 0) {
+    recordPriceAlertEvaluationCounters(env, totals);
+  } else {
+    for (const [kind, bucket] of kindBuckets) {
+      recordPriceAlertEvaluationCounters(env, { ...bucket, kind });
+    }
+  }
 
   log.info({
-    message: `Price-alert evaluation: ${counters.evaluated} evaluated, ${counters.matched} matched, ${counters.notified} notified, ${counters.suppressed} cooldown-suppressed, ${counters.failed} failed`,
+    message: `Price-alert evaluation: ${totals.evaluated} evaluated, ${totals.matched} matched, ${totals.notified} notified, ${totals.suppressed} cooldown-suppressed, ${totals.failed} failed`,
     activeAlerts: active.length,
-    ...counters,
+    ...totals,
   });
 
   return {
     configured: true,
     activeAlerts: active.length,
-    ...counters,
+    ...totals,
   };
 }
