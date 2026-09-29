@@ -50,6 +50,9 @@
 
 import type { Context } from 'hono';
 import type { MiddlewareHandler } from 'hono';
+// Type-only: the label dimension must track the repository's closed kind
+// set without adding a runtime coupling to the metrics module.
+import type { PriceAlertKind } from '../../../../packages/data-platform/src/repositories/d1/price-alert.repository';
 import type { AppEnv, Env } from '../env';
 
 /** Stale-price-share gauge — Prometheus contract name preserved. */
@@ -217,6 +220,13 @@ export function requestMetrics(): MiddlewareHandler<AppEnv> {
  * picture around these points: the failure-gauge threshold pair lives
  * in `price-alert-thresholds.ts` and the dashboard panels (AE SQL) in
  * METRICS.md, "Price-alert job counters".
+ *
+ * Task 6.1 (design D7): a run recorded with a `kind` stamps that sweep
+ * kind onto every emitted point (the AE kind label, blob3) so an
+ * operator can slice LANDED_COST/CATEGORY activity alongside the
+ * existing kinds without new gauge names. Skip paths stay uncounted by
+ * contract — the sweep simply records smaller (zero) numbers; the
+ * recorder never fabricates a count.
  */
 export const PRICE_ALERT_EVALUATED_COUNTER =
   'rajahinta_price_alerts_evaluated_total';
@@ -241,10 +251,21 @@ export interface PriceAlertEvaluationCounters {
   readonly failed: number;
   /** Matched but withheld by the 24-hour delivered-row cooldown. */
   readonly suppressed: number;
+  /**
+   * The sweep kind the run evaluated (task 6.1, design D7) — stamped
+   * onto every emitted point as the AE kind label so per-kind activity
+   * is distinguishable. Absent for kindless aggregate runs; never a
+   * substitute for counting: a kind whose alerts all skipped records
+   * zeros, it is not omitted.
+   */
+  readonly kind?: PriceAlertKind;
 }
 
+/** The five counter keys — `kind` is a label dimension, not a counter. */
+type PriceAlertCounterKey = Exclude<keyof PriceAlertEvaluationCounters, 'kind'>;
+
 /** Per-run counter order — stable for dashboard queries. */
-const PRICE_ALERT_COUNTER_POINTS: readonly (keyof PriceAlertEvaluationCounters)[] = [
+const PRICE_ALERT_COUNTER_POINTS: readonly PriceAlertCounterKey[] = [
   'evaluated',
   'matched',
   'notified',
@@ -252,10 +273,7 @@ const PRICE_ALERT_COUNTER_POINTS: readonly (keyof PriceAlertEvaluationCounters)[
   'suppressed',
 ];
 
-const PRICE_ALERT_COUNTER_NAMES: Record<
-  keyof PriceAlertEvaluationCounters,
-  string
-> = {
+const PRICE_ALERT_COUNTER_NAMES: Record<PriceAlertCounterKey, string> = {
   evaluated: PRICE_ALERT_EVALUATED_COUNTER,
   matched: PRICE_ALERT_MATCHED_COUNTER,
   notified: PRICE_ALERT_NOTIFIED_COUNTER,
@@ -266,17 +284,21 @@ const PRICE_ALERT_COUNTER_NAMES: Record<
 /**
  * Export one run's price-alert counters — one discrete data point per
  * counter, same gauge write path as the freshness metrics (no-op
- * without METRICS, best-effort emission).
+ * without METRICS, best-effort emission). A run carrying `kind` gets
+ * that kind stamped as the AE kind label on every point (task 6.1).
  */
 export function recordPriceAlertEvaluationCounters(
   env: Env,
   counters: PriceAlertEvaluationCounters,
 ): void {
   const emitter = metricsEmitter(env);
+  const labels =
+    counters.kind === undefined ? undefined : { kind: counters.kind };
   for (const key of PRICE_ALERT_COUNTER_POINTS) {
     emitter.recordGauge({
       name: PRICE_ALERT_COUNTER_NAMES[key],
       value: counters[key],
+      labels,
     });
   }
 }

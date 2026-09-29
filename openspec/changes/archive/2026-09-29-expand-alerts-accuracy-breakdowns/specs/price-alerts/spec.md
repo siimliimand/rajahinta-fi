@@ -1,8 +1,7 @@
 # price-alerts Specification
 
-## Purpose
-TBD - created by archiving change product-roadmap-phases-1-4. Update Purpose after archive.
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: Watchlist threshold management
 
 The alert kind set SHALL be the closed set `PRICE | TAX_CHANGE | LANDED_COST | CATEGORY`. The kind-aware creation contract SHALL be: a PRICE row requires a `productId` and a positive threshold; a TAX_CHANGE row requires a `productId` and MUST NOT carry a threshold; a LANDED_COST row requires a `productId` and a positive threshold; a CATEGORY row requires a canonical product category and a positive threshold and MUST NOT carry a `productId`. A category value not in the canonical set SHALL be rejected with a contract-level 400 naming the valid categories, never silently ignored. Alerts remain account-scoped; list, update (threshold/status), pause/resume, and delete keep their existing semantics for every kind.
@@ -51,28 +50,7 @@ The cron sweep SHALL evaluate each active alert against the kind's reference ser
 - **WHEN** the sweep runs over a mixed set of active PRICE, TAX_CHANGE, LANDED_COST, and CATEGORY rows
 - **THEN** each row is evaluated exactly once by its own kind's branch, and the other branches skip it before any read or counter
 
-### Requirement: Notification rate limit
-
-The system SHALL send at most one notification per alert per 24-hour period, for both kinds. The cooldown SHALL be recorded on the notification row and enforced regardless of how many evaluation cycles occur within the window.
-
-#### Scenario: Cooldown suppresses repeat sends
-
-- **WHEN** an alert triggered within the last 24 hours matches its condition again
-- **THEN** no new notification SHALL be sent and the suppression SHALL be visible in the job's counters
-
-#### Scenario: Re-trigger after cooldown
-
-- **WHEN** the condition is still met after the cooldown window has passed
-- **THEN** a new notification MAY be sent and a new notification row SHALL record it
-
-### Requirement: Delivery through the email Worker with an intent log
-
-Alert emails SHALL be dispatched through the existing email Worker send path. The system SHALL write an `alertNotifications` row before sending and mark the outcome after, so a retried evaluation cannot double-send a notification whose row is already marked delivered.
-
-#### Scenario: Crash-safe delivery
-
-- **WHEN** the evaluation job retries after a failure mid-delivery
-- **THEN** notifications already marked delivered SHALL be skipped and no duplicate email SHALL be sent for the same trigger
+## ADDED Requirements
 
 ### Requirement: Landed-cost alert explainability
 
@@ -91,4 +69,3 @@ The CATEGORY sweep's minimum SHALL be computed by a deterministic query over the
 
 - **WHEN** two or more products in the watched category share the category minimum
 - **THEN** the email names the product with the lowest `productId`, and a re-run within the cooldown window delivers no second email
-

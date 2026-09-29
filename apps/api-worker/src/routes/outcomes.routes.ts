@@ -24,6 +24,14 @@
  * module's exported user-reported labels — the API never invents
  * wording (spec calculation-outcomes).
  *
+ * `?groupBy=category|carrier` splits the same statistic read-time
+ * (change expand-alerts-accuracy-breakdowns, design D5): cells under
+ * the 10-outcome floor carry NO share — the suppression happens here
+ * so no client can render a small-sample percentage — and a per-cell
+ * state keeps count-only machine-distinguishable from the honest empty
+ * state. Wording stays locked to the module labels; the breakdown is
+ * display-only (nothing feeds the calculator, ranking, or basket).
+ *
  * @module OutcomesRoutes
  */
 
@@ -39,9 +47,10 @@ import {
   USER_REPORTED_OUTCOMES_LABEL_EN,
   USER_REPORTED_OUTCOMES_LABEL_FI,
 } from '../../../../packages/core-domain/src/outcomes/outcomes.types';
+import type { OutcomeAccuracyBreakdownCell } from '../../../../packages/core-domain/src/outcomes/outcomes.types';
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
-import { parseIntParam, parseDto } from './support';
+import { parseIntParam, parseDto, validationError } from './support';
 import { USER_CONTEXT_KEY } from '../auth/authenticated-account';
 import type { AuthenticatedAccount } from '../auth/authenticated-account';
 import { findOwnedCalculationRecord } from '../adapters/calculation-record-reads';
@@ -163,17 +172,92 @@ async function createOutcome(c: Context<AppEnv>): Promise<Response> {
   }
 }
 
-async function getAccuracy(c: Context<AppEnv>): Promise<Response> {
-  const statistic = await new D1CalculationOutcomeRepository(
-    c.env.DB,
-  ).findAccuracyStatistic({}, new Date());
+/**
+ * Below-floor threshold for breakdown cells (design D5): a cell with
+ * fewer than 10 outcomes renders the count only. The floor is applied
+ * at the endpoint so the share never enters the response — no client
+ * can render a below-floor percentage. The global statistic is not
+ * floored.
+ */
+const BREAKDOWN_MIN_CELL_N = 10;
 
+/** The two split dimensions the endpoint accepts — anything else 400s. */
+const GROUP_BY_SCHEMA = z.enum(['category', 'carrier']);
+
+/**
+ * Response cell under the display floor. `state` is the machine
+ * distinction between the two low states: `count_only` (1–9 outcomes,
+ * share suppressed) is NOT the honest empty state (`empty`, 0 outcomes),
+ * and only `share` (n ≥ 10) carries a numeric `withinMarginShare`.
+ */
+interface AccuracyBreakdownCellResponse {
+  readonly key: string;
+  readonly count: number;
+  readonly withinMarginShare: number | null;
+  readonly state: 'share' | 'count_only' | 'empty';
+}
+
+/** Apply the display floor to one repository cell. */
+function toFloorResponseCell(
+  cell: OutcomeAccuracyBreakdownCell,
+): AccuracyBreakdownCellResponse {
+  if (cell.count === 0) {
+    return { key: cell.key, count: 0, withinMarginShare: null, state: 'empty' };
+  }
+  if (cell.count < BREAKDOWN_MIN_CELL_N) {
+    return {
+      key: cell.key,
+      count: cell.count,
+      withinMarginShare: null,
+      state: 'count_only',
+    };
+  }
+  return {
+    key: cell.key,
+    count: cell.count,
+    withinMarginShare: cell.withinMarginShare,
+    state: 'share',
+  };
+}
+
+async function getAccuracy(c: Context<AppEnv>): Promise<Response> {
+  const repo = new D1CalculationOutcomeRepository(c.env.DB);
+  const groupBy = c.req.query('groupBy');
+
+  if (groupBy === undefined) {
+    // Unfiltered global statistic — the pre-breakdown response, kept
+    // byte-identical (compliance task 4.3 pins the exact shape).
+    const statistic = await repo.findAccuracyStatistic({}, new Date());
+    return c.json({
+      count: statistic.count,
+      withinMarginShare: statistic.withinMarginShare,
+      asOf: statistic.asOf.toISOString(),
+      // The exact module labels — every rendering says "user-reported"
+      // (spec calculation-outcomes; the UI must not invent wording).
+      label: {
+        fi: USER_REPORTED_OUTCOMES_LABEL_FI,
+        en: USER_REPORTED_OUTCOMES_LABEL_EN,
+      },
+    });
+  }
+
+  const parsed = GROUP_BY_SCHEMA.safeParse(groupBy);
+  if (!parsed.success) {
+    throw validationError(parsed.error);
+  }
+
+  // Read-time only: no caching, no materialization — and display-only,
+  // so the result must never feed calculator/ranking/basket inputs.
+  const breakdown = await repo.findAccuracyBreakdown(
+    {},
+    new Date(),
+    parsed.data,
+  );
   return c.json({
-    count: statistic.count,
-    withinMarginShare: statistic.withinMarginShare,
-    asOf: statistic.asOf.toISOString(),
-    // The exact module labels — every rendering says "user-reported"
-    // (spec calculation-outcomes; the UI must not invent wording).
+    dimension: breakdown.dimension,
+    cells: breakdown.cells.map(toFloorResponseCell),
+    asOf: breakdown.asOf.toISOString(),
+    // Same module labels — the breakdown adds no wording of its own.
     label: {
       fi: USER_REPORTED_OUTCOMES_LABEL_FI,
       en: USER_REPORTED_OUTCOMES_LABEL_EN,

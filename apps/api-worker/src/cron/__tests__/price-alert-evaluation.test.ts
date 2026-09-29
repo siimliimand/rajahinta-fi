@@ -15,7 +15,19 @@
  * - per-alert error isolation and the skip paths (no summary, no
  *   recipient);
  * - the unconfigured-email no-op with zero evaluations;
- * - counters exported via the observability module; router wiring on
+ * - the task-2.1 LANDED_COST reader (newest product-wide daily
+ *   landed-cost close, null otherwise — price-reader parity);
+ * - the task-3.1 CATEGORY sweep (deterministic category minimum,
+ *   identical threshold/cooldown semantics);
+ * - the task-2.2 LANDED_COST sweep (composition-cited emails: fires at
+ *   the threshold, stale and unresolvable-composition skips carry no
+ *   counters, cooldown parity, and the exhaustive kind-guard table —
+ *   each kind evaluated exactly once by its own branch, TAX_CHANGE
+ *   foreign);
+ * - counters exported via the observability module — one stamped
+ *   point-set per alert kind present in the sweep (task 6.1, design
+ *   D7), honest zeros for a fully-skipped kind, the kindless aggregate
+ *   heartbeat for a sweep with no threshold-kind row; router wiring on
  *   the shared 30-minute pattern.
  *
  * @module PriceAlertEvaluationTest
@@ -25,9 +37,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   PRICE_ALERT_COOLDOWN_MS,
   PRICE_ALERT_EVALUATION_CRON,
+  buildCategoryAlertEmail,
+  buildLandedCostAlertEmail,
   buildPriceAlertEmail,
   handlePriceAlertEvaluation,
+  latestMaterializedLandedCostCents,
   sendPriceAlertEmail,
+  type LandedCostCompositionFacts,
   type PriceAlertEmail,
   type PriceAlertEvaluationResult,
 } from '../price-alert-evaluation';
@@ -68,6 +84,7 @@ function alert(overrides: Partial<PriceAlertRecord> = {}): PriceAlertRecord {
     accountId: 7,
     productId: 123,
     kind: 'PRICE',
+    category: null,
     thresholdCents: 1500,
     status: 'active',
     createdAt: NOW,
@@ -75,6 +92,49 @@ function alert(overrides: Partial<PriceAlertRecord> = {}): PriceAlertRecord {
     ...overrides,
   };
 }
+
+/** CATEGORY-kind fixture — null product, canonical category, threshold. */
+function categoryAlert(
+  overrides: Partial<PriceAlertRecord> = {},
+): PriceAlertRecord {
+  return alert({
+    id: 21,
+    productId: null,
+    kind: 'CATEGORY',
+    category: 'beer',
+    thresholdCents: 1500,
+    ...overrides,
+  });
+}
+
+/** LANDED_COST-kind fixture — product-bearing, threshold (create contract). */
+function landedCostAlert(
+  overrides: Partial<PriceAlertRecord> = {},
+): PriceAlertRecord {
+  return alert({
+    id: 22,
+    kind: 'LANDED_COST',
+    thresholdCents: 4500,
+    ...overrides,
+  });
+}
+
+/**
+ * Composition facts fixture (task 2.2). The retail price is deliberately
+ * NOT derivable from the other figures (4450 − 3500 ≠ 450): if a builder
+ * computed any fact instead of citing it, these values could not round-trip.
+ */
+const LANDED_FACTS: LandedCostCompositionFacts = {
+  observedAt: '2026-08-30T09:30:00.000Z',
+  retailPriceCents: 3500,
+  transportCostCents: 450,
+  transportCarrier: 'posti',
+  transportOriginCountry: 'EE',
+  transportDestinationCountry: 'FI',
+  exciseDatasetVersion: 'v1.0-2024',
+  containerDutyDatasetVersion: 'v1.2-2024',
+  confidence: 'HIGH',
+};
 
 function deliveredRow(
   alertId: number,
@@ -124,6 +184,8 @@ function makeEnv(overrides: Partial<Env> = {}): Env {
 interface World {
   findActive: ReturnType<typeof vi.fn>;
   findByProductRange: ReturnType<typeof vi.fn>;
+  findCategoryMinPriceCents: ReturnType<typeof vi.fn>;
+  resolveLandedCostFacts: ReturnType<typeof vi.fn>;
   findLatestDeliveredByAlertId: ReturnType<typeof vi.fn>;
   createIntent: ReturnType<typeof vi.fn>;
   markDelivered: ReturnType<typeof vi.fn>;
@@ -138,6 +200,18 @@ interface WorldOptions {
   alerts?: PriceAlertRecord[];
   /** The newest daily close per call — null simulates "no summary". */
   closeCents?: number | null;
+  /** The newest daily landed-cost close on the same bucket row. */
+  landedCloseCents?: number | null;
+  /**
+   * The category-minimum result — null simulates "no fresh product-wide
+   * summary for any product of the category" (the stale-skip path).
+   */
+  categoryMin?: { productId: number; priceCloseCents: number } | null;
+  /**
+   * The LANDED_COST composition-facts resolution — null simulates a
+   * close whose facts are not retrievable from stored records.
+   */
+  landedFacts?: LandedCostCompositionFacts | null;
   /** Pre-existing delivered notification rows, by alert id. */
   latestDelivered?: Map<number, AlertNotificationRecord>;
   /** The account-email read result (default: an address). */
@@ -158,6 +232,9 @@ function makeWorld(options: WorldOptions = {}): {
   const {
     alerts = [alert()],
     closeCents = 1499,
+    landedCloseCents = 4499,
+    categoryMin = { productId: 123, priceCloseCents: 1499 },
+    landedFacts = LANDED_FACTS,
     latestDelivered = new Map(),
     email = 'user@example.com',
     sendImpl,
@@ -169,8 +246,16 @@ function makeWorld(options: WorldOptions = {}): {
   const findByProductRange = vi.fn(async () =>
     closeCents === null
       ? []
-      : [{ periodStart: '2026-08-30', priceCloseCents: closeCents }],
+      : [
+          {
+            periodStart: '2026-08-30',
+            priceCloseCents: closeCents,
+            landedCostCloseCents: landedCloseCents,
+          },
+        ],
   );
+  const findCategoryMinPriceCents = vi.fn(async () => categoryMin);
+  const resolveLandedCostFacts = vi.fn(async () => landedFacts);
   const findLatestDeliveredByAlertId = vi.fn(async (alertId: number) =>
     latestDelivered.get(alertId) ?? null,
   );
@@ -213,15 +298,19 @@ function makeWorld(options: WorldOptions = {}): {
     } as never as D1AlertNotificationRepository,
     summaries: {
       findByProductRange,
+      findCategoryMinPriceCents,
     } as never as D1PriceHistorySummaryRepository,
     products: { findById } as never as D1ProductSearchRepository,
     findAccountEmail,
+    resolveLandedCostFacts,
     send,
   };
 
   const world: World = {
     findActive,
     findByProductRange,
+    findCategoryMinPriceCents,
+    resolveLandedCostFacts,
     findLatestDeliveredByAlertId,
     createIntent,
     markDelivered,
@@ -458,6 +547,373 @@ describe('skip paths and per-alert isolation', () => {
 });
 
 // ---------------------------------------------------------------------------
+// latestMaterializedLandedCostCents — the LANDED_COST reader (task 2.1)
+// ---------------------------------------------------------------------------
+
+describe('latestMaterializedLandedCostCents (task 2.1 reader)', () => {
+  function summariesStub(
+    rows: Array<{ periodStart: string; landedCostCloseCents: number }>,
+  ): D1PriceHistorySummaryRepository {
+    return {
+      findByProductRange: vi.fn(async () => rows),
+    } as never as D1PriceHistorySummaryRepository;
+  }
+
+  it('returns the NEWEST bucket\'s landedCostCloseCents, reading the 7-day product-wide window', async () => {
+    const summaries = summariesStub([
+      { periodStart: '2026-08-28', landedCostCloseCents: 5300 },
+      { periodStart: '2026-08-29', landedCostCloseCents: 5100 },
+      { periodStart: '2026-08-30', landedCostCloseCents: 5250 },
+    ]);
+
+    const landed = await latestMaterializedLandedCostCents(summaries, 123, NOW);
+
+    // Price-reader parity: ascending read, LAST row is the newest bucket.
+    expect(landed).toBe(5250);
+    expect(summaries.findByProductRange).toHaveBeenCalledWith(
+      123,
+      'daily',
+      '2026-08-23', // NOW − 7d
+      '2026-08-30', // NOW
+    );
+  });
+
+  it('returns null when no bucket exists inside the lookback window', async () => {
+    const summaries = summariesStub([]);
+
+    const landed = await latestMaterializedLandedCostCents(summaries, 123, NOW);
+
+    expect(landed).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LANDED_COST sweep — composition-cited landed-cost alerts (task 2.2)
+// ---------------------------------------------------------------------------
+
+describe('LANDED_COST sweep (task 2.2)', () => {
+  it('fires on the landed close AT the threshold; the email cites the composition and the notification is marked', async () => {
+    const { world, run } = makeWorld({
+      alerts: [landedCostAlert({ thresholdCents: 4499 })],
+      landedCloseCents: 4499,
+    });
+
+    const result = await run();
+
+    // Equality triggers — the same `observed <= threshold` semantics as
+    // every threshold kind.
+    expect(result.evaluated).toBe(1);
+    expect(result.matched).toBe(1);
+    expect(result.notified).toBe(1);
+    // The freshness window is the price reader's protocol on the
+    // landed-cost close column.
+    expect(world.findByProductRange).toHaveBeenCalledWith(
+      123,
+      'daily',
+      '2026-08-23',
+      '2026-08-30',
+    );
+    // Every composition fact is cited in the body, each sourced from the
+    // resolved facts — the retail price (€35.00) is deliberately not
+    // derivable from the other cited figures.
+    const email = world.send.mock.calls[0]![0] as PriceAlertEmail;
+    expect(email.subject).toContain('Keitele Senorita');
+    expect(email.subject).toContain('€44.99');
+    expect(email.text).toContain('€44.99'); // observed landed close + threshold
+    expect(email.text).toContain('€35.00'); // retail price (facts.retailPriceCents)
+    expect(email.text).toContain('€4.50'); // transport cost
+    expect(email.text).toContain('posti'); // carrier
+    expect(email.text).toContain('EE → FI'); // route
+    expect(email.text).toContain('v1.0-2024'); // excise dataset version
+    expect(email.text).toContain('v1.2-2024'); // container-duty dataset version
+    expect(email.text).toContain('HIGH'); // confidence
+    expect(email.text).toContain(LANDED_FACTS.observedAt); // observed-at
+    expect(email.text).toContain('quantity=1 baseline');
+    expect(email.text).toContain('not a live quote');
+    // The intent row freezes the observed landed close, delivered-marked.
+    expect(world.createIntent).toHaveBeenCalledWith(
+      expect.objectContaining({ alertId: 22, observedPriceCents: 4499 }),
+    );
+    expect(world.markDelivered).toHaveBeenCalledTimes(1);
+  });
+
+  it('observed landed close above the threshold does not trigger', async () => {
+    const { world, run } = makeWorld({
+      alerts: [landedCostAlert({ thresholdCents: 4499 })],
+      landedCloseCents: 4500,
+    });
+
+    const result = await run();
+
+    expect(result.evaluated).toBe(1);
+    expect(result.matched).toBe(0);
+    expect(world.send).not.toHaveBeenCalled();
+    expect(world.createIntent).not.toHaveBeenCalled();
+  });
+
+  it('stale summaries never trigger — skip with no evaluation counter, no composition read, no email', async () => {
+    const { world, run } = makeWorld({
+      alerts: [landedCostAlert()],
+      closeCents: null,
+    });
+
+    const result = await run();
+
+    expect(world.findByProductRange).toHaveBeenCalledTimes(1);
+    expect(world.resolveLandedCostFacts).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ evaluated: 0, matched: 0, notified: 0 });
+    expect(world.send).not.toHaveBeenCalled();
+    expect(world.createIntent).not.toHaveBeenCalled();
+  });
+
+  it('a close whose composition is not retrievable is not evaluated — no counter, no email (explainability precondition)', async () => {
+    const { world, run } = makeWorld({
+      alerts: [landedCostAlert()],
+      landedFacts: null,
+    });
+
+    const result = await run();
+
+    expect(result).toMatchObject({
+      evaluated: 0,
+      matched: 0,
+      notified: 0,
+      failed: 0,
+    });
+    expect(world.send).not.toHaveBeenCalled();
+    expect(world.createIntent).not.toHaveBeenCalled();
+  });
+
+  it('the 24h delivered-row cooldown applies identically to LANDED_COST matches', async () => {
+    const { world, run } = makeWorld({
+      alerts: [landedCostAlert()],
+      latestDelivered: new Map([
+        [22, deliveredRow(22, new Date(NOW.getTime() - (PRICE_ALERT_COOLDOWN_MS - 1)))],
+      ]),
+    });
+
+    const result = await run();
+
+    expect(result.matched).toBe(1);
+    expect(result.suppressed).toBe(1);
+    expect(result.notified).toBe(0);
+    expect(world.send).not.toHaveBeenCalled();
+    expect(world.createIntent).not.toHaveBeenCalled();
+  });
+
+  it('a LANDED_COST row without a product is a data anomaly — skipped cleanly, no counters', async () => {
+    const { world, run } = makeWorld({
+      alerts: [landedCostAlert({ productId: null })],
+    });
+
+    const result = await run();
+
+    expect(result).toMatchObject({ evaluated: 0, matched: 0, failed: 0 });
+    expect(world.findByProductRange).not.toHaveBeenCalled();
+    expect(world.resolveLandedCostFacts).not.toHaveBeenCalled();
+    expect(world.send).not.toHaveBeenCalled();
+  });
+
+  it('the LANDED_COST branch owns its kind alone — the category-minimum query never runs for it', async () => {
+    const { world, run } = makeWorld({
+      alerts: [landedCostAlert()],
+    });
+
+    await run();
+
+    expect(world.findCategoryMinPriceCents).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CATEGORY sweep — deterministic category minimum (task 3.1)
+// ---------------------------------------------------------------------------
+
+describe('CATEGORY sweep (task 3.1)', () => {
+  it('triggers on the category minimum at the threshold and sends the category email', async () => {
+    const { world, run } = makeWorld({
+      alerts: [categoryAlert({ thresholdCents: 1500 })],
+      categoryMin: { productId: 77, priceCloseCents: 1500 },
+    });
+
+    const result = await run();
+
+    // Equality triggers — the same `observed <= threshold` semantics as PRICE.
+    expect(result.evaluated).toBe(1);
+    expect(result.matched).toBe(1);
+    expect(result.notified).toBe(1);
+    // The sweep query stays parameterized: canonical category, daily
+    // granularity, the same 7-day window the PRICE reader uses.
+    expect(world.findCategoryMinPriceCents).toHaveBeenCalledWith(
+      'beer',
+      'daily',
+      '2026-08-23',
+      '2026-08-30',
+    );
+    // The email names the tripping product, its price, the category, and
+    // the threshold.
+    const email = world.send.mock.calls[0]![0] as PriceAlertEmail;
+    expect(email.subject).toContain('Keitele Senorita');
+    expect(email.subject).toContain('€15.00');
+    expect(email.text).toContain('beer');
+    expect(email.text).toContain('€15.00');
+    expect(email.text).toContain('#77');
+    // The intent row freezes the category minimum.
+    expect(world.createIntent).toHaveBeenCalledWith(
+      expect.objectContaining({ alertId: 21, observedPriceCents: 1500 }),
+    );
+  });
+
+  it('observed minimum above the threshold does not trigger', async () => {
+    const { world, run } = makeWorld({
+      alerts: [categoryAlert({ thresholdCents: 1400 })],
+      categoryMin: { productId: 77, priceCloseCents: 1499 },
+    });
+
+    const result = await run();
+
+    expect(result.evaluated).toBe(1);
+    expect(result.matched).toBe(0);
+    expect(world.send).not.toHaveBeenCalled();
+    expect(world.createIntent).not.toHaveBeenCalled();
+  });
+
+  it('no fresh summary in the category skips BEFORE the evaluation counter (stale never triggers)', async () => {
+    const { world, run } = makeWorld({
+      alerts: [categoryAlert()],
+      categoryMin: null,
+    });
+
+    const result = await run();
+
+    expect(world.findCategoryMinPriceCents).toHaveBeenCalledTimes(1);
+    expect(result.evaluated).toBe(0);
+    expect(result.matched).toBe(0);
+    expect(world.send).not.toHaveBeenCalled();
+    expect(world.createIntent).not.toHaveBeenCalled();
+  });
+
+  it('the 24h delivered-row cooldown applies identically to CATEGORY matches', async () => {
+    const { world, run } = makeWorld({
+      alerts: [categoryAlert()],
+      latestDelivered: new Map([
+        [21, deliveredRow(21, new Date(NOW.getTime() - (PRICE_ALERT_COOLDOWN_MS - 1)))],
+      ]),
+    });
+
+    const result = await run();
+
+    expect(result.matched).toBe(1);
+    expect(result.suppressed).toBe(1);
+    expect(result.notified).toBe(0);
+    expect(world.send).not.toHaveBeenCalled();
+    expect(world.createIntent).not.toHaveBeenCalled();
+  });
+
+  it('TAX_CHANGE rows stay foreign to this sweep — skipped BEFORE any read or counter', async () => {
+    const { world, run } = makeWorld({
+      alerts: [alert({ id: 31, kind: 'TAX_CHANGE', thresholdCents: null })],
+    });
+
+    const result = await run();
+
+    expect(result).toMatchObject({
+      evaluated: 0,
+      matched: 0,
+      notified: 0,
+      suppressed: 0,
+      failed: 0,
+    });
+    // Skipped before ANY read — neither the price reader, the landed-cost
+    // window, nor the category-minimum query ran.
+    expect(world.findByProductRange).not.toHaveBeenCalled();
+    expect(world.findCategoryMinPriceCents).not.toHaveBeenCalled();
+    expect(world.resolveLandedCostFacts).not.toHaveBeenCalled();
+    expect(world.send).not.toHaveBeenCalled();
+  });
+
+  it('a mixed sweep evaluates every threshold kind exactly once, each by its own branch', async () => {
+    const { world, run } = makeWorld({
+      alerts: [
+        alert({ id: 11 }), // PRICE
+        categoryAlert({ id: 21 }), // CATEGORY
+        alert({ id: 31, kind: 'TAX_CHANGE', thresholdCents: null }),
+        landedCostAlert({ id: 32 }), // LANDED_COST
+      ],
+    });
+
+    const result = await run();
+
+    // The guard table is exhaustive: three threshold kinds, each owned by
+    // exactly one branch; the foreign kind contributes nothing.
+    expect(result.evaluated).toBe(3);
+    expect(result.notified).toBe(3);
+    // One window read per product-bearing branch (PRICE + LANDED_COST),
+    // one category-minimum query, one composition resolution.
+    expect(world.findByProductRange).toHaveBeenCalledTimes(2);
+    expect(world.findCategoryMinPriceCents).toHaveBeenCalledTimes(1);
+    expect(world.resolveLandedCostFacts).toHaveBeenCalledTimes(1);
+    expect(world.send).toHaveBeenCalledTimes(3);
+    const subjects = world.send.mock.calls.map(
+      (call) => (call[0] as PriceAlertEmail).subject,
+    );
+    expect(subjects.some((s) => s.startsWith('[rajahinta] Price alert:'))).toBe(true);
+    expect(subjects.some((s) => s.startsWith('[rajahinta] Category alert:'))).toBe(true);
+    expect(subjects.some((s) => s.startsWith('[rajahinta] Landed-cost alert:'))).toBe(true);
+  });
+
+  it('a PRICE row without a product is a data anomaly — skipped cleanly, no counters', async () => {
+    const { world, run } = makeWorld({
+      alerts: [alert({ id: 41, productId: null })],
+    });
+
+    const result = await run();
+
+    expect(result).toMatchObject({ evaluated: 0, matched: 0, failed: 0 });
+    expect(world.findByProductRange).not.toHaveBeenCalled();
+    expect(world.send).not.toHaveBeenCalled();
+  });
+
+  it('strips line breaks and truncates long names in the category email subject', async () => {
+    const { world, run } = makeWorld({
+      alerts: [categoryAlert()],
+      categoryMin: { productId: 77, priceCloseCents: 1400 },
+    });
+
+    await run(
+      {},
+      {
+        products: {
+          findById: async () => ({
+            name: `${'x'.repeat(400)}\n\rBCC: victim@example.com`,
+          }),
+        } as never,
+      },
+    );
+
+    const email = world.send.mock.calls[0]![0] as PriceAlertEmail;
+    expect(email.subject).not.toMatch(/[\r\n]/);
+    expect(email.subject).not.toContain('BCC');
+    expect(email.subject.length).toBeLessThanOrEqual(255);
+  });
+
+  it('the category email is factual — no advice phrasing (content policy)', async () => {
+    const { world, run } = makeWorld({
+      alerts: [categoryAlert()],
+      categoryMin: { productId: 77, priceCloseCents: 1400 },
+    });
+
+    await run();
+
+    const email = world.send.mock.calls[0]![0] as PriceAlertEmail;
+    for (const banned of ['good time to buy', 'best deal', 'buy now']) {
+      expect(email.text.toLowerCase()).not.toContain(banned);
+      expect(email.subject.toLowerCase()).not.toContain(banned);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Configuration gate
 // ---------------------------------------------------------------------------
 
@@ -493,6 +949,7 @@ describe('configuration gate', () => {
 
 // ---------------------------------------------------------------------------
 // Observability — counters exported through the metrics module
+// (task 6.1, design D7: one stamped point-set per kind present)
 // ---------------------------------------------------------------------------
 
 describe('counter export', () => {
@@ -517,6 +974,116 @@ describe('counter export', () => {
     // The second run: evaluated 1, matched 1, notified 0, failed 0,
     // suppressed 1 — the suppression is visible in the counters.
     expect(metrics.points.map((p) => p.doubles?.[0])).toEqual([1, 1, 0, 0, 1]);
+    // The run's sole present kind stamps every point (task 6.1).
+    for (const point of metrics.points) {
+      expect(point.blobs?.[2]).toBe('{"kind":"PRICE"}');
+    }
+  });
+
+  it('a mixed sweep emits one stamped point-set per kind present — in sweep order, the foreign kind none', async () => {
+    const metrics = fakeMetricsBinding();
+    const { run } = makeWorld({
+      alerts: [
+        alert({ id: 11 }), // PRICE
+        categoryAlert({ id: 21 }), // CATEGORY
+        alert({ id: 31, kind: 'TAX_CHANGE', thresholdCents: null }), // foreign
+        landedCostAlert({ id: 32 }), // LANDED_COST
+      ],
+    });
+
+    await run({ METRICS: metrics.binding });
+
+    // Three present kinds × five counters; the TAX_CHANGE row entered no
+    // bucket, so no TAX_CHANGE-stamped point exists.
+    expect(metrics.points).toHaveLength(15);
+    const kindLabel = (point: (typeof metrics.points)[number]): string | undefined => {
+      // AE blob values are string | ArrayBuffer; these are the emitter's
+      // JSON label strings.
+      const blob = point.blobs?.[2];
+      return typeof blob === 'string'
+        ? (JSON.parse(blob).kind as string | undefined)
+        : undefined;
+    };
+    const kinds = metrics.points.map(kindLabel);
+    expect(kinds).toEqual([
+      ...Array<string>(5).fill('PRICE'),
+      ...Array<string>(5).fill('CATEGORY'),
+      ...Array<string>(5).fill('LANDED_COST'),
+    ]);
+    // Per-kind buckets — each kind notified its one alert, all its own
+    // counters, never blended with another kind's.
+    for (let block = 0; block < 3; block += 1) {
+      expect(
+        metrics.points.slice(block * 5, block * 5 + 5).map((p) => p.doubles?.[0]),
+      ).toEqual([1, 1, 1, 0, 0]);
+    }
+  });
+
+  it('a kind whose alerts all skip still emits its zeros under its kind — never omitted', async () => {
+    const metrics = fakeMetricsBinding();
+    const { run } = makeWorld({
+      alerts: [categoryAlert()],
+      categoryMin: null, // the stale-summary skip path
+    });
+
+    const result = await run({ METRICS: metrics.binding });
+
+    // The pinned skip semantics hold — and the kind's point-set still
+    // went out, carrying the honest zeros (the metrics module's
+    // "records zeros, it is not omitted" posture).
+    expect(result.evaluated).toBe(0);
+    expect(metrics.points).toHaveLength(5);
+    expect(metrics.points[0].indexes?.[0]).toBe(PRICE_ALERT_EVALUATED_COUNTER);
+    expect(metrics.points[0].doubles?.[0]).toBe(0);
+    for (const point of metrics.points) {
+      expect(point.blobs?.[2]).toBe('{"kind":"CATEGORY"}');
+    }
+  });
+
+  it('a sweep with no threshold-kind row keeps the kindless aggregate heartbeat (zeros, no kind label)', async () => {
+    for (const alerts of [
+      [], // empty active set
+      [alert({ id: 31, kind: 'TAX_CHANGE', thresholdCents: null })], // foreign-only
+    ]) {
+      const metrics = fakeMetricsBinding();
+      const { run } = makeWorld({ alerts });
+
+      await run({ METRICS: metrics.binding });
+
+      // The run still produces its points — the METRICS.md canary
+      // ("evaluated 0 across a window") needs the heartbeat on the wire
+      // to stay distinguishable from a cron that stopped producing
+      // points — but nothing is attributed: no kind is present.
+      expect(metrics.points).toHaveLength(5);
+      expect(metrics.points[0].doubles?.[0]).toBe(0);
+      for (const point of metrics.points) {
+        expect(point.blobs?.[2]).toBe('{}');
+      }
+    }
+  });
+
+  it('a failing kind carries its kind on the failed point — the run-wide ladder breach stays attributable', async () => {
+    const metrics = fakeMetricsBinding();
+    const { run } = makeWorld({
+      alerts: [categoryAlert({ id: 21 }), alert({ id: 11 })],
+      email: null, // unresolvable recipient → failed in both kinds
+    });
+
+    const result = await run({ METRICS: metrics.binding });
+
+    expect(result.failed).toBe(2); // the run-wide aggregate
+    // CATEGORY bucket first (sweep order), PRICE second; the failed
+    // counter is the fourth point of each block.
+    const failedPoints = [metrics.points[3], metrics.points[8]];
+    expect(failedPoints.map((p) => p.indexes?.[0])).toEqual([
+      PRICE_ALERT_FAILED_COUNTER,
+      PRICE_ALERT_FAILED_COUNTER,
+    ]);
+    expect(failedPoints.map((p) => p.doubles?.[0])).toEqual([1, 1]);
+    expect(failedPoints.map((p) => p.blobs?.[2])).toEqual([
+      '{"kind":"CATEGORY"}',
+      '{"kind":"PRICE"}',
+    ]);
   });
 });
 
@@ -573,6 +1140,173 @@ describe('buildPriceAlertEmail', () => {
 
     expect(email.subject).toContain('Product #42');
     expect(email.text).toContain('Product #42 (#42)');
+  });
+});
+
+describe('buildCategoryAlertEmail', () => {
+  it('renders the tripping product, price, category, and threshold within the email Worker contract', () => {
+    const email = buildCategoryAlertEmail({
+      to: 'user@example.com',
+      productName: 'Keitele Senorita',
+      productId: 77,
+      category: 'beer',
+      observedPriceCents: 1499,
+      thresholdCents: 1500,
+      evaluatedAt: NOW,
+    });
+
+    expect(email.to).toBe('user@example.com');
+    expect(email.subject).toContain('Keitele Senorita');
+    expect(email.subject).toContain('€14.99');
+    expect(email.subject).not.toMatch(/[\r\n]/);
+    expect(email.subject.length).toBeLessThanOrEqual(255);
+    expect(email.text).toContain('beer');
+    expect(email.text).toContain('€14.99'); // observed category minimum
+    expect(email.text).toContain('€15.00'); // the user's threshold
+    expect(email.text).toContain('#77');
+    expect(email.text).toContain(NOW.toISOString());
+  });
+
+  it('strips line breaks and caps long names in the body and subject', () => {
+    const email = buildCategoryAlertEmail({
+      to: 'user@example.com',
+      productName: `${'y'.repeat(400)}\nBCC: victim@example.com`,
+      productId: 42,
+      category: 'wine_still',
+      observedPriceCents: 100,
+      thresholdCents: 200,
+      evaluatedAt: NOW,
+    });
+
+    expect(email.subject).not.toMatch(/[\r\n]/);
+    expect(email.subject).not.toContain('BCC');
+    expect(email.subject.length).toBeLessThanOrEqual(255);
+    expect(email.text).not.toContain('BCC');
+  });
+
+  it('falls back to the product id when no product row resolves', () => {
+    const email = buildCategoryAlertEmail({
+      to: 'user@example.com',
+      productName: null,
+      productId: 42,
+      category: 'wine_still',
+      observedPriceCents: 100,
+      thresholdCents: 200,
+      evaluatedAt: NOW,
+    });
+
+    expect(email.subject).toContain('Product #42');
+    expect(email.text).toContain('Product #42 (#42)');
+  });
+});
+
+describe('buildLandedCostAlertEmail (task 2.2 composition citation)', () => {
+  it('cites every composition fact verbatim from the input record', () => {
+    const email = buildLandedCostAlertEmail({
+      to: 'user@example.com',
+      productName: 'Keitele Senorita',
+      productId: 123,
+      observedLandedCostCents: 4450,
+      thresholdCents: 4500,
+      facts: LANDED_FACTS,
+    });
+
+    expect(email.to).toBe('user@example.com');
+    expect(email.subject).toBe(
+      '[rajahinta] Landed-cost alert: Keitele Senorita at €44.50',
+    );
+    expect(email.subject).not.toMatch(/[\r\n]/);
+    expect(email.subject.length).toBeLessThanOrEqual(255);
+    // Every cited fact pinned to its INPUT value. The retail price (3500)
+    // is deliberately not derivable from the other cited figures
+    // (4450 − 3500 ≠ 450), so a computed rather than cited rendering
+    // could not produce it.
+    expect(email.text).toContain('€44.50'); // observedLandedCostCents (input)
+    expect(email.text).toContain('€45.00'); // thresholdCents (input)
+    expect(email.text).toContain('€35.00'); // facts.retailPriceCents 3500
+    expect(email.text).toContain('€4.50'); // facts.transportCostCents 450
+    expect(email.text).toContain('(posti, EE → FI)'); // route triple
+    expect(email.text).toContain('Excise dataset:         v1.0-2024');
+    expect(email.text).toContain('Container-duty dataset: v1.2-2024');
+    expect(email.text).toContain('Confidence:             HIGH');
+    expect(email.text).toContain(`Observed:               ${LANDED_FACTS.observedAt}`);
+    expect(email.text).toContain('#123');
+    // The quantity=1 baseline / not-a-live-quote statement.
+    expect(email.text).toContain('quantity=1 baseline');
+    expect(email.text).toContain('not a live quote');
+  });
+
+  it('renders the fallback states factually — no offer recorded, engine-fallback versions unknown', () => {
+    const email = buildLandedCostAlertEmail({
+      to: 'user@example.com',
+      productName: null,
+      productId: 42,
+      observedLandedCostCents: 1200,
+      thresholdCents: 1500,
+      facts: {
+        observedAt: '2026-08-29T18:00:00.000Z',
+        retailPriceCents: 900,
+        transportCostCents: 0,
+        transportCarrier: null,
+        transportOriginCountry: null,
+        transportDestinationCountry: null,
+        exciseDatasetVersion: null,
+        containerDutyDatasetVersion: null,
+        confidence: 'LOW',
+      },
+    });
+
+    expect(email.subject).toContain('Product #42');
+    expect(email.text).toContain('Product #42 (#42)');
+    expect(email.text).toContain('€0.00 (no offer recorded)');
+    expect(email.text).toContain('Excise dataset:         unknown');
+    expect(email.text).toContain('Container-duty dataset: unknown');
+    expect(email.text).toContain('Confidence:             LOW');
+    expect(email.text).toContain('Observed:               2026-08-29T18:00:00.000Z');
+  });
+
+  it('strips line breaks and caps long names in the subject', () => {
+    const email = buildLandedCostAlertEmail({
+      to: 'user@example.com',
+      productName: `${'z'.repeat(400)}\nBCC: victim@example.com`,
+      productId: 42,
+      observedLandedCostCents: 100,
+      thresholdCents: 200,
+      facts: LANDED_FACTS,
+    });
+
+    expect(email.subject).not.toMatch(/[\r\n]/);
+    expect(email.subject).not.toContain('BCC');
+    expect(email.subject.length).toBeLessThanOrEqual(255);
+    expect(email.text).not.toContain('BCC');
+  });
+
+  it('is factual — no advice phrasing in subject or body (content policy)', () => {
+    for (const facts of [
+      LANDED_FACTS,
+      {
+        ...LANDED_FACTS,
+        transportCarrier: null,
+        transportOriginCountry: null,
+        transportDestinationCountry: null,
+        exciseDatasetVersion: null,
+        containerDutyDatasetVersion: null,
+        confidence: 'LOW' as const,
+      },
+    ]) {
+      const email = buildLandedCostAlertEmail({
+        to: 'user@example.com',
+        productName: 'Keitele Senorita',
+        productId: 123,
+        observedLandedCostCents: 4450,
+        thresholdCents: 4500,
+        facts,
+      });
+      for (const banned of ['good time to buy', 'best deal', 'buy now']) {
+        expect(email.text.toLowerCase()).not.toContain(banned);
+        expect(email.subject.toLowerCase()).not.toContain(banned);
+      }
+    }
   });
 });
 

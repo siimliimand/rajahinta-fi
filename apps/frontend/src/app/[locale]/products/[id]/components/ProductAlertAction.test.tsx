@@ -66,6 +66,7 @@ function alert(overrides: Partial<PriceAlert> = {}): PriceAlert {
     id: 7,
     productId: PRODUCT_ID,
     kind: 'PRICE',
+    category: null,
     thresholdCents: 1250,
     status: 'active',
     createdAt: '2026-08-01T10:00:00.000Z',
@@ -142,13 +143,106 @@ describe('ProductAlertAction', () => {
     await waitFor(() =>
       expect(mockedRequest).toHaveBeenCalledWith('/api/v1/account/alerts', {
         method: 'POST',
-        body: JSON.stringify({ productId: PRODUCT_ID, thresholdCents: 2000 }),
+        body: JSON.stringify({
+          productId: PRODUCT_ID,
+          kind: 'price',
+          thresholdCents: 2000,
+        }),
       }),
     );
 
     // Successful creation switches the panel to the manage view.
     await screen.findByTestId('product-alert-manage');
     expect(screen.getByText('Hintaraja 20.00 €')).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Kind choice (task 5.1): PRICE / LANDED_COST on the product page
+  // ---------------------------------------------------------------------------
+
+  it('offers exactly the PRICE and LANDED_COST kind options', async () => {
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
+
+    const create = await screen.findByTestId('product-alert-create');
+    expect(
+      within(create).getByTestId('product-alert-kind-option-price'),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      within(create).getByTestId('product-alert-kind-option-landed_cost'),
+    ).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('switches to landed cost: label names the landed-cost threshold and the hint renders', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
+
+    await screen.findByTestId('product-alert-create');
+    expect(
+      screen.queryByTestId('landed-cost-hint'),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByTestId('product-alert-kind-option-landed_cost'),
+    );
+
+    expect(screen.getByLabelText('Kokonaiskustannusraja (€)')).toBeInTheDocument();
+    expect(screen.getByTestId('landed-cost-hint')).toHaveTextContent(
+      'kokonaiskustannusta',
+    );
+    expect(
+      screen.queryByLabelText('Hintaraja (€)'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('POSTs the landed_cost kind with integer cents when that option is selected', async () => {
+    const user = userEvent.setup();
+    mockedRequest.mockImplementation(async (path, init) => {
+      if (init?.method === 'POST') {
+        return alert({ kind: 'LANDED_COST', thresholdCents: 2000 });
+      }
+      if (path === '/api/v1/account/alerts') return [];
+      throw new Error(`unexpected ${init?.method ?? 'GET'} ${path}`);
+    });
+
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
+
+    await screen.findByTestId('product-alert-create');
+    await user.click(
+      screen.getByTestId('product-alert-kind-option-landed_cost'),
+    );
+    await user.type(screen.getByLabelText('Kokonaiskustannusraja (€)'), '20');
+    await user.click(screen.getByRole('button', { name: 'Lisää herätys' }));
+
+    await waitFor(() =>
+      expect(mockedRequest).toHaveBeenCalledWith('/api/v1/account/alerts', {
+        method: 'POST',
+        body: JSON.stringify({
+          productId: PRODUCT_ID,
+          kind: 'landed_cost',
+          thresholdCents: 2000,
+        }),
+      }),
+    );
+  });
+
+  it('validates a landed-cost threshold locally with the same bounds, without calling the API', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
+
+    await screen.findByTestId('product-alert-create');
+    await user.click(
+      screen.getByTestId('product-alert-kind-option-landed_cost'),
+    );
+    await user.type(screen.getByLabelText('Kokonaiskustannusraja (€)'), '0,00');
+    await user.click(screen.getByRole('button', { name: 'Lisää herätys' }));
+
+    expect(
+      await screen.findByText(/enintään kaksi desimaalia/),
+    ).toBeInTheDocument();
+    expect(mockedRequest).not.toHaveBeenCalledWith(
+      '/api/v1/account/alerts',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('rejects an invalid threshold locally without calling the API', async () => {
@@ -207,6 +301,7 @@ describe('ProductAlertAction', () => {
     renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
 
     const manage = await screen.findByTestId('product-alert-manage');
+    expect(manage).toHaveTextContent('Hintaherätys');
     expect(manage).toHaveTextContent('Hintaraja 12.50 €');
     expect(manage).toHaveTextContent('Aktiivinen');
     expect(
@@ -216,6 +311,42 @@ describe('ProductAlertAction', () => {
       within(manage).getByRole('button', { name: 'Poista' }),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText('Hintaraja (€)')).not.toBeInTheDocument();
+  });
+
+  it('labels a LANDED_COST row with the landed-cost kind and threshold', async () => {
+    mockedRequest.mockResolvedValue([
+      alert({ kind: 'LANDED_COST', thresholdCents: 3000 }),
+    ]);
+
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
+
+    const manage = await screen.findByTestId('product-alert-manage');
+    const row = within(manage).getByTestId('product-alert-row');
+    expect(
+      within(row).getByTestId('product-alert-kind-label'),
+    ).toHaveTextContent('Kokonaiskustannusherätys');
+    expect(row).toHaveTextContent('Kokonaiskustannusraja 30.00 €');
+    expect(row).not.toHaveTextContent('Hintaraja');
+  });
+
+  it('renders every alert the product has, each labeled by kind', async () => {
+    // The API's duplicate rule is per product+kind — a product can carry
+    // one alert of each offered kind at the same time.
+    mockedRequest.mockResolvedValue([
+      alert(),
+      alert({ id: 8, kind: 'LANDED_COST', thresholdCents: 3000 }),
+    ]);
+
+    renderWithIntl(<ProductAlertAction productId={PRODUCT_ID} />);
+
+    const rows = await screen.findAllByTestId('product-alert-row');
+    expect(rows).toHaveLength(2);
+    expect(
+      within(rows[0]).getByTestId('product-alert-kind-label'),
+    ).toHaveTextContent('Hintaherätys');
+    expect(
+      within(rows[1]).getByTestId('product-alert-kind-label'),
+    ).toHaveTextContent('Kokonaiskustannusherätys');
   });
 
   it('pauses the existing alert via PATCH', async () => {

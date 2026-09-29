@@ -12,6 +12,10 @@
  */
 
 import type {
+  OutcomeAccuracyBreakdown,
+  OutcomeAccuracyBreakdownCell,
+  OutcomeAccuracySplitDimension,
+  OutcomeAccuracySplitRow,
   OutcomeAccuracyStatistic,
   OutcomeInputErrorReason,
   OutcomeSubmissionInput,
@@ -208,4 +212,71 @@ export function aggregateOutcomeAccuracy(
   }
 
   return { count, withinMarginShare: withinMarginCount / count, asOf };
+}
+
+/**
+ * Compute the per-dimension accuracy breakdown read-time from outcome
+ * rows enriched with their split dimensions: one cell per dimension
+ * value, each carrying its own count and within-margin share under
+ * the same honesty rules as {@link aggregateOutcomeAccuracy} — a
+ * cell's `withinMarginShare` is null exactly when the cell's count is
+ * 0 (never a fabricated percentage; see
+ * {@link OutcomeAccuracyBreakdownCell}).
+ *
+ * Attribution is join-honest: a row whose dimension value is null
+ * (its calculation record or transport offer no longer resolves) is
+ * not attributed to any cell, so cell counts need not sum to the
+ * global count. Without `knownKeys` a cell exists only for values
+ * observed in the rows; `knownKeys` adds zero-count empty cells for
+ * requested values that no row carries (the caller owns which value
+ * vocabulary is enumerated, e.g. the canonical category set).
+ *
+ * Cells are sorted by key ascending so output is deterministic. Pure —
+ * the clock stays an injected `asOf` parameter; display-only.
+ */
+export function aggregateOutcomeAccuracyBreakdown(
+  rows: readonly OutcomeAccuracySplitRow[],
+  dimension: OutcomeAccuracySplitDimension,
+  asOf: Date,
+  knownKeys?: readonly string[],
+): OutcomeAccuracyBreakdown {
+  const totals = new Map<string, { count: number; withinMarginCount: number }>();
+  const ensureCell = (key: string): { count: number; withinMarginCount: number } => {
+    let cell = totals.get(key);
+    if (!cell) {
+      cell = { count: 0, withinMarginCount: 0 };
+      totals.set(key, cell);
+    }
+    return cell;
+  };
+
+  for (const row of rows) {
+    const key = row[dimension];
+    // An unresolvable join is nobody's cell — attributing the outcome
+    // to a placeholder value would fabricate data for that value.
+    if (key === null) continue;
+    const cell = ensureCell(key);
+    cell.count += 1;
+    if (isWithinMargin(row.reportedTotalCents, row.estimatedTotalCents)) {
+      cell.withinMarginCount += 1;
+    }
+  }
+
+  // knownKeys only ever ADDS empty cells; observed keys always surface
+  // even when the caller's vocabulary is stale.
+  if (knownKeys) {
+    for (const key of knownKeys) {
+      ensureCell(key);
+    }
+  }
+
+  const cells: OutcomeAccuracyBreakdownCell[] = [...totals.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([key, { count, withinMarginCount }]) => ({
+      key,
+      count,
+      withinMarginShare: count === 0 ? null : withinMarginCount / count,
+    }));
+
+  return { dimension, cells, asOf };
 }

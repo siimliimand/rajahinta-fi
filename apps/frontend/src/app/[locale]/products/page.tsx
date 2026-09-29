@@ -9,6 +9,13 @@ import { request, SERVER_AGE_CONFIRMATION_TOKEN } from '@/lib/api';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import type { ProductSearchItem, ProductSearchResult } from '@/lib/types';
 import { Badge, Card, EmptyState, ErrorState } from '@/components/ui';
+import CategoryAlertAction from './components/CategoryAlertAction';
+import {
+  CANONICAL_CATEGORIES,
+  CATEGORY_LABELS,
+  categoryLabel,
+  type CanonicalCategory,
+} from './category-labels';
 
 /**
  * Catalog page (task 3.1, change product-catalog).
@@ -30,10 +37,10 @@ import { Badge, Card, EmptyState, ErrorState } from '@/components/ui';
  * fall back to the default order instead of a 400.
  *
  * Copy note (task 3.2): all catalog copy lives in the message catalogs
- * under the ProductsPage namespace; the category labels reuse the
- * vocabulary already established in the catalogs (EventPage.drinkType,
- * the only place the six canonical values carry both locales), and the
- * ABV line reuses the existing Common.abvValue key. Discoverability
+ * under the ProductsPage namespace; the category labels are the shared
+ * ./category-labels vocabulary (the same labels the accuracy breakdown's
+ * category cells render), and the ABV line reuses the existing
+ * Common.abvValue key. Discoverability
  * (design D6): generateMetadata renders per-category FI/EN titles and
  * descriptions, and every (category, page) state emits a canonical URL
  * so parameter permutations do not fragment the index.
@@ -41,21 +48,9 @@ import { Badge, Card, EmptyState, ErrorState } from '@/components/ui';
  * @module CatalogPage
  */
 
-/** Canonical product categories — mirrors PRODUCT_CATEGORIES in the D1
- *  schema (packages/data-platform), which the API validates against. The
- *  frontend cannot import that module (worker bindings), and the API is
- *  the enforcing authority; the page only needs the set to forgive
- *  unknown ?category= values before it fetches. */
-const CANONICAL_CATEGORIES = [
-  'beer',
-  'wine_still',
-  'wine_sparkling',
-  'intermediate_products',
-  'other_fermented',
-  'spirits',
-] as const;
-
-type CanonicalCategory = (typeof CANONICAL_CATEGORIES)[number];
+/** Canonical product categories and their labels live in the shared
+ *  ./category-labels module (task 5.1) — the accuracy breakdown's
+ *  category cells render the same vocabulary. */
 
 /**
  * Sort orders the listing API contract accepts (task 1.3) — mirrors
@@ -86,26 +81,6 @@ type CatalogLocale = 'fi' | 'en';
 /** Fixed catalog page size (design D5) and revalidate window. */
 const CATALOG_PAGE_SIZE = 24;
 const CATALOG_REVALIDATE_SECONDS = 900;
-
-/**
- * Category labels — the established FI/EN vocabulary from the message
- * catalogs (EventPage.drinkType). Kept as a structural constant rather
- * than catalog keys because the same labels feed the filter links, the
- * card badges, and the per-category metadata titles, and the flat
- * canonical-key → localized-label mapping is not user-visible copy of
- * its own.
- */
-const CATEGORY_LABELS: Record<CanonicalCategory, Record<CatalogLocale, string>> = {
-  beer: { fi: 'Olut', en: 'Beer' },
-  wine_still: { fi: 'Makuuviini', en: 'Still wine' },
-  wine_sparkling: { fi: 'Kuohuviini', en: 'Sparkling wine' },
-  intermediate_products: {
-    fi: 'Välituotteet (esim. vermutti)',
-    en: 'Intermediate products (e.g. vermouth)',
-  },
-  other_fermented: { fi: 'Siideri ja pitkäjuoma', en: 'Cider and long drink' },
-  spirits: { fi: 'Väkevät alkoholijuomat', en: 'Spirits' },
-};
 
 /**
  * Sort-order option labels — message-catalog keys (design: labels are
@@ -246,14 +221,6 @@ function formatEuro(cents: number, locale: CatalogLocale): string {
   } catch {
     return `${(cents / 100).toFixed(2)} €`;
   }
-}
-
-/** Localized label for a card's category; the raw value is the fallback
- *  so an out-of-vocabulary value can never render as an empty badge. */
-function categoryLabel(category: string, locale: CatalogLocale): string {
-  return (
-    CATEGORY_LABELS[category as CanonicalCategory]?.[locale] ?? category
-  );
 }
 
 interface ProductsPageProps {
@@ -465,6 +432,19 @@ export default async function ProductsPage({
           );
         })}
       </nav>
+
+      {/* ── Category alert entry (task 5.1, change
+          expand-alerts-accuracy-breakdowns): only when a canonical
+          category is browsed — the watch targets that category, so the
+          unfiltered view has no entry. The client island resolves the
+          account's existing watches itself; the localized category label
+          is resolved here (the server owns the vocabulary). ── */}
+      {category !== undefined ? (
+        <CategoryAlertAction
+          category={category}
+          categoryLabel={CATEGORY_LABELS[category][locale]}
+        />
+      ) : null}
 
       {/* ── Sort control (task 1.3) — a no-JS GET form so the sort order
           is URL state like category and page. A sort change resets to

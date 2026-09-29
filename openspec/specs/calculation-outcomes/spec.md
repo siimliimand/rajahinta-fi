@@ -3,9 +3,7 @@
 ## Purpose
 
 After a calculation, an authenticated user can report what the import actually cost, one report per record per account inside a 60-day window. The reported totals power a public aggregate accuracy statistic — the share of reported outcomes within 5% of the estimate, with sample size and as-of date — labeled user-reported everywhere. Outcome rows freeze the estimate they compare against and carry retention independent of the calculation-record sweep, so the accuracy evidence outlives the estimate record.
-
 ## Requirements
-
 ### Requirement: One user-reported outcome per calculation
 
 An authenticated account SHALL be able to report the actual total cost of one of its own calculation records within 60 days of the record's calculation timestamp. The system SHALL accept at most one outcome per calculation record per account and SHALL store the reported total in euro cents alongside a digest of the original estimate.
@@ -27,17 +25,32 @@ An authenticated account SHALL be able to report the actual total cost of one of
 
 ### Requirement: Public accuracy statistic labeled user-reported
 
-The system SHALL expose a public aggregate statistic computed from stored outcomes: the number of reported outcomes, the share whose reported total fell within the configured margin (5%) of the estimate, and the as-of date. The API response and every UI rendering SHALL label the statistic as based on user-reported outcomes and SHALL display the sample size.
+The public accuracy statistic SHALL remain computed read-time from stored outcomes, with `withinMarginShare` null exactly when the count is 0 and the count always displayed. The statistic SHALL additionally support read-time breakdowns by product category (outcome → calculation record → `product_master.category`, canonical set) and by transport carrier (calculation record → transport offer), each breakdown cell carrying its own count and within-margin share under the same honesty rules. A breakdown cell with fewer than 10 outcomes SHALL render the count only — a distinct count-only state, never a percentage. A cell with 0 outcomes SHALL render the honest empty state. All wording SHALL stay locked to the module labels ("user-reported"); the breakdown read path SHALL be display-only and SHALL NOT feed the calculator, ranking, or any basket input. The global statistic's shape and semantics SHALL be unchanged.
 
-#### Scenario: Statistic reflects stored outcomes
+#### Scenario: Breakdown cell above the floor
 
-- **WHEN** the accuracy endpoint is called
-- **THEN** it SHALL return the count, the within-margin share, and the as-of date computed read-time from stored outcomes
+- **WHEN** a category cell aggregates 10 or more outcomes
+- **THEN** the cell renders its within-margin share and its count, labeled user-reported
 
-#### Scenario: Empty state honest
+#### Scenario: Breakdown cell below the floor is count-only
 
-- **WHEN** no outcomes exist yet
-- **THEN** the statistic SHALL be returned with count zero and the UI SHALL state that no user-reported outcomes exist yet, not a percentage
+- **WHEN** a category or carrier cell aggregates between 1 and 9 outcomes
+- **THEN** the cell renders the count only and no percentage
+
+#### Scenario: Empty cell stays honest
+
+- **WHEN** a breakdown dimension has no outcomes for a value
+- **THEN** the cell renders the empty state (null share), never a fabricated 0% or 100%
+
+#### Scenario: Global statistic unchanged
+
+- **WHEN** the unfiltered accuracy statistic is requested
+- **THEN** the response carries the same count, withinMarginShare, asOf, and module labels as before this change
+
+#### Scenario: Breakdowns are display-only
+
+- **WHEN** the breakdown endpoint and its frontend rendering are active
+- **THEN** calculator, ranking, and basket responses remain byte-identical (compliance-pinned), and no breakdown value feeds any calculation input
 
 ### Requirement: Retention decoupled from calculation records
 
@@ -47,3 +60,4 @@ Outcome rows SHALL carry their own retention (24-month cap) enforced by a schedu
 
 - **WHEN** the calculation-record retention job prunes a record older than the record cap
 - **THEN** its outcome row SHALL remain, holding its snapshot of the estimate, until the outcome cap prunes it
+

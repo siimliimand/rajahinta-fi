@@ -152,16 +152,17 @@ function alertsApp(): ReturnType<typeof createApp> {
   return app;
 }
 
-/** Seed the product-wide daily summary the handler's lookback read finds. */
+/** Seed a product-wide daily summary the handler's lookback read finds. */
 async function seedDailySummary(
   d1: ReturnType<typeof openMigratedD1>['d1'],
   day: string,
   closeCents: number,
+  productId: number = PRODUCT_ID,
 ): Promise<void> {
   await new D1PriceHistorySummaryRepository(d1).upsertBucket({
     granularity: 'daily',
     periodStart: day,
-    productId: PRODUCT_ID,
+    productId,
     merchant: null,
     priceOpenCents: closeCents,
     priceCloseCents: closeCents,
@@ -496,11 +497,418 @@ describe('end-to-end: created alert → cron evaluation → email Worker send co
         // Task 4.1 added the alert kind; a threshold create defaults to PRICE.
         kind: 'PRICE',
         productId: PRODUCT_ID,
+        // Task 1.1 (expand-alerts-accuracy-breakdowns) added the nullable
+        // category to the route projection — null on product-scoped rows.
+        category: null,
         thresholdCents: 1500,
         status: 'active',
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
       },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. Migration 0022: the widened kind set on the real migrated schema
+// ---------------------------------------------------------------------------
+
+/**
+ * Task 1.1 (change expand-alerts-accuracy-breakdowns): the LANDED_COST
+ * and CATEGORY kinds exist only as rows here — the evaluate/email
+ * branches are later tasks. What an integration run alone can prove:
+ * the recreated table carries the widened kind CHECK and the nullable
+ * product_id + category columns, pre-existing PRICE/TAX_CHANGE flows
+ * still work on the recreated table, and both new kinds round-trip
+ * through the real repository with a NULL product_id where the contract
+ * demands one.
+ */
+describe('migration 0022: four-kind schema and repository round-trip', () => {
+  let db: DatabaseSync;
+  let d1: ReturnType<typeof openMigratedD1>['d1'];
+
+  beforeEach(async () => {
+    const opened = openMigratedD1();
+    db = opened.db;
+    d1 = opened.d1;
+    seedAccount(db, {
+      id: ACCOUNT_ID,
+      userId: 'user-7',
+      email: ACCOUNT_EMAIL,
+      tier: 'FREE',
+    });
+    seedProduct(db, { id: PRODUCT_ID, name: PRODUCT_NAME });
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('recreates price_alerts with the widened kind CHECK and nullable product_id', () => {
+    const row = db
+      .prepare(
+        `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'price_alerts'`,
+      )
+      .get() as { sql: string };
+    const tableSql = row.sql;
+
+    // The kind CHECK names the full closed set.
+    for (const kind of ['PRICE', 'TAX_CHANGE', 'LANDED_COST', 'CATEGORY']) {
+      expect(tableSql).toContain(`'${kind}'`);
+    }
+    // product_id lost its NOT NULL; the new category column is nullable.
+    const productIdLine = tableSql.match(/`product_id`[^,]*/)?.[0] ?? '';
+    expect(productIdLine).not.toContain('NOT NULL');
+    expect(tableSql).toMatch(/`category` text\(32\)/);
+    // The duplicate-guard unique and the status scan index were rebuilt.
+    const indexes = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'price_alerts'`)
+      .all() as Array<{ name: string }>;
+    const names = indexes.map((i) => i.name);
+    expect(names).toContain('price_alerts_account_id_product_id_kind_unique');
+    expect(names).toContain('price_alerts_status_idx');
+  });
+
+  it('keeps the PRICE and TAX_CHANGE flows working on the recreated table', async () => {
+    const alerts = new D1PriceAlertRepository(d1);
+    const price = await alerts.create({
+      accountId: ACCOUNT_ID,
+      productId: PRODUCT_ID,
+      thresholdCents: 1500,
+    });
+    const taxChange = await alerts.create({
+      accountId: ACCOUNT_ID,
+      productId: PRODUCT_ID,
+      kind: 'TAX_CHANGE',
+    });
+
+    expect(price).toMatchObject({
+      kind: 'PRICE',
+      productId: PRODUCT_ID,
+      category: null,
+      thresholdCents: 1500,
+    });
+    expect(taxChange).toMatchObject({
+      kind: 'TAX_CHANGE',
+      productId: PRODUCT_ID,
+      category: null,
+      thresholdCents: null,
+    });
+  });
+
+  it('persists LANDED_COST and CATEGORY rows and round-trips them through the repository', async () => {
+    const alerts = new D1PriceAlertRepository(d1);
+
+    const landedCost = await alerts.create({
+      accountId: ACCOUNT_ID,
+      productId: PRODUCT_ID,
+      kind: 'LANDED_COST',
+      thresholdCents: 4500,
+    });
+    const category = await alerts.create({
+      accountId: ACCOUNT_ID,
+      kind: 'CATEGORY',
+      category: 'wine_still',
+      thresholdCents: 1999,
+    });
+
+    // LANDED_COST keeps the product-bearing row shape.
+    expect(landedCost).toMatchObject({
+      kind: 'LANDED_COST',
+      productId: PRODUCT_ID,
+      category: null,
+      thresholdCents: 4500,
+    });
+    // CATEGORY carries a NULL product_id and the canonical category —
+    // the nullable column is what makes the row representable at all.
+    expect(category).toMatchObject({
+      kind: 'CATEGORY',
+      productId: null,
+      category: 'wine_still',
+      thresholdCents: 1999,
+    });
+    const rawCategoryRow = db
+      .prepare('SELECT product_id FROM price_alerts WHERE id = ?')
+      .get(category.id) as { product_id: number | null };
+    expect(rawCategoryRow.product_id).toBeNull();
+
+    // Fresh reads (new repository instance over the same persisted rows)
+    // return both new kinds, and the per-kind scans the evaluation crons
+    // use see exactly their own rows.
+    const reread = new D1PriceAlertRepository(d1);
+    const all = await reread.findByAccountId(ACCOUNT_ID);
+    expect(all.map((r) => r.kind).sort()).toEqual(['CATEGORY', 'LANDED_COST']);
+    expect((await reread.findByAccountId(ACCOUNT_ID, 'LANDED_COST')).map((r) => r.id)).toEqual([
+      landedCost.id,
+    ]);
+    expect((await reread.findActive('CATEGORY')).map((r) => r.id)).toContain(category.id);
+
+    // List/update/pause semantics are kind-agnostic — pause lands.
+    const paused = await reread.pause(ACCOUNT_ID, category.id);
+    expect(paused).toMatchObject({ id: category.id, status: 'paused' });
+    expect((await reread.findActive('CATEGORY')).map((r) => r.id)).not.toContain(category.id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. CATEGORY sweep (task 3.1, change expand-alerts-accuracy-breakdowns)
+// ---------------------------------------------------------------------------
+
+/**
+ * The repository-side deterministic minimum (spec: the lowest product-wide
+ * `priceCloseCents` across the category's products having a summary within
+ * the freshness window, tripping product = lowest `productId` among tied
+ * minima) against real migrated D1 — what a stubbed unit double cannot
+ * prove: SQL ordering, the closed window bounds, the product-wide merchant
+ * filter, and the category join.
+ */
+describe('CATEGORY sweep: deterministic category-minimum query (task 3.1)', () => {
+  let db: DatabaseSync;
+  let d1: ReturnType<typeof openMigratedD1>['d1'];
+  let summaries: D1PriceHistorySummaryRepository;
+
+  /** The query is parameterized — literal window strings here. */
+  const FROM = '2026-03-01';
+  const TO = '2026-03-07';
+
+  beforeEach(() => {
+    const opened = openMigratedD1();
+    db = opened.db;
+    d1 = opened.d1;
+    summaries = new D1PriceHistorySummaryRepository(d1);
+    seedProduct(db, { id: 1, name: 'Beer A', category: 'beer' });
+    seedProduct(db, { id: 2, name: 'Beer B', category: 'beer' });
+    seedProduct(db, { id: 3, name: 'Wine C', category: 'wine_still' });
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('returns the lowest product-wide close across the category — never another category', async () => {
+    await seedDailySummary(d1, '2026-03-05', 1000, 1);
+    await seedDailySummary(d1, '2026-03-05', 900, 2);
+    await seedDailySummary(d1, '2026-03-05', 500, 3); // wine_still
+
+    expect(await summaries.findCategoryMinPriceCents('beer', 'daily', FROM, TO)).toEqual({
+      productId: 2,
+      priceCloseCents: 900,
+    });
+  });
+
+  it('breaks tied minima by the lowest productId', async () => {
+    await seedDailySummary(d1, '2026-03-06', 900, 2);
+    await seedDailySummary(d1, '2026-03-05', 900, 1);
+
+    expect(await summaries.findCategoryMinPriceCents('beer', 'daily', FROM, TO)).toEqual({
+      productId: 1,
+      priceCloseCents: 900,
+    });
+  });
+
+  it('is bounded by the closed [from, to] window and reads product-wide rows only', async () => {
+    // Exactly at both bounds — included (closed range, like the price reader).
+    await seedDailySummary(d1, FROM, 950, 1);
+    await seedDailySummary(d1, TO, 940, 2);
+    // Outside the window (before FROM) — excluded even though cheapest.
+    await seedDailySummary(d1, '2026-02-28', 100, 1);
+    // A merchant row cheaper than every product-wide row must not win.
+    await summaries.upsertBucket({
+      granularity: 'daily',
+      periodStart: TO,
+      productId: 1,
+      merchant: 'alko',
+      priceOpenCents: 50,
+      priceCloseCents: 50,
+      priceMinCents: 50,
+      priceMaxCents: 50,
+      priceAvgCents: 50,
+      landedCostOpenCents: 50,
+      landedCostCloseCents: 50,
+      landedCostMinCents: 50,
+      landedCostMaxCents: 50,
+      landedCostAvgCents: 50,
+      observationCount: 1,
+      strictestReliability: 'VERIFIED',
+    });
+
+    expect(await summaries.findCategoryMinPriceCents('beer', 'daily', FROM, TO)).toEqual({
+      productId: 2,
+      priceCloseCents: 940,
+    });
+  });
+
+  it('returns null when no product of the category has a bucket inside the window', async () => {
+    await seedDailySummary(d1, '2026-02-20', 900, 1); // stale only
+
+    expect(await summaries.findCategoryMinPriceCents('beer', 'daily', FROM, TO)).toBeNull();
+  });
+});
+
+/**
+ * The cron side over the real stack (spec: the CATEGORY branch matches on
+ * the same `observed <= threshold` semantics, the email names the tripping
+ * product, its price, the category, and the threshold; re-runs within one
+ * cooldown window deliver at most one email per alert).
+ */
+describe('CATEGORY sweep: cron evaluation over the real stack (task 3.1)', () => {
+  let db: DatabaseSync;
+  let d1: ReturnType<typeof openMigratedD1>['d1'];
+  let metrics: ReturnType<typeof fakeMetricsBinding>;
+  let emails: Array<{ url: string; init: RequestInit }>;
+  const T0 = new Date();
+  const at = (msFromT0: number): Date => new Date(T0.getTime() + msFromT0);
+  const today = T0.toISOString().slice(0, 10);
+
+  beforeEach(() => {
+    const opened = openMigratedD1();
+    db = opened.db;
+    d1 = opened.d1;
+    seedAccount(db, {
+      id: ACCOUNT_ID,
+      userId: 'user-7',
+      email: ACCOUNT_EMAIL,
+      tier: 'FREE',
+    });
+    seedProduct(db, { id: 1, name: 'Karhu III', category: 'beer' });
+    seedProduct(db, { id: 2, name: 'Koff III', category: 'beer' });
+    metrics = fakeMetricsBinding();
+    emails = stubEmailWorker();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    db.close();
+  });
+
+  async function createCategoryAlert(thresholdCents: number): Promise<number> {
+    const created = await new D1PriceAlertRepository(d1).create({
+      accountId: ACCOUNT_ID,
+      kind: 'CATEGORY',
+      category: 'beer',
+      thresholdCents,
+    });
+    return created.id;
+  }
+
+  const run = (now: Date): ReturnType<typeof handlePriceAlertEvaluation> =>
+    handlePriceAlertEvaluation(alertsEnv(d1, metrics), createLogger('error'), {
+      now: () => now,
+    });
+
+  it('delivers one email naming the tripping product, price, category, and threshold; re-runs inside the window stay suppressed', async () => {
+    const alertId = await createCategoryAlert(1950);
+    // Product 2 holds the category minimum (1900 < 2000) — strictly below.
+    await seedDailySummary(d1, today, 2000, 1);
+    await seedDailySummary(d1, today, 1900, 2);
+
+    const run1 = await run(T0);
+    expect(run1).toMatchObject({
+      evaluated: 1,
+      matched: 1,
+      notified: 1,
+      suppressed: 0,
+      failed: 0,
+    });
+
+    // The exact email Worker request: tripping product + its price in the
+    // subject; category, price, and threshold in the body.
+    expect(emails).toHaveLength(1);
+    const { url, init } = emails[0]!;
+    expect(url).toBe(`${EMAIL_WORKER_URL}/internal/email/send`);
+    const headers = new Headers(init.headers);
+    expect(headers.get('x-email-send-secret')).toBe(EMAIL_SEND_SECRET);
+    const body = JSON.parse(init.body as string) as Record<string, string>;
+    expect(body.to).toBe(ACCOUNT_EMAIL);
+    expect(body.subject).toContain('Category alert');
+    expect(body.subject).toContain('Koff III'); // the tripping product…
+    expect(body.subject).toContain('€19.00'); // …and its price
+    expect(body.subject).not.toContain('Karhu'); // not the non-tripping one
+    expect(body.text).toContain('beer'); // the watched category
+    expect(body.text).toContain('€19.00'); // the observed minimum
+    expect(body.text).toContain('€19.50'); // the user's threshold
+
+    // The intent row freezes the category minimum, delivered.
+    const rows = notificationRows(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      alert_id: alertId,
+      observed_price_cents: 1900,
+      channel: 'email',
+      delivery_status: 'delivered',
+    });
+    expect(rows[0]?.marked_at).not.toBeNull();
+
+    // Re-run inside the cooldown window: suppressed — at most one email
+    // per alert per window even though the observed value is unchanged.
+    metrics.points.length = 0;
+    const run2 = await run(at(3_600_000));
+    expect(run2).toMatchObject({ matched: 1, notified: 0, suppressed: 1 });
+    expect(emails).toHaveLength(1);
+    expect(counterValue(metrics.points, PRICE_ALERT_SUPPRESSED_COUNTER)).toBe(1);
+
+    // Past the window the alert may notify exactly once more.
+    const run3 = await run(at(PRICE_ALERT_COOLDOWN_MS + 60_000));
+    expect(run3).toMatchObject({ matched: 1, notified: 1, suppressed: 0 });
+    expect(emails).toHaveLength(2);
+  });
+
+  it('never triggers on stale summaries only — no evaluation counter, no email', async () => {
+    await createCategoryAlert(1950);
+    const staleDay = new Date(T0.getTime() - 8 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    await seedDailySummary(d1, staleDay, 100, 1);
+
+    const result = await run(T0);
+
+    expect(result).toMatchObject({ evaluated: 0, matched: 0, notified: 0 });
+    expect(emails).toHaveLength(0);
+    expect(notificationRows(db)).toEqual([]);
+    expect(counterValue(metrics.points, PRICE_ALERT_EVALUATED_COUNTER)).toBe(0);
+  });
+
+  it('does not trigger when the category minimum is above the threshold', async () => {
+    await createCategoryAlert(1500);
+    await seedDailySummary(d1, today, 2000, 1);
+    await seedDailySummary(d1, today, 1900, 2);
+
+    const result = await run(T0);
+
+    expect(result).toMatchObject({ evaluated: 1, matched: 0, notified: 0 });
+    expect(emails).toHaveLength(0);
+    expect(notificationRows(db)).toEqual([]);
+  });
+
+  it('keeps foreign kinds inert on the real schema — LANDED_COST and TAX_CHANGE rows are skipped cleanly', async () => {
+    const alerts = new D1PriceAlertRepository(d1);
+    // Seeded summaries land a landed-cost close of 2100 (close + 100): a
+    // 100-cent threshold would make an erroneously evaluated LANDED_COST
+    // row fire loudly — the guard must keep it at zero reads.
+    await alerts.create({
+      accountId: ACCOUNT_ID,
+      productId: 1,
+      kind: 'TAX_CHANGE',
+    });
+    await alerts.create({
+      accountId: ACCOUNT_ID,
+      productId: 1,
+      kind: 'LANDED_COST',
+      thresholdCents: 100,
+    });
+    const categoryAlertId = await createCategoryAlert(1950);
+    await seedDailySummary(d1, today, 2000, 1);
+    await seedDailySummary(d1, today, 1900, 2);
+
+    const result = await run(T0);
+
+    // Exactly the CATEGORY alert evaluated, matched, notified.
+    expect(result).toMatchObject({ evaluated: 1, matched: 1, notified: 1 });
+    expect(emails).toHaveLength(1);
+    const body = JSON.parse(emails[0]!.init.body as string) as Record<string, string>;
+    expect(body.subject).toContain('Category alert');
+    const rows = notificationRows(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ alert_id: categoryAlertId });
   });
 });

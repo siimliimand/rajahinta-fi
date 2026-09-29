@@ -1125,7 +1125,24 @@
     "taxChangeHint": "Notifies when a confirmed new version of the rate dataset changes the product's landed cost. No price threshold is needed.",
     "taxChangeValue": "Triggers on a rate-dataset change",
     "duplicateTaxChangeAlert": "This product already has a tax-change alert.",
-    "existingTaxChangeAlert": "This product already has a tax-change alert."
+    "existingTaxChangeAlert": "This product already has a tax-change alert.",
+    "kindLandedCost": "Landed-cost alert",
+    "kindCategory": "Category alert",
+    "landedCostKindLabel": "Landed cost",
+    "landedCostThresholdLabel": "Landed-cost threshold (€)",
+    "landedCostHint": "The threshold follows the product's estimated landed cost — the retail price plus transport and the estimated duties and fees.",
+    "landedCostThresholdValue": "Landed-cost threshold {euros} €",
+    "existingLandedCostAlert": "This product already has a landed-cost alert.",
+    "categoryAlertTitle": "Category price alert",
+    "categoryAlertBody": "Set a threshold for the category — get notified when the category's lowest observed price drops below it.",
+    "categoryValue": "Category: {category}",
+    "existingCategoryAlert": "This category already has a price alert.",
+    "categoryBeer": "Beer",
+    "categoryWineStill": "Still wine",
+    "categoryWineSparkling": "Sparkling wine",
+    "categoryIntermediateProducts": "Intermediate products (e.g. vermouth)",
+    "categoryOtherFermented": "Cider and long drink",
+    "categorySpirits": "Spirits"
   },
   "Ranking": {
     "title": "How ranking works",
@@ -1495,7 +1512,13 @@
     "emptyBody": "When visitors report the actual total of their calculation, the share of reports within 5 % of the estimate is published here. Nothing is shown until then.",
     "asOfLine": "Computed {date}",
     "loading": "Loading the accuracy statistic\u2026",
-    "loadFailed": "The accuracy statistic is temporarily unavailable."
+    "loadFailed": "The accuracy statistic is temporarily unavailable.",
+    "dimensionLabel": "Breakdown",
+    "dimensionCategory": "Category",
+    "dimensionCarrier": "Carrier",
+    "countOnlyNote": "The share is not shown when there are fewer than 10 outcomes.",
+    "cellEmpty": "No outcomes yet.",
+    "breakdownFailed": "Loading the breakdown failed"
   },
   "OutcomeReport": {
     "formTitle": "Report the actual total",

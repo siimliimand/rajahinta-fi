@@ -74,6 +74,12 @@ export interface PriceAlertFailureViolation {
  * {@link PRICE_ALERT_FAILED_THRESHOLDS} — strict `>` like the freshness
  * evaluators. A count breaching both levels reports the higher severity
  * (one violation per run).
+ *
+ * Kind-agnostic by contract (task 6.1, design D7): every sweep kind —
+ * PRICE, TAX_CHANGE, LANDED_COST, CATEGORY — is judged by this one
+ * ladder at these same boundaries; no per-kind thresholds and no new
+ * severity levels exist. The violated count is run-wide, so per-kind
+ * attribution lives on the emitted points' AE kind label, not here.
  */
 export function evaluatePriceAlertFailures(
   failed: number,

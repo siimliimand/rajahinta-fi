@@ -1,5 +1,6 @@
 /**
- * Price-alert failure-gauge threshold tests (task 10.2).
+ * Price-alert failure-gauge threshold tests (task 10.2; per-kind sweep
+ * coverage task 6.1).
  *
  * - pins PRICE_ALERT_FAILED_THRESHOLDS (chosen defaults — no Prometheus
  *   rule precedent existed, unlike the ported freshness rules);
@@ -9,7 +10,10 @@
  *   gauge the per-run data points are written under;
  * - the datapoint→threshold composition: a failed count recorded via
  *   recordPriceAlertEvaluationCounters is exactly the value the
- *   evaluator consumes.
+ *   evaluator consumes;
+ * - kind-agnostic coverage (task 6.1, design D7): LANDED_COST and
+ *   CATEGORY runs are judged by the same ladder at the same boundaries
+ *   as the existing kinds, and a skip-only run trips nothing.
  *
  * @module PriceAlertThresholdsTest
  */
@@ -22,8 +26,28 @@ import {
 import {
   PRICE_ALERT_FAILED_COUNTER,
   recordPriceAlertEvaluationCounters,
+  type PriceAlertEvaluationCounters,
 } from '../metrics';
 import type { Env } from '../../env';
+
+/** Minimal AE sink — same shape as the metrics.test.ts fake. */
+function fakeEnvWithFailedSink(): {
+  env: Env;
+  doubles: Array<number | undefined>;
+  blobs: Array<Array<string | undefined> | undefined>;
+} {
+  const doubles: Array<number | undefined> = [];
+  const blobs: Array<Array<string | undefined> | undefined> = [];
+  const env = {
+    METRICS: {
+      writeDataPoint(point: { doubles?: number[]; blobs?: string[] }): void {
+        doubles.push(point.doubles?.[0]);
+        blobs.push(point.blobs);
+      },
+    },
+  } as unknown as Env;
+  return { env, doubles, blobs };
+}
 
 describe('PRICE_ALERT_FAILED_THRESHOLDS (task 10.2)', () => {
   it('pins the chosen constants (no Prometheus precedent — documented defaults)', () => {
@@ -64,22 +88,6 @@ describe('PRICE_ALERT_FAILED_THRESHOLDS (task 10.2)', () => {
 });
 
 describe('datapoint → threshold composition (task 10.2 wiring)', () => {
-  /** Minimal AE sink — same shape as the metrics.test.ts fake. */
-  function fakeEnvWithFailedSink(): {
-    env: Env;
-    doubles: Array<number | undefined>;
-  } {
-    const doubles: Array<number | undefined> = [];
-    const env = {
-      METRICS: {
-        writeDataPoint(point: { doubles?: number[] }): void {
-          doubles.push(point.doubles?.[0]);
-        },
-      },
-    } as unknown as Env;
-    return { env, doubles };
-  }
-
   it('the recorded failed counter is the value the evaluator judges', () => {
     const { env, doubles } = fakeEnvWithFailedSink();
     recordPriceAlertEvaluationCounters(env, {
@@ -110,5 +118,95 @@ describe('datapoint → threshold composition (task 10.2 wiring)', () => {
       suppressed: 0,
     });
     expect(evaluatePriceAlertFailures(doubles[3] as number)).toBeNull();
+  });
+});
+
+describe('per-kind sweep coverage (task 6.1, design D7)', () => {
+  /** A recorded run's failed count and its failed point's kind label. */
+  function recordedRun(counters: PriceAlertEvaluationCounters): {
+    failedCount: number;
+    failedKindLabel: string | undefined;
+  } {
+    const { env, doubles, blobs } = fakeEnvWithFailedSink();
+    recordPriceAlertEvaluationCounters(env, counters);
+    return {
+      failedCount: doubles[3] as number,
+      // blob3 is the labels channel; parse out the kind the point carries.
+      failedKindLabel: (JSON.parse(
+        blobs[3]?.[2] ?? '{}',
+      ) as Record<string, string>).kind,
+    };
+  }
+
+  it('a LANDED_COST failure run is judged by the same ladder at the same boundaries', () => {
+    // warning: failed > 0 — identical to the existing kinds' boundary.
+    const warning = evaluatePriceAlertFailures(
+      recordedRun({
+        evaluated: 2,
+        matched: 1,
+        notified: 0,
+        failed: 1,
+        suppressed: 0,
+        kind: 'LANDED_COST',
+      }).failedCount,
+    );
+    expect(warning?.severity).toBe('warning');
+    expect(warning?.threshold).toBe(
+      PRICE_ALERT_FAILED_THRESHOLDS.warning.threshold,
+    );
+    // critical: failed > 9 — same critical boundary, no per-kind pair.
+    const critical = evaluatePriceAlertFailures(
+      recordedRun({
+        evaluated: 12,
+        matched: 3,
+        notified: 2,
+        failed: 10,
+        suppressed: 1,
+        kind: 'LANDED_COST',
+      }).failedCount,
+    );
+    expect(critical?.severity).toBe('critical');
+    expect(critical?.threshold).toBe(
+      PRICE_ALERT_FAILED_THRESHOLDS.critical.threshold,
+    );
+    expect(critical?.invariant).toBe(PRICE_ALERT_FAILED_COUNTER);
+  });
+
+  it('a CATEGORY failure run is judged by the same ladder, and the breach is attributable to the sweep', () => {
+    const run = recordedRun({
+      evaluated: 3,
+      matched: 3,
+      notified: 0,
+      failed: 3,
+      suppressed: 0,
+      kind: 'CATEGORY',
+    });
+    const violation = evaluatePriceAlertFailures(run.failedCount);
+    expect(violation?.severity).toBe('warning');
+    expect(violation?.threshold).toBe(
+      PRICE_ALERT_FAILED_THRESHOLDS.warning.threshold,
+    );
+    // The emitted failed point carries the sweep kind, so a panel can
+    // attribute the breach to the CATEGORY sweep (the violation's
+    // measured count is run-wide — attribution lives on the point).
+    expect(run.failedKindLabel).toBe('CATEGORY');
+  });
+
+  it('a skip-only run trips nothing — skips are neither evaluations nor failures', () => {
+    for (const kind of ['LANDED_COST', 'CATEGORY'] as const) {
+      const run = recordedRun({
+        evaluated: 0,
+        matched: 0,
+        notified: 0,
+        failed: 0,
+        suppressed: 0,
+        kind,
+      });
+      expect(run.failedCount).toBe(0);
+      // warning fires at failed > 0 — a stale-summary/unretrievable-
+      // composition sweep that skipped every alert stays silent.
+      expect(evaluatePriceAlertFailures(run.failedCount)).toBeNull();
+      expect(run.failedKindLabel).toBe(kind);
+    }
   });
 });

@@ -9,6 +9,9 @@
  *   tolerance of a throwing binding;
  * - the freshness gauge writers (stale share, transport age + the +Inf
  *   sentinel) and the status-class mapping;
+ * - the price-alert job counters: one point per counter per run, the
+ *   per-kind sweep-kind stamp (task 6.1), the kindless legacy shape,
+ *   and the skipped-sweep zeros;
  * - config presence assertions over wrangler.jsonc (per-env datasets,
  *   traces export keys).
  *
@@ -271,7 +274,7 @@ describe('freshness gauge writers (fake AE binding)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Price-alert job counter writes (task 2.2)
+// Price-alert job counter writes (task 2.2; per-kind points task 6.1)
 // ---------------------------------------------------------------------------
 
 describe('recordPriceAlertEvaluationCounters (fake AE binding)', () => {
@@ -299,6 +302,87 @@ describe('recordPriceAlertEvaluationCounters (fake AE binding)', () => {
     expect(ae.points[0].blobs?.[1]).toBe('4');
   });
 
+  it('stamps the sweep kind onto every point for a LANDED_COST run (no new gauge names)', () => {
+    const ae = fakeAnalyticsEngine();
+    recordPriceAlertEvaluationCounters(envWith(ae), {
+      evaluated: 2,
+      matched: 1,
+      notified: 1,
+      failed: 0,
+      suppressed: 0,
+      kind: 'LANDED_COST',
+    });
+
+    // The kind is a label dimension — still exactly the five counters.
+    expect(ae.points).toHaveLength(5);
+    expect(ae.points.map((p) => p.indexes?.[0])).toEqual([
+      PRICE_ALERT_EVALUATED_COUNTER,
+      PRICE_ALERT_MATCHED_COUNTER,
+      PRICE_ALERT_NOTIFIED_COUNTER,
+      PRICE_ALERT_FAILED_COUNTER,
+      PRICE_ALERT_SUPPRESSED_COUNTER,
+    ]);
+    expect(ae.points.map((p) => p.doubles?.[0])).toEqual([2, 1, 1, 0, 0]);
+    for (const point of ae.points) {
+      expect(point.blobs?.[2]).toBe('{"kind":"LANDED_COST"}');
+    }
+  });
+
+  it('stamps the sweep kind onto every point for a CATEGORY run', () => {
+    const ae = fakeAnalyticsEngine();
+    recordPriceAlertEvaluationCounters(envWith(ae), {
+      evaluated: 3,
+      matched: 2,
+      notified: 2,
+      failed: 0,
+      suppressed: 0,
+      kind: 'CATEGORY',
+    });
+
+    expect(ae.points).toHaveLength(5);
+    for (const point of ae.points) {
+      expect(point.blobs?.[2]).toBe('{"kind":"CATEGORY"}');
+    }
+    expect(ae.points[0].doubles?.[0]).toBe(3);
+  });
+
+  it('a kindless run emits the legacy label-less points (existing sweep callers unchanged)', () => {
+    const ae = fakeAnalyticsEngine();
+    recordPriceAlertEvaluationCounters(envWith(ae), {
+      evaluated: 4,
+      matched: 2,
+      notified: 1,
+      failed: 1,
+      suppressed: 1,
+    });
+
+    for (const point of ae.points) {
+      expect(point.blobs?.[2]).toBe('{}');
+    }
+  });
+
+  it('a sweep whose alerts all skipped records evaluated 0 under its kind — never a fabricated count', () => {
+    for (const kind of ['LANDED_COST', 'CATEGORY'] as const) {
+      const ae = fakeAnalyticsEngine();
+      recordPriceAlertEvaluationCounters(envWith(ae), {
+        evaluated: 0,
+        matched: 0,
+        notified: 0,
+        failed: 0,
+        suppressed: 0,
+        kind,
+      });
+      expect(ae.points).toHaveLength(5);
+      // The run still emits its points (the cron produced one), but the
+      // evaluation count is the honest zero the sweep recorded — the
+      // spec's "skipped with no evaluation counter" posture, surfaced
+      // as a 0 the operator can see, not an absent or invented count.
+      expect(ae.points[0].indexes?.[0]).toBe(PRICE_ALERT_EVALUATED_COUNTER);
+      expect(ae.points[0].doubles?.[0]).toBe(0);
+      expect(ae.points[0].blobs?.[2]).toBe(`{"kind":"${kind}"}`);
+    }
+  });
+
   it('no-ops safely without the METRICS binding', () => {
     expect(() =>
       recordPriceAlertEvaluationCounters(envWith(null), {
@@ -307,6 +391,16 @@ describe('recordPriceAlertEvaluationCounters (fake AE binding)', () => {
         notified: 0,
         failed: 0,
         suppressed: 0,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      recordPriceAlertEvaluationCounters(envWith(null), {
+        evaluated: 1,
+        matched: 1,
+        notified: 0,
+        failed: 0,
+        suppressed: 0,
+        kind: 'LANDED_COST',
       }),
     ).not.toThrow();
   });

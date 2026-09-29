@@ -36,6 +36,8 @@ import type {
   DeclarationSummaryResponse,
   SessionStatus,
   AccuracyStatistic,
+  AccuracyBreakdown,
+  AccuracyBreakdownDimension,
   OutcomeReport,
 } from './types';
 
@@ -651,6 +653,21 @@ export async function getCategorySavings(
  */
 export async function getAccuracyStatistic(): Promise<AccuracyStatistic> {
   return request<AccuracyStatistic>('/api/v1/accuracy');
+}
+
+/**
+ * The accuracy statistic split by category or carrier (GET
+ * /api/v1/accuracy?groupBy=…, change expand-alerts-accuracy-breakdowns):
+ * cells under the 10-outcome floor arrive WITHOUT a share (state
+ * count_only) and empty cells carry state empty — the honesty floor is
+ * applied at the endpoint. Display-only read; failures propagate so
+ * callers can degrade quietly.
+ */
+export async function getAccuracyBreakdown(
+  groupBy: AccuracyBreakdownDimension,
+): Promise<AccuracyBreakdown> {
+  const params = new URLSearchParams({ groupBy });
+  return request<AccuracyBreakdown>(`/api/v1/accuracy?${params}`);
 }
 
 /**

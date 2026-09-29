@@ -25,6 +25,7 @@ import {
 } from './harness';
 import type { Env } from '../../env';
 import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
+import { PRODUCT_CATEGORIES } from '../../../../../packages/data-platform/src/d1/schema';
 import { registerAlertsRoutes } from '../alerts.routes';
 
 /**
@@ -71,8 +72,9 @@ async function setup(): Promise<Setup> {
 
 interface AlertJson {
   id: number;
-  productId: number;
-  kind: 'PRICE' | 'TAX_CHANGE';
+  productId: number | null;
+  kind: 'PRICE' | 'TAX_CHANGE' | 'LANDED_COST' | 'CATEGORY';
+  category: string | null;
   thresholdCents: number | null;
   status: string;
   createdAt: string;
@@ -311,6 +313,155 @@ describe('POST /api/v1/account/alerts — alert kind', () => {
 });
 
 // ---------------------------------------------------------------------------
+// POST — landed_cost + category kinds (task 1.2, change
+// expand-alerts-accuracy-breakdowns)
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/account/alerts — landed_cost and category kinds', () => {
+  /** Search-route parity: the unknown-category 400 names this exact set. */
+  const VALID_CATEGORIES = PRODUCT_CATEGORIES.join(', ');
+
+  it('creates a LANDED_COST alert with product + threshold', async () => {
+    const { db, app, env, token7 } = await setup();
+    seedProduct(db, { id: 1 });
+
+    const res = await createAlertWithKind(app, env, token7, {
+      productId: 1,
+      kind: 'landed_cost',
+      thresholdCents: 3200,
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as AlertJson;
+    expect(body.kind).toBe('LANDED_COST');
+    expect(body.productId).toBe(1);
+    expect(body.category).toBeNull();
+    expect(body.thresholdCents).toBe(3200);
+    expect(body.status).toBe('active');
+  });
+
+  it('rejects landed_cost without a threshold with 400', async () => {
+    const { db, app, env, token7 } = await setup();
+    seedProduct(db, { id: 1 });
+    const res = await createAlertWithKind(app, env, token7, {
+      productId: 1,
+      kind: 'landed_cost',
+    });
+    await expectEnvelope(res, 400, { error: 'ValidationError' });
+  });
+
+  it('rejects landed_cost without a productId with 400 (matrix 400, no product lookup)', async () => {
+    const { app, env, token7 } = await setup();
+    const res = await createAlertWithKind(app, env, token7, {
+      kind: 'landed_cost',
+      thresholdCents: 1000,
+    });
+    await expectEnvelope(res, 400, { error: 'ValidationError' });
+  });
+
+  it('rejects landed_cost carrying a category with 400', async () => {
+    const { db, app, env, token7 } = await setup();
+    seedProduct(db, { id: 1 });
+    const res = await createAlertWithKind(app, env, token7, {
+      productId: 1,
+      kind: 'landed_cost',
+      thresholdCents: 1000,
+      category: 'beer',
+    });
+    await expectEnvelope(res, 400, { error: 'ValidationError' });
+  });
+
+  it('creates a CATEGORY alert with category + threshold and no product', async () => {
+    const { app, env, token7 } = await setup();
+
+    const res = await createAlertWithKind(app, env, token7, {
+      category: 'beer',
+      kind: 'category',
+      thresholdCents: 1200,
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as AlertJson;
+    expect(body.kind).toBe('CATEGORY');
+    expect(body.productId).toBeNull();
+    expect(body.category).toBe('beer');
+    expect(body.thresholdCents).toBe(1200);
+    expect(body.status).toBe('active');
+  });
+
+  it('rejects kind category carrying a productId with 400', async () => {
+    const { app, env, token7 } = await setup();
+    const res = await createAlertWithKind(app, env, token7, {
+      productId: 1,
+      category: 'beer',
+      kind: 'category',
+      thresholdCents: 1200,
+    });
+    await expectEnvelope(res, 400, { error: 'ValidationError' });
+  });
+
+  it('rejects kind category without a category with 400', async () => {
+    const { app, env, token7 } = await setup();
+    const res = await createAlertWithKind(app, env, token7, {
+      kind: 'category',
+      thresholdCents: 1200,
+    });
+    await expectEnvelope(res, 400, { error: 'ValidationError' });
+  });
+
+  it('rejects kind category without a threshold with 400', async () => {
+    const { app, env, token7 } = await setup();
+    const res = await createAlertWithKind(app, env, token7, {
+      category: 'beer',
+      kind: 'category',
+    });
+    await expectEnvelope(res, 400, { error: 'ValidationError' });
+  });
+
+  it('rejects an unknown category with a 400 naming the canonical set (search-route parity)', async () => {
+    const { app, env, token7 } = await setup();
+    const res = await createAlertWithKind(app, env, token7, {
+      category: 'vodka_cranberry',
+      kind: 'category',
+      thresholdCents: 1200,
+    });
+    const body = await expectEnvelope(res, 400, { error: 'ValidationError' });
+    expect(body.message).toBe(
+      `Unknown category 'vodka_cranberry'. Valid categories: ${VALID_CATEGORIES}.`,
+    );
+  });
+
+  it('lists a CATEGORY row with null productId and the category, beside a null-category PRICE row', async () => {
+    const { db, app, env, token7 } = await setup();
+    seedProduct(db, { id: 1 });
+    const created = await createAlertWithKind(app, env, token7, {
+      category: 'spirits',
+      kind: 'category',
+      thresholdCents: 2500,
+    });
+    expect(created.status).toBe(201);
+    await createAlert(app, env, token7, 1, 999);
+
+    const res = await request(app, env, '/api/v1/account/alerts', {
+      headers: { cookie: cookieOf(token7) },
+    });
+    expect(res.status).toBe(200);
+    const alerts = (await res.json()) as AlertJson[];
+    expect(alerts).toHaveLength(2);
+    const categoryRow = alerts.find((a) => a.kind === 'CATEGORY');
+    expect(categoryRow).toMatchObject({
+      productId: null,
+      category: 'spirits',
+      thresholdCents: 2500,
+    });
+    const priceRow = alerts.find((a) => a.kind === 'PRICE');
+    expect(priceRow).toMatchObject({
+      productId: 1,
+      category: null,
+      thresholdCents: 999,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET — list
 // ---------------------------------------------------------------------------
 
@@ -471,6 +622,58 @@ describe('PATCH /api/v1/account/alerts/:alertId — kind rules', () => {
     expect(body.kind).toBe('TAX_CHANGE');
     expect(body.status).toBe('paused');
     expect(body.thresholdCents).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PATCH — threshold on the new kinds (task 1.2): LANDED_COST and CATEGORY
+// patch like PRICE; the TAX_CHANGE rejection above is unchanged
+// ---------------------------------------------------------------------------
+
+describe('PATCH /api/v1/account/alerts/:alertId — threshold on landed_cost and category', () => {
+  async function seedLandedCostAlert(s: Setup): Promise<AlertJson> {
+    seedProduct(s.db, { id: 1 });
+    const res = await createAlertWithKind(s.app, s.env, s.token7, {
+      productId: 1,
+      kind: 'landed_cost',
+      thresholdCents: 3000,
+    });
+    expect(res.status).toBe(201);
+    return (await res.json()) as AlertJson;
+  }
+
+  async function seedCategoryAlert(s: Setup): Promise<AlertJson> {
+    const res = await createAlertWithKind(s.app, s.env, s.token7, {
+      category: 'wine_still',
+      kind: 'category',
+      thresholdCents: 1500,
+    });
+    expect(res.status).toBe(201);
+    return (await res.json()) as AlertJson;
+  }
+
+  it('accepts a threshold patch on a LANDED_COST alert', async () => {
+    const s = await setup();
+    const alert = await seedLandedCostAlert(s);
+    const res = await request(s.app, s.env, `/api/v1/account/alerts/${alert.id}`, jsonInit('PATCH', s.token7, { thresholdCents: 4500 }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as AlertJson;
+    expect(body.kind).toBe('LANDED_COST');
+    expect(body.productId).toBe(1);
+    expect(body.category).toBeNull();
+    expect(body.thresholdCents).toBe(4500);
+  });
+
+  it('accepts a threshold patch on a CATEGORY alert', async () => {
+    const s = await setup();
+    const alert = await seedCategoryAlert(s);
+    const res = await request(s.app, s.env, `/api/v1/account/alerts/${alert.id}`, jsonInit('PATCH', s.token7, { thresholdCents: 2000 }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as AlertJson;
+    expect(body.kind).toBe('CATEGORY');
+    expect(body.productId).toBeNull();
+    expect(body.category).toBe('wine_still');
+    expect(body.thresholdCents).toBe(2000);
   });
 });
 

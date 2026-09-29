@@ -1,0 +1,13 @@
+-- Task 3.1 (change expand-alerts-accuracy-breakdowns, reopened slice):
+-- the CATEGORY sweep's minimum query (findCategoryMinPriceCents) filters
+-- product_master by category before joining price_history_summaries on
+-- the product id. The summary side rides the existing
+-- price_history_summaries key index and the join lands on this table's
+-- primary key, but the product-side category filter previously had no
+-- index to bound it — the spec requires the minimum query to be "bounded
+-- by the summary table's existing keys and the product category index",
+-- so product_master gets the index its category filter always lacked.
+-- IF NOT EXISTS despite the runner applying each file exactly once
+-- (wrangler d1 migrations filename-order semantics): a stray re-apply of
+-- the statement stays a no-op instead of an abort.
+CREATE INDEX IF NOT EXISTS `product_master_category_idx` ON `product_master` (`category`);

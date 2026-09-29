@@ -63,14 +63,19 @@ Gauges and their producers:
   +Inf sentinel — AE doubles cannot carry Infinity, and the sentinel
   keeps `> threshold` / `max()` alert semantics firing)).
 
-### Price-alert job counters — one discrete write per counter per run
+### Price-alert job counters — one discrete write per counter per kind per run
 
-Emitted once per run by the 30-min price-alert-evaluation cron handler
-(task 2.2, design R2) via `recordPriceAlertEvaluationCounters`, using
-the same data point shape as the freshness gauges. Each run writes five
-points; `double1` carries that run's count, so summing
-`double1 * _sample_interval` over a window gives the running totals
-(Prometheus `_total` namesakes):
+Emitted once per alert kind by the 30-min price-alert-evaluation cron
+handler (task 2.2, design R2; per-kind attribution task 6.1, design D7)
+via `recordPriceAlertEvaluationCounters`, using the same data point
+shape as the freshness gauges. The handler sweeps ALL active alerts in
+one run, but its counters are kept per kind: the run writes one
+five-point set per alert kind present in the sweep (a kind whose rows
+entered the sweep), and `blob3` carries that kind as the AE label
+(`{"kind":"PRICE"}`, `{"kind":"LANDED_COST"}`, `{"kind":"CATEGORY"}`),
+so summing `double1 * _sample_interval` over a window — per kind or
+across kinds — gives the running totals (Prometheus `_total`
+namesakes):
 
 | `index1` / `blob1` | Meaning |
 |---|---|
@@ -80,12 +85,31 @@ points; `double1` carries that run's count, so summing
 | `rajahinta_price_alerts_failed_total` | Failed pipelines (dispatch, intent write, unresolvable recipient) |
 | `rajahinta_price_alerts_cooldown_suppressed_total` | Matched but withheld by the 24-hour delivered-row cooldown (the spec requires suppression be visible in the job's counters) |
 
-Notified should track matched minus suppressed and failed; divergence
-is the first forensics question. The dashboard panels for these
-counters are under "Querying" below (task 10.2); the failure-count
-warning/critical thresholds live in
+Attribution posture (task 6.1, design D7):
+
+- A kind present in the sweep is never omitted: a kind whose alerts all
+  skipped (stale summaries, unretrievable composition) still writes its
+  five points with the honest zeros it recorded — under its kind label.
+- A kind absent from the sweep (no active rows of that kind) gets no
+  fabricated point-set.
+- TAX_CHANGE rows are never counted here — they skip to the
+  tax-change-alert-evaluation handler, whose own runs own that kind's
+  counters.
+- A sweep with no threshold-kind row at all (empty active set, or
+  TAX_CHANGE-only) writes one label-less (`blob3 = "{}"`) zero-valued
+  set: the run's heartbeat, so `evaluated = 0` across a window keeps
+  meaning "the cron stopped producing points" rather than "no rows
+  happened to exist".
+
+Notified tracks matched minus suppressed and failed within each kind
+(the per-alert pipeline increments exactly one kind's counters); cross-
+kind divergence is the first forensics question. The dashboard panels
+for these counters are under "Querying" below (task 10.2); the
+failure-count warning/critical thresholds live in
 `src/observability/price-alert-thresholds.ts`
-(`PRICE_ALERT_FAILED_THRESHOLDS`).
+(`PRICE_ALERT_FAILED_THRESHOLDS`) — the ladder itself stays run-wide
+(the violated count is the per-run aggregate), while attribution of a
+breach lives on the failed point's kind label.
 
 ## Querying — the Grafana re-point (task 6.5)
 
@@ -169,7 +193,9 @@ LIMIT 1
 
 Unlike the freshness gauges these are per-run counts, not latest-value
 observations — sum them over the window (weighted by `_sample_interval`)
-for the running totals:
+for the running totals. Per-kind points (task 6.1, design D7) share the
+counter names, so the aggregate query is unchanged; the kindless
+heartbeat rows of an empty sweep extract no kind:
 
 ```sql
 SELECT index1 AS counter,
@@ -181,11 +207,25 @@ GROUP BY counter
 ORDER BY counter
 ```
 
+Per-kind breakdown — attribute the totals to the sweep kinds:
+
+```sql
+SELECT index1 AS counter,
+       JSONExtractString(blob3, 'kind') AS kind,
+       sum(double1 * _sample_interval) AS total
+FROM rajahinta-api-metrics-production
+WHERE index1 LIKE 'rajahinta_price_alerts_%'
+  AND timestamp > NOW() - INTERVAL '1' DAY
+GROUP BY counter, kind
+ORDER BY counter, kind
+```
+
 Per-run time series (Grafana buckets the rows, same as above) — panel
-for the failure gauge:
+for the failure gauge, attributed per kind:
 
 ```sql
 SELECT timestamp,
+       JSONExtractString(blob3, 'kind') AS kind,
        double1 * _sample_interval AS failed
 FROM rajahinta-api-metrics-production
 WHERE index1 = 'rajahinta_price_alerts_failed_total'
@@ -198,8 +238,12 @@ Panel threshold steps mirror the in-code pair exactly
 `src/observability/price-alert-thresholds.ts`, strict `>`):
 `warning` above 0 failed pipelines in a run, `critical` above 9
 (≥ 10 — systemic email-Worker/D1 breakage rather than a one-off bad
-recipient). `evaluated = 0` across a whole window is itself a canary:
-the 30-min cron stopped producing points.
+recipient). The ladder is run-wide; the failed point's `kind` label is
+what attributes a breach to its sweep kind. `evaluated = 0` across a
+whole window is itself a canary: the 30-min cron stopped producing
+points (an empty sweep still writes its label-less zero-valued
+heartbeat, so absent points — not zero-valued ones — mean a stopped
+cron).
 
 ### Error rate by status class
 

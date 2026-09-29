@@ -1125,7 +1125,24 @@
     "taxChangeHint": "Laukaisee, kun vahvistettu uusi verotietoversio muuttaa tuotteen kokonaiskustannusta. Hintarajaa ei tarvita.",
     "taxChangeValue": "Laukaisee verotietojen muuttuessa",
     "duplicateTaxChangeAlert": "Tälle tuotteelle on jo veromuutosherätys.",
-    "existingTaxChangeAlert": "Tällä tuotteella on jo veromuutosherätys."
+    "existingTaxChangeAlert": "Tällä tuotteella on jo veromuutosherätys.",
+    "kindLandedCost": "Kokonaiskustannusherätys",
+    "kindCategory": "Tuoteryhmäherätys",
+    "landedCostKindLabel": "Kokonaiskustannus",
+    "landedCostThresholdLabel": "Kokonaiskustannusraja (€)",
+    "landedCostHint": "Raja seuraa tuotteen arvioitua kokonaiskustannusta — vähittäishinta plus kuljetus sekä arvioidut verot ja maksut.",
+    "landedCostThresholdValue": "Kokonaiskustannusraja {euros} €",
+    "existingLandedCostAlert": "Tällä tuotteella on jo kokonaiskustannusherätys.",
+    "categoryAlertTitle": "Hintaherätys tuoteryhmälle",
+    "categoryAlertBody": "Aseta tuoteryhmälle hintaraja — saat ilmoituksen, kun ryhmän alin havaittu hinta alittaa sen.",
+    "categoryValue": "Tuoteryhmä: {category}",
+    "existingCategoryAlert": "Tällä tuoteryhmällä on jo hintaherätys.",
+    "categoryBeer": "Olut",
+    "categoryWineStill": "Makuuviini",
+    "categoryWineSparkling": "Kuohuviini",
+    "categoryIntermediateProducts": "Välituotteet (esim. vermutti)",
+    "categoryOtherFermented": "Siideri ja pitkäjuoma",
+    "categorySpirits": "Väkevät alkoholijuomat"
   },
   "Ranking": {
     "title": "Miten järjestäminen toimii",
@@ -1495,7 +1512,13 @@
     "emptyBody": "Kun vierailijat raportoivat laskelmansa todellisen loppusumman, t\u00e4h\u00e4n julkaistaan arvion 5 %:n sis\u00e4\u00e4n j\u00e4\u00e4neiden raporttien osuus. Mit\u00e4\u00e4n ei n\u00e4ytet\u00e4 ennen sit\u00e4.",
     "asOfLine": "Laskettu {date}",
     "loading": "Ladataan tarkkuustilastoa\u2026",
-    "loadFailed": "Tarkkuustilasto ei ole juuri nyt saatavilla."
+    "loadFailed": "Tarkkuustilasto ei ole juuri nyt saatavilla.",
+    "dimensionLabel": "Jaottelu",
+    "dimensionCategory": "Tuoteryhmä",
+    "dimensionCarrier": "Kuljetusyhtiö",
+    "countOnlyNote": "Osuutta ei näytetä, kun lopputuloksia on alle 10.",
+    "cellEmpty": "Ei vielä lopputuloksia.",
+    "breakdownFailed": "Jaottelun lataaminen epäonnistui"
   },
   "OutcomeReport": {
     "formTitle": "Raportoi todellinen loppusumma",

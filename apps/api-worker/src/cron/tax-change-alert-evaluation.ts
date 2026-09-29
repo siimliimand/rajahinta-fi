@@ -521,10 +521,21 @@ export async function handleTaxChangeAlertEvaluation(
     // Per-alert isolation: a failing alert counts failed, never aborts
     // the sweep.
     try {
-      const steps = await readSteps(alert.productId, evaluatedAt);
+      // TAX_CHANGE rows always carry a product (the repository's kind
+      // guard enforces it), but the nullable column type admits anomalous
+      // rows — skip them the PRICE branch's way instead of feeding null
+      // into attribution.
+      if (alert.productId === null) {
+        log.warn({
+          message: `Tax-change alert ${alert.id}: row carries no product — data anomaly, skipped`,
+        });
+        continue;
+      }
+      const productId: number = alert.productId;
+      const steps = await readSteps(productId, evaluatedAt);
       if (steps.length === 0) {
         log.info({
-          message: `Tax-change alert ${alert.id}: no attributed rule-boundary steps for product ${alert.productId} within ${TAX_CHANGE_ALERT_LOOKBACK_DAYS}d — skipped`,
+          message: `Tax-change alert ${alert.id}: no attributed rule-boundary steps for product ${productId} within ${TAX_CHANGE_ALERT_LOOKBACK_DAYS}d — skipped`,
         });
         continue;
       }
@@ -561,11 +572,11 @@ export async function handleTaxChangeAlertEvaluation(
       // Intent row MUST exist before any dispatch attempt (spec:
       // delivery intent log). The intent freezes the NEW materialized
       // landed cost — the value the notification reports.
-      const product = await products.findById(alert.productId);
+      const product = await products.findById(productId);
       const email = buildTaxChangeAlertEmail({
         to,
         productName: product?.name ?? null,
-        productId: alert.productId,
+        productId,
         fromLandedCostCents: step.fromLandedCostCents,
         toLandedCostCents: step.toLandedCostCents,
         fromVersionLabel:
