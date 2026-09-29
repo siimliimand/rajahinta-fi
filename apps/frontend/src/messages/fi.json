@@ -129,7 +129,18 @@
     "exampleReferenceValue": "96,00 €",
     "exampleDifferenceLabel": "Ero Suomen vertailuhintaan",
     "exampleDifferenceValue": "Esimerkissä tuonti on noin 33,00 € edullisempi",
-    "exampleNote": "Esimerkkilaskelma käyttää kiinteitä kuvitteellisia lukuja eikä hae tietoja. Vain kokonaishintoja verrataan: ero voi kääntyä myös toisin, jolloin tuonti on vertailuhintaa kalliimpi. Veron määrä vaihtelee juomatyypin ja vahvuuden mukaan."
+    "exampleNote": "Esimerkkilaskelma käyttää kiinteitä kuvitteellisia lukuja eikä hae tietoja. Vain kokonaishintoja verrataan: ero voi kääntyä myös toisin, jolloin tuonti on vertailuhintaa kalliimpi. Veron määrä vaihtelee juomatyypin ja vahvuuden mukaan.",
+    "taskCardsHeading": "Laskurityökalut muihin tilanteisiin",
+    "taskCardsBasketTitle": "Ostoskorin optimointi",
+    "taskCardsBasketBody": "Yhdistä useita tuotteita yhdeksi ostoskoriksi ja laske optimaalinen myyjäyhdistelmä kokonaiskustannusarviona Suomeen.",
+    "taskCardsTripTitle": "Matkalaskuri",
+    "taskCardsTripBody": "Vertaa kokonaisen matkan ostoskoreja: matkakustannuksen osuus, kategoriakohtainen hintaero ja tullimäärärajojen vaikutus.",
+    "taskCardsEventTitle": "Tilaisuuslaskuri",
+    "taskCardsEventBody": "Arvioi juonetarve vieraiden määrän ja tilaisuuden keston perusteella — eriteltynä ostoslistana rivi riviltä.",
+    "taskCardsWhatIfTitle": "Skenaariolaskuri",
+    "taskCardsWhatIfBody": "Korvaa valmisteveron verokanta valitsemallasi arvolla ja vertaa tuotteiden kokonaishintoja. Laskelma on hypoteettinen.",
+    "taskCardsSavingsTitle": "Kokonaishinta-ero Alko-viitehintaan",
+    "taskCardsSavingsBody": "Päivittäin materialisoitu luettelo arvioiduista kokonaishinnoista ja niiden erosta Alkon viitehintaan kategorioittain."
   },
   "AgeGate": {
     "title": "Ikätarkistus",

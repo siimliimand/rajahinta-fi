@@ -21,13 +21,142 @@ const TRUST_ROW_STATUSES = [
 ] as const satisfies readonly ReliabilityStatus[];
 
 /**
+ * Static task-card links (funnel-evidence-and-value-surfaces task 3.1,
+ * D4). Order follows the visitor funnel: one basket, a whole trip, an
+ * event's drink need, a hypothetical duty scenario, and the daily
+ * landed-cost gap listing. Icons are decorative (aria-hidden); each
+ * card is ONE link, so the touch target is the full card (≥44 px,
+ * asserted by the mobile e2e journeys).
+ */
+const TASK_CARDS = [
+  {
+    href: '/basket',
+    titleKey: 'taskCardsBasketTitle',
+    bodyKey: 'taskCardsBasketBody',
+    icon: (
+      <svg
+        aria-hidden="true"
+        focusable="false"
+        className="h-5 w-5"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="9" cy="21" r="1" />
+        <circle cx="20" cy="21" r="1" />
+        <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6" />
+      </svg>
+    ),
+  },
+  {
+    href: '/trip',
+    titleKey: 'taskCardsTripTitle',
+    bodyKey: 'taskCardsTripBody',
+    icon: (
+      <svg
+        aria-hidden="true"
+        focusable="false"
+        className="h-5 w-5"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+      </svg>
+    ),
+  },
+  {
+    href: '/event',
+    titleKey: 'taskCardsEventTitle',
+    bodyKey: 'taskCardsEventBody',
+    icon: (
+      <svg
+        aria-hidden="true"
+        focusable="false"
+        className="h-5 w-5"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+      </svg>
+    ),
+  },
+  {
+    href: '/what-if',
+    titleKey: 'taskCardsWhatIfTitle',
+    bodyKey: 'taskCardsWhatIfBody',
+    icon: (
+      <svg
+        aria-hidden="true"
+        focusable="false"
+        className="h-5 w-5"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <line x1="4" y1="21" x2="4" y2="14" />
+        <line x1="4" y1="10" x2="4" y2="3" />
+        <line x1="12" y1="21" x2="12" y2="12" />
+        <line x1="12" y1="8" x2="12" y2="3" />
+        <line x1="20" y1="21" x2="20" y2="16" />
+        <line x1="20" y1="12" x2="20" y2="3" />
+        <line x1="1" y1="14" x2="7" y2="14" />
+        <line x1="9" y1="8" x2="15" y2="8" />
+        <line x1="17" y1="16" x2="23" y2="16" />
+      </svg>
+    ),
+  },
+  {
+    href: '/savings',
+    titleKey: 'taskCardsSavingsTitle',
+    bodyKey: 'taskCardsSavingsBody',
+    icon: (
+      <svg
+        aria-hidden="true"
+        focusable="false"
+        className="h-5 w-5"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+        <polyline points="17 6 23 6 23 12" />
+      </svg>
+    ),
+  },
+] as const;
+
+/**
  * Homepage (OpenSpec: design-system-foundation, tasks 4.1 + 4.2;
- * trust-and-reach-roadmap task 3.3 extends the trust row).
+ * trust-and-reach-roadmap task 3.3 extends the trust row;
+ * funnel-evidence-and-value-surfaces task 3.1 adds the task cards).
  *
  * Static catalog copy plus one server-side guides read (D6, D4): the
  * gradient hero with a floating search card as the primary CTA, a fixed
  * worked example labeled as an example (task 3.1, D7 — no API call, the
- * figures cannot drift with live data), a "Why Rajahinta.fi" feature
+ * figures cannot drift with live data), a static task-card section
+ * linking the five task tools (links only — the hero search stays the
+ * homepage's single input, funnel D4), a "Why Rajahinta.fi" feature
  * section surfacing the platform's genuine differentiators, the trust
  * row (data sources, reliability model, accuracy statistic,
  * methodology), and a FAQ section linking PUBLISHED guide entries. The
@@ -229,6 +358,45 @@ export default async function HomePage({
           <p className="mx-auto mt-4 max-w-xl text-center text-xs leading-relaxed text-gray-500">
             {t('exampleNote')}
           </p>
+        </div>
+      </section>
+
+      {/* ── Task cards (funnel-evidence-and-value-surfaces task 3.1, D4) ──
+          Static, server-rendered links to the five task tools. Links
+          only — the hero search stays the homepage's single input (D4):
+          no form, no origin selector. The whole card is the anchor, so
+          the touch target is the full card. */}
+      <section
+        aria-labelledby="home-taskcards-heading"
+        className="border-b border-gray-100 bg-white px-4 py-16 sm:px-6"
+      >
+        <div className="mx-auto max-w-5xl">
+          <h2
+            id="home-taskcards-heading"
+            className="mb-10 text-center text-2xl font-bold tracking-tight text-gray-900"
+          >
+            {t('taskCardsHeading')}
+          </h2>
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {TASK_CARDS.map((card) => (
+              <Link
+                key={card.href}
+                href={card.href}
+                className="group flex flex-col rounded-xl border border-gray-100 bg-gray-50 p-5 transition-colors hover:border-primary-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+              >
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary-100 text-primary-700">
+                  {card.icon}
+                </div>
+                <h3 className="text-sm font-semibold text-gray-900 transition-colors group-hover:text-primary-800">
+                  {t(card.titleKey)}
+                </h3>
+                <p className="mt-1.5 text-xs leading-relaxed text-gray-600">
+                  {t(card.bodyKey)}
+                </p>
+              </Link>
+            ))}
+          </div>
         </div>
       </section>
 
