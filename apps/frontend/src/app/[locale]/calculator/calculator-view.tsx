@@ -22,6 +22,11 @@ import {
 } from '@/lib/api';
 import { useDebouncedCallback } from '@/lib/use-debounced-callback';
 import { formatVolume } from '@/lib/format/product-attributes';
+import { emitFunnelEvent } from '@/lib/telemetry/funnel-events';
+import {
+  captureTimeToResultMs,
+  startTimeToResult,
+} from '@/lib/telemetry/time-to-result';
 import { Link } from '@/i18n/navigation';
 import { EmptyState, ErrorState } from '@/components/ui';
 import ProductSearch from './components/ProductSearch';
@@ -361,6 +366,12 @@ export default function CalculatorView() {
   const handleCalculate = useCallback(async () => {
     if (!selectedProduct) return;
 
+    // The submit itself is the funnel's start step and the origin of the
+    // time-to-result measurement — starting here captures the whole
+    // request, not only the render that follows it.
+    emitFunnelEvent('calc_started');
+    startTimeToResult();
+
     setCalculating(true);
     setCalcError(null);
     setResult(null);
@@ -427,6 +438,11 @@ export default function CalculatorView() {
     setResult(null);
     setCalcError(null);
     setCalculating(true);
+
+    // A scenario load re-submits the calculation; emitting the start step
+    // here keeps the started/seen pair consistent with the direct path.
+    emitFunnelEvent('calc_started');
+    startTimeToResult();
 
     (async () => {
       try {
@@ -498,6 +514,19 @@ export default function CalculatorView() {
     setResult(null);
     setCalcError(null);
   }, []);
+
+  // ── Result-seen funnel step: the effect runs after the result card has
+  //    committed, so the event marks a result the visitor can actually
+  //    see. The duration rides along only when a submit started the
+  //    clock — a null capture emits bare rather than fabricating one.
+  useEffect(() => {
+    if (result === null) return;
+    const durationMs = captureTimeToResultMs();
+    emitFunnelEvent(
+      'calc_result_seen',
+      durationMs === null ? undefined : { durationMs },
+    );
+  }, [result]);
 
   // ── Render ──
   const canCalculate = selectedProduct !== null && !calculating;

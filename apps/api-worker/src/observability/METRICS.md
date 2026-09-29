@@ -255,6 +255,111 @@ WHERE timestamp > NOW() - INTERVAL '1' HOUR
 GROUP BY status_class
 ```
 
+## Client funnel events — Grafana Faro RUM (task 1.5)
+
+The frontend emits four funnel events through the Grafana Faro Web SDK
+(`pushEvent`). They are client-side RUM signals: not part of the AE
+dataset above and never queryable from it. Emission lives in
+`apps/frontend/src/lib/telemetry/` (`funnel-events.ts`,
+`time-to-result.ts`, `faro-init.ts`); the emit points are the calculator
+view, the basket view, and the alerts page.
+
+Initialization is gated on build-time `NEXT_PUBLIC_FARO_URL` — unset,
+the emitters are complete no-ops, the client twin of the optional
+`METRICS` binding above. An init failure degrades the same way
+(telemetry never takes a page down).
+
+The events are identity-free and session-scoped (the funnel-evidence
+proposal's D1/D2 data-posture decisions): the collector sees Faro's
+anonymous session id only, and the output is observability, never a
+calculation or ranking input. Emitters skip Faro's dedupe deliberately —
+attribute-free repeats (a second calculation, a second alert) are
+distinct completions, not duplicates. The server-side outbound-click
+counter remains the authoritative action-completion signal; the funnel
+events answer the visitor-side journey the worker cannot see.
+
+### Event dictionary
+
+| Event | Trigger point | Attributes | What it answers |
+|---|---|---|---|
+| `calc_started` | Calculator submit (`calculator-view.tsx`; the direct path and the scenario-load re-submit both emit) | none | how many calculations begin |
+| `calc_result_seen` | Calculation result rendered — post-commit effect, so the event marks a result the visitor can actually see | `durationMs` — client time-to-result from submit, present only when a prior submit started the clock; a result without one emits bare rather than fabricating a duration | how long visitors wait to see the result |
+| `basket_optimized` | Optimization result rendered (`basket-view.tsx`; failed optimizations never reach the effect) | none | how many basket optimizations complete |
+| `alert_set` | Alerts POST success response (`account/alerts/page.tsx`) — the 409/404/error paths never count | deliberately none — form contents excluded | how many alert subscriptions complete |
+
+### Querying — Faro logs in Grafana (task 1.5)
+
+Faro events surface in Grafana as Faro logs (Loki data source): one JSON
+log line per event with `kind="events"`, the event name in
+`event_name`, its attributes flattened under `event_attributes_*`, and
+Faro's anonymous `session_id` alongside (schema per the Grafana Cloud
+Faro logs pipeline). Stream labels match the SDK init
+(`app_name="rajahinta-frontend"`; `environment` is `production` for
+production builds, `development` otherwise).
+
+Funnel conversion across the four events — per-event counts; the ratio
+of consecutive steps is the cohort-level conversion (the events carry no
+identity, so there is no per-user funnel by design):
+
+```logql
+sum by (event_name) (
+  count_over_time({app_name="rajahinta-frontend", environment="production"}
+    | json
+    | kind="events"
+    | event_name=~"calc_started|calc_result_seen|basket_optimized|alert_set"
+    [24h])
+)
+```
+
+Client time-to-result distribution — p50 and p95 of `durationMs`; the
+`!= ""` filter drops the bare events emitted without a clock. Durations
+are whole milliseconds from `performance.now()` (monotonic, comparable
+across devices); they include network and render wait, so they are not
+comparable to the AE request-duration p95 above — server-side latency
+stays in AE.
+
+```logql
+quantile_over_time(0.50,
+  {app_name="rajahinta-frontend", environment="production"}
+    | json
+    | kind="events"
+    | event_name="calc_result_seen"
+    | event_attributes_durationMs != ""
+    | unwrap event_attributes_durationMs
+  [24h])
+```
+
+```logql
+quantile_over_time(0.95,
+  {app_name="rajahinta-frontend", environment="production"}
+    | json
+    | kind="events"
+    | event_name="calc_result_seen"
+    | event_attributes_durationMs != ""
+    | unwrap event_attributes_durationMs
+  [24h])
+```
+
+Repeat-usage cohort — sessions that emitted at least one funnel event in
+the window, counted from the anonymous session id. Run it over a
+multi-day range at 1-day steps: each point is the sessions active that
+day, and a session series spanning more than one day bucket is a
+returning session. LogQL has no distinct-days-per-session function, so
+the day-bucketed panel is the signal (cohort-level by design — there is
+no identity to join on):
+
+```logql
+count(
+  sum by (session_id) (
+    count_over_time({app_name="rajahinta-frontend", environment="production"}
+      | json
+      | kind="events"
+      | event_name=~"calc_started|calc_result_seen|basket_optimized|alert_set"
+      [24h])
+  )
+)
+```
+
 ## Alerting note (design D8)
 
 PrometheusRule paging does not carry over: freshness invariants are

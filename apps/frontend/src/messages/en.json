@@ -74,6 +74,7 @@
   },
   "SiteFooter": {
     "disclaimer": "Rajahinta.fi is an independent price comparison and landed-cost calculator. All prices, taxes, and duties are estimates rather than official figures. The service does not provide tax or customs advice. Always verify current details with official sources.",
+    "privacyAnalytics": "Product analytics are anonymous and session-scoped: they collect no user identifiers, no account data, and no form contents. They are used to understand feature usage at cohort level only.",
     "methodology": "How ranking works",
     "tagline": "Finnish cross-border beverage price index and landed-cost calculator.",
     "servicesHeading": "Services",
@@ -129,7 +130,18 @@
     "exampleReferenceValue": "€96.00",
     "exampleDifferenceLabel": "Difference against the Finland reference price",
     "exampleDifferenceValue": "In this example importing is about €33.00 cheaper",
-    "exampleNote": "The example calculation uses fixed, illustrative figures and fetches no data. Only totals are compared: the difference can also turn the other way, making importing dearer than the reference price. Duty varies by beverage type and strength."
+    "exampleNote": "The example calculation uses fixed, illustrative figures and fetches no data. Only totals are compared: the difference can also turn the other way, making importing dearer than the reference price. Duty varies by beverage type and strength.",
+    "taskCardsHeading": "Calculation tools for other tasks",
+    "taskCardsBasketTitle": "Basket optimization",
+    "taskCardsBasketBody": "Combine several products into one basket and compute the optimal store combination as a landed-cost estimate for Finland.",
+    "taskCardsTripTitle": "Trip calculator",
+    "taskCardsTripBody": "Compare baskets for a whole trip: the shared travel cost, the per-category price difference, and the effect of the traveller allowance caps.",
+    "taskCardsEventTitle": "Event calculator",
+    "taskCardsEventBody": "Estimate the drink requirement from the guest count and the event duration, itemized line by line as a shopping list.",
+    "taskCardsWhatIfTitle": "Scenario calculator",
+    "taskCardsWhatIfBody": "Substitute the excise duty rate with a value of your choice and compare product totals. The calculation is hypothetical.",
+    "taskCardsSavingsTitle": "Landed-cost gap versus the Alko reference",
+    "taskCardsSavingsBody": "A listing materialized daily of estimated landed totals and their gap against the Alko reference price, by category."
   },
   "AgeGate": {
     "title": "Age verification",
@@ -1295,6 +1307,8 @@
     "above": "The product's lowest current offer price ({current}) is {delta} above the 90-day median ({median}) — {count} days of observations, as of {asOf}.",
     "below": "The product's lowest current offer price ({current}) is {delta} below the 90-day median ({median}) — {count} days of observations, as of {asOf}.",
     "flat": "The product's lowest current offer price ({current}) equals the 90-day median ({median}) — {count} days of observations, as of {asOf}.",
+    "windowLow": "The lowest current offer price is the lowest observed price in this 90-day window.",
+    "percentileRank": "The lowest current offer price is cheaper than {percent}% of the days in this 90-day window.",
     "insufficientHistory": "The comparison is not shown yet because the price history is not sufficient — {count} days of observations, as of {asOf}."
   },
   "ListsPage": {

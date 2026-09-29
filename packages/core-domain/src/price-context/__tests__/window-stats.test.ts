@@ -1,9 +1,10 @@
 /**
  * Unit tests for the pure price-context window computation (spec
  * price-context): median/min/max over odd and even bucket counts, delta
- * in cents and basis points, the INSUFFICIENT_HISTORY gate at and below
- * the minimum-bucket constant, and the every-number-is-explainable echo
- * of window length, bucket count, and as-of date.
+ * in cents and basis points, the strictly-above percentile rank in basis
+ * points with its isWindowLow fact, the INSUFFICIENT_HISTORY gate at and
+ * below the minimum-bucket constant, and the every-number-is-explainable
+ * echo of window length, bucket count, and as-of date.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -118,6 +119,81 @@ describe('computePriceContextWindow — delta versus median', () => {
   });
 });
 
+describe('computePriceContextWindow — percentile rank and window low', () => {
+  it('saturates at 10000 basis points when the current best is below every bucket', () => {
+    // 15 buckets 1000..1140, current 990: all 15 sit strictly above
+    // → 15/15 × 10000 = 10000. Not the window low — below it.
+    const result = computePriceContextWindow({
+      bucketsCents: series(15),
+      currentBestCents: 990,
+      asOf: '2026-09-08',
+    });
+
+    assertComputed(result);
+    expect(result.percentileRankBasisPoints).toBe(10000);
+    expect(result.isWindowLow).toBe(false);
+  });
+
+  it('is zero at the window maximum — no bucket sits strictly above', () => {
+    // 14 buckets 1000..1130, current = max: 0/14 × 10000 = 0, ties or not.
+    const result = computePriceContextWindow({
+      bucketsCents: series(14),
+      currentBestCents: 1130,
+      asOf: '2026-09-08',
+    });
+
+    assertComputed(result);
+    expect(result.percentileRankBasisPoints).toBe(0);
+    expect(result.isWindowLow).toBe(false);
+  });
+
+  it('excludes ties from the strictly-above count and rounds the non-integer ratio down', () => {
+    // Four 500s, six 1000s, four 2000s; current 1000 — the six ties are
+    // not above it, so 4/14 = 2857.14… → 2857 bps. Not the window low.
+    const buckets = [500, 500, 500, 500, 1000, 1000, 1000, 1000, 1000, 1000, 2000, 2000, 2000, 2000];
+    const result = computePriceContextWindow({
+      bucketsCents: buckets,
+      currentBestCents: 1000,
+      asOf: '2026-09-08',
+    });
+
+    assertComputed(result);
+    expect(result.percentileRankBasisPoints).toBe(2857);
+    expect(result.isWindowLow).toBe(false);
+  });
+
+  it('rounds an exact half-basis-point ratio away from zero', () => {
+    // One 2000 among thirty-one 1000s; current 1000 — the tie does not
+    // count, so 1/32 = 312.5 bps → 313 (half away from zero). The
+    // current best equals the window minimum → isWindowLow.
+    const buckets = [...Array.from({ length: 31 }, () => 1000), 2000];
+    const result = computePriceContextWindow({
+      bucketsCents: buckets,
+      currentBestCents: 1000,
+      asOf: '2026-09-08',
+    });
+
+    assertComputed(result);
+    expect(result.percentileRankBasisPoints).toBe(313);
+    expect(result.isWindowLow).toBe(true);
+  });
+
+  it('rounds a sub-half ratio down — a third of the window above', () => {
+    // Twenty 1000s (ties) and ten 2000s; current 1000 → 10/30
+    // = 3333.33… → 3333 bps (0.33 rounds down). Window low: true.
+    const buckets = [...Array.from({ length: 20 }, () => 1000), ...Array.from({ length: 10 }, () => 2000)];
+    const result = computePriceContextWindow({
+      bucketsCents: buckets,
+      currentBestCents: 1000,
+      asOf: '2026-09-08',
+    });
+
+    assertComputed(result);
+    expect(result.percentileRankBasisPoints).toBe(3333);
+    expect(result.isWindowLow).toBe(true);
+  });
+});
+
 describe('computePriceContextWindow — explainability echo (D5)', () => {
   it('travels window length, bucket count, and as-of on the value branch', () => {
     const result = computePriceContextWindow({
@@ -148,6 +224,8 @@ describe('computePriceContextWindow — insufficient history gate (D5)', () => {
       maxCents: null,
       deltaVsMedianCents: null,
       deltaVsMedianBasisPoints: null,
+      percentileRankBasisPoints: null,
+      isWindowLow: null,
       reason: 'INSUFFICIENT_HISTORY',
       windowDays: PRICE_CONTEXT_WINDOW_DAYS,
       bucketCount: PRICE_CONTEXT_MIN_BUCKETS - 1,

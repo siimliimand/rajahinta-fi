@@ -4,10 +4,11 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import type { BasketOptimizationResult, BasketItemInput } from '@/lib/basket.types';
 import { optimizeBasket, classifyBasketError } from '@/lib/basket.client';
+import { emitFunnelEvent } from '@/lib/telemetry/funnel-events';
 import type { TransportArrangement } from '@/lib/basket.types';
 import BasketBuilder from './components/BasketBuilder';
 import BasketResults from './components/BasketResults';
@@ -148,6 +149,15 @@ export default function BasketView() {
   }, [items, destination, transportArrangement, t]);
 
   const canOptimize = items.length > 0 && !optimizing;
+
+  // ── Optimized funnel step: the results section renders only when
+  //    `result` is set, so this post-commit effect — not the response
+  //    arrival inside the submit handler — is the "result shown" moment
+  //    the event is meant to mark. Failed optimizations never reach it.
+  useEffect(() => {
+    if (result === null) return;
+    emitFunnelEvent('basket_optimized');
+  }, [result]);
 
   // ── Summary figures (task 4.5) — presentation over the result object:
   // the grand total includes the consolidated transport, so the transport

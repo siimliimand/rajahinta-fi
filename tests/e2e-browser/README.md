@@ -96,6 +96,25 @@ Port overrides for an unusual local placement:
 the boot script reads the same variables, and the API base/CORS origin
 follow them automatically.
 
+## Mobile viewport projects
+
+The `mobile-chrome-375` (375×667) and `mobile-chrome-390` (390×844)
+projects run the `*.mobile.spec.ts` journeys — calculator, basket,
+product — through the same webServer stack as the desktop suite
+(change funnel-evidence-and-value-surfaces 4.1). They pin two
+phone-view invariants on every surface a journey reaches: no horizontal
+overflow (`scrollWidth ≤ innerWidth`, polled so hydration can settle)
+and ≥44 px touch targets on the shared quantity steppers (rendered
+bounding-box measurement). The desktop `chromium` project ignores the
+mobile spec files, so its journey set is unchanged; the mobile projects
+match only those files.
+
+```bash
+pnpm exec playwright test \
+  -c tests/e2e-browser/playwright.workers.config.ts \
+  --project=mobile-chrome-375 --project=mobile-chrome-390
+```
+
 ## Feature flags and launch gates
 
 Both systems were removed (2026-09-07, owner decision): every feature is

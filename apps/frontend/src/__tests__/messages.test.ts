@@ -154,6 +154,9 @@ describe('layout and navigation catalog completeness', () => {
   it('SiteFooter carries the disclaimer and methodology link copy', () => {
     expectNamespaceKeys('SiteFooter', [
       'disclaimer',
+      // funnel-evidence-and-value-surfaces 1.4: the anonymous, session-scoped
+      // product-analytics disclosure line under the disclaimer.
+      'privacyAnalytics',
       'methodology',
       'tagline',
       'servicesHeading',

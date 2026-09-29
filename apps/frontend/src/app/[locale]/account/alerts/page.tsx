@@ -16,6 +16,7 @@ import {
 } from '@/lib/api';
 import { Button, Input } from '@/components/ui';
 import type { PriceAlert, ProductSearchItem } from '@/lib/types';
+import { emitFunnelEvent } from '@/lib/telemetry/funnel-events';
 import ProductSearch from '../../calculator/components/ProductSearch';
 import ProductSelector from '../../calculator/components/ProductSelector';
 import { eurosToCents, formatCents } from './threshold';
@@ -256,6 +257,9 @@ export default function AlertsPage() {
             : { productId: selected.id, kind },
         ),
       });
+      // The success response — not the click — is the conversion: the
+      // 409/404/error paths below must never count as an alert set.
+      emitFunnelEvent('alert_set');
       setAlerts((prev) => [created, ...prev]);
       // CATEGORY rows carry no product — there is no name to remember.
       const createdProductId = created.productId;

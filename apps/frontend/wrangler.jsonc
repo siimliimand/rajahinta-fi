@@ -42,6 +42,25 @@
 // give SSR and the browser different cookie origins and break the
 // httpOnly session. Full rationale + cookie/CORS/trace contract:
 // OPENNEXT.md ("Frontend → API connection").
+//
+// Frontend → Grafana Faro RUM (change funnel-evidence-and-value-surfaces):
+// same BUILD-TIME rule. The collector endpoint and app key
+// (NEXT_PUBLIC_FARO_URL / NEXT_PUBLIC_FARO_APP_KEY) are inlined by
+// `next build` and set per environment in the same Workers Builds build
+// variables:
+//
+//   dev:        empty — local builds stay a full no-op (the Faro init
+//               module skips all instrumentation without a URL)
+//   staging:    https://faro-collector-<region>.grafana.net/collect/<staging-key>
+//   production: https://faro-collector-<region>.grafana.net/collect/<prod-key>
+//
+// These are PUBLIC client configuration, not credentials: the bundle
+// ships both to every browser by design and the key only authorizes
+// writes to our own Grafana Cloud app — so the values above are
+// placeholders and the real ones live in build variables only. Presence
+// of the URL is the whole gate (absent → no SDK, no network calls); that
+// is configuration state, not a feature flag (flag system removed
+// 2026-09-07) — rollback is `wrangler rollback`.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "rajahinta-frontend",

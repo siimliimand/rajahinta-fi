@@ -74,6 +74,7 @@
   },
   "SiteFooter": {
     "disclaimer": "Rajahinta.fi on riippumaton hintavertailu- ja kokonaiskustannuslaskuri. Kaikki hinnat, verot ja maksut ovat arvioita eivätkä virallisia tietoja. Palvelu ei tarjoa vero- tai tullineuvontaa. Tarkista ajantasaiset tiedot aina viranomaislähteistä.",
+    "privacyAnalytics": "Tuoteanalytiikka on anonyymiä ja istuntokohtaista: se ei kerää käyttäjätunnisteita, tilitietoja tai lomakkeiden sisältöä. Analytiikkaa käytetään vain ominaisuuksien käytön ymmärtämiseen ryhmätasolla.",
     "methodology": "Miten järjestäminen toimii",
     "tagline": "Rajat ylittävien juomien hintaindeksi ja kokonaiskustannuslaskuri.",
     "servicesHeading": "Palvelut",
@@ -129,7 +130,18 @@
     "exampleReferenceValue": "96,00 €",
     "exampleDifferenceLabel": "Ero Suomen vertailuhintaan",
     "exampleDifferenceValue": "Esimerkissä tuonti on noin 33,00 € edullisempi",
-    "exampleNote": "Esimerkkilaskelma käyttää kiinteitä kuvitteellisia lukuja eikä hae tietoja. Vain kokonaishintoja verrataan: ero voi kääntyä myös toisin, jolloin tuonti on vertailuhintaa kalliimpi. Veron määrä vaihtelee juomatyypin ja vahvuuden mukaan."
+    "exampleNote": "Esimerkkilaskelma käyttää kiinteitä kuvitteellisia lukuja eikä hae tietoja. Vain kokonaishintoja verrataan: ero voi kääntyä myös toisin, jolloin tuonti on vertailuhintaa kalliimpi. Veron määrä vaihtelee juomatyypin ja vahvuuden mukaan.",
+    "taskCardsHeading": "Laskurityökalut muihin tilanteisiin",
+    "taskCardsBasketTitle": "Ostoskorin optimointi",
+    "taskCardsBasketBody": "Yhdistä useita tuotteita yhdeksi ostoskoriksi ja laske optimaalinen myyjäyhdistelmä kokonaiskustannusarviona Suomeen.",
+    "taskCardsTripTitle": "Matkalaskuri",
+    "taskCardsTripBody": "Vertaa kokonaisen matkan ostoskoreja: matkakustannuksen osuus, kategoriakohtainen hintaero ja tullimäärärajojen vaikutus.",
+    "taskCardsEventTitle": "Tilaisuuslaskuri",
+    "taskCardsEventBody": "Arvioi juonetarve vieraiden määrän ja tilaisuuden keston perusteella — eriteltynä ostoslistana rivi riviltä.",
+    "taskCardsWhatIfTitle": "Skenaariolaskuri",
+    "taskCardsWhatIfBody": "Korvaa valmisteveron verokanta valitsemallasi arvolla ja vertaa tuotteiden kokonaishintoja. Laskelma on hypoteettinen.",
+    "taskCardsSavingsTitle": "Kokonaishinta-ero Alko-viitehintaan",
+    "taskCardsSavingsBody": "Päivittäin materialisoitu luettelo arvioiduista kokonaishinnoista ja niiden erosta Alkon viitehintaan kategorioittain."
   },
   "AgeGate": {
     "title": "Ikätarkistus",
@@ -1295,6 +1307,8 @@
     "above": "Tuotteen matalin nykyinen myyntihinta ({current}) on {delta} 90 päivän mediaanin ({median}) yläpuolella — havaintoja {count} päivältä, tilanne {asOf}.",
     "below": "Tuotteen matalin nykyinen myyntihinta ({current}) on {delta} 90 päivän mediaanin ({median}) alapuolella — havaintoja {count} päivältä, tilanne {asOf}.",
     "flat": "Tuotteen matalin nykyinen myyntihinta ({current}) on yhtä suuri kuin 90 päivän mediaani ({median}) — havaintoja {count} päivältä, tilanne {asOf}.",
+    "windowLow": "Matalin nykyinen myyntihinta on alhaisin 90 päivän aikavälillä havaittu hinta.",
+    "percentileRank": "Matalin nykyinen myyntihinta on halvempi kuin {percent} % 90 päivän aikavälin päivistä.",
     "insufficientHistory": "Vertailua ei vielä näytetä, koska hintahistoriaa ei ole riittävästi — havaintoja {count} päivältä, tilanne {asOf}."
   },
   "ListsPage": {
