@@ -15,7 +15,9 @@ import {
   validateOutcomeSubmission,
   isWithinMargin,
   aggregateOutcomeAccuracy,
+  aggregateOutcomeAccuracyBreakdown,
 } from '../outcomes';
+import type { OutcomeAccuracySplitRow } from '../outcomes.types';
 import {
   InvalidOutcomeInputError,
   OUTCOME_SUBMISSION_WINDOW,
@@ -288,5 +290,140 @@ describe('aggregateOutcomeAccuracy', () => {
       [{ reportedTotalCents: 100, estimatedTotalCents: 100 }],
       other,
     ).asOf).toBe(other);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Accuracy breakdowns — per-cell honesty (design D5)
+// ---------------------------------------------------------------------------
+
+describe('aggregateOutcomeAccuracyBreakdown', () => {
+  const asOf = new Date('2026-07-01T00:00:00.000Z');
+
+  /** An estimate-1000 row attributed to a category and carrier. */
+  function row(overrides?: Partial<OutcomeAccuracySplitRow>): OutcomeAccuracySplitRow {
+    return {
+      reportedTotalCents: 10_000,
+      estimatedTotalCents: 10_000,
+      category: 'beer',
+      carrier: 'posti',
+      ...overrides,
+    };
+  }
+
+  it('splits into per-cell counts and shares, sorted by key', () => {
+    const breakdown = aggregateOutcomeAccuracyBreakdown(
+      [
+        row({ category: 'wine_still', reportedTotalCents: 20_000 }), // outside
+        row({ reportedTotalCents: 20_000 }), // beer, outside
+        row({ reportedTotalCents: 10_500 }), // beer, exactly 5% → within
+        row({ category: 'wine_still', reportedTotalCents: 10_501 }), // outside
+      ],
+      'category',
+      asOf,
+    );
+    expect(breakdown.dimension).toBe('category');
+    expect(breakdown.asOf).toBe(asOf);
+    expect(breakdown.cells).toEqual([
+      { key: 'beer', count: 2, withinMarginShare: 1 / 2 },
+      { key: 'wine_still', count: 2, withinMarginShare: 0 },
+    ]);
+  });
+
+  it('a valued cell where every outcome is outside reports an honest 0 share, never null', () => {
+    const breakdown = aggregateOutcomeAccuracyBreakdown(
+      [row({ reportedTotalCents: 20_000 }), row({ reportedTotalCents: 1 })],
+      'category',
+      asOf,
+    );
+    expect(breakdown.cells).toEqual([
+      { key: 'beer', count: 2, withinMarginShare: 0 },
+    ]);
+  });
+
+  it('splits by carrier symmetrically to category', () => {
+    const breakdown = aggregateOutcomeAccuracyBreakdown(
+      [
+        row({ carrier: 'posti' }),
+        row({ carrier: 'matkahuolto', reportedTotalCents: 9_500 }),
+        row({ carrier: 'matkahuolto' }),
+      ],
+      'carrier',
+      asOf,
+    );
+    expect(breakdown.dimension).toBe('carrier');
+    expect(breakdown.cells).toEqual([
+      { key: 'matkahuolto', count: 2, withinMarginShare: 1 },
+      { key: 'posti', count: 1, withinMarginShare: 1 },
+    ]);
+  });
+
+  it('does not attribute rows whose dimension value is null (unresolvable join)', () => {
+    const breakdown = aggregateOutcomeAccuracyBreakdown(
+      [
+        row(),
+        row({ category: null, carrier: null, reportedTotalCents: 20_000 }),
+      ],
+      'category',
+      asOf,
+    );
+    expect(breakdown.cells).toEqual([
+      { key: 'beer', count: 1, withinMarginShare: 1 },
+    ]);
+  });
+
+  it('knownKeys add zero-count cells whose share is null exactly when count is 0', () => {
+    const breakdown = aggregateOutcomeAccuracyBreakdown(
+      [row()],
+      'category',
+      asOf,
+      ['beer', 'spirits'],
+    );
+    expect(breakdown.cells).toEqual([
+      { key: 'beer', count: 1, withinMarginShare: 1 },
+      { key: 'spirits', count: 0, withinMarginShare: null },
+    ]);
+  });
+
+  it('an observed key outside knownKeys still surfaces (no silent drop)', () => {
+    const breakdown = aggregateOutcomeAccuracyBreakdown(
+      [row({ category: 'beer' }), row({ category: 'cider' })],
+      'category',
+      asOf,
+      ['spirits'],
+    );
+    expect(breakdown.cells.map((c) => c.key)).toEqual(['beer', 'cider', 'spirits']);
+    expect(breakdown.cells.find((c) => c.key === 'cider')!.count).toBe(1);
+  });
+
+  it('empty rows: no cells without knownKeys, all-empty cells with them', () => {
+    const empty = aggregateOutcomeAccuracyBreakdown([], 'category', asOf);
+    expect(empty.cells).toEqual([]);
+
+    const enumerated = aggregateOutcomeAccuracyBreakdown(
+      [],
+      'category',
+      asOf,
+      ['beer', 'wine_still'],
+    );
+    expect(enumerated.cells).toEqual([
+      { key: 'beer', count: 0, withinMarginShare: null },
+      { key: 'wine_still', count: 0, withinMarginShare: null },
+    ]);
+  });
+
+  it('the 5% inclusive boundary holds per cell', () => {
+    const breakdown = aggregateOutcomeAccuracyBreakdown(
+      [
+        row({ reportedTotalCents: 10_500 }), // exactly 5% → within
+        row({ reportedTotalCents: 9_500 }), // −5% → within
+        row({ reportedTotalCents: 10_501 }), // one cent beyond → outside
+      ],
+      'category',
+      asOf,
+    );
+    expect(breakdown.cells).toEqual([
+      { key: 'beer', count: 3, withinMarginShare: 2 / 3 },
+    ]);
   });
 });

@@ -172,3 +172,63 @@ export interface OutcomeAccuracyStatistic {
   /** As-of instant the statistic was computed for (passed through). */
   readonly asOf: Date;
 }
+
+// ---------------------------------------------------------------------------
+// Accuracy breakdowns — read-time splits by category / carrier (design D5)
+// ---------------------------------------------------------------------------
+
+/**
+ * The objective dimension an accuracy breakdown splits outcomes by:
+ * the calculation record's product category, or the carrier of the
+ * transport offer the record shipped with. Display-only — no
+ * breakdown value may feed the calculator, ranking, or any basket
+ * input (spec calculation-outcomes).
+ */
+export type OutcomeAccuracySplitDimension = 'category' | 'carrier';
+
+/**
+ * A stored outcome enriched with the split-dimension values resolved
+ * through its calculation record (outcome → record →
+ * `product_master.category`; record → transport offer → carrier).
+ * Either value is null when the join does not resolve — records prune
+ * before outcomes, so an outcome can outlive its record or offer.
+ */
+export interface OutcomeAccuracySplitRow extends StoredOutcomeTotals {
+  /** Canonical product category of the record's product, or null. */
+  readonly category: string | null;
+  /** Carrier of the record's transport offer, or null. */
+  readonly carrier: string | null;
+}
+
+/**
+ * One breakdown cell — the accuracy statistic narrowed to a single
+ * dimension value. Same honesty contract as
+ * {@link OutcomeAccuracyStatistic}: `withinMarginShare` is null
+ * **exactly when `count` is 0**, and the count must be displayed.
+ * (Rendering the count-only floor for small cells is an endpoint
+ * concern layered on top of this shape.)
+ */
+export interface OutcomeAccuracyBreakdownCell {
+  /** The dimension value this cell aggregates (category key / carrier). */
+  readonly key: string;
+  /** Number of stored outcomes attributed to this cell. */
+  readonly count: number;
+  /** Share within margin in [0, 1], or null in the cell's empty state. */
+  readonly withinMarginShare: number | null;
+}
+
+/**
+ * The per-dimension breakdown result: one cell per dimension value
+ * observed in the rows (plus any explicitly requested empty keys).
+ * Cells are keyed deterministically (sorted by key). Cell counts need
+ * not sum to the global count — outcomes whose record or offer no
+ * longer resolves cannot be honestly attributed to any cell.
+ */
+export interface OutcomeAccuracyBreakdown {
+  /** Which dimension the cells split by. */
+  readonly dimension: OutcomeAccuracySplitDimension;
+  /** Cells sorted by key ascending. */
+  readonly cells: readonly OutcomeAccuracyBreakdownCell[];
+  /** As-of instant the breakdown was computed for (passed through). */
+  readonly asOf: Date;
+}

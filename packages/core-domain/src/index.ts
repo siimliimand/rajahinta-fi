@@ -774,6 +774,7 @@ export {
   validateOutcomeSubmission,
   isWithinMargin,
   aggregateOutcomeAccuracy,
+  aggregateOutcomeAccuracyBreakdown,
 } from './outcomes/outcomes';
 export {
   OUTCOME_RECORD_QUERY_PORT,
@@ -790,6 +791,10 @@ export type {
   OutcomeAccuracyStatistic,
   StoredOutcomeTotals,
   ValidatedOutcomeSubmission,
+  OutcomeAccuracySplitDimension,
+  OutcomeAccuracySplitRow,
+  OutcomeAccuracyBreakdownCell,
+  OutcomeAccuracyBreakdown,
 } from './outcomes/outcomes.types';
 
 // ---------------------------------------------------------------------------
