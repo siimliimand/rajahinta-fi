@@ -27,6 +27,13 @@
  * API base is already inlined into that deployment's build (the task-6.5
  * deploy-workflow pattern; see README.md).
  *
+ * Mobile coverage (funnel-evidence-and-value-surfaces 4.1): the
+ * mobile-chrome-375 and mobile-chrome-390 projects run the
+ * `*.mobile.spec.ts` journeys — calculator, basket, product — at
+ * 375×667 and 390×844, asserting no horizontal overflow on the reached
+ * surfaces and ≥44 px touch targets on the shared quantity steppers.
+ * The desktop chromium project keeps its exact existing journey set.
+ *
  * @module BrowserE2EWorkersPlaywrightConfig
  */
 import { defineConfig, type PlaywrightTestConfig } from '@playwright/test';
@@ -112,6 +119,26 @@ const config: PlaywrightTestConfig = {
     {
       name: 'chromium',
       use: { browserName: 'chromium' },
+      // Desktop keeps its exact existing journey set — the mobile
+      // journeys below match their own `*.mobile.spec.ts` files and run
+      // only in the phone-viewport projects.
+      testIgnore: /\.mobile\.spec\.ts/,
+    },
+    {
+      name: 'mobile-chrome-375',
+      testMatch: /\.mobile\.spec\.ts/,
+      use: {
+        browserName: 'chromium',
+        viewport: { width: 375, height: 667 },
+      },
+    },
+    {
+      name: 'mobile-chrome-390',
+      testMatch: /\.mobile\.spec\.ts/,
+      use: {
+        browserName: 'chromium',
+        viewport: { width: 390, height: 844 },
+      },
     },
   ],
 };
