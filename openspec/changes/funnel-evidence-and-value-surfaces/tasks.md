@@ -26,5 +26,5 @@
 
 ## Group 5 — Verification and docs
 
-- [ ] 5.1 Run typecheck, lint, unit, golden, compliance, and e2e suites; resolve all regressions <!-- agent: platform-engineer.fast, depends_on: [1.3, 2.3, 3.2, 4.2], touches: [] -->
+- [x] 5.1 Run typecheck, lint, unit, golden, compliance, and e2e suites; resolve all regressions <!-- agent: platform-engineer.fast, depends_on: [1.3, 2.3, 3.2, 4.2], touches: [] -->
 - [ ] 5.2 Update ARCHITECTURE.md — frontend RUM row, price-context capability description, homepage description <!-- agent: platform-engineer.fast, depends_on: [5.1], touches: [ARCHITECTURE.md] -->
