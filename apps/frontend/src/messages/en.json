@@ -1307,6 +1307,8 @@
     "above": "The product's lowest current offer price ({current}) is {delta} above the 90-day median ({median}) — {count} days of observations, as of {asOf}.",
     "below": "The product's lowest current offer price ({current}) is {delta} below the 90-day median ({median}) — {count} days of observations, as of {asOf}.",
     "flat": "The product's lowest current offer price ({current}) equals the 90-day median ({median}) — {count} days of observations, as of {asOf}.",
+    "windowLow": "The lowest current offer price is the lowest observed price in this 90-day window.",
+    "percentileRank": "The lowest current offer price is cheaper than {percent}% of the days in this 90-day window.",
     "insufficientHistory": "The comparison is not shown yet because the price history is not sufficient — {count} days of observations, as of {asOf}."
   },
   "ListsPage": {

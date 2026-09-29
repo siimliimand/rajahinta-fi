@@ -43,6 +43,13 @@ export interface ProductPriceContextValue {
   /** Current best price − window median, in euro cents. */
   readonly deltaVsMedianCents: number;
   readonly deltaVsMedianBasisPoints: number;
+  /**
+   * Share of the window's daily buckets STRICTLY above the current best
+   * price, in basis points (1/10000) — task 2.2. Ties do not count.
+   */
+  readonly percentileRankBasisPoints: number;
+  /** True iff the current best price equals the window minimum — task 2.2. */
+  readonly isWindowLow: boolean;
   readonly windowDays: number;
   readonly bucketCount: number;
   readonly asOf: string;
@@ -52,6 +59,8 @@ export interface ProductPriceContextValue {
 export interface ProductPriceContextUnavailable {
   readonly status: 'unavailable';
   readonly reason: 'INSUFFICIENT_HISTORY';
+  readonly percentileRankBasisPoints: null;
+  readonly isWindowLow: null;
   readonly windowDays: number;
   readonly bucketCount: number;
   readonly asOf: string;
@@ -92,14 +101,18 @@ function isPriceContextResponse(value: unknown): value is ProductPriceContextRes
       typeof context.minCents === 'number' &&
       typeof context.maxCents === 'number' &&
       typeof context.deltaVsMedianCents === 'number' &&
-      typeof context.deltaVsMedianBasisPoints === 'number'
+      typeof context.deltaVsMedianBasisPoints === 'number' &&
+      typeof context.percentileRankBasisPoints === 'number' &&
+      typeof context.isWindowLow === 'boolean'
     );
   }
   if (context.status === 'unavailable') {
     return (
       context.reason === 'INSUFFICIENT_HISTORY' &&
       context.medianCents === null &&
-      context.deltaVsMedianCents === null
+      context.deltaVsMedianCents === null &&
+      context.percentileRankBasisPoints === null &&
+      context.isWindowLow === null
     );
   }
   return false;
