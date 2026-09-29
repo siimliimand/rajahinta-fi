@@ -9,6 +9,15 @@
 #
 # Nothing is skipped: the suite runs against real docker-compose services
 # (postgres+timescaledb, redis) and real dev servers, exactly as locally.
+#
+# The mobile-viewport journeys (375×667 / 390×844) are a second, separate
+# invocation: they exist only as `*.mobile.spec.ts` projects in
+# playwright.workers.config.ts (the Workers-stack harness), so the
+# workflow runs them with explicit --project filters. That config boots
+# its own local Workers stack through Playwright's webServer array — no
+# docker, no Cloudflare account, no extra boot step. The legacy
+# docker-compose config is decommission-pending (6.7) and gains no
+# mobile projects.
 # =============================================================================
 
 name: E2E browser
@@ -70,6 +79,20 @@ jobs:
       - name: Run browser E2E suite
         run: pnpm run test:e2e-browser
 
+      # Separate invocation because the mobile projects live only in the
+      # Workers config (legacy is decommission-pending 6.7 and must not
+      # gain mobile runs). --project pins the run to the two phone
+      # viewports so the config's desktop chromium project is not
+      # executed a second time. The config's webServer array boots the
+      # Workers stack itself (CI=true forbids reuse), needing nothing the
+      # steps above did not already provide.
+      - name: Run mobile-viewport E2E journeys (Workers stack, 375px + 390px)
+        run: >-
+          pnpm exec playwright test
+          -c tests/e2e-browser/playwright.workers.config.ts
+          --project=mobile-chrome-375
+          --project=mobile-chrome-390
+
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
@@ -78,6 +101,8 @@ jobs:
           path: |
             tests/e2e-browser/playwright-report/
             tests/e2e-browser/test-results/
+            tests/e2e-browser/playwright-report-workers/
+            tests/e2e-browser/test-results-workers/
           retention-days: 7
           if-no-files-found: ignore
 
@@ -85,7 +110,8 @@ jobs:
         if: failure()
         run: |
           for f in /tmp/rajahinta-e2e-browser/backend.log \
-                   /tmp/rajahinta-e2e-browser/frontend.log; do
+                   /tmp/rajahinta-e2e-browser/frontend.log \
+                   /tmp/rajahinta-e2e-browser-workers/frontend-build.log; do
             echo "===== $f (tail 100) ====="
             tail -n 100 "$f" || true
           done
