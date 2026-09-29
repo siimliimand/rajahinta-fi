@@ -37,7 +37,7 @@ on:
 
 env:
   CI: true
-  NODE_VERSION: '22'
+  NODE_VERSION: '24'
   PNPM_VERSION: '9'
   # Wrangler reads both natively; never echoed, only passed to the CLI.
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

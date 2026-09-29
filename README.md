@@ -74,7 +74,7 @@ scripts/              dev-up.sh, seed export, test-suite wrappers
 
 ## Quick start
 
-Prerequisites: Node 22, pnpm 9, Docker.
+Prerequisites: Node 24, pnpm 9, Docker.
 
 ```bash
 pnpm install
