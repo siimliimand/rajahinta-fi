@@ -6,13 +6,13 @@
 - [x] 1.2 Declare the Faro public endpoint and app-key env vars per environment in `apps/frontend/wrangler.jsonc` and `infra/environments/{dev,staging,prod}.yaml` (public client config, not a credential) <!-- agent: devops-engineer.fast, depends_on: [], touches: [apps/frontend/wrangler.jsonc, infra/environments/*.yaml] -->
 - [x] 1.3 Emit the funnel events `calc_started`, `calc_result_seen`, `basket_optimized`, and `alert_set` at the four flow success points and measure client-side time-to-result from calculator submit to rendered result <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [apps/frontend/src/app/[locale]/calculator/**, apps/frontend/src/app/[locale]/basket/**, apps/frontend/src/app/[locale]/account/alerts/**, apps/frontend/src/lib/telemetry/**] -->
 - [x] 1.4 Add the anonymous, session-scoped product-analytics disclosure line to the footer privacy copy in FI + EN, content-lint green <!-- agent: platform-engineer.fast, depends_on: [1.1], touches: [apps/frontend/src/app/[locale]/components/SiteFooter.tsx, apps/frontend/messages/**] -->
-- [ ] 1.5 Document the funnel event dictionary and the Grafana/Faro query snippets in `METRICS.md` beside the AE re-point queries <!-- agent: devops-engineer.fast, depends_on: [1.3], touches: [apps/api-worker/src/observability/METRICS.md] -->
+- [x] 1.5 Document the funnel event dictionary and the Grafana/Faro query snippets in `METRICS.md` beside the AE re-point queries <!-- agent: devops-engineer.fast, depends_on: [1.3], touches: [apps/api-worker/src/observability/METRICS.md] -->
 
 ## Group 2 — Price-context factual rung
 
 - [x] 2.1 Extend `computePriceContextWindow` with an integer percentile rank (share of window buckets strictly above the current price, in basis points, deterministic integer arithmetic) and a derived `isWindowLow` fact (current best equals the window minimum), both behind the existing minimum-bucket gate; unit tests covering boundary ranks and the gated state <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/core-domain/src/price-context/**] -->
 - [x] 2.2 Carry `percentileRankBasisPoints` and `isWindowLow` through the product read path that serves the context line, including the unavailable-state passthrough <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [apps/api-worker/src/routes/**, packages/core-domain/src/price-context/**] -->
-- [ ] 2.3 Render the window-low and percentile phrasings in `ProductPriceContextLine` (FI + EN) with the window and as-of context, update component tests, and pass the content-policy lint <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [apps/frontend/src/app/[locale]/products/[id]/components/ProductPriceContextLine.tsx, apps/frontend/messages/**] -->
+- [x] 2.3 Render the window-low and percentile phrasings in `ProductPriceContextLine` (FI + EN) with the window and as-of context, update component tests, and pass the content-policy lint <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [apps/frontend/src/app/[locale]/products/[id]/components/ProductPriceContextLine.tsx, apps/frontend/messages/**] -->
 
 ## Group 3 — Homepage task cards
 
