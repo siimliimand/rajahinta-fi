@@ -649,19 +649,23 @@ export const savedScenarios = sqliteTable(
 );
 
 /**
- * Price alerts — per-account watchlist alerts on a product (task 2.1,
- * change product-roadmap-phases-1-4; kind column, threshold nullability
- * and per-kind duplicate guard per task 1.2, change
- * trust-and-reach-roadmap, design D5).
+ * Price alerts — per-account watchlist alerts (task 2.1, change
+ * product-roadmap-phases-1-4; kind column, threshold nullability and
+ * per-kind duplicate guard per task 1.2, change
+ * trust-and-reach-roadmap, design D5; LANDED_COST + CATEGORY kinds,
+ * nullable product_id and the category column per task 1.1, change
+ * expand-alerts-accuracy-breakdowns, design D1).
  *
- * One row per (account, product, kind): the UNIQUE constraint makes the
- * evaluation cooldown's per-alert scope identical to design R2's
- * per-product-per-account scope — a second alert on the same triple
- * could only produce duplicate emails — while PRICE and TAX_CHANGE
- * watches on one product coexist (the duplicate check is per
- * product+kind). Pausing keeps the configuration while excluding the
- * row from scheduled evaluation; deleting the account row cascades here
- * (GDPR erasure, same guarantee as savedScenarios).
+ * One row per (account, product, kind) for the product-bearing kinds:
+ * the UNIQUE constraint makes the evaluation cooldown's per-alert scope
+ * identical to design R2's per-product-per-account scope — a second
+ * alert on the same triple could only produce duplicate emails — while
+ * watches of different kinds on one product coexist (the duplicate
+ * check is per product+kind). CATEGORY rows carry a NULL product_id,
+ * which SQLite unique indexes treat as pairwise distinct. Pausing keeps
+ * the configuration while excluding the row from scheduled evaluation;
+ * deleting the account row cascades here (GDPR erasure, same guarantee
+ * as savedScenarios).
  */
 export const priceAlerts = sqliteTable(
   'price_alerts',
@@ -671,23 +675,36 @@ export const priceAlerts = sqliteTable(
     accountId: integer('account_id')
       .references(() => accounts.id, { onDelete: 'cascade' })
       .notNull(),
-    /** FK to product_master — the tracked product. Products are never deleted, so no cascade. */
-    productId: integer('product_id')
-      .references(() => productMaster.id)
-      .notNull(),
+    /**
+     * FK to product_master — the tracked product. Products are never
+     * deleted, so no cascade. Null only for CATEGORY alerts, which
+     * target a whole category instead of one product.
+     */
+    productId: integer('product_id').references(() => productMaster.id),
     /**
      * What triggers the alert: PRICE evaluates the materialized price
      * after ingestion cycles; TAX_CHANGE evaluates on rate-version
-     * publication and carries no threshold. Defaults to 'PRICE' —
+     * publication and carries no threshold; LANDED_COST evaluates the
+     * product's materialized landed-cost close; CATEGORY evaluates the
+     * watched category's minimum shelf price. Defaults to 'PRICE' —
      * existing rows took the default in migration 0016, preserving
      * exactly the pre-kind behavior.
      */
     kind: text('kind', { length: 16 }).default('PRICE').notNull(),
     /**
-     * Notify when the product's materialized price falls to or below
-     * this (cents). PRICE alerts carry it; TAX_CHANGE alerts leave it
-     * null — a rate-change trigger has no threshold to compare against
-     * (spec: "TAX_CHANGE alerts SHALL NOT require a threshold").
+     * CATEGORY alerts: the watched canonical category — one of the
+     * shared PRODUCT_CATEGORIES value set, validated at the
+     * repository/route layer (design D1; no schema CHECK so the
+     * constant stays the single definition). Null for every other kind.
+     */
+    category: text('category', { length: 32 }),
+    /**
+     * Notify when the watched figure falls to or below this (cents):
+     * the product's materialized price (PRICE) or landed cost
+     * (LANDED_COST), or the category's minimum shelf price (CATEGORY).
+     * TAX_CHANGE alerts leave it null — a rate-change trigger has no
+     * threshold to compare against (spec: "TAX_CHANGE alerts SHALL NOT
+     * require a threshold").
      */
     thresholdCents: integer('threshold_cents'),
     /** active = evaluated by the cron; paused = configuration kept, evaluation skipped. */
@@ -697,7 +714,9 @@ export const priceAlerts = sqliteTable(
   },
   (table) => [
     // Serves list-by-account (leading column) and the create-time
-    // duplicate guard — one alert per (account, product, kind).
+    // duplicate guard — one alert per (account, product, kind) for the
+    // product-bearing kinds (CATEGORY rows carry a NULL product_id,
+    // which this index does not dedupe).
     unique('price_alerts_account_id_product_id_kind_unique').on(
       table.accountId,
       table.productId,
@@ -714,7 +733,10 @@ export const priceAlerts = sqliteTable(
       sql`${table.thresholdCents} IS NULL OR ${table.thresholdCents} > 0`,
     ),
     check('price_alerts_status_check', sql`${table.status} IN ('active', 'paused')`),
-    check('price_alerts_kind_check', sql`${table.kind} IN ('PRICE', 'TAX_CHANGE')`),
+    check(
+      'price_alerts_kind_check',
+      sql`${table.kind} IN ('PRICE', 'TAX_CHANGE', 'LANDED_COST', 'CATEGORY')`,
+    ),
   ],
 );
 

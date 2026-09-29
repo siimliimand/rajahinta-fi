@@ -3,11 +3,13 @@
  * product-roadmap-phases-1-4) on the node:sqlite harness with the
  * committed migrations applied. Covers the alert CRUD lifecycle, the
  * kind-aware duplicate semantics (per product+kind, migration 0016;
- * task 1.4 of change trust-and-reach-roadmap), the notification
- * intent-log transitions (write-before-dispatch, one-shot outcome
- * marking), the latest-delivered finder the 24-hour cooldown (task 2.2)
- * enforces from, and the FK cascades that make account/alert deletion
- * carry their dependent rows away.
+ * task 1.4 of change trust-and-reach-roadmap), the LANDED_COST and
+ * CATEGORY kind contracts and their creation guards (migration 0022,
+ * task 1.1 of change expand-alerts-accuracy-breakdowns), the
+ * notification intent-log transitions (write-before-dispatch, one-shot
+ * outcome marking), the latest-delivered finder the 24-hour cooldown
+ * (task 2.2) enforces from, and the FK cascades that make account/alert
+ * deletion carry their dependent rows away.
  *
  * @module D1PriceAlertRepositoryTest
  */
@@ -15,6 +17,7 @@ import { describe, it, expect } from 'vitest';
 import { openMigratedD1 } from './d1-test-harness';
 import { D1PriceAlertRepository } from '../price-alert.repository';
 import { D1AlertNotificationRepository } from '../alert-notification.repository';
+import { PRODUCT_CATEGORIES } from '../../../d1/schema';
 
 const { db, d1 } = openMigratedD1();
 const alerts = new D1PriceAlertRepository(d1);
@@ -126,6 +129,231 @@ describe('D1PriceAlertRepository', () => {
         thresholdCents: undefined,
       } as never),
     ).rejects.toThrow(/PRICE alerts require a positive threshold/);
+  });
+
+  describe('LANDED_COST kind (migration 0022)', () => {
+    it('creates with product + threshold and round-trips the record', async () => {
+      const accountId = await seedAccount();
+      const productId = await seedProduct();
+
+      const row = await alerts.create({
+        accountId,
+        productId,
+        kind: 'LANDED_COST',
+        thresholdCents: 4500,
+      });
+
+      expect(row.kind).toBe('LANDED_COST');
+      expect(row.productId).toBe(productId);
+      expect(row.category).toBeNull();
+      expect(row.thresholdCents).toBe(4500);
+      expect(row.status).toBe('active');
+
+      // Round-trip through the kind-filtered read the evaluation cron uses.
+      const listed = await alerts.findByAccountId(accountId, 'LANDED_COST');
+      expect(listed.map((r) => r.id)).toEqual([row.id]);
+      expect(listed[0]).toMatchObject({
+        kind: 'LANDED_COST',
+        productId,
+        category: null,
+        thresholdCents: 4500,
+      });
+    });
+
+    it('requires a threshold — omitting one is refused', async () => {
+      const accountId = await seedAccount();
+      const productId = await seedProduct();
+      await expect(
+        alerts.create({
+          accountId,
+          productId,
+          kind: 'LANDED_COST',
+          thresholdCents: undefined,
+        } as never),
+      ).rejects.toThrow(/LANDED_COST alerts require a positive threshold/);
+    });
+
+    it('requires a productId — the nullable column must not weaken the guard', async () => {
+      const accountId = await seedAccount();
+      await expect(
+        alerts.create({
+          accountId,
+          productId: undefined,
+          kind: 'LANDED_COST',
+          thresholdCents: 4500,
+        } as never),
+      ).rejects.toThrow(/LANDED_COST alerts require a productId/);
+      // The PRICE guard carries the same invariant (product_id was NOT
+      // NULL until 0022 — the column no longer enforces it).
+      await expect(
+        alerts.create({ accountId, productId: undefined } as never),
+      ).rejects.toThrow(/PRICE alerts require a productId/);
+    });
+
+    it('rejects non-positive thresholds at the schema level', async () => {
+      const accountId = await seedAccount();
+      const productId = await seedProduct();
+      for (const thresholdCents of [0, -1]) {
+        await expect(
+          alerts.create({ accountId, productId, kind: 'LANDED_COST', thresholdCents }),
+        ).rejects.toThrow();
+      }
+    });
+
+    it('duplicate check stays per product+kind across the widened set', async () => {
+      const accountId = await seedAccount();
+      const productId = await seedProduct();
+      await alerts.create({ accountId, productId, thresholdCents: 1000 });
+      await alerts.create({ accountId, productId, kind: 'TAX_CHANGE' });
+      await alerts.create({
+        accountId,
+        productId,
+        kind: 'LANDED_COST',
+        thresholdCents: 4500,
+      });
+
+      // Same product, same kind: rejected for the new kind too.
+      await expect(
+        alerts.create({
+          accountId,
+          productId,
+          kind: 'LANDED_COST',
+          thresholdCents: 9999,
+        }),
+      ).rejects.toThrow();
+
+      const kinds = (await alerts.findByAccountId(accountId))
+        .filter((r) => r.productId === productId)
+        .map((r) => r.kind)
+        .sort();
+      expect(kinds).toEqual(['LANDED_COST', 'PRICE', 'TAX_CHANGE']);
+    });
+  });
+
+  describe('CATEGORY kind (migration 0022)', () => {
+    it('creates with a canonical category, null productId, and round-trips the record', async () => {
+      const accountId = await seedAccount();
+
+      const row = await alerts.create({
+        accountId,
+        kind: 'CATEGORY',
+        category: 'wine_still',
+        thresholdCents: 1999,
+      });
+
+      expect(row.kind).toBe('CATEGORY');
+      expect(row.productId).toBeNull();
+      expect(row.category).toBe('wine_still');
+      expect(row.thresholdCents).toBe(1999);
+      expect(row.status).toBe('active');
+
+      // Ground truth: the row really stores NULL product_id.
+      const raw = db
+        .prepare('SELECT product_id, category, threshold_cents FROM price_alerts WHERE id = ?')
+        .get(row.id) as {
+        product_id: number | null;
+        category: string;
+        threshold_cents: number;
+      };
+      expect(raw.product_id).toBeNull();
+      expect(raw.category).toBe('wine_still');
+
+      // Round-trip through both read shapes.
+      const listed = await alerts.findByAccountId(accountId, 'CATEGORY');
+      expect(listed.map((r) => r.id)).toEqual([row.id]);
+      expect(listed[0]).toMatchObject({
+        kind: 'CATEGORY',
+        productId: null,
+        category: 'wine_still',
+      });
+      expect((await alerts.findActive('CATEGORY')).map((r) => r.id)).toContain(row.id);
+      expect((await alerts.findByAccountId(accountId)).map((r) => r.id)).toEqual([row.id]);
+    });
+
+    it('accepts every canonical category value', async () => {
+      const accountId = await seedAccount();
+      for (const category of PRODUCT_CATEGORIES) {
+        const row = await alerts.create({
+          accountId,
+          kind: 'CATEGORY',
+          category,
+          thresholdCents: 1000,
+        });
+        expect(row.category).toBe(category);
+        expect(row.productId).toBeNull();
+      }
+    });
+
+    it('rejects a category outside the canonical set, naming the valid categories', async () => {
+      const accountId = await seedAccount();
+      const error = await alerts
+        .create({
+          accountId,
+          kind: 'CATEGORY',
+          category: 'vodka' as never,
+          thresholdCents: 1000,
+        })
+        .then(
+          () => null,
+          (e: unknown) => e as Error,
+        );
+      expect(error).not.toBeNull();
+      expect(error!.message).toMatch(/valid categories:/);
+      for (const category of PRODUCT_CATEGORIES) {
+        expect(error!.message).toContain(category);
+      }
+      // Nothing stored for the rejected call.
+      const rows = await alerts.findByAccountId(accountId);
+      expect(rows).toEqual([]);
+    });
+
+    it('forbids a productId and requires a threshold', async () => {
+      const accountId = await seedAccount();
+      await expect(
+        alerts.create({
+          accountId,
+          kind: 'CATEGORY',
+          category: 'beer',
+          productId: 123,
+          thresholdCents: 1000,
+        } as never),
+      ).rejects.toThrow(/CATEGORY alerts must not carry a productId/);
+
+      await expect(
+        alerts.create({
+          accountId,
+          kind: 'CATEGORY',
+          category: 'beer',
+          thresholdCents: undefined,
+        } as never),
+      ).rejects.toThrow(/CATEGORY alerts require a positive threshold/);
+    });
+  });
+
+  it('rejects a category on the product-bearing kinds', async () => {
+    const accountId = await seedAccount();
+    const productId = await seedProduct();
+    await expect(
+      alerts.create({
+        accountId,
+        productId,
+        category: 'beer',
+        thresholdCents: 1000,
+      } as never),
+    ).rejects.toThrow(/Only CATEGORY alerts may carry a category/);
+  });
+
+  it('rejects an unknown kind value at the schema level (widened CHECK)', async () => {
+    const accountId = await seedAccount();
+    const productId = await seedProduct();
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO price_alerts (account_id, product_id, kind, threshold_cents)
+           VALUES (?, ?, 'PRIX', 100)`,
+        )
+        .run(accountId, productId),
+    ).toThrow();
   });
 
   it('list overloads filter by kind without changing the unfiltered behavior', async () => {

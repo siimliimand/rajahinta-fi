@@ -504,3 +504,144 @@ describe('end-to-end: created alert → cron evaluation → email Worker send co
     ]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 5. Migration 0022: the widened kind set on the real migrated schema
+// ---------------------------------------------------------------------------
+
+/**
+ * Task 1.1 (change expand-alerts-accuracy-breakdowns): the LANDED_COST
+ * and CATEGORY kinds exist only as rows here — the evaluate/email
+ * branches are later tasks. What an integration run alone can prove:
+ * the recreated table carries the widened kind CHECK and the nullable
+ * product_id + category columns, pre-existing PRICE/TAX_CHANGE flows
+ * still work on the recreated table, and both new kinds round-trip
+ * through the real repository with a NULL product_id where the contract
+ * demands one.
+ */
+describe('migration 0022: four-kind schema and repository round-trip', () => {
+  let db: DatabaseSync;
+  let d1: ReturnType<typeof openMigratedD1>['d1'];
+
+  beforeEach(async () => {
+    const opened = openMigratedD1();
+    db = opened.db;
+    d1 = opened.d1;
+    seedAccount(db, {
+      id: ACCOUNT_ID,
+      userId: 'user-7',
+      email: ACCOUNT_EMAIL,
+      tier: 'FREE',
+    });
+    seedProduct(db, { id: PRODUCT_ID, name: PRODUCT_NAME });
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('recreates price_alerts with the widened kind CHECK and nullable product_id', () => {
+    const row = db
+      .prepare(
+        `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'price_alerts'`,
+      )
+      .get() as { sql: string };
+    const tableSql = row.sql;
+
+    // The kind CHECK names the full closed set.
+    for (const kind of ['PRICE', 'TAX_CHANGE', 'LANDED_COST', 'CATEGORY']) {
+      expect(tableSql).toContain(`'${kind}'`);
+    }
+    // product_id lost its NOT NULL; the new category column is nullable.
+    const productIdLine = tableSql.match(/`product_id`[^,]*/)?.[0] ?? '';
+    expect(productIdLine).not.toContain('NOT NULL');
+    expect(tableSql).toMatch(/`category` text\(32\)/);
+    // The duplicate-guard unique and the status scan index were rebuilt.
+    const indexes = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'price_alerts'`)
+      .all() as Array<{ name: string }>;
+    const names = indexes.map((i) => i.name);
+    expect(names).toContain('price_alerts_account_id_product_id_kind_unique');
+    expect(names).toContain('price_alerts_status_idx');
+  });
+
+  it('keeps the PRICE and TAX_CHANGE flows working on the recreated table', async () => {
+    const alerts = new D1PriceAlertRepository(d1);
+    const price = await alerts.create({
+      accountId: ACCOUNT_ID,
+      productId: PRODUCT_ID,
+      thresholdCents: 1500,
+    });
+    const taxChange = await alerts.create({
+      accountId: ACCOUNT_ID,
+      productId: PRODUCT_ID,
+      kind: 'TAX_CHANGE',
+    });
+
+    expect(price).toMatchObject({
+      kind: 'PRICE',
+      productId: PRODUCT_ID,
+      category: null,
+      thresholdCents: 1500,
+    });
+    expect(taxChange).toMatchObject({
+      kind: 'TAX_CHANGE',
+      productId: PRODUCT_ID,
+      category: null,
+      thresholdCents: null,
+    });
+  });
+
+  it('persists LANDED_COST and CATEGORY rows and round-trips them through the repository', async () => {
+    const alerts = new D1PriceAlertRepository(d1);
+
+    const landedCost = await alerts.create({
+      accountId: ACCOUNT_ID,
+      productId: PRODUCT_ID,
+      kind: 'LANDED_COST',
+      thresholdCents: 4500,
+    });
+    const category = await alerts.create({
+      accountId: ACCOUNT_ID,
+      kind: 'CATEGORY',
+      category: 'wine_still',
+      thresholdCents: 1999,
+    });
+
+    // LANDED_COST keeps the product-bearing row shape.
+    expect(landedCost).toMatchObject({
+      kind: 'LANDED_COST',
+      productId: PRODUCT_ID,
+      category: null,
+      thresholdCents: 4500,
+    });
+    // CATEGORY carries a NULL product_id and the canonical category —
+    // the nullable column is what makes the row representable at all.
+    expect(category).toMatchObject({
+      kind: 'CATEGORY',
+      productId: null,
+      category: 'wine_still',
+      thresholdCents: 1999,
+    });
+    const rawCategoryRow = db
+      .prepare('SELECT product_id FROM price_alerts WHERE id = ?')
+      .get(category.id) as { product_id: number | null };
+    expect(rawCategoryRow.product_id).toBeNull();
+
+    // Fresh reads (new repository instance over the same persisted rows)
+    // return both new kinds, and the per-kind scans the evaluation crons
+    // use see exactly their own rows.
+    const reread = new D1PriceAlertRepository(d1);
+    const all = await reread.findByAccountId(ACCOUNT_ID);
+    expect(all.map((r) => r.kind).sort()).toEqual(['CATEGORY', 'LANDED_COST']);
+    expect((await reread.findByAccountId(ACCOUNT_ID, 'LANDED_COST')).map((r) => r.id)).toEqual([
+      landedCost.id,
+    ]);
+    expect((await reread.findActive('CATEGORY')).map((r) => r.id)).toContain(category.id);
+
+    // List/update/pause semantics are kind-agnostic — pause lands.
+    const paused = await reread.pause(ACCOUNT_ID, category.id);
+    expect(paused).toMatchObject({ id: category.id, status: 'paused' });
+    expect((await reread.findActive('CATEGORY')).map((r) => r.id)).not.toContain(category.id);
+  });
+});
