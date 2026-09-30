@@ -1,6 +1,6 @@
 /**
  * Homepage task-card section tests (funnel-evidence-and-value-surfaces
- * tasks 3.1 + 3.2, D4).
+ * tasks 3.1 + 3.2, D4; data-quality-and-publication-trust 3.2).
  *
  * Renders the REAL server component to an HTML string (page.ssr.test.tsx
  * precedent; only Next server plumbing is mocked), pinning the static
@@ -10,10 +10,16 @@
  *   1. The section renders server-side with its localized heading.
  *   2. All five task destinations are linked (/basket, /trip, /event,
  *      /what-if, /savings), each card being ONE anchor wrapping the
- *      localized title and body.
+ *      localized title and body — /savings only while the savings
+ *      overview confirms listing content.
  *   3. The section is static: links only — no form, input, or button.
  *      The hero search stays the homepage's single input (funnel D4),
  *      so the only form on the page remains the hero search.
+ *   4. The savings card mirrors the overview honestly (3.2): zero
+ *      rows with an Alko reference (`withReference: 0`) and a failed
+ *      overview read BOTH render the non-link pending card — no CTA
+ *      into an empty or unverified listing; a non-zero count restores
+ *      the linked card with no copy change.
  *
  * @module HomePageTaskCardsTest
  */
@@ -21,7 +27,7 @@
 
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import HomePage from './page';
 
 // ---------------------------------------------------------------------------
@@ -87,6 +93,48 @@ vi.mock('./guides/guides.server', () => ({
 vi.mock('./components/AccuracyStat', () => ({
   default: () => React.createElement('div'),
 }));
+
+// ---------------------------------------------------------------------------
+// Savings overview — the homepage's server fetch (3.2) goes through
+// global fetch; default every render to a POPULATED overview so the
+// established five-anchor pins keep exercising the linked card
+// (savings-page.test.tsx stubbing precedent). The honest-state tests
+// override it.
+// ---------------------------------------------------------------------------
+
+/** Shape GET /api/v1/savings/overview serves; only the fields page.tsx reads. */
+function overviewBody(
+  categories: readonly { category: string; productCount: number }[],
+): unknown {
+  return { asOf: '2026-09-29T00:00:00.000Z', categories };
+}
+
+const OVERVIEW_POPULATED = overviewBody([{ category: 'beer', productCount: 2 }]);
+const OVERVIEW_EMPTY = overviewBody([]);
+
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => OVERVIEW_POPULATED,
+    }),
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+/** Point the homepage's overview fetch at `body`, or at a failure. */
+function mockOverviewFetch(body: unknown | null): void {
+  vi.stubGlobal(
+    'fetch',
+    body === null
+      ? vi.fn().mockRejectedValue(new Error('overview fetch not mocked'))
+      : vi.fn().mockResolvedValue({ ok: true, json: async () => body }),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Fixtures — verbatim catalog copy (source of truth: messages/{fi,en}.json).
@@ -247,6 +295,84 @@ describe('HomePage task cards (funnel-evidence-and-value-surfaces task 3.1, D4)'
       // section's — so the scoping assertion above is not vacuous.
       expect(page.querySelectorAll('form')).toHaveLength(1);
       expect(page.querySelector('form[action="/calculator"], form[action^="/en"]')).not.toBeNull();
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Savings-card honesty (data-quality-and-publication-trust 3.2) — the
+// card mirrors the overview: `withReference: 0` (the overview's summed
+// productCount) and a failed read render the non-link pending state;
+// a non-zero count keeps the established anchor.
+// ---------------------------------------------------------------------------
+
+describe('HomePage savings-card honest state (3.2)', () => {
+  it.each(['fi', 'en'] as const)(
+    'keeps the five anchors when the overview reports a non-zero reference count (%s)',
+    async (locale) => {
+      const section = taskCardSection(await renderHome(locale));
+
+      const anchor = section.querySelector<HTMLAnchorElement>(
+        `a[href="${localizedHref('/savings', locale)}"]`,
+      );
+      expect(anchor).not.toBeNull();
+      expect(anchor?.querySelector('h3')?.textContent).toBe(
+        TASK_CARDS.find((card) => card.href === '/savings')![locale].title,
+      );
+      // The pending card is gone on the linked path.
+      expect(section.querySelector('[data-testid="savings-card-pending"]'))
+        .toBeNull();
+    },
+  );
+
+  it.each(['fi', 'en'] as const)(
+    'renders the honest pending state and no /savings CTA at withReference: 0 (%s)',
+    async (locale) => {
+      mockOverviewFetch(OVERVIEW_EMPTY);
+      const section = taskCardSection(await renderHome(locale));
+
+      // No CTA into the empty listing — in either locale's href form.
+      expect(
+        section.querySelector(
+          'a[href="/savings"], a[href="/en/savings"]',
+        ),
+      ).toBeNull();
+      // The card stays present and names the pending state, keeping the
+      // section's grid at five cards.
+      const pending = section.querySelector('[data-testid="savings-card-pending"]');
+      expect(pending).not.toBeNull();
+      expect(
+        pending?.querySelector('h3')?.textContent,
+      ).toBe(TASK_CARDS.find((card) => card.href === '/savings')![locale].title);
+      expect(pending?.textContent).toContain(
+        locale === 'fi'
+          ? 'Alkon viitehintoja ei ole vielä yhdistetty tuotteiden kokonaishintalaskelmiin, joten luetteloa ei ole vielä julkaistu.'
+          : "Alko reference prices are not yet matched to the products' landed-cost calculations, so the listing is not published yet.",
+      );
+      // The other four task tools keep their anchors.
+      expect(section.querySelectorAll('a')).toHaveLength(4);
+      // Every catalog key resolved (a missing key would render __MISSING__).
+      expect(section.textContent).not.toContain('__MISSING_');
+    },
+  );
+
+  it.each(['fi', 'en'] as const)(
+    'degrades honestly on an overview fetch failure: non-link card, no invented data claims (%s)',
+    async (locale) => {
+      mockOverviewFetch(null);
+      const section = taskCardSection(await renderHome(locale));
+
+      expect(
+        section.querySelector('a[href="/savings"], a[href="/en/savings"]'),
+      ).toBeNull();
+      const pending = section.querySelector('[data-testid="savings-card-pending"]');
+      expect(pending).not.toBeNull();
+      expect(pending?.textContent).toContain(
+        locale === 'fi'
+          ? 'Luettelon saatavuutta ei voitu tarkistaa juuri nyt.'
+          : "The listing's availability could not be verified just now.",
+      );
+      expect(section.querySelectorAll('a')).toHaveLength(4);
     },
   );
 });

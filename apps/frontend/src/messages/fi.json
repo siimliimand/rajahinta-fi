@@ -141,7 +141,9 @@
     "taskCardsWhatIfTitle": "Skenaariolaskuri",
     "taskCardsWhatIfBody": "Korvaa valmisteveron verokanta valitsemallasi arvolla ja vertaa tuotteiden kokonaishintoja. Laskelma on hypoteettinen.",
     "taskCardsSavingsTitle": "Kokonaishinta-ero Alko-viitehintaan",
-    "taskCardsSavingsBody": "Päivittäin materialisoitu luettelo arvioiduista kokonaishinnoista ja niiden erosta Alkon viitehintaan kategorioittain."
+    "taskCardsSavingsBody": "Päivittäin materialisoitu luettelo arvioiduista kokonaishinnoista ja niiden erosta Alkon viitehintaan kategorioittain.",
+    "taskCardsSavingsPendingBody": "Alkon viitehintoja ei ole vielä yhdistetty tuotteiden kokonaishintalaskelmiin, joten luetteloa ei ole vielä julkaistu.",
+    "taskCardsSavingsUnavailableBody": "Luettelon saatavuutta ei voitu tarkistaa juuri nyt."
   },
   "AgeGate": {
     "title": "Ikätarkistus",
@@ -248,6 +250,10 @@
     },
     "sanityNote": {
       "label": "Luotettavuus alennettu: tulos on arvio"
+    },
+    "transportPending": {
+      "notIncluded": "Ei sisällytetty – tietoaineisto odottaa",
+      "explanation": "Kuljetuskustannuksen tietoaineisto ei ole vielä saatavilla, joten kuljetusta ei ole sisällytetty arvioon."
     },
     "category": {
       "foreignRetailPrice": "Ulkomainen vähittäishinta",

@@ -213,6 +213,71 @@ describe('layout and navigation catalog completeness', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Honest-state catalog keys (data-quality-and-publication-trust 3.1 +
+// 3.2): the calculator's transport-unavailable line and the homepage
+// savings-card pending copy must exist as full key sets in BOTH locales
+// — parity is what the honest states render from.
+// ---------------------------------------------------------------------------
+
+describe('honest-state catalog key parity (3.1 + 3.2)', () => {
+  const top = (locale: unknown): Record<string, Record<string, unknown>> =>
+    locale as Record<string, Record<string, unknown>>;
+
+  function expectParity(
+    namespace: string,
+    group: string | null,
+    keys: readonly string[],
+  ): void {
+    for (const catalog of [fi, en]) {
+      const table = group
+        ? (top(catalog)[namespace]?.[group] as Record<string, unknown> | undefined)
+        : top(catalog)[namespace];
+      // Group scopes are exact key sets; shared namespaces are checked
+      // as a subset (other tasks own the remaining keys).
+      const actual = Object.keys(table ?? {}).sort();
+      if (group) {
+        expect(actual).toEqual([...keys].sort());
+      } else {
+        for (const key of keys) {
+          expect(actual).toContain(key);
+        }
+      }
+      for (const key of keys) {
+        const text = table?.[key];
+        expect(typeof text).toBe('string');
+        expect((text as string).trim().length).toBeGreaterThan(0);
+      }
+    }
+    // Genuinely translated, not copied.
+    for (const key of keys) {
+      const fiText = group
+        ? (top(fi)[namespace]?.[group] as Record<string, unknown>)?.[key]
+        : top(fi)[namespace]?.[key];
+      const enText = group
+        ? (top(en)[namespace]?.[group] as Record<string, unknown>)?.[key]
+        : top(en)[namespace]?.[key];
+      expect(enText).not.toBe(fiText);
+    }
+  }
+
+  it('CalculatorResult.transportPending carries the same keys in both locales', () => {
+    expectParity('CalculatorResult', 'transportPending', [
+      'notIncluded',
+      'explanation',
+    ]);
+  });
+
+  it('Home carries both savings-card honest-state bodies in parity', () => {
+    expectParity('Home', null, [
+      'taskCardsSavingsTitle',
+      'taskCardsSavingsBody',
+      'taskCardsSavingsPendingBody',
+      'taskCardsSavingsUnavailableBody',
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Product-page enum labels (unit-integrity task 4.2): category and
 // containerType render through these keys, so both locales must carry
 // exactly the storage value sets — the D1 schema's PRODUCT_CATEGORIES and

@@ -16,6 +16,11 @@
  *      own disclaimer field.
  *   6. A result without the Finland reference renders no comparison —
  *      no placeholder, no empty container.
+ *   7. A transport component with `reliability: UNAVAILABLE` renders
+ *      the honest "not included — dataset pending" line with no €0.00
+ *      figure and a note naming the missing input; a usable transport
+ *      renders the amount exactly as before (data-quality-and-
+ *      publication-trust 3.1).
  *
  * @module ResultCardTest
  */
@@ -291,6 +296,83 @@ describe('ResultCard breakdown rows (task 4.1)', () => {
     expect(screen.getAllByText('Vahvistettu')).toHaveLength(2);
     expect(screen.getByText('Vanhentunut')).toBeInTheDocument();
     expect(screen.getByText('Arvioitu')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Transport-unavailable honest state (data-quality-and-publication-trust 3.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * The base fixture with the transport line switched to the shape the
+ * API emits while the transport dataset is empty: 0 cents, UNAVAILABLE,
+ * and a total that consequently carries no transport contribution.
+ */
+function resultWithTransportUnavailable(): CalculatorResultType {
+  const base = baseResult();
+  return {
+    ...base,
+    itemizedCosts: base.itemizedCosts.map((cost) =>
+      cost.category === 'transportCost'
+        ? { ...cost, cents: 0, reliability: 'UNAVAILABLE' }
+        : cost,
+    ),
+    transportCost: 0,
+    totalCents: 4650,
+  };
+}
+
+describe('ResultCard transport-unavailable honest state (3.1)', () => {
+  it('renders the not-included line with no €0.00 figure and the UNAVAILABLE badge', () => {
+    renderWithIntl(<ResultCard result={resultWithTransportUnavailable()} />);
+
+    const transportLabel = screen.getByText('Kuljetuskustannus');
+    const row = transportLabel.closest('div');
+    expect(row).not.toBeNull();
+    // The honest line replaces the amount — no €0.00 transport figure.
+    expect(
+      within(row!).getByTestId('transport-not-included').textContent,
+    ).toBe('Ei sisällytetty – tietoaineisto odottaa');
+    expect(row!.textContent).not.toContain('€0.00');
+    // The status stays visible through the canonical badge label.
+    expect(within(row!).getByText('Ei saatavilla')).toBeInTheDocument();
+  });
+
+  it('explains the downgraded confidence by naming the missing input (the transport dataset)', () => {
+    renderWithIntl(<ResultCard result={resultWithTransportUnavailable()} />);
+
+    const note = screen.getByTestId('transport-pending-note');
+    expect(note).toBeVisible();
+    expect(note.textContent).toBe(
+      'Kuljetuskustannuksen tietoaineisto ei ole vielä saatavilla, joten kuljetusta ei ole sisällytetty arvioon.',
+    );
+  });
+
+  it('renders every other figure verbatim — honesty never alters amounts', () => {
+    renderWithIntl(<ResultCard result={resultWithTransportUnavailable()} />);
+
+    // The API total (4650 cents without transport) is shown unchanged.
+    expect(screen.getByTestId('landed-cost-total')).toHaveTextContent(
+      '€46.50',
+    );
+    // The non-transport rows keep their amounts.
+    expect(screen.getByText('Ulkomainen vähittäishinta').closest('div'))
+      .toHaveTextContent('€40.00');
+    expect(screen.getByText('Arvio alkoholin valmisteverosta').closest('div'))
+      .toHaveTextContent('€6.50');
+  });
+
+  it('renders no pending state when transport is usable', () => {
+    const { container } = renderWithIntl(<ResultCard result={baseResult()} />);
+
+    // The base fixture's transport line (STALE, 500 cents) renders the
+    // amount exactly as before — zero pending-state copy anywhere.
+    expect(
+      screen.getByText('Kuljetuskustannus').closest('div'),
+    ).toHaveTextContent('€5.00');
+    expect(screen.queryByTestId('transport-not-included')).toBeNull();
+    expect(screen.queryByTestId('transport-pending-note')).toBeNull();
+    expect(container.textContent).not.toContain('Ei sisällytetty');
   });
 });
 

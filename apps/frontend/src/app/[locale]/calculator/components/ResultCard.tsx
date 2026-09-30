@@ -91,6 +91,13 @@ interface ResultCardProps {
  *      and the calculation timestamp are surfaced on the card.
  *   5. The structural disclaimer is consumed from the result object —
  *      the card never restates disclaimer copy as a UI string.
+ *   6. A transport component whose dataset is `UNAVAILABLE` renders an
+ *      explicit "not included — dataset pending" line instead of a
+ *      €0.00 figure, with a note naming the missing input (the
+ *      transport dataset) that explains the downgraded confidence
+ *      (data-quality-and-publication-trust 3.1). Every other figure
+ *      stays verbatim — the honest state changes presentation, never
+ *      amounts.
  *
  * No confidence score is invented here: reliability comes from the
  * result's own statuses, confidence display stays with the existing
@@ -108,6 +115,16 @@ export default function ResultCard({ result }: ResultCardProps) {
   // exists on the API result object).
   const priceLine = result.itemizedCosts.find(
     (cost) => cost.category === 'foreignRetailPrice',
+  );
+
+  // Transport without a dataset arrives as a €0.00 line (the calculator
+  // stores 0 cents with `UNAVAILABLE`). The honest presentation states
+  // the omission and explains the downgraded confidence; nothing else
+  // about the result changes.
+  const transportPending = result.itemizedCosts.some(
+    (cost) =>
+      cost.category === 'transportCost' &&
+      cost.reliability === 'UNAVAILABLE',
   );
 
   return (
@@ -243,15 +260,36 @@ export default function ResultCard({ result }: ResultCardProps) {
               <span className="text-sm text-gray-700">
                 {t(`category.${cost.category}`)}
               </span>
-              <div className="flex items-center gap-2">
-                <span className="text-sm tabular-nums text-gray-600">
-                  {formatEur(cost.cents)}
-                </span>
-                <LocalizedReliabilityBadge status={cost.reliability} />
-              </div>
+              {cost.category === 'transportCost' &&
+              cost.reliability === 'UNAVAILABLE' ? (
+                <div className="flex items-center gap-2">
+                  <span
+                    data-testid="transport-not-included"
+                    className="text-sm text-gray-500"
+                  >
+                    {t('transportPending.notIncluded')}
+                  </span>
+                  <LocalizedReliabilityBadge status={cost.reliability} />
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm tabular-nums text-gray-600">
+                    {formatEur(cost.cents)}
+                  </span>
+                  <LocalizedReliabilityBadge status={cost.reliability} />
+                </div>
+              )}
             </div>
           ))}
         </div>
+        {transportPending && (
+          <p
+            data-testid="transport-pending-note"
+            className="mt-2 text-xs leading-relaxed text-gray-500"
+          >
+            {t('transportPending.explanation')}
+          </p>
+        )}
       </div>
 
       {/* ── Structural disclaimer — consumed from the result object ── */}

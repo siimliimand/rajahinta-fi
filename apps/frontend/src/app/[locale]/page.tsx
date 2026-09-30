@@ -3,6 +3,7 @@
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { BASE_URL, SERVER_AGE_CONFIRMATION_TOKEN } from '@/lib/api';
 import { Link } from '@/i18n/navigation';
 import { RELIABILITY_STATUS_META } from '@/lib/design/status';
 import type { ReliabilityStatus } from '@/lib/types';
@@ -23,10 +24,12 @@ const TRUST_ROW_STATUSES = [
 /**
  * Static task-card links (funnel-evidence-and-value-surfaces task 3.1,
  * D4). Order follows the visitor funnel: one basket, a whole trip, an
- * event's drink need, a hypothetical duty scenario, and the daily
- * landed-cost gap listing. Icons are decorative (aria-hidden); each
- * card is ONE link, so the touch target is the full card (≥44 px,
- * asserted by the mobile e2e journeys).
+ * event's drink need, and a hypothetical duty scenario — the daily
+ * landed-cost gap listing's card renders separately below, gated on the
+ * overview confirming listing content (data-quality-and-publication-
+ * trust 3.2). Icons are decorative (aria-hidden); each linked card is
+ * ONE link, so the touch target is the full card (≥44 px, asserted by
+ * the mobile e2e journeys).
  */
 const TASK_CARDS = [
   {
@@ -123,46 +126,96 @@ const TASK_CARDS = [
       </svg>
     ),
   },
-  {
-    href: '/savings',
-    titleKey: 'taskCardsSavingsTitle',
-    bodyKey: 'taskCardsSavingsBody',
-    icon: (
-      <svg
-        aria-hidden="true"
-        focusable="false"
-        className="h-5 w-5"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-        <polyline points="17 6 23 6 23 12" />
-      </svg>
-    ),
-  },
 ] as const;
+
+/**
+ * The savings-listing card's decorative icon, shared by the linked and
+ * the pending state (data-quality-and-publication-trust 3.2).
+ */
+function SavingsCardIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+      <polyline points="17 6 23 6 23 12" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Savings-listing overview — server read (data-quality-and-publication-
+// trust 3.2). The card linking into /savings may only promise listing
+// content the overview confirms.
+// ---------------------------------------------------------------------------
+
+/** One category's aggregates as GET /api/v1/savings/overview serves them. */
+interface SavingsOverviewCategory {
+  readonly category: string;
+  readonly productCount: number;
+}
+
+interface SavingsOverviewResponse {
+  readonly asOf: string | null;
+  readonly categories: readonly SavingsOverviewCategory[];
+}
+
+/**
+ * Server-side overview read — the savings page's own getSavingsOverview
+ * fetch verbatim (age-gated endpoint, so the server presents the fixed
+ * first-party prerender token; 900 s revalidation). Any failure or
+ * unexpected shape degrades to null and the homepage card renders its
+ * honest non-link state — never an error, never a guessed figure.
+ */
+async function getSavingsOverview(): Promise<SavingsOverviewResponse | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/v1/savings/overview`, {
+      headers: {
+        accept: 'application/json',
+        'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN,
+      },
+      next: { revalidate: 900 },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as SavingsOverviewResponse | null;
+    if (body === null || typeof body !== 'object' || !Array.isArray(body.categories)) {
+      return null;
+    }
+    return body;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Homepage (OpenSpec: design-system-foundation, tasks 4.1 + 4.2;
  * trust-and-reach-roadmap task 3.3 extends the trust row;
  * funnel-evidence-and-value-surfaces task 3.1 adds the task cards).
  *
- * Static catalog copy plus one server-side guides read (D6, D4): the
- * gradient hero with a floating search card as the primary CTA, a fixed
- * worked example labeled as an example (task 3.1, D7 — no API call, the
- * figures cannot drift with live data), a static task-card section
- * linking the five task tools (links only — the hero search stays the
- * homepage's single input, funnel D4), a "Why Rajahinta.fi" feature
+ * Static catalog copy plus server-side reads that degrade gracefully
+ * (D6, D4): the gradient hero with a floating search card as the primary
+ * CTA, a fixed worked example labeled as an example (task 3.1, D7 — no
+ * API call, the figures cannot drift with live data), a task-card
+ * section linking the task tools (links only — the hero search stays
+ * the homepage's single input, funnel D4), a "Why Rajahinta.fi" feature
  * section surfacing the platform's genuine differentiators, the trust
  * row (data sources, reliability model, accuracy statistic,
  * methodology), and a FAQ section linking PUBLISHED guide entries. The
  * FAQ fetch follows the sitemap degradation contract: a fetch failure or
- * no published entries renders NO section at all.
- * AccuracyStat is a self-contained client island.
+ * no published entries renders NO section at all. The savings-listing
+ * card follows the same honesty contract one level up: with no rows
+ * carrying an Alko reference (overview `withReference: 0`), or when the
+ * overview cannot be read, the card states the pending state and does
+ * NOT link into the listing; the CTA returns with no code change once
+ * references exist. AccuracyStat is a self-contained client island.
  */
 export default async function HomePage({
   params,
@@ -183,6 +236,24 @@ export default async function HomePage({
   // failure or an empty index degrades to no section, never an error —
   // the same inert-degradation contract as the sitemap's guide slugs.
   const guides = await getServerGuidesIndex(locale);
+
+  // Savings-listing state for the task-card section (3.2). The overview
+  // carries no explicit withReference field: a category is emitted only
+  // over snapshot rows that have a computed Alko reference AND a
+  // resolvable product name, so the summed productCount IS the
+  // with-reference count the spec's `withReference: 0` names — the same
+  // rows the listing itself lists.
+  const savingsOverview = await getSavingsOverview();
+  const savingsWithReference =
+    savingsOverview?.categories.reduce(
+      (total, category) => total + category.productCount,
+      0,
+    ) ?? 0;
+  // Degrade-honestly choice for a failed overview read: the card renders
+  // its non-link state with "could not be verified" copy — no CTA into
+  // an unverified listing, no invented figures, no claimed data state.
+  const savingsListingReady =
+    savingsOverview !== null && savingsWithReference > 0;
 
   // The hero form is plain HTML (GET), so it navigates before hydration.
   // next-intl's `as-needed` prefixing: Finnish serves the bare path,
@@ -362,10 +433,11 @@ export default async function HomePage({
       </section>
 
       {/* ── Task cards (funnel-evidence-and-value-surfaces task 3.1, D4) ──
-          Static, server-rendered links to the five task tools. Links
-          only — the hero search stays the homepage's single input (D4):
-          no form, no origin selector. The whole card is the anchor, so
-          the touch target is the full card. */}
+          Server-rendered links to the task tools; the savings-listing
+          card links only once the overview confirms listing content
+          (3.2). Links only — the hero search stays the homepage's
+          single input (D4): no form, no origin selector. Each linked
+          card is one anchor, so the touch target is the full card. */}
       <section
         aria-labelledby="home-taskcards-heading"
         className="border-b border-gray-100 bg-white px-4 py-16 sm:px-6"
@@ -396,6 +468,48 @@ export default async function HomePage({
                 </p>
               </Link>
             ))}
+
+            {/* ── Savings-listing card (3.2) ──────────────────────────
+                Links into /savings only when the overview confirms
+                rows with an Alko reference; zero references render the
+                honest pending state and a failed overview read the
+                could-not-verify state — both as a plain card, never a
+                link into a listing that may have no content. The
+                linked branch is byte-identical to the previous static
+                card, so the CTA returns unchanged at non-zero. */}
+            {savingsListingReady ? (
+              <Link
+                href="/savings"
+                className="group flex flex-col rounded-xl border border-gray-100 bg-gray-50 p-5 transition-colors hover:border-primary-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+              >
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary-100 text-primary-700">
+                  <SavingsCardIcon />
+                </div>
+                <h3 className="text-sm font-semibold text-gray-900 transition-colors group-hover:text-primary-800">
+                  {t('taskCardsSavingsTitle')}
+                </h3>
+                <p className="mt-1.5 text-xs leading-relaxed text-gray-600">
+                  {t('taskCardsSavingsBody')}
+                </p>
+              </Link>
+            ) : (
+              <div
+                data-testid="savings-card-pending"
+                className="flex flex-col rounded-xl border border-gray-100 bg-gray-50 p-5"
+              >
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-gray-200 text-gray-600">
+                  <SavingsCardIcon />
+                </div>
+                <h3 className="text-sm font-semibold text-gray-900">
+                  {t('taskCardsSavingsTitle')}
+                </h3>
+                <p className="mt-1.5 text-xs leading-relaxed text-gray-600">
+                  {savingsOverview === null
+                    ? t('taskCardsSavingsUnavailableBody')
+                    : t('taskCardsSavingsPendingBody')}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </section>
