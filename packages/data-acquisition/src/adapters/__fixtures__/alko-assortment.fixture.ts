@@ -1,160 +1,226 @@
 /**
- * Golden dataset for the Alko assortment parser (task 7.5, design D6/D7).
+ * Golden dataset for the Alko storefront parser (change
+ * data-quality-and-publication-trust).
  *
  * Pins the payload contract documented in adapters/alko.adapter.ts: the
- * domestic reference feed is an EUR price list whose Finnish assortment
- * groups map through the source-category normalization. There is no
- * live API entitlement — this fixture IS the contract. When a real
- * feed is wired, parser drift against reality shows up as a golden-test
+ * REAL alko.fi storefront search API — one `{"@odata.count":N,"value":[…]}`
+ * page whose rows are plural storefront groups ("oluet"), percent ABV,
+ * litre volumes, and pipe-coded packageTypes. The fixture IS the
+ * contract: it was rebuilt from the live catalog sweep (2026-09-30,
+ * 11,307 rows) so parser drift against reality shows up as a golden-test
  * failure instead of a silent data outage.
  *
+ * Every row is EAN-less — the storefront carries no EAN field at all,
+ * so the fixture row type has no `ean` key (the explicit absence), and
+ * the parser must emit `ean: null`, never a guessed barcode. Rows also
+ * carry no manufacturer/brand/currency fields.
+ *
  * The set deliberately exercises every mapping branch the parser owns:
- * beer/wine/sparkling/spirits/cider/long-drink categories, one
- * unmappable category (rejected per-item to the correction queue), one
- * price-less row (rejected — a reference offer without an amount is
- * unusable), and a zero-ABV product.
+ * beer/wine/sparkling/spirits/cider/long-drink categories, a liqueur
+ * row (spirits tax key), a zero-ABV non-alcoholic row, the mainGroup
+ * fallback (merged productGroup bucket → välituotteet), a sibling-leaf
+ * resolution (unmapped 'grapat' next to a mapped leaf), one
+ * unmappable-group row (rejected per-item to the correction queue), and
+ * one price-less row (rejected; id mirrors a row observed live).
  *
  * @module AlkoAssortmentFixture
  */
 
-export interface AlkoFixtureProduct {
-  readonly productId: string;
+/**
+ * One storefront product row — only the fields the parser consumes.
+ * The live payload carries more (imageUrl, taste, closures, …); the
+ * parser never reads them (D4 image discipline, alks precedent).
+ */
+export interface AlkoFixtureRow {
+  readonly id: string;
   readonly name: string;
-  readonly manufacturer: string;
-  readonly productGroup: string;
-  readonly alcoholPercentage: number;
-  readonly volumeMl: number;
+  /** ABV in PERCENT; null on non-beverage rows (real accessories). */
+  readonly abv: number | null;
+  /** Retail price in EUR including VAT; 0 = unpriced. */
   readonly price: number;
-  readonly packagingType: string;
-  readonly ean: string;
+  /** Package volume in LITRES; null on non-beverage rows. */
+  readonly volume: number | null;
+  readonly mainGroupName: readonly string[];
+  readonly productGroupName: readonly string[];
+  /** Pipe-coded packages; omitted on non-beverage rows. */
+  readonly packageTypes?: readonly string[];
+  readonly countryName: string;
+  readonly webshopStock: number;
 }
 
-export interface AlkoFixturePayload {
-  readonly source: 'alko';
-  readonly currency: 'EUR';
-  readonly products: readonly AlkoFixtureProduct[];
+export interface AlkoFixturePage {
+  readonly '@odata.count': number;
+  readonly value: readonly AlkoFixtureRow[];
 }
 
-export const ALKO_GOLDEN_PRODUCTS: readonly AlkoFixtureProduct[] = [
+export const ALKO_GOLDEN_ROWS: readonly AlkoFixtureRow[] = [
+  // Beer — plural storefront group → historical 'olut' → tax beer.
   {
-    productId: '000001',
-    name: 'Lapin Kulta',
-    manufacturer: 'Hartwall',
-    productGroup: 'Olut',
-    alcoholPercentage: 4.5,
-    volumeMl: 450,
-    price: 1.95,
-    packagingType: 'Tölkki',
-    ean: '6411000000018',
+    id: '700439',
+    name: 'Lapin Kulta IVA',
+    abv: 4.7,
+    price: 2.19,
+    volume: 0.33,
+    mainGroupName: ['panimotuotteet'],
+    productGroupName: ['oluet'],
+    packageTypes: ['packageTypeId|packageType_tölkki|tölkki'],
+    countryName: 'Suomi',
+    webshopStock: 412,
   },
+  // Still wine (red) → 'viini' → wine_still.
   {
-    productId: '000002',
-    name: 'Koff III',
-    manufacturer: 'Sinebrychooff',
-    productGroup: 'Olut',
-    alcoholPercentage: 4.5,
-    volumeMl: 330,
-    price: 1.55,
-    packagingType: 'Pullo',
-    ean: '6411000000025',
+    id: '001793',
+    name: 'Casillero del Diablo Merlot',
+    abv: 13.5,
+    price: 10.48,
+    volume: 0.75,
+    mainGroupName: ['viinit'],
+    productGroupName: ['punaviinit'],
+    packageTypes: ['packageTypeId|packageType_pullo|lasipullo'],
+    countryName: 'Chile',
+    webshopStock: 88,
   },
+  // Sparkling (champagne) → 'samppanja' → wine_sparkling.
   {
-    productId: '000003',
-    name: 'Hard Rock Cafe Siideri',
-    manufacturer: 'Hartwall',
-    productGroup: 'Siideri',
-    alcoholPercentage: 4.7,
-    volumeMl: 330,
-    price: 2.25,
-    packagingType: 'Pullo',
-    ean: '6411000000032',
+    id: '000312',
+    name: 'Moët & Chandon Impérial',
+    abv: 12.0,
+    price: 44.98,
+    volume: 0.75,
+    mainGroupName: ['viinit'],
+    productGroupName: ['samppanjat'],
+    packageTypes: ['packageTypeId|packageType_pullo|lasipullo'],
+    countryName: 'Ranska',
+    webshopStock: 0,
   },
+  // Spirits → 'viina' → spirits.
   {
-    productId: '000004',
-    name: 'Rocher La Pigeonne',
-    manufacturer: 'Les Vignerons',
-    productGroup: 'Viini',
-    alcoholPercentage: 12.5,
-    volumeMl: 750,
-    price: 8.97,
-    packagingType: 'Pullo',
-    ean: '6411000000049',
-  },
-  {
-    productId: '000005',
-    name: 'Freixenet Cordon Negro',
-    manufacturer: 'Freixenet',
-    productGroup: 'Kuohuviini',
-    alcoholPercentage: 11.5,
-    volumeMl: 200,
-    price: 4.98,
-    packagingType: 'Pullo',
-    ean: '6411000000056',
-  },
-  {
-    productId: '000006',
+    id: '009038',
     name: 'Koskenkorva Viina',
-    manufacturer: 'Altia',
-    productGroup: 'Viina',
-    alcoholPercentage: 38.0,
-    volumeMl: 500,
+    abv: 40.0,
     price: 16.99,
-    packagingType: 'Pullo',
-    ean: '6411000000063',
+    volume: 0.5,
+    mainGroupName: ['väkevät'],
+    productGroupName: ['viina'],
+    packageTypes: ['packageTypeId|packageType_pullo|lasipullo'],
+    countryName: 'Suomi',
+    webshopStock: 350,
   },
+  // Cider → 'siideri' → other_fermented.
   {
-    productId: '000007',
+    id: '003145',
+    name: 'Golden Cap Omena',
+    abv: 4.7,
+    price: 1.99,
+    volume: 0.33,
+    mainGroupName: ['panimotuotteet'],
+    productGroupName: ['siiderit'],
+    packageTypes: ['packageTypeId|packageType_tölkki|tölkki'],
+    countryName: 'Suomi',
+    webshopStock: 240,
+  },
+  // Long drink → 'long drink' → other_fermented.
+  {
+    id: '004361',
     name: 'Original Long Drink',
-    manufacturer: 'Sinebrychooff',
-    productGroup: 'Lonkero',
-    alcoholPercentage: 5.5,
-    volumeMl: 500,
-    price: 2.95,
-    packagingType: 'Tölkki',
-    ean: '6411000000070',
+    abv: 5.5,
+    price: 2.49,
+    volume: 0.5,
+    mainGroupName: ['panimotuotteet'],
+    productGroupName: ['long drink'],
+    packageTypes: ['packageTypeId|packageType_tölkki|tölkki'],
+    countryName: 'Suomi',
+    webshopStock: 620,
   },
+  // Liqueur → 'likööri' → spirits tax key (shared with spirits).
   {
-    productId: '000008',
-    name: 'Iki Kuohuviini Alkoholiton',
-    manufacturer: 'Altia',
-    productGroup: 'Kuohuviini',
-    alcoholPercentage: 0.0,
-    volumeMl: 750,
-    price: 6.49,
-    packagingType: 'Pullo',
-    ean: '6411000000087',
+    id: '006102',
+    name: 'Baileys Original',
+    abv: 17.0,
+    price: 12.98,
+    volume: 0.5,
+    mainGroupName: ['väkevät'],
+    productGroupName: ['liköörit', 'kermaliköörit'],
+    packageTypes: ['packageTypeId|packageType_pullo|lasipullo'],
+    countryName: 'Irlanti',
+    webshopStock: 130,
   },
-  // Unmappable assortment group — per-item rejection to the correction
-  // queue; a fallback category assignment is forbidden by the
-  // product-normalization spec.
+  // Zero-ABV non-alcoholic → 'alkoholiton' → other_fermented.
   {
-    productId: '000009',
-    name: 'Mysteerijuoma',
-    manufacturer: 'Tuntematon',
-    productGroup: 'Juomasekoitukset ja muut',
-    alcoholPercentage: 12.0,
-    volumeMl: 500,
-    price: 21.99,
-    packagingType: 'Pullo',
-    ean: '6411000000094',
+    id: '006857',
+    name: 'Heineken 0.0',
+    abv: 0.0,
+    price: 1.29,
+    volume: 0.33,
+    mainGroupName: ['alkoholittomat'],
+    productGroupName: ['alkoholittomat oluet'],
+    packageTypes: ['packageTypeId|packageType_tölkki|tölkki'],
+    countryName: 'Alankomaat',
+    webshopStock: 95,
   },
-  // Reference offer without a usable amount — rejected per-item.
+  // Merged productGroup bucket (deliberately unmapped token) resolves
+  // through the mainGroup fallback: 'välituotteet' → fortified-wine
+  // family → intermediate_products.
   {
-    productId: '000010',
-    name: 'Hinnaton',
-    manufacturer: 'Tuntematon',
-    productGroup: 'Viini',
-    alcoholPercentage: 13.0,
-    volumeMl: 750,
+    id: '003591',
+    name: 'Harveys Bristol Cream',
+    abv: 17.5,
+    price: 12.98,
+    volume: 0.75,
+    mainGroupName: ['välituotteet'],
+    productGroupName: ['jälkiruokaviinit, väkevöidyt ja muut viinit'],
+    packageTypes: ['packageTypeId|packageType_pullo|lasipullo'],
+    countryName: 'Espanja',
+    webshopStock: 44,
+  },
+  // Unmapped 'grapat' row resolves through its sibling leaf —
+  // first-mappable-token scan ('ginit ja maustetut viinat' → gin →
+  // spirits); observed live on row 904045.
+  {
+    id: '904045',
+    name: 'Heidell Hoburg',
+    abv: 44.0,
+    price: 41.74,
+    volume: 0.5,
+    mainGroupName: ['väkevät'],
+    productGroupName: ['grapat', 'grapat', 'ginit ja maustetut viinat'],
+    packageTypes: ['packageTypeId|packageType_pullo|lasipullo'],
+    countryName: 'Espanja',
+    webshopStock: 6,
+  },
+  // Unmappable group — drinkware accessory, not a beverage (real live
+  // row shape: null abv/volume, no packageTypes, unmapped mainGroup).
+  // Per-item rejection to the correction queue; a fallback category
+  // assignment is forbidden by the product-normalization spec.
+  {
+    id: '833275',
+    name: 'Iittala Aino Aalto Lasipari',
+    abv: null,
+    price: 24.9,
+    volume: null,
+    mainGroupName: ['lahja- ja juomatarvikkeet'],
+    productGroupName: ['juomatarvikkeet'],
+    countryName: 'Suomi',
+    webshopStock: 12,
+  },
+  // Price-less row (0 EUR) — rejected per-item; the full-catalog sweep
+  // observed a price-less row at this id (gift-assortment range).
+  {
+    id: '833310',
+    name: 'Alko Lahjapakkaus Viinipullo',
+    abv: 13.0,
     price: 0,
-    packagingType: 'Pullo',
-    ean: '6411000000100',
+    volume: 0.75,
+    mainGroupName: ['viinit'],
+    productGroupName: ['punaviinit'],
+    packageTypes: ['packageTypeId|packageType_pullo|lasipullo'],
+    countryName: 'Suomi',
+    webshopStock: 0,
   },
 ];
 
-/** The golden payload — frozen so accidental fixture edits fail loudly. */
-export const ALKO_GOLDEN_PAYLOAD: AlkoFixturePayload = Object.freeze({
-  source: 'alko',
-  currency: 'EUR',
-  products: Object.freeze(ALKO_GOLDEN_PRODUCTS),
+/** The golden page — frozen so accidental fixture edits fail loudly. */
+export const ALKO_GOLDEN_PAYLOAD: AlkoFixturePage = Object.freeze({
+  '@odata.count': ALKO_GOLDEN_ROWS.length,
+  value: Object.freeze(ALKO_GOLDEN_ROWS),
 });
