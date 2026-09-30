@@ -111,6 +111,29 @@ failure-count warning/critical thresholds live in
 (the violated count is the per-run aggregate), while attribution of a
 breach lives on the failed point's kind label.
 
+### Data-quality gauges — one per run / per carrier / per feed (task 4.1)
+
+Emitted via `src/observability/data-quality.ts` (task 4.1, change
+data-quality-and-publication-trust) using the same data point shape as
+the freshness gauges. The five names are the dashboard panels'
+contract — imported into Grafana Cloud from `infra/grafana/`
+(data-quality-dashboard.json + data-quality-alerts.yaml; import steps
+in infra/README.md, "Data-quality panel"). Stable write order: coverage,
+transport rows (carriers ascending), feed ages (merchants ascending).
+
+| `index1` / `blob1` | Shape | Labels (`blob3`) | Producer |
+|---|---|---|---|
+| `rajahinta_data_quality_zero_price_rejections_total` | Per-run count — sum `double1 * _sample_interval` over a window for the running total (price-alert-counter semantics) | `{"merchant":"<id>"}` when the run's merchant is stamped | The ingestion run seam (`recordZeroPriceRejections`), counting the mapper price-floor gate's "price drift" rejections in the run report's error channel (`zeroPriceRejectionsOf`) |
+| `rajahinta_data_quality_implausible_volume_share_ratio` | Latest-observation ratio 0..1, "renders 0 when nothing audited" | — | The quality-report hook contract: `dataQualityReportGaugeHook(env)` registered via `DataQualityService.setQualityReportHook`, or `recordImplausibleVolumeShare` at the run seam. Byte-parity with the wave-1 `IMPLAUSIBLE_VOLUME_SHARE_METRIC` in packages/data-acquisition (parity pinned by test) |
+| `rajahinta_data_quality_alko_reference_coverage_ratio` | Latest-observation ratio 0..1 — products with a usable Alko reference (offer row + observation instant, the savings-snapshot qualification predicate) over all `product_master` rows | — | `measureAndRecordDataQualityGauges` on the 30-min tick (`measureAlkoReferenceCoverage`) |
+| `rajahinta_transport_offer_rows` | Latest-observation count per carrier — rows in the append-only `transport_offers` table | `{"carrier":"<id>"}` | `measureAndRecordDataQualityGauges`; expected curated carriers (fransberg, posti) are written as honest 0s when their table carries no rows — the panel shows zero, never absence |
+| `rajahinta_feed_last_success_age_seconds` | Latest-observation age in seconds per registry feed — newest `retail_offers.observed_at` per merchant with a non-empty `feed_url` (every successful ingestion stamps fresh observedAt instants) | `{"merchant":"<id>"}` | `measureAndRecordDataQualityGauges`; a feed that has never published an offer writes the `+Inf` sentinel (`double1 = 9007199254740991`, `blob2 = "+Inf"` — the transport-age contract), so `> threshold` alert semantics fire unchanged |
+
+Threshold alerts over these names are Grafana-managed rules
+(`infra/grafana/data-quality-alerts.yaml`, routing via infra/README.md).
+They are the data-quality paging layer; the freshness invariants stay
+with the in-Worker task-6.3 checker (see "Alerting note" below).
+
 ## Querying — the Grafana re-point (task 6.5)
 
 AE SQL API (used by the Grafana Cloudflare/JSON data source or plain
@@ -188,6 +211,54 @@ WHERE index1 = 'rajahinta_transport_newest_offer_age_seconds'
 ORDER BY timestamp DESC
 LIMIT 1
 ```
+
+### Data-quality gauges (task 4.1) — latest per label
+
+The cadence gauges (coverage, transport rows, feed ages) are
+latest-observation points like the freshness gauges, written once per
+label per 30-min tick — so a one-tick window holds exactly one point
+per label, and "latest per label" is a bounded-window read. Per-carrier
+row counts (the Grafana panel):
+
+```sql
+SELECT JSONExtractString(blob3, 'carrier') AS carrier,
+       double1 AS row_count
+FROM rajahinta-api-metrics-production
+WHERE index1 = 'rajahinta_transport_offer_rows'
+  AND timestamp > NOW() - INTERVAL '30' MINUTE
+ORDER BY carrier
+```
+
+Per-feed last-success age, latest per merchant (the `+Inf` sentinel
+`9007199254740991` breaches every age threshold unchanged):
+
+```sql
+SELECT JSONExtractString(blob3, 'merchant') AS merchant,
+       double1 AS age_seconds
+FROM rajahinta-api-metrics-production
+WHERE index1 = 'rajahinta_feed_last_success_age_seconds'
+  AND timestamp > NOW() - INTERVAL '30' MINUTE
+ORDER BY merchant
+```
+
+Zero-price rejections are per-run counts — sum over the window
+(`_sample_interval`-weighted, price-alert counter semantics), per
+merchant when the run stamped its label:
+
+```sql
+SELECT JSONExtractString(blob3, 'merchant') AS merchant,
+       sum(double1 * _sample_interval) AS rejections
+FROM rajahinta-api-metrics-production
+WHERE index1 = 'rajahinta_data_quality_zero_price_rejections_total'
+  AND timestamp > NOW() - INTERVAL '1' DAY
+GROUP BY merchant
+ORDER BY merchant
+```
+
+The ratio gauges (implausible-volume share, Alko reference coverage)
+read like the stale-price-share query above with their own `index1`.
+The Grafana panels + threshold alerts over all five names are committed
+under `infra/grafana/` (import steps in infra/README.md).
 
 ### Price-alert job counters (task 10.2 panel)
 

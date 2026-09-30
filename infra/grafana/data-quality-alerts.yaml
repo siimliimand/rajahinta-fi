@@ -1,0 +1,313 @@
+# Rajahinta data-quality threshold alerts (task 4.1, change
+# data-quality-and-publication-trust) — Grafana-managed alert rules in
+# provisioning format (apiVersion: 1), importable into Grafana Cloud.
+#
+# Every rule queries the Cloudflare Analytics Engine SQL dataset the
+# Worker writes (see apps/api-worker/src/observability/METRICS.md,
+# "Querying") through a JSON/Infinity data source and thresholds the
+# result. The metric names in the WHERE clauses are load-bearing: they
+# are the exact index1 names the code writes
+# (apps/api-worker/src/observability/data-quality.ts).
+#
+# THRESHOLD/FOR PROVENANCE — feed cadences come from the merchant
+# registry (polling_interval_ms; the price feeds are DAILY). The 30-min
+# aggregation tick rewrites the cadence gauges, so:
+#   - zero-price rejections: > 0 in a 1 h window, immediate (a single
+#     published price-drift rejection is already a spec-visible
+#     regression);
+#   - Alko coverage: < 5 % for 2 h — near-zero (covers the == 0 spec
+#     scenario) while tolerating one missed daily cycle;
+#   - transport rows per carrier: < 1 for 30 m — one full aggregation
+#     tick at zero, well inside the 6-hourly transport refresh cadence;
+#   - per-feed last-success age: > 2 d (2× the daily cadence window)
+#     for 1 h. The +Inf sentinel (9007199254740991) for a
+#     never-successful feed exceeds it by construction.
+#
+# ROUTING: rules carry only `severity` labels — route them through your
+# Grafana Cloud notification policy / contact points (Alerting →
+# Notification policies). No credentials or endpoints are hardcoded
+# here; the data source carries them.
+#
+# IMPORT: replace RAJAHINTA_AE_DATASOURCE_UID with your AE SQL data
+# source's uid (see infra/README.md, "Data-quality panel"). Pre-wiring
+# the gauges (before the writer seam is live) shows as NoData — three
+# rules deliberately treat NoData as Alerting, because a silent writer
+# is itself the blind spot the deployment-observability spec forbids.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: rajahinta-data-quality
+    folder: Rajahinta
+    interval: 5m
+    rules:
+      - title: RajahintaZeroPriceRejectionsNew
+        condition: C
+        for: 0m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: >-
+            The ingestion price-floor gate (task 1.1) rejected one or more offers as
+            price drift in the last hour — a feed published a non-positive cent price
+            and the product stayed offer-less. New rejections are a publishing-trust
+            regression: check the merchant label for the feed, then the ingestion run
+            errors (Workflows instance state / queue consumer logs, "price drift"
+            messages) and the source feed's price column.
+          runbook: >-
+            1) Identify the feed via the merchant label on the firing series.
+            2) Inspect that merchant's latest ingestion run errors for "price drift" lines
+            (they name the source value).
+            3) Compare the feed's raw price column — a currency/decimal parsing change is the usual cause.
+            4) The affected products upserted offer-less and sort last; they recover on the next good run.
+        labels:
+          severity: warning
+          team: rajahinta
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: RAJAHINTA_AE_DATASOURCE_UID
+            model:
+              datasource:
+                type: yesoreyeram-infinity-datasource
+                uid: RAJAHINTA_AE_DATASOURCE_UID
+              data: >-
+                SELECT index1 AS metric, sum(double1 * _sample_interval) AS rejections
+                FROM rajahinta-api-metrics-production
+                WHERE index1 = 'rajahinta_data_quality_zero_price_rejections_total'
+                  AND timestamp > NOW() - INTERVAL '1' HOUR
+                GROUP BY metric
+              format: table
+              method: POST
+              parser: backend
+              refId: A
+              source: response
+              type: json
+              url: https://api.cloudflare.com/client/v4/accounts/CF_ACCOUNT_ID/analytics_engine/sql?dataset=rajahinta-api-metrics-production
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: threshold
+      - title: RajahintaAlkoReferenceCoverageNearZero
+        condition: C
+        for: 2h
+        noDataState: Alerting
+        execErrState: Error
+        annotations:
+          summary: >-
+            Alko reference coverage (rajahinta_data_quality_alko_reference_coverage_ratio)
+            is at or near zero while the savings surface is enabled — products have lost
+            their usable Alko reference offers, so no savings gaps can materialize.
+            Typical causes: the Alko feed stopped publishing offers, the Alko merchant
+            lost its governance grant, or the coverage gauge writer stopped ticking
+            (NoData on this rule means the same).
+          runbook: >-
+            1) Confirm the savings-surface feature flag is enabled — if it is disabled, resolve as harmless.
+            2) Check the Alko registry row (feed_url non-empty) and its governance GRANTED status.
+            3) Check the Alko feed's latest ingestion run: zero fetched records or all offers
+            rejected leaves the coverage numerator at zero.
+            4) Confirm the data-quality gauge writer ticked in the last 30 min
+            (rajahinta_data_quality_alko_reference_coverage_ratio points in the AE dataset).
+        labels:
+          severity: critical
+          team: rajahinta
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 86400
+              to: 0
+            datasourceUid: RAJAHINTA_AE_DATASOURCE_UID
+            model:
+              datasource:
+                type: yesoreyeram-infinity-datasource
+                uid: RAJAHINTA_AE_DATASOURCE_UID
+              data: >-
+                SELECT double1 AS coverage
+                FROM rajahinta-api-metrics-production
+                WHERE index1 = 'rajahinta_data_quality_alko_reference_coverage_ratio'
+                ORDER BY timestamp DESC
+                LIMIT 1
+              format: table
+              method: POST
+              parser: backend
+              refId: A
+              source: response
+              type: json
+              url: https://api.cloudflare.com/client/v4/accounts/CF_ACCOUNT_ID/analytics_engine/sql?dataset=rajahinta-api-metrics-production
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0.05]
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: threshold
+      - title: RajahintaTransportOfferRowsZero
+        condition: C
+        for: 30m
+        noDataState: Alerting
+        execErrState: Error
+        annotations:
+          summary: >-
+            The transport offer table carries no rows for a carrier
+            (rajahinta_transport_offer_rows < 1 for carrier {{ $labels.carrier }}).
+            Transport costs degrade to ESTIMATED/UNAVAILABLE on every calculation that
+            needs that carrier. The panel shows the carrier at zero by construction —
+            expected curated carriers are written as honest 0s; the per-carrier
+            staleness invariant is additionally covered by the in-Worker freshness
+            checker (transport newest-offer age).
+          runbook: >-
+            1) Check the 6-hourly transport-rate-refresh cron ran
+            (its refresh log line names ratesUpdated per carrier).
+            2) Check the monthly curated-rate-refresh cron and the carrier's governance
+            GRANTED status — without a grant the curated sync appends nothing.
+            3) Check the D1 transport_offers table for the carrier (a wiped/migrated-empty
+            table is the other cause).
+            4) Confirm the data-quality gauge writer ticked (NoData on this rule = writer
+            or cron seam stopped).
+        labels:
+          severity: warning
+          team: rajahinta
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: RAJAHINTA_AE_DATASOURCE_UID
+            model:
+              datasource:
+                type: yesoreyeram-infinity-datasource
+                uid: RAJAHINTA_AE_DATASOURCE_UID
+              data: >-
+                SELECT JSONExtractString(blob3, 'carrier') AS carrier, double1 AS row_count
+                FROM rajahinta-api-metrics-production
+                WHERE index1 = 'rajahinta_transport_offer_rows'
+                  AND timestamp > NOW() - INTERVAL '30' MINUTE
+                ORDER BY carrier ASC
+              format: table
+              method: POST
+              parser: backend
+              refId: A
+              source: response
+              type: json
+              url: https://api.cloudflare.com/client/v4/accounts/CF_ACCOUNT_ID/analytics_engine/sql?dataset=rajahinta-api-metrics-production
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [1]
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: threshold
+      - title: RajahintaFeedLastSuccessStale
+        condition: C
+        for: 1h
+        noDataState: Alerting
+        execErrState: Error
+        annotations:
+          summary: >-
+            A registry feed's last-success age exceeds twice its cadence window
+            (rajahinta_feed_last_success_age_seconds > 2 d for merchant
+            {{ $labels.merchant }}) — the daily price feeds have missed ~2 cycles, or the
+            feed has never published an offer (the +Inf sentinel breaches every
+            threshold). The registry's polling_interval_ms is each feed's own cadence
+            window; the threshold is the 2× guard for the daily fleet.
+          runbook: >-
+            1) Identify the stale feed via the merchant label.
+            2) Check the hourly ingestion producer's log for that merchant (skipped: no
+            feed URL / not permitted / not due) and the queue consumer for repeated failures.
+            3) Fetch the feed URL manually — registry row feed_url, feed_format — a source
+            outage or schema change is the usual cause.
+            4) A feed whose registry row was just onboarded shows +Inf until its first
+            successful run; resolve as expected if ingestion just started.
+        labels:
+          severity: warning
+          team: rajahinta
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: RAJAHINTA_AE_DATASOURCE_UID
+            model:
+              datasource:
+                type: yesoreyeram-infinity-datasource
+                uid: RAJAHINTA_AE_DATASOURCE_UID
+              data: >-
+                SELECT JSONExtractString(blob3, 'merchant') AS merchant, double1 AS age_seconds
+                FROM rajahinta-api-metrics-production
+                WHERE index1 = 'rajahinta_feed_last_success_age_seconds'
+                  AND timestamp > NOW() - INTERVAL '30' MINUTE
+                ORDER BY merchant ASC
+              format: table
+              method: POST
+              parser: backend
+              refId: A
+              source: response
+              type: json
+              url: https://api.cloudflare.com/client/v4/accounts/CF_ACCOUNT_ID/analytics_engine/sql?dataset=rajahinta-api-metrics-production
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [172800]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: threshold

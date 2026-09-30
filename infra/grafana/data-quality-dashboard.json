@@ -1,0 +1,359 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_AE_METRICS",
+      "label": "Rajahinta AE metrics (Cloudflare Analytics Engine SQL)",
+      "description": "A JSON/Infinity-type Grafana data source pointing POST queries at the Cloudflare Analytics Engine SQL API (see apps/api-worker/src/observability/METRICS.md 'Querying'). Credentials live in the data source config, never in this file.",
+      "type": "datasource",
+      "pluginId": "yesoreyeram-infinity-datasource",
+      "pluginName": "Infinity"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "datasource",
+      "id": "yesoreyeram-infinity-datasource",
+      "name": "Infinity",
+      "version": "1.0.0"
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "${DS_AE_METRICS}" },
+      "description": "The ingestion price-floor gate (task 1.1) rejects non-positive cent prices before publication; each run writes its per-run count to rajahinta_data_quality_zero_price_rejections_total. Any non-zero value is a feed publishing price drift — alert RajahintaZeroPriceRejectionsNew.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "${DS_AE_METRICS}" },
+          "data": "SELECT timestamp, JSONExtractString(blob3, 'merchant') AS merchant, double1 * _sample_interval AS rejections FROM ${AE_DATASET} WHERE index1 = 'rajahinta_data_quality_zero_price_rejections_total' AND timestamp > NOW() - INTERVAL '7' DAY ORDER BY timestamp ASC",
+          "format": "timeseries",
+          "labelFields": ["merchant"],
+          "method": "POST",
+          "parser": "backend",
+          "refId": "A",
+          "source": "response",
+          "timeField": "timestamp",
+          "type": "json",
+          "url": "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/analytics_engine/sql?dataset=${AE_DATASET}",
+          "valueField": "rejections"
+        }
+      ],
+      "title": "Zero-price rejections per ingestion run",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "${DS_AE_METRICS}" },
+      "description": "Share of audited offers whose implausible unit volume the ceiling gate (task 1.2) withheld pre-upsert — rajahinta_data_quality_implausible_volume_share_ratio, latest observation. 0 with a healthy pipeline is normal; a rising share means feed volumes drifting outside the category ceilings.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.05 },
+              { "color": "red", "value": 0.25 }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "${DS_AE_METRICS}" },
+          "data": "SELECT timestamp, double1 AS implausible_volume_share FROM ${AE_DATASET} WHERE index1 = 'rajahinta_data_quality_implausible_volume_share_ratio' AND timestamp > NOW() - INTERVAL '7' DAY ORDER BY timestamp ASC",
+          "format": "timeseries",
+          "method": "POST",
+          "parser": "backend",
+          "refId": "A",
+          "source": "response",
+          "timeField": "timestamp",
+          "type": "json",
+          "url": "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/analytics_engine/sql?dataset=${AE_DATASET}",
+          "valueField": "implausible_volume_share"
+        }
+      ],
+      "title": "Implausible-volume share",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "${DS_AE_METRICS}" },
+      "description": "Share of catalog products carrying a usable Alko reference offer (the savings-snapshot qualification: an Alko offer row with an observation instant) — rajahinta_data_quality_alko_reference_coverage_ratio, latest observation. A drop to (near) zero kills the savings surface — alert RajahintaAlkoReferenceCoverageNearZero.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.05 },
+              { "color": "green", "value": 0.25 }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "${DS_AE_METRICS}" },
+          "data": "SELECT timestamp, double1 AS alko_reference_coverage FROM ${AE_DATASET} WHERE index1 = 'rajahinta_data_quality_alko_reference_coverage_ratio' AND timestamp > NOW() - INTERVAL '7' DAY ORDER BY timestamp ASC",
+          "format": "timeseries",
+          "method": "POST",
+          "parser": "backend",
+          "refId": "A",
+          "source": "response",
+          "timeField": "timestamp",
+          "type": "json",
+          "url": "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/analytics_engine/sql?dataset=${AE_DATASET}",
+          "valueField": "alko_reference_coverage"
+        }
+      ],
+      "title": "Alko reference coverage %",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "${DS_AE_METRICS}" },
+      "description": "Rows in the append-only transport_offers table per carrier — rajahinta_transport_offer_rows (carrier label), latest observation per carrier. Expected curated carriers (fransberg, posti) are written as honest 0s when their table is empty — alert RajahintaTransportOfferRowsZero.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 4,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "asc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "${DS_AE_METRICS}" },
+          "data": "SELECT timestamp, JSONExtractString(blob3, 'carrier') AS carrier, double1 AS transport_rows FROM ${AE_DATASET} WHERE index1 = 'rajahinta_transport_offer_rows' AND timestamp > NOW() - INTERVAL '3' DAY ORDER BY timestamp ASC",
+          "format": "timeseries",
+          "labelFields": ["carrier"],
+          "method": "POST",
+          "parser": "backend",
+          "refId": "A",
+          "source": "response",
+          "timeField": "timestamp",
+          "type": "json",
+          "url": "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/analytics_engine/sql?dataset=${AE_DATASET}",
+          "valueField": "transport_rows"
+        }
+      ],
+      "title": "Transport offer rows per carrier",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "${DS_AE_METRICS}" },
+      "description": "Age of the newest published offer per registry feed (feed_url non-empty) — rajahinta_feed_last_success_age_seconds (merchant label), latest observation. Every successful ingestion stamps fresh observedAt instants, so this is the per-feed last-success signal. A feed that never published renders +Inf (the 9007199254740991 sentinel) — alert RajahintaFeedLastSuccessStale.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 86400 },
+              { "color": "red", "value": 172800 }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "${DS_AE_METRICS}" },
+          "data": "SELECT timestamp, JSONExtractString(blob3, 'merchant') AS merchant, double1 AS feed_last_success_age_seconds FROM ${AE_DATASET} WHERE index1 = 'rajahinta_feed_last_success_age_seconds' AND timestamp > NOW() - INTERVAL '3' DAY ORDER BY timestamp ASC",
+          "format": "timeseries",
+          "labelFields": ["merchant"],
+          "method": "POST",
+          "parser": "backend",
+          "refId": "A",
+          "source": "response",
+          "timeField": "timestamp",
+          "type": "json",
+          "url": "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/analytics_engine/sql?dataset=${AE_DATASET}",
+          "valueField": "feed_last_success_age_seconds"
+        }
+      ],
+      "title": "Per-feed last-success age",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "${DS_AE_METRICS}" },
+      "description": "Reference surface for the freshness pair the in-Worker checker (task 6.3) alerts on: stale-price share and transport newest-offer age — documented in METRICS.md, evaluated from D1 by the cron checker (which must not scrape AE).",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 16 },
+      "id": 6,
+      "options": { "code": { "language": "plaintext", "showLineNumbers": false }, "content": "Freshness invariants (stale-price share > 0.10/0.25, transport age > 45/90 d) are evaluated from D1 by the api-worker freshness-alert cron (src/cron/freshness-alert.ts) and delivered via the email Worker — they intentionally do not page from this dashboard. This panel documents the split: data-quality regressions page from Grafana; freshness invariants page from the cron checker.", "mode": "markdown" },
+      "title": "Where freshness alerts live",
+      "type": "text"
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["rajahinta", "data-quality"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": "production", "value": "rajahinta-api-metrics-production" },
+        "description": "Analytics Engine dataset per environment (design D9) — dev/staging/production names in METRICS.md.",
+        "hide": 2,
+        "label": "AE dataset",
+        "name": "AE_DATASET",
+        "options": [
+          { "selected": true, "text": "production", "value": "rajahinta-api-metrics-production" },
+          { "selected": false, "text": "staging", "value": "rajahinta-api-metrics-staging" },
+          { "selected": false, "text": "dev", "value": "rajahinta-api-metrics-dev" }
+        ],
+        "query": "production : rajahinta-api-metrics-production, staging : rajahinta-api-metrics-staging, dev : rajahinta-api-metrics-dev",
+        "type": "textbox"
+      },
+      {
+        "current": { "selected": true, "text": "", "value": "" },
+        "description": "Cloudflare account id — part of the AE SQL API URL. Enter once on import (or bake the literal into the panel URLs).",
+        "hide": 2,
+        "label": "CF account id",
+        "name": "CF_ACCOUNT_ID",
+        "options": [],
+        "query": "",
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": { "from": "now-3d", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "Rajahinta · Data quality",
+  "uid": "rajahinta-data-quality",
+  "version": 1,
+  "weekStart": ""
+}

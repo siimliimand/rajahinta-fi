@@ -17,6 +17,7 @@ infra/
     dev.yaml       # local development (wrangler dev, local D1/R2/DO simulators)
     staging.yaml   # pre-production validation (workers.dev staging URLs)
     prod.yaml      # production hardened (custom domains, gated deploys)
+  grafana/         # Grafana Cloud artifacts: data-quality dashboard + threshold alerts
   staging-data/    # test fixture SQL (staging-reviews.sql feeds scripts/test-data-quality.sh)
   README.md
 ```
@@ -69,3 +70,61 @@ Enforced in staging and production (unchanged across the migration):
 3. **Data freshness** -- every externally sourced fact carries a reliability status and collection timestamp; the cron freshness checker alerts ops via the email Worker (design D8).
 4. **Feature flag gating** -- new merchant sources, new tax rulesets, and new ranking logic are behind flags for instant rollback.
 5. **Structural disclaimer** -- the "estimated total cost, not final legal tax liability" disclaimer is baked into every result object, not just the UI.
+
+## Data-quality panel
+
+`infra/grafana/` holds the Grafana Cloud artifacts for the data-quality
+surface (task 4.1, change `data-quality-and-publication-trust`). The
+metric data itself lives in the Workers Analytics Engine dataset the
+api-worker writes (`rajahinta-api-metrics-{dev,staging,production}` —
+metric names, write shapes, and AE SQL queries are documented in
+`apps/api-worker/src/observability/METRICS.md`); these files are the
+importable view + paging layer.
+
+**What it covers** — the five data-quality panels and their threshold
+alerts:
+
+| Panel | Metric (AE `index1`) | Alert | Fires when |
+|---|---|---|---|
+| Zero-price rejections per run | `rajahinta_data_quality_zero_price_rejections_total` | `RajahintaZeroPriceRejectionsNew` (warning) | any rejection in a 1 h window (`> 0`, immediate) |
+| Implausible-volume share | `rajahinta_data_quality_implausible_volume_share_ratio` | — (dashboard view; the count is gate-held, not published) | — |
+| Alko reference coverage % | `rajahinta_data_quality_alko_reference_coverage_ratio` | `RajahintaAlkoReferenceCoverageNearZero` (critical) | coverage `< 0.05` for `2h` (the `== 0` scenario included) while the savings surface is enabled |
+| Transport offer rows per carrier | `rajahinta_transport_offer_rows` (`carrier` label) | `RajahintaTransportOfferRowsZero` (warning) | a carrier sits at `< 1` row for `30m`; expected carriers are written as honest 0s |
+| Per-feed last-success age | `rajahinta_feed_last_success_age_seconds` (`merchant` label) | `RajahintaFeedLastSuccessStale` (warning) | age `> 2d` (2× the registry's daily cadence) for `1h`; a never-successful feed's `+Inf` sentinel breaches it by construction |
+
+Thresholds and `for` clauses track the merchant-registry feed cadences
+(daily price feeds; 6-hourly transport refresh; 30-min gauge tick) —
+the provenance notes are in the header of
+`data-quality-alerts.yaml`. Freshness invariants (stale-price share,
+transport newest-offer age) intentionally do **not** page from Grafana:
+they are evaluated from D1 by the in-Worker freshness-alert cron
+(`apps/api-worker/src/cron/freshness-alert.ts`) and delivered via the
+email Worker.
+
+**How to import** (one-time per Grafana Cloud stack):
+
+1. Create the AE SQL data source once: a JSON/Infinity-type data source
+   POSTing to `https://api.cloudflare.com/client/v4/accounts/<account
+   id>/analytics_engine/sql?dataset=<dataset>`, credentials in the data
+   source config (never in git). The query shape is in METRICS.md,
+   "Querying".
+2. Dashboard: Grafana → Dashboards → Import →
+   `data-quality-dashboard.json`. Import asks for the data source
+   (`DS_AE_METRICS` input) and the Cloudflare account id
+   (`CF_ACCOUNT_ID` variable). For staging, switch the `AE_DATASET`
+   variable to `rajahinta-api-metrics-staging`.
+3. Alerts: `data-quality-alerts.yaml` is Grafana provisioning format
+   (`apiVersion: 1`). Apply it by replacing the `RAJAHINTA_AE_DATASOURCE_UID`
+   placeholder with your data source's uid and the `CF_ACCOUNT_ID`
+   literal in the panel URLs, then provisioning it (self-managed Grafana:
+   drop into the provisioning directory; Grafana Cloud: import the rules
+   via UI or the `/api/v1/provisioning/alert-rules` API, or `grafana-cli
+   --cloud …` provisioning). Note the three cadence-gauge rules ship with
+   `noDataState: Alerting` on purpose — a silent gauge writer is itself
+   the blind spot the deployment-observability spec forbids, so expect a
+   NoData→Alerting page until the writer seam is live.
+
+**Where alerts route** — the rules carry only `severity` + `team`
+labels; routing (email/Slack/on-call) is your Grafana Cloud notification
+policy's job (Alerting → Notification policies). No endpoints or
+credentials are committed: the data source and contact points hold them.
