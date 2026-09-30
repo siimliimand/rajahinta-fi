@@ -270,3 +270,87 @@ Post-fix evidence (owner-approved fixes, 2026-09-30):
 With these two, every suite in task 5.1's list is green; the only non-green item
 remains the deferred Posti-backed figure (§2.2 operator data), and 5.1's run is
 otherwise the verification record for the deploy gate in 5.2.
+
+## 5.2 Production deploy + live verification (2026-09-30)
+
+### Auth + dispatch record
+
+`gh auth status` in this session (2026-09-30 ~11:56 UTC) answered
+`You are not logged into any GitHub hosts` (exit 1) — the gated dispatch
+is therefore **owner-run**; no run id, conclusion, or duration exists
+from this session.
+
+Dispatch mechanics, read from `deploy-production.yml` before hand-off:
+
+- Single input: `confirm_deploy` (required, default `no`) — the job's
+  first step fails before checkout unless it is exactly `yes`.
+- No `ref` input is declared; the job checks out and deploys whatever
+  ref the dispatch selects.
+- Job chain: confirmation gate → frontend build (OpenNext,
+  `NEXT_PUBLIC_API_URL = vars.PRODUCTION_API_URL`) → D1 migrations
+  (production, `db:migrate:d1:production`) → deploy api/email/frontend
+  Workers (`--env production`) → health gate
+  (`GET $PRODUCTION_API_URL/api/v1/health/ready`, 30 × 10 s) →
+  rollback-runbook job. **No seed step** — production is never seeded.
+- Concurrency group `deploy-production` (serialized); every
+  `wrangler deploy` versions the prior Workers scripts for instant
+  `wrangler rollback` (no DNS).
+
+**Merge-first fact:** this branch's head `feb6c04` is contained in no
+remote branch (`git branch -r --contains feb6c04` → empty);
+`origin/master` sits at `b28a03b` (PR #71 merge, predates this change).
+A dispatch on `master` before the merge would deploy master's tree —
+none of this change's behaviors. The merge is outside this session's
+authority (no push, no merge), so the dispatch is handed to the owner:
+
+```bash
+# 1. Gated dispatch (input name matters; run AFTER the branch merges):
+gh workflow run deploy-production.yml --ref master -f confirm_deploy=yes
+
+# 2. Record run id + conclusion + duration:
+gh run list --workflow=deploy-production.yml --limit 1
+gh run watch <run-id>
+```
+
+### Live evidence — the four pains (all PRE-DEPLOY, production)
+
+API base `https://api.rajahinta.fi`; every API call carried
+`x-age-confirmed: 1` (the calculator POST additionally
+`content-type: application/json`). Frontend fetched server-side, no
+auth. These are the CURRENT live states before any dispatch — re-run
+after the deploy and label the rows POST.
+
+| # | Pain | Endpoint / surface | Observed (UTC) | Result |
+|---|---|---|---|---|
+| 1 | €0.00 crowned at `LOWEST_PRICE` | `GET /api/v1/products?sort=LOWEST_PRICE` | 2026-09-30T11:56:49Z · HTTP 200 | **Still crowned.** Head rows: id 76 "R de Ruinart Champagne 12.5% 0.75 l" and id 626 "Famille Perrin Les Christins Vacqueyras Rouge 14.5% 0.75 l", both `lowestPriceCents: 0` with `eurPerGram.reason: "INVALID_PRICE"`. Next rows are €0.49 MINI bottles (ids 171, 179, 187). The price gate rejects at INGESTION, so already-stored zero-priced rows persist until that merchant's next feed sweep — a still-present €0.00 head post-deploy is the documented sweep behavior, not a deploy failure. |
+| 2 | Transport figure honesty | `POST /api/v1/calculator` `{"productId":1761,"quantity":6,"destination":"FI"}` — id 1761 = "Smirnoff Vodka 37.5% 1.5 l", 2599 c/unit | 2026-09-30T11:58:08Z · HTTP 200 | **UNAVAILABLE, stated honestly.** Itemized `Transport | transportCost | cents 0 | reliability UNAVAILABLE`; total `43990 c` (€439.90 = 15594 retail + 0 transport + 18996 excise + 462 container duty + 8938 import VAT); confidence `LOW`; structural disclaimer present (fi, v1.0). Real transport figures stay deferred until §2.2's operator transcription lands — their absence is not a deploy failure. |
+| 3 | Savings coverage | `GET /api/v1/savings?category=spirits` + `GET /api/v1/savings/overview` | 2026-09-30T11:56:49Z · HTTP 200 | **Zero coverage.** `category=spirits` → `coverage {evaluated: 4414, withReference: 0, listed: 0}`, `rows: []`, `asOf: null`; overview → `{asOf: null, categories: []}`. Expected until task 2.1's Alko-reference data action runs. |
+| 4 | Frontend surfaces | `https://rajahinta.fi/`, `/savings`, `/calculator` | 2026-09-30T11:58:08Z–11:59:20Z · all HTTP 200 | **Pre-branch bundle live.** Homepage renders the static link card into `/savings` ("Kokonaishinta-ero Alko-viitehintaan"); no pending-state card — markers `savings-card-pending` / `taskCardsSavingsPendingBody` are absent from the served HTML. `/savings` SSRs a text skeleton (`data-variant="text"` pulse) plus the category nav (`/savings?category=spirits`); content client-fetches. `/calculator` SSRs the shell with i18n labels (`UNAVAILABLE → "Ei saatavilla"`, `transportCost → "Kuljetuskustannus"`) but the branch's `transportPending` strings are absent. The frontend deploys via the same workflow, so the pending card and honest transport note appear only POST-dispatch. |
+
+### Post-dispatch verification (re-run, label POST)
+
+Same commands after the owner's dispatch goes green (the workflow's own
+health gate already proves `/api/v1/health/ready` before concluding):
+
+```bash
+curl -s -H "x-age-confirmed: 1" \
+  "https://api.rajahinta.fi/api/v1/products?sort=LOWEST_PRICE" | head -c 600
+curl -s -H "x-age-confirmed: 1" -H "content-type: application/json" \
+  -X POST https://api.rajahinta.fi/api/v1/calculator \
+  -d '{"productId":1761,"quantity":6,"destination":"FI"}'
+curl -s -H "x-age-confirmed: 1" \
+  "https://api.rajahinta.fi/api/v1/savings?category=spirits"
+curl -s -H "x-age-confirmed: 1" https://api.rajahinta.fi/api/v1/savings/overview
+# Frontend — pending card + transport-pending-note are this branch's additions:
+curl -s https://rajahinta.fi/ | grep -c "savings-card-pending"
+curl -s https://rajahinta.fi/calculator | grep -c "transportPending"
+```
+
+Expected POST states (honest, per the designed timeline): homepage
+renders `savings-card-pending` (withReference stays 0 — task 2.1 data
+action pending); the calculator result renders the transport-pending
+note (task 2.2 transcription pending); savings coverage stays 0;
+`LOWEST_PRICE` sheds its €0.00 rows only as each merchant's next feed
+sweep re-ingests under the new gate — their persistence is documented
+sweep behavior, not a deploy failure. Task 5.2's record completes when
+the dispatch run id + conclusion are appended above.
