@@ -185,7 +185,10 @@ describe('D1SessionRepository', () => {
     await createSession(accountId, hash(aToken()), new Date('2026-08-01T00:00:00.000Z'));
     await createSession(accountId, hash(aToken()), new Date('2026-08-02T00:00:00.000Z'));
     const keepToken = aToken();
-    await createSession(accountId, hash(keepToken), new Date('2026-09-30T00:00:00.000Z'));
+    // The kept session's expiry must always be future: a fixed instant
+    // here rots into a date bomb (the 2026-09-30 literal expired at
+    // midnight UTC on its own date and failed the suite from then on).
+    await createSession(accountId, hash(keepToken), DEFAULT_EXPIRY());
 
     const deleted = await repo.deleteExpiredBefore(new Date('2026-08-15T00:00:00.000Z'));
     expect(deleted).toBe(2);
