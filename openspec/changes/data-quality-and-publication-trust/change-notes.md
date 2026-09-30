@@ -9,74 +9,46 @@ one, which is the exact failure mode this change exists to prevent.
 
 ## 2.1 Alko reference landing
 
-Production data operation — trigger and verification procedure:
-`docs/ingestion-runbook.md` §6 ("Alko reference feed — manual
-(re-)run and verification"). All commands read-only except the one
-registry write called out there (§6.2).
+**EXECUTED 2026-09-30** (20:14–23:55 UTC) — the owner provided the
+Cloudflare API token (owner-directed production ops) and approved the
+Alko storefront wiring; the lead ran the §6 procedure end-to-end. The
+triggering prerequisite differed from §6.2's assumption: the production
+`merchant_registry` had NO `alko` row at all, and the real feed is
+Alko's storefront search API (`POST
+https://www.alko.fi/api/search/product?lang=fi`, odata-style
+pagination), which required a scoped adapter mapping change
+(owner-approved deviation from decision D3 — see design.md). Registry
+upsert + governance `GRANTED` insert executed per the documented
+patterns; first pass 21:00 UTC (off-schedule trigger per §6.6, hourly
+interval restored to daily after the pass); the first run exposed two
+live-environment failures, both fixed and re-run:
+
+1. **WAF 403** — Alko's Azure WAF challenges bare-content-type POSTs;
+   the adapter now rides browser-like headers + a page delay
+   (`fc133d1`).
+2. **D1 API-request budget** — chunks 41+ of the initial import
+   silently no-oped ("Too many API requests by single Worker
+   invocation"); the workflow now crosses a durable hibernation
+   boundary every 16 chunks so each group gets a fresh quota
+   (`27c9f5d`).
 
 | Metric | Value | Recorded via |
 |---|---|---|
-| `withReference` before | TBD (operator) | §6.4(b) |
-| `withReference` after | TBD (operator) | §6.4(b) |
-| EAN join hit-rate | TBD (operator) | §6.4(c) |
-| Verified at (UTC) | TBD (operator) | command timestamp |
+| `withReference` before | 0 (20:15 UTC) | §6.4(b) |
+| `withReference` after | **444** (as_of 2026-09-30, 23:30 UTC snapshot) | §6.4(b) |
+| EAN join hit-rate | **0 of 5,839 offered products (0.0%)** — the storefront source carries no EAN; qualification ran via the tier-2 compound fallback and still qualified 444 products | §6.4(c) |
+| Verified at (UTC) | 2026-09-30T23:45Z | command timestamp |
+| Alko reference offers before | 0 | §6.4(a) |
+| Alko reference offers after | **2,861** offers / 1,425 products | §6.4(a) |
 
-Supporting before/after pair for the reference offers themselves
-(runbook §6.4a) — baseline expected to be 0:
-
-| Metric | Value |
-|---|---|
-| Alko reference offers before | TBD (operator) |
-| Alko reference offers after | TBD (operator) |
-
-Exact commands (production, runbook §6.4 flag pattern):
-
-```bash
-cd apps/api-worker
-
-# §6.4(b) withReference — materialized snapshot rows, latest as-of day
-wrangler d1 execute DB --remote --env production --command "\
-  SELECT COUNT(*) AS with_reference FROM savings_snapshots \
-  WHERE as_of = (SELECT MAX(as_of) FROM savings_snapshots) \
-    AND alko_reference_cents IS NOT NULL" -y
-
-# §6.4(c) EAN join hit-rate — offered products whose EAN matches an
-# Alko-referenced product's EAN / all offered products
-wrangler d1 execute DB --remote --env production --command "\
-  WITH alko_eans AS ( \
-    SELECT DISTINCT pm.ean AS ean FROM retail_offers ro \
-    JOIN product_master pm ON pm.id = ro.product_id \
-    WHERE ro.merchant = 'alko' AND pm.ean IS NOT NULL), \
-  offered AS ( \
-    SELECT DISTINCT ro.product_id AS product_id, pm.ean AS ean \
-    FROM retail_offers ro JOIN product_master pm ON pm.id = ro.product_id) \
-  SELECT (SELECT COUNT(*) FROM offered) AS products_with_offers, \
-    (SELECT COUNT(*) FROM offered WHERE ean IS NOT NULL \
-      AND ean IN (SELECT ean FROM alko_eans)) AS ean_matched_products, \
-    ROUND(100.0 * (SELECT COUNT(*) FROM offered WHERE ean IS NOT NULL \
-      AND ean IN (SELECT ean FROM alko_eans)) / \
-      NULLIF((SELECT COUNT(*) FROM offered), 0), 1) AS ean_join_hit_rate_pct" -y
-
-# §6.4(a) Alko reference offer count (before/after pair)
-wrangler d1 execute DB --remote --env production --command "\
-  SELECT COUNT(*) AS alko_reference_offers FROM retail_offers \
-  WHERE merchant = 'alko'" -y
-
-# Public-surface confirmation (age gate applies; runbook §6.5)
-curl -H "x-age-confirmed: 1" \
-  "https://api.rajahinta.fi/api/v1/savings?category=spirits"
-# Expect coverage.withReference > 0 after the landing.
-```
-
-Endpoint confirmation record (fill after §6.5):
-
-| Check | Result |
-|---|---|
-| `GET /api/v1/savings?category=spirits` → `coverage.withReference` | TBD (operator) |
-| Homepage savings card state (listing CTA restored) | TBD (operator) |
-
-Task 2.1 stays open until the operator records the real numbers above;
-task 5.2's "savings coverage after 2.1" live check reads this section.
+Supporting facts: producer log `enqueued 1/5` (alko due, others not);
+workflow instance `price-ingestion-alko-2026-09-30-21` Completed ✅;
+volume-ceiling gate fired on live rows (34 implausible volumes held for
+review, e.g. "Savon Kyynel Pontikka" 40 l spirits, "Paulaner
+Oktoberfest" 5 l beer); 0 zero-priced offers landed. The 0% EAN rate is
+the design's named risk materialized — it feeds the dedupe/matching
+follow-up (spike-notes §5.3): an EAN-bearing source (Alko's product
+register) would lift the join materially.
 
 ## 2.2 Posti transcription — operator procedure
 
@@ -390,3 +362,54 @@ note (task 2.2 transcription pending); savings coverage stays 0;
 sweep re-ingests under the new gate — their persistence is documented
 sweep behavior, not a deploy failure. Task 5.2's record completes when
 the dispatch run id + conclusion are appended above.
+
+### 22:10–23:55 UTC — deploy EXECUTED (owner-directed, pipeline mirrored locally)
+
+The hand-off above was superseded the same evening: the owner provided
+the Cloudflare API token and approved the deploy; `gh` remains
+unauthenticated (the `confirm_deploy` gate's approval was given here in
+session, explicitly, twice), so the pipeline's exact steps ran locally
+against the merged master (`b283a03b..0313d88`, then fix commits — all
+pushed):
+
+| Step | Result |
+|---|---|
+| `db:migrate:d1:production` | ✅ no migrations to apply (schema unchanged) |
+| api-worker deploy | ✅ `8b2aaf10` → adapter fix `9db09b13` → budget fix `737b4a0d` |
+| email-worker deploy | ✅ `9bcb8c22` |
+| frontend deploy (OpenNext, `NEXT_PUBLIC_API_URL=https://api.rajahinta.fi`) | ✅ `916b1f8f` → post-landing rebuild `2fafe9c8` |
+| Health gate `/api/v1/health/ready` | ✅ HTTP 200 attempt 1 (D1 + DO up) |
+
+Rollback availability unchanged: every deploy versioned the prior
+script (`wrangler rollback --env production` per Worker).
+
+### Live evidence — POST-deploy (the four pains, 23:30–23:55 UTC)
+
+| Pain | PRE (11:56–11:59Z) | POST (23:30–23:55Z) |
+|---|---|---|
+| €0.00 crown on `sort=LOWEST_PRICE` | two zero-priced rows head (ids 76, 626) | rows persist (documented sweep timeline — the price gate holds for NEW ingestion; the rows clear at the merchant's next daily sweep pass) |
+| Calculator transport | `0 c / UNAVAILABLE` | unchanged — `0 c / UNAVAILABLE` honest state (cross-border Posti rows still pending, §2.2; the landed FI→FI ≤2 kg row publishes on the next monthly curated sync) |
+| Savings coverage | `withReference: 0`, listing empty | **`withReference: 444`** — `GET /api/v1/savings?category=spirits` lists 50 real rows with gaps (e.g. "Suomi Viina" €27.38 vs landed €45.90, 6,764 bps) |
+| Homepage savings card | static link card into an empty listing | **CTA restored** — rendered-DOM verification: `pending: 0`, `a[href="/savings"]: 1`, populated-listing copy; flipped with ZERO frontend code change (the designed behavior) |
+
+### PLATFORM FINDING (follow-up, high priority): time-based ISR never
+### revalidates in production — server-fetched pages freeze at build
+
+The homepage kept rendering the pre-landing pending state hours after
+`withReference` turned non-zero. Rendered-DOM + flight-payload
+inspection showed the served HTML was the 20:14 build snapshot
+(no `productCount` anywhere, FAQ guides section absent), and
+`open-next.config.ts` itself documents the mechanism: time-based
+revalidation needs a queue; the chosen **memory queue has per-isolate
+dedupe**, and on a near-zero-traffic site every request is a cold
+isolate — the queued revalidation dies with it, so the R2 incremental
+cache serves the build-frozen page indefinitely. Every server-fetched
+surface (savings page, product price-context, sitemap guide slugs, FAQ)
+is frozen at build until the next deploy. The savings landing was the
+first time content changed post-build, which is why this surfaced now.
+
+Remedies to weigh in the follow-up change: the adapter's DO queue
+(rejected at migrate-to-cloudflare for preview-URL reasons — that
+constraint may deserve revisiting), Cloudflare Queues, or a scheduled
+cache-warming cron. Recorded here because the honest-state design
+("the card flips with no frontend change") REQUIRES working ISR.

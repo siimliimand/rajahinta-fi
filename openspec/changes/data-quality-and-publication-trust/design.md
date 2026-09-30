@@ -31,6 +31,20 @@ Amounts are never altered (sanity-rail D3). When Posti rows land, the €0.00 li
 
 Single gated production deploy after verification (task 5.2, `confirm_deploy=yes` precedent). The two data-landing tasks are independent of the deploy: Posti transcription rides the same deploy (dataset edit), Alko ingestion is a production data operation verified by recorded before/after counts. Rollback is `wrangler rollback`; gates reject new bad rows at ingestion, and already-stored implausible rows are corrected by the next sweep rather than by a migration — no backfill is planned in this change.
 
+## Amendment (2026-09-30, owner-approved)
+
+**D3 deviation — Alko adapter mapping.** D3 assumed the reference feed
+would land as pure ops ("neither adds an adapter or a field"). The real
+source turned out to be Alko's storefront search API (POST + odata
+pagination), whose shape differs from the placeholder contract the
+golden fixture pinned. The owner approved the scoped mapping change
+(field renames, POST pagination, category token table, fixture updated
+to the live shape) as the designed "wire the real feed" workflow; the
+EAN-less consequence is recorded in change-notes §2.1 as the spike's
+real input. No other D-decision is affected: gates reject to
+absence/review (D1), ceilings extend the invariant (D2), honesty states
+render unchanged amounts (D4).
+
 ## Risks
 
 - **Over-aggressive ceilings reject real products** (e.g. novelty 3 l beer crates). Mitigation: ceilings live in one constants table with tests; rejection is null+review, not delete; the share metric makes over-rejection visible on the panel.
