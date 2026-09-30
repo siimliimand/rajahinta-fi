@@ -367,3 +367,282 @@ Nothing schedules the sweep — it runs when an operator runs it.
       notes or an ops note.
 - [ ] Revocation path exercised once (staging): producer skips the
       merchant again after `REVOKED`.
+
+---
+
+## 6. Alko reference feed — manual (re-)run and verification
+
+Operational sequence for landing the domestic Alko reference prices in
+production and verifying the savings funnel end-to-end (task 2.1,
+change `data-quality-and-publication-trust`). Unlike `alks` (§2–§3),
+nothing here is a first onboarding: the adapter is golden-fixture
+tested, the savings-snapshot cron and the `/api/v1/savings` route are
+shipped, and the governance grant already exists (precedent: grants
+recorded 2026-09-28). What has never happened is the data landing —
+production `retail_offers` carries zero `alko` rows, so the snapshot
+pass honestly materializes nothing and `withReference` reads 0. This
+section is the sequence for making the data land, verifying it, and
+re-running it later.
+
+Every artifact this section references is in the repository:
+
+| Artifact | Path |
+|---|---|
+| Alko feed adapter (EUR assortment parser) | `packages/data-acquisition/src/adapters/alko.adapter.ts` |
+| Adapter registry (`FEED_ADAPTERS`, keyed `alko`) | `packages/data-acquisition/src/index.ts` |
+| Hourly producer (registry + governance + cadence gate) | `apps/api-worker/src/queues/ingestion-producer.ts` |
+| Offer upsert (EAN tier matching) | `apps/api-worker/src/adapters/d1-upsert.repository.ts` |
+| Savings-snapshot cron (qualification predicate) | `apps/api-worker/src/cron/savings-snapshots.ts` |
+| Cron dispatch (30-minute shared tick) | `apps/api-worker/src/cron/router.ts` |
+| Savings route (`withReference` count) | `apps/api-worker/src/routes/savings.routes.ts` |
+
+Roles: the **ops lead** executes the production registry update and
+records the counts; the **platform engineer** owns the adapter and the
+snapshot cron.
+
+### 6.1 How the ingestion is triggered
+
+There is no one-off "ingest now" command — the only trigger is the
+hourly producer (cron `0 * * * *`), and it enqueues `alko` only when
+all three of these hold (§0's checkpoints, in the producer's order):
+
+1. **Non-empty registry `feed_url`.** The seed's `alko` row carries an
+   empty `feedUrl` — the "adapter not live yet" marker — and the
+   producer logs `Skipping merchant "alko": registry feed URL is
+   empty` for exactly that reason. The adapter fetches whatever URL
+   the registry row names (`AlkoFeedAdapter.fetch` reads
+   `config.feedUrl`), so setting the real feed URL is the act that
+   arms the feed.
+2. **Governance aggregated `GRANTED`.** Already the case in
+   production (grants recorded 2026-09-28); re-granting an
+   already-`GRANTED` merchant is a no-op (`changed: false`).
+3. **Cadence bucket crossed.** The seed cadence is daily
+   (86,400,000 ms), which fires on the 00:00 UTC pass (§0). A fresh
+   grant does not shortcut the bucket — the first enqueue lands on the
+   next tick whose interval bucket differs, which for a daily row is
+   the next 00:00 UTC.
+
+The enqueued message runs the standard workflow (fetch → map → lint →
+upsert, §2.3): `parseAlkoAssortment` rejects a non-EUR list outright,
+flags unmappable category rows and missing prices to the correction
+queue per-row, and maps Finnish assortment groups through the
+source-category normalization. Offers land in `retail_offers` with
+`merchant = 'alko'`, `country = 'FI'`, and an `observed_at` timestamp
+(NOT NULL by schema — the column's default stamps every row).
+
+The savings snapshots are a separate cron on the shared 30-minute
+aggregation tick (`*/30 * * * *`), registered after the time-series
+aggregation handler. The snapshot is a daily materialization keyed
+`(as_of, product_id)`: a same-day extra tick converges on the same
+rows (keyed upsert, no watermark). There is no manual snapshot
+trigger either — "run the snapshot" means "wait for the next
+30-minute tick after the reference offers exist".
+
+### 6.2 Prerequisites
+
+- [ ] **Production registry row carries the real feed URL.** The
+      production database is never seeded (§3), so the `alko` row —
+      if present at all — carries an empty `feed_url` or does not
+      exist. Setting the URL is the **one write** in this runbook
+      section; it mirrors §3's idempotent upsert exactly. The feed URL
+      itself is an owner decision (the adapter is fixture-pinned; no
+      live endpoint is recorded in the repository) — substitute the
+      owner-provided URL for `<ALKO_FEED_URL>`:
+
+      ```bash
+      cd apps/api-worker
+      wrangler d1 execute DB --remote --env production --command "\
+        INSERT INTO merchant_registry (merchant_id, name, country, feed_url, feed_format, polling_interval_ms) \
+        VALUES ('alko', 'Alko', 'FI', '<ALKO_FEED_URL>', 'json', 86400000) \
+        ON CONFLICT (merchant_id) DO UPDATE SET \
+          name = 'Alko', country = 'FI', feed_url = '<ALKO_FEED_URL>', \
+          feed_format = 'json', polling_interval_ms = 86400000, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')" -y
+      ```
+
+      The command mirrors the seed row (`country 'FI'`, `json`,
+      daily 86400000). Do not lower `polling_interval_ms` here unless
+      an off-schedule re-run is wanted (§6.6) — and never leave it
+      lowered (§2.0's pinning warning applies to every update).
+- [ ] **Governance `GRANTED` in production.** Verify read-only:
+      `GET https://api.rajahinta.fi/ops/console/governance` lists
+      `alko` as `GRANTED` (bearer token per §1; production secrets are
+      per-environment, §3). If it is not granted, follow §2.2 against
+      the production API before anything else.
+- [ ] **Baseline counts recorded (before).** Run the three read-only
+      queries of §6.4 against production and note the numbers — the
+      change notes compare before/after, and a before-count of zero
+      Alko offers is itself the expected baseline, worth recording
+      rather than assuming.
+
+### 6.3 Wait for the producer pass and the first run
+
+At the next eligible hourly pass (daily row → the 00:00 UTC pass;
+hourly row → the next tick):
+
+- Producer log: no `Skipping merchant "alko"` line, and the summary
+  line `Hourly price ingestion: enqueued N/N registry merchant
+  message(s)` counts `alko` among the enqueued. The message dedupe key
+  is `price-ingestion-alko-<UTC hour bucket>` (§2.3 convention).
+- The workflow runs fetch → map → lint → upsert against the feed URL.
+  Rows failing the payload contract (non-EUR, unmappable category,
+  missing price) surface as per-row errors and land in the correction
+  queue — the adapter never guesses around them (adapter docblock).
+  A whole-payload failure (non-EUR currency, missing `products`
+  array, HTTP error status) persists nothing: check the feed URL and
+  payload contract before re-running.
+
+### 6.4 Read-only verification queries
+
+Every command in this subsection is a SELECT — read-only, safe to run
+against production repeatedly. All use the flag pattern of §3
+(`cd apps/api-worker`, `DB --remote --env production`, `-y`).
+
+**(a) Alko reference offers — before/after.** The landing is visible
+as this count moving from its baseline (0) to the assortment size:
+
+```bash
+wrangler d1 execute DB --remote --env production --command "\
+  SELECT COUNT(*) AS alko_reference_offers FROM retail_offers \
+  WHERE merchant = 'alko'" -y
+```
+
+**(b) `withReference` — the join the savings snapshot uses.** The
+route's `coverage.withReference` counts snapshot rows for the latest
+as-of day with a non-null `alko_reference_cents`
+(`savings.routes.ts`); the snapshot pass qualifies a product only when
+it carries an Alko offer **with an observation timestamp** and the
+calculator resolves a usable benchmark and gap
+(`savings-snapshots.ts`). The SQL mirror of the qualification
+enumeration is:
+
+```bash
+wrangler d1 execute DB --remote --env production --command "\
+  SELECT COUNT(DISTINCT product_id) AS qualification_superset \
+  FROM retail_offers WHERE merchant = 'alko' AND observed_at IS NOT NULL" -y
+```
+
+(`observed_at` is NOT NULL by schema, so this equals the distinct
+Alko-referenced product count — it is the enumeration superset, not
+the guaranteed qualified count: the benchmark and gap steps run in the
+calculator and have no SQL mirror.) The honest `withReference` figure
+is the materialized one:
+
+```bash
+wrangler d1 execute DB --remote --env production --command "\
+  SELECT COUNT(*) AS with_reference FROM savings_snapshots \
+  WHERE as_of = (SELECT MAX(as_of) FROM savings_snapshots) \
+    AND alko_reference_cents IS NOT NULL" -y
+```
+
+**(c) EAN join hit-rate.** The offer upsert matches by EAN first
+(tier 1, `d1-upsert.repository.ts`): an Alko record whose EAN equals a
+stored product's EAN attaches its offer to that same `product_id` —
+which is exactly the pairing the snapshot pass needs. The compound-key
+fallback (tier 2) and the new-row insert (tier 3) explain any
+residual mismatch. The hit-rate measures how many offered products
+carry an EAN that some Alko-referenced product also carries:
+
+```bash
+wrangler d1 execute DB --remote --env production --command "\
+  WITH alko_eans AS ( \
+    SELECT DISTINCT pm.ean AS ean FROM retail_offers ro \
+    JOIN product_master pm ON pm.id = ro.product_id \
+    WHERE ro.merchant = 'alko' AND pm.ean IS NOT NULL), \
+  offered AS ( \
+    SELECT DISTINCT ro.product_id AS product_id, pm.ean AS ean \
+    FROM retail_offers ro JOIN product_master pm ON pm.id = ro.product_id) \
+  SELECT (SELECT COUNT(*) FROM offered) AS products_with_offers, \
+    (SELECT COUNT(*) FROM offered WHERE ean IS NOT NULL \
+      AND ean IN (SELECT ean FROM alko_eans)) AS ean_matched_products, \
+    ROUND(100.0 * (SELECT COUNT(*) FROM offered WHERE ean IS NOT NULL \
+      AND ean IN (SELECT ean FROM alko_eans)) / \
+      NULLIF((SELECT COUNT(*) FROM offered), 0), 1) AS ean_join_hit_rate_pct" -y
+```
+
+A low rate with a healthy Alko offer count means the reference rows
+landed on their own product ids (tier 3) instead of joining — the
+design's named risk (`design.md` Risks): the finding scopes the
+dedupe/matching follow-up (task 5.3's spike), it does not block this
+change; the honest empty state stays correct either way.
+
+### 6.5 End-to-end savings verification
+
+Wait for one 30-minute tick **after** the (a) count is non-zero (the
+hourly producer and the :00 snapshot tick coincide, but the workflow
+may finish mid-hour — the first tick after the offers are visible is
+the one that qualifies them; extra same-day ticks converge).
+
+- Workers Logs, `savings-snapshots` handler:
+  `Starting savings-snapshot pass for YYYY-MM-DD` with the enumerated
+  product count, then `Savings-snapshot pass for YYYY-MM-DD: N rows
+  written, N skipped, N failed`, then `Cron handler
+  "savings-snapshots" complete`. Skipped products without a usable
+  reference are the design's honest absence, not errors; per-product
+  failures are isolated and counted (`failed`), never fatal to the
+  tick.
+- Re-run the (b) materialized query — `with_reference` must now be
+  > 0 and equal the route's count for the day.
+- The public surface, end to end:
+
+  ```bash
+  curl -H "x-age-confirmed: 1" \
+    "https://api.rajahinta.fi/api/v1/savings?category=spirits"
+  ```
+
+  (The savings routes sit behind the age gate — a bare request 403s
+  with `AGE_GATE_REQUIRED`.) Expect `coverage.withReference > 0` and
+  rows ordered by `gapBasisPoints` descending for categories with
+  qualifying rows; a category with no qualifying rows returns 200
+  with an empty `rows` list and the counts — an honest empty state,
+  not an error. The homepage savings card flips from its
+  pending-reference state to the listing CTA on the same overview
+  data, with no frontend change (task 3.2 covers the empty-side
+  rendering).
+
+### 6.6 Re-run guidance
+
+- **Idempotency.** Re-running is safe at every layer: the producer
+  dedupes per UTC hour bucket, the consumer skips duplicate messages
+  by that key, offer upserts append an observation only when the price
+  changed (change detection against the latest prior row), and the
+  snapshot upsert is keyed `(as_of, product_id)` — the same day
+  converges, last write wins.
+- **Cadence.** The daily bucket fires at 00:00 UTC; nothing needs
+  re-running between passes. For an off-schedule re-run (e.g. the
+  feed published a corrected assortment mid-day), temporarily set the
+  registry row's `pollingIntervalMs` to `3600000` — the hourly
+  minimum, fired on every tick — via the ops console or the registry
+  API, **pinning `feedUrl` and `feedFormat` in the same update**
+  (§2.0: the upsert overwrites the whole row), wait one pass, then
+  restore `86400000`.
+- **When to re-run.** A new assortment payload version; after an
+  adapter or category-mapper change lands (the correction-queue and
+  hit-rate numbers should move the expected direction); when the
+  freshness panel shows the reference age growing past the daily
+  expectation (a silently failing fetch enqueues but persists
+  nothing); before recording change-notes numbers, so the after-counts
+  reflect the current catalog.
+- **Stopping.** Revocation (§2.3 path, production §3) is the kill
+  switch: the producer skips a `REVOKED` merchant on the next pass and
+  the gate blocks in-flight runs. Revocation stops ingestion; it does
+  not purge landed offers or snapshots.
+
+### 6.7 Verification checklist (Alko reference landing)
+
+- [ ] Registry row updated with the real feed URL (§6.2; the one
+      write, mirroring §3's pattern), `GET /ops/console/governance`
+      shows `alko` GRANTED.
+- [ ] Producer pass enqueues `alko` (no `Skipping merchant "alko"`
+      warning); workflow completes; correction-queue rows, if any,
+      are understood per-row failures.
+- [ ] (a) count > 0; baseline (before) and after numbers recorded.
+- [ ] One 30-minute tick observed: `savings-snapshots` handler logs
+      rows written; (b) materialized `with_reference` > 0.
+- [ ] `GET /api/v1/savings?category=...` reports
+      `coverage.withReference > 0` (age-confirmed request).
+- [ ] (c) EAN join hit-rate computed and recorded; a low rate noted as
+      the dedupe/matching follow-up input, not a blocker.
+- [ ] Numbers transcribed into the change notes
+      (`openspec/changes/data-quality-and-publication-trust/change-notes.md`,
+      §2.1) with the verified-at timestamp — TBD placeholders are
+      filled by the operator only, never pre-filled.
