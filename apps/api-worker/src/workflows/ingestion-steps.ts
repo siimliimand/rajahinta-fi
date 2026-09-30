@@ -103,6 +103,11 @@ import {
 } from '../adapters/d1-domain-ports';
 import { OfferChangeRecorderHook } from '../adapters/offer-change-recorder-hook';
 import { observationLogStore } from '../adapters/r2-observation-log.store';
+import {
+  recordImplausibleVolumeShare,
+  recordZeroPriceRejections,
+  zeroPriceRejectionsOf,
+} from '../observability/data-quality';
 import type { Logger } from '../logger';
 import type { IngestionRunOutcome } from '../queues/ingestion.queue';
 
@@ -906,6 +911,27 @@ export async function runIngestionWorkflow(
         merchantId: config.merchantId,
       });
     }
+
+    // -- Step 8: data-quality export writes (task 4.1) ----------------------
+    // The per-run AE points as their own step: a replayed instance returns
+    // the cached output without re-invoking the callback, so the per-run
+    // zero-price counter cannot double-write. Emission is no-op without
+    // METRICS and best-effort (write failures swallowed in metrics.ts) —
+    // this step never fails the run. The share write is guarded on the
+    // data-quality step's null contract: no upserted offers → nothing
+    // audited → no implausible-volume observation.
+    await step.do('data-quality-metrics', INGESTION_STEP_RETRY, async () => {
+      const zeroPriceRejections = zeroPriceRejectionsOf(upserts.upsertErrors);
+      recordZeroPriceRejections(env, zeroPriceRejections, config.merchantId);
+      if (quality !== null) {
+        recordImplausibleVolumeShare(
+          env,
+          quality.report.implausibleVolumeCount,
+          quality.report.totalOffers,
+        );
+      }
+      return { zeroPriceRejections, qualityReported: quality !== null };
+    });
 
     log?.info({
       message: `Workflow pipeline run for "${config.merchantId}": ` +

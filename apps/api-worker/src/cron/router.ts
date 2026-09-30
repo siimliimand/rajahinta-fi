@@ -43,6 +43,7 @@ import { handleFreshnessAlert } from './freshness-alert';
 import { handlePriceAlertEvaluation } from './price-alert-evaluation';
 import { handleSavingsSnapshots } from './savings-snapshots';
 import { handleRetentionSweep, RETENTION_CRON } from './retention-sweep';
+import { measureAndRecordDataQualityGauges } from '../observability/data-quality';
 import {
   INGESTION_PRODUCER_CRON,
   schedulePriceIngestions,
@@ -131,6 +132,14 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   add(AGGREGATION_CRON, {
     name: 'savings-snapshots',
     run: (env, log) => handleSavingsSnapshots(env, log),
+  });
+  // Task 4.1 (data-quality-and-publication-trust) shares the same 30-min
+  // tick: the cadence gauges (Alko reference coverage, transport rows,
+  // per-feed last-success age) are D1-measured and written best-effort —
+  // the one-tick writer never throws (per-gauge isolation inside).
+  add(AGGREGATION_CRON, {
+    name: 'data-quality-gauges',
+    run: (env, log) => measureAndRecordDataQualityGauges(env, log),
   });
   add(RETENTION_CRON, {
     name: 'retention-sweep',

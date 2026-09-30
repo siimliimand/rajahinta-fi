@@ -35,6 +35,10 @@ import {
   type WorkflowStepLike,
 } from '../ingestion-steps';
 import { PRODUCT_CATEGORIES } from '../../../../../packages/data-platform/src/d1/schema';
+import {
+  IMPLAUSIBLE_VOLUME_SHARE_GAUGE,
+  ZERO_PRICE_REJECTIONS_COUNTER,
+} from '../../observability/data-quality';
 import { ensureWorkflowInstance } from '../handoff';
 import { processIngestionMessage } from '../../queues/ingestion.queue';
 import { composeMerchantRegistry } from '../../queues/pipeline';
@@ -336,6 +340,7 @@ describe('runIngestionWorkflow — staged pipeline', () => {
       'volume-ceiling-gate',
       'upsert-offers-1',
       'data-quality',
+      'data-quality-metrics',
       'complete-job-claim',
     ]);
     expect(complete).toHaveBeenCalledTimes(1);
@@ -477,12 +482,73 @@ describe('runIngestionWorkflow — staged pipeline', () => {
     expect(offerRow!.price_cents).toBe(189);
     expect(offerRow!.reliability_status).toBe('ESTIMATED');
   });
+
+  it('a run with a zero-price rejection and an implausible volume performs both export writes (task 4.1 run seam)', async () => {
+    const { points, env } = fakeMetrics();
+    const services = stageServices({
+      feedRecords: [
+        // priceCents 0 → the mapper price-floor gate rejects the offer with
+        // the "price drift" error (rides the run's error channel)…
+        feedRecord({ productId: 'alko-free', ean: null, priceCents: 0 }),
+        // …and the live Karhu case → the ceiling gate withholds the volume.
+        feedRecord({ productId: 'alko-karhu', volumeMl: 33_000 }),
+      ],
+    });
+
+    const result = (await runIngestionWorkflow(workflowParams(), {
+      env,
+      step: new FakeWorkflowStep(),
+      NonRetryableError: FakeNonRetryableError,
+      services,
+      claims: {
+        complete: vi.fn(async () => undefined),
+        release: vi.fn(async () => undefined),
+      },
+      log: LOG,
+    })) as { productsIngested: number; errors: string[] };
+
+    // Both products still ingest — rejection is to trust, not existence.
+    expect(result.productsIngested).toBe(2);
+    expect(result.errors.some((error) => error.includes('price drift'))).toBe(true);
+
+    const byGauge = (name: string): AnalyticsEngineDataPoint[] =>
+      points.filter((point) => point.indexes?.[0] === name);
+
+    // Zero-price rejections: one point per run, per-run count 1, merchant-labelled.
+    const zeroPrice = byGauge(ZERO_PRICE_REJECTIONS_COUNTER);
+    expect(zeroPrice).toHaveLength(1);
+    expect(zeroPrice[0]!.doubles?.[0]).toBe(1);
+    expect(zeroPrice[0]!.blobs?.[2]).toBe('{"merchant":"alko"}');
+
+    // Implausible-volume share: 1 withheld / 1 audited offer = 1.
+    const share = byGauge(IMPLAUSIBLE_VOLUME_SHARE_GAUGE);
+    expect(share).toHaveLength(1);
+    expect(share[0]!.doubles?.[0]).toBe(1);
+  });
 });
 
 /** Worker env over the migrated in-memory D1. */
 function workerEnv(): { env: Env; db: import('node:sqlite').DatabaseSync } {
   const { db, d1 } = openMigratedD1();
   return { env: { DB: d1 } as unknown as Env, db };
+}
+
+/**
+ * Fake AE binding — the observability suite's sink pattern — for asserting
+ * the run-seam data-quality export writes (task 4.1).
+ */
+function fakeMetrics(): { points: AnalyticsEngineDataPoint[]; env: Env } {
+  const points: AnalyticsEngineDataPoint[] = [];
+  return {
+    points,
+    env: {
+      METRICS: {
+        writeDataPoint: (point?: AnalyticsEngineDataPoint): void => {
+          points.push(point ?? {});
+        },
+      },
+    } as unknown as Env,
+  };
 }
 
 /** Serialized quality-offer fixture (unit-window invariant tests, task 1.4). */
