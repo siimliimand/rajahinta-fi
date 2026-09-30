@@ -27,6 +27,21 @@
  * and the calculator degrades transport to ESTIMATED/UNAVAILABLE, as it
  * already does with an empty table.
  *
+ * First transcription (2026-09-30, from the owner-provided structured
+ * consumer tables): Posti's published consumer tables are DOMESTIC and
+ * OUTBOUND (FROM Finland) — they contain no TO-Finland lanes at all, so
+ * the admin procedure's "rows relevant to the calculator's lanes" has an
+ * empty solution set for the cross-border legs. Only rows that map onto
+ * the CarrierRateOffer shape without invention are transcribed: the
+ * weight-distinct domestic Small Parcel tier. The S/M/L/XL size classes
+ * all share the 25 kg cap and are differentiated only by dimensions,
+ * which this row shape cannot carry — encoding several prices into one
+ * weight bracket would let the first DB hit decide, so they stay out
+ * (same rationale as the Fransberg bracket-boundary epsilon, inverted:
+ * never let an ambiguous bracket fabricate a price). The Baltic and
+ * other-EU tables price FROM-Finland lanes this calculator never
+ * queries, and publish no per-size weight brackets besides.
+ *
  * @module PostiRateSource
  */
 
@@ -41,7 +56,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 /** Review date of the current transcription — the observation time every offer carries. */
-export const POSTI_OBSERVED_AT = new Date('2026-09-28T00:00:00Z');
+export const POSTI_OBSERVED_AT = new Date('2026-09-30T00:00:00Z');
 
 /**
  * The transcribed Posti rate rows.
@@ -58,7 +73,26 @@ export const POSTI_OBSERVED_AT = new Date('2026-09-28T00:00:00Z');
  * calculator selects by lane + package tier (parcel/box/pallet) + weight
  * bracket, so transcribe every tier the source publishes per lane.
  */
-const POSTI_RATES: readonly CarrierRateOffer[] = [];
+const POSTI_RATES: readonly CarrierRateOffer[] = [
+  {
+    // Domestic Small Parcel (XXS): the one consumer tier whose price is
+    // weight-distinct (max 3×25×35 cm, 2 kg) — every larger size class
+    // shares the 25 kg cap and differs only in dimensions, which this
+    // row shape cannot carry. Consumer rate, sender-paid (the Finnish
+    // domestic e-commerce norm this lane models): seller does not pay
+    // the transport separately.
+    carrier: 'posti',
+    originCountry: 'FI',
+    destinationCountry: 'FI',
+    weightMinKg: 0,
+    weightMaxKg: 2,
+    packageTier: 'parcel',
+    priceCents: 790,
+    currency: 'EUR',
+    sellerInvolvementIndicator: false,
+    observedAt: POSTI_OBSERVED_AT,
+  },
+];
 
 /** Build the curated Posti rate rows — pure, like the Fransberg builder. */
 export function buildPostiRates(): CarrierRateOffer[] {

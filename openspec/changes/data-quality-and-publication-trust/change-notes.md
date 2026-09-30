@@ -114,6 +114,42 @@ the operator's own browser should fetch the endpoint directly:
 
 Task 2.2 stays open until the transcribed rows land.
 
+### 2026-09-30 — consumer tables received, honest transcription landed
+
+The owner supplied Posti's structured consumer price tables (domestic
+parcels XXS–XXL, domestic letters, international letters + Baltic/other-EU
+parcels, additional services). Transcription findings, recorded as the
+review of record:
+
+- **No TO-Finland lanes exist in the consumer tables.** Every parcel rate
+  is FI→FI or FROM-Finland (FI→EE/LV/LT, FI→EU). The admin procedure's
+  "rows relevant to the calculator's lanes (shipping TO Finland)" has an
+  empty solution set here; inverting outbound consumer rates was
+  rejected — it would fabricate both lane direction and a merchant
+  contract price a consumer table cannot provide.
+- **Transcribed**: the domestic Small Parcel (XXS) tier — the one row
+  that maps onto `CarrierRateOffer` without invention (weight-distinct
+  0–2 kg, €7.90, FI→FI, parcel). `POSTI_OBSERVED_AT` → 2026-09-30.
+- **Excluded, with reasons**: S/M/L/XL/XXL domestic tiers share the
+  25 kg cap and differ only in dimensions the row shape cannot carry
+  (several prices in one weight bracket = first-DB-hit decides — the
+  exact ambiguity the Fransberg bracket epsilon exists to prevent);
+  Baltic/outbound tables price lanes this calculator never queries and
+  publish no per-size weight brackets; letters, the "other EU from
+  €32.90" starting price, Åland surcharge and additional services are
+  not lane-bracket rates.
+- **Tests**: `posti-rate.source.test.ts` now pins the transcription
+  (exact row, no-fabricated-inbound-lane guard, bracket-unambiguity +
+  price-floor guard, observed-at stamp).
+
+**What would complete the picture**: the lane-shaped JSON payload
+(`posti.fi/api/price-list/parcels.json` — reachable from a residential
+connection, still 403 from datacenter egress) carrying true
+TO-Finland bracket prices, or a dimensions-aware row schema (a separate
+change). Until either lands, cross-border transport renders the honest
+not-included state; the calculator's domestic lane (FI merchant → FI
+consumer, e.g. kippis) gains the ≤2 kg parcel rate.
+
 ## 5.1 Local verification (2026-09-30)
 
 Full local verification of the working tree at `cbab396`
