@@ -10,7 +10,7 @@
 ## 2. Data landing (ops)
 
 - [ ] 2.1 Trigger Alko reference feed ingestion in production; verify savings snapshot qualification end-to-end; record `withReference` before/after counts and the EAN join hit-rate in change notes; runbook addendum for re-runs <!-- agent: devops-engineer.fast, depends_on: [], touches: [docs/**] --> <!-- in-repo deliverables landed (runbook §6 + change-notes evidence table); task closes when the operator runs docs/ingestion-runbook.md §6.4–6.5 and fills the TBD table in change-notes.md -->
-- [ ] 2.2 Transcribe Posti's parcel price table into `POSTI_RATES` per the documented admin procedure (lanes shipping TO Finland, every tier the source publishes); bump `POSTI_OBSERVED_AT`; golden-fixture test for the transcribed rows <!-- agent: platform-engineer.fast, depends_on: [], touches: [packages/data-acquisition/src/adapters/posti-rate.source.ts, packages/data-acquisition/src/__tests__/**] -->
+- [ ] 2.2 Transcribe Posti's parcel price table into `POSTI_RATES` per the documented admin procedure (lanes shipping TO Finland, every tier the source publishes); bump `POSTI_OBSERVED_AT`; golden-fixture test for the transcribed rows <!-- agent: platform-engineer.fast, depends_on: [], touches: [packages/data-acquisition/src/adapters/posti-rate.source.ts, packages/data-acquisition/src/__tests__/**] --> <!-- live fetch re-attempted 2026-09-30: endpoint still 403 from datacenter egress, no Wayback captures, public pages carry no inbound lane table — operator procedure + evidence table in change-notes.md §2.2; closes when the transcribed rows land -->
 
 ## 3. Publication honesty (frontend)
 
