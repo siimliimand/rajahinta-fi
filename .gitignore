@@ -65,3 +65,5 @@ tests/e2e-browser/playwright-report/
 # ==== AgentMemory ====
 # Local agent-memory state, if persisted to disk.
 .agentmemory/
+# Agent-sandbox local state
+.local/
