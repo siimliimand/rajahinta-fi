@@ -5,7 +5,7 @@
 - [x] 1.1 Price floor gate: reject `priceCents <= 0` at mapping time in `data-mapping.service.ts` with an explicit price-drift error (parser's `readMinorUnitCents` stays structural); data-quality counter for rejections; unit tests cover `"0"`, negative, and valid-price passthrough <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-acquisition/src/services/data-mapping.service.ts, packages/data-acquisition/src/__tests__/**] -->
 - [x] 1.2 Category-bounded volume ceilings in the ingestion quality stage next to the existing `0 < unit_volume < 100` invariant (bounds in one constants table: beer ≤ 2 l, wine ≤ 6 l, spirits ≤ 3 l, remaining categories bounded); implausible → volume unavailable + review flag + share metric; tests pin the live Karhu "33 l" case and plausible passthrough <!-- agent: platform-engineer.build, depends_on: [], touches: [apps/api-worker/src/workflows/ingestion-steps.ts, packages/data-acquisition/src/services/data-quality.service.ts, apps/api-worker/src/__tests__/**] -->
 - [x] 1.3 Multipack-aware volume parse in `alks.parser.ts` (`24×0,33 l` → unit 330 ml, pack 24) + bundle-name rejection to review; unit tests cover the multipack shapes, the observed bundle names, and single-product passthrough across the four adapters sharing the parser <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-acquisition/src/adapters/alks.parser.ts, packages/data-acquisition/src/__tests__/**] -->
-- [ ] 1.4 Golden fixtures ("price 0", category-implausible volume, bundle name) + pipeline contract test asserting none publish; run in the existing unit suite <!-- agent: platform-engineer.build, depends_on: [1.1, 1.2, 1.3], touches: [packages/data-acquisition/src/__fixtures__/**, packages/data-acquisition/src/__tests__/**] -->
+- [x] 1.4 Golden fixtures ("price 0", category-implausible volume, bundle name) + pipeline contract test asserting none publish; run in the existing unit suite <!-- agent: platform-engineer.build, depends_on: [1.1, 1.2, 1.3], touches: [packages/data-acquisition/src/__fixtures__/**, packages/data-acquisition/src/__tests__/**] -->
 
 ## 2. Data landing (ops)
 
@@ -19,7 +19,7 @@
 
 ## 4. Observability
 
-- [ ] 4.1 Grafana data-quality panel + threshold alerts: zero-price rejections, implausible-volume share, Alko reference coverage %, transport-row count per carrier, per-feed last-success age; wires the counters from 1.1/1.2 and the existing freshness/metrics plumbing <!-- agent: devops-engineer.build, depends_on: [1.1, 1.2], touches: [infra/**, apps/api-worker/src/observability/**] -->
+- [x] 4.1 Grafana data-quality panel + threshold alerts: zero-price rejections, implausible-volume share, Alko reference coverage %, transport-row count per carrier, per-feed last-success age; wires the counters from 1.1/1.2 and the existing freshness/metrics plumbing <!-- agent: devops-engineer.build, depends_on: [1.1, 1.2], touches: [infra/**, apps/api-worker/src/observability/**] -->
 
 ## 5. Verification, rollout, spike
 
