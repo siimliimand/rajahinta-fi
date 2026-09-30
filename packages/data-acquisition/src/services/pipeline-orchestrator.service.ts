@@ -228,6 +228,15 @@ export class PipelineOrchestratorService {
     }> = [];
 
     for (const pair of mapped) {
+      // Offer-gate rejections (design D1, data-quality-and-publication-trust):
+      // the product still upserts — offer-less, honestly sorting last —
+      // while the rejected offer never reaches the upsert and its drift
+      // error rides the run's error collection, the same surface as the
+      // parser's per-row correction failures.
+      if (pair.offerErrors !== undefined) {
+        upsertErrors.push(...pair.offerErrors);
+      }
+
       try {
         const upsertResult = await this.upsertRepository.upsertProduct(
           pair.product,
@@ -238,52 +247,54 @@ export class PipelineOrchestratorService {
           recordsUpdated++;
         }
 
-        const offerResult = await this.upsertRepository.upsertOffer({
-          ...pair.offerInput,
-          productId: upsertResult.productId,
-        });
+        if (pair.offerErrors === undefined) {
+          const offerResult = await this.upsertRepository.upsertOffer({
+            ...pair.offerInput,
+            productId: upsertResult.productId,
+          });
 
-        upsertedOffers.push({
-          merchant: config.merchantId,
-          productId: upsertResult.productId,
-          observedAt: pair.offerInput.observedAt,
-          reliabilityStatus: pair.offerInput.reliabilityStatus,
-        });
+          upsertedOffers.push({
+            merchant: config.merchantId,
+            productId: upsertResult.productId,
+            observedAt: pair.offerInput.observedAt,
+            reliabilityStatus: pair.offerInput.reliabilityStatus,
+          });
 
-        // -- Step 4b: Changed-offer hook -------------------------------------
-        // Fires exactly once per CHANGED offer, after the row is durably
-        // upserted. The backend binds this to the price-observation
-        // recorder, so this is the single point where the observation log
-        // grows — strictly on the background ingestion path. Failure
-        // isolation is mandatory: a recorder error (including expected
-        // classification-gate rejections) is logged and the run continues
-        // with the remaining offers; it must never abort ingestion or
-        // pollute the run's error list.
-        if (offerResult.changed) {
-          offersChanged++;
+          // -- Step 4b: Changed-offer hook -------------------------------------
+          // Fires exactly once per CHANGED offer, after the row is durably
+          // upserted. The backend binds this to the price-observation
+          // recorder, so this is the single point where the observation log
+          // grows — strictly on the background ingestion path. Failure
+          // isolation is mandatory: a recorder error (including expected
+          // classification-gate rejections) is logged and the run continues
+          // with the remaining offers; it must never abort ingestion or
+          // pollute the run's error list.
+          if (offerResult.changed) {
+            offersChanged++;
 
-          if (this.offerChangeHook) {
-            try {
-              await this.offerChangeHook.onOfferChanged({
-                productId: upsertResult.productId,
-                offerId: offerResult.offerId,
-                merchant: config.merchantId,
-                country: pair.offerInput.country,
-                priceCents: pair.offerInput.priceCents,
-                reliabilityStatus: pair.offerInput.reliabilityStatus,
-                observedAt: pair.offerInput.observedAt,
-              });
-            } catch (hookErr) {
-              const message =
-                hookErr instanceof Error
-                  ? hookErr.message
-                  : 'Unknown offer-change hook error';
-              this.logger.error(
-                `Offer-change hook failed for offer ${offerResult.offerId} ` +
-                  `(merchant "${config.merchantId}", product ` +
-                  `${upsertResult.productId}); observation not recorded, ` +
-                  `ingestion continues: ${message}`,
-              );
+            if (this.offerChangeHook) {
+              try {
+                await this.offerChangeHook.onOfferChanged({
+                  productId: upsertResult.productId,
+                  offerId: offerResult.offerId,
+                  merchant: config.merchantId,
+                  country: pair.offerInput.country,
+                  priceCents: pair.offerInput.priceCents,
+                  reliabilityStatus: pair.offerInput.reliabilityStatus,
+                  observedAt: pair.offerInput.observedAt,
+                });
+              } catch (hookErr) {
+                const message =
+                  hookErr instanceof Error
+                    ? hookErr.message
+                    : 'Unknown offer-change hook error';
+                this.logger.error(
+                  `Offer-change hook failed for offer ${offerResult.offerId} ` +
+                    `(merchant "${config.merchantId}", product ` +
+                    `${upsertResult.productId}); observation not recorded, ` +
+                    `ingestion continues: ${message}`,
+                );
+              }
             }
           }
         }

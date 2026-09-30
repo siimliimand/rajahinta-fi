@@ -334,3 +334,78 @@ describe('DataMappingService — ESTIMATED offer on unresolved alcohol fields (t
     expect(offerInput.reliabilityStatus).toBe('ESTIMATED');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Price floor gate (task 1.1, design D1, change
+// data-quality-and-publication-trust) — a non-positive price is price
+// drift rejected at mapping time; the parser's minor-unit read stays
+// structural. The offer is never published; the product stays offer-less.
+// ---------------------------------------------------------------------------
+
+describe('DataMappingService — price floor gate (task 1.1, design D1)', () => {
+  const service = new DataMappingService();
+
+  it('spec: minor-unit price "0" is rejected as price drift, naming the source value', () => {
+    const pair = service.mapToProductAndOffer(
+      eurRecord({ priceCents: 0, originalPriceCents: 0 }),
+      'alks',
+      'DE',
+    );
+
+    expect(pair.offerErrors).toHaveLength(1);
+    expect(pair.offerErrors![0]).toContain('price drift');
+    expect(pair.offerErrors![0]).toContain('"0"');
+    expect(pair.offerErrors![0]).toContain('alks');
+  });
+
+  it('spec: a rejected price keeps the product — the product exists offer-less', () => {
+    const pair = service.mapToProductAndOffer(
+      eurRecord({ priceCents: 0, originalPriceCents: 0 }),
+      'alks',
+      'DE',
+    );
+
+    // D1: gates reject to absence, they never fix data — the product
+    // still maps in full and honestly sorts last without an offer.
+    expect(pair.product.name).toBe('Lapin Kulta');
+    expect(pair.product.brand).toBe('Lapin Kulta');
+    expect(pair.product.unitVolume).toBe('0.5');
+  });
+
+  it('spec: a negative price is rejected as price drift, naming the source value', () => {
+    const pair = service.mapToProductAndOffer(
+      eurRecord({ priceCents: -5, originalPriceCents: -5 }),
+      'alko',
+      'FI',
+    );
+
+    expect(pair.offerErrors).toHaveLength(1);
+    expect(pair.offerErrors![0]).toContain('price drift');
+    expect(pair.offerErrors![0]).toContain('"-5"');
+  });
+
+  it('spec: a valid price passes through unchanged — no rejection channel', () => {
+    const pair = service.mapToProductAndOffer(eurRecord(), 'alko', 'FI');
+
+    expect('offerErrors' in pair).toBe(false);
+    expect(pair.offerInput.priceCents).toBe(149);
+    expect(pair.offerInput.currency).toBe('EUR');
+  });
+
+  it('mapBatch keeps a rejected record in its slot with its product and its drift error', () => {
+    const pairs = service.mapBatch(
+      [
+        eurRecord({ priceCents: 149 }),
+        eurRecord({ productId: '000004', priceCents: 0, originalPriceCents: 0 }),
+      ],
+      'alks',
+      'DE',
+    );
+
+    expect(pairs).toHaveLength(2);
+    expect(pairs[0].offerErrors).toBeUndefined();
+    expect(pairs[1].offerErrors?.[0]).toContain('price drift');
+    expect(pairs[1].offerErrors?.[0]).toContain('"0"');
+    expect(pairs[1].product.name).toBe('Lapin Kulta');
+  });
+});

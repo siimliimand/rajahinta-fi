@@ -8,7 +8,11 @@
  */
 
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { DataQualityService } from '../services/data-quality.service';
+import {
+  DataQualityService,
+  IMPLAUSIBLE_VOLUME_SHARE_METRIC,
+} from '../services/data-quality.service';
+import type { DataQualityReport } from '../services/data-quality.service';
 import { ReliabilityService } from '@rajahinta/core-domain';
 import { HOUR, DAY } from '@rajahinta/core-domain';
 
@@ -326,6 +330,39 @@ describe('DataQualityService', () => {
         expect(report.flaggedIssues[0]).toContain('merchant-c');
       } finally {
         vi.useRealTimers();
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Implausible-volume share plumbing (task 1.2, data-quality-and-publication-trust)
+  // -------------------------------------------------------------------------
+
+  describe('implausible-volume share plumbing', () => {
+    it('pins the Prometheus contract name next to the stale-price-share convention', () => {
+      expect(IMPLAUSIBLE_VOLUME_SHARE_METRIC).toBe(
+        'rajahinta_data_quality_implausible_volume_share_ratio',
+      );
+    });
+
+    it('reports zero implausible volumes when called without the gate count', () => {
+      const report = service.runQualityCheck([makeOffer()]);
+
+      expect(report.implausibleVolumeCount).toBe(0);
+    });
+
+    it('carries the gate count on the report and through the quality-report hook', () => {
+      const seen: DataQualityReport[] = [];
+      DataQualityService.setQualityReportHook((report) => seen.push(report));
+      try {
+        const report = service.runQualityCheck([makeOffer(), makeOffer({ productId: 2 })], 1);
+
+        expect(report.implausibleVolumeCount).toBe(1);
+        // The hook (the metric surface's receiver) sees the same count.
+        expect(seen).toHaveLength(1);
+        expect(seen[0]!.implausibleVolumeCount).toBe(1);
+      } finally {
+        DataQualityService.setQualityReportHook(null);
       }
     });
   });

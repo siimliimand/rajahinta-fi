@@ -27,6 +27,16 @@ export interface MappedPair {
    */
   readonly product: UpsertProductInput & { readonly weightGrams: number | null };
   readonly offerInput: Omit<UpsertOfferInput, 'productId'>;
+  /**
+   * Offer-gate failure messages — present exactly when the mapped offer
+   * failed an ingestion plausibility gate (design D1, change
+   * data-quality-and-publication-trust): the offer is then NEVER
+   * published and the product upserts offer-less (it honestly sorts
+   * last). The strings ride the pipeline's error collection, the same
+   * surface as the feed parser's per-row correction failures, each
+   * naming the gate and the offending source value.
+   */
+  readonly offerErrors?: readonly string[];
 }
 
 @Injectable()
@@ -84,6 +94,22 @@ export class DataMappingService {
       weightGrams: record.weightGrams ?? null,
     };
 
+    // Price floor gate (design D1, data-quality-and-publication-trust):
+    // plausibility is a mapping concern — the parser's `readMinorUnitCents`
+    // stays structural (zero IS an integer), so a non-positive price is
+    // price drift, rejected HERE with the source value named. The offer is
+    // never published; the product stays (offer-less, honestly sorting
+    // last). The rejection rides the pipeline's error collection, the same
+    // failure-counting path the parser's non-EUR/invalid-price rows use.
+    const offerErrors =
+      record.priceCents <= 0
+        ? [
+            `Failed to map offer for product "${productName}" (merchant "${merchantId}"): ` +
+              `price drift — minor-unit price "${record.priceCents}" is not a positive ` +
+              'cent amount; offer rejected, the product stays offer-less (design D1)',
+          ]
+        : undefined;
+
     const offerInput: Omit<UpsertOfferInput, 'productId'> = {
       merchant: merchantId,
       // Registry-backed merchant market; the Finnish market default
@@ -104,7 +130,11 @@ export class DataMappingService {
       reliabilityStatus: 'ESTIMATED',
     };
 
-    return { product, offerInput };
+    // The rejection channel stays ABSENT on the happy path — a pair
+    // without gate failures is shape-identical to the pre-gate contract.
+    return offerErrors === undefined
+      ? { product, offerInput }
+      : { product, offerInput, offerErrors };
   }
 
   /**

@@ -61,6 +61,13 @@ export interface RawFeedRecord {
    * weight omit the field; the mapping persists null without an error.
    */
   readonly weightGrams?: number | null;
+  /**
+   * Units per multipack (design D1, change
+   * data-quality-and-publication-trust) — present exactly when the name
+   * carried a `pack × unit` volume token ("24×0,33 l"); `volumeMl` stays
+   * the PER-UNIT volume. Feeds without multipack names omit the field.
+   */
+  readonly packCount?: number | null;
 }
 
 /**

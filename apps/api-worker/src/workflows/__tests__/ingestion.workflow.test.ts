@@ -18,15 +18,23 @@ import {
   UPSERT_CHUNK_SIZE,
   composeIngestionStageServices,
   dataQualityStep,
+  mapRecordsStep,
   runIngestionWorkflow,
+  UNIT_VOLUME_CATEGORY_CEILING_LITRES,
   UNIT_VOLUME_LITRES_MAX,
+  UNIT_VOLUME_UNAVAILABLE,
+  unitVolumeCategoryCeiling,
   unitVolumeViolations,
+  volumeCeilingGateStep,
+  type DataQualityOutcome,
   type IngestionStageServices,
   type IngestionWorkflowParams,
+  type MappedRecords,
   type SerializedQualityOffer,
   type StepRetryConfig,
   type WorkflowStepLike,
 } from '../ingestion-steps';
+import { PRODUCT_CATEGORIES } from '../../../../../packages/data-platform/src/d1/schema';
 import { ensureWorkflowInstance } from '../handoff';
 import { processIngestionMessage } from '../../queues/ingestion.queue';
 import { composeMerchantRegistry } from '../../queues/pipeline';
@@ -325,6 +333,7 @@ describe('runIngestionWorkflow — staged pipeline', () => {
       'governance-gate',
       'fetch-feed',
       'map-records',
+      'volume-ceiling-gate',
       'upsert-offers-1',
       'data-quality',
       'complete-job-claim',
@@ -581,9 +590,11 @@ describe('unit-window invariant — staged pipeline flow', () => {
     expect(complete).toHaveBeenCalledTimes(1);
   });
 
-  it('an ml-shaped feed volume (500 l claim) fails the run’s check with a data error', async () => {
+  it('an ml-shaped feed volume (500 l claim) is gated to unavailable and fails the run’s check', async () => {
+    const upserts = fakeUpserts();
     const services = stageServices({
       feedRecords: [feedRecord({ volumeMl: 500_000 })],
+      upserts,
     });
     const { promise } = runWorkflow(services, {
       complete: noopClaim,
@@ -593,8 +604,11 @@ describe('unit-window invariant — staged pipeline flow', () => {
     const result = (await promise) as { productsIngested: number; errors: string[] };
 
     expect(result.productsIngested).toBe(1);
+    // Gated BEFORE upsert — the implausible 500 never stores as plausible.
+    expect(upserts.upsertedProducts[0]?.unitVolume).toBe(UNIT_VOLUME_UNAVAILABLE);
+    // The outer rail still fails the run for the stored-unavailable row.
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toMatch(/unit_volume 500/);
+    expect(result.errors[0]).toMatch(/canonical litre window/);
   });
 });
 
@@ -604,6 +618,230 @@ function qualityOffers(unitVolumes: string[]): SerializedQualityOffer[] {
     qualityOffer({ productId: i + 1, unitVolume }),
   );
 }
+
+// ---------------------------------------------------------------------------
+// Category-bounded volume ceilings (task 1.2, data-quality-and-publication-trust)
+// ---------------------------------------------------------------------------
+
+/** Merchant config for direct mapRecordsStep calls (pipeline-shaped fixtures). */
+const MERCHANT_CONFIG = {
+  merchantId: 'alko',
+  name: 'Alko',
+  country: 'FI',
+  feedUrl: 'https://alko.example/api',
+  feedFormat: 'json',
+  pollingIntervalMs: 3_600_000,
+} as const;
+
+/** Mapped pairs through the real mapper + lint, for direct gate-step tests. */
+function mappedPairs(records: RawFeedRecord[]): Promise<MappedRecords> {
+  return mapRecordsStep(stageServices({ feedRecords: records }), MERCHANT_CONFIG, {
+    records,
+    errors: [],
+  });
+}
+
+describe('category volume ceilings — constants table', () => {
+  it('bounds every canonical product category — the table is complete', () => {
+    expect(Object.keys(UNIT_VOLUME_CATEGORY_CEILING_LITRES).sort()).toEqual(
+      [...PRODUCT_CATEGORIES].sort(),
+    );
+    for (const ceiling of Object.values(UNIT_VOLUME_CATEGORY_CEILING_LITRES)) {
+      expect(ceiling).toBeGreaterThan(0);
+      // Every ceiling narrows the outer rail — never widens it.
+      expect(ceiling).toBeLessThan(UNIT_VOLUME_LITRES_MAX);
+    }
+  });
+
+  it('pins the given bounds: beer 2 l, wine family 6 l, spirits 3 l', () => {
+    expect(UNIT_VOLUME_CATEGORY_CEILING_LITRES).toEqual({
+      beer: 2,
+      wine_still: 6,
+      wine_sparkling: 6,
+      intermediate_products: 6,
+      other_fermented: 2,
+      spirits: 3,
+    });
+  });
+
+  it('an unlisted category falls back to the outer rail, not an unbounded pass', () => {
+    expect(unitVolumeCategoryCeiling('non_alcoholic')).toBe(UNIT_VOLUME_LITRES_MAX);
+    expect(unitVolumeCategoryCeiling('beer')).toBe(2);
+  });
+});
+
+describe('category volume ceilings — volumeCeilingGateStep', () => {
+  it('gates the live Karhu case: a 33 l beer stores unavailable and is held for review', async () => {
+    const mapped = await mappedPairs([
+      feedRecord({
+        productId: 'alko-karhu',
+        productName: 'Karhu Olut 5.3% 24×33 l',
+        // The live parse: the "24×33 l" name yields a 33-litre unit volume.
+        volumeMl: 33_000,
+      }),
+    ]);
+
+    const outcome = await volumeCeilingGateStep(mapped);
+
+    expect(outcome.findings).toHaveLength(1);
+    expect(outcome.findings[0]).toContain('Karhu Olut 5.3% 24×33 l');
+    expect(outcome.findings[0]).toContain('"beer"');
+    expect(outcome.findings[0]).toContain('33');
+    expect(outcome.findings[0]).toContain('ceiling of 2 l');
+    expect(outcome.findings[0]).toContain('held for review');
+    // Stored unavailable — the parser's unresolved encoding — BEFORE upsert.
+    expect(outcome.pairs[0]!.product.unitVolume).toBe(UNIT_VOLUME_UNAVAILABLE);
+  });
+
+  it('passes plausible volumes through unchanged with no review flag', async () => {
+    const mapped = await mappedPairs([
+      feedRecord({ category: 'beer', volumeMl: 330 }),
+      feedRecord({
+        productId: 'alko-2',
+        ean: null,
+        category: 'wine_still',
+        volumeMl: 750,
+      }),
+      feedRecord({
+        productId: 'alko-3',
+        ean: null,
+        category: 'spirits',
+        volumeMl: 500,
+      }),
+    ]);
+
+    const outcome = await volumeCeilingGateStep(mapped);
+
+    expect(outcome.findings).toEqual([]);
+    expect(outcome.pairs.map((p) => p.product.unitVolume)).toEqual([
+      '0.33',
+      '0.75',
+      '0.5',
+    ]);
+  });
+
+  it('the ceiling is inclusive: at-ceiling passes, just above is gated', async () => {
+    const mapped = await mappedPairs([
+      feedRecord({ volumeMl: 2_000 }), // 2 l beer — at the ceiling
+      feedRecord({ productId: 'a2', ean: null, volumeMl: 2_500 }),
+      feedRecord({
+        productId: 'a3',
+        ean: null,
+        category: 'wine_sparkling',
+        volumeMl: 6_000, // 6 l — at the ceiling
+      }),
+      feedRecord({
+        productId: 'a4',
+        ean: null,
+        category: 'wine_sparkling',
+        volumeMl: 6_500,
+      }),
+      feedRecord({
+        productId: 'a5',
+        ean: null,
+        category: 'spirits',
+        volumeMl: 3_000, // 3 l — at the ceiling
+      }),
+      feedRecord({ productId: 'a6', ean: null, category: 'spirits', volumeMl: 3_500 }),
+    ]);
+
+    const outcome = await volumeCeilingGateStep(mapped);
+
+    expect(outcome.pairs.map((p) => p.product.unitVolume)).toEqual([
+      '2',
+      UNIT_VOLUME_UNAVAILABLE,
+      '6',
+      UNIT_VOLUME_UNAVAILABLE,
+      '3',
+      UNIT_VOLUME_UNAVAILABLE,
+    ]);
+    expect(outcome.findings).toHaveLength(3);
+  });
+
+  it('leaves rail-owned volumes (the unresolved 0) to the outer window check', async () => {
+    const mapped = await mappedPairs([feedRecord({ volumeMl: 0 })]);
+
+    const outcome = await volumeCeilingGateStep(mapped);
+
+    expect(outcome.findings).toEqual([]);
+    expect(outcome.pairs[0]!.product.unitVolume).toBe('0');
+  });
+});
+
+describe('category volume ceilings — dataQualityStep', () => {
+  it('counts gated rows on the report and flags them for review next to the window errors', async () => {
+    const karhuFinding =
+      'Data error: unit_volume 33 for product "Karhu Olut 5.3% 24×33 l" ' +
+      '(category "beer") exceeds the beer ceiling of 2 l — volume stored ' +
+      'unavailable, row held for review';
+    const outcome = await dataQualityStep(
+      stageServices(),
+      qualityOffers(['0.5', '0']),
+      [karhuFinding],
+    );
+
+    // The share-metric count rides the report.
+    expect(outcome!.report.implausibleVolumeCount).toBe(1);
+    // The review flag rides flaggedIssues, next to the window errors.
+    expect(outcome!.report.flaggedIssues).toContain(karhuFinding);
+    // The stored-unavailable row still fails the outer rail.
+    expect(outcome!.unitVolumeViolations).toHaveLength(1);
+  });
+
+  it('defaults to zero gated rows when called without the gate', async () => {
+    const outcome = await dataQualityStep(stageServices(), qualityOffers(['0.5']));
+
+    expect(outcome!.report.implausibleVolumeCount).toBe(0);
+  });
+});
+
+describe('category volume ceilings — staged pipeline flow', () => {
+  it('the live Karhu case upserts volume-unavailable, flagged for review, with the rail error at run level', async () => {
+    const upserts = fakeUpserts();
+    const services = stageServices({
+      feedRecords: [
+        feedRecord({
+          productName: 'Karhu Olut 5.3% 24×33 l',
+          volumeMl: 33_000,
+        }),
+      ],
+      upserts,
+    });
+    const { step, promise } = runWorkflow(services, {
+      complete: noopClaim,
+      release: noopClaim,
+    });
+
+    const result = (await promise) as { productsIngested: number; errors: string[] };
+
+    // Gated BEFORE upsert — no plausible 33-litre beer is ever stored…
+    expect(upserts.upsertedProducts[0]?.unitVolume).toBe(UNIT_VOLUME_UNAVAILABLE);
+    // …but the row is not dropped: the offer still upserts.
+    expect(result.productsIngested).toBe(1);
+
+    // The gate runs as its own stage between map and upsert.
+    const names = step.invocations.map((i) => i.name);
+    expect(names.indexOf('volume-ceiling-gate')).toBeGreaterThan(
+      names.indexOf('map-records'),
+    );
+    expect(names.indexOf('volume-ceiling-gate')).toBeLessThan(
+      names.indexOf('upsert-offers-1'),
+    );
+
+    // Review flag + share count on the durable data-quality output.
+    const quality = (
+      step as unknown as { outputs: Map<string, unknown> }
+    ).outputs.get('data-quality') as DataQualityOutcome;
+    expect(quality.report.implausibleVolumeCount).toBe(1);
+    expect(quality.report.flaggedIssues.join('\n')).toContain(
+      'Karhu Olut 5.3% 24×33 l',
+    );
+
+    // The outer rail still rejects the stored 0 at run level.
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatch(/canonical litre window/);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // D1 governance default (task 2.1) — composition over the durable store

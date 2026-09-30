@@ -5,7 +5,8 @@
  * The pipeline stages of PipelineOrchestratorService become durable
  * Workflow steps, one per stage, in the orchestrator's real order:
  * resolve merchant → governance gate → fetch feed → map (+ lint) →
- * upsert (+ offer-change hook) → data quality. Each step runs under
+ * volume-ceiling gate → upsert (+ offer-change hook) → data quality.
+ * Each step runs under
  * {@link INGESTION_STEP_RETRY} — BullMQ price-ingestion parity
  * (attempts: 5, exponential 30 s base — the same shape
  * `retryDelaySeconds` gives Queue redeliveries), so a transient failure
@@ -84,6 +85,9 @@ import type {
 } from '../../../../packages/data-acquisition/src/interfaces/upsert-port.interface';
 import type { IOfferChangeHook } from '../../../../packages/data-acquisition/src/interfaces/offer-change-hook.interface';
 import { D1MerchantRegistryRepository } from '../../../../packages/data-platform/src/repositories/d1/merchant-registry.repository';
+// Type-only: the ceiling table's keys must track the canonical category
+// set without adding a runtime coupling to the schema module.
+import type { ProductCategory } from '../../../../packages/data-platform/src/d1/schema';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 import { D1SourceGovernanceRepository } from '../../../../packages/data-platform/src/repositories/d1/source-governance.repository';
 import { D1TaxRuleRepositoryAdapter } from '../../../../packages/data-platform/src/repositories/d1/tax-rate.repository';
@@ -281,6 +285,13 @@ export type SerializedOfferInput = Omit<UpsertOfferInput, 'productId' | 'observe
 export interface SerializedMappedPair {
   readonly product: UpsertProductInput;
   readonly offerInput: SerializedOfferInput;
+  /**
+   * Offer-gate rejections (design D1, data-quality-and-publication-trust)
+   * — present exactly when the offer must NOT be published; the product
+   * still upserts offer-less and the strings ride the step's error
+   * collection (orchestrator parity).
+   */
+  readonly offerErrors?: readonly string[];
 }
 
 /** map-records step output (mapping + content lint). */
@@ -433,6 +444,9 @@ export async function mapRecordsStep(
       return {
         product: pair.product,
         offerInput: { ...offerRest, observedAtIso: observedAt.toISOString() },
+        ...(pair.offerErrors !== undefined
+          ? { offerErrors: [...pair.offerErrors] }
+          : {}),
       };
     }),
     contentViolations,
@@ -475,48 +489,57 @@ export async function upsertOffersChunkStep(
         recordsUpdated++;
       }
 
-      const observedAt = new Date(pair.offerInput.observedAtIso);
-      const { observedAtIso: _serialized, ...offerRest } = pair.offerInput;
-      const offerResult = await services.upserts.upsertOffer({
-        ...offerRest,
-        observedAt,
-        productId: upsertResult.productId,
-      });
+      // Offer-gate rejections (design D1, data-quality-and-publication-trust):
+      // the product upserted above stays offer-less; the rejected offer
+      // never persists and its drift error rides the step's error
+      // collection (orchestrator parity — the hook and the quality feed
+      // see no offer at all).
+      if (pair.offerErrors !== undefined) {
+        upsertErrors.push(...pair.offerErrors);
+      } else {
+        const observedAt = new Date(pair.offerInput.observedAtIso);
+        const { observedAtIso: _serialized, ...offerRest } = pair.offerInput;
+        const offerResult = await services.upserts.upsertOffer({
+          ...offerRest,
+          observedAt,
+          productId: upsertResult.productId,
+        });
 
-      upsertedOffers.push({
-        merchant: config.merchantId,
-        productId: upsertResult.productId,
-        observedAtIso: pair.offerInput.observedAtIso,
-        reliabilityStatus: pair.offerInput.reliabilityStatus,
-        unitVolume: pair.product.unitVolume,
-      });
+        upsertedOffers.push({
+          merchant: config.merchantId,
+          productId: upsertResult.productId,
+          observedAtIso: pair.offerInput.observedAtIso,
+          reliabilityStatus: pair.offerInput.reliabilityStatus,
+          unitVolume: pair.product.unitVolume,
+        });
 
-      // Changed-offer hook: fires exactly once per CHANGED offer, after
-      // the row is durably upserted. Failure isolation is mandatory —
-      // a recorder error is contained and the run continues
-      // (orchestrator parity; the observation log never aborts
-      // ingestion or pollutes the run's error list).
-      if (offerResult.changed) {
-        offersChanged++;
+        // Changed-offer hook: fires exactly once per CHANGED offer, after
+        // the row is durably upserted. Failure isolation is mandatory —
+        // a recorder error is contained and the run continues
+        // (orchestrator parity; the observation log never aborts
+        // ingestion or pollutes the run's error list).
+        if (offerResult.changed) {
+          offersChanged++;
 
-        if (services.offerChangeHook) {
-          try {
-            await services.offerChangeHook.onOfferChanged({
-              productId: upsertResult.productId,
-              offerId: offerResult.offerId,
-              merchant: config.merchantId,
-              country: pair.offerInput.country,
-              priceCents: pair.offerInput.priceCents,
-              reliabilityStatus: pair.offerInput.reliabilityStatus,
-              observedAt,
-            });
-          } catch (hookErr) {
-            const message =
-              hookErr instanceof Error
-                ? hookErr.message
-                : 'Unknown offer-change hook error';
-            // Contained, orchestrator parity — never surfaces in errors[].
-            void message;
+          if (services.offerChangeHook) {
+            try {
+              await services.offerChangeHook.onOfferChanged({
+                productId: upsertResult.productId,
+                offerId: offerResult.offerId,
+                merchant: config.merchantId,
+                country: pair.offerInput.country,
+                priceCents: pair.offerInput.priceCents,
+                reliabilityStatus: pair.offerInput.reliabilityStatus,
+                observedAt,
+              });
+            } catch (hookErr) {
+              const message =
+                hookErr instanceof Error
+                  ? hookErr.message
+                  : 'Unknown offer-change hook error';
+              // Contained, orchestrator parity — never surfaces in errors[].
+              void message;
+            }
           }
         }
       }
@@ -577,10 +600,110 @@ export interface DataQualityOutcome {
   readonly unitVolumeViolations: readonly string[];
 }
 
+/**
+ * The parser's unresolved-volume encoding — what the mapper persists when
+ * a feed name yields no parsable volume, and what the ceiling gate below
+ * stores for a category-implausible volume: the row keeps its offer,
+ * minus any plausible-volume claim.
+ */
+export const UNIT_VOLUME_UNAVAILABLE = '0';
+
+/**
+ * Per-category unit-volume ceilings in litres — one constants table, keyed
+ * by the canonical product-category set (data-platform PRODUCT_CATEGORIES,
+ * the same keys the D1 category CHECK and the tax rules share).
+ * `Record<ProductCategory, number>` makes a category added to the schema
+ * without a bound a compile error.
+ *
+ * The bounds extend, never replace, the outer 0–100 l rail
+ * ({@link UNIT_VOLUME_LITRES_MAX}): each only narrows the window for a
+ * category whose single units never legitimately reach it — beer and other
+ * fermented drinks are singles ≤ 2 l, spirits ≤ 3 l, and the wine family
+ * (still, sparkling, fortified) sells up to 6 l single units. A parsed
+ * volume above the ceiling is a multipack or unit error (the live
+ * "Karhu Olut 5.3% 24×33 l" case) — never a plausible per-unit value.
+ */
+export const UNIT_VOLUME_CATEGORY_CEILING_LITRES: Readonly<
+  Record<ProductCategory, number>
+> = {
+  beer: 2,
+  wine_still: 6,
+  wine_sparkling: 6,
+  intermediate_products: 6,
+  other_fermented: 2,
+  spirits: 3,
+};
+
+/**
+ * Effective ceiling for a product category — a category outside the
+ * canonical set (cannot reach D1 today; the category CHECK rejects it)
+ * falls back to the outer rail rather than an unbounded pass.
+ */
+export function unitVolumeCategoryCeiling(category: string): number {
+  return (
+    UNIT_VOLUME_CATEGORY_CEILING_LITRES[category as ProductCategory] ??
+    UNIT_VOLUME_LITRES_MAX
+  );
+}
+
+/**
+ * volume-ceiling-gate step output — the pairs to upsert (volume-nulled
+ * where gated) plus one review flag per gated row.
+ */
+export interface VolumeCeilingGateOutcome {
+  readonly pairs: readonly SerializedMappedPair[];
+  readonly findings: readonly string[];
+}
+
+/**
+ * volume-ceiling-gate — runs BEFORE any upsert. The unit-window check is
+ * assessment-only post-upsert, but a category-implausible volume must
+ * never be STORED as plausible, so this gate transforms the mapped pairs
+ * first: a volume above its category ceiling is withheld to the parser's
+ * unresolved encoding and the row flagged for review. Rejection is to
+ * absence/review, never a drop — the row still upserts, offer intact.
+ * Only finite volumes above the ceiling are gated; rail-owned shapes
+ * (unresolved 0, negative, non-numeric) pass through untouched for the
+ * outer window check to flag as before. Volume-plausible rows pass
+ * unchanged.
+ */
+export async function volumeCeilingGateStep(
+  mapped: MappedRecords,
+): Promise<VolumeCeilingGateOutcome> {
+  const pairs: SerializedMappedPair[] = [];
+  const findings: string[] = [];
+  for (const pair of mapped.pairs) {
+    const volume = Number(pair.product.unitVolume);
+    const ceiling = unitVolumeCategoryCeiling(pair.product.category);
+    if (!(Number.isFinite(volume) && volume > ceiling)) {
+      pairs.push(pair);
+      continue;
+    }
+    findings.push(
+      `Data error: unit_volume ${pair.product.unitVolume} for product ` +
+        `"${pair.product.name}" (category "${pair.product.category}") exceeds ` +
+        `the ${pair.product.category} ceiling of ${ceiling} l — volume stored ` +
+        `unavailable, row held for review`,
+    );
+    pairs.push({
+      product: { ...pair.product, unitVolume: UNIT_VOLUME_UNAVAILABLE },
+      offerInput: pair.offerInput,
+      // Preserve the mapping stage's own offer-gate rejections (task 1.1
+      // price floor) — a pair can fail both gates, and the ceiling copy
+      // must not resurrect an offer the mapper rejected.
+      ...(pair.offerErrors !== undefined
+        ? { offerErrors: [...pair.offerErrors] }
+        : {}),
+    });
+  }
+  return { pairs, findings };
+}
+
 /** data-quality step — run only when at least one offer was upserted. */
 export async function dataQualityStep(
   services: IngestionStageServices,
   upserted: readonly SerializedQualityOffer[],
+  categoryVolumeFindings: readonly string[] = [],
 ): Promise<DataQualityOutcome | null> {
   if (upserted.length === 0) return null;
   const report = services.dataQuality.runQualityCheck(
@@ -590,6 +713,7 @@ export async function dataQualityStep(
       observedAt: new Date(offer.observedAtIso),
       reliabilityStatus: offer.reliabilityStatus,
     })),
+    categoryVolumeFindings.length,
   );
 
   // Rows outside the canonical window fail the check: they are flagged on
@@ -599,7 +723,12 @@ export async function dataQualityStep(
   // committed mapper design, so "rejected" here means never trusted and
   // never re-interpreted, not silently dropped.
   const unitViolations = unitVolumeViolations(upserted);
-  report.flaggedIssues.push(...unitViolations);
+  // The ceiling gate's review flags ride the same report surface (its
+  // count feeds the implausible-volume share metric). A gated row appears
+  // as BOTH a held-for-review flag here and a window violation below —
+  // its stored volume is the unresolved 0, which the rail must keep
+  // rejecting as plausible-volume data.
+  report.flaggedIssues.push(...categoryVolumeFindings, ...unitViolations);
   return { report, unitVolumeViolations: unitViolations };
 }
 
@@ -713,7 +842,25 @@ export async function runIngestionWorkflow(
       });
     }
 
-    // -- Step 5: upsert (+ offer-change hook), chunked ----------------------
+    // -- Step 5: volume-ceiling gate ---------------------------------------
+    // Publication-trust gate (task 1.2): an implausible volume is withheld
+    // to the unavailable encoding BEFORE any upsert so it can never be
+    // stored — let alone published — as a plausible value. The rows still
+    // upsert; the review flags ride the data-quality report below.
+    const gated = await step.do('volume-ceiling-gate', INGESTION_STEP_RETRY, () =>
+      volumeCeilingGateStep(mapped),
+    );
+    if (gated.findings.length > 0) {
+      log?.warn({
+        message:
+          `Category volume ceilings for "${config.merchantId}": ` +
+          `${gated.findings.length} offer(s) held for review — ` +
+          'volume stored unavailable',
+        merchantId: config.merchantId,
+      });
+    }
+
+    // -- Step 6: upsert (+ offer-change hook), chunked ----------------------
     // The engine's default step timeout is 10 minutes and one pair costs
     // several sequential D1 round-trips — a full alks catalog (~2,900
     // pairs) cannot fit a single attempt (staging 2026-09-11: two 600s
@@ -730,10 +877,10 @@ export async function runIngestionWorkflow(
     };
     for (
       let offset = 0, index = 1;
-      offset < mapped.pairs.length;
+      offset < gated.pairs.length;
       offset += UPSERT_CHUNK_SIZE, index++
     ) {
-      const chunk = mapped.pairs.slice(offset, offset + UPSERT_CHUNK_SIZE);
+      const chunk = gated.pairs.slice(offset, offset + UPSERT_CHUNK_SIZE);
       const part = await step.do(`upsert-offers-${index}`, INGESTION_STEP_RETRY, () =>
         upsertOffersChunkStep(services, config, chunk),
       );
@@ -746,9 +893,9 @@ export async function runIngestionWorkflow(
       };
     }
 
-    // -- Step 6: data quality ----------------------------------------------
+    // -- Step 7: data quality ----------------------------------------------
     const quality = await step.do('data-quality', INGESTION_STEP_RETRY, () =>
-      dataQualityStep(services, upserts.upsertedOffers),
+      dataQualityStep(services, upserts.upsertedOffers, gated.findings),
     );
     if (quality !== null && quality.unitVolumeViolations.length > 0) {
       log?.warn({

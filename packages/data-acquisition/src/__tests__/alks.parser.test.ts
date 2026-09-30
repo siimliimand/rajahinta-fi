@@ -330,3 +330,167 @@ describe('parseAlksStoreProduct — accepted SKU shape set (onboard-kippis-merch
     expect(errors[0]).toContain('correction queue');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Multipack-aware volume parse and bundle-name rejection (task 1.3,
+// design D1, change data-quality-and-publication-trust)
+// ---------------------------------------------------------------------------
+
+describe('parseAlksStoreProduct — multipack volume tokens (task 1.3, design D1)', () => {
+  /** Minimal row builder: only the name varies. */
+  const rowNamed = (id: number, name: string) => ({
+    id,
+    name,
+    sku: 'de-4740077005916',
+    permalink: `https://alks.fi/product/multipack-${id}/`,
+    prices: { price: '3099', currency_code: 'EUR' },
+    categories: [{ name: 'Olut' }],
+    is_in_stock: true,
+  });
+
+  it('spec: "24×0,33 l" resolves to unit 330 ml with pack count 24', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowNamed(757001, 'Karhu Olut 5.3% 24×0,33 l tölkki'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.volumeMl).toBe(330);
+    expect(record?.packCount).toBe(24);
+  });
+
+  it('spec: "24 x 33 cl" resolves to unit 330 ml with pack count 24', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowNamed(757002, 'Karin Munk Olut 4,7% 24 x 33 cl'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.volumeMl).toBe(330);
+    expect(record?.packCount).toBe(24);
+  });
+
+  it('spec: the encoded "&#215;" separator parses identically — the parser runs before entity decoding', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowNamed(757003, 'Sidra 4,5% 24&#215;0,33 l tölkki'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.volumeMl).toBe(330);
+    expect(record?.packCount).toBe(24);
+    // The name is carried verbatim — decoding happens later, at mapping.
+    expect(record?.productName).toContain('&#215;');
+  });
+
+  it('spec: "24×33 l" parses deterministically as unit 33 l (pack 24) — the ceiling gate judges it, not the parser', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowNamed(757004, 'Karhu Olut 5.3% 24×33 l'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.volumeMl).toBe(33000);
+    expect(record?.packCount).toBe(24);
+  });
+
+  it('spec: a 6-pack of 0,5 l bottles resolves to unit 500 ml with pack count 6', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowNamed(757005, 'Olut 5,5% 6 x 0,5 l pullo'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.volumeMl).toBe(500);
+    expect(record?.packCount).toBe(6);
+  });
+});
+
+describe('parseAlksStoreProduct — bundle names held for review (task 1.3, design D1)', () => {
+  /** Minimal row builder: only the name (and optionally the category) varies. */
+  const rowNamed = (id: number, name: string, category = 'Väkevä') => ({
+    id,
+    name,
+    sku: 'de-4740077005916',
+    permalink: `https://alks.fi/product/bundle-${id}/`,
+    prices: { price: '4999', currency_code: 'EUR' },
+    categories: [{ name: category }],
+    is_in_stock: true,
+  });
+
+  it('spec: the observed bundle shape ("… + Jägermeister 0") drops with a review error — no record', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowNamed(757010, 'Koskenkorva Vodka 40% 0,5 l + Jägermeister 0'),
+    );
+    expect(record).toBeNull();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('multi-product bundle');
+    expect(errors[0]).toContain('Jägermeister');
+    expect(errors[0]).toContain('held for review');
+    expect(errors[0]).toContain('correction queue');
+  });
+
+  it('a second concatenated brand drops the same way, with the row label naming the product', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowNamed(757011, 'Absolut Vodka 40% 0,5 l + Gordon\'s Gin 0,5 l'),
+    );
+    expect(record).toBeNull();
+    expect(errors[0]).toContain('757011');
+    expect(errors[0]).toContain('multi-product bundle');
+  });
+
+  it('spec: promo shapes never false-positive — "4+1" keeps the record', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowNamed(757012, 'Karhu III Olut 4,7% 4+1 0,5 l tölkki', 'Olut'),
+    );
+    expect(errors).toEqual([]);
+    expect(record).not.toBeNull();
+    expect(record?.volumeMl).toBe(500);
+    expect(record?.packCount).toBeNull();
+  });
+});
+
+describe('parseAlksStoreProduct — single-product passthrough unchanged (task 1.3)', () => {
+  /** Minimal row builder: only the name varies (category must agree with the name tokens). */
+  const rowNamed = (id: number, name: string, category = 'Olut') => ({
+    id,
+    name,
+    sku: 'de-4740077005916',
+    permalink: `https://alks.fi/product/single-${id}/`,
+    prices: { price: '699', currency_code: 'EUR' },
+    categories: [{ name: category }],
+    is_in_stock: true,
+  });
+
+  it('spec: a single-product name keeps its volume and a null pack count', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowNamed(757020, 'Herb Liqueur 35% 0.5 l PET', 'Liköörit'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.volumeMl).toBe(500);
+    expect(record?.packCount).toBeNull();
+  });
+
+  it('spec: the comma-decimal single volume form is unchanged', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowNamed(757021, 'Olut 4,7% 0,33 l tölkki'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.volumeMl).toBe(330);
+    expect(record?.packCount).toBeNull();
+  });
+
+  it('spec: the unit-first live case shape ("33cl x 24") keeps the per-container volume and no pack count', () => {
+    // The kippis sweep's documented skew: `33cl x 24` is not a
+    // pack-first token, so the plain single-token parse stands.
+    const { record, errors } = parseAlksStoreProduct(
+      rowNamed(
+        757022,
+        'Hartwall Original Long Drink 4,5% 33cl x 24 tölkkiä',
+        'Siiderit lonkerot ja seltzerit',
+      ),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.volumeMl).toBe(330);
+    expect(record?.packCount).toBeNull();
+  });
+
+  it('spec: an unparsed name keeps the 0-ml encoding with a null pack count', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      rowNamed(757023, 'Mysteeri Juoma'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.volumeMl).toBe(0);
+    expect(record?.packCount).toBeNull();
+  });
+});

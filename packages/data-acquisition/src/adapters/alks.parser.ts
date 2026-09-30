@@ -16,7 +16,11 @@
  *   guessed around — the record is kept with a null EAN and a per-row
  *   correction error names the SKU (design D1).
  * - ABV and volume come from the product name by rule-based regex
- *   ("35%", "0,5 l" / "0.5 l" / "500 ml"); container type from name
+ *   ("35%", "0,5 l" / "0.5 l" / "500 ml"), multipack-aware since
+ *   data-quality-and-publication-trust: a `pack × unit` token
+ *   ("24×0,33 l", raw or HTML-entity-encoded) resolves to the per-unit
+ *   volume plus `packCount`, and a name concatenating a second product
+ *   ("+ Jägermeister …") is held for review. Container type from name
  *   tokens (PET, pullo, tölkki) through `alksContainerType` into the
  *   product_master vocabulary.
  *   The beverage category comes from the row's categories through
@@ -49,10 +53,13 @@ import type { RawFeedRecord } from '../interfaces/feed-adapter.interface';
  * A parsed Store API row: the canonical feed record plus the feed
  * weight. `RawFeedRecord` gains its optional `weightGrams` field in
  * task 1.2; this shape already requires the resolved value so the
- * adapter can return parser output unchanged.
+ * adapter can return parser output unchanged. Same pattern for
+ * `packCount` (change data-quality-and-publication-trust).
  */
 export interface AlksParsedRecord extends RawFeedRecord {
   readonly weightGrams: number | null;
+  /** Units per multipack; null when the name carries no multipack token. */
+  readonly packCount: number | null;
 }
 
 /** Per-row parse outcome: the record and/or its correction errors. */
@@ -142,6 +149,35 @@ const VOLUME_PATTERN = /(\d+(?:[.,]\d+)?)\s*(ml|cl|l)(?![a-z])/;
 
 const VOLUME_TO_ML: Record<string, number> = { ml: 1, cl: 10, l: 1000 };
 
+/**
+ * Multipack volume token: `pack [x×] unit` ("24×0,33 l", "24 x 33 cl").
+ * The separator is the multiplication sign in every spelling the parser
+ * can actually see — the parser runs BEFORE the mapping's
+ * `decodeHtmlEntities`, so a WooCommerce name may reach it with the
+ * entity (`&#215;`, hex, or named form) still encoded. One pattern, one
+ * deterministic reading: the first number is the PACK, the second the
+ * per-unit volume. The unit-first live shape ("33cl x 24") is not a
+ * match — it keeps the plain single-token parse below.
+ */
+const MULTIPACK_PATTERN =
+  /(\d+)\s*(?:×|&#215;|&#xd7;|&#x00d7;|&times;|x)\s*(\d+(?:[.,]\d+)?)\s*(ml|cl|l)(?![a-z])/;
+
+/**
+ * Multi-product bundle marker: a plus followed by whitespace and a
+ * letter ("…+ Jägermeister 0") — a second brand segment concatenated
+ * onto the name. Digits stay excluded so promo shapes ("4+1") never
+ * match.
+ */
+const BUNDLE_NAME_PATTERN = /\+\s+\p{L}/u;
+
+/** Volume resolved from a name: per-unit millilitres plus the pack count. */
+interface ParsedVolume {
+  /** Per-UNIT volume — never multiplied by the pack count (design D1). */
+  readonly volumeMl: number;
+  /** Units per multipack; null when the name carries no multipack token. */
+  readonly packCount: number | null;
+}
+
 /** Percentage ABV from the name, 0–100; null when absent or implausible. */
 function parseAbvPercent(name: string): number | null {
   const match = ABV_PATTERN.exec(name.toLowerCase());
@@ -151,14 +187,42 @@ function parseAbvPercent(name: string): number | null {
   return value;
 }
 
-/** Millilitres from the name; null when no plausible volume token exists. */
-function parseVolumeMl(name: string): number | null {
-  const match = VOLUME_PATTERN.exec(name.toLowerCase());
+/** "0,33" + "l" → 330; null when the value or unit is implausible. */
+function volumeToMl(value: string, unit: string): number | null {
+  const parsed = Number.parseFloat(value.replace(',', '.'));
+  const factor = VOLUME_TO_ML[unit];
+  if (!Number.isFinite(parsed) || parsed <= 0 || factor === undefined) {
+    return null;
+  }
+  return Math.round(parsed * factor);
+}
+
+/**
+ * Volume from the name, multipack-aware (design D1,
+ * data-quality-and-publication-trust): a `pack × unit` token resolves to
+ * the per-unit volume plus the pack count — "24×0,33 l" is 24 units of
+ * 330 ml, never 24 × 330 ml — replacing first-token-wins, which met a
+ * mistyped token ("24×33 l") as a plausible volume. A malformed
+ * multipack token falls through to the single-token parse; a name
+ * without a multipack token parses exactly as before, pack count null.
+ * Null when no plausible volume token exists.
+ */
+function parseVolume(name: string): ParsedVolume | null {
+  const lowered = name.toLowerCase();
+
+  const multipack = MULTIPACK_PATTERN.exec(lowered);
+  if (multipack !== null) {
+    const pack = Number.parseInt(multipack[1], 10);
+    const unitMl = volumeToMl(multipack[2], multipack[3]);
+    if (pack >= 1 && unitMl !== null) {
+      return { volumeMl: unitMl, packCount: pack };
+    }
+  }
+
+  const match = VOLUME_PATTERN.exec(lowered);
   if (match === null) return null;
-  const value = Number.parseFloat(match[1].replace(',', '.'));
-  const factor = VOLUME_TO_ML[match[2]];
-  if (!Number.isFinite(value) || value <= 0 || factor === undefined) return null;
-  return Math.round(value * factor);
+  const volumeMl = volumeToMl(match[1], match[2]);
+  return volumeMl === null ? null : { volumeMl, packCount: null };
 }
 
 /**
@@ -337,11 +401,11 @@ function readEanFromSku(sku: string | null): string | null {
 /**
  * Parse a single WooCommerce Store API product row.
  *
- * Structural failures (no name, non-EUR price, unusable price) and the
- * category contradiction drop the row with a per-row error — the
- * correction-queue surface shared with the Alko adapter. A non-matching
- * SKU and unparsable ABV/volume keep the record by design (D1/D3);
- * weight never errors (D7).
+ * Structural failures (no name, a bundle name, non-EUR price, unusable
+ * price) and the category contradiction drop the row with a per-row
+ * error — the correction-queue surface shared with the Alko adapter. A
+ * non-matching SKU and unparsable ABV/volume keep the record by design
+ * (D1/D3); weight never errors (D7).
  */
 export function parseAlksStoreProduct(row: unknown): AlksProductParseResult {
   const errors: string[] = [];
@@ -362,6 +426,20 @@ export function parseAlksStoreProduct(row: unknown): AlksProductParseResult {
     return {
       record: null,
       errors: [`Failed to map ${label}: missing or empty product name`],
+    };
+  }
+
+  // D1 (data-quality-and-publication-trust): a name that concatenates a
+  // second product ("+ Jägermeister …") cannot yield one honest
+  // ABV/volume — the row is held for review, never published as a
+  // product with arbitrarily parsed fields.
+  if (BUNDLE_NAME_PATTERN.test(name.toLowerCase())) {
+    return {
+      record: null,
+      errors: [
+        `Failed to map ${label}: product name indicates a multi-product bundle ("${name}") — ` +
+          'held for review, flagged for the correction queue',
+      ],
     };
   }
 
@@ -437,7 +515,7 @@ export function parseAlksStoreProduct(row: unknown): AlksProductParseResult {
   }
 
   const abvPercent = parseAbvPercent(name);
-  const volumeMl = parseVolumeMl(name);
+  const volume = parseVolume(name);
   const containerToken = findContainerToken(name);
   const brand = readBrandName(product.brands);
 
@@ -448,7 +526,8 @@ export function parseAlksStoreProduct(row: unknown): AlksProductParseResult {
     brand,
     category: mapping.taxCategory,
     alcoholByVolume: abvPercent !== null ? abvPercent / 100 : null,
-    volumeMl: volumeMl ?? 0,
+    volumeMl: volume?.volumeMl ?? 0,
+    packCount: volume?.packCount ?? null,
     // product_master vocabulary (the schema CHECK's value set), NOT the
     // core-domain kebab-case canonicals — migration 0002 pins
     // ('glass','plastic','metal','carton','other','can','bottle'), and a

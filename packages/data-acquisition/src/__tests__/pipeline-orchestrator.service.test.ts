@@ -55,6 +55,9 @@ function mappedPair(overrides: Record<string, unknown> = {}) {
       observedAt: new Date('2026-08-26T10:00:00Z'),
       ...overrides,
     },
+    // Undefined keeps the pair shape-identical to the happy path; a test
+    // simulating an offer-gate rejection (task 1.1) overrides the field.
+    offerErrors: undefined as readonly string[] | undefined,
   };
 }
 
@@ -390,6 +393,38 @@ describe('PipelineOrchestratorService', () => {
       expect(report.offersChanged).toBe(1);
       expect(report.recordsAdded).toBe(1);
       expect(report.errors).toEqual([]);
+    });
+  });
+
+  describe('runForMerchant — offer-gate rejections (task 1.1, design D1)', () => {
+    it('never publishes a gate-rejected offer: product stays offer-less, drift error surfaces', async () => {
+      const onOfferChanged = vi.fn().mockResolvedValue(undefined);
+      const driftError =
+        'Failed to map offer for product "R de Ruinart Champagne" (merchant "alks"): ' +
+        'price drift — minor-unit price "0" is not a positive cent amount; ' +
+        'offer rejected, the product stays offer-less (design D1)';
+      const service = createService({
+        mappedPairs: [
+          mappedPair(),
+          { ...mappedPair(), offerErrors: [driftError] },
+        ],
+        offerResults: [{ offerId: 501, changed: true }],
+        offerChangeHook: { onOfferChanged },
+      });
+
+      const report = await service.runForMerchant(MERCHANT);
+
+      // Both products upsert — the rejected one offer-less (design D1)
+      expect(report.recordsAdded).toBe(2);
+      // The drift error rides the run's error collection, the same
+      // surface as the parser's per-row correction failures
+      expect(report.errors).toContain(driftError);
+      // Only the accepted offer was upserted: one hook call, and the
+      // quality check audits one offer
+      expect(onOfferChanged).toHaveBeenCalledTimes(1);
+      expect(report.offersChanged).toBe(1);
+      expect(report.qualityReport).toBeDefined();
+      expect(report.qualityReport!.totalOffers).toBe(1);
     });
   });
 

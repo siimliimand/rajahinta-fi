@@ -55,9 +55,27 @@ export interface DataQualityReport {
   unavailableCount: number;
   estimatedCount: number;
   verifiedCount: number;
+  /**
+   * Offers whose unit volume the ingestion ceiling gate withheld
+   * (stored unavailable, row held for review — the volume ceiling gate
+   * runs pre-upsert in the ingestion workflow). Callers without the
+   * gate report 0. Share surface: {@link IMPLAUSIBLE_VOLUME_SHARE_METRIC}.
+   */
+  implausibleVolumeCount: number;
   /** Human-readable descriptions of every issue found. */
   flaggedIssues: string[];
 }
+
+/**
+ * Prometheus contract name for the implausible-volume share gauge
+ * (`implausibleVolumeCount / totalOffers`), named after the existing
+ * `rajahinta_data_quality_*` convention of the stale-price-share gauge.
+ * The report carries the count; the metric surfaces that consume the
+ * report (application-api exporter hook, Analytics Engine gauges —
+ * Grafana panel wiring is a separate observability task) render the ratio.
+ */
+export const IMPLAUSIBLE_VOLUME_SHARE_METRIC =
+  'rajahinta_data_quality_implausible_volume_share_ratio';
 
 /**
  * Gauge hook (FIX-M, deployment-observability metric contract): receiver
@@ -121,15 +139,22 @@ export class DataQualityService {
    * @param offers  Offers to audit (lightweight objects from the pipeline
    *                or full RetailOfferRecord values — both are structurally
    *                compatible with {@link QualityCheckOffer}).
+   * @param implausibleVolumeCount  Offers whose unit volume the ingestion
+   *                ceiling gate withheld pre-upsert (0 when the caller
+   *                runs without the gate).
    * @returns       An actionable quality report.
    */
-  runQualityCheck(offers: QualityCheckOffer[]): DataQualityReport {
+  runQualityCheck(
+    offers: QualityCheckOffer[],
+    implausibleVolumeCount = 0,
+  ): DataQualityReport {
     const report: DataQualityReport = {
       totalOffers: offers.length,
       staleCount: 0,
       unavailableCount: 0,
       estimatedCount: 0,
       verifiedCount: 0,
+      implausibleVolumeCount,
       flaggedIssues: [],
     };
 
