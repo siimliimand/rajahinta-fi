@@ -428,6 +428,22 @@ function errorOf(err: unknown): string {
   return err instanceof Error ? err.message : 'Unknown error';
 }
 
+/** Politeness gap between catalog pages — Alko's Azure WAF challenges
+ * rapid minimal-header clients; a real browser cadence (headers below +
+ * a spacing delay) fetched the full catalog cleanly from a datacenter
+ * egress during the 2026-09-30 wiring probe. */
+const ALKO_PAGE_DELAY_MS = 400;
+
+/** Browser-like request headers — the WAF's first-line fingerprint check
+ * (a bare `content-type` POST is challenged with 403 before any JSON). */
+const ALKO_FETCH_HEADERS: Record<string, string> = {
+  'content-type': 'application/json',
+  accept: 'application/json, text/plain, */*',
+  'accept-language': 'fi-FI,fi;q=0.9,en;q=0.5',
+  'user-agent':
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+};
+
 export class AlkoFeedAdapter implements IFeedAdapter {
   readonly merchantId = 'alko';
 
@@ -451,11 +467,14 @@ export class AlkoFeedAdapter implements IFeedAdapter {
     let total: number | null = null;
 
     for (let skip = 0; total === null || skip < total; skip += PAGE_TOP) {
+      if (skip > 0) {
+        await new Promise((resolve) => setTimeout(resolve, ALKO_PAGE_DELAY_MS));
+      }
       let response: Response;
       try {
         response = await fetch(config.feedUrl, {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: ALKO_FETCH_HEADERS,
           body: JSON.stringify({ filters: [], skip, top: PAGE_TOP }),
         });
       } catch (err) {
