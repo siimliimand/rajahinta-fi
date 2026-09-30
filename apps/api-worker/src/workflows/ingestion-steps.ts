@@ -161,6 +161,12 @@ export interface WorkflowStepLike {
     config: StepRetryConfig,
     callback: () => Promise<T>,
   ): Promise<T>;
+  /**
+   * Durable hibernation sleep — the instance pauses and the next step
+   * execution runs in a fresh invocation. Used to hand each chunk group
+   * a fresh D1 API-request budget (see the upsert loop). Duration in ms.
+   */
+  sleep(name: string, sleepFor: number): Promise<void>;
 }
 
 /** Error constructor injected by the shell (cloudflare:workflows NonRetryableError in production). */
@@ -465,6 +471,15 @@ export async function mapRecordsStep(
  * run in the low tens for a full alks catalog.
  */
 export const UPSERT_CHUNK_SIZE = 250;
+
+/**
+ * Chunks per D1 API-request budget window — every this-many chunk steps
+ * the workflow crosses a durable sleep boundary so subsequent chunks run
+ * in a fresh Worker invocation (see the upsert loop). Sized from the
+ * 2026-09-30 production run: the quota died between chunks 40 and 41 of
+ * 250 rows each, so 16 keeps a >2× margin. Each boundary costs ~1 s.
+ */
+export const CHUNK_BUDGET_RESET_EVERY = 16;
 
 /**
  * upsert-offers chunk — the orchestrator's upsert loop + offer-change
@@ -885,6 +900,18 @@ export async function runIngestionWorkflow(
       offset < gated.pairs.length;
       offset += UPSERT_CHUNK_SIZE, index++
     ) {
+      // D1 API-request budget: every Worker invocation carries a bounded
+      // per-invocation API-request quota, and the instance's executions
+      // share it — a full Alko catalog (~350 chunks) exhausts it mid-run
+      // (2026-09-30 production: chunks 41+ upserted nothing, each row
+      // rejected with "Too many API requests by single Worker
+      // invocation"). A durable hibernation boundary every N chunks
+      // gives the next chunk a fresh invocation and a fresh quota; on
+      // replay the sleep is skipped per its durable name and completed
+      // chunk outputs replay from cache.
+      if (index > 1 && (index - 1) % CHUNK_BUDGET_RESET_EVERY === 0) {
+        await step.sleep(`chunk-budget-reset-${index}`, 1_000);
+      }
       const chunk = gated.pairs.slice(offset, offset + UPSERT_CHUNK_SIZE);
       const part = await step.do(`upsert-offers-${index}`, INGESTION_STEP_RETRY, () =>
         upsertOffersChunkStep(services, config, chunk),

@@ -36,7 +36,13 @@ export class IngestionWorkflow extends WorkflowEntrypoint<
   ): Promise<unknown> {
     return runIngestionWorkflow(event.payload, {
       env: this.env,
-      step,
+      // Engine boundary cast: the runtime WorkflowStep is the structural
+      // superset of WorkflowStepLike (do + sleep), but its SDK generics
+      // (Serializable<T> returns, WorkflowSleepDuration) are broader than
+      // the steps module's narrow signatures — the single boundary cast
+      // keeps the steps module free of cloudflare:workers type coupling.
+      // Every callback still executes inside the real engine.
+      step: step as unknown as import('./ingestion-steps').WorkflowStepLike,
       NonRetryableError,
     });
   }

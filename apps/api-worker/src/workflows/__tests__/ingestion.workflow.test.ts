@@ -81,6 +81,13 @@ class FakeWorkflowStep implements WorkflowStepLike {
   private readonly outputs = new Map<string, unknown>();
   readonly invocations: { name: string; attempt: number }[] = [];
   readonly delays: Record<string, number[]> = {};
+  /** Durable sleeps are RECORDED, not slept (same philosophy as delays). */
+  readonly sleeps: { name: string; sleepFor: number }[] = [];
+
+  sleep(name: string, sleepFor: number): Promise<void> {
+    this.sleeps.push({ name, sleepFor });
+    return Promise.resolve();
+  }
 
   do<T>(
     name: string,
