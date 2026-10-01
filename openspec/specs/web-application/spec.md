@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change phase1-mvp. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Calculator UI
 
 The calculator result view SHALL render an Alko benchmark line when the result carries the optional `alkoBenchmark` field: the Alko price, the difference in euros and percent, and the reference's reliability badge and timestamp. Wording SHALL be factual in both locales, including the plain statement when importing is not cheaper. The line SHALL NOT render when the field is absent, and SHALL never display as part of the total.
@@ -61,15 +63,6 @@ Product-listing copy SHALL be restricted to a controlled vocabulary (identificat
 
 - **WHEN** a pull request is opened against the main branch
 - **THEN** the content-policy check SHALL run as a gating job whose failure blocks the merge
-
-### Requirement: Plain outbound links
-
-Outbound merchant links SHALL be plain links recorded for basic analytics only (click-through counts), with no purchase tracking or commission tracking infrastructure.
-
-#### Scenario: Click recorded
-
-- **WHEN** a user clicks a merchant link
-- **THEN** the click SHALL be recorded as a count, and no purchase or commission data SHALL be collected
 
 ### Requirement: Correction flag affordance
 
@@ -487,3 +480,30 @@ Interactive controls SHALL meet a ≥44 px effective touch-target size on small 
 - **WHEN** the comparison view renders below the small-screen breakpoint
 - **THEN** products render as stacked cards instead of a horizontally scrolling table
 
+### Requirement: Honest transport-unavailable state
+
+The calculator result SHALL render an explicit "transport not included — dataset pending" state when the transport component's reliability is `UNAVAILABLE`, instead of displaying a €0.00 transport line. Result amounts are never altered; only the presentation of the unavailable component changes. The LOW-confidence indication SHALL carry explanatory copy (which inputs are missing) in Finnish and English.
+
+#### Scenario: Empty transport dataset renders honestly
+
+- **WHEN** a calculation returns transport with `reliability: UNAVAILABLE`
+- **THEN** the transport line reads as not-included with the pending-dataset explanation and no €0.00 figure is displayed
+
+#### Scenario: Real transport data renders as before
+
+- **WHEN** a calculation returns transport with a usable estimate
+- **THEN** the transport line renders the amount as before, with no pending-state copy
+
+### Requirement: Homepage promise honesty
+
+The homepage savings feature card SHALL reflect the actual savings-listing state: when the savings overview reports zero products with an Alko reference (`withReference: 0`), the card SHALL render an honest reference-data-pending state instead of linking into the empty listing. Copy passes the content lint; figures stay factual with as-of context.
+
+#### Scenario: Empty savings listing is not advertised
+
+- **WHEN** the savings overview reports `withReference: 0`
+- **THEN** the homepage card shows the honest pending state and does not link into the empty listing
+
+#### Scenario: Populated listing restores the CTA
+
+- **WHEN** the savings overview reports a non-zero reference count
+- **THEN** the homepage card renders the existing listing CTA without any code change

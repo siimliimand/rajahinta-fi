@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change phase1-mvp. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Permitted-source ingestion
 
 The pipeline SHALL ingest only merchants with `GRANTED` governance status. The adapter registry SHALL contain five live feed adapters: the Alko domestic reference feed, the alks.fi WooCommerce Store API feed, the longero.fi WooCommerce Store API feed, the kippis.net WooCommerce Store API feed, and the mydrink.ee WooCommerce Store API feed. The mydrink merchant SHALL be registered in the merchant registry (feedUrl `https://mydrink.ee`, json, daily cadence, country `EE`) with its governance source recorded as `RETAILER_API` (operator holds documented scraping rights to the owner-operated site's public Store API), and SHALL NOT be fetched until an operator grants it through the governance gate. The Alko, alks, longero, and kippis adapters' behavior SHALL remain unchanged. The source-category mapper SHALL recognize the MyDrink Estonian storefront terms as additive exact keys (spirits section and its leaves to spirits/liqueur, wine leaf terms to wine or sparkling-wine, `õlu ▾` to beer, `siider` to cider, `alkoholivaba ▾` and `karastusjoogid` to non-alcoholic) and SHALL NOT map the wine parent term, heterogeneous promo sections, or non-beverage navigation terms. Records whose SKU matches no accepted EAN form SHALL be kept without an EAN and correction-flagged, not dropped.
@@ -255,3 +257,57 @@ The alks.fi adapter SHALL map the payload's product weight to `weightGrams`, and
 - **WHEN** a product name contains no entities (or already-decoded ampersands)
 - **THEN** the persisted name is byte-identical to the source name
 
+### Requirement: Offer price plausibility gate
+
+Ingestion SHALL reject any mapped offer whose price is not a positive integer cent amount. A price of `0` or less SHALL be treated as price drift: the offer is not published, the failure carries an explicit drift message naming the source value, and the rejection is counted in the data-quality metrics.
+
+#### Scenario: Zero-priced feed product is rejected
+
+- **WHEN** a WooCommerce feed product carries a minor-unit price of `"0"`
+- **THEN** mapping fails with a price-drift error and no offer is published for that product
+
+#### Scenario: Rejections are observable
+
+- **WHEN** the ingestion pipeline rejects zero or negative prices
+- **THEN** the rejection count is observable through the data-quality metrics
+
+### Requirement: Category-bounded volume plausibility
+
+The ingestion quality stage SHALL enforce per-category unit-volume ceilings (beer, cider, wine, spirits and the remaining catalog categories, bounds in one constants table). A product whose parsed unit volume exceeds its category bound SHALL have its volume stored as unavailable with a review flag — never published as a plausible value. The existing `0 < unit_volume < 100` invariant remains in force as the outer rail.
+
+#### Scenario: Category-implausible volume is not published
+
+- **WHEN** a beer product parses to a unit volume above the beer ceiling (e.g. "24×33 l")
+- **THEN** the product's volume is unavailable, the row is flagged for review, and no plausible 33-litre beer appears in the catalog
+
+#### Scenario: Plausible volumes pass unchanged
+
+- **WHEN** a product's parsed unit volume is within its category bound
+- **THEN** the volume is stored as before and no review flag is set
+
+### Requirement: Multipack-aware volume parsing
+
+The shared WooCommerce name parser SHALL parse multipack volume tokens (`24×0,33 l`, `24 x 33 cl`) into a deterministic unit volume and pack count rather than applying first-token-wins to a possibly mistyped token.
+
+#### Scenario: Multipack token resolves to unit volume
+
+- **WHEN** a feed product name contains `24×0,33 l`
+- **THEN** the parser records a unit volume of 330 ml with pack count 24
+
+### Requirement: Bundle names are held for review
+
+A feed product whose name indicates a multi-product bundle (multi-brand concatenation such as "+ Jägermeister …") SHALL be held for review instead of being published as a single product with arbitrarily parsed ABV/volume.
+
+#### Scenario: Bundle is not published as a product
+
+- **WHEN** a feed row's name concatenates distinct products
+- **THEN** the row is held for review and no product with a misattributed ABV/volume is published
+
+### Requirement: Pipeline contract fixtures pin ingestion gates
+
+Golden fixtures SHALL cover the observed failure shapes (zero price, category-implausible volume, bundle name) and a pipeline contract test SHALL assert that none of them publishes: the gates hold for the class, not only for the four recorded incidents.
+
+#### Scenario: Contract test keeps the gates honest
+
+- **WHEN** the fixture pipeline runs in CI
+- **THEN** no fixture with a zero price, category-implausible volume, or bundle name produces a published product/offer

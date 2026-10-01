@@ -5,6 +5,7 @@
 Observability and operational health for rajahinta.fi on Cloudflare Workers: dependency-aware health endpoints (D1 roundtrip + Durable Object ping), structured request logging and OTLP trace export to Grafana Cloud, request metrics and freshness gauges in Workers Analytics Engine, and freshness alerting delivered as email through the email Worker (replacing the former Prometheus/ServiceMonitor/K8s stack).
 
 ## Requirements
+
 ### Requirement: Dependency-aware health checks
 
 Readiness SHALL verify its dependencies: a D1 roundtrip query and a Durable Object ping, each with short timeouts, with dependency status exposed in the response body. Liveness SHALL remain cheap and process-only. Workers routing and any external uptime probes SHALL key off the appropriate endpoint so a Worker with a dead dependency is not reported ready.
@@ -18,6 +19,7 @@ Readiness SHALL verify its dependencies: a D1 roundtrip query and a Durable Obje
 
 - **WHEN** liveness is probed
 - **THEN** it SHALL not perform network calls to dependencies
+
 ### Requirement: Ops dashboard is authenticated
 
 The ops dashboard route SHALL be protected by an authentication guard and an IP allowlist (or bound to a separate internal port). Unauthenticated requests SHALL receive no operational data.
@@ -35,6 +37,7 @@ Request logs SHALL be structured and carry a request ID on every request handled
 
 - **WHEN** any API request is handled
 - **THEN** its log entries are queryable by request ID in Workers Logs
+
 ### Requirement: Distributed tracing
 
 The API Worker SHALL export OpenTelemetry traces to Grafana Cloud via the Workers OTLP export, configured through environment bindings. Trace context SHALL propagate from the frontend Worker to the API Worker where both handle a request.
@@ -43,6 +46,7 @@ The API Worker SHALL export OpenTelemetry traces to Grafana Cloud via the Worker
 
 - **WHEN** a calculation request is served
 - **THEN** a trace for the request is exported to the configured Grafana Cloud endpoint
+
 ### Requirement: Freshness alerting
 
 Freshness invariants (stale price share, transport age) SHALL be evaluated by a scheduled Cron handler in the API Worker. When an invariant is violated, the handler SHALL trigger an operational alert email through the email Worker. Alerting SHALL NOT depend on a Prometheus rule or cluster-side scraper.
@@ -51,6 +55,7 @@ Freshness invariants (stale price share, transport age) SHALL be evaluated by a 
 
 - **WHEN** the stale price share exceeds its threshold at the Cron evaluation
 - **THEN** the operator receives an alert email via the email Worker
+
 ### Requirement: Reproducible deploys
 
 Kubernetes manifests SHALL reference immutable image tags (SHA digests) produced by the deploy pipeline, never mutable tags. Horizontal Pod Autoscaling and a PodDisruptionBudget SHALL be configured once per-replica state is eliminated.
@@ -101,3 +106,17 @@ The frontend SHALL load the Grafana Faro Web SDK when its public endpoint config
 
 - **WHEN** any calculation, ranking, or ordering is produced
 - **THEN** no funnel event, RUM signal, or aggregate derived from them contributes to the result
+
+### Requirement: Catalog data-quality metrics and alerting
+
+The observability stack SHALL expose a data-quality panel covering: zero-price rejections from ingestion, implausible-volume share, Alko reference coverage (share of products with a usable reference offer), transport-row count per carrier, and per-feed last-success age. Threshold alerts SHALL fire on regression (new zero-price rejections, coverage drop to or near zero, empty transport table, stale feed) so data-quality regressions page before customers encounter them.
+
+#### Scenario: Empty reference coverage is alerted, not discovered
+
+- **WHEN** Alko reference coverage falls to zero while the savings surface is enabled
+- **THEN** an alert fires on the data-quality panel
+
+#### Scenario: Transport dataset state is visible
+
+- **WHEN** the transport offer table carries no rows for a carrier
+- **THEN** the panel shows the carrier's row count as zero and the staleness alert covers it
