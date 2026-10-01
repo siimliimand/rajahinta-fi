@@ -37,20 +37,22 @@ test.describe('account export journey', () => {
     // server-derived identity (welcome + session id) stays hidden. The
     // account-scoped 401 either replaces the route with /login (Workers
     // stack) or fails closed with the retry affordance (legacy stack).
+    // The locator counts are awaited — a sync `count() > 0` compares a
+    // Promise and never matches (the 2026-10-01 CI lesson).
     await expect
-      .poll(
-        () =>
-          /\/login$/.test(page.url())
-            ? 'redirect'
-            : page.getByText('Tilin tietojen lataaminen epäonnistui.').count() >
-                0
-              ? 'retry-affordance'
-              : page.getByRole('button', { name: 'Yritä uudelleen' }).count() >
-                  0
-                ? 'retry-affordance'
-                : 'pending',
-        { timeout: 25_000, intervals: [500, 1_000, 2_500, 5_000] },
-      )
+      .poll(async () => {
+        if (/\/login$/.test(page.url())) return 'redirect';
+        if (
+          (await page.getByText('Tilin tietojen lataaminen epäonnistui.').count()) >
+            0 ||
+          (await page
+            .getByRole('button', { name: 'Yritä uudelleen' })
+            .count()) > 0
+        ) {
+          return 'retry-affordance';
+        }
+        return 'pending';
+      })
       .not.toBe('pending');
     await expect(
       page.getByRole('heading', { name: 'Tervetuloa takaisin', exact: true }),
