@@ -28,6 +28,14 @@
  *   section), `classification` carries a NotPersisted marker with an
  *   explanatory evidence summary, and `metadata.input.transportMethod` is
  *   omitted (optional in the frontend type).
+ * - `travellerAlternative` (task 1.2, change finnish-first-client-experience)
+ *   is deliberately NEVER emitted: the callout is computed live per request
+ *   against the allowance dataset effective at calculation time, is not
+ *   persisted with the record, and recomputing it here would fabricate an
+ *   estimate the past calculation never carried (the mapper's own no-
+ *   recomputation rule). The response TYPE carries the optional field (it
+ *   mirrors the live CalculatorResult), but a reconstructed result omits
+ *   the key — the render-nothing state for past results.
  *
  * Pure — no I/O; the controller loads the record/product/rule rows and
  * passes them in.  Exported so tests exercise the mapping directly.
@@ -339,6 +347,8 @@ export function mapCalculationRecordToResult(
     // Persisted verbatim when the record has one; NULL/legacy rows emit
     // NO key — absence is the render-nothing state, never null.
     ...(alkoBenchmark !== null ? { alkoBenchmark } : {}),
+    // travellerAlternative is deliberately NOT emitted — computed live per
+    // request, never persisted, never recomputed here (header note).
     metadata: {
       input: {
         // CalculatorInput.productId IS the product-master ID (see

@@ -1593,7 +1593,7 @@ describe('LandedCostCalculatorService', () => {
       expect(result.classification.evidence).toHaveLength(2);
     });
 
-    it('delivery-mode results are byte-for-byte identical with the port wired or unwired', async () => {
+    it('delivery-mode pre-existing fields stay byte-for-byte identical with the port wired or unwired (task 1.2 adds only the callout key)', async () => {
       const deliveryInput: CalculatorInput = {
         productId: 7,
         quantity: 6,
@@ -1609,19 +1609,320 @@ describe('LandedCostCalculatorService', () => {
       const withPort = await wired.service.calculate(deliveryInput);
       const withoutPort = await unwired.service.calculate(deliveryInput);
 
+      // Task 1.2: the wired delivery performs exactly ONE allowance read —
+      // the traveller-alternative callout's.
+      expect(port.resolveForTravelDate).toHaveBeenCalledTimes(1);
+      expect(port.resolveForTravelDate).toHaveBeenCalledWith('2026-03-15');
+
+      // Design D4: apart from the ADDITIVE callout key, the wired delivery
+      // result is byte-for-byte the unwired engine output — no amount,
+      // status, confidence, or metadata field may move.
       const serialize = (result: unknown): string =>
         JSON.stringify(result, (key, value) =>
-          key === 'calculationTimestamp' ? undefined : value,
+          key === 'calculationTimestamp' || key === 'travellerAlternative'
+            ? undefined
+            : value,
         );
       expect(serialize(withPort)).toBe(serialize(withoutPort));
+      expect(withPort.totalCents).toBe(withoutPort.totalCents);
+      expect(withPort.confidence).toBe(withoutPort.confidence);
 
-      // Delivery never reaches the allowance port.
-      expect(port.resolveForTravelDate).not.toHaveBeenCalled();
+      // The only difference IS the callout — present wired, absent unwired.
+      expect(withPort.travellerAlternative).toEqual({
+        estimatedTotalCents: 22140,
+        withinAllowance: true,
+        allowanceDatasetVersion: 'fi-allowances-2026.1',
+        categoryKey: 'spirits',
+      });
+      expect('travellerAlternative' in withoutPort).toBe(false);
+
       // Delivery keeps the single plain tax lines.
       const labels = withPort.itemizedCosts.map((c) => c.label);
       expect(labels).toContain('Alcohol excise');
       expect(labels).not.toContain('Alcohol excise (within traveller allowance)');
       expect('allowanceDatasetVersion' in withPort.metadata).toBe(false);
+    });
+  });
+
+  describe('traveller alternative callout on delivery results (task 1.2)', () => {
+    /** 6 × 1 l Jameson 40 % — same fixture shape as the PERSONAL block. */
+    const JAMESON_PRODUCT: CalculatorProductData = {
+      id: 7,
+      regulatoryClassification: 'spirits',
+      category: 'spirits',
+      volumeLitres: 1.0,
+      alcoholByVolume: 0.4,
+      containerType: 'glass',
+      depositSystemStatus: false,
+      weightKg: 1.75,
+      normalizedName: 'Jameson Irish Whiskey 40% 1 l',
+    };
+
+    const JAMESON_OFFER: CalculatorRetailOfferData = {
+      id: 700,
+      priceCents: 3690,
+      merchant: 'test-merchant-ee',
+      country: 'EE',
+      reliabilityStatus: 'VERIFIED',
+    };
+
+    const UNIT_PRICE_CENTS = 3690;
+
+    const DELIVERY_INPUT: CalculatorInput = {
+      productId: 7,
+      quantity: 6,
+      destination: 'FI',
+      sessionId: 'delivery-session',
+      transportArrangement: 'SELLER_ARRANGED',
+      transactionDate: '2026-03-15T12:00:00.000Z',
+    };
+
+    const EXCISE_UNIT_CENTS = 2195;
+    const DUTY_UNIT_CENTS = 51;
+
+    /** Published dataset: spirits capped at 6 l (volume shape). */
+    const VOLUME_CAP_DATASET: TripResolvedAllowances = {
+      dataset: { versionLabel: 'fi-allowances-2026.1' },
+      limits: [{ category: 'spirits', volumeCapLitres: 6, quantityCap: null }],
+    };
+
+    function createAllowancePort(
+      resolved: TripResolvedAllowances | null,
+    ): ITravellerAllowancePort {
+      return {
+        resolveForTravelDate: vi.fn().mockResolvedValue(resolved),
+      };
+    }
+
+    function createDeliveryService(options?: {
+      travellerAllowances?: ITravellerAllowancePort | null;
+      product?: CalculatorProductData;
+      input?: CalculatorInput;
+    }) {
+      const productData = createMockProductDataPort({
+        findProductById: vi
+          .fn()
+          .mockResolvedValue(options?.product ?? JAMESON_PRODUCT),
+        findRetailOffers: vi.fn().mockResolvedValue([JAMESON_OFFER]),
+      });
+      const created = createService({
+        productData,
+        transportEstimate: createTransportEstimateStub(null),
+        travellerAllowances: options?.travellerAllowances,
+      });
+      (created.mocks.alcoholExcise.calculate as ReturnType<typeof vi.fn>)
+        .mockResolvedValue({
+          category: 'spirits',
+          abv: 0.4,
+          volumeLitres: 1.0,
+          rateApplied: 21.95,
+          taxCents: EXCISE_UNIT_CENTS,
+          taxDatasetVersion: 'v1',
+          reliability: 'VERIFIED' as const,
+          ruleId: null,
+        });
+      (created.mocks.containerDuty.calculate as ReturnType<typeof vi.fn>)
+        .mockResolvedValue({
+          volumeLitres: 1.0,
+          ratePerLitre: 0.51,
+          dutyCents: DUTY_UNIT_CENTS,
+          taxDatasetVersion: 'v1',
+          reliability: 'VERIFIED' as const,
+          ruleId: null,
+        });
+      return { ...created, input: options?.input ?? DELIVERY_INPUT };
+    }
+
+    /** Serialize with the volatile timestamp and the additive callout key stripped. */
+    const serializeCore = (result: unknown): string =>
+      JSON.stringify(result, (key, value) =>
+        key === 'calculationTimestamp' || key === 'travellerAlternative'
+          ? undefined
+          : value,
+      );
+
+    it('carries the labelled traveller estimate — allowed quantity × shelf price, dataset version, category key', async () => {
+      const port = createAllowancePort(VOLUME_CAP_DATASET);
+      const { service, input } = createDeliveryService({
+        travellerAllowances: port,
+      });
+
+      const result = await service.calculate(input);
+
+      // 6 × 1 l within the 6 l spirits cap: the full quantity is allowed
+      // and the estimate is the shelf price for all six units.
+      expect(result.travellerAlternative).toEqual({
+        estimatedTotalCents: 6 * UNIT_PRICE_CENTS,
+        withinAllowance: true,
+        allowanceDatasetVersion: 'fi-allowances-2026.1',
+        categoryKey: 'spirits',
+      });
+
+      // Exactly ONE allowance read per delivery request — the callout's,
+      // resolved on the transaction date's calendar part.
+      expect(port.resolveForTravelDate).toHaveBeenCalledTimes(1);
+      expect(port.resolveForTravelDate).toHaveBeenCalledWith('2026-03-15');
+    });
+
+    it('changes no delivery figure, status, or confidence (design D4) — identical to the unwired engine modulo the callout key', async () => {
+      const wired = createDeliveryService({
+        travellerAllowances: createAllowancePort(VOLUME_CAP_DATASET),
+      });
+      const unwired = createDeliveryService();
+
+      const withCallout = await wired.service.calculate(wired.input);
+      const without = await unwired.service.calculate(unwired.input);
+
+      // The additive key is the ONLY byte-level difference.
+      expect(serializeCore(withCallout)).toBe(serializeCore(without));
+      expect(withCallout.totalCents).toBe(without.totalCents);
+      expect(withCallout.confidence).toBe(without.confidence);
+      expect('travellerAlternative' in without).toBe(false);
+    });
+
+    it('over-cap delivery pins withinAllowance false and the cap-bounded estimate', async () => {
+      const { service, input } = createDeliveryService({
+        travellerAllowances: createAllowancePort(VOLUME_CAP_DATASET),
+        input: { ...DELIVERY_INPUT, quantity: 12 },
+      });
+
+      const result = await service.calculate(input);
+
+      // The 6 l cap allows 6 of the requested 12 units — the estimate
+      // covers the ALLOWED quantity only, never the full request.
+      expect(result.travellerAlternative).toEqual({
+        estimatedTotalCents: 6 * UNIT_PRICE_CENTS,
+        withinAllowance: false,
+        allowanceDatasetVersion: 'fi-allowances-2026.1',
+        categoryKey: 'spirits',
+      });
+    });
+
+    it('a bottle-count cap bounds the estimate the same way', async () => {
+      const { service, input } = createDeliveryService({
+        travellerAllowances: createAllowancePort({
+          dataset: { versionLabel: 'fi-allowances-2026.1' },
+          limits: [
+            { category: 'spirits', volumeCapLitres: null, quantityCap: 2 },
+          ],
+        }),
+        input: { ...DELIVERY_INPUT, quantity: 5 },
+      });
+
+      const result = await service.calculate(input);
+
+      expect(result.travellerAlternative).toEqual({
+        estimatedTotalCents: 2 * UNIT_PRICE_CENTS,
+        withinAllowance: false,
+        allowanceDatasetVersion: 'fi-allowances-2026.1',
+        categoryKey: 'spirits',
+      });
+    });
+
+    it('litres-cap arithmetic matches the trip-fill floor+epsilon conversion', async () => {
+      // 0.7 l bottles against a 6 l cap: 8 fit (8 × 0.7 = 5.6), 9 do not
+      // (9 × 0.7 = 6.3) — the same floor((cap + 1e-9) / unitVolume) the
+      // PERSONAL branch and the fill engine apply, so the callout can
+      // never advertise a bound traveller mode would not apply.
+      const BOTTLE: CalculatorProductData = {
+        ...JAMESON_PRODUCT,
+        volumeLitres: 0.7,
+      };
+      const { service, input } = createDeliveryService({
+        travellerAllowances: createAllowancePort(VOLUME_CAP_DATASET),
+        product: BOTTLE,
+        input: { ...DELIVERY_INPUT, quantity: 12 },
+      });
+
+      const result = await service.calculate(input);
+
+      expect(result.travellerAlternative).toMatchObject({
+        estimatedTotalCents: 8 * UNIT_PRICE_CENTS,
+        withinAllowance: false,
+        categoryKey: 'spirits',
+      });
+    });
+
+    it('no cap row for the category → the key is absent and delivery figures equal the unwired engine', async () => {
+      const wired = createDeliveryService({
+        travellerAllowances: createAllowancePort({
+          dataset: { versionLabel: 'fi-allowances-2026.1' },
+          limits: [
+            { category: 'beer', volumeCapLitres: 24, quantityCap: null },
+          ],
+        }),
+      });
+      const unwired = createDeliveryService();
+
+      const result = await wired.service.calculate(wired.input);
+      const baseline = await unwired.service.calculate(unwired.input);
+
+      // Absence is the no-callout state — `?? null` for consumers, no key
+      // on the wire (never a placeholder object).
+      expect(result.travellerAlternative ?? null).toBeNull();
+      expect('travellerAlternative' in result).toBe(false);
+      // No cap row = no invented alternative: everything else identical.
+      expect(serializeCore(result)).toBe(serializeCore(baseline));
+    });
+
+    it('no effective dataset degrades to no callout — never the PERSONAL rejection', async () => {
+      const port = createAllowancePort(null);
+      const { service, mocks, input } = createDeliveryService({
+        travellerAllowances: port,
+      });
+
+      // MUST NOT throw NoAllowanceDatasetError — that rejection is the
+      // PERSONAL branch's contract; the delivery path stays fully
+      // available when no dataset is published (design D3).
+      const result = await service.calculate(input);
+
+      expect(result.travellerAlternative ?? null).toBeNull();
+      expect('travellerAlternative' in result).toBe(false);
+      expect(port.resolveForTravelDate).toHaveBeenCalledTimes(1);
+      // The delivery calculation itself completed and persisted.
+      expect(mocks.calculationRecords.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('an unwired port emits no callout (the degrade rule of every existing surface)', async () => {
+      const { service, input } = createDeliveryService();
+
+      const result = await service.calculate(input);
+
+      expect(result.travellerAlternative ?? null).toBeNull();
+      expect('travellerAlternative' in result).toBe(false);
+    });
+
+    it('a cap row that cannot bound the line (degenerate unit volume) yields no callout', async () => {
+      const UNBOUNDED: CalculatorProductData = {
+        ...JAMESON_PRODUCT,
+        volumeLitres: 0,
+      };
+      const { service, input } = createDeliveryService({
+        travellerAllowances: createAllowancePort(VOLUME_CAP_DATASET),
+        product: UNBOUNDED,
+      });
+
+      const result = await service.calculate(input);
+
+      // A litres cap against a non-positive unit volume cannot bound a
+      // quantity — no estimate is guessed.
+      expect(result.travellerAlternative ?? null).toBeNull();
+    });
+
+    it('PERSONAL requests never carry the callout — the PERSONAL result IS the traveller scenario', async () => {
+      const port = createAllowancePort(VOLUME_CAP_DATASET);
+      const { service, input } = createDeliveryService({
+        travellerAllowances: port,
+        input: { ...DELIVERY_INPUT, transportArrangement: 'PERSONAL' },
+      });
+
+      const result = await service.calculate(input);
+
+      expect(result.travellerAlternative ?? null).toBeNull();
+      expect('travellerAlternative' in result).toBe(false);
+      // Exactly one port read in total — the PERSONAL branch's; the
+      // callout branch never runs for a traveller request.
+      expect(port.resolveForTravelDate).toHaveBeenCalledTimes(1);
     });
   });
 });

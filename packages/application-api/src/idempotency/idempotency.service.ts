@@ -13,7 +13,7 @@
 
 import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import type { CalculatorResult } from '@rajahinta/core-domain';
+import type { CalculatorResult, TransportArrangement } from '@rajahinta/core-domain';
 
 // ---------------------------------------------------------------------------
 // Injection token
@@ -89,6 +89,16 @@ export interface CacheKeyInput {
    */
   readonly items?: readonly { productId: number; quantity: number }[];
   /**
+   * How transport is arranged (task 1.2, change
+   * finnish-first-client-experience). Load-bearing for the cache identity:
+   * a PERSONAL request runs the traveller-allowance branch while a delivery
+   * request runs the full-tax engines, so identical product/quantity
+   * requests differing only in the arrangement are DIFFERENT calculations
+   * and must never collide on one cache entry. Absent hashes as the
+   * delivery default (`SELLER_ARRANGED` semantics).
+   */
+  readonly transportArrangement?: TransportArrangement;
+  /**
    * Resolved dataset version labels (tax + transport) at the time of request.
    *
    * Tax: returned by `ITaxRuleRepositoryPort.findActiveVersionLabels()` —
@@ -110,6 +120,12 @@ export interface CacheKeyInput {
  *
  * The hash is stable across process restarts — cache invalidation is
  * driven by dataset version changes, not TTL or redeployment.
+ *
+ * Byte stream:
+ * `[items|]productId|quantity|DEST|transportMethod?__NONE__|transportArrangement?__NONE__|V|v1|v2|…`
+ * (versions sorted). The worker Durable Object's `hashCacheKey` reproduces
+ * this stream exactly — any change here must be mirrored there (cross-
+ * runtime parity test).
  *
  * When `datasetVersions` is present, the hash differs after a dataset
  * version change, producing a different cache key and guaranteeing a
@@ -139,6 +155,12 @@ export function hashInput(input: CacheKeyInput): string {
   h.update(input.destination.toUpperCase());
   h.update('|');
   h.update(input.transportMethod ?? '__NONE__');
+
+  // Include the transport arrangement (task 1.2): PERSONAL and delivery
+  // of the same product/quantity are different calculations (allowance
+  // branch vs full-tax engines) and must produce distinct cache keys.
+  h.update('|');
+  h.update(input.transportArrangement ?? '__NONE__');
 
   // Include dataset versions (sorted for determinism) when provided.
   // The sentinel marker ensures the version section is unambiguous even

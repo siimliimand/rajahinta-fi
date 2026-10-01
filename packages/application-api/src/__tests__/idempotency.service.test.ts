@@ -172,6 +172,68 @@ describe('hashInput', () => {
     };
     expect(hashInput(v2024_1)).not.toEqual(hashInput(v2024_2));
   });
+
+  // -----------------------------------------------------------------------
+  // transportArrangement in hash (task 1.2, change
+  // finnish-first-client-experience)
+  //
+  // A PERSONAL request runs the traveller-allowance branch while a
+  // delivery request runs the full-tax engines — identical product/
+  // quantity requests differing only in the arrangement are DIFFERENT
+  // calculations and must produce DISTINCT cache identities (design:
+  // "PERSONAL and delivery of the same product must not collide").
+  // -----------------------------------------------------------------------
+
+  it('separates PERSONAL from delivery for identical product/quantity', () => {
+    const base: CacheKeyInput = {
+      productId: 42, quantity: 6, destination: 'FI',
+      datasetVersions: ['v3.0-2026'],
+    };
+    const personal = hashInput({ ...base, transportArrangement: 'PERSONAL' });
+    const delivery = hashInput({
+      ...base,
+      transportArrangement: 'SELLER_ARRANGED',
+    });
+    expect(personal).not.toEqual(delivery);
+  });
+
+  it('separates PERSONAL from an omitted arrangement (the delivery default)', () => {
+    const base: CacheKeyInput = {
+      productId: 42, quantity: 6, destination: 'FI',
+      datasetVersions: ['v3.0-2026'],
+    };
+    expect(hashInput({ ...base, transportArrangement: 'PERSONAL' }))
+      .not.toEqual(hashInput(base));
+  });
+
+  it('separates every arrangement from the others', () => {
+    const base: CacheKeyInput = {
+      productId: 7, quantity: 2, destination: 'FI',
+    };
+    const seller = hashInput({ ...base, transportArrangement: 'SELLER_ARRANGED' });
+    const independent = hashInput({ ...base, transportArrangement: 'INDEPENDENT_CARRIER' });
+    const personal = hashInput({ ...base, transportArrangement: 'PERSONAL' });
+    const omitted = hashInput(base);
+    expect(seller).not.toEqual(independent);
+    expect(seller).not.toEqual(personal);
+    expect(independent).not.toEqual(personal);
+    // The omitted arrangement hashes as the delivery default — distinct
+    // from PERSONAL, identical to an explicit SELLER_ARRANGED only in
+    // semantics; the sentinel keeps it a distinct byte stream from every
+    // explicit value.
+    expect(omitted).not.toEqual(personal);
+    expect(omitted).not.toEqual(seller);
+    expect(omitted).not.toEqual(independent);
+  });
+
+  it('is deterministic for the same arrangement', () => {
+    const input: CacheKeyInput = {
+      productId: 42, quantity: 6, destination: 'FI',
+      transportArrangement: 'PERSONAL',
+      datasetVersions: ['v3.0-2026'],
+    };
+    expect(hashInput(input)).toEqual(hashInput(input));
+  });
 });
 
 // ---------------------------------------------------------------------------

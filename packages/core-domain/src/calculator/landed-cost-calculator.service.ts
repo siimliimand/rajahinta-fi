@@ -46,6 +46,7 @@ import type {
   IProductDataPort,
   ICalculationRecordPort,
   AlkoBenchmarkSnapshot,
+  TravellerAlternativeCallout,
 } from './calculator.types';
 import {
   isOfferOutOfStock,
@@ -60,7 +61,10 @@ import type { ReliabilityStatus } from '../reliability/reliability.types';
 import type { ClassificationInput } from '../classification/classification.types';
 import { ImportVatService, type ImportVatResult } from '../vat';
 import { TRAVELLER_ALLOWANCE_PORT } from '../optimizer/ports/traveller-allowance.port';
-import type { ITravellerAllowancePort } from '../optimizer/ports/traveller-allowance.port';
+import type {
+  ITravellerAllowancePort,
+  TripResolvedAllowances,
+} from '../optimizer/ports/traveller-allowance.port';
 
 /**
  * Fit tolerance for the litres→quantity cap conversion — the same
@@ -251,6 +255,26 @@ export class LandedCostCalculatorService {
       (computed.importVatTotal ?? 0);
 
     // -----------------------------------------------------------------------
+    // 7a. Traveller-alternative callout (task 1.2, delivery mode only)
+    // -----------------------------------------------------------------------
+
+    // A PERSONAL result IS the traveller scenario — no callout there (and
+    // no second port read; the PERSONAL branch already performed the one
+    // allowance read inside computeItemCosts). Delivery arrangements read
+    // the port once here; every degrade case yields null and the key is
+    // omitted — amounts, statuses, and confidence stay byte-identical
+    // (design D4).
+    const travellerAlternative =
+      (input.transportArrangement ?? 'SELLER_ARRANGED') === 'PERSONAL'
+        ? null
+        : await this.resolveTravellerAlternativeCallout(
+            input,
+            product.category.toLowerCase(),
+            product.volumeLitres,
+            bestOffer.priceCents,
+          );
+
+    // -----------------------------------------------------------------------
     // 8. Persist calculation record
     // -----------------------------------------------------------------------
 
@@ -293,6 +317,7 @@ export class LandedCostCalculatorService {
       disclaimer: DISCLAIMER_FI,
       classification: computed.classificationResult,
       ...(alkoBenchmark !== undefined ? { alkoBenchmark } : {}),
+      ...(travellerAlternative !== null ? { travellerAlternative } : {}),
       metadata: {
         input,
         calculationTimestamp: new Date().toISOString(),
@@ -742,6 +767,68 @@ export class LandedCostCalculatorService {
   // ---------------------------------------------------------------------------
 
   /**
+   * The calendar date the allowance lookup uses: the CALENDAR DATE of the
+   * transaction (design: today when the request carries no date). The date
+   * part of the ISO input is the traveller's own date wording — no
+   * timezone re-derivation that could shift the lookup day. Shared by the
+   * PERSONAL split and the delivery callout so both resolve the same
+   * dataset version within one request.
+   */
+  private allowanceLookupDate(input: CalculatorInput): string {
+    return input.transactionDate !== undefined
+      ? input.transactionDate.slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+  }
+
+  /**
+   * The within-allowance quantity for one line against a RESOLVED dataset —
+   * the single implementation of the cap arithmetic, shared by the PERSONAL
+   * split and the delivery callout so the two can never disagree on whether
+   * a unit fits (task 1.2). Per-dimension bounds; a dimension the cap
+   * cannot bound (missing row, non-positive/unbounded unit volume against a
+   * litres cap) is skipped rather than guessed. No computable bound at all
+   * → null: the cap does not apply.
+   *
+   * The litres→quantity conversion is the trip-fill engine's
+   * floor-plus-{@link LITRES_EPSILON} semantics (same centilitre-granular
+   * epsilon as the fill engine's maxFitQuantity).
+   */
+  private boundQuantityAgainstCaps(
+    resolved: TripResolvedAllowances,
+    category: string,
+    requestedQuantity: number,
+    unitVolumeLitres: number,
+  ): number | null {
+    const capRow =
+      resolved.limits.find((limit) => limit.category === category) ?? null;
+
+    let bound = requestedQuantity;
+    let boundable = false;
+    if (capRow !== null) {
+      if (capRow.quantityCap !== null) {
+        bound = Math.min(bound, capRow.quantityCap);
+        boundable = true;
+      }
+      if (
+        capRow.volumeCapLitres !== null &&
+        Number.isFinite(unitVolumeLitres) &&
+        unitVolumeLitres > 0
+      ) {
+        bound = Math.min(
+          bound,
+          Math.floor(
+            (capRow.volumeCapLitres + LITRES_EPSILON) / unitVolumeLitres,
+          ),
+        );
+        boundable = true;
+      }
+    }
+
+    if (capRow === null || !boundable) return null;
+    return Math.max(0, bound);
+  }
+
+  /**
    * Resolve the traveller-allowance split for a PERSONAL-mode line
    * (task 1.1): the published dataset effective on the transaction date,
    * the cap row for the product's tax category, and the within/surplus
@@ -767,14 +854,7 @@ export class LandedCostCalculatorService {
   ): Promise<TravellerAllowanceSplit | null> {
     if (this.travellerAllowances == null) return null;
 
-    // The allowance version resolves on the CALENDAR DATE of the
-    // transaction (design: today when the request carries no date). The
-    // date part of the ISO input is the traveller's own date wording —
-    // no timezone re-derivation that could shift the lookup day.
-    const transactionDate =
-      input.transactionDate !== undefined
-        ? input.transactionDate.slice(0, 10)
-        : new Date().toISOString().slice(0, 10);
+    const transactionDate = this.allowanceLookupDate(input);
 
     const resolved = await this.travellerAllowances.resolveForTravelDate(
       transactionDate,
@@ -783,36 +863,14 @@ export class LandedCostCalculatorService {
       throw new NoAllowanceDatasetError(transactionDate);
     }
 
-    const capRow =
-      resolved.limits.find((limit) => limit.category === category) ?? null;
+    const allowedQuantity = this.boundQuantityAgainstCaps(
+      resolved,
+      category,
+      input.quantity,
+      unitVolumeLitres,
+    );
 
-    // Per-dimension bounds; a dimension the cap cannot bound (missing
-    // row, non-positive/unbounded unit volume against a litres cap) is
-    // skipped rather than guessed. No computable bound at all → the cap
-    // does not apply.
-    let bound = input.quantity;
-    let boundable = false;
-    if (capRow !== null) {
-      if (capRow.quantityCap !== null) {
-        bound = Math.min(bound, capRow.quantityCap);
-        boundable = true;
-      }
-      if (
-        capRow.volumeCapLitres !== null &&
-        Number.isFinite(unitVolumeLitres) &&
-        unitVolumeLitres > 0
-      ) {
-        bound = Math.min(
-          bound,
-          Math.floor(
-            (capRow.volumeCapLitres + LITRES_EPSILON) / unitVolumeLitres,
-          ),
-        );
-        boundable = true;
-      }
-    }
-
-    if (capRow === null || !boundable) {
+    if (allowedQuantity === null) {
       return {
         versionLabel: resolved.dataset.versionLabel,
         category,
@@ -822,13 +880,57 @@ export class LandedCostCalculatorService {
       };
     }
 
-    const allowedQuantity = Math.max(0, bound);
     return {
       versionLabel: resolved.dataset.versionLabel,
       category,
       allowedQuantity,
       surplusQuantity: input.quantity - allowedQuantity,
       capApplied: true,
+    };
+  }
+
+  /**
+   * Resolve the delivery-mode traveller-alternative callout (task 1.2,
+   * change finnish-first-client-experience): what ONE traveller carrying
+   * the same quantity would pay within the effective allowance caps —
+   * the allowed quantity × the unit shelf price already used for the
+   * retail line, via the SAME port resolution and cap arithmetic as the
+   * PERSONAL branch ({@link boundQuantityAgainstCaps}), so the callout can
+   * never advertise a bound the traveller mode would not apply.
+   *
+   * Delivery DEGRADES where PERSONAL refuses (design D3/D4): port
+   * unwired, no effective dataset, or no boundable cap row for the
+   * category all yield null — never an invented cap and never the
+   * {@link NoAllowanceDatasetError} rejection (the delivery path stays
+   * fully available). Exactly one port read per delivery request; the
+   * estimate never alters any delivery figure, status, or confidence.
+   */
+  private async resolveTravellerAlternativeCallout(
+    input: CalculatorInput,
+    category: string,
+    unitVolumeLitres: number,
+    unitShelfPriceCents: number,
+  ): Promise<TravellerAlternativeCallout | null> {
+    if (this.travellerAllowances == null) return null;
+
+    const resolved = await this.travellerAllowances.resolveForTravelDate(
+      this.allowanceLookupDate(input),
+    );
+    if (resolved === null) return null;
+
+    const allowedQuantity = this.boundQuantityAgainstCaps(
+      resolved,
+      category,
+      input.quantity,
+      unitVolumeLitres,
+    );
+    if (allowedQuantity === null) return null;
+
+    return {
+      estimatedTotalCents: allowedQuantity * unitShelfPriceCents,
+      withinAllowance: allowedQuantity >= input.quantity,
+      allowanceDatasetVersion: resolved.dataset.versionLabel,
+      categoryKey: category,
     };
   }
 

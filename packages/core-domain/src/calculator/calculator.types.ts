@@ -372,6 +372,34 @@ export type AlkoBenchmarkSnapshot = Omit<AlkoBenchmarkAvailable, 'observedAt'> &
 };
 
 /**
+ * Delivery-mode traveller-alternative callout (task 1.2, change
+ * finnish-first-client-experience): the labelled out-of-pocket estimate for
+ * ONE traveller carrying the same quantity within the effective traveller
+ * allowance caps — an invitation to try the trip calculator, computed in the
+ * same request from the same allowance port read semantics as the PERSONAL
+ * branch (one read, no extra I/O beyond it).
+ *
+ * Purely additive (design D4): the estimate never enters `totalCents`, the
+ * itemized breakdown, any reliability status, or the confidence — the
+ * delivery result's own figures are byte-identical with and without it.
+ */
+export interface TravellerAlternativeCallout {
+  /**
+   * The allowed quantity (requested quantity capped by the category cap,
+   * trip-fill floor-plus-epsilon litres→quantity semantics) × the unit
+   * shelf price already used for the result's retail line (best-offer
+   * retail), in euro-cents.
+   */
+  readonly estimatedTotalCents: number;
+  /** Whether the FULL requested quantity fits the category cap. */
+  readonly withinAllowance: boolean;
+  /** `versionLabel` of the allowance dataset the estimate resolves against. */
+  readonly allowanceDatasetVersion: string;
+  /** Canonical tax-rule category the cap was looked up with. */
+  readonly categoryKey: string;
+}
+
+/**
  * Full result from the landed-cost calculator.
  */
 export interface CalculatorResult {
@@ -433,6 +461,20 @@ export interface CalculatorResult {
    * `totalCents`, the itemized breakdown, or any ranking input.
    */
   readonly alkoBenchmark?: AlkoBenchmarkSnapshot;
+
+  /**
+   * Traveller-alternative estimate for delivery-mode results (task 1.2,
+   * change finnish-first-client-experience). Present exactly when a
+   * published allowance dataset resolved for the transaction date AND the
+   * product's category has a boundable cap row AND the request was a
+   * delivery arrangement. In every degrade case — port unwired, no
+   * effective dataset, no cap row for the category, or a PERSONAL request
+   * (a PERSONAL result IS the traveller scenario) — the key is ABSENT:
+   * absence is the render-nothing state (`?? null` for consumers, never a
+   * displayed placeholder). Purely additive: never enters `totalCents`,
+   * the itemized breakdown, statuses, or confidence (design D4).
+   */
+  readonly travellerAlternative?: TravellerAlternativeCallout | null;
 
   /** Calculation metadata. */
   readonly metadata: {

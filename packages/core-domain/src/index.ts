@@ -342,6 +342,7 @@ export type {
   CalculatorRetailOfferData,
   RetailOfferAvailability,
   AlkoBenchmarkSnapshot,
+  TravellerAlternativeCallout,
   CostCategory,
   ItemizedCost,
   CreateCalculationRecordInput,
