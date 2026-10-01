@@ -40,6 +40,7 @@ import {
   DISCLAIMER_FI,
 } from '../adapters/core-domain-bridge';
 import type { CalculatorResult } from '../../../../packages/core-domain/src/calculator/calculator.types';
+import { NoAllowanceDatasetError } from '../../../../packages/core-domain/src/calculator/calculator.types';
 import type { ITaxRuleRepositoryPort } from '../../../../packages/core-domain/src/tax/ports/tax-rule-repository.port';
 import type { ExciseResult } from '../../../../packages/core-domain/src/tax/services/alcohol-excise.service';
 import type { ContainerDutyResult } from '../../../../packages/core-domain/src/tax/services/container-duty.service';
@@ -178,6 +179,19 @@ async function calculate(c: Context<AppEnv>): Promise<Response> {
   } catch (err) {
     if (err instanceof ProductNotFoundError || err instanceof NoRetailOffersError) {
       throw new ApiHttpError(404, err.message);
+    }
+    // No PUBLISHED traveller-allowance dataset covers the transaction
+    // date: capping is spec-mandatory, so a traveller calculation has no
+    // computable result — 409 NoPublishedAllowances (trip-fill/trip-
+    // feasibility parity, design D3), resolvable only by publishing a
+    // covering version. The delivery path never reaches the port, so
+    // this state cannot touch it.
+    if (err instanceof NoAllowanceDatasetError) {
+      throw new ApiHttpError(409, {
+        statusCode: 409,
+        message: err.message,
+        error: 'NoPublishedAllowances',
+      });
     }
     if (err instanceof ClassificationGateRejectionError) {
       throw new ApiHttpError(422, {
