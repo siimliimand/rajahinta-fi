@@ -67,3 +67,5 @@ tests/e2e-browser/playwright-report/
 .agentmemory/
 # Agent-sandbox local state
 .local/
+# gh device-flow state
+.config/
