@@ -30,9 +30,11 @@ import type {
 } from '../calculator.types';
 import {
   ClassificationGateRejectionError,
+  NoAllowanceDatasetError,
   ProductNotFoundError,
   NoRetailOffersError,
 } from '../calculator.types';
+import type { ITravellerAllowancePort, TripResolvedAllowances } from '../../optimizer/ports/traveller-allowance.port';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -95,11 +97,16 @@ function createMockCalculationRecordPort(
 
 /**
  * Create service with real sub-services (where cheap) and mocked ports.
+ *
+ * `travellerAllowances` defaults to UNWIRED (undefined) — the production
+ * surfaces that never bound the token — so every test below that does not
+ * opt into traveller mode exercises the pre-allowance engine exactly.
  */
 function createService(options?: {
   productData?: IProductDataPort;
   calculationRecords?: ICalculationRecordPort;
   transportEstimate?: ReturnType<typeof createTransportEstimateStub>;
+  travellerAllowances?: ITravellerAllowancePort | null;
 }): {
   service: LandedCostCalculatorService;
   mocks: {
@@ -175,6 +182,7 @@ function createService(options?: {
     confidence,
     productData,
     calculationRecords,
+    options?.travellerAllowances,
   );
 
   return {
@@ -1301,6 +1309,319 @@ describe('LandedCostCalculatorService', () => {
         (c) => c.category === 'alcoholExciseEstimate',
       )!;
       expect(exciseLine.reliability).toBe('ESTIMATED');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Traveller allowance PERSONAL branch (task 1.1, change
+  // finnish-first-client-experience): the published allowance dataset
+  // effective on the transaction date bounds the quantity; the allowed
+  // portion carries shelf price only; the surplus runs the existing
+  // engines with the established import-VAT base composition.
+  // ---------------------------------------------------------------------------
+
+  describe('traveller allowance PERSONAL branch (task 1.1)', () => {
+    /** 6 × 1 l Jameson 40 % — the spec scenario's fixture shape. */
+    const JAMESON_PRODUCT: CalculatorProductData = {
+      id: 7,
+      regulatoryClassification: 'spirits',
+      category: 'spirits',
+      volumeLitres: 1.0,
+      alcoholByVolume: 0.4,
+      containerType: 'glass',
+      depositSystemStatus: false,
+      weightKg: 1.75,
+      normalizedName: 'Jameson Irish Whiskey 40% 1 l',
+    };
+
+    const JAMESON_OFFER: CalculatorRetailOfferData = {
+      id: 700,
+      priceCents: 3690,
+      merchant: 'test-merchant-ee',
+      country: 'EE',
+      reliabilityStatus: 'VERIFIED',
+    };
+
+    const PERSONAL_INPUT: CalculatorInput = {
+      productId: 7,
+      quantity: 6,
+      destination: 'FI',
+      sessionId: 'traveller-session',
+      transportArrangement: 'PERSONAL',
+      transactionDate: '2026-03-15T12:00:00.000Z',
+    };
+
+    /** Deterministic per-unit tax figures for the stub engines. */
+    const EXCISE_UNIT_CENTS = 2195;
+    const DUTY_UNIT_CENTS = 51;
+
+    function createAllowancePort(
+      resolved: TripResolvedAllowances | null,
+    ): ITravellerAllowancePort {
+      return {
+        resolveForTravelDate: vi.fn().mockResolvedValue(resolved),
+      };
+    }
+
+    /** Published dataset: spirits capped at 6 l (volume shape). */
+    const VOLUME_CAP_DATASET: TripResolvedAllowances = {
+      dataset: { versionLabel: 'fi-allowances-2026.1' },
+      limits: [{ category: 'spirits', volumeCapLitres: 6, quantityCap: null }],
+    };
+
+    function createJamesonService(options?: {
+      travellerAllowances?: ITravellerAllowancePort | null;
+      quantity?: number;
+    }) {
+      const productData = createMockProductDataPort({
+        findProductById: vi.fn().mockResolvedValue(JAMESON_PRODUCT),
+        findRetailOffers: vi.fn().mockResolvedValue([JAMESON_OFFER]),
+      });
+      const created = createService({
+        productData,
+        transportEstimate: createTransportEstimateStub(null),
+        travellerAllowances: options?.travellerAllowances,
+      });
+      (created.mocks.alcoholExcise.calculate as ReturnType<typeof vi.fn>)
+        .mockResolvedValue({
+          category: 'spirits',
+          abv: 0.4,
+          volumeLitres: 1.0,
+          rateApplied: 21.95,
+          taxCents: EXCISE_UNIT_CENTS,
+          taxDatasetVersion: 'v1',
+          reliability: 'VERIFIED' as const,
+          ruleId: null,
+        });
+      (created.mocks.containerDuty.calculate as ReturnType<typeof vi.fn>)
+        .mockResolvedValue({
+          volumeLitres: 1.0,
+          ratePerLitre: 0.51,
+          dutyCents: DUTY_UNIT_CENTS,
+          taxDatasetVersion: 'v1',
+          reliability: 'VERIFIED' as const,
+          ruleId: null,
+        });
+      const input: CalculatorInput =
+        options?.quantity !== undefined
+          ? { ...PERSONAL_INPUT, quantity: options.quantity }
+          : PERSONAL_INPUT;
+      return { ...created, input };
+    }
+
+    it('quantity within the spirits cap is shelf price only — taxes zero, dataset version recorded', async () => {
+      const { service, input } = createJamesonService({
+        travellerAllowances: createAllowancePort(VOLUME_CAP_DATASET),
+      });
+
+      const result = await service.calculate(input);
+
+      // 6 × €36.90 shelf price, no transport, no taxes.
+      expect(result.foreignRetailPrice).toBe(22140);
+      expect(result.transportCost).toBe(0);
+      expect(result.alcoholExciseEstimate).toBe(0);
+      expect(result.containerDutyEstimate).toBe(0);
+      expect('importVatEstimate' in result).toBe(false);
+      expect(result.totalCents).toBe(22140);
+
+      // The dataset version travelled to the metadata.
+      expect(result.metadata.allowanceDatasetVersion).toBe(
+        'fi-allowances-2026.1',
+      );
+
+      // Within-allowance lines are explicit dataset-fact zeros.
+      const byLabel = new Map(result.itemizedCosts.map((c) => [c.label, c]));
+      expect(byLabel.get('Alcohol excise (within traveller allowance)')).toMatchObject({
+        cents: 0,
+        reliability: 'VERIFIED',
+      });
+      expect(byLabel.get('Container duty (within traveller allowance)')).toMatchObject({
+        cents: 0,
+        reliability: 'VERIFIED',
+      });
+      expect(byLabel.get('Import VAT (within traveller allowance)')).toMatchObject({
+        cents: 0,
+        reliability: 'VERIFIED',
+      });
+      expect(byLabel.has('Alcohol excise (over-allowance surplus)')).toBe(false);
+
+      // The allowance application is classification evidence.
+      expect(result.classification.classification).toBe('TravellerImport');
+      expect(result.classification.evidence).toHaveLength(3);
+      expect(result.classification.evidence[2].source).toBe(
+        'TravellerAllowance',
+      );
+      expect(result.classification.evidence[2].supportingData).toContain(
+        'covers 6 of 6 units',
+      );
+      expect(result.classification.evidence[2].supportingData).toContain(
+        'travellers: 1',
+      );
+    });
+
+    it('over-cap surplus is taxed on the surplus only — exact VAT base composition', async () => {
+      const { service, input } = createJamesonService({
+        travellerAllowances: createAllowancePort(VOLUME_CAP_DATASET),
+        quantity: 12,
+      });
+
+      const result = await service.calculate(input);
+
+      // Allowed 6, surplus 6 — the traveller pays shelf price for ALL
+      // units, and only the surplus carries the engines' figures.
+      expect(result.foreignRetailPrice).toBe(44280);
+      expect(result.alcoholExciseEstimate).toBe(EXCISE_UNIT_CENTS * 6); // 13170
+      expect(result.containerDutyEstimate).toBe(DUTY_UNIT_CENTS * 6); // 306
+
+      // Import VAT on the surplus composition: retail(surplus) +
+      // transport(0, once) + excise(surplus) + duty(surplus) = 35616;
+      // 35616 × 25.5 % = 9082.08 → 9082 half-up.
+      expect(result.importVatEstimate).toBe(9082);
+
+      const vatLine = result.itemizedCosts.find(
+        (c) => c.category === 'importVatEstimate' && c.cents > 0,
+      )!;
+      expect(vatLine.label).toBe(
+        'Import VAT (over-allowance surplus, estimated)',
+      );
+      expect(vatLine.rateVersionId).toBe('import-vat-2024.2');
+      const base = new Map(vatLine.breakdown!.map((b) => [b.label, b.cents]));
+      expect(base.get('Retail price')).toBe(22140); // surplus retail only
+      expect(base.get('Transport')).toBe(0);
+      expect(base.get('Alcohol excise')).toBe(13170);
+      expect(base.get('Container duty')).toBe(306);
+      expect([...base.values()].reduce((s, v) => s + v, 0)).toBe(35616);
+
+      expect(result.totalCents).toBe(44280 + 13170 + 306 + 9082);
+
+      // Both portions are labeled in the breakdown.
+      const labels = result.itemizedCosts.map((c) => c.label);
+      expect(labels).toContain('Alcohol excise (within traveller allowance)');
+      expect(labels).toContain('Alcohol excise (over-allowance surplus)');
+      expect(labels).toContain('Container duty (over-allowance surplus)');
+      expect(result.classification.evidence[2].supportingData).toContain(
+        'covers 6 of 12 units; surplus 6 units taxed',
+      );
+    });
+
+    it('a quantity cap (bottle count) bounds the split the same way', async () => {
+      const { service, input } = createJamesonService({
+        travellerAllowances: createAllowancePort({
+          dataset: { versionLabel: 'fi-allowances-2026.1' },
+          limits: [
+            { category: 'spirits', volumeCapLitres: null, quantityCap: 2 },
+          ],
+        }),
+        quantity: 5,
+      });
+
+      const result = await service.calculate(input);
+
+      // Allowed 2, surplus 3: excise 3×2195 = 6585, duty 3×51 = 153.
+      expect(result.foreignRetailPrice).toBe(18450);
+      expect(result.alcoholExciseEstimate).toBe(6585);
+      expect(result.containerDutyEstimate).toBe(153);
+      // Base: 3×3690 + 6585 + 153 = 17808; × 25.5 % = 4541.04 → 4541.
+      expect(result.importVatEstimate).toBe(4541);
+      expect(result.totalCents).toBe(18450 + 6585 + 153 + 4541);
+      expect(result.classification.evidence[2].supportingData).toContain(
+        'covers 2 of 5 units; surplus 3 units taxed',
+      );
+    });
+
+    it('no cap row for the category applies no allowance — full taxation, never an invented exemption', async () => {
+      const { service, input } = createJamesonService({
+        travellerAllowances: createAllowancePort({
+          dataset: { versionLabel: 'fi-allowances-2026.1' },
+          limits: [{ category: 'beer', volumeCapLitres: 24, quantityCap: null }],
+        }),
+      });
+
+      const result = await service.calculate(input);
+
+      // The split does not apply: the full quantity is taxed exactly as
+      // the pre-allowance engine would.
+      expect(result.alcoholExciseEstimate).toBe(EXCISE_UNIT_CENTS * 6);
+      expect(result.containerDutyEstimate).toBe(DUTY_UNIT_CENTS * 6);
+      expect(result.importVatEstimate).toBe(9082);
+      expect(result.totalCents).toBe(22140 + 13170 + 306 + 9082);
+      // Plain engine labels — no within/surplus split lines.
+      const labels = result.itemizedCosts.map((c) => c.label);
+      expect(labels).toContain('Alcohol excise');
+      expect(labels).not.toContain('Alcohol excise (within traveller allowance)');
+      // The consulted dataset is still the recorded provenance, and the
+      // evidence says why nothing was applied.
+      expect(result.metadata.allowanceDatasetVersion).toBe(
+        'fi-allowances-2026.1',
+      );
+      expect(result.classification.evidence).toHaveLength(3);
+      expect(result.classification.evidence[2].observation).toContain(
+        'No traveller-allowance cap covers this product category',
+      );
+    });
+
+    it('no published dataset rejects with the dedicated error carrying the transaction date', async () => {
+      const port = createAllowancePort(null);
+      const { service, mocks, input } = createJamesonService({
+        travellerAllowances: port,
+      });
+
+      const error = await service.calculate(input).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(NoAllowanceDatasetError);
+      expect((error as NoAllowanceDatasetError).transactionDate).toBe(
+        '2026-03-15',
+      );
+      expect((error as Error).message).toContain('2026-03-15');
+      // The port resolved the transaction date's calendar part.
+      expect(port.resolveForTravelDate).toHaveBeenCalledWith('2026-03-15');
+      // Nothing was persisted for the rejected calculation.
+      expect(mocks.calculationRecords.create).not.toHaveBeenCalled();
+    });
+
+    it('an unwired port degrades to the pre-allowance full-taxation math (no rejection)', async () => {
+      // Default harness: the port token is not bound — today's surfaces.
+      const { service, input } = createJamesonService();
+
+      const result = await service.calculate(input);
+
+      expect(result.alcoholExciseEstimate).toBe(EXCISE_UNIT_CENTS * 6);
+      expect(result.importVatEstimate).toBe(9082);
+      expect(result.totalCents).toBe(22140 + 13170 + 306 + 9082);
+      expect('allowanceDatasetVersion' in result.metadata).toBe(false);
+      // No allowance evidence — the branch never ran.
+      expect(result.classification.evidence).toHaveLength(2);
+    });
+
+    it('delivery-mode results are byte-for-byte identical with the port wired or unwired', async () => {
+      const deliveryInput: CalculatorInput = {
+        productId: 7,
+        quantity: 6,
+        destination: 'FI',
+        sessionId: 'delivery-session',
+        transactionDate: '2026-03-15T12:00:00.000Z',
+      };
+
+      const port = createAllowancePort(VOLUME_CAP_DATASET);
+      const wired = createJamesonService({ travellerAllowances: port });
+      const unwired = createJamesonService();
+
+      const withPort = await wired.service.calculate(deliveryInput);
+      const withoutPort = await unwired.service.calculate(deliveryInput);
+
+      const serialize = (result: unknown): string =>
+        JSON.stringify(result, (key, value) =>
+          key === 'calculationTimestamp' ? undefined : value,
+        );
+      expect(serialize(withPort)).toBe(serialize(withoutPort));
+
+      // Delivery never reaches the allowance port.
+      expect(port.resolveForTravelDate).not.toHaveBeenCalled();
+      // Delivery keeps the single plain tax lines.
+      const labels = withPort.itemizedCosts.map((c) => c.label);
+      expect(labels).toContain('Alcohol excise');
+      expect(labels).not.toContain('Alcohol excise (within traveller allowance)');
+      expect('allowanceDatasetVersion' in withPort.metadata).toBe(false);
     });
   });
 });

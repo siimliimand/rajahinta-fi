@@ -128,9 +128,20 @@ export interface ComputedItemCostsResult {
   readonly importVatRateVersionId?: string;
 
   /**
+   * `versionLabel` of the traveller-allowance dataset applied to this
+   * computation (task 1.1, change finnish-first-client-experience).
+   * Present exactly when the request was traveller-mode (`PERSONAL`) and
+   * a published dataset resolved for the transaction date — key absent
+   * for delivery computations (absence is the not-applied state).
+   */
+  readonly allowanceDatasetVersion?: string;
+
+  /**
    * Itemized costs excluding transport: [retail, excise, container duty]
    * plus the import-VAT line when the transaction is an import. The
-   * caller splices in the transport line at position 1.
+   * caller splices in the transport line at position 1. Traveller-mode
+   * computations label the within-allowance / over-allowance portions
+   * per line instead (same canonical categories, per-line labels).
    */
   readonly itemizedCosts: readonly ItemizedCost[];
 }
@@ -452,6 +463,15 @@ export interface CalculatorResult {
      * (idempotency/cache keys derived from these invalidate on change).
      */
     readonly datasetVersions: readonly string[];
+    /**
+     * `versionLabel` of the traveller-allowance dataset whose caps bounded
+     * this calculation (task 1.1). Present only for traveller-mode
+     * (`PERSONAL`) results that resolved a published dataset — key absent
+     * for delivery results. Kept OUT of `datasetVersions` deliberately:
+     * that array feeds the idempotency version comparison, which keys on
+     * the tax datasets the cache layer resolves on its own.
+     */
+    readonly allowanceDatasetVersion?: string;
     /** Transport offer ID that was used, or null when unavailable. */
     readonly transportOfferId: number | null;
   };
@@ -576,5 +596,29 @@ export class NoRetailOffersError extends Error {
     super(`No retail offers found for product ${productId}`);
     this.name = 'NoRetailOffersError';
     this.productId = productId;
+  }
+}
+
+/**
+ * Thrown when a traveller-mode (`PERSONAL`) calculation cannot resolve a
+ * PUBLISHED traveller-allowance dataset effective on the transaction date
+ * (task 1.1, design D3). Sibling of
+ * {@link ClassificationGateRejectionError}: the request is refused rather
+ * than computed with invented caps — the delivery path stays fully
+ * available. Carries the resolved calendar date (`YYYY-MM-DD`) the lookup
+ * used, so the route layer (task 1.3) can mirror the trip routes'
+ * no-dataset message shape.
+ */
+export class NoAllowanceDatasetError extends Error {
+  /** The transaction date the allowance lookup used, `YYYY-MM-DD`. */
+  readonly transactionDate: string;
+
+  constructor(transactionDate: string) {
+    super(
+      `No published traveller allowance dataset is effective on ${transactionDate} — ` +
+        'a traveller-mode calculation cannot run without a bound',
+    );
+    this.name = 'NoAllowanceDatasetError';
+    this.transactionDate = transactionDate;
   }
 }

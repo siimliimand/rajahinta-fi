@@ -50,6 +50,8 @@ import {
   D1TransportOfferQuery,
   D1CalculationRecordPort,
 } from '../adapters/d1-domain-ports';
+import { D1TravellerAllowancePort } from '../adapters/d1-traveller-allowance-port';
+import { D1TravellerAllowancesRepository } from '../../../../packages/data-platform/src/repositories/d1/traveller-allowances.repository';
 import {
   idempotencyCacheKey,
   idempotencyLookup,
@@ -82,6 +84,11 @@ export function buildLandedCostCalculatorService(d1: AppEnv['Bindings']['DB']): 
     new ConfidenceFrameworkService(new ReliabilityService()),
     new D1ProductDataPort(new D1ProductSearchRepository(d1)),
     new D1CalculationRecordPort(d1),
+    // Traveller-mode allowance resolution (task 1.1) — the same port the
+    // optimizer's fill engine is wired with (trip.routes.ts parity), so
+    // the calculator's PERSONAL branch resolves the identical published
+    // dataset instead of inventing caps.
+    new D1TravellerAllowancePort(new D1TravellerAllowancesRepository(d1)),
   );
   return { calculator, taxRepo };
 }
