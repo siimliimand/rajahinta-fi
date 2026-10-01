@@ -516,7 +516,11 @@ describe('GET /api/v1/products — catalog browse (task 2.1, change product-cata
       items: Array<{ id: number; lowestPriceCents: number | null; merchantCount: number }>;
     };
     const karhu = body.items.find((i) => i.id === 1)!;
-    expect(karhu.lowestPriceCents).toBe(350); // minimum across offers
+    // Minimum across the LATEST observation per (product, merchant) —
+    // the superseded cheaper alko scrape (350) must not drag the
+    // catalog's minimum below what the detail page lists (parity with
+    // the current-offer collapse, change data-quality-and-publication-trust).
+    expect(karhu.lowestPriceCents).toBe(390);
     expect(karhu.merchantCount).toBe(2); // distinct merchants
     const offerless = body.items.find((i) => i.id === 2)!;
     // Honest absence — no guessed price (design D4).

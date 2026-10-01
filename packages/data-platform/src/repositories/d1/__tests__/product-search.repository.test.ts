@@ -890,10 +890,10 @@ describe('D1ProductSearchRepository.listCatalogPage — objective sort orders (t
   /**
    * Price fixture: distinct minima (300, 400), a min-price tie (500 —
    * ids 3001/3003, resolved by id ASC), an offer-less product (3005,
-   * last), and a superseded cheaper scrape (row 604 → MIN over ALL rows
-   * is the repository's page aggregate, so 3002's key price is 400 even
-   * though its current scrape shows 420 — the sort key IS the displayed
-   * price).
+   * last), and a superseded cheaper scrape (row 604 → the aggregate
+   * reads the LATEST observation per (product, merchant), so 3002's key
+   * price is its current scrape 420 — a superseded cheaper scrape must
+   * not drag the sort key or the rendered price).
    */
   beforeAll(async () => {
     const wine = [
@@ -962,14 +962,14 @@ describe('D1ProductSearchRepository.listCatalogPage — objective sort orders (t
     expect(result.total).toBe(5);
     expect(result.items.map((i) => i.product.id)).toEqual([
       3004, // min 300
-      3002, // min 400 (all-rows aggregate, matching the rendered price)
+      3002, // min 420 — the LATEST scrape; superseded 400 must not drag
       3001, // min 500 — id tie ahead of 3003
       3003, // min 500
       3005, // no offers — after every priced row, never a guessed position
     ]);
     // The rendered aggregate equals the sort key on every row.
     const mins = result.items.map((i) => i.lowestPriceCents);
-    expect(mins).toEqual([300, 400, 500, 500, null]);
+    expect(mins).toEqual([300, 420, 500, 500, null]);
   });
 
   it('LOWEST_PRICE paginates the same total order across pages', async () => {
@@ -1019,6 +1019,50 @@ describe('D1ProductSearchRepository.listCatalogPage — objective sort orders (t
     });
     const other = await otherRepo.listCatalogPage(1, 24, 'wine_still', 'LOWEST_PRICE');
     expect(other.items.map((i) => i.product.id)).toEqual([3004, 3005]);
+  });
+
+  it('a superseded zero-price scrape must not crown the LOWEST_PRICE catalog (2026-10-01 production incident)', async () => {
+    // The live incident: a pre-price-floor sweep stored price 0 for a
+    // product the feed still advertises; the plausibility gate now
+    // rejects new zero observations, so the stale row can never be
+    // superseded by a sweep — and the all-rows MIN crowned it at the
+    // head of the catalog. The latest-observation aggregate reads the
+    // recovered price instead.
+    await priceRepo.create({
+      id: 3006,
+      name: 'Koevi F',
+      manufacturer: 'Katalogi Panimo',
+      brand: 'Koekappale',
+      category: 'wine_still',
+      alcoholByVolume: '0.125',
+      unitVolume: '0.75',
+      containerType: 'glass',
+      regulatoryClassification: 'wine',
+      depositSystemStatus: null,
+      ean: null,
+    });
+    await priceRepoDb.d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+            observed_at, reliability_status)
+         VALUES (612, 'alks', 'DE', 3006, 0, '2026-09-14T08:01:32.000Z', 'ESTIMATED'),
+                (613, 'alks', 'DE', 3006, 750, '2026-10-01T00:01:09.000Z', 'ESTIMATED')`,
+      )
+      .run();
+
+    const result = await priceRepo.listCatalogPage(1, 24, 'wine_still', 'LOWEST_PRICE');
+    const item = result.items.find((candidate) => candidate.product.id === 3006);
+    // The recovered price, never the superseded zero.
+    expect(item?.lowestPriceCents).toBe(750);
+    // Sorts after the 500-minimum rows, before the offer-less product —
+    // no zero-price crown anywhere in the order.
+    expect(result.items.map((i) => i.product.id)).toEqual([
+      3004, 3002, 3001, 3003, 3006, 3005,
+    ]);
+    // Detail parity: findOffers already collapsed to the same latest row.
+    const offers = await priceRepo.findOffers(3006);
+    expect(offers).toHaveLength(1);
+    expect(offers[0]?.priceCents).toBe(750);
   });
 
   it('ALCOHOL_PERCENTAGE orders descending, ties by id, unknown ABV last', async () => {

@@ -315,18 +315,33 @@ const CATALOG_KEYS_SQL = `
 
 /**
  * Price-ordered catalog keys (task 1.2): ascending by the product's
- * lowest observed offer price — the same all-rows MIN the page renders
- * (design D4), so the sort key IS the displayed price. LEFT JOIN keeps
- * offer-less products in the listing; the `(… IS NULL)` term sends them
- * last, and the id ASC tie makes the order total and deterministic
- * (spec product-search: "Price sort orders by observed lowest price").
+ * lowest observed offer price — the same latest-observation MIN the page
+ * renders (design D4), so the sort key IS the displayed price.
+ * LEFT JOIN keeps offer-less products in the listing; the `(… IS NULL)`
+ * term sends them last, and the id ASC tie makes the order total and
+ * deterministic (spec product-search: "Price sort orders by observed
+ * lowest price").
+ *
+ * The offer set is the latest observation per (product, merchant) —
+ * retail_offers is append-per-scrape, so without this filter a
+ * SUPERSEDED cheaper scrape drags the minimum below what the detail page
+ * and the search route list (2026-10-01: pre-price-floor zero-price rows
+ * crowned the LOWEST_PRICE catalog even after the source recovered).
  */
+const LATEST_OFFER_PER_MERCHANT_SQL = `
+  (SELECT product_id, merchant, MAX(id) AS id
+     FROM retail_offers
+ GROUP BY product_id, merchant)`;
+
 const CATALOG_KEYS_BY_PRICE_SQL = `
   SELECT p.id AS id, p.name AS name
     FROM product_master p
-    LEFT JOIN (SELECT product_id, MIN(price_cents) AS min_price_cents
-                 FROM retail_offers
-             GROUP BY product_id) a
+    LEFT JOIN (SELECT o.product_id AS product_id,
+                      MIN(o.price_cents) AS min_price_cents
+                 FROM retail_offers o
+                 JOIN ${LATEST_OFFER_PER_MERCHANT_SQL} m
+                   ON m.id = o.id
+             GROUP BY o.product_id) a
       ON a.product_id = p.id`;
 
 const INSERT_SQL = `
@@ -673,12 +688,14 @@ export class D1ProductSearchRepository extends ProductRepository {
     const aggregates = (
       await this.d1
         .prepare(
-          `SELECT product_id,
-                  MIN(price_cents) AS min_price_cents,
-                  COUNT(DISTINCT merchant) AS merchant_count
-             FROM retail_offers
-            WHERE product_id IN (${inList})
-            GROUP BY product_id`,
+          `SELECT o.product_id,
+                  MIN(o.price_cents) AS min_price_cents,
+                  COUNT(DISTINCT o.merchant) AS merchant_count
+             FROM retail_offers o
+             JOIN ${LATEST_OFFER_PER_MERCHANT_SQL} m
+               ON m.id = o.id
+            WHERE o.product_id IN (${inList})
+         GROUP BY o.product_id`,
         )
         .bind(...pageIds)
         .all<D1OfferAggregateRow>()

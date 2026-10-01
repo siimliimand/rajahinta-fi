@@ -299,8 +299,10 @@ interface OfferAggregateRow {
  * the detail page lists (task 4.3 collapse parity). Over that set,
  * COUNT(DISTINCT merchant) equals the detail response's offers.length
  * and MIN(price_cents) equals its currentBestPriceCents. The catalog
- * browse path keeps the repository's own all-rows aggregate
- * (listCatalogPage — outside this change's scope).
+ * browse path reads through the repository's listCatalogPage, which
+ * applies the same latest-observation set (change
+ * data-quality-and-publication-trust: the all-rows aggregate let a
+ * pre-price-floor zero scrape crown the LOWEST_PRICE catalog).
  */
 async function offerAggregatesByProductId(
   db: D1Database,
