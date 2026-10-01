@@ -413,3 +413,29 @@ Remedies to weigh in the follow-up change: the adapter's DO queue
 constraint may deserve revisiting), Cloudflare Queues, or a scheduled
 cache-warming cron. Recorded here because the honest-state design
 ("the card flips with no frontend change") REQUIRES working ISR.
+
+### 2026-10-01 10:15 UTC — post-archive follow-up: catalog aggregate fix + canonical pipeline deploy
+
+Deploying the archived change exposed pain #1's residual: the /products
+catalog (sort=LOWEST_PRICE) still crowned a €0.00 row. Root cause: the
+catalog browse aggregate (repository `listCatalogPage`) MINned ALL
+observation rows, while the search/detail paths read the latest
+observation per (product, merchant) — a superseded pre-floor zero
+scrape (product 76, Sep 14) dragged the catalog minimum below what the
+detail page listed, violating the route's own parity principle.
+
+- Fix: `e3b17ce` — `listCatalogPage` (sort key + rendered aggregate)
+  now reads the latest observation per (product, merchant); regression
+  test pins the incident shape (superseded 0 → recovered price).
+- Canonical gated pipeline deploy (gh-authenticated this time):
+  run 36847355283 ✅ 2m3s — api `1e876e70`, email `2af6802b`, frontend
+  `74591e4c`; health gate ✅. CI on the push: CI ✅, Deploy Staging ✅,
+  E2E browser ✅ (31+ checks).
+- Result: product 76's crown GONE (€70.99 latest observation renders).
+  ONE residual row remains (product 626, alks, €0.00 observed Sep 30):
+  the feed still flaps 0 ↔ real price for it, and the gate correctly
+  rejects new zero observations — so the stale row self-heals only when
+  the source publishes a plausible price again (as product 76's did on
+  Oct 1). An immediate removal is a one-row owner-approved deletion;
+  recorded here rather than executed, because production data deletion
+  is an owner decision.
