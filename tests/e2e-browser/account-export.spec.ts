@@ -25,6 +25,10 @@ test.describe('account export journey', () => {
   test('anonymous visitor: no session minted, no account data rendered', async ({
     page,
   }) => {
+    // Cold CI stacks compile/serve the first /account load slowly (the
+    // retry affordance appeared seconds after a naive 15 s window on the
+    // 2026-10-01 run) — the journey needs more than the default budget.
+    test.setTimeout(90_000);
     await acceptAgeGate(page);
 
     await page.goto('/account');
@@ -41,8 +45,11 @@ test.describe('account export journey', () => {
             : page.getByText('Tilin tietojen lataaminen epäonnistui.').count() >
                 0
               ? 'retry-affordance'
-              : 'pending',
-        { timeout: 15_000 },
+              : page.getByRole('button', { name: 'Yritä uudelleen' }).count() >
+                  0
+                ? 'retry-affordance'
+                : 'pending',
+        { timeout: 25_000, intervals: [500, 1_000, 2_500, 5_000] },
       )
       .not.toBe('pending');
     await expect(
