@@ -439,3 +439,35 @@ detail page listed, violating the route's own parity principle.
   Oct 1). An immediate removal is a one-row owner-approved deletion;
   recorded here rather than executed, because production data deletion
   is an owner decision.
+
+### 2026-10-01 12:30 UTC — owner-directed data correction: pre-gate zero-price observations purged
+
+Owner confirmed alks.fi (and possibly other merchants) list broken €0.00
+products in their own stores and directed that affected products be
+treated as not sellable. In this catalog "not sellable" = offer-less
+(null price, sorts last, excluded from savings/calculator) — the D1
+honest-absence state.
+
+Findings: the zero-price class comprised 34 rows, ALL pre-gate artifacts
+(Sep 14 – Sep 30), ALL from merchant `alks`, on exactly two products:
+- 76 R de Ruinart — flapping 0 ↔ €70.99 (real price recovered Oct 1);
+- 626 Famille Perrin — €0.00 on EVERY observation since Sep 14 (never
+  a real listing in our data; the source published it broken from day
+  one).
+
+Action: purged all 34 `price_cents <= 0` rows from production
+`retail_offers` (single DELETE + prior single-row delete). Full row
+snapshot: /tmp/opencode/zero-price-rows-audit-2026-10-01.json (33 rows
++ 102421 recorded above). Rationale: the plausibility gate (this change)
+proves the class invalid; deleting only the newest row promoted older
+zero rows to latest — the whole class had to go.
+
+Future behavior (no code change needed): any merchant advertising
+€0.00 → observation rejected at the mapping gate → product renders
+offer-less (not sellable). When the merchant fixes the listing, the
+next daily sweep appends the real price and the product becomes
+sellable automatically.
+
+Verified 12:29 UTC: 0 zero-price rows in the table; 76 renders €70.99;
+626 detail returns `offers: []`; LOWEST_PRICE head = €0.49 minis with
+zero nulls/zeros in priced positions; health gate ok.
