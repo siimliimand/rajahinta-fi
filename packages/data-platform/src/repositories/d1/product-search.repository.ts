@@ -14,14 +14,24 @@
  * executes raw SQL through the {@link D1DatabaseLike} executor instead of
  * drizzle builders.
  *
- * `searchRanked` ports scripts/spikes/cloudflare/search-parity/src/query.ts
- * verbatim: FTS5 MATCH phrase with prefix expansion on the final token,
+ * `searchRanked` derives from scripts/spikes/cloudflare/search-parity/
+ * src/query.ts: FTS5 MATCH with prefix expansion on the final token,
  * bm25 column weights 10/5/2 (name > brand > manufacturer), id ASC
  * tie-break, then a `LIKE '%q%'` merge that backfills mid-token substrings
  * a token-prefix match cannot express. Both orders are total, so repeated
  * calls return identical rows in identical order — the pagination
  * interplay (controller fetches up to MAX_PAGE_SIZE, then slices)
  * requires exactly that.
+ *
+ * Two Finnish-first refinements diverge from the spike (task 3.1, change
+ * finnish-first-client-experience). Query tokens expand through the
+ * curated {@link FINNISH_SYNONYM_GROUPS} into per-token OR-groups —
+ * monotone by construction, since the un-expanded phrase always remains
+ * a disjunct. And the LIKE merge is gated on scarcity: skipped when the
+ * FTS token-match candidate count already reaches
+ * {@link SEARCH_PAGE_SIZE} (a common word's head stays clean of
+ * brand-substring noise — the live `olut` → Absolut incident), consulted
+ * as before when matches are scarce (`arhu` → Karhu fragment recall).
  *
  * `searchByName` / blank-query listing: SQLite and D1 ship no Finnish
  * collation and D1 has no custom collations, so the final ordering stays
@@ -112,6 +122,17 @@ interface D1OfferAggregateRow {
 const BM25_COLUMN_WEIGHTS = 'bm25(`product_master_fts`, 10.0, 5.0, 2.0)';
 
 /**
+ * The listing page size (SearchController's per-page slice) — the
+ * LIKE-merge scarcity-gate threshold (task 3.1, change
+ * finnish-first-client-experience): when the FTS token-match candidate
+ * count reaches it, the page is already full of token matches and the
+ * mid-token substring merge can only crowd the head with brand-substring
+ * noise (the live `olut` → Absolut incident); below it, the merge runs
+ * unchanged and keeps fragment recall (`arhu` → Karhu).
+ */
+export const SEARCH_PAGE_SIZE = 20;
+
+/**
  * Extract unicode-letter tokens (Finnish/Swedish ä/ö/å included),
  * lowercased — the tokens FTS5's unicode61 tokenizer also produces.
  */
@@ -123,17 +144,98 @@ export function tokenize(query: string): string[] {
 }
 
 /**
- * Build the FTS5 MATCH expression: the full query as a phrase with
- * prefix expansion on the final token ('"karhu" *' / '"le coq" *') —
- * the closest FTS5 analogue of the pg ILIKE '%q%' recall filter
- * (adjacent phrase; mid-token is impossible — that is what the LIKE
- * merge backfills).
+ * Curated Finnish↔English synonym groups (task 3.1, change
+ * finnish-first-client-experience) — category/term-level equivalence sets
+ * the query builder expands into OR-groups inside the FTS5 MATCH
+ * expression. Intentionally closed and category-flavored (design D5):
+ * brand-level misspellings are did-you-mean territory, not synonyms.
+ * Members are lowercase (query tokens are lowercased by {@link tokenize},
+ * ä/ö/å preserved) and each term belongs to exactly one group, keeping
+ * the lookup unambiguous. A member may be a multi-word phrase
+ * ('red wine'), quoted as a single FTS5 phrase during expansion.
+ */
+export const FINNISH_SYNONYM_GROUPS: readonly (readonly string[])[] = [
+  ['viski', 'whisky'],
+  ['olut', 'beer', 'oluet'],
+  ['viini', 'wine'],
+  ['punaviini', 'red wine'],
+  ['valkoviini', 'white wine'],
+  ['kuohuviini', 'sparkling wine'],
+  ['siideri', 'cider'],
+  ['likööri', 'liqueur'],
+  ['konjakki', 'cognac', 'brandy'],
+  ['shampanja', 'champagne'],
+  ['vodka', 'viina'],
+];
+
+/**
+ * Upper bound of OR-arms in one MATCH expression — the group-product of a
+ * many-token query is capped so a pathological query cannot blow the
+ * expression up (design D5: "keep the expression bounded"). Combinations
+ * enumerate with every original token first, so the all-original phrase
+ * is always the FIRST arm: even a truncated expression retains the
+ * un-expanded query's disjunct, keeping expansion monotone (it can never
+ * narrow a result set).
+ */
+export const MAX_MATCH_PHRASES = 32;
+
+/**
+ * The synonym group of one query token — the token itself first, then the
+ * rest of its curated group; a singleton when the token is in no group
+ * (group-less tokens therefore build exactly the legacy expression).
+ */
+function synonymGroupFor(token: string): readonly string[] {
+  for (const group of FINNISH_SYNONYM_GROUPS) {
+    if (group.includes(token)) {
+      return [token, ...group.filter((member) => member !== token)];
+    }
+  }
+  return [token];
+}
+
+/** Quote one FTS5 term/phrase, doubling embedded quotes. */
+function ftsQuote(term: string): string {
+  return `"${term.replace(/"/g, '""')}"`;
+}
+
+/**
+ * Build the FTS5 MATCH expression (task 3.1, change
+ * finnish-first-client-experience):
+ *
+ * - each token expands to the OR-group of its synonym group, e.g.
+ *   `viski` → `"viski" * OR "whisky" *`;
+ * - the prefix expansion on the final token — the analogue of the pg
+ *   ILIKE '%q%' recall filter — applies to EVERY member of the final
+ *   token's group;
+ * - multi-token queries keep adjacency across groups: FTS5 has no
+ *   phrase-across-OR-groups construct, so the expression enumerates the
+ *   group-product of phrase combinations (`"karhu olut" * OR
+ *   "karhu beer" * OR "karhu oluet" *`), bounded by
+ *   {@link MAX_MATCH_PHRASES};
+ * - tokens in no group yield exactly the legacy phrase-plus-prefix form
+ *   (`"karhu" *`, `"le coq" *`) — group-less queries behave as before.
+ *
+ * Monotone by construction: every original token is the first member of
+ * its position group, so the all-original phrase is the first OR arm and
+ * expansion is a pure disjunction-widening of the legacy expression.
  */
 export function buildMatchExpression(tokens: string[]): string {
-  const phrase = tokens
-    .map((t) => t.replace(/"/g, '""'))
-    .join('" "');
-  return `"${phrase}" *`;
+  if (tokens.length === 0) return '';
+  const positionGroups = tokens.map(synonymGroupFor);
+  const phrases: string[] = [];
+  const enumerate = (position: number, prefix: readonly string[]): void => {
+    if (phrases.length >= MAX_MATCH_PHRASES) return;
+    if (position === positionGroups.length) {
+      phrases.push(ftsQuote(prefix.join(' ')));
+      return;
+    }
+    for (const member of positionGroups[position]) {
+      enumerate(position + 1, [...prefix, member]);
+      if (phrases.length >= MAX_MATCH_PHRASES) return;
+    }
+  };
+  enumerate(0, []);
+  return phrases.map((phrase) => `${phrase} *`).join(' OR ');
 }
 
 /** SQL LIKE pattern with escaping of the LIKE wildcards inside user input. */
@@ -268,6 +370,24 @@ const FTS_SEARCH_IN_CATEGORY_SQL = `
    WHERE product_master_fts MATCH ? AND p.category = ?
    ORDER BY ${BM25_COLUMN_WEIGHTS} ASC, p.id ASC
    LIMIT ?`;
+
+/**
+ * Cheap unbounded candidate count for the LIKE-merge scarcity gate
+ * (task 3.1, change finnish-first-client-experience) — the same MATCH
+ * expression the ranked fetch runs, counted without the LIMIT so the
+ * gate reads the true candidate count, not the fetched window.
+ */
+const FTS_COUNT_SQL = `
+  SELECT count(*) AS n
+    FROM product_master_fts
+   WHERE product_master_fts MATCH ?`;
+
+/** Category-narrowed candidate count (the combined q+category path). */
+const FTS_COUNT_IN_CATEGORY_SQL = `
+  SELECT count(*) AS n
+    FROM product_master_fts f
+    JOIN product_master p ON p.id = f.rowid
+   WHERE product_master_fts MATCH ? AND p.category = ?`;
 
 /** LIKE candidates — the ILIKE recall analogue; catches mid-token
  *  substrings ('arhu') the token-prefix match cannot express. LIKE is
@@ -455,22 +575,41 @@ export class D1ProductSearchRepository extends ProductRepository {
 
   /**
    * Ranked search over name, brand, and manufacturer — FTS5 MATCH with
-   * prefix expansion first, LIKE '%q%' fallback/merge second,
-   * deterministic tie-break ordering. Mirrors `searchRanked(query, limit)`
-   * of the pg repository; blank/whitespace queries fall through to the
-   * unfiltered alphabetical listing (defensive total-order parity with
-   * the spike, which never throws on whitespace).
+   * synonym-expanded OR-groups and final-token prefix expansion first,
+   * LIKE '%q%' merge second under the scarcity gate, deterministic
+   * tie-break ordering. Mirrors `searchRanked(query, limit)` of the pg
+   * repository; blank/whitespace queries fall through to the unfiltered
+   * alphabetical listing (defensive total-order parity with the spike,
+   * which never throws on whitespace).
+   *
+   * Finnish synonym expansion (task 3.1, change
+   * finnish-first-client-experience) widens the MATCH expression
+   * per-token through {@link FINNISH_SYNONYM_GROUPS} — monotone, since
+   * the un-expanded phrase remains a disjunct (see
+   * {@link buildMatchExpression}).
+   *
+   * The LIKE merge is consulted only when the FTS token-match candidate
+   * count is below {@link SEARCH_PAGE_SIZE}; at or above it the merge is
+   * skipped entirely, so a common word's result head contains token
+   * matches only — brand names merely containing the letters (Abs(olut)
+   * for `olut`) cannot crowd the page. Below the threshold the merge
+   * runs exactly as before, preserving mid-token fragment recall
+   * (`arhu` → Karhu). The gate changes no ranking semantics of the paths
+   * it runs: FTS relevance order first, LIKE-only rows appended in id
+   * order, capped at the caller's limit — the skipped branch is the only
+   * difference.
    *
    * `category` (task 2.1, change client-experience-improvement) narrows
-   * BOTH candidate paths with an exact-equality predicate, so the result
-   * contains only keyword matches whose category equals the value — the
-   * category is never silently ignored because a keyword is present
-   * (spec product-search). The value must be validated against
-   * PRODUCT_CATEGORIES by the caller (the API route 400s unknown values);
-   * like {@link D1ProductSearchRepository.listCatalogPage}, an
-   * unvalidated value filters strictly and yields zero rows. The limit
-   * applies to the combined result set: the candidate queries carry the
-   * category predicate before their LIMIT.
+   * BOTH candidate paths (the gate's candidate count included) with an
+   * exact-equality predicate, so the result contains only keyword
+   * matches whose category equals the value — the category is never
+   * silently ignored because a keyword is present (spec product-search).
+   * The value must be validated against PRODUCT_CATEGORIES by the caller
+   * (the API route 400s unknown values); like
+   * {@link D1ProductSearchRepository.listCatalogPage}, an unvalidated
+   * value filters strictly and yields zero rows. The limit applies to
+   * the combined result set: the candidate queries carry the category
+   * predicate before their LIMIT.
    */
   override async searchRanked(
     query: string,
@@ -488,32 +627,50 @@ export class D1ProductSearchRepository extends ProductRepository {
 
     const filtered = category !== undefined;
 
-    // 1) FTS candidates.
+    // 1) FTS candidates (synonym-expanded MATCH — task 3.1).
+    const matchExpression = buildMatchExpression(tokens);
     const ftsRows = (
       await this.d1
         .prepare(filtered ? FTS_SEARCH_IN_CATEGORY_SQL : FTS_SEARCH_SQL)
         .bind(
-          buildMatchExpression(tokens),
+          matchExpression,
           ...(filtered ? [category] : []),
           limit,
         )
         .all<D1ProductRow>()
     ).results;
 
-    // 2) LIKE candidates.
+    // 2) LIKE candidates — the ILIKE recall analogue — gated on FTS
+    //    scarcity: consulted only when the token-match candidate count
+    //    (the same MATCH expression, unbounded count) is below the page
+    //    size. At or above it the head is already full of token matches
+    //    and the merge's brand-substring rows can only add noise; below
+    //    it the merge backfills mid-token fragments exactly as before.
+    const ftsCount =
+      (
+        await this.d1
+          .prepare(filtered ? FTS_COUNT_IN_CATEGORY_SQL : FTS_COUNT_SQL)
+          .bind(matchExpression, ...(filtered ? [category] : []))
+          .first<{ n: number }>()
+      )?.n ?? 0;
     const pattern = likePattern(trimmed);
-    const likeRows = (
-      await this.d1
-        .prepare(filtered ? RANKED_LIKE_IN_CATEGORY_SQL : RANKED_LIKE_SQL)
-        .bind(
-          pattern,
-          pattern,
-          pattern,
-          ...(filtered ? [category] : []),
-          limit,
-        )
-        .all<D1ProductRow>()
-    ).results;
+    const likeRows =
+      ftsCount >= SEARCH_PAGE_SIZE
+        ? []
+        : (
+            await this.d1
+              .prepare(
+                filtered ? RANKED_LIKE_IN_CATEGORY_SQL : RANKED_LIKE_SQL,
+              )
+              .bind(
+                pattern,
+                pattern,
+                pattern,
+                ...(filtered ? [category] : []),
+                limit,
+              )
+              .all<D1ProductRow>()
+          ).results;
 
     // 3) Merge: FTS relevance order first, LIKE-only rows appended in id
     //    order — a total, deterministic order capped at the caller's limit.
