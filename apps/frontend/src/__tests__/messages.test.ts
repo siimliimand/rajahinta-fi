@@ -275,6 +275,51 @@ describe('honest-state catalog key parity (3.1 + 3.2)', () => {
       'taskCardsSavingsUnavailableBody',
     ]);
   });
+
+  // ── Traveller mode (task 2.1, change finnish-first-client-experience):
+  // the buying-mode toggle, the honest no-dataset state, the PERSONAL
+  // result provenance lines, and the delivery-mode callout render only
+  // from these keys — both locales must carry the exact sets. ──
+
+  it('Calculator.buyingMode carries the same keys in both locales', () => {
+    expectParity('Calculator', 'buyingMode', [
+      'label',
+      'sellerArranged',
+      'sellerArrangedDescription',
+      'personal',
+      'personalDescription',
+    ]);
+  });
+
+  it('Calculator carries the traveller-mode honest-state copy in parity', () => {
+    expectParity('Calculator', null, [
+      'travellerUnavailableTitle',
+      'travellerUnavailableBody',
+    ]);
+  });
+
+  it('CalculatorResult.allowance carries the same keys in both locales', () => {
+    expectParity('CalculatorResult', 'allowance', [
+      'datasetVersion',
+      'singleTravellerNote',
+      'lineWithin',
+      'lineSurplus',
+    ]);
+  });
+
+  it('CalculatorResult.travellerAlternative carries the same keys in both locales', () => {
+    expectParity('CalculatorResult', 'travellerAlternative', [
+      'label',
+      'estimateWithin',
+      'estimatePartial',
+      'tryLink',
+    ]);
+  });
+
+  it('did-you-mean banner copy exists in both locales (task 3.3)', () => {
+    expectParity('ProductSearch', null, ['didYouMean']);
+    expectParity('ProductsPage', null, ['didYouMean']);
+  });
 });
 
 // ---------------------------------------------------------------------------

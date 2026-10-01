@@ -4,11 +4,12 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui';
-import { searchProducts } from '@/lib/api';
+import { getProductDetail, searchProducts } from '@/lib/api';
 import type { ProductSearchItem } from '@/lib/types';
+import type { TripPrefill } from '../trip.client';
 
 // ---------------------------------------------------------------------------
 // Caps — mirror the server-side zod caps (trip.routes.ts, task 8.2)
@@ -44,6 +45,15 @@ interface TripFillFormProps {
   ) => void;
   /** Disables the submit control while the fill request is in flight. */
   readonly submitting: boolean;
+  /**
+   * The `?product=&quantity=` handshake seed (task 2.2, change
+   * finnish-first-client-experience): the product is resolved by ID
+   * through the same master-data read the picker uses and added through
+   * the selection path below, so dedupe, the candidate cap, and the
+   * per-line quantity validation apply unchanged. Absent on a plain
+   * visit; a vanished product degrades silently to the empty form.
+   */
+  readonly prefill?: TripPrefill;
 }
 
 /**
@@ -74,7 +84,11 @@ function parseQuantity(value: string): number {
  *
  * @module TripFillForm
  */
-export default function TripFillForm({ onSubmit, submitting }: TripFillFormProps) {
+export default function TripFillForm({
+  onSubmit,
+  submitting,
+  prefill,
+}: TripFillFormProps) {
   const t = useTranslations('TripPage');
   const tCommon = useTranslations('Common');
   const tSearch = useTranslations('ProductSearch');
@@ -151,6 +165,47 @@ export default function TripFillForm({ onSubmit, submitting }: TripFillFormProps
       return next;
     });
   }, []);
+
+  // ── Prefill handshake (task 2.2): resolve the seeded product by ID and
+  // add it through handleSelect so the existing selection invariants
+  // (dedupe, candidate cap, default bound) stay the only path in; the
+  // seeded quantity is then applied as an ordinary field value the
+  // form's own validation still parses at submit. A vanished product
+  // degrades silently — the form simply stays empty. ──
+  const seededProductId = prefill?.productId;
+  const seededQuantity = prefill?.quantity;
+  useEffect(() => {
+    if (seededProductId === undefined || seededQuantity === undefined) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const detail = await getProductDetail(seededProductId);
+        if (cancelled) return;
+        handleSelect({
+          id: detail.product.id,
+          name: detail.product.name,
+          brand: detail.product.brand,
+          category: detail.product.category,
+          alcoholByVolume: detail.product.alcoholByVolume,
+          unitVolume: detail.product.unitVolume,
+          containerType: detail.product.containerType,
+          lowestPriceCents: null,
+          merchantCount: detail.offers.length,
+        });
+        setQuantities((current) => {
+          const next = new Map(current);
+          next.set(seededProductId, String(seededQuantity));
+          return next;
+        });
+      } catch {
+        // Unknown or vanished product id — today's empty form, never an
+        // error state; the handshake never fabricates a candidate.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [seededProductId, seededQuantity, handleSelect]);
 
   // Every candidate must carry a parsed, in-cap bound — a started but
   // malformed field blocks the submit instead of being silently dropped.

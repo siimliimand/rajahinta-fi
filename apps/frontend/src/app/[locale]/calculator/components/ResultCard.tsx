@@ -8,12 +8,14 @@ import { useTranslations } from 'next-intl';
 import type {
   AlkoBenchmark,
   CalculatorResult as CalculatorResultType,
+  CostCategory,
   ReliabilityStatus,
 } from '@/lib/types';
 import { RELIABILITY_STATUS_META } from '@/lib/design/status';
 import { ReliabilityBadge } from '@/components/ui';
 import DisclaimerBanner from './DisclaimerBanner';
 import SanityNoteList from './SanityNoteList';
+import TravellerAlternativeCallout from './TravellerAlternativeCallout';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -40,6 +42,20 @@ function formatSignedPercent(percent: number): string {
   const sign = percent > 0 ? '+' : percent < 0 ? '-' : '';
   return `${sign}${Math.abs(percent).toFixed(1)} %`;
 }
+
+/**
+ * Cost categories the traveller allowance can split (task 2.1, change
+ * finnish-first-client-experience): in a PERSONAL result the taxed
+ * engines apply to the surplus only, so these lines can appear twice —
+ * the dataset-fact zero (within allowance) followed by the taxed
+ * surplus. Labels disambiguate the pair; transport and retail never
+ * split.
+ */
+const ALLOWANCE_SPLIT_CATEGORIES: ReadonlySet<CostCategory> = new Set([
+  'alcoholExciseEstimate',
+  'containerDutyEstimate',
+  'importVatEstimate',
+]);
 
 /**
  * Reliability badge composed from the canonical status module: label key
@@ -108,6 +124,10 @@ export default function ResultCard({ result }: ResultCardProps) {
   const tCommon = useTranslations('Common');
   const meta = result.metadata;
   const benchmark = result.alkoBenchmark;
+  // Traveller mode (task 2.1): the allowance dataset version is present
+  // exactly on PERSONAL results that resolved a published dataset —
+  // delivery results never carry the key.
+  const allowanceDatasetVersion = meta.allowanceDatasetVersion;
 
   // The price data feeding the result: the retail line's own reliability
   // status. Rendered with the calculation timestamp — the same freshness
@@ -246,41 +266,68 @@ export default function ResultCard({ result }: ResultCardProps) {
 
       {/* ── Breakdown beneath the answer — figures verbatim from the
           result object, labeled by category so every number stays
-          traceable to its input ── */}
+          traceable to its input. In a traveller-mode result (task 2.1)
+          the split tax lines carry their within/surplus portion labels;
+          delivery results keep the plain category labels. ── */}
       <div>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
           {t('costBreakdown')}
         </h3>
         <div className="divide-y divide-gray-100">
-          {result.itemizedCosts.map((cost, i) => (
-            <div
-              key={`${cost.category}-${i}`}
-              className="flex items-center justify-between py-1.5"
-            >
-              <span className="text-sm text-gray-700">
-                {t(`category.${cost.category}`)}
-              </span>
-              {cost.category === 'transportCost' &&
-              cost.reliability === 'UNAVAILABLE' ? (
-                <div className="flex items-center gap-2">
-                  <span
-                    data-testid="transport-not-included"
-                    className="text-sm text-gray-500"
-                  >
-                    {t('transportPending.notIncluded')}
-                  </span>
-                  <LocalizedReliabilityBadge status={cost.reliability} />
+          {(() => {
+            // Emission-order discriminator: within-allowance lines are
+            // dataset-fact zeros (VERIFIED) emitted before the taxed
+            // surplus line of the same canonical category.
+            const seenSplitCategories = new Set<CostCategory>();
+            return result.itemizedCosts.map((cost, i) => {
+              let labelText = t(`category.${cost.category}`);
+              if (
+                allowanceDatasetVersion !== undefined &&
+                ALLOWANCE_SPLIT_CATEGORIES.has(cost.category)
+              ) {
+                if (seenSplitCategories.has(cost.category)) {
+                  labelText = t('allowance.lineSurplus', {
+                    category: labelText,
+                  });
+                } else if (
+                  cost.cents === 0 &&
+                  cost.reliability === 'VERIFIED'
+                ) {
+                  labelText = t('allowance.lineWithin', {
+                    category: labelText,
+                  });
+                }
+              }
+              seenSplitCategories.add(cost.category);
+              return (
+                <div
+                  key={`${cost.category}-${i}`}
+                  className="flex items-center justify-between py-1.5"
+                >
+                  <span className="text-sm text-gray-700">{labelText}</span>
+                  {cost.category === 'transportCost' &&
+                  cost.reliability === 'UNAVAILABLE' ? (
+                    <div className="flex items-center gap-2">
+                      <span
+                        data-testid="transport-not-included"
+                        className="text-sm text-gray-500"
+                      >
+                        {t('transportPending.notIncluded')}
+                      </span>
+                      <LocalizedReliabilityBadge status={cost.reliability} />
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm tabular-nums text-gray-600">
+                        {formatEur(cost.cents)}
+                      </span>
+                      <LocalizedReliabilityBadge status={cost.reliability} />
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm tabular-nums text-gray-600">
-                    {formatEur(cost.cents)}
-                  </span>
-                  <LocalizedReliabilityBadge status={cost.reliability} />
-                </div>
-              )}
-            </div>
-          ))}
+              );
+            });
+          })()}
         </div>
         {transportPending && (
           <p
@@ -290,7 +337,44 @@ export default function ResultCard({ result }: ResultCardProps) {
             {t('transportPending.explanation')}
           </p>
         )}
+        {/* ── Traveller-mode provenance (task 2.1): the explicit
+            one-traveller assumption plus the allowance dataset version
+            the caps were applied from. Delivery results render neither. ── */}
+        {allowanceDatasetVersion !== undefined && (
+          <div
+            data-testid="traveller-mode-notes"
+            className="mt-3 space-y-1 rounded-md bg-gray-50 px-3 py-2"
+          >
+            <p
+              data-testid="single-traveller-note"
+              className="text-xs leading-relaxed text-gray-600"
+            >
+              {t('allowance.singleTravellerNote')}
+            </p>
+            <p
+              data-testid="allowance-dataset-version"
+              className="text-xs text-gray-400"
+            >
+              {t('allowance.datasetVersion', {
+                version: allowanceDatasetVersion,
+              })}
+            </p>
+          </div>
+        )}
       </div>
+
+      {/* ── Traveller-alternative callout (task 2.2): a labeled ESTIMATE
+          for one traveller carrying the same quantity — display-only,
+          never a cost line, never a restyle of the delivery figures.
+          Present only on the live POST payload for delivery requests;
+          absence renders nothing. ── */}
+      {result.travellerAlternative && (
+        <TravellerAlternativeCallout
+          alternative={result.travellerAlternative}
+          productId={meta.input.productId}
+          quantity={meta.input.quantity}
+        />
+      )}
 
       {/* ── Structural disclaimer — consumed from the result object ── */}
       <DisclaimerBanner disclaimer={result.disclaimer} />

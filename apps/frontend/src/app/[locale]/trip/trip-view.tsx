@@ -4,14 +4,16 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, EmptyState } from '@/components/ui';
 import {
   calculateTripFeasibility,
   classifyTripCalcError,
   fillTripAllowance,
+  parseTripPrefillParams,
   type TripCalcErrorKind,
+  type TripPrefill,
 } from './trip.client';
 import type {
   TripCategoryKey,
@@ -113,6 +115,26 @@ export default function TripView() {
   // form (fresh initial state) and drops everything derived from the
   // previous inputs — presets, results, and errors included.
   const [formResetSeq, setFormResetSeq] = useState(0);
+
+  // ── Prefill handshake (task 2.2, change
+  // finnish-first-client-experience): the calculator's "Kokeile
+  // matkalaskuria" callout links here with ?product=&quantity=; valid
+  // values open the fill mode and seed the candidate. Absent or invalid
+  // parameters leave today's behavior untouched — break-even default,
+  // empty forms. The URL stays the source: re-applying after a form
+  // reset keeps the seed visible while the parameters remain. ──
+  const [prefill, setPrefill] = useState<TripPrefill | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const parsed = parseTripPrefillParams(
+      params.get('product'),
+      params.get('quantity'),
+    );
+    if (parsed === null) return;
+    setPrefill(parsed);
+    setMode('fill');
+  }, []);
 
   const applyPreset = useCallback((preset: TripRoutePreset) => {
     setAppliedPreset((prev) => ({ seq: (prev?.seq ?? 0) + 1, preset }));
@@ -286,6 +308,7 @@ export default function TripView() {
               key={`trip-fill-reset-${formResetSeq}`}
               onSubmit={handleFillSubmit}
               submitting={submitting}
+              {...(prefill !== null ? { prefill } : {})}
             />
           )}
           {/* ── Reset affordance (task 4.7): every input back to its

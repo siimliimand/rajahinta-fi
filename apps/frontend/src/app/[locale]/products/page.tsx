@@ -346,6 +346,13 @@ export default async function ProductsPage({
 
   const items = result.items;
   const totalPages = result.totalPages;
+  // Zero-result did-you-mean (task 3.3, change
+  // finnish-first-client-experience): the API attaches `suggestion` only
+  // when a ranked search returned no items and a brand candidate matched.
+  const suggestion =
+    typeof result.suggestion === 'string' && result.suggestion.trim() !== ''
+      ? result.suggestion
+      : undefined;
 
   const pageHref = (target: number): string =>
     catalogHref(category, target, sort, q);
@@ -487,6 +494,25 @@ export default async function ProductsPage({
           {t('sortApply')}
         </button>
       </form>
+
+      {/* ── Zero-result did-you-mean (task 3.3): a clickable chip that
+          runs the suggested query as plain URL state (page 1, same
+          category and sort), while the input above keeps the customer's
+          original spelling — the banner never appears with results. ── */}
+      {items.length === 0 && suggestion !== undefined && (
+        <div
+          data-testid="catalog-suggestion"
+          className="mb-4 flex flex-wrap items-center gap-2"
+        >
+          <span className="text-sm text-gray-600">{t('didYouMean')}</span>
+          <Link
+            href={catalogHref(category, undefined, sort, suggestion)}
+            className="touch-target inline-flex items-center rounded-full border border-primary-300 bg-primary-50 px-3 py-1 text-sm font-medium text-primary-800 transition-colors hover:bg-primary-100"
+          >
+            {suggestion}
+          </Link>
+        </div>
+      )}
 
       {items.length === 0 ? (
         q !== undefined ? (

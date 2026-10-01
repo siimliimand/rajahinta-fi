@@ -109,6 +109,63 @@ export async function fillTripAllowance(
 }
 
 // ---------------------------------------------------------------------------
+// Trip-fill prefill handshake (task 2.2, change
+// finnish-first-client-experience)
+// ---------------------------------------------------------------------------
+
+/** A parsed, validated `?product=&quantity=` seed for the fill form. */
+export interface TripPrefill {
+  readonly productId: number;
+  readonly quantity: number;
+}
+
+/**
+ * Quantity window of the handshake — the fill form's own per-line bound
+ * (MIN/MAX_FILL_QUANTITY in TripFillForm). A seed outside it is not
+ * clamped to a fabricated figure; it falls back to the form's default
+ * bound of 1 and the customer edits from there.
+ */
+export const TRIP_PREFILL_MIN_QUANTITY = 1;
+export const TRIP_PREFILL_MAX_QUANTITY = 99;
+
+/**
+ * Parse the calculator callout's `?product=&quantity=` handshake values.
+ *
+ * Contract (task 2.2): a valid positive-integer `product` is required for
+ * ANY prefill — an absent, blank, or malformed product yields null and
+ * the page behaves exactly as before the handshake existed. The
+ * `quantity` is applied only when it parses as a whole number within the
+ * fill form's window; absent and out-of-window values fall back to 1
+ * (the bound a manual selection starts from — no cap is invented here).
+ *
+ * Pure so the validation is unit-testable; the view consumes the result
+ * on mount.
+ */
+export function parseTripPrefillParams(
+  product: string | null,
+  quantity: string | null,
+): TripPrefill | null {
+  const rawProduct = (product ?? '').trim();
+  if (!/^\d+$/.test(rawProduct)) return null;
+  const productId = Number.parseInt(rawProduct, 10);
+  if (!Number.isFinite(productId) || productId <= 0) return null;
+
+  const rawQuantity = (quantity ?? '').trim();
+  const parsedQuantity = /^\d+$/.test(rawQuantity)
+    ? Number.parseInt(rawQuantity, 10)
+    : Number.NaN;
+  const withinWindow =
+    Number.isFinite(parsedQuantity) &&
+    parsedQuantity >= TRIP_PREFILL_MIN_QUANTITY &&
+    parsedQuantity <= TRIP_PREFILL_MAX_QUANTITY;
+
+  return {
+    productId,
+    quantity: withinWindow ? parsedQuantity : TRIP_PREFILL_MIN_QUANTITY,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Category price benchmarks (task 3.2, change client-experience-improvement)
 // ---------------------------------------------------------------------------
 

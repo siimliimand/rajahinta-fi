@@ -205,12 +205,22 @@
     "metaTitle": "Rajat ylittävä kustannuslaskuri",
     "metaDescription": "Hae tuote, valitse määrä ja saat eritelty arvion alkoholin tuonnin kokonaiskustannuksesta Suomeen: vähittäishinta, kuljetus sekä Suomen valmistevero ja pakkausvero.",
     "howTitle": "Miten laskenta toimii",
-    "howBody": "Hae tuote, valitse määrä ja laske: arvio yhdistää tuotteen vähittäishintaan kuljetusarvion sekä kohteena olevan Suomen valmisteveron ja pakkausveron. Jokainen luku kantaa luotettavuusmerkinnän, ja tulos on aina arvio — ei vero- tai tullineuvontaa."
+    "howBody": "Hae tuote, valitse määrä ja laske: arvio yhdistää tuotteen vähittäishintaan kuljetusarvion sekä kohteena olevan Suomen valmisteveron ja pakkausveron. Jokainen luku kantaa luotettavuusmerkinnän, ja tulos on aina arvio — ei vero- tai tullineuvontaa.",
+    "buyingMode": {
+      "label": "Ostotapa",
+      "sellerArranged": "Toimitus",
+      "sellerArrangedDescription": "Myyjä järjestää kuljetuksen — arvio sisältää kuljetuskustannuksen.",
+      "personal": "Otan itse mukaan",
+      "personalDescription": "Kuljet tavarat itse — verot lasketaan yhden matkustajan määräajojen mukaan."
+    },
+    "travellerUnavailableTitle": "Matkustajalla laskeminen ei ole juuri nyt mahdollista",
+    "travellerUnavailableBody": "Voimassa olevaa matkustajamäärien tietoaineistoa ei ole laskentapäivälle, eikä arviota voi laskea ilman sitä. Yritä myöhemmin uudelleen tai valitse ostotavaksi Toimitus — se toimii kuten ennenkin."
   },
   "ProductSearch": {
     "placeholder": "Hae tuotteita…",
     "search": "Hae",
-    "searching": "Haetaan…"
+    "searching": "Haetaan…",
+    "didYouMean": "Tarkoititko:"
   },
   "ProductSelector": {
     "typeToSearch": "Kirjoita tuotteen nimi aloittaaksesi haun.",
@@ -254,6 +264,18 @@
     "transportPending": {
       "notIncluded": "Ei sisällytetty – tietoaineisto odottaa",
       "explanation": "Kuljetuskustannuksen tietoaineisto ei ole vielä saatavilla, joten kuljetusta ei ole sisällytetty arvioon."
+    },
+    "allowance": {
+      "datasetVersion": "Matkustajamäärien tietoaineisto: {version}",
+      "singleTravellerNote": "Laskenta noudattaa yhden matkustajan määräaikoja: sallitun määrän osuus jää verottomaksi, ja verot lasketaan vain määräajoja ylittävästä osasta.",
+      "lineWithin": "{category} (sallitun määrän sisällä, veroton)",
+      "lineSurplus": "{category} (sallitun määrän ylittävä osa)"
+    },
+    "travellerAlternative": {
+      "label": "Matkalaskurin arvio",
+      "estimateWithin": "Yksi matkustaja, sama määrä — arvio yhteensä {amount}.",
+      "estimatePartial": "Sama määrä ylittää yhden matkustajan määräajat — arvio yhteensä {amount} kattaa vain sallitun määrän osuuden.",
+      "tryLink": "Kokeile matkalaskuria"
     },
     "category": {
       "foreignRetailPrice": "Ulkomainen vähittäishinta",
@@ -1675,6 +1697,7 @@
     "emptyBody": "Tähän näkymään ei ole tallentunut yhtään tuotetta.",
     "searchEmptyTitle": "Ei tuloksia haulle \"{query}\"",
     "searchEmptyBody": "Kokeile yleisempää hakusanaa tai selaa tuoteryhmiä.",
+    "didYouMean": "Tarkoititko:",
     "browseCategoriesLabel": "Tuoteryhmät",
     "retryLabel": "Yritä uudelleen",
     "unavailableTitle": "Jokin meni pieleen",

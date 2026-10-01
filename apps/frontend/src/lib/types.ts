@@ -36,6 +36,14 @@ export interface ProductSearchResult {
    * Strictly informational: never filters, reorders, or annotates items.
    */
   readonly merchantWarnings?: readonly MerchantWarning[];
+  /**
+   * Zero-result did-you-mean candidate (task 3.3, change
+   * finnish-first-client-experience): a brand token within the bounded
+   * edit distance of the query. Attached by the API ONLY when the ranked
+   * search returned zero items and a candidate was found — absent
+   * otherwise (never null), and the original query fields are untouched.
+   */
+  readonly suggestion?: string;
 }
 
 /**
@@ -349,6 +357,13 @@ export interface CalculateRequest {
   readonly quantity: number;
   readonly destination: string;
   readonly transportMethod?: string;
+  /**
+   * How transport is arranged (task 2.1, change
+   * finnish-first-client-experience). Absent means `SELLER_ARRANGED` —
+   * the delivery path, byte-identical to the pre-traveller-mode
+   * payload. `PERSONAL` runs the traveller-allowance branch.
+   */
+  readonly transportArrangement?: ScenarioTransportArrangement;
   readonly sessionId?: string;
 }
 
@@ -362,7 +377,14 @@ export type CostCategory =
   | 'foreignRetailPrice'
   | 'transportCost'
   | 'alcoholExciseEstimate'
-  | 'containerDutyEstimate';
+  | 'containerDutyEstimate'
+  /**
+   * Import-VAT line (mirrors core-domain CostCategory; design D6).
+   * Emitted when the offer's seller country differs from the
+   * destination — traveller-mode results carry it for the taxed
+   * surplus portion (task 2.1, change finnish-first-client-experience).
+   */
+  | 'importVatEstimate';
 
 export type ReliabilityStatus = 'VERIFIED' | 'ESTIMATED' | 'STALE' | 'UNAVAILABLE';
 
@@ -492,6 +514,27 @@ export interface SanityNote {
   };
 }
 
+/**
+ * Delivery-mode traveller-alternative estimate (mirrors the core-domain
+ * `TravellerAlternativeCallout`, task 1.2 of change
+ * finnish-first-client-experience): the labelled out-of-pocket estimate
+ * for ONE traveller carrying the same quantity within the effective
+ * traveller allowance caps. Purely additive and display-only — it never
+ * enters `totalCents`, the itemized breakdown, or any status. It is
+ * computed live per request: present only on the POST response, never on
+ * GET/persisted results.
+ */
+export interface TravellerAlternative {
+  /** Allowed quantity × unit shelf price, in euro-cents. */
+  readonly estimatedTotalCents: number;
+  /** Whether the FULL requested quantity fits the category cap. */
+  readonly withinAllowance: boolean;
+  /** `versionLabel` of the allowance dataset the estimate resolves against. */
+  readonly allowanceDatasetVersion: string;
+  /** Canonical tax-rule category the cap was looked up with. */
+  readonly categoryKey: string;
+}
+
 export interface CalculatorResult {
   readonly itemizedCosts: readonly ItemizedCost[];
   /** Offers excluded for lacking a valid EUR conversion (task 1.5). */
@@ -518,6 +561,18 @@ export interface CalculatorResult {
    * never null, never a placeholder.
    */
   readonly sanityNotes?: readonly SanityNote[];
+  /**
+   * Traveller-alternative estimate for delivery-mode results (task 2.2,
+   * change finnish-first-client-experience). Present exactly when a
+   * published allowance dataset resolved for the transaction date AND
+   * the product's category has a boundable cap row AND the request was a
+   * delivery arrangement. Every degrade case — no effective dataset, no
+   * cap row, or a PERSONAL request — leaves the key ABSENT (never null,
+   * never a placeholder): absence is the render-nothing state. Purely
+   * additive display-only data; it never enters the delivery figures.
+   * Live POST responses only — GET/persisted results never carry it.
+   */
+  readonly travellerAlternative?: TravellerAlternative | null;
   readonly disclaimer: Disclaimer;
   readonly classification: ClassificationResult;
   readonly metadata: {
@@ -538,6 +593,15 @@ export interface CalculatorResult {
     readonly alcoholByVolume: number;
     readonly category: string;
     readonly datasetVersions: readonly string[];
+    /**
+     * `versionLabel` of the traveller-allowance dataset applied to this
+     * computation (task 2.1, change finnish-first-client-experience).
+     * Present exactly when the request was traveller-mode (`PERSONAL`)
+     * and a published dataset resolved for the transaction date — key
+     * absent for delivery computations (absence is the not-applied
+     * state, never null). Mirrors core-domain's metadata contract.
+     */
+    readonly allowanceDatasetVersion?: string;
     readonly transportOfferId: number | null;
   };
   readonly calculationRecordId: number;
