@@ -33,6 +33,14 @@
  * brand-substring noise — the live `olut` → Absolut incident), consulted
  * as before when matches are scarce (`arhu` → Karhu fragment recall).
  *
+ * A zero-result query additionally carries a did-you-mean candidate
+ * (task 3.2, change finnish-first-client-experience): bounded edit
+ * distance (≤ 2) between diacritic-folded comparison keys of the query's
+ * most significant token and the distinct brand vocabulary — advisory
+ * only, exposed as the additive optional `suggestion` field; the
+ * customer's query text is never rewritten (see
+ * {@link D1ProductSearchRepository.searchRankedWithSuggestion}).
+ *
  * `searchByName` / blank-query listing: SQLite and D1 ship no Finnish
  * collation and D1 has no custom collations, so the final ordering stays
  * in application code — fetch, sort with `localeCompare(name, 'fi')`,
@@ -245,6 +253,64 @@ function likePattern(query: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Zero-result did-you-mean primitives (task 3.2, change
+// finnish-first-client-experience)
+// ---------------------------------------------------------------------------
+
+/**
+ * Upper bound of the did-you-mean edit distance (spec product-search:
+ * "bounded edit distance (≤ 2)"). Deliberately small: the suggestion is
+ * advisory, and a loose bound would guess rather than correct.
+ */
+export const SUGGESTION_MAX_EDIT_DISTANCE = 2;
+
+/**
+ * The did-you-mean comparison key of one token: lowercased with the
+ * Finnish diacritics folded away (ä→a, ö→o, å→a). Keys exist for
+ * comparison only — a returned suggestion is always an original-cased
+ * vocabulary value, never this folded form. Folding both sides is what
+ * lets `likoori` reach `likööri` and a diacritic-less keyboard reach
+ * `Skål Brännvin` (design Q5).
+ */
+export function foldComparisonKey(token: string): string {
+  return token.toLowerCase().replace(/[äöå]/g, (c) =>
+    c === 'ä' ? 'a' : c === 'ö' ? 'o' : 'a',
+  );
+}
+
+/**
+ * Classic Levenshtein distance (insert/delete/substitute — no
+ * transposition shortcut, so `koskenkrova` → `koskenkorva` costs 2),
+ * computed only while the distance can still stay within `bound`: the
+ * two-row DP bails out with `bound + 1` as soon as a row's minimum
+ * exceeds it, and the length-difference guard rejects early. The result
+ * therefore saturates at `bound + 1` — callers must compare against
+ * `bound`, not against an exact figure beyond it.
+ */
+export function boundedEditDistance(a: string, b: string, bound: number): number {
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > bound) return bound + 1;
+  let previous: number[] = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const current: number[] = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const d = Math.min(
+        previous[j] + 1,
+        current[j - 1] + 1,
+        previous[j - 1] + substitutionCost,
+      );
+      current.push(d);
+      if (d < rowMin) rowMin = d;
+    }
+    if (rowMin > bound) return bound + 1;
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+// ---------------------------------------------------------------------------
 // Row mapping — D1 raw shapes → canonical pg contract shapes
 // ---------------------------------------------------------------------------
 
@@ -423,6 +489,17 @@ const NAME_LIKE_SQL = `
     FROM product_master
    WHERE name LIKE ? ESCAPE '\\'
    ORDER BY id ASC`;
+
+/**
+ * The did-you-mean brand vocabulary (task 3.2, change
+ * finnish-first-client-experience): every distinct non-blank brand value.
+ * The brand column is small (design D3's ~10⁴-row catalog), so the
+ * per-request DISTINCT read stays bounded — no cache infrastructure
+ * (design Q5). Comparison keys and selection happen app-side in
+ * {@link D1ProductSearchRepository.suggestBrand}.
+ */
+const BRAND_VOCABULARY_SQL = `
+  SELECT DISTINCT brand FROM product_master WHERE brand <> ''`;
 
 /**
  * Catalog key read (design D1) — deliberately narrow: only the columns
@@ -683,6 +760,93 @@ export class D1ProductSearchRepository extends ProductRepository {
       if (merged.length >= limit) break;
     }
     return merged.map(toContractProduct);
+  }
+
+  /**
+   * The zero-result did-you-mean candidate for `query` (task 3.2, change
+   * finnish-first-client-experience), or null.
+   *
+   * Vocabulary: one comparison entry per distinct non-blank brand value
+   * (the {@link BRAND_VOCABULARY_SQL} read — design Q5's brand-token
+   * vocabulary). The comparison key JOINS the brand's {@link tokenize}
+   * tokens, so word boundaries and punctuation inside a brand never have
+   * to be typed back: `Jack Daniel's` stores the key `jackdaniels` and
+   * stays reachable from `jackdanels`, while a single-token brand's key
+   * IS its token (`Koskenkorva`). Keys fold through
+   * {@link foldComparisonKey}; the returned VALUE is always the original
+   * brand string, never the folded key.
+   *
+   * Target: the query's most significant token — the longest
+   * {@link tokenize} token, first occurrence on ties (a total function of
+   * the query string, so repeated calls agree). The brand-side join pairs
+   * with it naturally: users who misspell a brand omit its separators
+   * (`jackdanels`, `koskenkrova`) far more often than they split one
+   * brand token in two.
+   *
+   * Selection: {@link boundedEditDistance} between the folded target and
+   * each folded key, kept while ≤ {@link SUGGESTION_MAX_EDIT_DISTANCE};
+   * the best candidate wins by (distance, then the alphabetical order of
+   * the ORIGINAL value under the same Finnish collation the module
+   * already orders by) — total and stable, so equal candidates across
+   * repeated calls return the identical string. A distance-0 candidate is
+   * kept deliberately: with folded keys it is the common Finnish-keyboard
+   * case (`likoori` → Likööri), not a rewrite — the response's query
+   * fields are never touched either way (advisory trust posture).
+   */
+  async suggestBrand(query: string): Promise<string | null> {
+    const tokens = tokenize(query);
+    if (tokens.length === 0) return null;
+    const target = tokens.reduce((longest, token) =>
+      token.length > longest.length ? token : longest,
+    );
+    const targetKey = foldComparisonKey(target);
+    const brands = (
+      await this.d1.prepare(BRAND_VOCABULARY_SQL).all<{ brand: string }>()
+    ).results;
+    let best: {
+      readonly value: string;
+      readonly distance: number;
+    } | null = null;
+    for (const { brand } of brands) {
+      const brandTokens = tokenize(brand);
+      if (brandTokens.length === 0) continue; // punctuation-only value
+      const distance = boundedEditDistance(
+        targetKey,
+        foldComparisonKey(brandTokens.join('')),
+        SUGGESTION_MAX_EDIT_DISTANCE,
+      );
+      if (distance > SUGGESTION_MAX_EDIT_DISTANCE) continue;
+      if (
+        best === null ||
+        distance < best.distance ||
+        (distance === best.distance &&
+          brand.localeCompare(best.value, 'fi') < 0)
+      ) {
+        best = { value: brand, distance };
+      }
+    }
+    return best === null ? null : best.value;
+  }
+
+  /**
+   * {@link D1ProductSearchRepository.searchRanked} plus the zero-result
+   * did-you-mean (task 3.2): an EMPTY ranked result computes
+   * {@link D1ProductSearchRepository.suggestBrand} for the same query;
+   * any non-empty result set leaves `suggestion` null (spec
+   * product-search: no suggestion when the query has results). The route
+   * attaches the field only when non-null — the customer's original
+   * query text stays the response's query, and the suggestion is never
+   * applied implicitly.
+   */
+  async searchRankedWithSuggestion(
+    query: string,
+    limit: number,
+    category?: string,
+  ): Promise<{ items: ProductRecord[]; suggestion: string | null }> {
+    const items = await this.searchRanked(query, limit, category);
+    const suggestion =
+      items.length === 0 ? await this.suggestBrand(query) : null;
+    return { items, suggestion };
   }
 
   /** @inheritdoc */

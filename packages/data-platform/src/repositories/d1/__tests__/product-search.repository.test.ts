@@ -28,7 +28,10 @@ import {
   FINNISH_SYNONYM_GROUPS,
   MAX_MATCH_PHRASES,
   SEARCH_PAGE_SIZE,
+  SUGGESTION_MAX_EDIT_DISTANCE,
+  boundedEditDistance,
   buildMatchExpression,
+  foldComparisonKey,
   tokenize,
 } from '../product-search.repository';
 
@@ -1544,5 +1547,204 @@ describe('D1ProductSearchRepository.searchRanked — merge gate below the page s
       expect.arrayContaining(BELOW_TOKEN_MATCH_IDS),
     );
     expect(ids.slice(BELOW_TOKEN_MATCH_IDS.length)).toEqual(BELOW_ABSOLUT_IDS);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Zero-result did-you-mean (task 3.2, change finnish-first-client-
+// experience) — isolated fixture DB so the shared-database describes above
+// are untouched. Spec product-search: a zero-result keyword query carries
+// an optional `suggestion` computed by bounded edit distance (≤ 2) against
+// the brand vocabulary on diacritic-folded keys; ordering is (distance,
+// then alphabetical); results, no candidate, or no token → no suggestion.
+// ---------------------------------------------------------------------------
+
+describe('did-you-mean primitives — foldComparisonKey + boundedEditDistance (task 3.2)', () => {
+  it('folds ä/ö/å to a/o/a on the lowercased key — comparison only', () => {
+    expect(foldComparisonKey('KoskenKörva')).toBe('koskenkorva');
+    expect(foldComparisonKey('SKÅL')).toBe('skal');
+    expect(foldComparisonKey('BRÄNNVIN')).toBe('brannvin');
+    expect(foldComparisonKey('Äöå')).toBe('aoa');
+  });
+
+  it('classic Levenshtein — no transposition shortcut (koskenkrova costs 2)', () => {
+    // The r/o transposition decomposes into two substitutions — the spec
+    // bound (≤ 2) is exactly why the classic distance must be used.
+    expect(
+      boundedEditDistance(
+        'koskenkrova',
+        'koskenkorva',
+        SUGGESTION_MAX_EDIT_DISTANCE,
+      ),
+    ).toBe(2);
+    expect(
+      boundedEditDistance(
+        'jackdanels',
+        'jackdaniels',
+        SUGGESTION_MAX_EDIT_DISTANCE,
+      ),
+    ).toBe(1);
+    expect(boundedEditDistance('kitten', 'sitting', 10)).toBe(3);
+  });
+
+  it('bounds: exact match is 0, beyond the bound saturates at bound + 1', () => {
+    expect(boundedEditDistance('karhu', 'karhu', 2)).toBe(0);
+    // Folded-key equality is what makes likoori reach likööri (design Q5).
+    expect(boundedEditDistance('likoori', foldComparisonKey('likööri'), 2)).toBe(0);
+    // True distance 4 — but the bounded variant saturates at bound + 1.
+    expect(boundedEditDistance('abc', 'xyzz', 2)).toBe(
+      SUGGESTION_MAX_EDIT_DISTANCE + 1,
+    );
+    // Length-difference guard fires before any DP work.
+    expect(boundedEditDistance('a', 'abcde', 2)).toBe(3);
+    expect(boundedEditDistance('', 'ab', 2)).toBe(2);
+  });
+});
+
+describe('D1ProductSearchRepository — zero-result did-you-mean (task 3.2)', () => {
+  const sugDb = openMigratedD1();
+  const sugRepo = new D1ProductSearchRepository(sugDb.d1);
+
+  // Fixture layout (folded joined keys in comments):
+  // - Koskenkorva  → 'koskenkorva'  (the koskenkrova pin, distance 2);
+  // - Jack Daniel's → 'jackdaniels' (the jackdanels pin — the joined
+  //   multi-word key keeps a de-spaced/de-apostrophed typo reachable);
+  // - Karhu / Karju / Kaara → 'karhu' / 'karju' / 'kaara' (tie and
+  //   distance-precedence pins: Karhu < Karju alphabetically, Kaara
+  //   alphabetically FIRST but always the farthest of the three);
+  // - Skål Brännvin → 'skalbrannvin' (folded brand-side key, original
+  //   value must come back with å/ä intact).
+  const KOSKENKORVA_ID = 6701;
+  const JACK_DANIELS_ID = 6702;
+  const KARHU_ID = 6703;
+  const KARJU_ID = 6704;
+  const KAARA_ID = 6705;
+  const SKAL_BRANNVIN_ID = 6706;
+
+  beforeAll(async () => {
+    const seeds: ReadonlyArray<{
+      id: number;
+      name: string;
+      brand: string;
+      category: string;
+    }> = [
+      { id: KOSKENKORVA_ID, name: 'Koskenkorva Viina 60 %', brand: 'Koskenkorva', category: 'spirits' },
+      { id: JACK_DANIELS_ID, name: "Jack Daniel's Old No. 7", brand: "Jack Daniel's", category: 'spirits' },
+      { id: KARHU_ID, name: 'Karhu Pohjola', brand: 'Karhu', category: 'beer' },
+      { id: KARJU_ID, name: 'Karju Vahva Olut', brand: 'Karju', category: 'beer' },
+      { id: KAARA_ID, name: 'Kaara III', brand: 'Kaara', category: 'beer' },
+      { id: SKAL_BRANNVIN_ID, name: 'Skål Brännvin 50 %', brand: 'Skål Brännvin', category: 'spirits' },
+    ];
+    for (const seed of seeds) {
+      await sugRepo.create({
+        id: seed.id,
+        name: seed.name,
+        manufacturer: 'Suggestio Panimo',
+        brand: seed.brand,
+        category: seed.category,
+        alcoholByVolume: '0.047',
+        unitVolume: '0.33',
+        containerType: 'can',
+        regulatoryClassification: seed.category,
+        depositSystemStatus: true,
+        ean: null,
+      });
+    }
+  });
+
+  /** Wrapper convenience: just the suggestion of one query. */
+  function suggestionOf(query: string): Promise<string | null> {
+    return sugRepo
+      .searchRankedWithSuggestion(query, MAX_PAGE_SIZE)
+      .then((r) => r.suggestion);
+  }
+
+  it('spec: "koskenkrova" (zero results) suggests "Koskenkorva" — distance-2 transposition', async () => {
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      'koskenkrova',
+      MAX_PAGE_SIZE,
+    );
+    expect(items).toEqual([]); // the zero-result trigger, explicit
+    expect(suggestion).toBe('Koskenkorva');
+  });
+
+  it('spec: "jackdanels" (zero results) suggests "Jack Daniel\'s" — the joined multi-word brand key', async () => {
+    // The brand's tokenize() tokens joined ('jack' + 'daniel' + 's' →
+    // 'jackdaniels') keep the de-spaced/de-apostrophed typo within
+    // distance 1; the suggestion VALUE is the original brand string.
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      'jackdanels',
+      MAX_PAGE_SIZE,
+    );
+    expect(items).toEqual([]);
+    expect(suggestion).toBe("Jack Daniel's");
+  });
+
+  it('no suggestion when the query has results — the vocabulary is never consulted', async () => {
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      'koskenkorva',
+      MAX_PAGE_SIZE,
+    );
+    expect(items.map((r) => r.id)).toContain(KOSKENKORVA_ID);
+    expect(suggestion).toBeNull();
+  });
+
+  it('stable tie ordering: "karu" ties Karhu/Karju at distance 1 and picks the alphabetically first', async () => {
+    // karu → karhu (insert h, 1) and karu → karju (insert j, 1); kaara is
+    // farther (2). The Finnish-collation tie puts Karhu ahead — and the
+    // same call returns the identical string on every repeat.
+    expect(await suggestionOf('karu')).toBe('Karhu');
+    expect(await suggestionOf('karu')).toBe('Karhu');
+    expect(await suggestionOf('karu')).toBe('Karhu');
+  });
+
+  it('distance beats alphabetical position: "krrju" picks Karju (1) over the earlier-sorted Karhu (2)', async () => {
+    // Kaara and Karhu both sort before Karju, but Karju is the nearest
+    // candidate — (distance, then alphabetical) must never let an
+    // alphabetically earlier but farther brand win.
+    expect(await suggestionOf('krrju')).toBe('Karju');
+  });
+
+  it('folded keys: "koskenkörva" reaches Koskenkorva, and the diacritic-less brand spelling returns the original å/ä value', async () => {
+    // Query-side fold: ö→o turns the Finnish-keyboard near-miss into an
+    // exact folded key (distance 0 — kept on purpose, design Q5's
+    // likoori → likööri case).
+    expect(await suggestionOf('koskenkörva')).toBe('Koskenkorva');
+    // Brand-side fold + value preservation: the user typed pure ASCII,
+    // the suggestion is the original 'Skål Brännvin', never the key.
+    expect(await suggestionOf('skalbrannvin')).toBe('Skål Brännvin');
+  });
+
+  it('multi-token queries target the longest token, first occurrence on ties', async () => {
+    // 'koskenkrova' (11) outranks 'olutxxx' (7) as the significant token.
+    expect(await suggestionOf('olutxxx koskenkrova')).toBe('Koskenkorva');
+    // Equal length → the FIRST occurrence wins: 'kaara' (→ Kaara, exact),
+    // not 'karhu'.
+    expect(await suggestionOf('kaara karhu')).toBe('Kaara');
+  });
+
+  it('no candidate within the bound → null', async () => {
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      'zzzzzz',
+      MAX_PAGE_SIZE,
+    );
+    expect(items).toEqual([]);
+    expect(suggestion).toBeNull();
+  });
+
+  it('a blank query stays the alphabetical listing and never suggests', async () => {
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      '   ',
+      MAX_PAGE_SIZE,
+    );
+    expect(items).toHaveLength(6);
+    expect(suggestion).toBeNull();
+  });
+
+  it('the wrapper passes the ranked items through unchanged — suggestion rides beside them', async () => {
+    const direct = await sugRepo.searchRanked('karhu', 1);
+    const wrapped = await sugRepo.searchRankedWithSuggestion('karhu', 1);
+    expect(wrapped.items).toEqual(direct);
+    expect(wrapped.suggestion).toBeNull();
   });
 });

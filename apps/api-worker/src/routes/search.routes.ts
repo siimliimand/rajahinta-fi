@@ -19,6 +19,13 @@
  * Search items and detail offers carry the read-time €/g metric
  * (`eurPerGram`) with its status.
  *
+ * Zero-result did-you-mean (task 3.2, change
+ * finnish-first-client-experience): a ranked-q search that found nothing
+ * carries the repository's advisory `suggestion` as an additive optional
+ * top-level field — present only when a candidate exists; every existing
+ * field, the ordering, and the customer's original query text are
+ * untouched (design Q5 trust posture; task 3.3 renders the chip).
+ *
  * @module SearchRoutes
  */
 
@@ -397,6 +404,10 @@ async function search(c: Context<AppEnv>): Promise<Response> {
     // (true totals, design D3); the ids and ranked-q paths keep
     // fetch-and-slice below.
     let catalogPage: CatalogProductListPage | undefined;
+    // Zero-result did-you-mean (task 3.2) — only the ranked-q path can
+    // produce one; the ids path is not a text query and the browse path
+    // paginates the catalog.
+    let suggestion: string | null = null;
 
     if (ids !== undefined && ids.trim().length > 0) {
       // ID lookup takes precedence over free-text search (q ignored).
@@ -425,12 +436,19 @@ async function search(c: Context<AppEnv>): Promise<Response> {
       // only keyword matches in the category. The category is NEVER
       // silently ignored because q is present (spec product-search); an
       // explicit sort honors over the filtered set.
-      const products = await repo.searchRanked(
+      //
+      // searchRankedWithSuggestion (task 3.2) computes the advisory
+      // did-you-mean only when the ranked search came back empty — a
+      // non-empty result set leaves it null and skips the vocabulary
+      // read entirely. The original query text is passed through
+      // untouched; nothing here rewrites it.
+      const ranked = await repo.searchRankedWithSuggestion(
         query,
         MAX_PAGE_SIZE,
         categoryParam,
       );
-      items = products.map((p) => toSearchItemResponse(p));
+      suggestion = ranked.suggestion;
+      items = ranked.items.map((p) => toSearchItemResponse(p));
       // Same pre-ordering aggregate merge as the ids path — the sort key
       // must be the real offer figure, never the null/0 placeholder.
       items = withOfferAggregates(
@@ -480,6 +498,13 @@ async function search(c: Context<AppEnv>): Promise<Response> {
       limit: limitNum,
       totalPages: Math.ceil(total / limitNum),
     };
+    // Advisory did-you-mean (task 3.2): strictly additive optional field —
+    // attached only when the zero-result ranked search produced a
+    // candidate within the edit-distance bound; absent (never null)
+    // otherwise, like merchantWarnings below.
+    if (suggestion !== null) {
+      payload.suggestion = suggestion;
+    }
     if (warnings !== undefined) {
       payload.merchantWarnings = warnings;
     }

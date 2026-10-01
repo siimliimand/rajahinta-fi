@@ -406,6 +406,77 @@ describe('GET /api/v1/products — combined category + keyword (task 2.1, change
   });
 });
 
+describe('GET /api/v1/products — zero-result did-you-mean (task 3.2, change finnish-first-client-experience)', () => {
+  it('attaches the advisory suggestion on a zero-result query — strictly additive passthrough', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, {
+      id: 1,
+      name: 'Koskenkorva Viina 60 %',
+      brand: 'Koskenkorva',
+      category: 'spirits',
+    });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products?q=koskenkrova', {
+      headers: AGE,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: unknown[];
+      total: number;
+      suggestion?: string;
+    };
+    expect(body.total).toBe(0);
+    expect(body.items).toEqual([]);
+    expect(body.suggestion).toBe('Koskenkorva');
+  });
+
+  it('omits the suggestion field when the query has results', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III' });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products?q=karhu', {
+      headers: AGE,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      total: number;
+      suggestion?: string;
+    };
+    expect(body.total).toBeGreaterThanOrEqual(1);
+    expect(Object.prototype.hasOwnProperty.call(body, 'suggestion')).toBe(false);
+  });
+
+  it('a zero-result query with no candidate within the bound stays absent (never null on the wire)', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III' });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products?q=zzzzzz', {
+      headers: AGE,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { total: number; suggestion?: string };
+    expect(body.total).toBe(0);
+    expect(Object.prototype.hasOwnProperty.call(body, 'suggestion')).toBe(false);
+  });
+
+  it('the ids path never suggests — it is not a text query', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III', brand: 'Koskenkorva' });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products?ids=999', {
+      headers: AGE,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { total: number; suggestion?: string };
+    expect(body.total).toBe(0);
+    expect(Object.prototype.hasOwnProperty.call(body, 'suggestion')).toBe(false);
+  });
+});
+
 describe('GET /api/v1/products — catalog browse (task 2.1, change product-catalog)', () => {
   it('filters by a canonical category with deterministic FI order', async () => {
     const { db, d1 } = openMigratedD1();
