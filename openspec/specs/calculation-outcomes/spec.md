@@ -3,7 +3,9 @@
 ## Purpose
 
 After a calculation, an authenticated user can report what the import actually cost, one report per record per account inside a 60-day window. The reported totals power a public aggregate accuracy statistic — the share of reported outcomes within 5% of the estimate, with sample size and as-of date — labeled user-reported everywhere. Outcome rows freeze the estimate they compare against and carry retention independent of the calculation-record sweep, so the accuracy evidence outlives the estimate record.
+
 ## Requirements
+
 ### Requirement: One user-reported outcome per calculation
 
 An authenticated account SHALL be able to report the actual total cost of one of its own calculation records within 60 days of the record's calculation timestamp. The system SHALL accept at most one outcome per calculation record per account and SHALL store the reported total in euro cents alongside a digest of the original estimate.
@@ -61,3 +63,16 @@ Outcome rows SHALL carry their own retention (24-month cap) enforced by a schedu
 - **WHEN** the calculation-record retention job prunes a record older than the record cap
 - **THEN** its outcome row SHALL remain, holding its snapshot of the estimate, until the outcome cap prunes it
 
+### Requirement: Catalog coverage block on the accuracy response
+
+The public accuracy response SHALL carry an additive `coverage` block computed read-time from stored catalog state: the distinct product count, the total offer observation count, and the last ingestion watermark timestamp. The block SHALL contain only true stored values — no estimates, no seeded counters. The user-reported statistic's shape and semantics SHALL be unchanged; the coverage block is additive and display-only, and SHALL NOT feed the calculator, ranking, or any basket input.
+
+#### Scenario: Coverage block present and true
+
+- **WHEN** the accuracy endpoint is requested with zero stored outcomes
+- **THEN** the response carries `count: 0` exactly as before, plus the coverage block whose values equal the corresponding D1 counts and watermark
+
+#### Scenario: Additive, display-only
+
+- **WHEN** the coverage block is added to the response
+- **THEN** calculator, ranking, and basket responses remain byte-identical (compliance-pinned), and no coverage value feeds any calculation input
