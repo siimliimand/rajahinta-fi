@@ -21,6 +21,7 @@ import DisclaimerBanner from './DisclaimerBanner';
 import ReportExportActions from './ReportExportActions';
 import SanityNoteList from './SanityNoteList';
 import ShareResultAction from './ShareResultAction';
+import TravellerAlternativeCallout from './TravellerAlternativeCallout';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -311,6 +312,18 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
       {/* ── Alko benchmark — display-only comparison, not a cost line:
           renders nothing when the result carries no reference ── */}
       {benchmark && <AlkoBenchmarkLine benchmark={benchmark} />}
+
+      {/* ── Traveller-alternative callout (task 2.2): labeled one-traveller
+          ESTIMATE with the trip-calculator link. The field exists only on
+          the live POST response — GET/persisted results never carry it,
+          and absence renders nothing (never a placeholder). ── */}
+      {result.travellerAlternative && (
+        <TravellerAlternativeCallout
+          alternative={result.travellerAlternative}
+          productId={meta.input.productId}
+          quantity={meta.input.quantity}
+        />
+      )}
 
       {/* ── Confidence breakdown ── */}
       {result.confidenceBreakdown.length > 0 && (

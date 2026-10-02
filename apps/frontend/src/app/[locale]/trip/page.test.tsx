@@ -29,12 +29,20 @@
 import * as React from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import TripPage, { generateMetadata as tripMetadata } from './page';
 import TripView from './trip-view';
 import { renderWithIntl } from '@/lib/testing/test-intl';
-import { ApiFetchError, request, searchProducts } from '@/lib/api';
-import type { ProductSearchResult } from '@/lib/types';
+import {
+  ApiFetchError,
+  getProductDetail,
+  request,
+  searchProducts,
+} from '@/lib/api';
+import type {
+  ProductDetailResponse,
+  ProductSearchResult,
+} from '@/lib/types';
 import type { TripFeasibilityResponse, TripFillResponse } from './trip.types';
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -46,6 +54,9 @@ vi.mock('@/lib/api', async (importOriginal) => {
     // original module's request, so overriding `request` alone cannot
     // intercept it (alerts page test precedent).
     searchProducts: vi.fn(),
+    // The prefill handshake (task 2.2) resolves the seeded product by
+    // ID through the same master-data read.
+    getProductDetail: vi.fn(),
   };
 });
 
@@ -82,6 +93,7 @@ vi.mock('next-intl/server', () => ({
 
 const mockedRequest = vi.mocked(request);
 const mockedSearchProducts = vi.mocked(searchProducts);
+const mockedGetProductDetail = vi.mocked(getProductDetail);
 
 // The break-even card's allowance hint renders through the i18n
 // navigation Link; stub it with the plain-anchor shape the other view
@@ -788,5 +800,118 @@ describe('TripPage server shell (task 2.3)', () => {
     expect(html).toContain('Miten matkalaskenta toimii');
     // The summary is content, not advice — the estimates stance holds.
     expect(html).toContain('ei vero- tai tullineuvontaa');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Prefill handshake (task 2.2, change finnish-first-client-experience):
+// the calculator callout links to /trip?product=&quantity=; valid values
+// open the fill mode and seed the candidate through the ordinary
+// selection path; absent or invalid values keep today's behavior.
+// ---------------------------------------------------------------------------
+
+const PREFILL_PRODUCT_DETAIL: ProductDetailResponse = {
+  product: {
+    id: 42,
+    name: 'Saku Originaal',
+    manufacturer: 'Saku',
+    brand: 'Saku',
+    category: 'beer',
+    alcoholByVolume: 4.7,
+    unitVolume: '0,5 l',
+    containerType: 'CAN',
+    regulatoryClassification: 'beer',
+    depositSystemStatus: true,
+    ean: null,
+  },
+  offers: [],
+};
+
+describe('TripPage prefill handshake (?product=&quantity=, task 2.2)', () => {
+  beforeEach(() => {
+    mockedGetProductDetail.mockReset();
+  });
+
+  afterEach(() => {
+    // jsdom keeps one URL across tests in the file — reset it so later
+    // suites see the parameterless default.
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('opens the fill mode and seeds the candidate with the given quantity', async () => {
+    mockedGetProductDetail.mockResolvedValue(PREFILL_PRODUCT_DETAIL);
+    window.history.replaceState({}, '', '/trip?product=42&quantity=3');
+
+    const { container } = renderWithIntl(<TripView />);
+
+    // Fill mode is active without a click…
+    expect(
+      within(container).getByTestId('trip-mode-fill'),
+    ).toHaveAttribute('aria-pressed', 'true');
+    // …and the candidate arrives resolved by ID through the ordinary
+    // selection path, with the seeded quantity bound in its field.
+    await within(container).findByTestId('trip-fill-selected-42');
+    const qty = container.querySelector(
+      '#trip-fill-qty-42',
+    ) as HTMLInputElement;
+    expect(qty.value).toBe('3');
+    expect(mockedGetProductDetail).toHaveBeenCalledWith(42);
+  });
+
+  it('ignores absent params — break-even default, no fetch, empty fill form', async () => {
+    window.history.replaceState({}, '', '/trip');
+    const user = userEvent.setup();
+    const { container } = renderWithIntl(<TripView />);
+
+    expect(
+      within(container).getByTestId('trip-mode-breakeven'),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(mockedGetProductDetail).not.toHaveBeenCalled();
+
+    // The fill surface stays reachable exactly as before, and empty.
+    await user.click(within(container).getByTestId('trip-mode-fill'));
+    expect(within(container).getByTestId('trip-fill-form')).toBeInTheDocument();
+    expect(
+      within(container).queryByTestId('trip-fill-selected-42'),
+    ).toBeNull();
+    expect(mockedGetProductDetail).not.toHaveBeenCalled();
+  });
+
+  it('ignores an invalid product param — no candidate, no error', async () => {
+    window.history.replaceState({}, '', '/trip?product=abc&quantity=3');
+    const { container } = renderWithIntl(<TripView />);
+
+    expect(
+      within(container).getByTestId('trip-mode-breakeven'),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(mockedGetProductDetail).not.toHaveBeenCalled();
+  });
+
+  it('degrades silently when the seeded product no longer exists', async () => {
+    mockedGetProductDetail.mockRejectedValue(
+      new ApiFetchError(404, {
+        statusCode: 404,
+        message: 'Product 999 not found',
+        error: 'NotFound',
+        timestamp: '2026-10-01T12:00:00.000Z',
+        path: '/api/v1/products/999',
+      }),
+    );
+    window.history.replaceState({}, '', '/trip?product=999&quantity=3');
+
+    const { container } = renderWithIntl(<TripView />);
+
+    // The fill mode opens, but no candidate is fabricated and no error
+    // state appears — the handshake never invents a product.
+    expect(
+      within(container).getByTestId('trip-mode-fill'),
+    ).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => {
+      expect(mockedGetProductDetail).toHaveBeenCalled();
+    });
+    expect(
+      within(container).queryByTestId('trip-fill-selected-999'),
+    ).toBeNull();
+    expect(container.textContent).not.toContain('epäonnistui');
   });
 });

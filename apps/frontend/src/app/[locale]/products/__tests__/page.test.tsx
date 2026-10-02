@@ -530,3 +530,51 @@ describe('ProductsPage category alert entry', () => {
     expect(screen.queryByTestId('category-alert-action')).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Zero-result did-you-mean (task 3.3, change
+// finnish-first-client-experience): the API attaches `suggestion` only
+// when a ranked search returned zero items — the chip runs the suggested
+// query as URL state while the input keeps the customer's spelling.
+// ---------------------------------------------------------------------------
+
+describe('ProductsPage did-you-mean suggestion (task 3.3)', () => {
+  it('renders the chip on a zero-result search and links the suggested query', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([], { total: 0, totalPages: 0, suggestion: 'Koskenkorva' }),
+    );
+
+    await renderCatalog({ q: 'koskenkrova' });
+
+    const box = screen.getByTestId('catalog-suggestion');
+    expect(box.textContent).toContain('Tarkoititko:');
+    const chip = within(box).getByRole('link');
+    expect(chip).toHaveTextContent('Koskenkorva');
+    // Page 1 of the suggested query; category/sort defaults stay out of
+    // the URL (the canonical-clean href builder).
+    expect(chip.getAttribute('href')).toBe('/products?q=Koskenkorva');
+    // The customer's original query stays in the input — the suggestion
+    // never rewrites what was typed.
+    expect(
+      (screen.getByLabelText('Haku') as HTMLInputElement).value,
+    ).toBe('koskenkrova');
+  });
+
+  it('renders no chip when results exist or the response carries no suggestion', async () => {
+    // Results present, suggestion attached — the banner requires zero
+    // results, and the API never sends this shape; render nothing.
+    mockedRequest.mockResolvedValue(
+      catalogResult([catalogItem()], { suggestion: 'Koskenkorva' }),
+    );
+    await renderCatalog({ q: 'karhu' });
+    expect(screen.queryByTestId('catalog-suggestion')).toBeNull();
+
+    // Zero results without a candidate — the plain empty state only.
+    mockedRequest.mockResolvedValue(
+      catalogResult([], { total: 0, totalPages: 0 }),
+    );
+    await renderCatalog({ q: 'pöppönen' });
+    expect(screen.queryByTestId('catalog-suggestion')).toBeNull();
+    expect(screen.getByText('Ei tuloksia haulle "pöppönen"')).toBeInTheDocument();
+  });
+});

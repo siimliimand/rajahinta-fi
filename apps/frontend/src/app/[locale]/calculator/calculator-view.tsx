@@ -11,6 +11,7 @@ import type {
   CalculatorResult,
   MerchantWarning,
   SavedScenario,
+  ScenarioTransportArrangement,
 } from '@/lib/types';
 import {
   searchProducts,
@@ -123,6 +124,16 @@ interface CalculationError {
    * localized in-context explanation — never the raw backend message.
    */
   readonly ageGateRequired: boolean;
+  /**
+   * True when a traveller-mode (`PERSONAL`) calculation hit the 409
+   * `NoPublishedAllowances` rejection (task 2.1, change
+   * finnish-first-client-experience): no published traveller-allowance
+   * dataset is effective on the calculation date, so the estimate cannot
+   * run without a bound. Renders the honest, calm unavailable state —
+   * never the backend's raw message — and the form stays usable with
+   * delivery selectable.
+   */
+  readonly travellerUnavailable: boolean;
 }
 
 /**
@@ -146,6 +157,7 @@ function toCalculationError(
       rateLimited: false,
       retryAfterSeconds: null,
       ageGateRequired: true,
+      travellerUnavailable: false,
     };
   }
   if (err instanceof ApiFetchError && err.status === 429) {
@@ -157,6 +169,25 @@ function toCalculationError(
           ? err.body.retryAfterSeconds
           : null,
       ageGateRequired: false,
+      travellerUnavailable: false,
+    };
+  }
+  // Traveller mode without a bound (task 2.1): a 409
+  // `NoPublishedAllowances` means no published traveller-allowance
+  // dataset is effective on the calculation date. The backend message is
+  // English prose — the honest state renders the localized explanation
+  // instead and keeps the form fully usable.
+  if (
+    err instanceof ApiFetchError &&
+    err.status === 409 &&
+    err.body?.error === 'NoPublishedAllowances'
+  ) {
+    return {
+      message: fallbackMessage,
+      rateLimited: false,
+      retryAfterSeconds: null,
+      ageGateRequired: false,
+      travellerUnavailable: true,
     };
   }
   return {
@@ -164,6 +195,7 @@ function toCalculationError(
     rateLimited: false,
     retryAfterSeconds: null,
     ageGateRequired: false,
+    travellerUnavailable: false,
   };
 }
 
@@ -210,6 +242,17 @@ export default function CalculatorView() {
   // Display-only merchant warnings joined into the search response
   // (task 2.4) — advisory for the results panel, never a filter.
   const [searchWarnings, setSearchWarnings] = useState<readonly MerchantWarning[]>([]);
+  // Zero-result did-you-mean candidate (task 3.3, change
+  // finnish-first-client-experience): carried by the search response only
+  // when it returned no items, so the chip can never appear alongside
+  // results. Cleared at the start of every search.
+  const [searchSuggestion, setSearchSuggestion] = useState<string | null>(null);
+  // The query the displayed results actually answer (task 3.3): after a
+  // suggestion click the chip searches the suggested term while the
+  // customer's original query stays in the input — the empty state and
+  // the selector's no-results line must name the searched term, never
+  // the untouched input value.
+  const [searchedQuery, setSearchedQuery] = useState('');
 
   // ── Selection state ──
   const [selectedProduct, setSelectedProduct] =
@@ -222,6 +265,13 @@ export default function CalculatorView() {
   // means the published transport dataset — the request then omits the
   // field entirely, byte-identical to the pre-4.2 payload.
   const [transportMethod, setTransportMethod] = useState('');
+  // Buying mode (task 2.1, change finnish-first-client-experience):
+  // delivery is the default and reproduces today's request exactly —
+  // `SELLER_ARRANGED` is omitted from the payload. Selecting "Otan itse
+  // mukaan" adds `transportArrangement: 'PERSONAL'`, the
+  // traveller-allowance branch.
+  const [transportArrangement, setTransportArrangement] =
+    useState<ScenarioTransportArrangement>('SELLER_ARRANGED');
   // Quick/advanced disclosure (task 4.2): the quick path is visible by
   // default; the advanced options exist behind an explicit control.
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -263,6 +313,8 @@ export default function CalculatorView() {
       setSelectedProduct(null);
       setResult(null);
       setSearchWarnings([]);
+      setSearchSuggestion(null);
+      setSearchedQuery(trimmed);
 
       try {
         const res = await searchProducts(
@@ -275,6 +327,13 @@ export default function CalculatorView() {
         if (controller.signal.aborted) return;
         setSearchResults(res.items);
         setSearchWarnings(res.merchantWarnings ?? []);
+        // The API attaches `suggestion` only to a zero-result response —
+        // a non-empty result set always clears the chip.
+        setSearchSuggestion(
+          typeof res.suggestion === 'string' && res.suggestion.trim() !== ''
+            ? res.suggestion
+            : null,
+        );
       } catch (err: unknown) {
         // Superseded searches leave the newer one's state untouched.
         if (controller.signal.aborted) return;
@@ -300,6 +359,7 @@ export default function CalculatorView() {
         }
         setSearchResults([]);
         setSearchWarnings([]);
+        setSearchSuggestion(null);
       } finally {
         if (searchAbortRef.current === controller) {
           setSearchLoading(false);
@@ -335,6 +395,16 @@ export default function CalculatorView() {
       runSearch(q);
     },
     [debouncedSearch, runSearch],
+  );
+
+  // ── Did-you-mean chip (task 3.3): runs the suggested query but never
+  // rewrites the input — the customer's original spelling stays visible,
+  // and the results panel answers the suggested term. ──
+  const handleSuggestion = useCallback(
+    (suggested: string) => {
+      runSearch(suggested);
+    },
+    [runSearch],
   );
 
   // ── Hero-search handoff (task 1.1) ──
@@ -387,6 +457,12 @@ export default function CalculatorView() {
         ...(transportMethod.trim() !== ''
           ? { transportMethod: transportMethod.trim() }
           : {}),
+        // Traveller mode (task 2.1): only the non-default arrangement
+        // rides along — the delivery default keeps the payload identical
+        // to the pre-toggle request.
+        ...(transportArrangement !== 'SELLER_ARRANGED'
+          ? { transportArrangement }
+          : {}),
       });
       setResult(res);
 
@@ -403,7 +479,7 @@ export default function CalculatorView() {
     } finally {
       setCalculating(false);
     }
-  }, [selectedProduct, quantity, destination, transportMethod, t]);
+  }, [selectedProduct, quantity, destination, transportMethod, transportArrangement, t]);
 
   // ── Save-scenario handler (delegated to the scenario controls) ──
   const handleSaveScenario = useCallback(
@@ -420,10 +496,15 @@ export default function CalculatorView() {
           ...(transportMethod.trim() !== ''
             ? { transportMethod: transportMethod.trim() }
             : {}),
+          // The arrangement is stored only when non-default — a delivery
+          // scenario stays byte-identical to the pre-traveller-mode form.
+          ...(transportArrangement !== 'SELLER_ARRANGED'
+            ? { transportArrangement }
+            : {}),
         },
       });
     },
-    [selectedProduct, quantity, destination, transportMethod, t],
+    [selectedProduct, quantity, destination, transportMethod, transportArrangement, t],
   );
 
   // ── Load-scenario handler: repopulate inputs and re-run the calculation
@@ -435,6 +516,7 @@ export default function CalculatorView() {
     setQuantity(inputs.quantity);
     setDestination(inputs.destination);
     setTransportMethod(inputs.transportMethod ?? '');
+    setTransportArrangement(inputs.transportArrangement ?? 'SELLER_ARRANGED');
     setResult(null);
     setCalcError(null);
     setCalculating(true);
@@ -468,6 +550,10 @@ export default function CalculatorView() {
           ...(inputs.transportMethod !== undefined
             ? { transportMethod: inputs.transportMethod }
             : {}),
+          ...(inputs.transportArrangement !== undefined &&
+          inputs.transportArrangement !== 'SELLER_ARRANGED'
+            ? { transportArrangement: inputs.transportArrangement }
+            : {}),
         });
         setResult(res);
 
@@ -492,6 +578,7 @@ export default function CalculatorView() {
     setCalcError(null);
     setDestination(DEFAULT_DESTINATION);
     setTransportMethod('');
+    setTransportArrangement('SELLER_ARRANGED');
   }, []);
 
   // ── Clear-form affordance (task 4.7): every input back to its
@@ -506,10 +593,13 @@ export default function CalculatorView() {
     setHasSearched(false);
     setSearchWarnings([]);
     setShortQuery(false);
+    setSearchSuggestion(null);
+    setSearchedQuery('');
     setSelectedProduct(null);
     setQuantity(1);
     setDestination(DEFAULT_DESTINATION);
     setTransportMethod('');
+    setTransportArrangement('SELLER_ARRANGED');
     setAdvancedOpen(false);
     setResult(null);
     setCalcError(null);
@@ -604,6 +694,8 @@ export default function CalculatorView() {
               onSubmit={handleSearch}
               loading={searchLoading}
               error={searchError}
+              suggestion={searchSuggestion}
+              onSuggestion={handleSuggestion}
             />
 
             {/* ── Too-short search term: inline, specific (task 4.7) ── */}
@@ -653,7 +745,7 @@ export default function CalculatorView() {
                     description={
                       <>
                         {t('searchNoResultsDescription', {
-                          query: query.trim(),
+                          query: searchedQuery,
                         })}{' '}
                         {t('broaderSearchHint')}
                       </>
@@ -682,7 +774,7 @@ export default function CalculatorView() {
                       selectedId={selectedProduct?.id ?? null}
                       onSelect={handleSelect}
                       loading={searchLoading}
-                      query={query}
+                      query={searchedQuery}
                     />
                     {searchResults.length > 0 && (
                       <div className="mt-3">
@@ -784,6 +876,48 @@ export default function CalculatorView() {
                 </div>
               </div>
 
+              {/* ── Buying mode (task 2.1, change
+                  finnish-first-client-experience): Toimitus is the default
+                  and reproduces today's request exactly; Otan itse mukaan
+                  adds `transportArrangement: 'PERSONAL'` — the
+                  traveller-allowance branch. ── */}
+              <fieldset className="mb-5" data-testid="buying-mode">
+                <legend className="mb-2 block text-sm font-medium text-gray-700">
+                  {t('buyingMode.label')}
+                </legend>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {(
+                    [
+                      ['SELLER_ARRANGED', 'sellerArranged', 'sellerArrangedDescription'],
+                      ['PERSONAL', 'personal', 'personalDescription'],
+                    ] as const
+                  ).map(([value, labelKey, descriptionKey]) => (
+                    <label
+                      key={value}
+                      data-testid={`buying-mode-${value}`}
+                      className="flex cursor-pointer items-start gap-2 rounded-md border border-gray-200 p-2 transition-colors hover:bg-gray-50 has-[:checked]:border-primary-400 has-[:checked]:bg-primary-50"
+                    >
+                      <input
+                        type="radio"
+                        name="buying-mode"
+                        value={value}
+                        checked={transportArrangement === value}
+                        onChange={() => setTransportArrangement(value)}
+                        className="mt-0.5 h-4 w-4 shrink-0 border-gray-300 text-primary-600 focus:ring-primary-500"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-gray-900">
+                          {t(`buyingMode.${labelKey}`)}
+                        </span>
+                        <span className="mt-0.5 block text-xs leading-relaxed text-gray-500">
+                          {t(`buyingMode.${descriptionKey}`)}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
               {/* ── Advanced options (task 4.2): collapsed by default —
                   an explicit control discloses the transport-side inputs.
                   Toggling changes visibility only: the calculation always
@@ -868,7 +1002,32 @@ export default function CalculatorView() {
                 )}
               </button>
 
-              {calcError && (
+              {calcError && calcError.travellerUnavailable ? (
+                /* ── Honest traveller-mode unavailable state (task 2.1):
+                    the dataset is missing, so the estimate cannot run —
+                    calm copy, retry later, and the form (delivery
+                    included) stays fully usable. Never fabricated
+                    figures, never the raw backend message. ── */
+                <div
+                  data-testid="traveller-unavailable"
+                  role="status"
+                  className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3"
+                >
+                  <p className="text-sm font-semibold text-amber-900">
+                    {t('travellerUnavailableTitle')}
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-amber-800">
+                    {t('travellerUnavailableBody')}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleCalculate}
+                    className="mt-2 rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                  >
+                    {tCommon('retry')}
+                  </button>
+                </div>
+              ) : calcError ? (
                 <div className="mt-3">
                   <ErrorState
                     title={
@@ -898,7 +1057,7 @@ export default function CalculatorView() {
                     ) : null}
                   </ErrorState>
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
         )}

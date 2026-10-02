@@ -93,12 +93,35 @@ describe('hashCacheKey — key material (hashInput parity)', () => {
       .not.toBe(await hashCacheKey(baseInput));
   });
 
+  it('includes transportArrangement in the hash', async () => {
+    expect(
+      await hashCacheKey({ ...baseInput, transportArrangement: 'PERSONAL' }),
+    ).not.toBe(await hashCacheKey(baseInput));
+  });
+
+  it('separates PERSONAL from delivery for identical product/quantity (task 1.2)', async () => {
+    const base: CacheKeyInput = {
+      ...baseInput,
+      datasetVersions: ['v3.0-2026'],
+    };
+    expect(
+      await hashCacheKey({ ...base, transportArrangement: 'PERSONAL' }),
+    ).not.toBe(
+      await hashCacheKey({ ...base, transportArrangement: 'SELLER_ARRANGED' }),
+    );
+    // The omitted arrangement (delivery default) is distinct from PERSONAL.
+    expect(
+      await hashCacheKey({ ...base, transportArrangement: 'PERSONAL' }),
+    ).not.toBe(await hashCacheKey(base));
+  });
+
   it('returns a 64-character hex string (SHA-256)', async () => {
     expect(await hashCacheKey(baseInput)).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it('matches the legacy node:crypto byte stream exactly (cross-runtime parity)', async () => {
-    // The legacy hashInput stream: productId|quantity|DEST|method|V|sorted versions.
+    // The hashInput stream:
+    // productId|quantity|DEST|method|arrangement?__NONE__|V|sorted versions.
     const input: CacheKeyInput = {
       productId: 99,
       quantity: 3,
@@ -114,6 +137,8 @@ describe('hashCacheKey — key material (hashInput parity)', () => {
       .update('SE')
       .update('|')
       .update('posti')
+      .update('|')
+      .update('__NONE__')
       .update('|V|')
       .update('2026-08-21T00:00:00.000Z')
       .update('|')

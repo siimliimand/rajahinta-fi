@@ -28,13 +28,21 @@
 
 import React from 'react';
 import { screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import ResultCard from './ResultCard';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import type {
   CalculatorResult as CalculatorResultType,
   ReliabilityStatus,
 } from '@/lib/types';
+
+// The traveller-alternative callout (task 2.2) renders its /trip link
+// through the i18n navigation Link; stub it with the plain-anchor shape
+// the other view tests use.
+vi.mock('@/i18n/navigation', () => ({
+  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
+    React.createElement('a', props),
+}));
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -440,5 +448,215 @@ describe('ResultCard disclaimer (task 4.1)', () => {
     // The fixture's own disclaimer string appears; the card never
     // restates disclaimer copy as a UI string of its own.
     expect(screen.getByText('Testirakennevastuuvapautus')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Traveller-mode PERSONAL rendering (task 2.1, change
+// finnish-first-client-experience): metadata.allowanceDatasetVersion is
+// present exactly on PERSONAL results, and the taxed lines arrive split
+// — the dataset-fact zero (within allowance, VERIFIED) before the taxed
+// surplus line of the same canonical category.
+// ---------------------------------------------------------------------------
+
+/** A PERSONAL result with the full split: retail + within/surplus pairs. */
+function personalSplitResult(): CalculatorResultType {
+  const base = baseResult();
+  return {
+    ...base,
+    itemizedCosts: [
+      {
+        label: 'Retail price',
+        category: 'foreignRetailPrice',
+        cents: 4000,
+        reliability: 'VERIFIED',
+      },
+      {
+        label: 'Alcohol excise (within traveller allowance)',
+        category: 'alcoholExciseEstimate',
+        cents: 0,
+        reliability: 'VERIFIED',
+      },
+      {
+        label: 'Container duty (within traveller allowance)',
+        category: 'containerDutyEstimate',
+        cents: 0,
+        reliability: 'VERIFIED',
+      },
+      {
+        label: 'Alcohol excise (over-allowance surplus)',
+        category: 'alcoholExciseEstimate',
+        cents: 1200,
+        reliability: 'ESTIMATED',
+      },
+      {
+        label: 'Container duty (over-allowance surplus)',
+        category: 'containerDutyEstimate',
+        cents: 300,
+        reliability: 'ESTIMATED',
+      },
+    ],
+    metadata: {
+      ...base.metadata,
+      allowanceDatasetVersion: 'allowances-trip-2026.1',
+    },
+  } as CalculatorResultType;
+}
+
+describe('ResultCard traveller-mode split labels (task 2.1)', () => {
+  it('labels the within-allowance zero lines as the untaxed allowance portion', () => {
+    renderWithIntl(<ResultCard result={personalSplitResult()} />);
+
+    expect(
+      screen.getByText(
+        'Arvio alkoholin valmisteverosta (sallitun määrän sisällä, veroton)',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Arvio pakkausverosta (sallitun määrän sisällä, veroton)',
+      ),
+    ).toBeInTheDocument();
+    // The dataset-fact zeros render as €0.00 amounts — honest dataset
+    // facts, not missing figures.
+    const zeroLine = screen
+      .getByText(
+        'Arvio alkoholin valmisteverosta (sallitun määrän sisällä, veroton)',
+      )
+      .closest('div');
+    expect(zeroLine).toHaveTextContent('€0.00');
+  });
+
+  it('labels the taxed lines as the over-allowance surplus with the engine figures', () => {
+    renderWithIntl(<ResultCard result={personalSplitResult()} />);
+
+    const surplusExcise = screen
+      .getByText('Arvio alkoholin valmisteverosta (sallitun määrän ylittävä osa)')
+      .closest('div');
+    expect(surplusExcise).toHaveTextContent('€12.00');
+    const surplusDuty = screen
+      .getByText('Arvio pakkausverosta (sallitun määrän ylittävä osa)')
+      .closest('div');
+    expect(surplusDuty).toHaveTextContent('€3.00');
+  });
+
+  it('states the single-traveller assumption and cites the allowance dataset version', () => {
+    renderWithIntl(<ResultCard result={personalSplitResult()} />);
+
+    const note = screen.getByTestId('single-traveller-note');
+    // The one-traveller assumption is explicit, never implied.
+    expect(note.textContent).toContain('yhden matkustajan määräaikoja');
+    expect(screen.getByTestId('allowance-dataset-version')).toHaveTextContent(
+      'Matkustajamäärien tietoaineisto: allowances-trip-2026.1',
+    );
+  });
+
+  it('keeps plain category labels on a PERSONAL result without a cap split (no cap row for the category)', () => {
+    const result = personalSplitResult();
+    renderWithIntl(
+      <ResultCard
+        result={{
+          ...result,
+          itemizedCosts: [
+            result.itemizedCosts[0]!,
+            {
+              label: 'Alcohol excise',
+              category: 'alcoholExciseEstimate',
+              cents: 1200,
+              reliability: 'ESTIMATED',
+            },
+          ],
+        }}
+      />,
+    );
+
+    // The single taxed line is the ordinary category label — no within/
+    // surplus copy is invented for an unsplit line.
+    expect(
+      screen.getByText('Arvio alkoholin valmisteverosta'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'Arvio alkoholin valmisteverosta (sallitun määrän sisällä, veroton)',
+      ),
+    ).toBeNull();
+  });
+
+  it('renders delivery results without any allowance copy', () => {
+    const { container } = renderWithIntl(<ResultCard result={baseResult()} />);
+
+    expect(screen.queryByTestId('traveller-mode-notes')).toBeNull();
+    expect(screen.queryByTestId('single-traveller-note')).toBeNull();
+    expect(screen.queryByTestId('allowance-dataset-version')).toBeNull();
+    expect(container.textContent).not.toContain('sallitun määrän');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Traveller-alternative callout (task 2.2): display-only estimate on
+// delivery results, rendered from the live POST payload only.
+// ---------------------------------------------------------------------------
+
+describe('ResultCard travellerAlternative callout (task 2.2)', () => {
+  it('renders the labeled estimate, dataset version, and the /trip handshake link', () => {
+    const base = baseResult();
+    renderWithIntl(
+      <ResultCard
+        result={
+          {
+            ...base,
+            travellerAlternative: {
+              estimatedTotalCents: 4000,
+              withinAllowance: true,
+              allowanceDatasetVersion: 'allowances-trip-2026.1',
+              categoryKey: 'beer',
+            },
+          } as CalculatorResultType
+        }
+      />,
+    );
+
+    const callout = screen.getByTestId('traveller-alternative');
+    expect(
+      within(callout).getByText('Matkalaskurin arvio'),
+    ).toBeInTheDocument();
+    expect(callout.textContent).toContain(
+      'Yksi matkustaja, sama määrä — arvio yhteensä €40.00.',
+    );
+    expect(callout.textContent).toContain(
+      'Matkustajamäärien tietoaineisto: allowances-trip-2026.1',
+    );
+    const link = within(callout).getByTestId('traveller-alternative-link');
+    // Seeds the trip fill form with the result's product and quantity.
+    expect(link.getAttribute('href')).toBe('/trip?product=1&quantity=1');
+  });
+
+  it('says the estimate covers only the allowance-bounded portion when withinAllowance is false', () => {
+    renderWithIntl(
+      <ResultCard
+        result={
+          {
+            ...baseResult(),
+            travellerAlternative: {
+              estimatedTotalCents: 4000,
+              withinAllowance: false,
+              allowanceDatasetVersion: 'allowances-trip-2026.1',
+              categoryKey: 'beer',
+            },
+          } as CalculatorResultType
+        }
+      />,
+    );
+
+    expect(screen.getByTestId('traveller-alternative').textContent).toContain(
+      'kattaa vain sallitun määrän osuuden',
+    );
+  });
+
+  it('renders nothing when the result carries no callout', () => {
+    const { container } = renderWithIntl(<ResultCard result={baseResult()} />);
+
+    expect(screen.queryByTestId('traveller-alternative')).toBeNull();
+    expect(container.textContent).not.toContain('Matkalaskurin arvio');
   });
 });

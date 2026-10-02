@@ -469,6 +469,62 @@ describe('mapCalculationRecordToResult', () => {
     }
   });
 
+  // -------------------------------------------------------------------------
+  // travellerAlternative (task 1.2, change finnish-first-client-experience)
+  //
+  // The callout is computed LIVE per delivery request against the allowance
+  // dataset effective at calculation time. It is not persisted with the
+  // record, and the mapper recomputes nothing — so a reconstructed result
+  // NEVER carries the key, for any record shape.
+  // -------------------------------------------------------------------------
+
+  it('serves a record with no travellerAlternative key — computed live, never reconstructed', () => {
+    const result = mapCalculationRecordToResult({
+      record: makeRecord(),
+      product: makeProduct(),
+      exciseVersionLabel: 'v3.0-2026',
+      containerVersionLabel: 'v2.0-2025',
+    });
+
+    expect('travellerAlternative' in result).toBe(false);
+    expect(result.travellerAlternative ?? null).toBeNull();
+    // The additive field changes no existing mapped shape — figures stay
+    // verbatim (design D4: the callout never feeds any persisted figure).
+    expect(result.totalCents).toBe(5144);
+    expect(result.itemizedCosts).toEqual(PERSISTED_BREAKDOWN);
+  });
+
+  it('does not fabricate a travellerAlternative even for a record whose breakdown carries the PERSONAL split', () => {
+    const result = mapCalculationRecordToResult({
+      record: makeRecord({
+        breakdown: [
+          PERSISTED_BREAKDOWN[0],
+          {
+            label: 'Alcohol excise (within traveller allowance)',
+            category: 'alcoholExciseEstimate',
+            cents: 0,
+            reliability: 'VERIFIED',
+          },
+          {
+            label: 'Alcohol excise (over-allowance surplus)',
+            category: 'alcoholExciseEstimate',
+            cents: 6585,
+            reliability: 'VERIFIED',
+          },
+          PERSISTED_BREAKDOWN[3],
+        ],
+      }),
+      product: makeProduct(),
+      exciseVersionLabel: null,
+      containerVersionLabel: null,
+    });
+
+    // Split-labelled lines are mapped verbatim as lines — they never grow
+    // into a reconstructed traveller-alternative estimate.
+    expect('travellerAlternative' in result).toBe(false);
+    expect(result.alcoholExciseEstimate).toBe(6585);
+  });
+
   it('degrades factually when the classification is not persisted', () => {
     const result = mapCalculationRecordToResult({
       record: makeRecord(),

@@ -128,9 +128,20 @@ export interface ComputedItemCostsResult {
   readonly importVatRateVersionId?: string;
 
   /**
+   * `versionLabel` of the traveller-allowance dataset applied to this
+   * computation (task 1.1, change finnish-first-client-experience).
+   * Present exactly when the request was traveller-mode (`PERSONAL`) and
+   * a published dataset resolved for the transaction date — key absent
+   * for delivery computations (absence is the not-applied state).
+   */
+  readonly allowanceDatasetVersion?: string;
+
+  /**
    * Itemized costs excluding transport: [retail, excise, container duty]
    * plus the import-VAT line when the transaction is an import. The
-   * caller splices in the transport line at position 1.
+   * caller splices in the transport line at position 1. Traveller-mode
+   * computations label the within-allowance / over-allowance portions
+   * per line instead (same canonical categories, per-line labels).
    */
   readonly itemizedCosts: readonly ItemizedCost[];
 }
@@ -361,6 +372,34 @@ export type AlkoBenchmarkSnapshot = Omit<AlkoBenchmarkAvailable, 'observedAt'> &
 };
 
 /**
+ * Delivery-mode traveller-alternative callout (task 1.2, change
+ * finnish-first-client-experience): the labelled out-of-pocket estimate for
+ * ONE traveller carrying the same quantity within the effective traveller
+ * allowance caps — an invitation to try the trip calculator, computed in the
+ * same request from the same allowance port read semantics as the PERSONAL
+ * branch (one read, no extra I/O beyond it).
+ *
+ * Purely additive (design D4): the estimate never enters `totalCents`, the
+ * itemized breakdown, any reliability status, or the confidence — the
+ * delivery result's own figures are byte-identical with and without it.
+ */
+export interface TravellerAlternativeCallout {
+  /**
+   * The allowed quantity (requested quantity capped by the category cap,
+   * trip-fill floor-plus-epsilon litres→quantity semantics) × the unit
+   * shelf price already used for the result's retail line (best-offer
+   * retail), in euro-cents.
+   */
+  readonly estimatedTotalCents: number;
+  /** Whether the FULL requested quantity fits the category cap. */
+  readonly withinAllowance: boolean;
+  /** `versionLabel` of the allowance dataset the estimate resolves against. */
+  readonly allowanceDatasetVersion: string;
+  /** Canonical tax-rule category the cap was looked up with. */
+  readonly categoryKey: string;
+}
+
+/**
  * Full result from the landed-cost calculator.
  */
 export interface CalculatorResult {
@@ -423,6 +462,20 @@ export interface CalculatorResult {
    */
   readonly alkoBenchmark?: AlkoBenchmarkSnapshot;
 
+  /**
+   * Traveller-alternative estimate for delivery-mode results (task 1.2,
+   * change finnish-first-client-experience). Present exactly when a
+   * published allowance dataset resolved for the transaction date AND the
+   * product's category has a boundable cap row AND the request was a
+   * delivery arrangement. In every degrade case — port unwired, no
+   * effective dataset, no cap row for the category, or a PERSONAL request
+   * (a PERSONAL result IS the traveller scenario) — the key is ABSENT:
+   * absence is the render-nothing state (`?? null` for consumers, never a
+   * displayed placeholder). Purely additive: never enters `totalCents`,
+   * the itemized breakdown, statuses, or confidence (design D4).
+   */
+  readonly travellerAlternative?: TravellerAlternativeCallout | null;
+
   /** Calculation metadata. */
   readonly metadata: {
     readonly input: CalculatorInput;
@@ -452,6 +505,15 @@ export interface CalculatorResult {
      * (idempotency/cache keys derived from these invalidate on change).
      */
     readonly datasetVersions: readonly string[];
+    /**
+     * `versionLabel` of the traveller-allowance dataset whose caps bounded
+     * this calculation (task 1.1). Present only for traveller-mode
+     * (`PERSONAL`) results that resolved a published dataset — key absent
+     * for delivery results. Kept OUT of `datasetVersions` deliberately:
+     * that array feeds the idempotency version comparison, which keys on
+     * the tax datasets the cache layer resolves on its own.
+     */
+    readonly allowanceDatasetVersion?: string;
     /** Transport offer ID that was used, or null when unavailable. */
     readonly transportOfferId: number | null;
   };
@@ -576,5 +638,29 @@ export class NoRetailOffersError extends Error {
     super(`No retail offers found for product ${productId}`);
     this.name = 'NoRetailOffersError';
     this.productId = productId;
+  }
+}
+
+/**
+ * Thrown when a traveller-mode (`PERSONAL`) calculation cannot resolve a
+ * PUBLISHED traveller-allowance dataset effective on the transaction date
+ * (task 1.1, design D3). Sibling of
+ * {@link ClassificationGateRejectionError}: the request is refused rather
+ * than computed with invented caps — the delivery path stays fully
+ * available. Carries the resolved calendar date (`YYYY-MM-DD`) the lookup
+ * used, so the route layer (task 1.3) can mirror the trip routes'
+ * no-dataset message shape.
+ */
+export class NoAllowanceDatasetError extends Error {
+  /** The transaction date the allowance lookup used, `YYYY-MM-DD`. */
+  readonly transactionDate: string;
+
+  constructor(transactionDate: string) {
+    super(
+      `No published traveller allowance dataset is effective on ${transactionDate} — ` +
+        'a traveller-mode calculation cannot run without a bound',
+    );
+    this.name = 'NoAllowanceDatasetError';
+    this.transactionDate = transactionDate;
   }
 }

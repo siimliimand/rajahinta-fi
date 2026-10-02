@@ -23,7 +23,17 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { openMigratedD1 } from './d1-test-harness';
-import { D1ProductSearchRepository } from '../product-search.repository';
+import {
+  D1ProductSearchRepository,
+  FINNISH_SYNONYM_GROUPS,
+  MAX_MATCH_PHRASES,
+  SEARCH_PAGE_SIZE,
+  SUGGESTION_MAX_EDIT_DISTANCE,
+  boundedEditDistance,
+  buildMatchExpression,
+  foldComparisonKey,
+  tokenize,
+} from '../product-search.repository';
 
 // ---------------------------------------------------------------------------
 // Fixtures — the spike's 14 products, seeded through repository.create()
@@ -1211,5 +1221,530 @@ describe('D1ProductSearchRepository.searchRanked — combined category + keyword
     const first = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'beer');
     const second = await combRepo.searchRanked('karhu', MAX_PAGE_SIZE, 'beer');
     expect(first.map((r) => r.id)).toEqual(second.map((r) => r.id));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finnish synonym expansion + LIKE-merge scarcity gate (task 3.1, change
+// finnish-first-client-experience) — isolated fixture DBs. Spec
+// product-search: expansion through the curated synonym map is monotone
+// (never narrows), and the LIKE '%q%' merge is consulted only when the
+// FTS token-match candidate count is below the listing page size.
+// ---------------------------------------------------------------------------
+
+/** Unbounded FTS candidate count for a raw MATCH expression. */
+async function ftsCount(
+  handle: ReturnType<typeof openMigratedD1>['d1'],
+  expression: string,
+): Promise<number> {
+  const row = await handle
+    .prepare(
+      'SELECT count(*) AS n FROM product_master_fts WHERE product_master_fts MATCH ?',
+    )
+    .bind(expression)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/** FTS-matched product ids for a raw MATCH expression, id ASC. */
+async function ftsMatchedIds(
+  handle: ReturnType<typeof openMigratedD1>['d1'],
+  expression: string,
+): Promise<number[]> {
+  const rows = (
+    await handle
+      .prepare(
+        `SELECT p.id AS id
+           FROM product_master_fts f
+           JOIN product_master p ON p.id = f.rowid
+          WHERE product_master_fts MATCH ?
+          ORDER BY p.id`,
+      )
+      .bind(expression)
+      .all<{ id: number }>()
+  ).results;
+  return rows.map((row) => row.id);
+}
+
+/** The pre-task-3.1 phrase builder — the un-expanded expression baseline. */
+function legacyMatchExpression(tokens: readonly string[]): string {
+  return `"${tokens.map((t) => t.replace(/"/g, '""')).join('" "')}" *`;
+}
+
+describe('buildMatchExpression — synonym OR-groups (task 3.1)', () => {
+  it('expands a Finnish token to every group member, each carrying the final-token prefix', () => {
+    expect(buildMatchExpression(['viski'])).toBe('"viski" * OR "whisky" *');
+    expect(buildMatchExpression(['olut'])).toBe(
+      '"olut" * OR "beer" * OR "oluet" *',
+    );
+  });
+
+  it('keeps group-less tokens exactly on the legacy expression (golden parity)', () => {
+    expect(buildMatchExpression(['karhu'])).toBe('"karhu" *');
+    expect(buildMatchExpression(['le', 'coq'])).toBe('"le coq" *');
+  });
+
+  it('keeps adjacency across groups for multi-token queries (group-product phrases)', () => {
+    expect(buildMatchExpression(['karhu', 'olut'])).toBe(
+      '"karhu olut" * OR "karhu beer" * OR "karhu oluet" *',
+    );
+    // The final token's prefix expansion applies to every member of its
+    // group; non-final positions stay exact.
+    expect(buildMatchExpression(['viski', 'pullo'])).toBe(
+      '"viski pullo" * OR "whisky pullo" *',
+    );
+  });
+
+  it('quotes multi-word group members as FTS phrases', () => {
+    expect(buildMatchExpression(['punaviini'])).toBe(
+      '"punaviini" * OR "red wine" *',
+    );
+  });
+
+  it('wires every curated group: each member appears in the head member’s expression', () => {
+    for (const group of FINNISH_SYNONYM_GROUPS) {
+      const expression = buildMatchExpression([group[0]]);
+      for (const member of group) {
+        expect(expression).toContain(`"${member}"`);
+      }
+    }
+  });
+
+  it('bounds the group-product of long queries, original phrase first (the monotone anchor)', () => {
+    // 3·2·3·2·2 = 72 combinations — above the bound.
+    const tokens = ['olut', 'viski', 'konjakki', 'siideri', 'viina'];
+    const arms = buildMatchExpression(tokens).split(' OR ');
+    expect(arms.length).toBe(MAX_MATCH_PHRASES);
+    // The un-expanded phrase is the FIRST arm — even a truncated
+    // expression retains the legacy disjunct, so expansion can never
+    // narrow a result set.
+    expect(arms[0]).toBe(`"${tokens.join(' ')}" *`);
+  });
+});
+
+describe('D1ProductSearchRepository.searchRanked — Finnish synonym recall (task 3.1)', () => {
+  const synDb = openMigratedD1();
+  const synRepo = new D1ProductSearchRepository(synDb.d1);
+
+  // Fixture layout (ids grouped by purpose):
+  // - 6301..6319: nineteen 'Olutpaja …' rows — token-prefix ('olut*') matches;
+  // - 6030 'Karhu Pohjolainen Olut' brings the 'olut*' FTS candidate count
+  //   to EXACTLY the page size (20) — the gate's "at or above" boundary;
+  // - 6020/6021 'Absolut …' — the live incident noise: 'Abs(olut)' matches
+  //   the LIKE '%olut%' merge but never the FTS token prefix;
+  // - viski/whisky, cognac/brandy, vodka/viina rows — expansion recall pins.
+  const OLUTPAJA_IDS = Array.from({ length: 19 }, (_, i) => 6301 + i);
+  const KARHU_OLUT_ID = 6030;
+  const ABSOLUT_IDS = [6020, 6021];
+  const VISKI_ID = 6101;
+  const WHISKY_IDS = [6102, 6103];
+  const COGNAC_ID = 6111;
+  const BRANDY_ID = 6110;
+  const VODKA_ID = 6120;
+  const VIINA_ID = 6121;
+
+  beforeAll(async () => {
+    const seeds: ReadonlyArray<{
+      id: number;
+      name: string;
+      brand: string;
+      category: string;
+    }> = [
+      ...OLUTPAJA_IDS.map((id, i) => ({
+        id,
+        name: `Olutpaja Erityis ${String(i + 1).padStart(2, '0')}`,
+        brand: 'Olutpaja',
+        category: 'beer',
+      })),
+      { id: KARHU_OLUT_ID, name: 'Karhu Pohjolainen Olut', brand: 'Karhu', category: 'beer' },
+      { id: 6020, name: 'Absolut Vodka Original', brand: 'Absolut', category: 'spirits' },
+      { id: 6021, name: 'Absolut Vodka Citron', brand: 'Absolut', category: 'spirits' },
+      { id: VISKI_ID, name: 'Teerenpeli Viski', brand: 'Teerenpeli', category: 'spirits' },
+      { id: 6102, name: 'Highland Park Whisky 12', brand: 'Highland Park', category: 'spirits' },
+      { id: 6103, name: 'Glenfiddich Whisky 15', brand: 'Glenfiddich', category: 'spirits' },
+      { id: BRANDY_ID, name: 'Frania Brandy', brand: 'Frania', category: 'spirits' },
+      { id: COGNAC_ID, name: 'Hennessy Cognac', brand: 'Hennessy', category: 'spirits' },
+      { id: VODKA_ID, name: 'Finlandia Vodka', brand: 'Finlandia', category: 'spirits' },
+      { id: VIINA_ID, name: 'Salmiakki Viina', brand: 'Salmiakki', category: 'spirits' },
+    ];
+    for (const seed of seeds) {
+      await synRepo.create({
+        id: seed.id,
+        name: seed.name,
+        manufacturer: 'Synonyymi Panimo',
+        brand: seed.brand,
+        category: seed.category,
+        alcoholByVolume: '0.047',
+        unitVolume: '0.33',
+        containerType: 'can',
+        regulatoryClassification: seed.category,
+        depositSystemStatus: true,
+        ean: null,
+      });
+    }
+  });
+
+  it('spec: "viski" recalls the English-language whisky catalog — parity with "whisky"', async () => {
+    const viski = (await synRepo.searchRanked('viski', MAX_PAGE_SIZE))
+      .map((r) => r.id)
+      .sort((a, b) => a - b);
+    const whisky = (await synRepo.searchRanked('whisky', MAX_PAGE_SIZE))
+      .map((r) => r.id)
+      .sort((a, b) => a - b);
+    // Both terms recall the viski row AND the whisky rows…
+    expect(viski).toEqual(expect.arrayContaining([VISKI_ID, ...WHISKY_IDS]));
+    expect(whisky).toEqual(expect.arrayContaining([VISKI_ID, ...WHISKY_IDS]));
+    // …with equal recall — the Finnish term reaches exactly the English set.
+    expect(viski).toEqual(whisky);
+  });
+
+  it('spec: expansion is monotone — each expanded query is a superset of its un-expanded query', async () => {
+    for (const tokens of [
+      ['viski'],
+      ['olut'],
+      ['konjakki'],
+      ['viina'],
+      ['teerenpeli', 'viski'],
+    ]) {
+      const unExpandedIds = await ftsMatchedIds(
+        synDb.d1,
+        legacyMatchExpression(tokens),
+      );
+      const expandedIds = (
+        await synRepo.searchRanked(tokens.join(' '), MAX_PAGE_SIZE)
+      ).map((r) => r.id);
+      expect(expandedIds).toEqual(expect.arrayContaining(unExpandedIds));
+    }
+  });
+
+  it('expansion recalls across the curated groups: viina→vodka, konjakki→cognac/brandy', async () => {
+    const viina = (await synRepo.searchRanked('viina', MAX_PAGE_SIZE)).map(
+      (r) => r.id,
+    );
+    expect(viina).toEqual(
+      expect.arrayContaining([VODKA_ID, VIINA_ID, ...ABSOLUT_IDS]),
+    );
+    const konjakki = (await synRepo.searchRanked('konjakki', MAX_PAGE_SIZE)).map(
+      (r) => r.id,
+    );
+    expect(konjakki).toEqual(expect.arrayContaining([COGNAC_ID, BRANDY_ID]));
+  });
+
+  it('a capped pathological expression stays executable MATCH SQL', async () => {
+    // No fixture row carries any five-token synonym combination — zero
+    // hits, but the bounded expression must parse and run.
+    const expression = buildMatchExpression([
+      'olut',
+      'viski',
+      'konjakki',
+      'siideri',
+      'viina',
+    ]);
+    expect(await ftsCount(synDb.d1, expression)).toBe(0);
+  });
+
+  it('spec: "olut" at ≥ page-size token matches — the head is clean of brand-substring noise (Absolut incident)', async () => {
+    // Precondition, explicit: token matches sit exactly AT the threshold
+    // (19 Olutpaja rows + Karhu Olut) — the "at or above" boundary.
+    expect(await ftsCount(synDb.d1, '"olut" *')).toBe(SEARCH_PAGE_SIZE);
+    expect(
+      await ftsCount(synDb.d1, buildMatchExpression(tokenize('olut'))),
+    ).toBe(SEARCH_PAGE_SIZE);
+
+    const rows = await synRepo.searchRanked('olut', MAX_PAGE_SIZE);
+    const ids = rows.map((r) => r.id);
+    // The merge is skipped: exactly the token matches come back, and the
+    // 'Abs(olut)' brand-substring rows cannot crowd the head.
+    expect(rows).toHaveLength(SEARCH_PAGE_SIZE);
+    for (const id of ABSOLUT_IDS) {
+      expect(ids).not.toContain(id);
+    }
+    expect(rows.some((r) => r.brand.toLowerCase().includes('absolut'))).toBe(
+      false,
+    );
+    // Every head row is a genuine token match — some name token starts
+    // with 'olut' — including the Karhu Olut row.
+    expect(ids).toContain(KARHU_OLUT_ID);
+    for (const row of rows) {
+      expect(tokenize(row.name).some((t) => t.startsWith('olut'))).toBe(true);
+    }
+  });
+
+  it('spec: "arhu" produces no FTS token matches — the merge runs and recalls Karhu', async () => {
+    // Fragment recall survives the gate: zero token matches is as scarce
+    // as it gets, so the mid-token LIKE merge fires.
+    expect(await ftsCount(synDb.d1, '"arhu" *')).toBe(0);
+    const rows = await synRepo.searchRanked('arhu', MAX_PAGE_SIZE);
+    expect(rows.map((r) => r.id)).toEqual([KARHU_OLUT_ID]);
+  });
+
+  it('the gate counts category-narrowed candidates — the combined path skips the merge at the threshold', async () => {
+    // In-category token matches = 20 → merge skipped; only beer rows.
+    const rows = await synRepo.searchRanked('olut', MAX_PAGE_SIZE, 'beer');
+    expect(rows).toHaveLength(SEARCH_PAGE_SIZE);
+    expect(rows.every((r) => r.category === 'beer')).toBe(true);
+    const ids = rows.map((r) => r.id);
+    for (const id of ABSOLUT_IDS) {
+      expect(ids).not.toContain(id);
+    }
+  });
+});
+
+describe('D1ProductSearchRepository.searchRanked — merge gate below the page size (task 3.1)', () => {
+  const belowDb = openMigratedD1();
+  const belowRepo = new D1ProductSearchRepository(belowDb.d1);
+  const BELOW_TOKEN_MATCH_IDS = Array.from({ length: 18 }, (_, i) => 6401 + i);
+  const BELOW_ABSOLUT_IDS = [6420, 6421];
+
+  beforeAll(async () => {
+    for (let i = 0; i < BELOW_TOKEN_MATCH_IDS.length; i++) {
+      await belowRepo.create({
+        id: BELOW_TOKEN_MATCH_IDS[i],
+        name: `Olutpaja Erityis ${String(i + 1).padStart(2, '0')}`,
+        manufacturer: 'Synonyymi Panimo',
+        brand: 'Olutpaja',
+        category: 'beer',
+        alcoholByVolume: '0.047',
+        unitVolume: '0.33',
+        containerType: 'can',
+        regulatoryClassification: 'beer',
+        depositSystemStatus: true,
+        ean: null,
+      });
+    }
+    for (const id of BELOW_ABSOLUT_IDS) {
+      await belowRepo.create({
+        id,
+        name: `Absolut Vodka ${id === 6420 ? 'Original' : 'Citron'}`,
+        manufacturer: 'Synonyymi Panimo',
+        brand: 'Absolut',
+        category: 'spirits',
+        alcoholByVolume: '0.400',
+        unitVolume: '0.50',
+        containerType: 'glass',
+        regulatoryClassification: 'spirits',
+        depositSystemStatus: null,
+        ean: null,
+      });
+    }
+  });
+
+  it('strictly below the page size the merge still fires — substring rows appended after the token matches (semantics unchanged)', async () => {
+    // Precondition: 18 token matches, strictly below SEARCH_PAGE_SIZE.
+    expect(await ftsCount(belowDb.d1, '"olut" *')).toBe(18);
+
+    const rows = await belowRepo.searchRanked('olut', MAX_PAGE_SIZE);
+    const ids = rows.map((r) => r.id);
+    // The 'Abs(olut)' substring rows ARE recalled below the gate — the
+    // pre-gate merge behavior, unchanged.
+    expect(ids).toEqual(expect.arrayContaining(BELOW_ABSOLUT_IDS));
+    expect(rows).toHaveLength(
+      BELOW_TOKEN_MATCH_IDS.length + BELOW_ABSOLUT_IDS.length,
+    );
+    // Merge semantics unchanged: FTS relevance order first (the 18 token
+    // matches), then the LIKE-only rows appended in id ASC order.
+    expect(ids.slice(0, BELOW_TOKEN_MATCH_IDS.length)).toEqual(
+      expect.arrayContaining(BELOW_TOKEN_MATCH_IDS),
+    );
+    expect(ids.slice(BELOW_TOKEN_MATCH_IDS.length)).toEqual(BELOW_ABSOLUT_IDS);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Zero-result did-you-mean (task 3.2, change finnish-first-client-
+// experience) — isolated fixture DB so the shared-database describes above
+// are untouched. Spec product-search: a zero-result keyword query carries
+// an optional `suggestion` computed by bounded edit distance (≤ 2) against
+// the brand vocabulary on diacritic-folded keys; ordering is (distance,
+// then alphabetical); results, no candidate, or no token → no suggestion.
+// ---------------------------------------------------------------------------
+
+describe('did-you-mean primitives — foldComparisonKey + boundedEditDistance (task 3.2)', () => {
+  it('folds ä/ö/å to a/o/a on the lowercased key — comparison only', () => {
+    expect(foldComparisonKey('KoskenKörva')).toBe('koskenkorva');
+    expect(foldComparisonKey('SKÅL')).toBe('skal');
+    expect(foldComparisonKey('BRÄNNVIN')).toBe('brannvin');
+    expect(foldComparisonKey('Äöå')).toBe('aoa');
+  });
+
+  it('classic Levenshtein — no transposition shortcut (koskenkrova costs 2)', () => {
+    // The r/o transposition decomposes into two substitutions — the spec
+    // bound (≤ 2) is exactly why the classic distance must be used.
+    expect(
+      boundedEditDistance(
+        'koskenkrova',
+        'koskenkorva',
+        SUGGESTION_MAX_EDIT_DISTANCE,
+      ),
+    ).toBe(2);
+    expect(
+      boundedEditDistance(
+        'jackdanels',
+        'jackdaniels',
+        SUGGESTION_MAX_EDIT_DISTANCE,
+      ),
+    ).toBe(1);
+    expect(boundedEditDistance('kitten', 'sitting', 10)).toBe(3);
+  });
+
+  it('bounds: exact match is 0, beyond the bound saturates at bound + 1', () => {
+    expect(boundedEditDistance('karhu', 'karhu', 2)).toBe(0);
+    // Folded-key equality is what makes likoori reach likööri (design Q5).
+    expect(boundedEditDistance('likoori', foldComparisonKey('likööri'), 2)).toBe(0);
+    // True distance 4 — but the bounded variant saturates at bound + 1.
+    expect(boundedEditDistance('abc', 'xyzz', 2)).toBe(
+      SUGGESTION_MAX_EDIT_DISTANCE + 1,
+    );
+    // Length-difference guard fires before any DP work.
+    expect(boundedEditDistance('a', 'abcde', 2)).toBe(3);
+    expect(boundedEditDistance('', 'ab', 2)).toBe(2);
+  });
+});
+
+describe('D1ProductSearchRepository — zero-result did-you-mean (task 3.2)', () => {
+  const sugDb = openMigratedD1();
+  const sugRepo = new D1ProductSearchRepository(sugDb.d1);
+
+  // Fixture layout (folded joined keys in comments):
+  // - Koskenkorva  → 'koskenkorva'  (the koskenkrova pin, distance 2);
+  // - Jack Daniel's → 'jackdaniels' (the jackdanels pin — the joined
+  //   multi-word key keeps a de-spaced/de-apostrophed typo reachable);
+  // - Karhu / Karju / Kaara → 'karhu' / 'karju' / 'kaara' (tie and
+  //   distance-precedence pins: Karhu < Karju alphabetically, Kaara
+  //   alphabetically FIRST but always the farthest of the three);
+  // - Skål Brännvin → 'skalbrannvin' (folded brand-side key, original
+  //   value must come back with å/ä intact).
+  const KOSKENKORVA_ID = 6701;
+  const JACK_DANIELS_ID = 6702;
+  const KARHU_ID = 6703;
+  const KARJU_ID = 6704;
+  const KAARA_ID = 6705;
+  const SKAL_BRANNVIN_ID = 6706;
+
+  beforeAll(async () => {
+    const seeds: ReadonlyArray<{
+      id: number;
+      name: string;
+      brand: string;
+      category: string;
+    }> = [
+      { id: KOSKENKORVA_ID, name: 'Koskenkorva Viina 60 %', brand: 'Koskenkorva', category: 'spirits' },
+      { id: JACK_DANIELS_ID, name: "Jack Daniel's Old No. 7", brand: "Jack Daniel's", category: 'spirits' },
+      { id: KARHU_ID, name: 'Karhu Pohjola', brand: 'Karhu', category: 'beer' },
+      { id: KARJU_ID, name: 'Karju Vahva Olut', brand: 'Karju', category: 'beer' },
+      { id: KAARA_ID, name: 'Kaara III', brand: 'Kaara', category: 'beer' },
+      { id: SKAL_BRANNVIN_ID, name: 'Skål Brännvin 50 %', brand: 'Skål Brännvin', category: 'spirits' },
+    ];
+    for (const seed of seeds) {
+      await sugRepo.create({
+        id: seed.id,
+        name: seed.name,
+        manufacturer: 'Suggestio Panimo',
+        brand: seed.brand,
+        category: seed.category,
+        alcoholByVolume: '0.047',
+        unitVolume: '0.33',
+        containerType: 'can',
+        regulatoryClassification: seed.category,
+        depositSystemStatus: true,
+        ean: null,
+      });
+    }
+  });
+
+  /** Wrapper convenience: just the suggestion of one query. */
+  function suggestionOf(query: string): Promise<string | null> {
+    return sugRepo
+      .searchRankedWithSuggestion(query, MAX_PAGE_SIZE)
+      .then((r) => r.suggestion);
+  }
+
+  it('spec: "koskenkrova" (zero results) suggests "Koskenkorva" — distance-2 transposition', async () => {
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      'koskenkrova',
+      MAX_PAGE_SIZE,
+    );
+    expect(items).toEqual([]); // the zero-result trigger, explicit
+    expect(suggestion).toBe('Koskenkorva');
+  });
+
+  it('spec: "jackdanels" (zero results) suggests "Jack Daniel\'s" — the joined multi-word brand key', async () => {
+    // The brand's tokenize() tokens joined ('jack' + 'daniel' + 's' →
+    // 'jackdaniels') keep the de-spaced/de-apostrophed typo within
+    // distance 1; the suggestion VALUE is the original brand string.
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      'jackdanels',
+      MAX_PAGE_SIZE,
+    );
+    expect(items).toEqual([]);
+    expect(suggestion).toBe("Jack Daniel's");
+  });
+
+  it('no suggestion when the query has results — the vocabulary is never consulted', async () => {
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      'koskenkorva',
+      MAX_PAGE_SIZE,
+    );
+    expect(items.map((r) => r.id)).toContain(KOSKENKORVA_ID);
+    expect(suggestion).toBeNull();
+  });
+
+  it('stable tie ordering: "karu" ties Karhu/Karju at distance 1 and picks the alphabetically first', async () => {
+    // karu → karhu (insert h, 1) and karu → karju (insert j, 1); kaara is
+    // farther (2). The Finnish-collation tie puts Karhu ahead — and the
+    // same call returns the identical string on every repeat.
+    expect(await suggestionOf('karu')).toBe('Karhu');
+    expect(await suggestionOf('karu')).toBe('Karhu');
+    expect(await suggestionOf('karu')).toBe('Karhu');
+  });
+
+  it('distance beats alphabetical position: "krrju" picks Karju (1) over the earlier-sorted Karhu (2)', async () => {
+    // Kaara and Karhu both sort before Karju, but Karju is the nearest
+    // candidate — (distance, then alphabetical) must never let an
+    // alphabetically earlier but farther brand win.
+    expect(await suggestionOf('krrju')).toBe('Karju');
+  });
+
+  it('folded keys: "koskenkörva" reaches Koskenkorva, and the diacritic-less brand spelling returns the original å/ä value', async () => {
+    // Query-side fold: ö→o turns the Finnish-keyboard near-miss into an
+    // exact folded key (distance 0 — kept on purpose, design Q5's
+    // likoori → likööri case).
+    expect(await suggestionOf('koskenkörva')).toBe('Koskenkorva');
+    // Brand-side fold + value preservation: the user typed pure ASCII,
+    // the suggestion is the original 'Skål Brännvin', never the key.
+    expect(await suggestionOf('skalbrannvin')).toBe('Skål Brännvin');
+  });
+
+  it('multi-token queries target the longest token, first occurrence on ties', async () => {
+    // 'koskenkrova' (11) outranks 'olutxxx' (7) as the significant token.
+    expect(await suggestionOf('olutxxx koskenkrova')).toBe('Koskenkorva');
+    // Equal length → the FIRST occurrence wins: 'kaara' (→ Kaara, exact),
+    // not 'karhu'.
+    expect(await suggestionOf('kaara karhu')).toBe('Kaara');
+  });
+
+  it('no candidate within the bound → null', async () => {
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      'zzzzzz',
+      MAX_PAGE_SIZE,
+    );
+    expect(items).toEqual([]);
+    expect(suggestion).toBeNull();
+  });
+
+  it('a blank query stays the alphabetical listing and never suggests', async () => {
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      '   ',
+      MAX_PAGE_SIZE,
+    );
+    expect(items).toHaveLength(6);
+    expect(suggestion).toBeNull();
+  });
+
+  it('the wrapper passes the ranked items through unchanged — suggestion rides beside them', async () => {
+    const direct = await sugRepo.searchRanked('karhu', 1);
+    const wrapped = await sugRepo.searchRankedWithSuggestion('karhu', 1);
+    expect(wrapped.items).toEqual(direct);
+    expect(wrapped.suggestion).toBeNull();
   });
 });

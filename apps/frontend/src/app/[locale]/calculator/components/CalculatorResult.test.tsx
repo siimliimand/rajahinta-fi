@@ -17,13 +17,21 @@
 
 import React from 'react';
 import { screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import CalculatorResult from './CalculatorResult';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import type {
   CalculatorResult as CalculatorResultType,
   ReliabilityStatus,
 } from '@/lib/types';
+
+// The traveller-alternative callout (task 2.2) renders its /trip link
+// through the i18n navigation Link; stub it with the plain-anchor shape
+// the other view tests use.
+vi.mock('@/i18n/navigation', () => ({
+  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
+    React.createElement('a', props),
+}));
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -267,5 +275,87 @@ describe('CalculatorResult without alkoBenchmark (pre-change records)', () => {
 
     expect(screen.getByText('Yhteensä')).toBeInTheDocument();
     expect(screen.getByText('€46.50')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Traveller-alternative callout (task 2.2, change
+// finnish-first-client-experience): a labeled ESTIMATE rendered from the
+// live POST payload only — GET/persisted results never carry the field.
+// ---------------------------------------------------------------------------
+
+const TRAVELLER_ALTERNATIVE = {
+  estimatedTotalCents: 4000,
+  withinAllowance: true,
+  allowanceDatasetVersion: 'allowances-trip-2026.1',
+  categoryKey: 'spirits',
+} as const;
+
+describe('CalculatorResult travellerAlternative callout (task 2.2)', () => {
+  it('renders the labeled estimate with the dataset version and the trip link', () => {
+    renderWithIntl(
+      <CalculatorResult
+        result={
+          {
+            ...baseResult(),
+            travellerAlternative: TRAVELLER_ALTERNATIVE,
+          } as CalculatorResultType
+        }
+      />,
+    );
+
+    const callout = screen.getByTestId('traveller-alternative');
+    // Labeled as the trip calculator's estimate — clearly not a cost line
+    // of the delivery result.
+    expect(
+      within(callout).getByText('Matkalaskurin arvio'),
+    ).toBeInTheDocument();
+    expect(callout.textContent).toContain(
+      'Yksi matkustaja, sama määrä — arvio yhteensä €40.00.',
+    );
+    // Allowance framing pinned to the dataset version it resolves against.
+    expect(
+      within(callout).getByText(
+        'Matkustajamäärien tietoaineisto: allowances-trip-2026.1',
+      ),
+    ).toBeInTheDocument();
+    // The handshake link seeds product and quantity.
+    const link = within(callout).getByTestId('traveller-alternative-link');
+    expect(link.getAttribute('href')).toBe('/trip?product=1&quantity=1');
+    expect(link.textContent).toBe('Kokeile matkalaskuria');
+  });
+
+  it('says the estimate covers only the allowance-bounded portion when the quantity exceeds the caps', () => {
+    renderWithIntl(
+      <CalculatorResult
+        result={
+          {
+            ...baseResult(),
+            travellerAlternative: {
+              ...TRAVELLER_ALTERNATIVE,
+              withinAllowance: false,
+            },
+          } as CalculatorResultType
+        }
+      />,
+    );
+
+    const callout = screen.getByTestId('traveller-alternative');
+    expect(callout.textContent).toContain(
+      'Sama määrä ylittää yhden matkustajan määräajat',
+    );
+    expect(callout.textContent).toContain(
+      'kattaa vain sallitun määrän osuuden',
+    );
+  });
+
+  it('renders nothing when the result carries no callout (the persisted GET state)', () => {
+    const { container } = renderWithIntl(
+      <CalculatorResult result={baseResult()} />,
+    );
+
+    expect(screen.queryByTestId('traveller-alternative')).toBeNull();
+    expect(container.textContent).not.toContain('Matkalaskurin arvio');
+    expect(container.textContent).not.toContain('Kokeile matkalaskuria');
   });
 });

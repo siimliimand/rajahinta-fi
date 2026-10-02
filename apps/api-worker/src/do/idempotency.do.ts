@@ -8,11 +8,12 @@
  *
  * Version-aware keys: cache keys are SHA-256 digests of the calculation
  * inputs PLUS the resolved dataset versions (tax, transport proxy).
- * `hashCacheKey` reproduces the legacy `hashInput` byte stream exactly and
- * digests it with WebCrypto, so identical inputs hash identically across
- * the old node:crypto stack and this Worker (pinned by a cross-runtime
- * test). A dataset version change therefore produces a different key and
- * a guaranteed fresh calculation — invalidation by construction.
+ * `hashCacheKey` reproduces the application-api `hashInput` byte stream
+ * exactly and digests it with WebCrypto, so identical inputs hash
+ * identically across the node:crypto stack and this Worker (pinned by a
+ * cross-runtime test). A dataset version change therefore produces a
+ * different key and a guaranteed fresh calculation — invalidation by
+ * construction.
  *
  * TTL: DO storage has no native per-key expiry, so entries carry an
  * `expiresAt` enforced lazily on read (the correctness path — matches a
@@ -49,6 +50,13 @@ export interface CacheKeyInput {
   readonly destination: string;
   readonly transportMethod?: string;
   /**
+   * How transport is arranged — parity with the application-api
+   * CacheKeyInput (task 1.2): PERSONAL and delivery of the same
+   * product/quantity are different calculations and must never share a
+   * cache entry. Absent hashes as the delivery default.
+   */
+  readonly transportArrangement?: 'SELLER_ARRANGED' | 'INDEPENDENT_CARRIER' | 'PERSONAL';
+  /**
    * Basket items — when present (and non-empty) they replace the
    * productId/quantity dimension (basket-optimization requests).
    */
@@ -82,10 +90,12 @@ export const DEFAULT_TTL_SECONDS = 3_600;
 /**
  * Deterministic SHA-256 cache key over the inputs and dataset versions.
  *
- * Reproduces the legacy `hashInput` byte stream exactly:
- * `[items|]productId|quantity|DEST|transportMethod?__NONE__|V|v1|v2|…`
+ * Reproduces the application-api `hashInput` byte stream exactly:
+ * `[items|]productId|quantity|DEST|transportMethod?__NONE__|transportArrangement?__NONE__|V|v1|v2|…`
  * with versions sorted — digested with WebCrypto SHA-256 (identical
- * digests to the old node:crypto path; see the parity test).
+ * digests to the node:crypto path; see the parity test). Any dimension
+ * added there (e.g. transportArrangement, task 1.2) must be mirrored
+ * here in the same stream position.
  */
 export async function hashCacheKey(input: CacheKeyInput): Promise<string> {
   const parts: string[] = [];
@@ -100,6 +110,13 @@ export async function hashCacheKey(input: CacheKeyInput): Promise<string> {
 
   parts.push(input.destination.toUpperCase(), '|');
   parts.push(input.transportMethod ?? '__NONE__');
+
+  // Transport arrangement (task 1.2) — PERSONAL vs delivery of the same
+  // product/quantity are distinct calculations; same stream position as
+  // application-api hashInput.
+  parts.push('|');
+  parts.push(input.transportArrangement ?? '__NONE__');
+
   parts.push('|V|');
   if (input.datasetVersions && input.datasetVersions.length > 0) {
     for (const v of [...input.datasetVersions].sort()) {

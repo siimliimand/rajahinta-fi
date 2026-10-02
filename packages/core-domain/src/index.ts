@@ -342,6 +342,7 @@ export type {
   CalculatorRetailOfferData,
   RetailOfferAvailability,
   AlkoBenchmarkSnapshot,
+  TravellerAlternativeCallout,
   CostCategory,
   ItemizedCost,
   CreateCalculationRecordInput,
@@ -355,6 +356,7 @@ export {
   PRODUCT_DATA_PORT,
   CALCULATION_RECORD_PORT,
   ClassificationGateRejectionError,
+  NoAllowanceDatasetError,
   ProductNotFoundError,
   NoRetailOffersError,
 } from './calculator/calculator.types';

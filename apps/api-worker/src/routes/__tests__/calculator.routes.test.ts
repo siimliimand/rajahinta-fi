@@ -302,6 +302,86 @@ describe('POST /api/v1/calculator', () => {
     });
     expect(typeof body.reason).toBe('string');
   });
+
+  it('rejects a PERSONAL request with 409 NoPublishedAllowances when no allowance dataset is effective (trip-route parity)', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    seedOffer(db, { productId: 1 });
+    seedTaxRule(db, {
+      taxType: 'excise',
+      productCategory: 'beer',
+      rate: 0.365,
+    });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+    });
+    // No traveller_allowances rows at all — nothing PUBLISHED, nothing
+    // effective on today (the transaction date the lookup resolves).
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/calculator', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AGE },
+      body: JSON.stringify({
+        productId: 1,
+        quantity: 1,
+        destination: 'FI',
+        transportArrangement: 'PERSONAL',
+      }),
+    });
+    // Exact trip-routes envelope (NO_ALLOWANCE_DATASET → 409
+    // NoPublishedAllowances): the message names the transaction date and
+    // states no published dataset is effective — caps are never invented.
+    const today = new Date().toISOString().slice(0, 10);
+    await expectEnvelope(res, 409, {
+      message:
+        `No published traveller allowance dataset is effective on ${today} — ` +
+        'a traveller-mode calculation cannot run without a bound',
+      error: 'NoPublishedAllowances',
+    });
+  });
+
+  it('keeps the delivery path fully available in the same no-dataset state', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    seedOffer(db, { productId: 1 });
+    seedTaxRule(db, {
+      taxType: 'excise',
+      productCategory: 'beer',
+      rate: 0.365,
+    });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+    });
+    // Same empty-allowances state as the 409 test above.
+    const app = buildApp();
+
+    // An explicit delivery arrangement never reaches the allowance port —
+    // it computes normally (design D3: delivery always available).
+    const res = await request(app, permissiveEnv(d1), '/api/v1/calculator', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AGE },
+      body: JSON.stringify({
+        productId: 1,
+        quantity: 2,
+        destination: 'FI',
+        transportArrangement: 'SELLER_ARRANGED',
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.totalCents).toBeGreaterThan(0);
+    expect(body.currency).toBe('EUR');
+    expect(Array.isArray(body.itemizedCosts)).toBe(true);
+    // No allowance bound rode along — delivery stays un-capped.
+    expect(body.allowanceDatasetVersion).toBeUndefined();
+  });
 });
 
 describe('GET /api/v1/calculator/result/:recordId', () => {

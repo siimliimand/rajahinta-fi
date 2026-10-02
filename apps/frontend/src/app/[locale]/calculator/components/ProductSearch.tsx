@@ -23,6 +23,18 @@ interface ProductSearchProps {
   loading: boolean;
   /** Error message to display, or null. */
   error: string | null;
+  /**
+   * Zero-result did-you-mean candidate from the last search response
+   * (task 3.3, change finnish-first-client-experience). The API attaches
+   * it only when the ranked search returned zero items, so the banner
+   * never appears when results exist. Absent/null renders nothing.
+   */
+  suggestion?: string | null;
+  /**
+   * Runs the suggested query. The customer's own query stays in the
+   * input — the chip searches, it never rewrites what was typed.
+   */
+  onSuggestion?: (query: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -34,7 +46,10 @@ interface ProductSearchProps {
  *
  * A controlled input: every keystroke reports to `onChange` (the parent
  * debounces the actual search, task 5.2) and Enter or the search button
- * fires `onSubmit` for an immediate search.
+ * fires `onSubmit` for an immediate search. A zero-result response can
+ * carry a did-you-mean candidate, rendered as a clickable chip below the
+ * form (task 3.3) — clicking it runs the suggested query while the
+ * customer's original spelling stays in the input.
  */
 export default function ProductSearch({
   value,
@@ -42,6 +57,8 @@ export default function ProductSearch({
   onSubmit,
   loading,
   error,
+  suggestion,
+  onSuggestion,
 }: ProductSearchProps) {
   const t = useTranslations('ProductSearch');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -50,6 +67,11 @@ export default function ProductSearch({
     e.preventDefault();
     onSubmit(value);
   }
+
+  const hasSuggestion =
+    onSuggestion !== undefined &&
+    typeof suggestion === 'string' &&
+    suggestion.trim() !== '';
 
   return (
     <div className="space-y-1">
@@ -72,6 +94,22 @@ export default function ProductSearch({
         </Button>
       </form>
       {error && <p className="text-sm text-error">{error}</p>}
+      {hasSuggestion && (
+        <div
+          data-testid="search-suggestion"
+          className="flex flex-wrap items-center gap-2 pt-1"
+        >
+          <span className="text-sm text-gray-600">{t('didYouMean')}</span>
+          <button
+            type="button"
+            data-testid="search-suggestion-chip"
+            onClick={() => onSuggestion!(suggestion!.trim())}
+            className="touch-target inline-flex items-center rounded-full border border-primary-300 bg-primary-50 px-3 py-1 text-sm font-medium text-primary-800 transition-colors hover:bg-primary-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+          >
+            {suggestion}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

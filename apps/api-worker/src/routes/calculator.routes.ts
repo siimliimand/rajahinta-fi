@@ -40,6 +40,7 @@ import {
   DISCLAIMER_FI,
 } from '../adapters/core-domain-bridge';
 import type { CalculatorResult } from '../../../../packages/core-domain/src/calculator/calculator.types';
+import { NoAllowanceDatasetError } from '../../../../packages/core-domain/src/calculator/calculator.types';
 import type { ITaxRuleRepositoryPort } from '../../../../packages/core-domain/src/tax/ports/tax-rule-repository.port';
 import type { ExciseResult } from '../../../../packages/core-domain/src/tax/services/alcohol-excise.service';
 import type { ContainerDutyResult } from '../../../../packages/core-domain/src/tax/services/container-duty.service';
@@ -50,6 +51,8 @@ import {
   D1TransportOfferQuery,
   D1CalculationRecordPort,
 } from '../adapters/d1-domain-ports';
+import { D1TravellerAllowancePort } from '../adapters/d1-traveller-allowance-port';
+import { D1TravellerAllowancesRepository } from '../../../../packages/data-platform/src/repositories/d1/traveller-allowances.repository';
 import {
   idempotencyCacheKey,
   idempotencyLookup,
@@ -82,6 +85,11 @@ export function buildLandedCostCalculatorService(d1: AppEnv['Bindings']['DB']): 
     new ConfidenceFrameworkService(new ReliabilityService()),
     new D1ProductDataPort(new D1ProductSearchRepository(d1)),
     new D1CalculationRecordPort(d1),
+    // Traveller-mode allowance resolution (task 1.1) — the same port the
+    // optimizer's fill engine is wired with (trip.routes.ts parity), so
+    // the calculator's PERSONAL branch resolves the identical published
+    // dataset instead of inventing caps.
+    new D1TravellerAllowancePort(new D1TravellerAllowancesRepository(d1)),
   );
   return { calculator, taxRepo };
 }
@@ -171,6 +179,19 @@ async function calculate(c: Context<AppEnv>): Promise<Response> {
   } catch (err) {
     if (err instanceof ProductNotFoundError || err instanceof NoRetailOffersError) {
       throw new ApiHttpError(404, err.message);
+    }
+    // No PUBLISHED traveller-allowance dataset covers the transaction
+    // date: capping is spec-mandatory, so a traveller calculation has no
+    // computable result — 409 NoPublishedAllowances (trip-fill/trip-
+    // feasibility parity, design D3), resolvable only by publishing a
+    // covering version. The delivery path never reaches the port, so
+    // this state cannot touch it.
+    if (err instanceof NoAllowanceDatasetError) {
+      throw new ApiHttpError(409, {
+        statusCode: 409,
+        message: err.message,
+        error: 'NoPublishedAllowances',
+      });
     }
     if (err instanceof ClassificationGateRejectionError) {
       throw new ApiHttpError(422, {

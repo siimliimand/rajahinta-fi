@@ -18,11 +18,13 @@
  * @module LandedCostCalculatorService
  */
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ClassificationGateService } from '../normalization/classification-gate.service';
 import { AlcoholExciseService } from '../tax/services/alcohol-excise.service';
 import { ContainerDutyService } from '../tax/services/container-duty.service';
 import { TransactionClassificationService } from '../classification/transaction-classification.service';
+import type { EvidenceDetail } from '../classification/classification.types';
+import { buildEvidenceSummary } from '../classification/evidence.utils';
 import { ConfidenceFrameworkService } from '../reliability/confidence-framework.service';
 import type {
   ConfidenceLevel,
@@ -44,18 +46,53 @@ import type {
   IProductDataPort,
   ICalculationRecordPort,
   AlkoBenchmarkSnapshot,
+  TravellerAlternativeCallout,
 } from './calculator.types';
 import {
   isOfferOutOfStock,
   PRODUCT_DATA_PORT,
   CALCULATION_RECORD_PORT,
   ClassificationGateRejectionError,
+  NoAllowanceDatasetError,
   ProductNotFoundError,
   NoRetailOffersError,
 } from './calculator.types';
 import type { ReliabilityStatus } from '../reliability/reliability.types';
 import type { ClassificationInput } from '../classification/classification.types';
 import { ImportVatService, type ImportVatResult } from '../vat';
+import { TRAVELLER_ALLOWANCE_PORT } from '../optimizer/ports/traveller-allowance.port';
+import type {
+  ITravellerAllowancePort,
+  TripResolvedAllowances,
+} from '../optimizer/ports/traveller-allowance.port';
+
+/**
+ * Fit tolerance for the litres→quantity cap conversion — the same
+ * centilitre-granular epsilon the trip-fill engine's maxFitQuantity uses,
+ * so the calculator's allowed/surplus split can never disagree with the
+ * fill engine on whether a unit fits the cap.
+ */
+const LITRES_EPSILON = 1e-9;
+
+/**
+ * The resolved within/surplus split for one PERSONAL-mode line
+ * (task 1.1). `capApplied` is false when the resolved dataset carries no
+ * boundable cap for the product's category — the within/over split then
+ * does not apply and the full quantity is taxed as before (an absent cap
+ * never becomes an invented exemption).
+ */
+interface TravellerAllowanceSplit {
+  /** `versionLabel` of the resolved dataset — provenance. */
+  readonly versionLabel: string;
+  /** Canonical tax-rule category the cap was looked up with. */
+  readonly category: string;
+  /** Units covered by the allowance (0 when no cap applies). */
+  readonly allowedQuantity: number;
+  /** Units above the allowance — the only quantity the engines tax. */
+  readonly surplusQuantity: number;
+  /** Whether a cap row actually bounded this line. */
+  readonly capApplied: boolean;
+}
 
 /** Merchant id of the domestic reference feed (design D6). */
 const ALKO_MERCHANT = 'alko';
@@ -92,6 +129,19 @@ export class LandedCostCalculatorService {
 
     @Inject(CALCULATION_RECORD_PORT)
     private readonly calculationRecords: ICalculationRecordPort,
+
+    /**
+     * Traveller-allowance port (task 1.1). Optional so every existing
+     * construction site keeps compiling and behaving unchanged: unwired,
+     * PERSONAL requests degrade to the pre-allowance full-taxation math
+     * (today's labels-only semantics); wired (calculator route), the
+     * branch resolves the published dataset and splits the quantity.
+     * `@Optional()` mirrors the optimizer module's null-port default —
+     * Nest resolves null when a host module does not bind the token.
+     */
+    @Optional()
+    @Inject(TRAVELLER_ALLOWANCE_PORT)
+    private readonly travellerAllowances?: ITravellerAllowancePort | null,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -205,6 +255,26 @@ export class LandedCostCalculatorService {
       (computed.importVatTotal ?? 0);
 
     // -----------------------------------------------------------------------
+    // 7a. Traveller-alternative callout (task 1.2, delivery mode only)
+    // -----------------------------------------------------------------------
+
+    // A PERSONAL result IS the traveller scenario — no callout there (and
+    // no second port read; the PERSONAL branch already performed the one
+    // allowance read inside computeItemCosts). Delivery arrangements read
+    // the port once here; every degrade case yields null and the key is
+    // omitted — amounts, statuses, and confidence stay byte-identical
+    // (design D4).
+    const travellerAlternative =
+      (input.transportArrangement ?? 'SELLER_ARRANGED') === 'PERSONAL'
+        ? null
+        : await this.resolveTravellerAlternativeCallout(
+            input,
+            product.category.toLowerCase(),
+            product.volumeLitres,
+            bestOffer.priceCents,
+          );
+
+    // -----------------------------------------------------------------------
     // 8. Persist calculation record
     // -----------------------------------------------------------------------
 
@@ -247,6 +317,7 @@ export class LandedCostCalculatorService {
       disclaimer: DISCLAIMER_FI,
       classification: computed.classificationResult,
       ...(alkoBenchmark !== undefined ? { alkoBenchmark } : {}),
+      ...(travellerAlternative !== null ? { travellerAlternative } : {}),
       metadata: {
         input,
         calculationTimestamp: new Date().toISOString(),
@@ -259,6 +330,9 @@ export class LandedCostCalculatorService {
         alcoholByVolume: product.alcoholByVolume,
         category: product.category,
         datasetVersions: computed.datasetVersions,
+        ...(computed.allowanceDatasetVersion !== undefined
+          ? { allowanceDatasetVersion: computed.allowanceDatasetVersion }
+          : {}),
         transportOfferId,
       },
       calculationRecordId: persisted.id,
@@ -314,14 +388,46 @@ export class LandedCostCalculatorService {
     );
 
     // -----------------------------------------------------------------------
+    // Traveller allowance (task 1.1, change finnish-first-client-experience)
+    // -----------------------------------------------------------------------
+
+    const transportArrangement =
+      input.transportArrangement ?? 'SELLER_ARRANGED';
+
+    // PERSONAL arrangement activates the traveller-import branch: the
+    // published allowance dataset effective on the transaction date bounds
+    // the quantity, the allowed portion carries retail price only, and the
+    // surplus runs the engines below. Delivery arrangements never reach
+    // the port — every figure stays identical to the pre-allowance engine
+    // (design D4, golden fixtures untouched).
+    //
+    // An UNWIRED port degrades to the pre-allowance full-taxation math:
+    // surfaces that never bind the token (basket composition, cron,
+    // golden harnesses) keep today's PERSONAL behavior instead of
+    // regressing. A WIRED port that resolves no dataset rejects — caps
+    // are never invented (design D3).
+    const allowanceSplit =
+      transportArrangement === 'PERSONAL'
+        ? await this.resolveTravellerAllowanceSplit(
+            input,
+            exciseCategory,
+            product.volumeLitres,
+          )
+        : null;
+
+    /** The quantity the tax engines apply: the allowance surplus when a
+     * cap bounded the line, the full quantity otherwise. Delivery
+     * computations always see `input.quantity` here. */
+    const taxedQuantity =
+      allowanceSplit !== null ? allowanceSplit.surplusQuantity : input.quantity;
+
+    // -----------------------------------------------------------------------
     // Transaction classification
     // -----------------------------------------------------------------------
 
     const sellerInvolvementIndicator =
       transportCtx?.sellerInvolvementIndicator ?? false;
     const carrierId = transportCtx?.carrierId ?? offer.merchant;
-    const transportArrangement =
-      input.transportArrangement ?? 'SELLER_ARRANGED';
 
     const classificationInput: ClassificationInput = {
       sellerInvolvementIndicator,
@@ -332,8 +438,42 @@ export class LandedCostCalculatorService {
       sellerId: offer.merchant,
     };
 
-    const classificationResult =
+    let classificationResult =
       await this.transactionClassification.classify(classificationInput);
+
+    // The allowance application is classification evidence (design D1):
+    // the traveller-import label alone says allowances APPLY — the
+    // evidence records what was actually applied, to whom (one
+    // traveller, design D2), and from which dataset version. Appended
+    // after the rule pipeline's own evidence so existing indexes hold.
+    if (allowanceSplit !== null) {
+      const allowanceEvidence: EvidenceDetail =
+        allowanceSplit.capApplied
+          ? {
+              observation:
+                'Traveller allowance applied from the published allowance dataset — the within-allowance quantity carries no excise, container duty, or import VAT; only the surplus is taxed',
+              supportingData:
+                `allowance dataset: ${allowanceSplit.versionLabel}; ` +
+                `category: ${allowanceSplit.category}; travellers: 1; ` +
+                `allowance covers ${allowanceSplit.allowedQuantity} of ${input.quantity} units; ` +
+                `surplus ${allowanceSplit.surplusQuantity} units taxed`,
+              source: 'TravellerAllowance',
+            }
+          : {
+              observation:
+                'No traveller-allowance cap covers this product category in the published dataset — no allowance applied and the full quantity is taxed',
+              supportingData:
+                `allowance dataset: ${allowanceSplit.versionLabel}; ` +
+                `category: ${allowanceSplit.category}; travellers: 1`,
+              source: 'TravellerAllowance',
+            };
+      const evidence = [...classificationResult.evidence, allowanceEvidence];
+      classificationResult = {
+        ...classificationResult,
+        evidence,
+        evidenceSummary: buildEvidenceSummary(evidence),
+      };
+    }
 
     // -----------------------------------------------------------------------
     // Import VAT — design D6 gate
@@ -348,18 +488,20 @@ export class LandedCostCalculatorService {
     const isImport = offer.country !== input.destination;
 
     let importVat: ImportVatResult | null = null;
-    if (isImport) {
+    if (isImport && taxedQuantity > 0) {
       // The base is the consignment aggregate (price + transport + excise
-      // + container duty for the whole line) — the same composition the
-      // itemized breakdown below shows. Transport enters once (it is not
-      // quantity-scaled); 0 when no transport context exists — the basket
-      // path's consolidated shipping resolves after item costs.
+      // + container duty for the taxed quantity) — the same composition
+      // the itemized breakdown below shows. Transport enters once (it is
+      // not quantity-scaled); 0 when no transport context exists — the
+      // basket path's consolidated shipping resolves after item costs.
+      // Under a traveller allowance the base covers the SURPLUS only:
+      // same composition, taxed quantity (task 1.1).
       importVat = this.importVat.calculate(
         {
-          retailPriceCents: offer.priceCents * input.quantity,
+          retailPriceCents: offer.priceCents * taxedQuantity,
           transportCents: transportCtx?.transportCents ?? 0,
-          alcoholExciseCents: exciseResult.taxCents * input.quantity,
-          containerDutyCents: containerDutyResult.dutyCents * input.quantity,
+          alcoholExciseCents: exciseResult.taxCents * taxedQuantity,
+          containerDutyCents: containerDutyResult.dutyCents * taxedQuantity,
         },
         input.transactionDate !== undefined
           ? new Date(input.transactionDate)
@@ -382,8 +524,9 @@ export class LandedCostCalculatorService {
     const lineRetailPriceCents = offer.priceCents * input.quantity;
     const sanityNotes = evaluateLineSanityRail({
       lineRetailPriceCents,
-      lineExciseCents: exciseResult.taxCents * input.quantity,
-      lineContainerDutyCents: containerDutyResult.dutyCents * input.quantity,
+      lineExciseCents: exciseResult.taxCents * taxedQuantity,
+      lineContainerDutyCents:
+        containerDutyResult.dutyCents * taxedQuantity,
     });
     const exciseRailTripped = sanityNotes.some(
       (note) => note.component === 'alcoholExciseEstimate',
@@ -446,8 +589,8 @@ export class LandedCostCalculatorService {
     // -----------------------------------------------------------------------
 
     const retailTotal = offer.priceCents * input.quantity;
-    const exciseTotal = exciseResult.taxCents * input.quantity;
-    const containerDutyTotal = containerDutyResult.dutyCents * input.quantity;
+    const exciseTotal = exciseResult.taxCents * taxedQuantity;
+    const containerDutyTotal = containerDutyResult.dutyCents * taxedQuantity;
 
     const datasetVersions: string[] = [];
     if (exciseResult.taxDatasetVersion)
@@ -459,6 +602,64 @@ export class LandedCostCalculatorService {
     // -----------------------------------------------------------------------
     // Itemized costs (transport excluded — caller adds it)
     // -----------------------------------------------------------------------
+
+    // Delivery (and unsplit PERSONAL) keep today's single line per tax
+    // component. When a traveller allowance bounded the line, the split
+    // is explicit per portion — labeled lines over the SAME canonical
+    // categories, no new category space (design D1): the within portion
+    // is a dataset-fact zero (VERIFIED — the cap is published data, the
+    // application arithmetic), the surplus carries the engine figures.
+    const taxLines: ItemizedCost[] =
+      allowanceSplit !== null && allowanceSplit.capApplied
+        ? [
+            ...(allowanceSplit.allowedQuantity > 0
+              ? ([
+                  {
+                    label: 'Alcohol excise (within traveller allowance)',
+                    category: 'alcoholExciseEstimate',
+                    cents: 0,
+                    reliability: 'VERIFIED',
+                  },
+                  {
+                    label: 'Container duty (within traveller allowance)',
+                    category: 'containerDutyEstimate',
+                    cents: 0,
+                    reliability: 'VERIFIED',
+                  },
+                ] satisfies ItemizedCost[])
+            : []),
+            ...(taxedQuantity > 0
+              ? ([
+                  {
+                    label: 'Alcohol excise (over-allowance surplus)',
+                    category: 'alcoholExciseEstimate',
+                    cents: exciseTotal,
+                    reliability: exciseStatus,
+                  },
+                  {
+                    label: 'Container duty (over-allowance surplus)',
+                    category: 'containerDutyEstimate',
+                    cents: containerDutyTotal,
+                    reliability: containerDutyStatus,
+                  },
+                ] satisfies ItemizedCost[])
+            : []),
+          ]
+        : [
+            {
+              label: 'Alcohol excise',
+              category: 'alcoholExciseEstimate',
+              cents: exciseTotal,
+              reliability: exciseStatus,
+            },
+            {
+              label: 'Container duty',
+              category: 'containerDutyEstimate',
+              cents: containerDutyTotal,
+              reliability: containerDutyStatus,
+            },
+          ];
+
     const itemizedCosts: ItemizedCost[] = [
       {
         label: 'Retail price',
@@ -474,30 +675,29 @@ export class LandedCostCalculatorService {
           },
         ],
       },
-      {
-        label: 'Alcohol excise',
-        category: 'alcoholExciseEstimate',
-        cents: exciseTotal,
-        reliability: exciseStatus,
-      },
-      {
-        label: 'Container duty',
-        category: 'containerDutyEstimate',
-        cents: containerDutyTotal,
-        reliability: containerDutyStatus,
-      },
+      ...taxLines,
     ];
 
     // The import-VAT line (design D6): amount, rate version, per-component
     // base breakdown, reliability, timestamp. The structural disclaimer
     // already carried by every calculation result covers this line — the
-    // figure is an estimate, not the final legal tax liability.
+    // figure is an estimate, not the final legal tax liability. Under a
+    // traveller allowance the line covers the SURPLUS only, and the
+    // within-allowance portion shows as an explicit dataset-fact zero.
+    if (isImport && allowanceSplit !== null && allowanceSplit.capApplied && allowanceSplit.allowedQuantity > 0) {
+      itemizedCosts.push({
+        label: 'Import VAT (within traveller allowance)',
+        category: 'importVatEstimate',
+        cents: 0,
+        reliability: 'VERIFIED',
+      });
+    }
     if (importVat !== null) {
       const baseLines: readonly ItemizedCost[] = [
         {
           label: 'Retail price',
           category: 'foreignRetailPrice',
-          cents: retailTotal,
+          cents: offer.priceCents * taxedQuantity,
           reliability: importVat.reliability,
         },
         {
@@ -520,7 +720,10 @@ export class LandedCostCalculatorService {
         },
       ];
       itemizedCosts.push({
-        label: 'Import VAT (estimated)',
+        label:
+          allowanceSplit !== null && allowanceSplit.capApplied
+            ? 'Import VAT (over-allowance surplus, estimated)'
+            : 'Import VAT (estimated)',
         category: 'importVatEstimate',
         cents: importVat.vatCents,
         reliability: importVat.reliability,
@@ -545,6 +748,9 @@ export class LandedCostCalculatorService {
       confidenceBreakdown,
       ...(sanityNotes.length > 0 ? { sanityNotes } : {}),
       datasetVersions,
+      ...(allowanceSplit !== null
+        ? { allowanceDatasetVersion: allowanceSplit.versionLabel }
+        : {}),
       ...(importVat !== null
         ? {
             importVatTotal: importVat.vatCents,
@@ -559,6 +765,174 @@ export class LandedCostCalculatorService {
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
+
+  /**
+   * The calendar date the allowance lookup uses: the CALENDAR DATE of the
+   * transaction (design: today when the request carries no date). The date
+   * part of the ISO input is the traveller's own date wording — no
+   * timezone re-derivation that could shift the lookup day. Shared by the
+   * PERSONAL split and the delivery callout so both resolve the same
+   * dataset version within one request.
+   */
+  private allowanceLookupDate(input: CalculatorInput): string {
+    return input.transactionDate !== undefined
+      ? input.transactionDate.slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+  }
+
+  /**
+   * The within-allowance quantity for one line against a RESOLVED dataset —
+   * the single implementation of the cap arithmetic, shared by the PERSONAL
+   * split and the delivery callout so the two can never disagree on whether
+   * a unit fits (task 1.2). Per-dimension bounds; a dimension the cap
+   * cannot bound (missing row, non-positive/unbounded unit volume against a
+   * litres cap) is skipped rather than guessed. No computable bound at all
+   * → null: the cap does not apply.
+   *
+   * The litres→quantity conversion is the trip-fill engine's
+   * floor-plus-{@link LITRES_EPSILON} semantics (same centilitre-granular
+   * epsilon as the fill engine's maxFitQuantity).
+   */
+  private boundQuantityAgainstCaps(
+    resolved: TripResolvedAllowances,
+    category: string,
+    requestedQuantity: number,
+    unitVolumeLitres: number,
+  ): number | null {
+    const capRow =
+      resolved.limits.find((limit) => limit.category === category) ?? null;
+
+    let bound = requestedQuantity;
+    let boundable = false;
+    if (capRow !== null) {
+      if (capRow.quantityCap !== null) {
+        bound = Math.min(bound, capRow.quantityCap);
+        boundable = true;
+      }
+      if (
+        capRow.volumeCapLitres !== null &&
+        Number.isFinite(unitVolumeLitres) &&
+        unitVolumeLitres > 0
+      ) {
+        bound = Math.min(
+          bound,
+          Math.floor(
+            (capRow.volumeCapLitres + LITRES_EPSILON) / unitVolumeLitres,
+          ),
+        );
+        boundable = true;
+      }
+    }
+
+    if (capRow === null || !boundable) return null;
+    return Math.max(0, bound);
+  }
+
+  /**
+   * Resolve the traveller-allowance split for a PERSONAL-mode line
+   * (task 1.1): the published dataset effective on the transaction date,
+   * the cap row for the product's tax category, and the within/surplus
+   * quantity split under the trip-fill engine's cap semantics (same
+   * floor-plus-epsilon litres→quantity conversion as the fill engine's
+   * maxFitQuantity, so both engines can never disagree on whether a unit
+   * fits).
+   *
+   * - Port unwired → null: the caller's full-quantity path applies
+   *   (pre-allowance behavior for surfaces that never bound the token).
+   * - Port wired, no PUBLISHED dataset covering the date →
+   *   {@link NoAllowanceDatasetError}: a traveller calculation without a
+   *   bound is refused, never computed with invented caps (design D3).
+   * - Dataset resolved but no (boundable) cap row for the category → a
+   *   split with `capApplied: false` and the full quantity as surplus:
+   *   the split does not apply, nothing is exempted, the evidence
+   *   records why.
+   */
+  private async resolveTravellerAllowanceSplit(
+    input: CalculatorInput,
+    category: string,
+    unitVolumeLitres: number,
+  ): Promise<TravellerAllowanceSplit | null> {
+    if (this.travellerAllowances == null) return null;
+
+    const transactionDate = this.allowanceLookupDate(input);
+
+    const resolved = await this.travellerAllowances.resolveForTravelDate(
+      transactionDate,
+    );
+    if (resolved === null) {
+      throw new NoAllowanceDatasetError(transactionDate);
+    }
+
+    const allowedQuantity = this.boundQuantityAgainstCaps(
+      resolved,
+      category,
+      input.quantity,
+      unitVolumeLitres,
+    );
+
+    if (allowedQuantity === null) {
+      return {
+        versionLabel: resolved.dataset.versionLabel,
+        category,
+        allowedQuantity: 0,
+        surplusQuantity: input.quantity,
+        capApplied: false,
+      };
+    }
+
+    return {
+      versionLabel: resolved.dataset.versionLabel,
+      category,
+      allowedQuantity,
+      surplusQuantity: input.quantity - allowedQuantity,
+      capApplied: true,
+    };
+  }
+
+  /**
+   * Resolve the delivery-mode traveller-alternative callout (task 1.2,
+   * change finnish-first-client-experience): what ONE traveller carrying
+   * the same quantity would pay within the effective allowance caps —
+   * the allowed quantity × the unit shelf price already used for the
+   * retail line, via the SAME port resolution and cap arithmetic as the
+   * PERSONAL branch ({@link boundQuantityAgainstCaps}), so the callout can
+   * never advertise a bound the traveller mode would not apply.
+   *
+   * Delivery DEGRADES where PERSONAL refuses (design D3/D4): port
+   * unwired, no effective dataset, or no boundable cap row for the
+   * category all yield null — never an invented cap and never the
+   * {@link NoAllowanceDatasetError} rejection (the delivery path stays
+   * fully available). Exactly one port read per delivery request; the
+   * estimate never alters any delivery figure, status, or confidence.
+   */
+  private async resolveTravellerAlternativeCallout(
+    input: CalculatorInput,
+    category: string,
+    unitVolumeLitres: number,
+    unitShelfPriceCents: number,
+  ): Promise<TravellerAlternativeCallout | null> {
+    if (this.travellerAllowances == null) return null;
+
+    const resolved = await this.travellerAllowances.resolveForTravelDate(
+      this.allowanceLookupDate(input),
+    );
+    if (resolved === null) return null;
+
+    const allowedQuantity = this.boundQuantityAgainstCaps(
+      resolved,
+      category,
+      input.quantity,
+      unitVolumeLitres,
+    );
+    if (allowedQuantity === null) return null;
+
+    return {
+      estimatedTotalCents: allowedQuantity * unitShelfPriceCents,
+      withinAllowance: allowedQuantity >= input.quantity,
+      allowanceDatasetVersion: resolved.dataset.versionLabel,
+      categoryKey: category,
+    };
+  }
 
   /**
    * Resolve product master data. Returns the CalculatorProductData needed

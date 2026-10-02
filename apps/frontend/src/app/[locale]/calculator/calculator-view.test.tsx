@@ -20,7 +20,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CalculatorView from './calculator-view';
-import { searchProducts, calculateLandedCost, listScenarios } from '@/lib/api';
+import { ApiFetchError, searchProducts, calculateLandedCost, listScenarios } from '@/lib/api';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import type {
   CalculatorResult as CalculatorResultType,
@@ -431,5 +431,170 @@ describe('CalculatorView form pass (task 4.7)', () => {
     expect(screen.queryByTestId('calc-transport-method')).toBeNull();
     expect(screen.queryByTestId('advanced-toggle')).toBeNull();
     expect(mockedCalculateLandedCost).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Buying-mode toggle (task 2.1, change finnish-first-client-experience):
+// Toimitus is the default and reproduces today's request exactly; Otan
+// itse mukaan adds transportArrangement: 'PERSONAL'; the 409
+// NoPublishedAllowances rejection renders the honest unavailable state
+// with the form kept usable.
+// ---------------------------------------------------------------------------
+
+describe('CalculatorView buying-mode toggle (task 2.1)', () => {
+  it('defaults to Toimitus and keeps the request payload free of transportArrangement', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    const hit = await screen.findByText('Renat');
+    await user.click(hit.closest('button') as HTMLButtonElement);
+
+    expect(
+      screen.getByRole('radio', { name: /Toimitus/ }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole('radio', { name: /Otan itse mukaan/ }),
+    ).not.toBeChecked();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Laske kokonaiskustannus' }),
+    );
+    await screen.findByTestId('result-card');
+    expect(mockedCalculateLandedCost.mock.calls[0]![0]).toEqual({
+      productId: HIT.id,
+      quantity: 1,
+      destination: 'FI',
+    });
+  });
+
+  it('sends transportArrangement PERSONAL when Otan itse mukaan is selected', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    const hit = await screen.findByText('Renat');
+    await user.click(hit.closest('button') as HTMLButtonElement);
+
+    await user.click(screen.getByRole('radio', { name: /Otan itse mukaan/ }));
+    await user.click(
+      screen.getByRole('button', { name: 'Laske kokonaiskustannus' }),
+    );
+    await screen.findByTestId('result-card');
+    expect(mockedCalculateLandedCost.mock.calls[0]![0]).toEqual({
+      productId: HIT.id,
+      quantity: 1,
+      destination: 'FI',
+      transportArrangement: 'PERSONAL',
+    });
+  });
+
+  it('renders the honest traveller-unavailable state on 409 NoPublishedAllowances and keeps the form usable', async () => {
+    mockedCalculateLandedCost.mockRejectedValueOnce(
+      new ApiFetchError(409, {
+        statusCode: 409,
+        message:
+          'No published traveller allowance dataset is effective on 2026-10-01 — a traveller-mode calculation cannot run without a bound',
+        error: 'NoPublishedAllowances',
+        timestamp: '2026-10-01T12:00:00.000Z',
+        path: '/api/v1/calculator',
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    const hit = await screen.findByText('Renat');
+    await user.click(hit.closest('button') as HTMLButtonElement);
+    await user.click(screen.getByRole('radio', { name: /Otan itse mukaan/ }));
+    await user.click(
+      screen.getByRole('button', { name: 'Laske kokonaiskustannus' }),
+    );
+
+    // The honest state: the missing dataset is the reason, retry-later
+    // copy, and never the raw backend message.
+    const state = await screen.findByTestId('traveller-unavailable');
+    expect(state.textContent).toContain('tietoaineistoa');
+    expect(state.textContent).not.toContain('No published traveller');
+
+    // The form stays usable: the toggle is intact, delivery remains
+    // selectable, and switching back succeeds.
+    const seller = screen.getByRole('radio', { name: /Toimitus/ });
+    expect(seller).toBeEnabled();
+    await user.click(seller);
+    await user.click(
+      screen.getByRole('button', { name: 'Laske kokonaiskustannus' }),
+    );
+    await screen.findByTestId('result-card');
+    expect(mockedCalculateLandedCost.mock.calls[1]![0]).toEqual({
+      productId: HIT.id,
+      quantity: 1,
+      destination: 'FI',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Zero-result did-you-mean chip (task 3.3, change
+// finnish-first-client-experience): the response's `suggestion` renders a
+// clickable chip that runs the suggested query while the customer's
+// original query stays in the input; it never appears when results exist.
+// ---------------------------------------------------------------------------
+
+describe('CalculatorView did-you-mean suggestion chip (task 3.3)', () => {
+  it('runs the suggested query from the chip and preserves the original query in the input', async () => {
+    mockedSearchProducts
+      .mockResolvedValueOnce({
+        items: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0,
+        suggestion: 'Koskenkorva',
+      })
+      .mockResolvedValueOnce(searchResponse([HIT]));
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'koskenkrova');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+
+    const banner = await screen.findByTestId('search-suggestion');
+    expect(banner.textContent).toContain('Tarkoititko:');
+    const chip = screen.getByTestId('search-suggestion-chip');
+    expect(chip).toHaveTextContent('Koskenkorva');
+
+    // The chip searches — the input is never rewritten.
+    const input = screen.getByPlaceholderText(
+      'Hae tuotteita…',
+    ) as HTMLInputElement;
+    expect(input.value).toBe('koskenkrova');
+    await user.click(chip);
+    await screen.findByText('Renat');
+
+    expect(mockedSearchProducts).toHaveBeenLastCalledWith(
+      'Koskenkorva',
+      'ALPHABETICAL',
+      1,
+      20,
+      expect.anything(),
+    );
+    expect(input.value).toBe('koskenkrova');
+    // Results exist → the banner is gone.
+    expect(screen.queryByTestId('search-suggestion')).toBeNull();
+  });
+
+  it('never renders the chip when results exist or the response carries no suggestion', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    await screen.findByText('Renat');
+    expect(screen.queryByTestId('search-suggestion')).toBeNull();
   });
 });
