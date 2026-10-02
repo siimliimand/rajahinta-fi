@@ -21,7 +21,11 @@
  * the cheapest current-available single offer's price and provenance
  * (design D1, change honest-trust-surfaces) — the aggregate resolves
  * that offer's reliability, and the item reports MISSING_PRICE when
- * there is no current offer at all.
+ * there is no current offer at all. Pack products divide by the
+ * package total volume: the pack units parse from the product name at
+ * read time (task 6.1 amendment) through the same parser on both the
+ * listing and detail embed paths, so a pack row can never price a
+ * 24-pack against one can.
  *
  * Zero-result did-you-mean (task 3.2, change
  * finnish-first-client-experience): a ranked-q search that found nothing
@@ -41,6 +45,7 @@ import type { Context } from 'hono';
 import { eurPerGram } from '../../../../packages/core-domain/src/unitprice/eur-per-gram';
 import type { UnitPriceResult } from '../../../../packages/core-domain/src/unitprice/unitprice.types';
 import type { ReliabilityStatus } from '../../../../packages/core-domain/src/reliability/reliability.types';
+import { parsePackUnits } from '../../../../packages/data-acquisition/src/services/pack-notation';
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
 import { parseIntParam } from './support';
@@ -240,16 +245,26 @@ function toReliabilityStatus(raw: string): ReliabilityStatus {
     : 'UNAVAILABLE';
 }
 
-/** The physical inputs the €/g metric derives from, parsed once per product. */
+/**
+ * The physical inputs the €/g metric derives from, parsed once per product.
+ * `unitsPerPackage` is the pack SIZE parsed from the product NAME at read
+ * time (task 6.1 amendment) — a multipack's price is a package price, so
+ * the metric divides it by the package total volume. `undefined` = the
+ * name states no decisive count (single-unit default 1); the value is
+ * never persisted, and both embed paths parse the SAME name through the
+ * SAME parser, which is what keeps listing == detail on pack rows.
+ */
 interface UnitPriceInputs {
   readonly unitVolumeL: number;
   readonly alcoholFraction: number | null;
+  readonly unitsPerPackage: number | undefined;
 }
 
 function unitPriceInputs(p: ProductRow): UnitPriceInputs {
   return {
     unitVolumeL: parseLitres(p.unitVolume),
     alcoholFraction: parseAlcoholFraction(p.alcoholByVolume),
+    unitsPerPackage: parsePackUnits(p.name) ?? undefined,
   };
 }
 
@@ -289,6 +304,8 @@ function cheapestOfferPrice(
  * unknown, distinct from the domain's value-level faults). Missing or
  * invalid physicals and zero ethanol keep their domain reasons via the
  * module's precedence. No listing path passes NaN as the price.
+ * Pack rows divide by the parsed package total (units from the name —
+ * the same derivation the detail offers embed uses).
  */
 function searchItemUnitPrice(
   inputs: UnitPriceInputs,
@@ -299,6 +316,7 @@ function searchItemUnitPrice(
     inputs.unitVolumeL,
     inputs.alcoholFraction,
     price === null ? 'VERIFIED' : price.reliability,
+    inputs.unitsPerPackage,
   );
 }
 
@@ -635,7 +653,10 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
     // offer's metric. unitVolume is litres as numeric text; an unparseable
     // value propagates as NaN → the module reports INVALID_VOLUME. The
     // ABV text is a fraction (0.047 = 4.7 %); absent → null → the module
-    // reports MISSING_ALCOHOL_FRACTION.
+    // reports MISSING_ALCOHOL_FRACTION. The pack units parse from the
+    // product name (task 6.1 amendment) through the same parser the
+    // listing embed uses, so a pack row's offers price the package, not
+    // one can — and listing == detail on every pack row.
     const inputs = unitPriceInputs(product);
 
     const response: Record<string, unknown> = {
@@ -669,12 +690,14 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
         // Value offers inherit the offer price's reliability
         // (VERIFIED → computed, otherwise ESTIMATED); missing/invalid
         // inputs degrade to an explicit unavailable — never a
-        // substituted value (spec unit-price-metrics).
+        // substituted value (spec unit-price-metrics). Pack rows pass
+        // the name-parsed units so the denominator is the package total.
         eurPerGram: eurPerGram(
           o.priceCents,
           inputs.unitVolumeL,
           inputs.alcoholFraction,
           toReliabilityStatus(o.reliabilityStatus),
+          inputs.unitsPerPackage,
         ),
       })),
       currentBestPriceCents,

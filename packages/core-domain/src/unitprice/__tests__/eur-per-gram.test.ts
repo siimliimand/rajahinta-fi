@@ -215,6 +215,108 @@ describe('eurPerGram — missing price (task 2.2, change honest-trust-surfaces)'
   });
 });
 
+describe('eurPerGram — units per package (task 6.1 amendment, honest-trust-surfaces)', () => {
+  it('scales the denominator: 2000 c, 0.5 l, 40%, 24 units → 3787.2 g → 0.528 ¢/g', () => {
+    // A 24-pack priced as one line: the denominator is the package
+    // total (0.5 × 24 = 12 l), so numerator and denominator describe
+    // the same physical goods.
+    const result = assertValue(eurPerGram(2000, 0.5, 0.4, 'VERIFIED', 24), 'computed');
+    expect(result.ethanolGrams).toBeCloseTo(3787.2, 9);
+    expect(result.centsPerGram).toBeCloseTo(0.5280946346, 9);
+  });
+
+  it('live 2900 shape: 2199 c, 0.33 l, 5.3%, 24 units → 331.19 g → ≈ 6.64 ¢/g (was 159.35)', () => {
+    // The live defect priced the pack (2199 ¢) against ONE can's volume
+    // (0.33 l → 159.35 ¢/g, beer priced like gold). The package
+    // denominator gives the honest figure.
+    const result = assertValue(eurPerGram(2199, 0.33, 0.053, 'VERIFIED', 24), 'computed');
+    expect(result.ethanolGrams).toBeCloseTo(331.19064, 9);
+    expect(result.centsPerGram).toBeCloseTo(6.6396803968, 9);
+    // Sane beer band at pack granularity, unlike the corrupted 159.35.
+    expect(result.centsPerGram).toBeGreaterThan(4);
+    expect(result.centsPerGram).toBeLessThan(12);
+  });
+
+  it('status model is untouched: non-VERIFIED price with units → ESTIMATED', () => {
+    const result = assertValue(eurPerGram(2199, 0.33, 0.053, 'STALE', 24), 'ESTIMATED');
+    expect(result.priceReliability).toBe('STALE');
+    expect(result.centsPerGram).toBeCloseTo(6.6396803968, 9);
+  });
+
+  it('omitted units is byte-identical to explicit undefined, for every status', () => {
+    // The default-1 contract: existing callers' results cannot move.
+    const vectors = [
+      [2000, 0.5, 0.4, 'VERIFIED'],
+      [2199, 0.33, 0.053, 'VERIFIED'],
+      [300, 0.33, 0.047, 'ESTIMATED'],
+      [null, 0.33, 0.047, 'VERIFIED'],
+      [2000, null, 0.4, 'VERIFIED'],
+      [2000, 0.33, null, 'VERIFIED'],
+      [2000, 0, 0.4, 'VERIFIED'],
+      [2000, 0.33, 0, 'VERIFIED'],
+      [2000, 0.33, 40, 'VERIFIED'],
+      [-5, 0.5, 0.4, 'VERIFIED'],
+    ] as const;
+    for (const [price, volume, abv, reliability] of vectors) {
+      expect(JSON.stringify(eurPerGram(price, volume, abv, reliability))).toBe(
+        JSON.stringify(eurPerGram(price, volume, abv, reliability, undefined)),
+      );
+    }
+  });
+
+  it('explicit units of 1 is byte-identical to the omitted-argument result', () => {
+    // A parsed "1×0,33 l"-style name resolves to one unit — the same
+    // bytes the single-unit formula always produced.
+    const omitted = eurPerGram(300, 0.33, 0.047);
+    expect(JSON.stringify(eurPerGram(300, 0.33, 0.047, 'VERIFIED', 1))).toBe(
+      JSON.stringify(omitted),
+    );
+    expect(JSON.stringify(eurPerGram(300, 0.33, 0.047, 'ESTIMATED', 1))).toBe(
+      JSON.stringify(eurPerGram(300, 0.33, 0.047, 'ESTIMATED')),
+    );
+  });
+
+  it.each([0, -3, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'provided units %s is not finite ≥ 1 → INVALID_UNITS_PER_PACKAGE',
+    (bad) => {
+      expect(eurPerGram(2199, 0.33, 0.053, 'VERIFIED', bad)).toEqual({
+        status: 'unavailable',
+        centsPerGram: null,
+        ethanolGrams: null,
+        reason: 'INVALID_UNITS_PER_PACKAGE',
+      });
+    },
+  );
+
+  it('null is a supplied non-value → INVALID_UNITS_PER_PACKAGE (only undefined defaults to 1)', () => {
+    expect(eurPerGram(2199, 0.33, 0.053, 'VERIFIED', null)).toMatchObject({
+      status: 'unavailable',
+      reason: 'INVALID_UNITS_PER_PACKAGE',
+    });
+  });
+
+  it('precedence: units validates after the volume it scales and before the later faults', () => {
+    // Invalid volume still wins (earlier phase).
+    expect(eurPerGram(2000, 0, 0.4, 'VERIFIED', 0)).toMatchObject({
+      reason: 'INVALID_VOLUME',
+    });
+    // Invalid units beat zero ethanol, invalid fraction, invalid price.
+    expect(eurPerGram(2000, 0.33, 0, 'VERIFIED', -1)).toMatchObject({
+      reason: 'INVALID_UNITS_PER_PACKAGE',
+    });
+    expect(eurPerGram(2000, 0.33, 40, 'VERIFIED', Number.NaN)).toMatchObject({
+      reason: 'INVALID_UNITS_PER_PACKAGE',
+    });
+    expect(eurPerGram(-5, 0.33, 0.4, 'VERIFIED', Number.NaN)).toMatchObject({
+      reason: 'INVALID_UNITS_PER_PACKAGE',
+    });
+    // Known unknowns still outrank everything: missing price + bad units.
+    expect(eurPerGram(null, 0.33, 0.4, 'VERIFIED', 0)).toMatchObject({
+      reason: 'MISSING_PRICE',
+    });
+  });
+});
+
 /** Narrow a result to the value branch, asserting the expected status. */
 function assertValue(
   result: ReturnType<typeof eurPerGram>,

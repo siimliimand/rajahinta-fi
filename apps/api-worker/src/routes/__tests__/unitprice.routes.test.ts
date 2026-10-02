@@ -279,3 +279,64 @@ describe('GET /api/v1/unitprice/ranking — status carriage', () => {
     expect(body.items).toEqual([]);
   });
 });
+
+describe('GET /api/v1/unitprice/ranking — pack-row ranking (task 6.2)', () => {
+  it('ranks a pack row on package math: "Karhu Olut 5.3% 24×33 l" → ≈ 6.64 ¢/g, was 159.35', async () => {
+    const { db, d1 } = openMigratedD1();
+    // The live defect shape: per-unit 0.33 l and 5.3 % stored, the pack
+    // count only in the name. Single-unit math priced the 2199 ¢ pack
+    // against one can (159.35 ¢/g — beer ranked like gold); package math
+    // divides by 24 × 0.33 l × 0.053 × 789 ≈ 331.19 g.
+    seedProduct(db, {
+      id: 1,
+      name: 'Karhu Olut 5.3% 24×33 l',
+      category: 'beer',
+      unitVolume: 0.33,
+      alcoholByVolume: 0.053,
+    });
+    seedOffer(db, { id: 11, productId: 1, priceCents: 2199 });
+    // A regular single-can beer the pack row must now outrank.
+    seedProduct(db, { id: 2, name: 'Karhu III', category: 'beer' });
+    seedOffer(db, { id: 21, productId: 2, priceCents: 300 });
+
+    const res = await getRanking(d1, '?category=beer');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as RankingBody;
+    // 6.6397 < 24.5150 — the pack row leads instead of trailing at 159.
+    expect(body.items.map((r) => r.productId)).toEqual([1, 2]);
+    expect(body.items[0]!.ethanolGrams).toBeCloseTo(331.19064, 5);
+    expect(body.items[0]!.centsPerGram).toBeCloseTo(6.6396803968, 8);
+    expect(body.items[0]!.reliabilityStatus).toBe('VERIFIED');
+  });
+
+  it('a single-unit product metric is byte-identical to its pre-change value', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III', category: 'beer' }); // no pack notation
+    seedOffer(db, { id: 11, productId: 1, priceCents: 300 });
+
+    const res = await getRanking(d1, '?category=beer');
+    const body = (await res.json()) as RankingBody;
+    // The name states no pack size → units default to 1 → ×1 is exact
+    // IEEE identity, so the row carries the exact pre-change doubles
+    // (0.33 l × 0.047 × 789 = 12.23739 g; 300 ¢ / that).
+    expect(body.items[0]!.ethanolGrams).toBe(12.237390000000001);
+    expect(body.items[0]!.centsPerGram).toBe(24.515031391497693);
+  });
+
+  it('a digit-bearing name with no pack notation parses units = undefined (default path)', async () => {
+    const { db, d1 } = openMigratedD1();
+    // ABV and volume digits in the name must not read as a pack count:
+    // no N×V and no "N-pack" → single-unit math on the stored physicals.
+    seedProduct(db, {
+      id: 1,
+      name: 'Koff Porter 4.7% 0,33 l',
+      category: 'beer',
+    });
+    seedOffer(db, { id: 11, productId: 1, priceCents: 350 });
+
+    const res = await getRanking(d1, '?category=beer');
+    const body = (await res.json()) as RankingBody;
+    expect(body.items[0]!.ethanolGrams).toBe(12.237390000000001);
+    expect(body.items[0]!.centsPerGram).toBeCloseTo(28.6008699567, 8);
+  });
+});

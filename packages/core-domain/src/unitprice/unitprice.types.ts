@@ -46,13 +46,17 @@ export type UnitPriceStatus = 'computed' | 'ESTIMATED' | 'unavailable';
  * current offer to price at all (the listing embed of a product with no
  * current-available offer), so the input is genuinely absent — a
  * different honesty claim than `INVALID_PRICE`'s "a price was supplied
- * but is unusable".
+ * but is unusable". `INVALID_UNITS_PER_PACKAGE` is the pack-side value
+ * fault: a units-per-package count was supplied (multipacks price the
+ * whole package against the total volume) but is not a usable count —
+ * only a literal `undefined` (nothing stated) defaults to one unit.
  */
 export type UnitPriceUnavailableReason =
   | 'MISSING_VOLUME'
   | 'MISSING_ALCOHOL_FRACTION'
   | 'MISSING_PRICE'
   | 'INVALID_VOLUME'
+  | 'INVALID_UNITS_PER_PACKAGE'
   | 'ZERO_ETHANOL'
   | 'INVALID_ALCOHOL_FRACTION'
   | 'INVALID_PRICE';
@@ -67,9 +71,11 @@ export interface UnitPriceValue {
   /** Offer price in euro cents per gram of pure ethanol. */
   readonly centsPerGram: number;
   /**
-   * Grams of pure ethanol in one unit — the denominator actually used
-   * (`unitVolumeL × alcoholFraction × 789`), kept as evidence so the
-   * density conversion is auditable and testable.
+   * Grams of pure ethanol the priced package contains — the denominator
+   * actually used (`unitVolumeL × unitsPerPackage × alcoholFraction ×
+   * 789`), kept as evidence so the density conversion is auditable and
+   * testable. Single-unit products carry the per-unit grams; a pack
+   * carries the package total, matching the pack's price.
    */
   readonly ethanolGrams: number;
   /** Reliability of the offer price the metric was derived from. */

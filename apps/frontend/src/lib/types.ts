@@ -118,13 +118,17 @@ export interface RetailOffer {
  * Why the €/g metric could not be produced (mirrors core-domain).
  * `MISSING_PRICE` (no current-available offer to price) and
  * `ZERO_ETHANOL` (present, valid, zero ABV — no denominator) close the
- * gap to the domain union the API actually emits.
+ * gap to the domain union the API actually emits, as does
+ * `INVALID_UNITS_PER_PACKAGE` (a supplied pack size that is not a
+ * finite count ≥ 1 — pack rows price the package against its total
+ * volume).
  */
 export type UnitPriceUnavailableReason =
   | 'MISSING_VOLUME'
   | 'MISSING_ALCOHOL_FRACTION'
   | 'MISSING_PRICE'
   | 'INVALID_VOLUME'
+  | 'INVALID_UNITS_PER_PACKAGE'
   | 'ZERO_ETHANOL'
   | 'INVALID_ALCOHOL_FRACTION'
   | 'INVALID_PRICE';
@@ -134,7 +138,10 @@ export interface UnitPriceValue {
   readonly status: 'computed' | 'ESTIMATED';
   /** Offer price in euro cents per gram of pure ethanol. */
   readonly centsPerGram: number;
-  /** Grams of pure ethanol in one unit (volume × fraction × 789 g/l). */
+  /**
+   * Grams of pure ethanol the priced package contains
+   * (unit volume × units-per-package × fraction × 789 g/l).
+   */
   readonly ethanolGrams: number;
   /** Reliability of the offer price the metric was derived from. */
   readonly priceReliability: ReliabilityStatus;
