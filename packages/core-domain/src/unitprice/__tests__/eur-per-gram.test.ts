@@ -116,12 +116,33 @@ describe('eurPerGram — unavailable (explicit, no substituted value)', () => {
     }
   });
 
-  it('alcohol fraction ≤ 0, > 1 (percent passed as fraction), or non-finite → INVALID_ALCOHOL_FRACTION', () => {
-    for (const bad of [0, -0.04, 40, 1.01, Number.NaN]) {
+  it('alcohol fraction < 0, > 1 (percent passed as fraction), or non-finite → INVALID_ALCOHOL_FRACTION', () => {
+    for (const bad of [-0.04, 40, 1.01, Number.NaN]) {
       expect(eurPerGram(2000, 0.5, bad)).toMatchObject({
         status: 'unavailable',
         reason: 'INVALID_ALCOHOL_FRACTION',
       });
+    }
+  });
+
+  it('ABV exactly 0 → ZERO_ETHANOL, not INVALID_ALCOHOL_FRACTION (live case: Karhu 0,0)', () => {
+    // Data is present and valid; the metric is physically undefined
+    // (denominator zero), which is a different honesty claim than
+    // "the record is broken".
+    expect(eurPerGram(2000, 0.33, 0)).toEqual({
+      status: 'unavailable',
+      centsPerGram: null,
+      ethanolGrams: null,
+      reason: 'ZERO_ETHANOL',
+    });
+  });
+
+  it('a 0 fraction never yields a value, for any price', () => {
+    for (const cents of [0, 2000, -1]) {
+      const result = eurPerGram(cents, 0.33, 0);
+      expect(result.status).toBe('unavailable');
+      expect(result.centsPerGram).toBeNull();
+      expect(result.ethanolGrams).toBeNull();
     }
   });
 
@@ -149,6 +170,48 @@ describe('eurPerGram — unavailable (explicit, no substituted value)', () => {
     expect(eurPerGram(-5, null, 0.4)).toMatchObject({ reason: 'MISSING_VOLUME' });
     // Missing abv + invalid volume: missing-alcohol check still comes first.
     expect(eurPerGram(-5, 0, undefined)).toMatchObject({ reason: 'MISSING_ALCOHOL_FRACTION' });
+  });
+
+  it('zero-ethanol sits between known unknowns and value-level faults (documented precedence)', () => {
+    // Known unknowns still win: missing abv + zero abv elsewhere aside,
+    // a missing fraction beats the zero check; invalid volume beats it too.
+    expect(eurPerGram(-5, 0.5, undefined)).toMatchObject({
+      reason: 'MISSING_ALCOHOL_FRACTION',
+    });
+    expect(eurPerGram(2000, 0, 0)).toMatchObject({ reason: 'INVALID_VOLUME' });
+    // Zero ethanol is reported before later faults (invalid price,
+    // invalid fraction cannot mask it).
+    expect(eurPerGram(-5, 0.33, 0)).toMatchObject({ reason: 'ZERO_ETHANOL' });
+  });
+});
+
+describe('eurPerGram — missing price (task 2.2, change honest-trust-surfaces)', () => {
+  it('null price with complete physicals → MISSING_PRICE, not INVALID_PRICE', () => {
+    // A listing with no current-available offer has no price INPUT —
+    // genuinely absent, a different honesty claim than a supplied-but-
+    // unusable price (INVALID_PRICE stays reserved for value faults).
+    expect(eurPerGram(null, 0.33, 0.047)).toEqual({
+      status: 'unavailable',
+      centsPerGram: null,
+      ethanolGrams: null,
+      reason: 'MISSING_PRICE',
+    });
+    expect(eurPerGram(undefined, 0.33, 0.047)).toMatchObject({
+      reason: 'MISSING_PRICE',
+    });
+  });
+
+  it('missing price is a known unknown — reported before value-level faults', () => {
+    expect(eurPerGram(null, 0, 0.4)).toMatchObject({ reason: 'MISSING_PRICE' });
+    expect(eurPerGram(null, 0.33, 0)).toMatchObject({ reason: 'MISSING_PRICE' });
+    expect(eurPerGram(null, 0.5, 40)).toMatchObject({ reason: 'MISSING_PRICE' });
+  });
+
+  it('the other known unknowns still outrank the missing price (module precedence)', () => {
+    expect(eurPerGram(null, null, 0.4)).toMatchObject({ reason: 'MISSING_VOLUME' });
+    expect(eurPerGram(null, 0.5, undefined)).toMatchObject({
+      reason: 'MISSING_ALCOHOL_FRACTION',
+    });
   });
 });
 

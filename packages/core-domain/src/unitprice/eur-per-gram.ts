@@ -48,12 +48,18 @@ export const ETHANOL_DENSITY_G_PER_L = 789;
  * Validation policy (single reported reason, checked in this order):
  *
  * 1. `unitVolumeL` is `null`/`undefined` → `MISSING_VOLUME`; then
- *    `alcoholFraction` is `null`/`undefined` → `MISSING_ALCOHOL_FRACTION`
- *    (known unknowns are reported before value-level faults).
+ *    `alcoholFraction` is `null`/`undefined` → `MISSING_ALCOHOL_FRACTION`;
+ *    then `priceCents` is `null`/`undefined` → `MISSING_PRICE` (known
+ *    unknowns are reported before value-level faults, and the physical
+ *    inputs precede the absent market price).
  * 2. Volume must be a finite number > 0 → else `INVALID_VOLUME`.
- *    `alcoholFraction` is a fraction, not a percent: it must be a finite
- *    number in `(0, 1]` — else `INVALID_ALCOHOL_FRACTION` (e.g. passing
- *    40 instead of 0.4 is rejected, not clamped).
+ *    `alcoholFraction` is a fraction, not a percent: an ABV of exactly
+ *    0 is present and valid data (a non-alcoholic beer), but the metric
+ *    is physically undefined — its denominator is zero — so it yields
+ *    `ZERO_ETHANOL` rather than an invalid-data accusation. Any other
+ *    out-of-domain value (negative, > 1, non-finite) →
+ *    `INVALID_ALCOHOL_FRACTION` (e.g. passing 40 instead of 0.4 is
+ *    rejected, not clamped).
  * 3. Price must be a finite number ≥ 0 → else `INVALID_PRICE`. A zero
  *    price is structurally valid (the metric is 0 cents/gram); ranking
  *    policy may treat free offers separately, that is not this
@@ -69,15 +75,18 @@ export const ETHANOL_DENSITY_G_PER_L = 789;
  * {@link ReliabilityStatus} yields `'ESTIMATED'` with the value still
  * returned, so an uncertain price is visible without hiding the number.
  *
- * @param priceCents      Offer price in euro cents (finite, ≥ 0).
+ * @param priceCents      Offer price in euro cents (finite, ≥ 0), or
+ *                        `null`/`undefined` when there is no current
+ *                        offer to price at → `MISSING_PRICE`.
  * @param unitVolumeL     Unit volume in litres (finite, > 0), or
  *                        `null`/`undefined` when unknown.
  * @param alcoholFraction ABV as a fraction in `(0, 1]` (0.4 = 40%),
- *                        or `null`/`undefined` when unknown.
+ *                        or `null`/`undefined` when unknown. Exactly 0
+ *                        (non-alcoholic) yields `ZERO_ETHANOL`.
  * @param priceReliability Reliability of the offer price; default `'VERIFIED'`.
  */
 export function eurPerGram(
-  priceCents: number,
+  priceCents: number | null | undefined,
   unitVolumeL: number | null | undefined,
   alcoholFraction: number | null | undefined,
   priceReliability: ReliabilityStatus = 'VERIFIED',
@@ -88,8 +97,15 @@ export function eurPerGram(
   if (alcoholFraction === null || alcoholFraction === undefined) {
     return unavailable('MISSING_ALCOHOL_FRACTION');
   }
+  if (priceCents === null || priceCents === undefined) {
+    return unavailable('MISSING_PRICE');
+  }
   if (!Number.isFinite(unitVolumeL) || unitVolumeL <= 0) {
     return unavailable('INVALID_VOLUME');
+  }
+  if (alcoholFraction === 0) {
+    // Present, valid data — the metric is undefined, not the input.
+    return unavailable('ZERO_ETHANOL');
   }
   if (
     !Number.isFinite(alcoholFraction) ||

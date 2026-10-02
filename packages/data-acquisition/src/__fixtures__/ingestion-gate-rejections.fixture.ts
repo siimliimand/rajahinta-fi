@@ -17,19 +17,22 @@
  *   (data-mapping.service.ts, task 1.1) — the offer is never published,
  *   the product upserts offer-less.
  * - category-implausible volume — the live "Karhu Olut 5.3% 24×33 l"
- *   33-litre beer. The multipack parser (task 1.3) yields the honest
- *   per-unit 33 l; the volume-ceiling gate (api-worker
- *   ingestion-steps.ts, task 1.2) withholds it to the unavailable
- *   encoding with a review flag, pre-upsert. This fixture pins the
- *   data-acquisition half: the row must reach that gate as a true
- *   per-unit value on a beer, never normalized plausible.
+ *   33-litre beer shape. The multipack parser (task 1.3) yields the pack
+ *   total (33 l, pack count 24); the mapping-layer pack-notation
+ *   normalizer (task 1.1, change honest-trust-surfaces) reads the name
+ *   as 24 × 33 cl and stores 0.33, so the row reaches the downstream
+ *   volume-ceiling gate (api-worker ingestion-steps.ts, task 1.2)
+ *   plausible.
  * - bundle name — the live "… + Jägermeister 0" concatenation. Gate:
  *   the parser (alks.parser.ts, task 1.3) — the row is held for review
  *   with no record, so nothing with arbitrarily parsed ABV/volume can
  *   publish.
  * - stacked — volume AND zero price on one row: the gates must compose
  *   (the ceiling copy preserves the mapper's offer rejection — an offer
- *   the price floor rejected is never resurrected).
+ *   the price floor rejected is never resurrected). At the mapping layer
+ *   the volume half now normalizes to a plausible 0.33 (task 1.1,
+ *   honest-trust-surfaces); the composition over a TRUE implausible
+ *   volume is pinned in the api-worker workflow tests.
  *
  * The pipeline contract test consuming this fixture lives in
  * `__tests__/pipeline-gate-contract.test.ts`.
@@ -71,10 +74,11 @@ export const ALKS_GATE_REJECTION_PRODUCTS: readonly AlksFixtureProduct[] = [
     weight: '1.5',
     is_in_stock: true,
   },
-  // Category-implausible volume — the live 33-litre beer. The multipack
-  // token parses deterministically as per-unit 33 l with pack count 24
-  // (never 24 × 33 l); the downstream volume-ceiling gate judges the
-  // value against the beer ceiling.
+  // Category-implausible volume — the live 33-litre beer shape. The
+  // parser yields the pack total (33 l, pack count 24); the mapping
+  // normalizer (honest-trust-surfaces task 1.1) reads the name as
+  // 24 × 33 cl → 0.33 per unit, satisfying the beer ceiling the
+  // downstream gate enforces.
   {
     id: 757102,
     name: 'Karhu Olut 5.3% 24×33 l',
@@ -84,9 +88,11 @@ export const ALKS_GATE_REJECTION_PRODUCTS: readonly AlksFixtureProduct[] = [
     categories: [{ name: 'Olut' }],
     is_in_stock: true,
   },
-  // Stacked — the volume failure AND the zero price on one row: a row
-  // can fail multiple gates at once, and no gate may resurrect what
-  // another rejected.
+  // Stacked — the incident shape carries a pack total AND a zero price.
+  // At this layer the price floor is the gate that fires (the volume
+  // normalizes to a plausible 0.33); no gate may resurrect what another
+  // rejected — pinned over a true implausible volume in the api-worker
+  // workflow tests.
   {
     id: 757103,
     name: 'Karin Munk Olut 4,7% 24×33 l',

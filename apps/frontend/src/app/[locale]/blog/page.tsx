@@ -3,6 +3,7 @@
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import NewsletterSubscribeForm from '../components/NewsletterSubscribeForm';
@@ -20,11 +21,17 @@ interface BlogIndexPageProps {
  * page adds no status logic of its own. Finnish serves from `/blog`,
  * English from `/en/blog` (localePrefix: 'as-needed').
  *
+ * Zero-publication gating (honest-trust-surfaces task 4.1, design D5):
+ * zero PUBLISHED posts for the locale is a missing page — the route
+ * answers `notFound()`, a crawler-honest 404 instead of an empty shell.
+ * Visibility is decided at request time from the publication count, so
+ * the first publication restores the page with no flag and no deploy.
+ *
  * Degradation semantics follow the curated-list precedent: a backend
- * failure renders a server-side "unavailable" state instead of an error;
- * zero published posts render the explicit empty state (an answer, not
- * an error). Copy is neutral per the content-policy lint — the blog
- * announces dataset changes and documents method, it never promotes.
+ * failure renders a server-side "unavailable" state instead of an error
+ * (a fetch failure is not evidence of zero posts). Copy is neutral per
+ * the content-policy lint — the blog announces dataset changes and
+ * documents method, it never promotes.
  */
 export async function generateMetadata({
   params,
@@ -56,6 +63,13 @@ export default async function BlogIndexPage({ params }: BlogIndexPageProps) {
   const t = await getTranslations({ locale, namespace: 'BlogPage' });
   const outcome = await getServerBlogIndex(locale);
 
+  // Zero-publication gating (task 4.1, design D5): a crawler-honest 404
+  // — no soft-404 empty shell. Only a resolved, empty index gates; a
+  // fetch failure keeps the unavailable state below.
+  if (outcome.kind === 'ok' && outcome.items.length === 0) {
+    notFound();
+  }
+
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
       <h1 className="mb-1 text-2xl font-bold text-primary-700">{t('title')}</h1>
@@ -70,18 +84,6 @@ export default async function BlogIndexPage({ params }: BlogIndexPageProps) {
             {t('unavailableTitle')}
           </h2>
           <p className="mt-1 text-sm text-gray-500">{t('unavailableBody')}</p>
-        </section>
-      )}
-
-      {outcome.kind === 'ok' && outcome.items.length === 0 && (
-        <section
-          data-testid="blog-empty"
-          className="rounded-lg border border-gray-200 bg-gray-50 p-6"
-        >
-          <h2 className="text-sm font-semibold text-gray-700">
-            {t('emptyTitle')}
-          </h2>
-          <p className="mt-1 text-sm text-gray-500">{t('emptyBody')}</p>
         </section>
       )}
 

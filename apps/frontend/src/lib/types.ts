@@ -21,6 +21,16 @@ export interface ProductSearchItem {
   readonly containerType: string;
   readonly lowestPriceCents: number | null;
   readonly merchantCount: number;
+  /**
+   * Read-time €/g ethanol metric for this listing row (mirrors the API's
+   * SearchItemResponse embed, honest-trust-surfaces task 2.2): computed
+   * from the cheapest current-available single offer, labeled with that
+   * offer's price reliability. Optional so the type tolerates cached
+   * responses captured before the embed existed; an absent key or an
+   * `unavailable` status renders nothing on the card — no placeholder,
+   * no zero. Never reorders the listing.
+   */
+  readonly eurPerGram?: UnitPriceResult;
 }
 
 export interface ProductSearchResult {
@@ -104,11 +114,18 @@ export interface RetailOffer {
 // Unit-price metric (mirrors core-domain unitprice.types)
 // ---------------------------------------------------------------------------
 
-/** Why the €/g metric could not be produced (mirrors core-domain). */
+/**
+ * Why the €/g metric could not be produced (mirrors core-domain).
+ * `MISSING_PRICE` (no current-available offer to price) and
+ * `ZERO_ETHANOL` (present, valid, zero ABV — no denominator) close the
+ * gap to the domain union the API actually emits.
+ */
 export type UnitPriceUnavailableReason =
   | 'MISSING_VOLUME'
   | 'MISSING_ALCOHOL_FRACTION'
+  | 'MISSING_PRICE'
   | 'INVALID_VOLUME'
+  | 'ZERO_ETHANOL'
   | 'INVALID_ALCOHOL_FRACTION'
   | 'INVALID_PRICE';
 
@@ -978,6 +995,20 @@ export interface ComparisonProduct {
 // ---------------------------------------------------------------------------
 
 /**
+ * True catalog coverage behind the accuracy statistic (change
+ * honest-trust-surfaces, task 3.1): the stored product count, the total
+ * offer observation count, and the latest ingestion watermark — read-time
+ * D1 aggregates, true values only. Display-only on the UI side; no value
+ * here feeds any calculation input.
+ */
+export interface AccuracyCoverage {
+  readonly productCount: number;
+  readonly offerObservations: number;
+  /** ISO-8601 watermark of the latest fully materialized ingest; null = none yet. */
+  readonly lastIngestAt: string | null;
+}
+
+/**
  * Public accuracy statistic. `withinMarginShare` is a fraction in [0,1]
  * and is null EXACTLY when count is 0 — the honest empty state renders
  * "no outcomes yet", never a percentage (spec calculation-outcomes).
@@ -992,6 +1023,12 @@ export interface AccuracyStatistic {
    * the UI renders it verbatim and never invents its own label.
    */
   readonly label: { readonly fi: string; readonly en: string };
+  /**
+   * Additive catalog-coverage block (honest-trust-surfaces task 3.1).
+   * Optional so the type also tolerates responses captured before the
+   * block existed.
+   */
+  readonly coverage?: AccuracyCoverage;
 }
 
 /** The two split dimensions the accuracy breakdown endpoint accepts. */

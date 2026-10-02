@@ -168,6 +168,9 @@ describe('layout and navigation catalog completeness', () => {
       'linkEvent',
       'linkValue',
       'linkBlog',
+      // honest-trust-surfaces 4.1: the footer carries a guides link whose
+      // visibility is gated on the locale's published-guide count.
+      'linkGuides',
       // about-contact: 3.3 adds both pages to the footer nav.
       'linkAbout',
       'linkContact',
@@ -313,6 +316,20 @@ describe('honest-state catalog key parity (3.1 + 3.2)', () => {
       'estimateWithin',
       'estimatePartial',
       'tryLink',
+    ]);
+  });
+
+  // ── Outcome nudge (honest-trust-surfaces task 3.3): the post-
+  // calculation prompt renders only from these keys — both locales must
+  // carry the exact set. ──
+
+  it('CalculatorResult.outcomeNudge carries the same keys in both locales', () => {
+    expectParity('CalculatorResult', 'outcomeNudge', [
+      'bodySignedIn',
+      'bodyAnonymous',
+      'ctaSignedIn',
+      'ctaAnonymous',
+      'dismiss',
     ]);
   });
 

@@ -16,16 +16,21 @@
 import * as React from 'react';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AccountPage from './page';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import {
   ApiFetchError,
   ensureSession,
+  getCalculationResult,
   request,
   requestVerificationEmail,
 } from '@/lib/api';
-import type { ApiError, SessionStatus } from '@/lib/types';
+import type {
+  ApiError,
+  CalculatorResult,
+  SessionStatus,
+} from '@/lib/types';
 
 const replaceMock = vi.fn();
 
@@ -58,6 +63,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 const mockedEnsureSession = vi.mocked(ensureSession);
 const mockedRequest = vi.mocked(request);
 const mockedResend = vi.mocked(requestVerificationEmail);
+const mockedGetCalculationResult = vi.mocked(getCalculationResult);
 
 function apiError(status: number, error: string): ApiError {
   return {
@@ -147,5 +153,91 @@ describe('AccountPage', () => {
 
     expect(await screen.findByTestId('account-load-failed')).toBeInTheDocument();
     expect(replaceMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Outcome deep-link (honest-trust-surfaces task 3.3): /account?outcome=
+// <recordId> from the result view's nudge preselects that record's report
+// form — scrolled into view and marked, never auto-submitted.
+// ---------------------------------------------------------------------------
+
+/** Minimal history record — only the fields the page renders. */
+function historyResult(recordId: number): CalculatorResult {
+  return {
+    itemizedCosts: [],
+    excludedOffers: [],
+    foreignRetailPrice: 2400,
+    transportCost: 0,
+    alcoholExciseEstimate: 0,
+    containerDutyEstimate: 0,
+    totalCents: 2400,
+    currency: 'EUR',
+    confidence: 'MEDIUM',
+    confidenceBreakdown: [],
+    disclaimer: { text: 'Testidisclaimer', language: 'fi', version: 'test' },
+    classification: {
+      classification: 'NotPersisted',
+      confidence: 'LOW',
+      evidence: [],
+      evidenceSummary: 'Ei tallennettu',
+    },
+    metadata: {
+      input: { productId: 1, quantity: 1, destination: 'FI' },
+      calculationTimestamp: new Date().toISOString(),
+      productMasterId: 1,
+      retailOfferIds: [],
+      quantity: 1,
+      destination: 'FI',
+      productName: 'Historiatuote',
+      volumeLitres: 0.33,
+      alcoholByVolume: 4.7,
+      category: 'beer',
+      datasetVersions: [],
+      transportOfferId: null,
+    },
+    calculationRecordId: recordId,
+  } as CalculatorResult;
+}
+
+describe('AccountPage outcome deep-link (?outcome=, task 3.3)', () => {
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
+  const scrollIntoView = vi.fn();
+
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = scrollIntoView;
+  });
+
+  afterEach(() => {
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+    window.history.pushState({}, '', '/account');
+  });
+
+  it('marks the requested record and scrolls its report form into view', async () => {
+    window.history.pushState({}, '', '/account?outcome=42');
+    mockedEnsureSession.mockResolvedValue({ ...SESSION, verified: true });
+    mockedRequest.mockResolvedValue([{ recordId: 42, outcomeReported: false }]);
+    mockedGetCalculationResult.mockResolvedValue(historyResult(42));
+
+    renderWithIntl(<AccountPage />);
+
+    const form = await screen.findByTestId('outcome-report-form-42');
+    const entry = form.closest('li');
+    expect(entry?.hasAttribute('data-outcome-preselected')).toBe(true);
+    expect(scrollIntoView).toHaveBeenCalled();
+  });
+
+  it('leaves no highlight when the requested record is not in the history', async () => {
+    window.history.pushState({}, '', '/account?outcome=99');
+    mockedEnsureSession.mockResolvedValue({ ...SESSION, verified: true });
+    mockedRequest.mockResolvedValue([{ recordId: 42, outcomeReported: false }]);
+    mockedGetCalculationResult.mockResolvedValue(historyResult(42));
+
+    renderWithIntl(<AccountPage />);
+
+    // The history still renders (record 42's form), but nothing is
+    // marked — the deep link never fabricates a prompt.
+    await screen.findByTestId('outcome-report-form-42');
+    expect(document.querySelector('[data-outcome-preselected]')).toBeNull();
   });
 });

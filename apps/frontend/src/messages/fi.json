@@ -86,6 +86,7 @@
     "linkEvent": "Tilaisuuslaskuri",
     "linkValue": "Arvo (€/g alkoholi)",
     "linkBlog": "Blogi",
+    "linkGuides": "Oppaat",
     "copyright": "© Rajahinta.fi",
     "linkAbout": "Tietoja Rajahinta.fi:stä",
     "linkContact": "Yhteystiedot"
@@ -276,6 +277,13 @@
       "estimateWithin": "Yksi matkustaja, sama määrä — arvio yhteensä {amount}.",
       "estimatePartial": "Sama määrä ylittää yhden matkustajan määräajat — arvio yhteensä {amount} kattaa vain sallitun määrän osuuden.",
       "tryLink": "Kokeile matkalaskuria"
+    },
+    "outcomeNudge": {
+      "bodySignedIn": "Jos todellinen loppusumma poikkesi arviosta, voit raportoida sen tilisivulla. Yksi raportti per laskelma.",
+      "bodyAnonymous": "Kirjautumalla sisään voit raportoida tämän laskelman todellisen loppusumman. Yksi raportti per laskelma.",
+      "ctaSignedIn": "Raportoi tilisivulla",
+      "ctaAnonymous": "Kirjaudu sisään",
+      "dismiss": "Sulje"
     },
     "category": {
       "foreignRetailPrice": "Ulkomainen vähittäishinta",
@@ -1560,7 +1568,12 @@
     "dimensionCarrier": "Kuljetusyhtiö",
     "countOnlyNote": "Osuutta ei näytetä, kun lopputuloksia on alle 10.",
     "cellEmpty": "Ei vielä lopputuloksia.",
-    "breakdownFailed": "Jaottelun lataaminen epäonnistui"
+    "breakdownFailed": "Jaottelun lataaminen epäonnistui",
+    "coverageLabel": "Seurattu valikoima",
+    "coverageProductsLabel": "Seurattuja tuotteita",
+    "coverageObservationsLabel": "Tallennettuja hintahavaintoja",
+    "coverageSyncLabel": "Viimeisin päivitys",
+    "coverageNote": "Nämä luvut kuvaavat seurattua valikoimaa, eivät käyttäjien raportoimia lopputuloksia. Tarkkuustilasto julkaistaan, kun lopputuloksia on raportoitu."
   },
   "OutcomeReport": {
     "formTitle": "Raportoi todellinen loppusumma",
@@ -1689,6 +1702,8 @@
     "fromPriceLabel": "Halvin havaittu hinta",
     "noPrice": "Ei havaittuja hintoja",
     "merchantCount": "Myyjiä: {count}",
+    "unitPriceChip": "{value} snt/g",
+    "trackedPrice": "Seurattu hinta",
     "paginationNavLabel": "Sivutus",
     "prevPage": "Edellinen sivu",
     "nextPage": "Seuraava sivu",

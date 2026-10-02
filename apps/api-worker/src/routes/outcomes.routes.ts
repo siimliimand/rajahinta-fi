@@ -32,6 +32,13 @@
  * state. Wording stays locked to the module labels; the breakdown is
  * display-only (nothing feeds the calculator, ranking, or basket).
  *
+ * The unfiltered response carries an additive `coverage` block (change
+ * honest-trust-surfaces, task 3.1): the true catalog state — product
+ * count, offer observation count, latest aggregation watermark — read
+ * from D1 at request time. The statistic fields keep their exact shape;
+ * the block is display-only and feeds no calculation input (spec
+ * calculation-outcomes).
+ *
  * @module OutcomesRoutes
  */
 
@@ -220,14 +227,62 @@ function toFloorResponseCell(
   };
 }
 
+/**
+ * Catalog coverage aggregate (change honest-trust-surfaces, task 3.1) —
+ * ONE statement, three scalar subqueries: the true stored counts and
+ * the true latest watermark. `MAX(watermark)` over the per-job rows is
+ * the ingestion watermark (ISO TEXT compares chronologically); over an
+ * empty table it is NULL → null, the honest no-ingest-yet state, never
+ * a fabricated instant. Read-time only — no caching, no materialization.
+ */
+const COVERAGE_SQL = `
+  SELECT
+    (SELECT COUNT(*) FROM product_master) AS product_count,
+    (SELECT COUNT(*) FROM retail_offers) AS offer_observations,
+    (SELECT MAX(watermark) FROM aggregation_watermarks) AS last_ingest_at`;
+
+interface D1CoverageRow {
+  readonly product_count: number;
+  readonly offer_observations: number;
+  readonly last_ingest_at: string | null;
+}
+
+/** The additive `coverage` block shape on the unfiltered accuracy response. */
+export interface AccuracyCoverageResponse {
+  readonly productCount: number;
+  readonly offerObservations: number;
+  readonly lastIngestAt: string | null;
+}
+
+/** Read the coverage block — one D1 round-trip, true stored values only. */
+async function readCoverage(
+  d1: D1DatabaseLike,
+): Promise<AccuracyCoverageResponse> {
+  const row = await d1.prepare(COVERAGE_SQL).first<D1CoverageRow>();
+  if (!row) {
+    // Scalar subqueries always yield exactly one row, even over empty tables.
+    throw new Error('coverage aggregate returned no row');
+  }
+  return {
+    productCount: row.product_count,
+    offerObservations: row.offer_observations,
+    lastIngestAt: row.last_ingest_at,
+  };
+}
+
 async function getAccuracy(c: Context<AppEnv>): Promise<Response> {
   const repo = new D1CalculationOutcomeRepository(c.env.DB);
   const groupBy = c.req.query('groupBy');
 
   if (groupBy === undefined) {
-    // Unfiltered global statistic — the pre-breakdown response, kept
-    // byte-identical (compliance task 4.3 pins the exact shape).
-    const statistic = await repo.findAccuracyStatistic({}, new Date());
+    // Unfiltered global statistic — the statistic fields stay
+    // byte-identical (compliance task 4.3); `coverage` is the one
+    // additive field (honest-trust-surfaces task 3.1), read in
+    // parallel with the statistic.
+    const [statistic, coverage] = await Promise.all([
+      repo.findAccuracyStatistic({}, new Date()),
+      readCoverage(c.env.DB),
+    ]);
     return c.json({
       count: statistic.count,
       withinMarginShare: statistic.withinMarginShare,
@@ -238,6 +293,7 @@ async function getAccuracy(c: Context<AppEnv>): Promise<Response> {
         fi: USER_REPORTED_OUTCOMES_LABEL_FI,
         en: USER_REPORTED_OUTCOMES_LABEL_EN,
       },
+      coverage,
     });
   }
 

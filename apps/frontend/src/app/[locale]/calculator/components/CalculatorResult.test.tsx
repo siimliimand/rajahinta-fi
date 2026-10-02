@@ -16,10 +16,12 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CalculatorResult from './CalculatorResult';
 import { renderWithIntl } from '@/lib/testing/test-intl';
+import { ensureSession } from '@/lib/api';
 import type {
   CalculatorResult as CalculatorResultType,
   ReliabilityStatus,
@@ -32,6 +34,18 @@ vi.mock('@/i18n/navigation', () => ({
   Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
     React.createElement('a', props),
 }));
+
+// The outcome nudge (task 3.3) probes the session on mount; the probe is
+// mocked so the render stays offline and steerable per test. Default is
+// a pending probe — the nudge renders nothing and no state update fires
+// in the tests that do not exercise it.
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>();
+  return {
+    ...actual,
+    ensureSession: vi.fn(() => new Promise<never>(() => undefined)),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -357,5 +371,100 @@ describe('CalculatorResult travellerAlternative callout (task 2.2)', () => {
     expect(screen.queryByTestId('traveller-alternative')).toBeNull();
     expect(container.textContent).not.toContain('Matkalaskurin arvio');
     expect(container.textContent).not.toContain('Kokeile matkalaskuria');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Outcome nudge (honest-trust-surfaces task 3.3): one dismissible prompt
+// after a successful calculation — account deep-link with the record
+// preselected when signed in, the sign-in path when anonymous,
+// session-sticky dismissal, nothing on a probe failure.
+// ---------------------------------------------------------------------------
+
+const SESSION: {
+  userId: string;
+  email: string;
+  verified: boolean;
+} = {
+  userId: '11111111-2222-4333-8444-555555555555',
+  email: 'kayttaja@example.fi',
+  verified: true,
+};
+
+const mockedEnsureSession = vi.mocked(ensureSession);
+
+describe('CalculatorResult outcome nudge (task 3.3)', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    // mockClear (not mockReset): keeps the factory's fail-closed default
+    // so an unset probe never yields an undefined promise.
+    mockedEnsureSession.mockClear();
+  });
+
+  it('renders the account deep-link with the record preselected when signed in', async () => {
+    mockedEnsureSession.mockResolvedValue(SESSION);
+
+    renderWithIntl(<CalculatorResult result={baseResult()} />);
+
+    const nudge = await screen.findByTestId('outcome-nudge');
+    expect(nudge).toBeVisible();
+    const cta = within(nudge).getByTestId('outcome-nudge-cta');
+    expect(cta.getAttribute('href')).toBe('/account?outcome=42');
+    // The prompt is dismissible and sends nothing on its own — its only
+    // outbound call is the session probe itself.
+    expect(
+      within(nudge).getByTestId('outcome-nudge-dismiss'),
+    ).toBeInTheDocument();
+    expect(mockedEnsureSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the sign-in path when the session probe answers 401', async () => {
+    const { ApiFetchError } = await import('@/lib/api');
+    mockedEnsureSession.mockRejectedValue(new ApiFetchError(401, null, null));
+
+    renderWithIntl(<CalculatorResult result={baseResult()} />);
+
+    const nudge = await screen.findByTestId('outcome-nudge');
+    expect(
+      within(nudge).getByTestId('outcome-nudge-cta').getAttribute('href'),
+    ).toBe('/login');
+  });
+
+  it('renders nothing when the session probe fails for any other reason', async () => {
+    mockedEnsureSession.mockRejectedValue(new Error('network down'));
+
+    renderWithIntl(<CalculatorResult result={baseResult()} />);
+
+    await waitFor(() => expect(mockedEnsureSession).toHaveBeenCalled());
+    expect(screen.queryByTestId('outcome-nudge')).toBeNull();
+  });
+
+  it('dismisses for the session: hidden immediately, stays hidden on remount, never probes again', async () => {
+    const user = userEvent.setup();
+    mockedEnsureSession.mockResolvedValue(SESSION);
+
+    const { unmount } = renderWithIntl(
+      <CalculatorResult result={baseResult()} />,
+    );
+    await user.click(await screen.findByTestId('outcome-nudge-dismiss'));
+    expect(screen.queryByTestId('outcome-nudge')).toBeNull();
+    expect(sessionStorage.getItem('rajahinta-outcome-nudge-dismissed')).toBe(
+      '1',
+    );
+
+    // A freshly mounted result in the same session stays dismissed — and
+    // the dismissal short-circuits before the session probe.
+    unmount();
+    renderWithIntl(<CalculatorResult result={baseResult()} />);
+    expect(screen.queryByTestId('outcome-nudge')).toBeNull();
+    expect(mockedEnsureSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('never renders a nudge placeholder before the probe resolves', () => {
+    mockedEnsureSession.mockReturnValue(new Promise(() => undefined));
+
+    renderWithIntl(<CalculatorResult result={baseResult()} />);
+
+    expect(screen.queryByTestId('outcome-nudge')).toBeNull();
   });
 });

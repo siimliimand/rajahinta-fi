@@ -448,12 +448,20 @@ function stripVolatile(body: Record<string, unknown>): string {
   // Offer aggregates on listing rows (lowestPriceCents/merchantCount)
   // track the offer table by design since unit-integrity-and-result-trust
   // (task 3.1): they are offer data, not €/g metric output, so a price
-  // flip moves them without violating input isolation. They are stripped
-  // from the identity check; the flip itself is pinned as a non-vacuity
-  // assertion below.
+  // flip moves them without violating input isolation. The €/g embed
+  // joined that class with honest-trust-surfaces (task 2.2, design D1):
+  // it derives from the cheapest current offer's price, so the flip
+  // legitimately moves it too (the flip moving it is pinned as a
+  // non-vacuity assertion below). All three are stripped from the
+  // identity check.
   if (Array.isArray(rest.items)) {
     rest.items = (rest.items as Record<string, unknown>[]).map(
-      ({ lowestPriceCents: _p, merchantCount: _m, ...item }) => item,
+      ({
+        lowestPriceCents: _p,
+        merchantCount: _m,
+        eurPerGram: _e,
+        ...item
+      }) => item,
     );
   }
   return JSON.stringify(rest).replaceAll(/"computedAt":"[^"]*"/g, '"computedAt":"<READ-TIME>"');
@@ -650,6 +658,21 @@ describe('€/g ranking flip vs default ordering (fresh composition per price st
     };
     expect(row2Before.lowestPriceCents).toBe(500);
     expect(row2After.lowestPriceCents).toBe(100);
+
+    // The listing €/g embed tracks the cheapest current offer (task 2.2,
+    // honest-trust-surfaces): the flip must move it too — guards a
+    // regression to the old constant-unavailable NaN-price embed.
+    const embedBefore = searchBefore.items.find((i) => i.id === 2) as {
+      eurPerGram: { centsPerGram: number | null };
+    };
+    const embedAfter = searchAfter.items.find((i) => i.id === 2) as {
+      eurPerGram: { centsPerGram: number | null };
+    };
+    expect(embedBefore.eurPerGram.centsPerGram).not.toBeNull();
+    expect(embedAfter.eurPerGram.centsPerGram).not.toBeNull();
+    expect(embedAfter.eurPerGram.centsPerGram).not.toBe(
+      embedBefore.eurPerGram.centsPerGram,
+    );
 
     // The default ordering followed the product data, never the metric:
     // identical id order AND identical bytes (informational embeds

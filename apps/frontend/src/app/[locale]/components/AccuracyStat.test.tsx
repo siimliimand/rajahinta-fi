@@ -20,6 +20,17 @@
  *      empty state (never a fabricated 0 %).
  *   6. The trust-row variant gains no selector.
  *
+ * Coverage mode (honest-trust-surfaces task 3.2, design D4):
+ *   7. Count 0 WITH a coverage block → the labeled catalog-coverage
+ *      rendering (products tracked / observations / last sync), never
+ *      the accuracy presentation (no share, no sample size, no
+ *      breakdown selector) — in both variants.
+ *   8. Count 0 WITHOUT the block (pre-3.1 response) → the honest empty
+ *      state, exactly as before.
+ *   9. Non-zero count → the user-reported presentation unchanged, even
+ *      when a coverage block rides along (the data-driven flip back).
+ *  10. lastIngestAt null → coverage renders without the sync row.
+ *
  * @module AccuracyStatTest
  */
 // @vitest-environment jsdom
@@ -31,7 +42,7 @@ import userEvent from '@testing-library/user-event';
 import AccuracyStat from './AccuracyStat';
 import { getAccuracyBreakdown, getAccuracyStatistic } from '@/lib/api';
 import { renderWithIntl } from '@/lib/testing/test-intl';
-import type { AccuracyBreakdown } from '@/lib/types';
+import type { AccuracyBreakdown, AccuracyCoverage } from '@/lib/types';
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
@@ -78,6 +89,26 @@ function breakdown(dimension: 'category' | 'carrier'): AccuracyBreakdown {
       en: 'Based on user-reported outcomes',
     },
   };
+}
+
+/** The additive catalog-coverage block (honest-trust-surfaces task 3.1). */
+function coverage(
+  overrides: Partial<AccuracyCoverage> = {},
+): AccuracyCoverage {
+  return {
+    productCount: 1284,
+    offerObservations: 45231,
+    lastIngestAt: '2026-09-30T00:05:00.000Z',
+    ...overrides,
+  };
+}
+
+/** A statistic with the coverage block attached, as the route returns it. */
+function statWithCoverage(
+  count = 0,
+  block: AccuracyCoverage | undefined = coverage(),
+) {
+  return { ...globalStat(count, count === 0 ? null : 0.75), coverage: block };
 }
 
 describe('AccuracyStat (honest rendering contract)', () => {
@@ -301,6 +332,105 @@ describe('AccuracyStat trust-row (breakdown absence)', () => {
     expect(screen.queryByTestId('accuracy-breakdown')).toBeNull();
     expect(screen.queryByTestId('accuracy-dimension-category')).toBeNull();
     expect(screen.queryByTestId('accuracy-dimension-carrier')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Coverage mode (honest-trust-surfaces task 3.2, design D4)
+// ---------------------------------------------------------------------------
+
+describe('AccuracyStat coverage mode (count 0 + coverage block)', () => {
+  it('renders the labeled catalog coverage in the section variant — never the accuracy presentation', async () => {
+    mockedAccuracy.mockResolvedValue(statWithCoverage());
+
+    renderWithIntl(<AccuracyStat variant="section" />);
+    const cov = await screen.findByTestId('accuracy-coverage');
+
+    // The coverage label names the mode (the section heading); the three
+    // true values render inside the block.
+    expect(cov).toHaveTextContent('Seurattuja tuotteita');
+    expect(cov).toHaveTextContent('1284');
+    expect(cov).toHaveTextContent('Tallennettuja hintahavaintoja');
+    expect(cov).toHaveTextContent('45231');
+    const sync = within(cov).getByTestId('accuracy-coverage-last-sync');
+    expect(sync).toHaveTextContent('Viimeisin päivitys');
+    // The watermark formats with the existing fi numeric date convention.
+    expect(sync).toHaveTextContent(/30\.9\.2026/);
+
+    // Visually distinct from the accuracy presentation: the heading is
+    // the coverage label, and no share, sample size, or selector renders.
+    expect(
+      screen.getByRole('heading', { name: 'Seurattu valikoima' }),
+    ).toBeDefined();
+    expect(screen.queryByTestId('accuracy-empty')).toBeNull();
+    expect(screen.queryByTestId('accuracy-statistic')).toBeNull();
+    expect(screen.queryByTestId('accuracy-breakdown')).toBeNull();
+    expect(cov).not.toHaveTextContent('%');
+    expect(cov).not.toHaveTextContent('Otoskoko');
+    // The API's user-reported label does not ride along in coverage mode.
+    expect(
+      screen.queryByText(/Perustuu käyttäjien raportoimiin lopputuloksiin/),
+    ).toBeNull();
+  });
+
+  it('renders the labeled catalog coverage in the trust-row variant (homepage)', async () => {
+    mockedAccuracy.mockResolvedValue(statWithCoverage());
+
+    renderWithIntl(<AccuracyStat variant="trust-row" />);
+    await waitFor(() =>
+      expect(screen.getByTestId('accuracy-trust-row')).toBeDefined(),
+    );
+    const cov = await screen.findByTestId('accuracy-coverage');
+
+    expect(
+      screen.getByRole('heading', { name: 'Seurattu valikoima' }),
+    ).toBeDefined();
+    expect(cov).toHaveTextContent('Seurattuja tuotteita');
+    expect(cov).toHaveTextContent('1284');
+    expect(screen.queryByTestId('accuracy-empty')).toBeNull();
+    expect(screen.queryByTestId('accuracy-statistic')).toBeNull();
+  });
+
+  it('keeps the honest empty state when the response carries no coverage block (old response)', async () => {
+    mockedAccuracy.mockResolvedValue(globalStat(0, null));
+
+    renderWithIntl(<AccuracyStat variant="section" />);
+    await waitFor(() => expect(screen.getByTestId('accuracy-empty')).toBeDefined());
+
+    expect(screen.queryByTestId('accuracy-coverage')).toBeNull();
+    expect(screen.getByText('Ei vielä käyttäjien raportoimia lopputuloksia')).toBeDefined();
+  });
+
+  it('flips back to the user-reported presentation when the count is non-zero, even with coverage present', async () => {
+    mockedAccuracy.mockResolvedValue(statWithCoverage(12));
+
+    renderWithIntl(<AccuracyStat variant="section" />);
+    await waitFor(() =>
+      expect(screen.getByTestId('accuracy-statistic')).toBeDefined(),
+    );
+
+    // Byte-for-byte the accuracy presentation; the coverage block and its
+    // label stay out.
+    expect(screen.getByText(/75 % raportoiduista loppusumista/)).toBeDefined();
+    expect(screen.getByText(/Otoskoko: 12/)).toBeDefined();
+    expect(screen.queryByTestId('accuracy-coverage')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Seurattu valikoima' })).toBeNull();
+    // The breakdown selector returns with the outcomes it splits.
+    expect(screen.getByTestId('accuracy-breakdown')).toBeInTheDocument();
+  });
+
+  it('renders coverage without the sync row when lastIngestAt is null', async () => {
+    mockedAccuracy.mockResolvedValue(
+      statWithCoverage(0, coverage({ lastIngestAt: null })),
+    );
+
+    renderWithIntl(<AccuracyStat variant="trust-row" />);
+    const cov = await screen.findByTestId('accuracy-coverage');
+
+    expect(cov).toHaveTextContent('Seurattuja tuotteita');
+    expect(cov).toHaveTextContent('Tallennettuja hintahavaintoja');
+    expect(screen.queryByTestId('accuracy-coverage-last-sync')).toBeNull();
+    expect(cov).not.toHaveTextContent('Viimeisin päivitys');
   });
 });
 

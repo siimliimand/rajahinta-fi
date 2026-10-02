@@ -8,7 +8,14 @@ import { Link } from '@/i18n/navigation';
 import { request, SERVER_AGE_CONFIRMATION_TOKEN } from '@/lib/api';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import type { ProductSearchItem, ProductSearchResult } from '@/lib/types';
-import { Badge, Card, EmptyState, ErrorState } from '@/components/ui';
+import { RELIABILITY_STATUS_META } from '@/lib/design/status';
+import {
+  Badge,
+  Card,
+  EmptyState,
+  ErrorState,
+  ReliabilityBadge,
+} from '@/components/ui';
 import CategoryAlertAction from './components/CategoryAlertAction';
 import {
   CANONICAL_CATEGORIES,
@@ -44,6 +51,12 @@ import {
  * (design D6): generateMetadata renders per-category FI/EN titles and
  * descriptions, and every (category, page) state emits a canonical URL
  * so parameter permutations do not fragment the index.
+ *
+ * Trust surfaces (task 2.3, change honest-trust-surfaces): the card
+ * footer's €/g chip renders only for a computed listing embed (value +
+ * unit + the canonical reliability badge) and renders nothing for an
+ * unavailable or absent embed; a single-seller card replaces the
+ * "Myyjiä: 1" count with the tracked-price framing (design D6).
  *
  * @module CatalogPage
  */
@@ -319,6 +332,11 @@ export default async function ProductsPage({
   const q = resolveQParam(query.q);
 
   const t = await getTranslations({ locale, namespace: 'ProductsPage' });
+  // Root-scoped so the €/g chip's reliability label resolves through the
+  // canonical labelKey contract in RELIABILITY_STATUS_META — the same
+  // source of truth as the home trust-row, the compare view, and the
+  // value ranking.
+  const tRoot = await getTranslations({ locale });
 
   const result = await getServerCatalogPage(category, page, sort, q);
 
@@ -548,7 +566,9 @@ export default async function ProductsPage({
       ) : (
         <>
           {/* ── Card grid — name, brand, category, ABV, volume, lowest
-              observed price, merchant count; each card links to the
+              observed price, the €/g chip when the listing embed is
+              computed, and the seller line (tracked-price framing for a
+              single seller, the count otherwise); each card links to the
               product detail page ── */}
           <ul
             data-testid="catalog-grid"
@@ -597,9 +617,42 @@ export default async function ProductsPage({
                     ) : (
                       <p className="text-gray-500">{t('noPrice')}</p>
                     )}
-                    <p className="text-gray-500">
-                      {t('merchantCount', { count: item.merchantCount })}
-                    </p>
+                    {/* ── €/g chip (task 2.3, change honest-trust-surfaces):
+                        ONLY a computed metric renders — an unavailable or
+                        absent embed renders nothing at all (no placeholder,
+                        no zero). Value + localized unit + the input price's
+                        reliability badge, the canonical presentation the
+                        compare view's UnitPriceCell and the value ranking
+                        use; the badge's icon shape keeps the label off
+                        color alone. ── */}
+                    {item.eurPerGram !== undefined &&
+                    item.eurPerGram.status !== 'unavailable' ? (
+                      <p className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span className="font-semibold tabular-nums text-gray-900">
+                          {t('unitPriceChip', {
+                            value: item.eurPerGram.centsPerGram.toFixed(2),
+                          })}
+                        </span>
+                        <ReliabilityBadge status={item.eurPerGram.priceReliability}>
+                          {tRoot(
+                            RELIABILITY_STATUS_META[item.eurPerGram.priceReliability]
+                              .labelKey,
+                          )}
+                        </ReliabilityBadge>
+                      </p>
+                    ) : null}
+                    {/* ── Single-seller reframe (task 2.3, design D6): one
+                        seller is not advertised as a count — the
+                        merchant-agnostic tracked-price line replaces
+                        "Myyjiä: 1". Zero and multi-seller counts render as
+                        before. ── */}
+                    {item.merchantCount === 1 ? (
+                      <p className="text-gray-500">{t('trackedPrice')}</p>
+                    ) : (
+                      <p className="text-gray-500">
+                        {t('merchantCount', { count: item.merchantCount })}
+                      </p>
+                    )}
                   </div>
                 </Card>
               </li>
