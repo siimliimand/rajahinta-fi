@@ -140,11 +140,12 @@ Plain, hook-free React components over Tailwind utilities — usable from both s
 
 | Component file | Route | Purpose |
 |---|---|---|
-| `calculator/components/ResultCard.tsx` | `/calculator` | Answer-first result card: estimated landed cost as the primary figure, explicit cheaper/dearer wording with the Finland comparison (never color-alone), itemized breakdown beneath, reliability status + timestamp via `RELIABILITY_STATUS_META`, structural disclaimer consumed from the result object |
-| `calculator/components/ProductSearch.tsx` | `/calculator` | Product search input |
+| `calculator/components/ResultCard.tsx` | `/calculator` | Answer-first result card: estimated landed cost as the primary figure, explicit cheaper/dearer wording with the Finland comparison (never color-alone), itemized breakdown beneath, reliability status + timestamp via `RELIABILITY_STATUS_META`, structural disclaimer consumed from the result object; traveller-mode results render the within/surplus-allowance split with the dataset version + single-traveller note, and the honest traveller-unavailable state on 409 `NoPublishedAllowances` |
+| `calculator/components/ProductSearch.tsx` | `/calculator` | Product search input with the zero-result "Tarkoititko: X?" suggestion chip (click runs the suggested query; the typed query is never rewritten) |
 | `calculator/components/ProductSelector.tsx` | `/calculator` | Product selection from results |
 | `calculator/components/QuantitySelector.tsx` | `/calculator` | Quantity input for calculation |
-| `calculator/components/CalculatorResult.tsx` | `/calculator` | Itemized landed-cost result display |
+| `calculator/components/CalculatorResult.tsx` | `/calculator` | Itemized landed-cost result display (persisted GET view; the live POST view adds the traveller-alternative callout below) |
+| `calculator/components/TravellerAlternativeCallout.tsx` | `/calculator` | Delivery-result callout: labeled traveller-import estimate (allowance framing + dataset version; partial-coverage copy when the quantity exceeds the cap) with the "Kokeile matkalaskuria" link into the pre-filled trip calculator |
 | `calculator/components/HistoryChart.tsx` | `/calculator`, `/compare` | Pure-SVG historical price/landed-cost chart with tax-change markers and reliability badges (flag-gated) |
 | `calculator/components/ProductHistoryPanel.tsx` | `/calculator`, `/compare` | Flag-guarded chart panel — skips fetch when flag off; metric and merchant filters; "data available from" notice |
 | `calculator/components/DisclaimerBanner.tsx` | `/calculator` | Structural disclaimer rendered on every result |
