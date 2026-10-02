@@ -38,12 +38,15 @@ export type UnitPriceStatus = 'computed' | 'ESTIMATED' | 'unavailable';
  * Why the metric could not be produced. Distinguishes missing data
  * (known unknowns — the product record simply lacks the field) from
  * invalid data (a value was supplied but is outside the domain the
- * formula accepts).
+ * formula accepts) from defined-but-undefined data (`ZERO_ETHANOL`:
+ * the ABV is present, valid, and genuinely zero — the metric has no
+ * denominator, so it does not exist rather than the data being wrong).
  */
 export type UnitPriceUnavailableReason =
   | 'MISSING_VOLUME'
   | 'MISSING_ALCOHOL_FRACTION'
   | 'INVALID_VOLUME'
+  | 'ZERO_ETHANOL'
   | 'INVALID_ALCOHOL_FRACTION'
   | 'INVALID_PRICE';
 
