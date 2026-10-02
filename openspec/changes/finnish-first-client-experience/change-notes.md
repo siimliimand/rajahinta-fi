@@ -345,3 +345,29 @@ regressions observed: delivery totals match pre-change engine
 semantics on a domestic product, all search totals ≥ baseline, and
 no live check was papered over — both gaps are recorded with root
 causes and owner actions.
+
+---
+
+## Addendum — owner-directed data operations (2026-10-02, post-merge)
+
+Both production gaps from §4.2's findings were closed the same day under the owner's explicit direction.
+
+### 1. Traveller allowance dataset published
+
+`eu-2007-74-2026.1` (Commission Directive 2007/74/EC, EUR-Lex CELEX 32007L0074) seeded into production `traveller_allowance_datasets` + `traveller_allowance_limits` (5 cited limit rows: spirits 10 l, intermediate products 20 l, wine still 90 l / sparkling 60 l shared, beer 110 l — the seed module's exact values, generated verbatim from `traveller-allowances.seed.ts`), then transitioned PENDING_CONFIRMATION → PUBLISHED (the repository's only publish path; `confirmed_by: 'owner-directed (agent session 2026-10-02)'`). No endpoint was used — the operator-console-only lifecycle was respected; statements ran via `wrangler d1 execute --remote`.
+
+Live verification (product 5057 Jameson Caskmates Stout 40 %, 6 × 0.7 l = 4.2 l ≤ 10 l spirits cap):
+
+- PERSONAL: HTTP 200, total **€267.48 = shelf price only** (retail 26 748 c; excise/duty/VAT zero within cap), `metadata.allowanceDatasetVersion: eu-2007-74-2026.1` — the pre-change delivery figure was €364.20.
+- Delivery: unchanged €364.20 **plus** `travellerAlternative { estimatedTotalCents: 26748, withinAllowance: true, version: eu-2007-74-2026.1, categoryKey: 'spirits' }`.
+
+### 2. product_master.brand populated (derived)
+
+Root cause confirmed: no feed carries brands (alks store API `brands: []` on every payload; alko adapter deliberately empty) — the pipeline was faithful, the data absent. Owner approved derivation + backfill + deploy.
+
+- `deriveBrand(name)` (packages/data-acquisition, `feature/derive-product-brand`): pure conservative leading-run extractor — beverage/grape/qualifier stoplist (207 folded words), 3-token cap, honest `''` refusals; 31 unit pins on real catalog names.
+- Backfill: 7,876 rows dumped, script emitted **7,279 UPDATEs** (stored-empty only, `updated_at` untouched; FTS synced by the existing `product_master_fts_au` trigger). Distribution: 2,205 × 1-token / 2,253 × 2-token / 2,821 × 3-token (cap) / 597 honest refusals (7.6%).
+- Deploy: PR #74 (CI green) merged `aa63ab0`, gated deploy run `36980931195` success — the daily cron now derives brands instead of overwriting them back to ''.
+- Live: `koskenkrova` → 0 results + `suggestion: Koskenkorva`; `jackdanels` → `Jack Daniel's`; 53 products branded Koskenkorva, 23 Jack Daniel's; `jameson` recall now leads with brand-token matches; viski (100) and olut (clean head) unchanged.
+
+Known v1 limitation (documented in the module header): lexically unmarked line names over-capture within the 3-token cap ("Tuborg Sunsæt", "Bacardi Carta Blanca") — advisory-only impact on suggestions/bm25 ranking, never product identity (the Tier-2 compound key was backfilled BEFORE deploy so lookups match).
