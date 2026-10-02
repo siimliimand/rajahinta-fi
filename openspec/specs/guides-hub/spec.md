@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change insight-surfaces. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Evergreen guides on the blog publication pipeline
 
 The system SHALL support evergreen guide posts (kind GUIDE) alongside rate-change posts (kind RATE_CHANGE) in the same `blogPosts` store, distinguished by a kind discriminator defaulting to RATE_CHANGE. Operators SHALL create and edit guide drafts through ops console actions behind the ops-access guard, and guide publication SHALL follow the same human DRAFT-to-PUBLISHED path, with the action appended to the audit trail. Guides SHALL carry no rate-dataset-version provenance because none applies to them.
@@ -55,3 +57,15 @@ The guides platform SHALL carry FAQ entries answering the standing visitor quest
 - **WHEN** the homepage FAQ section renders
 - **THEN** it lists only PUBLISHED FAQ entries and renders nothing when none exist
 
+### Requirement: Zero-publication visibility gating
+
+When zero guides are published for the requested locale, the public guides index route SHALL render `notFound()` (a real 404) instead of an empty-state page, and the site footer SHALL omit the guides link. Visibility SHALL be decided at request time from publication counts; a failure resolving the counts SHALL default to hidden. Publishing the first guide SHALL restore the index page and the footer link on a subsequent request with no feature flag and no deploy. Guide-detail routes for unpublished slugs keep their existing not-found behavior.
+
+#### Scenario: Zero published guides render 404
+
+- **WHEN** the guides index is requested for a locale with zero published guides
+- **THEN** the response is a 404, and no "no guides yet" empty shell is served to crawlers
+
+#### Scenario: Footer link hidden while empty, restored on first publication
+
+- **WHEN** zero guides are published, the footer omits the guides link; **WHEN** the first guide is published, a subsequent request renders the index and the footer link without a deploy or flag
