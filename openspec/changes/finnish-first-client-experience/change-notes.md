@@ -240,3 +240,108 @@ this pass. Task 4.1's gate for 4.2 (gated production deploy + live
 verification) is satisfied on the local side: 8/8 suite commands exit
 0, 10/10 browser checks pass, and every ADDED requirement scenario
 maps to a green committed test.
+
+## 4.2 — Production deploy + live verification (2026-10-02)
+
+Owner-approved gated rollout executed per the established pipeline:
+push → PR CI → merge → gated `deploy-production.yml` → live
+verification against `https://api.rajahinta.fi` / `https://rajahinta.fi`.
+Everything below is recorded output (raw responses kept under
+`/tmp/opencode/42-evidence/`); the production-credential token was used
+only in-memory for two read-only D1 diagnostics and never written
+anywhere.
+
+### Pipeline (all steps green)
+
+| Step | Result |
+|---|---|
+| Push `feature/finnish-first-client-experience` | new remote branch |
+| PR | [#73](https://github.com/siimliimand/rajahinta-fi/pull/73) → master |
+| PR checks (watched) | **all pass**: D1 suite ×2, Data-quality ×2, E2E ×2, Golden-dataset ×2, Integration ×2, Lint ×2, Load test (calculator, in-process), Unit tests ×2, Worker checks ×2, Wrangler config validation ×2 (Artillery staging job `skipping` — PR-path by design) |
+| Merge | merge commit **`71c7264`** ("Merge pull request #73 …", task commits preserved) |
+| Gated deploy | run **`36974411926`** ([actions/runs/36974411926](https://github.com/siimliimand/rajahinta-fi/actions/runs/36974411926)), `confirm_deploy=yes`, ref `master` |
+| Deploy steps | Build frontend (OpenNext) ✓ → Apply D1 migrations (production) ✓ → Deploy API Worker ✓ → Deploy email Worker ✓ → Deploy frontend Worker ✓ → **Health gate ✓** (`/api/v1/health/ready` 200) |
+| Post-deploy health | `{"status":"ok","checks":{"d1":{"status":"up"},"durableObjects":{"status":"up"}}}` |
+
+### Live search battery (production API, `x-age-confirmed: 1`, cache-busted)
+
+| Term | Before | After (live `total`) | Verdict |
+|---|---|---|---|
+| `viski` | 1 | **≥ 100** (response `total: 100` = saturated MAX_PAGE_SIZE window; page returns 20) | **PASS** — whisky recalled via fi↔en synonym expansion, ≫ pre-change 1 |
+| `viini` | 16 | **73** | **PASS** — synonym-expanded recall, ~4.5× baseline |
+| `olut` | Absolut rows in head | **36**; head = Olutpaja XA Stout, Olutpaja Vasen Ranta IPA, Karhu Olut 5.3 %, Carlsberg olut, Fentimans Ginger Beer, Carabao Lager Beer — all `olut`/`beer` token matches, **zero Absolut rows in the head** | **PASS** — scarcity gate holds on real catalog (Absolut incident fixed) |
+| `koskenkrova` | 0 (no suggestion field pre-change) | **0 results + `suggestion` ABSENT** | **DATA-GATED** — see finding 1 |
+| `jackdanels` | 0 (no suggestion field pre-change) | **0 results + `suggestion` ABSENT** | **DATA-GATED** — see finding 1 |
+| `arhu` | Karhu recalled | **9**, all Karhu rows | **PASS** — fragment LIKE-merge recall survives the gate |
+
+Control queries recorded the same hour: `Koskenkorva` → 84 results
+(head: Koskenkorva Viina / Caipiroska / Vodka), `"Jack Daniel"` → 23,
+`jackdaniels` (correct concatenated spelling) → 0 — names tokenize as
+`jack`/`daniels`, so the concatenated form needs the did-you-mean path
+exactly as designed.
+
+**Finding 1 (recorded observation, no workaround attempted): the 3.2
+did-you-mean suggestion is deployed but dormant on today's production
+data.** The API responses carried no `suggestion` field for
+`koskenkrova`/`jackdanels`. Root cause verified read-only against
+production D1: `SELECT COUNT(*) … WHERE brand <> ''` on
+`product_master` returns **0 of 7876 rows with a non-empty brand** —
+`BRAND_VOCABULARY_SQL`'s vocabulary is empty, so `suggestBrand`
+correctly returns null (an empty vocabulary admits no candidate; the
+route attaches the field only when non-null, per the committed tests).
+Product 5057's detail record corroborates: `"brand": ""`. This is not
+a regression (the field did not exist pre-change; zero-result behavior
+is otherwise identical). Unblocking = populating `product_master.brand`
+via the catalog/ETL load — an owner/data-platform decision, not
+attempted here.
+
+### Live calculator on real product 5057 — Jameson Caskmates Stout Edition
+
+Product confirmed live: `id=5057`, category `spirits`,
+`alcoholByVolume 0.4`, `unitVolume "0.7000"`, single alko offer €44.58
+(`observedAt 2026-10-02T00:01:10Z`). Quantity **6** → 6 × 0.7 l = 4.2 l,
+within the 10 l spirits cap. Two POSTs to
+`https://api.rajahinta.fi/api/v1/calculator` (the task's stated
+budget; no further writes):
+
+| Request | Response (real figures) |
+|---|---|
+| Delivery default `{"productId":5057,"quantity":6,"destination":"FI"}` | HTTP 200 — `totalCents 36420` = foreignRetailPrice **26748** (6 × 4458) + alcoholExciseEstimate **9456** + containerDutyEstimate **216** + transport **0** (domestic FI seller → no import VAT line); classification `DistanceBuying`/HIGH; `travellerAlternative` **absent** — the contracted null-when-no-dataset state, so the callout correctly does not render |
+| PERSONAL `{"productId":5057,"quantity":6,"destination":"FI","transportArrangement":"PERSONAL"}` | HTTP **409** `error:"NoPublishedAllowances"` — "No published traveller allowance dataset is effective on 2026-10-02 — a traveller-mode calculation cannot run without a bound" |
+
+**Finding 2 (recorded observation): production has NO published
+traveller allowance dataset — the honest 409 state, which the task
+explicitly allows as a correct outcome.** Read-only D1 diagnostic:
+`traveller_allowance_datasets` is **empty (0 rows)**; the table itself
+exists (migration 0007 applied by the deploy's migrate step). The
+PERSONAL branch, the 409 mapping (task 1.3), and the dataset-absent
+delivery semantics (task 1.2's contracted null) are all verifiably
+live — the pre-change API had no PERSONAL branch at all, so this 409
+shape is itself new-code evidence. The within-cap shelf-price
+response, `metadata.allowanceDatasetVersion`, and the delivery
+`travellerAlternative` callout go live the moment the operator
+publishes a dataset (e.g. the `eu-2007-74-2026.1` five-cap row set
+already mirrored locally in 4.1) — a deliberate manual owner act per
+the deploy workflow's own "production is NEVER seeded" contract, not
+attempted here.
+
+### Frontend liveness (SSR HTML, production)
+
+`https://rajahinta.fi/fi/calculator` (→ `/calculator`, HTTP 200)
+serves the new UI strings in the SSR HTML: `Ostotapa` /
+`Otan itse mukaan` (task 2.1 buying-mode toggle) and `Tarkoititko`
+(task 3.3 banner copy). Until Finding 2 is unblocked, a PERSONAL
+submission in production renders the honest traveller-unavailable
+state pinned by `calculator-view.test.tsx:495`.
+
+### Summary
+
+Deploy `36974411926` green end-to-end; both search pains verified
+fixed on production (viski ≥100 vs 1, viini 73 vs 16, olut head
+clean, arhu→Karhu); PERSONAL/delivery engine live with the honest
+409 state pending the owner's dataset publication; did-you-mean
+deployed but dormant pending brand-column population. No
+regressions observed: delivery totals match pre-change engine
+semantics on a domestic product, all search totals ≥ baseline, and
+no live check was papered over — both gaps are recorded with root
+causes and owner actions.
