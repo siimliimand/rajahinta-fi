@@ -11,6 +11,7 @@ import type {
   AccuracyBreakdown,
   AccuracyBreakdownCell,
   AccuracyBreakdownDimension,
+  AccuracyCoverage,
   AccuracyStatistic,
 } from '@/lib/types';
 import { categoryLabel } from '../products/category-labels';
@@ -49,6 +50,17 @@ const DIMENSIONS: readonly AccuracyBreakdownDimension[] = [
  *   - The empty state is honest: count 0 renders "no user-reported
  *     outcomes yet", never a percentage (share is null exactly when
  *     count is 0).
+ *
+ * Coverage mode (honest-trust-surfaces task 3.2, design D4): when the
+ * count is 0 AND the response carries the additive `coverage` block, the
+ * island renders that block instead — products tracked, offer
+ * observations, last sync — labeled as catalog coverage ("Seurattu
+ * valikoima"), visually distinct from the accuracy presentation (its own
+ * label and layout, no share, no sample size, no breakdown selector).
+ * The flip is data-driven only: the first non-zero count returns the
+ * island to the user-reported presentation with no code change. A
+ * count-0 response WITHOUT the block (captured before task 3.1) keeps
+ * the honest empty state.
  *
  * Breakdown (section variant only): a category | carrier selector fetches
  * `?groupBy=…` and renders one block per cell by its API-supplied state —
@@ -103,6 +115,13 @@ export default function AccuracyStat({
       })
     : null;
 
+  // Coverage mode (design D4): a count-0 response with the additive
+  // coverage block renders the catalog-coverage presentation; a count-0
+  // response without the block falls through to the honest empty state,
+  // and any non-zero count always renders the user-reported statistic.
+  const coverageBlock =
+    stat !== null && stat.count === 0 ? stat.coverage ?? null : null;
+
   if (variant === 'section') {
     return (
       <section
@@ -111,7 +130,7 @@ export default function AccuracyStat({
         className="mb-8 scroll-mt-16 rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
       >
         <h2 id="accuracy-heading" className="mb-2 text-sm font-semibold text-gray-700">
-          {t('heading')}
+          {coverageBlock !== null ? t('coverageLabel') : t('heading')}
         </h2>
 
         {stat === null && !failed && (
@@ -135,7 +154,11 @@ export default function AccuracyStat({
           </div>
         )}
 
-        {stat !== null && stat.count === 0 && (
+        {coverageBlock !== null && (
+          <AccuracyCoverageBlock coverage={coverageBlock} locale={locale} />
+        )}
+
+        {coverageBlock === null && stat !== null && stat.count === 0 && (
           <div data-testid="accuracy-empty">
             <p className="text-sm font-medium text-gray-900">{t('emptyTitle')}</p>
             <p className="mt-1 text-sm leading-relaxed text-gray-600">
@@ -147,7 +170,7 @@ export default function AccuracyStat({
           </div>
         )}
 
-        {stat !== null && stat.count > 0 && (
+        {coverageBlock === null && stat !== null && stat.count > 0 && (
           <div data-testid="accuracy-statistic">
             <p className="text-sm leading-relaxed text-gray-600">
               {t('shareLine', {
@@ -167,8 +190,12 @@ export default function AccuracyStat({
         {/* ── Breakdown (task 5.2): the selector rides below the global
                 figure — the global statistic stays the default view, and
                 picking a dimension fetches its split. Picking the active
-                dimension again returns to the global figure. ── */}
-        {stat !== null && <AccuracyBreakdownPanel locale={locale} />}
+                dimension again returns to the global figure. In coverage
+                mode there are no outcomes to split, so the selector does
+                not render. ── */}
+        {coverageBlock === null && stat !== null && (
+          <AccuracyBreakdownPanel locale={locale} />
+        )}
       </section>
     );
   }
@@ -176,7 +203,9 @@ export default function AccuracyStat({
   // ── trust-row variant: a quiet column entry (home page) ──
   return (
     <div data-testid="accuracy-trust-row">
-      <h3 className="text-sm font-semibold text-gray-900">{t('heading')}</h3>
+      <h3 className="text-sm font-semibold text-gray-900">
+        {coverageBlock !== null ? t('coverageLabel') : t('heading')}
+      </h3>
 
       {stat === null && !failed && (
         <p className="mt-1.5 text-sm text-gray-400" aria-live="polite">
@@ -188,7 +217,11 @@ export default function AccuracyStat({
         <p className="mt-1.5 text-sm text-gray-400">{t('loadFailed')}</p>
       )}
 
-      {stat !== null && stat.count === 0 && (
+      {coverageBlock !== null && (
+        <AccuracyCoverageBlock coverage={coverageBlock} locale={locale} />
+      )}
+
+      {coverageBlock === null && stat !== null && stat.count === 0 && (
         <>
           <p className="mt-1.5 text-sm leading-relaxed text-gray-600">
             {t('emptyTitle')}.
@@ -199,7 +232,7 @@ export default function AccuracyStat({
         </>
       )}
 
-      {stat !== null && stat.count > 0 && (
+      {coverageBlock === null && stat !== null && stat.count > 0 && (
         <>
           <p className="mt-1.5 text-sm leading-relaxed text-gray-600">
             {t('shareLine', {
@@ -215,6 +248,77 @@ export default function AccuracyStat({
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Coverage block (task 3.2, design D4)
+// ---------------------------------------------------------------------------
+
+/**
+ * The catalog-coverage presentation: the three true values from the
+ * accuracy response's additive `coverage` block, labeled as catalog
+ * coverage and laid out as a label/value list — deliberately unlike the
+ * share/count paragraphs of the user-reported statistic, so the two
+ * modes cannot be mistaken for each other. An absent or unparseable
+ * watermark renders no sync row: only what exists.
+ */
+function AccuracyCoverageBlock({
+  coverage,
+  locale,
+}: {
+  coverage: AccuracyCoverage;
+  locale: string;
+}) {
+  const t = useTranslations('AccuracyStat');
+
+  const lastSync =
+    coverage.lastIngestAt !== null &&
+    !Number.isNaN(Date.parse(coverage.lastIngestAt))
+      ? new Date(coverage.lastIngestAt).toLocaleDateString(
+          locale === 'fi' ? 'fi-FI' : 'en-GB',
+          { year: 'numeric', month: 'numeric', day: 'numeric' },
+        )
+      : null;
+
+  return (
+    <div
+      data-testid="accuracy-coverage"
+      className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-3"
+    >
+      <dl className="space-y-1.5">
+        <div className="flex items-baseline justify-between gap-3">
+          <dt className="text-xs text-gray-500">
+            {t('coverageProductsLabel')}
+          </dt>
+          <dd className="text-sm font-medium text-gray-900">
+            {coverage.productCount}
+          </dd>
+        </div>
+        <div className="flex items-baseline justify-between gap-3">
+          <dt className="text-xs text-gray-500">
+            {t('coverageObservationsLabel')}
+          </dt>
+          <dd className="text-sm font-medium text-gray-900">
+            {coverage.offerObservations}
+          </dd>
+        </div>
+        {lastSync !== null && (
+          <div
+            className="flex items-baseline justify-between gap-3"
+            data-testid="accuracy-coverage-last-sync"
+          >
+            <dt className="text-xs text-gray-500">
+              {t('coverageSyncLabel')}
+            </dt>
+            <dd className="text-sm font-medium text-gray-900">{lastSync}</dd>
+          </div>
+        )}
+      </dl>
+      <p className="mt-2 text-xs leading-relaxed text-gray-500">
+        {t('coverageNote')}
+      </p>
     </div>
   );
 }

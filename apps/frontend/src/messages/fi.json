@@ -1568,7 +1568,12 @@
     "dimensionCarrier": "Kuljetusyhtiö",
     "countOnlyNote": "Osuutta ei näytetä, kun lopputuloksia on alle 10.",
     "cellEmpty": "Ei vielä lopputuloksia.",
-    "breakdownFailed": "Jaottelun lataaminen epäonnistui"
+    "breakdownFailed": "Jaottelun lataaminen epäonnistui",
+    "coverageLabel": "Seurattu valikoima",
+    "coverageProductsLabel": "Seurattuja tuotteita",
+    "coverageObservationsLabel": "Tallennettuja hintahavaintoja",
+    "coverageSyncLabel": "Viimeisin päivitys",
+    "coverageNote": "Nämä luvut kuvaavat seurattua valikoimaa, eivät käyttäjien raportoimia lopputuloksia. Tarkkuustilasto julkaistaan, kun lopputuloksia on raportoitu."
   },
   "OutcomeReport": {
     "formTitle": "Raportoi todellinen loppusumma",

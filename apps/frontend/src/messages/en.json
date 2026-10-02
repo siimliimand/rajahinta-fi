@@ -1568,7 +1568,12 @@
     "dimensionCarrier": "Carrier",
     "countOnlyNote": "The share is not shown when there are fewer than 10 outcomes.",
     "cellEmpty": "No outcomes yet.",
-    "breakdownFailed": "Loading the breakdown failed"
+    "breakdownFailed": "Loading the breakdown failed",
+    "coverageLabel": "Tracked catalog",
+    "coverageProductsLabel": "Products tracked",
+    "coverageObservationsLabel": "Recorded price observations",
+    "coverageSyncLabel": "Last sync",
+    "coverageNote": "These figures describe the tracked catalog, not user-reported outcomes. The accuracy statistic is published once outcomes are reported."
   },
   "OutcomeReport": {
     "formTitle": "Report the actual total",
