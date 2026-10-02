@@ -4,7 +4,7 @@
 
 ### Requirement: Price per gram of pure ethanol
 
-The system SHALL compute a unit price in euro per gram of pure ethanol for every product offer as price divided by the product of unit volume in litres, alcohol fraction, and ethanol density (789 g/l). The metric SHALL be derived at read time from stored offer and product fields and SHALL NOT be persisted as a column. The unavailability reason set SHALL distinguish zero ethanol (`ZERO_ETHANOL` — the alcohol fraction is present and equals 0, so the denominator is zero and the metric is physically undefined) from invalid input (`INVALID_ALCOHOL_FRACTION`, `INVALID_VOLUME`, `INVALID_PRICE` — the value is unusable data) and from missing input (`MISSING_VOLUME`, `MISSING_ALCOHOL_FRACTION` — known unknowns report before value-level faults).
+The system SHALL compute a unit price in euro per gram of pure ethanol for every product offer as price divided by the product of unit volume in litres, alcohol fraction, and ethanol density (789 g/l). The metric SHALL be derived at read time from stored offer and product fields and SHALL NOT be persisted as a column. The unavailability reason set SHALL distinguish zero ethanol (`ZERO_ETHANOL` — the alcohol fraction is present and equals 0, so the denominator is zero and the metric is physically undefined) from invalid input (`INVALID_ALCOHOL_FRACTION`, `INVALID_VOLUME`, `INVALID_PRICE` — the value is unusable data) and from missing input (`MISSING_VOLUME`, `MISSING_ALCOHOL_FRACTION`, `MISSING_PRICE` — known unknowns report before value-level faults).
 
 #### Scenario: Metric computed from complete inputs
 
