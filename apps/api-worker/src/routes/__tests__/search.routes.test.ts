@@ -963,6 +963,63 @@ describe('eurPerGram embed', () => {
     expect(Object.keys(body.offers[0]!)).toEqual([...LEGACY_OFFER_KEYS, 'eurPerGram']);
   });
 
+  it('a pack row prices the package on the detail path too (task 6.1): ≈ 6.64 ¢/g, was 159.35', async () => {
+    const { db, d1 } = openMigratedD1();
+    // The live 2900 shape: 2199 ¢ pack, per-unit 0.33 l, 5.3 %, pack
+    // count only in the name. The name-parsed 24 units make the offer
+    // embed divide by the package total — the live pre-fix path priced
+    // the pack against one can (159.35 ¢/g, beer priced like gold).
+    seedProduct(db, {
+      id: 1,
+      name: 'Karhu Olut 5.3% 24×33 l',
+      alcoholByVolume: 0.053,
+      unitVolume: 0.33,
+    });
+    seedOffer(db, { id: 11, productId: 1, priceCents: 2199 });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products/1', {
+      headers: AGE,
+    });
+    const body = (await res.json()) as {
+      offers: Array<{
+        eurPerGram: { status: string; centsPerGram: number; ethanolGrams: number };
+      }>;
+    };
+    expect(body.offers[0]!.eurPerGram.status).toBe('computed');
+    expect(body.offers[0]!.eurPerGram.ethanolGrams).toBeCloseTo(331.19064, 5);
+    expect(body.offers[0]!.eurPerGram.centsPerGram).toBeCloseTo(6.6397, 3);
+  });
+
+  it('a non-VERIFIED pack offer stays ESTIMATED on the package denominator (live defect shape)', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, {
+      id: 1,
+      name: 'Karhu Olut 5.3% 24×33 l',
+      alcoholByVolume: 0.053,
+      unitVolume: 0.33,
+    });
+    seedOffer(db, {
+      id: 11,
+      productId: 1,
+      priceCents: 2199,
+      reliabilityStatus: 'ESTIMATED',
+    });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products/1', {
+      headers: AGE,
+    });
+    const body = (await res.json()) as {
+      offers: Array<{ eurPerGram: { status: string; centsPerGram: number } }>;
+    };
+    // The live defect reported "159.35 ¢/g ESTIMATED" — one can's
+    // volume under a pack price. The status honesty is unchanged; the
+    // denominator is now the package the price actually covers.
+    expect(body.offers[0]!.eurPerGram.status).toBe('ESTIMATED');
+    expect(body.offers[0]!.eurPerGram.centsPerGram).toBeCloseTo(6.6397, 3);
+  });
+
   it('a non-VERIFIED offer price yields an ESTIMATED metric (value still returned)', async () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1 });
@@ -1313,34 +1370,116 @@ describe('GET /api/v1/products — listing €/g embed from the cheapest current
     });
   });
 
-  it('the live Karhu row shape computes a sane beer €/g (fixture: 24×33 l name, per-unit 0.33)', async () => {
+  it('the live 2900 pack row prices the package: 24 name-parsed units × per-unit 0.33 l → ≈ 6.64 ¢/g', async () => {
     const { db, d1 } = openMigratedD1();
-    // Product-2900 shape AFTER the task-1.x correction: per-unit litres.
+    // The live product-2900 shape after the task-1.x volume correction:
+    // per-unit litres stored, the pack count only in the name. The
+    // task-6.1 amendment derives 24 units from the name at read time,
+    // so the 2199 ¢ pack divides by 24 × 0.33 l — ≈ 6.64 ¢/g, not the
+    // 159.35 ¢/g the single-can denominator produced live pre-fix.
     seedProduct(db, {
       id: 1,
-      name: 'Karhu Olut 5.3 % 24×33 l',
+      name: 'Karhu Olut 5.3% 24×33 l',
       alcoholByVolume: 0.053,
       unitVolume: 0.33,
     });
-    seedOffer(db, { id: 11, productId: 1, priceCents: 239 });
+    seedOffer(db, { id: 11, productId: 1, priceCents: 2199 });
     const app = buildApp();
 
     const res = await request(app, permissiveEnv(d1), '/api/v1/products', { headers: AGE });
     const body = (await res.json()) as {
       items: Array<{
         id: number;
-        eurPerGram: { status: string; centsPerGram: number; priceReliability: string };
+        eurPerGram: {
+          status: string;
+          centsPerGram: number;
+          ethanolGrams: number;
+          priceReliability: string;
+        };
       }>;
     };
     const embed = body.items[0]!.eurPerGram;
     expect(embed.status).toBe('computed');
     expect(embed.priceReliability).toBe('VERIFIED');
-    // 0.33 l × 0.053 × 789 ≈ 13.7996 g; 239 ¢ / that ≈ 17.3194 ¢/g —
-    // inside the sane beer band, not the corrupted 1.59 ¢/g the live
-    // pack-notation volume produced.
-    expect(embed.centsPerGram).toBeCloseTo(17.3194, 3);
-    expect(embed.centsPerGram).toBeGreaterThanOrEqual(10);
-    expect(embed.centsPerGram).toBeLessThanOrEqual(20);
+    // 24 × 0.33 l × 0.053 × 789 ≈ 331.19 g of ethanol in the package.
+    expect(embed.ethanolGrams).toBeCloseTo(331.19064, 5);
+    expect(embed.centsPerGram).toBeCloseTo(6.6397, 3);
+    // Sane beer band at package granularity — the corrupted 159.35 and
+    // the pack-total-volume 1.59 both sit far outside it.
+    expect(embed.centsPerGram).toBeGreaterThanOrEqual(4);
+    expect(embed.centsPerGram).toBeLessThanOrEqual(12);
+  });
+
+  it('pack-row parity: the listing embed equals the detail offer embed on a 24×33 l row', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, {
+      id: 1,
+      name: 'Karhu Olut 5.3% 24×33 l',
+      alcoholByVolume: 0.053,
+      unitVolume: 0.33,
+    });
+    seedOffer(db, { id: 11, productId: 1, priceCents: 2199 });
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const listing = await request(app, env, '/api/v1/products', { headers: AGE });
+    const listingBody = (await listing.json()) as {
+      items: Array<{ id: number; eurPerGram: Record<string, unknown> }>;
+    };
+    const detail = await request(app, env, '/api/v1/products/1', { headers: AGE });
+    const detailBody = (await detail.json()) as {
+      offers: Array<{ eurPerGram: Record<string, unknown> }>;
+    };
+
+    // Same name → same name-parsed units on both embed paths (task
+    // 6.1): a pack row cannot disagree between listing and detail.
+    expect(listingBody.items[0]!.eurPerGram).toEqual(
+      detailBody.offers[0]!.eurPerGram,
+    );
+    // Both denominators carry the 24 units, not one can.
+    expect(
+      (detailBody.offers[0]!.eurPerGram as { ethanolGrams: number }).ethanolGrams,
+    ).toBeCloseTo(331.19064, 5);
+  });
+
+  it('the reversed notation order applies units too: "33CL x 24" → 24 units', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, {
+      id: 1,
+      name: 'Siideri 33CL x 24',
+      alcoholByVolume: 0.05,
+      unitVolume: 0.33,
+    });
+    seedOffer(db, { id: 11, productId: 1, priceCents: 1200 });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products', { headers: AGE });
+    const body = (await res.json()) as {
+      items: Array<{
+        id: number;
+        eurPerGram: { ethanolGrams: number; centsPerGram: number };
+      }>;
+    };
+    // 24 × 0.33 l × 0.05 × 789 ≈ 312.44 g — the trailing count applies.
+    expect(body.items[0]!.eurPerGram.ethanolGrams).toBeCloseTo(312.444, 5);
+    expect(body.items[0]!.eurPerGram.centsPerGram).toBeCloseTo(3.8406882513, 8);
+  });
+
+  it('single-unit products are byte-identical to the pre-amendment embed', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 }); // name 'Karhu III' — no pack notation
+    seedOffer(db, { id: 11, productId: 1, priceCents: 350 });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products', { headers: AGE });
+    const body = (await res.json()) as {
+      items: Array<{ id: number; eurPerGram: Record<string, unknown> }>;
+    };
+    // The name states no pack size → the units default to 1 → the exact
+    // bytes the pre-amendment formula produced (350 ¢ / 12.23739 g).
+    expect(JSON.stringify(body.items[0]!.eurPerGram)).toBe(
+      '{"status":"computed","centsPerGram":28.60086995674731,"ethanolGrams":12.237390000000001,"priceReliability":"VERIFIED"}',
+    );
   });
 });
 

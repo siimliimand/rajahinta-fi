@@ -40,8 +40,14 @@ export const ETHANOL_DENSITY_G_PER_L = 789;
  * Euro cents per gram of pure ethanol for one offer.
  *
  * ```
- * centsPerGram = priceCents / (unitVolumeL × alcoholFraction × 789 g/l)
+ * centsPerGram = priceCents /
+ *   (unitVolumeL × unitsPerPackage × alcoholFraction × 789 g/l)
  * ```
+ *
+ * `unitsPerPackage` scales the priced volume: multipack products price
+ * the whole package, so the denominator is the package total, not one
+ * unit's. The default of 1 (argument omitted) keeps every single-unit
+ * result byte-identical to the unit-only formula.
  *
  * Pure — no I/O, no persistence; derive at read time only.
  *
@@ -53,14 +59,20 @@ export const ETHANOL_DENSITY_G_PER_L = 789;
  *    unknowns are reported before value-level faults, and the physical
  *    inputs precede the absent market price).
  * 2. Volume must be a finite number > 0 → else `INVALID_VOLUME`.
- *    `alcoholFraction` is a fraction, not a percent: an ABV of exactly
+ * 3. `unitsPerPackage`, when the argument is provided (not
+ *    `undefined`), must be a finite number ≥ 1 → else
+ *    `INVALID_UNITS_PER_PACKAGE`. Only a literal `undefined` means
+ *    "nothing stated" and defaults to one unit; `null` and every other
+ *    out-of-domain value are supplied-but-unusable data. It validates
+ *    directly after the volume it scales, before the remaining faults.
+ * 4. `alcoholFraction` is a fraction, not a percent: an ABV of exactly
  *    0 is present and valid data (a non-alcoholic beer), but the metric
  *    is physically undefined — its denominator is zero — so it yields
  *    `ZERO_ETHANOL` rather than an invalid-data accusation. Any other
  *    out-of-domain value (negative, > 1, non-finite) →
  *    `INVALID_ALCOHOL_FRACTION` (e.g. passing 40 instead of 0.4 is
  *    rejected, not clamped).
- * 3. Price must be a finite number ≥ 0 → else `INVALID_PRICE`. A zero
+ * 5. Price must be a finite number ≥ 0 → else `INVALID_PRICE`. A zero
  *    price is structurally valid (the metric is 0 cents/gram); ranking
  *    policy may treat free offers separately, that is not this
  *    function's concern.
@@ -84,12 +96,17 @@ export const ETHANOL_DENSITY_G_PER_L = 789;
  *                        or `null`/`undefined` when unknown. Exactly 0
  *                        (non-alcoholic) yields `ZERO_ETHANOL`.
  * @param priceReliability Reliability of the offer price; default `'VERIFIED'`.
+ * @param unitsPerPackage Units in the priced package (finite, ≥ 1),
+ *                        or `undefined` (the default) for a single-unit
+ *                        product — never `null`, which is a supplied
+ *                        non-value → `INVALID_UNITS_PER_PACKAGE`.
  */
 export function eurPerGram(
   priceCents: number | null | undefined,
   unitVolumeL: number | null | undefined,
   alcoholFraction: number | null | undefined,
   priceReliability: ReliabilityStatus = 'VERIFIED',
+  unitsPerPackage?: number | null,
 ): UnitPriceResult {
   if (unitVolumeL === null || unitVolumeL === undefined) {
     return unavailable('MISSING_VOLUME');
@@ -102,6 +119,21 @@ export function eurPerGram(
   }
   if (!Number.isFinite(unitVolumeL) || unitVolumeL <= 0) {
     return unavailable('INVALID_VOLUME');
+  }
+  // Only an absent argument defaults to one unit; everything else must
+  // be a usable count (multipacks divide the price by the total volume).
+  let units: number;
+  if (unitsPerPackage === undefined) {
+    units = 1;
+  } else if (
+    typeof unitsPerPackage === 'number' &&
+    Number.isFinite(unitsPerPackage) &&
+    unitsPerPackage >= 1
+  ) {
+    units = unitsPerPackage;
+  } else {
+    // Provided but unusable (null, 0, negatives, non-finite).
+    return unavailable('INVALID_UNITS_PER_PACKAGE');
   }
   if (alcoholFraction === 0) {
     // Present, valid data — the metric is undefined, not the input.
@@ -118,7 +150,10 @@ export function eurPerGram(
     return unavailable('INVALID_PRICE');
   }
 
-  const ethanolGrams = unitVolumeL * alcoholFraction * ETHANOL_DENSITY_G_PER_L;
+  // ×1 is exact IEEE identity, so the units-default path computes the
+  // identical double the pre-units formula produced — byte-identical.
+  const ethanolGrams =
+    unitVolumeL * units * alcoholFraction * ETHANOL_DENSITY_G_PER_L;
   const centsPerGram = priceCents / ethanolGrams;
 
   if (priceReliability === 'VERIFIED') {

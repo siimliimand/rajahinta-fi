@@ -11,6 +11,11 @@
  * the pure `eurPerGram` module and the order from the pure
  * `rankUnitPrices` policy — nothing is re-implemented here.
  *
+ * Pack products price the package (task 6.2, change
+ * honest-trust-surfaces): the pack size parses from the product NAME at
+ * read time — the same derivation the search embeds use — so a 24-pack
+ * row ranks on its package total, never single-unit math.
+ *
  * Pure read endpoint: the ordering is a read-model listing only and
  * never feeds search order, default ordering, or any calculation input.
  *
@@ -33,6 +38,7 @@ import {
 } from '../../../../packages/core-domain/src/unitprice/ranking';
 import type { ReliabilityStatus } from '../../../../packages/core-domain/src/reliability/reliability.types';
 import { TAX_CATEGORY_KEYS } from '../../../../packages/core-domain/src/tax/tax-categories';
+import { parsePackUnits } from '../../../../packages/data-acquisition/src/services/pack-notation';
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
 import { ageGate } from '../middleware/age-gate';
@@ -98,16 +104,26 @@ function toReliabilityStatus(raw: string): ReliabilityStatus {
     : 'UNAVAILABLE';
 }
 
-/** The physical inputs the €/g metric derives from, parsed once per product. */
+/**
+ * The physical inputs the €/g metric derives from, parsed once per product.
+ * `unitsPerPackage` is the pack SIZE parsed from the product NAME at read
+ * time (task 6.2 amendment) — a multipack's price is a package price, so
+ * the metric divides it by the package total volume. `undefined` = the
+ * name states no decisive count (single-unit default 1); the value is
+ * never persisted, and the ranking parses the SAME name through the SAME
+ * parser the search embeds use.
+ */
 interface UnitPriceInputs {
   readonly unitVolumeL: number;
   readonly alcoholFraction: number | null;
+  readonly unitsPerPackage: number | undefined;
 }
 
 function unitPriceInputs(p: ProductRow): UnitPriceInputs {
   return {
     unitVolumeL: parseLitres(p.unitVolume),
     alcoholFraction: parseAlcoholFraction(p.alcoholByVolume),
+    unitsPerPackage: parsePackUnits(p.name) ?? undefined,
   };
 }
 
@@ -176,11 +192,15 @@ async function ranking(c: Context<AppEnv>): Promise<Response> {
         entries.push({
           productId: product.id,
           offerId: offer.id,
+          // Pack rows pass the name-parsed units so the denominator is
+          // the package total — the ranking cannot price a 24-pack
+          // against one can.
           metric: eurPerGram(
             offer.priceCents,
             inputs.unitVolumeL,
             inputs.alcoholFraction,
             toReliabilityStatus(offer.reliabilityStatus),
+            inputs.unitsPerPackage,
           ),
         });
       }

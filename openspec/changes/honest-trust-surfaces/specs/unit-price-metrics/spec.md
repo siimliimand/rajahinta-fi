@@ -4,12 +4,27 @@
 
 ### Requirement: Price per gram of pure ethanol
 
-The system SHALL compute a unit price in euro per gram of pure ethanol for every product offer as price divided by the product of unit volume in litres, alcohol fraction, and ethanol density (789 g/l). The metric SHALL be derived at read time from stored offer and product fields and SHALL NOT be persisted as a column. The unavailability reason set SHALL distinguish zero ethanol (`ZERO_ETHANOL` — the alcohol fraction is present and equals 0, so the denominator is zero and the metric is physically undefined) from invalid input (`INVALID_ALCOHOL_FRACTION`, `INVALID_VOLUME`, `INVALID_PRICE` — the value is unusable data) and from missing input (`MISSING_VOLUME`, `MISSING_ALCOHOL_FRACTION`, `MISSING_PRICE` — known unknowns report before value-level faults).
+The system SHALL compute a unit price in euro per gram of pure ethanol for every product offer as price divided by the product of unit volume in litres, units per package, alcohol fraction, and ethanol density (789 g/l). Units per package SHALL be 1 for single-unit products; for a multipack — whose price prices the whole package — it SHALL be derived from the product name's pack notation at read time and SHALL NOT be persisted as a column (amendment: a pack priced against one can's volume is the defect this rule removes). The metric SHALL be derived at read time from stored offer and product fields and SHALL NOT be persisted as a column. The unavailability reason set SHALL distinguish zero ethanol (`ZERO_ETHANOL` — the alcohol fraction is present and equals 0, so the denominator is zero and the metric is physically undefined) from invalid input (`INVALID_ALCOHOL_FRACTION`, `INVALID_VOLUME`, `INVALID_PRICE`, `INVALID_UNITS_PER_PACKAGE` — the value is unusable data; the last is a supplied pack size that is not a finite number ≥ 1, where only an absent argument defaults to one unit) and from missing input (`MISSING_VOLUME`, `MISSING_ALCOHOL_FRACTION`, `MISSING_PRICE` — known unknowns report before value-level faults).
 
 #### Scenario: Metric computed from complete inputs
 
 - **WHEN** an offer has a price and the product has both unit volume and alcohol percentage
 - **THEN** the API SHALL return the €/g value computed by the pure function, with the offer's price reliability status attached
+
+#### Scenario: Pack product prices the package against the package total
+
+- **WHEN** an offer of 2199 cents names `24×33 l` with unit volume 0.33 l and 5.3 % ABV (product 2900 shape)
+- **THEN** the metric divides by 24 × 0.33 l × 0.053 × 789 g/l ≈ 331.19 g and reports ≈ 6.64 c/g — never the ≈ 159.35 c/g a single-can denominator produced
+
+#### Scenario: Products without pack notation are byte-identical to the unit-only formula
+
+- **WHEN** a product name states no decisive pack size and no units-per-package is supplied
+- **THEN** the metric SHALL be exactly the value the pre-amendment unit-volume formula produced (the default multiplier of 1 changes no byte)
+
+#### Scenario: A supplied pack size outside the domain is honest
+
+- **WHEN** a units-per-package value is supplied and is not a finite number ≥ 1 (e.g. 0, −3, NaN, Infinity)
+- **THEN** the metric SHALL be unavailable with reason `INVALID_UNITS_PER_PACKAGE`, never a silently substituted count
 
 #### Scenario: Missing alcohol data
 
