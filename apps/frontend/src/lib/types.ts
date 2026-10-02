@@ -978,6 +978,20 @@ export interface ComparisonProduct {
 // ---------------------------------------------------------------------------
 
 /**
+ * True catalog coverage behind the accuracy statistic (change
+ * honest-trust-surfaces, task 3.1): the stored product count, the total
+ * offer observation count, and the latest ingestion watermark — read-time
+ * D1 aggregates, true values only. Display-only on the UI side; no value
+ * here feeds any calculation input.
+ */
+export interface AccuracyCoverage {
+  readonly productCount: number;
+  readonly offerObservations: number;
+  /** ISO-8601 watermark of the latest fully materialized ingest; null = none yet. */
+  readonly lastIngestAt: string | null;
+}
+
+/**
  * Public accuracy statistic. `withinMarginShare` is a fraction in [0,1]
  * and is null EXACTLY when count is 0 — the honest empty state renders
  * "no outcomes yet", never a percentage (spec calculation-outcomes).
@@ -992,6 +1006,12 @@ export interface AccuracyStatistic {
    * the UI renders it verbatim and never invents its own label.
    */
   readonly label: { readonly fi: string; readonly en: string };
+  /**
+   * Additive catalog-coverage block (honest-trust-surfaces task 3.1).
+   * Optional so the type also tolerates responses captured before the
+   * block existed.
+   */
+  readonly coverage?: AccuracyCoverage;
 }
 
 /** The two split dimensions the accuracy breakdown endpoint accepts. */

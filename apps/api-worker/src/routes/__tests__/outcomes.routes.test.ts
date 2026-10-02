@@ -13,6 +13,11 @@
  * - the public accuracy statistic: count + within-margin share + as-of
  *   with the module's user-reported labels; the empty state is count 0
  *   and a null share (never a fabricated percentage);
+ * - the additive coverage block (change honest-trust-surfaces): true
+ *   stored catalog aggregates — product count, offer observations, the
+ *   latest aggregation watermark (null when none exists) — added without
+ *   touching the statistic fields and without entering the breakdown
+ *   response;
  * - the accuracy breakdowns (`?groupBy=category|carrier`, change
  *   expand-alerts-accuracy-breakdowns): cells under the 10-outcome
  *   floor carry NO share (a count-only state distinct from the empty
@@ -34,6 +39,7 @@ import {
   request,
   seedAccount,
   seedCalculationRecord,
+  seedOffer,
   seedProduct,
 } from './harness';
 import { D1CalculationOutcomeRepository } from '../../../../../packages/data-platform/src/repositories/d1/calculation-outcome.repository';
@@ -109,6 +115,18 @@ function attachCarrier(
   );
 }
 
+/** Insert an aggregation watermark row (the ingestion cursor coverage reports). */
+function seedWatermark(
+  db: Setup['db'],
+  jobName: string,
+  watermark: string,
+): void {
+  db.prepare('INSERT INTO aggregation_watermarks (job_name, watermark) VALUES (?, ?)').run(
+    jobName,
+    watermark,
+  );
+}
+
 /** The breakdown response cell as the endpoint renders it under the floor. */
 interface BreakdownCellBody {
   key: string;
@@ -122,6 +140,13 @@ interface BreakdownBody {
   cells: BreakdownCellBody[];
   asOf: string;
   label: { fi: string; en: string };
+}
+
+/** The additive coverage block on the unfiltered accuracy response. */
+interface CoverageBody {
+  productCount: number;
+  offerObservations: number;
+  lastIngestAt: string | null;
 }
 
 function postOutcome(
@@ -308,8 +333,58 @@ describe('GET /api/v1/accuracy — public statistic', () => {
   });
 });
 
+describe('GET /api/v1/accuracy — additive coverage block (honest-trust-surfaces)', () => {
+  it('carries the true stored aggregates: product count, offer observations, latest watermark', async () => {
+    const s = await setup();
+    seedProduct(s.db, { id: 1 });
+    seedProduct(s.db, { id: 2, name: 'Absolut Vanilia' });
+    // retail_offers accumulates daily snapshots — every stored row counts.
+    seedOffer(s.db, { id: 11, productId: 1 });
+    seedOffer(s.db, { id: 12, productId: 1, merchant: 'eu-import' });
+    seedOffer(s.db, { id: 21, productId: 2 });
+    // Two consuming jobs — the reported watermark is the LATEST one.
+    seedWatermark(s.db, 'price-history-daily', '2026-09-30T06:00:00.000Z');
+    seedWatermark(s.db, 'price-history-weekly', '2026-10-01T06:00:00.000Z');
+
+    const app = buildApp();
+    const res = await request(app, permissiveEnv(s.d1), '/api/v1/accuracy');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { coverage: CoverageBody };
+    expect(body.coverage).toEqual({
+      productCount: 2,
+      offerObservations: 3,
+      lastIngestAt: '2026-10-01T06:00:00.000Z',
+    });
+  });
+
+  it('watermark absent → lastIngestAt null; an empty catalog reports true zeros', async () => {
+    const s = await setup(); // no products, no offers, no watermarks, no outcomes
+    const app = buildApp();
+    const res = await request(app, permissiveEnv(s.d1), '/api/v1/accuracy');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { count: number; coverage: CoverageBody };
+    // Spec scenario "Coverage block present and true": count: 0 exactly as
+    // before, plus the coverage block equal to the stored state.
+    expect(body.count).toBe(0);
+    expect(body.coverage).toEqual({
+      productCount: 0,
+      offerObservations: 0,
+      lastIngestAt: null,
+    });
+  });
+
+  it('breakdown response gains no coverage block (additive on the global path only)', async () => {
+    const s = await setup();
+    const app = buildApp();
+    const res = await request(app, permissiveEnv(s.d1), '/api/v1/accuracy?groupBy=category');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(['asOf', 'cells', 'dimension', 'label']);
+  });
+});
+
 describe('GET /api/v1/accuracy?groupBy — breakdowns with the min-N floor', () => {
-  it('without groupBy the global shape is unchanged (exact key set)', async () => {
+  it('without groupBy the statistic shape is unchanged and coverage is additive (exact key set)', async () => {
     const s = await setup();
     const app = buildApp();
     const res = await request(app, permissiveEnv(s.d1), '/api/v1/accuracy');
@@ -318,12 +393,20 @@ describe('GET /api/v1/accuracy?groupBy — breakdowns with the min-N floor', () 
     expect(Object.keys(body).sort()).toEqual([
       'asOf',
       'count',
+      'coverage',
       'label',
       'withinMarginShare',
     ]);
     expect(Object.keys(body.label as Record<string, unknown>).sort()).toEqual([
       'en',
       'fi',
+    ]);
+    // The four user-reported statistic fields keep their exact pre-change
+    // shape; `coverage` is the one additive field (spec calculation-outcomes).
+    expect(Object.keys(body.coverage as Record<string, unknown>).sort()).toEqual([
+      'lastIngestAt',
+      'offerObservations',
+      'productCount',
     ]);
   });
 
