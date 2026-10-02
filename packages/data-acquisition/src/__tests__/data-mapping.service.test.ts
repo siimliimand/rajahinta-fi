@@ -499,3 +499,105 @@ describe('DataMappingService — brand derivation fallback (derive-product-brand
     expect(second.product.brand).toBe(first.product.brand);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Pack-notation volume normalization (task 1.1, change
+// honest-trust-surfaces) — the per-unit volume parsed from the name is
+// authoritative when the name carries pack notation; the feed's pack
+// total never lands in unitVolume. Names without notation stay on the
+// volumeMl quotient, unchanged.
+// ---------------------------------------------------------------------------
+
+describe('DataMappingService — pack-notation unitVolume (task 1.1, honest-trust-surfaces)', () => {
+  const service = new DataMappingService();
+
+  it('spec: "Karhu Olut 5.3% 24×33 l" stores 0.33 — not the 33 l pack total', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Karhu Olut 5.3% 24×33 l', volumeMl: 33000 }),
+      'alko',
+      'FI',
+    );
+
+    expect(product.unitVolume).toBe('0.33');
+  });
+
+  it('spec: comma-decimal variant "8×0,33 l" stores 0.33', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Lapin Kulta 8×0,33 l', volumeMl: 2640 }),
+      'alko',
+      'FI',
+    );
+
+    expect(product.unitVolume).toBe('0.33');
+  });
+
+  it('spec: "6×0,5 l" stores 0.5', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Olut 6×0,5 l', volumeMl: 3000 }),
+      'alks',
+      'DE',
+    );
+
+    expect(product.unitVolume).toBe('0.5');
+  });
+
+  it('spec: "24×500 ml" stores 0.5 — explicit ml unit divides by 1000', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Olut 24×500 ml', volumeMl: 12000 }),
+      'alks',
+      'DE',
+    );
+
+    expect(product.unitVolume).toBe('0.5');
+  });
+
+  it('spec: ascii separator "24 x 33 l" parses like the × variant', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Karhu Olut 24 x 33 l', volumeMl: 33000 }),
+      'alko',
+      'FI',
+    );
+
+    expect(product.unitVolume).toBe('0.33');
+  });
+
+  it('spec: bare-integer litres ≤ 10 stay litres — "2×3 l" stores 3', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Viinipakkaus 2×3 l', volumeMl: 6000 }),
+      'alks',
+      'DE',
+    );
+
+    expect(product.unitVolume).toBe('3');
+  });
+
+  it('spec: plain non-pack name unchanged — "Jameson 0,7 l" stays volumeMl-driven', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Jameson 0,7 l', volumeMl: 700 }),
+      'alko',
+      'FI',
+    );
+
+    expect(product.unitVolume).toBe('0.7');
+  });
+
+  it('spec: a name with × but unparseable notation stays unchanged — no guess', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Long Drink × 24', volumeMl: 500 }),
+      'alks',
+      'DE',
+    );
+
+    expect(product.unitVolume).toBe('0.5');
+  });
+
+  it('spec: a bare "24×33" with no unit token is ambiguous — volumeMl stands', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ productName: 'Karhu Olut 24×33', volumeMl: 33000 }),
+      'alko',
+      'FI',
+    );
+
+    expect(product.unitVolume).toBe('33');
+  });
+});

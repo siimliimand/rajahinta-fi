@@ -16,6 +16,7 @@ import type { UpsertProductInput, UpsertOfferInput } from '../interfaces/upsert-
 import type { RawFeedRecord } from '../interfaces/feed-adapter.interface';
 import { decodeHtmlEntities } from './html-entities';
 import { deriveBrand } from './derive-brand';
+import { parsePackUnitVolumeLitres } from './pack-notation';
 
 /** Paired upsert inputs for a single feed record. */
 export interface MappedPair {
@@ -84,6 +85,13 @@ export class DataMappingService {
     // deployed; this mapping never rewrites an existing row.
     const brand = feedBrand.trim() !== '' ? feedBrand : deriveBrand(productName);
 
+    // Pack-notation names are authoritative for volume (task 1.1, change
+    // honest-trust-surfaces): feeds report the PACK total as volumeMl
+    // ("Karhu Olut 5.3% 24×33 l" arrives as 33000), while the name's
+    // N×V notation carries the per-unit fact. Ambiguous or absent
+    // notation leaves the volumeMl quotient standing — never guessed.
+    const packLitres = parsePackUnitVolumeLitres(productName);
+
     // Category + regulatory classification come from the feed adapter's
     // source-category normalization (task 7.1) — the adapter maps the
     // source-market string to the canonical tax-rule key. Placeholders
@@ -95,10 +103,15 @@ export class DataMappingService {
       brand,
       category: record.category,
       containerType: record.containerType,
-      // Canonical litres at ingestion (design D1) — String of the quotient
-      // keeps the pinned shapes ("0.5", "0.75", "3", "0.15"); integer ml
-      // inputs never produce exponent notation.
-      unitVolume: String(record.volumeMl / 1000),
+      // Canonical litres at ingestion (design D1). When the name carried
+      // unambiguous pack notation the per-unit parse wins (above);
+      // otherwise the String of the quotient keeps the pinned shapes
+      // ("0.5", "0.75", "3", "0.15") — integer ml inputs never produce
+      // exponent notation.
+      unitVolume:
+        packLitres !== null
+          ? String(packLitres)
+          : String(record.volumeMl / 1000),
       alcoholByVolume:
         record.alcoholByVolume !== null
           ? String(record.alcoholByVolume)

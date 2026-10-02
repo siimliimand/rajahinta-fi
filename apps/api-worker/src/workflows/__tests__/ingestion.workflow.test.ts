@@ -744,12 +744,15 @@ describe('category volume ceilings — constants table', () => {
 });
 
 describe('category volume ceilings — volumeCeilingGateStep', () => {
-  it('gates the live Karhu case: a 33 l beer stores unavailable and is held for review', async () => {
+  it('gates a true 33 l beer: stores unavailable and is held for review — defense-in-depth over a pack-total feed that carries no pack notation', async () => {
     const mapped = await mappedPairs([
       feedRecord({
         productId: 'alko-karhu',
-        productName: 'Karhu Olut 5.3% 24×33 l',
-        // The live parse: the "24×33 l" name yields a 33-litre unit volume.
+        // A bare pack total on a name WITHOUT pack notation: the
+        // pack-notation normalizer (honest-trust-surfaces task 1.1)
+        // never guesses, so the 33-litre value reaches the gate and the
+        // gate holds it.
+        productName: 'Karhu Olut 5.3%',
         volumeMl: 33_000,
       }),
     ]);
@@ -757,13 +760,31 @@ describe('category volume ceilings — volumeCeilingGateStep', () => {
     const outcome = await volumeCeilingGateStep(mapped);
 
     expect(outcome.findings).toHaveLength(1);
-    expect(outcome.findings[0]).toContain('Karhu Olut 5.3% 24×33 l');
+    expect(outcome.findings[0]).toContain('Karhu Olut 5.3%');
     expect(outcome.findings[0]).toContain('"beer"');
     expect(outcome.findings[0]).toContain('33');
     expect(outcome.findings[0]).toContain('ceiling of 2 l');
     expect(outcome.findings[0]).toContain('held for review');
     // Stored unavailable — the parser's unresolved encoding — BEFORE upsert.
     expect(outcome.pairs[0]!.product.unitVolume).toBe(UNIT_VOLUME_UNAVAILABLE);
+  });
+
+  it('the live Karhu pack-notation name defuses at mapping: 0.33 per can passes the ceiling gate', async () => {
+    const mapped = await mappedPairs([
+      feedRecord({
+        productId: 'alko-karhu',
+        productName: 'Karhu Olut 5.3% 24×33 l',
+        // The live incident input: the feed reports the PACK total.
+        volumeMl: 33_000,
+      }),
+    ]);
+
+    // The name's N×V notation is authoritative at mapping — the gate
+    // never sees the 33 l pack total.
+    const outcome = await volumeCeilingGateStep(mapped);
+
+    expect(outcome.findings).toEqual([]);
+    expect(outcome.pairs[0]!.product.unitVolume).toBe('0.33');
   });
 
   it('passes plausible volumes through unchanged with no review flag', async () => {
@@ -869,12 +890,15 @@ describe('category volume ceilings — dataQualityStep', () => {
 });
 
 describe('category volume ceilings — staged pipeline flow', () => {
-  it('the live Karhu case upserts volume-unavailable, flagged for review, with the rail error at run level', async () => {
+  it('a true 33 l beer upserts volume-unavailable, flagged for review, with the rail error at run level', async () => {
     const upserts = fakeUpserts();
     const services = stageServices({
       feedRecords: [
         feedRecord({
-          productName: 'Karhu Olut 5.3% 24×33 l',
+          // A pack total on a name WITHOUT pack notation: the normalizer
+          // never guesses, so the true 33 l reaches the ceiling gate
+          // (honest-trust-surfaces task 1.1).
+          productName: 'Karhu Olut 5.3%',
           volumeMl: 33_000,
         }),
       ],
@@ -907,7 +931,7 @@ describe('category volume ceilings — staged pipeline flow', () => {
     ).outputs.get('data-quality') as DataQualityOutcome;
     expect(quality.report.implausibleVolumeCount).toBe(1);
     expect(quality.report.flaggedIssues.join('\n')).toContain(
-      'Karhu Olut 5.3% 24×33 l',
+      'Karhu Olut 5.3%',
     );
 
     // The outer rail still rejects the stored 0 at run level.

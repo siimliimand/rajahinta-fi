@@ -3,12 +3,13 @@
  * (task 1.4, change data-quality-and-publication-trust).
  *
  * Drives the REAL ingestion pipeline as far as this package's unit
- * suite reaches — alks adapter fetch → parse → map (price floor) →
- * orchestrate (offer-less upsert) — over the golden failure rows in
+ * suite reaches — alks adapter fetch → parse → map (pack-notation
+ * normalization, price floor) → orchestrate (offer-less upsert) — over
+ * the golden failure rows in
  * `__fixtures__/ingestion-gate-rejections.fixture.ts`, and asserts for
  * EACH observed failure shape that nothing broken publishes: no zero
- * price becomes an offer, no bundle name becomes a product, no
- * category-implausible volume is normalized away on this layer's watch.
+ * price becomes an offer, no bundle name becomes a product, no pack
+ * total reaches `unit_volume` (task 1.1, honest-trust-surfaces).
  *
  * Gate-ownership boundary, pinned here as documentation: the
  * volume-ceiling gate itself lives downstream in the api-worker
@@ -16,8 +17,9 @@
  * pinned there against the same incident shapes
  * (ingestion.workflow.test.ts). What data-acquisition owns — and this
  * contract pins — is that the fixture rows reach that boundary in the
- * exact shape the gate keys on: a true per-unit volume, the mapper's
- * own offer rejections intact, and a bundle row held before mapping.
+ * exact shape the gate keys on: pack-notation rows normalized to the
+ * per-unit volume, the mapper's own offer rejections intact, and a
+ * bundle row held before mapping.
  *
  * @module PipelineGateContractTest
  */
@@ -172,22 +174,22 @@ describe('pipeline gate contract — golden failure shapes publish nothing (task
     expect(ruinartDrift).toContain('offer rejected');
   });
 
-  it('category-implausible volume: the row reaches the storage boundary as a true per-unit 33 l beer — never normalized plausible', async () => {
+  it('pack-notation volume: the row reaches the storage boundary normalized per unit — never the 33 l pack total', async () => {
     const { products, offers } = await runFixturePipeline();
 
-    // The multipack parse feeds the gate the honest reading of the live
-    // incident: ONE unit of 33 l (pack count 24) — not 24 × 0,33 l and
-    // not 24 × 33 l. 33 l beer is the gate's trigger state.
+    // Task 1.1 (honest-trust-surfaces): the name's N×V notation is
+    // authoritative — "24×33 l" is 24 cans × 33 cl, so the mapper
+    // stores 0.33 and the pack total never reaches the boundary.
     const karhu = products.find((p) => p.name === IMPLAUSIBLE_VOLUME.name);
     expect(karhu).toBeDefined();
-    expect(karhu?.unitVolume).toBe('33');
-    expect(karhu?.unitVolume).not.toBe(String((24 * 330) / 1000));
+    expect(karhu?.unitVolume).toBe('0.33');
+    expect(karhu?.unitVolume).not.toBe('33');
     expect(karhu?.category).toBe('beer');
 
-    // At this layer the row keeps its offer — by committed design the
-    // implausible VOLUME is what must never publish, and withholding it
-    // (unavailable encoding + review flag, pre-upsert) is the api-worker
-    // volume-ceiling gate's act, pinned there against this same shape.
+    // The row is plausible now, so its offer publishes at this layer;
+    // the downstream ceiling gate remains as defense-in-depth it never
+    // needs to fire for this shape (pinned in the api-worker tests
+    // over a true 33 l row).
     expect(offers.some((o) => o.priceCents === 2999)).toBe(true);
   });
 
@@ -225,13 +227,14 @@ describe('pipeline gate contract — golden failure shapes publish nothing (task
     expect(report.qualityReport).toBeDefined();
     expect(report.qualityReport!.totalOffers).toBe(2);
 
-    // The stacked row reaches the boundary with BOTH gate signals on
-    // one pair: the implausible per-unit volume (33 l beer) AND the
-    // mapper's price-floor rejection — the ceiling gate's copy preserves
-    // the latter, so a rejected offer is never resurrected downstream.
+    // The stacked row reaches the boundary with the mapper's price-floor
+    // rejection intact — an offer the price floor rejected is never
+    // resurrected downstream. Its pack-notation volume normalizes to a
+    // plausible 0.33 at mapping (task 1.1, honest-trust-surfaces), so
+    // the volume-ceiling gate never fires for this shape.
     const stacked = products.find((p) => p.name === STACKED.name);
     expect(stacked).toBeDefined();
-    expect(stacked?.unitVolume).toBe('33');
+    expect(stacked?.unitVolume).toBe('0.33');
     const stackedDrift = report.errors.find((e) => e.includes(STACKED.name));
     expect(stackedDrift).toContain('price drift');
     expect(offers.map((o) => o.priceCents)).not.toContain(0);
