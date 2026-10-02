@@ -15,6 +15,7 @@ import { Injectable } from '@nestjs/common';
 import type { UpsertProductInput, UpsertOfferInput } from '../interfaces/upsert-port.interface';
 import type { RawFeedRecord } from '../interfaces/feed-adapter.interface';
 import { decodeHtmlEntities } from './html-entities';
+import { deriveBrand } from './derive-brand';
 
 /** Paired upsert inputs for a single feed record. */
 export interface MappedPair {
@@ -44,6 +45,11 @@ export class DataMappingService {
   /**
    * Map a single raw feed record to upsert-ready product + offer inputs.
    *
+   * Brand resolution: the decoded feed brand when the merchant carries
+   * one, otherwise {@link deriveBrand} over the decoded display name
+   * (conservative derivation — '' when unknown). `manufacturer` keeps
+   * its placeholder semantics of mirroring brand.
+   *
    * @param record     Normalised feed record from the merchant adapter
    *                   (EUR-only per design D3 — offers can no longer be
    *                   unconvertible, and no FX provenance is carried).
@@ -64,7 +70,19 @@ export class DataMappingService {
     // escaping elsewhere is unchanged (design D2). Single-pass decoding
     // keeps plain text and already-decoded input byte-identical.
     const productName = decodeHtmlEntities(record.productName);
-    const brand = decodeHtmlEntities(record.brand);
+    const feedBrand = decodeHtmlEntities(record.brand);
+
+    // Brand: the feed value when the merchant carries one (passthrough,
+    // never overwritten); otherwise a conservative derivation from the
+    // DECODED name (derive-brand.ts — derivation runs after entity
+    // decoding so encoded text can't split tokens). Today no live feed
+    // carries a brand (alks returns `brands: []`, alko pins ''), so the
+    // derived value is the norm; it populates the did-you-mean brand
+    // vocabulary (task 3.2) and bm25 brand ranking. Derived values are
+    // advisory — the Tier-2 compound identity key implications were
+    // handled by the lead-sequenced production backfill before this
+    // deployed; this mapping never rewrites an existing row.
+    const brand = feedBrand.trim() !== '' ? feedBrand : deriveBrand(productName);
 
     // Category + regulatory classification come from the feed adapter's
     // source-category normalization (task 7.1) — the adapter maps the
@@ -73,7 +91,7 @@ export class DataMappingService {
     const product: MappedPair['product'] = {
       id: 0, // placeholder; the upsert adapter resolves the canonical ID
       name: productName,
-      manufacturer: brand, // placeholder — feed adapter may provide actual manufacturer
+      manufacturer: brand, // placeholder — mirrors brand (feed adapter may provide actual manufacturer)
       brand,
       category: record.category,
       containerType: record.containerType,

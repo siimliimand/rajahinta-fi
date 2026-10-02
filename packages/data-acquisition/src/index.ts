@@ -52,6 +52,14 @@ export { FeedIngestionService } from './services/feed-ingestion.service';
 export { DataMappingService } from './services/data-mapping.service';
 export type { MappedPair } from './services/data-mapping.service';
 
+// Conservative brand derivation from the feed display name — populates
+// product_master.brand when (as today) no feed carries one; the values
+// feed the did-you-mean brand vocabulary (task 3.2) and bm25 brand
+// ranking. Also consumed by scripts/backfill-brand.mts for the
+// lead-sequenced production backfill (kept import-free so the script
+// can load it under node --experimental-strip-types).
+export { deriveBrand } from './services/derive-brand';
+
 // Feed display-text entity decoder — reused by the entity backfill
 // (scripts/seed-d1.ts) so persisted rows decode with the same rules
 // ingestion used.
