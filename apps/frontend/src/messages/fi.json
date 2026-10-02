@@ -1702,6 +1702,8 @@
     "fromPriceLabel": "Halvin havaittu hinta",
     "noPrice": "Ei havaittuja hintoja",
     "merchantCount": "Myyjiä: {count}",
+    "unitPriceChip": "{value} snt/g",
+    "trackedPrice": "Seurattu hinta",
     "paginationNavLabel": "Sivutus",
     "prevPage": "Edellinen sivu",
     "nextPage": "Seuraava sivu",

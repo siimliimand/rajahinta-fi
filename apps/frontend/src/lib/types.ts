@@ -21,6 +21,16 @@ export interface ProductSearchItem {
   readonly containerType: string;
   readonly lowestPriceCents: number | null;
   readonly merchantCount: number;
+  /**
+   * Read-time €/g ethanol metric for this listing row (mirrors the API's
+   * SearchItemResponse embed, honest-trust-surfaces task 2.2): computed
+   * from the cheapest current-available single offer, labeled with that
+   * offer's price reliability. Optional so the type tolerates cached
+   * responses captured before the embed existed; an absent key or an
+   * `unavailable` status renders nothing on the card — no placeholder,
+   * no zero. Never reorders the listing.
+   */
+  readonly eurPerGram?: UnitPriceResult;
 }
 
 export interface ProductSearchResult {
@@ -104,11 +114,18 @@ export interface RetailOffer {
 // Unit-price metric (mirrors core-domain unitprice.types)
 // ---------------------------------------------------------------------------
 
-/** Why the €/g metric could not be produced (mirrors core-domain). */
+/**
+ * Why the €/g metric could not be produced (mirrors core-domain).
+ * `MISSING_PRICE` (no current-available offer to price) and
+ * `ZERO_ETHANOL` (present, valid, zero ABV — no denominator) close the
+ * gap to the domain union the API actually emits.
+ */
 export type UnitPriceUnavailableReason =
   | 'MISSING_VOLUME'
   | 'MISSING_ALCOHOL_FRACTION'
+  | 'MISSING_PRICE'
   | 'INVALID_VOLUME'
+  | 'ZERO_ETHANOL'
   | 'INVALID_ALCOHOL_FRACTION'
   | 'INVALID_PRICE';
 

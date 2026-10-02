@@ -1702,6 +1702,8 @@
     "fromPriceLabel": "Lowest observed price",
     "noPrice": "No observed prices",
     "merchantCount": "Merchants: {count}",
+    "unitPriceChip": "{value} ¢/g",
+    "trackedPrice": "Tracked price",
     "paginationNavLabel": "Pagination",
     "prevPage": "Previous page",
     "nextPage": "Next page",

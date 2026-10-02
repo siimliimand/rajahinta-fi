@@ -36,7 +36,13 @@ import { NextIntlClientProvider } from 'next-intl';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductsPage from '../page';
 import { request } from '@/lib/api';
-import type { ProductSearchItem, ProductSearchResult } from '@/lib/types';
+import type {
+  ProductSearchItem,
+  ProductSearchResult,
+  ReliabilityStatus,
+  UnitPriceResult,
+  UnitPriceUnavailableReason,
+} from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Mocked Next server plumbing — next-intl/server resolved from the locale's
@@ -55,8 +61,18 @@ vi.mock('next-intl/server', () => ({
     const table = (
       await import(locale === 'en' ? '@/messages/en.json' : '@/messages/fi.json')
     ).default as Record<string, unknown>;
+    // Dotted-path resolution: a namespace-less (root) translator receives
+    // full paths like 'Common.reliability.VERIFIED' (RELIABILITY_STATUS_META
+    // labelKey contract), namespaced translators receive bare keys.
+    const resolve = (path: string): unknown =>
+      path.split('.').reduce<unknown>((node, part) => {
+        if (node !== null && typeof node === 'object') {
+          return (node as Record<string, unknown>)[part];
+        }
+        return undefined;
+      }, table);
     return (key: string, values?: Record<string, unknown>) => {
-      const value = (table[ns] as Record<string, unknown> | undefined)?.[key];
+      const value = resolve(ns === '' ? key : `${ns}.${key}`);
       if (typeof value !== 'string') return `__MISSING_${ns}.${key}__`;
       if (values === undefined) return value;
       return value.replace(/\{(\w+)\}/g, (_, k: string) => {
@@ -124,6 +140,31 @@ function catalogResult(
     limit: 24,
     totalPages: 1,
     ...extra,
+  };
+}
+
+/** A computed €/g embed exactly as the listing API emits it (task 2.2). */
+function computedEmbed(
+  centsPerGram: number,
+  priceReliability: ReliabilityStatus = 'VERIFIED',
+): UnitPriceResult {
+  return {
+    status: 'computed',
+    centsPerGram,
+    ethanolGrams: 12.24,
+    priceReliability,
+  };
+}
+
+/** An unavailable €/g embed: explicit nulls plus the domain reason. */
+function unavailableEmbed(
+  reason: UnitPriceUnavailableReason = 'MISSING_PRICE',
+): UnitPriceResult {
+  return {
+    status: 'unavailable',
+    centsPerGram: null,
+    ethanolGrams: null,
+    reason,
   };
 }
 
@@ -576,5 +617,120 @@ describe('ProductsPage did-you-mean suggestion (task 3.3)', () => {
     await renderCatalog({ q: 'pöppönen' });
     expect(screen.queryByTestId('catalog-suggestion')).toBeNull();
     expect(screen.getByText('Ei tuloksia haulle "pöppönen"')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// €/g chip and single-seller framing (task 2.3, change
+// honest-trust-surfaces): the chip renders only for a computed listing
+// embed — an unavailable or absent embed renders nothing at all — and a
+// single-seller card replaces the "Myyjiä: 1" count with the
+// tracked-price framing (design D6).
+// ---------------------------------------------------------------------------
+
+describe('ProductsPage €/g chip and single-seller framing (task 2.3)', () => {
+  it('renders the chip with value, unit, and the reliability label on a computed embed', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([
+        catalogItem({ merchantCount: 2, eurPerGram: computedEmbed(16.26) }),
+      ]),
+    );
+
+    await renderCatalog();
+
+    const card = screen.getByText('Kotikalja 0.5 l').closest('article');
+    // Value in the shared €/g presentation (toFixed(2) + localized unit),
+    // the same format the compare cell and the value ranking use.
+    expect(card).toHaveTextContent('16.26 snt/g');
+    // Reliability rides with the canonical badge label — never color alone.
+    expect(card).toHaveTextContent('Vahvistettu');
+    // Multi-seller counts are untouched by the chip.
+    expect(card).toHaveTextContent('Myyjiä: 2');
+  });
+
+  it('renders nothing for the chip on an unavailable embed — no placeholder, no zero', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([
+        catalogItem({ eurPerGram: unavailableEmbed('MISSING_PRICE') }),
+      ]),
+    );
+
+    await renderCatalog();
+
+    const card = screen.getByText('Kotikalja 0.5 l').closest('article');
+    expect(card).not.toHaveTextContent('snt/g');
+    // No placeholder dash and no substituted zero where the chip would be.
+    expect(card).not.toHaveTextContent('—');
+    expect(card).not.toHaveTextContent('0.00');
+    // The rest of the card is unchanged.
+    expect(card).toHaveTextContent('1,99 €');
+    expect(card).toHaveTextContent('Myyjiä: 2');
+  });
+
+  it('renders nothing for the chip when the embed is absent (pre-embed cached row)', async () => {
+    mockedRequest.mockResolvedValue(catalogResult([catalogItem()]));
+
+    await renderCatalog();
+
+    const card = screen.getByText('Kotikalja 0.5 l').closest('article');
+    expect(card).not.toHaveTextContent('snt/g');
+    expect(card).not.toHaveTextContent('Vahvistettu');
+    expect(card).toHaveTextContent('Myyjiä: 2');
+  });
+
+  it('replaces the seller line with the tracked-price framing for exactly one seller', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([
+        catalogItem({ merchantCount: 1, eurPerGram: computedEmbed(16.26) }),
+      ]),
+    );
+
+    await renderCatalog();
+
+    const card = screen.getByText('Kotikalja 0.5 l').closest('article');
+    expect(card).toHaveTextContent('Seurattu hinta');
+    expect(card).not.toHaveTextContent('Myyjiä: 1');
+  });
+
+  it('keeps the seller count for multi-seller and zero-offer cards', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([
+        catalogItem({ id: 1, name: 'Multi Seller', merchantCount: 3 }),
+        catalogItem({
+          id: 2,
+          name: 'No Offers',
+          lowestPriceCents: null,
+          merchantCount: 0,
+        }),
+      ]),
+    );
+
+    await renderCatalog();
+
+    const multi = screen.getByText('Multi Seller').closest('article');
+    expect(multi).toHaveTextContent('Myyjiä: 3');
+    expect(multi).not.toHaveTextContent('Seurattu hinta');
+    const none = screen.getByText('No Offers').closest('article');
+    expect(none).toHaveTextContent('Myyjiä: 0');
+    expect(none).not.toHaveTextContent('Seurattu hinta');
+  });
+
+  it('renders EN chip copy and framing for the EN locale', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([
+        catalogItem({
+          merchantCount: 1,
+          eurPerGram: computedEmbed(9.4, 'ESTIMATED'),
+        }),
+      ]),
+    );
+
+    await renderCatalog({}, 'en');
+
+    const card = screen.getByText('Kotikalja 0.5 l').closest('article');
+    expect(card).toHaveTextContent('9.40 ¢/g');
+    expect(card).toHaveTextContent('Estimated');
+    expect(card).toHaveTextContent('Tracked price');
+    expect(card).not.toHaveTextContent('Merchants: 1');
   });
 });

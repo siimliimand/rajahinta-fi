@@ -11,7 +11,11 @@
  * @module CompareSortingTest
  */
 import { describe, it, expect } from 'vitest';
-import type { ComparisonProduct } from '@/lib/types';
+import type {
+  ComparisonProduct,
+  ReliabilityStatus,
+  UnitPriceUnavailableReason,
+} from '@/lib/types';
 import { sortComparisonProducts, COMPARE_SORT_OPTIONS } from './sort-products';
 
 function product(overrides: Partial<ComparisonProduct>): ComparisonProduct {
@@ -197,6 +201,109 @@ describe('sortComparisonProducts — EUR_PER_GRAM option', () => {
     const first = sortComparisonProducts([pricey, cheap], 'EUR_PER_GRAM');
     const second = sortComparisonProducts([pricey, cheap], 'EUR_PER_GRAM');
     expect(first.map((p) => p.id)).toEqual(second.map((p) => p.id));
+  });
+});
+
+describe('sortComparisonProducts — EUR_PER_GRAM with real embeds (task 2.3)', () => {
+  /**
+   * Embeds shaped exactly as the API emits them on detail offers and
+   * listing rows (honest-trust-surfaces task 2.2): a computed result
+   * carries the derived ethanol grams and the source price's narrowed
+   * reliability; an unavailable one carries explicit nulls plus the
+   * domain reason. The compare view attaches these verbatim (via
+   * bestOfferUnitPrice), so the sort must order on the real values.
+   */
+  const computedEmbed = (
+    centsPerGram: number,
+    priceReliability: ReliabilityStatus = 'VERIFIED',
+  ) => ({
+    status: 'computed' as const,
+    centsPerGram,
+    ethanolGrams: 12.24,
+    priceReliability,
+  });
+
+  const unavailableEmbed = (
+    reason: UnitPriceUnavailableReason = 'MISSING_PRICE',
+  ) => ({
+    status: 'unavailable' as const,
+    centsPerGram: null,
+    ethanolGrams: null,
+    reason,
+  });
+
+  it('orders a page of computed embeds by metric value — no longer an id-order no-op', () => {
+    // Ids ascend while metric values descend: id order and metric order
+    // disagree, and the metric must win (spec unit-price-metrics: the
+    // order is no longer a universal id-order no-op).
+    const page = [
+      product({ id: 1, eurPerGram: computedEmbed(19.8) }),
+      product({ id: 2, eurPerGram: computedEmbed(9.4) }),
+      product({ id: 3, eurPerGram: computedEmbed(31.05) }),
+      product({ id: 4, eurPerGram: computedEmbed(4.9) }),
+    ];
+    expect(sortComparisonProducts(page, 'EUR_PER_GRAM').map((p) => p.id)).toEqual(
+      [4, 2, 1, 3],
+    );
+  });
+
+  it('breaks ties by product id when two real embeds carry the same value', () => {
+    const page = [
+      product({ id: 8, name: 'ZZZ', eurPerGram: computedEmbed(12.5) }),
+      product({ id: 5, name: 'AAA', eurPerGram: computedEmbed(12.5) }),
+    ];
+    expect(sortComparisonProducts(page, 'EUR_PER_GRAM').map((p) => p.id)).toEqual(
+      [5, 8],
+    );
+  });
+
+  it('rows whose embed is unavailable (no current offer) sort after every computed value', () => {
+    const page = [
+      product({ id: 1, eurPerGram: unavailableEmbed('MISSING_PRICE') }),
+      product({ id: 2, eurPerGram: computedEmbed(31.05) }),
+      product({ id: 3, eurPerGram: unavailableEmbed('ZERO_ETHANOL') }),
+      product({ id: 4, eurPerGram: computedEmbed(9.4) }),
+    ];
+    expect(sortComparisonProducts(page, 'EUR_PER_GRAM').map((p) => p.id)).toEqual(
+      [4, 2, 1, 3],
+    );
+  });
+
+  it('a missing embed (unresolved detail) sorts last, like an unavailable one', () => {
+    const page = [
+      product({ id: 1, eurPerGram: computedEmbed(19.8) }),
+      product({ id: 2 }),
+      product({ id: 3, eurPerGram: computedEmbed(9.4) }),
+    ];
+    expect(sortComparisonProducts(page, 'EUR_PER_GRAM').map((p) => p.id)).toEqual(
+      [3, 1, 2],
+    );
+  });
+
+  it('the source price reliability never moves the order (ESTIMATED low beats VERIFIED high)', () => {
+    const page = [
+      product({ id: 1, eurPerGram: computedEmbed(9.4, 'VERIFIED') }),
+      product({ id: 2, eurPerGram: computedEmbed(4.9, 'ESTIMATED') }),
+    ];
+    expect(sortComparisonProducts(page, 'EUR_PER_GRAM').map((p) => p.id)).toEqual(
+      [2, 1],
+    );
+  });
+
+  it('stays deterministic when only unavailable embeds exist', () => {
+    // Every metric missing (+Infinity across the board): the objective
+    // contract still holds — the same input array orders identically on
+    // every call (ECMAScript stability makes the resolved order stable),
+    // and no unavailable row can masquerade as a 0 €/g value.
+    const page = [
+      product({ id: 3, eurPerGram: unavailableEmbed('MISSING_VOLUME') }),
+      product({ id: 1, eurPerGram: unavailableEmbed('MISSING_ALCOHOL_FRACTION') }),
+      product({ id: 2, eurPerGram: unavailableEmbed('ZERO_ETHANOL') }),
+    ];
+    const first = sortComparisonProducts(page, 'EUR_PER_GRAM').map((p) => p.id);
+    const second = sortComparisonProducts(page, 'EUR_PER_GRAM').map((p) => p.id);
+    expect(first).toEqual(second);
+    expect(first).toHaveLength(3);
   });
 });
 
