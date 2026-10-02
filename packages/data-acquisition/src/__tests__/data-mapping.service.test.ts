@@ -409,3 +409,93 @@ describe('DataMappingService — price floor gate (task 1.1, design D1)', () => 
     expect(pairs[1].product.name).toBe('Lapin Kulta');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Brand derivation fallback (change derive-product-brand) — no live feed
+// carries a brand, so the mapping derives a conservative brand from the
+// DECODED display name; a non-empty feed brand always wins (passthrough).
+// Derived values feed the advisory did-you-mean vocabulary (task 3.2) and
+// bm25 brand ranking — never product identity.
+// ---------------------------------------------------------------------------
+
+describe('DataMappingService — brand derivation fallback (derive-product-brand)', () => {
+  const service = new DataMappingService();
+
+  it('spec: empty feed brand → derived from the decoded name', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ brand: '', productName: 'Koskenkorva Vodka 40% 0.5 l' }),
+      'alko',
+      'FI',
+    );
+
+    expect(product.brand).toBe('Koskenkorva');
+  });
+
+  it('spec: a non-empty feed brand wins over derivation (passthrough)', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ brand: 'Feed Brand Co', productName: 'Koskenkorva Vodka 40% 0.5 l' }),
+      'alks',
+      'DE',
+    );
+
+    expect(product.brand).toBe('Feed Brand Co');
+  });
+
+  it('spec: derivation runs on the DECODED name — entities cannot split tokens', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ brand: '', productName: 'Koskenkorva &#8221;Sisu&#8221; Vodka 40% 0.5 l' }),
+      'alks',
+      'DE',
+    );
+
+    expect(product.name).toBe('Koskenkorva \u201DSisu\u201D Vodka 40% 0.5 l');
+    expect(product.brand).toBe('Koskenkorva \u201DSisu\u201D');
+  });
+
+  it('spec: unresolvable name (no stop token) → brand stays "" — never guessed', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ brand: '', productName: 'Acme Foobar Industries' }),
+      'alks',
+      'DE',
+    );
+
+    expect(product.brand).toBe('');
+  });
+
+  it('spec: an empty name with an empty feed brand maps brand ""', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ brand: '', productName: '' }),
+      'alko',
+      'FI',
+    );
+
+    expect(product.brand).toBe('');
+    expect(product.name).toBe('');
+  });
+
+  it('spec: the derived brand mirrors into the manufacturer placeholder', () => {
+    const { product } = service.mapToProductAndOffer(
+      eurRecord({ brand: '', productName: 'Koskenkorva Vodka 40% 0.5 l' }),
+      'alko',
+      'FI',
+    );
+
+    expect(product.manufacturer).toBe('Koskenkorva');
+  });
+
+  it('spec: mapping the same record twice derives the same brand (idempotence)', () => {
+    const first = service.mapToProductAndOffer(
+      eurRecord({ brand: '', productName: 'Riga Black Balsam Currant' }),
+      'alks',
+      'DE',
+    );
+    const second = service.mapToProductAndOffer(
+      eurRecord({ brand: '', productName: 'Riga Black Balsam Currant' }),
+      'alks',
+      'DE',
+    );
+
+    expect(first.product.brand).toBe('Riga Black Balsam');
+    expect(second.product.brand).toBe(first.product.brand);
+  });
+});
