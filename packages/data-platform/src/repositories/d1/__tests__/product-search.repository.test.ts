@@ -889,6 +889,125 @@ describe('D1ProductSearchRepository.listCatalogPage — catalog listing (design 
 });
 
 // ---------------------------------------------------------------------------
+// Cheapest current offer provenance (task 2.2, change
+// honest-trust-surfaces) — the listing €/g embed derives from ONE
+// specific offer: the cheapest row of the latest-observation set, with
+// that row's own reliability status. The set and its semantics are
+// findOffers' (detail-route parity), so the tests pin the aggregate
+// against findOffers directly.
+// ---------------------------------------------------------------------------
+
+describe('D1ProductSearchRepository.listCatalogPage — cheapest current offer provenance (task 2.2)', () => {
+  const provDb = openMigratedD1();
+  const provRepo = new D1ProductSearchRepository(provDb.d1);
+
+  beforeAll(async () => {
+    // 5101: the SUPERSEDED scrape is cheaper AND VERIFIED — neither its
+    // price nor its status may leak; the current row is pricier and
+    // ESTIMATED. 5102: a STALE-labeled current row surfaces its own
+    // provenance (the detail page lists the same row). 5103: two
+    // merchants tie at the minimum — the lowest offer id wins.
+    for (const r of [
+      { id: 5101, name: 'Provenanssi A' },
+      { id: 5102, name: 'Provenanssi B' },
+      { id: 5103, name: 'Provenanssi C' },
+    ]) {
+      await provRepo.create({
+        id: r.id,
+        name: r.name,
+        manufacturer: 'Provenanssi Panimo',
+        brand: 'Provenanssi',
+        category: 'spirits',
+        alcoholByVolume: '0.047',
+        unitVolume: '0.33',
+        containerType: 'can',
+        regulatoryClassification: 'spirits',
+        depositSystemStatus: true,
+        ean: null,
+      });
+    }
+    await provDb.d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+            observed_at, reliability_status)
+         VALUES (700, 'alko', 'FI', 5101, 100, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (701, 'alko', 'FI', 5101, 200, '2026-09-02T10:00:00.000Z', 'ESTIMATED'),
+                (710, 'alko', 'FI', 5102, 300, '2026-09-02T10:00:00.000Z', 'STALE'),
+                (720, 'alko', 'FI', 5103, 400, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (721, 'eu-import', 'EE', 5103, 400, '2026-09-01T10:00:00.000Z', 'ESTIMATED')`,
+      )
+      .run();
+  });
+
+  it('exposes the cheapest current offer’s price AND its provenance', async () => {
+    const result = await repo.listCatalogPage(1, 100, 'wine_still');
+    const byId = new Map(result.items.map((item) => [item.product.id, item]));
+    // 2000: the min 250 belongs to the ESTIMATED eu-import row (601) —
+    // not the VERIFIED co-offer's status.
+    expect(byId.get(2000)?.lowestPriceCents).toBe(250);
+    expect(byId.get(2000)?.cheapestOfferReliabilityStatus).toBe('ESTIMATED');
+    // 2001: the latest scrape (603) holds the min 199, VERIFIED.
+    expect(byId.get(2001)?.lowestPriceCents).toBe(199);
+    expect(byId.get(2001)?.cheapestOfferReliabilityStatus).toBe('VERIFIED');
+  });
+
+  it('a superseded cheaper scrape leaks neither its price nor its status', async () => {
+    const result = await provRepo.listCatalogPage(1, 10, 'spirits');
+    const a = result.items.find((item) => item.product.id === 5101);
+    // The current row is 200/ESTIMATED — the superseded 100/VERIFIED
+    // scrape prices and labels nothing.
+    expect(a?.lowestPriceCents).toBe(200);
+    expect(a?.cheapestOfferReliabilityStatus).toBe('ESTIMATED');
+  });
+
+  it('a product with no current offer exposes neither price nor provenance (honest absence)', async () => {
+    // Shared fixture 2002 has no retail_offers rows at all.
+    const wine = await repo.listCatalogPage(1, 100, 'wine_still');
+    const offerless = wine.items.find((item) => item.product.id === 2002);
+    expect(offerless?.lowestPriceCents).toBeNull();
+    expect(offerless?.merchantCount).toBe(0);
+    expect(offerless?.cheapestOfferReliabilityStatus).toBeNull();
+
+    // A STALE-LABELED row is still a current row: it surfaces with its
+    // own status, exactly as the detail page lists it — the label is
+    // honest, the price is never presented as VERIFIED.
+    const spirits = await provRepo.listCatalogPage(1, 10, 'spirits');
+    const stale = spirits.items.find((item) => item.product.id === 5102);
+    expect(stale?.lowestPriceCents).toBe(300);
+    expect(stale?.cheapestOfferReliabilityStatus).toBe('STALE');
+  });
+
+  it('a price tie resolves to the lowest offer id — the detail route’s own pick', async () => {
+    const result = await provRepo.listCatalogPage(1, 10, 'spirits');
+    const tied = result.items.find((item) => item.product.id === 5103);
+    expect(tied?.lowestPriceCents).toBe(400);
+    // findOrders parity: findOffers lists [720, 721] id-ASC; the shared
+    // lowest-current-offer rule keeps 720 (strictly-smaller only), so
+    // the provenance is 720's VERIFIED, never 721's ESTIMATED.
+    expect(tied?.cheapestOfferReliabilityStatus).toBe('VERIFIED');
+    const offers = await provRepo.findOffers(5103);
+    expect(offers.map((o) => o.id)).toEqual([720, 721]);
+    const best = offers.reduce((acc, o) => (o.priceCents < acc.priceCents ? o : acc));
+    expect(best.id).toBe(720);
+    expect(best.reliabilityStatus).toBe('VERIFIED');
+  });
+
+  it('the aggregate provenance equals what findOffers implies for every offered product', async () => {
+    const result = await repo.listCatalogPage(1, 100, 'wine_still');
+    for (const item of result.items) {
+      if (item.lowestPriceCents === null) continue;
+      const offers = await repo.findOffers(item.product.id);
+      expect(offers.length).toBeGreaterThan(0);
+      const best = offers.reduce((acc, o) =>
+        o.priceCents < acc.priceCents ? o : acc,
+      );
+      expect(item.lowestPriceCents).toBe(best.priceCents);
+      expect(item.cheapestOfferReliabilityStatus).toBe(best.reliabilityStatus);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Catalog sort orders (task 1.2, change client-experience-improvement) —
 // isolated fixture DB so the shared-database describes above are untouched.
 // ---------------------------------------------------------------------------

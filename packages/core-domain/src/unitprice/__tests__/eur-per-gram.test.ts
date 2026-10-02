@@ -185,6 +185,36 @@ describe('eurPerGram — unavailable (explicit, no substituted value)', () => {
   });
 });
 
+describe('eurPerGram — missing price (task 2.2, change honest-trust-surfaces)', () => {
+  it('null price with complete physicals → MISSING_PRICE, not INVALID_PRICE', () => {
+    // A listing with no current-available offer has no price INPUT —
+    // genuinely absent, a different honesty claim than a supplied-but-
+    // unusable price (INVALID_PRICE stays reserved for value faults).
+    expect(eurPerGram(null, 0.33, 0.047)).toEqual({
+      status: 'unavailable',
+      centsPerGram: null,
+      ethanolGrams: null,
+      reason: 'MISSING_PRICE',
+    });
+    expect(eurPerGram(undefined, 0.33, 0.047)).toMatchObject({
+      reason: 'MISSING_PRICE',
+    });
+  });
+
+  it('missing price is a known unknown — reported before value-level faults', () => {
+    expect(eurPerGram(null, 0, 0.4)).toMatchObject({ reason: 'MISSING_PRICE' });
+    expect(eurPerGram(null, 0.33, 0)).toMatchObject({ reason: 'MISSING_PRICE' });
+    expect(eurPerGram(null, 0.5, 40)).toMatchObject({ reason: 'MISSING_PRICE' });
+  });
+
+  it('the other known unknowns still outrank the missing price (module precedence)', () => {
+    expect(eurPerGram(null, null, 0.4)).toMatchObject({ reason: 'MISSING_VOLUME' });
+    expect(eurPerGram(null, 0.5, undefined)).toMatchObject({
+      reason: 'MISSING_ALCOHOL_FRACTION',
+    });
+  });
+});
+
 /** Narrow a result to the value branch, asserting the expected status. */
 function assertValue(
   result: ReturnType<typeof eurPerGram>,

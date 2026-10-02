@@ -113,11 +113,16 @@ interface D1CatalogKeyRow {
   readonly name: string;
 }
 
-/** Raw D1 per-product offer aggregate row (design D4). */
+/** Raw D1 per-product offer aggregate row (design D4 + honest-trust D1). */
 interface D1OfferAggregateRow {
   readonly product_id: number;
   readonly min_price_cents: number;
   readonly merchant_count: number;
+  /**
+   * Reliability status of the cheapest current offer — the specific row
+   * whose price `min_price_cents` reports. NOT NULL like the column.
+   */
+  readonly cheapest_reliability_status: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -530,6 +535,43 @@ const LATEST_OFFER_PER_MERCHANT_SQL = `
      FROM retail_offers
  GROUP BY product_id, merchant)`;
 
+/**
+ * Correlated provenance of the CHEAPEST CURRENT offer (design D1, change
+ * honest-trust-surfaces): the reliability status of the one latest-
+ * observation row whose `price_cents` equals the aggregate's
+ * `MIN(o.price_cents)`. The listing embed derives its €/g metric from
+ * THAT offer — the minimum over current offers is one specific offer,
+ * and its price provenance must travel with the price.
+ *
+ * The pick is deterministic and detail-parity: rows are ordered
+ * `price_cents ASC, id ASC`, which is exactly the row the detail
+ * endpoint's own derivation lands on (`findOffers` returns the
+ * latest-observation rows in `id ASC` order and the shared
+ * lowest-current-offer rule keeps the FIRST strictly-smaller price —
+ * the minimum-price row with the lowest id). A superseded cheaper
+ * scrape can never leak its price or its status: the inner latest-per-
+ * (product, merchant) collapse is the same one
+ * {@link LATEST_OFFER_PER_MERCHANT_SQL} applies to the outer aggregate.
+ *
+ * Written as a correlated scalar subquery so the grouped aggregate keeps
+ * its shape (one statement, one round trip — no per-row N+1); SQLite
+ * resolves the outer `o.product_id` grouping column at each group.
+ * Exported because the search route's ids/ranked-q aggregate
+ * (offerAggregatesByProductId) must resolve the identical provenance —
+ * one SQL fragment, two aggregate sites, zero drift.
+ */
+export const CHEAPEST_CURRENT_OFFER_PROVENANCE_SQL = `
+  (SELECT o2.reliability_status
+     FROM retail_offers o2
+     JOIN (SELECT product_id, merchant, MAX(id) AS id
+             FROM retail_offers
+            WHERE product_id = o.product_id
+         GROUP BY product_id, merchant) latest
+       ON latest.id = o2.id
+    WHERE o2.product_id = o.product_id
+    ORDER BY o2.price_cents ASC, o2.id ASC
+    LIMIT 1)`;
+
 const CATALOG_KEYS_BY_PRICE_SQL = `
   SELECT p.id AS id, p.name AS name
     FROM product_master p
@@ -587,18 +629,30 @@ export type CatalogSortOrder = (typeof CATALOG_SORT_ORDERS)[number];
 
 /**
  * One catalog listing item: the full contract product plus the offer
- * aggregates of its page (design D4, change product-catalog).
+ * aggregates of its page (design D4, change product-catalog) and the
+ * provenance of the cheapest current offer (design D1, change
+ * honest-trust-surfaces).
  */
 export interface CatalogProductListItem {
   /** Full product row in the canonical contract shape (see the module header). */
   readonly product: ProductRecord;
   /**
    * Lowest observed offer price in EUR cents — null when the product has
-   * no offers. Honest absence, never a guessed price.
+   * no offers. Honest absence, never a guessed price. This IS the price
+   * of one specific offer: the cheapest row of the latest-observation
+   * set (see {@link CHEAPEST_CURRENT_OFFER_PROVENANCE_SQL}), which is
+   * what makes the listing €/g embed's derivation honest.
    */
   readonly lowestPriceCents: number | null;
   /** Distinct merchants with an observed offer — 0 when the product has no offers. */
   readonly merchantCount: number;
+  /**
+   * Reliability status of the cheapest current offer — the offer whose
+   * price {@link CatalogProductListItem.lowestPriceCents} reports. Null
+   * exactly when the product has no current offer; a superseded scrape
+   * never supplies a price or a provenance.
+   */
+  readonly cheapestOfferReliabilityStatus: string | null;
 }
 
 /**
@@ -915,7 +969,11 @@ export class D1ProductSearchRepository extends ProductRepository {
    *    page's ids (design D4) — bounded by pageSize regardless of catalog
    *    size. Offer-less products keep `lowestPriceCents: null` and
    *    `merchantCount: 0`; no availability filtering in v1 (documented
-   *    deferral — the aggregate reflects observed offers).
+   *    deferral — the aggregate reflects observed offers, the SAME
+   *    latest-observation set the detail endpoint lists). Each aggregate
+   *    also resolves the cheapest current offer's reliability status
+   *    (design D1, change honest-trust-surfaces) so the route can label
+   *    the listing €/g embed with that offer's provenance.
    *
    * `category` must be validated against `PRODUCT_CATEGORIES` by the
    * caller (design D2: the API route 400s unknown values). Any
@@ -1011,7 +1069,8 @@ export class D1ProductSearchRepository extends ProductRepository {
         .prepare(
           `SELECT o.product_id,
                   MIN(o.price_cents) AS min_price_cents,
-                  COUNT(DISTINCT o.merchant) AS merchant_count
+                  COUNT(DISTINCT o.merchant) AS merchant_count,
+                  ${CHEAPEST_CURRENT_OFFER_PROVENANCE_SQL} AS cheapest_reliability_status
              FROM retail_offers o
              JOIN ${LATEST_OFFER_PER_MERCHANT_SQL} m
                ON m.id = o.id
@@ -1041,6 +1100,9 @@ export class D1ProductSearchRepository extends ProductRepository {
         product,
         lowestPriceCents: aggregate ? aggregate.min_price_cents : null,
         merchantCount: aggregate ? aggregate.merchant_count : 0,
+        cheapestOfferReliabilityStatus: aggregate
+          ? aggregate.cheapest_reliability_status
+          : null,
       };
     });
 

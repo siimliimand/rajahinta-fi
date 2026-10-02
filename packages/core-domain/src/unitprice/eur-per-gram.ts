@@ -48,8 +48,10 @@ export const ETHANOL_DENSITY_G_PER_L = 789;
  * Validation policy (single reported reason, checked in this order):
  *
  * 1. `unitVolumeL` is `null`/`undefined` → `MISSING_VOLUME`; then
- *    `alcoholFraction` is `null`/`undefined` → `MISSING_ALCOHOL_FRACTION`
- *    (known unknowns are reported before value-level faults).
+ *    `alcoholFraction` is `null`/`undefined` → `MISSING_ALCOHOL_FRACTION`;
+ *    then `priceCents` is `null`/`undefined` → `MISSING_PRICE` (known
+ *    unknowns are reported before value-level faults, and the physical
+ *    inputs precede the absent market price).
  * 2. Volume must be a finite number > 0 → else `INVALID_VOLUME`.
  *    `alcoholFraction` is a fraction, not a percent: an ABV of exactly
  *    0 is present and valid data (a non-alcoholic beer), but the metric
@@ -73,7 +75,9 @@ export const ETHANOL_DENSITY_G_PER_L = 789;
  * {@link ReliabilityStatus} yields `'ESTIMATED'` with the value still
  * returned, so an uncertain price is visible without hiding the number.
  *
- * @param priceCents      Offer price in euro cents (finite, ≥ 0).
+ * @param priceCents      Offer price in euro cents (finite, ≥ 0), or
+ *                        `null`/`undefined` when there is no current
+ *                        offer to price at → `MISSING_PRICE`.
  * @param unitVolumeL     Unit volume in litres (finite, > 0), or
  *                        `null`/`undefined` when unknown.
  * @param alcoholFraction ABV as a fraction in `(0, 1]` (0.4 = 40%),
@@ -82,7 +86,7 @@ export const ETHANOL_DENSITY_G_PER_L = 789;
  * @param priceReliability Reliability of the offer price; default `'VERIFIED'`.
  */
 export function eurPerGram(
-  priceCents: number,
+  priceCents: number | null | undefined,
   unitVolumeL: number | null | undefined,
   alcoholFraction: number | null | undefined,
   priceReliability: ReliabilityStatus = 'VERIFIED',
@@ -92,6 +96,9 @@ export function eurPerGram(
   }
   if (alcoholFraction === null || alcoholFraction === undefined) {
     return unavailable('MISSING_ALCOHOL_FRACTION');
+  }
+  if (priceCents === null || priceCents === undefined) {
+    return unavailable('MISSING_PRICE');
   }
   if (!Number.isFinite(unitVolumeL) || unitVolumeL <= 0) {
     return unavailable('INVALID_VOLUME');

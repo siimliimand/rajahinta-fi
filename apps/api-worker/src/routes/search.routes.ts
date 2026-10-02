@@ -17,7 +17,11 @@
  * categories). The detail response embeds per-merchant reliability
  * scores (informational only — see src/services/merchant-reliability.ts).
  * Search items and detail offers carry the read-time €/g metric
- * (`eurPerGram`) with its status.
+ * (`eurPerGram`) with its status; on listings the metric derives from
+ * the cheapest current-available single offer's price and provenance
+ * (design D1, change honest-trust-surfaces) — the aggregate resolves
+ * that offer's reliability, and the item reports MISSING_PRICE when
+ * there is no current offer at all.
  *
  * Zero-result did-you-mean (task 3.2, change
  * finnish-first-client-experience): a ranked-q search that found nothing
@@ -51,6 +55,7 @@ import {
 } from '../services/merchant-warnings';
 import {
   CATALOG_SORT_ORDERS,
+  CHEAPEST_CURRENT_OFFER_PROVENANCE_SQL,
   D1ProductSearchRepository,
   type CatalogProductListItem,
   type CatalogProductListPage,
@@ -183,7 +188,7 @@ type SearchItem = {
 /**
  * Search item as returned: the base shape plus the €/g metric embed.
  */
-type SearchItemResponse = SearchItem & { eurPerGram?: UnitPriceResult };
+type SearchItemResponse = SearchItem & { eurPerGram: UnitPriceResult };
 
 /** Map a product row to a search-result item (toSearchItem parity). */
 function toSearchItem(p: ProductRow): SearchItem {
@@ -249,49 +254,106 @@ function unitPriceInputs(p: ProductRow): UnitPriceInputs {
 }
 
 /**
- * The €/g metric embed for a search item. The metric derives from the
- * physical inputs only — never from the listing's aggregate price: a
- * `lowestPriceCents` minimum across observed offers is not any single
- * offer's price, and per-offer metrics live on the detail route. The
- * price input is therefore NaN on every listing path and the module
- * reports the metric unavailable — naming the first missing physical
- * input (volume before alcohol fraction, module precedence) so the item
- * still says WHY it has no €/g. The union has no MISSING_PRICE reason,
- * so a product with complete physical data degrades to INVALID_PRICE
- * (the price input is genuinely unusable here). No value is silently
- * substituted (spec unit-price-metrics).
+ * The cheapest current offer's price with its narrowed provenance, or
+ * null when the product has no current offer. The aggregate's
+ * `min_price_cents` IS this offer's price (design D1, change
+ * honest-trust-surfaces): the minimum over current offers is one
+ * specific offer, and the aggregate resolves that offer's reliability
+ * alongside the price.
  */
-function searchItemUnitPrice(inputs: UnitPriceInputs): UnitPriceResult {
-  return eurPerGram(Number.NaN, inputs.unitVolumeL, inputs.alcoholFraction);
+interface OfferPriceProvenance {
+  readonly priceCents: number;
+  readonly reliability: ReliabilityStatus;
 }
 
-/** Map a product row to its response shape, embedding the metric. */
-function toSearchItemResponse(p: ProductRow): SearchItemResponse {
+/**
+ * Pair the aggregate's price with its provenance. Null only when there
+ * is no current offer (both fields are null together by construction).
+ */
+function cheapestOfferPrice(
+  priceCents: number | null,
+  reliabilityStatus: string | null,
+): OfferPriceProvenance | null {
+  return priceCents === null || reliabilityStatus === null
+    ? null
+    : { priceCents, reliability: toReliabilityStatus(reliabilityStatus) };
+}
+
+/**
+ * The €/g metric embed for a search item (design D1, change
+ * honest-trust-surfaces). Derived from the cheapest current-available
+ * offer's price labeled with THAT offer's narrowed reliability — the
+ * same freshness semantics the detail route's offer listing uses, so a
+ * listing row and its detail page can never disagree. No current offer
+ * → `MISSING_PRICE`: the price input is genuinely absent (a known
+ * unknown, distinct from the domain's value-level faults). Missing or
+ * invalid physicals and zero ethanol keep their domain reasons via the
+ * module's precedence. No listing path passes NaN as the price.
+ */
+function searchItemUnitPrice(
+  inputs: UnitPriceInputs,
+  price: OfferPriceProvenance | null,
+): UnitPriceResult {
+  return eurPerGram(
+    price === null ? null : price.priceCents,
+    inputs.unitVolumeL,
+    inputs.alcoholFraction,
+    price === null ? 'VERIFIED' : price.reliability,
+  );
+}
+
+/**
+ * Base items without the embed, plus each product's parsed physical
+ * inputs: the embed is computed at aggregate-merge time, when the
+ * cheapest current offer's provenance is known. Keeping it out of the
+ * base shape is also what preserves the legacy key order — eurPerGram
+ * appends last, after the aggregates override their existing keys.
+ */
+function toSearchItems(products: readonly ProductRow[]): {
+  items: SearchItem[];
+  inputsById: Map<number, UnitPriceInputs>;
+} {
   return {
-    ...toSearchItem(p),
-    eurPerGram: searchItemUnitPrice(unitPriceInputs(p)),
+    items: products.map(toSearchItem),
+    inputsById: new Map(products.map((p) => [p.id, unitPriceInputs(p)])),
   };
 }
 
 /**
  * Map a catalog listing entry to the response shape with the page's real
- * offer aggregates (design D4, change product-catalog). The spread
- * overrides keep the legacy key order — lowestPriceCents/merchantCount
- * already exist in the base shape, so only their values change.
+ * offer aggregates (design D4, change product-catalog) and the €/g embed
+ * derived from the entry's cheapest current offer (design D1, change
+ * honest-trust-surfaces). The spread overrides keep the legacy key
+ * order — lowestPriceCents/merchantCount already exist in the base
+ * shape, so only their values change before the embed appends.
  */
 function toCatalogItem(entry: CatalogProductListItem): SearchItemResponse {
   return {
-    ...toSearchItemResponse(entry.product),
+    ...toSearchItem(entry.product),
     lowestPriceCents: entry.lowestPriceCents,
     merchantCount: entry.merchantCount,
+    eurPerGram: searchItemUnitPrice(
+      unitPriceInputs(entry.product),
+      cheapestOfferPrice(
+        entry.lowestPriceCents,
+        entry.cheapestOfferReliabilityStatus,
+      ),
+    ),
   };
 }
 
-/** One grouped aggregate row: per-product min price + merchant count. */
+/**
+ * One grouped aggregate row: per-product min price, merchant count, and
+ * the cheapest current offer's reliability status — the provenance of
+ * the row MIN landed on. The repository's catalog aggregate resolves
+ * the identical column, so the ids/ranked-q paths cannot drift from
+ * browse.
+ */
 interface OfferAggregateRow {
   readonly product_id: number;
   readonly min_price_cents: number;
   readonly merchant_count: number;
+  readonly cheapest_reliability_status: string;
 }
 
 /**
@@ -310,6 +372,11 @@ interface OfferAggregateRow {
  * applies the same latest-observation set (change
  * data-quality-and-publication-trust: the all-rows aggregate let a
  * pre-price-floor zero scrape crown the LOWEST_PRICE catalog).
+ *
+ * The provenance column is the shared
+ * CHEAPEST_CURRENT_OFFER_PROVENANCE_SQL fragment — the lowest-id row
+ * among the min-price rows, which is the offer the detail route's own
+ * lowest-current-offer derivation lands on.
  */
 async function offerAggregatesByProductId(
   db: D1Database,
@@ -322,7 +389,8 @@ async function offerAggregatesByProductId(
       .prepare(
         `SELECT o.product_id AS product_id,
                 MIN(o.price_cents) AS min_price_cents,
-                COUNT(DISTINCT o.merchant) AS merchant_count
+                COUNT(DISTINCT o.merchant) AS merchant_count,
+                ${CHEAPEST_CURRENT_OFFER_PROVENANCE_SQL} AS cheapest_reliability_status
            FROM retail_offers o
            JOIN (SELECT product_id, merchant, MAX(id) AS id
                    FROM retail_offers
@@ -338,23 +406,37 @@ async function offerAggregatesByProductId(
 }
 
 /**
- * Merge the aggregates into mapped items. Offer-less products keep the
- * base shape's honest absence (null/0) — only products with a latest
- * offer row are overridden.
+ * Merge the aggregates into mapped items and compute each item's €/g
+ * embed from the cheapest current offer (design D1). Offer-less
+ * products keep the base shape's honest absence (null/0) and an embed
+ * reporting MISSING_PRICE — only products with a latest offer row are
+ * overridden.
  */
 function withOfferAggregates(
-  items: SearchItemResponse[],
+  items: readonly SearchItem[],
   aggregates: Map<number, OfferAggregateRow>,
+  inputsById: Map<number, UnitPriceInputs>,
 ): SearchItemResponse[] {
   return items.map((item) => {
     const aggregate = aggregates.get(item.id);
-    return aggregate
-      ? {
-          ...item,
-          lowestPriceCents: aggregate.min_price_cents,
-          merchantCount: aggregate.merchant_count,
-        }
-      : item;
+    return {
+      ...item,
+      ...(aggregate
+        ? {
+            lowestPriceCents: aggregate.min_price_cents,
+            merchantCount: aggregate.merchant_count,
+          }
+        : {}),
+      eurPerGram: searchItemUnitPrice(
+        inputsById.get(item.id)!,
+        aggregate
+          ? cheapestOfferPrice(
+              aggregate.min_price_cents,
+              aggregate.cheapest_reliability_status,
+            )
+          : null,
+      ),
+    };
   });
 }
 
@@ -417,14 +499,21 @@ async function search(c: Context<AppEnv>): Promise<Response> {
         .filter((n) => !Number.isNaN(n) && n > 0);
 
       const products = await Promise.all(productIds.map((id) => repo.findById(id)));
-      items = products
-        .filter((p): p is NonNullable<typeof p> => p !== null)
-        .map((p) => toSearchItemResponse(p));
+      const found = products.filter(
+        (p): p is NonNullable<typeof p> => p !== null,
+      );
+      // Base items plus inputs; the embed is computed when the aggregate
+      // merge resolves each product's cheapest current offer.
+      const { items: baseItems, inputsById } = toSearchItems(found);
       // Aggregates merge BEFORE ordering — LOWEST_PRICE sorts on them
       // (task 1.2). Order-neutral for ALPHABETICAL.
       items = withOfferAggregates(
-        items,
-        await offerAggregatesByProductId(c.env.DB, items.map((item) => item.id)),
+        baseItems,
+        await offerAggregatesByProductId(
+          c.env.DB,
+          baseItems.map((item) => item.id),
+        ),
+        inputsById,
       );
       items.sort(
         sortBy === 'ALPHABETICAL' ? compareByName : compareBySortOrder(sortBy),
@@ -448,12 +537,18 @@ async function search(c: Context<AppEnv>): Promise<Response> {
         categoryParam,
       );
       suggestion = ranked.suggestion;
-      items = ranked.items.map((p) => toSearchItemResponse(p));
+      // Base items plus inputs; the embed is computed when the aggregate
+      // merge resolves each product's cheapest current offer.
+      const { items: baseItems, inputsById } = toSearchItems(ranked.items);
       // Same pre-ordering aggregate merge as the ids path — the sort key
       // must be the real offer figure, never the null/0 placeholder.
       items = withOfferAggregates(
-        items,
-        await offerAggregatesByProductId(c.env.DB, items.map((item) => item.id)),
+        baseItems,
+        await offerAggregatesByProductId(
+          c.env.DB,
+          baseItems.map((item) => item.id),
+        ),
+        inputsById,
       );
       if (sort !== undefined) {
         items.sort(compareBySortOrder(sortBy));

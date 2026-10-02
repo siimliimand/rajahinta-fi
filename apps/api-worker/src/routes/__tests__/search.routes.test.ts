@@ -892,7 +892,7 @@ describe('eurPerGram embed', () => {
     'reliabilityStatus',
   ];
 
-  it('search items carry the metric — explicitly unavailable (no price in the search path)', async () => {
+  it('search items carry the metric — explicitly unavailable with MISSING_PRICE when no current offer exists', async () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1 }); // volume + ABV present
     const app = buildApp();
@@ -903,14 +903,15 @@ describe('eurPerGram embed', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: Array<Record<string, unknown>> };
     expect(body.items).toHaveLength(1);
-    // One embed shape everywhere: the Phase 1 search path loads no offers,
-    // so there is no price to derive from — the metric degrades to an
-    // explicit unavailable, never a substituted value.
+    // One embed shape everywhere: the product has no current offer, so
+    // the price input is genuinely absent (design D1, change
+    // honest-trust-surfaces) — the metric degrades to an explicit
+    // MISSING_PRICE, never a substituted value and never a NaN call.
     expect(body.items[0]!.eurPerGram).toEqual({
       status: 'unavailable',
       centsPerGram: null,
       ethanolGrams: null,
-      reason: 'INVALID_PRICE',
+      reason: 'MISSING_PRICE',
     });
     expect(Object.keys(body.items[0]!)).toEqual([...LEGACY_ITEM_KEYS, 'eurPerGram']);
   });
@@ -1031,6 +1032,315 @@ describe('eurPerGram embed', () => {
       [...LEGACY_OFFER_KEYS, 'eurPerGram'],
     ]);
     expect(secondBody.offers).toEqual(firstBody.offers);
+  });
+});
+
+describe('GET /api/v1/products — listing €/g embed from the cheapest current offer (task 2.2, change honest-trust-surfaces)', () => {
+  const EMBED_ITEM_KEYS = [
+    'id',
+    'name',
+    'brand',
+    'category',
+    'alcoholByVolume',
+    'unitVolume',
+    'containerType',
+    'lowestPriceCents',
+    'merchantCount',
+    'eurPerGram',
+  ];
+
+  /**
+   * Embed fixture: product 1 mirrors the Kippis scrape shape (a
+   * superseded cheaper alko scrape, its current pricier row, and a
+   * pricier ESTIMATED merchant) so the embed must price exactly the
+   * current 320 VERIFIED row — not the 300 scrape log, not the 420
+   * ESTIMATED merchant. Products 2/3 pin provenance labeling and the
+   * price-tie resolution.
+   */
+  function seedEmbedCatalog(db: DatabaseSync): void {
+    seedProduct(db, {
+      id: 1,
+      name: 'Karhu III',
+      alcoholByVolume: 0.047,
+      unitVolume: 0.33,
+    });
+    seedOffer(db, {
+      id: 11,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 300,
+      observedAt: '2026-09-01T06:00:00.000Z',
+    });
+    seedOffer(db, {
+      id: 12,
+      productId: 1,
+      merchant: 'alko',
+      priceCents: 320,
+      observedAt: '2026-09-10T06:00:00.000Z',
+    });
+    seedOffer(db, {
+      id: 13,
+      productId: 1,
+      merchant: 'saksoinet',
+      priceCents: 420,
+      reliabilityStatus: 'ESTIMATED',
+    });
+    seedProduct(db, {
+      id: 2,
+      name: 'Koff III',
+      alcoholByVolume: 0.035,
+      unitVolume: 0.33,
+    });
+    seedOffer(db, {
+      id: 21,
+      productId: 2,
+      merchant: 'eu-import',
+      priceCents: 250,
+      reliabilityStatus: 'ESTIMATED',
+    });
+    seedProduct(db, {
+      id: 3,
+      name: 'Olvi III',
+      alcoholByVolume: 0.047,
+      unitVolume: 0.33,
+    });
+    seedOffer(db, {
+      id: 31,
+      productId: 3,
+      merchant: 'alko',
+      priceCents: 320,
+      observedAt: '2026-09-10T06:00:00.000Z',
+    });
+    seedOffer(db, {
+      id: 32,
+      productId: 3,
+      merchant: 'saksoinet',
+      priceCents: 320,
+      reliabilityStatus: 'ESTIMATED',
+    });
+  }
+
+  /**
+   * The detail route's own cheapest-offer metric for a product: the
+   * first strictly-smallest price over the id-ASC offers (the shared
+   * lowest-current-offer rule), with that offer's provenance. The
+   * listing embed must equal this — never disagree.
+   */
+  async function detailCheapestMetric(
+    app: ReturnType<typeof buildApp>,
+    env: Env,
+    productId: number,
+  ): Promise<Record<string, unknown>> {
+    const res = await request(app, env, `/api/v1/products/${productId}`, {
+      headers: AGE,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      offers: Array<{ id: number; priceCents: number; eurPerGram: Record<string, unknown> }>;
+    };
+    return body.offers.reduce(
+      (best, offer) => (offer.priceCents < best.priceCents ? offer : best),
+    ).eurPerGram;
+  }
+
+  it('the browse embed equals the cheapest current detail offer — a fully-valid fixture computes (no NaN path)', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedEmbedCatalog(db);
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const detailMetric = await detailCheapestMetric(app, env, 1);
+
+    const res = await request(app, env, '/api/v1/products', { headers: AGE });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: Array<{ id: number; eurPerGram: Record<string, unknown> }>;
+    };
+    const item = body.items.find((i) => i.id === 1)!;
+    // embed == cheapest-current-detail-offer, the identical shape the
+    // detail page computed for offer 12 (320 c, VERIFIED).
+    expect(item.eurPerGram).toEqual(detailMetric);
+    // 0.33 l × 0.047 × 789 g/l ≈ 12.23739 g; 320 ¢ / that ≈ 26.1494 ¢/g.
+    expect(item.eurPerGram).toMatchObject({
+      status: 'computed',
+      priceReliability: 'VERIFIED',
+    });
+    expect((item.eurPerGram as { centsPerGram: number }).centsPerGram).toBeCloseTo(26.1494, 4);
+    expect((item.eurPerGram as { ethanolGrams: number }).ethanolGrams).toBeCloseTo(12.23739, 5);
+    // The superseded all-time-low 300 scrape prices neither the value
+    // nor the provenance.
+    expect((item.eurPerGram as { centsPerGram: number }).centsPerGram).not.toBeCloseTo(
+      300 / 12.23739,
+      3,
+    );
+    expect(Object.keys(item)).toEqual(EMBED_ITEM_KEYS);
+  });
+
+  it('ranked-q and ids rows carry the same embed as the detail page for every product', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedEmbedCatalog(db);
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const detailById = new Map<number, Record<string, unknown>>();
+    for (const id of [1, 2, 3]) {
+      detailById.set(id, await detailCheapestMetric(app, env, id));
+    }
+
+    const ranked = await request(app, env, '/api/v1/products?q=iii', { headers: AGE });
+    const rankedBody = (await ranked.json()) as {
+      items: Array<{ id: number; eurPerGram: Record<string, unknown> }>;
+    };
+    expect(rankedBody.items.map((i) => i.id).sort((a, b) => a - b)).toEqual([1, 2, 3]);
+    for (const item of rankedBody.items) {
+      expect(item.eurPerGram).toEqual(detailById.get(item.id));
+    }
+
+    const byIds = await request(app, env, '/api/v1/products?ids=1,2,3', { headers: AGE });
+    const idsBody = (await byIds.json()) as {
+      items: Array<{ id: number; eurPerGram: Record<string, unknown> }>;
+    };
+    for (const item of idsBody.items) {
+      expect(item.eurPerGram).toEqual(detailById.get(item.id));
+    }
+  });
+
+  it('an ESTIMATED cheapest offer labels the embed ESTIMATED — the value still returns', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedEmbedCatalog(db);
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products', { headers: AGE });
+    const body = (await res.json()) as {
+      items: Array<{
+        id: number;
+        eurPerGram: { status: string; priceReliability: string; centsPerGram: number };
+      }>;
+    };
+    const koff = body.items.find((i) => i.id === 2)!;
+    expect(koff.eurPerGram.status).toBe('ESTIMATED');
+    expect(koff.eurPerGram.priceReliability).toBe('ESTIMATED');
+    // 0.33 l × 0.035 × 789 ≈ 9.11295 g; 250 ¢ / that ≈ 27.4335 ¢/g.
+    expect(koff.eurPerGram.centsPerGram).toBeCloseTo(27.4335, 4);
+  });
+
+  it('a price tie resolves to the lowest offer id — the detail route’s own pick', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedEmbedCatalog(db);
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const detailMetric = await detailCheapestMetric(app, env, 3);
+
+    const res = await request(app, env, '/api/v1/products', { headers: AGE });
+    const body = (await res.json()) as {
+      items: Array<{
+        id: number;
+        eurPerGram: { priceReliability: string } & Record<string, unknown>;
+      }>;
+    };
+    const olvi = body.items.find((i) => i.id === 3)!;
+    // Offers 31 (alko, VERIFIED) and 32 (saksoinet, ESTIMATED) tie at
+    // 320 — the detail derivation lands on the lowest id, so the embed
+    // must carry VERIFIED, never the tied row's looser status.
+    expect(olvi.eurPerGram).toEqual(detailMetric);
+    expect(olvi.eurPerGram.priceReliability).toBe('VERIFIED');
+  });
+
+  it('no current offer → MISSING_PRICE on every listing path, never a value', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 9, name: 'Offerless Olut', alcoholByVolume: 0.047, unitVolume: 0.33 });
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const expected = {
+      status: 'unavailable',
+      centsPerGram: null,
+      ethanolGrams: null,
+      reason: 'MISSING_PRICE',
+    };
+    for (const path of [
+      '/api/v1/products',
+      '/api/v1/products?q=offerless',
+      '/api/v1/products?ids=9',
+    ]) {
+      const res = await request(app, env, path, { headers: AGE });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        items: Array<{ id: number; lowestPriceCents: number | null; eurPerGram: unknown }>;
+      };
+      const item = body.items.find((i) => i.id === 9)!;
+      expect(item.lowestPriceCents).toBeNull();
+      expect(item.eurPerGram).toEqual(expected);
+    }
+  });
+
+  it('a corrupt unit volume keeps INVALID_VOLUME even with a current offer', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, unitVolume: 0 });
+    seedOffer(db, { id: 11, productId: 1, priceCents: 320 });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products', { headers: AGE });
+    const body = (await res.json()) as {
+      items: Array<{ id: number; eurPerGram: Record<string, unknown> }>;
+    };
+    expect(body.items[0]!.eurPerGram).toEqual({
+      status: 'unavailable',
+      centsPerGram: null,
+      ethanolGrams: null,
+      reason: 'INVALID_VOLUME',
+    });
+  });
+
+  it('an alcohol-free product reports ZERO_ETHANOL on the listing', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu 0,0', alcoholByVolume: 0 });
+    seedOffer(db, { id: 11, productId: 1, priceCents: 320 });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products', { headers: AGE });
+    const body = (await res.json()) as {
+      items: Array<{ id: number; eurPerGram: Record<string, unknown> }>;
+    };
+    // Present and valid ABV data, physically undefined metric — the
+    // honest reason, never INVALID_ALCOHOL_FRACTION (design D2).
+    expect(body.items[0]!.eurPerGram).toEqual({
+      status: 'unavailable',
+      centsPerGram: null,
+      ethanolGrams: null,
+      reason: 'ZERO_ETHANOL',
+    });
+  });
+
+  it('the live Karhu row shape computes a sane beer €/g (fixture: 24×33 l name, per-unit 0.33)', async () => {
+    const { db, d1 } = openMigratedD1();
+    // Product-2900 shape AFTER the task-1.x correction: per-unit litres.
+    seedProduct(db, {
+      id: 1,
+      name: 'Karhu Olut 5.3 % 24×33 l',
+      alcoholByVolume: 0.053,
+      unitVolume: 0.33,
+    });
+    seedOffer(db, { id: 11, productId: 1, priceCents: 239 });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products', { headers: AGE });
+    const body = (await res.json()) as {
+      items: Array<{
+        id: number;
+        eurPerGram: { status: string; centsPerGram: number; priceReliability: string };
+      }>;
+    };
+    const embed = body.items[0]!.eurPerGram;
+    expect(embed.status).toBe('computed');
+    expect(embed.priceReliability).toBe('VERIFIED');
+    // 0.33 l × 0.053 × 789 ≈ 13.7996 g; 239 ¢ / that ≈ 17.3194 ¢/g —
+    // inside the sane beer band, not the corrupted 1.59 ¢/g the live
+    // pack-notation volume produced.
+    expect(embed.centsPerGram).toBeCloseTo(17.3194, 3);
+    expect(embed.centsPerGram).toBeGreaterThanOrEqual(10);
+    expect(embed.centsPerGram).toBeLessThanOrEqual(20);
   });
 });
 
