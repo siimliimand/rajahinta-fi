@@ -3,6 +3,7 @@
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import RelatedTools from './related-tools';
@@ -49,10 +50,16 @@ function formatPublished(iso: string | null, locale: string): string | null {
  * the guides are most often about — the duty-free allowances reference
  * and the trip calculator (spec: cross-links where topically relevant).
  *
+ * Zero-publication gating (honest-trust-surfaces task 4.1, design D5):
+ * zero PUBLISHED guides for the locale is a missing page — the route
+ * answers `notFound()`, a crawler-honest 404 instead of an empty shell.
+ * Visibility is decided at request time from the publication count, so
+ * the first publication restores the page with no flag and no deploy.
+ *
  * Degradation semantics follow the blog/curated-list precedent: a
  * backend failure renders a server-side "unavailable" state instead of
- * an error; zero published guides render the explicit empty state (an
- * answer, not an error). Copy is neutral per the content-policy lint.
+ * an error (a fetch failure is not evidence of zero guides). Copy is
+ * neutral per the content-policy lint.
  */
 export default async function GuidesIndexPage({ params }: GuidesIndexPageProps) {
   const { locale } = await params;
@@ -60,6 +67,13 @@ export default async function GuidesIndexPage({ params }: GuidesIndexPageProps) 
 
   const t = await getTranslations({ locale, namespace: 'GuidesPage' });
   const outcome = await getServerGuidesIndex(locale);
+
+  // Zero-publication gating (task 4.1, design D5): a crawler-honest 404
+  // — no soft-404 empty shell. Only a resolved, empty index gates; a
+  // fetch failure keeps the unavailable state below.
+  if (outcome.kind === 'ok' && outcome.items.length === 0) {
+    notFound();
+  }
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
@@ -75,18 +89,6 @@ export default async function GuidesIndexPage({ params }: GuidesIndexPageProps) 
             {t('unavailableTitle')}
           </h2>
           <p className="mt-1 text-sm text-gray-500">{t('unavailableBody')}</p>
-        </section>
-      )}
-
-      {outcome.kind === 'ok' && outcome.items.length === 0 && (
-        <section
-          data-testid="guides-empty"
-          className="rounded-lg border border-gray-200 bg-gray-50 p-6"
-        >
-          <h2 className="text-sm font-semibold text-gray-700">
-            {t('emptyTitle')}
-          </h2>
-          <p className="mt-1 text-sm text-gray-500">{t('emptyBody')}</p>
         </section>
       )}
 

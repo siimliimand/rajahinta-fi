@@ -58,6 +58,12 @@ export default function AccountPage() {
   const [outcomeFlags, setOutcomeFlags] = useState<
     ReadonlyMap<number, boolean>
   >(new Map());
+  // Outcome deep-link (honest-trust-surfaces 3.3): /account?outcome=
+  // <recordId> from the result view's nudge preselects that record's
+  // report form — scrolled into view and marked, never auto-submitted.
+  const [preselectedRecordId, setPreselectedRecordId] = useState<
+    number | null
+  >(null);
 
   // ── Data export state ──
   const [exporting, setExporting] = useState(false);
@@ -158,6 +164,29 @@ export default function AccountPage() {
       cancelled = true;
     };
   }, [session]);
+
+  // ── Outcome deep-link (?outcome=<recordId>, honest-trust-surfaces 3.3)
+  // ── The window read (not useSearchParams) keeps the page out of the
+  // suspense boundary — the account/verify + trip-view precedent.
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get('outcome');
+    if (raw === null || !/^\d+$/.test(raw)) return;
+    setPreselectedRecordId(Number.parseInt(raw, 10));
+  }, []);
+
+  // When the history has loaded, bring the preselected record's report
+  // form into view. A record that is not on the page (already reported,
+  // outside the window, or not among the recent entries) stays
+  // unhighlighted — the deep link never fabricates a prompt.
+  useEffect(() => {
+    if (preselectedRecordId === null || historyLoading) return;
+    const target = document.getElementById(
+      `history-record-${preselectedRecordId}`,
+    );
+    if (target && typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ block: 'center' });
+    }
+  }, [preselectedRecordId, historyLoading, historyResults]);
 
   // ── Data export handler ──
   const handleExport = useCallback(async () => {
@@ -399,7 +428,15 @@ export default function AccountPage() {
               return (
                 <li
                   key={calc.calculationRecordId}
-                  className="py-3"
+                  id={`history-record-${calc.calculationRecordId}`}
+                  data-outcome-preselected={
+                    calc.calculationRecordId === preselectedRecordId || undefined
+                  }
+                  className={
+                    calc.calculationRecordId === preselectedRecordId
+                      ? 'rounded-md bg-primary-50/60 py-3 ring-1 ring-primary-200'
+                      : 'py-3'
+                  }
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0 flex-1">

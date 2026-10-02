@@ -35,6 +35,10 @@ vi.mock('@/lib/api', async (importOriginal) => {
     calculateLandedCost: vi.fn(),
     listScenarios: vi.fn(),
     request: vi.fn(),
+    // The result view's outcome nudge (task 3.3) probes the session on
+    // mount; failing closed here keeps the render offline and the nudge
+    // out of these view tests' scope.
+    ensureSession: vi.fn(() => Promise.reject(new Error('offline'))),
   };
 });
 

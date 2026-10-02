@@ -86,6 +86,7 @@
     "linkEvent": "Event calculator",
     "linkValue": "Value (€/g ethanol)",
     "linkBlog": "Blog",
+    "linkGuides": "Guides",
     "copyright": "© Rajahinta.fi",
     "linkAbout": "About Rajahinta.fi",
     "linkContact": "Contact"
@@ -276,6 +277,13 @@
       "estimateWithin": "One traveller, same quantity — estimated total {amount}.",
       "estimatePartial": "The same quantity exceeds one traveller's allowances — the estimated total {amount} covers the within-allowance portion only.",
       "tryLink": "Try the trip calculator"
+    },
+    "outcomeNudge": {
+      "bodySignedIn": "If the actual total differed from the estimate, you can report it on your account page. One report per calculation.",
+      "bodyAnonymous": "Sign in to report the actual total of this calculation. One report per calculation.",
+      "ctaSignedIn": "Report on the account page",
+      "ctaAnonymous": "Sign in",
+      "dismiss": "Dismiss"
     },
     "category": {
       "foreignRetailPrice": "Foreign retail price",

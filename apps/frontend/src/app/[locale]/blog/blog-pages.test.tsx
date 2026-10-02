@@ -9,8 +9,10 @@
  *   Index (/blog):
  *   1. Published posts render title, publication date, dataset version,
  *      and a per-post link to /blog/:slug.
- *   2. Zero published posts → the explicit empty state.
- *   3. Fetch failure → the unavailable state, no crash.
+ *   2. Zero published posts → notFound() — a crawler-honest 404, no
+ *      empty shell (honest-trust-surfaces task 4.1, design D5).
+ *   3. Fetch failure → the unavailable state, no crash (a fetch failure
+ *      is not evidence of zero posts).
  *
  *   Slug (/blog/:slug):
  *   4. A published post renders its title, bullet-list body lines, and
@@ -166,15 +168,17 @@ describe('BlogIndexPage', () => {
     expect(html).toContain('Veroaineiston versio 2026-2');
   });
 
-  it('renders the explicit empty state when nothing is published', async () => {
+  it('answers a crawler-honest 404 when nothing is published (task 4.1)', async () => {
+    const { notFound } = await import('next/navigation');
     mockedRequest.mockResolvedValue({ items: [], total: 0 });
 
-    const element = await BlogIndexPage({
-      params: Promise.resolve({ locale: 'fi' }),
-    });
-    const html = await renderPageHtml(element);
-
-    expect(html).toContain('Ei vielä julkaisuja');
+    // notFound() aborts the render — no empty-state shell is served.
+    await expect(
+      BlogIndexPage({
+        params: Promise.resolve({ locale: 'fi' }),
+      }),
+    ).rejects.toThrow('NEXT_NOT_FOUND');
+    expect(vi.mocked(notFound)).toHaveBeenCalledTimes(1);
   });
 
   it('renders the unavailable state on fetch failure', async () => {

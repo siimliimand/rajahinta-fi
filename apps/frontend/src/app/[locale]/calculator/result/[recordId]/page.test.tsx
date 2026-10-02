@@ -54,6 +54,9 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return {
     ...actual,
     getCalculationResult: vi.fn(),
+    // The result view's outcome nudge (task 3.3) probes the session on
+    // mount; failing closed here keeps the render offline.
+    ensureSession: vi.fn(() => Promise.reject(new Error('offline'))),
   };
 });
 

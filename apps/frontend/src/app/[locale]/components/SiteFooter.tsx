@@ -1,7 +1,9 @@
 import React from 'react';
-import { getMessages, getTranslations } from 'next-intl/server';
+import { getLocale, getMessages, getTranslations } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import { routing } from '@/i18n/routing';
+import { getServerBlogIndex } from '../blog/blog.server';
+import { getServerGuidesIndex } from '../guides/guides.server';
 import NewsletterSubscribeForm from './NewsletterSubscribeForm';
 
 /**
@@ -19,10 +21,30 @@ import NewsletterSubscribeForm from './NewsletterSubscribeForm';
  * - Hand-rolls the Card surface for the disclaimer strip because the Card
  *   primitive crashes under the classic-JSX vitest runtime; swap to
  *   <Card> once it carries the React import.
+ *
+ * Blog/guides link visibility (honest-trust-surfaces task 4.1, design
+ * D5): decided at request time from the CURRENT locale's publication
+ * counts, using the same fetch helpers the index pages use. Zero
+ * published items omit the link; a count resolution failure hides it
+ * (the honest default); the first publication restores it with no flag
+ * and no deploy.
  */
 export default async function SiteFooter() {
   const t = await getTranslations('SiteFooter');
   const languageNames = readLanguageNames(await getMessages());
+
+  // Publication counts for this request's locale (task 4.1). Both
+  // helpers resolve their own failure to `unavailable` — which hides
+  // the respective link.
+  const locale = await getLocale();
+  const [blogOutcome, guidesOutcome] = await Promise.all([
+    getServerBlogIndex(locale),
+    getServerGuidesIndex(locale),
+  ]);
+  const showBlogLink =
+    blogOutcome.kind === 'ok' && blogOutcome.items.length > 0;
+  const showGuidesLink =
+    guidesOutcome.kind === 'ok' && guidesOutcome.items.length > 0;
 
   return (
     <footer className="border-t border-gray-200 bg-gray-50">
@@ -80,19 +102,22 @@ export default async function SiteFooter() {
             <ul className="mt-4 space-y-2.5">
               {[
                 { href: '/ranking', labelKey: 'methodology' },
-                { href: '/blog',    labelKey: 'linkBlog' },
+                { href: '/blog',    labelKey: 'linkBlog',    visible: showBlogLink },
+                { href: '/guides',  labelKey: 'linkGuides',  visible: showGuidesLink },
                 { href: '/about',   labelKey: 'linkAbout' },
                 { href: '/contact', labelKey: 'linkContact' },
-              ].map(({ href, labelKey }) => (
-                <li key={href}>
-                  <Link
-                    href={href}
-                    className="text-sm text-gray-600 transition-colors hover:text-primary-700"
-                  >
-                    {t(labelKey)}
-                  </Link>
-                </li>
-              ))}
+              ]
+                .filter((entry) => entry.visible !== false)
+                .map(({ href, labelKey }) => (
+                  <li key={href}>
+                    <Link
+                      href={href}
+                      className="text-sm text-gray-600 transition-colors hover:text-primary-700"
+                    >
+                      {t(labelKey)}
+                    </Link>
+                  </li>
+                ))}
             </ul>
           </div>
         </div>

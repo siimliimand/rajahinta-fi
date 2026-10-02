@@ -18,6 +18,7 @@ import {
 import { ConfidenceBadge, ReliabilityBadge } from '@/components/ui';
 import { MerchantLink } from '../../compare/components/MerchantLink';
 import DisclaimerBanner from './DisclaimerBanner';
+import OutcomeNudge from './OutcomeNudge';
 import ReportExportActions from './ReportExportActions';
 import SanityNoteList from './SanityNoteList';
 import ShareResultAction from './ShareResultAction';
@@ -441,6 +442,13 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
       {/* ── Share action (task 5.2) — frozen snapshot + copyable
           /share/[publicId] link for this record ── */}
       <ShareResultAction recordId={result.calculationRecordId} />
+
+      {/* ── Outcome nudge (task 3.3, design D7) — one dismissible prompt
+          after a successful calculation, in both buying modes: logged-in
+          visitors get the account deep-link with this record preselected,
+          anonymous ones the sign-in path. Session-sticky dismissal, never
+          blocks the result, sends nothing on its own. ── */}
+      <OutcomeNudge recordId={result.calculationRecordId} />
 
       {/* ── Disclaimer ── */}
       <DisclaimerBanner disclaimer={result.disclaimer} />

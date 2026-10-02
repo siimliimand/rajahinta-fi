@@ -67,6 +67,9 @@ vi.mock('next-intl/server', () => ({
     return (key: string) =>
       typeof table?.[key] === 'string' ? table[key] : `__MISSING_${ns}.${key}__`;
   },
+  // The footer's blog/guides link gating (task 4.1) resolves the
+  // request locale for its publication-count fetches.
+  getLocale: async () => state.locale,
   setRequestLocale: () => undefined,
 }));
 
@@ -90,6 +93,9 @@ vi.mock('@/lib/api', () => ({
   // which imports these — stubs are enough: SSR never submits.
   ApiFetchError: class ApiFetchError extends Error {},
   subscribeToNewsletter: () => Promise.resolve({ status: 'PENDING' }),
+  // The footer's publication-count fetches (task 4.1) fail closed here —
+  // the offline harness renders the honest hidden-links default.
+  request: () => Promise.reject(new Error('offline in layout.ssr harness')),
 }));
 
 // Link applies the routing config's localePrefix: 'as-needed' — Finnish
