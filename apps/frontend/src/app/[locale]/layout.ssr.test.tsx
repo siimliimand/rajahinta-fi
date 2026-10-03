@@ -15,9 +15,11 @@
  *   2. Layout composition — the REAL [locale] layout renders with the
  *      chrome replaced by markers (async components cannot pass through
  *      renderToString), pinning that every route's initial HTML carries
- *      the chrome slots, the correct `lang` attribute, and the
- *      server-side age-gate decision: page content always renders, and
- *      the gate dialog ships as an overlay only while unconfirmed.
+ *      the chrome slots, the correct `lang` attribute, and the pre-paint
+ *      age gate (task 2.1, design D4): the render is cookie-independent
+ *      (cacheable HTML), the gate dialog always ships as an overlay, and
+ *      an inline script sets the confirmed flag on <html> before the
+ *      overlay markup — so the base CSS can keep it unpainted pre-hydration.
  *
  * @module LayoutSsrTest
  */
@@ -41,8 +43,9 @@ const state = vi.hoisted(() => ({
   // Steers the mocked usePathname — SiteHeader marks the active
   // destination from it.
   pathname: '/' as string,
-  // Steers the mocked cookies() — the age_confirmed cookie value the
-  // layout reads for the server-side gate decision (null = no cookie).
+  // Steers the mocked cookies() — inert today (the layout renders
+  // cookie-independently, task 2.1) and kept as a tripwire: the
+  // byte-identical-output pin below fails if a cookies() read returns.
   ageCookie: null as string | null,
 }));
 
@@ -141,8 +144,8 @@ const DESTINATIONS = [
 
 /**
  * Render the real layout for a locale, the way the server would. The
- * optional cookie value steers the mocked cookies() exactly like the
- * request's Cookie header would.
+ * optional cookie value steers the mocked cookies() — which only bites
+ * if the layout regresses into reading cookies again.
  */
 async function renderLayout(
   locale: 'fi' | 'en',
@@ -337,8 +340,20 @@ describe('[locale] layout SSR — composition', () => {
   });
 });
 
-describe('[locale] layout SSR — server-side age-gate decision', () => {
-  it.each(['fi', 'en'] as const)('unconfirmed: page content AND the gate overlay are both in the HTML (%s)', async (locale) => {
+describe('[locale] layout SSR — pre-paint age gate (task 2.1, design D4)', () => {
+  it.each(['fi', 'en'] as const)('renders byte-identically with and without an age_confirmed cookie (%s)', async (locale) => {
+    const noCookie = await renderLayout(locale);
+    const confirmed = await renderLayout(locale, 'true');
+    const emptyCookie = await renderLayout(locale, '');
+
+    // Rendering is cookie-independent — that is what makes the routes
+    // cacheable. The mocked cookies() feeds different values, so this
+    // fails loudly if a cookies() read is reintroduced into the layout.
+    expect(confirmed).toBe(noCookie);
+    expect(emptyCookie).toBe(noCookie);
+  });
+
+  it.each(['fi', 'en'] as const)('default server HTML: page content AND the gate overlay are both in the HTML (%s)', async (locale) => {
     const html = await renderLayout(locale);
 
     // Content ships for crawlers — the gate is a fixed overlay, never a
@@ -352,29 +367,58 @@ describe('[locale] layout SSR — server-side age-gate decision', () => {
     expect(html).not.toContain('data-age-gate-placeholder');
   });
 
-  it.each(['fi', 'en'] as const)('confirmed: page content renders and no overlay ships (%s)', async (locale) => {
-    const html = await renderLayout(locale, 'true');
+  it('ships the inline pre-paint script before the overlay markup', async () => {
+    const html = await renderLayout('fi');
 
-    expect(html).toContain('PAGE-BODY-MARKER');
-    expect(html).not.toContain('data-age-gate-overlay');
-    expect(html).not.toContain('role="dialog"');
+    const scriptIdx = html.indexOf('data-age-confirmed');
+    const overlayIdx = html.indexOf('data-age-gate-overlay');
+    expect(scriptIdx).toBeGreaterThan(-1);
+    expect(overlayIdx).toBeGreaterThan(-1);
+    // Parse order is paint order: the script executes during parsing,
+    // before the overlay node can exist, so the confirmed verdict is on
+    // <html> before first paint and the overlay never flashes.
+    expect(scriptIdx).toBeLessThan(overlayIdx);
+    // It reads the same cookie the AgeGate component writes.
+    expect(html).toContain('age_confirmed=');
   });
 
-  it('the unconfirmed HTML carries the localized dialog copy, the confirmed HTML does not', async () => {
-    const unconfirmed = await renderLayout('fi');
-    expect(unconfirmed).toContain('Ikätarkistus');
-    expect(unconfirmed).toContain('Olen 18 vuotta täyttänyt');
+  it('the pre-paint script mirrors the cookie parse: any non-empty value confirms, empty or absent does not', async () => {
+    const html = await renderLayout('fi');
+    const script = html
+      .match(/<script>([\s\S]*?)<\/script>/g)
+      ?.map((m) => m.slice('<script>'.length, -'</script>'.length))
+      .find((body) => body.includes('data-age-confirmed'));
+    expect(script).toBeTruthy();
 
-    const confirmed = await renderLayout('fi', 'true');
-    expect(confirmed).not.toContain('Ikätarkistus');
-    expect(confirmed).not.toContain('Olen 18 vuotta täyttänyt');
+    /** Run the shipped script against a steered jsdom cookie jar. */
+    const run = (cookieValue: string | null): boolean => {
+      document.documentElement.removeAttribute('data-age-confirmed');
+      document.cookie = 'age_confirmed=; path=/; max-age=0';
+      if (cookieValue !== null) {
+        document.cookie = `age_confirmed=${cookieValue}; path=/`;
+      }
+      new Function(script as string)();
+      return document.documentElement.hasAttribute('data-age-confirmed');
+    };
+
+    try {
+      expect(run(null)).toBe(false); // no cookie
+      expect(run('')).toBe(false); // present-but-empty counts as unconfirmed (honest click-through parity)
+      expect(run('true')).toBe(true);
+      expect(run('any-junk-value')).toBe(true); // any non-empty value counts
+    } finally {
+      document.documentElement.removeAttribute('data-age-confirmed');
+      document.cookie = 'age_confirmed=; path=/; max-age=0';
+    }
   });
 
-  it('an empty cookie value counts as unconfirmed (client-parse parity)', async () => {
-    const html = await renderLayout('fi', '');
+  it('the default HTML carries the localized dialog copy in both locales', async () => {
+    const fi = await renderLayout('fi');
+    expect(fi).toContain('Ikätarkistus');
+    expect(fi).toContain('Olen 18 vuotta täyttänyt');
 
-    expect(html).toContain('PAGE-BODY-MARKER');
-    expect(html).toContain('data-age-gate-overlay');
+    const en = await renderLayout('en');
+    expect(en).toContain('Age verification');
   });
 });
 

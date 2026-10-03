@@ -38,6 +38,32 @@ function clearAgeConfirmedCookie(): void {
   document.cookie = `${COOKIE_NAME}=; path=/; SameSite=Lax; max-age=0`;
 }
 
+/**
+ * <html> attribute the layout's inline pre-paint script seeds before
+ * first paint and the unlayered base-CSS rule in globals.css reads to
+ * keep the server-rendered overlay unpainted pre-hydration. Restated
+ * as a literal: layout.tsx cannot import constants across the
+ * 'use client' boundary (it would receive a client reference).
+ */
+const PREPAINT_FLAG = 'data-age-confirmed';
+
+/**
+ * Mirror the confirmed verdict onto <html>. The pre-paint script only
+ * seeds the attribute; from hydration on this component owns it, so
+ * every state transition keeps the CSS rule consistent with the DOM.
+ * Clearing it BEFORE the 403-recovery re-open is load-bearing: without
+ * that, the pre-hydration rule would keep the reopened overlay
+ * invisible.
+ */
+function setPrePaintFlag(confirmed: boolean): void {
+  if (typeof document === 'undefined') return;
+  if (confirmed) {
+    document.documentElement.setAttribute(PREPAINT_FLAG, '');
+  } else {
+    document.documentElement.removeAttribute(PREPAINT_FLAG);
+  }
+}
+
 /** Remove the key the old implementation wrote (cleanup, see below). */
 function removeLegacyStorageKey(): void {
   localStorage.removeItem(LEGACY_STORAGE_KEY);
@@ -68,31 +94,32 @@ function getDialogFocusables(dialog: HTMLElement | null): HTMLElement[] {
  * every gated API call kept 403ing; the stale localStorage key is now
  * removed on mount so old visitors converge on the cookie alone.
  *
- * The server hands the gate decision down (`initialVerified`, read from
- * the same cookie in the [locale] layout), so the first client render
- * matches the server HTML — no hydration mismatch. Children always
+ * The server does not read the cookie (design D4 of first-impression-pass):
+ * the [locale] layout renders cookie-independently — every route stays
+ * cacheable — and always ships the overlay in the server HTML, while an
+ * inline pre-paint script sets `data-age-confirmed` on <html> before
+ * first paint and the unlayered base-CSS rule in globals.css keeps that
+ * server-rendered overlay unpainted for confirmed visitors. This
+ * component's initial render matches the server HTML (overlay in the
+ * tree — no hydration mismatch), then the mount effect converges on the
+ * cookie — still the single source of truth — unmounting the overlay
+ * behind the already-applied CSS, so confirmed visitors with JS on
+ * never see a gate flash. From hydration on, the component keeps the
+ * <html> flag in sync so the pre-hydration CSS rule can never suppress
+ * a React-mounted overlay — in particular the `age-gate:required`
+ * 403-recovery re-open. Children always
  * render: an unconfirmed visitor gets the dialog as a fixed overlay on
  * top, never a placeholder replacement, so restricted content stays in
  * the crawlable server payload and the gate is not a cloak (gated data
- * remains server-enforced via the APIs' 403s). The mount-time cookie
- * re-read and the `age-gate:required` recovery event re-open the
- * overlay if the decision flips after hydration or a gated call 403s.
- * Declining clears the cookie and navigates to the neutral in-house
+ * remains server-enforced via the APIs' 403s). Declining clears the
+ * cookie and navigates to the neutral in-house
  * page /age-gate/declined — never an external origin.
  */
-export function AgeGate({
-  children,
-  initialVerified,
-}: {
-  children: React.ReactNode;
-  /**
-   * Server-read gate decision. `null` only where no server decision
-   * exists (client-only call sites) — treated as unverified until the
-   * mount-time cookie re-read.
-   */
-  initialVerified: boolean | null;
-}) {
-  const [verified, setVerified] = useState<boolean | null>(initialVerified);
+export function AgeGate({ children }: { children: React.ReactNode }) {
+  // The server HTML always contains the overlay (cookie-independent
+  // render), so the initial client render must too; converging on the
+  // cookie happens in the mount effect below.
+  const [verified, setVerified] = useState(false);
   const t = useTranslations('AgeGate');
   const router = useRouter();
   const pathname = usePathname();
@@ -103,16 +130,25 @@ export function AgeGate({
   useEffect(() => {
     // Cleanup for visitors still carrying the old dual-store state.
     removeLegacyStorageKey();
-    // Fallback re-read: the cookie can lapse between the server-rendered
-    // decision and hydration, and client-only call sites pass null.
-    setVerified(getAgeVerified());
+    // Convergence on the single source of truth: the same read the
+    // pre-paint script did before first paint, repeated at hydration
+    // (the cookie can lapse in between; fresh visits converge here
+    // either way). Confirmed visitors see nothing change — the overlay
+    // was already CSS-hidden and is now unmounted outright.
+    const confirmed = getAgeVerified();
+    setVerified(confirmed);
+    setPrePaintFlag(confirmed);
 
     // Recovery hook for an expired cookie: when a client request comes
     // back 403 AGE_GATE_REQUIRED, the api client dispatches this event
     // and the prompt re-opens in place instead of the visitor being
     // stuck on silently failing calls. Opening an already-open gate
-    // (verified already false) is a no-op.
-    const handleGateRequired = () => setVerified(false);
+    // (verified already false) is a no-op. The flag is cleared first so
+    // the pre-hydration CSS rule cannot hide the reopened overlay.
+    const handleGateRequired = () => {
+      setPrePaintFlag(false);
+      setVerified(false);
+    };
     window.addEventListener(AGE_GATE_REQUIRED_EVENT, handleGateRequired);
     return () => {
       window.removeEventListener(AGE_GATE_REQUIRED_EVENT, handleGateRequired);
@@ -121,6 +157,7 @@ export function AgeGate({
 
   const handleConfirm = () => {
     setAgeConfirmedCookie();
+    setPrePaintFlag(true);
     setVerified(true);
   };
 
@@ -130,6 +167,7 @@ export function AgeGate({
     // broken or leak a referrer.
     removeLegacyStorageKey();
     clearAgeConfirmedCookie();
+    setPrePaintFlag(false);
     router.replace(DECLINED_PATH);
   };
 
@@ -138,7 +176,7 @@ export function AgeGate({
   // Tab is trapped inside, and on close focus returns to the flow that
   // triggered the open. The pathname dep re-runs this after a soft
   // navigation so the gate re-takes focus on the next page.
-  const gateOpen = verified !== true;
+  const gateOpen = !verified;
   useEffect(() => {
     if (!gateOpen) return;
     restoreFocusRef.current =

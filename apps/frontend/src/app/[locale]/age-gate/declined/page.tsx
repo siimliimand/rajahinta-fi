@@ -8,9 +8,10 @@ import { Link } from '@/i18n/navigation';
  *
  * Decline recovery (task 1.4): the decline is not persisted anywhere
  * (declining CLEARS the confirmation cookie), so the recovery action is a
- * plain link home — the server re-reads `age_confirmed`, finds it absent,
- * and the AgeGate re-presents the confirmation. Works without JavaScript
- * and never touches the crawlable soft-gate contract.
+ * plain link home — with the cookie absent, the AgeGate overlay (which
+ * ships in every server HTML and converges on the cookie) re-presents
+ * the confirmation. Works without JavaScript and never touches the
+ * crawlable soft-gate contract.
  */
 export default async function AgeGateDeclinedPage({
   params,
