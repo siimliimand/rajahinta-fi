@@ -16,6 +16,16 @@
  * read time — the same derivation the search embeds use — so a 24-pack
  * row ranks on its package total, never single-unit math.
  *
+ * Acquisition is one repository call (task 1.1, change
+ * unitprice-ranking-scale-fix): `listCategoryOfferCandidates(category)`
+ * returns the category's products with their current offers already
+ * joined inline, so the retired fetch-then-sweep — every product listed,
+ * then one `findOffers` round trip per product — cannot return: that
+ * O(category) D1 fan-out blew the edge time budget on large categories
+ * (the 2026-10 wine_still ≈ 100 s timeout incident). The route suite
+ * pins the bound (≤ 2 D1 statements per request, design D5) so a
+ * per-product sweep fails CI rather than production.
+ *
  * Pure read endpoint: the ordering is a read-model listing only and
  * never feeds search order, default ordering, or any calculation input.
  *
@@ -42,15 +52,10 @@ import { parsePackUnits } from '../../../../packages/data-acquisition/src/servic
 import type { AppEnv } from '../env';
 import { ApiHttpError } from '../errors';
 import { ageGate } from '../middleware/age-gate';
-import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
-
-/**
- * Upper bound on the products examined per ranking request — the
- * repository's documented fetch-then-shape scale (design D3, ~10⁴
- * product rows). The category filter is applied app-side over the same
- * listing the search surface reads; Phase 1 adds no new SQL surface.
- */
-const RANKING_MAX_PRODUCTS = 10_000;
+import {
+  D1ProductSearchRepository,
+  type CategoryOfferCandidate,
+} from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 
 const CATEGORY_KEYS: readonly string[] = TAX_CATEGORY_KEYS;
 const VALID_CATEGORIES_MESSAGE = `Valid categories: ${CATEGORY_KEYS.join(', ')}.`;
@@ -59,16 +64,6 @@ const VALID_CATEGORIES_MESSAGE = `Valid categories: ${CATEGORY_KEYS.join(', ')}.
 // Local parsing helpers — parity with search.routes.ts (route files are
 // self-contained; the same stored formats are read here).
 // ---------------------------------------------------------------------------
-
-/** Product row projection used by the ranking mapping. */
-interface ProductRow {
-  readonly id: number;
-  readonly name: string;
-  readonly brand: string;
-  readonly category: string;
-  readonly alcoholByVolume: string | null;
-  readonly unitVolume: string;
-}
 
 /**
  * `unit_volume` is the numeric(10,4) column rendered as fixed-scale text
@@ -105,13 +100,13 @@ function toReliabilityStatus(raw: string): ReliabilityStatus {
 }
 
 /**
- * The physical inputs the €/g metric derives from, parsed once per product.
- * `unitsPerPackage` is the pack SIZE parsed from the product NAME at read
- * time (task 6.2 amendment) — a multipack's price is a package price, so
- * the metric divides it by the package total volume. `undefined` = the
- * name states no decisive count (single-unit default 1); the value is
- * never persisted, and the ranking parses the SAME name through the SAME
- * parser the search embeds use.
+ * The physical inputs the €/g metric derives from, parsed once per
+ * candidate row. `unitsPerPackage` is the pack SIZE parsed from the
+ * product NAME at read time (task 6.2 amendment) — a multipack's price
+ * is a package price, so the metric divides it by the package total
+ * volume. `undefined` = the name states no decisive count (single-unit
+ * default 1); the value is never persisted, and the ranking parses the
+ * SAME name through the SAME parser the search embeds use.
  */
 interface UnitPriceInputs {
   readonly unitVolumeL: number;
@@ -119,11 +114,11 @@ interface UnitPriceInputs {
   readonly unitsPerPackage: number | undefined;
 }
 
-function unitPriceInputs(p: ProductRow): UnitPriceInputs {
+function unitPriceInputs(candidate: CategoryOfferCandidate): UnitPriceInputs {
   return {
-    unitVolumeL: parseLitres(p.unitVolume),
-    alcoholFraction: parseAlcoholFraction(p.alcoholByVolume),
-    unitsPerPackage: parsePackUnits(p.name) ?? undefined,
+    unitVolumeL: parseLitres(candidate.unitVolume),
+    alcoholFraction: parseAlcoholFraction(candidate.alcoholByVolume),
+    unitsPerPackage: parsePackUnits(candidate.name) ?? undefined,
   };
 }
 
@@ -176,52 +171,53 @@ async function ranking(c: Context<AppEnv>): Promise<Response> {
 
   try {
     const repo = new D1ProductSearchRepository(c.env.DB);
-    const products = await repo.searchByName(null, RANKING_MAX_PRODUCTS);
-    const productById = new Map(products.map((p) => [p.id, p]));
+    // The whole category's candidates in one round trip (task 1.1):
+    // latest-per-(product, merchant) offers joined inline. A product
+    // without offers has no candidate row — the same omission the
+    // retired per-product sweep produced.
+    const candidates = await repo.listCategoryOfferCandidates(category);
 
-    // One candidate per offer of every product in the category. Reads are
-    // sequential and bounded: output order never depends on read order
-    // (the pure ranking policy decides it), and the sweep must not fan
-    // out unbounded against D1.
-    const entries: UnitPriceRankingEntry[] = [];
-    for (const product of products) {
-      if (product.category !== category) continue;
-      const inputs = unitPriceInputs(product);
-      const offers = await repo.findOffers(product.id);
-      for (const offer of offers) {
-        entries.push({
-          productId: product.id,
-          offerId: offer.id,
-          // Pack rows pass the name-parsed units so the denominator is
-          // the package total — the ranking cannot price a 24-pack
-          // against one can.
-          metric: eurPerGram(
-            offer.priceCents,
-            inputs.unitVolumeL,
-            inputs.alcoholFraction,
-            toReliabilityStatus(offer.reliabilityStatus),
-            inputs.unitsPerPackage,
-          ),
-        });
-      }
-    }
+    const entries: UnitPriceRankingEntry[] = candidates.map((candidate) => {
+      const inputs = unitPriceInputs(candidate);
+      return {
+        productId: candidate.productId,
+        offerId: candidate.offerId,
+        // Pack rows pass the name-parsed units so the denominator is
+        // the package total — the ranking cannot price a 24-pack
+        // against one can.
+        metric: eurPerGram(
+          candidate.priceCents,
+          inputs.unitVolumeL,
+          inputs.alcoholFraction,
+          toReliabilityStatus(candidate.reliabilityStatus),
+          inputs.unitsPerPackage,
+        ),
+      };
+    });
+
+    // A multi-merchant product yields one candidate row per merchant;
+    // name/brand come from the joined product row and are identical
+    // across those rows, so any row per id carries the identity fields.
+    const candidateById = new Map(
+      candidates.map((candidate) => [candidate.productId, candidate]),
+    );
 
     // Omission, best-offer selection, and the total €/g/id order all
     // live in the pure policy — this handler only joins the identity
     // fields back onto the ranked rows.
     const items: RankingRow[] = rankUnitPrices(entries).map((row) => {
-      const product = productById.get(row.productId);
-      if (product === undefined) {
-        // Unreachable — every ranked id comes from the listing just read.
-        // Fail loudly rather than substitute an anonymous row.
+      const candidate = candidateById.get(row.productId);
+      if (candidate === undefined) {
+        // Unreachable — every ranked id comes from the candidates just
+        // read. Fail loudly rather than substitute an anonymous row.
         throw new Error(
-          `Ranked product ${row.productId} missing from the category listing`,
+          `Ranked product ${row.productId} missing from the category candidates`,
         );
       }
       return {
         productId: row.productId,
-        name: product.name,
-        brand: product.brand,
+        name: candidate.name,
+        brand: candidate.brand,
         offerId: row.offerId,
         centsPerGram: row.centsPerGram,
         ethanolGrams: row.ethanolGrams,

@@ -8,10 +8,16 @@
  * Expected values are hand-computed from the pinned metric vectors
  * (0.33 l × 0.047 × 789 = 12.23739 g ethanol).
  *
+ * Acquisition scale pin (task 2.2, design D5): one test counts the D1
+ * statements a multi-product category request prepares — ≤ 2 — so the
+ * retired per-product `findOffers` sweep (the 2026-10 wine_still
+ * ≈ 100 s edge-timeout incident) fails here, not in production.
+ *
  * @module UnitPriceRoutesTest
  */
 
 import { describe, it, expect } from 'vitest';
+import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
 import {
   buildApp,
   expectEnvelope,
@@ -338,5 +344,60 @@ describe('GET /api/v1/unitprice/ranking — pack-row ranking (task 6.2)', () => 
     const body = (await res.json()) as RankingBody;
     expect(body.items[0]!.ethanolGrams).toBe(12.237390000000001);
     expect(body.items[0]!.centsPerGram).toBeCloseTo(28.6008699567, 8);
+  });
+});
+
+describe('GET /api/v1/unitprice/ranking — acquisition scale (design D5 pin)', () => {
+  it('serves a multi-product category in ≤ 2 D1 statements — a per-product sweep fails this pin', async () => {
+    const { db, d1 } = openMigratedD1();
+    // Several products with several (multi-merchant) offers each, plus
+    // an offer-bearing unrankable product: enough per-product work that
+    // the retired sweep's one `findOffers` round trip per product —
+    // 6 statements on this fixture — blows the bound, while the single
+    // candidate query stays at 1.
+    for (const id of [1, 2, 3, 4]) {
+      seedProduct(db, { id, name: `Scale Brew ${id}`, category: 'beer' });
+      seedOffer(db, {
+        id: id * 10 + 1,
+        productId: id,
+        merchant: 'alko',
+        priceCents: 300 + id,
+      });
+      seedOffer(db, {
+        id: id * 10 + 2,
+        productId: id,
+        merchant: 'saksoinet',
+        priceCents: 320 + id,
+      });
+    }
+    seedProduct(db, {
+      id: 9,
+      name: 'Mystery Brew',
+      category: 'beer',
+      alcoholByVolume: null,
+    });
+    seedOffer(db, { id: 91, productId: 9, priceCents: 300 });
+
+    // Count every statement the request prepares; the statements
+    // themselves delegate untouched to the migrated in-memory D1.
+    let statements = 0;
+    const countingD1: D1DatabaseLike = {
+      prepare(query: string) {
+        statements += 1;
+        return d1.prepare(query);
+      },
+      batch: (prepared) => d1.batch(prepared),
+    };
+
+    const res = await getRanking(countingD1, '?category=beer');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as RankingBody;
+    // Same physicals everywhere → €/g ascending is price ascending, so
+    // the fixture stays behaviorally assertive: the cheapest current
+    // offer per product wins (alko 301–304 beats saksoinet 321–324) and
+    // the unrankable product is omitted.
+    expect(body.items.map((r) => r.productId)).toEqual([1, 2, 3, 4]);
+    expect(body.items[0]!.offerId).toBe(11);
+    expect(statements).toBeLessThanOrEqual(2);
   });
 });
