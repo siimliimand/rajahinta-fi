@@ -1902,3 +1902,171 @@ describe('D1ProductSearchRepository — zero-result did-you-mean (task 3.2)', ()
     expect(wrapped.suggestion).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Category ranking candidates (task 1.1, change unitprice-ranking-scale-fix)
+// — isolated fixture DB so the shared-database describes above are
+// untouched. The single-query candidate JOIN must reproduce, per category,
+// exactly the offer set `findOffers` documents: the latest observation per
+// (product, merchant), MAX(id) per group.
+// ---------------------------------------------------------------------------
+
+describe('D1ProductSearchRepository.listCategoryOfferCandidates (task 1.1)', () => {
+  const candDb = openMigratedD1();
+  const candRepo = new D1ProductSearchRepository(candDb.d1);
+
+  // Fixture layout:
+  // - 8101 (beer): one merchant scraped twice — the older, cheaper row
+  //   must be superseded by the later scrape (recency rule);
+  // - 8102 (beer): two merchants, alko superseded once — one candidate
+  //   row per merchant, each its own latest scrape;
+  // - 8103 (beer): no offers — no candidate row at all;
+  // - 8104 (spirits): offered, but outside the queried category.
+  const OLD_ALKO_ID = 880; // superseded — must never surface
+  const LATEST_ALKO_ID = 881;
+  const MERCHANT_ALKO_LATEST_ID = 890; // alko's latest for 8102
+  const SUPERSEDED_ALKO_ID = 889; // alko's older scrape for 8102
+  const EU_IMPORT_ID = 891; // eu-import's only scrape for 8102
+  const SPIRITS_OFFER_ID = 895; // out-of-category offer
+
+  beforeAll(async () => {
+    const products = [
+      { id: 8101, name: 'Kaatoa Kalja', brand: 'Kaatoa', category: 'beer', abv: '0.045', vol: '0.33' },
+      { id: 8102, name: 'Kaksikauppa Kalja', brand: 'Kaksikauppa', category: 'beer', abv: '0.050', vol: '0.50' },
+      { id: 8103, name: 'Tarjouskalja Ilman Hintoja', brand: 'Tarjouskalja', category: 'beer', abv: null, vol: '0.33' },
+      { id: 8104, name: 'Renat Testbrännvin', brand: 'Renat', category: 'spirits', abv: '0.375', vol: '0.50' },
+    ];
+    for (const p of products) {
+      await candRepo.create({
+        id: p.id,
+        name: p.name,
+        manufacturer: 'Kandidaatti Panimo',
+        brand: p.brand,
+        category: p.category,
+        alcoholByVolume: p.abv,
+        unitVolume: p.vol,
+        containerType: 'can',
+        regulatoryClassification: p.category,
+        depositSystemStatus: true,
+        ean: null,
+      });
+    }
+    await candDb.d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+            observed_at, reliability_status)
+         VALUES (${OLD_ALKO_ID}, 'alko', 'FI', 8101, 249, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (${LATEST_ALKO_ID}, 'alko', 'FI', 8101, 299, '2026-09-02T10:00:00.000Z', 'VERIFIED'),
+                (${SUPERSEDED_ALKO_ID}, 'alko', 'FI', 8102, 250, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (${MERCHANT_ALKO_LATEST_ID}, 'alko', 'FI', 8102, 260, '2026-09-02T10:00:00.000Z', 'VERIFIED'),
+                (${EU_IMPORT_ID}, 'eu-import', 'EE', 8102, 350, '2026-09-02T10:00:00.000Z', 'ESTIMATED'),
+                (${SPIRITS_OFFER_ID}, 'alko', 'FI', 8104, 400, '2026-09-03T10:00:00.000Z', 'VERIFIED')`,
+      )
+      .run();
+  });
+
+  it('recency rule: an older scrape per merchant is ignored — only MAX(id) surfaces', async () => {
+    const rows = await candRepo.listCategoryOfferCandidates('beer');
+    const forProduct = rows.filter((r) => r.productId === 8101);
+    // Exactly one candidate for the single-merchant product: the LATEST
+    // scrape, with its own price.
+    expect(forProduct).toHaveLength(1);
+    expect(forProduct[0]?.offerId).toBe(LATEST_ALKO_ID);
+    expect(forProduct[0]?.priceCents).toBe(299);
+    // The superseded cheaper row leaks nowhere in the whole result set.
+    expect(rows.some((r) => r.offerId === OLD_ALKO_ID)).toBe(false);
+    expect(rows.some((r) => r.priceCents === 249 && r.productId === 8101)).toBe(
+      false,
+    );
+  });
+
+  it('multi-merchant products: one candidate per merchant, each the merchant\'s latest', async () => {
+    const rows = await candRepo.listCategoryOfferCandidates('beer');
+    const forProduct = rows.filter((r) => r.productId === 8102);
+    expect(forProduct).toHaveLength(2);
+    // Ordered by the SQL's (product id, offer id) — both current rows.
+    expect(forProduct.map((r) => r.offerId)).toEqual([
+      MERCHANT_ALKO_LATEST_ID,
+      EU_IMPORT_ID,
+    ]);
+    expect(forProduct.map((r) => r.priceCents)).toEqual([260, 350]);
+    // The superseded alko scrape prices nothing.
+    expect(forProduct.some((r) => r.offerId === SUPERSEDED_ALKO_ID)).toBe(false);
+  });
+
+  it('category scoping: only the queried category\'s products appear, in SQL', async () => {
+    const rows = await candRepo.listCategoryOfferCandidates('beer');
+    expect(new Set(rows.map((r) => r.productId))).toEqual(
+      new Set([8101, 8102]),
+    );
+    expect(rows.every((r) => r.category === 'beer')).toBe(true);
+    // The spirits product's offer stays out even though it exists.
+    expect(rows.some((r) => r.offerId === SPIRITS_OFFER_ID)).toBe(false);
+
+    // And the reverse query scopes just as strictly.
+    const spirits = await candRepo.listCategoryOfferCandidates('spirits');
+    expect(spirits.map((r) => r.productId)).toEqual([8104]);
+    expect(spirits.map((r) => r.offerId)).toEqual([SPIRITS_OFFER_ID]);
+  });
+
+  it('products without offers produce no rows', async () => {
+    const rows = await candRepo.listCategoryOfferCandidates('beer');
+    expect(rows.some((r) => r.productId === 8103)).toBe(false);
+  });
+
+  it('a canonical category with no products returns an empty set', async () => {
+    expect(
+      await candRepo.listCategoryOfferCandidates('intermediate_products'),
+    ).toEqual([]);
+  });
+
+  it('row shape matches the minimal candidate projection — pg numeric text scales, camelCase, nothing extra', async () => {
+    const rows = await candRepo.listCategoryOfferCandidates('beer');
+    const row = rows.find((r) => r.offerId === LATEST_ALKO_ID);
+    expect(row).toEqual({
+      productId: 8101,
+      name: 'Kaatoa Kalja',
+      brand: 'Kaatoa',
+      category: 'beer',
+      alcoholByVolume: '0.045', // numeric(5,3) text
+      unitVolume: '0.3300', // numeric(10,4) text — pg contract scale
+      offerId: LATEST_ALKO_ID,
+      priceCents: 299,
+      reliabilityStatus: 'VERIFIED',
+    });
+    // Minimal projection, pinned structurally: no merchant/country/
+    // availability/timestamp keys can ride along unnoticed.
+    expect(Object.keys(row ?? {}).sort()).toEqual([
+      'alcoholByVolume',
+      'brand',
+      'category',
+      'name',
+      'offerId',
+      'priceCents',
+      'productId',
+      'reliabilityStatus',
+      'unitVolume',
+    ]);
+  });
+
+  it('parity pin: the candidate set per product equals exactly what findOffers implies', async () => {
+    // The whole point of design D2: the inline dedup IS the findOffers
+    // recency rule, so per product the candidate offer ids must be the
+    // identical set findOffers returns — no more, no less.
+    const rows = await candRepo.listCategoryOfferCandidates('beer');
+    const byProduct = new Map<number, number[]>();
+    for (const r of rows) {
+      byProduct.set(r.productId, [...(byProduct.get(r.productId) ?? []), r.offerId]);
+    }
+    for (const productId of [8101, 8102]) {
+      const offers = await candRepo.findOffers(productId);
+      expect(byProduct.get(productId)).toEqual(offers.map((o) => o.id));
+    }
+  });
+
+  it('is deterministic across repeated calls — identical rows in identical order', async () => {
+    const first = await candRepo.listCategoryOfferCandidates('beer');
+    const second = await candRepo.listCategoryOfferCandidates('beer');
+    expect(second).toEqual(first);
+  });
+});
