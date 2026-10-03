@@ -125,7 +125,7 @@ const CURATED_NORMS: readonly NormInput[] = [
   { drinkType: 'intermediate_products', eventProfile: 'celebration', drinksPerGuestPerHour: 0.1, abvPercent: 18 },
 ];
 
-export const CONSUMPTION_NORMS_SEED: readonly ConsumptionNormSeedRow[] =
+export const CONSUMPTION_NORMS_SEED_ROWS: readonly ConsumptionNormSeedRow[] =
   CURATED_NORMS.map(norm);
 
 // Append-only guard: a re-run refreshes PENDING_CONFIRMATION rows only —
@@ -150,7 +150,7 @@ const UPSERT_SQL = `
  */
 export async function seedConsumptionNorms(d1: D1DatabaseLike): Promise<void> {
   await d1.batch(
-    CONSUMPTION_NORMS_SEED.map((row) =>
+    CONSUMPTION_NORMS_SEED_ROWS.map((row) =>
       d1
         .prepare(UPSERT_SQL)
         .bind(

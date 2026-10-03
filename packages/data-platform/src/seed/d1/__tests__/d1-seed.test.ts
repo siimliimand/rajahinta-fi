@@ -154,7 +154,12 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
     });
 
     expect(result.migrationsApplied).toEqual(listMigrationFiles(MIGRATIONS_DIR));
-    expect(result.seedFilesApplied).toEqual(['tax-rules.d1.sql', 'staging.d1.sql']);
+    expect(result.seedFilesApplied).toEqual([
+      'tax-rules.d1.sql',
+      'staging.d1.sql',
+      'consumption-norms.d1.sql',
+      'carrier-box-types.d1.sql',
+    ]);
 
     const expectations = buildExpectations();
     expect(result.verification['tax_rules_total']).toBe(expectations.taxRulesTotal);
@@ -166,6 +171,8 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
     expect(result.verification['transport_offers_total']).toBe(expectations.transportOffers);
     expect(result.verification['staging_reviews_total']).toBe(expectations.stagingReviews);
     expect(result.verification['spot_beer_rate_rows']).toBe(1);
+    expect(result.verification['consumption_norms_total']).toBe(expectations.consumptionNormsRows);
+    expect(result.verification['carrier_box_types_total']).toBe(expectations.carrierBoxTypesRows);
   }, DB_TEST_TIMEOUT_MS);
 
   it('is idempotent: re-applying the seed never duplicates or changes counts', () => {
@@ -282,6 +289,8 @@ describe('assertVerificationRow count semantics', () => {
       product_master_total: expectations.productMaster,
       retail_offers_total: expectations.retailOffers,
       staging_reviews_total: expectations.stagingReviews,
+      consumption_norms_total: expectations.consumptionNormsRows,
+      carrier_box_types_total: expectations.carrierBoxTypesRows,
       fts_indexed_products: expectations.ftsIndexedProducts,
       ...overrides,
     };
