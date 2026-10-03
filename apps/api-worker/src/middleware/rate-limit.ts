@@ -61,6 +61,16 @@ export const RATE_LIMIT_PROFILES = {
    * so the discovery surface's budget stays isolated from search's.
    */
   SAVINGS: { limit: 30, windowMs: 60_000 },
+  /**
+   * Contact intake (change first-impression-pass, task 3.2, design D8):
+   * a public unauthenticated write — the form's abuse surface. 5
+   * messages / 10 min / IP: a person reporting an error never comes
+   * near the ceiling, while bulk submission is throttled before the
+   * handler runs. Its own DO window — profile keys are isolated per
+   * client, so contact traffic cannot exhaust or be exhausted by the
+   * other surfaces' budgets.
+   */
+  CONTACT: { limit: 5, windowMs: 600_000 },
 } as const;
 
 export type RateLimitProfileName = keyof typeof RATE_LIMIT_PROFILES;

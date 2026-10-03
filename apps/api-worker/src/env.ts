@@ -123,6 +123,19 @@ export interface Env {
   readonly OPS_BEARER_TOKEN?: string;
   /** Comma-separated IPs / IPv4 CIDRs allowed to reach ops routes; absent = off. */
   readonly OPS_IP_ALLOWLIST?: string;
+
+  // -- Contact intake (task 3.2, change first-impression-pass, design D8) ---
+
+  /**
+   * Salt for the contact intake's IP forensics hash — HMAC-SHA-256 over
+   * the edge-asserted client IP before it ever touches storage. A
+   * SECRET, never a wrangler var: set per environment with
+   * `wrangler secret put CONTACT_IP_HASH_SALT`. The intake fails closed
+   * (500, nothing stored) when it is absent: an unsalted IP hash would
+   * violate the minimal-personal-data requirement, so misconfiguration
+   * must be loud, not silent.
+   */
+  readonly CONTACT_IP_HASH_SALT?: string;
 }
 
 /** Hono environment: bindings + per-request variables. */

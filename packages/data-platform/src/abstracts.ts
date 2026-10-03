@@ -1491,3 +1491,53 @@ export abstract class ShareSnapshotRepository {
   /** Delete snapshots created before the cutoff (hygiene sweep). Returns rows removed. */
   abstract deleteOlderThan(cutoff: Date): Promise<number>;
 }
+// ---------------------------------------------------------------------------
+// Contact intake (change first-impression-pass, task 3.2, design D8)
+// ---------------------------------------------------------------------------
+
+/** Topic of a contact message — the fixed intake enum (spec contact-intake). */
+export type ContactMessageTopic = 'product_error' | 'store_inquiry' | 'other';
+
+/** Persisted contact-message row — camelCase projection of the snake_case D1 row. */
+export interface ContactMessageRecord {
+  readonly id: number;
+  /** The sender's message (bounded at 5000 characters). */
+  readonly message: string;
+  readonly topic: ContactMessageTopic;
+  /** Optional reply address — a reply is possible only when present. */
+  readonly replyEmail: string | null;
+  /** UI locale the form was rendered in ('fi' | 'en'). */
+  readonly locale: string;
+  /** Salted HMAC-SHA-256 hex of the source IP — never the raw address. */
+  readonly ipHash: string;
+  readonly createdAt: Date;
+}
+
+/** Insert input — the caller hashes the IP; this layer never sees raw addresses. */
+export interface ContactMessageInsertInput {
+  readonly message: string;
+  readonly topic: ContactMessageTopic;
+  readonly replyEmail: string | null;
+  readonly locale: string;
+  readonly ipHash: string;
+}
+
+/**
+ * Contact-message repository — the operator-read intake behind the
+ * contact form. Write-once rows with no account link: the salted IP
+ * hash is the only forensics field, there is no status workflow and no
+ * update. Reads belong to the operator's documented wrangler SQL
+ * (newest-first) — no repository read path exists because no code
+ * consumes one. Retention is the bounded 90-day delete.
+ */
+@Injectable()
+export abstract class ContactMessageRepository {
+  /** Insert one accepted message; returns the stored row. */
+  abstract insert(input: ContactMessageInsertInput): Promise<ContactMessageRecord>;
+
+  /**
+   * Delete rows created before the cutoff (retention sweep). Bounded
+   * batches; returns the total rows removed.
+   */
+  abstract deleteCreatedBefore(cutoff: Date, batchSize: number): Promise<number>;
+}
