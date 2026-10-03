@@ -176,6 +176,26 @@ export type {
 
 export { D1ReferenceLinkRepository } from './repositories/d1/reference-link.repository';
 export { D1MatchReviewRepository } from './repositories/d1/match-review.repository';
+// The matcher's IProductMasterQuery port adapter + the row→domain
+// assembly the matching pass script imports (task 1.3, change
+// alko-reference-matching-pipeline); implements the core-domain port
+// directly (the D1TaxRuleRepositoryAdapter precedent — no abstracts
+// counterpart).
+export {
+  D1ProductMasterQueryRepository,
+  normalizedProductFromMasterRow,
+  productMasterRecordFromRow,
+  abvPercentFromStored,
+  volumeLitresFromStored,
+  abvBucketFromPercent,
+  volumeBucketFromLitres,
+  storedCategoryToCanonical,
+  canonicalCategoryToStored,
+  findCandidatesSql,
+  FIND_CANDIDATES_LIMIT,
+  ABV_BUCKET_PERCENT,
+  VOLUME_BUCKET_LITRES,
+} from './repositories/d1/product-master-query.repository';
 export {
   ReferenceLinkRepository,
   MatchReviewRepository,
