@@ -125,6 +125,23 @@ interface D1OfferAggregateRow {
   readonly cheapest_reliability_status: string;
 }
 
+/**
+ * Raw D1 ranking-candidate row (task 1.1, change
+ * unitprice-ranking-scale-fix) — the flat JOIN projection: product fields
+ * inline with the one current offer per (product, merchant).
+ */
+interface D1OfferCandidateRow {
+  readonly product_id: number;
+  readonly name: string;
+  readonly brand: string;
+  readonly category: string;
+  readonly alcohol_by_volume: number | null;
+  readonly unit_volume: number;
+  readonly offer_id: number;
+  readonly price_cents: number;
+  readonly reliability_status: string;
+}
+
 // ---------------------------------------------------------------------------
 // Spike-ported query helpers (search-parity reference implementation)
 // ---------------------------------------------------------------------------
@@ -583,6 +600,54 @@ const CATALOG_KEYS_BY_PRICE_SQL = `
              GROUP BY o.product_id) a
       ON a.product_id = p.id`;
 
+/**
+ * Defensive cap on ranking candidate rows (task 1.1, change
+ * unitprice-ranking-scale-fix, design D3) — NOT a pagination contract.
+ * Candidates are latest-per-merchant offers (~1.04 per product today, the
+ * largest category ~3.5k rows), so the cap sits far above observed need.
+ * If it ever binds, ranking COMPLETENESS (which products appear) degrades
+ * — never correctness: the pure ranking policy still orders whatever it
+ * receives.
+ */
+export const CATEGORY_OFFER_CANDIDATES_LIMIT = 20_000;
+
+/**
+ * One category's ranking candidates in a single statement (task 1.1,
+ * change unitprice-ranking-scale-fix, design D2): the category's products
+ * joined to their CURRENT offers — the latest observation per (product,
+ * merchant), the exact MAX(id)-per-group recency rule `findOffers`
+ * documents (retail_offers is append-per-scrape), moved into this one
+ * query. The dedup aggregate is scoped to the category's product ids, so
+ * it seeks the category's slice of the (product_id, merchant, id) index
+ * instead of scanning the whole scrape history.
+ *
+ * Products without offers produce no rows — the same omission the
+ * per-product sweep produced. The projection is deliberately minimal:
+ * exactly the fields the ranking route's pure mapping consumes (no
+ * merchant, country, availability, or timestamps). The deterministic
+ * ORDER BY makes the defensive cap's truncation stable across calls —
+ * without it, which rows survive a binding LIMIT would be SQLite-
+ * undefined. The category must be validated against PRODUCT_CATEGORIES
+ * by the caller (the API route 400s unknown values); like
+ * {@link D1ProductSearchRepository.listCatalogPage}, an unknown value
+ * filters strictly and yields zero rows.
+ */
+const CATEGORY_OFFER_CANDIDATES_SQL = `
+  SELECT p.id AS product_id, p.name, p.brand, p.category,
+         p.alcohol_by_volume, p.unit_volume,
+         o.id AS offer_id, o.price_cents, o.reliability_status
+    FROM retail_offers o
+    JOIN (SELECT product_id, merchant, MAX(id) AS id
+            FROM retail_offers
+           WHERE product_id IN (SELECT id FROM product_master
+                                 WHERE category = ?)
+        GROUP BY product_id, merchant) latest
+      ON latest.id = o.id
+    JOIN product_master p
+      ON p.id = o.product_id
+   ORDER BY p.id ASC, o.id ASC
+   LIMIT ${CATEGORY_OFFER_CANDIDATES_LIMIT}`;
+
 const INSERT_SQL = `
   INSERT INTO product_master (
     name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
@@ -665,6 +730,30 @@ export interface CatalogProductListPage {
   readonly total: number;
   readonly page: number;
   readonly pageSize: number;
+}
+
+/**
+ * One ranking candidate (task 1.1, change unitprice-ranking-scale-fix) —
+ * the flat row the unit-price route maps into `UnitPriceRankingEntry`s:
+ * product identity and physical inputs with the one current offer's price
+ * facts. Minimal projection by design — merchant, country, availability,
+ * and timestamps are deliberately absent. A product offered by several
+ * merchants yields one row per merchant; a product without offers yields
+ * no row at all.
+ */
+export interface CategoryOfferCandidate {
+  readonly productId: number;
+  readonly name: string;
+  readonly brand: string;
+  readonly category: string;
+  /** numeric(5,3) text — the pg contract rendering; null when unknown. */
+  readonly alcoholByVolume: string | null;
+  /** numeric(10,4) text — the pg contract rendering. */
+  readonly unitVolume: string;
+  /** The latest-observation offer row the price facts report. */
+  readonly offerId: number;
+  readonly priceCents: number;
+  readonly reliabilityStatus: string;
 }
 
 @Injectable()
@@ -950,6 +1039,46 @@ export class D1ProductSearchRepository extends ProductRepository {
       .bind(id)
       .first<D1RetailOfferRow>();
     return row ? toContractOffer(row) : null;
+  }
+
+  /**
+   * One category's ranking candidates (task 1.1, change
+   * unitprice-ranking-scale-fix) — {@link CategoryOfferCandidate} rows
+   * straight from {@link CATEGORY_OFFER_CANDIDATES_SQL}: the whole
+   * candidate set in one round trip, the exact `findOffers` recency rule
+   * inline. Replaces the ranking route's per-product `findOffers` sweep
+   * (design D1: acquisition collapses to one repository call; the pure
+   * ranking pipeline is untouched).
+   *
+   * Kept on the D1 concrete class only (no abstract counterpart): the
+   * route binds the concrete type, the catalog-listing precedent.
+   */
+  async listCategoryOfferCandidates(
+    category: string,
+  ): Promise<CategoryOfferCandidate[]> {
+    const rows = (
+      await this.d1
+        .prepare(CATEGORY_OFFER_CANDIDATES_SQL)
+        .bind(category)
+        .all<D1OfferCandidateRow>()
+    ).results;
+    return rows.map((row) => ({
+      productId: row.product_id,
+      name: row.name,
+      brand: row.brand,
+      category: row.category,
+      alcoholByVolume: realToNumericText(
+        row.alcohol_by_volume,
+        ALCOHOL_BY_VOLUME_SCALE,
+      ),
+      unitVolume: realToNumericText(
+        row.unit_volume,
+        UNIT_VOLUME_SCALE,
+      ) as string,
+      offerId: row.offer_id,
+      priceCents: row.price_cents,
+      reliabilityStatus: row.reliability_status,
+    }));
   }
 
   /**

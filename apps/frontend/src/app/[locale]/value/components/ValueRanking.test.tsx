@@ -77,8 +77,10 @@ describe('ValueRanking', () => {
     renderWithIntl(<ValueRanking category="beer" />);
 
     await screen.findByRole('table');
+    // The ranking fetch carries the 10 s timeout signal (design D7).
     expect(mockRequest).toHaveBeenCalledWith(
       '/api/v1/unitprice/ranking?category=beer',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 
@@ -143,6 +145,33 @@ describe('ValueRanking', () => {
     expect(mockRequest).toHaveBeenCalledTimes(2);
   });
 
+  it('surfaces the error state when the fetch times out, and retry re-issues', async () => {
+    // The abort a real 10 s AbortSignal.timeout throws: a TimeoutError
+    // DOMException, not a plain Error (design D7).
+    mockRequest
+      .mockRejectedValueOnce(
+        new DOMException(
+          'The operation was aborted due to timeout',
+          'TimeoutError',
+        ),
+      )
+      .mockResolvedValueOnce(rankingResponse(ROWS));
+    renderWithIntl(<ValueRanking category="beer" />);
+
+    await screen.findByText('Luetteloa ei saatu haettua');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+
+    // Retry re-issues the same ranking request, timeout signal included.
+    await userEvent.setup().click(screen.getByRole('button'));
+    await screen.findByRole('table');
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+    expect(mockRequest).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/unitprice/ranking?category=beer',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
   it('re-fetches when the category prop changes', async () => {
     mockRequest.mockResolvedValue(rankingResponse(ROWS));
     const view = renderRerenderable(<ValueRanking category="beer" />);
@@ -153,6 +182,7 @@ describe('ValueRanking', () => {
     await screen.findByRole('table');
     expect(mockRequest).toHaveBeenCalledWith(
       '/api/v1/unitprice/ranking?category=wine_still',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 });

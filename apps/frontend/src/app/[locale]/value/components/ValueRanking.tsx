@@ -64,6 +64,11 @@ export default function ValueRanking({
 
     request<UnitPriceRankingResponse>(
       `/api/v1/unitprice/ranking?category=${encodeURIComponent(category)}`,
+      // The API computes the ranking live (design D7); a dead backend used
+      // to leave this fetch pending for the browser's ~100 s default. The
+      // timeout surfaces the failure through the existing ErrorState/retry
+      // in seconds instead.
+      { signal: AbortSignal.timeout(10_000) },
     )
       .then((res) => {
         if (!cancelled) {
