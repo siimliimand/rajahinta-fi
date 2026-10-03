@@ -242,6 +242,14 @@ interface ProductsPageProps {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
+/* Caching verdict (first-impression-pass 2.2, verified against a built
+ * server): awaiting `searchParams` renders this page per request, so it
+ * emits `private, no-cache, no-store` regardless of the layout's
+ * revalidate — the accepted cost of URL-state browsing (design D5, plain
+ * links + no-JS GET form). The ISR-eligibility sweep in
+ * ./__tests__/cache-headers.test.ts pins this classification. */
+
+
 /* Filter, pagination, sort, and search controls carry the ≥44 px touch
  * floor (task 5.4, web-application mobile-first interaction standards). */
 const FILTER_LINK_CLASSES = [
