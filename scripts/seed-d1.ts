@@ -8,8 +8,9 @@
  *
  *   1. generate   byte-deterministic seed SQL (packages/data-platform/src/seed/d1/generate.ts)
  *   2. migrate    `wrangler d1 migrations apply DB` (unless --skip-migrate)
- *   3. seed       `wrangler d1 execute DB --file <tax-rules.d1.sql>` then
- *                 `--file <staging.d1.sql>`
+ *   3. seed       `wrangler d1 execute DB --file <f>` for every file
+ *                 registered in SEED_SQL_FILES (tax-rules, staging,
+ *                 consumption-norms, carrier-box-types)
  *   4. verify     row-count / version-presence assertions — the script
  *                 FAILS LOUDLY on any mismatch
  *

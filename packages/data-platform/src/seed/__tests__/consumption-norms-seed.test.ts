@@ -18,7 +18,7 @@ import {
   CONSUMPTION_NORM_EVENT_PROFILES,
 } from '../../repositories/d1/consumption-norms.repository';
 import {
-  CONSUMPTION_NORMS_SEED,
+  CONSUMPTION_NORMS_SEED_ROWS,
   CONSUMPTION_NORMS_SEED_VERSION,
   CONSUMPTION_NORMS_CITATION_URL,
   seedConsumptionNorms,
@@ -33,11 +33,11 @@ function rowCount(): number {
 
 describe('consumption norms seed — curated content', () => {
   it('covers the full drink type × event profile matrix, each key exactly once', () => {
-    expect(CONSUMPTION_NORMS_SEED).toHaveLength(
+    expect(CONSUMPTION_NORMS_SEED_ROWS).toHaveLength(
       CONSUMPTION_NORM_DRINK_TYPES.length * CONSUMPTION_NORM_EVENT_PROFILES.length,
     );
 
-    const keys = CONSUMPTION_NORMS_SEED.map((r) => `${r.drinkType}|${r.eventProfile}`);
+    const keys = CONSUMPTION_NORMS_SEED_ROWS.map((r) => `${r.drinkType}|${r.eventProfile}`);
     expect(new Set(keys).size).toBe(keys.length);
 
     for (const drinkType of CONSUMPTION_NORM_DRINK_TYPES) {
@@ -48,7 +48,7 @@ describe('consumption norms seed — curated content', () => {
   });
 
   it('carries a verifiable source citation on every row — a citation-less norm is unrepresentable', () => {
-    for (const row of CONSUMPTION_NORMS_SEED) {
+    for (const row of CONSUMPTION_NORMS_SEED_ROWS) {
       expect(row.sourceCitation.trim().length).toBeGreaterThan(0);
       // The verifiable reference an operator can actually open.
       expect(row.sourceCitation).toContain(CONSUMPTION_NORMS_CITATION_URL);
@@ -60,7 +60,7 @@ describe('consumption norms seed — curated content', () => {
   });
 
   it('stays inside the schema vocabularies and positive-value rules (mirrors the CHECKs before they run)', () => {
-    for (const row of CONSUMPTION_NORMS_SEED) {
+    for (const row of CONSUMPTION_NORMS_SEED_ROWS) {
       expect(CONSUMPTION_NORM_DRINK_TYPES).toContain(row.drinkType);
       expect(CONSUMPTION_NORM_EVENT_PROFILES).toContain(row.eventProfile);
       expect(row.normValuePerGuestPerHour).toBeGreaterThan(0);
@@ -69,7 +69,7 @@ describe('consumption norms seed — curated content', () => {
   });
 
   it('is one version, dated 2026-01-01, open-ended — deterministic, never wall-clock', () => {
-    for (const row of CONSUMPTION_NORMS_SEED) {
+    for (const row of CONSUMPTION_NORMS_SEED_ROWS) {
       expect(row.versionLabel).toBe(CONSUMPTION_NORMS_SEED_VERSION);
       expect(row.effectiveFrom).toBe('2026-01-01');
       expect(row.effectiveTo).toBeNull();
@@ -80,7 +80,7 @@ describe('consumption norms seed — curated content', () => {
 describe('consumption norms seed — apply', () => {
   it('lands the whole version in one batch, every row PENDING_CONFIRMATION', async () => {
     await seedConsumptionNorms(d1);
-    expect(rowCount()).toBe(CONSUMPTION_NORMS_SEED.length);
+    expect(rowCount()).toBe(CONSUMPTION_NORMS_SEED_ROWS.length);
 
     const statuses = db
       .prepare('SELECT DISTINCT status FROM consumption_norms')
@@ -93,7 +93,7 @@ describe('consumption norms seed — apply', () => {
          FROM consumption_norms WHERE drink_type = 'beer' AND event_profile = 'casual_gathering'`,
       )
       .get() as { norm_value_per_guest_per_hour: number; source_citation: string };
-    const curated = CONSUMPTION_NORMS_SEED.find(
+    const curated = CONSUMPTION_NORMS_SEED_ROWS.find(
       (r) => r.drinkType === 'beer' && r.eventProfile === 'casual_gathering',
     )!;
     expect(stored.norm_value_per_guest_per_hour).toBe(curated.normValuePerGuestPerHour);
@@ -103,7 +103,7 @@ describe('consumption norms seed — apply', () => {
   it('is idempotent: a re-run refreshes pending rows in place, never duplicates', async () => {
     await seedConsumptionNorms(d1);
     await seedConsumptionNorms(d1);
-    expect(rowCount()).toBe(CONSUMPTION_NORMS_SEED.length);
+    expect(rowCount()).toBe(CONSUMPTION_NORMS_SEED_ROWS.length);
 
     // Stored values match the curated constant exactly (replace, not drift).
     const rows = db
@@ -111,7 +111,7 @@ describe('consumption norms seed — apply', () => {
       .all() as Array<{ norm_value_per_guest_per_hour: number; source_citation: string }>;
     for (const row of rows) {
       expect(
-        CONSUMPTION_NORMS_SEED.some(
+        CONSUMPTION_NORMS_SEED_ROWS.some(
           (curated) =>
             curated.normValuePerGuestPerHour === row.norm_value_per_guest_per_hour &&
             curated.sourceCitation === row.source_citation,
@@ -148,6 +148,6 @@ describe('consumption norms seed — apply', () => {
         )
         .get() as { n: number }
     ).n;
-    expect(untouchedCount).toBe(CONSUMPTION_NORMS_SEED.length - 1);
+    expect(untouchedCount).toBe(CONSUMPTION_NORMS_SEED_ROWS.length - 1);
   });
 });

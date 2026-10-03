@@ -316,7 +316,7 @@ export {
 
 export {
   seedConsumptionNorms,
-  CONSUMPTION_NORMS_SEED,
+  CONSUMPTION_NORMS_SEED_ROWS,
   CONSUMPTION_NORMS_SEED_VERSION,
   CONSUMPTION_NORMS_CITATION_URL,
   type ConsumptionNormSeedRow,
