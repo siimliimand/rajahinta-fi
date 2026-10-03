@@ -134,4 +134,23 @@ describe('WhatIfView form pass (task 4.7)', () => {
       ),
     ).toBeNull();
   });
+
+  it('names the rate unit in the draft rate family’s physical units (task 3.3)', () => {
+    renderWithIntl(<WhatIfView />);
+
+    // The default row is a fermented category → litre of beverage.
+    expect(
+      screen.getByLabelText('Hypoteettinen verokanta (€ per litra juomaa)'),
+    ).toBeInTheDocument();
+
+    // Switch the row to spirits → litre of pure alcohol.
+    fireEvent.change(screen.getByLabelText('Tuotelaji'), {
+      target: { value: 'spirits' },
+    });
+    expect(
+      screen.getByLabelText(
+        'Hypoteettinen verokanta (€ per litra puhdasta alkoholia)',
+      ),
+    ).toBeInTheDocument();
+  });
 });

@@ -73,7 +73,7 @@ describe('renderEmbedHtml — document shape', () => {
   it('renders the English locale from the same catalogs', () => {
     const html = renderEmbedHtml('en', resultOutcome());
     expect(html).toContain('<html lang="en">');
-    expect(html).toContain('Hypothetical excise rate: 18.1 € per formula unit');
+    expect(html).toContain('Hypothetical excise rate: 18.1 € per litre of beverage');
   });
 });
 

@@ -18,8 +18,10 @@
  *   the ranking policy.
  * - **Output-identity** (dynamic): a landed-cost calculation is
  *   byte-identical whether the outcomes table is empty or full, and the
- *   default product ordering is byte-identical whether the €/g ranking
- *   would order products one way or the exact reverse — only the
+ *   €/g metric never decides a listing order — the default ordering is
+ *   exactly the LOWEST_PRICE contract (task 1.3, first-impression-pass)
+ *   in both price states, while the explicit ALPHABETICAL and the q-path
+ *   relevance orders stay byte-identical across a price flip; only the
  *   ranking's own output moves.
  * - **Determinism lockstep**: the ranking endpoint's item order is in
  *   lockstep with the pure policy (`rankUnitPrices`) over the same data,
@@ -468,10 +470,12 @@ function stripVolatile(body: Record<string, unknown>): string {
 }
 
 /**
- * Five same-shape beer products. Names fix the DEFAULT listing order
- * (alphabetical: 2,3,1,4,5); offer prices fix the initial €/g ranking
- * order (cheapest first: 1,4,5,3,2 — products 4 and 5 tie exactly, so
- * the id tiebreaker is exercised). All identical across compositions.
+ * Five same-shape beer products. Names fix the explicit ALPHABETICAL
+ * order (2,3,1,4,5); offer prices fix the default LOWEST_PRICE order
+ * (task 1.3, first-impression-pass: cheapest first 1,4,5,3,2 — products
+ * 4 and 5 tie exactly, so the id tiebreaker is exercised) and, the
+ * products sharing one shape, the initial €/g ranking order too.
+ * All identical across compositions.
  */
 function seedRankingCatalog(db: ReturnType<typeof openMigratedD1>['db']): void {
   seedProduct(db, { id: 1, name: 'C-Product', category: 'beer', unitVolume: 0.5 });
@@ -624,7 +628,7 @@ describe('€/g ranking determinism lockstep', () => {
 // ===========================================================================
 
 describe('€/g ranking flip vs default ordering (fresh composition per price state)', () => {
-  it('the ranking order reverses while the default listing stays byte-identical', async () => {
+  it('the ranking order reverses while every listing order follows the price contract, never the metric', async () => {
     // State A: initial prices.
     const before = openMigratedD1();
     seedRankingCatalog(before.db);
@@ -674,25 +678,93 @@ describe('€/g ranking flip vs default ordering (fresh composition per price st
       embedBefore.eurPerGram.centsPerGram,
     );
 
-    // The default ordering followed the product data, never the metric:
-    // identical id order AND identical bytes (informational embeds
-    // stripped). The compare surface pins the alphabetical order —
-    // names, not €/g, decide it; the search surface pins its own
-    // relevance order (a product_master FTS read — no offers, no
-    // ranking) as flip-invariant.
-    expect(compareBefore.items.map((i) => i.id)).toEqual([2, 3, 1, 4, 5]);
-    for (const [a, b, label] of [
-      [compareBefore, compareAfter, 'compare'],
-      [searchBefore, searchAfter, 'search'],
-    ] as const) {
-      const orderA = a.items.map((i) => i.id);
-      expect(a.items).toHaveLength(5);
-      expect(b.items.map((i) => i.id), `${label}: id order after flip`).toEqual(
-        orderA,
-      );
-      expect(stripVolatile(b as unknown as Record<string, unknown>)).toBe(
-        stripVolatile(a as unknown as Record<string, unknown>),
-      );
-    }
+    // Task 1.3 (first-impression-pass) made the absent-sort default the
+    // LOWEST_PRICE contract on every listing path — ids and q alike — so
+    // the default listings follow the OFFER data across the flip; the
+    // €/g metric must still never decide them. The default order pins as
+    // exactly the explicit LOWEST_PRICE order in BOTH states on BOTH
+    // surfaces (contract-driven, not metric-driven), while the explicit
+    // ALPHABETICAL order stays byte-identical across the flip (names do
+    // not change when prices do).
+    const defaultBefore = compareBefore.items.map((i) => i.id);
+    expect(defaultBefore).toEqual([1, 4, 5, 3, 2]); // 100 < 200 = 200 (4 < 5) < 300 < 500
+    const explicitBefore = await fireListing(
+      before.d1,
+      `${COMPARE_PATH}&sort=LOWEST_PRICE`,
+    );
+    expect(explicitBefore.items.map((i) => i.id)).toEqual(defaultBefore);
+
+    const defaultAfter = compareAfter.items.map((i) => i.id);
+    expect(defaultAfter).toEqual([2, 4, 5, 3, 1]); // 100 < 150 < 200 < 300 < 900
+    expect(defaultAfter).not.toEqual(defaultBefore); // the flip is real in the offer data
+    const explicitAfter = await fireListing(
+      after.d1,
+      `${COMPARE_PATH}&sort=LOWEST_PRICE`,
+    );
+    expect(explicitAfter.items.map((i) => i.id)).toEqual(defaultAfter);
+
+    const alphabeticalBefore = await fireListing(
+      before.d1,
+      `${COMPARE_PATH}&sort=ALPHABETICAL`,
+    );
+    const alphabeticalAfter = await fireListing(
+      after.d1,
+      `${COMPARE_PATH}&sort=ALPHABETICAL`,
+    );
+    expect(alphabeticalBefore.items).toHaveLength(5);
+    expect(alphabeticalBefore.items.map((i) => i.id)).toEqual([2, 3, 1, 4, 5]);
+    expect(alphabeticalAfter.items.map((i) => i.id)).toEqual(
+      alphabeticalBefore.items.map((i) => i.id),
+    );
+    expect(
+      stripVolatile(alphabeticalAfter as unknown as Record<string, unknown>),
+    ).toBe(stripVolatile(alphabeticalBefore as unknown as Record<string, unknown>));
+
+    // Search surface: the q path's absent sort defaults to the same
+    // LOWEST_PRICE contract over the ranked candidate set — pinned
+    // identical to the explicit sort in both states.
+    const searchDefaultBefore = searchBefore.items.map((i) => i.id);
+    expect(searchDefaultBefore).toEqual([1, 4, 5, 3, 2]);
+    const searchExplicitBefore = await fireListing(
+      before.d1,
+      `${SEARCH_PATH}&sort=LOWEST_PRICE`,
+    );
+    expect(searchExplicitBefore.items.map((i) => i.id)).toEqual(
+      searchDefaultBefore,
+    );
+
+    const searchDefaultAfter = searchAfter.items.map((i) => i.id);
+    expect(searchDefaultAfter).toEqual([2, 4, 5, 3, 1]);
+    expect(searchDefaultAfter).not.toEqual(searchDefaultBefore);
+    const searchExplicitAfter = await fireListing(
+      after.d1,
+      `${SEARCH_PATH}&sort=LOWEST_PRICE`,
+    );
+    expect(searchExplicitAfter.items.map((i) => i.id)).toEqual(
+      searchDefaultAfter,
+    );
+
+    // Search explicit ALPHABETICAL: identical id order AND identical
+    // bytes across the price flip (informational embeds stripped).
+    const searchAlphabeticalBefore = await fireListing(
+      before.d1,
+      `${SEARCH_PATH}&sort=ALPHABETICAL`,
+    );
+    const searchAlphabeticalAfter = await fireListing(
+      after.d1,
+      `${SEARCH_PATH}&sort=ALPHABETICAL`,
+    );
+    expect(searchAlphabeticalBefore.items).toHaveLength(5);
+    expect(searchAlphabeticalBefore.items.map((i) => i.id)).toEqual([
+      2, 3, 1, 4, 5,
+    ]);
+    expect(searchAlphabeticalAfter.items.map((i) => i.id)).toEqual(
+      searchAlphabeticalBefore.items.map((i) => i.id),
+    );
+    expect(
+      stripVolatile(searchAlphabeticalAfter as unknown as Record<string, unknown>),
+    ).toBe(
+      stripVolatile(searchAlphabeticalBefore as unknown as Record<string, unknown>),
+    );
   });
 });

@@ -112,7 +112,7 @@ export default function ResetPasswordPage() {
               hint={tAuth('passwordHint')}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              minLength={12}
+              minLength={8}
               maxLength={128}
               required
             />

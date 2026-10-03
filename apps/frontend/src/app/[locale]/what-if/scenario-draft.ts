@@ -167,3 +167,41 @@ export function draftRowsFromScenario(
     })),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Rate-family unit naming (first-impression-pass task 3.3)
+// ---------------------------------------------------------------------------
+
+/** Which physical unit names a scenario's rate: spirits, fermented, or both. */
+export type WhatIfRateFamily = 'spirits' | 'fermented' | 'mixed';
+
+/**
+ * Family of one category. Only `spirits` is taxed per litre of pure
+ * alcohol; every other canonical category is a fermented product whose
+ * rate family is named per litre of beverage. Takes a plain string so
+ * result lines (whose `category` travels as a string) need no cast, and
+ * anything unrecognised falls to the fermented family.
+ */
+export function rateFamilyForCategory(category: string): 'spirits' | 'fermented' {
+  return category === 'spirits' ? 'spirits' : 'fermented';
+}
+
+/**
+ * One family for a whole scenario: spirits only → spirits, fermented
+ * only → fermented, both → mixed (the label then names both physical
+ * units — the one name it must never carry is the internal formula unit).
+ * No rows resolve to the fermented default, matching the blank draft.
+ */
+export function scenarioRateFamily(categories: readonly string[]): WhatIfRateFamily {
+  let hasSpirits = false;
+  let hasFermented = false;
+  for (const category of categories) {
+    if (rateFamilyForCategory(category) === 'spirits') {
+      hasSpirits = true;
+    } else {
+      hasFermented = true;
+    }
+  }
+  if (hasSpirits && hasFermented) return 'mixed';
+  return hasSpirits ? 'spirits' : 'fermented';
+}

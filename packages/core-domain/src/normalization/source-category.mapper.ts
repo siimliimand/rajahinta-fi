@@ -9,14 +9,18 @@
  * tax-meaningful and live feeds do not fall into the excise engine's
  * fallback rates.
  *
- * An unmappable string maps to null. Callers flag the record for the
- * correction queue; silently assigning a fallback category is
- * forbidden by the product-normalization spec.
+ * An unmappable string maps to null — unless the product's ABV is above
+ * the 22 % EU intermediate-products boundary, in which case the boundary
+ * rule resolves it (and every fermented-bucket keyword outcome) to
+ * spirits, attributable via `boundaryApplied`. Below the boundary,
+ * callers flag unmappables for the correction queue; silently assigning
+ * a fallback category is forbidden by the product-normalization spec.
  *
  * @module SourceCategoryMapper
  */
 
 import { TAX_CATEGORY_KEYS, type TaxCategory } from '../tax/tax-categories';
+import { INTERMEDIATE_PRODUCTS_ABV_CEILING } from '../tax/services/alcohol-excise.math';
 import type { CanonicalCategory } from './normalization.types';
 import { normalizeCategory } from './normalization.service';
 
@@ -32,6 +36,16 @@ export interface SourceCategoryMapping {
   readonly canonicalCategory: CanonicalCategory;
   /** The canonical key the tax rules use (taxRules.productCategory). */
   readonly taxCategory: TaxCategory;
+  /**
+   * Present (true) only when the EU intermediate-products boundary
+   * determined the outcome: a >22 % ABV product re-assigned to spirits
+   * from a keyword path (or from no mapping at all) that would otherwise
+   * have yielded a fermented bucket. Absent for keyword outcomes —
+   * review output can therefore attribute every above-boundary spirits
+   * result to the boundary rule rather than to a keyword (design D1,
+   * change first-impression-pass).
+   */
+  readonly boundaryApplied?: true;
 }
 
 /**
@@ -185,6 +199,26 @@ export const SWEDISH_SOURCE_CATEGORY_MAP: Readonly<Record<string, CanonicalCateg
   rumm: 'spirits',
   gin: 'spirits',
   liköör: 'liqueur',
+  // Spirit-family keywords the 26 misclassified >22 % rows came from
+  // (task 1.1, change first-impression-pass, design D1). Additive only:
+  // every term maps to the existing canonical spirits category at any
+  // ABV, so the audit trail is attributional — a bitter/snaps/
+  // akvavit/sambuca/arrak family string is a keyword outcome, never a
+  // boundary-rule re-assignment. Forms 'akvavit' (here), 'aquavit',
+  // 'akvaviitti' and 'bitters' (normalizeCategory) already mapped; these
+  // are the attested market spellings that did not (derive-brand
+  // stoplist, Alko group vocabulary, live alks.fi rows):
+  bitter: 'spirits', // SV/EN/DK singular; 'bitters' already maps
+  bitteri: 'spirits', // FI singular
+  bitterit: 'spirits', // FI plural
+  katkero: 'spirits', // FI bitters family ('katkerot' group → 'bitters' in the Alko adapter)
+  katkerot: 'spirits',
+  snaps: 'spirits', // SV/DK/NO
+  snapsi: 'spirits', // FI
+  brannvin: 'spirits', // SV akvavit family
+  sambuca: 'spirits',
+  arrak: 'spirits', // FI/ET spelling
+  akvaviitit: 'spirits', // FI plural of 'akvavit'
   // Still-wine leaves ('punane'/'valge' = red/white; 'pakiveinid' =
   // bag-in-box wine) — the leaf-first counterparts of 'veinid ▾'.
   punased: 'wine',
@@ -240,19 +274,55 @@ const CANONICAL_TO_TAX_CATEGORY: Readonly<Record<CanonicalCategory, TaxCategory>
 /**
  * Normalize a source-market category string.
  *
- * Returns null when the string has no canonical mapping — the caller
- * flags the record for the correction queue instead of assigning a
- * fallback category.
+ * `abv` is the product's alcohol-by-volume as a decimal fraction (0–1,
+ * the same representation the excise engine's calculation helpers take).
+ * When provided, it enforces the EU intermediate-products ceiling
+ * (design D1, change first-impression-pass): a product above 22 % ABV
+ * never normalizes to a fermented bucket — an outcome that would resolve
+ * to `other_fermented` (cider, long drink, sake, non-alcoholic, other)
+ * is re-assigned to `spirits`, and an unmapped string on an above-
+ * boundary product resolves to `spirits` under the boundary rule instead
+ * of null, because above 22 % the fermented buckets are not lawful
+ * retail categories (taxonomy law, not a guess). Outcomes determined by
+ * the boundary carry `boundaryApplied: true`; keyword outcomes never do.
+ * A provided ABV outside 0–1 throws — a wrong-scale value would
+ * silently re-key every row. Categories whose outcome is not fermented
+ * (beer, wines, fortified, spirits) pass through unchanged at any ABV.
+ *
+ * Returns null when the string has no canonical mapping and the product
+ * is at or below the boundary — the caller flags the record for the
+ * correction queue instead of assigning a fallback category. An empty
+ * string is structural (no source string at all) and stays null at any
+ * ABV.
  */
-export function mapSourceCategory(raw: string): SourceCategoryMapping | null {
+export function mapSourceCategory(
+  raw: string,
+  abv?: number | null,
+): SourceCategoryMapping | null {
   const key = raw.trim().toLowerCase();
   if (key === '') return null;
 
+  if (abv !== undefined && abv !== null) {
+    if (abv < 0 || abv > 1) {
+      throw new RangeError(`abv must be a 0–1 fraction, got ${abv}`);
+    }
+  }
+  const aboveBoundary =
+    abv !== undefined && abv !== null && abv > INTERMEDIATE_PRODUCTS_ABV_CEILING;
+
   const canonicalCategory = SWEDISH_SOURCE_CATEGORY_MAP[key] ?? normalizeCategory(key);
-  if (canonicalCategory === 'other' && !EXPLICIT_OTHER_TOKENS.has(key)) {
+  if (canonicalCategory === 'other' && !EXPLICIT_OTHER_TOKENS.has(key) && !aboveBoundary) {
     // normalizeCategory collapses anything unrecognised into 'other';
     // the spec requires unmappables to be flagged, not silently assigned.
+    // Above the boundary the spec resolves them to spirits under the
+    // boundary rule instead of queueing them (never a fermented guess).
     return null;
+  }
+
+  if (aboveBoundary && CANONICAL_TO_TAX_CATEGORY[canonicalCategory] === 'other_fermented') {
+    // The fermented bucket is capped by taxonomy law: re-assign to
+    // spirits, attributable to the boundary rule via `boundaryApplied`.
+    return { canonicalCategory: 'spirits', taxCategory: 'spirits', boundaryApplied: true };
   }
 
   const taxCategory = CANONICAL_TO_TAX_CATEGORY[canonicalCategory];

@@ -25,6 +25,7 @@
 import en from '@/messages/en.json';
 import fi from '@/messages/fi.json';
 import { SITE_URL } from '@/lib/api';
+import { scenarioRateFamily } from '../scenario-draft';
 import type { WhatIfResponse } from '../what-if.types';
 
 export type EmbedLocale = 'fi' | 'en';
@@ -97,6 +98,14 @@ function resultBody(locale: EmbedLocale, result: WhatIfResponse): string {
   const m = (key: string, params?: Record<string, string | number>) =>
     embedMessageHtml(locale, `WhatIfPage.${key}`, params);
 
+  // Task 3.3: the scenario rate is named in the scenario's rate family's
+  // physical unit. The unit travels as a plain param — embedMessageHtml
+  // interpolates first and escapes the finished string.
+  const rateUnit = embedMessage(
+    locale,
+    `WhatIfPage.unit.${scenarioRateFamily(result.lines.map((line) => line.category))}`,
+  );
+
   const totalsRows = [
     ['result.totalsBaselineExcise', formatEur(result.totals.baselineExciseCents)],
     ['result.totalsHypotheticalExcise', formatEur(result.totals.hypotheticalExciseCents)],
@@ -134,7 +143,10 @@ function resultBody(locale: EmbedLocale, result: WhatIfResponse): string {
     `<div class="wi-disclaimer" role="note">${escapeHtml(result.disclaimer.text)}<br><small>v${escapeHtml(
       result.disclaimer.version,
     )} · ${embedMessageHtml(locale, `DisclaimerBanner.languageName.${result.disclaimer.language}`)}</small></div>`,
-    `<p class="wi-meta">${m('result.scenarioRate', { rate: String(result.hypotheticalRate) })} · ${m(
+    `<p class="wi-meta">${m('result.scenarioRate', {
+      rate: String(result.hypotheticalRate),
+      unit: rateUnit,
+    })} · ${m(
       'result.scenarioBaselineVersion',
       { version: result.baselineTaxDatasetVersion },
     )}</p>`,

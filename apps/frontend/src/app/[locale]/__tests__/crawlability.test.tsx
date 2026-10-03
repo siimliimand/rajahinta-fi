@@ -2,15 +2,17 @@
  * Crawlability regression test (price-intelligence-roadmap task 1.3).
  *
  * Serves the public routes the way a cookie-less crawler's request
- * reaches them: the REAL [locale] layout (server-side age-gate decision
- * from the mocked cookies()) with each route's REAL page component as
- * its children, rendered to an HTML string — only Next server plumbing
- * is mocked (layout.ssr.test.tsx harness). Pins the crawlability
- * contract end to end: the first HTML carries each page's stable
- * catalog copy AND the age-gate dialog as a fixed overlay, so the gate
- * never cloaks content (enforcement stays in the gated APIs' 403s).
- * The server fetches the pages make are routed through a mocked
- * `request`, keeping the render deterministic and offline.
+ * reaches them: the REAL [locale] layout (cookie-independent render since
+ * task 2.1 — the gate overlay ships in every server HTML, and the inline
+ * pre-paint script owns the confirmed first paint client-side) with each
+ * route's REAL page component as its children, rendered to an HTML
+ * string — only Next server plumbing is mocked (layout.ssr.test.tsx
+ * harness). Pins the crawlability contract end to end: the first HTML
+ * carries each page's stable catalog copy AND the age-gate dialog as a
+ * fixed overlay, so the gate never cloaks content (enforcement stays in
+ * the gated APIs' 403s). The server fetches the pages make are routed
+ * through a mocked `request`, keeping the render deterministic and
+ * offline.
  *
  * @module CrawlabilityTest
  */
@@ -35,7 +37,9 @@ const state = vi.hoisted(() => ({
   // Steers the mocked usePathname (AgeGate marks the declined route
   // from it); the crawler lands on the bare locale root.
   pathname: '/' as string,
-  // Cookie-less: what a first-time crawler's request carries.
+  // Cookie-less: what a first-time crawler's request carries. The
+  // layout no longer reads cookies (task 2.1) — the mock stays as a
+  // tripwire against reintroducing the request dependency.
   ageCookie: null as string | null,
 }));
 

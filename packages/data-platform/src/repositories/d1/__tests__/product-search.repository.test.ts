@@ -761,24 +761,27 @@ describe('D1ProductSearchRepository.listCatalogPage — catalog listing (design 
 
   it('serves deep pages beyond the legacy fetch cap, total intact', async () => {
     const expected = expectedCatalogOrder();
-    const page2 = await repo.listCatalogPage(2, 100, 'wine_still');
+    // Explicit ALPHABETICAL: this block pins the FI-collation contract,
+    // which is no longer the listing default (task 1.3, change
+    // first-impression-pass flipped the default to LOWEST_PRICE).
+    const page2 = await repo.listCatalogPage(2, 100, 'wine_still', 'ALPHABETICAL');
     expect(page2.total).toBe(CATALOG_FIXTURE_COUNT);
     expect(page2.items.map((item) => item.product.id)).toEqual(
       expected.slice(100),
     );
 
-    const pastEnd = await repo.listCatalogPage(3, 100, 'wine_still');
+    const pastEnd = await repo.listCatalogPage(3, 100, 'wine_still', 'ALPHABETICAL');
     expect(pastEnd.items).toEqual([]);
     expect(pastEnd.total).toBe(CATALOG_FIXTURE_COUNT);
   });
 
   it('orders deterministically under the Finnish collation (ä/ö after z)', async () => {
     // Pages 1+2 concatenated must equal the mirrored contract comparator's
-    // order over the whole fixture.
+    // order over the whole fixture (explicit ALPHABETICAL — see above).
     const expected = expectedCatalogOrder();
     const collected: number[] = [];
     for (let p = 1; p <= 2; p++) {
-      const result = await repo.listCatalogPage(p, 100, 'wine_still');
+      const result = await repo.listCatalogPage(p, 100, 'wine_still', 'ALPHABETICAL');
       collected.push(...result.items.map((item) => item.product.id));
     }
     expect(collected).toEqual(expected);
@@ -793,8 +796,8 @@ describe('D1ProductSearchRepository.listCatalogPage — catalog listing (design 
 
     // Determinism: identical request → identical order (spec: "Repeated
     // request → identical order").
-    const first = await repo.listCatalogPage(2, 100, 'wine_still');
-    const second = await repo.listCatalogPage(2, 100, 'wine_still');
+    const first = await repo.listCatalogPage(2, 100, 'wine_still', 'ALPHABETICAL');
+    const second = await repo.listCatalogPage(2, 100, 'wine_still', 'ALPHABETICAL');
     expect(first.items.map((item) => item.product.id)).toEqual(
       second.items.map((item) => item.product.id),
     );
@@ -802,18 +805,18 @@ describe('D1ProductSearchRepository.listCatalogPage — catalog listing (design 
 
   it('slices pages exactly — middle, last, and past-the-end', async () => {
     const expected = expectedCatalogOrder();
-    const middle = await repo.listCatalogPage(10, 7, 'wine_still');
+    const middle = await repo.listCatalogPage(10, 7, 'wine_still', 'ALPHABETICAL');
     expect(middle.items.map((item) => item.product.id)).toEqual(
       expected.slice(63, 70),
     );
     expect(middle.total).toBe(CATALOG_FIXTURE_COUNT);
 
-    const last = await repo.listCatalogPage(16, 7, 'wine_still');
+    const last = await repo.listCatalogPage(16, 7, 'wine_still', 'ALPHABETICAL');
     expect(last.items.map((item) => item.product.id)).toEqual(
       expected.slice(105),
     );
 
-    const past = await repo.listCatalogPage(17, 7, 'wine_still');
+    const past = await repo.listCatalogPage(17, 7, 'wine_still', 'ALPHABETICAL');
     expect(past.items).toEqual([]);
     expect(past.total).toBe(CATALOG_FIXTURE_COUNT);
   });
@@ -1239,17 +1242,49 @@ describe('D1ProductSearchRepository.listCatalogPage — objective sort orders (t
     expect(result.items.map((i) => i.product.id)).toEqual([3102, 3101]);
   });
 
-  it('the default sort stays alphabetical (contract unchanged)', async () => {
-    const explicit = await priceRepo.listCatalogPage(1, 24, 'wine_still', 'ALPHABETICAL');
+  it('the omitted sort defaults to LOWEST_PRICE on the default path — priced ascending, offer-less strictly after priced (task 1.3)', async () => {
+    // No category, no sort — the exact shape the route's blank-q browse
+    // sends. The priceRepo catalog holds the six wine_still fixtures
+    // (3006 added by the incident test above) plus the two beer rows.
+    const result = await priceRepo.listCatalogPage(1, 24);
+    expect(result.total).toBe(8);
+    expect(result.items.map((i) => i.product.id)).toEqual([
+      3102, // 290
+      3004, // 300
+      3101, // 350
+      3002, // 420 — the latest scrape
+      3001, // 500 — id tie ahead of 3003
+      3003, // 500
+      3006, // 750 — recovered price
+      3005, // no offers — strictly after every priced row
+    ]);
+    expect(result.items[result.items.length - 1]!.lowestPriceCents).toBeNull();
+  });
+
+  it('the omitted sort defaults to LOWEST_PRICE on the category-view path too (task 1.3)', async () => {
+    const result = await priceRepo.listCatalogPage(1, 24, 'beer');
+    expect(result.total).toBe(2);
+    // 290 < 350 — price ascending within the category, not the name order
+    // (Koevi Kalja 1 would lead alphabetically).
+    expect(result.items.map((i) => i.product.id)).toEqual([3102, 3101]);
+  });
+
+  it('the omitted sort equals the explicit LOWEST_PRICE — never the alphabetical order — deterministically across runs (task 1.3)', async () => {
     const omitted = await priceRepo.listCatalogPage(1, 24, 'wine_still');
+    const explicit = await priceRepo.listCatalogPage(1, 24, 'wine_still', 'LOWEST_PRICE');
     expect(omitted.items.map((i) => i.product.id)).toEqual(
       explicit.items.map((i) => i.product.id),
     );
     // The FI-collation alphabetical order differs from the price order —
-    // proves the default really did not become a price sort.
-    const priced = await priceRepo.listCatalogPage(1, 24, 'wine_still', 'LOWEST_PRICE');
-    expect(omitted.items.map((i) => i.product.id)).not.toEqual(
-      priced.items.map((i) => i.product.id),
+    // proves the default really did flip away from the name sort.
+    const alphabetical = await priceRepo.listCatalogPage(1, 24, 'wine_still', 'ALPHABETICAL');
+    expect(alphabetical.items.map((i) => i.product.id)).not.toEqual(
+      omitted.items.map((i) => i.product.id),
+    );
+    // Deterministic: identical call → identical order, every run.
+    const again = await priceRepo.listCatalogPage(1, 24, 'wine_still');
+    expect(again.items.map((i) => i.product.id)).toEqual(
+      omitted.items.map((i) => i.product.id),
     );
   });
 });

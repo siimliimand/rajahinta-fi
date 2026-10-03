@@ -509,6 +509,40 @@ describe('POST /api/v1/account/password/reset', () => {
     expect(ok.status).toBe(200);
   });
 
+  it('reset enforces the SAME D7 policy as register: blocklist at any length, 8-char floor', async () => {
+    const { d1 } = openMigratedD1();
+    const { mails } = stubEmailTransport();
+    const app = buildApp();
+    const env = mailEnv(d1);
+    const { email } = await registerInto(env);
+
+    await request(app, env, '/api/v1/account/password/reset-request', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email }),
+    });
+    const token = tokenFromLink(mails[mails.length - 1]!, 'reset');
+
+    // A 14-character blocklisted password is rejected — the old 12 floor no
+    // longer compensates for being on the list.
+    const blocklisted = await request(app, env, '/api/v1/account/password/reset', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ token, newPassword: 'password123456' }),
+    });
+    await expectEnvelope(blocklisted, 400, { error: 'InvalidPassword' });
+
+    // Same token still live (policy gate precedes consumption) — and an
+    // exactly-8-character non-blocklisted password now clears the reset
+    // floor, proving reset and register share one policy.
+    const ok = await request(app, env, '/api/v1/account/password/reset', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ token, newPassword: 'kr7px2qm' }),
+    });
+    expect(ok.status).toBe(200);
+  });
+
   it('an unknown/replayed/expired token is the uniform 401', async () => {
     const { d1 } = openMigratedD1();
     stubEmailTransport();

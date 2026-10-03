@@ -2166,6 +2166,61 @@ export const sourceGovernance = sqliteTable(
 );
 
 /**
+ * Contact messages — the operator-read intake behind POST /api/v1/contact
+ * (task 3.2, change first-impression-pass, design D8). Not a pg-schema
+ * translation: the table is new with this change.
+ *
+ * Minimal personal data (spec contact-intake): the message itself, the
+ * fixed topic enum, the optional reply email, the UI locale, the
+ * submission timestamp, and a salted HMAC-SHA-256 hex of the source IP
+ * for abuse forensics — the raw address is never stored, and no column
+ * links a message to an account. Rows persist until the operator reads
+ * them (documented wrangler SQL, newest-first via the created_at index)
+ * or the daily retention sweep deletes them past 90 days — nothing
+ * silently drops an unread message.
+ */
+export const contactMessages = sqliteTable(
+  'contact_messages',
+  {
+    id: integer('id').primaryKey(),
+    /** The sender's message, bounded at 5000 characters (CHECK below). */
+    message: text('message', { length: 5000 }).notNull(),
+    /** Fixed intake enum: product error, store inquiry, or other. */
+    topic: text('topic', { length: 16 }).notNull(),
+    /** Optional reply address — a reply is possible only when present. */
+    replyEmail: text('reply_email', { length: 320 }),
+    /** UI locale the form was rendered in ('fi' | 'en'). */
+    locale: text('locale', { length: 2 }).notNull(),
+    /** Salted HMAC-SHA-256 hex of the source IP (64 hex chars) — never raw. */
+    ipHash: text('ip_hash', { length: 64 }).notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    check(
+      'contact_messages_topic_check',
+      sql`${table.topic} IN ('product_error', 'store_inquiry', 'other')`,
+    ),
+    check(
+      'contact_messages_locale_check',
+      sql`${table.locale} IN ('fi', 'en')`,
+    ),
+    // Application-level caps, re-stated in SQL — a row longer than the
+    // declared cap is an intake bug, not data.
+    check(
+      'contact_messages_message_length_check',
+      sql`length(${table.message}) <= 5000`,
+    ),
+    check(
+      'contact_messages_ip_hash_check',
+      sql`length(${table.ipHash}) = 64`,
+    ),
+    // The operator's newest-first inbox read (documented wrangler SQL;
+    // no admin UI) and the retention sweep's cutoff scan.
+    index('contact_messages_created_at_idx').on(table.createdAt),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -2209,4 +2264,5 @@ export const d1Schema = {
   shareSnapshots,
   sourceGovernance,
   emailTokens,
+  contactMessages,
 };

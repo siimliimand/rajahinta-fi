@@ -16,6 +16,8 @@
  * @module password
  */
 
+import { COMMON_PASSWORDS } from './common-passwords';
+
 /**
  * Iteration count for NEW hashes — verify reads the stored header instead.
  *
@@ -35,11 +37,40 @@ export const SALT_BYTES = 16;
 /** Derived hash length in bytes — pinned by the pbkdf2-sha256 label. */
 export const HASH_BYTES = 32;
 
-/** NIST SP 800-63B: memorized secrets SHOULD be at least 12 characters. */
-export const MIN_PASSWORD_LENGTH = 12;
+/**
+ * NIST SP 800-63B §5.1.1.2: verifiers SHALL require memorized secrets to be
+ * at least 8 characters. (The earlier 12 here over-cited the standard — its
+ * hard floor is 8, with only an advisory that longer is better. What 800-63B
+ * actually mandates alongside the floor is the OTHER half of this policy:
+ * §5.1.1.2 also requires checking prospective secrets against lists of
+ * commonly-used/compromised values, which {@link isValidPassword} does
+ * against the pinned local blocklist in `common-passwords.ts`.)
+ */
+export const MIN_PASSWORD_LENGTH = 8;
 
 /** NIST SP 800-63B: verifiers SHOULD permit at least 64; 128 allows passphrases. */
 export const MAX_PASSWORD_LENGTH = 128;
+
+/**
+ * Blocklist lookup set over the pinned snapshot, normalized the same way
+ * the input side is (trim + case-fold). Entries are stored pre-normalized,
+ * so this mapping is idempotent — it exists to keep the two normalizations
+ * from ever drifting apart. Matching is exact on the normalized form, not
+ * substring: the list screens whole passwords.
+ */
+const COMMON_PASSWORD_SET: ReadonlySet<string> = new Set(
+  COMMON_PASSWORDS.map((entry) => entry.trim().toLowerCase()),
+);
+
+/**
+ * True when the password, after trimming and case-folding, is on the pinned
+ * common-password blocklist (`common-passwords.ts` — versioned in-repo, no
+ * external breach API). Length never exempts: a blocklisted 20-character
+ * password is as guessable as its short spelling.
+ */
+export function isCommonPassword(password: string): boolean {
+  return COMMON_PASSWORD_SET.has(password.trim().toLowerCase());
+}
 
 /** First field of the stored hash — the only algorithm label parsed. */
 const ALGORITHM_LABEL = 'pbkdf2-sha256';
@@ -212,12 +243,30 @@ export async function verifyPassword(
 }
 
 /**
- * NIST SP 800-63B password policy: 12–128 characters, no composition rules
- * (length is the only strength lever — mandated character classes push
- * users toward predictable patterns). Lengths count Unicode code points.
- * Register and reset callers (tasks 2.2/2.3) gate on this before hashing.
+ * NIST SP 800-63B password policy (design D7): 8–128 code points AND not on
+ * the pinned common-password blocklist — the standard's actual shape, a
+ * modest length floor plus screening against commonly-used lists (no
+ * composition rules; mandated character classes push users toward
+ * predictable patterns). Enforced wherever a password is SET — register,
+ * reset, change — never at login: existing credentials predate the
+ * blocklist, and the policy applies at set/reset time only (see
+ * {@link isPasswordLengthValid} for the login-side bounds). A rejection is
+ * one generic message; the blocklist contents are never disclosed or
+ * enumerated.
  */
 export function isValidPassword(password: string): boolean {
+  return isPasswordLengthValid(password) && !isCommonPassword(password);
+}
+
+/**
+ * Length-only bounds (8–128 code points) for the LOGIN route's input gate.
+ * Every stored credential clears at least this floor (it has only ever
+ * risen), so shorter input can fail fast without a PBKDF2 derivation — but
+ * the blocklist is deliberately NOT applied here: a pre-policy stored
+ * password that happens to sit on it must still verify, otherwise the
+ * policy change would lock unaffected accounts out.
+ */
+export function isPasswordLengthValid(password: string): boolean {
   const length = [...password].length;
   return length >= MIN_PASSWORD_LENGTH && length <= MAX_PASSWORD_LENGTH;
 }

@@ -242,6 +242,59 @@ describe('parseAlkoAssortment — contract guards', () => {
   });
 });
 
+describe('parseAlkoAssortment — ABV-guarded category (first-impression-pass 1.2)', () => {
+  // The storefront payload carries ABV in PERCENT; 'juomasekoitukset'
+  // resolves to the long-drink bucket (other_fermented below the 22 %
+  // boundary) — an above-boundary row in that group is the audited
+  // misclassification shape.
+  const guardRow = (overrides: Record<string, unknown> = {}) => ({
+    id: '990001',
+    name: 'Long Drink 41%',
+    abv: 41,
+    price: 3.49,
+    volume: 0.5,
+    productGroupName: ['juomasekoitukset'],
+    mainGroupName: ['panimotuotteet'], // deliberately unmapped at main level
+    packageTypes: ['packageTypeId|packageType_tölkki|tölkki'],
+    webshopStock: 5,
+    ...overrides,
+  });
+
+  const parseOne = (row: Record<string, unknown>) =>
+    parseAlkoAssortment({ '@odata.count': 1, value: [row] });
+
+  it('above-boundary long-drink group (41 %) re-keys to spirits — the 00:00 UTC cron cannot re-misclassify', () => {
+    const { records, errors } = parseOne(guardRow());
+    expect(errors).toEqual([]);
+    expect(records[0].category).toBe('spirits');
+    expect(records[0].regulatoryClassification).toBe('spirits');
+    expect(records[0].alcoholByVolume).toBe(0.41);
+  });
+
+  it('ABV absent leaves the guard unkeyed — the fermented bucket stands (honest unknown)', () => {
+    const { records, errors } = parseOne(guardRow({ abv: undefined }));
+    expect(errors).toEqual([]);
+    expect(records[0].category).toBe('other_fermented');
+    expect(records[0].alcoholByVolume).toBeNull();
+  });
+
+  it('below-boundary long-drink group keeps the honest fermented bucket', () => {
+    const { records, errors } = parseOne(guardRow({ name: 'Long Drink 5,5%', abv: 5.5 }));
+    expect(errors).toEqual([]);
+    expect(records[0].category).toBe('other_fermented');
+    expect(records[0].alcoholByVolume).toBe(0.055);
+  });
+
+  it('an ABV over 100 is garbage in either scale — the guard is never fed it and nothing throws', () => {
+    const { records, errors } = parseOne(guardRow({ abv: 145 }));
+    expect(errors).toEqual([]);
+    // Category resolves without the boundary; the record carries the raw
+    // ABV for the existing downstream validation to judge.
+    expect(records[0].category).toBe('other_fermented');
+    expect(records[0].alcoholByVolume).toBe(1.45);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Sequential skip/@odata.count pagination
 // ---------------------------------------------------------------------------

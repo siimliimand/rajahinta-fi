@@ -325,7 +325,10 @@ function readAvailability(webshopStock: unknown): 'in_stock' | 'out_of_stock' | 
  * records. Pure: no I/O, deterministic on its input. A non-object
  * payload or a missing `value` array is a payload-level error;
  * individual invalid rows (unmappable category, missing or invalid
- * price) are reported per-row and skipped.
+ * price) are reported per-row and skipped. Category mapping runs
+ * through the ABV guard: a row above 22 % ABV never resolves to the
+ * fermented duty key (first-impression-pass 1.2) — a usable ABV feeds
+ * `mapSourceCategory`, an unusable one leaves the guard unkeyed.
  */
 export function parseAlkoAssortment(payload: unknown): {
   records: RawFeedRecord[];
@@ -348,8 +351,17 @@ export function parseAlkoAssortment(payload: unknown): {
   rows.forEach((row) => {
     const label = `product ${String(row.id ?? '(unknown)')}`;
 
+    // ABV feeds the category guard (first-impression-pass 1.2), so it is
+    // read before the mapping: the percent → fraction scale is the
+    // mapper's 0–1 contract. An ABV above 100 is garbage in either
+    // scale — the guard is left unkeyed (never rescaled) and the record
+    // carries it unchanged for the existing ABV validation downstream.
+    const abvPercent = readAbvPercent(row.abv);
+    const abvFraction =
+      abvPercent !== null && abvPercent <= 100 ? abvPercent / 100 : null;
+
     const singularToken = groupImpliedCategoryToken(row);
-    const mapping = singularToken !== null ? mapSourceCategory(singularToken) : null;
+    const mapping = singularToken !== null ? mapSourceCategory(singularToken, abvFraction) : null;
     if (mapping === null) {
       errors.push(
         `Failed to map ${label}: storefront groups ${JSON.stringify([
@@ -369,7 +381,6 @@ export function parseAlkoAssortment(payload: unknown): {
       return;
     }
 
-    const abvPercent = readAbvPercent(row.abv);
     const volumeLitres = readPositiveNumber(row.volume);
 
     records.push({

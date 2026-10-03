@@ -80,7 +80,11 @@ export class AlcoholExciseService {
     asOf?: Date,
   ): Promise<ExciseResult> {
     const lookupDate = asOf ?? new Date();
-    const normalised = normaliseCategory(category);
+    // The product's ABV bounds the engine's raw-category fallback: an
+    // unrecognized category on a >22 % product resolves to the spirits
+    // duty key, never to a per-litre-of-product fermented key (design D1,
+    // change first-impression-pass).
+    const normalised = normaliseCategory(category, abv);
 
     // Get ALL active rules for this category (multiple ABV tiers)
     const rules = await this.taxRepo.findAllApplicable(

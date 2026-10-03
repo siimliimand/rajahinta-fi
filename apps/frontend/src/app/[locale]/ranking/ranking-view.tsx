@@ -160,46 +160,20 @@ export default function RankingView() {
           {t('enforcementTitle')}
         </h2>
         <div className="space-y-3 text-xs leading-relaxed text-gray-600">
-          <p>
-            {t.rich('enforcementP1', {
-              code: (chunks) => (
-                <code className="mx-1 rounded bg-gray-100 px-1 py-0.5 font-mono text-gray-700">
-                  {chunks}
-                </code>
-              ),
-            })}
-          </p>
+          <p>{t('enforcementP1')}</p>
           <p>{t('enforcementP2')}</p>
           <ol className="ml-4 list-decimal space-y-1">
             <li>
               <strong className="text-gray-700">{t('layer1Name')}</strong>
-              {t.rich('layer1Desc', {
-                code: (chunks) => (
-                  <code className="mx-1 rounded bg-gray-100 px-1 py-0.5 font-mono">
-                    {chunks}
-                  </code>
-                ),
-              })}
+              {t('layer1Desc')}
             </li>
             <li>
               <strong className="text-gray-700">{t('layer2Name')}</strong>
-              {t.rich('layer2Desc', {
-                code: (chunks) => (
-                  <code className="mx-1 rounded bg-gray-100 px-1 py-0.5 font-mono">
-                    {chunks}
-                  </code>
-                ),
-              })}
+              {t('layer2Desc')}
             </li>
             <li>
               <strong className="text-gray-700">{t('layer3Name')}</strong>
-              {t.rich('layer3Desc', {
-                code: (chunks) => (
-                  <code className="mx-1 rounded bg-gray-100 px-1 py-0.5 font-mono">
-                    {chunks}
-                  </code>
-                ),
-              })}
+              {t('layer3Desc')}
             </li>
           </ol>
         </div>

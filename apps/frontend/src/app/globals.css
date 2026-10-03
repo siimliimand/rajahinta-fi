@@ -214,3 +214,22 @@
     box-shadow: 0 0 0 3px rgb(59 130 246 / 0.2);
   }
 }
+
+/*
+ * Pre-paint age-gate state (first-impression-pass task 2.1, design D4).
+ *
+ * The [locale] layout ships an inline pre-paint script that reads the
+ * `age_confirmed` cookie and sets `data-age-confirmed` on <html> before
+ * first paint. The server HTML always contains the gate overlay (the
+ * render is cookie-independent, so pages stay cacheable), so this rule
+ * keeps that overlay unpainted for confirmed visitors until AgeGate
+ * hydration removes it — no gate flash. AgeGate keeps the attribute in
+ * sync after hydration and clears it before a 403-recovery re-open, so
+ * this rule can never suppress a React-mounted overlay.
+ *
+ * Unlayered on purpose: it must beat the overlay's `fixed` display
+ * utility for as long as the overlay exists pre-hydration.
+ */
+html[data-age-confirmed] [data-age-gate-overlay] {
+  display: none;
+}

@@ -62,6 +62,7 @@ import { registerGroupOrderRoutes } from './routes/group-order.routes';
 import { registerAnalyticsRoutes } from './routes/analytics.routes';
 import { registerOpsRoutes } from './routes/ops.routes';
 import { registerHealthRoutes } from './routes/health.routes';
+import { registerContactRoutes } from './routes/contact.routes';
 import { dispatchScheduled } from './cron/router';
 import { handleIngestionBatch } from './queues/ingestion.queue';
 import type { IngestionMessageBody } from './queues/ingestion-message';
@@ -181,6 +182,12 @@ export function createApp(): Hono<AppEnv> {
   registerGroupOrderRoutes(app);
   registerAnalyticsRoutes(app);
   registerOpsRoutes(app);
+
+  // Contact intake (task 3.2, change first-impression-pass, design D8).
+  // No guard prefixes — the intake is anonymous by design; its CONTACT
+  // rate limit rides the route registration (the session/rotate
+  // precedent) inside the route module.
+  registerContactRoutes(app);
 
   return app;
 }

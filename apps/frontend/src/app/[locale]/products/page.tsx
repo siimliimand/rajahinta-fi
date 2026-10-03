@@ -80,7 +80,7 @@ const CATALOG_SORT_ORDERS = [
 
 type CatalogSortOrder = (typeof CATALOG_SORT_ORDERS)[number];
 
-const DEFAULT_SORT: CatalogSortOrder = 'ALPHABETICAL';
+const DEFAULT_SORT: CatalogSortOrder = 'LOWEST_PRICE';
 
 /**
  * Search-query cap, mirroring the embed widget's MAX_QUERY_LENGTH —
@@ -130,8 +130,9 @@ function resolvePageParam(raw: string | string[] | undefined): number {
 
 /**
  * Forgiving sort resolution (task 1.3): absent, blank, and unknown
- * values all render the default alphabetical order — the API's strict
- * 400 never happens because only resolved canonical values are sent.
+ * values all render the default price ordering (LOWEST_PRICE) — the
+ * API's strict 400 never happens because only resolved canonical values
+ * are sent.
  */
 function resolveSortParam(
   raw: string | string[] | undefined,
@@ -240,6 +241,14 @@ interface ProductsPageProps {
   params: Promise<{ locale: string }>;
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
+
+/* Caching verdict (first-impression-pass 2.2, verified against a built
+ * server): awaiting `searchParams` renders this page per request, so it
+ * emits `private, no-cache, no-store` regardless of the layout's
+ * revalidate — the accepted cost of URL-state browsing (design D5, plain
+ * links + no-JS GET form). The ISR-eligibility sweep in
+ * ./__tests__/cache-headers.test.ts pins this classification. */
+
 
 /* Filter, pagination, sort, and search controls carry the ≥44 px touch
  * floor (task 5.4, web-application mobile-first interaction standards). */
@@ -475,7 +484,7 @@ export default async function ProductsPage({
           is URL state like category and page. A sort change resets to
           page 1 (no page field in the form); the category and the active
           search travel in hidden fields. The default order is a real
-          option value (ALPHABETICAL — an explicit contract value) so the
+          option value (LOWEST_PRICE — an explicit contract value) so the
           select always submits a value the API accepts. ── */}
       <form
         method="get"

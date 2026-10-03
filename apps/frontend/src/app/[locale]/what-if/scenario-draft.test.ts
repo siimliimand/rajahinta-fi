@@ -15,6 +15,8 @@ import {
   parseDecimalInput,
   parseEurToCents,
   parseVolumeLitres,
+  rateFamilyForCategory,
+  scenarioRateFamily,
 } from './scenario-draft';
 
 function validRow(overrides: Partial<ReturnType<typeof newProductDraft>> = {}) {
@@ -129,5 +131,31 @@ describe('draftRowsFromScenario', () => {
     });
     // The rebuilt draft must build the same scenario again.
     expect(buildScenarioRequest(draft.rate, draft.rows)).toEqual(scenario);
+  });
+});
+
+describe('rate family (task 3.3 — physical unit naming)', () => {
+  it('maps only the spirits category to the pure-alcohol family', () => {
+    expect(rateFamilyForCategory('spirits')).toBe('spirits');
+    for (const fermented of [
+      'beer',
+      'wine_still',
+      'wine_sparkling',
+      'intermediate_products',
+      'other_fermented',
+    ]) {
+      expect(rateFamilyForCategory(fermented)).toBe('fermented');
+    }
+    // Unknown strings fall to the fermented family (never a crash).
+    expect(rateFamilyForCategory('something-else')).toBe('fermented');
+  });
+
+  it('derives one family per scenario: spirits, fermented, or mixed', () => {
+    expect(scenarioRateFamily(['spirits'])).toBe('spirits');
+    expect(scenarioRateFamily(['wine_still', 'wine_sparkling'])).toBe('fermented');
+    expect(scenarioRateFamily(['beer', 'other_fermented'])).toBe('fermented');
+    expect(scenarioRateFamily(['beer', 'spirits'])).toBe('mixed');
+    // No rows → the fermented default, matching the blank draft's row.
+    expect(scenarioRateFamily([])).toBe('fermented');
   });
 });

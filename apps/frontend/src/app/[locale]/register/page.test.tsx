@@ -61,7 +61,10 @@ describe('RegisterPage', () => {
 
     expect(screen.getByLabelText('Sähköpostiosoite')).toBeInTheDocument();
     expect(screen.getByLabelText('Salasana')).toBeInTheDocument();
-    expect(screen.getByText('Vähintään 12 ja enintään 128 merkkiä.')).toBeInTheDocument();
+    expect(screen.getByText('Vähintään 8 ja enintään 128 merkkiä. Yleisiä salasanoja ei hyväksytä.')).toBeInTheDocument();
+    // D7 client-side bounds mirror the worker policy (floor 8, cap 128).
+    expect(screen.getByLabelText('Salasana')).toHaveAttribute('minLength', '8');
+    expect(screen.getByLabelText('Salasana')).toHaveAttribute('maxLength', '128');
     expect(screen.getByTestId('register-submit')).toHaveTextContent('Luo tili');
     expect(screen.getByRole('link', { name: 'Kirjaudu sisään' })).toHaveAttribute(
       'href',
@@ -123,7 +126,7 @@ describe('RegisterPage', () => {
     await user.click(screen.getByTestId('register-submit'));
 
     expect(await screen.findByTestId('register-failure')).toHaveTextContent(
-      'Salasanan tulee olla 12–128 merkkiä pitkä.',
+      'Salasanan tulee olla 8–128 merkkiä pitkä eikä yleinen tai helposti arvattava.',
     );
   });
 

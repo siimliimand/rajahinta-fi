@@ -24,7 +24,11 @@
  *   tokens (PET, pullo, tölkki) through `alksContainerType` into the
  *   product_master vocabulary.
  *   The beverage category comes from the row's categories through
- *   `mapSourceCategory`, with name tokens as the second source. When
+ *   `mapSourceCategory`, with name tokens as the second source — both
+ *   guarded by the product's name-parsed ABV fraction, so a product
+ *   above the 22 % EU intermediate-products boundary never normalizes
+ *   to the fermented bucket (first-impression-pass; an unparseable ABV
+ *   leaves the guard unkeyed). When
  *   both sources yield a beverage type on different tax-rule keys, the
  *   row is a correction error — never a silent pick (design D3). A
  *   product whose name yields no ABV or volume still parses: the
@@ -348,24 +352,27 @@ function alksContainerType(token: string): string {
 type SourceCategoryMapping = NonNullable<ReturnType<typeof mapSourceCategory>>;
 
 /** First category term with a canonical mapping, in payload order. */
-function categoryImpliedMapping(categories: unknown): SourceCategoryMapping | null {
+function categoryImpliedMapping(
+  categories: unknown,
+  abv: number | null,
+): SourceCategoryMapping | null {
   if (!Array.isArray(categories)) return null;
   for (const entry of categories) {
     if (typeof entry !== 'object' || entry === null) continue;
     const name = readNonEmptyString((entry as StoreApiTerm).name);
     if (name === null) continue;
-    const mapping = mapSourceCategory(name);
+    const mapping = mapSourceCategory(name, abv);
     if (mapping !== null) return mapping;
   }
   return null;
 }
 
 /** First name token with a canonical beverage mapping, in token order. */
-function nameImpliedMapping(name: string): SourceCategoryMapping | null {
+function nameImpliedMapping(name: string, abv: number | null): SourceCategoryMapping | null {
   const lowered = name.toLowerCase();
   for (const { token, pattern } of BEVERAGE_PATTERNS) {
     if (!pattern.test(lowered)) continue;
-    const mapping = mapSourceCategory(token);
+    const mapping = mapSourceCategory(token, abv);
     if (mapping !== null) return mapping;
   }
   return null;
@@ -482,8 +489,19 @@ export function parseAlksStoreProduct(row: unknown): AlksProductParseResult {
   // second source. Both present must agree — on the tax-rule key the
   // record actually carries (liqueur and spirits share it; a canonical
   // difference with identical tax treatment is not a contradiction).
-  const fromCategories = categoryImpliedMapping(product.categories);
-  const fromName = nameImpliedMapping(name);
+  // Both sources resolve through the ABV-guarded mapper
+  // (first-impression-pass 1.1/1.2): the name-parsed fraction feeds the
+  // EU intermediate-products ceiling, so an above-22 % product whose
+  // keyword bucket would resolve to `other_fermented` ("Muut juomat",
+  // "Juomasekoitus", …) re-keys to spirits and the daily 00:00 UTC cron
+  // cannot re-misclassify it. An unparseable ABV passes null — the guard
+  // is not keyed and the honest fermented/queue outcome stands.
+  const abvPercent = parseAbvPercent(name);
+  // parseAbvPercent is bounded 0–100, so the fraction is always 0–1: the
+  // scale the mapper requires (it throws RangeError on anything else).
+  const abvFraction = abvPercent !== null ? abvPercent / 100 : null;
+  const fromCategories = categoryImpliedMapping(product.categories, abvFraction);
+  const fromName = nameImpliedMapping(name, abvFraction);
 
   let mapping: SourceCategoryMapping | null;
   if (fromCategories !== null && fromName !== null) {
@@ -514,7 +532,6 @@ export function parseAlksStoreProduct(row: unknown): AlksProductParseResult {
     };
   }
 
-  const abvPercent = parseAbvPercent(name);
   const volume = parseVolume(name);
   const containerToken = findContainerToken(name);
   const brand = readBrandName(product.brands);

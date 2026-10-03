@@ -7,9 +7,15 @@ import {
   SALT_BYTES,
   derivePbkdf2Sha256,
   hashPassword,
+  isCommonPassword,
+  isPasswordLengthValid,
   isValidPassword,
   verifyPassword,
 } from '../password';
+import {
+  COMMON_PASSWORDS,
+  COMMON_PASSWORD_BLOCKLIST_VERSION,
+} from '../common-passwords';
 
 /** Fixed 16-byte salt for every known-answer vector (hex 0f1e2d…e1f0). */
 const KAT_SALT = Uint8Array.from([
@@ -114,7 +120,7 @@ describe('hashPassword', () => {
   it('uses the policy salt length constant', async () => {
     expect(SALT_BYTES).toBe(16);
     expect(HASH_BYTES).toBe(32);
-    expect(MIN_PASSWORD_LENGTH).toBe(12);
+    expect(MIN_PASSWORD_LENGTH).toBe(8);
     expect(MAX_PASSWORD_LENGTH).toBe(128);
   });
 });
@@ -213,16 +219,17 @@ describe('verifyPassword', () => {
   }, 30_000);
 });
 
-describe('isValidPassword (NIST 800-63B policy)', () => {
-  it('accepts the 12-character minimum', () => {
-    expect(isValidPassword('a'.repeat(12))).toBe(true);
+describe('isValidPassword (D7 new-password policy: 8 floor + pinned blocklist)', () => {
+  it('accepts the 8-character minimum when not blocklisted', () => {
+    expect(isValidPassword('a'.repeat(8))).toBe(true);
+    expect(isValidPassword('zz9xq7kd')).toBe(true);
     // No composition rules: repetition and digit-only passphrases are valid.
     expect(isValidPassword('aaaaaaaaaaaa')).toBe(true);
     expect(isValidPassword('123456789012')).toBe(true);
   });
 
-  it('rejects an 11-character password', () => {
-    expect(isValidPassword('a'.repeat(11))).toBe(false);
+  it('rejects a 7-character password', () => {
+    expect(isValidPassword('a'.repeat(7))).toBe(false);
   });
 
   it('accepts up to 128 characters and rejects beyond', () => {
@@ -234,11 +241,88 @@ describe('isValidPassword (NIST 800-63B policy)', () => {
     expect(isValidPassword('')).toBe(false);
   });
 
+  it('rejects blocklisted passwords at ANY length — length no longer compensates', () => {
+    for (const common of [
+      'q1w2e3r4', // 8 — exactly at the new floor
+      'password', // 8
+      'qwerty123', // 9
+      'password1', // 9
+      'salasana123', // 11
+      'password123456', // 14 — above the OLD 12-character floor
+    ]) {
+      expect(isValidPassword(common), common).toBe(false);
+    }
+  });
+
+  it('compares case-insensitively and trims the input', () => {
+    expect(isValidPassword('PASSWORD')).toBe(false);
+    expect(isValidPassword('Salasana123')).toBe(false);
+    expect(isValidPassword('  password1  ')).toBe(false);
+  });
+
+  it('screens the Finnish family including Cyrillic-а homoglyph variants', () => {
+    expect(isValidPassword('salasan\u0430')).toBe(false);
+    expect(isValidPassword('salasan\u04301')).toBe(false);
+  });
+
   it('counts Unicode code points, not UTF-16 units', () => {
-    // '🏋' is one code point but two UTF-16 units: 4 × 🏋 + 8 ASCII = 12
-    // code points (20 UTF-16 units); dropping one ASCII char gives 11 code
-    // points (19 UTF-16 units — which a UTF-16 count would wrongly accept).
-    expect(isValidPassword('🏋🏋🏋🏋abcdefgh')).toBe(true);
-    expect(isValidPassword('🏋🏋🏋🏋abcdefg')).toBe(false);
+    // '🏋' is one code point but two UTF-16 units. 4 × 🏋 + 'abcd' = 8 code
+    // points (16 UTF-16 units); 3 × 🏋 + 'ab' = 5 code points but 8 UTF-16
+    // units — the case a UTF-16 count would wrongly accept.
+    expect(isValidPassword('🏋🏋🏋🏋abcd')).toBe(true);
+    expect(isValidPassword('🏋🏋🏋abc')).toBe(false);
+    expect(isValidPassword('🏋🏋🏋ab')).toBe(false);
+  });
+});
+
+describe('isPasswordLengthValid (login bounds — length only, no blocklist)', () => {
+  it('accepts 8–128 including blocklisted passwords', () => {
+    // The login gate is length-only: a pre-policy stored password that sits
+    // on the blocklist must still be verifiable (existing accounts are
+    // unaffected — the policy applies at set/reset time).
+    expect(isPasswordLengthValid('password')).toBe(true);
+    expect(isPasswordLengthValid('password123456')).toBe(true);
+    expect(isPasswordLengthValid('a'.repeat(128))).toBe(true);
+  });
+
+  it('rejects below the floor and above the cap', () => {
+    expect(isPasswordLengthValid('a'.repeat(7))).toBe(false);
+    expect(isPasswordLengthValid('a'.repeat(129))).toBe(false);
+  });
+});
+
+describe('isCommonPassword (normalized lookup)', () => {
+  it('matches the trimmed, case-folded form only', () => {
+    expect(isCommonPassword(' Password123 ')).toBe(true);
+    expect(isCommonPassword('password1234extra')).toBe(false);
+    expect(isCommonPassword('correct horse battery staple')).toBe(false);
+  });
+});
+
+describe('common-password blocklist file (pinned, versioned)', () => {
+  it('pins the required trivially guessable entries', () => {
+    for (const entry of [
+      'password',
+      'salasana',
+      '12345678',
+      'q1w2e3r4',
+      'password1',
+      'qwerty123',
+    ]) {
+      expect(COMMON_PASSWORDS).toContain(entry);
+    }
+  });
+
+  it('is versioned, duplicate-free, and sized like a real screening list', () => {
+    expect(COMMON_PASSWORD_BLOCKLIST_VERSION).toMatch(/^\d{4}-\d{2}-v\d+$/);
+    expect(new Set(COMMON_PASSWORDS).size).toBe(COMMON_PASSWORDS.length);
+    expect(COMMON_PASSWORDS.length).toBeGreaterThanOrEqual(200);
+  });
+
+  it('stores entries pre-normalized (lowercase, untrimmed)', () => {
+    for (const entry of COMMON_PASSWORDS) {
+      expect(entry).toBe(entry.toLowerCase());
+      expect(entry).toBe(entry.trim());
+    }
   });
 });

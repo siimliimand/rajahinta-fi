@@ -2,10 +2,11 @@ import React from 'react';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { notFound } from 'next/navigation';
-import { cookies } from 'next/headers';
 import { NextIntlClientProvider } from 'next-intl';
-import { getMessages, getTranslations, setRequestLocale } from 'next-intl/server';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { routing } from '@/i18n/routing';
+import { getClientMessages } from '@/lib/i18n/client-messages';
+import { SHARED_CHROME_NAMESPACES } from '@/lib/i18n/route-namespaces';
 import { SITE_URL } from '@/lib/api';
 import { AgeGate } from './components/AgeGate';
 import SiteHeader from './components/SiteHeader';
@@ -86,11 +87,36 @@ const jsonLd = {
 };
 
 /**
- * Same cookie the AgeGate component and the API client use. Restated
- * here because importing a plain constant across the 'use client'
+ * Pre-paint age-gate state (first-impression-pass task 2.1, design D4).
+ *
+ * Rendered into the SSR'd HTML as the first element of <body>, this
+ * script executes synchronously during parsing — before the overlay
+ * further down can exist, hence before first paint. It reads the
+ * `age_confirmed` cookie and, for any non-empty value, sets
+ * `data-age-confirmed` on <html>. The base CSS (unlayered rule in
+ * globals.css) keeps the server-rendered overlay unpainted for
+ * confirmed visitors until AgeGate hydration removes it — no gate
+ * flash, on fresh and CDN-cached HTML alike.
+ *
+ * Reader, not a store: the cookie remains the single source of truth
+ * (AgeGate converges on it at hydration). The parse below mirrors
+ * AgeGate's getAgeVerified exactly — split/trim/starts-with, an empty
+ * value counts as unconfirmed. The cookie and attribute names are
+ * restated here because importing a constant across the 'use client'
  * boundary hands the server a client reference, not the string.
  */
-const AGE_CONFIRMATION_COOKIE = 'age_confirmed';
+const AGE_GATE_PREPAINT_SCRIPT = `try {
+var confirmed = false;
+var parts = document.cookie.split(';');
+for (var i = 0; i < parts.length; i++) {
+var segment = parts[i].trim();
+if (segment.startsWith('age_confirmed=')) {
+confirmed = segment.slice('age_confirmed='.length).length > 0;
+break;
+}
+}
+if (confirmed) document.documentElement.setAttribute('data-age-confirmed', '');
+} catch (e) {}`;
 
 export default async function RootLayout({
   children,
@@ -105,18 +131,32 @@ export default async function RootLayout({
   }
   setRequestLocale(locale);
 
-  // Server-side gate decision (design D1): the same `age_confirmed`
-  // cookie the API client presents decides whether the first HTML ships
-  // the gate overlay. Reading cookies() makes the route dynamic — the
-  // change accepts that in exchange for a correct first-paint state.
-  const ageConfirmed = (await cookies()).get(AGE_CONFIRMATION_COOKIE)?.value;
+  // The gate decision is made on the client (design D4 of
+  // first-impression-pass): rendering no longer reads request cookies,
+  // so every route under this layout is cacheable and `revalidate`
+  // above is effective. The server HTML always ships the overlay; the
+  // inline pre-paint script below plus the base-CSS rule keyed on
+  // <html data-age-confirmed> keep confirmed visitors flash-free before
+  // hydration, and AgeGate converges on the cookie at mount.
 
-  // Messages are inherited by every client component below the provider.
-  const messages = await getMessages();
+  // Client messages ride the per-route split (first-impression-pass task
+  // 2.3, design D6): the provider here carries only the shared-chrome
+  // subset — header, footer newsletter island, age gate, the 404
+  // boundary, and the home island's namespaces. Routes whose client
+  // components need more replace this subset with their own via a nested
+  // NextIntlClientProvider in their segment layout, fed by the
+  // `ROUTE_CLIENT_NAMESPACES` map (`@/lib/i18n/route-namespaces`).
+  // Server-rendered copy keeps full-catalog access through next-intl's
+  // server path, so what the HTML shows is unchanged — only the
+  // serialized client payload shrinks.
+  const messages = await getClientMessages(locale, SHARED_CHROME_NAMESPACES);
 
   return (
     <html lang={locale} className={inter.variable}>
       <body>
+        {/* First element in the body: the gate verdict is set during
+            parsing, before the overlay markup below can be painted. */}
+        <script dangerouslySetInnerHTML={{ __html: AGE_GATE_PREPAINT_SCRIPT }} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -129,9 +169,7 @@ export default async function RootLayout({
           <div className="flex min-h-screen flex-col">
             <SiteHeader />
             <div className="flex-1">
-              <AgeGate initialVerified={(ageConfirmed?.length ?? 0) > 0}>
-                {children}
-              </AgeGate>
+              <AgeGate>{children}</AgeGate>
             </div>
             <SiteFooter />
           </div>

@@ -43,6 +43,7 @@ import { handleFreshnessAlert } from './freshness-alert';
 import { handlePriceAlertEvaluation } from './price-alert-evaluation';
 import { handleSavingsSnapshots } from './savings-snapshots';
 import { handleRetentionSweep, RETENTION_CRON } from './retention-sweep';
+import { handleContactRetention } from './contact-retention';
 import { measureAndRecordDataQualityGauges } from '../observability/data-quality';
 import {
   INGESTION_PRODUCER_CRON,
@@ -144,6 +145,13 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   add(RETENTION_CRON, {
     name: 'retention-sweep',
     run: (env, log) => handleRetentionSweep(env, log),
+  });
+  // Task 3.2 (change first-impression-pass, design D8) shares the same
+  // daily tick as the calculation-record sweep: contact_messages have a
+  // spec-pinned 90-day retention, deleted as bounded batch DELETEs.
+  add(RETENTION_CRON, {
+    name: 'contact-retention',
+    run: (env, log) => handleContactRetention(env, log),
   });
 
   return table;

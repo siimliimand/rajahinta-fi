@@ -10,6 +10,7 @@ import {
   DRAFT_BOUNDS,
   DRAFT_CATEGORY_KEYS,
   RATE_SLIDER,
+  scenarioRateFamily,
   type ProductDraft,
 } from '../scenario-draft';
 
@@ -84,6 +85,10 @@ export default function WhatIfForm({
 
   const rowNumber = new Map(rows.map((row, index) => [row.key, index + 1]));
 
+  // Task 3.3: the slider's unit names the physical unit of the draft's
+  // rate family — never the internal formula unit.
+  const rateUnit = t(`unit.${scenarioRateFamily(rows.map((row) => row.category))}`);
+
   return (
     <div>
       {/* ── Hypothetical rate slider ── */}
@@ -93,7 +98,7 @@ export default function WhatIfForm({
             htmlFor="what-if-rate"
             className="text-sm font-medium text-gray-700"
           >
-            {t('form.rateLabel')}
+            {t('form.rateLabel', { unit: rateUnit })}
           </label>
           <output
             htmlFor="what-if-rate"

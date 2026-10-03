@@ -37,22 +37,21 @@ function seedConfirmedCookie(): void {
 }
 
 /** Render the gate around a marked restricted child, app conventions. */
-function renderGate(initialVerified: boolean | null = false): void {
+function renderGate(): void {
   renderWithIntl(
-    <AgeGate initialVerified={initialVerified}>
+    <AgeGate>
       <div>content</div>
     </AgeGate>,
   );
 }
 
-/** Render to an HTML string the way the server would. */
-function renderToHtml(
-  initialVerified: boolean,
-  children: React.ReactNode,
-): string {
+/** Render to an HTML string the way the server would: the render is
+    cookie-independent, so this default (overlay-shipping) variant is
+    the only server HTML there is. */
+function renderToHtml(children: React.ReactNode): string {
   return renderToString(
     <NextIntlClientProvider locale="fi" messages={fiMessages}>
-      <AgeGate initialVerified={initialVerified}>{children}</AgeGate>
+      <AgeGate>{children}</AgeGate>
     </NextIntlClientProvider>,
   );
 }
@@ -79,12 +78,15 @@ describe('AgeGate', () => {
     localStorage.clear();
     // Clear any cookie set by previous tests (seeded with path=/).
     document.cookie = `${COOKIE_NAME}=; path=/; max-age=0`;
+    // Clear the <html> pre-paint flag a previous test (or the layout's
+    // script, conceptually) may have set.
+    document.documentElement.removeAttribute('data-age-confirmed');
     replaceMock.mockClear();
     pathnameState.value = '/';
   });
 
   it('renders children behind the overlay prompt when unconfirmed', () => {
-    renderGate(false);
+    renderGate();
 
     expect(screen.getByText(CONFIRM_TEXT)).toBeTruthy();
     expect(screen.getByText(DENY_TEXT)).toBeTruthy();
@@ -98,13 +100,17 @@ describe('AgeGate', () => {
 
   it('confirm sets the age_confirmed cookie, closes the overlay, keeps the content', async () => {
     const user = userEvent.setup();
-    renderGate(false);
+    renderGate();
 
     await user.click(screen.getByText(CONFIRM_TEXT));
 
     expect(document.cookie).toContain(`${COOKIE_NAME}=true`);
     expect(queryOverlay()).toBeNull();
     expect(screen.getByText('content')).toBeTruthy();
+    // The <html> flag mirrors the confirmed verdict post-hydration.
+    expect(document.documentElement.hasAttribute('data-age-confirmed')).toBe(
+      true,
+    );
 
     // jsdom cannot read max-age back from document.cookie, so the 90-day
     // TTL is pinned through the exported constant instead.
@@ -114,7 +120,7 @@ describe('AgeGate', () => {
   it('deny clears the cookie and redirects to the declined path', async () => {
     // No cookie (expired/absent) → the modal is what offers deny.
     const user = userEvent.setup();
-    renderGate(false);
+    renderGate();
     expect(screen.getByText(CONFIRM_TEXT)).toBeTruthy();
 
     await user.click(screen.getByText(DENY_TEXT));
@@ -126,7 +132,7 @@ describe('AgeGate', () => {
 
   it('ignores and removes the stale legacy localStorage key when there is no cookie', () => {
     localStorage.setItem(COOKIE_NAME, 'true');
-    renderGate(false);
+    renderGate();
 
     // localStorage is no longer a gate input: without a cookie the modal
     // still overlays the content, and the stale key is cleaned up on mount.
@@ -136,9 +142,10 @@ describe('AgeGate', () => {
     expect(localStorage.getItem(COOKIE_NAME)).toBeNull();
   });
 
-  it('unconfirmed SSR carries the restricted content AND the overlay dialog', () => {
+  it('the server HTML (the only variant) carries the restricted content AND the overlay dialog', () => {
+    // Cookie-independent render (task 2.1, design D4): the unconfirmed
+    // default is the only server HTML — there is no confirmed variant.
     const html = renderToHtml(
-      false,
       <div data-testid="restricted">RESTRICTED-CONTENT-MARKER</div>,
     );
 
@@ -151,20 +158,8 @@ describe('AgeGate', () => {
     expect(html).not.toContain('data-age-gate-placeholder');
   });
 
-  it('confirmed SSR carries the content and ships no overlay', () => {
-    const html = renderToHtml(
-      true,
-      <div data-testid="restricted">RESTRICTED-CONTENT-MARKER</div>,
-    );
-
-    expect(html).toContain('RESTRICTED-CONTENT-MARKER');
-    expect(html).not.toContain('data-age-gate-overlay');
-    expect(html).not.toContain('role="dialog"');
-    expect(html).not.toContain('Ikätarkistus');
-  });
-
   it('hydrates the unconfirmed server HTML with no hydration mismatch', async () => {
-    const serverHtml = renderToHtml(false, <div>content</div>);
+    const serverHtml = renderToHtml(<div>content</div>);
     const container = document.createElement('div');
     container.innerHTML = serverHtml;
     document.body.appendChild(container);
@@ -179,7 +174,7 @@ describe('AgeGate', () => {
       hydrateRoot(
         container,
         <NextIntlClientProvider locale="fi" messages={fiMessages}>
-          <AgeGate initialVerified={false}>
+          <AgeGate>
             <div>content</div>
           </AgeGate>
         </NextIntlClientProvider>,
@@ -196,9 +191,59 @@ describe('AgeGate', () => {
     container.remove();
   });
 
+  it('hydrates confirmed state from the pre-paint flag with no hydration mismatch, then removes the overlay', async () => {
+    seedConfirmedCookie();
+    // A real browser has run the layout's inline pre-paint script by
+    // now: the flag is on <html> before hydration.
+    document.documentElement.setAttribute('data-age-confirmed', '');
+    const serverHtml = renderToHtml(<div>content</div>);
+    const container = document.createElement('div');
+    container.innerHTML = serverHtml;
+    document.body.appendChild(container);
+
+    const hydrationErrors: unknown[] = [];
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      hydrationErrors.push(args);
+    });
+
+    const { hydrateRoot } = await import('react-dom/client');
+    act(() => {
+      hydrateRoot(
+        container,
+        <NextIntlClientProvider locale="fi" messages={fiMessages}>
+          <AgeGate>
+            <div>content</div>
+          </AgeGate>
+        </NextIntlClientProvider>,
+      );
+    });
+
+    errorSpy.mockRestore();
+    const flat = JSON.stringify(hydrationErrors);
+    // The initial render must match the server HTML (overlay in tree);
+    // converging on the cookie happens in the mount effect, behind the
+    // CSS that already hid the overlay — never a structural mismatch.
+    expect(flat).not.toMatch(/hydrat|mismatch/i);
+
+    expect(queryOverlay()).toBeNull();
+    expect(screen.getByText('content')).toBeTruthy();
+    container.remove();
+  });
+
+  it('converges on the cookie at mount: a seeded confirmed cookie closes the overlay and raises the flag', () => {
+    seedConfirmedCookie();
+    renderGate();
+
+    expect(queryOverlay()).toBeNull();
+    expect(screen.getByText('content')).toBeTruthy();
+    expect(document.documentElement.hasAttribute('data-age-confirmed')).toBe(
+      true,
+    );
+  });
+
   it('re-opens the overlay when the api client dispatches age-gate:required', () => {
     seedConfirmedCookie();
-    renderGate(true);
+    renderGate();
     expect(queryOverlay()).toBeNull();
 
     act(() => {
@@ -210,10 +255,30 @@ describe('AgeGate', () => {
     expect(screen.getByText('content')).toBeTruthy();
   });
 
+  it('a 403-recovery re-open clears the pre-paint flag so the overlay is not CSS-suppressed', () => {
+    // Cookie present at load: the pre-paint script set the <html> flag.
+    seedConfirmedCookie();
+    document.documentElement.setAttribute('data-age-confirmed', '');
+    renderGate();
+    expect(queryOverlay()).toBeNull();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(AGE_GATE_REQUIRED_EVENT));
+    });
+
+    expect(queryOverlay()).not.toBeNull();
+    // The flag is gone — the pre-hydration hide rule cannot fight the
+    // reopened overlay.
+    expect(document.documentElement.hasAttribute('data-age-confirmed')).toBe(
+      false,
+    );
+    expect(screen.getByText('content')).toBeTruthy();
+  });
+
   it('confirming from the recovery modal closes it and sets the cookie', async () => {
     seedConfirmedCookie();
     const user = userEvent.setup();
-    renderGate(true);
+    renderGate();
 
     act(() => {
       window.dispatchEvent(new CustomEvent(AGE_GATE_REQUIRED_EVENT));
@@ -227,20 +292,20 @@ describe('AgeGate', () => {
 
   it('the declined path renders children with no overlay (exclusion unchanged)', () => {
     pathnameState.value = DECLINED_PATH;
-    renderGate(false);
+    renderGate();
 
     expect(queryOverlay()).toBeNull();
     expect(screen.getByText('content')).toBeTruthy();
   });
 
   it('moves focus into the dialog when the overlay opens', () => {
-    renderGate(false);
+    renderGate();
 
     expect(document.activeElement).toBe(screen.getByText(CONFIRM_TEXT));
   });
 
   it('traps Tab focus inside the dialog while the overlay is open', () => {
-    renderGate(false);
+    renderGate();
     const confirm = screen.getByText(CONFIRM_TEXT);
     const deny = screen.getByText(DENY_TEXT);
     expect(document.activeElement).toBe(confirm);
@@ -259,7 +324,7 @@ describe('AgeGate', () => {
     seedConfirmedCookie();
     const user = userEvent.setup();
     renderWithIntl(
-      <AgeGate initialVerified={true}>
+      <AgeGate>
         <button
           onClick={() =>
             window.dispatchEvent(new CustomEvent(AGE_GATE_REQUIRED_EVENT))

@@ -85,6 +85,17 @@ export const DEFAULT_RATES: Record<
 // ---------------------------------------------------------------------------
 
 /**
+ * The EU intermediate-products ABV ceiling as a fraction (22 %).
+ *
+ * Taxonomy law, not a heuristic: an intermediate product is by definition
+ * ≤ 22 % ABV, so any beverage above it cannot lawfully sit in a fermented
+ * or intermediate bucket — it is in the spirits category.  Both the
+ * excise engine's raw-category fallback ({@link normaliseCategory}) and
+ * the ingestion mapper's keyword outcomes are bounded by this value.
+ */
+export const INTERMEDIATE_PRODUCTS_ABV_CEILING = 0.22;
+
+/**
  * Normalise a raw product-category string to the canonical seed key.
  *
  * Canonical keys are idempotent — passing an already-canonical key returns it
@@ -100,11 +111,31 @@ export const DEFAULT_RATES: Record<
  *   rtd / ready-to-drink / lonkero     → other_fermented
  *   intermediate / väli / portviini / sherry → intermediate_products
  *   already-canonical (wine_still, wine_sparkling, other_fermented, intermediate_products) → unchanged
- *   (anything else)                    → other_fermented
+ *   (anything else, ABV ≤ 22 %)        → other_fermented
+ *   (anything else, ABV > 22 %)        → spirits — the EU intermediate-
+ *     products boundary: above 22 % a fermented bucket is not a lawful
+ *     retail category, so the fallback resolves to the spirits duty key
+ *     (change first-impression-pass, design D1)
  *
+ * @param raw  Raw product-category string.
+ * @param abv  Optional product ABV as a decimal fraction (0–1, e.g. 0.40
+ *             for 40 % — the same representation the calculation helpers
+ *             take).  Bounds the `default` branch only; recognized and
+ *             already-canonical keys pass through unchanged.  A provided
+ *             value outside 0–1 throws — a wrong-scale ABV would
+ *             silently re-key every row.
  * @returns The canonical category key.
  */
-export function normaliseCategory(raw: string): AlcoholExciseCategory {
+export function normaliseCategory(
+  raw: string,
+  abv?: number | null,
+): AlcoholExciseCategory {
+  // Validate on every path, not just the fallback: a wrong-scale ABV
+  // (e.g. 41 for 41 %) must fail loudly rather than be silently ignored
+  // or misapplied (same discipline as the calculation helpers).
+  if (abv !== undefined && abv !== null) {
+    validateRange(abv, 0, 1, 'abv');
+  }
   const lower = raw.toLowerCase().trim();
   switch (lower) {
     // Canonical keys (idempotent passthrough)
@@ -143,6 +174,13 @@ export function normaliseCategory(raw: string): AlcoholExciseCategory {
     case 'sherry':
       return 'intermediate_products';
     default:
+      // The fallback may only yield the fermented duty key at or below
+      // the EU intermediate-products boundary; above it, an unrecognized
+      // category is lawfully spirits — never a per-litre-of-product
+      // fermented key on a >22 % product (design D1).
+      if (abv !== undefined && abv !== null && abv > INTERMEDIATE_PRODUCTS_ABV_CEILING) {
+        return 'spirits';
+      }
       return 'other_fermented';
   }
 }

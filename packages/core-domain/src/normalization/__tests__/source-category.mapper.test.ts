@@ -395,3 +395,111 @@ describe('isKnownTaxCategory', () => {
     expect(isKnownTaxCategory('unknown')).toBe(false);
   });
 });
+
+describe('mapSourceCategory — spirit-family keywords (task 1.1, first-impression-pass)', () => {
+  it('maps every spirit-family spelling to spirits at any ABV', () => {
+    for (const term of [
+      'Bitter',
+      'Bitteri',
+      'Bitterit',
+      'Katkero',
+      'Katkerot',
+      'Snaps',
+      'Snapsi',
+      'Brannvin',
+      'Sambuca',
+      'Arrak',
+      'Akvaviitit',
+      // Already-mapped family members keep working:
+      'Akvavit',
+      'Aquavit',
+      'Akvaviitti',
+      'Bitters',
+    ]) {
+      for (const abv of [undefined, 0.05, 0.58]) {
+        const result = mapSourceCategory(term, abv);
+        expect(result, `term "${term}" at abv ${abv} must map`).not.toBeNull();
+        expect(result!.canonicalCategory, `"${term}" at ${abv}`).toBe('spirits');
+        expect(result!.taxCategory, `"${term}" at ${abv}`).toBe('spirits');
+      }
+    }
+  });
+
+  it('attributes keyword outcomes to the keyword, never the boundary rule', () => {
+    // A 58 % arrak is spirits because the keyword says so:
+    expect(mapSourceCategory('Arrak', 0.58)).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+    });
+    expect(mapSourceCategory('Sambuca', 0.38)!.boundaryApplied).toBeUndefined();
+  });
+});
+
+describe('mapSourceCategory — the 22 % intermediate-products boundary (design D1)', () => {
+  it('keeps a fermented-bucket keyword outcome at exactly 22 % — the boundary is inclusive', () => {
+    expect(mapSourceCategory('Muut juomat', 0.22)).toEqual({
+      canonicalCategory: 'other',
+      taxCategory: 'other_fermented',
+    });
+    expect(mapSourceCategory('Siideri', 0.22)!.taxCategory).toBe('other_fermented');
+  });
+
+  it('re-assigns a fermented-bucket keyword outcome to spirits just above the boundary', () => {
+    // 22.0001 % — the task-pinned boundary value:
+    expect(mapSourceCategory('Muut juomat', 0.220001)).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+      boundaryApplied: true,
+    });
+  });
+
+  it('bounds every keyword path into the fermented bucket — the live misclassification families', () => {
+    // Source strings measured on the live misclassified rows:
+    expect(mapSourceCategory('Muut juomat', 0.41)).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+      boundaryApplied: true,
+    }); // Aalborg Taffel Akvavit 41 %, 1-ENKELT Bitter 35 %
+    expect(mapSourceCategory('Other drinks', 0.432)!.boundaryApplied).toBe(true); // Montelobos Mezcal 43.2 %
+    expect(mapSourceCategory('Juomasekoitus', 0.25)!.boundaryApplied).toBe(true); // Smirnoff Crush 25 %
+    expect(mapSourceCategory('Siideri', 0.3)!.canonicalCategory).toBe('spirits');
+    expect(mapSourceCategory('Lonkero', 0.3)!.taxCategory).toBe('spirits');
+    expect(mapSourceCategory('Sake', 0.41)!.boundaryApplied).toBe(true);
+    // Honest non-alcoholic keywords cannot outvote the ABV either:
+    expect(mapSourceCategory('Alkoholivaba ▾', 0.41)!.taxCategory).toBe('spirits');
+  });
+
+  it('resolves an unmapped string to spirits under the boundary rule above 22 %', () => {
+    // Above 22 % a fermented bucket is not lawful, so "unknown" is
+    // spirits by taxonomy law — not a guess. Attributable:
+    expect(mapSourceCategory('Kaffe', 0.45)).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+      boundaryApplied: true,
+    });
+  });
+
+  it('still queues unmapped strings at or below the boundary — the correction queue owns them', () => {
+    expect(mapSourceCategory('Kaffe', 0.22)).toBeNull();
+    expect(mapSourceCategory('Kaffe')).toBeNull();
+    // An empty string is structural — no source string at all — and
+    // stays null at any ABV.
+    expect(mapSourceCategory('', 0.45)).toBeNull();
+  });
+
+  it('does not touch outcomes that are not the fermented bucket', () => {
+    // The guard bounds the fermented bucket only; beer, wines and
+    // fortified wines key on their own duty categories.
+    expect(mapSourceCategory('Olut', 0.41)!.taxCategory).toBe('beer');
+    expect(mapSourceCategory('Viini', 0.41)!.taxCategory).toBe('wine_still');
+    expect(mapSourceCategory('Vermutti', 0.41)!.taxCategory).toBe('intermediate_products');
+    expect(mapSourceCategory('Viski', 0.41)!.boundaryApplied).toBeUndefined();
+  });
+
+  it('rejects a wrong-scale ABV instead of silently re-keying every row', () => {
+    // 41 as a percentage-scale value must throw, not read as 41 × the
+    // boundary and flip every mapping to spirits.
+    expect(() => mapSourceCategory('Olut', 41)).toThrow(RangeError);
+    expect(() => mapSourceCategory('Olut', -0.1)).toThrow(RangeError);
+  });
+});

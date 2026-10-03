@@ -13,7 +13,8 @@ import { Button, Input } from '@/components/ui';
 /**
  * Registration page (design D8, change email-password-auth). Posts to
  * `POST /api/v1/account/register`, which validates the credentials
- * (password policy: 12–128 chars), creates the account, sets the session
+ * (password policy: 8–128 chars plus a common-password blocklist — one
+ * generic error either way), creates the account, sets the session
  * cookie, and fires a best-effort verification email. Duplicate email
  * answers 409; the AUTH rate limit can answer 429.
  *
@@ -87,7 +88,7 @@ export default function RegisterPage() {
             hint={tAuth('passwordHint')}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            minLength={12}
+            minLength={8}
             maxLength={128}
             required
           />
