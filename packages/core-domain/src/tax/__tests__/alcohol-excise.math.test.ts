@@ -330,3 +330,46 @@ describe('resolveOtherFermentedFormula', () => {
     expect(resolveOtherFermentedFormula('sake')).toBe(FORMULA_PER_LITRE_OF_PRODUCT);
   });
 });
+// ---------------------------------------------------------------------------
+// normaliseCategory — the 22 % intermediate-products boundary on the
+// raw-category fallback (task 1.1, first-impression-pass, design D1)
+// ---------------------------------------------------------------------------
+
+describe('normaliseCategory — ABV-bounded fallback', () => {
+  it('falls back to other_fermented without an ABV — call sites that cannot supply one behave as before', () => {
+    expect(normaliseCategory('tunnistamaton juoma')).toBe('other_fermented');
+    expect(normaliseCategory('other')).toBe('other_fermented');
+  });
+
+  it('yields other_fermented from the fallback at exactly 22 % — the boundary is inclusive', () => {
+    expect(normaliseCategory('tunnistamaton juoma', 0.22)).toBe('other_fermented');
+  });
+
+  it('yields spirits from the fallback at 22.0001 % — the task-pinned boundary value', () => {
+    expect(normaliseCategory('tunnistamaton juoma', 0.220001)).toBe('spirits');
+  });
+
+  it('yields spirits from the fallback anywhere above the boundary', () => {
+    expect(normaliseCategory('tunnistamaton juoma', 0.41)).toBe('spirits');
+    expect(normaliseCategory('other', 0.58)).toBe('spirits');
+    expect(normaliseCategory('kaffe', 1.0)).toBe('spirits');
+  });
+
+  it('guards only the fallback — recognized aliases and canonical keys pass through at any ABV', () => {
+    expect(normaliseCategory('olut', 0.41)).toBe('beer');
+    expect(normaliseCategory('wine', 0.41)).toBe('wine_still');
+    expect(normaliseCategory('lonkero', 0.58)).toBe('other_fermented');
+    // The canonical fermented key is idempotent, not fallback-produced —
+    // the ingestion mapper (and the backfill) own its ABV bound.
+    expect(normaliseCategory('other_fermented', 0.58)).toBe('other_fermented');
+  });
+
+  it('treats a null ABV like an absent one', () => {
+    expect(normaliseCategory('tunnistamaton juoma', null)).toBe('other_fermented');
+  });
+
+  it('throws on a wrong-scale ABV instead of silently re-keying every row', () => {
+    expect(() => normaliseCategory('olut', 41)).toThrow(RangeError);
+    expect(() => normaliseCategory('olut', -0.1)).toThrow(RangeError);
+  });
+});

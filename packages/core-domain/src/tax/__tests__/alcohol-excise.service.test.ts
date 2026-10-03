@@ -365,3 +365,42 @@ describe('AlcoholExciseService', () => {
     });
   });
 });
+// ---------------------------------------------------------------------------
+// The 22 % boundary on the engine's raw-category fallback (task 1.1,
+// first-impression-pass, design D1) — the service passes the product's
+// ABV into normaliseCategory, so an unrecognized stored category keys
+// duty to spirits above the boundary, never to a fermented key.
+// ---------------------------------------------------------------------------
+
+describe('AlcoholExciseService — ABV-bounded category fallback', () => {
+  let service: AlcoholExciseService;
+  let lookedUpCategories: string[];
+
+  beforeEach(() => {
+    lookedUpCategories = [];
+    const repo = createMockRepo();
+    const original = repo.findAllApplicable.bind(repo);
+    repo.findAllApplicable = async (taxType, category, asOf) => {
+      lookedUpCategories.push(category);
+      return original(taxType, category, asOf);
+    };
+    service = new AlcoholExciseService(repo);
+  });
+
+  it('keys duty to spirits for an unrecognized category above the boundary', async () => {
+    const result = await service.calculate('tunnistamaton juoma', 0.41, 0.7);
+    expect(lookedUpCategories).toEqual(['spirits']);
+    expect(result.category).toBe('spirits');
+  });
+
+  it('keeps the fermented key for an unrecognized category at exactly 22 %', async () => {
+    const result = await service.calculate('tunnistamaton juoma', 0.22, 0.7);
+    expect(lookedUpCategories).toEqual(['other_fermented']);
+    expect(result.category).toBe('other_fermented');
+  });
+
+  it('keeps the stored category when it is already canonical — the backfill owns those rows', async () => {
+    await service.calculate('other_fermented', 0.41, 0.7);
+    expect(lookedUpCategories).toEqual(['other_fermented']);
+  });
+});
