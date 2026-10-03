@@ -1541,3 +1541,296 @@ export abstract class ContactMessageRepository {
    */
   abstract deleteCreatedBefore(cutoff: Date, batchSize: number): Promise<number>;
 }
+
+// ---------------------------------------------------------------------------
+// Alko reference linking (change alko-reference-matching-pipeline, task 1.2)
+// ---------------------------------------------------------------------------
+
+/** Lifecycle of a product_reference_links row (migration 0026 CHECK). */
+export type ReferenceLinkStatus = 'CONFIRMED' | 'REJECTED' | 'SUPERSEDED';
+
+/** Review-queue status of a match_review row (migration 0026 CHECK). */
+export type MatchReviewStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED';
+
+/**
+ * The operator decision a review row can receive — the target states of
+ * the PENDING → decided transitions. PENDING is the source state, never
+ * a decision target.
+ */
+export type MatchReviewDecision = 'CONFIRMED' | 'REJECTED';
+
+/**
+ * Scorer confidence vocabulary — the exact core-domain MatchConfidence
+ * value set (packages/core-domain/src/normalization/
+ * product-matcher.types.ts), shared with the column's SQL CHECK.
+ */
+export type MatchReviewConfidence = 'EXACT' | 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';
+
+/**
+ * Scorer method vocabulary — the migration CHECK admits 'ean' | 'fuzzy'
+ * only: an enqueued candidate always arrived through one of the scorer's
+ * two paths (core-domain's 'none' means no match, which is never queued).
+ */
+export type MatchReviewMethod = 'ean' | 'fuzzy';
+
+/** Persisted reference-link row — camelCase projection of the snake_case D1 row. */
+export interface ReferenceLinkRecord {
+  readonly id: number;
+  /** Foreign-universe product the link starts from. */
+  readonly foreignProductId: number;
+  /** Alko product the foreign product is referenced to. */
+  readonly alkoProductId: number;
+  readonly status: ReferenceLinkStatus;
+  /** Operator who confirmed — non-null whenever status is CONFIRMED (SQL CHECK). */
+  readonly confirmedBy: string | null;
+  /** When the confirmation happened — non-null alongside confirmedBy. */
+  readonly confirmedAt: Date | null;
+  readonly createdAt: Date;
+  /** Stamped explicitly by the repository on supersedence (no ON UPDATE trigger). */
+  readonly updatedAt: Date;
+}
+
+/**
+ * Direct-creation input — an operator-confirmed link is born CONFIRMED or
+ * not at all (the blacklist-entry birth pattern). The queue-independent
+ * path for manual links with no matching-pass candidate behind them.
+ */
+export interface ReferenceLinkCreateInput {
+  readonly foreignProductId: number;
+  readonly alkoProductId: number;
+  /** Operator attribution — blank attribution is refused before any write. */
+  readonly confirmedBy: string;
+}
+
+/** Both halves of a successful confirm — the link and the decided review row. */
+export interface ReferenceLinkDecision {
+  readonly link: ReferenceLinkRecord;
+  readonly review: MatchReviewRecord;
+}
+
+/** Persisted match-review row — camelCase projection of the snake_case D1 row. */
+export interface MatchReviewRecord {
+  readonly id: number;
+  readonly foreignProductId: number;
+  readonly alkoProductId: number;
+  readonly confidence: MatchReviewConfidence;
+  readonly matchMethod: MatchReviewMethod;
+  /** Scorer's pinned 0–100 contract (SQL CHECK + enqueue guard). */
+  readonly score: number;
+  /** Both sides' identity fields frozen at enqueue time — the reviewer sees what the scorer saw. */
+  readonly foreignName: string;
+  readonly foreignBrand: string | null;
+  readonly foreignAbv: number | null;
+  readonly foreignVolume: number | null;
+  readonly alkoName: string;
+  readonly alkoBrand: string | null;
+  readonly alkoAbv: number | null;
+  readonly alkoVolume: number | null;
+  readonly status: MatchReviewStatus;
+  /** Non-null whenever status is decided (SQL CHECK). */
+  readonly decidedBy: string | null;
+  readonly decidedAt: Date | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+/**
+ * Enqueue input — one scored (foreign, alko) candidate as the matching
+ * pass emits it. The pair is the idempotency key; everything else is
+ * refreshed in place on re-enqueue of a still-PENDING pair.
+ */
+export interface MatchReviewEnqueueInput {
+  readonly foreignProductId: number;
+  readonly alkoProductId: number;
+  readonly confidence: MatchReviewConfidence;
+  readonly matchMethod: MatchReviewMethod;
+  readonly score: number;
+  readonly foreignName: string;
+  readonly foreignBrand: string | null;
+  readonly foreignAbv: number | null;
+  readonly foreignVolume: number | null;
+  readonly alkoName: string;
+  readonly alkoBrand: string | null;
+  readonly alkoAbv: number | null;
+  readonly alkoVolume: number | null;
+}
+
+/** What one enqueue did to the queue — the matching pass's counters (design D5). */
+export type MatchReviewEnqueueOutcome = 'created' | 'refreshed' | 'skipped';
+
+export interface MatchReviewEnqueueResult {
+  /** Row id — the existing id on refresh/skip (never a duplicate row). */
+  readonly id: number;
+  readonly outcome: MatchReviewEnqueueOutcome;
+}
+
+/**
+ * A decision (or confirm) was attempted on a match_review row that has
+ * already been decided — the pair-unique + guarded-UPDATE pair keeps
+ * decided rows immutable (design D2/D5), so a second decide can only
+ * surface as this typed error. The API maps it to 409.
+ */
+export class MatchReviewAlreadyDecidedError extends Error {
+  readonly reviewId: number;
+  /** The status the row already carries — CONFIRMED or REJECTED, never PENDING. */
+  readonly currentStatus: MatchReviewStatus;
+
+  constructor(reviewId: number, currentStatus: MatchReviewStatus) {
+    super(
+      `match_review row ${reviewId} is already decided (${currentStatus}) — ` +
+        'decided candidates are immutable and can never re-enter the queue',
+    );
+    this.name = 'MatchReviewAlreadyDecidedError';
+    this.reviewId = reviewId;
+    this.currentStatus = currentStatus;
+  }
+}
+
+/**
+ * A CONFIRMED reference (link or review-row flip) was attempted without a
+ * non-empty operator attribution — the storage CHECK would refuse the
+ * row (the consumption-norms citation pattern); this surfaces it as a
+ * typed error before any write.
+ */
+export class MissingDecisionAttributionError extends Error {
+  constructor(detail: string) {
+    super(`a confirmed decision requires a non-empty operator attribution: ${detail}`);
+    this.name = 'MissingDecisionAttributionError';
+  }
+}
+
+/**
+ * A second live CONFIRMED link for one side was refused — the partial
+ * unique indexes (migration 0026, WHERE status = 'CONFIRMED') allow at
+ * most one live link per foreign product AND per Alko product. This is
+ * the typed face of that violation; superseding the current link is the
+ * only legal path to a replacement. The API maps it to 409.
+ */
+export class ReferenceLinkConflictError extends Error {
+  readonly foreignProductId: number;
+  readonly alkoProductId: number;
+
+  constructor(foreignProductId: number, alkoProductId: number) {
+    super(
+      `a CONFIRMED link ${foreignProductId} → ${alkoProductId} conflicts with an ` +
+        'existing live link on the foreign or Alko side — supersede it first',
+    );
+    this.name = 'ReferenceLinkConflictError';
+    this.foreignProductId = foreignProductId;
+    this.alkoProductId = alkoProductId;
+  }
+}
+
+/** A pair was offered where both sides are the same product — unrepresentable. */
+export class ReferenceLinkSelfLinkError extends Error {
+  readonly productId: number;
+
+  constructor(productId: number) {
+    super(
+      `product ${productId} cannot reference itself — ` +
+        'the foreign and Alko sides of a link must be distinct products',
+    );
+    this.name = 'ReferenceLinkSelfLinkError';
+    this.productId = productId;
+  }
+}
+
+/** An enqueue carried a score outside the scorer's pinned 0–100 contract. */
+export class MatchReviewScoreRangeError extends Error {
+  readonly score: number;
+
+  constructor(score: number) {
+    super(
+      `match_review score ${score} is outside the scorer's pinned 0–100 contract ` +
+        '(integer, inclusive)',
+    );
+    this.name = 'MatchReviewScoreRangeError';
+    this.score = score;
+  }
+}
+
+/**
+ * Reference-link repository — the terminal product-identity EDGE between
+ * the foreign and Alko product universes (design D1: a link, never a
+ * merge). Rows are operator decisions only; the matching pass never
+ * writes here. At most one live CONFIRMED link per side (partial unique
+ * indexes); replacement supersedes the current link and coexists with it
+ * as history.
+ */
+@Injectable()
+export abstract class ReferenceLinkRepository {
+  /**
+   * Create a CONFIRMED link directly (queue-independent operator action).
+   * Rejects with {@link ReferenceLinkSelfLinkError} for a self pair,
+   * {@link MissingDecisionAttributionError} for blank attribution, and
+   * {@link ReferenceLinkConflictError} when a live link already exists
+   * on either side.
+   */
+  abstract create(input: ReferenceLinkCreateInput): Promise<ReferenceLinkRecord>;
+
+  /**
+   * Promote a PENDING match_review row: create the attributed CONFIRMED
+   * link AND flip the review row to CONFIRMED in one transaction. Null
+   * when the review row is unknown; {@link MatchReviewAlreadyDecidedError}
+   * when it is decided; {@link ReferenceLinkConflictError} when either
+   * side already has a live link (the review row stays PENDING — the
+   * batch rolls back whole).
+   */
+  abstract confirm(reviewId: number, confirmedBy: string): Promise<ReferenceLinkDecision | null>;
+
+  /**
+   * Mark a PENDING match_review row REJECTED — records the calibration
+   * decision, creates no link. Null when the review row is unknown;
+   * {@link MatchReviewAlreadyDecidedError} when it is decided.
+   */
+  abstract reject(reviewId: number, decidedBy: string): Promise<MatchReviewRecord | null>;
+
+  /**
+   * CONFIRMED → SUPERSEDED, stamping updated_at — the only legal path to
+   * a replacement link on a side that already has one. Null when the
+   * link is unknown or not CONFIRMED (terminal-once).
+   */
+  abstract supersede(linkId: number): Promise<ReferenceLinkRecord | null>;
+
+  /**
+   * Every live link, foreign_product_id ascending — the savings cron's
+   * sweep read, served by the covering partial unique index.
+   */
+  abstract listConfirmed(): Promise<ReferenceLinkRecord[]>;
+}
+
+/**
+ * Match-review repository — the review queue the matching pass writes
+ * (design D2/D5): every scored candidate, PENDING only; the pass never
+ * decides. Enqueue is idempotent per (foreign, alko) pair: new pairs
+ * insert, PENDING pairs refresh in place, decided pairs are untouched —
+ * the pair-unique index makes decision immutability physical.
+ */
+@Injectable()
+export abstract class MatchReviewRepository {
+  /**
+   * Idempotent enqueue of one scored candidate. Returns what happened:
+   * 'created' (new pair), 'refreshed' (PENDING pair re-scored in place),
+   * or 'skipped' (pair already decided — untouched).
+   */
+  abstract enqueue(input: MatchReviewEnqueueInput): Promise<MatchReviewEnqueueResult>;
+
+  /**
+   * The queue view for one status, deterministically ordered: score
+   * descending (review triage), then foreign_product_id, then
+   * alko_product_id ascending as tiebreakers.
+   */
+  abstract listByStatus(status: MatchReviewStatus): Promise<MatchReviewRecord[]>;
+
+  /**
+   * Guarded PENDING → decision transition, stamping attribution. Null
+   * when the row is unknown; {@link MatchReviewAlreadyDecidedError} when
+   * it is decided (decision immutability — a decided row can never be
+   * re-decided).
+   */
+  abstract decide(
+    id: number,
+    decision: MatchReviewDecision,
+    decidedBy: string,
+  ): Promise<MatchReviewRecord | null>;
+}

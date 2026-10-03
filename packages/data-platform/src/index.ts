@@ -168,6 +168,39 @@ export type {
 } from './abstracts';
 
 // ---------------------------------------------------------------------------
+// Alko reference linking — the review queue the matching pass writes and the
+// terminal foreign→Alko identity edge behind it (task 1.2, change
+// alko-reference-matching-pipeline); abstracts in abstracts.ts, D1
+// implementations co-located (savings-snapshot precedent: no pg counterpart)
+// ---------------------------------------------------------------------------
+
+export { D1ReferenceLinkRepository } from './repositories/d1/reference-link.repository';
+export { D1MatchReviewRepository } from './repositories/d1/match-review.repository';
+export {
+  ReferenceLinkRepository,
+  MatchReviewRepository,
+  MissingDecisionAttributionError,
+  MatchReviewAlreadyDecidedError,
+  ReferenceLinkConflictError,
+  ReferenceLinkSelfLinkError,
+  MatchReviewScoreRangeError,
+} from './abstracts';
+export type {
+  ReferenceLinkRecord,
+  ReferenceLinkCreateInput,
+  ReferenceLinkDecision,
+  ReferenceLinkStatus,
+  MatchReviewRecord,
+  MatchReviewEnqueueInput,
+  MatchReviewEnqueueResult,
+  MatchReviewEnqueueOutcome,
+  MatchReviewStatus,
+  MatchReviewDecision,
+  MatchReviewConfidence,
+  MatchReviewMethod,
+} from './abstracts';
+
+// ---------------------------------------------------------------------------
 // Product dimensions + carrier box types — D1-only tables (task 3.1, change
 // product-roadmap-phases-1-4); abstract + concrete are co-located in the
 // repository files (price-alert precedent; no pg counterpart)
