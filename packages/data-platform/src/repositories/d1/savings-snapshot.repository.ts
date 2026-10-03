@@ -34,7 +34,7 @@ const SNAPSHOT_COLUMNS = `
   id, as_of, product_id, category, best_merchant, best_merchant_country,
   best_price_cents, best_observed_at, alko_reference_cents,
   alko_observed_at, landed_total_cents, landed_reliability, confidence,
-  gap_cents, gap_basis_points, tax_dataset_version`;
+  gap_cents, gap_basis_points, tax_dataset_version, reference_link_id`;
 
 /** Raw D1 savings_snapshots row. */
 interface D1SnapshotRow {
@@ -54,6 +54,8 @@ interface D1SnapshotRow {
   readonly gap_cents: number;
   readonly gap_basis_points: number;
   readonly tax_dataset_version: string;
+  /** Nullable provenance — the CONFIRMED link that produced the pair (0026). */
+  readonly reference_link_id: number | null;
 }
 
 const RELIABILITIES: readonly SavingsReliabilityStatus[] = [
@@ -106,6 +108,7 @@ function toContractRecord(row: D1SnapshotRow): SnapshotRecord {
     gapCents: row.gap_cents,
     gapBasisPoints: row.gap_basis_points,
     taxDatasetVersion: row.tax_dataset_version,
+    referenceLinkId: row.reference_link_id,
   };
 }
 
@@ -130,6 +133,7 @@ function computedParams(snapshot: SavingsSnapshotUpsertInput): unknown[] {
     snapshot.gapCents,
     snapshot.gapBasisPoints,
     snapshot.taxDatasetVersion,
+    snapshot.referenceLinkId,
   ];
 }
 
@@ -141,8 +145,8 @@ const INSERT_SQL = `
     as_of, product_id, category, best_merchant, best_merchant_country,
     best_price_cents, best_observed_at, alko_reference_cents,
     alko_observed_at, landed_total_cents, landed_reliability, confidence,
-    gap_cents, gap_basis_points, tax_dataset_version
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    gap_cents, gap_basis_points, tax_dataset_version, reference_link_id
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   RETURNING id`;
 
 const UPDATE_SQL = `
@@ -151,7 +155,7 @@ const UPDATE_SQL = `
     best_price_cents = ?, best_observed_at = ?, alko_reference_cents = ?,
     alko_observed_at = ?, landed_total_cents = ?, landed_reliability = ?,
     confidence = ?, gap_cents = ?, gap_basis_points = ?,
-    tax_dataset_version = ?
+    tax_dataset_version = ?, reference_link_id = ?
   WHERE id = ?
   RETURNING id`;
 

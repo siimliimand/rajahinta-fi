@@ -1,6 +1,7 @@
 /**
- * Savings-snapshot materialization cron handler (task 2.2, change
- * insight-surfaces, design D1–D4) — the daily savings-discovery pass.
+ * Savings-snapshot materialization cron handler (tasks 2.2 + 4.1, changes
+ * insight-surfaces / alko-reference-matching-pipeline) — the daily
+ * savings-discovery pass.
  *
  * ## Cadence — shared post-ingestion tick, daily grain
  *
@@ -14,17 +15,28 @@
  * is kept (unlike the time-series scan, whose incremental protocol needs
  * one).
  *
- * ## Qualification and the gap (design D1/D3)
+ * ## Qualification and the gap (design D1/D3; v2 links per D4)
  *
- * A product qualifies only when it carries an Alko reference offer WITH
- * an observation timestamp — the exact predicate
- * `resolveAlkoBenchmark` applies, and the benchmark the calculator
- * returns is that selection (newest observedAt, ties to the higher
- * offer id). The gap is the FULL landed cost (calculator quantity 1,
- * destination FI, default transport arrangement) versus the Alko
- * domestic reference — never the retail price alone. A product without
- * a usable benchmark produces NO row: absence is the honest state, a
- * guessed gap never materializes.
+ * A product qualifies two ways (spec savings-discovery): it carries an
+ * Alko reference offer WITH an observation timestamp on its own record —
+ * the exact predicate `resolveAlkoBenchmark` applies, and the benchmark
+ * the calculator returns is that selection (newest observedAt, ties to
+ * the higher offer id) — OR a CONFIRMED product reference link connects
+ * its record to a distinct Alko product record. A product in both sets
+ * evaluates ONCE via the direct path (dedupe by product id; direct
+ * wins). The linked evaluation computes the landed cost on the foreign
+ * product's own best offer and passes the linked Alko product to the
+ * calculator as `alkoReferenceProductId` — benchmark selection stays
+ * inside the calculator (design D4: no cron-side selection logic); the
+ * CONFIRMED status is the qualification, so the linked path runs no
+ * Alko-offer pre-check of its own. Only links in CONFIRMED status are
+ * read (`listConfirmed`); PENDING and REJECTED links have no effect.
+ *
+ * The gap is the FULL landed cost (calculator quantity 1, destination
+ * FI, default transport arrangement) versus the Alko domestic reference
+ * — never the retail price alone. A product without a usable benchmark
+ * produces NO row: absence is the honest state, a guessed gap never
+ * materializes.
  *
  * ## Per-product isolation and explainability
  *
@@ -32,7 +44,12 @@
  * run and never fatal to the tick. Every row carries the tax dataset
  * version(s) that produced its figures (the calculator's
  * `datasetVersions`, joined deterministically when excise and container
- * duty differ) — the explainability invariant. All money is integer
+ * duty differ) and — when a CONFIRMED link produced the pair — the
+ * `reference_link_id` provenance column. The best-merchant fields come
+ * from the offer the landed total was computed on
+ * (`metadata.retailOfferIds[0]`), which for a linked row is the FOREIGN
+ * offer, and the category is the evaluated product's own — the row
+ * stays explainable about the product it is about. All money is integer
  * cents, the gap ratio integer basis points (design D4).
  *
  * Note: `calculate` persists a calculation record per product by design;
@@ -62,9 +79,13 @@ import { D1TaxRuleRepositoryAdapter } from '../../../../packages/data-platform/s
 import { D1TransportOfferRepository } from '../../../../packages/data-platform/src/repositories/d1/transport-offer.repository';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 import { D1SavingsSnapshotRepository } from '../../../../packages/data-platform/src/repositories/d1/savings-snapshot.repository';
+import { D1ReferenceLinkRepository } from '../../../../packages/data-platform/src/repositories/d1/reference-link.repository';
 import { strictestReliability } from '../../../../packages/data-platform/src/d1/summary-aggregation';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
-import type { SavingsSnapshotUpsertInput } from '../../../../packages/data-platform/src/abstracts';
+import type {
+  ReferenceLinkRecord,
+  SavingsSnapshotUpsertInput,
+} from '../../../../packages/data-platform/src/abstracts';
 import {
   computeSavingsGap,
   isSavingsGapValue,
@@ -108,6 +129,47 @@ async function findQualifyingProductIds(d1: D1DatabaseLike): Promise<number[]> {
     .bind(ALKO_MERCHANT)
     .all<{ product_id: number }>();
   return rows.results.map((row) => row.product_id);
+}
+
+/**
+ * One enumerated evaluation: a direct product (link null — the v1 path,
+ * benchmark from its own Alko offers) or a linked product (the CONFIRMED
+ * link whose Alko side the benchmark resolves from, design D4).
+ */
+interface SnapshotEvaluation {
+  readonly productId: number;
+  readonly link: ReferenceLinkRecord | null;
+}
+
+/**
+ * The v2 evaluation set: every directly-qualified product first (id
+ * ascending, byte-identical enumeration to v1), then every CONFIRMED
+ * link's foreign product not already in that set (id ascending — one
+ * live CONFIRMED link per foreign product is a schema invariant, but the
+ * first wins regardless). Dedupe here is the "direct path wins" rule:
+ * a product with its own Alko reference never evaluates through a link.
+ */
+function buildEvaluations(
+  directProductIds: number[],
+  confirmedLinks: ReferenceLinkRecord[],
+): SnapshotEvaluation[] {
+  const direct = directProductIds.map((productId) => ({
+    productId,
+    link: null,
+  }));
+  const directIds = new Set(directProductIds);
+  const linked = new Map<number, ReferenceLinkRecord>();
+  for (const link of confirmedLinks) {
+    if (!directIds.has(link.foreignProductId) && !linked.has(link.foreignProductId)) {
+      linked.set(link.foreignProductId, link);
+    }
+  }
+  return [
+    ...direct,
+    ...[...linked.values()]
+      .sort((a, b) => a.foreignProductId - b.foreignProductId)
+      .map((link) => ({ productId: link.foreignProductId, link })),
+  ];
 }
 
 /**
@@ -173,12 +235,18 @@ export interface SavingsSnapshotDeps {
   products?: D1ProductSearchRepository;
   offersForProduct?: (productId: number) => Promise<CalculatorRetailOfferData[]>;
   qualifyingProductIds?: () => Promise<number[]>;
+  /** CONFIRMED links only — the real seam is `listConfirmed`, whose
+   *  WHERE clause is the status filter (PENDING/REJECTED never surface). */
+  confirmedLinks?: () => Promise<ReferenceLinkRecord[]>;
   now?: () => Date;
 }
 
 /**
- * One savings-snapshot pass: enumerate Alko-referenced products, compute
- * each one's full landed cost, and upsert the day's rows keyed
+ * One savings-snapshot pass: enumerate qualifying products — a direct
+ * Alko reference offer with an observation timestamp, or the foreign
+ * side of a CONFIRMED reference link — compute each one's full landed
+ * cost (the linked path against the linked Alko product's benchmark,
+ * selection inside the calculator), and upsert the day's rows keyed
  * (asOf, productId). Never throws on per-product failure (isolation) —
  * the router's handler boundary only sees failures of the scan itself.
  */
@@ -197,36 +265,55 @@ export async function handleSavingsSnapshots(
     deps.offersForProduct ?? ((id: number) => new D1ProductDataPort(products).findRetailOffers(id));
   const qualifyingProductIds =
     deps.qualifyingProductIds ?? (() => findQualifyingProductIds(env.DB));
+  const confirmedLinks =
+    deps.confirmedLinks ?? (() => new D1ReferenceLinkRepository(env.DB).listConfirmed());
 
-  const productIds = await qualifyingProductIds();
+  const [directProductIds, links] = await Promise.all([
+    qualifyingProductIds(),
+    confirmedLinks(),
+  ]);
+  const evaluations = buildEvaluations(directProductIds, links);
   const counters = { rowsWritten: 0, skipped: 0, failed: 0 };
 
   log.info({
     message: `Starting savings-snapshot pass for ${asOf}`,
-    products: productIds.length,
+    products: evaluations.length,
+    linkedProducts: evaluations.filter((evaluation) => evaluation.link !== null).length,
     cadence: SAVINGS_SNAPSHOT_CADENCE,
   });
 
-  for (const productId of productIds) {
+  for (const { productId, link } of evaluations) {
     try {
-      // Qualification mirrors resolveAlkoBenchmark: an Alko offer row
-      // counts as a reference only WITH its observation timestamp.
-      const offers = await offersForProduct(productId);
-      const hasReference = offers.some(
-        (offer) => offer.merchant === ALKO_MERCHANT && offer.observedAt !== undefined,
-      );
-      if (!hasReference) {
-        counters.skipped++;
-        continue;
+      if (link === null) {
+        // Direct path (v1, unchanged): qualification mirrors
+        // resolveAlkoBenchmark — an Alko offer row counts as a reference
+        // only WITH its observation timestamp. The linked path skips
+        // this pre-check on purpose: its qualification IS the CONFIRMED
+        // link, and the foreign product need not carry any Alko offer.
+        const offers = await offersForProduct(productId);
+        const hasReference = offers.some(
+          (offer) => offer.merchant === ALKO_MERCHANT && offer.observedAt !== undefined,
+        );
+        if (!hasReference) {
+          counters.skipped++;
+          continue;
+        }
       }
 
       // Full landed cost for one unit to Finland, default transport
-      // arrangement (SELLER_ARRANGED) — design D1.
-      const result = await calculator.calculate({
-        productId,
-        quantity: 1,
-        destination: SNAPSHOT_DESTINATION,
-      });
+      // arrangement (SELLER_ARRANGED) — design D1. Linked (design D4):
+      // the calculator resolves the benchmark from the linked Alko
+      // product's offers with its own selection predicate.
+      const result = await calculator.calculate(
+        link === null
+          ? { productId, quantity: 1, destination: SNAPSHOT_DESTINATION }
+          : {
+              productId,
+              quantity: 1,
+              destination: SNAPSHOT_DESTINATION,
+              alkoReferenceProductId: link.alkoProductId,
+            },
+      );
 
       // The benchmark on the result IS the newest-reference selection.
       // Absent → no row, never a guessed gap (design D3).
@@ -252,7 +339,9 @@ export async function handleSavingsSnapshots(
       }
 
       // The row documents the offer the landed total was computed on —
-      // read by the id the calculator itself selected.
+      // read by the id the calculator itself selected. For a linked row
+      // that offer is the FOREIGN product's (the benchmark came from the
+      // linked Alko product's offers instead).
       const bestOfferId = result.metadata.retailOfferIds[0];
       const bestOffer = await products.findRetailOfferById(bestOfferId);
       if (bestOffer === null) {
@@ -277,6 +366,7 @@ export async function handleSavingsSnapshots(
         gapCents: gap.gapCents,
         gapBasisPoints: gap.gapBasisPoints,
         taxDatasetVersion: taxDatasetVersionOf(result.metadata.datasetVersions),
+        referenceLinkId: link === null ? null : link.id,
       };
       await snapshots.upsertSnapshot(snapshot);
       counters.rowsWritten++;
@@ -297,5 +387,5 @@ export async function handleSavingsSnapshots(
     ...counters,
   });
 
-  return { asOf, qualifyingProducts: productIds.length, ...counters };
+  return { asOf, qualifyingProducts: evaluations.length, ...counters };
 }

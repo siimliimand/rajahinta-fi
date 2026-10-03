@@ -971,6 +971,144 @@ describe('LandedCostCalculatorService', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Linked Alko reference override (task 4.1, change
+  // alko-reference-matching-pipeline, design D4)
+  // -------------------------------------------------------------------------
+
+  describe('linked Alko reference override (alkoReferenceProductId)', () => {
+    /** The calculated (foreign) product's own offers — no alko row. */
+    const FOREIGN_ONLY_OFFERS: CalculatorRetailOfferData[] = [
+      { id: 100, priceCents: 200, merchant: 'test-merchant-de', country: 'DE', reliabilityStatus: 'VERIFIED' },
+    ];
+
+    /** The linked Alko product's reference rows — exercising the exact
+     *  newest-observedAt selection on the override side. */
+    const LINKED_ALKO_OFFERS: CalculatorRetailOfferData[] = [
+      {
+        id: 900,
+        priceCents: 300,
+        merchant: 'alko',
+        country: 'FI',
+        reliabilityStatus: 'VERIFIED',
+        observedAt: new Date('2026-08-01T10:00:00.000Z'),
+      },
+      // Newest observation wins despite the lower price — selection is
+      // the SAME resolveAlkoBenchmark predicate, override or not.
+      {
+        id: 901,
+        priceCents: 260,
+        merchant: 'alko',
+        country: 'FI',
+        reliabilityStatus: 'STALE',
+        observedAt: new Date('2026-08-05T10:00:00.000Z'),
+      },
+    ];
+
+    function createOverridePort(): IProductDataPort {
+      return createMockProductDataPort({
+        findProductById: vi.fn().mockResolvedValue(DEFAULT_PRODUCT),
+        findRetailOffers: vi.fn().mockImplementation((productId: number) =>
+          productId === 2
+            ? Promise.resolve(LINKED_ALKO_OFFERS)
+            : Promise.resolve(FOREIGN_ONLY_OFFERS),
+        ),
+      });
+    }
+
+    const LINKED_INPUT: CalculatorInput = {
+      ...DEFAULT_INPUT,
+      alkoReferenceProductId: 2,
+    };
+
+    it('resolves the benchmark from the linked product offers with the same newest-reference selection while the retail line stays on the target best offer', async () => {
+      const productData = createOverridePort();
+      const { service, mocks } = createService({ productData });
+
+      const result = await service.calculate(LINKED_INPUT);
+
+      // Both sides read: the target's offers AND the override's offers.
+      const readIds = (productData.findRetailOffers as ReturnType<typeof vi.fn>).mock.calls
+        .map((call) => call[0]);
+      expect(readIds).toEqual([1, 2]);
+      // Benchmark from the override's offers (newest = 260), retail from
+      // the target's own offer (200).
+      expect(result.alkoBenchmark).toEqual({
+        status: 'available',
+        referencePriceCents: 260,
+        differenceCents: -60,
+        // -60 / 260 * 100 = -23.076… → -23.1 (half away from zero).
+        differencePercent: -23.1,
+        reliabilityStatus: 'STALE',
+        observedAt: '2026-08-05T10:00:00.000Z',
+        // The explainability invariant: the record/result name the
+        // product the reference came from.
+        referenceProductId: 2,
+      });
+      expect(result.foreignRetailPrice).toBe(200);
+      expect(result.metadata.retailOfferIds).toEqual([100]);
+
+      // The persisted calculation record carries the same snapshot —
+      // the reference product id travels into the record.
+      const createCall = (mocks.calculationRecords.create as ReturnType<typeof vi.fn>)
+        .mock.calls[0][0];
+      expect(createCall.alkoBenchmark).toEqual(result.alkoBenchmark);
+      expect(
+        (createCall.alkoBenchmark as { referenceProductId?: number }).referenceProductId,
+      ).toBe(2);
+    });
+
+    it('yields benchmark absence — never an error — when the linked product has no offers', async () => {
+      const productData = createMockProductDataPort({
+        findProductById: vi.fn().mockResolvedValue(DEFAULT_PRODUCT),
+        findRetailOffers: vi.fn().mockImplementation((productId: number) =>
+          productId === 2 ? Promise.resolve([]) : Promise.resolve(FOREIGN_ONLY_OFFERS),
+        ),
+      });
+      const { service } = createService({ productData });
+
+      const result = await service.calculate(LINKED_INPUT);
+
+      expect('alkoBenchmark' in result).toBe(false);
+      // The calculation itself is unaffected — the override only governs
+      // the display benchmark.
+      expect(result.foreignRetailPrice).toBe(200);
+    });
+
+    it('keeps the direct path byte-identical: no override input, no referenceProductId anywhere', async () => {
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue([
+          ...FOREIGN_ONLY_OFFERS,
+          {
+            id: 902,
+            priceCents: 240,
+            merchant: 'alko',
+            country: 'FI',
+            reliabilityStatus: 'VERIFIED',
+            observedAt: new Date('2026-08-05T10:00:00.000Z'),
+          },
+        ]),
+      });
+      const calculationRecords = createMockCalculationRecordPort();
+      const { service, mocks } = createService({ productData, calculationRecords });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expect(result.alkoBenchmark).toEqual({
+        status: 'available',
+        referencePriceCents: 240,
+        differenceCents: -40,
+        differencePercent: -16.7,
+        reliabilityStatus: 'VERIFIED',
+        observedAt: '2026-08-05T10:00:00.000Z',
+      });
+      expect('referenceProductId' in (result.alkoBenchmark ?? {})).toBe(false);
+      const createCall = (mocks.calculationRecords.create as ReturnType<typeof vi.fn>)
+        .mock.calls[0][0];
+      expect('referenceProductId' in (createCall.alkoBenchmark as object)).toBe(false);
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // Import VAT — itemized line, domestic exclusion, date resolution
   // (task 4.3, design D6; landed-cost-calculator spec scenarios)

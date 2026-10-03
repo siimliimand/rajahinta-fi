@@ -1,10 +1,13 @@
 /**
  * Savings-snapshot cron handler tests (task 2.2, change
- * insight-surfaces) — happy-path materialization over the real D1
- * repositories on the fake-D1 harness (migrations applied), the
- * non-qualifying no-row contract, re-run idempotence via the keyed
- * upsert, per-product failure isolation, and the handler-group
- * sequencing after time-series aggregation.
+ * insight-surfaces; task 4.1, change alko-reference-matching-pipeline)
+ * — happy-path materialization over the real D1 repositories on the
+ * fake-D1 harness (migrations applied), the non-qualifying no-row
+ * contract, re-run idempotence via the keyed upsert, per-product failure
+ * isolation, the handler-group sequencing after time-series aggregation,
+ * and the v2 linked qualification: CONFIRMED reference links materialize
+ * the foreign product against the linked Alko benchmark, PENDING and
+ * REJECTED links stay inert, and the direct path wins the dedupe.
  *
  * @module SavingsSnapshotsCronTest
  */
@@ -98,13 +101,36 @@ async function seedQualifyingSet(db: DatabaseSync): Promise<void> {
   await seedOffer(db, 31, 3, 'beverage-de', 'DE', 200, '2026-09-03T10:00:00.000Z');
 }
 
+/** One product_reference_links row — status decides everything (only
+ *  CONFIRMED may carry attribution; the others are inert by law). The
+ *  value set is the migration's CHECK: a link is never PENDING (that is
+ *  the review queue's status) — the non-live states are REJECTED and
+ *  SUPERSEDED. */
+async function seedLink(
+  db: DatabaseSync,
+  id: number,
+  foreignProductId: number,
+  alkoProductId: number,
+  status: 'CONFIRMED' | 'REJECTED' | 'SUPERSEDED',
+): Promise<void> {
+  const attribution =
+    status === 'CONFIRMED' ? `, 'ops', '2026-09-07T08:00:00.000Z'` : `, NULL, NULL`;
+  await db
+    .prepare(
+      `INSERT INTO product_reference_links (id, foreign_product_id, alko_product_id,
+          status, confirmed_by, confirmed_at)
+       VALUES (?, ?, ?, ?${attribution})`,
+    )
+    .run(id, foreignProductId, alkoProductId, status);
+}
+
 function snapshotRows(db: DatabaseSync): Array<Record<string, unknown>> {
   return db
     .prepare(
       `SELECT as_of, product_id, category, best_merchant, best_merchant_country,
               best_price_cents, best_observed_at, alko_reference_cents,
               alko_observed_at, landed_total_cents, landed_reliability, confidence,
-              gap_cents, gap_basis_points, tax_dataset_version
+              gap_cents, gap_basis_points, tax_dataset_version, reference_link_id
          FROM savings_snapshots ORDER BY product_id ASC`,
     )
     .all() as never;
@@ -254,6 +280,169 @@ describe('handleSavingsSnapshots', () => {
     const rows = snapshotRows(db);
     expect(rows).toHaveLength(1);
     expect(rows[0].product_id).toBe(2);
+  });
+});
+
+describe('handleSavingsSnapshots — linked qualification (v2)', () => {
+  /** Foreign product 5 (own foreign offer only), Alko product 6 (own
+   *  alko offer), CONFIRMED link 5 → 6. */
+  async function seedLinkedPair(db: DatabaseSync): Promise<void> {
+    await seedTaxRules(db);
+    await seedProduct(db, 5);
+    await seedOffer(db, 51, 5, 'beverage-de', 'DE', 200, '2026-09-03T10:00:00.000Z');
+    await seedProduct(db, 6);
+    await seedOffer(db, 61, 6, 'alko', 'FI', 300, '2026-09-05T12:00:00.000Z');
+    await seedLink(db, 55, 5, 6, 'CONFIRMED');
+  }
+
+  it('materializes the linked foreign product against the linked Alko benchmark, with the reference link id on the row', async () => {
+    const { env, db } = createEnv();
+    await seedLinkedPair(db);
+
+    const result = await handleSavingsSnapshots(env, LOG, {
+      now: () => RUN_NOW,
+    });
+
+    // Product 6 qualifies directly (its own alko offer), product 5 only
+    // through the link — both evaluate exactly once.
+    expect(result).toEqual({
+      asOf: AS_OF,
+      qualifyingProducts: 2,
+      rowsWritten: 2,
+      skipped: 0,
+      failed: 0,
+    });
+
+    const rows = snapshotRows(db);
+    expect(rows).toHaveLength(2);
+
+    // The linked row: landed cost on the FOREIGN offer, reference from
+    // the LINKED Alko product's offers, provenance link id on the row.
+    const linked = rows.find((r) => r.product_id === 5)!;
+    expect(linked.category).toBe('beer');
+    expect(linked.best_merchant).toBe('beverage-de');
+    expect(linked.best_merchant_country).toBe('DE');
+    expect(linked.best_price_cents).toBe(200);
+    expect(linked.alko_reference_cents).toBe(300);
+    expect(linked.alko_observed_at).toBe('2026-09-05T12:00:00.000Z');
+    expect(linked.reference_link_id).toBe(55);
+    const linkedLanded = linked.landed_total_cents as number;
+    expect(Number.isInteger(linkedLanded)).toBe(true);
+    expect(linkedLanded).toBeGreaterThanOrEqual(200);
+    const expectedGap = computeSavingsGap({
+      productId: 5,
+      productName: 'Product 5',
+      landedTotalCents: linkedLanded,
+      alkoReferenceCents: 300,
+    });
+    expect(linked.gap_cents).toBe(expectedGap.gapCents);
+    expect(linked.gap_basis_points).toBe(expectedGap.gapBasisPoints);
+
+    // The directly-qualified Alko-side product carries no link provenance.
+    const direct = rows.find((r) => r.product_id === 6)!;
+    expect(direct.reference_link_id).toBeNull();
+  });
+
+  it('leaves non-CONFIRMED links fully inert — no row, no evaluation', async () => {
+    const { env, db } = createEnv();
+    await seedTaxRules(db);
+    await seedProduct(db, 5);
+    await seedOffer(db, 51, 5, 'beverage-de', 'DE', 200, '2026-09-03T10:00:00.000Z');
+    // The link targets exist (FK parents) but carry no offers — the only
+    // path to a row for product 5 would be reading a non-CONFIRMED link.
+    // (A link is never PENDING — that is the review queue's status; the
+    // non-live link states are REJECTED and SUPERSEDED.)
+    await seedProduct(db, 6);
+    await seedProduct(db, 7);
+    await seedLink(db, 56, 5, 6, 'REJECTED');
+    await seedLink(db, 57, 5, 7, 'SUPERSEDED');
+
+    const result = await handleSavingsSnapshots(env, LOG, {
+      now: () => RUN_NOW,
+    });
+
+    expect(result.qualifyingProducts).toBe(0);
+    expect(result.rowsWritten).toBe(0);
+    expect(result.skipped).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(snapshotRows(db)).toHaveLength(0);
+    // The non-CONFIRMED rows ARE in the table — the sweep read is what
+    // filters them (status = 'CONFIRMED' in listConfirmed's WHERE).
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM product_reference_links').get() as { n: number },
+    ).toEqual({ n: 2 });
+  });
+
+  it('evaluates a product carrying both a direct Alko offer and a CONFIRMED link exactly once via the direct path', async () => {
+    const { env, db } = createEnv();
+    await seedTaxRules(db);
+    await seedProduct(db, 7);
+    await seedOffer(db, 71, 7, 'beverage-de', 'DE', 250, '2026-09-01T10:00:00.000Z');
+    await seedOffer(db, 72, 7, 'alko', 'FI', 400, '2026-09-05T12:00:00.000Z');
+    await seedProduct(db, 8);
+    await seedOffer(db, 81, 8, 'alko', 'FI', 300, '2026-09-05T12:00:00.000Z');
+    await seedLink(db, 58, 7, 8, 'CONFIRMED');
+
+    const result = await handleSavingsSnapshots(env, LOG, {
+      now: () => RUN_NOW,
+    });
+
+    expect(result.qualifyingProducts).toBe(2); // 7 and 8, once each
+    expect(result.rowsWritten).toBe(2);
+
+    const rowsFor7 = snapshotRows(db).filter((r) => r.product_id === 7);
+    expect(rowsFor7).toHaveLength(1);
+    // Direct path wins: the reference is the product's OWN alko offer
+    // (400), not the linked Alko product's (300) — and no link provenance.
+    expect(rowsFor7[0].alko_reference_cents).toBe(400);
+    expect(rowsFor7[0].reference_link_id).toBeNull();
+  });
+
+  it('skips a linked product whose linked Alko product has no usable benchmark — honest absence', async () => {
+    const { env, db } = createEnv();
+    await seedTaxRules(db);
+    await seedProduct(db, 9);
+    await seedOffer(db, 91, 9, 'beverage-de', 'DE', 200, '2026-09-03T10:00:00.000Z');
+    await seedProduct(db, 10); // link target with NO offers at all
+    await seedLink(db, 59, 9, 10, 'CONFIRMED');
+
+    const result = await handleSavingsSnapshots(env, LOG, {
+      now: () => RUN_NOW,
+    });
+
+    expect(result.qualifyingProducts).toBe(1);
+    expect(result.rowsWritten).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(snapshotRows(db)).toHaveLength(0);
+  });
+
+  it('isolates a linked product failure — direct products still materialize', async () => {
+    const { env, db } = createEnv();
+    await seedLinkedPair(db);
+    const real = buildSavingsCalculator(env.DB);
+    const { log, errors } = captureErrors();
+
+    const result = await handleSavingsSnapshots(env, log, {
+      now: () => RUN_NOW,
+      calculator: {
+        calculate: (input) =>
+          // Product 5 is the LINKED evaluation — its failure must not
+          // drop product 6's direct row.
+          input.productId === 5
+            ? Promise.reject(new Error('linked calculator exploded'))
+            : real.calculate(input),
+      },
+    });
+
+    expect(result.qualifyingProducts).toBe(2);
+    expect(result.failed).toBe(1);
+    expect(result.rowsWritten).toBe(1);
+    expect(errors.some((m) => m.includes('product 5'))).toBe(true);
+
+    const rows = snapshotRows(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].product_id).toBe(6);
   });
 });
 

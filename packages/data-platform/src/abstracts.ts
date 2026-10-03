@@ -1294,6 +1294,13 @@ export interface SavingsSnapshotRecord {
   readonly gapBasisPoints: number;
   /** Tax-dataset version the landed total was computed against (version_label vocabulary). */
   readonly taxDatasetVersion: string;
+  /**
+   * CONFIRMED reference link that produced the pair — null for a direct
+   * Alko-reference row (design D4, change
+   * alko-reference-matching-pipeline): the row names the edge that
+   * connected the product to its reference.
+   */
+  readonly referenceLinkId: number | null;
 }
 
 /**
@@ -1318,6 +1325,14 @@ export interface SavingsSnapshotUpsertInput {
   readonly gapCents: number;
   readonly gapBasisPoints: number;
   readonly taxDatasetVersion: string;
+  /**
+   * CONFIRMED reference link that produced this pair — null for a direct
+   * Alko-reference computation (design D4, change
+   * alko-reference-matching-pipeline). Always written: a re-run clears a
+   * stale link id when a product's live link is gone (last-write-wins,
+   * like every computed column).
+   */
+  readonly referenceLinkId: number | null;
 }
 
 /**

@@ -125,6 +125,7 @@ async function seedSnapshot(
     gapCents: seed.gapCents ?? 200,
     gapBasisPoints: seed.gapBasisPoints,
     taxDatasetVersion: 'v3.0-2026',
+    referenceLinkId: null,
   };
   await new D1SavingsSnapshotRepository(d1).upsertSnapshot(input);
 }

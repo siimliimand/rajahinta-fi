@@ -56,6 +56,7 @@ function snapshot(
     gapCents: 1009,
     gapBasisPoints: 3882,
     taxDatasetVersion: '2026-01-01',
+    referenceLinkId: null,
     ...overrides,
   };
 }
@@ -145,6 +146,49 @@ describe('D1SavingsSnapshotRepository.upsertSnapshot', () => {
     const rows = await repo.findByCategoryRange('beer', '2026-09-01', '2026-09-01');
     expect(rows[0].alkoReferenceCents).toBeNull();
     expect(rows[0].alkoObservedAt).toBeNull();
+  });
+
+  // Task 4.1 (change alko-reference-matching-pipeline): the nullable
+  // provenance column — the CONFIRMED link that produced the pair.
+  it('persists the producing reference link id, and null stays null on the direct path', async () => {
+    const { d1, repo } = makeRepo();
+    await seedProduct(d1, 7);
+    await seedProduct(d1, 8);
+    await d1
+      .prepare(
+        `INSERT INTO product_reference_links (id, foreign_product_id, alko_product_id,
+            status, confirmed_by, confirmed_at)
+         VALUES (55, 7, 8, 'CONFIRMED', 'ops', '2026-09-01T00:00:00.000Z')`,
+      )
+      .run();
+
+    await repo.upsertSnapshot(snapshot({ referenceLinkId: 55 }));
+    await repo.upsertSnapshot(snapshot({ productId: 8 }));
+
+    const rows = await repo.findByCategoryRange('beer', '2026-09-01', '2026-09-01');
+    expect(rows.find((r) => r.productId === 7)?.referenceLinkId).toBe(55);
+    expect(rows.find((r) => r.productId === 8)?.referenceLinkId).toBeNull();
+  });
+
+  it('overwrites a stale link id with null when the pair re-materializes without a link (last-write-wins)', async () => {
+    const { d1, repo } = makeRepo();
+    await seedProduct(d1, 7);
+    await seedProduct(d1, 8);
+    await d1
+      .prepare(
+        `INSERT INTO product_reference_links (id, foreign_product_id, alko_product_id,
+            status, confirmed_by, confirmed_at)
+         VALUES (55, 7, 8, 'CONFIRMED', 'ops', '2026-09-01T00:00:00.000Z')`,
+      )
+      .run();
+
+    await repo.upsertSnapshot(snapshot({ referenceLinkId: 55 }));
+    // The link was superseded away — the next direct re-run must clear it.
+    await repo.upsertSnapshot(snapshot({ referenceLinkId: null }));
+
+    const rows = await repo.findByCategoryRange('beer', '2026-09-01', '2026-09-01');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].referenceLinkId).toBeNull();
   });
 });
 

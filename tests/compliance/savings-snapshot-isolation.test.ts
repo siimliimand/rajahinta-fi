@@ -281,6 +281,7 @@ function snapshotInput(
     gapCents: 1009,
     gapBasisPoints: 3882,
     taxDatasetVersion: 'v3.0-2026',
+    referenceLinkId: null,
     ...overrides,
   };
 }
