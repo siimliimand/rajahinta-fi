@@ -7,6 +7,7 @@ import * as React from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Badge, Button, Card, ReliabilityBadge } from '@/components/ui';
 import { routing } from '@/i18n/routing';
+import { rateFamilyForCategory, scenarioRateFamily } from '../scenario-draft';
 import type { WhatIfLine, WhatIfResponse } from '../what-if.types';
 import WhatIfDisclaimer from './WhatIfDisclaimer';
 
@@ -87,6 +88,10 @@ function LineCard({ line }: { readonly line: WhatIfLine }) {
   const t = useTranslations('WhatIfPage');
   const tCommon = useTranslations('Common');
 
+  // Task 3.3: the line's rates are named in its own rate family's
+  // physical unit — never the internal formula unit.
+  const unit = t(`unit.${rateFamilyForCategory(line.category)}`);
+
   return (
     <Card padding="md" shadow="sm" data-testid={`what-if-line-${line.id}`}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -134,7 +139,7 @@ function LineCard({ line }: { readonly line: WhatIfLine }) {
           {t('result.baselineFormula', { formula: line.baseline.formulaRef })}
         </p>
         <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
-          <span>{t('result.baselineRate', { rate: String(line.baseline.rateApplied) })}</span>
+          <span>{t('result.baselineRate', { rate: String(line.baseline.rateApplied), unit })}</span>
           <span className="font-medium text-gray-700">
             {t('result.baselineTax', { amount: formatEur(line.baseline.taxCents) })}
           </span>
@@ -147,7 +152,7 @@ function LineCard({ line }: { readonly line: WhatIfLine }) {
       {/* Hypothetical substitution — the substituted rate and its tax. */}
       <div className="mt-2 rounded-md bg-gray-50 px-3 py-2">
         <p className="text-xs text-gray-500">
-          {t('result.hypotheticalRate', { rate: String(line.hypothetical.rate) })}
+          {t('result.hypotheticalRate', { rate: String(line.hypothetical.rate), unit })}
           {' · '}
           {t('result.hypotheticalFormula', { formula: line.hypothetical.formulaRef })}
         </p>
@@ -224,7 +229,10 @@ export default function WhatIfResult({ result }: WhatIfResultProps) {
 
       {/* Scenario citation: the substituted rate and the fixed baseline version. */}
       <p className="mb-4 text-sm text-gray-700">
-        {t('result.scenarioRate', { rate: String(result.hypotheticalRate) })}
+        {t('result.scenarioRate', {
+          rate: String(result.hypotheticalRate),
+          unit: t(`unit.${scenarioRateFamily(result.lines.map((line) => line.category))}`),
+        })}
         {' · '}
         {t('result.scenarioBaselineVersion', { version: result.baselineTaxDatasetVersion })}
       </p>

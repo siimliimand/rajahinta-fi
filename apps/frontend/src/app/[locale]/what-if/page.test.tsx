@@ -367,7 +367,7 @@ describe('WhatIfPage — throttle discipline', () => {
       JSON.parse((mockedApiFetch.mock.calls[2]![1] as { body: string }).body).hypotheticalRate,
     ).toBe(50);
     expect(
-      screen.getByText(/Hypoteettinen verokanta: 50 € kaava-yksikköä kohti/),
+      screen.getByText(/Hypoteettinen verokanta: 50 € per litra juomaa/),
     ).toBeInTheDocument();
     expect(screen.queryByTestId('what-if-throttle')).not.toBeInTheDocument();
   });
@@ -477,7 +477,10 @@ describe('WhatIfPage server shell (task 2.4)', () => {
     // Illustrative scenario questions: a duty-rate change and a price
     // change scenario, crawlable in the server HTML.
     expect(html).toContain('Esimerkkikysymyksiä');
-    expect(html).toContain('verokanta laski 20 eurosta 15 euroon');
+    // The example names the physical unit of the family it varies.
+    expect(html).toContain(
+      'verokanta laski 20 eurosta 15 euroon litraa puhdasta alkoholia kohti',
+    );
     expect(html).toContain('tuonnin vähittäishinta');
     // The summary is content, not advice — the hypothetical stance holds.
     expect(html).toContain('Miten mitä jos -laskenta toimii');
