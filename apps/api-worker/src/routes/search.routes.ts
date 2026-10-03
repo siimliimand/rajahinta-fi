@@ -12,9 +12,11 @@
  * Reads go through the D1 product-search repository (FTS5 + LIKE
  * fallback, task 2.2); the alphabetical sort and pagination semantics are
  * copied verbatim, extended by the objective server-side sort orders
- * (task 1.2, change client-experience-improvement: ALPHABETICAL default,
- * LOWEST_PRICE, ALCOHOL_PERCENTAGE — unknown values 400 like unknown
- * categories). The detail response embeds per-merchant reliability
+ * (task 1.2, change client-experience-improvement: LOWEST_PRICE,
+ * ALPHABETICAL, ALCOHOL_PERCENTAGE — unknown values 400 like unknown
+ * categories; task 1.3, change first-impression-pass flips the absent-
+ * sort default to LOWEST_PRICE across the browse, ranked-q, and ids
+ * paths). The detail response embeds per-merchant reliability
  * scores (informational only — see src/services/merchant-reliability.ts).
  * Search items and detail offers carry the read-time €/g metric
  * (`eurPerGram`) with its status; on listings the metric derives from
@@ -89,14 +91,17 @@ function isCanonicalCategory(value: string): value is ProductCategory {
 /**
  * `sort` parameter (task 1.2, change client-experience-improvement) —
  * parsed against the repository's shared order set. Blank counts as
- * absent (default alphabetical), matching the q/ids/category blankness
- * handling; an unknown value is a contract-level parameter error — a 400
- * with the same shape as the unknown-category treatment, never a silent
- * fallback (proposal decision D3).
+ * absent, and absent defaults to LOWEST_PRICE (task 1.3, change
+ * first-impression-pass — the listing leads with the lowest observed
+ * prices, offer-less products after all priced rows), matching the
+ * q/ids/category blankness handling; an unknown value stays a
+ * contract-level parameter error — a 400 with the same shape as the
+ * unknown-category treatment, never a silent fallback (proposal
+ * decision D3).
  */
 function parseSortOrder(raw: string | undefined): CatalogSortOrder {
   const trimmed = raw?.trim() ?? '';
-  if (trimmed.length === 0) return 'ALPHABETICAL';
+  if (trimmed.length === 0) return 'LOWEST_PRICE';
   if ((CATALOG_SORT_ORDERS as readonly string[]).includes(trimmed)) {
     return trimmed as CatalogSortOrder;
   }
@@ -523,8 +528,9 @@ async function search(c: Context<AppEnv>): Promise<Response> {
       // Base items plus inputs; the embed is computed when the aggregate
       // merge resolves each product's cheapest current offer.
       const { items: baseItems, inputsById } = toSearchItems(found);
-      // Aggregates merge BEFORE ordering — LOWEST_PRICE sorts on them
-      // (task 1.2). Order-neutral for ALPHABETICAL.
+      // Aggregates merge BEFORE ordering — LOWEST_PRICE (also the
+      // absent-sort default, task 1.3 change first-impression-pass)
+      // sorts on them; ALPHABETICAL keeps the name order with the id tie.
       items = withOfferAggregates(
         baseItems,
         await offerAggregatesByProductId(
@@ -533,16 +539,15 @@ async function search(c: Context<AppEnv>): Promise<Response> {
         ),
         inputsById,
       );
-      items.sort(
-        sortBy === 'ALPHABETICAL' ? compareByName : compareBySortOrder(sortBy),
-      );
+      items.sort(compareBySortOrder(sortBy));
     } else if (query.length > 0) {
       // Ranked search — combined category+q filtering (task 2.1, change
       // client-experience-improvement): the repository applies the
       // category together with the keyword, so the result set contains
       // only keyword matches in the category. The category is NEVER
-      // silently ignored because q is present (spec product-search); an
-      // explicit sort honors over the filtered set.
+      // silently ignored because q is present (spec product-search); the
+      // sort — explicit, or the absent-sort LOWEST_PRICE default (task
+      // 1.3, change first-impression-pass) — orders the filtered set.
       //
       // searchRankedWithSuggestion (task 3.2) computes the advisory
       // did-you-mean only when the ranked search came back empty — a
@@ -568,9 +573,11 @@ async function search(c: Context<AppEnv>): Promise<Response> {
         ),
         inputsById,
       );
-      if (sort !== undefined) {
-        items.sort(compareBySortOrder(sortBy));
-      }
+      // Unconditional: the default (absent sort) is LOWEST_PRICE too
+      // (task 1.3), so the keyword path leads with the cheapest priced
+      // matches exactly as an explicit sort would — never the raw
+      // relevance order of the ranked fetch.
+      items.sort(compareBySortOrder(sortBy));
     } else {
       // Blank or absent q — the catalog listing (design D3, change
       // product-catalog): the repository paginates (exact totals, FI

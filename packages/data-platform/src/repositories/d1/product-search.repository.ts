@@ -985,7 +985,13 @@ export class D1ProductSearchRepository extends ProductRepository {
    * ALPHABETICAL keeps the app-side FI collation; LOWEST_PRICE and
    * ALCOHOL_PERCENTAGE order in SQL (numeric keys, id tie — total order,
    * no collation needed) with offer-less / unknown-ABV products last.
-   * The value set is {@link CATALOG_SORT_ORDERS}; the route validates it.
+   * The default is LOWEST_PRICE (task 1.3, change first-impression-pass):
+   * the leading `(min_price_cents IS NULL) ASC` term makes the
+   * offer-less-last placement explicit against SQLite's NULLs-first
+   * ascending order — a bare `min_price ASC` would silently render
+   * offer-less rows first — and the id tie keeps the order total, so
+   * every page and every run slice the identical sequence. The value
+   * set is {@link CATALOG_SORT_ORDERS}; the route validates it.
    *
    * Kept on the D1 concrete class only (no abstract counterpart yet):
    * the route binds the concrete type (the D1-only repository precedent).
@@ -994,7 +1000,7 @@ export class D1ProductSearchRepository extends ProductRepository {
     page: number,
     pageSize: number,
     category?: string,
-    sort: CatalogSortOrder = 'ALPHABETICAL',
+    sort: CatalogSortOrder = 'LOWEST_PRICE',
   ): Promise<CatalogProductListPage> {
     // A negative/zero page would slice from the list's tail (negative
     // offset) — silently wrong content instead of an error.

@@ -25,6 +25,11 @@
  *   6. Unknown ?category= values are forgiven (design D2): the page
  *      renders the unfiltered view and never sends the value to the API
  *      (the API would answer 400).
+ *   7. Sort state (task 1.3, change first-impression-pass): the default
+ *      LOWEST_PRICE stays out of the fetch and URLs (canonical-clean);
+ *      an explicit non-default sort travels through the fetch, the
+ *      links, and the control; an unknown ?sort= value forgives to the
+ *      default price ordering — the strict 400 lives at the API only.
  *
  * @module CatalogPageTest
  */
@@ -454,6 +459,76 @@ describe('ProductsPage pagination', () => {
     await renderCatalog();
 
     expect(screen.queryByTestId('catalog-pagination')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sort state (task 1.3, change first-impression-pass): the catalog's
+// default order is LOWEST_PRICE. The default stays out of the fetch and
+// URLs (canonical-clean href builder); an explicit non-default sort
+// travels through every control; an unknown ?sort= value forgives to the
+// default — the API's strict 400 never happens.
+// ---------------------------------------------------------------------------
+
+describe('ProductsPage sort state (task 1.3)', () => {
+  it('defaults to LOWEST_PRICE: the select shows the price order and the default stays out of the fetch and links', async () => {
+    await renderCatalog();
+
+    const select = screen.getByLabelText('Järjestys') as HTMLSelectElement;
+    expect(select.value).toBe('LOWEST_PRICE');
+    // The API's absent-sort default is the price order too, so the
+    // canonical-clean fetch omits sort entirely.
+    expect(mockedRequest).toHaveBeenCalledWith(
+      '/api/v1/products?page=1&limit=24',
+      {
+        headers: { 'x-age-confirmed': 'server-prerender' },
+        next: { revalidate: 900 },
+      },
+    );
+    // Category links stay canonical-clean: the default sort is omitted.
+    const row = screen.getByTestId('catalog-filter-row');
+    expect(
+      within(row).getByRole('link', { name: 'Olut' }),
+    ).toHaveAttribute('href', '/products?category=beer');
+  });
+
+  it('carries an explicit non-default sort through the fetch, the links, and the control state', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([catalogItem()], { total: 60, page: 1, totalPages: 3 }),
+    );
+
+    await renderCatalog({ sort: 'ALPHABETICAL' });
+
+    expect(mockedRequest).toHaveBeenCalledWith(
+      '/api/v1/products?sort=ALPHABETICAL&page=1&limit=24',
+      {
+        headers: { 'x-age-confirmed': 'server-prerender' },
+        next: { revalidate: 900 },
+      },
+    );
+    const select = screen.getByLabelText('Järjestys') as HTMLSelectElement;
+    expect(select.value).toBe('ALPHABETICAL');
+    const nav = screen.getByTestId('catalog-pagination');
+    expect(
+      within(nav).getByRole('link', { name: '2' }),
+    ).toHaveAttribute('href', '/products?sort=ALPHABETICAL&page=2');
+  });
+
+  it('forgives an unknown sort value: the default price ordering renders and nothing unknown reaches the API', async () => {
+    await renderCatalog({ sort: 'PROMOTED' });
+
+    const select = screen.getByLabelText('Järjestys') as HTMLSelectElement;
+    expect(select.value).toBe('LOWEST_PRICE');
+    // The strict API would 400 — the page resolves the parameter before
+    // fetching and sends the default (omitted) instead of the value.
+    expect(mockedRequest).toHaveBeenCalledWith(
+      '/api/v1/products?page=1&limit=24',
+      {
+        headers: { 'x-age-confirmed': 'server-prerender' },
+        next: { revalidate: 900 },
+      },
+    );
+    expect(screen.getByTestId('catalog-grid')).toBeInTheDocument();
   });
 });
 
