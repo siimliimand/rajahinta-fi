@@ -680,9 +680,9 @@
     "emailLabel": "Email address",
     "passwordLabel": "Password",
     "newPasswordLabel": "New password",
-    "passwordHint": "At least 12 and at most 128 characters.",
+    "passwordHint": "At least 8 and at most 128 characters. Common passwords are not accepted.",
     "invalidEmail": "Please check the email address.",
-    "invalidPassword": "The password must be 12 to 128 characters long.",
+    "invalidPassword": "The password must be 8 to 128 characters long and must not be a common or easily guessable password.",
     "rateLimited": "Too many attempts. Please try again in a few minutes.",
     "genericError": "The action failed. Please try again."
   },

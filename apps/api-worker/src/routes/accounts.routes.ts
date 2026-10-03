@@ -38,7 +38,12 @@ import { parseIntParam, parseUuidParam } from './support';
 import { z } from 'zod';
 import { USER_CONTEXT_KEY, SESSION_TOKEN_CONTEXT_KEY } from '../auth/authenticated-account';
 import type { AuthenticatedAccount } from '../auth/authenticated-account';
-import { isValidPassword, hashPassword, verifyPassword } from '../auth/password';
+import {
+  isPasswordLengthValid,
+  isValidPassword,
+  hashPassword,
+  verifyPassword,
+} from '../auth/password';
 import { D1SessionRepository } from '../../../../packages/data-platform/src/repositories/d1/session.repository';
 import {
   D1AccountStore,
@@ -158,10 +163,15 @@ function invalidEmailError(): ApiHttpError {
   });
 }
 
+/**
+ * Generic password-policy rejection (design D7). ONE message for every
+ * failure mode — below the floor, above the cap, or blocklisted — so the
+ * response never discloses that a blocklist exists, let alone its contents.
+ */
 function invalidPasswordError(field = 'password'): ApiHttpError {
   return new ApiHttpError(400, {
     statusCode: 400,
-    message: `"${field}" is required and must be 12 to 128 characters long`,
+    message: `"${field}" is required and must meet the password policy (8 to 128 characters)`,
     error: 'InvalidPassword',
   });
 }
@@ -266,7 +276,13 @@ async function login(c: Context<AppEnv>): Promise<Response> {
   if (typeof email !== 'string' || !isValidEmailFormat(email)) {
     throw invalidEmailError();
   }
-  if (typeof password !== 'string' || !isValidPassword(password)) {
+  // Login gates on LENGTH only (isPasswordLengthValid, not the full
+  // new-password policy): stored credentials predate the blocklist, and the
+  // policy applies at set/reset time — screening here would lock an
+  // unaffected account out of its own pre-policy password. A sub-floor
+  // attempt can never match any stored hash (the floor has only ever
+  // risen), so failing fast skips the derivation.
+  if (typeof password !== 'string' || !isPasswordLengthValid(password)) {
     throw invalidPasswordError();
   }
 

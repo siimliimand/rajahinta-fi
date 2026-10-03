@@ -97,6 +97,17 @@ describe('ResetPasswordPage', () => {
     );
   });
 
+  it('renders the reset password field with the D7 policy bounds (min 8, max 128)', async () => {
+    setQuery('?token=abc123');
+    renderWithIntl(<ResetPasswordPage />);
+
+    const field = await screen.findByLabelText('Uusi salasana');
+    // Reset enforces the SAME client-side bounds as registration (design D7).
+    expect(field).toHaveAttribute('minLength', '8');
+    expect(field).toHaveAttribute('maxLength', '128');
+    expect(screen.getByText('Vähintään 8 ja enintään 128 merkkiä. Yleisiä salasanoja ei hyväksytä.')).toBeInTheDocument();
+  });
+
   it('renders the invalid-link message on the uniform 401 token rejection', async () => {
     setQuery('?token=expired');
     mockedReset.mockRejectedValue(
@@ -133,7 +144,9 @@ describe('ResetPasswordPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Vaihda salasana' }));
 
     expect(
-      await screen.findByText('Salasanan tulee olla 12–128 merkkiä pitkä.'),
+      await screen.findByText(
+        'Salasanan tulee olla 8–128 merkkiä pitkä eikä yleinen tai helposti arvattava.',
+      ),
     ).toBeInTheDocument();
   });
 });

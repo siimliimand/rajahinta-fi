@@ -183,7 +183,7 @@ describe('POST /api/v1/account/register', () => {
     await expectEnvelope(caseVariant, 409, { error: 'EmailAlreadyRegistered' });
   });
 
-  it('validates email format and the 12–128 password policy (400, before any hashing side effect)', async () => {
+  it('validates email format and the password policy (400, before any hashing side effect)', async () => {
     const { d1 } = openMigratedD1();
     const app = buildApp();
     const env = permissiveEnv(d1);
@@ -204,6 +204,65 @@ describe('POST /api/v1/account/register', () => {
       body: JSON.stringify({ email: 'me@example.invalid', password: 'short' }),
     });
     await expectEnvelope(shortPassword, 400, { error: 'InvalidPassword' });
+  });
+
+  it('accepts an exactly-8-character password that is not blocklisted (D7 floor)', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const res = await request(app, env, '/api/v1/account/register', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'floor-ok@example.invalid', password: 'kr7px2qm' }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it('rejects blocklisted passwords at any length with the ONE generic error (D7: no list disclosure)', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    // 8 chars = at the new floor; 9 = above it; 14 = above the OLD 12 floor
+    // (length no longer compensates); 'short' = below the floor. All get
+    // the identical generic policy rejection — the blocklist membership is
+    // never disclosed or enumerable from responses.
+    for (const password of ['q1w2e3r4', 'qwerty123', 'password123456', 'short']) {
+      const res = await request(app, env, '/api/v1/account/register', {
+        method: 'POST',
+        headers: JSON_HDRS,
+        body: JSON.stringify({ email: 'policy@example.invalid', password }),
+      });
+      await expectEnvelope(res, 400, {
+        message:
+          '"password" is required and must meet the password policy (8 to 128 characters)',
+        error: 'InvalidPassword',
+      });
+    }
+  });
+
+  it('still logs in a pre-policy 12-character credential (existing accounts unaffected)', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const registered = await request(app, env, '/api/v1/account/register', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({
+        email: 'legacy@example.invalid',
+        password: 'twelvechar12',
+      }),
+    });
+    expect(registered.status).toBe(201);
+
+    const login = await request(app, env, '/api/v1/account/login', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ email: 'legacy@example.invalid', password: 'twelvechar12' }),
+    });
+    expect(login.status).toBe(200);
   });
 
   it('appends register success (and duplicate rejection) to audit_events — never the password', async () => {

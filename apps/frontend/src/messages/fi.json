@@ -680,9 +680,9 @@
     "emailLabel": "Sähköpostiosoite",
     "passwordLabel": "Salasana",
     "newPasswordLabel": "Uusi salasana",
-    "passwordHint": "Vähintään 12 ja enintään 128 merkkiä.",
+    "passwordHint": "Vähintään 8 ja enintään 128 merkkiä. Yleisiä salasanoja ei hyväksytä.",
     "invalidEmail": "Tarkista sähköpostiosoite.",
-    "invalidPassword": "Salasanan tulee olla 12–128 merkkiä pitkä.",
+    "invalidPassword": "Salasanan tulee olla 8–128 merkkiä pitkä eikä yleinen tai helposti arvattava.",
     "rateLimited": "Liian monta yritystä. Yritä hetken kuluttua uudelleen.",
     "genericError": "Toiminto epäonnistui. Yritä uudelleen."
   },
