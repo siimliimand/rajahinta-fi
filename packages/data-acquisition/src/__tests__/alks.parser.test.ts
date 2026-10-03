@@ -245,6 +245,86 @@ describe('parseAlksStoreProducts — contract guards', () => {
   });
 });
 
+describe('parseAlksStoreProduct — ABV-guarded category (first-impression-pass 1.2)', () => {
+  // Minimal row: the category source and the name-embedded ABV are the
+  // only variables — a 41 % "Muut juomat" row is the audited
+  // misclassification shape (keyword bucket → other_fermented before
+  // the guard existed).
+  const guardRow = (id: number, name: string, categoryName: string) => ({
+    id,
+    name,
+    sku: `fi-6410400${String(id).padStart(6, '0')}`,
+    permalink: `https://alks.fi/product/guard-${id}/`,
+    prices: { price: '1899', currency_code: 'EUR' },
+    categories: [{ name: categoryName }],
+    is_in_stock: true,
+  });
+
+  it('above-boundary keyword residue ("Muut juomat", 41 % akvavit) re-keys to spirits — the 00:00 UTC cron cannot re-misclassify', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      guardRow(756400, 'Lignell Akvavit 41% 0,5 l', 'Muut juomat'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.category).toBe('spirits');
+    expect(record?.regulatoryClassification).toBe('spirits');
+    expect(record?.alcoholByVolume).toBe(0.41);
+  });
+
+  it('arrak 58 % under the same keyword bucket re-keys to spirits', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      guardRow(756401, 'Arrak 58% 0,5 l', 'Muut juomat'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.category).toBe('spirits');
+  });
+
+  it('sambuca 38 % under "Juomasekoitus" re-keys — the long-drink bucket is capped too', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      guardRow(756402, 'Antica Sambuca 38% 0,7 l', 'Juomasekoitus'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.category).toBe('spirits');
+  });
+
+  it('below-boundary "Muut juomat" keeps the honest fermented bucket', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      guardRow(756403, 'Marjasekoitus 4,7% 0,33 l', 'Muut juomat'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.category).toBe('other_fermented');
+  });
+
+  it('unparseable ABV leaves the guard unkeyed — the fermented bucket stands (honest unknown)', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      guardRow(756404, 'Juomasekoitus 0,5 l', 'Muut juomat'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.category).toBe('other_fermented');
+    expect(record?.alcoholByVolume).toBeNull();
+  });
+
+  it('spirit-family keyword category maps to spirits at any ABV — a keyword outcome, never boundary-attributed', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      guardRow(756405, 'Anker Akvavit 37% 0,5 l', 'Akvavit'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.category).toBe('spirits');
+  });
+
+  it('a boundary-guarded category can still contradict a name token — the disagreement drops to the correction queue', () => {
+    // 41 % "Muut juomat" resolves to spirits (boundary), the name token
+    // 'olut' resolves to beer — different tax keys, never silently picked.
+    const { record, errors } = parseAlksStoreProduct(
+      guardRow(756406, 'Olut 41% 0,5 l', 'Muut juomat'),
+    );
+    expect(record).toBeNull();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('spirits');
+    expect(errors[0]).toContain('beer');
+    expect(errors[0]).toContain('correction queue');
+  });
+});
+
 describe('parseAlksStoreProduct — accepted SKU shape set (onboard-kippis-merchant 2.1)', () => {
   // Minimal row builder: the name parses cleanly so the only variable
   // under test is the SKU shape.
