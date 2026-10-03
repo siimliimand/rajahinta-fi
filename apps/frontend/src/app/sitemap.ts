@@ -7,12 +7,18 @@
  * (product-catalog task 3.2), per-product URLs drawn from the product
  * listing via the shared API client, one URL per published curated list
  * drawn from the list catalog, and one URL per published blog post and
- * guide per locale. Finnish serves from the unprefixed
- * paths, English under /en (localePrefix: 'as-needed'). Backend reads
- * are cached; an unreachable backend degrades to a static-routes-only
- * sitemap rather than a failed one. The catalog only ever advertises
- * URLs that serve: a fetch failure or a catalog without published
- * entries yields zero dynamic URLs (the sitemap degrades to inert).
+ * guide per locale — plus the per-locale /blog and /guides index URLs,
+ * derived from the same slug fetches (no additional requests) and
+ * advertised only for locales whose fetch returned published content
+ * (sitemap-content-aware-advertisement D1/D2). Finnish serves from the
+ * unprefixed paths, English under /en (localePrefix: 'as-needed').
+ * Backend reads are cached; an unreachable backend degrades to the
+ * unconditional static routes rather than a failed sitemap. The
+ * sitemap only advertises URLs that serve: a fetch failure or a
+ * catalog without published entries yields zero dynamic URLs (the
+ * sitemap degrades to inert), and a failed or empty blog/guide fetch
+ * also omits that locale's editorial index URL (D3 — the same
+ * degradation contract, extended to the two indexes).
  *
  * @module Sitemap
  */
@@ -27,7 +33,9 @@ import { routing } from '@/i18n/routing';
  * 3.2; /about and /contact by price-intelligence-roadmap task 3.3;
  * the tool pages /event, /trip, /what-if and /value by
  * price-intelligence-roadmap task 6.2 — public, individually
- * titled pages every locale serves). */
+ * titled pages every locale serves). The /blog and /guides paths are
+ * content-gated per locale: emitted only when that locale's slug
+ * fetch returned published content (see the loop in sitemap()). */
 const STATIC_PATHS = [
   '',
   '/calculator',
@@ -176,6 +184,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const prefix = locale === routing.defaultLocale ? '' : `/${locale}`;
 
     for (const path of STATIC_PATHS) {
+      // Content-aware index gates (sitemap-content-aware-advertisement
+      // D2/D3): a locale's /blog and /guides indexes are advertised only
+      // when that locale's slug fetch returned published content — every
+      // advertised URL must serve, so a failed or empty fetch (the
+      // degradation contract) omits the index too. All other static
+      // routes are unconditional.
+      if (path === '/blog' && !blogSlugsByLocale.get(locale)?.length) continue;
+      if (path === '/guides' && !guideSlugsByLocale.get(locale)?.length) continue;
       entries.push({
         url: `${SITE_URL}${prefix}${path}`,
         changeFrequency: path === '' ? 'daily' : 'weekly',
