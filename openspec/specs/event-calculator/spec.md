@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change product-roadmap-phases-1-4. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Consumption computation from norms
 
 Given guest count, duration, and event profile, the calculator SHALL compute expected consumption per drink type by resolving the PUBLISHED consumption norms effective on the event date, attaching the norms version to the result. All arithmetic SHALL be pure and deterministic.
@@ -32,12 +34,17 @@ The MVP UI SHALL expose the simple mode (guests, duration, profile) without cros
 
 ### Requirement: V2 cross-border sourcing plan
 
-The V2 sourcing plan SHALL compare domestic purchase against foreign sourcing over the versioned sourcing-country set, which after this change SHALL be Finland, Estonia, Latvia, Lithuania, and Germany. Sweden SHALL NOT appear in the canonical country order, in validation, in fixtures, or in the user-facing country labels in either locale. All sourcing countries except Finland SHALL be EUR markets, consistent with the single-currency invariant.
+The V2 sourcing plan SHALL compare domestic purchase against foreign sourcing over the versioned sourcing-country set, which after this change SHALL be Finland, Estonia, Latvia, Lithuania, and Germany. Sweden SHALL NOT appear in the canonical country order, in validation, in fixtures, or in the user-facing country labels in either locale. All sourcing countries except Finland SHALL be EUR markets, consistent with the single-currency invariant. The consumer-facing label for the foreign-comparison control SHALL describe the capability without a version suffix; the V2 identifier remains internal to code, configuration, and documentation.
 
 #### Scenario: Sweden is not a selectable market
 
 - **WHEN** the sourcing plan validates country inputs or the event page renders the country selector
 - **THEN** `SE` is rejected as invalid and no Swedish label exists in the message catalogs
+
+#### Scenario: No version suffix in consumer labels
+
+- **WHEN** the event calculator renders the foreign-comparison toggle in either locale
+- **THEN** the label describes the capability (comparing against foreign stores) and contains no version marker
 
 #### Scenario: Deterministic tie-breaks preserved
 
@@ -85,4 +92,3 @@ The event calculator SHALL pre-fill per-category €/l price inputs from the cat
 
 - **WHEN** a category label renders in either locale
 - **THEN** the text comes from the message catalog and never the raw category key
-

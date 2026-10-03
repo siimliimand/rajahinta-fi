@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change phase1-mvp. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Lightweight age gate
 
 The application SHALL present a lightweight access-control age gate (simple confirmation, not identity verification) as the default.
@@ -211,12 +213,17 @@ WHEN a client-side request to a gated endpoint is rejected with the age-gate rej
 
 ### Requirement: Gate presentation
 
-The age gate SHALL be a presentation-layer overlay, not a content replacement. The server SHALL read the `age_confirmed` cookie during rendering and pass the decision to the gate component as initial state. Page content SHALL always be present in the server HTML. Visitors without a confirmed cookie SHALL see the confirmation modal as a fixed overlay above the content; interaction with the page remains blocked until confirmation. The API-side gate SHALL be unchanged: gated endpoints SHALL keep returning 403 `AGE_GATE_REQUIRED` without a valid confirmation token, and server-side data fetches SHALL keep presenting the server confirmation token.
+The age gate SHALL be a presentation-layer overlay, not a content replacement. The server SHALL NOT read the `age_confirmed` cookie during rendering; the visitor's initial gate state SHALL be established client-side before first paint by an inline script that reads the cookie — the cookie remains the single confirmation state, and the inline script is a reader of it, not a second store. Page content SHALL always be present in the server HTML. Visitors without a confirmed cookie SHALL see the confirmation modal as a fixed overlay above the content; interaction with the page remains blocked until confirmation. Because rendering does not depend on request cookies, pages remain eligible for incremental static regeneration and CDN caching, and a cached response SHALL present the correct gate state for each visitor once the pre-paint script runs, with no gate flash for confirmed visitors. The API-side gate SHALL be unchanged: gated endpoints SHALL keep returning 403 `AGE_GATE_REQUIRED` without a valid confirmation token, and server-side data fetches SHALL keep presenting the server confirmation token.
 
 #### Scenario: Cookie-less fetch still receives content
 
 - **WHEN** a client requests any public page without an `age_confirmed` cookie
 - **THEN** the server HTML contains the page's content (header, footer, and the page body), and the confirmation modal is present as an overlay
+
+#### Scenario: Cached HTML presents the correct gate state
+
+- **WHEN** a visitor receives a CDN-cached response, with or without a confirmed cookie
+- **THEN** the pre-paint script applies the visitor's own gate state before first paint, the overlay blocks unconfirmed visitors, and confirmed visitors see no gate flash and no reload
 
 #### Scenario: Unconfirmed browser sees the overlay
 
@@ -256,4 +263,3 @@ The age-gate declined page SHALL offer a clearly labelled recovery action ("Pain
 
 - **WHEN** the recovery action is added
 - **THEN** unconfirmed visitors still see the overlay over fully rendered server HTML, and gated API endpoints still answer 403 `AGE_GATE_REQUIRED`
-

@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change phase1-mvp. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Objective sort orders
 
 The Ranking & Sorting Module SHALL implement only the objective sort orders defined in the business plan: lowest estimated landed cost, lowest €/litre, lowest €/unit, alphabetical, alcohol percentage, and product category.
@@ -23,12 +25,17 @@ The sorting function's input type SHALL have no field available for a merchant p
 
 ### Requirement: Documentable logic
 
-The module's logic SHALL be describable in plain language on a public "how ranking works" page without omitting any actual factor.
+The module's logic SHALL be describable in plain language on a public "how ranking works" page without omitting any actual factor. The consumer-facing transparency presentation SHALL state the neutrality facts in consumer language — without type-system names, internal field names, or build-time terminology — while the developer-facing documentation retains the full technical detail. Omitting the jargon SHALL NOT omit any factor: every enforcement fact remains stated.
 
 #### Scenario: Methodology in lockstep
 
 - **WHEN** the public ranking page is compared against the implementation
 - **THEN** the documented methodology SHALL match the actual sorting behavior exactly
+
+#### Scenario: Transparency copy is consumer-language
+
+- **WHEN** the transparency section renders on the ranking page in either locale
+- **THEN** it states the neutrality enforcement facts — no paid-placement field exists in the sort input, the input shape is pinned by tests, and unexpected fields are rejected at runtime — without naming sort-input interface types, internal flag fields, or compile-time verification
 
 ### Requirement: €/g as a neutral sort option
 
@@ -43,4 +50,3 @@ The comparison sort options SHALL include €/g ethanol price, resolved through 
 
 - **WHEN** `enable_unit_price_eur_per_gram` is off
 - **THEN** the €/g sort option SHALL NOT be offered by the API or rendered in the UI
-

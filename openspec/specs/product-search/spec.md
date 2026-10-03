@@ -133,12 +133,17 @@ The `/products` catalog page SHALL offer a keyword search input whose value live
 
 ### Requirement: Server-side catalog sorting
 
-`GET /api/v1/products` SHALL support a `sort` parameter with at least `LOWEST_PRICE` (ascending by the product's lowest observed offer price, products without offers last), `ALCOHOL_PERCENTAGE` (descending), and alphabetical as the default. Sort orders SHALL use only objective product and observed-offer fields; no commercial or promotional signal can affect ordering. An unknown `sort` value SHALL be rejected as a 400 contract error, matching the unknown-category treatment.
+`GET /api/v1/products` SHALL support a `sort` parameter with at least `LOWEST_PRICE` (ascending by the product's lowest observed offer price, products without offers last), `ALCOHOL_PERCENTAGE` (descending), and alphabetical. The default order SHALL be `LOWEST_PRICE`: a request without a `sort` parameter SHALL order by lowest observed offer price ascending, with offer-less products rendered after all priced rows, deterministically — the ordering SHALL be explicit against the engine's ascending NULL order, never incidental. Sort orders SHALL use only objective product and observed-offer fields; no commercial or promotional signal can affect ordering. An unknown `sort` value SHALL be rejected as a 400 contract error, matching the unknown-category treatment.
 
 #### Scenario: Price sort orders by observed lowest price
 
 - **WHEN** the request carries `sort=LOWEST_PRICE`
 - **THEN** rows order by lowest observed offer price ascending, and products without offers render after all priced rows
+
+#### Scenario: Absent sort parameter defaults to price order
+
+- **WHEN** the request carries no `sort` parameter
+- **THEN** rows order exactly as `sort=LOWEST_PRICE` — lowest observed offer price ascending, offer-less products after all priced rows
 
 #### Scenario: ABV sort is deterministic
 
