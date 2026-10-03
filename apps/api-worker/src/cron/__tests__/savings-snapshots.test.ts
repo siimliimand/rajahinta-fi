@@ -9,6 +9,15 @@
  * the foreign product against the linked Alko benchmark, PENDING and
  * REJECTED links stay inert, and the direct path wins the dedupe.
  *
+ * Task 4.2 closes the remaining v2 suite gaps: a byte-level pin of the
+ * full direct-path row (every column, hard expectations — the loose
+ * 4.1 assertions tolerate drift this does not), linked re-run
+ * idempotence with stable provenance plus stale reference_link_id
+ * clearing when a link disappears between runs, a mixed
+ * direct/linked/failing pass with exact counters and row-level
+ * isolation, newest-observedAt benchmark parity through the calculator
+ * seam, and multi-link enumeration.
+ *
  * @module SavingsSnapshotsCronTest
  */
 
@@ -443,6 +452,347 @@ describe('handleSavingsSnapshots — linked qualification (v2)', () => {
     const rows = snapshotRows(db);
     expect(rows).toHaveLength(1);
     expect(rows[0].product_id).toBe(6);
+  });
+});
+
+describe('handleSavingsSnapshots — cron v2 suite additions (task 4.2)', () => {
+  /** Full raw read — every savings_snapshots column INCLUDING the
+   *  surrogate id, for byte-level row pinning. */
+  function rawSnapshotRows(db: DatabaseSync): Array<Record<string, unknown>> {
+    return db
+      .prepare('SELECT * FROM savings_snapshots ORDER BY product_id ASC')
+      .all() as never;
+  }
+
+  /** The linked-pair fixture (foreign 5 → alko 6, link 55), built from
+   *  the shared top-level seeders. */
+  async function seedLinkedPair(db: DatabaseSync): Promise<void> {
+    await seedTaxRules(db);
+    await seedProduct(db, 5);
+    await seedOffer(db, 51, 5, 'beverage-de', 'DE', 200, '2026-09-03T10:00:00.000Z');
+    await seedProduct(db, 6);
+    await seedOffer(db, 61, 6, 'alko', 'FI', 300, '2026-09-05T12:00:00.000Z');
+    await seedLink(db, 55, 5, 6, 'CONFIRMED');
+  }
+
+  it('materializes the direct-reference path byte-identically — every column hard-pinned, zero links, reference_link_id NULL in the DB', async () => {
+    const { env, db } = createEnv();
+    await seedQualifyingSet(db);
+
+    const result = await handleSavingsSnapshots(env, LOG, {
+      now: () => RUN_NOW,
+    });
+
+    expect(result).toEqual({
+      asOf: AS_OF,
+      qualifyingProducts: 2,
+      rowsWritten: 2,
+      skipped: 0,
+      failed: 0,
+    });
+
+    // The v1 row shape is a frozen contract. The 4.1 assertions above
+    // tolerate engine drift (landed ≥ retail, confidence matching a
+    // union) — this pin does not: any change in the landed composition,
+    // confidence grading, gap rounding, or the dataset-version join
+    // moves a number and fails. Landed composition on this fixture:
+    // retail 250/400 + excise + container duty + import VAT, transport
+    // UNAVAILABLE → 0.
+    expect(rawSnapshotRows(db)).toEqual([
+      {
+        id: 1,
+        as_of: '2026-09-08',
+        product_id: 1,
+        category: 'beer',
+        best_merchant: 'beverage-de',
+        best_merchant_country: 'DE',
+        best_price_cents: 250,
+        best_observed_at: '2026-09-01T10:00:00.000Z',
+        alko_reference_cents: 300,
+        alko_observed_at: '2026-09-05T12:00:00.000Z',
+        landed_total_cents: 410,
+        landed_reliability: 'UNAVAILABLE',
+        confidence: 'LOW',
+        gap_cents: 110,
+        gap_basis_points: 3667,
+        tax_dataset_version: 'v1.0-2024+v2.0-2025+import-vat-2024.2',
+        reference_link_id: null,
+      },
+      {
+        id: 2,
+        as_of: '2026-09-08',
+        product_id: 2,
+        category: 'beer',
+        best_merchant: 'vinos-es',
+        best_merchant_country: 'ES',
+        best_price_cents: 400,
+        best_observed_at: '2026-09-02T10:00:00.000Z',
+        alko_reference_cents: 500,
+        alko_observed_at: '2026-09-06T12:00:00.000Z',
+        landed_total_cents: 599,
+        landed_reliability: 'UNAVAILABLE',
+        confidence: 'LOW',
+        gap_cents: 99,
+        gap_basis_points: 1980,
+        tax_dataset_version: 'v1.0-2024+v2.0-2025+import-vat-2024.2',
+        reference_link_id: null,
+      },
+    ]);
+    // Provenance NULL at the DB level — the direct path writes no link
+    // id on any row.
+    expect(
+      db
+        .prepare(
+          'SELECT COUNT(*) AS n FROM savings_snapshots WHERE reference_link_id IS NULL',
+        )
+        .get() as { n: number },
+    ).toEqual({ n: 2 });
+  });
+
+  it('re-runs idempotently with links — the same keyed rows are overwritten in place and the reference link id is stable', async () => {
+    const { env, db } = createEnv();
+    await seedLinkedPair(db);
+    const deps: SavingsSnapshotDeps = { now: () => RUN_NOW };
+    const idLinkRows = `
+      SELECT id, product_id, reference_link_id FROM savings_snapshots
+       ORDER BY product_id ASC`;
+
+    await handleSavingsSnapshots(env, LOG, deps);
+    const idsAfterFirst = db.prepare(idLinkRows).all() as never;
+    const rowsAfterFirst = snapshotRows(db);
+
+    const second = await handleSavingsSnapshots(env, LOG, deps);
+
+    expect(second.rowsWritten).toBe(2);
+    // No duplicates: still exactly two physical rows, same surrogate ids
+    // — the second run UPDATED the keyed rows, it did not insert.
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM savings_snapshots').get() as { n: number },
+    ).toEqual({ n: 2 });
+    expect(db.prepare(idLinkRows).all() as never).toEqual(idsAfterFirst);
+    // Every computed column — reference_link_id included — rewritten to
+    // the same value: provenance stable across re-runs.
+    expect(snapshotRows(db)).toEqual(rowsAfterFirst);
+    expect(rowsAfterFirst.find((r) => r.product_id === 5)?.reference_link_id).toBe(55);
+  });
+
+  it('clears a stale reference link id when the link disappears between runs', async () => {
+    const { env, db } = createEnv();
+    await seedLinkedPair(db);
+
+    await handleSavingsSnapshots(env, LOG, { now: () => RUN_NOW });
+    const rowsAfterFirst = snapshotRows(db);
+    expect(rowsAfterFirst.find((r) => r.product_id === 5)?.reference_link_id).toBe(55);
+
+    // The world moves between runs: the operator supersedes the link
+    // (the production unlink path — listConfirmed now returns FEWER
+    // links) and a fresh scrape gives the foreign product its own Alko
+    // reference.
+    await db
+      .prepare(
+        `UPDATE product_reference_links
+            SET status = 'SUPERSEDED', updated_at = '2026-09-07T16:00:00.000Z'
+          WHERE id = 55`,
+      )
+      .run();
+    await seedOffer(db, 52, 5, 'alko', 'FI', 444, '2026-09-06T09:00:00.000Z');
+
+    const second = await handleSavingsSnapshots(env, LOG, { now: () => RUN_NOW });
+
+    // Product 5 re-qualifies DIRECTLY now; its keyed row is rewritten
+    // through the direct path — the stale link id is cleared, not kept.
+    expect(second).toEqual({
+      asOf: AS_OF,
+      qualifyingProducts: 2,
+      rowsWritten: 2,
+      skipped: 0,
+      failed: 0,
+    });
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM savings_snapshots').get() as { n: number },
+    ).toEqual({ n: 2 });
+
+    const rows = snapshotRows(db);
+    const row5 = rows.find((r) => r.product_id === 5)!;
+    expect(row5.reference_link_id).toBeNull();
+    // The reference now resolves from the product's OWN alko offer.
+    expect(row5.alko_reference_cents).toBe(444);
+    expect(row5.alko_observed_at).toBe('2026-09-06T09:00:00.000Z');
+    // The landed side still documents the foreign best offer.
+    expect(row5.best_merchant).toBe('beverage-de');
+    expect(row5.best_price_cents).toBe(200);
+    // The never-linked neighbour's row is byte-identical to its run-1 row.
+    expect(rows.find((r) => r.product_id === 6)).toEqual(
+      rowsAfterFirst.find((r) => r.product_id === 6),
+    );
+  });
+
+  it('runs a direct, a linked, and a failing product in one pass — counters exact and the direct row byte-equal to a solo run', async () => {
+    const mixed = createEnv();
+    await seedTaxRules(mixed.db);
+    // Direct qualifier: own foreign + alko offers.
+    await seedProduct(mixed.db, 20);
+    await seedOffer(mixed.db, 201, 20, 'beverage-de', 'DE', 250, '2026-09-01T10:00:00.000Z');
+    await seedOffer(mixed.db, 202, 20, 'alko', 'FI', 300, '2026-09-05T12:00:00.000Z');
+    // Linked qualifier: foreign 21 → alko 22 through link 65.
+    await seedProduct(mixed.db, 21);
+    await seedOffer(mixed.db, 211, 21, 'beverage-de', 'DE', 200, '2026-09-03T10:00:00.000Z');
+    await seedProduct(mixed.db, 22);
+    await seedOffer(mixed.db, 221, 22, 'alko', 'FI', 300, '2026-09-05T12:00:00.000Z');
+    await seedLink(mixed.db, 65, 21, 22, 'CONFIRMED');
+    // Direct qualifier whose evaluation will throw.
+    await seedProduct(mixed.db, 23);
+    await seedOffer(mixed.db, 231, 23, 'beverage-de', 'DE', 260, '2026-09-01T10:00:00.000Z');
+    await seedOffer(mixed.db, 232, 23, 'alko', 'FI', 320, '2026-09-05T12:00:00.000Z');
+
+    const real = buildSavingsCalculator(mixed.env.DB);
+    const { log, errors } = captureErrors();
+    const result = await handleSavingsSnapshots(mixed.env, log, {
+      now: () => RUN_NOW,
+      calculator: {
+        calculate: (input) =>
+          input.productId === 23
+            ? Promise.reject(new Error('failing neighbour'))
+            : real.calculate(input),
+      },
+    });
+
+    // Product 22 (the link's Alko side) direct-qualifies too — it must
+    // carry offers for the linked benchmark to resolve — so four are
+    // enumerated: 20 and 22 and 23 direct, 21 linked. The healthy trio
+    // writes, 23 fails, nothing bleeds across states.
+    expect(result).toEqual({
+      asOf: AS_OF,
+      qualifyingProducts: 4,
+      rowsWritten: 3,
+      skipped: 0,
+      failed: 1,
+    });
+    expect(errors.some((m) => m.includes('product 23'))).toBe(true);
+
+    const mixedRows = snapshotRows(mixed.db);
+    expect(mixedRows).toHaveLength(3);
+    // The linked neighbour materialized with its own provenance.
+    const linked = mixedRows.find((r) => r.product_id === 21)!;
+    expect(linked.alko_reference_cents).toBe(300);
+    expect(linked.reference_link_id).toBe(65);
+
+    // Row-level isolation: the direct row from the mixed pass is
+    // BYTE-EQUAL to the same product's row in a pass with no linked or
+    // failing neighbours at all.
+    const solo = createEnv();
+    await seedTaxRules(solo.db);
+    await seedProduct(solo.db, 20);
+    await seedOffer(solo.db, 201, 20, 'beverage-de', 'DE', 250, '2026-09-01T10:00:00.000Z');
+    await seedOffer(solo.db, 202, 20, 'alko', 'FI', 300, '2026-09-05T12:00:00.000Z');
+    await handleSavingsSnapshots(solo.env, LOG, { now: () => RUN_NOW });
+
+    expect(snapshotRows(solo.db).find((r) => r.product_id === 20)).toEqual(
+      mixedRows.find((r) => r.product_id === 20),
+    );
+  });
+
+  it('feeds the linked reference product id to the calculator and the row carries the NEWEST observed benchmark', async () => {
+    const { env, db } = createEnv();
+    await seedTaxRules(db);
+    await seedProduct(db, 30);
+    await seedOffer(db, 301, 30, 'beverage-de', 'DE', 200, '2026-09-03T10:00:00.000Z');
+    await seedProduct(db, 31);
+    // The linked Alko product carries TWO reference offers — newest wins.
+    await seedOffer(db, 311, 31, 'alko', 'FI', 300, '2026-09-01T12:00:00.000Z');
+    await seedOffer(db, 312, 31, 'alko', 'FI', 350, '2026-09-05T12:00:00.000Z');
+    await seedLink(db, 75, 30, 31, 'CONFIRMED');
+
+    const real = buildSavingsCalculator(env.DB);
+    const calls: Array<Parameters<typeof real.calculate>[0]> = [];
+    const result = await handleSavingsSnapshots(env, LOG, {
+      now: () => RUN_NOW,
+      calculator: {
+        calculate: (input) => {
+          calls.push(input);
+          return real.calculate(input);
+        },
+      },
+    });
+
+    // Both materialize: 31 directly, 30 through the link.
+    expect(result).toEqual({
+      asOf: AS_OF,
+      qualifyingProducts: 2,
+      rowsWritten: 2,
+      skipped: 0,
+      failed: 0,
+    });
+
+    // Seam parity (design D4): the linked evaluation names the reference
+    // product and lets resolveAlkoBenchmark do the selecting — no
+    // cron-side offer pre-selection. The direct evaluation names none.
+    expect(calls.find((c) => c.productId === 30)).toMatchObject({
+      productId: 30,
+      quantity: 1,
+      destination: 'FI',
+      alkoReferenceProductId: 31,
+    });
+    expect(calls.find((c) => c.productId === 31)?.alkoReferenceProductId).toBeUndefined();
+
+    // Newest observedAt wins on BOTH paths — 350 @ 09-05, not 300 @ 09-01.
+    const rows = snapshotRows(db);
+    const linked = rows.find((r) => r.product_id === 30)!;
+    expect(linked.alko_reference_cents).toBe(350);
+    expect(linked.alko_observed_at).toBe('2026-09-05T12:00:00.000Z');
+    expect(linked.reference_link_id).toBe(75);
+    const direct = rows.find((r) => r.product_id === 31)!;
+    expect(direct.alko_reference_cents).toBe(350);
+    expect(direct.alko_observed_at).toBe('2026-09-05T12:00:00.000Z');
+    expect(direct.reference_link_id).toBeNull();
+  });
+
+  it('enumerates every CONFIRMED link — two linked foreign products both materialize with their own provenance', async () => {
+    const { env, db } = createEnv();
+    await seedTaxRules(db);
+    await seedProduct(db, 40);
+    await seedOffer(db, 401, 40, 'beverage-de', 'DE', 210, '2026-09-02T10:00:00.000Z');
+    await seedProduct(db, 41);
+    await seedOffer(db, 411, 41, 'vinos-es', 'ES', 220, '2026-09-02T10:00:00.000Z');
+    await seedProduct(db, 42);
+    await seedOffer(db, 421, 42, 'alko', 'FI', 310, '2026-09-05T12:00:00.000Z');
+    await seedProduct(db, 43);
+    await seedOffer(db, 431, 43, 'alko', 'FI', 330, '2026-09-05T12:00:00.000Z');
+    await seedLink(db, 80, 40, 42, 'CONFIRMED');
+    await seedLink(db, 81, 41, 43, 'CONFIRMED');
+
+    const result = await handleSavingsSnapshots(env, LOG, {
+      now: () => RUN_NOW,
+    });
+
+    // 42 and 43 qualify directly; 40 and 41 only through their links —
+    // all four evaluated, all four written.
+    expect(result).toEqual({
+      asOf: AS_OF,
+      qualifyingProducts: 4,
+      rowsWritten: 4,
+      skipped: 0,
+      failed: 0,
+    });
+
+    const rows = snapshotRows(db);
+    expect(rows).toHaveLength(4);
+
+    const row40 = rows.find((r) => r.product_id === 40)!;
+    expect(row40.best_merchant).toBe('beverage-de');
+    expect(row40.best_price_cents).toBe(210);
+    expect(row40.alko_reference_cents).toBe(310);
+    expect(row40.reference_link_id).toBe(80);
+
+    const row41 = rows.find((r) => r.product_id === 41)!;
+    expect(row41.best_merchant).toBe('vinos-es');
+    expect(row41.best_price_cents).toBe(220);
+    expect(row41.alko_reference_cents).toBe(330);
+    expect(row41.reference_link_id).toBe(81); // own link — never cross-wired
+
+    // The Alko-side products' own rows carry no link provenance.
+    expect(rows.find((r) => r.product_id === 42)?.reference_link_id).toBeNull();
+    expect(rows.find((r) => r.product_id === 43)?.reference_link_id).toBeNull();
   });
 });
 

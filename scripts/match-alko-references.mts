@@ -115,7 +115,7 @@
  */
 import { mkdirSync, readdirSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import type {
   CanonicalCategory,
@@ -158,9 +158,13 @@ import {
 /** The Alko merchant literal — parity with savings-snapshots' ALKO_MERCHANT. */
 const ALKO_MERCHANT = 'alko';
 
-/** Repo layout resolved from the invoked script path, never from cwd. */
-const SCRIPT_DIR = process.argv[1] ? dirname(resolve(process.argv[1])) : undefined;
-const REPO_ROOT = SCRIPT_DIR ? resolve(SCRIPT_DIR, '..') : undefined;
+/**
+ * Repo layout resolved from THIS module's own URL — identical to the
+ * invoked script path on direct runs, and stable when the module is
+ * imported (the test suite) instead of executed. Never from cwd.
+ */
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(SCRIPT_DIR, '..');
 const LOCAL_D1_DIR = REPO_ROOT
   ? resolve(REPO_ROOT, 'apps/api-worker/.wrangler/state/v3/d1/miniflare-D1DatabaseObject')
   : '';
@@ -217,7 +221,7 @@ function usage(): string {
   ].join('\n');
 }
 
-function parseArgs(argv: readonly string[]): CliOptions {
+export function parseArgs(argv: readonly string[]): CliOptions {
   const options: CliOptions = {
     stats: false,
     limit: null,
