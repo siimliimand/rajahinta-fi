@@ -3,8 +3,10 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { notFound } from 'next/navigation';
 import { NextIntlClientProvider } from 'next-intl';
-import { getMessages, getTranslations, setRequestLocale } from 'next-intl/server';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { routing } from '@/i18n/routing';
+import { getClientMessages } from '@/lib/i18n/client-messages';
+import { SHARED_CHROME_NAMESPACES } from '@/lib/i18n/route-namespaces';
 import { SITE_URL } from '@/lib/api';
 import { AgeGate } from './components/AgeGate';
 import SiteHeader from './components/SiteHeader';
@@ -137,8 +139,17 @@ export default async function RootLayout({
   // <html data-age-confirmed> keep confirmed visitors flash-free before
   // hydration, and AgeGate converges on the cookie at mount.
 
-  // Messages are inherited by every client component below the provider.
-  const messages = await getMessages();
+  // Client messages ride the per-route split (first-impression-pass task
+  // 2.3, design D6): the provider here carries only the shared-chrome
+  // subset — header, footer newsletter island, age gate, the 404
+  // boundary, and the home island's namespaces. Routes whose client
+  // components need more replace this subset with their own via a nested
+  // NextIntlClientProvider in their segment layout, fed by the
+  // `ROUTE_CLIENT_NAMESPACES` map (`@/lib/i18n/route-namespaces`).
+  // Server-rendered copy keeps full-catalog access through next-intl's
+  // server path, so what the HTML shows is unchanged — only the
+  // serialized client payload shrinks.
+  const messages = await getClientMessages(locale, SHARED_CHROME_NAMESPACES);
 
   return (
     <html lang={locale} className={inter.variable}>
