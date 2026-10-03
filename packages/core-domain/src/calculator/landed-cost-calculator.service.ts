@@ -186,10 +186,26 @@ export class LandedCostCalculatorService {
     }
     const bestOffer = this.selectBestOffer(offers);
 
-    // Display-only enrichment, resolved from the same single offers read —
-    // the product-data port stays the only lookup machinery. Never enters
-    // totals, the itemized breakdown, or any ranking input.
-    const alkoBenchmark = this.resolveAlkoBenchmark(offers, bestOffer);
+    // Benchmark source offers (design D4, change
+    // alko-reference-matching-pipeline): the linked reference product's
+    // own offers when the request names one — the selection itself stays
+    // inside resolveAlkoBenchmark, and the retail best offer above still
+    // comes from the calculated product's offers. Only the target
+    // product's offer set is mandatory: an override product without
+    // offers yields benchmark absence, never an error.
+    const benchmarkOffers =
+      input.alkoReferenceProductId === undefined
+        ? offers
+        : await this.productData.findRetailOffers(input.alkoReferenceProductId);
+
+    // Display-only enrichment, resolved from a single offers read per
+    // product — the product-data port stays the only lookup machinery.
+    // Never enters totals, the itemized breakdown, or any ranking input.
+    const alkoBenchmark = this.resolveAlkoBenchmark(
+      benchmarkOffers,
+      bestOffer,
+      input.alkoReferenceProductId,
+    );
 
     // -----------------------------------------------------------------------
     // 3. Transport estimation
@@ -972,17 +988,25 @@ export class LandedCostCalculatorService {
   }
 
   /**
-   * Resolve the display-only Alko benchmark from the offers already
+   * Resolve the display-only Alko benchmark from the given offers already
    * fetched through the product-data port. Only rows carrying an
    * observation timestamp can serve as references — the deterministic
    * newest-reference selection needs the observation axis — so legacy
    * rows without one are dropped here rather than failing the whole
    * benchmark. An unavailable result degrades to key-absence on the
    * contract: absence is the render-nothing state, never null.
+   *
+   * `referenceProductId` (design D4, change
+   * alko-reference-matching-pipeline) records WHICH product the offers
+   * came from when the request resolved the benchmark from a linked
+   * reference product; it travels on the snapshot so the result and the
+   * persisted calculation record keep every figure traceable to its
+   * input. Absent → the snapshot is byte-identical to the direct path's.
    */
   private resolveAlkoBenchmark(
     offers: CalculatorRetailOfferData[],
     bestOffer: CalculatorRetailOfferData,
+    referenceProductId?: number,
   ): AlkoBenchmarkSnapshot | undefined {
     const alkoOffers: AlkoReferenceOffer[] = [];
     for (const offer of offers) {
@@ -1002,7 +1026,13 @@ export class LandedCostCalculatorService {
     });
 
     return benchmark.status === 'available'
-      ? { ...benchmark, observedAt: benchmark.observedAt.toISOString() }
+      ? {
+          ...benchmark,
+          observedAt: benchmark.observedAt.toISOString(),
+          ...(referenceProductId !== undefined
+            ? { referenceProductId }
+            : {}),
+        }
       : undefined;
   }
 

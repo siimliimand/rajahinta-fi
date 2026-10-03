@@ -11,8 +11,10 @@
  * registry count, with-reference = latest-day rows, listed = returned
  * rows), the latest-day-only read (an older day's row is invisible),
  * per-row reliability + confidence, the limit clamp (top-N by the same
- * order, capped at 100), category validation (400), and the age gate
- * (403 without confirmation).
+ * order, capped at 100), category validation (400), the age gate
+ * (403 without confirmation), and the mixed-provenance listing (task 4.3,
+ * change alko-reference-matching-pipeline: direct and linked rows count,
+ * order, and render identically — the link id never leaves D1).
  *
  * @module SavingsRoutesTest
  */
@@ -51,6 +53,7 @@ const AGE_OK = { 'x-age-confirmed': 'confirmed-test-token' };
 
 const AS_OF = '2026-09-08';
 const DAY_BEFORE = '2026-09-07';
+const LINK_CONFIRMED_AT = '2026-09-01T00:00:00.000Z';
 
 interface SavingsRowJson {
   productId: number;
@@ -101,13 +104,19 @@ async function seedSnapshot(
     merchant?: string;
     merchantCountry?: string;
     priceCents?: number;
+    referenceLinkId?: number | null;
+    /** Skip the product_master insert (the row already exists — a mixed-
+     * provenance fixture seeds products first so the links' FK sides exist). */
+    skipProductSeed?: boolean;
   },
 ): Promise<void> {
-  seedProduct(db, {
-    id: seed.productId,
-    name: seed.name,
-    category: seed.category,
-  });
+  if (!seed.skipProductSeed) {
+    seedProduct(db, {
+      id: seed.productId,
+      name: seed.name,
+      category: seed.category,
+    });
+  }
   const asOf = seed.asOf ?? AS_OF;
   const input: SavingsSnapshotUpsertInput = {
     asOf,
@@ -125,8 +134,28 @@ async function seedSnapshot(
     gapCents: seed.gapCents ?? 200,
     gapBasisPoints: seed.gapBasisPoints,
     taxDatasetVersion: 'v3.0-2026',
+    referenceLinkId: seed.referenceLinkId ?? null,
   };
   await new D1SavingsSnapshotRepository(d1).upsertSnapshot(input);
+}
+
+/**
+ * Insert one CONFIRMED product_reference_links row (migration 0026) — the
+ * live edge a linked snapshot row names as provenance. CONFIRMED requires
+ * attribution (conditional CHECK), so the fixture inserts it directly with
+ * a fixed operator instant; the link lifecycle itself is task 1.2's
+ * repository tests' subject.
+ */
+function seedConfirmedLink(
+  db: DatabaseSync,
+  link: { id: number; foreignProductId: number; alkoProductId: number },
+): void {
+  db.prepare(
+    `INSERT INTO product_reference_links (
+       id, foreign_product_id, alko_product_id, status,
+       confirmed_by, confirmed_at
+     ) VALUES (?, ?, ?, 'CONFIRMED', 'savings-route-test', ?)`,
+  ).run(link.id, link.foreignProductId, link.alkoProductId, LINK_CONFIRMED_AT);
 }
 
 describe('GET /api/v1/savings — deterministic listing', () => {
@@ -200,6 +229,72 @@ describe('GET /api/v1/savings — deterministic listing', () => {
     });
     expect(row.observedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(row.alkoObservedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
+describe('GET /api/v1/savings — mixed provenance (direct + linked rows)', () => {
+  it('counts, orders, and renders linked rows exactly like direct rows', async () => {
+    const { db, d1 } = openMigratedD1();
+    // Two CONFIRMED links (migration 0026): the provenance the cron v2
+    // stamps on linked snapshot rows. Seeded directly — the route reads
+    // savings_snapshots, never the pass or the links. Fixture order follows
+    // the FKs: product rows first (both links' sides), then links, then
+    // the snapshot rows that name them.
+    seedProduct(db, { id: 1, name: 'Aurora Lager', category: 'beer' });
+    seedProduct(db, { id: 2, name: 'Borealis Porter', category: 'beer' });
+    seedProduct(db, { id: 3, name: 'Cider Zest', category: 'beer' });
+    seedProduct(db, { id: 90, name: 'Alko Vertti', category: 'beer' });
+    seedProduct(db, { id: 91, name: 'Alko Vertti II', category: 'beer' });
+    seedConfirmedLink(db, { id: 1, foreignProductId: 2, alkoProductId: 90 });
+    seedConfirmedLink(db, { id: 2, foreignProductId: 3, alkoProductId: 91 });
+    await seedSnapshot(db, d1, { productId: 1, name: 'Aurora Lager', category: 'beer', gapBasisPoints: 500, skipProductSeed: true });
+    await seedSnapshot(db, d1, {
+      productId: 2,
+      name: 'Borealis Porter',
+      category: 'beer',
+      gapBasisPoints: 900,
+      referenceLinkId: 1,
+      reliability: 'VERIFIED',
+      confidence: 'MEDIUM',
+      skipProductSeed: true,
+    });
+    await seedSnapshot(db, d1, { productId: 3, name: 'Cider Zest', category: 'beer', gapBasisPoints: 500, referenceLinkId: 2, skipProductSeed: true });
+    const app = savingsApp();
+
+    const body = (await (
+      await getBeerListing(app, savingsEnv(d1))
+    ).json()) as SavingsJson;
+
+    // Counts are provenance-blind: registry (5) / latest-day rows whether
+    // direct or linked (3) / returned rows (3).
+    expect(body.coverage).toEqual({ evaluated: 5, withReference: 3, listed: 3 });
+    // The pinned order is untouched by provenance: 900 bps first, the
+    // equal 500-bps pair by name ascending — linked, direct, linked,
+    // interleaved purely by the sort rule.
+    expect(body.rows.map((r) => r.productName)).toEqual([
+      'Borealis Porter',
+      'Aurora Lager',
+      'Cider Zest',
+    ]);
+    // Identical row shape across provenance — the frontend contract is
+    // unchanged, and the link id stays in D1 (backend-only provenance).
+    const expectedKeys = [
+      'alkoObservedAt', 'alkoReferenceCents', 'category', 'confidence',
+      'gapBasisPoints', 'gapCents', 'landedTotalCents', 'merchant',
+      'merchantCountry', 'observedAt', 'priceCents', 'productId',
+      'productName', 'reliability', 'taxDatasetVersion',
+    ];
+    for (const row of body.rows) {
+      expect(Object.keys(row).sort()).toEqual(expectedKeys);
+    }
+    // The per-row figures flow for linked rows exactly as for direct ones.
+    expect(body.rows[0]).toMatchObject({
+      productId: 2,
+      merchant: 'saksoinet',
+      merchantCountry: 'EE',
+      reliability: 'VERIFIED',
+      confidence: 'MEDIUM',
+    });
   });
 });
 

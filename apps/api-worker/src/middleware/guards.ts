@@ -25,7 +25,7 @@
  * | Shop-report submission (NEW surface, trust-and-reach-roadmap 2.2) (POST /api/v1/reports) | no Nest counterpart | requireRateLimit('AUTH') → sessionAuth() |
  * | Outcome + share writes (NEW surface, trust-and-reach-roadmap 3.2/6.1) (POST /api/v1/calculations/:id/{outcome,share}) | no Nest counterpart | sessionAuth() (the prefix's CALCULATOR rate limit registers at index.ts) |
  * | Newsletter (NEW surface, trust-and-reach-roadmap 5.3) (/api/v1/newsletter/*) | no Nest counterpart | POST subscribe: requireRateLimit('AUTH') (public write; consent is account-independent — no session exists); GET confirm + unsubscribe: NO guard (the emailed token IS the capability — verify-email/confirm precedent) |
- * | Ops console (4 controllers, /ops/console/*) + moderation/newsletter additions (trust-and-reach-roadmap 2.3/5.3: reports queue, blacklist publish/appeals, newsletter notify) | OpsAccessGuard | opsAccess() (prefix registration below covers every /ops/console/** route) |
+ * | Ops console (4 controllers, /ops/console/*) + moderation/newsletter additions (trust-and-reach-roadmap 2.3/5.3: reports queue, blacklist publish/appeals, newsletter notify) + match-review queue (alko-reference-matching-pipeline 3.1: match-review list/confirm/reject, reference-link supersede) | OpsAccessGuard | opsAccess() (prefix registration below covers every /ops/console/** route) |
  *
  * ## Route inventory — chains registered per-route (NOT in GUARDED_ROUTES)
  *

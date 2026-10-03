@@ -12,6 +12,14 @@
  * - ops-correction-queue.service.test.ts / ops-audit-trail.service.test.ts
  *   (fail-closed queue; audit trail reads with limit clamps).
  *
+ * Task 3.2 (change alko-reference-matching-pipeline) adds the
+ * match-review surface to its siblings: the full queue lifecycle driven
+ * through the console API from the matching pass's repository seam
+ * (enqueue), the CONFIRMED/REJECTED history listings, blank-attribution
+ * refusal (nothing decided, nothing audited), and guard fail-closed on
+ * the four new paths. The focused error-mapping cases live in
+ * ops.routes.match-review.test.ts (task 3.1).
+ *
  * @module OpsRoutesTest
  */
 
@@ -24,8 +32,12 @@ import {
   openMigratedD1,
   permissiveEnv,
   request,
+  seedProduct,
 } from './harness';
 import { D1ConsumptionNormsRepository } from '../../../../../packages/data-platform/src/repositories/d1/consumption-norms.repository';
+import { D1MatchReviewRepository } from '../../../../../packages/data-platform/src/repositories/d1/match-review.repository';
+import { D1ReferenceLinkRepository } from '../../../../../packages/data-platform/src/repositories/d1/reference-link.repository';
+import type { MatchReviewEnqueueInput } from '../../../../../packages/data-platform/src/abstracts';
 
 const OPS = { authorization: `Bearer ${FAKE_OPS_TOKEN}` };
 const JSON_HDRS = { 'content-type': 'application/json', ...OPS };
@@ -269,5 +281,246 @@ describe('GET /ops/console/audit — durable trail reads', () => {
     const zero = await request(app, env, '/ops/console/audit?limit=0', { headers: OPS });
     const zeroBody = (await zero.json()) as Record<string, any>;
     expect(zeroBody.total).toBe(1); // clamped to ≥ 1
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Match-review queue (task 3.2, change alko-reference-matching-pipeline) —
+// lifecycle, attribution, guard. The 3.1 file owns the focused
+// error-mapping cases (404, re-decide 409, conflict→supersede); these
+// cover the seams it doesn't: enqueue via the repository, the history
+// listings, and the fail-closed attribution contract.
+// ---------------------------------------------------------------------------
+
+/** A scored candidate exactly as the matching pass emits it (design D2). */
+function candidate(
+  pair: { foreignProductId: number; alkoProductId: number; score: number },
+  identity: Partial<Pick<MatchReviewEnqueueInput, 'foreignName' | 'alkoName'>> = {},
+): MatchReviewEnqueueInput {
+  return {
+    ...pair,
+    confidence: 'HIGH',
+    matchMethod: 'fuzzy',
+    foreignName: identity.foreignName ?? 'Karhu III 0,33 l  %4.7',
+    foreignBrand: 'Karhu',
+    foreignAbv: 4.7,
+    foreignVolume: 0.33,
+    alkoName: identity.alkoName ?? 'Karhu III',
+    alkoBrand: 'Karhu',
+    alkoAbv: 4.7,
+    alkoVolume: 0.33,
+  };
+}
+
+describe('match-review console lifecycle (enqueue → decide → history listings)', () => {
+  it('walks queue → confirm → CONFIRMED views + live link → reject → REJECTED', async () => {
+    const { db, d1 } = openMigratedD1();
+    // Both sides FK to product_master — seed the parents first.
+    for (const id of [7, 2, 9, 3]) seedProduct(db, { id });
+    const reviews = new D1MatchReviewRepository(d1);
+    const first = await reviews.enqueue(
+      candidate({ foreignProductId: 7, alkoProductId: 2, score: 88 }),
+    );
+    const second = await reviews.enqueue(
+      candidate(
+        { foreignProductId: 9, alkoProductId: 3, score: 74 },
+        { foreignName: 'Olvi III 0,5 l', alkoName: 'Olvi III' },
+      ),
+    );
+    expect(first.outcome).toBe('created');
+    expect(second.outcome).toBe('created');
+
+    const app = buildApp();
+    const env = authedEnv(d1);
+
+    // The default view serves the pending queue, score-desc.
+    const pending = await request(app, env, '/ops/console/match-review', { headers: OPS });
+    expect(pending.status).toBe(200);
+    const pendingBody = (await pending.json()) as Record<string, any>;
+    expect(pendingBody.total).toBe(2);
+    expect(pendingBody.items.map((r: Record<string, unknown>) => r.id)).toEqual([
+      first.id,
+      second.id,
+    ]);
+
+    const confirm = await request(app, env, `/ops/console/match-review/${first.id}/confirm`, {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ operator: 'ops-1', note: 'Same beer' }),
+    });
+    expect(confirm.status).toBe(200);
+    const confirmedBody = (await confirm.json()) as Record<string, any>;
+    expect(confirmedBody).toMatchObject({
+      id: first.id,
+      status: 'CONFIRMED',
+      foreignProductId: 7,
+      alkoProductId: 2,
+    });
+    const linkId = confirmedBody.linkId as number;
+
+    // The queue drained to the undecided candidate; the decision history
+    // and the repository's live-link sweep agree with the decision.
+    const pendingAfter = await request(app, env, '/ops/console/match-review', { headers: OPS });
+    expect(((await pendingAfter.json()) as Record<string, any>).total).toBe(1);
+
+    const confirmedList = await request(
+      app,
+      env,
+      '/ops/console/match-review?status=CONFIRMED',
+      { headers: OPS },
+    );
+    const confirmedListBody = (await confirmedList.json()) as Record<string, any>;
+    expect(confirmedListBody.total).toBe(1);
+    expect(confirmedListBody.items[0]).toMatchObject({ id: first.id, status: 'CONFIRMED' });
+
+    const liveLinks = await new D1ReferenceLinkRepository(d1).listConfirmed();
+    expect(
+      liveLinks.map((link) => ({
+        id: link.id,
+        foreignProductId: link.foreignProductId,
+        alkoProductId: link.alkoProductId,
+        confirmedBy: link.confirmedBy,
+      })),
+    ).toEqual([
+      { id: linkId, foreignProductId: 7, alkoProductId: 2, confirmedBy: 'ops-1' },
+    ]);
+
+    const reject = await request(app, env, `/ops/console/match-review/${second.id}/reject`, {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ operator: 'ops-2' }),
+    });
+    expect(reject.status).toBe(200);
+    expect((await reject.json()) as Record<string, any>).toMatchObject({
+      id: second.id,
+      status: 'REJECTED',
+    });
+
+    const rejectedList = await request(
+      app,
+      env,
+      '/ops/console/match-review?status=REJECTED',
+      { headers: OPS },
+    );
+    const rejectedListBody = (await rejectedList.json()) as Record<string, any>;
+    expect(rejectedListBody.total).toBe(1);
+    expect(rejectedListBody.items[0]).toMatchObject({ id: second.id, status: 'REJECTED' });
+    const drained = await request(app, env, '/ops/console/match-review', { headers: OPS });
+    expect(((await drained.json()) as Record<string, any>).total).toBe(0);
+
+    // Decided is terminal across decisions too — confirming the REJECTED
+    // candidate is the same immutability 409 as re-confirming a CONFIRMED one.
+    const crossConfirm = await request(
+      app,
+      env,
+      `/ops/console/match-review/${second.id}/confirm`,
+      {
+        method: 'POST',
+        headers: JSON_HDRS,
+        body: JSON.stringify({ operator: 'ops-2' }),
+      },
+    );
+    await expectEnvelope(crossConfirm, 409, { error: 'InvalidTransition' });
+
+    // Both decisions carry their operator into the append-only trail.
+    const trail = await request(app, env, '/ops/console/audit?limit=10', { headers: OPS });
+    const trailBody = (await trail.json()) as Record<string, any>;
+    expect(trailBody.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'match_review',
+          entityId: String(first.id),
+          action: 'confirmed',
+          author: 'ops-1',
+        }),
+        expect.objectContaining({
+          entityType: 'match_review',
+          entityId: String(second.id),
+          action: 'updated',
+          author: 'ops-2',
+        }),
+      ]),
+    );
+  });
+
+  it('refuses blank attribution with 400 — candidate stays PENDING, no link, no audit', async () => {
+    const { db, d1 } = openMigratedD1();
+    for (const id of [7, 2]) seedProduct(db, { id });
+    const enqueued = await new D1MatchReviewRepository(d1).enqueue(
+      candidate({ foreignProductId: 7, alkoProductId: 2, score: 88 }),
+    );
+    const app = buildApp();
+    const env = authedEnv(d1);
+
+    for (const operator of ['', '   ']) {
+      const confirm = await request(
+        app,
+        env,
+        `/ops/console/match-review/${enqueued.id}/confirm`,
+        {
+          method: 'POST',
+          headers: JSON_HDRS,
+          body: JSON.stringify({ operator }),
+        },
+      );
+      await expectEnvelope(confirm, 400, {
+        message: 'operator must be a non-empty string (max 128 chars)',
+      });
+
+      const reject = await request(
+        app,
+        env,
+        `/ops/console/match-review/${enqueued.id}/reject`,
+        {
+          method: 'POST',
+          headers: JSON_HDRS,
+          body: JSON.stringify({ operator }),
+        },
+      );
+      await expectEnvelope(reject, 400, {
+        message: 'operator must be a non-empty string (max 128 chars)',
+      });
+    }
+
+    // Nothing moved: the candidate is still reviewable, unattributed, and
+    // no decision artifacts (link or audit row) were written.
+    const row = db
+      .prepare('SELECT status, decided_by FROM match_review WHERE id = ?')
+      .get(enqueued.id) as Record<string, unknown>;
+    expect(row).toEqual({ status: 'PENDING', decided_by: null });
+    expect(
+      (db.prepare('SELECT count(*) AS n FROM product_reference_links').get() as { n: number }).n,
+    ).toBe(0);
+    expect(
+      (
+        db
+          .prepare("SELECT count(*) AS n FROM audit_events WHERE entity_type = 'match_review'")
+          .get() as { n: number }
+      ).n,
+    ).toBe(0);
+  });
+});
+
+describe('match-review paths — deny before any data (ops guard fail-closed)', () => {
+  it('403s the queue, confirm, reject, and supersede without OPS_BEARER_TOKEN', async () => {
+    const { d1 } = openMigratedD1();
+    const app = buildApp();
+    const locked = lockedEnv(d1);
+
+    const list = await request(app, locked, '/ops/console/match-review');
+    await expectEnvelope(list, 403, { message: 'Forbidden' });
+
+    for (const path of [
+      '/ops/console/match-review/1/confirm',
+      '/ops/console/match-review/1/reject',
+      '/ops/console/reference-links/1/supersede',
+    ]) {
+      const res = await request(app, locked, path, {
+        method: 'POST',
+        headers: JSON_HDRS,
+        body: JSON.stringify({ operator: 'ops-1' }),
+      });
+      await expectEnvelope(res, 403, { message: 'Forbidden' });
+    }
   });
 });

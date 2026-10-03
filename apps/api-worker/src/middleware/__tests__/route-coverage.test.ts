@@ -236,12 +236,13 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
     expect(ok.status).toBe(200);
   });
 
-  it('ops console: every moderation + newsletter ops route rides the guard prefix (tasks 2.3/5.3)', async () => {
+  it('ops console: every moderation + newsletter + match-review ops route rides the guard prefix (tasks 2.3/5.3, 3.1)', async () => {
     const { d1 } = openMigratedD1();
     const app = buildProbeApp();
 
-    // The task-2.3/5.3 additions — each must deny with the SAME
-    // fail-closed envelope before any probe handler is reached.
+    // The task-2.3/5.3 and task-3.1 (alko-reference-matching-pipeline)
+    // additions — each must deny with the SAME fail-closed envelope
+    // before any probe handler is reached.
     const opsRoutes: [string, string][] = [
       ['GET', '/ops/console/reports'],
       ['POST', '/ops/console/reports/1/link'],
@@ -252,6 +253,10 @@ describe('guard route coverage (Nest @UseGuards parity)', () => {
       ['POST', '/ops/console/blacklist/1/appeal'],
       ['POST', '/ops/console/blacklist/1/resolve'],
       ['POST', '/ops/console/newsletter/notify'],
+      ['GET', '/ops/console/match-review'],
+      ['POST', '/ops/console/match-review/1/confirm'],
+      ['POST', '/ops/console/match-review/1/reject'],
+      ['POST', '/ops/console/reference-links/1/supersede'],
     ];
     for (const [method, path] of opsRoutes) {
       const closed = await probe(app, testEnv(d1), path, { method });
@@ -474,12 +479,16 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/ops/console/governance', ['GET'], 'opsAccess'],
   ['/ops/console/governance/:merchantId/grant', ['POST'], 'opsAccess'],
   ['/ops/console/governance/:merchantId/revoke', ['POST'], 'opsAccess'],
+  ['/ops/console/match-review', ['GET'], 'opsAccess'],
+  ['/ops/console/match-review/:id/confirm', ['POST'], 'opsAccess'],
+  ['/ops/console/match-review/:id/reject', ['POST'], 'opsAccess'],
   ['/ops/console/merchants', ['POST'], 'opsAccess'],
   ['/ops/console/newsletter/notify', ['POST'], 'opsAccess'],
   ['/ops/console/producer-links', ['GET', 'POST'], 'opsAccess'],
   ['/ops/console/producer-links/:id', ['POST'], 'opsAccess'],
   ['/ops/console/producer-links/:id/delete', ['POST'], 'opsAccess'],
   ['/ops/console/producer-links/:id/publish', ['POST'], 'opsAccess'],
+  ['/ops/console/reference-links/:id/supersede', ['POST'], 'opsAccess'],
   ['/ops/console/reports', ['GET'], 'opsAccess'],
   ['/ops/console/reports/:id/link', ['POST'], 'opsAccess'],
   ['/ops/console/reports/:id/reject', ['POST'], 'opsAccess'],

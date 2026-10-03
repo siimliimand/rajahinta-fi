@@ -134,8 +134,9 @@ export function buildProbeApp(): Hono<AppEnv> {
   // Ops routes.
   app.get('/ops/console/audit', ok);
   // Moderation + newsletter ops additions (tasks 2.3/5.3, change
-  // trust-and-reach-roadmap) — every one rides the /ops/console/*
-  // opsAccess() prefix registration.
+  // trust-and-reach-roadmap) and the match-review trust gate (task 3.1,
+  // change alko-reference-matching-pipeline) — every one rides the
+  // /ops/console/* opsAccess() prefix registration.
   app.get('/ops/console/reports', ok);
   app.post('/ops/console/reports/:id/link', ok);
   app.post('/ops/console/reports/:id/reject', ok);
@@ -145,6 +146,10 @@ export function buildProbeApp(): Hono<AppEnv> {
   app.post('/ops/console/blacklist/:id/appeal', ok);
   app.post('/ops/console/blacklist/:id/resolve', ok);
   app.post('/ops/console/newsletter/notify', ok);
+  app.get('/ops/console/match-review', ok);
+  app.post('/ops/console/match-review/:id/confirm', ok);
+  app.post('/ops/console/match-review/:id/reject', ok);
+  app.post('/ops/console/reference-links/:id/supersede', ok);
 
   return app;
 }

@@ -168,6 +168,59 @@ export type {
 } from './abstracts';
 
 // ---------------------------------------------------------------------------
+// Alko reference linking — the review queue the matching pass writes and the
+// terminal foreign→Alko identity edge behind it (task 1.2, change
+// alko-reference-matching-pipeline); abstracts in abstracts.ts, D1
+// implementations co-located (savings-snapshot precedent: no pg counterpart)
+// ---------------------------------------------------------------------------
+
+export { D1ReferenceLinkRepository } from './repositories/d1/reference-link.repository';
+export { D1MatchReviewRepository } from './repositories/d1/match-review.repository';
+// The matcher's IProductMasterQuery port adapter + the row→domain
+// assembly the matching pass script imports (task 1.3, change
+// alko-reference-matching-pipeline); implements the core-domain port
+// directly (the D1TaxRuleRepositoryAdapter precedent — no abstracts
+// counterpart).
+export {
+  D1ProductMasterQueryRepository,
+  normalizedProductFromMasterRow,
+  productMasterRecordFromRow,
+  abvPercentFromStored,
+  volumeLitresFromStored,
+  abvBucketFromPercent,
+  volumeBucketFromLitres,
+  storedCategoryToCanonical,
+  canonicalCategoryToStored,
+  findCandidatesSql,
+  FIND_CANDIDATES_LIMIT,
+  ABV_BUCKET_PERCENT,
+  VOLUME_BUCKET_LITRES,
+} from './repositories/d1/product-master-query.repository';
+export {
+  ReferenceLinkRepository,
+  MatchReviewRepository,
+  MissingDecisionAttributionError,
+  MatchReviewAlreadyDecidedError,
+  ReferenceLinkConflictError,
+  ReferenceLinkSelfLinkError,
+  MatchReviewScoreRangeError,
+} from './abstracts';
+export type {
+  ReferenceLinkRecord,
+  ReferenceLinkCreateInput,
+  ReferenceLinkDecision,
+  ReferenceLinkStatus,
+  MatchReviewRecord,
+  MatchReviewEnqueueInput,
+  MatchReviewEnqueueResult,
+  MatchReviewEnqueueOutcome,
+  MatchReviewStatus,
+  MatchReviewDecision,
+  MatchReviewConfidence,
+  MatchReviewMethod,
+} from './abstracts';
+
+// ---------------------------------------------------------------------------
 // Product dimensions + carrier box types — D1-only tables (task 3.1, change
 // product-roadmap-phases-1-4); abstract + concrete are co-located in the
 // repository files (price-alert precedent; no pg counterpart)

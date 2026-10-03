@@ -20,6 +20,14 @@
  * updated, AND unpublished through this console so content changes
  * never require deploys.
  *
+ * Task 3.1 (change alko-reference-matching-pipeline) adds the
+ * match-review queue — the Alko reference-linking trust gate (design
+ * D2): the side-by-side queue listing, attributed confirm/reject (a
+ * confirm creates the CONFIRMED product_reference_links row and flips
+ * the review row in one repository transaction), and the supersede path
+ * the confirm-conflict 409 points at. The matching pass never writes a
+ * link; nothing reaches CONFIRMED except through these endpoints.
+ *
  * EVERY mutating action writes an append-only D1 `audit_events` row via
  * the task-2.5 D1AuditEventRepository (WorkerAuditService).
  *
@@ -59,6 +67,15 @@ import {
   D1ConsumptionNormsRepository,
   MissingNormSourceCitationError,
 } from '../../../../packages/data-platform/src/repositories/d1/consumption-norms.repository';
+import { D1MatchReviewRepository } from '../../../../packages/data-platform/src/repositories/d1/match-review.repository';
+import { D1ReferenceLinkRepository } from '../../../../packages/data-platform/src/repositories/d1/reference-link.repository';
+import {
+  MatchReviewAlreadyDecidedError,
+  MissingDecisionAttributionError,
+  ReferenceLinkConflictError,
+  type MatchReviewRecord,
+  type MatchReviewStatus,
+} from '../../../../packages/data-platform/src/abstracts';
 import {
   D1FerryOffersRepository,
   FerryOfferImmutableError,
@@ -576,6 +593,281 @@ async function confirmConsumptionNorm(c: Context<AppEnv>): Promise<Response> {
     versionLabel: published.versionLabel,
     status: 'PUBLISHED',
     confirmedAt,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Match-review queue — the Alko reference-linking trust gate (task 3.1,
+// change alko-reference-matching-pipeline; design D2, spec
+// product-normalization). The matching pass queues every scored candidate;
+// NOTHING becomes a CONFIRMED product_reference_links row without an
+// operator decision here — the exact trust pattern of the
+// consumption-norms confirm above (attributed, audited, guarded).
+// ---------------------------------------------------------------------------
+
+/** The listing filter's accepted statuses (migration 0026 CHECK). */
+const MATCH_REVIEW_STATUSES: readonly MatchReviewStatus[] = [
+  'PENDING',
+  'CONFIRMED',
+  'REJECTED',
+];
+
+/** Validate the optional status filter (kinds never mix in listings). */
+function parseReviewStatusFilter(raw: string | undefined): MatchReviewStatus {
+  if (raw === undefined || raw === '') return 'PENDING';
+  if (!MATCH_REVIEW_STATUSES.includes(raw as MatchReviewStatus)) {
+    throw new ApiHttpError(400, {
+      statusCode: 400,
+      message: 'status must be one of: PENDING, CONFIRMED, REJECTED',
+      error: 'ValidationError',
+    });
+  }
+  return raw as MatchReviewStatus;
+}
+
+/**
+ * The console's review row — both universes side by side, exactly the
+ * identity fields frozen at enqueue (the reviewer sees what the scorer
+ * saw), plus the scoring facts. Queue listings follow the console's
+ * `{ items, total }` envelope; the repository's order is deterministic
+ * (score desc, then the pair ids ascending).
+ */
+function matchReviewItem(review: MatchReviewRecord): Record<string, unknown> {
+  return {
+    id: review.id,
+    status: review.status,
+    foreign: {
+      productId: review.foreignProductId,
+      name: review.foreignName,
+      brand: review.foreignBrand,
+      abv: review.foreignAbv,
+      volume: review.foreignVolume,
+    },
+    alko: {
+      productId: review.alkoProductId,
+      name: review.alkoName,
+      brand: review.alkoBrand,
+      abv: review.alkoAbv,
+      volume: review.alkoVolume,
+    },
+    confidence: review.confidence,
+    method: review.matchMethod,
+    score: review.score,
+    createdAt: review.createdAt.toISOString(),
+  };
+}
+
+/**
+ * GET /ops/console/match-review?status=PENDING — the operator worklist,
+ * defaulting to the pending queue (status=CONFIRMED/REJECTED read the
+ * decision history).
+ */
+async function listMatchReview(c: Context<AppEnv>): Promise<Response> {
+  const status = parseReviewStatusFilter(c.req.query('status'));
+  const reviews = await new D1MatchReviewRepository(c.env.DB).listByStatus(status);
+  return c.json({ items: reviews.map(matchReviewItem), total: reviews.length });
+}
+
+/**
+ * Map the decision repositories' typed refusals onto the console error
+ * envelope: an already-decided candidate is an invalid transition (409,
+ * norms-confirm parity); a blank attribution is a validation failure
+ * (400 — validateOperator already ran, so this is the repository's
+ * defensive guard surfacing, never the primary rejection); a per-side
+ * live-link conflict is a 409 that NAMES the blocking link, because
+ * superseding it is the only legal path to the replacement.
+ */
+async function matchReviewHttpError(
+  err: unknown,
+  d1: D1DatabaseLike,
+): Promise<ApiHttpError | null> {
+  if (err instanceof MatchReviewAlreadyDecidedError) {
+    return new ApiHttpError(409, {
+      statusCode: 409,
+      message: err.message,
+      error: 'InvalidTransition',
+    });
+  }
+  if (err instanceof MissingDecisionAttributionError) {
+    return new ApiHttpError(400, {
+      statusCode: 400,
+      message: err.message,
+      error: 'ValidationError',
+    });
+  }
+  if (err instanceof ReferenceLinkConflictError) {
+    const blocking = (
+      await new D1ReferenceLinkRepository(d1).listConfirmed()
+    ).find(
+      (link) =>
+        link.foreignProductId === err.foreignProductId ||
+        link.alkoProductId === err.alkoProductId,
+    );
+    return new ApiHttpError(409, {
+      statusCode: 409,
+      message: err.message,
+      error: 'ReferenceLinkConflict',
+      conflictingLink: blocking
+        ? {
+            id: blocking.id,
+            foreignProductId: blocking.foreignProductId,
+            alkoProductId: blocking.alkoProductId,
+            confirmedBy: blocking.confirmedBy,
+            confirmedAt: blocking.confirmedAt?.toISOString() ?? null,
+          }
+        : null,
+    });
+  }
+  return null;
+}
+
+/**
+ * POST /ops/console/match-review/:id/confirm — the trust gate (design
+ * D2): promotes the PENDING candidate to an attributed CONFIRMED link +
+ * decided review row in one repository transaction. A per-side conflict
+ * rolls the promotion back whole (the candidate stays PENDING) and the
+ * 409 names the blocking link — supersede it first, then re-confirm.
+ */
+async function confirmMatchReview(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  validateOperator(dto);
+
+  const repo = new D1ReferenceLinkRepository(c.env.DB);
+  let decided: Awaited<ReturnType<D1ReferenceLinkRepository['confirm']>>;
+  try {
+    decided = await repo.confirm(id, dto.operator as string);
+  } catch (err) {
+    const mapped = await matchReviewHttpError(err, c.env.DB);
+    if (mapped !== null) throw mapped;
+    throw err;
+  }
+  if (decided === null) {
+    throw new ApiHttpError(404, `Match review ${id} not found`);
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'match_review',
+    entityId: String(id),
+    action: 'confirmed',
+    author: dto.operator as string,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      `Reference link confirmed via operator console (${decided.link.foreignProductId} → ${decided.link.alkoProductId})`,
+    previousValue: {
+      status: 'PENDING',
+      foreignProductId: decided.review.foreignProductId,
+      alkoProductId: decided.review.alkoProductId,
+    },
+    newValue: {
+      status: 'CONFIRMED',
+      linkId: decided.link.id,
+      foreignProductId: decided.link.foreignProductId,
+      alkoProductId: decided.link.alkoProductId,
+    },
+  });
+
+  return c.json({
+    id: decided.review.id,
+    status: decided.review.status,
+    linkId: decided.link.id,
+    foreignProductId: decided.link.foreignProductId,
+    alkoProductId: decided.link.alkoProductId,
+    confirmedAt: decided.link.confirmedAt?.toISOString() ?? null,
+  });
+}
+
+/**
+ * POST /ops/console/match-review/:id/reject — record the calibration
+ * decision, create NO link. Same attribution/audit contract as confirm
+ * (the rejected row is scorer-calibration data per design D2).
+ */
+async function rejectMatchReview(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  validateOperator(dto);
+
+  const repo = new D1ReferenceLinkRepository(c.env.DB);
+  let rejected: Awaited<ReturnType<D1ReferenceLinkRepository['reject']>>;
+  try {
+    rejected = await repo.reject(id, dto.operator as string);
+  } catch (err) {
+    const mapped = await matchReviewHttpError(err, c.env.DB);
+    if (mapped !== null) throw mapped;
+    throw err;
+  }
+  if (rejected === null) {
+    throw new ApiHttpError(404, `Match review ${id} not found`);
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'match_review',
+    entityId: String(id),
+    action: 'updated',
+    author: dto.operator as string,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Match candidate rejected via operator console',
+    previousValue: {
+      status: 'PENDING',
+      foreignProductId: rejected.foreignProductId,
+      alkoProductId: rejected.alkoProductId,
+    },
+    newValue: { status: rejected.status },
+  });
+
+  return c.json({
+    id: rejected.id,
+    status: rejected.status,
+    foreignProductId: rejected.foreignProductId,
+    alkoProductId: rejected.alkoProductId,
+    decidedAt: rejected.decidedAt?.toISOString() ?? null,
+  });
+}
+
+/**
+ * POST /ops/console/reference-links/:id/supersede — the replacement path
+ * the confirm-conflict 409 points at (CONFIRMED → SUPERSEDED, terminal;
+ * the replacement link is then created by re-confirming the queued
+ * candidate). The repository's supersede carries no attribution
+ * parameter — the operator identity lives in this audit row (the
+ * ferry-publish pattern). The repository conflates unknown id with
+ * not-live link (both null); the 404 message covers both.
+ */
+async function supersedeReferenceLink(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  validateOperator(dto);
+
+  const superseded = await new D1ReferenceLinkRepository(c.env.DB).supersede(id);
+  if (superseded === null) {
+    throw new ApiHttpError(
+      404,
+      `Reference link ${id} not found or not live (SUPERSEDED is terminal)`,
+    );
+  }
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'reference_link',
+    entityId: String(id),
+    action: 'updated',
+    author: dto.operator as string,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Reference link superseded via operator console',
+    previousValue: {
+      status: 'CONFIRMED',
+      foreignProductId: superseded.foreignProductId,
+      alkoProductId: superseded.alkoProductId,
+    },
+    newValue: { status: superseded.status },
+  });
+
+  return c.json({
+    id: superseded.id,
+    status: superseded.status,
+    foreignProductId: superseded.foreignProductId,
+    alkoProductId: superseded.alkoProductId,
   });
 }
 
@@ -2263,6 +2555,16 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   );
   app.post('/ops/console/confirmations/tax/:id/approve', approveTaxReview);
   app.post('/ops/console/confirmations/tax/:id/reject', rejectTaxReview);
+
+  // Match-review queue (task 3.1, alko-reference-matching-pipeline) — the
+  // Alko reference-linking trust gate (design D2): the side-by-side queue
+  // listing and the attributed confirm/reject decisions; supersede is the
+  // replacement path the confirm-conflict 409 points at. Mutations ride
+  // the POST body like every console mutation (operator + note).
+  app.get('/ops/console/match-review', listMatchReview);
+  app.post('/ops/console/match-review/:id/confirm', confirmMatchReview);
+  app.post('/ops/console/match-review/:id/reject', rejectMatchReview);
+  app.post('/ops/console/reference-links/:id/supersede', supersedeReferenceLink);
 
   app.get('/ops/console/corrections', listCorrections);
   app.post('/ops/console/corrections', openCorrection);

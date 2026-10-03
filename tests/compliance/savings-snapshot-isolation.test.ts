@@ -17,10 +17,15 @@
  *   snapshot rows present, the landed-cost calculation, the €/g ranking,
  *   and the basket optimization are byte-identical (same
  *   JSON.stringify discipline as the mirror test) to the zero-row
- *   outputs. The savings surface itself is the non-vacuity witness: its
- *   honest empty state (asOf null) vs populated day proves the
- *   compositions genuinely differ in snapshot state while nothing else
- *   moved.
+ *   outputs. Since change alko-reference-matching-pipeline (task 4.3)
+ *   snapshot rows can carry `reference_link_id` provenance (migration
+ *   0026), so the fixture set spans zero, one, and many CONFIRMED links
+ *   across the compositions — the identity claim is unchanged: linkage
+ *   must not leak into any computed ordering. The savings surface itself
+ *   is the non-vacuity witness: its honest empty state (asOf null) vs
+ *   populated day proves the compositions genuinely differ in snapshot
+ *   state while nothing else moved; the persisted link ids on the
+ *   latest-day rows prove the link fixtures are not vacuous either.
  *
  * Byte-proxy decisions are the mirror suite's: compute/read-time stamps
  * (calculationTimestamp/calculatedAt/computedAt) are normalized away;
@@ -255,10 +260,33 @@ async function seedBoxCatalogue(
 }
 
 // ---------------------------------------------------------------------------
-// Savings snapshot fixtures — the only difference between compositions
+// Savings snapshot fixtures (and the CONFIRMED reference links their
+// provenance names) — the only difference between compositions
 // ---------------------------------------------------------------------------
 
 const SNAPSHOT_DAY_A = '2026-09-07';
+
+const LINK_CONFIRMED_AT = '2026-09-01T00:00:00.000Z';
+
+/**
+ * Insert one CONFIRMED product_reference_links row (migration 0026) — the
+ * live edge a linked snapshot row names as `reference_link_id`. CONFIRMED
+ * requires attribution (conditional CHECK), so the fixture inserts it
+ * directly with a fixed operator instant; the link lifecycle itself is
+ * the repositories' tests' subject (task 1.2). Must run after the link
+ * sides' product_master rows exist (FK).
+ */
+function seedConfirmedLink(
+  db: ReturnType<typeof openMigratedD1>['db'],
+  link: { id: number; foreignProductId: number; alkoProductId: number },
+): void {
+  db.prepare(
+    `INSERT INTO product_reference_links (
+       id, foreign_product_id, alko_product_id, status,
+       confirmed_by, confirmed_at
+     ) VALUES (?, ?, ?, 'CONFIRMED', 'savings-isolation-compliance', ?)`,
+  ).run(link.id, link.foreignProductId, link.alkoProductId, LINK_CONFIRMED_AT);
+}
 
 /** One fully computed daily snapshot, as the insight job emits it. */
 function snapshotInput(
@@ -281,6 +309,7 @@ function snapshotInput(
     gapCents: 1009,
     gapBasisPoints: 3882,
     taxDatasetVersion: 'v3.0-2026',
+    referenceLinkId: null,
     ...overrides,
   };
 }
@@ -393,7 +422,7 @@ async function getSavings(
 // ===========================================================================
 
 describe('savings-snapshot state vs calculator/ranking/basket outputs (fresh composition per snapshot state)', () => {
-  it('all three outputs are byte-identical with zero, one, and many snapshot rows', async () => {
+  it('all three outputs are byte-identical with zero, one, and many snapshot rows — direct and link provenance alike', async () => {
     // Composition A: no savings rows anywhere.
     const zero = openMigratedD1();
     seedSharedCatalog(zero.db);
@@ -413,18 +442,34 @@ describe('savings-snapshot state vs calculator/ranking/basket outputs (fresh com
     const oneBasket = await postBasketOptimize(one.d1);
     const oneSavings = await getSavings(one.d1);
 
+    // Composition D: identical seeds PLUS exactly one snapshot row that
+    // NAMES a CONFIRMED reference link (one link present).
+    const oneLink = openMigratedD1();
+    seedSharedCatalog(oneLink.db);
+    await seedBoxCatalogue(oneLink.d1);
+    seedConfirmedLink(oneLink.db, { id: 1, foreignProductId: 1, alkoProductId: 2 });
+    await seedSnapshots(oneLink.d1, [snapshotInput(1, { referenceLinkId: 1 })]);
+    const oneLinkCost = await postLandedCost(oneLink.d1);
+    const oneLinkRanking = await getRanking(oneLink.d1);
+    const oneLinkBasket = await postBasketOptimize(oneLink.d1);
+    const oneLinkSavings = await getSavings(oneLink.d1);
+
     // Composition C: identical seeds PLUS many snapshot rows — three
-    // days, two products.
+    // days, two products, mixed provenance: two CONFIRMED links, three
+    // link-bearing rows (the same link re-stamped across a product's
+    // days, as the cron keys rows per day), three direct rows.
     const many = openMigratedD1();
     seedSharedCatalog(many.db);
     await seedBoxCatalogue(many.d1);
+    seedConfirmedLink(many.db, { id: 1, foreignProductId: 1, alkoProductId: 2 });
+    seedConfirmedLink(many.db, { id: 2, foreignProductId: 2, alkoProductId: 3 });
     await seedSnapshots(many.d1, [
-      snapshotInput(1),
-      snapshotInput(2),
-      snapshotInput(1, { asOf: '2026-09-06' }),
+      snapshotInput(1, { referenceLinkId: 1 }),
+      snapshotInput(2, { referenceLinkId: 2 }),
+      snapshotInput(1, { asOf: '2026-09-06', referenceLinkId: 1 }),
       snapshotInput(2, { asOf: '2026-09-06' }),
       snapshotInput(1, { asOf: '2026-09-05' }),
-      snapshotInput(2, { asOf: '2026-09-05' }),
+      snapshotInput(2, { asOf: '2026-09-05', referenceLinkId: 2 }),
     ]);
     const manyCost = await postLandedCost(many.d1);
     const manyRanking = await getRanking(many.d1);
@@ -434,12 +479,14 @@ describe('savings-snapshot state vs calculator/ranking/basket outputs (fresh com
     // The calculator neither grew a key nor moved a figure.
     const zeroCostBytes = JSON.stringify(normalizeStamps(zeroCost));
     expect(JSON.stringify(normalizeStamps(oneCost))).toBe(zeroCostBytes);
+    expect(JSON.stringify(normalizeStamps(oneLinkCost))).toBe(zeroCostBytes);
     expect(JSON.stringify(normalizeStamps(manyCost))).toBe(zeroCostBytes);
     expect(Object.keys(manyCost).sort()).toEqual(Object.keys(zeroCost).sort());
 
-    // The ranking is byte-identical across all three states.
+    // The ranking is byte-identical across all four states.
     const zeroRankingBytes = JSON.stringify(zeroRanking);
     expect(JSON.stringify(oneRanking)).toBe(zeroRankingBytes);
+    expect(JSON.stringify(oneLinkRanking)).toBe(zeroRankingBytes);
     expect(JSON.stringify(manyRanking)).toBe(zeroRankingBytes);
     // Non-vacuity for the ranking surface: the metric orders the seeded
     // catalog (mirror suite's expected order).
@@ -447,9 +494,10 @@ describe('savings-snapshot state vs calculator/ranking/basket outputs (fresh com
       (zeroRanking as { items: { productId: number }[] }).items.map((i) => i.productId),
     ).toEqual([1, 4, 5, 3, 2]);
 
-    // The basket optimization is byte-identical across all three states.
+    // The basket optimization is byte-identical across all four states.
     const zeroBasketBytes = JSON.stringify(normalizeStamps(zeroBasket));
     expect(JSON.stringify(normalizeStamps(oneBasket))).toBe(zeroBasketBytes);
+    expect(JSON.stringify(normalizeStamps(oneLinkBasket))).toBe(zeroBasketBytes);
     expect(JSON.stringify(normalizeStamps(manyBasket))).toBe(zeroBasketBytes);
     expect(Object.keys(manyBasket).sort()).toEqual(Object.keys(zeroBasket).sort());
 
@@ -461,10 +509,22 @@ describe('savings-snapshot state vs calculator/ranking/basket outputs (fresh com
     expect(zeroSavings.rows).toEqual([]);
     expect(oneSavings.asOf).toBe(SNAPSHOT_DAY_A);
     expect(oneSavings.rows).toHaveLength(1);
+    expect(oneLinkSavings.asOf).toBe(SNAPSHOT_DAY_A);
+    expect(oneLinkSavings.rows).toHaveLength(1);
     expect(manySavings.asOf).toBe(SNAPSHOT_DAY_A);
     expect(manySavings.rows.map((r) => r.productId).sort()).toEqual([1, 2]);
     expect(zeroSavings.coverage.evaluated).toBe(manySavings.coverage.evaluated);
     expect(zeroSavings.coverage.withReference).toBe(0);
+    expect(oneSavings.coverage.withReference).toBe(1);
+    expect(oneLinkSavings.coverage.withReference).toBe(1);
     expect(manySavings.coverage.withReference).toBe(2);
+    // The link fixtures are not vacuous either: the latest-day rows of
+    // the link-bearing compositions name their CONFIRMED links (latest
+    // day reads in product-id order), and mixed provenance coexists on
+    // the many composition's full three-day span.
+    const oneLinkDay = await new D1SavingsSnapshotRepository(oneLink.d1).findLatestDay();
+    expect(oneLinkDay.map((r) => r.referenceLinkId)).toEqual([1]);
+    const manyDay = await new D1SavingsSnapshotRepository(many.d1).findLatestDay();
+    expect(manyDay.map((r) => r.referenceLinkId)).toEqual([1, 2]);
   });
 });

@@ -186,6 +186,21 @@ export interface CalculatorInput {
    * date-resolved (import VAT) consume it.
    */
   readonly transactionDate?: string;
+
+  /**
+   * Optional Alko reference product override (design D4, change
+   * alko-reference-matching-pipeline): when present, the display-only
+   * Alko benchmark resolves from THAT product's Alko offers — with the
+   * exact benchmark selection predicate (newest observation, ties to the
+   * higher offer id) — while the retail best-offer selection keeps
+   * running on {@link productId}'s own offers. This is the
+   * CONFIRMED-reference-link path: the calculated (foreign) product need
+   * not carry any Alko offer of its own. Absent → the benchmark resolves
+   * from the calculated product's own offers, exactly as before. An
+   * override product with no usable Alko offers yields benchmark absence
+   * — the honest state, never a guessed reference.
+   */
+  readonly alkoReferenceProductId?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -369,6 +384,17 @@ export interface SanityNote {
 export type AlkoBenchmarkSnapshot = Omit<AlkoBenchmarkAvailable, 'observedAt'> & {
   /** Observation timestamp of the selected reference row, ISO 8601. */
   readonly observedAt: string;
+  /**
+   * Product master id whose Alko offers produced this benchmark —
+   * present exactly when the request resolved the reference from a
+   * LINKED reference product (`CalculatorInput.alkoReferenceProductId`,
+   * design D4, change alko-reference-matching-pipeline) rather than the
+   * calculated product's own offers. The explainability invariant for
+   * linked-pair calculations: the result and the persisted record name
+   * the product the reference came from. Absent for direct
+   * calculations — key absence keeps those byte-identical.
+   */
+  readonly referenceProductId?: number;
 };
 
 /**
