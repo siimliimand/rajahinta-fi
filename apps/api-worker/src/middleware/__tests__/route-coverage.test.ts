@@ -382,6 +382,9 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   // Calculator — CALCULATOR prefix at index.ts, ageGate prefix in guards.
   ['/api/v1/calculator', ['POST'], 'CALCULATOR + ageGate'],
   ['/api/v1/calculator/result/:recordId', ['GET'], 'CALCULATOR + ageGate'],
+  // Contact intake (first-impression-pass 3.2) — route-local CONTACT
+  // rate limit (5/10 min/IP), anonymous by design; no guard.
+  ['/api/v1/contact', ['POST'], 'CONTACT'],
   // Declaration — ageGate prefix + requireFeature('declaration:summary').
   ['/api/v1/declaration/:recordId', ['GET'], '— + ageGate + entitlement'],
   // Event calculator — route-local CALCULATOR.
