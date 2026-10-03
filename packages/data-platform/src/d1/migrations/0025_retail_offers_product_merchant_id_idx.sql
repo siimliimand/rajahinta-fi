@@ -1,0 +1,15 @@
+-- Task 1.2 (change unitprice-ranking-scale-fix):
+-- the unitprice ranking dedups retail_offers to the latest offer per
+-- (product, merchant) via a GROUP BY product_id, merchant with MAX(id),
+-- and the per-product findOffers lookups filter retail_offers by
+-- product_id. Both need a product_id-leading index; the only existing
+-- retail_offers index is
+-- retail_offers_merchant_product_id_observed_at_idx
+-- (merchant, product_id, observed_at), which cannot serve any
+-- product_id-leading predicate. This index leads with product_id and
+-- merchant in the dedup's GROUP BY order, and the trailing id column
+-- lets SQLite resolve MAX(id) per group from the index alone.
+-- IF NOT EXISTS despite the runner applying each file exactly once
+-- (wrangler d1 migrations filename-order semantics): a stray re-apply of
+-- the statement stays a no-op instead of an abort.
+CREATE INDEX IF NOT EXISTS `retail_offers_product_merchant_id_idx` ON `retail_offers` (`product_id`, `merchant`, `id`);
