@@ -192,3 +192,113 @@ describe('ranking input types carry no VAT surface', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 4. Carrier-priced transport lines are equally invisible
+// (transport-confidence-unlock, task 4.1)
+//
+// The 0 ¢ / UNAVAILABLE transport line above described the pre-unlock
+// reality (no carrier rows, total miss). With carrier matching fixed, real
+// results carry carrier-priced transport lines whose reliability moved too
+// (design D6: VERIFIED only on a stored weight, ESTIMATED otherwise —
+// status-only, monetary figures byte-identical). These checks pin that the
+// carrier-priced shape and its D6 status twin are as invisible to every
+// compare order as the VAT line is: reliability stays display-only.
+// ---------------------------------------------------------------------------
+
+/** Carrier-priced line set: transport 150 ¢ ESTIMATED (volume-estimate basis). */
+const CARRIER_ESTIMATED_LINES: ItemizedCost[] = [
+  { label: 'Retail price', category: 'foreignRetailPrice', cents: 200, reliability: 'ESTIMATED' },
+  { label: 'Transport', category: 'transportCost', cents: 150, reliability: 'ESTIMATED' },
+  { label: 'Alcohol excise', category: 'alcoholExciseEstimate', cents: 91, reliability: 'VERIFIED' },
+  { label: 'Container duty', category: 'containerDutyEstimate', cents: 0, reliability: 'VERIFIED' },
+  {
+    label: 'Import VAT (estimated)',
+    category: 'importVatEstimate',
+    cents: 112,
+    reliability: 'VERIFIED',
+    rateVersionId: 'import-vat-2024.2',
+    calculatedAt: '2026-09-09T10:00:00.000Z',
+    breakdown: [
+      { label: 'Retail price', category: 'foreignRetailPrice', cents: 200, reliability: 'VERIFIED' },
+      { label: 'Transport', category: 'transportCost', cents: 150, reliability: 'ESTIMATED' },
+      { label: 'Alcohol excise', category: 'alcoholExciseEstimate', cents: 91, reliability: 'VERIFIED' },
+      { label: 'Container duty', category: 'containerDutyEstimate', cents: 0, reliability: 'VERIFIED' },
+    ],
+  },
+];
+
+/** D6 twin: the ONLY difference is the transport status (stored-weight basis). */
+const CARRIER_VERIFIED_LINES: ItemizedCost[] = CARRIER_ESTIMATED_LINES.map(
+  (l) =>
+    l.category === 'transportCost'
+      ? { ...l, reliability: 'VERIFIED' }
+      : { ...l, breakdown: l.breakdown?.map((b) =>
+          b.category === 'transportCost'
+            ? { ...b, reliability: 'VERIFIED' }
+            : b,
+        ) },
+);
+
+describe('carrier-priced transport is invisible to every compare order', () => {
+  it('the D6 twin pair differs in status only — every monetary figure byte-identical', () => {
+    // The downgrade moved a status, never a cent: strip reliabilities and
+    // the two line sets must serialize identically.
+    const stripStatus = (lines: ItemizedCost[]): unknown[] =>
+      JSON.parse(
+        JSON.stringify(lines, (key, value) =>
+          key === 'reliability' ? undefined : value,
+        ),
+      );
+    expect(stripStatus(CARRIER_VERIFIED_LINES)).toEqual(
+      stripStatus(CARRIER_ESTIMATED_LINES),
+    );
+    // Same totals — the status feeds confidence display, not money.
+    const sum = (lines: ItemizedCost[]) =>
+      lines.reduce((s, l) => s + l.cents, 0);
+    expect(sum(CARRIER_VERIFIED_LINES)).toBe(sum(CARRIER_ESTIMATED_LINES));
+  });
+
+  it('decorating with carrier-priced lines reorders nothing vs the UNAVAILABLE-zero shape', () => {
+    // Equal totals: one product carries the carrier-priced transport line
+    // (150 ¢ ESTIMATED), the others the legacy 0 ¢ UNAVAILABLE shape — no
+    // order may move under any sort option.
+    const plain = [
+      createCompareProduct({ id: 1, name: 'Alpha', totalCents: 553, itemizedCosts: DOMESTIC_LINES }),
+      createCompareProduct({ id: 2, name: 'Beta', totalCents: 553, itemizedCosts: DOMESTIC_LINES }),
+      createCompareProduct({ id: 3, name: 'Gamma', totalCents: 553, itemizedCosts: DOMESTIC_LINES }),
+    ];
+    const carrierPriced = [
+      createCompareProduct({ id: 1, name: 'Alpha', totalCents: 553, itemizedCosts: DOMESTIC_LINES }),
+      createCompareProduct({ id: 2, name: 'Beta', totalCents: 553, itemizedCosts: CARRIER_ESTIMATED_LINES }),
+      createCompareProduct({ id: 3, name: 'Gamma', totalCents: 553, itemizedCosts: CARRIER_ESTIMATED_LINES }),
+    ];
+
+    for (const order of COMPARE_SORT_OPTIONS) {
+      expect(
+        sortComparisonProducts(carrierPriced, order).map((p) => p.id),
+      ).toEqual(sortComparisonProducts(plain, order).map((p) => p.id));
+    }
+  });
+
+  it('the D6 status twin pair never reorders — the downgrade is display-only', () => {
+    // Same monetary figures, transport status ESTIMATED vs VERIFIED: the
+    // reliability difference must not move ANY compare order.
+    const estimatedBasis = [
+      createCompareProduct({ id: 1, name: 'Alpha', totalCents: 553, itemizedCosts: CARRIER_ESTIMATED_LINES }),
+      createCompareProduct({ id: 2, name: 'Beta', totalCents: 553, itemizedCosts: CARRIER_ESTIMATED_LINES }),
+      createCompareProduct({ id: 3, name: 'Gamma', totalCents: 553, itemizedCosts: CARRIER_VERIFIED_LINES }),
+    ];
+    const storedBasis = [
+      createCompareProduct({ id: 1, name: 'Alpha', totalCents: 553, itemizedCosts: CARRIER_VERIFIED_LINES }),
+      createCompareProduct({ id: 2, name: 'Beta', totalCents: 553, itemizedCosts: CARRIER_VERIFIED_LINES }),
+      createCompareProduct({ id: 3, name: 'Gamma', totalCents: 553, itemizedCosts: CARRIER_ESTIMATED_LINES }),
+    ];
+
+    for (const order of COMPARE_SORT_OPTIONS) {
+      expect(
+        sortComparisonProducts(estimatedBasis, order).map((p) => p.id),
+      ).toEqual(sortComparisonProducts(storedBasis, order).map((p) => p.id));
+    }
+  });
+});

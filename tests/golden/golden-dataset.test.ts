@@ -14,6 +14,14 @@
  * must be re-verified manually.  Bump GOLDEN_DATASET_VERSION when any
  * expected value changes.
  *
+ * @version 3.1 — transport-confidence-unlock task 4.1: the seeded carrier
+ *   rows move to the shipping vocabulary ('parcel') — the old rows encoded
+ *   the dropped containerType join — and Case 2's parcel ceiling widens to
+ *   cover the quantity-scaled 3.6 kg shipment (D4). Case 5's confidence pin
+ *   moves HIGH → MEDIUM (D6: exact bracket on a volume-estimate weight caps
+ *   transport at ESTIMATED). Case 9 adds registry-carrier lanes with the
+ *   D6 stored/volume twin and weight-derived parcel/pallet tiers. No
+ *   monetary figure moved.
  * @version 3.0 — import-VAT vectors (task 4.4, change
  *   alks-feed-and-import-vat): foreign-seller cases (Cases 1, 2, 3, 5)
  *   carry the itemised import-VAT line with traceable provenance
@@ -45,6 +53,7 @@ import type { TransportOffer } from '@rajahinta/core-domain/transport/transport-
 import type {
   CalculatorInput,
   CalculatorRetailOfferData,
+  ItemizedCost,
   IProductDataPort,
   ICalculationRecordPort,
 } from '@rajahinta/core-domain';
@@ -222,14 +231,23 @@ function createGoldenService(options: {
 
 const NOW = new Date();
 
-/** Offer for carrierA: DE → FI, can/parcel up to 1 kg, seller involved. */
+/**
+ * Offer for carrierA: DE → FI, parcel up to 1 kg, seller involved.
+ * `packageTier: 'parcel'` (shipping packaging) — the row previously said
+ * 'can' because the tier join matched product containerType; that join is
+ * gone (transport-confidence-unlock D3): the tier derives from shipment
+ * weight against the carrier's own parcel ceilings. The stored carrier ID
+ * is lowercase per the curated-write convention (D2) — the calculators'
+ * mixed-case `transportMethod: 'carrierA'` below exercises the domain
+ * boundary normalization.
+ */
 const OFFER_CARRIER_A: TransportOffer = {
   id: 900,
-  carrier: 'carrierA',
+  carrier: 'carriera',
   originCountry: 'DE',
   destinationCountry: 'FI',
   weightBracket: { minKg: 0, maxKg: 1 },
-  packageTier: 'can',
+  packageTier: 'parcel',
   priceCents: 150,
   currency: 'EUR',
   sellerInvolvementIndicator: true,
@@ -238,14 +256,23 @@ const OFFER_CARRIER_A: TransportOffer = {
   reliabilityStatus: 'EXACT',
 };
 
-/** Offer for carrierB: ES → FI, glass up to 2 kg, independent. */
+/**
+ * Offer for carrierB: ES → FI, parcel 0–31.5 kg, independent.
+ * Two deliberate fixture repairs (transport-confidence-unlock): the tier
+ * said 'glass' under the dropped containerType join → 'parcel'; the
+ * bracket ceiling 2 kg priced a PER-UNIT weight, and Case 2 ships
+ * 3 × 1.2 kg = 3.6 kg under the quantity-total rule (D4) — the ceiling
+ * widens to a Fransberg-shaped parcel cap so the fixture keeps matching
+ * and every monetary pin in Case 2 stays byte-identical. Stored carrier ID
+ * lowercase per the curated-write convention (D2).
+ */
 const OFFER_CARRIER_B: TransportOffer = {
   id: 901,
-  carrier: 'carrierB',
+  carrier: 'carrierb',
   originCountry: 'ES',
   destinationCountry: 'FI',
-  weightBracket: { minKg: 0, maxKg: 2 },
-  packageTier: 'glass',
+  weightBracket: { minKg: 0, maxKg: 31.5 },
+  packageTier: 'parcel',
   priceCents: 200,
   currency: 'EUR',
   sellerInvolvementIndicator: false,
@@ -320,7 +347,7 @@ const OFFER_CARRIER_B: TransportOffer = {
 
 describe('Golden dataset', () => {
   it(`has dataset version ${GOLDEN_DATASET_VERSION}`, () => {
-    expect(GOLDEN_DATASET_VERSION).toBe('3.0');
+    expect(GOLDEN_DATASET_VERSION).toBe('3.1');
   });
 
   // -----------------------------------------------------------------------
@@ -625,7 +652,12 @@ describe('Golden dataset', () => {
       const result = await service.calculate(INPUT);
 
       expect(result.classification.classification).toBe('DistanceSelling');
-      expect(result.confidence).toBe('HIGH');
+      // Pin moved VERIFIED→ESTIMATED basis (transport-confidence-unlock D6):
+      // carrierA's exact bracket matches on the product's volume-estimate
+      // weight (no stored weight in this fixture), which caps the transport
+      // status at ESTIMATED — confidence can no longer be all-VERIFIED HIGH.
+      // Status-only change: every monetary figure above is untouched.
+      expect(result.confidence).toBe('MEDIUM');
     });
   });
 
@@ -922,14 +954,19 @@ describe('Golden dataset', () => {
       reliabilityStatus: 'EXACT',
     };
 
-    /** Glass-matching transport (PRODUCT_SPIRITS is glass, 1.0 kg). */
-    const OFFER_CARRIER_GLASS: TransportOffer = {
+    /**
+     * Parcel-tier transport for a 1.0 kg spirits shipment (PRODUCT_SPIRITS).
+     * The row previously said packageTier 'glass' under the dropped
+     * containerType join (transport-confidence-unlock D3) — the shipping
+     * tier is derived from weight, not container material.
+     */
+    const OFFER_CARRIER_PARCEL: TransportOffer = {
       id: 902,
-      carrier: 'carrierA',
+      carrier: 'carriera',
       originCountry: 'DE',
       destinationCountry: 'FI',
       weightBracket: { minKg: 0, maxKg: 5 },
-      packageTier: 'glass',
+      packageTier: 'parcel',
       priceCents: 150,
       currency: 'EUR',
       sellerInvolvementIndicator: true,
@@ -948,7 +985,7 @@ describe('Golden dataset', () => {
     const service = createGoldenService({
       product: PRODUCT_SPIRITS,
       offers: [KOSKENKORVA_OFFER],
-      transportOffers: [OFFER_CARRIER_GLASS],
+      transportOffers: [OFFER_CARRIER_PARCEL],
     });
 
     it('degrades the implausible line (LOW + ESTIMATED + notes) instead of passing VERIFIED — amounts unchanged', async () => {
@@ -985,6 +1022,187 @@ describe('Golden dataset', () => {
       expect(result.sanityNotes![0].figures.lineComponentCents).toBe(
         exciseLine.cents,
       );
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Case 9: carrier-seeded registry lane (transport-confidence-unlock).
+  //
+  // The carrier rows match the offer's REGISTRY carrierId (design D1) —
+  // no transportMethod override — so the fixed matching is exercised the
+  // way production resolves it: carrier + lane + weight bracket, with the
+  // tier derived from the total shipment weight (D3) scaled by quantity
+  // (D4). Two product twins isolate the D6 gate: an exact bracket on a
+  // STORED product weight reads VERIFIED; the identical bracket on a
+  // volume-estimate weight caps at ESTIMATED with byte-identical cents
+  // (downgrade-only, monetary figures untouched).
+  // -----------------------------------------------------------------------
+
+  /** Merchant-carrier lane (Fransberg-shaped): two parcel brackets + pallet. */
+  const CARRIER_ROWS: TransportOffer[] = [
+    {
+      id: 910,
+      carrier: 'northline',
+      originCountry: 'DE',
+      destinationCountry: 'FI',
+      weightBracket: { minKg: 0, maxKg: 1 },
+      packageTier: 'parcel',
+      priceCents: 150,
+      currency: 'EUR',
+      sellerInvolvementIndicator: true,
+      observedAt: NOW,
+      refreshedAt: NOW,
+      reliabilityStatus: 'EXACT',
+    },
+    {
+      id: 911,
+      carrier: 'northline',
+      originCountry: 'DE',
+      destinationCountry: 'FI',
+      weightBracket: { minKg: 1, maxKg: 31.5 },
+      packageTier: 'parcel',
+      priceCents: 300,
+      currency: 'EUR',
+      sellerInvolvementIndicator: true,
+      observedAt: NOW,
+      refreshedAt: NOW,
+      reliabilityStatus: 'EXACT',
+    },
+    {
+      id: 912,
+      carrier: 'northline',
+      originCountry: 'DE',
+      destinationCountry: 'FI',
+      weightBracket: { minKg: 31.5, maxKg: 720 },
+      packageTier: 'pallet',
+      priceCents: 9000,
+      currency: 'EUR',
+      sellerInvolvementIndicator: false,
+      observedAt: NOW,
+      refreshedAt: NOW,
+      reliabilityStatus: 'EXACT',
+    },
+  ];
+
+  /** Registry carrier assignment (merchant_registry.carrier_id, design D1). */
+  const OFFER_REGISTRY_DE: CalculatorRetailOfferData = {
+    id: 117,
+    priceCents: 200,
+    merchant: 'registry-de',
+    country: 'DE',
+    reliabilityStatus: 'EXACT',
+    carrierId: 'northline',
+  };
+
+  /** Stored product weight → exact brackets certify VERIFIED (D6). */
+  const PRODUCT_STORED_WEIGHT: CalculatorProductData = {
+    id: 14,
+    regulatoryClassification: 'beer',
+    category: 'beer',
+    volumeLitres: 0.5,
+    alcoholByVolume: 0.05,
+    containerType: 'can',
+    depositSystemStatus: true,
+    weightKg: 0.55,
+    storedWeightGrams: 500,
+    normalizedName: 'Stored-Weight Lager 5%',
+  };
+
+  /** No stored weight → volume-estimate basis caps at ESTIMATED (D6). */
+  const PRODUCT_VOLUME_WEIGHT: CalculatorProductData = {
+    id: 15,
+    regulatoryClassification: 'beer',
+    category: 'beer',
+    volumeLitres: 0.5,
+    alcoholByVolume: 0.05,
+    containerType: 'can',
+    depositSystemStatus: true,
+    weightKg: 0.55,
+    storedWeightGrams: null,
+    normalizedName: 'Volume-Weight Lager 5%',
+  };
+
+  describe('Case 9 — registry carrier lane, weight-derived tiers, D6 gate', () => {
+    function createRegistryService(
+      product: CalculatorProductData,
+      carrierId: string | null = 'northline',
+    ): LandedCostCalculatorService {
+      return createGoldenService({
+        product,
+        offers: [carrierId === null ? OFFER_REGISTRY_DE : { ...OFFER_REGISTRY_DE, carrierId }],
+        transportOffers: CARRIER_ROWS,
+      });
+    }
+
+    const transportLine = (
+      result: Awaited<ReturnType<LandedCostCalculatorService['calculate']>>,
+    ): ItemizedCost =>
+      result.itemizedCosts.find((l) => l.category === 'transportCost')!;
+
+    it('resolves the carrier from the offer registry carrierId — real cents, VERIFIED on stored weight', async () => {
+      const result = await createRegistryService(PRODUCT_STORED_WEIGHT).calculate({
+        productId: 14,
+        quantity: 1,
+        destination: 'FI',
+      });
+
+      // 0.5 kg (stored) × 1 → exact first parcel bracket.
+      expect(result.transportCost).toBe(150);
+      expect(result.metadata.transportOfferId).toBe(910);
+      expect(transportLine(result).reliability).toBe('VERIFIED');
+    });
+
+    it('D6: the same exact bracket on a volume-estimate weight caps at ESTIMATED — cents byte-identical', async () => {
+      const result = await createRegistryService(PRODUCT_VOLUME_WEIGHT).calculate({
+        productId: 15,
+        quantity: 1,
+        destination: 'FI',
+      });
+
+      // Status-only downgrade: same row (910), same 150 ¢ — only the
+      // weight basis (and therefore the status) differs from the twin.
+      expect(result.transportCost).toBe(150);
+      expect(result.metadata.transportOfferId).toBe(910);
+      expect(transportLine(result).reliability).toBe('ESTIMATED');
+    });
+
+    it('quantity scales the lookup weight into the heavier parcel bracket — transport stays per-shipment', async () => {
+      const result = await createRegistryService(PRODUCT_STORED_WEIGHT).calculate({
+        productId: 14,
+        quantity: 12,
+        destination: 'FI',
+      });
+
+      // 0.5 kg × 12 = 6 kg → second parcel bracket, priced ONCE (not ×12).
+      expect(result.transportCost).toBe(300);
+      expect(result.metadata.transportOfferId).toBe(911);
+    });
+
+    it('above the carrier’s largest parcel ceiling the shipment is pallet freight', async () => {
+      const result = await createRegistryService(PRODUCT_STORED_WEIGHT).calculate({
+        productId: 14,
+        quantity: 64,
+        destination: 'FI',
+      });
+
+      // 0.5 kg × 64 = 32 kg > 31.5 kg parcel ceiling (from the carrier's
+      // own parcel rows) → pallet tier, exact pallet bracket.
+      expect(result.transportCost).toBe(9000);
+      expect(result.metadata.transportOfferId).toBe(912);
+    });
+
+    it('normalizes carrier casing/whitespace at the domain boundary (D2)', async () => {
+      const result = await createRegistryService(
+        PRODUCT_STORED_WEIGHT,
+        ' Northline ',
+      ).calculate({
+        productId: 14,
+        quantity: 1,
+        destination: 'FI',
+      });
+
+      expect(result.transportCost).toBe(150);
+      expect(result.metadata.transportOfferId).toBe(910);
     });
   });
 });
