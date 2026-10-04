@@ -152,23 +152,49 @@ export default function ResultCard({ result }: ResultCardProps) {
       className="space-y-5 rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
       data-testid="result-card"
     >
-      {/* ── Answer-first: the estimated landed cost ── */}
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-          {t('total')}
-        </p>
-        <p
-          data-testid="landed-cost-total"
-          className="tabular-money mt-1 text-4xl font-extrabold text-gray-900"
-        >
-          {formatEur(result.totalCents)}
-        </p>
-        <p className="mt-0.5 text-xs text-gray-500">
-          {t('unitsTimesDestination', {
-            count: meta.quantity,
-            destination: meta.input.destination,
-          })}
-        </p>
+      {/* ── Answer-first hero pair (task 3.4, design D4): the estimated
+          landed cost leads; a delivery-mode result carrying a
+          travellerAlternative renders the traveller estimate as a
+          co-equal labeled block beside it — the same treatment the
+          record-page card got in 3.2, same message keys, no new copy.
+          Without the field the hero renders exactly as before in a
+          plain (non-grid) block — the card's first child, so unlike
+          the record card no top margin rides on the wrapper. Amounts
+          come straight from the payload — byte-identical, display-only
+          — and the callout keeps its conditional presence: live POST
+          payload only, GET/persisted results never carry the field. ── */}
+      <div
+        className={
+          result.travellerAlternative !== undefined
+            ? 'grid gap-3 md:grid-cols-2'
+            : undefined
+        }
+        data-testid="hero-pair"
+      >
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            {t('total')}
+          </p>
+          <p
+            data-testid="landed-cost-total"
+            className="tabular-money mt-1 text-4xl font-extrabold text-gray-900"
+          >
+            {formatEur(result.totalCents)}
+          </p>
+          <p className="mt-0.5 text-xs text-gray-500">
+            {t('unitsTimesDestination', {
+              count: meta.quantity,
+              destination: meta.input.destination,
+            })}
+          </p>
+        </div>
+        {result.travellerAlternative && (
+          <TravellerAlternativeCallout
+            alternative={result.travellerAlternative}
+            productId={meta.input.productId}
+            quantity={meta.input.quantity}
+          />
+        )}
       </div>
 
       {/* ── Savings summary (task 5.1 follow-through) — the same
@@ -362,19 +388,6 @@ export default function ResultCard({ result }: ResultCardProps) {
           </div>
         )}
       </div>
-
-      {/* ── Traveller-alternative callout (task 2.2): a labeled ESTIMATE
-          for one traveller carrying the same quantity — display-only,
-          never a cost line, never a restyle of the delivery figures.
-          Present only on the live POST payload for delivery requests;
-          absence renders nothing. ── */}
-      {result.travellerAlternative && (
-        <TravellerAlternativeCallout
-          alternative={result.travellerAlternative}
-          productId={meta.input.productId}
-          quantity={meta.input.quantity}
-        />
-      )}
 
       {/* ── Structural disclaimer — consumed from the result object ── */}
       <DisclaimerBanner disclaimer={result.disclaimer} />
