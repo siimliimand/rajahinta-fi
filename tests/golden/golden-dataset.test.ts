@@ -857,18 +857,25 @@ describe('Golden dataset', () => {
       classification: {
         classification: 'DistanceBuying',
         confidence: 'HIGH',
+        // Evidence codes (consumer-clarity-and-discovery, 2026-10-04): the
+        // classification layer stamps a closed-set `code` beside each
+        // observation. Additive only — observations, evidenceSummary, and
+        // every monetary field in this vector stay byte-identical.
         evidence: [
           {
+            code: 'BUYER_CARRIAGE',
             observation: 'Buyer arranged transport via independent carrier',
             supportingData: 'carrier: beverage-fi',
             source: 'carrierId',
           },
           {
+            code: 'SELLER_NOT_INVOLVED',
             observation: 'Seller did not arrange transport',
             supportingData: 'seller country: FI, buyer country: FI',
             source: 'sellerInvolvementIndicator',
           },
           {
+            code: 'SELLER_IDENTITY_CONFIRMED',
             observation: 'Seller identity confirmed',
             supportingData: 'seller: beverage-fi',
             source: 'sellerId',
