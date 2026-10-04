@@ -1256,8 +1256,8 @@
     "metaTitle": "Landed-cost gap versus the Alko reference",
     "metaDescription": "Estimated landed costs in Finland for foreign offers and their gaps against the Alko reference price, materialized daily. Informational listing.",
     "title": "Landed-cost gap versus the Alko reference",
-    "subtitle": "Each row shows a foreign offer's estimated landed cost in Finland (including duties, taxes, and transport) and its gap against the Alko reference price for the same product. Rows are ordered by the largest gap first; ties are broken by product name in alphabetical order.",
-    "informationalNote": "This listing is informational: it presents the computed gaps as they are. The order is deterministic (largest gap first, ties by product name) and does not affect search, other listings, or the calculator. The figures come from the daily materialized snapshot.",
+    "subtitle": "Each row shows a foreign offer's estimated landed cost in Finland (including duties, taxes, and transport) and its gap against the Alko reference price for the same product. Rows are ordered by the largest saving first; ties are broken by product name in alphabetical order.",
+    "informationalNote": "This listing is informational: it presents the computed gaps as they are. The order is deterministic (largest saving first, ties by product name) and does not affect search, other listings, or the calculator. The figures come from the daily materialized snapshot.",
     "categorySelectorLabel": "Category",
     "category": {
       "beer": "Beer",
@@ -1267,7 +1267,7 @@
       "other_fermented": "Cider and long drink",
       "spirits": "Spirits"
     },
-    "tableCaption": "Products in the {category} price category by landed-cost gap, largest first",
+    "tableCaption": "Products in the {category} price category by landed-cost gap, largest saving first",
     "columnPosition": "#",
     "columnProduct": "Product",
     "columnLandedTotal": "Estimated landed total",

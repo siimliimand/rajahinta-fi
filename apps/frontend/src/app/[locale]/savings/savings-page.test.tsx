@@ -5,7 +5,7 @@
  *
  *   Server shell (renderToString, Next server plumbing mocked):
  *   1. The ordering rule is stated in the copy exactly as the ranking
- *      rule behaves (largest gap first, product-name tiebreaker), and
+ *      rule behaves (largest saving first, product-name tiebreaker), and
  *      the category selector renders URL-state links.
  *
  *   Client listing (@testing-library/react, request mocked — the listing
@@ -195,7 +195,7 @@ function savingsRow(overrides: Partial<Record<string, unknown>> = {}) {
 // ---------------------------------------------------------------------------
 
 describe('SavingsPage shell', () => {
-  it('states the ordering rule (largest gap first, name tiebreaker) and renders the selector', async () => {
+  it('states the ordering rule (largest saving first, name tiebreaker) and renders the selector', async () => {
     const element = await SavingsPage({
       params: Promise.resolve({ locale: 'fi' }),
       searchParams: Promise.resolve({}),
@@ -207,8 +207,9 @@ describe('SavingsPage shell', () => {
     );
 
     // The ordering rule, stated in copy exactly as sortSavingsRows orders.
-    expect(html).toContain('suurimman eron mukaan ensin');
+    expect(html).toContain('suurimman säästön mukaan ensin');
     expect(html).toContain('tuotenimen aakkosjärjestys');
+    expect(html).toContain('suurin säästö ensin');
     // URL-state category links.
     expect(html).toContain('href="/savings?category=beer"');
     expect(html).toContain('href="/savings?category=spirits"');
