@@ -484,6 +484,9 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/ops/console/match-review/:id/reject', ['POST'], 'opsAccess'],
   ['/ops/console/merchants', ['POST'], 'opsAccess'],
   ['/ops/console/newsletter/notify', ['POST'], 'opsAccess'],
+  // Offer verification (transport-confidence-unlock 5.1) — the human
+  // write path for VERIFIED; rides the opsAccess prefix like the rest.
+  ['/ops/console/offers/:id/verify', ['POST'], 'opsAccess'],
   ['/ops/console/producer-links', ['GET', 'POST'], 'opsAccess'],
   ['/ops/console/producer-links/:id', ['POST'], 'opsAccess'],
   ['/ops/console/producer-links/:id/delete', ['POST'], 'opsAccess'],

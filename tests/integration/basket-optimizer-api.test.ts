@@ -73,7 +73,10 @@ const TRANSPORT_BEVERAGE_DE: TransportOffer = {
   originCountry: 'DE',
   destinationCountry: 'FI',
   weightBracket: { minKg: 0, maxKg: 10 },
-  packageTier: 'can',
+  // D3 (transport-confidence-unlock): the tier is the shipping packaging
+  // ('parcel'/'pallet'), never the product's container material — the
+  // 0.55 kg shipment derives 'parcel' against this row's 10 kg ceiling.
+  packageTier: 'parcel',
   priceCents: 150,
   currency: 'EUR',
   sellerInvolvementIndicator: true,
@@ -88,7 +91,9 @@ const TRANSPORT_VINOS_ES: TransportOffer = {
   originCountry: 'ES',
   destinationCountry: 'FI',
   weightBracket: { minKg: 0, maxKg: 10 },
-  packageTier: 'can',
+  // D3: parcel/pallet is the shipping tier the carrier prices by —
+  // container material never selects it (transport-confidence-unlock).
+  packageTier: 'parcel',
   priceCents: 200,
   currency: 'EUR',
   sellerInvolvementIndicator: true,
