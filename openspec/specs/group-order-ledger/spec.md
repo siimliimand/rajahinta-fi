@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change product-roadmap-phases-1-4. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Shared session with shareable token
 
 An authenticated user SHALL create a group order session that participants join through a shareable token link, each participant adding items under a self-chosen nickname. The token SHALL grant access only to its session and SHALL expire. The session SHALL store no personal data beyond participant nicknames and no account data for non-owning participants.
@@ -45,12 +47,21 @@ The system SHALL NOT process, broker, or facilitate payments: no payment links, 
 - **WHEN** the group order page is viewed
 - **THEN** it SHALL display that Rajahinta does not process or manage payments
 
-### Requirement: Feature gating
+### Requirement: Group-order discoverability
 
-All group order endpoints and UI SHALL be gated behind `enable_group_order_ledger`, default off.
+The group-order creation page SHALL be a discoverable surface: linked from the site footer in every locale, listed in the sitemap's static paths (`/group-order`), and crawlable by robots — the blanket `/group-order` robots disallow SHALL be narrowed to the token subpaths `/group-order/*` and `/en/group-order/*`, so token-scoped session pages remain non-indexable while the creation page becomes crawlable. The header navigation set SHALL remain unchanged: the group-order surface is deliberately a footer-class surface, not a header destination.
 
-#### Scenario: Flag off
+#### Scenario: Create page is linked and crawlable
 
-- **WHEN** the flag is off
-- **THEN** session creation and share-link access SHALL return the feature-disabled error
+- **WHEN** the site footer renders in any locale or the sitemap is fetched
+- **THEN** the group-order creation page appears as a link, and robots.txt does not exclude the creation page path
 
+#### Scenario: Token sessions stay non-indexable
+
+- **WHEN** robots.txt is fetched
+- **THEN** the disallow rules cover `/group-order/*` and `/en/group-order/*` while the creation page `/group-order` itself is not disallowed
+
+#### Scenario: Header navigation stays closed
+
+- **WHEN** the site header renders its desktop or mobile navigation set
+- **THEN** no group-order entry appears and the curated navigation sets are unchanged
