@@ -210,10 +210,19 @@ export class LandedCostCalculatorService {
     // -----------------------------------------------------------------------
     // 3. Transport estimation
     // -----------------------------------------------------------------------
+    // D1 (change transport-confidence-unlock): the carrier resolves once —
+    // an explicit transportMethod wins, then the merchant registry's
+    // carrier assignment, then the merchant name itself as the honest last
+    // resort. The estimator normalizes casing (D2); a miss still degrades
+    // to the 0 ¢ / UNAVAILABLE path below.
+    const resolvedCarrier =
+      input.transportMethod ?? bestOffer.carrierId ?? bestOffer.merchant;
+
     const transportResult = await this.estimateTransport(
       input,
       product,
       bestOffer,
+      resolvedCarrier,
     );
 
     let transportCostCents = 0;
@@ -235,7 +244,7 @@ export class LandedCostCalculatorService {
             transportStatus,
             sellerInvolvementIndicator:
               transportResult.offer.sellerInvolvementIndicator,
-            carrierId: input.transportMethod ?? bestOffer.merchant,
+            carrierId: resolvedCarrier,
             transportCents: transportCostCents,
           }
         : null;
@@ -1039,25 +1048,38 @@ export class LandedCostCalculatorService {
   /**
    * Estimate transport cost for this product.
    * Returns null when no transport offers are found (graceful degradation).
+   *
+   * Weight semantics (change transport-confidence-unlock): the per-unit
+   * weight is the stored product weight (grams → kg) when present and
+   * positive (design D5); otherwise the volume estimate already carried in
+   * `product.weightKg`. D4 multiplies by `input.quantity` — the estimator
+   * prices the TOTAL shipment weight against the carrier's brackets.
+   * `storedWeightGrams` travels as the estimator's final argument so the
+   * weight basis (and the D6 VERIFIED gate) reflects real data only.
    */
   private async estimateTransport(
     input: CalculatorInput,
     product: CalculatorProductData,
     offer: CalculatorRetailOfferData,
+    carrier: string,
   ): Promise<{
     offer: { id: number; priceCents: number; sellerInvolvementIndicator: boolean };
     reliabilityStatus: ReliabilityStatus;
   } | null> {
-    const carrier = input.transportMethod ?? offer.merchant;
     const origin = offer.country;
+    const unitWeightKg =
+      product.storedWeightGrams != null && product.storedWeightGrams > 0
+        ? product.storedWeightGrams / 1000
+        : product.weightKg;
+    const shipmentWeightKg = unitWeightKg * input.quantity;
 
     try {
       const estimate = await this.transportEstimation.estimate(
         carrier,
         origin,
         input.destination,
-        product.weightKg,
-        product.containerType,
+        shipmentWeightKg,
+        product.storedWeightGrams,
       );
 
       return {

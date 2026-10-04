@@ -68,6 +68,15 @@ import type { D1DatabaseLike } from '../../d1/executor';
 type ProductRecord = typeof productMaster.$inferSelect;
 type ProductInsert = typeof productMaster.$inferInsert;
 type RetailOfferRecord = typeof retailOffers.$inferSelect;
+/**
+ * `findOffers` row — the base offer plus the merchant registry's carrier
+ * assignment (design D1, change transport-confidence-unlock). The column
+ * is selected in every row of this query, so the field is required here:
+ * an unassigned merchant reads as null, never as an absent key.
+ */
+type RetailOfferWithCarrierRecord = RetailOfferRecord & {
+  readonly carrierId: string | null;
+};
 
 /** Column projection shared by every product_master SELECT. */
 const PRODUCT_COLUMNS = `
@@ -105,6 +114,13 @@ interface D1RetailOfferRow {
   readonly source_url: string | null;
   readonly observed_at: string;
   readonly reliability_status: string;
+  /**
+   * merchant_registry.carrier_id (design D1, change
+   * transport-confidence-unlock) — present only in the `findOffers`
+   * projection, which LEFT JOINs the registry; null when the merchant has
+   * no assignment.
+   */
+  readonly carrier_id?: string | null;
 }
 
 /** Raw D1 catalog key row — the narrow (id, name) selection of the keys-then-page read. */
@@ -397,6 +413,20 @@ function toContractOffer(row: D1RetailOfferRow): RetailOfferRecord {
     sourceUrl: row.source_url,
     observedAt: new Date(row.observed_at),
     reliabilityStatus: row.reliability_status,
+  };
+}
+
+/**
+ * {@link toContractOffer} plus the registry join's carrier assignment —
+ * always present on this projection: an unassigned merchant maps to a
+ * null field, never an absent key (design D1).
+ */
+function toContractOfferWithCarrier(
+  row: D1RetailOfferRow,
+): RetailOfferWithCarrierRecord {
+  return {
+    ...toContractOffer(row),
+    carrierId: row.carrier_id ?? null,
   };
 }
 
@@ -1001,8 +1031,18 @@ export class D1ProductSearchRepository extends ProductRepository {
     return row ? toContractProduct(row) : null;
   }
 
-  /** @inheritdoc */
-  async findOffers(productId: number): Promise<RetailOfferRecord[]> {
+  /**
+   * @inheritdoc
+   *
+   * The latest-observation offer set enriched with the merchant
+   * registry's carrier assignment (design D1, change
+   * transport-confidence-unlock): one LEFT JOIN on the offer's merchant
+   * — no per-offer follow-up reads. The join is LEFT so an offer whose
+   * merchant is missing from the registry survives with
+   * `carrierId: null`, the honest unknown that degrades to the
+   * merchant-name fallback downstream.
+   */
+  async findOffers(productId: number): Promise<RetailOfferWithCarrierRecord[]> {
     // retail_offers is append-per-scrape: upsertOffer inserts a new row per
     // run and rows are never updated, so the latest observation for a
     // (product, merchant) pair is the max id — the same recency the
@@ -1013,19 +1053,20 @@ export class D1ProductSearchRepository extends ProductRepository {
         .prepare(
           `SELECT o.id, o.merchant, o.country, o.product_id, o.price_cents,
                   o.currency, o.availability, o.source_url, o.observed_at,
-                  o.reliability_status
+                  o.reliability_status, reg.carrier_id AS carrier_id
              FROM retail_offers o
              JOIN (SELECT merchant, MAX(id) AS id
                      FROM retail_offers
                     WHERE product_id = ?
                  GROUP BY merchant) m
                ON m.id = o.id
+             LEFT JOIN merchant_registry reg ON reg.merchant_id = o.merchant
             ORDER BY o.id ASC`,
         )
         .bind(productId)
         .all<D1RetailOfferRow>()
     ).results;
-    return rows.map(toContractOffer);
+    return rows.map(toContractOfferWithCarrier);
   }
 
   /** @inheritdoc */

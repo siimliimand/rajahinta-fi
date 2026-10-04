@@ -221,6 +221,16 @@ export interface CalculatorProductData {
   readonly depositSystemStatus: boolean | null;
   /** Weight in kilograms (may be estimated from volume when unknown). */
   readonly weightKg: number;
+  /**
+   * Stored product weight in grams (`product_master.weight_grams`, design
+   * D5, change transport-confidence-unlock) — the per-unit weight basis
+   * for transport estimation when present and positive. Null/absent means
+   * the feed carried no weight: the calculator keeps the volume estimate
+   * (`weightKg`) and its ESTIMATED cap. Read models that predate the
+   * column may omit the field, which reads exactly as null — absence is
+   * the unknown state, never a fabricated weight.
+   */
+  readonly storedWeightGrams?: number | null;
   readonly normalizedName: string;
 }
 
@@ -279,6 +289,16 @@ export interface CalculatorRetailOfferData {
    * as a benchmark reference.
    */
   readonly observedAt?: Date;
+  /**
+   * The carrier that ships this merchant's parcels
+   * (`merchant_registry.carrier_id`, design D1, change
+   * transport-confidence-unlock). Null/absent means the assignment is
+   * unknown: the transport lookup falls back to the merchant name
+   * honestly and degrades to UNAVAILABLE on a miss — the port never
+   * guesses a carrier. Read models that predate the registry join may
+   * omit the field, which reads exactly as null.
+   */
+  readonly carrierId?: string | null;
 }
 
 // ---------------------------------------------------------------------------

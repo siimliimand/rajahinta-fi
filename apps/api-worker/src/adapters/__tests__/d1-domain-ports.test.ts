@@ -136,7 +136,9 @@ describe('D1ProductDataPort.findRetailOffers', () => {
 
 /** Minimal product_master contract row — the fields the port reads. */
 function productRow(
-  overrides: Partial<Record<'id' | 'name' | 'unitVolume' | 'alcoholByVolume', string | number>> = {},
+  overrides: Partial<
+    Record<'id' | 'name' | 'unitVolume' | 'alcoholByVolume' | 'weightGrams', string | number>
+  > = {},
 ): Record<string, unknown> {
   return {
     id: 1,
@@ -242,6 +244,58 @@ describe('D1ProductDataPort volume guard (task 1.5, proposal D1)', () => {
     expect((await port.findRetailOffers(1))[0].reliabilityStatus).toBe(
       'ESTIMATED',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Carrier + stored-weight passthrough (task 3.3, design D1/D5)
+// ---------------------------------------------------------------------------
+
+describe('D1ProductDataPort carrier + stored-weight passthrough (task 3.3)', () => {
+  it('exposes the registry carrier assignment on the offer contract (D1)', async () => {
+    const rows = [
+      { ...offerRow(), carrierId: 'fransberg' },
+    ] as unknown as RetailOfferRecord[];
+
+    const offers = await portWith(rows).findRetailOffers(1);
+
+    expect(offers[0].carrierId).toBe('fransberg');
+  });
+
+  it('keeps an unassigned merchant honestly null — never a guessed carrier (D1)', async () => {
+    const rows = [
+      { ...offerRow(), carrierId: null },
+    ] as unknown as RetailOfferRecord[];
+
+    const offers = await portWith(rows).findRetailOffers(1);
+
+    expect(offers[0].carrierId).toBeNull();
+  });
+
+  it('reads a registry-less legacy row as carrierId null', async () => {
+    const offers = await portWith([offerRow()]).findRetailOffers(1);
+
+    expect(offers[0].carrierId).toBeNull();
+  });
+
+  it('passes the stored feed weight through and never fabricates one (D5)', async () => {
+    const port = portWithProduct(() => productRow({ weightGrams: 550 }));
+
+    const product = await port.findProductById(1);
+
+    // The stored grams ride the contract as-is; the volume estimate stays
+    // untouched as the calculator's fallback path.
+    expect(product?.storedWeightGrams).toBe(550);
+    expect(product?.weightKg).toBe(0.5);
+  });
+
+  it('keeps a weight-less product null on storedWeightGrams (D5)', async () => {
+    const port = portWithProduct(() => productRow()); // no weightGrams field
+
+    const product = await port.findProductById(1);
+
+    expect(product?.storedWeightGrams).toBeNull();
+    expect(product?.weightKg).toBe(0.5);
   });
 });
 
