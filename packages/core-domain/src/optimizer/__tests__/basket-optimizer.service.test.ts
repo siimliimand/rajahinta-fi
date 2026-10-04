@@ -226,9 +226,9 @@ function createOptimizer(options?: {
 
   // Basket shipping with transport offers
   const transportOffers = options?.transportOffers ?? [
-    makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
-    makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1500, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'can' }),
-    makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1600, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'bottle' }),
+    makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
+    makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1500, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'parcel' }),
+    makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1600, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'pallet' }),
   ];
   const shippingCalc = new BasketShippingCalculator(new StubTransportQuery(transportOffers));
 
@@ -428,8 +428,8 @@ describe('BasketOptimizerService', () => {
 
       // Both merchants have same shipping cost
       const transportOffers = [
-        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
       ];
 
       const service = createOptimizer({ productData, transportOffers });
@@ -789,8 +789,8 @@ describe('BasketOptimizerService', () => {
         findRetailOffers: vi.fn().mockResolvedValue(offersAllEqual),
       });
       const transportOffers = [
-        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
       ];
       const service = createOptimizer({ productData, transportOffers });
       const input: BasketOptimizationInput = {
@@ -942,9 +942,9 @@ describe('BasketOptimizerService', () => {
       });
 
       const transportOffers = [
-        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-c', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-c', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
       ];
 
       const service = createOptimizer({ productData, transportOffers });
@@ -999,8 +999,8 @@ describe('BasketOptimizerService', () => {
       });
 
       const transportOffers = [
-        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'bottle' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'pallet' }),
       ];
 
       const service = createOptimizer({ productData, transportOffers, basketCalcRecordPort: null });
@@ -1055,8 +1055,8 @@ describe('BasketOptimizerService', () => {
       });
 
       const transportOffers = [
-        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'bottle' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'pallet' }),
       ];
 
       const service = createOptimizer({ productData, merchantTerms, transportOffers, basketCalcRecordPort: null });
@@ -1097,10 +1097,10 @@ describe('BasketOptimizerService', () => {
       });
 
       const transportOffers = [
-        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'bottle' }),
-        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'bottle' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'pallet' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: null, maxKg: null }, packageTier: 'pallet' }),
       ];
 
       const service = createOptimizer({ productData, transportOffers });
@@ -1133,10 +1133,10 @@ describe('BasketOptimizerService', () => {
       });
 
       const transportOffers = [
-        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-c', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-d', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-c', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-d', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
       ];
 
       const service = createOptimizer({ productData, transportOffers });
@@ -1209,7 +1209,7 @@ describe('BasketOptimizerService', () => {
           destinationCountry: 'FI',
           priceCents: 1000,
           weightBracket: { minKg: 0, maxKg: 10 },
-          packageTier: 'can',
+          packageTier: 'parcel',
         }),
       );
 
@@ -1373,7 +1373,7 @@ describe('BasketOptimizerService', () => {
           destinationCountry: 'FI',
           priceCents: 1000,
           weightBracket: { minKg: 0, maxKg: 10 },
-          packageTier: 'can',
+          packageTier: 'parcel',
         }),
       );
       const service = createOptimizer({ productData, transportOffers, basketCalcRecordPort: null });
@@ -1477,10 +1477,10 @@ describe('BasketOptimizerService', () => {
       });
 
       const transportOffers = [
-        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'bottle' }),
-        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'bottle' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'pallet' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 20 }, packageTier: 'pallet' }),
       ];
 
       const service = createOptimizer({ productData, transportOffers });
@@ -1515,14 +1515,14 @@ describe('BasketOptimizerService', () => {
           destinationCountry: 'FI',
           priceCents: 800,
           weightBracket: { minKg: 0, maxKg: 10 },
-          packageTier: 'keg',
+          packageTier: 'parcel',
         }),
         makeTransportOffer({
           carrier: 'merchant-a',
           destinationCountry: 'FI',
           priceCents: 1500,
           weightBracket: { minKg: 10, maxKg: 20 },
-          packageTier: 'keg',
+          packageTier: 'parcel',
         }),
       ];
 
@@ -1586,10 +1586,10 @@ describe('BasketOptimizerService', () => {
       });
 
       const transportOffers = [
-        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'bottle' }),
-        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'can' }),
-        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'bottle' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-a', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'pallet' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'parcel' }),
+        makeTransportOffer({ carrier: 'merchant-b', destinationCountry: 'FI', priceCents: 1000, weightBracket: { minKg: 0, maxKg: 10 }, packageTier: 'pallet' }),
       ];
 
       const service = createOptimizer({ productData, transportOffers });

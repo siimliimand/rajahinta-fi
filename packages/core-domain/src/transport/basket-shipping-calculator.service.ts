@@ -1,38 +1,14 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ITransportOfferQuery, TRANSPORT_OFFER_QUERY } from './transport-offer-query.interface';
 import { inBracket, selectBestBracketOffer } from './bracket-selection';
+import { deriveShipmentTier, isPackageTier, type ShipmentTier } from './shipment-tier';
+import { normalizeCarrierId } from './transport-estimation.service';
 import type { TransportOffer } from './transport-offer.type';
 import type {
   BasketItem,
   BasketShippingResult,
   BasketShippingThresholdCheck,
 } from './basket-shipping.types';
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/** Pick the dominant package type (mode). Ties favour the first encountered. */
-function dominantPackageType(items: readonly BasketItem[]): string {
-  if (items.length === 0) return 'parcel';
-
-  const counts = new Map<string, number>();
-  for (const item of items) {
-    counts.set(item.packageType, (counts.get(item.packageType) ?? 0) + 1);
-  }
-
-  let bestType = items[0].packageType;
-  let bestCount = 0;
-
-  for (const [type, count] of counts) {
-    if (count > bestCount) {
-      bestCount = count;
-      bestType = type;
-    }
-  }
-
-  return bestType;
-}
 
 // ---------------------------------------------------------------------------
 // Service
@@ -55,16 +31,26 @@ export class BasketShippingCalculator {
   /**
    * Estimate shipping cost for a basket of items shipped together.
    *
+   * Carrier resolution mirrors the single-item calculator (design D1,
+   * change transport-confidence-unlock): the caller passes the already
+   * resolved carrier as `transportMethod` — explicit user transportMethod,
+   * else the merchant registry's `carrierId`, else the merchant name. The
+   * id normalizes here exactly like TransportEstimationService.estimate
+   * (design D2), so both entry points query the same rows. When no carrier
+   * is resolvable (parameter omitted by a direct caller) all active offers
+   * are considered.
+   *
+   * The parcel/pallet tier derives from the basket's total weight against
+   * the carrier's own bracket ceilings (design D3) — item `packageType`
+   * (container material) never selects the tier, mirroring estimate().
+   *
    * When transportMethod is provided, candidates are filtered by carrier AND
    * optional originCountry (matching TransportEstimationService.estimate()'s
-   * behaviour).  When both originCountry and transportMethod are omitted,
-   * all active offers for the destination + package tier are considered,
-   * which may select a different carrier than the merchant's — callers
-   * SHOULD always pass originCountry when the merchant's country is known.
+   * behaviour).
    *
    * @param items            Items in the basket.
    * @param destination      Destination country code (ISO 3166-1 alpha-2).
-   * @param transportMethod  Optional carrier or method identifier. When
+   * @param transportMethod  Optional resolved carrier identifier. When
    *                         omitted the service queries all active offers.
    * @param originCountry    Optional origin country code. When provided,
    *                         candidates are filtered to offers from this
@@ -77,16 +63,21 @@ export class BasketShippingCalculator {
     originCountry?: string,
   ): Promise<BasketShippingResult> {
     const totalWeight = items.reduce((sum, i) => sum + i.weightKg, 0);
-    const pkgTier = dominantPackageType(items);
 
     const offers = transportMethod
-      ? await this.offerQuery.findByCarrier(transportMethod)
+      ? await this.offerQuery.findByCarrier(normalizeCarrierId(transportMethod))
       : await this.offerQuery.findAllActive();
+
+    // D3: the tier belongs to the shipment weight, not the container. With
+    // a resolvable carrier the boundary comes from that carrier's own
+    // parcel ceilings; the carrier-less fallback derives it from the union
+    // of active offers. `packageType` stays display-only in the breakdown.
+    const pkgTier: ShipmentTier = deriveShipmentTier(offers, totalWeight);
 
     const candidates = offers.filter(
       (o) =>
         o.destinationCountry === destination &&
-        o.packageTier === pkgTier &&
+        isPackageTier(o, pkgTier) &&
         (originCountry === undefined || o.originCountry === originCountry),
     );
 

@@ -49,6 +49,16 @@ class StubQuery implements ITransportOfferQuery {
   }
 }
 
+/** StubQuery that records every carrier lookup (D2 normalization asserts). */
+class RecordingStubQuery extends StubQuery {
+  readonly carrierLookups: string[] = [];
+
+  override async findByCarrier(carrierId: string): Promise<TransportOffer[]> {
+    this.carrierLookups.push(carrierId);
+    return super.findByCarrier(carrierId);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -190,28 +200,31 @@ describe('BasketShippingCalculator', () => {
       expect(result.reliability).toBe('EXACT');
     });
 
-    it('picks dominant package type across mixed items', async () => {
+    it('derives the shipping tier from weight against carrier ceilings, not item package types', async () => {
+      // D3 (change transport-confidence-unlock): 'box'/'parcel' here are
+      // container materials (display-only). The 15 kg basket exceeds the
+      // carrier's largest parcel ceiling (10 kg), so the pallet bracket is
+      // selected regardless of what the items' packageType field says.
       const offers = [
         makeOffer({
           id: 1,
-          carrier: 'posti',
-          destinationCountry: 'FI',
-          packageTier: 'box',
-          weightBracket: { minKg: 0, maxKg: 50 },
-          priceCents: 3000,
-        }),
-        makeOffer({
-          id: 2,
           carrier: 'posti',
           destinationCountry: 'FI',
           packageTier: 'parcel',
           weightBracket: { minKg: 0, maxKg: 10 },
           priceCents: 1500,
         }),
+        makeOffer({
+          id: 2,
+          carrier: 'posti',
+          destinationCountry: 'FI',
+          packageTier: 'pallet',
+          weightBracket: { minKg: 10, maxKg: 200 },
+          priceCents: 3000,
+        }),
       ];
       const calc = new BasketShippingCalculator(new StubQuery(offers));
 
-      // 2 boxes + 1 parcel → dominant is 'box'
       const items: BasketItem[] = [
         { weightKg: 5, packageType: 'box' },
         { weightKg: 8, packageType: 'box' },
@@ -219,8 +232,100 @@ describe('BasketShippingCalculator', () => {
       ];
       const result = await calc.calculateBasket(items, 'FI', 'posti');
 
-      expect(result.packageTier).toBe('box');
+      expect(result.packageTier).toBe('pallet');
       expect(result.totalCents).toBe(3000);
+      expect(result.reliability).toBe('EXACT');
+    });
+
+    it('heavy basket above the parcel ceiling degrades honestly when no pallet rows exist', async () => {
+      // Same derivation as estimate() (D3): above the largest parcel
+      // ceiling a carrier without pallet rows has no match — the basket
+      // reports PARTIAL/0 ¢ where the estimator throws NotFoundError.
+      const offers = [
+        makeOffer({
+          id: 1,
+          carrier: 'posti',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 0, maxKg: 5 },
+          priceCents: 1000,
+        }),
+      ];
+      const calc = new BasketShippingCalculator(new StubQuery(offers));
+
+      const result = await calc.calculateBasket(
+        [
+          { weightKg: 6, packageType: 'bottle' },
+          { weightKg: 6, packageType: 'bottle' },
+        ],
+        'FI',
+        'posti',
+      );
+
+      expect(result.packageTier).toBe('pallet');
+      expect(result.totalCents).toBe(0);
+      expect(result.reliability).toBe('PARTIAL');
+    });
+
+    it('heavy basket selects the pallet bracket when the carrier prices pallets', async () => {
+      const offers = [
+        makeOffer({
+          id: 1,
+          carrier: 'posti',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 0, maxKg: 10 },
+          priceCents: 1500,
+        }),
+        makeOffer({
+          id: 2,
+          carrier: 'posti',
+          destinationCountry: 'FI',
+          packageTier: 'pallet',
+          weightBracket: { minKg: 10, maxKg: 200 },
+          priceCents: 3000,
+        }),
+      ];
+      const calc = new BasketShippingCalculator(new StubQuery(offers));
+
+      const result = await calc.calculateBasket(
+        [
+          { weightKg: 8, packageType: 'bottle' },
+          { weightKg: 8, packageType: 'bottle' },
+        ],
+        'FI',
+        'posti',
+      );
+
+      expect(result.packageTier).toBe('pallet');
+      expect(result.totalCents).toBe(3000);
+      expect(result.reliability).toBe('EXACT');
+    });
+
+    it('normalizes the carrier id before the offer query (D2 parity with estimate)', async () => {
+      const offers = [
+        makeOffer({
+          id: 1,
+          carrier: 'posti',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 0, maxKg: 20 },
+          priceCents: 2500,
+        }),
+      ];
+      const query = new RecordingStubQuery(offers);
+      const calc = new BasketShippingCalculator(query);
+
+      const result = await calc.calculateBasket(
+        [{ weightKg: 10, packageType: 'parcel' }],
+        'FI',
+        '  Posti  ',
+      );
+
+      expect(result.totalCents).toBe(2500);
+      expect(result.reliability).toBe('EXACT');
+      // Same normalized lookup the estimator performs for the same input.
+      expect(query.carrierLookups).toEqual(['posti']);
     });
 
     it('allocates cost proportionally by weight', async () => {
@@ -410,12 +515,14 @@ describe('BasketShippingCalculator', () => {
       ];
       const calc = new BasketShippingCalculator(new StubQuery(offers));
 
-      // Two items = 24kg total, no exact bracket match (24 > 5, 24 < 15 no, 24 < 25 yes — wait 24 IS in 15–25!)
-      // Give each item 22kg → total 44kg which falls outside both brackets
+      // Two 6kg items = 12kg total — inside the carrier's parcel tier
+      // (largest parcel ceiling 25 kg) but in neither bracket, so the
+      // multi-line fallback picks the cheapest bracket (300¢), not the
+      // closest-midpoint one (3500¢).
       const result = await calc.calculateBasket(
         [
-          { weightKg: 22, packageType: 'parcel' },
-          { weightKg: 22, packageType: 'parcel' },
+          { weightKg: 6, packageType: 'parcel' },
+          { weightKg: 6, packageType: 'parcel' },
         ],
         'FI',
         'posti',
