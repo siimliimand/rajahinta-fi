@@ -17,6 +17,7 @@
  * @module WhatIfClient
  */
 
+import { routing, type AppLocale } from '@/i18n/routing';
 import { apiFetch, ApiFetchError } from '@/lib/api';
 import type { ApiError } from '@/lib/types';
 import type { WhatIfResponse, WhatIfScenarioRequest } from './what-if.types';
@@ -98,6 +99,30 @@ export function classifyWhatIfError(err: unknown): {
 }
 
 // ---------------------------------------------------------------------------
+// Disclaimer language
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a URL pathname to the disclaimer language the POST route expects:
+ * the first segment when it is a site locale (the `[locale]` segment),
+ * `routing.defaultLocale` otherwise — with `localePrefix: 'as-needed'`
+ * the bare `/what-if` path IS the Finnish locale.
+ */
+export function whatIfLanguageFromPathname(pathname: string): AppLocale {
+  const segment = pathname.split('/')[1] ?? '';
+  if ((routing.locales as readonly string[]).includes(segment)) {
+    return segment as AppLocale;
+  }
+  return routing.defaultLocale;
+}
+
+/** The active `[locale]` in the browser; the default on the server. */
+function activeLanguage(): AppLocale {
+  if (typeof window === 'undefined') return routing.defaultLocale;
+  return whatIfLanguageFromPathname(window.location.pathname);
+}
+
+// ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
 
@@ -106,6 +131,15 @@ export function classifyWhatIfError(err: unknown): {
  * always carries the structural HYPOTHETICAL disclaimer and the share
  * token for the inputs.
  *
+ * The POST body names `language` (design D1) — the disclaimer language
+ * as an explicit input of the route DTO — whenever the resolved language
+ * is not the default 'fi', whose absence the DTO resolves identically.
+ * When {@link language} is not given it is derived from the active
+ * `[locale]` path segment. It rides the request body only — the share
+ * token stays scenario-inputs-only.
+ *
+ * @param language Explicit disclaimer language — the embed route forwards
+ *        its own `[locale]` segment so the widget matches its host path.
  * @throws {@link WhatIfRateLimitError} on 429 (with Retry-After seconds)
  * @throws {@link ApiFetchError} on any other non-2xx — use
  *         {@link classifyWhatIfError} to render the right treatment.
@@ -113,12 +147,22 @@ export function classifyWhatIfError(err: unknown): {
 export async function calculateWhatIfExcise(
   input: WhatIfScenarioRequest,
   signal?: AbortSignal,
+  language?: AppLocale,
 ): Promise<WhatIfResponse> {
+  // Design D1: the disclaimer language is an explicit input of the route
+  // DTO whose ABSENCE means the domestic default ('fi') — "en is an
+  // explicit request". The language is derived from the active [locale]
+  // (or forwarded by the embed route) and named on the wire only when it
+  // is not the default. It rides the request body only — the share token
+  // stays scenario-inputs-only.
+  const resolved = language ?? activeLanguage();
+  const payload =
+    resolved === routing.defaultLocale ? input : { ...input, language: resolved };
   let res: Response;
   try {
     res = await apiFetch('/api/v1/what-if/excise', {
       method: 'POST',
-      body: JSON.stringify(input),
+      body: JSON.stringify(payload),
       signal,
     });
   } catch (err: unknown) {
