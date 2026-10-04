@@ -515,6 +515,86 @@ describe('GET /api/v1/products — zero-result did-you-mean (task 3.2, change fi
   });
 });
 
+describe('GET /api/v1/products — zero-result suggestion over the widened vocabulary (task 2.2, change consumer-clarity-and-discovery)', () => {
+  // The spec scenario's exact shape: the misspelled word appears in
+  // product NAMES and the curated synonym map but in NO brand — the
+  // brand here stays 'Absolut', so only the widened union (design D2:
+  // brand tokens + name tokens + FINNISH_SYNONYM_GROUPS members) can
+  // resolve votka → vodka.
+  function seedVodkaCatalog(db: DatabaseSync): void {
+    seedProduct(db, {
+      id: 1,
+      name: 'Absolut Vodka Original',
+      brand: 'Absolut',
+      category: 'spirits',
+    });
+  }
+
+  it('carries the advisory suggestion for the misspelled category word "votka" — contract otherwise unchanged', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedVodkaCatalog(db);
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products?q=votka', {
+      headers: AGE,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: unknown[];
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+      suggestion?: string;
+    };
+    // votka→vodka is distance 1 against the union ('viina' is 4); the
+    // fi collation's lowercase-first tie puts the curated member 'vodka'
+    // ahead of the name token 'Vodka'.
+    expect(body.suggestion).toBe('vodka');
+    // The misspelling is never silently rewritten: no fuzzy results are
+    // injected, so the response still answers the ORIGINAL query — zero
+    // results — with the suggestion riding advisory-only beside it.
+    expect(body.total).toBe(0);
+    expect(body.items).toEqual([]);
+    // The envelope contract is otherwise frozen: the legacy pagination
+    // fields intact, then the advisory field, then the additive warnings
+    // embed — nothing reordered, nothing removed.
+    expect(body.page).toBe(1);
+    expect(body.limit).toBe(20);
+    expect(body.totalPages).toBe(0);
+    expect(Object.keys(body)).toEqual([
+      'items',
+      'total',
+      'page',
+      'limit',
+      'totalPages',
+      'suggestion',
+      'merchantWarnings',
+    ]);
+  });
+
+  it('the suggested word is a real query: "vodka" finds the product and carries no suggestion', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedVodkaCatalog(db);
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products?q=vodka', {
+      headers: AGE,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: Array<{ id: number }>;
+      total: number;
+      suggestion?: string;
+    };
+    // The chip's follow-up query resolves through the synonym expansion —
+    // the advisory word is never a dead end.
+    expect(body.total).toBe(1);
+    expect(body.items.map((i) => i.id)).toEqual([1]);
+    expect(Object.prototype.hasOwnProperty.call(body, 'suggestion')).toBe(false);
+  });
+});
+
 describe('GET /api/v1/products — catalog browse (task 2.1, change product-catalog)', () => {
   it('filters by a canonical category with deterministic FI order', async () => {
     const { db, d1 } = openMigratedD1();
