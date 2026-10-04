@@ -885,6 +885,21 @@ export default function CalculatorView() {
                 <legend className="mb-2 block text-sm font-medium text-gray-700">
                   {t('buyingMode.label')}
                 </legend>
+                {/* ── Price fork (task 3.3, consumer-clarity-and-discovery):
+                    one plain sentence stating that the mode choice decides
+                    what the price is — the delivery total versus the
+                    carry-it-yourself allowance framing. Display copy
+                    only; the option labels interpolate so the fork names
+                    exactly the two rendered choices. ── */}
+                <p
+                  data-testid="buying-mode-description"
+                  className="mb-2 text-xs leading-relaxed text-gray-500"
+                >
+                  {t('buyingMode.description', {
+                    delivery: t('buyingMode.sellerArranged'),
+                    personal: t('buyingMode.personal'),
+                  })}
+                </p>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {(
                     [

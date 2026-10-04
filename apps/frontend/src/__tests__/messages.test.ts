@@ -166,6 +166,9 @@ describe('layout and navigation catalog completeness', () => {
       'linkBasket',
       'linkTrip',
       'linkEvent',
+      // consumer-clarity-and-discovery 4.1: the group-order tool joins the
+      // footer's services column.
+      'linkGroupOrder',
       'linkValue',
       'linkBlog',
       // honest-trust-surfaces 4.1: the footer carries a guides link whose
@@ -287,6 +290,9 @@ describe('honest-state catalog key parity (3.1 + 3.2)', () => {
   it('Calculator.buyingMode carries the same keys in both locales', () => {
     expectParity('Calculator', 'buyingMode', [
       'label',
+      // consumer-clarity-and-discovery 3.3: the fieldset description states
+      // the price fork between the two modes.
+      'description',
       'sellerArranged',
       'sellerArrangedDescription',
       'personal',
@@ -317,6 +323,66 @@ describe('honest-state catalog key parity (3.1 + 3.2)', () => {
       'estimatePartial',
       'tryLink',
     ]);
+  });
+
+  // ── Localized classification display (consumer-clarity-and-discovery
+  // 3.2): the label localizes from the ClassificationLabel enum and the
+  // evidence composes locale sentences from the closed evidence-code set —
+  // both locales must carry the exact sets the mapping reads from. ──
+
+  it('CalculatorResult.classification carries exactly the ClassificationLabel set in both locales', () => {
+    expectParity('CalculatorResult', 'classification', [
+      'DistanceSelling',
+      'DistanceBuying',
+      'TravellerImport',
+    ]);
+  });
+
+  it('CalculatorResult.evidence carries the closed code set plus data labels in both locales', () => {
+    const codes = [
+      'BUYER_TRAVELLING',
+      'PERSONAL_ALLOWANCE_APPLIES',
+      'SELLER_CARRIAGE',
+      'BUYER_CARRIAGE',
+      'SELLER_NOT_INVOLVED',
+      'SELLER_IDENTITY_CONFIRMED',
+      'SELLER_IDENTITY_UNVERIFIED',
+      'TRANSPORT_UNDETERMINED',
+    ] as const;
+    const dataKeys = [
+      'carrier',
+      'sellerCountry',
+      'buyerCountry',
+      'destination',
+      'seller',
+      'transportArrangement',
+      'personalTransport',
+      'carrierUnavailable',
+      'noCarrierIdentified',
+      'sellerNotInvolvedInShipping',
+      'sellerIdentifierMissing',
+    ] as const;
+
+    for (const catalog of [fi, en]) {
+      const table = top(catalog).CalculatorResult?.evidence as
+        | Record<string, unknown>
+        | undefined;
+      expect(Object.keys(table ?? {}).sort()).toEqual([...codes, 'data'].sort());
+      for (const code of codes) {
+        expect(typeof table?.[code]).toBe('string');
+      }
+      const data = table?.data as Record<string, unknown> | undefined;
+      expect(Object.keys(data ?? {}).sort()).toEqual([...dataKeys].sort());
+      for (const key of dataKeys) {
+        expect(typeof data?.[key]).toBe('string');
+      }
+    }
+    // Genuinely translated, not copied.
+    for (const code of codes) {
+      const fiTable = top(fi).CalculatorResult?.evidence as Record<string, unknown>;
+      const enTable = top(en).CalculatorResult?.evidence as Record<string, unknown>;
+      expect(enTable[code]).not.toBe(fiTable[code]);
+    }
   });
 
   // ── Outcome nudge (honest-trust-surfaces task 3.3): the post-

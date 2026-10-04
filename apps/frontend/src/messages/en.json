@@ -210,6 +210,7 @@
     "howBody": "Search for a product, select a quantity, and calculate: the estimate combines the product's retail price with a transport estimate and the Finnish excise duty and container tax for the destination. Every figure carries a reliability status, and the result is an estimate — not tax or customs advice.",
     "buyingMode": {
       "label": "Buying mode",
+      "description": "The price follows the selected mode: {delivery} includes the transport cost, {personal} applies one traveller's allowances.",
       "sellerArranged": "Delivery",
       "sellerArrangedDescription": "The seller arranges transport — the estimate includes the transport cost.",
       "personal": "I will carry it myself",
@@ -245,6 +246,34 @@
     "taxRateDataset": "Tax rate dataset: {versions}",
     "transactionClassification": "Transaction classification",
     "notStored": "Not stored with this record",
+    "classification": {
+      "DistanceSelling": "Distance selling — the seller is liable for Finnish excise duty",
+      "DistanceBuying": "Distance buying — the buyer is liable for taxation on import",
+      "TravellerImport": "Traveller import — traveller allowances apply"
+    },
+    "evidence": {
+      "BUYER_TRAVELLING": "The buyer carries the goods across the border personally ({values}).",
+      "PERSONAL_ALLOWANCE_APPLIES": "Personal import allowance applies — the purchase is not included in the calculated total ({values}).",
+      "SELLER_CARRIAGE": "The seller delivers the goods directly to the buyer's country ({values}).",
+      "BUYER_CARRIAGE": "The buyer arranged transport via an independent carrier ({values}).",
+      "SELLER_NOT_INVOLVED": "The seller is not involved in transporting the goods ({values}).",
+      "SELLER_IDENTITY_CONFIRMED": "The seller's details are confirmed ({values}).",
+      "SELLER_IDENTITY_UNVERIFIED": "The seller's details are unverified, lowering the classification's confidence ({values}).",
+      "TRANSPORT_UNDETERMINED": "The transport arrangement could not be determined ({values}).",
+      "data": {
+        "carrier": "carrier",
+        "sellerCountry": "seller country",
+        "buyerCountry": "buyer country",
+        "destination": "destination",
+        "seller": "seller",
+        "transportArrangement": "transport arrangement",
+        "personalTransport": "personal transport",
+        "carrierUnavailable": "carrier information not available",
+        "noCarrierIdentified": "no carrier identified",
+        "sellerNotInvolvedInShipping": "seller not involved in shipping",
+        "sellerIdentifierMissing": "no seller identifier provided"
+      }
+    },
     "availableAt": "Available at",
     "viewAt": "View at {merchant}",
     "alkoBenchmark": {
