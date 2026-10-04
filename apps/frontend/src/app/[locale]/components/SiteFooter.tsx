@@ -79,8 +79,9 @@ export default async function SiteFooter() {
                 { href: '/compare',    labelKey: 'linkCompare' },
                 { href: '/basket',     labelKey: 'linkBasket' },
                 { href: '/trip',       labelKey: 'linkTrip' },
-                { href: '/event',      labelKey: 'linkEvent' },
-                { href: '/value',      labelKey: 'linkValue' },
+                { href: '/event',       labelKey: 'linkEvent' },
+                { href: '/group-order', labelKey: 'linkGroupOrder' },
+                { href: '/value',       labelKey: 'linkValue' },
               ].map(({ href, labelKey }) => (
                 <li key={href}>
                   <Link
