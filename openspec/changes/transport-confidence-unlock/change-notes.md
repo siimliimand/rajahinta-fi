@@ -3,10 +3,13 @@
 ## Pre-flight reads (2026-10-04)
 
 Task 1.1: read-only operations reads before any grant/trigger/write in later
-tasks. **Blocker: every remote read failed — wrangler is not authenticated in
-this session** (exact error below). Nothing was fabricated; everything below
-that could be verified comes from the repo itself (config, migrations,
-handler source). The queries are recorded ready-to-run once auth exists.
+tasks. **First attempt was blocked on wrangler auth (history kept below);
+re-run completed 2026-10-04 against production** (D1
+`rajahinta-api-production`, f8f67277-5046-46fc-9144-4342ab7af003) with
+`CLOUDFLARE_API_TOKEN` injected inline per command from a local secret
+file — never echoed, logged, or committed. All queries succeeded; the
+`carrier_id` sub-read returned the expected migration-pending state (0027
+not yet applied remotely — see Query 4). Staging cross-check included.
 
 ### Environment / binding map (verified from `apps/api-worker/wrangler.jsonc`)
 
@@ -23,27 +26,16 @@ Invocation convention per `docs/ingestion-runbook.md`: run from
 `apps/api-worker` with `wrangler d1 execute DB --remote --env <env> ...`.
 The environment that matters for every read below is **production**.
 
-### Blocker — exact failure
+### Prior blocker — RESOLVED 2026-10-04
 
-`npx wrangler whoami` → "You are not authenticated. Please run
-`wrangler login`." No `CLOUDFLARE_API_TOKEN` is set in the session
-environment (the token exists only as GitHub Actions secret input to the
-deploy workflows — see `.github/workflows/deploy-*.yml`; no local `.env`).
-
-A representative read was attempted and failed verbatim:
-
-```
-wrangler d1 execute DB --remote --env production \
-  --command "SELECT merchant_id, permission_status FROM source_governance \
-  WHERE merchant_id IN ('fransberg','posti')" --json
-```
-
-> error: "In a non-interactive environment, it's necessary to set a
-> CLOUDFLARE_API_TOKEN environment variable for wrangler to work."
-
-`wrangler deployments list --env production` failed the same way, so the
-**deployed** cron state is unverified. Re-run the queries below with auth
-set (interactive `wrangler login` or `CLOUDFLARE_API_TOKEN`) before task 2.
+First attempt: `npx wrangler whoami` → "You are not authenticated. Please
+run `wrangler login`." A representative D1 read failed verbatim with:
+"In a non-interactive environment, it's necessary to set a
+CLOUDFLARE_API_TOKEN environment variable for wrangler to work."
+Resolved by sourcing the token per-command (inline
+`CLOUDFLARE_API_TOKEN="$(cat <secret-file>)"` env, same secret the deploy
+workflows use via GitHub Actions) — no interactive login, nothing stored
+in the repo or shell history.
 
 ### Query 1 — source_governance rows for the curated carriers
 
@@ -61,8 +53,20 @@ SELECT merchant_id, acquisition_method, permission_status, status_reason,
 FROM source_governance WHERE merchant_id IN ('fransberg','posti');
 ```
 
-**Result: NOT RUN — auth blocker.** Expected for the unlock: a GRANTED row
-per carrier (fail-closed gate means zero rows read as "not granted").
+**Result (production, 2026-10-04): 2 rows, both GRANTED** — the fail-closed
+gate is open for both curated carriers:
+
+| id | merchant_id | acquisition_method | permission_status | last_verified_at | created_at / updated_at |
+|----|-------------|--------------------|-------------------|------------------|-------------------------|
+| 5  | fransberg   | MANUAL_VERIFICATION | GRANTED | 2026-09-28T12:33:55.000Z | 2026-09-28T12:33:58.863Z (both) |
+| 6  | posti       | MANUAL_VERIFICATION | GRANTED | 2026-09-28T12:33:55.000Z | 2026-09-28T12:33:58.863Z (both) |
+
+`source_url`: `https://fransberg.eu/pricing` / `https://www.posti.fi`.
+`status_reason` (both): owner policy 2026-09-28 — transport rates are a
+manually curated in-repo dataset, admin re-verifies a few times per year,
+grant enables the monthly curated-rate-refresh cron (posti adds: its
+price-list JSON endpoint is CDN-blocked for datacenter/Cloudflare egress,
+403/1031). A zero-row result would have read as "not granted".
 
 ### Query 2 — carrier rows in transport_offers (does the Oct 1 tick append?)
 
@@ -71,10 +75,29 @@ SELECT carrier, COUNT(*) AS rows, MAX(observed_at) AS newest
 FROM transport_offers GROUP BY carrier;
 ```
 
-**Result: NOT RUN — auth blocker.** Proposal (verified 2026-10-03 against
-the repo) states the table carries no carrier rows at all; this read
-confirms whether that is still true and, if rows exist, which carrier and
-how fresh.
+**Result (production, 2026-10-04): the proposal's "no carrier rows at all"
+is outdated — one carrier present:**
+
+| carrier | rows | newest `observed_at` |
+|---|---|---|
+| fransberg | 36 | 2026-09-17T00:00:00.000Z |
+
+No `posti` rows and no other carrier values. Reading the tick fingerprint
+(the handler is append-only and skips a carrier whose newest stored
+`observed_at` already equals its dataset constant):
+
+- **fransberg @ 2026-09-17** is consistent with the dataset's constant —
+  fransberg reads as already current; an Oct 1 tick would have taken the
+  skip path and appended nothing. This read alone cannot distinguish
+  "tick ran and skipped" from "rows loaded by an earlier sync".
+- **posti: 0 rows is the notable gap.** The grant (2026-09-28 12:33) and
+  the Posti-capable handler (commit `99e869c`, 2026-09-28) both predate
+  the 2026-10-01 05:00 UTC tick, and a zero-row carrier takes the append
+  path — yet nothing was appended. Either the Oct 1 Posti refresh failed
+  or the then-deployed build lacked the Posti path; not determinable from
+  reads. Flag: do not assume the cron works end-to-end for Posti until a
+  tick succeeds or the Workers Logs / dashboard cron-invocation history
+  for `rajahinta-api-production` is checked (see deploy state below).
 
 ### Query 3 — weight_grams coverage over product_master
 
@@ -84,12 +107,11 @@ SELECT COUNT(*) AS total, COUNT(weight_grams) AS with_weight,
 FROM product_master;
 ```
 
-**Result: NOT RUN — auth blocker.** Schema facts verified from
-`migrations/0020_product_weight_grams.sql`: nullable `INTEGER`, added by
-forward migration, **no backfill, no default** — so partial-to-zero
-coverage is expected by construction and informs how much of the
-quantity-aware weight path (change item "quantity-aware weight") can rely
-on stored weights vs the volume fallback.
+**Result (production, 2026-10-04): total 9494, with_weight 3766** (39.7%;
+5728 NULL — matches the no-backfill, no-default expectation from migration
+0020). The quantity-aware weight path can rely on stored weights for ~2 in
+5 products; the volume fallback carries the rest. (Staging: 4638/6158 =
+75.4% — staging coverage is NOT representative of production.)
 
 ### Query 4 — merchant registry countries
 
@@ -97,10 +119,37 @@ on stored weights vs the volume fallback.
 SELECT merchant_id, name, country FROM merchant_registry ORDER BY merchant_id;
 ```
 
-**Result: NOT RUN — auth blocker.** Schema (`0000_supreme_bucky.sql`):
-`merchant_id text(128)`, `name text(256)`, `country text(4)` (ISO-ish
-2-letter per seed data, e.g. `FI`, `DE`). Needed as the anchor for the
-carrier-per-merchant column this change adds.
+**Result (production, 2026-10-04): `carrier_id` column missing — migration
+0027 NOT applied remotely.** The query with `carrier_id` failed verbatim:
+
+> "no such column: carrier_id at offset 35: SQLITE_ERROR [code: 7500]"
+
+Recorded as the migration-pending state (per task definition), not a data
+anomaly: 0027 must be applied to the remote production (and staging) D1
+before this change's merchant→carrier reads/writes can run. Fallback query
+without the column succeeded — the registry anchor for the new column:
+
+| merchant_id | name    | country |
+|-------------|---------|---------|
+| alko        | Alko    | FI      |
+| alks        | Alks    | DE      |
+| kippis      | Kippis  | FI      |
+| longero     | Longero | EE      |
+| mydrink     | MyDrink | EE      |
+
+(Schema `0000_supreme_bucky.sql`: `merchant_id text(128)`, `name
+text(256)`, `country text(4)` ISO-ish 2-letter — confirmed by the rows.)
+
+### Staging cross-check (2026-10-04, same reads against `rajahinta-api-staging`)
+
+- `source_governance`: fransberg + posti both GRANTED (matches production).
+- `transport_offers`: fransberg 36 rows @ 2026-09-17 constant (identical to
+  production) plus 10 legacy probe rows frozen at 2026-08-31T18:29:50.316Z
+  (db_schenker 2, dhl_fi 2, dsv_fi 1, kaukokiito 1, maersk_fi 2,
+  posti_freight 2, vr_transport 2) — production has none of those.
+- `product_master`: 4638/6158 with weight (75.4%).
+- `merchant_registry`: same five merchants/countries as production.
+- Cron triggers on the staging Worker: same six schedules incl. `0 5 1 * *`.
 
 ### Curated-cron deploy state
 
@@ -110,16 +159,24 @@ carrier-per-merchant column this change adds.
   `CURATED_REFRESH_CRON = '0 5 1 * *'` and syncs the in-repo Fransberg +
   Posti datasets, skipping a carrier whose newest stored `observed_at`
   already equals the dataset's constant.
-- **Deployed state (NOT verified):** `wrangler deployments list` needs the
-  same auth; blocked.
-- **Oct 1 tick log (NOT verified — tooling limitation, per plan):**
-  `wrangler tail` only streams live events, it cannot replay past
-  invocations, so the 2026-10-01 05:00 UTC tick cannot be confirmed from
-  here. Cheap alternatives once authenticated: Workers Logs / cron-invocation
-  history in the Cloudflare dashboard for `rajahinta-api-production`, or the
-  `MAX(observed_at)` from Query 2 as the effective evidence (the handler is
-  append-only and skips unchanged datasets, so presence + freshness of
-  carrier rows IS the tick's fingerprint).
+- **Deployed state (verified 2026-10-04):** active production deployment is
+  2026-10-04T09:51:28.034Z, version `5364d1b2-bc5b-46d4-934c-6298ccb443f4`
+  (100% of traffic). The remote trigger set on `rajahinta-api-production`
+  includes `0 5 1 * *` (created 2026-09-26, refreshed by the latest deploy)
+  alongside `0 * * * *`, `0 2 * * *`, `0 */6 * * *`, `*/30 * * * *`,
+  `30 3 * * *`. The curated handler is in the codebase since commit
+  `99e869c` (2026-09-28, "curated transport sources (Posti joins
+  Fransberg)"), which predates the active deployment — so the deployed
+  worker carries both the handler and the trigger.
+- **Oct 1 tick log (still not directly verifiable — tooling limitation):**
+  `wrangler tail` only streams live events and cannot replay past
+  invocations; Workers Logs / dashboard cron-invocation history for
+  `rajahinta-api-production` remains the way to confirm the 2026-10-01
+  05:00 UTC invocation itself. The Query 2 fingerprint partially covers
+  it: fransberg sits at its dataset constant (skip path), but posti has
+  zero rows even though the append path should have run — treat "the cron
+  works end-to-end for Posti" as unproven until a tick succeeds or the
+  invocation history is checked.
 
 ### Doc drift noticed (no action this task)
 
@@ -128,17 +185,18 @@ carrier-per-merchant column this change adds.
 `src/cron/curated-rate-refresh.ts` (covers fransberg + posti). Config and
 code agree on the schedule; only the comment is stale.
 
-### Re-run checklist once auth is available
+### Re-run checklist — EXECUTED 2026-10-04
 
-```bash
-cd apps/api-worker
-wrangler d1 execute DB --remote --env production --json --command "<query 1..4 above>"
-wrangler deployments list --env production
-```
+All four queries plus `wrangler deployments list` ran against production
+(token injected per-command from a local secret file; nothing logged or
+committed), and the same reads were cross-checked against staging (see
+above). The reads are on record; the governance GRANT already exists in
+production.
 
-Then fill the TODO block below from the owner's answers and update this
-section's "NOT RUN" entries with real results. Do not proceed to the
-governance grant (task 2.x ops unlock) before these reads are on record.
+Still open before task 2.x: (a) owner answers for the TODO block below —
+carrier mapping remains unanswered; (b) migration 0027 applied remotely
+(Query 4); (c) optionally confirm the Oct 1 cron invocation via Workers
+Logs / dashboard history (Posti gap in Query 2).
 
 ## TODO(owner) — carrier truth per merchant
 
