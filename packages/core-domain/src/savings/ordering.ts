@@ -1,6 +1,7 @@
 /**
- * Deterministic savings-listing order — gap basis points descending,
- * product name ascending as tiebreaker.
+ * Deterministic savings-listing order — gap basis points ascending
+ * (the largest saving — the most negative gap — first), product name
+ * ascending as tiebreaker.
  *
  * The listing is a public, neutral surface (spec savings-discovery): the
  * same snapshot day must always render the same rows in the same order,
@@ -18,9 +19,10 @@ import type { SavingsGapValue } from './savings.types';
 // ---------------------------------------------------------------------------
 
 /**
- * Comparator for the public listing order: gap basis points descending
- * (largest landed-cost excess over Alko first), product name ascending as
- * the tiebreaker, product id ascending as the final tie. The id level
+ * Comparator for the public listing order: gap basis points ascending
+ * (largest saving first — gap = landed − reference, so the most negative
+ * gap is the biggest cross-border win), product name ascending as the
+ * tiebreaker, product id ascending as the final tie. The id level
  * exists because two distinct products can share a name — without it the
  * order of that pair would be left to the sort implementation.
  *
@@ -28,7 +30,7 @@ import type { SavingsGapValue } from './savings.types';
  */
 export function compareSavingsRows(a: SavingsGapValue, b: SavingsGapValue): number {
   if (a.gapBasisPoints !== b.gapBasisPoints) {
-    return b.gapBasisPoints - a.gapBasisPoints;
+    return a.gapBasisPoints - b.gapBasisPoints;
   }
   if (a.productName !== b.productName) {
     return a.productName < b.productName ? -1 : 1;

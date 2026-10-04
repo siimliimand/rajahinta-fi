@@ -4,9 +4,9 @@
  *
  * Public, deterministic listing of the daily materialized snapshot rows
  * for ONE category, ordered by the core-domain sortSavingsRows rule
- * (gap basis points descending, product name ascending, product id as
- * the final tie). Guard chain (allowances parity): ageGate() per-route
- * plus the route-local SAVINGS limiter.
+ * (gap basis points ascending — the largest saving first — product name
+ * ascending, product id as the final tie). Guard chain (allowances
+ * parity): ageGate() per-route plus the route-local SAVINGS limiter.
  *
  * ## Coverage counts — derivation decision
  *
@@ -57,9 +57,9 @@ import { D1SavingsSnapshotRepository } from '../../../../packages/data-platform/
 import type { SavingsSnapshotRecord } from '../../../../packages/data-platform/src/abstracts';
 
 /** Rows returned when the client sends no limit (listing-page scale). */
-const DEFAULT_LIMIT = 50;
+const DEFAULT_LIMIT = 200;
 /** Hard cap — the listing is a discovery surface, not a bulk export. */
-const MAX_LIMIT = 100;
+const MAX_LIMIT = 500;
 
 /**
  * Largest observed cross-border difference within one category — the

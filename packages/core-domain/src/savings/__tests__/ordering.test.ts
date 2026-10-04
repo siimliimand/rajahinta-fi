@@ -1,7 +1,8 @@
 /**
  * Unit tests for the deterministic savings-listing order (spec
- * savings-discovery): gap basis points descending, product name ascending
- * tiebreaker, fully total order regardless of runtime.
+ * savings-discovery): gap basis points ascending (largest saving first),
+ * product name ascending tiebreaker, fully total order regardless of
+ * runtime.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -25,12 +26,13 @@ function row(
 }
 
 describe('compareSavingsRows', () => {
-  it('orders by gap basis points descending', () => {
+  it('orders by gap basis points ascending (largest saving first)', () => {
     const rows = [row(1, 'A', 100), row(2, 'B', 2500), row(3, 'C', -1000)];
 
     const sorted = [...rows].sort(compareSavingsRows);
 
-    expect(sorted.map((r) => r.productId)).toEqual([2, 1, 3]);
+    // Most negative gap first — the biggest cross-border saving leads.
+    expect(sorted.map((r) => r.productId)).toEqual([3, 1, 2]);
   });
 
   it('breaks equal gaps by product name ascending', () => {
@@ -50,12 +52,12 @@ describe('compareSavingsRows', () => {
     expect(sorted.map((r) => r.productId)).toEqual([2, 5, 9]);
   });
 
-  it('places negative gaps (import cheaper) after positive ones', () => {
+  it('places the most negative gap (largest saving) first', () => {
     const rows = [row(1, 'A', -2500), row(2, 'B', -1000), row(3, 'C', 10)];
 
     const sorted = [...rows].sort(compareSavingsRows);
 
-    expect(sorted.map((r) => r.productId)).toEqual([3, 2, 1]);
+    expect(sorted.map((r) => r.productId)).toEqual([1, 2, 3]);
   });
 });
 
@@ -66,7 +68,7 @@ describe('sortSavingsRows', () => {
 
     const sorted = sortSavingsRows(input);
 
-    expect(sorted.map((r) => r.productId)).toEqual([2, 1]);
+    expect(sorted.map((r) => r.productId)).toEqual([1, 2]);
     expect(input).toEqual(snapshot);
   });
 
@@ -82,8 +84,9 @@ describe('sortSavingsRows', () => {
     const second = sortSavingsRows(input);
 
     expect(first).toEqual(second);
-    // 700 bps first; the three 500-bps rows tie → 'A'(1), 'A'(4), 'C'(3).
-    expect(first.map((r) => r.productId)).toEqual([2, 1, 4, 3]);
+    // 700 bps is the largest loss → last; the three 500-bps rows tie at
+    // the head → 'A'(1), 'A'(4), 'C'(3).
+    expect(first.map((r) => r.productId)).toEqual([1, 4, 3, 2]);
   });
 
   it('handles the empty listing (honest zero state)', () => {

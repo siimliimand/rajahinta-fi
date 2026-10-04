@@ -4,17 +4,19 @@
  * exact composition index.ts wires, age gate + SAVINGS limiter on the
  * route) on the fake-D1 harness.
  *
- * Pinning here: the deterministic listing order (gap bps desc, product
- * name ascending on equal gaps — twice-requested identical), the honest
+ * Pinning here: the deterministic listing order (gap bps asc — the
+ * largest saving first — product name ascending on equal gaps —
+ * twice-requested identical), the honest
  * zero state (unknown category → 200 with an empty list AND the counts,
  * never an error), the coverage counts on every response (evaluated =
  * registry count, with-reference = latest-day rows, listed = returned
  * rows), the latest-day-only read (an older day's row is invisible),
  * per-row reliability + confidence, the limit clamp (top-N by the same
- * order, capped at 100), category validation (400), the age gate
- * (403 without confirmation), and the mixed-provenance listing (task 4.3,
- * change alko-reference-matching-pipeline: direct and linked rows count,
- * order, and render identically — the link id never leaves D1).
+ * order, default 200, capped at 500), category validation (400), the
+ * age gate (403 without confirmation), and the mixed-provenance listing
+ * (task 4.3, change alko-reference-matching-pipeline: direct and linked
+ * rows count, order, and render identically — the link id never leaves
+ * D1).
  *
  * @module SavingsRoutesTest
  */
@@ -159,7 +161,7 @@ function seedConfirmedLink(
 }
 
 describe('GET /api/v1/savings — deterministic listing', () => {
-  it('orders by gap bps desc with the product-name tiebreak, and repeats identically', async () => {
+  it('orders by gap bps asc (largest saving first) with the product-name tiebreak, and repeats identically', async () => {
     const { db, d1 } = openMigratedD1();
     // Equal-gap pair breaks by name ascending; the wine row and the
     // previous-day row must stay out of the beer listing and its counts.
@@ -176,11 +178,12 @@ describe('GET /api/v1/savings — deterministic listing', () => {
     const body = (await first.json()) as SavingsJson;
     const second = (await (await getBeerListing(app, env)).json()) as SavingsJson;
 
-    // Deterministic order, identical across reads.
+    // Deterministic order, identical across reads: gap ascending — the
+    // 500-bps rows (the larger savings here) lead, name asc on the tie.
     expect(body.rows.map((r) => r.productName)).toEqual([
-      'Cider Zest', // 900 bps first
-      'Aurora Lager', // 500 bps, name asc…
+      'Aurora Lager', // 500 bps first, name asc…
       'Borealis Porter', // …Aurora < Borealis
+      'Cider Zest', // 900 bps (largest loss) last
     ]);
     expect(body.rows).toEqual(second.rows);
     expect(body.asOf).toBe(AS_OF);
@@ -268,13 +271,13 @@ describe('GET /api/v1/savings — mixed provenance (direct + linked rows)', () =
     // Counts are provenance-blind: registry (5) / latest-day rows whether
     // direct or linked (3) / returned rows (3).
     expect(body.coverage).toEqual({ evaluated: 5, withReference: 3, listed: 3 });
-    // The pinned order is untouched by provenance: 900 bps first, the
-    // equal 500-bps pair by name ascending — linked, direct, linked,
-    // interleaved purely by the sort rule.
+    // The pinned order is untouched by provenance: the equal 500-bps
+    // pair by name ascending first, 900 bps last — linked, direct,
+    // linked, interleaved purely by the sort rule.
     expect(body.rows.map((r) => r.productName)).toEqual([
-      'Borealis Porter',
       'Aurora Lager',
       'Cider Zest',
+      'Borealis Porter',
     ]);
     // Identical row shape across provenance — the frontend contract is
     // unchanged, and the link id stays in D1 (backend-only provenance).
@@ -287,8 +290,9 @@ describe('GET /api/v1/savings — mixed provenance (direct + linked rows)', () =
     for (const row of body.rows) {
       expect(Object.keys(row).sort()).toEqual(expectedKeys);
     }
-    // The per-row figures flow for linked rows exactly as for direct ones.
-    expect(body.rows[0]).toMatchObject({
+    // The per-row figures flow for linked rows exactly as for direct ones
+    // (the 900-bps linked row is last in ascending order).
+    expect(body.rows[2]).toMatchObject({
       productId: 2,
       merchant: 'saksoinet',
       merchantCountry: 'EE',
@@ -343,13 +347,14 @@ describe('GET /api/v1/savings — limit clamp', () => {
     const body = (await (
       await getBeerListing(app, savingsEnv(d1), '?category=beer&limit=2')
     ).json()) as SavingsJson;
-    expect(body.rows.map((r) => r.productName)).toEqual(['Ale B', 'Ale C']);
+    // Gap ascending: 100 → 200 → 300 bps, so the top-2 are Ale A and Ale C.
+    expect(body.rows.map((r) => r.productName)).toEqual(['Ale A', 'Ale C']);
     expect(body.coverage.listed).toBe(2);
     // The counts stay honest above the clamp.
     expect(body.coverage.withReference).toBe(3);
   });
 
-  it('falls back to the default on a malformed limit and caps at 100', async () => {
+  it('falls back to the default (200) on a malformed limit, accepts 500, and clamps above 500', async () => {
     const { db, d1 } = openMigratedD1();
     await seedThreeBeerRows(db, d1);
     const app = savingsApp();
@@ -359,8 +364,10 @@ describe('GET /api/v1/savings — limit clamp', () => {
     ).json()) as SavingsJson;
     expect(malformed.rows).toHaveLength(3);
 
-    // 101 qualifying rows — the hard cap trims the listing to 100.
-    for (let id = 10; id <= 110; id++) {
+    // 508 qualifying rows — every limit number is exercised where it binds:
+    // the absent/invalid default trims to 200, an explicit 500 is accepted
+    // in full, and anything above the hard cap clamps to 500.
+    for (let id = 10; id <= 514; id++) {
       await seedSnapshot(db, d1, {
         productId: id,
         name: `Bulk Ale ${id}`,
@@ -368,11 +375,26 @@ describe('GET /api/v1/savings — limit clamp', () => {
         gapBasisPoints: id,
       });
     }
-    const capped = (await (
+
+    const defaulted = (await (
+      await getBeerListing(app, savingsEnv(d1), '?category=beer&limit=potato')
+    ).json()) as SavingsJson;
+    expect(defaulted.rows).toHaveLength(200);
+    expect(defaulted.coverage.listed).toBe(200);
+    // The counts stay honest above the clamp.
+    expect(defaulted.coverage.withReference).toBe(508);
+
+    const atMax = (await (
       await getBeerListing(app, savingsEnv(d1), '?category=beer&limit=500')
     ).json()) as SavingsJson;
-    expect(capped.rows).toHaveLength(100);
-    expect(capped.coverage.listed).toBe(100);
+    expect(atMax.rows).toHaveLength(500);
+    expect(atMax.coverage.listed).toBe(500);
+
+    const overMax = (await (
+      await getBeerListing(app, savingsEnv(d1), '?category=beer&limit=999')
+    ).json()) as SavingsJson;
+    expect(overMax.rows).toHaveLength(500);
+    expect(overMax.coverage.listed).toBe(500);
   });
 });
 
