@@ -452,28 +452,42 @@ describe('BasketShippingCalculator', () => {
           weightBracket: { minKg: 0, maxKg: 10 },
           priceCents: 2000,
         }),
+        makeOffer({
+          id: 2,
+          carrier: 'posti',
+          originCountry: 'DE',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 20, maxKg: 30 },
+          priceCents: 4000,
+        }),
       ];
       const query = new StubQuery(offers);
       const calc = new BasketShippingCalculator(query);
       const estimate = new TransportEstimationService(query);
 
-      // Exact match → basket EXACT ↔ estimate VERIFIED
+      // Exact match → basket EXACT ↔ estimate VERIFIED. The stored weight
+      // (5 kg → 5000 g) satisfies the D6 gate: an exact bracket alone no
+      // longer certifies VERIFIED.
       const exactBasket = await calc.calculateBasket(
         [{ weightKg: 5, packageType: 'parcel' }],
         'FI',
         'posti',
       );
-      const exactEstimate = await estimate.estimate('posti', 'DE', 'FI', 5, 'parcel');
+      const exactEstimate = await estimate.estimate('posti', 'DE', 'FI', 5, 5000);
       expect(exactBasket.reliability).toBe('EXACT');
       expect(exactEstimate.reliabilityStatus).toBe('VERIFIED');
 
-      // No exact match possible (12kg outside 0–10 bracket) → both ESTIMATED
+      // No exact match possible (12kg misses both parcel brackets) → both
+      // ESTIMATED. A second parcel bracket keeps 12kg inside the parcel
+      // tier (D3): above the carrier's largest parcel ceiling the estimate
+      // path would derive 'pallet' and degrade instead.
       const estBasket = await calc.calculateBasket(
         [{ weightKg: 12, packageType: 'parcel' }],
         'FI',
         'posti',
       );
-      const estEstimate = await estimate.estimate('posti', 'DE', 'FI', 12, 'parcel');
+      const estEstimate = await estimate.estimate('posti', 'DE', 'FI', 12);
       expect(estBasket.reliability).toBe('ESTIMATED');
       expect(estEstimate.reliabilityStatus).toBe('ESTIMATED');
     });
