@@ -158,3 +158,131 @@ UNAVAILABLE — nothing will be guessed or defaulted.
 Owner answers:
 
 - (pending — fill in)
+
+## Verification runbook (task 5.3, 2026-10-04)
+
+Owner/operator procedure for the VERIFIED write path (task 5.1), its
+audit trail, the ageing contract (task 5.2), and what each surface
+shows once a verification exists. Docs-only: everything below was
+read off the committed code (`ops.routes.ts` `verifyOffer`,
+`freshness-alert.ts` `writeBackAgedVerifiedOffers`,
+`audit-event.repository.ts`, `middleware/ops-access.ts`,
+`lib/design/status.ts`); no commands were executed.
+
+### Operator flow — POST /ops/console/offers/:id/verify
+
+- **Access:** every `/ops/console/*` route rides the opsAccess guard —
+  fail-closed 403 unless `OPS_BEARER_TOKEN` matches the
+  `Authorization: Bearer <token>` header (constant-time SHA-256 digest
+  compare) or `OPS_IP_ALLOWLIST` matches `CF-Connecting-IP`. The same
+  token the rest of the console uses; per-environment secret.
+- **Request:** JSON body `{ "operator": "<name>", "note": "<why>" }`.
+  `operator` is required (non-empty, ≤ 128 chars after trim,
+  `validateOperator`); `note` is an optional string. `:id` is the
+  numeric `retail_offers.id` — unknown id → 404, non-JSON body → 400.
+- **Effect:** sets `reliability_status = 'VERIFIED'` on that row and
+  stamps `verified_at` (ISO-8601 at handling time) and `verified_by`
+  (the trimmed operator name), then appends one audit row (below).
+- **Success response:** `{ id, merchant, productId, reliabilityStatus:
+  "VERIFIED", verifiedAt, verifiedBy }`.
+- **Re-verification:** allowed — a later verify overwrites the
+  `verified_at`/`verified_by` pair in place and appends another audit
+  row. The columns hold only the latest decision; the history lives in
+  `audit_events`.
+- **No un-verify endpoint, deliberately:** superseding a verdict is a
+  later operator decision, never an accident. Ingestion never writes
+  VERIFIED either (offers are pinned ESTIMATED at birth), so a human
+  with a name on record is the only writer (design D7).
+
+### Audit query
+
+Each verify appends to the append-only `audit_events` table with
+`entity_type = 'retail_offer'`, `action = 'confirmed'`,
+`author = <operator>`, and JSON `previous_value` / `new_value`
+snapshots (previous `reliabilityStatus`; new status + verifiedAt +
+verifiedBy) — the same WorkerAuditService write path as every other
+console mutation.
+
+Console read (newest first; limit clamped 1..100, default 25):
+
+```
+GET https://api.rajahinta.fi/ops/console/audit?limit=25
+```
+
+Direct D1 read (repo convention: `cd apps/api-worker`,
+`--remote --env production`, per `docs/ingestion-runbook.md`):
+
+```bash
+wrangler d1 execute DB --remote --env production --command "\
+  SELECT id, entity_id, author, reason, occurred_at, previous_value, new_value \
+  FROM audit_events \
+  WHERE entity_type = 'retail_offer' AND action = 'confirmed' \
+  ORDER BY occurred_at DESC, id ASC LIMIT 50" -y
+```
+
+Columns are snake_case in D1; the console JSON maps them to camelCase.
+The `(entity_type, entity_id, occurred_at)` index serves per-offer
+history — add `AND entity_id = '<offer id>'` for one offer's timeline.
+
+### Ageing contract (task 5.2 — what happens to VERIFIED over time)
+
+- The freshness cron (`FRESHNESS_ALERT_CRON = */30 * * * *`, every
+  30 min) runs the VERIFIED → STALE write-back before its alerting
+  evaluation — and before the alert-config gate, so ageing runs even
+  where email paging is unconfigured. A failed pass is logged, never
+  thrown; offers stay VERIFIED until the next tick retries.
+- **Window source:** the SAME window that defines `actualStatus` in
+  the data-quality classifier — `ReliabilityService.stalenessThreshold
+  For('price')`, module default 48 h. A row ages out when
+  `observed_at < now − window` (strict: AT the boundary is still
+  fresh), mirroring `assessDataRecency` one-to-one — no second
+  freshness constant.
+- **Status-only + idempotent:** the UPDATE touches only
+  `reliability_status`, guarded on `reliability_status = 'VERIFIED'` —
+  price, `observed_at`, and the verification pair are never written,
+  and a re-run over already-STALE rows matches zero rows.
+  ESTIMATED / UNAVAILABLE rows never match (they age through
+  re-ingestion, not this pass).
+- **Attribution survives:** `verified_at` / `verified_by` remain on
+  the row across VERIFIED → STALE. STALE reads as "was verified, the
+  evidence has since aged out"; the pair is historical attribution,
+  overwritten only by the next explicit verification.
+
+### Expected surfaces after a verification
+
+- **Merchant reliability score** (merchants surface): `statusCounts`
+  and `statusShares` aggregate stored statuses, so the verified offer
+  moves its merchant's count into VERIFIED and the VERIFIED share
+  becomes non-zero. Past the price window the freshness tick moves it
+  to STALE — counts follow, shares renormalize; no code involved
+  (design D8: scoring aggregates stored statuses unchanged).
+- **Calculator confidence:** the confidence report is built from
+  per-input reliability statuses; the offer's retail status feeds it
+  directly (`resolveRetailOfferStatus`), so a verified retail offer
+  presents as the verified input it is. Transport VERIFIED is gated
+  separately (task 3.2, design D6): the estimator reports VERIFIED
+  only on an exact weight-bracket match whose weight basis is
+  `STORED_PRODUCT_WEIGHT` (non-null `weight_grams`); a volume-estimate
+  basis caps at ESTIMATED regardless of any verification. Note the
+  asymmetry: the endpoint verifies `retail_offers` rows — transport
+  VERIFIED comes from the curated datasets through that estimator
+  gate, never from this endpoint.
+- **Legend (reliability status meta):** canonical source
+  `apps/frontend/src/lib/design/status.ts` + the `Common.reliability.*`
+  catalog labels (green Verified / blue Estimated / amber Stale / gray
+  Unavailable). No copy change: with phase 5 approved, green becomes a
+  reachable state and the legend's "green = verified" promise is
+  simply true (design D9 — the fallback copy does not apply).
+  Checked, not edited.
+
+### Prerequisite — carrier mapping (TODO(owner) above)
+
+A verified retail offer says nothing about shipping until the
+merchant→carrier assignment exists: with `merchant_registry.carrier_id
+= NULL` the calculator falls back to the merchant name and typically
+degrades transport to `0 ¢ / UNAVAILABLE`, leaving the confidence
+report unverified on the transport input no matter how many offers are
+verified. Fill the `TODO(owner) — carrier truth per merchant` block
+above (NULL is a valid, honest answer) before promising green
+transport lines; Longero (EE→FI) is expected to stay UNAVAILABLE until
+a real carrier dataset exists.
