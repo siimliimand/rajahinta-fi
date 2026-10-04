@@ -20,6 +20,11 @@
  * the four new paths. The focused error-mapping cases live in
  * ops.routes.match-review.test.ts (task 3.1).
  *
+ * Task 5.1 (change transport-confidence-unlock) adds the offer
+ * verification surface: attribution recorded, audit row written,
+ * re-verify overwrites and re-audits, and the guard fails closed —
+ * no token means no status change and no audit row.
+ *
  * @module OpsRoutesTest
  */
 
@@ -32,8 +37,10 @@ import {
   openMigratedD1,
   permissiveEnv,
   request,
+  seedOffer,
   seedProduct,
 } from './harness';
+import { WorkerAuditService } from '../../adapters/audit';
 import { D1ConsumptionNormsRepository } from '../../../../../packages/data-platform/src/repositories/d1/consumption-norms.repository';
 import { D1MatchReviewRepository } from '../../../../../packages/data-platform/src/repositories/d1/match-review.repository';
 import { D1ReferenceLinkRepository } from '../../../../../packages/data-platform/src/repositories/d1/reference-link.repository';
@@ -522,5 +529,161 @@ describe('match-review paths — deny before any data (ops guard fail-closed)', 
       });
       await expectEnvelope(res, 403, { message: 'Forbidden' });
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Offer verification (task 5.1, transport-confidence-unlock) — the
+// owner-gated human write path for VERIFIED (design D7).
+// ---------------------------------------------------------------------------
+
+/** Read an offer row straight from the store (assertions see raw DDL). */
+function verifyOfferRow(
+  db: import('node:sqlite').DatabaseSync,
+  id: number,
+): { reliability_status: string; verified_at: string | null; verified_by: string | null } {
+  return db
+    .prepare(
+      'SELECT reliability_status, verified_at, verified_by FROM retail_offers WHERE id = ?',
+    )
+    .get(id) as { reliability_status: string; verified_at: string | null; verified_by: string | null };
+}
+
+describe('POST /ops/console/offers/:id/verify — the human VERIFIED write path', () => {
+  it('sets VERIFIED with attribution and audits the decision', async () => {
+    const { db, d1 } = openMigratedD1();
+    const productId = seedProduct(db);
+    // Offers are born ESTIMATED — the ingestion contract this endpoint
+    // exists to supersede.
+    const offerId = seedOffer(db, { productId, reliabilityStatus: 'ESTIMATED' });
+    const app = buildApp();
+    const env = authedEnv(d1);
+
+    const res = await request(app, env, `/ops/console/offers/${offerId}/verify`, {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ operator: 'ops-1', note: 'price checked on alko.fi' }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      id: offerId,
+      merchant: 'alko',
+      productId,
+      reliabilityStatus: 'VERIFIED',
+      verifiedAt: expect.any(String),
+      verifiedBy: 'ops-1',
+    });
+
+    const row = verifyOfferRow(db, offerId);
+    expect(row.reliability_status).toBe('VERIFIED');
+    expect(row.verified_by).toBe('ops-1');
+    expect(row.verified_at).toEqual(expect.any(String));
+
+    const events = await new WorkerAuditService(d1).queryChanges({ limit: 10 });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      entityType: 'retail_offer',
+      entityId: String(offerId),
+      action: 'confirmed',
+      author: 'ops-1',
+      reason: 'price checked on alko.fi',
+      previousValue: { reliabilityStatus: 'ESTIMATED' },
+    });
+    expect(events[0]!.newValue).toEqual({
+      reliabilityStatus: 'VERIFIED',
+      verifiedAt: row.verified_at,
+      verifiedBy: 'ops-1',
+    });
+  });
+
+  it('requires operator attribution and 404s unknown offers — refusals write nothing', async () => {
+    const { db, d1 } = openMigratedD1();
+    const productId = seedProduct(db);
+    const offerId = seedOffer(db, { productId, reliabilityStatus: 'ESTIMATED' });
+    const app = buildApp();
+    const env = authedEnv(d1);
+
+    const noOperator = await request(
+      app,
+      env,
+      `/ops/console/offers/${offerId}/verify`,
+      {
+        method: 'POST',
+        headers: JSON_HDRS,
+        body: JSON.stringify({ note: 'no operator named' }),
+      },
+    );
+    await expectEnvelope(noOperator, 400, {
+      message: expect.stringContaining('operator must be a non-empty string'),
+    });
+
+    const missing = await request(app, env, '/ops/console/offers/9999/verify', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ operator: 'ops-1' }),
+    });
+    await expectEnvelope(missing, 404, { message: 'Retail offer 9999 not found' });
+
+    // Both refusals left the offer and the trail untouched.
+    const row = verifyOfferRow(db, offerId);
+    expect(row.reliability_status).toBe('ESTIMATED');
+    expect(row.verified_at).toBeNull();
+    expect(row.verified_by).toBeNull();
+    expect(await new WorkerAuditService(d1).queryChanges({ limit: 10 })).toEqual([]);
+  });
+
+  it('re-verify overwrites the attribution and appends a fresh audit row', async () => {
+    const { db, d1 } = openMigratedD1();
+    const productId = seedProduct(db);
+    const offerId = seedOffer(db, { productId, reliabilityStatus: 'ESTIMATED' });
+    const app = buildApp();
+    const env = authedEnv(d1);
+    const verify = (operator: string) =>
+      request(app, env, `/ops/console/offers/${offerId}/verify`, {
+        method: 'POST',
+        headers: JSON_HDRS,
+        body: JSON.stringify({ operator }),
+      });
+
+    expect((await verify('ops-1')).status).toBe(200);
+    const second = await verify('ops-2');
+    expect(second.status).toBe(200);
+    const secondBody = (await second.json()) as { verifiedAt: string };
+
+    // Re-verification overwrites the pair in place — there is no
+    // un-verify, only a newer operator decision.
+    const row = verifyOfferRow(db, offerId);
+    expect(row.reliability_status).toBe('VERIFIED');
+    expect(row.verified_by).toBe('ops-2');
+    expect(row.verified_at).toBe(secondBody.verifiedAt);
+
+    // Two decisions, two rows — history lives in the audit trail
+    // (newest first), and a note-less verify takes the default reason.
+    const events = await new WorkerAuditService(d1).queryChanges({ limit: 10 });
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ author: 'ops-2', reason: 'Offer verified via operator console' });
+    expect(events[1]).toMatchObject({ author: 'ops-1' });
+  });
+});
+
+describe('offer verify path — deny before any data (ops guard fail-closed)', () => {
+  it('403s without OPS_BEARER_TOKEN — no status change, no audit row', async () => {
+    const { db, d1 } = openMigratedD1();
+    const productId = seedProduct(db);
+    const offerId = seedOffer(db, { productId, reliabilityStatus: 'ESTIMATED' });
+    const app = buildApp();
+
+    const res = await request(app, lockedEnv(d1), `/ops/console/offers/${offerId}/verify`, {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ operator: 'ops-1' }),
+    });
+    await expectEnvelope(res, 403, { message: 'Forbidden' });
+
+    const row = verifyOfferRow(db, offerId);
+    expect(row.reliability_status).toBe('ESTIMATED');
+    expect(row.verified_at).toBeNull();
+    expect(row.verified_by).toBeNull();
+    expect(await new WorkerAuditService(d1).queryChanges({ limit: 10 })).toEqual([]);
   });
 });
