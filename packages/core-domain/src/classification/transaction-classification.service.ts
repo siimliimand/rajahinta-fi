@@ -104,11 +104,13 @@ export class TransactionClassificationService {
     if (params.buyerIsTravelling) {
       const evidence: EvidenceDetail[] = [
         {
+          code: 'BUYER_TRAVELLING',
           observation: 'Buyer indicated they are physically carrying goods across the border',
           supportingData: `destination: ${params.sellerCountry}, buyer country: ${params.buyerCountry}`,
           source: 'buyerIsTravelling',
         },
         {
+          code: 'PERSONAL_ALLOWANCE_APPLIES',
           observation: 'Personal import allowance applies — excluded from landed-cost calculator',
           supportingData: 'transport arrangement: personal transport',
           source: 'buyerIsTravelling',
@@ -129,6 +131,7 @@ export class TransactionClassificationService {
         : 'carrier information not available';
       const evidence: EvidenceDetail[] = [
         {
+          code: 'SELLER_CARRIAGE',
           observation: 'Retailer offers direct delivery to buyer\'s country',
           supportingData: `seller country: ${params.sellerCountry}, buyer country: ${params.buyerCountry}, ${carrierLabel}`,
           source: 'sellerInvolvementIndicator',
@@ -152,11 +155,13 @@ export class TransactionClassificationService {
 
       const evidence: EvidenceDetail[] = [
         {
+          code: 'BUYER_CARRIAGE',
           observation: 'Buyer arranged transport via independent carrier',
           supportingData: `carrier: ${params.carrierId}`,
           source: 'carrierId',
         },
         {
+          code: 'SELLER_NOT_INVOLVED',
           observation: 'Seller did not arrange transport',
           supportingData: `seller country: ${params.sellerCountry}, buyer country: ${params.buyerCountry}`,
           source: 'sellerInvolvementIndicator',
@@ -165,12 +170,14 @@ export class TransactionClassificationService {
 
       if (confidence === 'HIGH') {
         evidence.push({
+          code: 'SELLER_IDENTITY_CONFIRMED',
           observation: 'Seller identity confirmed',
           supportingData: `seller: ${params.sellerId}`,
           source: 'sellerId',
         });
       } else {
         evidence.push({
+          code: 'SELLER_IDENTITY_UNVERIFIED',
           observation: 'Seller identity is unverified, reducing confidence',
           supportingData: 'no seller identifier provided',
           source: 'sellerId',
@@ -188,6 +195,7 @@ export class TransactionClassificationService {
     // --- Rule 4: Distance Buying (unknown transport arrangement) ---
     const evidence: EvidenceDetail[] = [
       {
+        code: 'TRANSPORT_UNDETERMINED',
         observation: 'Transport arrangement could not be determined',
         supportingData: `seller country: ${params.sellerCountry}, buyer country: ${params.buyerCountry}, no carrier identified, seller not involved in shipping`,
         source: 'TransportClassification',
