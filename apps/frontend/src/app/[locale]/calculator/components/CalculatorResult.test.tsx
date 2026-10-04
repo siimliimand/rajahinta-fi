@@ -1,15 +1,16 @@
 /**
- * CalculatorResult Alko benchmark line tests (task 4.3,
- * change drop-sweden-eur-only-alko-benchmark).
+ * CalculatorResult component tests.
  *
- * Pins the web-application "Calculator UI" contract:
- *   1. A result carrying `alkoBenchmark` renders a factual line BELOW the
- *      itemized breakdown — reference price, signed difference in euros
- *      and percent, reliability badge, observation timestamp — visibly
- *      separate from the total row, with the plain statement for each
- *      price posture.
- *   2. A result without the field (no reference, or a pre-change record)
- *      renders nothing — no placeholder, no empty container.
+ * Covers, alongside the original benchmark-line pins (task 4.3, change
+ * drop-sweden-euro-only-alko-benchmark):
+ *   - Traveller-alternative promotion (consumer-clarity-and-discovery
+ *     3.2, design D4): the live-POST estimate renders as a co-equal
+ *     labeled block beside the hero total, amounts byte-identical; the
+ *     delivery-only presentation is unchanged when the field is absent.
+ *   - Localized classification display (3.2, design D3): the label
+ *     localizes from the ClassificationLabel enum; evidence lines
+ *     compose locale sentences from the closed evidence codes, falling
+ *     back to the English `observation` for evidence without a code.
  *
  * @module CalculatorResultTest
  */
@@ -19,11 +20,14 @@ import React from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import CalculatorResult from './CalculatorResult';
+import CalculatorResult, { EVIDENCE_MESSAGE_KEYS } from './CalculatorResult';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import { ensureSession } from '@/lib/api';
+import fiMessages from '@/messages/fi.json';
+import enMessages from '@/messages/en.json';
 import type {
   CalculatorResult as CalculatorResultType,
+  EvidenceCode,
   ReliabilityStatus,
 } from '@/lib/types';
 
@@ -339,6 +343,47 @@ describe('CalculatorResult travellerAlternative callout (task 2.2)', () => {
     expect(link.textContent).toBe('Kokeile matkalaskuria');
   });
 
+  it('places the estimate beside the hero total as a co-equal block (3.2, design D4)', () => {
+    renderWithIntl(
+      <CalculatorResult
+        result={
+          {
+            ...baseResult(),
+            travellerAlternative: TRAVELLER_ALTERNATIVE,
+          } as CalculatorResultType
+        }
+      />,
+    );
+
+    const hero = screen.getByText('Yhteensä').closest('div')!;
+    const callout = screen.getByTestId('traveller-alternative');
+    // Same wrapper, callout after the hero — adjacent, at the same rank.
+    expect(hero.parentElement).not.toBeNull();
+    expect(hero.parentElement).toBe(callout.parentElement);
+    expect(
+      hero.compareDocumentPosition(callout) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // The delivery amount is byte-identical and stays the hero's figure.
+    expect(within(hero).getByText('€46.50')).toBeInTheDocument();
+    // The traveller estimate never enters the delivery hero.
+    expect(hero.textContent).not.toContain('Matkalaskurin arvio');
+    // The delivery result's confidence badge stays outside the traveller
+    // block — the LOW badge (when present) remains the delivery hero's
+    // property, never the estimate's.
+    expect(within(callout).queryByText('Kohtalainen luotettavuus')).toBeNull();
+    expect(screen.getAllByText('Kohtalainen luotettavuus').length).toBe(1);
+  });
+
+  it('keeps the delivery-only hero presentation when no callout is present', () => {
+    renderWithIntl(<CalculatorResult result={baseResult()} />);
+
+    const hero = screen.getByText('Yhteensä').closest('div')!;
+    // Without travellerAlternative the hero wrapper is the plain block —
+    // exactly the pre-promotion presentation.
+    expect(hero.parentElement!.className).not.toContain('grid');
+    expect(screen.queryByTestId('traveller-alternative')).toBeNull();
+  });
+
   it('says the estimate covers only the allowance-bounded portion when the quantity exceeds the caps', () => {
     renderWithIntl(
       <CalculatorResult
@@ -371,6 +416,170 @@ describe('CalculatorResult travellerAlternative callout (task 2.2)', () => {
     expect(screen.queryByTestId('traveller-alternative')).toBeNull();
     expect(container.textContent).not.toContain('Matkalaskurin arvio');
     expect(container.textContent).not.toContain('Kokeile matkalaskuria');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Localized classification display (task 3.2, design D3): the label
+// localizes from the ClassificationLabel enum; evidence lines compose
+// locale sentences from the closed evidence codes, with the English
+// `observation` as the fallback for evidence lacking a code (the
+// calculator-appended traveller-allowance evidence).
+// ---------------------------------------------------------------------------
+
+describe('CalculatorResult localized classification (task 3.2)', () => {
+  /** Result with a given classification + evidence, everything else base. */
+  function resultWithClassification(
+    classification: CalculatorResultType['classification'],
+  ): CalculatorResultType {
+    return { ...baseResult(), classification };
+  }
+
+  it('renders the DistanceBuying label and Finnish evidence lines composed from codes + values', () => {
+    renderWithIntl(
+      <CalculatorResult
+        result={resultWithClassification({
+          classification: 'DistanceBuying',
+          confidence: 'MEDIUM',
+          evidence: [
+            {
+              code: 'BUYER_CARRIAGE',
+              observation: 'Buyer arranged transport via independent carrier',
+              supportingData: 'carrier: posti',
+              source: 'carrierId',
+            },
+            {
+              code: 'SELLER_NOT_INVOLVED',
+              observation: 'Seller did not arrange transport',
+              supportingData: 'seller country: DE, buyer country: FI',
+              source: 'sellerInvolvementIndicator',
+            },
+            {
+              code: 'SELLER_IDENTITY_UNVERIFIED',
+              observation:
+                'Seller identity is unverified, reducing confidence',
+              supportingData: 'no seller identifier provided',
+              source: 'sellerId',
+            },
+          ],
+          evidenceSummary:
+            'Buyer arranged transport via independent carrier. ' +
+            'Seller did not arrange transport.',
+        })}
+      />,
+    );
+
+    // The label localizes from the enum value — never the raw enum string.
+    expect(
+      screen.getByText('Etäosto — ostaja vastaa tuonnin verotuksesta'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('DistanceBuying')).toBeNull();
+
+    // Evidence lines compose the code's Finnish sentence with the
+    // localized data labels; values ride as locale-neutral identifiers.
+    const evidence = screen.getByTestId('classification-evidence');
+    expect(
+      within(evidence).getByText(
+        'Ostaja on järjestänyt kuljetuksen ulkopuolisen kuljettajan kanssa (kuljetus: posti).',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(evidence).getByText(
+        'Myyjä ei osallistu tavaran kuljetukseen (myyjän maa: DE, ostajan maa: FI).',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(evidence).getByText(
+        'Myyjän tietoja ei ole vahvistettu, mikä madaltaa luokittelun luotettavuutta (myyjätunnusta ei ole annettu).',
+      ),
+    ).toBeInTheDocument();
+
+    // The API's English evidenceSummary stays off the page — it is an
+    // API-contract field, not UI copy.
+    expect(
+      screen.queryByText(/Buyer arranged transport via independent carrier/),
+    ).toBeNull();
+  });
+
+  it('falls back to the English observation for evidence without a code', () => {
+    renderWithIntl(
+      <CalculatorResult
+        result={resultWithClassification({
+          classification: 'TravellerImport',
+          confidence: 'HIGH',
+          evidence: [
+            {
+              code: 'BUYER_TRAVELLING',
+              observation:
+                'Buyer indicated they are physically carrying goods across the border',
+              supportingData: 'destination: EE, buyer country: FI',
+              source: 'buyerIsTravelling',
+            },
+            {
+              // Calculator-appended traveller-allowance evidence predates
+              // codes — it must render the unchanged English observation.
+              observation:
+                'Traveller allowance applied from the published allowance dataset — the within-allowance quantity carries no excise, container duty, or import VAT; only the surplus is taxed',
+              supportingData:
+                'allowance dataset: allowances-trip-2026.1; category: beer; travellers: 1',
+              source: 'TravellerAllowance',
+            },
+          ],
+          evidenceSummary: 'summary',
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText('Matkustajatuonti — matkustajamäärät ovat voimassa'),
+    ).toBeInTheDocument();
+    const evidence = screen.getByTestId('classification-evidence');
+    // Coded evidence composes Finnish, with the parsed values tail.
+    expect(evidence.textContent).toContain(
+      'Ostaja kantaa tavarat itse yli rajan (matkakohde: EE, ostajan maa: FI).',
+    );
+    // Uncoded evidence rides verbatim — never reworded, never dropped.
+    expect(evidence.textContent).toContain(
+      'Traveller allowance applied from the published allowance dataset',
+    );
+  });
+
+  it('renders the notStored marker and no evidence list for persisted records without classification', () => {
+    const { container } = renderWithIntl(
+      <CalculatorResult result={baseResult()} />,
+    );
+
+    expect(
+      screen.getByText('Ei tallennettu tämän tietueen yhteyteen'),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('classification-evidence')).toBeNull();
+    // The English API summary no longer renders as UI text.
+    expect(container.textContent).not.toContain('not persisted');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Evidence-code drift guard (task 3.2, design D3): the exhaustive code →
+// message-key mapping must cover exactly the closed set in BOTH catalogs —
+// the compile-time Record<EvidenceCode, …> check plus this catalog test
+// close the loop when a code is added in core-domain.
+// ---------------------------------------------------------------------------
+
+describe('CalculatorResult evidence message mapping (task 3.2)', () => {
+  it('maps every closed-set code to a message key present in both catalogs', () => {
+    const mappedCodes = Object.keys(EVIDENCE_MESSAGE_KEYS) as EvidenceCode[];
+    expect(mappedCodes).toHaveLength(8);
+
+    for (const code of mappedCodes) {
+      const key = EVIDENCE_MESSAGE_KEYS[code];
+      expect(
+        (fiMessages.CalculatorResult.evidence as Record<string, unknown>)[code],
+      ).toBeDefined();
+      expect(
+        (enMessages.CalculatorResult.evidence as Record<string, unknown>)[code],
+      ).toBeDefined();
+      expect(key.endsWith(code)).toBe(true);
+    }
   });
 });
 

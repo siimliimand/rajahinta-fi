@@ -15,7 +15,14 @@
 import { describe, it, expect } from 'vitest';
 import { TransportClassificationService } from '../../transport/transport-classification.service';
 import { TransactionClassificationService } from '../transaction-classification.service';
-import type { ClassificationInput, ClassificationResult } from '../classification.types';
+import { EVIDENCE_CODES } from '../classification.types';
+import type {
+  ClassificationInput,
+  ClassificationResult,
+  EvidenceCode,
+  EvidenceDetail,
+} from '../classification.types';
+import { buildEvidenceSummary } from '../evidence.utils';
 
 const transportService = new TransportClassificationService();
 const service = new TransactionClassificationService(transportService);
@@ -317,6 +324,138 @@ describe('TransactionClassificationService', () => {
       const asyncResult = await service.classify(input);
       const syncResult = service.classifySync(input);
       expect(syncResult).toEqual(asyncResult);
+    });
+
+    // -----------------------------------------------------------------------
+    // Evidence codes — closed set (design D3, consumer-clarity-and-discovery)
+    // -----------------------------------------------------------------------
+
+    describe('evidence codes — closed set (design D3)', () => {
+      /**
+       * Canonical code → observation pairing, one entry per rule emission
+       * site. `Record<EvidenceCode, …>` fails to COMPILE (pnpm build, tsc)
+       * when a code joins the union without an entry here; the runtime
+       * set-equality test below is the test-level mirror (vitest does not
+       * typecheck). Together they keep the set closed and handled.
+       */
+      const OBSERVATION_BY_CODE: Record<EvidenceCode, string> = {
+        BUYER_TRAVELLING:
+          'Buyer indicated they are physically carrying goods across the border',
+        PERSONAL_ALLOWANCE_APPLIES:
+          'Personal import allowance applies — excluded from landed-cost calculator',
+        SELLER_CARRIAGE:
+          'Retailer offers direct delivery to buyer\'s country',
+        BUYER_CARRIAGE:
+          'Buyer arranged transport via independent carrier',
+        SELLER_NOT_INVOLVED:
+          'Seller did not arrange transport',
+        SELLER_IDENTITY_CONFIRMED:
+          'Seller identity confirmed',
+        SELLER_IDENTITY_UNVERIFIED:
+          'Seller identity is unverified, reducing confidence',
+        TRANSPORT_UNDETERMINED:
+          'Transport arrangement could not be determined',
+      };
+
+      /** One representative input per classification path (both carrier edge cases kept). */
+      const PATHS: Array<{
+        name: string;
+        input: ClassificationInput;
+        codes: EvidenceCode[];
+      }> = [
+        {
+          name: 'TravellerImport',
+          input: { sellerInvolvementIndicator: false, carrierId: '', sellerCountry: 'EE', buyerCountry: 'FI', buyerIsTravelling: true, sellerId: '' },
+          codes: ['BUYER_TRAVELLING', 'PERSONAL_ALLOWANCE_APPLIES'],
+        },
+        {
+          name: 'DistanceSelling — carrier known',
+          input: { sellerInvolvementIndicator: true, carrierId: 'posti', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: '' },
+          codes: ['SELLER_CARRIAGE'],
+        },
+        {
+          name: 'DistanceSelling — carrier unknown',
+          input: { sellerInvolvementIndicator: true, carrierId: '', sellerCountry: 'EE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: '' },
+          codes: ['SELLER_CARRIAGE'],
+        },
+        {
+          name: 'DistanceBuying — HIGH',
+          input: { sellerInvolvementIndicator: false, carrierId: 'dhl', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: 'merchant' },
+          codes: ['BUYER_CARRIAGE', 'SELLER_NOT_INVOLVED', 'SELLER_IDENTITY_CONFIRMED'],
+        },
+        {
+          name: 'DistanceBuying — MEDIUM',
+          input: { sellerInvolvementIndicator: false, carrierId: 'dhl', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: '' },
+          codes: ['BUYER_CARRIAGE', 'SELLER_NOT_INVOLVED', 'SELLER_IDENTITY_UNVERIFIED'],
+        },
+        {
+          name: 'DistanceBuying — LOW (no carrier)',
+          input: { sellerInvolvementIndicator: false, carrierId: '', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: '' },
+          codes: ['TRANSPORT_UNDETERMINED'],
+        },
+        {
+          name: 'DistanceBuying — LOW (blank carrier)',
+          input: { sellerInvolvementIndicator: false, carrierId: '   ', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: '' },
+          codes: ['TRANSPORT_UNDETERMINED'],
+        },
+      ];
+
+      it('the union is exhausted: every code has exactly one observation and vice versa', () => {
+        expect([...EVIDENCE_CODES].sort()).toEqual(
+          Object.keys(OBSERVATION_BY_CODE).sort(),
+        );
+        // No two codes may share an observation — the code IS the site identity.
+        expect(new Set(Object.values(OBSERVATION_BY_CODE)).size).toBe(
+          EVIDENCE_CODES.length,
+        );
+      });
+
+      it('every rule emission carries a code from the closed set, in rule order', () => {
+        for (const path of PATHS) {
+          const result = service.classifySync(path.input);
+          expect(
+            result.evidence.map((item) => item.code),
+            `path: ${path.name}`,
+          ).toEqual(path.codes);
+          for (const item of result.evidence) {
+            expect(EVIDENCE_CODES).toContain(item.code);
+          }
+        }
+      });
+
+      it('code ↔ observation pairing is stable — a code never drifts onto other prose', () => {
+        for (const path of PATHS) {
+          const result = service.classifySync(path.input);
+          for (const item of result.evidence) {
+            const code = item.code;
+            expect(code, `path: ${path.name}`).toBeDefined();
+            expect(OBSERVATION_BY_CODE[code as EvidenceCode]).toBe(
+              item.observation,
+            );
+          }
+        }
+      });
+
+      it('codes are additive on the wire — evidenceSummary is byte-identical with codes stripped', () => {
+        for (const path of PATHS) {
+          const result = service.classifySync(path.input);
+          // evidenceSummary derives from observation + supportingData only:
+          // recomputing it from code-stripped evidence must reproduce the
+          // exact serialized string, byte for byte.
+          const stripped: EvidenceDetail[] = result.evidence.map((item) => ({
+            observation: item.observation,
+            supportingData: item.supportingData,
+            source: item.source,
+          }));
+          expect(result.evidenceSummary, `path: ${path.name}`).toBe(
+            buildEvidenceSummary(stripped),
+          );
+          // No code token may leak into the wire summary.
+          for (const code of EVIDENCE_CODES) {
+            expect(result.evidenceSummary).not.toContain(code);
+          }
+        }
+      });
     });
   });
 });

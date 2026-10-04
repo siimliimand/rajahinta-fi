@@ -157,12 +157,13 @@ interface WhatIfJson {
  * what the output is NOT).
  */
 function expectWhatIfDisclaimer(body: WhatIfJson): void {
-  expect(body.disclaimer.language).toBe('en');
+  // consumer-clarity-and-discovery (D1): the route defaults `language` to
+  // 'fi' when the body omits it — every scenario in this file omits it.
+  expect(body.disclaimer.language).toBe('fi');
   expect(body.disclaimer.version).toBe('1.0');
-  expect(body.disclaimer.text).toMatch(/^Hypothetical calculation:/u);
-  expect(body.disclaimer.text).toContain('not a forecast');
-  expect(body.disclaimer.text).toContain('not an estimate of future prices');
-  expect(body.disclaimer.text).toContain('not an official statement');
+  expect(body.disclaimer.text).toMatch(/^Hypoteettinen laskelma:/u);
+  expect(body.disclaimer.text).toContain('ei ole ennuste');
+  expect(body.disclaimer.text).toContain('virallinen ilmoitus');
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +323,21 @@ describe('POST /api/v1/what-if/excise — disclaimer on every 200 result (task 8
       const multiBody = (await multi.json()) as WhatIfJson;
       expect(multiBody.lines).toHaveLength(2);
       expectWhatIfDisclaimer(multiBody);
+
+      // State 5 — explicit `language: 'en'` selects the EN variant of the
+      // versioned pair (consumer-clarity-and-discovery D1: 'en' is an
+      // explicit request; absence above pins the 'fi' default).
+      const explicitEn = await request(app, env, WHAT_IF_PATH, jsonInit({
+        ...SCENARIO,
+        language: 'en',
+      }));
+      expect(explicitEn.status).toBe(200);
+      const enBody = (await explicitEn.json()) as WhatIfJson;
+      expect(enBody.disclaimer.language).toBe('en');
+      expect(enBody.disclaimer.version).toBe('1.0');
+      expect(enBody.disclaimer.text).toMatch(/^Hypothetical calculation:/u);
+      expect(enBody.disclaimer.text).toContain('not a forecast');
+      expect(enBody.disclaimer.text).toContain('not an official statement');
     } finally {
       db.close();
     }

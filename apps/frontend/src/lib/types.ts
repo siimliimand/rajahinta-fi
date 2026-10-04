@@ -440,9 +440,35 @@ export interface ClassificationResult {
     readonly observation: string;
     readonly supportingData: string;
     readonly source: string;
+    /**
+     * Machine-readable closed-set evidence code (additive, task 3.1 of
+     * consumer-clarity-and-discovery; mirrors core-domain EvidenceDetail).
+     * Optional: evidence appended outside the rule pipeline (the
+     * calculator's traveller-allowance evidence) predates codes — clients
+     * fall back to the unchanged `observation` when absent.
+     */
+    readonly code?: EvidenceCode;
   }>;
   readonly evidenceSummary: string;
 }
+
+/**
+ * Closed, machine-readable set of classification-evidence codes (mirrors
+ * core-domain `EvidenceCode`, design D3 of
+ * consumer-clarity-and-discovery). The frontend composes locale sentences
+ * from `code + supportingData values`; adding a code in core-domain
+ * without extending this union — and the frontend message mapping — fails
+ * compilation.
+ */
+export type EvidenceCode =
+  | 'BUYER_TRAVELLING'
+  | 'PERSONAL_ALLOWANCE_APPLIES'
+  | 'SELLER_CARRIAGE'
+  | 'BUYER_CARRIAGE'
+  | 'SELLER_NOT_INVOLVED'
+  | 'SELLER_IDENTITY_CONFIRMED'
+  | 'SELLER_IDENTITY_UNVERIFIED'
+  | 'TRANSPORT_UNDETERMINED';
 
 export interface Disclaimer {
   readonly text: string;

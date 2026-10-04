@@ -6,6 +6,7 @@ import type {
   AlkoBenchmark,
   CalculatorResult as CalculatorResultType,
   CostCategory,
+  EvidenceCode,
   ReliabilityStatus,
   DataFreshnessEntry,
   RetailOffer,
@@ -107,6 +108,128 @@ function AlkoBenchmarkLine({ benchmark }: { benchmark: AlkoBenchmark }) {
       </p>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Evidence localization (task 3.2, design D3): code + values → locale text
+// ---------------------------------------------------------------------------
+
+/**
+ * Evidence code → message key. `Record<EvidenceCode, …>` is the type-level
+ * exhaustiveness check (design D3's risk note): a code added to the
+ * core-domain union without a mapping here fails compilation, so the
+ * frontend mapping can never silently drop a new code. The message group
+ * itself is exhaustiveness-tested against both catalogs in
+ * `messages.test.ts` and `CalculatorResult.test.tsx`.
+ */
+export const EVIDENCE_MESSAGE_KEYS: Record<
+  EvidenceCode,
+  `evidence.${EvidenceCode}`
+> = {
+  BUYER_TRAVELLING: 'evidence.BUYER_TRAVELLING',
+  PERSONAL_ALLOWANCE_APPLIES: 'evidence.PERSONAL_ALLOWANCE_APPLIES',
+  SELLER_CARRIAGE: 'evidence.SELLER_CARRIAGE',
+  BUYER_CARRIAGE: 'evidence.BUYER_CARRIAGE',
+  SELLER_NOT_INVOLVED: 'evidence.SELLER_NOT_INVOLVED',
+  SELLER_IDENTITY_CONFIRMED: 'evidence.SELLER_IDENTITY_CONFIRMED',
+  SELLER_IDENTITY_UNVERIFIED: 'evidence.SELLER_IDENTITY_UNVERIFIED',
+  TRANSPORT_UNDETERMINED: 'evidence.TRANSPORT_UNDETERMINED',
+};
+
+/**
+ * Localized labels for the structured data the classification service
+ * carries in `supportingData` (a closed `key: value` / bare-phrase
+ * vocabulary emitted by the classification rules). Values themselves are
+ * locale-neutral identifiers (country codes, carrier ids, seller ids) and
+ * ride as-is; the `personalTransport` value and the bare phrases are the
+ * localized exceptions.
+ */
+const EVIDENCE_DATA_LABELS = {
+  carrier: 'evidence.data.carrier',
+  sellerCountry: 'evidence.data.sellerCountry',
+  buyerCountry: 'evidence.data.buyerCountry',
+  destination: 'evidence.data.destination',
+  seller: 'evidence.data.seller',
+  transportArrangement: 'evidence.data.transportArrangement',
+  personalTransport: 'evidence.data.personalTransport',
+  carrierUnavailable: 'evidence.data.carrierUnavailable',
+  noCarrierIdentified: 'evidence.data.noCarrierIdentified',
+  sellerNotInvolvedInShipping: 'evidence.data.sellerNotInvolvedInShipping',
+  sellerIdentifierMissing: 'evidence.data.sellerIdentifierMissing',
+} as const;
+
+type EvidenceDataLabel = keyof typeof EVIDENCE_DATA_LABELS;
+
+/** `key: value` pair keys the parser recognizes in `supportingData`. */
+const EVIDENCE_DATA_PAIR_KEYS: ReadonlyMap<string, EvidenceDataLabel> =
+  new Map([
+    ['carrier', 'carrier'],
+    ['seller country', 'sellerCountry'],
+    ['buyer country', 'buyerCountry'],
+    ['destination', 'destination'],
+    ['seller', 'seller'],
+    ['transport arrangement', 'transportArrangement'],
+  ]);
+
+/** Bare data phrases (no value) the parser recognizes. */
+const EVIDENCE_DATA_PHRASES: ReadonlyMap<string, EvidenceDataLabel> = new Map([
+  ['carrier information not available', 'carrierUnavailable'],
+  ['no carrier identified', 'noCarrierIdentified'],
+  ['seller not involved in shipping', 'sellerNotInvolvedInShipping'],
+  ['no seller identifier provided', 'sellerIdentifierMissing'],
+  ['personal transport', 'personalTransport'],
+]);
+
+/**
+ * Compose the localized values tail from `supportingData`: known pairs
+ * keep their value verbatim behind a localized label, known phrases are
+ * localized outright, and anything unrecognized rides as-is — an unknown
+ * emission shape degrades to the raw data, never to a dropped fact.
+ */
+function formatEvidenceValues(
+  supportingData: string,
+  t: ReturnType<typeof useTranslations>,
+): string {
+  const composed = supportingData
+    .split(', ')
+    .map((part) => {
+      const separator = part.indexOf(': ');
+      if (separator > 0) {
+        const pairKey = EVIDENCE_DATA_PAIR_KEYS.get(
+          part.slice(0, separator).trim(),
+        );
+        if (pairKey !== undefined) {
+          return `${t(EVIDENCE_DATA_LABELS[pairKey])}:${part.slice(separator + 1)}`;
+        }
+      }
+      const phraseKey = EVIDENCE_DATA_PHRASES.get(part.trim());
+      if (phraseKey !== undefined) {
+        return t(EVIDENCE_DATA_LABELS[phraseKey]);
+      }
+      return part.trim();
+    })
+    .filter((part) => part !== '')
+    .join(', ');
+  return composed !== '' ? composed : supportingData.trim();
+}
+
+/**
+ * One localized evidence line (task 3.2, design D3): coded evidence
+ * composes its locale sentence from the code's message plus the values
+ * tail; evidence without a code (the calculator-appended
+ * traveller-allowance evidence) falls back to the unchanged English
+ * `observation` verbatim.
+ */
+export function localizedEvidenceLine(
+  item: CalculatorResultType['classification']['evidence'][number],
+  t: ReturnType<typeof useTranslations>,
+): string {
+  if (item.code === undefined) {
+    return item.observation;
+  }
+  return t(EVIDENCE_MESSAGE_KEYS[item.code], {
+    values: formatEvidenceValues(item.supportingData, t),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -277,14 +400,36 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
           ))}
         </div>
 
-        {/* ── Hero total ── */}
-        <div className="mt-4 rounded-xl bg-primary-600 px-5 py-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-primary-200">
-            {t('total')}
-          </p>
-          <p className="tabular-money mt-1 text-3xl font-extrabold text-white">
-            {formatEur(result.totalCents)}
-          </p>
+        {/* ── Hero pair (task 3.2, design D4): a delivery-mode result
+            carrying a travellerAlternative renders the delivery hero and
+            the traveller estimate side by side at the same rank; without
+            one the hero renders exactly as before. Amounts come straight
+            from the payload — byte-identical, display-only — and the
+            callout keeps its conditional presence: live POST payload
+            only, GET/persisted results never carry the field. ── */}
+        <div
+          className={
+            result.travellerAlternative !== undefined
+              ? 'mt-4 grid gap-3 md:grid-cols-2'
+              : 'mt-4'
+          }
+          data-testid="hero-pair"
+        >
+          <div className="rounded-xl bg-primary-600 px-5 py-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary-200">
+              {t('total')}
+            </p>
+            <p className="tabular-money mt-1 text-3xl font-extrabold text-white">
+              {formatEur(result.totalCents)}
+            </p>
+          </div>
+          {result.travellerAlternative && (
+            <TravellerAlternativeCallout
+              alternative={result.travellerAlternative}
+              productId={meta.input.productId}
+              quantity={meta.input.quantity}
+            />
+          )}
         </div>
       </div>
 
@@ -313,18 +458,6 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
       {/* ── Alko benchmark — display-only comparison, not a cost line:
           renders nothing when the result carries no reference ── */}
       {benchmark && <AlkoBenchmarkLine benchmark={benchmark} />}
-
-      {/* ── Traveller-alternative callout (task 2.2): labeled one-traveller
-          ESTIMATE with the trip-calculator link. The field exists only on
-          the live POST response — GET/persisted results never carry it,
-          and absence renders nothing (never a placeholder). ── */}
-      {result.travellerAlternative && (
-        <TravellerAlternativeCallout
-          alternative={result.travellerAlternative}
-          productId={meta.input.productId}
-          quantity={meta.input.quantity}
-        />
-      )}
 
       {/* ── Confidence breakdown ── */}
       {result.confidenceBreakdown.length > 0 && (
@@ -372,7 +505,12 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
         )}
       </div>
 
-      {/* ── Classification ── */}
+      {/* ── Classification (task 3.2): the label localizes from the
+          ClassificationLabel enum and the evidence lines compose locale
+          sentences from the closed-set evidence codes (design D3). The
+          API's English `evidenceSummary` stays unchanged on the wire;
+          the page renders the localized evidence instead. Evidence
+          without a code falls back to the English observation. ── */}
       <div>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
           {t('transactionClassification')}
@@ -380,11 +518,20 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
         <p className="text-sm font-medium text-gray-800">
           {result.classification.classification === 'NotPersisted'
             ? t('notStored')
-            : result.classification.classification}
+            : t(`classification.${result.classification.classification}`)}
         </p>
-        <p className="mt-0.5 text-xs text-gray-500">
-          {result.classification.evidenceSummary}
-        </p>
+        {result.classification.evidence.length > 0 && (
+          <ul
+            data-testid="classification-evidence"
+            className="mt-1 space-y-0.5"
+          >
+            {result.classification.evidence.map((item, i) => (
+              <li key={i} className="text-xs leading-relaxed text-gray-500">
+                {localizedEvidenceLine(item, t)}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* ── Merchant offers ── */}

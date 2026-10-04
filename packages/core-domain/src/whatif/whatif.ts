@@ -58,7 +58,10 @@ import type {
   WhatIfScenarioResult,
   WhatIfTotals,
 } from './whatif.types';
-import { WHATIF_DISCLAIMER_EN } from './whatif.disclaimer';
+import {
+  WHATIF_DISCLAIMER_FI,
+  WHATIF_DISCLAIMER_EN,
+} from './whatif.disclaimer';
 import {
   calculateAlcoholExcise,
   normaliseCategory,
@@ -85,7 +88,9 @@ export function calculateWhatIfExcise(input: WhatIfScenarioInput): WhatIfScenari
     // validateScenario enforces one shared baseline version; naming it
     // here attaches the R11 provenance to the whole result.
     baselineTaxDatasetVersion: input.products[0].baselineRule.taxDatasetVersion,
-    disclaimer: WHATIF_DISCLAIMER_EN,
+    // Selection from the versioned pair only — no wording is composed
+    // here; absent language means `fi` (design D1).
+    disclaimer: input.disclaimerLanguage === 'en' ? WHATIF_DISCLAIMER_EN : WHATIF_DISCLAIMER_FI,
     lines,
     totals: computeTotals(lines),
   };

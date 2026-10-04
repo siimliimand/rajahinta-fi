@@ -3,9 +3,11 @@
  *
  * Public comparison surfaces are crawlable. Account pages are
  * session-scoped (no indexable content), group order sessions are
- * share-token-scoped coordination surfaces (task 9.4), and the age-gate
- * interstitial is a prompt, not a destination — all are excluded for
- * every locale.
+ * share-token-scoped coordination surfaces (task 9.4) — the wildcard
+ * disallow covers token session paths while the create page itself
+ * stays crawlable (consumer-clarity-and-discovery task 4.1) — and the
+ * age-gate interstitial is a prompt, not a destination — all excluded
+ * for every locale.
  *
  * @module Robots
  */
@@ -22,8 +24,8 @@ export default function robots(): MetadataRoute.Robots {
         disallow: [
           '/account',
           '/en/account',
-          '/group-order',
-          '/en/group-order',
+          '/group-order/*',
+          '/en/group-order/*',
           '/age-gate',
           '/en/age-gate',
         ],

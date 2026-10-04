@@ -49,11 +49,14 @@ describe('sitemap static paths (task 3.3)', () => {
 /**
  * The public static routes a crawler may be advertised, independent of
  * sitemap.ts's own list: every non-dynamic page route that is neither
- * session-scoped (account, group-order), a gate prompt (age-gate), an
- * auth/transactional flow (login, register, newsletter), the operator
- * console (ops), nor token-scoped (share). Task 6.2 pins the sitemap to
- * this inventory so a new public route cannot ship unadvertised — the
- * same filesystem scan layout.ssr.test.tsx uses for the chrome contract.
+ * session-scoped (account), a gate prompt (age-gate), an auth/transactional
+ * flow (login, register, newsletter), the operator console (ops), nor
+ * token-scoped (share). The group-order create page is a public static
+ * route (consumer-clarity-and-discovery 4.1) — its dynamic [token] session
+ * pages stay excluded by the bracket filter below. Task 6.2 pins the
+ * sitemap to this inventory so a new public route cannot ship
+ * unadvertised — the same filesystem scan layout.ssr.test.tsx uses for
+ * the chrome contract.
  */
 const PUBLIC_STATIC_ROUTES = [
   '/',
@@ -65,6 +68,7 @@ const PUBLIC_STATIC_ROUTES = [
   '/compare',
   '/contact',
   '/event',
+  '/group-order',
   '/guides',
   '/products',
   '/ranking',
@@ -89,7 +93,6 @@ const UNCONDITIONAL_STATIC_ROUTES = PUBLIC_STATIC_ROUTES.filter(
 const NON_ADVERTISED_PREFIXES = [
   '/account',
   '/age-gate',
-  '/group-order',
   '/login',
   '/register',
   '/newsletter',

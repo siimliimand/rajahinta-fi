@@ -21,6 +21,12 @@
  *      figure and a note naming the missing input; a usable transport
  *      renders the amount exactly as before (data-quality-and-
  *      publication-trust 3.1).
+ *   8. Traveller-alternative promotion (consumer-clarity-and-discovery
+ *      3.4, design D4): the live-POST estimate renders as a co-equal
+ *      labeled block beside the hero total — the same treatment the
+ *      record-page card got in 3.2, amounts byte-identical; the
+ *      delivery-only presentation is unchanged when the field is
+ *      absent.
  *
  * @module ResultCardTest
  */
@@ -594,7 +600,9 @@ describe('ResultCard traveller-mode split labels (task 2.1)', () => {
 
 // ---------------------------------------------------------------------------
 // Traveller-alternative callout (task 2.2): display-only estimate on
-// delivery results, rendered from the live POST payload only.
+// delivery results, rendered from the live POST payload only. Promoted
+// beside the hero total as a co-equal block (task 3.4, design D4) —
+// the record-card treatment from 3.2, amounts byte-identical.
 // ---------------------------------------------------------------------------
 
 describe('ResultCard travellerAlternative callout (task 2.2)', () => {
@@ -629,6 +637,57 @@ describe('ResultCard travellerAlternative callout (task 2.2)', () => {
     const link = within(callout).getByTestId('traveller-alternative-link');
     // Seeds the trip fill form with the result's product and quantity.
     expect(link.getAttribute('href')).toBe('/trip?product=1&quantity=1');
+  });
+
+  it('places the estimate beside the hero total as a co-equal block (3.4, design D4)', () => {
+    renderWithIntl(
+      <ResultCard
+        result={
+          {
+            ...baseResult(),
+            travellerAlternative: {
+              estimatedTotalCents: 4000,
+              withinAllowance: true,
+              allowanceDatasetVersion: 'allowances-trip-2026.1',
+              categoryKey: 'beer',
+            },
+          } as CalculatorResultType
+        }
+      />,
+    );
+
+    const hero = screen.getByTestId('landed-cost-total').closest('div')!;
+    const callout = screen.getByTestId('traveller-alternative');
+    // Same wrapper, callout after the hero — adjacent, at the same rank,
+    // both before the breakdown the estimate used to trail.
+    expect(hero.parentElement).not.toBeNull();
+    expect(hero.parentElement).toBe(callout.parentElement);
+    expect(
+      hero.compareDocumentPosition(callout) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      callout.compareDocumentPosition(breakdownHeading()) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // The delivery amount is byte-identical and stays the hero's figure.
+    expect(within(hero).getByText('€51.50')).toBeInTheDocument();
+    // The traveller estimate never enters the delivery hero.
+    expect(hero.textContent).not.toContain('Matkalaskurin arvio');
+    // The estimate keeps its own amount — €40.00 lives in the callout,
+    // never beside the delivery total.
+    expect(callout.textContent).toContain('€40.00');
+    expect(hero.textContent).not.toContain('€40.00');
+  });
+
+  it('keeps the delivery-only hero presentation when no callout is present', () => {
+    renderWithIntl(<ResultCard result={baseResult()} />);
+
+    const hero = screen.getByTestId('landed-cost-total').closest('div')!;
+    // Without travellerAlternative the hero wrapper is the plain block —
+    // exactly the pre-promotion presentation.
+    expect(hero.parentElement!.className).not.toContain('grid');
+    expect(screen.queryByTestId('traveller-alternative')).toBeNull();
   });
 
   it('says the estimate covers only the allowance-bounded portion when withinAllowance is false', () => {

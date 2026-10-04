@@ -62,7 +62,13 @@ export async function GET(
   try {
     const scenario = decodeWhatIfShareToken(token);
     // Recompute through the pure endpoint — nothing is stored anywhere.
-    outcome = { kind: 'result', result: await calculateWhatIfExcise(scenario) };
+    // The disclaimer language comes from THIS route's [locale] segment
+    // (design D1): the token carries the inputs only, so the widget's
+    // language must not — and does not — travel inside it.
+    outcome = {
+      kind: 'result',
+      result: await calculateWhatIfExcise(scenario, undefined, locale),
+    };
   } catch (err: unknown) {
     const { kind, retryAfterSeconds } = classifyWhatIfError(err);
     if (kind === 'rate-limited') {

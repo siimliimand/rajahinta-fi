@@ -100,6 +100,9 @@ describe('GET /what-if/embed', () => {
     expect(mockedApiFetch).toHaveBeenCalledTimes(1);
     const [path, init] = mockedApiFetch.mock.calls[0]!;
     expect(path).toBe('/api/v1/what-if/excise');
+    // The recompute forwards this route's own [locale] segment as the
+    // disclaimer language (design D1); the decoded token stays
+    // inputs-only. The fi default travels as absence — the DTO default.
     expect(JSON.parse((init as { body: string }).body)).toEqual({
       hypotheticalRate: 18.1,
       products: [
@@ -144,5 +147,9 @@ describe('GET /what-if/embed', () => {
     const html = await (await get('en', TOKEN)).text();
     expect(html).toContain('lang="en"');
     expect(html).toContain('Baseline rate dataset: v3.0-2026');
+
+    // D1: the /en embed asks the API for the English disclaimer too.
+    const [, init] = mockedApiFetch.mock.calls[0]!;
+    expect(JSON.parse((init as { body: string }).body)).toMatchObject({ language: 'en' });
   });
 });

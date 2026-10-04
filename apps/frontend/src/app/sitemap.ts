@@ -32,7 +32,8 @@ import { routing } from '@/i18n/routing';
  * by insight-surfaces tasks 2.4/5.2; /products by product-catalog task
  * 3.2; /about and /contact by price-intelligence-roadmap task 3.3;
  * the tool pages /event, /trip, /what-if and /value by
- * price-intelligence-roadmap task 6.2 — public, individually
+ * price-intelligence-roadmap task 6.2; /group-order by
+ * consumer-clarity-and-discovery task 4.1 — public, individually
  * titled pages every locale serves). The /blog and /guides paths are
  * content-gated per locale: emitted only when that locale's slug
  * fetch returned published content (see the loop in sitemap()). */
@@ -45,6 +46,7 @@ const STATIC_PATHS = [
   '/event',
   '/what-if',
   '/value',
+  '/group-order',
   '/products',
   '/ranking',
   '/blog',

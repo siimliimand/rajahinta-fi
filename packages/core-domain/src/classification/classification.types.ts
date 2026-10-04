@@ -77,6 +77,45 @@ export interface ClassificationInput {
 }
 
 // ---------------------------------------------------------------------------
+// Evidence codes — closed set (design D3, consumer-clarity-and-discovery)
+// ---------------------------------------------------------------------------
+
+/**
+ * Closed, machine-readable set of evidence codes — exactly one per site where
+ * the classification rules emit an observation.
+ *
+ * The codes exist so the client can compose locale-specific sentences from
+ * `code + structured values` while core-domain stays locale-free. The English
+ * `observation` prose remains authoritative and unchanged; `evidenceSummary`
+ * is derived from observation/supportingData only, so adding a code never
+ * moves a byte on the wire (additive field).
+ *
+ * Adding a code here is a closed-set operation: extend {@link EVIDENCE_CODES}
+ * and every exhaustive consumer (frontend mapping, tests) must handle it.
+ */
+export const EVIDENCE_CODES = [
+  /** Buyer indicated they are physically carrying goods across the border. */
+  'BUYER_TRAVELLING',
+  /** Personal import allowance applies — excluded from landed-cost calculator. */
+  'PERSONAL_ALLOWANCE_APPLIES',
+  /** Retailer offers direct delivery to the buyer's country. */
+  'SELLER_CARRIAGE',
+  /** Buyer arranged transport via independent carrier. */
+  'BUYER_CARRIAGE',
+  /** Seller did not arrange transport. */
+  'SELLER_NOT_INVOLVED',
+  /** Seller identity confirmed. */
+  'SELLER_IDENTITY_CONFIRMED',
+  /** Seller identity is unverified, reducing confidence. */
+  'SELLER_IDENTITY_UNVERIFIED',
+  /** Transport arrangement could not be determined. */
+  'TRANSPORT_UNDETERMINED',
+] as const;
+
+/** Machine-readable evidence code — exhaustive union over {@link EVIDENCE_CODES}. */
+export type EvidenceCode = (typeof EVIDENCE_CODES)[number];
+
+// ---------------------------------------------------------------------------
 // Module output
 // ---------------------------------------------------------------------------
 
@@ -110,6 +149,15 @@ export interface EvidenceDetail {
    * e.g. "TravellerImport", "buyerIsTravelling", "TransportClassification"
    */
   readonly source: string;
+
+  /**
+   * Machine-readable closed-set code for this observation (additive, design
+   * D3). Every classification-rule emission carries one; the field is
+   * optional because evidence appended outside the rule pipeline (e.g. the
+   * calculator's traveller-allowance evidence) predates codes. Clients must
+   * fall back to the unchanged `observation` when absent.
+   */
+  readonly code?: EvidenceCode;
 }
 
 /**

@@ -8,9 +8,10 @@
  * canonical category, ABV fraction, price/volume caps, duplicate ids),
  * the HAND-computed scenario vector through the engine-resolved baseline
  * (36.20 €/cl-ethanol beer rule), the structural HYPOTHETICAL disclaimer
- * on every result, the engine's zero-rate fallback baseline, and the
- * share-token codec — round-trip fidelity, encode∘decode identity,
- * UTF-8 ids, and tamper/corruption/bound rejection.
+ * on every result (design D1: `fi` default, `en` explicit, never absent),
+ * the engine's zero-rate fallback baseline, and the share-token codec —
+ * round-trip fidelity, encode∘decode identity, UTF-8 ids, and
+ * tamper/corruption/bound rejection.
  *
  * EPHEMERAL architecture is pinned too: no idempotency store is wired
  * into the route, so identical payloads recompute fresh every time
@@ -34,6 +35,10 @@ import {
   decodeWhatIfShareToken,
   WhatIfShareTokenError,
 } from '../what-if.routes';
+import {
+  WHATIF_DISCLAIMER_EN,
+  WHATIF_DISCLAIMER_FI,
+} from '../../../../../packages/core-domain/src/whatif/whatif.disclaimer';
 import type { Env } from '../../env';
 import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
 
@@ -312,13 +317,9 @@ describe('POST /api/v1/what-if/excise — computed result', () => {
     });
 
     // Structural HYPOTHETICAL disclaimer travels ON the result (spec):
-    // stronger-than-calculator wording, naming what the output is NOT.
-    expect(body.disclaimer.language).toBe('en');
-    expect(body.disclaimer.version).toBe('1.0');
-    expect(body.disclaimer.text).toMatch(/^Hypothetical calculation:/u);
-    expect(body.disclaimer.text).toContain('not a forecast');
-    expect(body.disclaimer.text).toContain('not an estimate of future prices');
-    expect(body.disclaimer.text).toContain('not an official statement');
+    // omitted language defaults to the FI variant (design D1), pinned
+    // byte-identical to the versioned constant.
+    expect(body.disclaimer).toEqual(WHATIF_DISCLAIMER_FI);
   });
 
   it('falls back to the engine zero-rate baseline when no rule covers the category', async () => {
@@ -344,6 +345,79 @@ describe('POST /api/v1/what-if/excise — computed result', () => {
     expect(line.hypothetical.taxCents).toBe(85);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Disclaimer language (design D1) — fi default, en explicit, never absent
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/what-if/excise — disclaimer language', () => {
+  it('defaults to the FI disclaimer when language is omitted', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedBeerRule(db);
+    const app = whatIfApp();
+
+    const res = await postWhatIf(app, whatIfEnv(d1));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as WhatIfJson;
+    expect(body.disclaimer).toEqual(WHATIF_DISCLAIMER_FI);
+  });
+
+  it('carries the FI disclaimer for explicit language "fi"', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedBeerRule(db);
+    const app = whatIfApp();
+
+    const res = await postWhatIf(app, whatIfEnv(d1), { ...SCENARIO, language: 'fi' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as WhatIfJson;
+    expect(body.disclaimer).toEqual(WHATIF_DISCLAIMER_FI);
+  });
+
+  it('carries the EN disclaimer for explicit language "en"', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedBeerRule(db);
+    const app = whatIfApp();
+
+    const res = await postWhatIf(app, whatIfEnv(d1), { ...SCENARIO, language: 'en' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as WhatIfJson;
+
+    // Byte-identical to the versioned EN constant — stronger-than-
+    // calculator wording naming what the output is NOT.
+    expect(body.disclaimer).toEqual(WHATIF_DISCLAIMER_EN);
+    expect(body.disclaimer.language).toBe('en');
+    expect(body.disclaimer.version).toBe('1.0');
+    expect(body.disclaimer.text).toMatch(/^Hypothetical calculation:/u);
+    expect(body.disclaimer.text).toContain('not a forecast');
+    expect(body.disclaimer.text).toContain('not an estimate of future prices');
+    expect(body.disclaimer.text).toContain('not an official statement');
+  });
+
+  it('carries the disclaimer on EVERY 200 response — engine-resolved baseline', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedBeerRule(db);
+    await expectDisclaimerOn200(whatIfApp(), whatIfEnv(d1));
+  });
+
+  it('carries the disclaimer on EVERY 200 response — zero-rate fallback (no rules seeded)', async () => {
+    const { d1 } = openMigratedD1();
+    await expectDisclaimerOn200(whatIfApp(), whatIfEnv(d1));
+  });
+});
+
+/** Structural rule: any 200 carries the disclaimer — variant is the
+ *  caller's choice, its PRESENCE is not negotiable. */
+async function expectDisclaimerOn200(
+  app: ReturnType<typeof buildApp>,
+  env: Env,
+): Promise<void> {
+  const res = await postWhatIf(app, env);
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as WhatIfJson;
+  expect(body.disclaimer.text).toBeTruthy();
+  expect(body.disclaimer.version).toBe('1.0');
+  expect(['fi', 'en']).toContain(body.disclaimer.language);
+}
 
 // ---------------------------------------------------------------------------
 // Share token — round-trip fidelity, identity, tamper rejection

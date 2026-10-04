@@ -17,6 +17,8 @@ import {
   createDefaultRuleSet,
   createPostReformRuleSet,
 } from '../services/classification-rule-engine.service';
+import { TransportClassificationService } from '../../transport/transport-classification.service';
+import { TransactionClassificationService } from '../transaction-classification.service';
 import type { ClassificationInput } from '../classification.types';
 import type { IClassificationRuleRepositoryPort, ClassificationRuleSetRecord } from '../ports/classification-rule-repository.port';
 
@@ -580,6 +582,50 @@ describe('ClassificationRuleEngine', () => {
       const { result } = await engine.classify(inputNoCarrier);
       expect(result.classification).toBe('DistanceBuying');
       expect(result.confidence).toBe('HIGH');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Evidence vocabulary parity with the standalone pipeline (design D3) —
+  // the evidence codes are a closed set derived from the classification
+  // rules' observation sites. Every engine emission must come from that same
+  // closed vocabulary, so a code derived for the standalone path applies to
+  // the engine path too. Wire fields here are metadata-only: no code pin is
+  // asserted on engine results (the engine's evidence content is frozen by
+  // the suites above).
+  // ---------------------------------------------------------------------------
+
+  describe('evidence vocabulary parity (design D3)', () => {
+    const engine = new ClassificationRuleEngine();
+    const standalone = new TransactionClassificationService(
+      new TransportClassificationService(),
+    );
+
+    // One representative input per classification path, including both
+    // DistanceBuying confidence variants and the blank-carrier edge case.
+    const paths: ClassificationInput[] = [
+      { sellerInvolvementIndicator: false, carrierId: '', sellerCountry: 'EE', buyerCountry: 'FI', buyerIsTravelling: true, sellerId: '' },
+      { sellerInvolvementIndicator: true, carrierId: 'posti', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: '' },
+      { sellerInvolvementIndicator: false, carrierId: 'dhl', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: 'merchant' },
+      { sellerInvolvementIndicator: false, carrierId: 'dhl', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: '' },
+      { sellerInvolvementIndicator: false, carrierId: '', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: '' },
+      { sellerInvolvementIndicator: false, carrierId: '   ', sellerCountry: 'DE', buyerCountry: 'FI', buyerIsTravelling: false, sellerId: '' },
+    ];
+
+    it('every engine observation belongs to the closed vocabulary the codes were derived from', () => {
+      const standaloneObservations = new Set<string>();
+      for (const input of paths) {
+        for (const item of standalone.classifySync(input).evidence) {
+          standaloneObservations.add(item.observation);
+        }
+      }
+
+      for (const input of paths) {
+        const { result } = engine.classifySync(input);
+        for (const item of result.evidence) {
+          expect(standaloneObservations.has(item.observation)).toBe(true);
+        }
+      }
     });
   });
 });

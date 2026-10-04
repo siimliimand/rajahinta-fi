@@ -1756,11 +1756,15 @@ describe('D1ProductSearchRepository.searchRanked — merge gate below the page s
 
 // ---------------------------------------------------------------------------
 // Zero-result did-you-mean (task 3.2, change finnish-first-client-
-// experience) — isolated fixture DB so the shared-database describes above
-// are untouched. Spec product-search: a zero-result keyword query carries
-// an optional `suggestion` computed by bounded edit distance (≤ 2) against
-// the brand vocabulary on diacritic-folded keys; ordering is (distance,
-// then alphabetical); results, no candidate, or no token → no suggestion.
+// experience; vocabulary widened in task 2.1, change
+// consumer-clarity-and-discovery) — isolated fixture DB so the
+// shared-database describes above are untouched. Spec product-search: a
+// zero-result keyword query carries an optional `suggestion` computed by
+// bounded edit distance (≤ 2) against the CLOSED VOCABULARY UNION —
+// distinct brand values, distinct product-name tokens, and curated
+// FINNISH_SYNONYM_GROUPS members — on diacritic-folded keys; ordering is
+// (distance, then alphabetical); results, no candidate, or no token → no
+// suggestion.
 // ---------------------------------------------------------------------------
 
 describe('did-you-mean primitives — foldComparisonKey + boundedEditDistance (task 3.2)', () => {
@@ -1950,6 +1954,85 @@ describe('D1ProductSearchRepository — zero-result did-you-mean (task 3.2)', ()
     const wrapped = await sugRepo.searchRankedWithSuggestion('karhu', 1);
     expect(wrapped.items).toEqual(direct);
     expect(wrapped.suggestion).toBeNull();
+  });
+
+  // --- Widened vocabulary union (task 2.1, change
+  // --- consumer-clarity-and-discovery, design D2): brands + name tokens
+  // --- + curated synonym members. ---
+
+  it('spec: "votka" (zero results) suggests the synonym-group member "vodka" — a word in no fixture brand', async () => {
+    // The misspelled category word lives in no brand; it reaches the
+    // vocabulary through the curated ['vodka', 'viina'] group (union
+    // arm 3). votka→vodka is distance 1 ('viina' is 4) — the unique
+    // nearest member.
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      'votka',
+      MAX_PAGE_SIZE,
+    );
+    expect(items).toEqual([]); // not a prefix of anything — truly zero
+    expect(suggestion).toBe('vodka');
+  });
+
+  it('name-token arm: "pohjila" (zero results) suggests "Pohjola" — a product-name token in no brand', async () => {
+    // 'Pohjola' appears only as a token of the name 'Karhu Pohjola'
+    // (union arm 2); the suggestion VALUE keeps the name's casing.
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      'pohjila',
+      MAX_PAGE_SIZE,
+    );
+    expect(items).toEqual([]);
+    expect(suggestion).toBe('Pohjola');
+  });
+
+  it('multi-word synonym members key joined: "redwin" suggests "red wine"', async () => {
+    // The curated member 'red wine' stores the joined key 'redwine' —
+    // the same de-spaced precedent as multi-word brands.
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      'redwin',
+      MAX_PAGE_SIZE,
+    );
+    expect(items).toEqual([]);
+    expect(suggestion).toBe('red wine');
+  });
+
+  it('multi-token queries target the longest token against the union: "olut pohjila" suggests "Pohjola"', async () => {
+    // 'pohjila' (7) outranks 'olut' (4) as the significant token — the
+    // selection rule holds when the wider arms supply the candidate.
+    expect(await suggestionOf('olut pohjila')).toBe('Pohjola');
+  });
+
+  it('tie across the union at equal distance resolves alphabetically: "viinut" suggests "viina"', async () => {
+    // 'viinut' sits at distance 2 from the name token 'Viina', the
+    // synonym member 'viina' AND the synonym member 'viini'. The
+    // (distance, then alphabetical) order picks the viina word (a < i;
+    // the fi collation's lowercase-first tertiary puts 'viina' ahead of
+    // the name token's 'Viina') — stable across requests.
+    expect(await suggestionOf('viinut')).toBe('viina');
+    expect(await suggestionOf('viinut')).toBe('viina');
+    expect(await suggestionOf('viinut')).toBe('viina');
+  });
+
+  it('determinism: repeated widened-vocabulary calls return the identical string', async () => {
+    const queries = ['votka', 'pohjila', 'redwin'];
+    for (const query of queries) {
+      const first = await suggestionOf(query);
+      expect(first).not.toBeNull();
+      for (let i = 0; i < 3; i++) {
+        expect(await suggestionOf(query)).toBe(first);
+      }
+    }
+  });
+
+  it('no suggestion when the widened vocabulary itself matches — "vodka" yields results, not a suggestion', async () => {
+    // 'vodka' expands through its synonym group to 'viina' too; the FTS
+    // arm matches 'Koskenkorva Viina 60 %' via the 'viina' prefix — a
+    // productive query never consults the suggestion vocabulary.
+    const { items, suggestion } = await sugRepo.searchRankedWithSuggestion(
+      'vodka',
+      MAX_PAGE_SIZE,
+    );
+    expect(items.length).toBeGreaterThan(0);
+    expect(suggestion).toBeNull();
   });
 });
 

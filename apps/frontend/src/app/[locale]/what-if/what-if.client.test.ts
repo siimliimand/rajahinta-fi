@@ -1,18 +1,20 @@
 /**
  * What-if API client tests (task 8.3) — the 429 Retry-After capture the
- * throttle countdown depends on, plus the error classification parity
- * with the trip/event clients.
+ * throttle countdown depends on, the error classification parity
+ * with the trip/event clients, and the disclaimer-language derivation
+ * the POST body carries (design D1).
  *
  * @module WhatIfClientTest
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { apiFetch, ApiFetchError } from '@/lib/api';
 import {
   calculateWhatIfExcise,
   classifyWhatIfError,
   parseRetryAfterSeconds,
   WhatIfRateLimitError,
+  whatIfLanguageFromPathname,
 } from './what-if.client';
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -81,6 +83,68 @@ describe('calculateWhatIfExcise', () => {
     const abort = new DOMException('aborted', 'AbortError');
     mockedApiFetch.mockRejectedValueOnce(abort);
     await expect(calculateWhatIfExcise(INPUT)).rejects.toBe(abort);
+  });
+});
+
+describe('disclaimer language (design D1)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function postedBody(): Promise<Record<string, unknown>> {
+    mockedApiFetch.mockResolvedValueOnce(jsonResponse({ shareToken: 'wi1.a.b' }));
+    await calculateWhatIfExcise(INPUT);
+    const [, init] = mockedApiFetch.mock.calls[0]!;
+    return JSON.parse((init as { body: string }).body) as Record<string, unknown>;
+  }
+
+  it('bare path (fi) posts the inputs with NO language field — absence is the domestic default (D1)', async () => {
+    vi.stubGlobal('window', { location: { pathname: '/what-if' } });
+    expect(await postedBody()).toEqual(INPUT);
+  });
+
+  it('posts language=en under the /en locale prefix', async () => {
+    vi.stubGlobal('window', { location: { pathname: '/en/what-if' } });
+    expect(await postedBody()).toEqual({ ...INPUT, language: 'en' });
+  });
+
+  it('an explicit language wins over the derived one — the embed route forwards its locale', async () => {
+    vi.stubGlobal('window', { location: { pathname: '/what-if' } });
+    mockedApiFetch.mockResolvedValueOnce(jsonResponse({ shareToken: 'wi1.a.b' }));
+    await calculateWhatIfExcise(INPUT, undefined, 'en');
+    const [, init] = mockedApiFetch.mock.calls[0]!;
+    expect(JSON.parse((init as { body: string }).body)).toMatchObject({ language: 'en' });
+  });
+
+  it('an explicit default is normalized to absence — the route DTO default resolves it to fi', async () => {
+    vi.stubGlobal('window', { location: { pathname: '/en/what-if' } });
+    mockedApiFetch.mockResolvedValueOnce(jsonResponse({ shareToken: 'wi1.a.b' }));
+    await calculateWhatIfExcise(INPUT, undefined, 'fi');
+    const [, init] = mockedApiFetch.mock.calls[0]!;
+    expect(JSON.parse((init as { body: string }).body)).toEqual(INPUT);
+  });
+
+  it('without a window (server-side recompute) the default locale applies', async () => {
+    expect(await postedBody()).toEqual(INPUT);
+  });
+
+  it('language rides the POST body only — the share token payload is not touched', async () => {
+    vi.stubGlobal('window', { location: { pathname: '/en/what-if' } });
+    const body = await postedBody();
+    expect(Object.keys(body).sort()).toEqual([
+      'hypotheticalRate',
+      'language',
+      'products',
+    ]);
+  });
+
+  it('maps the first pathname segment to the site locale, defaulting otherwise', () => {
+    expect(whatIfLanguageFromPathname('/what-if')).toBe('fi');
+    expect(whatIfLanguageFromPathname('/fi/what-if')).toBe('fi');
+    expect(whatIfLanguageFromPathname('/en/what-if')).toBe('en');
+    expect(whatIfLanguageFromPathname('/')).toBe('fi');
+    expect(whatIfLanguageFromPathname('/xx/what-if')).toBe('fi');
+    expect(whatIfLanguageFromPathname('/english/what-if')).toBe('fi');
   });
 });
 
