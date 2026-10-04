@@ -78,6 +78,13 @@ export interface WhatIfScenarioInput {
   /** Hypothetical rate in € per formula unit (finite, ≥ 0; 0 models full exemption). */
   readonly hypotheticalRate: number;
   readonly products: readonly WhatIfProductInput[];
+  /**
+   * Language of the structural disclaimer carried on the result — selects
+   * from the versioned `WHATIF_DISCLAIMER_FI` / `WHATIF_DISCLAIMER_EN`
+   * pair; the wording itself is never composed at request time. Absent
+   * means `fi` (Finnish-first site; `en` is an explicit request).
+   */
+  readonly disclaimerLanguage?: 'fi' | 'en';
 }
 
 // ---------------------------------------------------------------------------

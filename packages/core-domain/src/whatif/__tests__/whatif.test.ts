@@ -363,8 +363,21 @@ describe('calculateWhatIfExcise — substitution semantics', () => {
 // ---------------------------------------------------------------------------
 
 describe('calculateWhatIfExcise — structural disclaimer', () => {
-  it('carries the disclaimer in the payload, structurally', () => {
+  it('defaults to the Finnish disclaimer when disclaimerLanguage is absent', () => {
     const result = calculateWhatIfExcise(sixCategoryInput());
+    expect(result.disclaimer).toEqual(WHATIF_DISCLAIMER_FI);
+    expect(result.disclaimer.language).toBe('fi');
+    expect(result.disclaimer.version).toBe('1.0');
+  });
+
+  it('carries the Finnish disclaimer for an explicit disclaimerLanguage "fi"', () => {
+    const result = calculateWhatIfExcise({ ...sixCategoryInput(), disclaimerLanguage: 'fi' });
+    expect(result.disclaimer).toEqual(WHATIF_DISCLAIMER_FI);
+    expect(result.disclaimer.language).toBe('fi');
+  });
+
+  it('carries the English disclaimer for an explicit disclaimerLanguage "en"', () => {
+    const result = calculateWhatIfExcise({ ...sixCategoryInput(), disclaimerLanguage: 'en' });
     expect(result.disclaimer).toEqual(WHATIF_DISCLAIMER_EN);
     expect(result.disclaimer.language).toBe('en');
     expect(result.disclaimer.version).toBe('1.0');
