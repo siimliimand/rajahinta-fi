@@ -28,6 +28,8 @@ import {
   buildSavingsCalculator,
   SAVINGS_SNAPSHOT_CRON,
   SAVINGS_SNAPSHOT_CADENCE,
+  SAVINGS_SNAPSHOT_CHUNK_SIZE,
+  SAVINGS_SNAPSHOT_CURSOR_JOB,
   type SavingsSnapshotDeps,
 } from '../savings-snapshots';
 import { handlersForCron } from '../router';
@@ -35,6 +37,9 @@ import { AGGREGATION_CRON } from '../time-series-aggregation';
 import { computeSavingsGap } from '../../../../../packages/core-domain/src/savings/gap';
 import { openMigratedD1 } from '../../analytics/__tests__/fake-d1';
 import { createLogger, type Logger } from '../../logger';
+import { D1SavingsSnapshotRepository } from '../../../../../packages/data-platform/src/repositories/d1/savings-snapshot.repository';
+import type { SavingsSnapshotUpsertInput } from '../../../../../packages/data-platform/src/abstracts';
+import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
 import type { Env } from '../../env';
 
 const LOG = createLogger('error');
@@ -805,5 +810,445 @@ describe('savings-snapshots registration', () => {
     expect(names.indexOf('savings-snapshots')).toBeGreaterThan(
       names.indexOf('time-series-aggregation'),
     );
+  });
+});
+
+describe('handleSavingsSnapshots — cursor-chunked walk (v3, savings-cron-cursor-chunking)', () => {
+  /**
+   * D1-statement counting wrapper (design D4): every `prepare` (and
+   * batch member) is one subrequest against the budget. Invocations
+   * share the SAME underlying D1 fixture — the cursor state crosses
+   * invocations through the `aggregation_watermarks` row, exactly as
+   * consecutive production ticks share the real database.
+   */
+  function countingD1(d1: D1DatabaseLike, counter: { count: number }): D1DatabaseLike {
+    return {
+      prepare(query: string) {
+        counter.count++;
+        return d1.prepare(query);
+      },
+      batch(statements) {
+        counter.count += statements.length;
+        return d1.batch(statements);
+      },
+    };
+  }
+
+  function envOver(d1: D1DatabaseLike, counter: { count: number }): Env {
+    return { DB: countingD1(d1, counter) } as unknown as Env;
+  }
+
+  /** The pass cursor's persisted value, read straight off the fixture. */
+  function cursorWatermark(db: DatabaseSync): string | undefined {
+    return (
+      db
+        .prepare(
+          `SELECT watermark FROM aggregation_watermarks WHERE job_name = ?`,
+        )
+        .get(SAVINGS_SNAPSHOT_CURSOR_JOB) as { watermark: string } | undefined
+    )?.watermark;
+  }
+
+  /** Upsert-order capture — the processed product ids, in order. */
+  function orderTrackingSnapshots(
+    d1: D1DatabaseLike,
+    order: number[],
+  ): D1SavingsSnapshotRepository {
+    const real = new D1SavingsSnapshotRepository(d1);
+    return {
+      upsertSnapshot: async (input: SavingsSnapshotUpsertInput) => {
+        order.push(input.productId);
+        return real.upsertSnapshot(input);
+      },
+    } as unknown as D1SavingsSnapshotRepository;
+  }
+
+  /** Logger capturing info + error messages (D5 line assertions). */
+  function captureLog(): { log: Logger; info: string[]; errors: string[] } {
+    const info: string[] = [];
+    const errors: string[] = [];
+    const log: Logger = {
+      debug: () => {},
+      info: (fields) => {
+        info.push(fields.message);
+      },
+      warn: () => {},
+      error: (fields) => {
+        errors.push(fields.message);
+      },
+    };
+    return { log, info, errors };
+  }
+
+  /** Sync bulk seeders — the pin's 5,000-product catalog needs them. */
+  function bulkSeeders(db: DatabaseSync) {
+    const product = db.prepare(
+      `INSERT INTO product_master (id, name, manufacturer, brand, category,
+          alcohol_by_volume, unit_volume, container_type, regulatory_classification)
+       VALUES (?, ?, 'Brewery', 'Brand', 'beer', 0.05, 0.33, 'can', 'beer')`,
+    );
+    let offerId = 0;
+    const foreignOffer = db.prepare(
+      `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+          currency, observed_at, reliability_status)
+       VALUES (?, 'beverage-de', 'DE', ?, 200, 'EUR', '2026-09-01T10:00:00.000Z', 'VERIFIED')`,
+    );
+    const alkoOffer = db.prepare(
+      `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+          currency, observed_at, reliability_status)
+       VALUES (?, 'alko', 'FI', ?, 300, 'EUR', '2026-09-05T12:00:00.000Z', 'VERIFIED')`,
+    );
+    const link = db.prepare(
+      `INSERT INTO product_reference_links (id, foreign_product_id, alko_product_id,
+          status, confirmed_by, confirmed_at)
+       VALUES (?, ?, ?, 'CONFIRMED', 'ops', '2026-09-07T08:00:00.000Z')`,
+    );
+    let linkId = 900;
+    return {
+      productWithForeignAndAlko(id: number) {
+        product.run(id, `Product ${id}`);
+        foreignOffer.run(++offerId, id);
+        alkoOffer.run(++offerId, id);
+      },
+      productWithForeignOnly(id: number) {
+        product.run(id, `Product ${id}`);
+        foreignOffer.run(++offerId, id);
+      },
+      productWithAlkoOnly(id: number) {
+        product.run(id, `Product ${id}`);
+        alkoOffer.run(++offerId, id);
+      },
+      linkForeignToAlko(foreignProductId: number, alkoProductId: number) {
+        link.run(++linkId, foreignProductId, alkoProductId);
+      },
+    };
+  }
+
+  it('pins the chunk size and cursor job the budget math depends on', () => {
+    expect(SAVINGS_SNAPSHOT_CHUNK_SIZE).toBe(300);
+    expect(SAVINGS_SNAPSHOT_CURSOR_JOB).toBe('savings-snapshot-cursor');
+  });
+
+  /**
+   * THE BUDGET PIN (design D4 — the test that would have caught the
+   * incident). Synthetic catalog of 5,000 products + 10 link targets —
+   * a realistic mix spread EVENLY across the id space (qualifiers
+   * distribute by id in production): 500 direct-qualifying (every 10th
+   * id), 10 CONFIRMED-linked (every 500th), 4,490 skip-only — 5,020
+   * evaluations at ~10.4 % qualifying density (production is ~14 %).
+   *
+   * Computed per-invocation ceiling (documented, D2; measured through
+   * the real calculator path): fixed 4 statements (enumeration +
+   * listConfirmed + cursor read + cursor write) + 300 offer reads (1
+   * per product) + ~30 qualifying × ~5 (calculator reads + the
+   * by-design calculation-record write + offer re-read + the
+   * 2-statement keyed upsert) ≈ 454 (measured on this fixture: max 396).
+   * Pinned at 1,000 (D4) — 2× headroom
+   * over the computed ceiling. The recalibration point is an
+   * all-qualifying chunk: 300 × ~6 + 4 ≈ 1,800 > 1,000 — the D2
+   * density-margin note. v2's single walk of the same catalog costs
+   * ≈ 7,500 statements in ONE invocation — 7× over — which is why the
+   * day-total assertion below (total > budget) gives the pin teeth:
+   * removing the chunking fails this test by construction.
+   */
+  it('walks a 5,000-product catalog across simulated invocations with every invocation inside the D1 statement budget', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedTaxRules(db);
+    const seed = bulkSeeders(db);
+    // Direct-qualifying every 10th id; CONFIRMED-linked every 500th
+    // (foreign product carries no alko offer, its target 5000+id does —
+    // the target direct-qualifies on its own offer); the rest skip-only
+    // (an alko offer row enumerates them; the calculator's
+    // benchmark-absent skip is forced by the stub below because the
+    // schema's observed_at is NOT NULL — the honest skip state is
+    // unreachable through seeded rows alone).
+    for (let id = 1; id <= 5000; id++) {
+      if (id % 10 === 0) {
+        seed.productWithForeignAndAlko(id);
+      } else if (id % 500 === 7) {
+        seed.productWithForeignOnly(id);
+        seed.productWithAlkoOnly(5000 + id);
+        seed.linkForeignToAlko(id, 5000 + id);
+      } else {
+        seed.productWithAlkoOnly(id);
+      }
+    }
+
+    const real = buildSavingsCalculator(d1);
+    const skipResult = {} as Awaited<ReturnType<typeof real.calculate>>;
+    const deps: SavingsSnapshotDeps = {
+      now: () => RUN_NOW,
+      calculator: {
+        calculate: (input) =>
+          input.productId <= 5000 && input.productId % 10 !== 0 && input.productId % 500 !== 7
+            ? Promise.resolve(skipResult)
+            : real.calculate(input),
+      },
+    };
+
+    const counter = { count: 0 };
+    const invocationCounts: number[] = [];
+    const evaluations = 5000 + 10 + 10; // enumerated + linked foreigns
+    const invocations = Math.ceil(evaluations / SAVINGS_SNAPSHOT_CHUNK_SIZE);
+    for (let tick = 0; tick < invocations; tick++) {
+      counter.count = 0;
+      const result = await handleSavingsSnapshots(envOver(d1, counter), LOG, deps);
+      invocationCounts.push(counter.count);
+      // Chunks of the mixed catalog write only their qualifying members
+      // (skips and failures ride along); the write rate per tick is
+      // still bounded by the chunk size.
+      expect(result.rowsWritten).toBeLessThanOrEqual(SAVINGS_SNAPSHOT_CHUNK_SIZE);
+    }
+    expect(invocationCounts).toHaveLength(17); // 16 full chunks + 220-id tail
+
+    // EVERY invocation inside the budget — the incident's assertion.
+    for (const count of invocationCounts) {
+      expect(count).toBeLessThanOrEqual(1_000);
+      expect(count).toBeGreaterThan(0);
+    }
+
+    // Teeth: the FULL day costs far more than one budget — a
+    // single-invocation walk (v2) would fail the same pin by 7×+.
+    const dayTotal = invocationCounts.reduce((sum, count) => sum + count, 0);
+    expect(dayTotal).toBeGreaterThan(1_000);
+
+    // The walk converged: every qualifier materialized exactly once,
+    // linked rows carry their provenance, and the tail chunk wrapped
+    // the cursor to 0 for the next day-pass.
+    const counts = db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+                SUM(reference_link_id IS NOT NULL) AS linked
+           FROM savings_snapshots`,
+      )
+      .get() as { total: number; linked: number };
+    expect(counts.total).toBe(520); // 500 direct + 10 targets + 10 linked
+    expect(counts.linked).toBe(10);
+    expect(cursorWatermark(db)).toBe('0');
+  }, 60_000);
+
+  /**
+   * THE LINKED-REACHABILITY TEST (the incident): CONFIRMED-linked ids
+   * ride the same id-ascending total order as direct products — a link
+   * whose foreign id is BELOW every direct id materializes in the FIRST
+   * chunk, interleaved at its id position, never as an appended tail
+   * past the subrequest death line (v2's bug class, design D3).
+   */
+  it('materializes CONFIRMED-linked products in the first chunk, interleaved in id order with direct products', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedTaxRules(db);
+    const seed = bulkSeeders(db);
+    // 300 direct qualifiers with ids 100..399; a linked pair whose
+    // foreign id (5) is below ALL of them.
+    for (let id = 100; id <= 399; id++) {
+      seed.productWithForeignAndAlko(id);
+    }
+    seed.productWithForeignOnly(5);
+    seed.productWithAlkoOnly(6); // the link's Alko side direct-qualifies too
+    seed.linkForeignToAlko(5, 6);
+    const linkId = db
+      .prepare('SELECT id FROM product_reference_links WHERE foreign_product_id = 5')
+      .get() as { id: number };
+
+    const order: number[] = [];
+    const deps: SavingsSnapshotDeps = {
+      now: () => RUN_NOW,
+      snapshots: orderTrackingSnapshots(d1, order),
+    };
+
+    const first = await handleSavingsSnapshots({ DB: d1 } as unknown as Env, LOG, deps);
+
+    // Chunk 1 = the first 300 of [5, 6, 100..399] — the linked id 5 is
+    // the FIRST processed id of the whole day-pass (v2 ordered it last).
+    expect(first.qualifyingProducts).toBe(302);
+    expect(first.rowsWritten).toBe(300);
+    expect(order[0]).toBe(5);
+    expect(order[1]).toBe(6);
+    expect(order).toEqual([...order].sort((a, b) => a - b)); // one total order
+    expect(cursorWatermark(db)).toBe(String(order[order.length - 1]));
+
+    const rows = db
+      .prepare('SELECT product_id, reference_link_id FROM savings_snapshots')
+      .all() as Array<{ product_id: number; reference_link_id: number | null }>;
+    const linked = rows.find((row) => row.product_id === 5);
+    expect(linked?.reference_link_id).toBe(linkId.id);
+
+    // Chunk 2 finishes the list — the linked row never had a tail.
+    const secondOrder: number[] = [];
+    const second = await handleSavingsSnapshots({ DB: d1 } as unknown as Env, LOG, {
+      now: () => RUN_NOW,
+      snapshots: orderTrackingSnapshots(d1, secondOrder),
+    });
+    expect(second.rowsWritten).toBe(2);
+    expect(secondOrder).toEqual([398, 399]);
+    expect(cursorWatermark(db)).toBe('0'); // tail chunk wrapped
+  });
+
+  it('processes an exactly-300 window, wraps after the last chunk, and the tick after wrap starts a fresh day pass', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedTaxRules(db);
+    const seed = bulkSeeders(db);
+    for (let id = 1; id <= 301; id++) {
+      seed.productWithForeignAndAlko(id);
+    }
+    const { log, info } = captureLog();
+
+    const first = await handleSavingsSnapshots({ DB: d1 } as unknown as Env, log, {
+      now: () => RUN_NOW,
+    });
+    expect(first.rowsWritten).toBe(300);
+    expect(cursorWatermark(db)).toBe('300');
+    // D5 chunk-window line AND the unchanged completion summary line.
+    expect(info.some((m) => m.includes('chunk [1..300] of 301 qualifying (cursor 0)'))).toBe(
+      true,
+    );
+    expect(info).toContain(
+      'Savings-snapshot pass for 2026-09-08: 300 rows written, 0 skipped, 0 failed',
+    );
+
+    const second = await handleSavingsSnapshots({ DB: d1 } as unknown as Env, log, {
+      now: () => RUN_NOW,
+    });
+    expect(second.rowsWritten).toBe(1);
+    expect(cursorWatermark(db)).toBe('0'); // wrap after the last chunk
+    expect(
+      info.some((m) => m.includes('chunk [301..301] of 301 qualifying (cursor 300)')),
+    ).toBe(true);
+
+    // The tick after wrap: a fresh day-pass re-walks the list — and the
+    // keyed upsert keeps the table at one row per product. The fresh
+    // pass fills another exactly-300 window (301 remains above cursor 0).
+    const third = await handleSavingsSnapshots({ DB: d1 } as unknown as Env, log, {
+      now: () => RUN_NOW,
+    });
+    expect(third.rowsWritten).toBe(300);
+    expect(cursorWatermark(db)).toBe('300');
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM savings_snapshots').get() as { n: number },
+    ).toEqual({ n: 301 });
+
+    // And its tail chunk re-writes the last product, wrapping again.
+    const fourth = await handleSavingsSnapshots({ DB: d1 } as unknown as Env, log, {
+      now: () => RUN_NOW,
+    });
+    expect(fourth.rowsWritten).toBe(1);
+    expect(cursorWatermark(db)).toBe('0');
+  });
+
+  it('re-writes the same chunk idempotently when the cursor is reset — same keyed rows, no duplicates', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedTaxRules(db);
+    const seed = bulkSeeders(db);
+    for (let id = 1; id <= 320; id++) {
+      seed.productWithForeignAndAlko(id);
+    }
+
+    await handleSavingsSnapshots({ DB: d1 } as unknown as Env, LOG, { now: () => RUN_NOW });
+    const idRows = `SELECT id, product_id FROM savings_snapshots ORDER BY product_id ASC`;
+    const afterFirst = db.prepare(idRows).all() as never;
+    expect(cursorWatermark(db)).toBe('300');
+
+    // Operator reset (the wrap edge): the same chunk is processed again.
+    db.prepare('UPDATE aggregation_watermarks SET watermark = ? WHERE job_name = ?').run(
+      '0',
+      SAVINGS_SNAPSHOT_CURSOR_JOB,
+    );
+    const second = await handleSavingsSnapshots({ DB: d1 } as unknown as Env, LOG, {
+      now: () => RUN_NOW,
+    });
+
+    expect(second.rowsWritten).toBe(300);
+    // Physical rows unchanged — the re-write UPDATED the keyed rows.
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM savings_snapshots').get() as { n: number },
+    ).toEqual({ n: 300 });
+    expect(db.prepare(idRows).all() as never).toEqual(afterFirst);
+    expect(cursorWatermark(db)).toBe('300');
+  });
+
+  it('persists the cursor between invocations — state crosses ticks through the shared watermark row', async () => {
+    const { db, d1 } = openMigratedD1();
+    // Enumeration via the seam (ids only — no offers, every product
+    // skips); the CURSOR rides the real watermark SQL, unoverridden.
+    const ids = Array.from({ length: 350 }, (_, i) => i + 1);
+
+    // Row absent → cursor defaults to 0 (design risk note).
+    expect(cursorWatermark(db)).toBeUndefined();
+
+    const counter = { count: 0 };
+    const offerCalls: number[][] = [];
+    const depsFor = (): SavingsSnapshotDeps => {
+      offerCalls.push([]);
+      return {
+        now: () => RUN_NOW,
+        qualifyingProductIds: () => Promise.resolve(ids),
+        confirmedLinks: () => Promise.resolve([]),
+        offersForProduct: (productId) => {
+          offerCalls[offerCalls.length - 1].push(productId);
+          return Promise.resolve([]);
+        },
+      };
+    };
+
+    const first = await handleSavingsSnapshots(envOver(d1, counter), LOG, depsFor());
+    expect(first.skipped).toBe(300);
+    expect(cursorWatermark(db)).toBe('300');
+    expect(offerCalls[0]).toEqual(ids.slice(0, 300));
+
+    const second = await handleSavingsSnapshots(envOver(d1, counter), LOG, depsFor());
+    expect(second.skipped).toBe(50);
+    expect(offerCalls[1]).toEqual(ids.slice(300));
+    expect(cursorWatermark(db)).toBe('0'); // tail → wrap
+  });
+
+  it('advances the cursor past a failed product inside a chunk — no eternal stall, failure logged and counted', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedTaxRules(db);
+    const seed = bulkSeeders(db);
+    for (let id = 1; id <= 3; id++) {
+      seed.productWithForeignAndAlko(id);
+    }
+    const real = buildSavingsCalculator(d1);
+    const { log, errors } = captureLog();
+
+    const first = await handleSavingsSnapshots({ DB: d1 } as unknown as Env, log, {
+      now: () => RUN_NOW,
+      calculator: {
+        calculate: (input) =>
+          input.productId === 2
+            ? Promise.reject(new Error('calculator exploded'))
+            : real.calculate(input),
+      },
+    });
+
+    // The poisoned product did not stall the walk: the chunk completed
+    // and the cursor advanced PAST id 2 to the chunk max (design D1 —
+    // the failed product retries on the next day-pass instead).
+    expect(first.failed).toBe(1);
+    expect(first.rowsWritten).toBe(2);
+    expect(errors.some((m) => m.includes('product 2'))).toBe(true);
+    expect(cursorWatermark(db)).toBe('0'); // 3 products = tail → wrapped past the failure
+
+    const rows = db
+      .prepare('SELECT product_id FROM savings_snapshots ORDER BY product_id ASC')
+      .all() as Array<{ product_id: number }>;
+    expect(rows.map((row) => row.product_id)).toEqual([1, 3]);
+
+    // Next tick: a fresh pass retries the failed product — still
+    // isolated, the healthy rows idempotently re-written.
+    const second = await handleSavingsSnapshots({ DB: d1 } as unknown as Env, log, {
+      now: () => RUN_NOW,
+      calculator: {
+        calculate: (input) =>
+          input.productId === 2
+            ? Promise.reject(new Error('calculator exploded'))
+            : real.calculate(input),
+      },
+    });
+    expect(second.failed).toBe(1);
+    expect(second.rowsWritten).toBe(2);
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM savings_snapshots').get() as { n: number },
+    ).toEqual({ n: 2 });
   });
 });

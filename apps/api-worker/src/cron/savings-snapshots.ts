@@ -3,17 +3,27 @@
  * insight-surfaces / alko-reference-matching-pipeline) — the daily
  * savings-discovery pass.
  *
- * ## Cadence — shared post-ingestion tick, daily grain
+ * ## Cadence — shared post-ingestion tick, cursor-chunked daily grain (v3)
  *
  * Registered on the EXISTING 30-minute aggregation pattern
  * ({@link SAVINGS_SNAPSHOT_CRON}) after the time-series aggregation
  * handler, in its own waitUntil like every sibling (router.ts). The
  * snapshot itself is a DAILY materialization — one row per product per
  * as-of day — and {@link SAVINGS_SNAPSHOT_CADENCE} records that operator
- * decision. On the shared tick a same-day re-run is a converging no-op:
- * the (asOf, product_id) upsert key IS the idempotence, so no watermark
- * is kept (unlike the time-series scan, whose incremental protocol needs
- * one).
+ * decision. The daily walk does not fit one Worker invocation (the
+ * 2026-10-04 incident: a single-invocation O(catalog) walk exceeded the
+ * subrequest budget partway through, capping the direct path and making
+ * every appended-tail linked row unreachable), so each tick processes a
+ * bounded {@link SAVINGS_SNAPSHOT_CHUNK_SIZE} chunk of the combined
+ * qualifying list and advances a persisted product-id cursor
+ * ({@link SAVINGS_SNAPSHOT_CURSOR_JOB} row in `aggregation_watermarks` —
+ * the same job-cursor protocol as the time-series scan, D1 design).
+ * Write-then-advance: the cursor moves only after the chunk's upserts
+ * are attempted; per-product isolation absorbs individual failures so a
+ * poisoned product cannot stall the walk. When no ids remain above the
+ * cursor the cursor resets to 0 and the next tick begins the day's pass
+ * anew — a same-day re-run stays a converging no-op: the
+ * (asOf, product_id) upsert key IS the idempotence.
  *
  * ## Qualification and the gap (design D1/D3; v2 links per D4)
  *
@@ -109,6 +119,55 @@ export const SAVINGS_SNAPSHOT_CRON = AGGREGATION_CRON;
  */
 export const SAVINGS_SNAPSHOT_CADENCE = 'daily';
 
+/**
+ * Products processed per tick (design D2): the daily walk is chunked so
+ * one invocation stays inside the empirical subrequest budget — at the
+ * documented qualifying density a chunk costs ≈600 D1 statements, half
+ * the budget with 2× safety. Recalibrate upward (never downward) if the
+ * catalog's qualifying share grows past the D2 margin.
+ */
+export const SAVINGS_SNAPSHOT_CHUNK_SIZE = 300;
+
+/** Watermark row holding the pass's product-id cursor (design D1). */
+export const SAVINGS_SNAPSHOT_CURSOR_JOB = 'savings-snapshot-cursor';
+
+/**
+ * The pass cursor: the last processed product id of the current
+ * day-pass, read/written as raw prepared statements against the generic
+ * `aggregation_watermarks` table (the module already owns raw SQL for
+ * the enumeration) — the Date-typed AggregationWatermarkRepository
+ * abstract is not bent for an integer cursor. Absent row → 0: a fresh
+ * pass, the same semantics as the time-series scan's first run (design
+ * risk note). Mirrors the repository's own statement shapes.
+ */
+async function readSavingsCursor(d1: D1DatabaseLike): Promise<number> {
+  const row = await d1
+    .prepare('SELECT watermark FROM aggregation_watermarks WHERE job_name = ?')
+    .bind(SAVINGS_SNAPSHOT_CURSOR_JOB)
+    .first<{ watermark: string }>();
+  if (row === null) {
+    return 0;
+  }
+  const parsed = Number(row.watermark);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+/** Write-then-advance persist step (design D1): called only after the
+ *  chunk's upserts are attempted, so the cursor never promises work the
+ *  tick did not do. Upsert keyed on the job_name UNIQUE index. */
+async function writeSavingsCursor(d1: D1DatabaseLike, productId: number): Promise<void> {
+  await d1
+    .prepare(
+      `INSERT INTO aggregation_watermarks (job_name, watermark, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT (job_name) DO UPDATE SET
+         watermark = excluded.watermark,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(SAVINGS_SNAPSHOT_CURSOR_JOB, String(productId), new Date().toISOString())
+    .run();
+}
+
 /** Merchant id of the domestic reference feed — byte-parity with the
  *  calculator's private ALKO_MERCHANT (inlined on purpose: importing the
  *  service module for one string would couple the cron pass to it). */
@@ -142,34 +201,32 @@ interface SnapshotEvaluation {
 }
 
 /**
- * The v2 evaluation set: every directly-qualified product first (id
- * ascending, byte-identical enumeration to v1), then every CONFIRMED
- * link's foreign product not already in that set (id ascending — one
- * live CONFIRMED link per foreign product is a schema invariant, but the
- * first wins regardless). Dedupe here is the "direct path wins" rule:
- * a product with its own Alko reference never evaluates through a link.
+ * The v3 evaluation set (design D3): the combined deduplicated list —
+ * direct ∪ CONFIRMED-linked — in ONE total order, product id ascending.
+ * The v2 direct-then-appended order was the incident's bug class: ids
+ * appended after a long enumeration sit past the subrequest death line
+ * and never materialize. Sorting puts every product at a cursor address
+ * proportional to its id, so a confirmed link becomes materializable in
+ * the first chunk that covers its id. Dedupe is still "direct path
+ * wins": a product with its own Alko reference never evaluates through
+ * a link (a live CONFIRMED link per foreign product is a schema
+ * invariant, but the first link wins regardless).
  */
 function buildEvaluations(
   directProductIds: number[],
   confirmedLinks: ReferenceLinkRecord[],
 ): SnapshotEvaluation[] {
-  const direct = directProductIds.map((productId) => ({
-    productId,
-    link: null,
-  }));
-  const directIds = new Set(directProductIds);
-  const linked = new Map<number, ReferenceLinkRecord>();
+  const byProductId = new Map<number, SnapshotEvaluation>();
   for (const link of confirmedLinks) {
-    if (!directIds.has(link.foreignProductId) && !linked.has(link.foreignProductId)) {
-      linked.set(link.foreignProductId, link);
+    if (!byProductId.has(link.foreignProductId)) {
+      byProductId.set(link.foreignProductId, { productId: link.foreignProductId, link });
     }
   }
-  return [
-    ...direct,
-    ...[...linked.values()]
-      .sort((a, b) => a.foreignProductId - b.foreignProductId)
-      .map((link) => ({ productId: link.foreignProductId, link })),
-  ];
+  for (const productId of directProductIds) {
+    // Direct overwrites any linked entry — the dedupe rule.
+    byProductId.set(productId, { productId, link: null });
+  }
+  return [...byProductId.values()].sort((a, b) => a.productId - b.productId);
 }
 
 /**
@@ -238,16 +295,27 @@ export interface SavingsSnapshotDeps {
   /** CONFIRMED links only — the real seam is `listConfirmed`, whose
    *  WHERE clause is the status filter (PENDING/REJECTED never surface). */
   confirmedLinks?: () => Promise<ReferenceLinkRecord[]>;
+  /** The pass cursor (design D1) — the real seams are the raw watermark
+   *  statements above: read defaults to 0 when the row is absent. */
+  readCursor?: () => Promise<number>;
+  writeCursor?: (productId: number) => Promise<void>;
   now?: () => Date;
 }
 
 /**
- * One savings-snapshot pass: enumerate qualifying products — a direct
- * Alko reference offer with an observation timestamp, or the foreign
- * side of a CONFIRMED reference link — compute each one's full landed
- * cost (the linked path against the linked Alko product's benchmark,
- * selection inside the calculator), and upsert the day's rows keyed
- * (asOf, productId). Never throws on per-product failure (isolation) —
+ * One tick of the savings-snapshot pass (v3, cursor-chunked): enumerate
+ * the combined qualifying list — a direct Alko reference offer with an
+ * observation timestamp, or the foreign side of a CONFIRMED reference
+ * link — in one id-ascending total order, take the
+ * {@link SAVINGS_SNAPSHOT_CHUNK_SIZE} chunk just above the persisted
+ * cursor, compute each one's full landed cost (the linked path against
+ * the linked Alko product's benchmark, selection inside the calculator),
+ * and upsert the day's rows keyed (asOf, productId). Write-then-advance:
+ * the cursor is persisted only after the chunk's upserts are attempted
+ * (a failed product still advances — isolation already absorbed it, and
+ * advancing past a poisoned product prevents an eternal stall, design
+ * D1); an exhausted list resets the cursor to 0 so the next tick begins
+ * the day's pass anew. Never throws on per-product failure (isolation) —
  * the router's handler boundary only sees failures of the scan itself.
  */
 export async function handleSavingsSnapshots(
@@ -267,22 +335,35 @@ export async function handleSavingsSnapshots(
     deps.qualifyingProductIds ?? (() => findQualifyingProductIds(env.DB));
   const confirmedLinks =
     deps.confirmedLinks ?? (() => new D1ReferenceLinkRepository(env.DB).listConfirmed());
+  const readCursor = deps.readCursor ?? (() => readSavingsCursor(env.DB));
+  const writeCursor = deps.writeCursor ?? ((id: number) => writeSavingsCursor(env.DB, id));
 
-  const [directProductIds, links] = await Promise.all([
+  const [cursor, directProductIds, links] = await Promise.all([
+    readCursor(),
     qualifyingProductIds(),
     confirmedLinks(),
   ]);
   const evaluations = buildEvaluations(directProductIds, links);
+  // The chunk is the next CHUNK_SIZE ids above the cursor in the one
+  // total order (design D2); a wrap tick (nothing above the cursor)
+  // processes nothing and resets the cursor.
+  let chunkStart = 0;
+  while (chunkStart < evaluations.length && evaluations[chunkStart].productId <= cursor) {
+    chunkStart++;
+  }
+  const chunk = evaluations.slice(chunkStart, chunkStart + SAVINGS_SNAPSHOT_CHUNK_SIZE);
   const counters = { rowsWritten: 0, skipped: 0, failed: 0 };
 
   log.info({
     message: `Starting savings-snapshot pass for ${asOf}`,
     products: evaluations.length,
     linkedProducts: evaluations.filter((evaluation) => evaluation.link !== null).length,
+    chunkProducts: chunk.length,
+    cursor,
     cadence: SAVINGS_SNAPSHOT_CADENCE,
   });
 
-  for (const { productId, link } of evaluations) {
+  for (const { productId, link } of chunk) {
     try {
       if (link === null) {
         // Direct path (v1, unchanged): qualification mirrors
@@ -379,6 +460,46 @@ export async function handleSavingsSnapshots(
         productId,
       });
     }
+  }
+
+  // Write-then-advance (design D1): the cursor moves only after the
+  // chunk's upserts were attempted — per-product isolation means the
+  // chunk's outcome never blocks the advance (a failed product retries
+  // on the next day-pass instead of stalling the walk, design D1). When
+  // nothing remains above the chunk — the tail chunk, or a cursor
+  // already past the list — the pass is complete and the cursor wraps
+  // to 0, so the NEXT tick begins the day's pass anew and an immediate
+  // same-day re-run re-walks the list idempotently (the v2 converging
+  // no-op, unchanged: the keyed upsert absorbs the re-write).
+  const exhausted = chunkStart + chunk.length >= evaluations.length;
+  const nextCursor = exhausted
+    ? 0
+    : chunk[chunk.length - 1].productId;
+  await writeCursor(nextCursor);
+
+  // Design D5: the chunk window and cursor position on every tick, so
+  // budget death or a stall is visible in tail/Grafana without forensics.
+  if (chunk.length === 0) {
+    log.info({
+      message: `Savings-snapshot pass chunk exhausted of ${evaluations.length} qualifying (cursor ${cursor}): wrap — cursor reset to 0, ${counters.rowsWritten} rows written, ${counters.skipped} skipped, ${counters.failed} failed`,
+      asOf,
+      cursor,
+      nextCursor,
+      qualifyingTotal: evaluations.length,
+      ...counters,
+    });
+  } else {
+    const lastId = chunk[chunk.length - 1].productId;
+    const wrapNote = exhausted ? ' — list exhausted, cursor wrapped to 0' : '';
+    log.info({
+      message: `Savings-snapshot pass chunk [${chunk[0].productId}..${lastId}] of ${evaluations.length} qualifying (cursor ${cursor}): ${counters.rowsWritten} rows written, ${counters.skipped} skipped, ${counters.failed} failed${wrapNote}`,
+      asOf,
+      cursor,
+      nextCursor,
+      chunkWindow: { from: chunk[0].productId, to: lastId },
+      qualifyingTotal: evaluations.length,
+      ...counters,
+    });
   }
 
   log.info({
