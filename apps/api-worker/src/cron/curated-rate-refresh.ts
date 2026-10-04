@@ -36,6 +36,7 @@ import {
   POSTI_OBSERVED_AT,
 } from '../../../../packages/data-acquisition/src/adapters/posti-rate.source';
 import type { ICarrierRateSource } from '../../../../packages/data-acquisition/src/interfaces/carrier-rate-source.port';
+import { D1SourceGovernanceRepository } from '../../../../packages/data-platform/src/repositories/d1/source-governance.repository';
 import { composeGovernanceService } from '../queues/pipeline';
 import { D1TransportOfferWritePort } from '../adapters/d1-domain-ports';
 import type { Env } from '../env';
@@ -115,7 +116,12 @@ export async function handleCuratedRateRefresh(
       deps.refresh ??
       ((id: string) => {
         const adapter = new PipelineTransportRateAdapter(
-          composeGovernanceService(),
+          // The gate MUST read the durable D1 source_governance store — the
+          // no-arg composeGovernanceService() default is the empty in-memory
+          // repo, fail-closed, which skips every carrier that reaches this
+          // gate (the 2026-10 Posti append gap). Same wiring as
+          // composeIngestionPipeline / the ingestion producer.
+          composeGovernanceService(new D1SourceGovernanceRepository(env.DB)),
           new Map([[id, carriers.get(id)!.source]]),
           new D1TransportOfferWritePort(env.DB),
         );
