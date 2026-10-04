@@ -36,10 +36,15 @@
  * A zero-result query additionally carries a did-you-mean candidate
  * (task 3.2, change finnish-first-client-experience): bounded edit
  * distance (≤ 2) between diacritic-folded comparison keys of the query's
- * most significant token and the distinct brand vocabulary — advisory
+ * most significant token and the closed suggestion vocabulary — advisory
  * only, exposed as the additive optional `suggestion` field; the
  * customer's query text is never rewritten (see
- * {@link D1ProductSearchRepository.searchRankedWithSuggestion}).
+ * {@link D1ProductSearchRepository.searchRankedWithSuggestion}). The
+ * vocabulary is a union (task 2.1, change
+ * consumer-clarity-and-discovery): distinct brand values, distinct
+ * product-name tokens, and the curated {@link FINNISH_SYNONYM_GROUPS}
+ * members, so a word that lives in no brand (`votka` → vodka) still
+ * suggests (see {@link D1ProductSearchRepository.suggestQuery}).
  *
  * `searchByName` / blank-query listing: SQLite and D1 ship no Finnish
  * collation and D1 has no custom collations, so the final ordering stays
@@ -187,6 +192,27 @@ export function tokenize(query: string): string[] {
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
     .filter((t) => t.length > 0);
+}
+
+/**
+ * The case-preserving sibling of {@link tokenize} — the identical
+ * letter/number split, original casing kept. Used by the did-you-mean
+ * name-token arm so a suggestion can return the word exactly as the
+ * catalog spells it (`Pohjola`, not a lowercased artifact); the
+ * comparison side still folds through {@link foldComparisonKey}.
+ */
+function splitTokens(text: string): string[] {
+  return text.split(/[^\p{L}\p{N}]+/u).filter((t) => t.length > 0);
+}
+
+/**
+ * One did-you-mean vocabulary entry: the VALUE a suggestion returns
+ * (original casing, exactly as the source spells it) and its folded
+ * comparison KEY (see {@link foldComparisonKey}).
+ */
+interface SuggestionVocabularyEntry {
+  readonly value: string;
+  readonly key: string;
 }
 
 /**
@@ -543,15 +569,22 @@ const NAME_LIKE_SQL = `
    ORDER BY id ASC`;
 
 /**
- * The did-you-mean brand vocabulary (task 3.2, change
- * finnish-first-client-experience): every distinct non-blank brand value.
- * The brand column is small (design D3's ~10⁴-row catalog), so the
- * per-request DISTINCT read stays bounded — no cache infrastructure
- * (design Q5). Comparison keys and selection happen app-side in
- * {@link D1ProductSearchRepository.suggestBrand}.
+ * The did-you-mean vocabulary — a closed union (task 2.1, change
+ * consumer-clarity-and-discovery, design D2): distinct brand values,
+ * distinct product-name tokens, and the curated synonym-group members.
+ * The SQL arms below read the two catalog sides; the synonym arm is the
+ * app-side {@link FINNISH_SYNONYM_GROUPS} constant. Both reads are
+ * catalog-scale DISTINCTs and run ONLY on the zero-result path (the
+ * vocabulary is never consulted when the primary search found rows), so
+ * the union stays bounded; per-request reads, no cache infrastructure
+ * (design Q5). Selection happens app-side in
+ * {@link D1ProductSearchRepository.suggestQuery}.
  */
-const BRAND_VOCABULARY_SQL = `
+const SUGGESTION_BRANDS_SQL = `
   SELECT DISTINCT brand FROM product_master WHERE brand <> ''`;
+
+const SUGGESTION_NAMES_SQL = `
+  SELECT DISTINCT name FROM product_master`;
 
 /**
  * Catalog key read (design D1) — deliberately narrow: only the columns
@@ -937,65 +970,118 @@ export class D1ProductSearchRepository extends ProductRepository {
 
   /**
    * The zero-result did-you-mean candidate for `query` (task 3.2, change
-   * finnish-first-client-experience), or null.
+   * finnish-first-client-experience), or null. Behavior-named
+   * `suggestQuery` as of task 2.1 (change
+   * consumer-clarity-and-discovery): the vocabulary is no longer
+   * brand-only, so "brand" in the old name would misstate the contract.
    *
-   * Vocabulary: one comparison entry per distinct non-blank brand value
-   * (the {@link BRAND_VOCABULARY_SQL} read — design Q5's brand-token
-   * vocabulary). The comparison key JOINS the brand's {@link tokenize}
-   * tokens, so word boundaries and punctuation inside a brand never have
-   * to be typed back: `Jack Daniel's` stores the key `jackdaniels` and
-   * stays reachable from `jackdanels`, while a single-token brand's key
-   * IS its token (`Koskenkorva`). Keys fold through
-   * {@link foldComparisonKey}; the returned VALUE is always the original
-   * brand string, never the folded key.
+   * Vocabulary (design D2's closed union):
+   *
+   * 1. every distinct non-blank brand value, keyed by its JOINED
+   *    {@link tokenize} tokens — word boundaries and punctuation inside a
+   *    brand never have to be typed back: `Jack Daniel's` stores the key
+   *    `jackdaniels` and stays reachable from `jackdanels`, while a
+   *    single-token brand's key IS its token (`Koskenkorva`);
+   * 2. every distinct product-name TOKEN, keyed per token (a name is
+   *    corrected one word at a time — `pohjila` reaches the `Pohjola` of
+   *    `Karhu Pohjola` without the rest of the name) and deduped
+   *    app-side, since SQL has no token splitter;
+   * 3. every curated {@link FINNISH_SYNONYM_GROUPS} member, keyed by its
+   *    joined tokens like brands (`red wine` → `redwine`).
+   *
+   * Keys fold through {@link foldComparisonKey}; a returned VALUE is
+   * always an original spelling from the vocabulary — the brand string,
+   * the name token as the catalog spells it, or the curated member —
+   * never the folded key.
    *
    * Target: the query's most significant token — the longest
    * {@link tokenize} token, first occurrence on ties (a total function of
-   * the query string, so repeated calls agree). The brand-side join pairs
-   * with it naturally: users who misspell a brand omit its separators
-   * (`jackdanels`, `koskenkrova`) far more often than they split one
-   * brand token in two.
+   * the query string, so repeated calls agree).
    *
    * Selection: {@link boundedEditDistance} between the folded target and
    * each folded key, kept while ≤ {@link SUGGESTION_MAX_EDIT_DISTANCE};
    * the best candidate wins by (distance, then the alphabetical order of
    * the ORIGINAL value under the same Finnish collation the module
-   * already orders by) — total and stable, so equal candidates across
-   * repeated calls return the identical string. A distance-0 candidate is
-   * kept deliberately: with folded keys it is the common Finnish-keyboard
-   * case (`likoori` → Likööri), not a rewrite — the response's query
-   * fields are never touched either way (advisory trust posture).
+   * already orders by, then a byte-wise tie for values the collation
+   * deems equal — v/w under `fi` — keeping the winner a total function of
+   * the vocabulary regardless of SQL row order). Total and stable, so
+   * equal candidates across repeated calls return the identical string.
+   * A distance-0 candidate is kept deliberately: with folded keys it is
+   * the common Finnish-keyboard case (`likoori` → Likööri), not a
+   * rewrite — the response's query fields are never touched either way
+   * (advisory trust posture).
    */
-  async suggestBrand(query: string): Promise<string | null> {
+  async suggestQuery(query: string): Promise<string | null> {
     const tokens = tokenize(query);
     if (tokens.length === 0) return null;
     const target = tokens.reduce((longest, token) =>
       token.length > longest.length ? token : longest,
     );
     const targetKey = foldComparisonKey(target);
+
+    // The union is read only here, on the zero-result path — the
+    // catalog-scale DISTINCTs never run for a productive query.
+    const vocabulary: SuggestionVocabularyEntry[] = [];
+
+    // 1) Brands — joined-token key, original brand value.
     const brands = (
-      await this.d1.prepare(BRAND_VOCABULARY_SQL).all<{ brand: string }>()
+      await this.d1.prepare(SUGGESTION_BRANDS_SQL).all<{ brand: string }>()
     ).results;
-    let best: {
-      readonly value: string;
-      readonly distance: number;
-    } | null = null;
     for (const { brand } of brands) {
       const brandTokens = tokenize(brand);
       if (brandTokens.length === 0) continue; // punctuation-only value
+      vocabulary.push({
+        value: brand,
+        key: foldComparisonKey(brandTokens.join('')),
+      });
+    }
+
+    // 2) Product-name tokens — per-token key/value, deduped app-side.
+    const seenNameTokens = new Set<string>();
+    const names = (
+      await this.d1.prepare(SUGGESTION_NAMES_SQL).all<{ name: string }>()
+    ).results;
+    for (const { name } of names) {
+      for (const nameToken of splitTokens(name)) {
+        if (seenNameTokens.has(nameToken)) continue;
+        seenNameTokens.add(nameToken);
+        vocabulary.push({
+          value: nameToken,
+          key: foldComparisonKey(nameToken),
+        });
+      }
+    }
+
+    // 3) Curated synonym-group members — the app-side constant, joined
+    //    token key like brands so multi-word members stay reachable.
+    for (const group of FINNISH_SYNONYM_GROUPS) {
+      for (const member of group) {
+        const memberTokens = tokenize(member);
+        if (memberTokens.length === 0) continue;
+        vocabulary.push({
+          value: member,
+          key: foldComparisonKey(memberTokens.join('')),
+        });
+      }
+    }
+
+    let best: (SuggestionVocabularyEntry & { distance: number }) | null = null;
+    for (const entry of vocabulary) {
       const distance = boundedEditDistance(
         targetKey,
-        foldComparisonKey(brandTokens.join('')),
+        entry.key,
         SUGGESTION_MAX_EDIT_DISTANCE,
       );
       if (distance > SUGGESTION_MAX_EDIT_DISTANCE) continue;
-      if (
-        best === null ||
-        distance < best.distance ||
-        (distance === best.distance &&
-          brand.localeCompare(best.value, 'fi') < 0)
-      ) {
-        best = { value: brand, distance };
+      if (best === null || distance < best.distance) {
+        best = { ...entry, distance };
+        continue;
+      }
+      if (distance === best.distance) {
+        const byCollation = entry.value.localeCompare(best.value, 'fi');
+        if (byCollation < 0 || (byCollation === 0 && entry.value < best.value)) {
+          best = { ...entry, distance };
+        }
       }
     }
     return best === null ? null : best.value;
@@ -1004,7 +1090,7 @@ export class D1ProductSearchRepository extends ProductRepository {
   /**
    * {@link D1ProductSearchRepository.searchRanked} plus the zero-result
    * did-you-mean (task 3.2): an EMPTY ranked result computes
-   * {@link D1ProductSearchRepository.suggestBrand} for the same query;
+   * {@link D1ProductSearchRepository.suggestQuery} for the same query;
    * any non-empty result set leaves `suggestion` null (spec
    * product-search: no suggestion when the query has results). The route
    * attaches the field only when non-null — the customer's original
@@ -1018,7 +1104,7 @@ export class D1ProductSearchRepository extends ProductRepository {
   ): Promise<{ items: ProductRecord[]; suggestion: string | null }> {
     const items = await this.searchRanked(query, limit, category);
     const suggestion =
-      items.length === 0 ? await this.suggestBrand(query) : null;
+      items.length === 0 ? await this.suggestQuery(query) : null;
     return { items, suggestion };
   }
 
