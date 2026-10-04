@@ -316,11 +316,13 @@ export const transportOffers = sqliteTable(
   },
   (table) => [
     // No packageTier CHECK: pg has a plain varchar and the domain treats it
-    // as a free string — the calculator matches offers to products by
-    // `packageTier === product.containerType`, so real rows carry the
-    // container-type vocabulary ('can', 'bottle', …). The CHECK that 0000
-    // invented here was dropped by migration 0003 (golden e2e caught it:
-    // every real offer was rejected and transport silently degraded to 0).
+    // as a free string — since transport-confidence-unlock (3.2) the
+    // calculator derives parcel/pallet from shipment weight against the
+    // carrier's own bracket ceilings, so real rows carry the curated
+    // datasets' shipping vocabulary ('parcel', 'pallet'). The CHECK that
+    // 0000 invented here was dropped by migration 0003 (golden e2e caught
+    // it: every real offer was rejected and transport silently degraded
+    // to 0).
     check('transport_offers_reliability_status_check', sql`${table.reliabilityStatus} IN ${RELIABILITY_VALUES}`),
   ],
 );
