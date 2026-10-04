@@ -160,22 +160,14 @@ export interface GoldenTransportSeed {
 /**
  * Insert golden transport offers into transport_offers.
  *
- * DEFECT WORKAROUND (reported, not fixed — constraint: tests/configs only):
- * migration 0000 added `transport_offers_package_tier_check`
- * ('parcel','box','pallet'), a constraint the pg source schema never had.
- * The calculator matches transport offers by STRICT packageTier equality
- * against product.containerType (TransportEstimationService.estimate →
- * `o.packageTier === packageType`, calculator passes product.containerType),
- * and product_master's container vocabulary (glass/plastic/metal/carton/
- * other/can/bottle) has ZERO intersection with the tier CHECK's values —
- * so on the migrated schema as written, no transport offer can ever match
- * any product and every calculation silently degrades to transport 0 /
- * UNAVAILABLE. The golden oracle requires the carrier offers to match
- * (150/200¢), so this seeder writes the golden tiers with CHECK enforcement
- * scoped OFF for the insert duration (PRAGMA ignore_check_constraints —
- * FK/UNIQUE/NOT NULL stay enforced). Every other constraint in the harness
- * keeps its production semantics; the fix itself belongs to the migration
- * owner (task 2.x follow-up).
+ * Seed shape follows the committed transport semantics
+ * (transport-confidence-unlock): tiers are shipping packaging ('parcel'),
+ * carrier IDs are stored lowercase per the curated-write convention (D2),
+ * and bracket ceilings are carrier rate data the weight-derived tier
+ * derivation (D3) reads back — fixture callers size them to the case's
+ * quantity-total shipment weight (D4). No constraint scoping is needed:
+ * migration 0003 dropped the invented package_tier CHECK, and every
+ * seeded column value is the production shape verbatim.
  */
 export function seedGoldenTransport(db: DatabaseSync, offers: readonly GoldenTransportSeed[]): void {
   const insert = db.prepare(
@@ -185,23 +177,18 @@ export function seedGoldenTransport(db: DatabaseSync, offers: readonly GoldenTra
        seller_involvement_indicator, reliability_status
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'EUR', ?, 'VERIFIED')`,
   );
-  db.exec('PRAGMA ignore_check_constraints = 1');
-  try {
-    for (const offer of offers) {
-      insert.run(
-        offer.id,
-        offer.carrier,
-        offer.originCountry,
-        offer.destinationCountry,
-        offer.weightBracket.minKg,
-        offer.weightBracket.maxKg,
-        offer.packageTier,
-        offer.priceCents,
-        offer.sellerInvolvementIndicator ? 1 : 0,
-      );
-    }
-  } finally {
-    db.exec('PRAGMA ignore_check_constraints = 0');
+  for (const offer of offers) {
+    insert.run(
+      offer.id,
+      offer.carrier,
+      offer.originCountry,
+      offer.destinationCountry,
+      offer.weightBracket.minKg,
+      offer.weightBracket.maxKg,
+      offer.packageTier,
+      offer.priceCents,
+      offer.sellerInvolvementIndicator ? 1 : 0,
+    );
   }
 }
 

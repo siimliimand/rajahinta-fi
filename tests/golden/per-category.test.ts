@@ -113,14 +113,17 @@ function buildService(
   const alcoholExcise = new AlcoholExciseService(taxRepo);
   const containerDuty = new ContainerDutyService(taxRepo);
 
-  // Build a transport offer matching the product's merchant and container
+  // Build a transport offer matching the product's merchant. Tier is
+  // 'parcel' (transport-confidence-unlock D3): the containerType join is
+  // gone — the tier derives from shipment weight, and every per-category
+  // case is qty=1 (≤ 1.3 kg) inside the carrier's {0,5} kg parcel bracket.
   const transportOffer: TransportOffer = {
     id: 1000,
     carrier,
     originCountry: offers[0].country,
     destinationCountry: 'FI',
     weightBracket: { minKg: 0, maxKg: 5 },
-    packageTier: product.containerType,
+    packageTier: 'parcel',
     priceCents: transportPriceCents,
     currency: 'EUR',
     sellerInvolvementIndicator: false,
@@ -238,7 +241,7 @@ describe('Per-category golden regressions', () => {
       const tq = new InMemoryTransportOfferQuery([{
         id: 1001, carrier: 'vinos-es', originCountry: 'ES',
         destinationCountry: 'FI', weightBracket: { minKg: 0, maxKg: 5 },
-        packageTier: 'glass', priceCents: 200, currency: 'EUR',
+        packageTier: 'parcel', priceCents: 200, currency: 'EUR',
         sellerInvolvementIndicator: false, observedAt: NOW, refreshedAt: NOW,
         reliabilityStatus: 'EXACT',
       }]);
@@ -317,7 +320,7 @@ describe('Per-category golden regressions', () => {
       const tq = new InMemoryTransportOfferQuery([{
         id: 1002, carrier: 'spirits-eu', originCountry: 'PL',
         destinationCountry: 'FI', weightBracket: { minKg: 0, maxKg: 5 },
-        packageTier: 'glass', priceCents: 200, currency: 'EUR',
+        packageTier: 'parcel', priceCents: 200, currency: 'EUR',
         sellerInvolvementIndicator: false, observedAt: NOW, refreshedAt: NOW,
         reliabilityStatus: 'EXACT',
       }]);
