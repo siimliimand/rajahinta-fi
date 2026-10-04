@@ -9,6 +9,7 @@ import {
   getServerAllowanceVersions,
   getServerAllowances,
   resolveRequestedDate,
+  type AllowanceLimit,
 } from './allowances.server';
 
 interface AllowancesPageProps {
@@ -58,14 +59,44 @@ function EvidenceCitation({ citation }: { readonly citation: string }) {
 }
 
 /**
- * Traveller-allowance reference page (insight-surfaces task 4.2).
+ * Static per-category container sizes behind the container-equivalent
+ * helper (D5): a cap converts into a count of the category's most common
+ * container, rounded to the nearest whole unit. Display-only arithmetic —
+ * the line states the conversion with "≈", never advice. A category
+ * without a fixed container, or with a quantity-only cap, renders no
+ * helper line.
+ */
+const CONTAINER_LITRES: Readonly<Record<string, number>> = {
+  beer: 0.5,
+  wine_still: 0.75,
+  wine_sparkling: 0.75,
+  intermediate_products: 0.75,
+  other_fermented: 0.5,
+  spirits: 0.5,
+};
+
+/** The locale-worded helper message per category (fixed container sizes). */
+const CONTAINER_MESSAGE_KEY: Readonly<Record<string, string>> = {
+  beer: 'containerEquivalentBeer',
+  wine_still: 'containerEquivalentWineStill',
+  wine_sparkling: 'containerEquivalentWineSparkling',
+  intermediate_products: 'containerEquivalentIntermediateProducts',
+  other_fermented: 'containerEquivalentOtherFermented',
+  spirits: 'containerEquivalentSpirits',
+};
+
+/**
+ * Traveller-allowance reference page (insight-surfaces task 4.2;
+ * consumer-clarity-and-discovery 5.1 + 5.2).
  *
  * Pure display over the task-4.1 read endpoints: the published per-category
  * allowances effective on the chosen date, with the dataset version and its
- * effective window beside the caps, every stored citation rendered verbatim
- * as an evidence link, and the version history below. The guidance-not-legal-
- * advice framing is standing copy; the content-policy lint polices the
- * vocabulary.
+ * effective window beside the caps. Each category row reads as a concise
+ * summary line (category + cap) with a static container-equivalent helper;
+ * the per-category stored citations stay verbatim, evidence-linked, inside
+ * one collapsed evidence disclosure per dataset block, and the dataset-level
+ * citation remains verbatim and inline. The guidance-not-legal-advice
+ * framing is standing copy; the content-policy lint polices the vocabulary.
  */
 export default async function AllowancesPage({
   params,
@@ -83,6 +114,52 @@ export default async function AllowancesPage({
     to === null
       ? t('effectiveWindowOpen', { from })
       : t('effectiveWindow', { from, to });
+
+  // Locale-shaped numbers for cap figures (products page precedent);
+  // container sizes are baked into the locale-worded helper messages.
+  const numberFormat = new Intl.NumberFormat(
+    locale === 'fi' ? 'fi-FI' : 'en-IE',
+    { maximumFractionDigits: 2 },
+  );
+
+  /** Localized category name; unknown keys render as stored — nothing invented. */
+  const categoryName = (category: string): string =>
+    t.has(`category.${category}`) ? t(`category.${category}`) : category;
+
+  /** Concise summary line stating the category's cap as a bound. */
+  const capSummary = (limit: AllowanceLimit): string | null => {
+    const volume =
+      limit.volumeCapLitres === null
+        ? null
+        : numberFormat.format(limit.volumeCapLitres);
+    const quantity =
+      limit.quantityCap === null
+        ? null
+        : numberFormat.format(limit.quantityCap);
+    if (volume !== null && quantity !== null) {
+      return t('summaryBoth', { volume, quantity });
+    }
+    if (volume !== null) return t('summaryVolume', { volume });
+    if (quantity !== null) return t('summaryQuantity', { quantity });
+    return null;
+  };
+
+  /** Display-only cap → common-container conversion, when one is defined. */
+  const containerEquivalent = (limit: AllowanceLimit): string | null => {
+    const litres = CONTAINER_LITRES[limit.category];
+    const key = CONTAINER_MESSAGE_KEY[limit.category];
+    if (
+      limit.volumeCapLitres === null ||
+      litres === undefined ||
+      key === undefined ||
+      !t.has(key)
+    ) {
+      return null;
+    }
+    return t(key, {
+      count: numberFormat.format(Math.round(limit.volumeCapLitres / litres)),
+    });
+  };
 
   // Both reads are independent — fetch together (the caps outcome drives
   // the main state; the history renders below in every covered/uncovered
@@ -183,44 +260,70 @@ export default async function AllowancesPage({
                   {t('columnCategory')}
                 </th>
                 <th scope="col" className="pb-2 pr-4 font-medium">
-                  {t('columnVolume')}
-                </th>
-                <th scope="col" className="pb-2 pr-4 font-medium">
-                  {t('columnQuantity')}
-                </th>
-                <th scope="col" className="pb-2 pr-4 font-medium">
-                  {t('columnWindow')}
+                  {t('columnCap')}
                 </th>
                 <th scope="col" className="pb-2 font-medium">
-                  {t('columnCitation')}
+                  {t('columnWindow')}
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {outcome.payload.limits.map((limit) => (
-                <tr key={limit.category}>
-                  <td className="py-2 pr-4 font-medium text-gray-900">
-                    {/* Unknown category keys render as stored — nothing invented. */}
-                    {t.has(`category.${limit.category}`)
-                      ? t(`category.${limit.category}`)
-                      : limit.category}
-                  </td>
-                  <td className="py-2 pr-4 tabular-nums text-gray-700">
-                    {limit.volumeCapLitres ?? '—'}
-                  </td>
-                  <td className="py-2 pr-4 tabular-nums text-gray-700">
-                    {limit.quantityCap ?? '—'}
-                  </td>
-                  <td className="py-2 pr-4 text-gray-600">
-                    {windowText(limit.effectiveFrom, limit.effectiveTo)}
-                  </td>
-                  <td className="py-2">
-                    <EvidenceCitation citation={limit.sourceCitation} />
-                  </td>
-                </tr>
-              ))}
+              {outcome.payload.limits.map((limit) => {
+                const summary = capSummary(limit);
+                const helper = containerEquivalent(limit);
+                return (
+                  <tr
+                    key={limit.category}
+                    data-testid={`allowances-limit-${limit.category}`}
+                  >
+                    <td className="py-2 pr-4 font-medium text-gray-900">
+                      {categoryName(limit.category)}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {summary !== null && (
+                        <p className="tabular-nums text-gray-900">{summary}</p>
+                      )}
+                      {helper !== null && (
+                        <p className="mt-0.5 text-xs tabular-nums text-gray-500">
+                          {helper}
+                        </p>
+                      )}
+                    </td>
+                    <td className="py-2 text-gray-600">
+                      {windowText(limit.effectiveFrom, limit.effectiveTo)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+
+          {/* ── Evidence disclosure (D5): the per-category stored citations,
+              verbatim and evidence-linked, one click away — never repeated
+              inline per row, never paraphrased. ── */}
+          <details
+            className="mt-5 rounded-md border border-gray-200 bg-gray-50 px-4 py-3"
+            data-testid="allowances-evidence-disclosure"
+          >
+            <summary className="cursor-pointer select-none text-sm font-medium text-gray-700">
+              {t('evidenceDisclosureSummary')}
+            </summary>
+            <dl className="mt-3 space-y-3">
+              {outcome.payload.limits.map((limit) => (
+                <div
+                  key={limit.category}
+                  data-testid={`allowances-evidence-${limit.category}`}
+                >
+                  <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                    {categoryName(limit.category)}
+                  </dt>
+                  <dd className="mt-1">
+                    <EvidenceCitation citation={limit.sourceCitation} />
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </details>
         </section>
       )}
 
