@@ -336,6 +336,13 @@ differ only in dimensions the row shape cannot carry).**
 
 ## TODO(owner) — carrier truth per merchant
 
+> **RESOLVED — DECIDED (owner-directed 2026-10-04):** see **Carrier
+> assignments & Omniva dataset (task 8.3)** at the end of this file for the
+> assignments, per-row evidence basis, and the exact reversal UPDATE. Block
+> kept verbatim for audit history — the notes below (including the then-valid
+> "no EE→FI dataset exists" expectation for Longero) describe the state at
+> question time and are superseded, not deleted.
+
 The `merchant_registry.carrier_id` values are owner data. Fill one line per
 merchant; `NULL` (leave unknown) is a valid answer and keeps that merchant
 UNAVAILABLE — nothing will be guessed or defaulted.
@@ -351,7 +358,10 @@ UNAVAILABLE — nothing will be guessed or defaulted.
 
 Owner answers:
 
-- (pending — fill in)
+- **Decided 2026-10-04 (owner-directed):** `alko → posti`, `alks →
+  fransberg`, `kippis → posti`, `mydrink → omniva`, `longero → omniva`.
+  Applied by task 8.2 to staging and production; best-evidence until each
+  merchant confirms its actual carrier — see the task 8.3 section.
 
 ## Verification runbook (task 5.3, 2026-10-04)
 
@@ -480,3 +490,192 @@ verified. Fill the `TODO(owner) — carrier truth per merchant` block
 above (NULL is a valid, honest answer) before promising green
 transport lines; Longero (EE→FI) is expected to stay UNAVAILABLE until
 a real carrier dataset exists.
+
+## Carrier assignments & Omniva dataset (task 8.3, 2026-10-04)
+
+Runbook addendum for the owner-directed carrier assignments (task 8.2
+applies them) and the Omniva EE→FI curated dataset (task 8.1
+transcribed it). This section records provenance and expectations only —
+the operator verification flow, its audit trail, and how to read the
+resulting statuses are already in the **Verification runbook (task 5.3)**
+section above and are not repeated here.
+
+### Assignment provenance — owner-directed, reversible
+
+The five `merchant_registry.carrier_id` values are **owner-directed data
+operations of 2026-10-04** (applied to staging and production by task 8.2):
+`alko → posti`, `alks → fransberg`, `kippis → posti`, `mydrink → omniva`,
+`longero → omniva`. They are data, not code — the entire assignment is
+reversible with a single UPDATE (this is also the "undo" if a merchant
+disowns the mapping):
+
+```sql
+UPDATE merchant_registry SET carrier_id = NULL
+WHERE merchant_id IN ('alko', 'alks', 'kippis', 'mydrink', 'longero');
+```
+
+Evidence basis per row (merchant registry country ↔ carrier lane
+coverage; Query 4 above anchors the countries):
+
+- `alks → fransberg` — the DE-origin merchant; Fransberg is the only
+  curated carrier whose dataset covers DE→FI lanes.
+- `alko → posti`, `kippis → posti` — FI merchants; Posti's curated
+  dataset is the domestic FI→FI lane.
+- `mydrink → omniva`, `longero → omniva` — EE merchants; Omniva's new
+  dataset is the EE→FI lane (the dataset the old TODO block found
+  missing in 1.1 now exists).
+
+These remain **best-evidence assignments** until each merchant confirms
+its actual carrier; a confirmation (or refutation) is a one-row UPDATE of
+the same shape — set the single `carrier_id`, never guess a replacement.
+
+### Omniva dataset — source, validity, admin
+
+- **Source:** Omniva's published price list "International parcels for
+  private customers — prices including VAT in EUR, valid from 1.07.2025"
+  (PDF):
+  `https://www.omniva.ee/wp-content/uploads/sites/7/2025/08/hinnakiri-rv-pakiteenused-era-est-en-2025-4.pdf`
+  — transcribed 2026-10-04 into
+  `packages/data-acquisition/src/adapters/omniva-rate.source.ts`: 11
+  Standard-service EE→FI parcel brackets, 0–30 kg, 1240–2601 ¢,
+  VAT-inclusive, recipient-paid (`sellerInvolvementIndicator` false on
+  every row).
+- **Standard service only** (3–6 working days — the default consumer
+  parcel service). **Premium is deliberately omitted:** the
+  transport-offer schema does not dimension on service level, and
+  encoding both services into one weight bracket would let the first DB
+  hit decide the price — the same rationale as Posti's size classes:
+  never encode an ambiguous choice into one weight bracket. **Economy is
+  omitted:** capped at 0.5 kg, a sliver this calculator's baskets do not
+  fit.
+- **1.10.2026 universal-service change: no impact.** That change covers
+  universal-service letters/parcels only; Omniva's commercial parcel
+  prices are unaffected (omniva.ee news "New Postal Service Price List
+  from 1 October", 01.09.2026), so this dataset needed no re-review at
+  that date.
+- **`OMNIVA_OBSERVED_AT` convention:** every row carries the
+  transcription's review date (currently `2026-10-04T00:00:00Z`). When
+  Omniva reprices, edit the bracket table and bump the constant to the
+  new review date — the date is the dedupe key, so a bump without a
+  price change is harmless but creates an append.
+- **Admin procedure:** identical to Fransberg/Posti — edit the dataset,
+  bump `OMNIVA_OBSERVED_AT`, deploy; the monthly curated-rate-refresh
+  cron re-ingests it through the same governance-gated pipeline and the
+  per-carrier skip guards against duplicate appends.
+- **2026-11-01 cron expectation:** the dataset is unchanged since its
+  2026-10-04 observation, so the monthly tick (2026-11-01 05:00 UTC)
+  takes the unchanged-dataset skip path and appends nothing — zero new
+  `omniva` rows after that tick is correct behavior, not a failure.
+
+### Expected transport outcomes per merchant (after 8.2)
+
+| merchant | carrier | lane coverage | expected transport outcome |
+|---|---|---|---|
+| alks | fransberg | DE→FI | quotes the Fransberg parcel/pallet brackets |
+| alko | posti | FI→FI | quotes Posti's single parcel row only when the derived tier is parcel **and** weight ≤ 2 kg; above that, honest `0 ¢ / UNAVAILABLE` until Posti's table grows |
+| kippis | posti | FI→FI | same as alko |
+| mydrink | omniva | EE→FI | quotes the Omniva EE→FI 0–30 kg parcel brackets |
+| longero | omniva | EE→FI | quotes the Omniva EE→FI 0–30 kg parcel brackets |
+
+The EE merchants (mydrink, longero) go from permanently UNAVAILABLE to
+priced — the assignment is exactly what the Omniva dataset unlocks.
+Anything outside a covered lane/tier/bracket — an origin country no
+dataset covers, a pallet-tier shipment against Posti, weight above the
+last bracket — degrades to `0 ¢ / UNAVAILABLE` as designed. How to read
+the resulting statuses (transport VERIFIED gated on exact bracket match
+plus stored-weight basis; merchant reliability shares) is in the
+**Verification runbook (task 5.3)** section above; per-carrier row
+counts after the 8.2 refresh are that task's verification.
+
+## Ops data + deploy (task 8.2, 2026-10-04)
+
+Executed 2026-10-04 ~16:30–17:00 UTC on the deploy host, staging first
+then production. Mutations were limited to the owner-directed
+assignments, the api-worker deploys, and one refresh trigger — no
+commits, no pushes.
+
+### Carrier assignments — applied and verified
+
+Provenance: **owner-directed 2026-10-04** (alko→posti, alks→fransberg,
+kippis→posti, mydrink→omniva, longero→omniva). One CASE UPDATE per
+environment against `merchant_registry` (staging `changes: 5`, then
+production `changes: 5`); verified by SELECT — both envs show exactly
+alko=FI/posti, alks=DE/fransberg, kippis=FI/posti, mydrink=EE/omniva,
+longero=EE/omniva. Pre-state was carrier_id NULL on all five in both
+envs.
+
+### api-worker deploy — gate fix + omniva source now live
+
+No package.json deploy script exists; the repo's own CI commands
+(`deploy-staging.yml` / `deploy-production.yml`) were mirrored from
+`apps/api-worker/`:
+
+- **staging** `rajahinta-api-staging`: version
+  `fa5b0939-b6c0-403e-9600-e9ec6eec29ca`, created 2026-10-04T16:39:42Z,
+  active at 100%.
+- **production** `rajahinta-api-production`: version
+  `1b9cfb92-d8e3-4156-8f28-d27f54fca663`, created
+  2026-10-04T16:39:55Z, active at 100% (custom domain api.rajahinta.fi,
+  `0 5 1 * *` cron present in the trigger set).
+
+This closes the task 2.1 open item: the deployed bundle now carries the
+governance-gate D1 wiring fix plus the 8.1 omniva source/registration
+(commit `9acf5da`). The uncommitted test-file edits in the working tree
+are untouched and not part of the bundle.
+
+### Refresh trigger — omniva appended 0 (BLOCKED on governance grant)
+
+Proven 2.1 path, production env, run once:
+
+```
+wrangler dev --env production --remote --test-scheduled --port 8788 \
+  --show-interactive-dev-session false
+curl "http://localhost:8788/__scheduled?cron=0+5+1+*+*"
+```
+
+Outcome: fransberg and posti took the unchanged-dataset skip
+(2026-09-17 / 2026-09-30) — idempotent, no dupes. Omniva logged
+"Running monthly curated rate refresh for omniva" then **"Refreshed 0
+curated omniva transport rates"** — the expected 11 rows did not land.
+
+Root cause (code-level, verified by reads only): the pipeline adapter's
+`checkCarrierPermission` looks up `source_governance` by carrierId as
+merchant_id. `fransberg` and `posti` have MANUAL_VERIFICATION GRANTED
+rows (created 2026-09-28 for exactly this); **no `omniva` row exists in
+`source_governance` in any env** — 8.1 registered the carrier in code
+only, and migrations 0027/0028 (merchant_carrier, offer_verification)
+don't cover governance. Missing record → default PENDING → skip before
+any fetch → 0 rows. The gate fix working as deployed is what surfaces
+this.
+
+**Remediation needs owner direction (not executed — outside the
+authorized mutation set):** INSERT a `source_governance` GRANTED row for
+merchant_id `omniva`, mirroring the fransberg/posti precedent —
+acquisition_method `MANUAL_VERIFICATION`, source_url
+`https://omniva.ee` (or the owner's preferred citation), status_reason
+in the "owner policy 2026-10-04: manually curated in-repo dataset
+(omniva-rate.source.ts) … grant enables the monthly curated-rate-refresh
+cron" pattern — in staging and production. Then re-trigger once via the
+same path: fransberg/posti will skip unchanged (safe), omniva will
+append its 11 rows @ 2026-10-04.
+
+### Per-carrier counts — before → after (transport_offers)
+
+| carrier   | production before | production after | staging |
+|-----------|-------------------|------------------|---------|
+| fransberg | 36 @ 2026-09-17   | 36 (unchanged — skip) | 36 (unchanged) |
+| posti     | 1 @ 2026-09-30    | 1 (unchanged — skip)  | 1 (unchanged)  |
+| omniva    | 0                 | **0 (governance-blocked)** | 0 |
+| legacy probes | —             | — | 10 rows @ 2026-08-31 untouched |
+
+Staging got no refresh trigger (task scope: production trigger, once);
+staging additionally carries `alks` governance REVOKED (pre-existing
+staging drift, unrelated to 8.2).
+
+### Task 8.2 status
+
+Assignments: DONE (both envs, verified). Deploy: DONE (gate fix +
+omniva live in staging and production). Refresh: PARTIAL — omniva
+append blocked on the missing governance grant; everything else
+verified. No blockers for the assignments/deploy; one owner decision
+pending for the omniva governance INSERT + one re-trigger.
