@@ -128,8 +128,9 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   // Task 2.2 (change insight-surfaces) shares the same 30-minute
   // post-ingestion tick, registered after the time-series aggregation
   // handler: the savings-snapshot pass materializes the day's
-  // best-vs-Alko rows with the keyed idempotent upsert (extra same-day
-  // runs converge — no watermark needed).
+  // best-vs-Alko rows with the keyed idempotent upsert, cursor-chunked
+  // across ticks (300 ids per invocation over the savings-snapshot-cursor
+  // watermark — extra same-day runs converge).
   add(AGGREGATION_CRON, {
     name: 'savings-snapshots',
     run: (env, log) => handleSavingsSnapshots(env, log),
