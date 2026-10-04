@@ -352,15 +352,16 @@ describe('D1 measurements (migrated fake D1)', () => {
         .run();
     }
     const rowsByCarrier = await measureTransportRowsPerCarrier(d1);
-    // fransberg is an expected curated carrier with no rows — an honest
-    // 0 (the spec scenario: the panel shows zero), never absent.
-    expect(rowsByCarrier).toEqual({ fransberg: 0, posti: 3 });
+    // fransberg and omniva are expected curated carriers with no rows —
+    // honest 0s (the spec scenario: the panel shows zero), never absent.
+    expect(rowsByCarrier).toEqual({ fransberg: 0, omniva: 0, posti: 3 });
   });
 
   it('measureTransportRowsPerCarrier yields all-zero points for an empty table', async () => {
     const { d1 } = openMigratedD1();
     expect(await measureTransportRowsPerCarrier(d1)).toEqual({
       fransberg: 0,
+      omniva: 0,
       posti: 0,
     });
   });
@@ -441,19 +442,24 @@ describe('measureAndRecordDataQualityGauges (fake AE + fake D1)', () => {
       totalProducts: 2,
       ratio: 0.5,
     });
-    expect(result.transportRows).toEqual({ fransberg: 0, posti: 1 });
+    expect(result.transportRows).toEqual({ fransberg: 0, omniva: 0, posti: 1 });
     expect(result.feedAges).toEqual({ alko: 6 * 3600 });
 
     const indexes = ae.points.map((p) => p.indexes?.[0]);
     expect(indexes[0]).toBe(ALKO_REFERENCE_COVERAGE_GAUGE);
-    expect(indexes.slice(1, 3)).toEqual([
+    // One row point per expected curated carrier, sorted (fransberg,
+    // omniva, posti).
+    expect(indexes.slice(1, 4)).toEqual([
+      TRANSPORT_OFFER_ROWS_GAUGE,
       TRANSPORT_OFFER_ROWS_GAUGE,
       TRANSPORT_OFFER_ROWS_GAUGE,
     ]);
-    expect(indexes[3]).toBe(FEED_LAST_SUCCESS_AGE_GAUGE);
+    expect(indexes[4]).toBe(FEED_LAST_SUCCESS_AGE_GAUGE);
     expect(ae.points[1].blobs?.[2]).toBe('{"carrier":"fransberg"}');
-    expect(ae.points[2].doubles?.[0]).toBe(1);
-    expect(ae.points[3].doubles?.[0]).toBe(6 * 3600);
+    expect(ae.points[2].blobs?.[2]).toBe('{"carrier":"omniva"}');
+    expect(ae.points[2].doubles?.[0]).toBe(0);
+    expect(ae.points[3].doubles?.[0]).toBe(1);
+    expect(ae.points[4].doubles?.[0]).toBe(6 * 3600);
   });
 
   it('isolates a failing measurement — the other gauges still write', async () => {

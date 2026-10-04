@@ -1,7 +1,7 @@
 /**
  * Monthly curated-rate refresh — the manual-dataset ingestion path for
  * every carrier whose rates live as an in-repo curated dataset (currently
- * fransberg and posti; see the adapters' module docblocks).
+ * fransberg, posti, and omniva; see the adapters' module docblocks).
  *
  * None of these carriers publishes a fetchable feed (fransberg.eu serves
  * an HTML page not worth scraping; Posti's JSON endpoint is CDN-blocked
@@ -35,6 +35,10 @@ import {
   PostiCarrierRateSource,
   POSTI_OBSERVED_AT,
 } from '../../../../packages/data-acquisition/src/adapters/posti-rate.source';
+import {
+  OmnivaCarrierRateSource,
+  OMNIVA_OBSERVED_AT,
+} from '../../../../packages/data-acquisition/src/adapters/omniva-rate.source';
 import type { ICarrierRateSource } from '../../../../packages/data-acquisition/src/interfaces/carrier-rate-source.port';
 import { D1SourceGovernanceRepository } from '../../../../packages/data-platform/src/repositories/d1/source-governance.repository';
 import { composeGovernanceService } from '../queues/pipeline';
@@ -61,9 +65,11 @@ interface CuratedCarrier {
 function composeCuratedCarriers(): Map<string, CuratedCarrier> {
   const fransberg = new FransbergCarrierRateSource();
   const posti = new PostiCarrierRateSource();
+  const omniva = new OmnivaCarrierRateSource();
   const map = new Map<string, CuratedCarrier>();
   map.set(fransberg.carrierId, { source: fransberg, observedAt: FRANSBERG_OBSERVED_AT });
   map.set(posti.carrierId, { source: posti, observedAt: POSTI_OBSERVED_AT });
+  map.set(omniva.carrierId, { source: omniva, observedAt: OMNIVA_OBSERVED_AT });
   return map;
 }
 

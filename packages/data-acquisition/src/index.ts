@@ -163,6 +163,16 @@ export {
   FRANSBERG_PALLET_KG,
 } from './adapters/fransberg-rate.source';
 
+// Omniva (omniva.ee) — manually curated dataset source (the
+// international-parcel price list for private customers is a PDF; see
+// the module docblock). Ingestion is owned by the api-worker's monthly
+// curated-rate-refresh cron, NOT the CARRIER_RATE_SOURCES map below.
+export {
+  OmnivaCarrierRateSource,
+  buildOmnivaRates,
+  OMNIVA_OBSERVED_AT,
+} from './adapters/omniva-rate.source';
+
 export { DrizzleTransportOfferWriteAdapter } from './adapters/transport-offer-write.adapter';
 
 // ---------------------------------------------------------------------------

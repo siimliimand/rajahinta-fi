@@ -77,6 +77,13 @@ price, a customer is quoted.
 - **Spec deltas** for transport-estimation, operator-console, and
   merchant-reliability-scoring, plus deliberate updates to the compliance pins
   that assert today's UNAVAILABLE/LOW behavior.
+- **Omniva EE→FI carrier dataset** (task 8.x): a third curated source
+  transcribed from Omniva's published commercial international-parcel price
+  list (Standard service, valid from 1.07.2025 — unaffected by the
+  universal-service change of 1.10.2026), so the Estonian merchants finally
+  have a real carrier lane. Merchant registry `carrier_id` values are filled
+  as owner-directed data operations: `alko → posti`, `alks → fransberg`,
+  `kippis → posti`, `mydrink → omniva`, `longero → omniva`.
 
 ## Decision points
 
