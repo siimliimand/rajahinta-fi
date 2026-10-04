@@ -47,7 +47,12 @@
  *
  * The structural HYPOTHETICAL disclaimer rides the module's result
  * (WHATIF_DISCLAIMER — spec: disclaimer travels with the result) on
- * EVERY 200 response; it is never stripped or replaced here.
+ * EVERY 200 response; it is never stripped or replaced here. The
+ * request's `language` selects the FI/EN variant of the versioned pair
+ * (design D1: `fi` is the default — Finnish-first site, `en` is an
+ * explicit request) and is presentation-only: it is NEVER encoded into
+ * the share token, whose payload stays scenario INPUTS only (the embed
+ * route derives the language from its own `[locale]` segment).
  *
  * @module WhatIfRoutes
  */
@@ -116,6 +121,8 @@ const whatIfScenarioSchema = z
       .min(0, { message: RATE_MESSAGE })
       .max(MAX_HYPOTHETICAL_RATE, { message: RATE_MESSAGE }),
     products: z.array(whatIfProductSchema).min(1).max(MAX_PRODUCTS),
+    /** Disclaimer language (design D1) — `fi` default, `en` explicit. */
+    language: z.enum(['fi', 'en']).default('fi'),
   })
   .superRefine((dto, ctx) => {
     const seen = new Set<string>();
@@ -280,7 +287,12 @@ export function decodeWhatIfShareToken(token: string): WhatIfShareScenario {
       `payload violates the scenario bounds (${parsed.error.issues[0]?.message ?? 'unknown'})`,
     );
   }
-  return parsed.data;
+  // Inputs only — `language` is route presentation (design D1), never
+  // part of the token payload; the embed route derives it from [locale].
+  return {
+    hypotheticalRate: parsed.data.hypotheticalRate,
+    products: parsed.data.products,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -376,6 +388,7 @@ async function calculateWhatIfExciseRoute(c: Context<AppEnv>): Promise<Response>
       return calculateWhatIfExcise({
         hypotheticalRate: dto.hypotheticalRate,
         products,
+        disclaimerLanguage: dto.language,
       });
     } catch (err) {
       // Engine-resolved data spanning two dataset versions at one
