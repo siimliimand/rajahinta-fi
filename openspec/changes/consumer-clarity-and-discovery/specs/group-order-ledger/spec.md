@@ -12,7 +12,7 @@
 
 ### Requirement: Group-order discoverability
 
-The group-order creation page SHALL be a discoverable surface: linked from the site footer in every locale, listed in the sitemap as a static destination, and crawlable by robots. Token-scoped session pages (`/group-order/{token}`) SHALL remain non-indexable — the robots exclusion SHALL cover token subpaths without excluding the creation page. The header navigation set SHALL remain unchanged.
+The group-order creation page SHALL be a discoverable surface: linked from the site footer in every locale, listed in the sitemap's static paths (`/group-order`), and crawlable by robots — the blanket `/group-order` robots disallow SHALL be narrowed to the token subpaths `/group-order/*` and `/en/group-order/*`, so token-scoped session pages remain non-indexable while the creation page becomes crawlable. The header navigation set SHALL remain unchanged: the group-order surface is deliberately a footer-class surface, not a header destination.
 
 #### Scenario: Create page is linked and crawlable
 
@@ -22,4 +22,9 @@ The group-order creation page SHALL be a discoverable surface: linked from the s
 #### Scenario: Token sessions stay non-indexable
 
 - **WHEN** robots.txt is fetched
-- **THEN** token subpaths under `/group-order/` are disallowed while the creation page is not
+- **THEN** the disallow rules cover `/group-order/*` and `/en/group-order/*` while the creation page `/group-order` itself is not disallowed
+
+#### Scenario: Header navigation stays closed
+
+- **WHEN** the site header renders its desktop or mobile navigation set
+- **THEN** no group-order entry appears and the curated navigation sets are unchanged
