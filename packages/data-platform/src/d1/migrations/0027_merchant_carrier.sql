@@ -1,0 +1,13 @@
+-- Task 3.1 (change transport-confidence-unlock, design D1): the merchant
+-- registry gains the carrier assignment the transport lookup resolves on —
+-- `carrier = transportMethod ?? offer.carrierId ?? merchant`, where the
+-- merchant-name fallback loses on case and vocabulary.
+--
+-- Nullable forward migration per the product weight_grams precedent
+-- (0020). NULL means "unknown which carrier ships this merchant's
+-- parcels", and unknown produces the existing UNAVAILABLE degradation —
+-- the honest default. No backfill, no default, no seeded values: the
+-- carrier-per-merchant mapping is owner data (task 1.1), applied as
+-- data, never invented. Values use the transport_offers carrier
+-- vocabulary (lowercase ids: 'fransberg', 'posti').
+ALTER TABLE `merchant_registry` ADD COLUMN `carrier_id` text(128);

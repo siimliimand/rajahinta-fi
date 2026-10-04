@@ -38,6 +38,7 @@
 
 import { FransbergCarrierRateSource } from '../../../../packages/data-acquisition/src/adapters/fransberg-rate.source';
 import { PostiCarrierRateSource } from '../../../../packages/data-acquisition/src/adapters/posti-rate.source';
+import { OmnivaCarrierRateSource } from '../../../../packages/data-acquisition/src/adapters/omniva-rate.source';
 import type {
   DataQualityReport,
   QualityReportHook,
@@ -276,6 +277,7 @@ function expectedTransportCarriers(): string[] {
   return [
     new FransbergCarrierRateSource().carrierId,
     new PostiCarrierRateSource().carrierId,
+    new OmnivaCarrierRateSource().carrierId,
   ];
 }
 

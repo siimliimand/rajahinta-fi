@@ -142,7 +142,10 @@ const TRANSPORT_BEVERAGE_DE: TransportOffer = {
   originCountry: 'DE',
   destinationCountry: 'FI',
   weightBracket: { minKg: 0, maxKg: 10 },
-  packageTier: 'can',
+  // Mirrors the transport_offers row seeded below ('parcel'): D3 makes
+  // the shipping tier — not the container material — the join key, and
+  // the engines query THIS fixture through the in-memory port.
+  packageTier: 'parcel',
   priceCents: 150,
   currency: 'EUR',
   sellerInvolvementIndicator: true,
@@ -157,7 +160,8 @@ const TRANSPORT_VINOS_ES: TransportOffer = {
   originCountry: 'ES',
   destinationCountry: 'FI',
   weightBracket: { minKg: 0, maxKg: 10 },
-  packageTier: 'can',
+  // Mirrors the transport_offers row seeded below ('parcel') — D3 join key.
+  packageTier: 'parcel',
   priceCents: 200,
   currency: 'EUR',
   sellerInvolvementIndicator: true,

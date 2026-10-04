@@ -352,11 +352,17 @@ const OFFER_BEER_DATA: CalculatorRetailOfferData = {
 /** Transport offer for carrierA: DE → FI, parcel up to 1 kg. */
 const TRANSPORT_OFFER: TransportOffer = {
   id: 900,
-  carrier: 'carrierA',
+  // D2 (transport-confidence-unlock): curated rows store lowercase
+  // carrier ids; the DTO's 'carrierA' exercises the boundary
+  // normalization that closes the case gap at lookup time.
+  carrier: 'carriera',
   originCountry: 'DE',
   destinationCountry: 'FI',
   weightBracket: { minKg: 0, maxKg: 1 },
-  packageTier: 'can',
+  // D3 (transport-confidence-unlock): the tier is the shipping packaging
+  // the carrier prices by — never the product's container material. The
+  // 0.55 kg beer shipment derives 'parcel' from this row's 1 kg ceiling.
+  packageTier: 'parcel',
   priceCents: 150,
   currency: 'EUR',
   sellerInvolvementIndicator: true,

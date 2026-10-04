@@ -15,6 +15,11 @@
  *   optional originCountry parameter and wired it in the optimizer's
  *   prefetch phase (commit T2.8).
  *
+ * Task 3.4 (change transport-confidence-unlock): the basket path now shares
+ * the estimator's carrier resolution (transportMethod → registry carrierId →
+ * merchant name), its weight-derived parcel/pallet tier, and its carrier-id
+ * normalization — the single-line scenario below pins the parity.
+ *
  * @module BasketCalculatorConsistencyTest
  */
 import { describe, it, expect } from 'vitest';
@@ -53,6 +58,29 @@ import {
 // Fixtures — reuse golden PRODUCT_BEER, add a second merchant offer
 // ---------------------------------------------------------------------------
 
+/**
+ * The stored-weight twin of PRODUCT_BEER (design D5/D6): 550 g equals the
+ * golden weightKg, so every figure is unchanged while the transport line
+ * earns its weight basis from the product master — the only basis under
+ * which an exact bracket certifies VERIFIED.
+ */
+const PRODUCT_BEER_STORED: CalculatorProductData = {
+  ...PRODUCT_BEER,
+  storedWeightGrams: 550,
+};
+
+/**
+ * Registry-assigned offer (design D1): the merchant name carries no
+ * transport rows, so the shipment resolves only through the registry
+ * `carrierId` — pinning that the basket path reads the same contract
+ * enrichment the single-item calculator consumes.
+ */
+const OFFER_BEER_MAIN: CalculatorRetailOfferData = {
+  ...OFFER_BEER,
+  merchant: 'premium-drinks-de',
+  carrierId: 'beverage-de',
+};
+
 /** Second offer for the same product from a different merchant. */
 const OFFER_BEER_ALT: CalculatorRetailOfferData = {
   id: 200,
@@ -62,12 +90,15 @@ const OFFER_BEER_ALT: CalculatorRetailOfferData = {
   reliabilityStatus: 'EXACT',
 };
 
-const ALL_OFFERS = [OFFER_BEER, OFFER_BEER_ALT];
+const ALL_OFFERS = [OFFER_BEER_MAIN, OFFER_BEER_ALT];
 
 // ---------------------------------------------------------------------------
 // Transport offers — each merchant route has a matching offer.
 // Brackets are wide enough to cover all tested quantities (up to 10 units,
-// 0.55 kg × 10 = 5.5 kg).
+// 0.55 kg × 10 = 5.5 kg). Tiers are shipping tiers ('parcel'), not container
+// materials (design D3): the parcel/pallet decision derives from shipment
+// weight against the carrier's largest parcel ceiling, which these 0–10 kg
+// brackets set at 10 kg.
 // ---------------------------------------------------------------------------
 
 const BASE_DATE = new Date('2026-08-16T12:00:00Z');
@@ -78,7 +109,7 @@ const TRANSPORT_BEVERAGE_DE: TransportOffer = {
   originCountry: 'DE',
   destinationCountry: 'FI',
   weightBracket: { minKg: 0, maxKg: 10 },
-  packageTier: 'can',
+  packageTier: 'parcel',
   priceCents: 150,
   currency: 'EUR',
   sellerInvolvementIndicator: true,
@@ -93,7 +124,7 @@ const TRANSPORT_VINOS_ES: TransportOffer = {
   originCountry: 'ES',
   destinationCountry: 'FI',
   weightBracket: { minKg: 0, maxKg: 10 },
-  packageTier: 'can',
+  packageTier: 'parcel',
   priceCents: 200,
   currency: 'EUR',
   sellerInvolvementIndicator: true,
@@ -161,7 +192,7 @@ class InMemoryMerchantTermsPort implements IMerchantTermsPort {
 
 const TAX_REPO = new InMemoryTaxRuleRepository();
 const TRANSPORT_QUERY = new InMemoryTransportOfferQuery(ALL_TRANSPORT_OFFERS);
-const PRODUCT_DATA = new InMemoryProductDataPort(PRODUCT_BEER, ALL_OFFERS);
+const PRODUCT_DATA = new InMemoryProductDataPort(PRODUCT_BEER_STORED, ALL_OFFERS);
 const CALC_RECORDS = new InMemoryCalcRecordPort();
 const BASKET_CALC_RECORDS = new InMemoryBasketCalcRecordPort();
 const MERCHANT_TERMS = new InMemoryMerchantTermsPort();
@@ -231,7 +262,7 @@ const EXPECTED_EXCISE_PER_UNIT = 91; // Math.round(36.20 × 0.05 × 0.5 × 100) 
 /** Expected per-unit container duty for PRODUCT_BEER (deposit exempt). */
 const EXPECTED_CONTAINER_PER_UNIT = 0; // depositSystemStatus=true → EXEMPTED
 
-/** Expected transport cost when carrier=beverage-de for 0.55 kg can. */
+/** Expected transport cost for the 0.55 kg shipment on the beverage-de parcel tier. */
 const EXPECTED_TRANSPORT = 150;
 
 /** Expected unit price for the cheapest offer (OFFER_BEER = 200). */
@@ -345,11 +376,13 @@ describe('Basket optimizer — calculator consistency (T2.8)', () => {
       ).toBe(EXPECTED_TRANSPORT);
     });
 
-    it('identical transport reliability (semantic: EXACT = VERIFIED)', async () => {
+    it('identical transport reliability (semantic: EXACT = VERIFIED on a stored weight)', async () => {
       const calcResult = await CALCULATOR.calculate(CALC_INPUT);
       const optResult = await OPTIMIZER.optimize(toBasketInput(CALC_INPUT));
 
-      // Calculator uses ReliabilityStatus ('VERIFIED'/'ESTIMATED'/'UNAVAILABLE')
+      // Calculator uses ReliabilityStatus ('VERIFIED'/'ESTIMATED'/'UNAVAILABLE').
+      // D6 (change transport-confidence-unlock): the exact bracket certifies
+      // VERIFIED only on the fixture's stored product weight (550 g).
       const transportItem = calcResult.itemizedCosts.find(
         (i) => i.category === 'transportCost',
       );
@@ -357,6 +390,39 @@ describe('Basket optimizer — calculator consistency (T2.8)', () => {
 
       // Optimizer uses ConsolidatedTransportReliability ('EXACT'/'ESTIMATED'/'PARTIAL')
       // Both mean "perfect bracket match" — different vocabularies for same concept
+      expect(
+        optResult.shipments[0].consolidatedTransport.reliability,
+      ).toBe('EXACT');
+    });
+
+    it('single-line basket matches the single-item estimate (unified selection, task 3.4)', async () => {
+      // Spec: transport-estimation / "Unified single-line shipment selection" —
+      // one product line through the optimizer must select the SAME transport
+      // offer, cost, and reliability status as the single-item estimate for
+      // the same product, quantity, route, and (resolved) carrier.
+      const calcResult = await CALCULATOR.calculate(CALC_INPUT);
+      const optResult = await OPTIMIZER.optimize(toBasketInput(CALC_INPUT));
+
+      // Same transport offer id (calculator metadata vs consolidated line).
+      const transportItem = calcResult.itemizedCosts.find(
+        (i) => i.category === 'transportCost',
+      );
+      expect(transportItem).toBeDefined();
+      expect(calcResult.metadata.transportOfferId).toBe(
+        TRANSPORT_BEVERAGE_DE.id,
+      );
+      expect(optResult.shipments[0].consolidatedTransport.totalCents).toBe(
+        transportItem!.cents,
+      );
+
+      // Same cost and tier semantics: the basket derives its shipping tier
+      // from weight (parcel), never from the product's container material.
+      expect(optResult.shipments[0].consolidatedTransport.packageTier).toBe(
+        'parcel',
+      );
+
+      // Reliability status maps 1:1 across the two vocabularies.
+      expect(transportItem!.reliability).toBe('VERIFIED');
       expect(
         optResult.shipments[0].consolidatedTransport.reliability,
       ).toBe('EXACT');
@@ -443,10 +509,12 @@ describe('Basket optimizer — calculator consistency (T2.8)', () => {
       const calcResult = await CALCULATOR.calculate(CALC_INPUT);
       const optResult = await OPTIMIZER.optimize(toBasketInput(CALC_INPUT));
 
-      // Calculator: weight=0.55 kg (not scaled by quantity) → bracket match → 150¢
+      // Calculator (design D4): lookup weight = 0.55 kg × 3 = 1.65 kg —
+      // still inside the 0–10 kg parcel bracket → 150¢
       expect(calcResult.transportCost).toBe(EXPECTED_TRANSPORT);
 
-      // Optimizer: totalWeight = 0.55 × 3 = 1.65 kg, same carrier after origin fix
+      // Optimizer: totalWeight = 0.55 × 3 = 1.65 kg, same carrier resolved
+      // from the offer's registry carrierId — same bracket, same price
       expect(
         optResult.shipments[0].consolidatedTransport.totalCents,
       ).toBe(EXPECTED_TRANSPORT);

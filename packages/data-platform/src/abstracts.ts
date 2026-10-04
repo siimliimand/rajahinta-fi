@@ -79,7 +79,21 @@ export abstract class ProductRepository {
   }
 
   abstract findById(id: number): Promise<typeof productMaster.$inferSelect | null>;
-  abstract findOffers(productId: number): Promise<typeof retailOffers.$inferSelect[]>;
+
+  /**
+   * Retail offers enriched with the merchant registry's carrier
+   * assignment (design D1, change transport-confidence-unlock):
+   * `carrierId` is null/absent when the merchant has no carrier row
+   * value — never fabricated. Implementations whose store predates the
+   * registry join may omit the field; consumers read that as null.
+   */
+  abstract findOffers(
+    productId: number,
+  ): Promise<(typeof retailOffers.$inferSelect & {
+    /** Carrier id from merchant_registry.carrier_id, null when unassigned. */
+    readonly carrierId?: string | null;
+  })[]>;
+
   abstract findRetailOfferById(id: number): Promise<typeof retailOffers.$inferSelect | null>;
 
   /** Insert a new product master record. */

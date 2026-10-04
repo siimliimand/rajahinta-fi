@@ -194,11 +194,15 @@ const OFFER_BEER: CalculatorRetailOfferData = {
 
 const TRANSPORT_OFFER: TransportOffer = {
   id: 900,
-  carrier: 'carrierA',
+  // Lowercase stored carrier ID + 'parcel' tier (transport-confidence-
+  // unlock D2/D3): the request's mixed-case transportMethod normalizes at
+  // the domain boundary, and the tier derives from the 0.55 kg shipment
+  // weight against this bracket — never from the product's containerType.
+  carrier: 'carriera',
   originCountry: 'DE',
   destinationCountry: 'FI',
   weightBracket: { minKg: 0, maxKg: 1 },
-  packageTier: 'can',
+  packageTier: 'parcel',
   priceCents: 150,
   currency: 'EUR',
   sellerInvolvementIndicator: true,

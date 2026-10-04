@@ -163,6 +163,11 @@ export class D1ProductDataPort implements IProductDataPort {
       containerType: record.containerType,
       depositSystemStatus: record.depositSystemStatus,
       weightKg: estimateWeightKg(volumeLitres),
+      // Design D5 (change transport-confidence-unlock): the stored feed
+      // weight passes through as-is — null stays null, the calculator
+      // keeps the volume estimate above as the per-unit fallback. The
+      // port never fabricates a weight.
+      storedWeightGrams: record.weightGrams ?? null,
       normalizedName: record.name,
     };
   }
@@ -180,6 +185,12 @@ export class D1ProductDataPort implements IProductDataPort {
    * `observedAt` passes through untouched — every D1 row carries
    * `observed_at` (NOT NULL), and the Alko benchmark's newest-reference
    * selection needs the observation axis (task 4.2).
+   *
+   * `carrierId` (design D1, change transport-confidence-unlock) comes
+   * from the repository's `merchant_registry` join — null when the
+   * merchant has no carrier assignment, and the null falls through to
+   * the merchant-name fallback in the calculator. The port never
+   * guesses a carrier.
    */
   async findRetailOffers(productId: number): Promise<CalculatorRetailOfferData[]> {
     const offers = await this.repo.findOffers(productId);
@@ -201,6 +212,7 @@ export class D1ProductDataPort implements IProductDataPort {
         reliabilityStatus,
         availability: toAvailability(o.availability),
         observedAt: o.observedAt,
+        carrierId: o.carrierId ?? null,
       };
     });
   }

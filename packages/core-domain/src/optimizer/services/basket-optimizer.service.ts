@@ -73,6 +73,7 @@ import type {
 } from '../../calculator/calculator.types';
 import type { IMerchantTermsPort, MerchantTerms } from '../ports/merchant-terms.port';
 import type { IBasketCalculationRecordPort } from '../ports/basket-calculation-record.port';
+import { resolveEstimationWeight } from '../../transport/estimation-weight';
 import type { BasketItem } from '../../transport/basket-shipping.types';
 import type { ReliabilityStatus } from '../../reliability/reliability.types';
 
@@ -713,14 +714,31 @@ export class BasketOptimizerService {
         // First need for this (merchant, item-subset) inside the bounded
         // search — compute, memoize, never recompute. The country is the
         // shipment's origin, the same value the shipment row carries.
+        // Carrier resolution mirrors the single-item calculator 1:1
+        // (design D1, change transport-confidence-unlock): explicit
+        // transportMethod wins, then the offer's registry carrierId, then
+        // the merchant name as the honest last resort — so a one-line
+        // basket and the single-item estimate query the same carrier.
+        const firstCandidate =
+          candidatesPerItem[indices[0]][assignment[indices[0]]];
+        const resolvedCarrier =
+          transportMethod ?? firstCandidate.offer.carrierId ?? merchant;
+        // Line weights use the same per-unit weight resolution as
+        // estimateTransport (design D7): stored grams when the product
+        // master carries them, the volume estimate otherwise — otherwise
+        // a stored weight would be ignored only on the basket path.
         const basketItems: BasketItem[] = indices.map((idx) => ({
-          weightKg: resolvedItems[idx].product.weightKg * items[idx].quantity,
+          weightKg:
+            resolveEstimationWeight(
+              resolvedItems[idx].product.storedWeightGrams,
+              resolvedItems[idx].product.weightKg,
+            ).weightKg * items[idx].quantity,
           packageType: resolvedItems[idx].product.containerType,
         }));
         const shippingResult = await this.basketShipping.calculateBasket(
           basketItems,
           destination,
-          transportMethod,
+          resolvedCarrier,
           country,
         );
         transport = {

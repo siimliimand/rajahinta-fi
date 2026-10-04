@@ -33,14 +33,20 @@ describe('E2E calculator-path baseline', () => {
   it(`measures p50/p95 over ${SAMPLES} sequential calculations (printed to suite output)`, async () => {
     const { db, d1 } = openMigratedD1();
     seedGoldenDataset(db);
+    // Golden Case-1 transport twin (transport-confidence-unlock): tier
+    // 'parcel' (the containerType join is gone, D3) and a lowercase stored
+    // carrier ID (D2) so the mixed-case `transportMethod` below resolves
+    // through domain normalization. Quantities whose total weight passes
+    // the 1 kg parcel ceiling (0.55 kg × qty, D4) degrade to transport
+    // UNAVAILABLE by design — the completion guard below is unaffected.
     seedGoldenTransport(db, [
       {
         id: 900,
-        carrier: 'carrierA',
+        carrier: 'carriera',
         originCountry: 'DE',
         destinationCountry: 'FI',
         weightBracket: { minKg: 0, maxKg: 1 },
-        packageTier: 'can',
+        packageTier: 'parcel',
         priceCents: 150,
         sellerInvolvementIndicator: true,
       },

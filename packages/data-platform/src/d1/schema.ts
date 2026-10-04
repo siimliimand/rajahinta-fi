@@ -208,6 +208,14 @@ export const retailOffers = sqliteTable(
     reliabilityStatus: text('reliability_status', { length: 16 })
       .default('ESTIMATED')
       .notNull(),
+    /**
+     * Verification attribution pair (migration 0028, design D7, change
+     * transport-confidence-unlock) — written only by the operator
+     * verify action; every ingested offer is born NULL/ESTIMATED.
+     * Re-verification overwrites the pair; there is no un-verify path.
+     */
+    verifiedAt: text('verified_at'),
+    verifiedBy: text('verified_by', { length: 128 }),
   },
   (table) => [
     // Serves the changed-offer detection lookup (latest prior row per
@@ -308,11 +316,13 @@ export const transportOffers = sqliteTable(
   },
   (table) => [
     // No packageTier CHECK: pg has a plain varchar and the domain treats it
-    // as a free string — the calculator matches offers to products by
-    // `packageTier === product.containerType`, so real rows carry the
-    // container-type vocabulary ('can', 'bottle', …). The CHECK that 0000
-    // invented here was dropped by migration 0003 (golden e2e caught it:
-    // every real offer was rejected and transport silently degraded to 0).
+    // as a free string — since transport-confidence-unlock (3.2) the
+    // calculator derives parcel/pallet from shipment weight against the
+    // carrier's own bracket ceilings, so real rows carry the curated
+    // datasets' shipping vocabulary ('parcel', 'pallet'). The CHECK that
+    // 0000 invented here was dropped by migration 0003 (golden e2e caught
+    // it: every real offer was rejected and transport silently degraded
+    // to 0).
     check('transport_offers_reliability_status_check', sql`${table.reliabilityStatus} IN ${RELIABILITY_VALUES}`),
   ],
 );
@@ -1026,6 +1036,14 @@ export const merchantRegistry = sqliteTable('merchant_registry', {
   feedFormat: text('feed_format', { length: 8 }).notNull(),
   /** How often to poll for new data (milliseconds). */
   pollingIntervalMs: integer('polling_interval_ms').notNull(),
+  /**
+   * Carrier assignment for the transport lookup (migration 0027, design
+   * D1, change transport-confidence-unlock): the transport_offers carrier
+   * id that ships this merchant's parcels. NULL means unknown, and
+   * unknown stays UNAVAILABLE — values are owner data, never seeded or
+   * guessed by code.
+   */
+  carrierId: text('carrier_id', { length: 128 }),
   createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
   /** When the registry row last changed — onboarding audit trail. */
   updatedAt: text('updated_at').default(ISO_8601_NOW).notNull(),

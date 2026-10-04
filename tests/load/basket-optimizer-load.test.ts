@@ -234,6 +234,9 @@ function buildOffersByProduct(candidatesPerItem: number): Record<
       priceCents: offerPriceCents(product.id, idx),
       merchant: m.id,
       country: m.country,
+      // Registry assignment (design D1): the shipping calculator resolves
+      // the carrier from the offer, not the merchant name.
+      carrierId: 'dhl',
       reliabilityStatus: 'EXACT',
     }));
   }
@@ -259,6 +262,7 @@ function buildCap30Offers(candidatesPerItem: number): Record<
       priceCents: offerPriceCents(product.id, idx),
       merchant: m.id,
       country: m.country,
+      carrierId: 'dhl', // registry assignment, design D1
       reliabilityStatus: 'EXACT',
     }));
   }
@@ -285,6 +289,7 @@ function buildCap30DisjointOffers(): Record<number, CalculatorRetailOfferData[]>
         priceCents: offerPriceCents(product.id, 0),
         merchant: `cap30-shop-${product.id}`,
         country: pool.country,
+        carrierId: 'dhl', // registry assignment, design D1
         reliabilityStatus: 'EXACT',
       },
     ];
@@ -312,6 +317,7 @@ const CAP30_SINGLE_OFFERS: Record<number, CalculatorRetailOfferData[]> =
           priceCents: offerPriceCents(product.id, 0),
           merchant: 'solo-merchant',
           country: 'DE',
+          carrierId: 'dhl', // registry assignment, design D1
           reliabilityStatus: 'EXACT',
         },
       ],
@@ -322,7 +328,12 @@ const CAP30_SINGLE_OFFERS: Record<number, CalculatorRetailOfferData[]> =
 // Fixtures — transport offers for the (real) BasketShippingCalculator
 // ---------------------------------------------------------------------------
 
-/** One carrier, two weight brackets, for every (origin, package tier) used. */
+/**
+ * One carrier ('dhl', resolved via the offers' registry carrierId), two
+ * shipping tiers with full bracket coverage, for every origin used. The
+ * open-top parcel row keeps every shipment weight inside the parcel tier
+ * (design D3) — the exact bracket is then always found.
+ */
 function buildTransportOffers(): TransportOffer[] {
   const offers: TransportOffer[] = [];
   let id = 0;
@@ -332,7 +343,7 @@ function buildTransportOffers(): TransportOffer[] {
     { minKg: 11, maxKg: null },
   ];
   for (const { id: _mId, country } of MERCHANTS) {
-    for (const packageTier of ['can', 'bottle'] as const) {
+    for (const packageTier of ['parcel', 'pallet'] as const) {
       for (const bracket of brackets) {
         offers.push({
           id: ++id,

@@ -28,6 +28,20 @@
  * values directly from the data, so there is no scrape/export path that
  * could go silently blind.
  *
+ * ## Verified ageing write-back (task 5.2, design D8)
+ *
+ * Before the alerting evaluation, the tick degrades aged VERIFIED retail
+ * offers to STALE: the freshness window that defines `actualStatus` in
+ * the data-quality classifier — `ReliabilityService.stalenessThresholdFor
+ * ('price')`, the same window source, never a second constant — decides
+ * which stored VERIFIED rows are past their evidence. The write is
+ * status-only (price, observed_at, and the verified_at/verified_by
+ * attribution pair are never touched), guarded on
+ * `reliability_status = 'VERIFIED'` so a re-run over already-STALE rows
+ * writes nothing. Ageing runs even where alerting emails are
+ * unconfigured — it is data hygiene, not paging — and a failed pass is
+ * logged without failing the tick (the next tick retries).
+ *
  * ## Suppression (dedupe) — IdempotencyDO job-claim namespace
  *
  * A sustained violation would otherwise email on every tick. Each
@@ -70,6 +84,8 @@ import {
 import { claimJob, completeJob, releaseJob } from '../do/client';
 import type { JobClaimOutcome } from '../do/idempotency.do';
 import { dispatchEmailToWorker, type EmailDispatchTarget } from '../services/email-send';
+import { ReliabilityService } from '../adapters/core-domain-bridge';
+import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 import type { Env } from '../env';
 import type { Logger } from '../logger';
 
@@ -313,6 +329,53 @@ export async function sendAlertEmail(
 }
 
 // ---------------------------------------------------------------------------
+// Verified ageing write-back (task 5.2, change transport-confidence-unlock,
+// design D8)
+// ---------------------------------------------------------------------------
+
+/**
+ * Degrade every aged VERIFIED retail offer to STALE — the write-back
+ * pass the freshness tick runs before its alert evaluation.
+ *
+ * The window is the SAME one that defines `actualStatus` in the
+ * data-quality classifier: `ReliabilityService.stalenessThresholdFor
+ * ('price')`, whose `assessDataRecency` reports STALE exactly when
+ * `now − observed_at` EXCEEDS the threshold (a row observed exactly at
+ * the boundary is still fresh). The strict `observed_at < cutoff`
+ * comparison over ISO-8601 text mirrors that boundary one-to-one — no
+ * second freshness constant lives here.
+ *
+ * The update is status-only and idempotent by construction:
+ *
+ * - guarded on `reliability_status = 'VERIFIED'`, so already-STALE rows
+ *   (and ESTIMATED / UNAVAILABLE rows, which age through re-ingestion,
+ *   not through this pass) never match — a re-run writes zero rows;
+ * - never touches price, observed_at, or the verified_at/verified_by
+ *   attribution pair: the pair keeps recording WHO verified the offer
+ *   and WHEN — the STALE status says the verification has since aged
+ *   out, and re-verification overwrites the pair in place.
+ *
+ * @returns The number of rows transitioned VERIFIED → STALE.
+ */
+export async function writeBackAgedVerifiedOffers(
+  d1: D1DatabaseLike,
+  now: Date,
+): Promise<number> {
+  const threshold = new ReliabilityService().stalenessThresholdFor('price');
+  const cutoff = new Date(now.getTime() - threshold.milliseconds);
+  const result = await d1
+    .prepare(
+      `UPDATE retail_offers
+          SET reliability_status = 'STALE'
+        WHERE reliability_status = 'VERIFIED'
+          AND observed_at < ?`,
+    )
+    .bind(cutoff.toISOString())
+    .run();
+  return Number(result.meta.changes ?? 0);
+}
+
+// ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
 
@@ -320,6 +383,12 @@ export async function sendAlertEmail(
 export interface FreshnessAlertResult {
   /** False when the EMAIL_WORKER binding/URL, secret, or recipient are unset. */
   readonly configured: boolean;
+  /**
+   * Offers transitioned VERIFIED → STALE by the ageing write-back
+   * (task 5.2, design D8) — runs every tick, alerting config or not.
+   * Null when the pass failed (logged; the next tick retries).
+   */
+  readonly verifiedToStale: number | null;
   /** Measured stale-price-share (null when unconfigured). */
   readonly staleShare: {
     readonly stale: number;
@@ -341,6 +410,11 @@ export interface FreshnessAlertDeps {
   measureStaleShare?: () => Promise<{ stale: number; total: number; share: number }>;
   /** Defaults to D1TransportOfferWritePort.findNewestObservedAt (the refresh read). */
   findNewestObservedAt?: () => Promise<Date | null>;
+  /**
+   * Defaults to the D1 VERIFIED → STALE write-back against env.DB
+   * (task 5.2, design D8).
+   */
+  writeBackAgedVerified?: (now: Date) => Promise<number>;
   now?: () => Date;
   send?: (email: AlertEmail) => Promise<void>;
   claim?: (key: string) => Promise<JobClaimOutcome>;
@@ -349,16 +423,43 @@ export interface FreshnessAlertDeps {
 }
 
 /**
- * One freshness-alert tick: measure both invariants, evaluate the ported
- * thresholds, and email each violated invariant through the email
- * Worker — suppressed per invariant+severity within the configured
- * window. Healthy → no email, no fetch. Never throws on email failure.
+ * One freshness-alert tick: age aged VERIFIED offers back to STALE
+ * (status-only, idempotent), measure both invariants, evaluate the
+ * ported thresholds, and email each violated invariant through the
+ * email Worker — suppressed per invariant+severity within the
+ * configured window. Healthy → no email, no fetch. Never throws on
+ * email or write-back failure.
  */
 export async function handleFreshnessAlert(
   env: Env,
   log: Logger,
   deps: FreshnessAlertDeps = {},
 ): Promise<FreshnessAlertResult> {
+  const now = deps.now ?? (() => new Date());
+
+  // -- Verified ageing (task 5.2, design D8) -------------------------------
+  // Runs BEFORE the alerting-configuration gate: degrading aged VERIFIED
+  // rows is data hygiene, not paging — it must not depend on the email
+  // path being configured. The default pass is skipped only where no D1
+  // binding exists at all (bare test envs). A failed pass is logged,
+  // never thrown — the next tick retries and alerting proceeds.
+  const writeBackAgedVerified =
+    deps.writeBackAgedVerified ??
+    (env.DB
+      ? (at: Date) => writeBackAgedVerifiedOffers(env.DB, at)
+      : async () => 0);
+  let verifiedToStale: number | null;
+  try {
+    verifiedToStale = await writeBackAgedVerified(now());
+  } catch (err) {
+    log.error({
+      message: `Verified-ageing write-back failed: ${
+        err instanceof Error ? err.message : 'unknown error'
+      } — offers stay VERIFIED until the next tick retries`,
+    });
+    verifiedToStale = null;
+  }
+
   // -- Alerting configuration gate ----------------------------------------
   // Unconfigured = alerting off for the environment: skip the evaluation
   // reads entirely (no R2 scan, no D1 read) and say so once per tick.
@@ -375,6 +476,7 @@ export async function handleFreshnessAlert(
     });
     return {
       configured: false,
+      verifiedToStale,
       staleShare: null,
       transportAgeSeconds: null,
       violations: [],
@@ -383,7 +485,6 @@ export async function handleFreshnessAlert(
     };
   }
 
-  const now = deps.now ?? (() => new Date());
   // Captured post-gate: closures (the default sender below) see plain
   // values instead of re-reading optional properties.
   const sendTarget: EmailDispatchTarget = {
@@ -497,6 +598,7 @@ export async function handleFreshnessAlert(
 
   return {
     configured: true,
+    verifiedToStale,
     staleShare,
     transportAgeSeconds: transportAge,
     violations,

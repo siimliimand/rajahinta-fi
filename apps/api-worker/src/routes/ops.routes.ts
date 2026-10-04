@@ -28,6 +28,11 @@
  * the confirm-conflict 409 points at. The matching pass never writes a
  * link; nothing reaches CONFIRMED except through these endpoints.
  *
+ * Task 5.1 (change transport-confidence-unlock) adds the offer
+ * verification action (design D7) — the owner-gated human write path
+ * that makes VERIFIED reachable: attributed, audited, re-verifiable,
+ * and deliberately without an un-verify endpoint.
+ *
  * EVERY mutating action writes an append-only D1 `audit_events` row via
  * the task-2.5 D1AuditEventRepository (WorkerAuditService).
  *
@@ -2506,6 +2511,66 @@ async function notifySubscribers(c: Context<AppEnv>): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
+// Offer verification — the human write path for VERIFIED (task 5.1,
+// change transport-confidence-unlock; design D7, spec operator-console)
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /ops/console/offers/:id/verify — set a retail offer's reliability
+ * status to VERIFIED, attributed to the named operator. Deliberately NOT
+ * an ingestion path: ingestion pins offers ESTIMATED at birth ("ingestion
+ * never self-certifies VERIFIED"), and a human with a name on record is
+ * the only writer of VERIFIED. Re-verification is allowed and overwrites
+ * the verified_at/verified_by pair; each decision appends its own audit
+ * row, so the history lives in the audit trail, not in the columns.
+ * There is deliberately NO un-verify endpoint — superseding a verdict is
+ * a later operator decision, never an accident.
+ */
+async function verifyOffer(c: Context<AppEnv>): Promise<Response> {
+  const id = parseIntParam(c, 'id');
+  const dto = await readBody(c);
+  validateOperator(dto);
+
+  const existing = await c.env.DB.prepare(
+    'SELECT merchant, product_id, reliability_status FROM retail_offers WHERE id = ?',
+  )
+    .bind(id)
+    .first<{ merchant: string; product_id: number; reliability_status: string }>();
+  if (existing === null) {
+    throw new ApiHttpError(404, `Retail offer ${id} not found`);
+  }
+
+  const verifiedAt = new Date().toISOString();
+  const verifiedBy = (dto.operator as string).trim();
+  await c.env.DB.prepare(
+    'UPDATE retail_offers SET reliability_status = ?, verified_at = ?, verified_by = ? WHERE id = ?',
+  )
+    .bind('VERIFIED', verifiedAt, verifiedBy, id)
+    .run();
+
+  await new WorkerAuditService(c.env.DB).logChange({
+    entityType: 'retail_offer',
+    entityId: String(id),
+    action: 'confirmed',
+    author: verifiedBy,
+    reason:
+      (dto.note as string | undefined)?.trim() ||
+      'Offer verified via operator console',
+    previousValue: { reliabilityStatus: existing.reliability_status },
+    newValue: { reliabilityStatus: 'VERIFIED', verifiedAt, verifiedBy },
+  });
+
+  return c.json({
+    id,
+    merchant: existing.merchant,
+    productId: existing.product_id,
+    reliabilityStatus: 'VERIFIED' as const,
+    verifiedAt,
+    verifiedBy,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Audit trail — real D1 audit_events reads
 // ---------------------------------------------------------------------------
 
@@ -2633,6 +2698,11 @@ export function registerOpsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   // notify-subscribers action through the email worker's send contract
   // with the delivery intent log (crash-safe redelivery).
   app.post('/ops/console/newsletter/notify', notifySubscribers);
+
+  // Offer verification (task 5.1, transport-confidence-unlock, D7) —
+  // the owner-gated human write path for VERIFIED: attributed, audited,
+  // re-verifiable; deliberately no un-verify.
+  app.post('/ops/console/offers/:id/verify', verifyOffer);
 
   app.get('/ops/console/audit', recentAudit);
   return app;

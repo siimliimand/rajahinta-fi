@@ -291,7 +291,9 @@ const TRANSPORT_OFFERS: TransportOffer[] = [
     originCountry: 'DE',
     destinationCountry: 'FI',
     weightBracket: { minKg: 0, maxKg: 1 },
-    packageTier: 'can',
+    // 'parcel' (shipping packaging) — the row previously said 'can' under
+    // the dropped containerType join (transport-confidence-unlock D3).
+    packageTier: 'parcel',
     priceCents: 150,
     currency: 'EUR',
     sellerInvolvementIndicator: true,
@@ -305,7 +307,7 @@ const TRANSPORT_OFFERS: TransportOffer[] = [
     originCountry: 'DE',
     destinationCountry: 'FI',
     weightBracket: { minKg: 0, maxKg: 1 },
-    packageTier: 'can',
+    packageTier: 'parcel',
     priceCents: 180,
     currency: 'EUR',
     sellerInvolvementIndicator: true,
@@ -561,10 +563,29 @@ const PRODUCT_PIPELINE: CalculatorProductData = {
   normalizedName: 'Pipeline Pilsner 5%',
 };
 
+/**
+ * Product 7 — carrier-seeded fixture (transport-confidence-unlock, task
+ * 4.1): recorded through the hook from a mixed-case merchant name so the
+ * observation pins the domain-boundary carrier normalization (D2) and the
+ * recorder's honest ESTIMATED cap (D6) against seeded carrier rows.
+ */
+const PRODUCT_CARRIER: CalculatorProductData = {
+  id: 7,
+  regulatoryClassification: 'beer',
+  category: 'beer',
+  volumeLitres: 0.5,
+  alcoholByVolume: 0.05,
+  containerType: 'can',
+  depositSystemStatus: true,
+  weightKg: 0.55,
+  normalizedName: 'Carrier Lane Lager 5%',
+};
+
 class InMemoryProductDataPort implements IProductDataPort {
   async findProductById(id: number): Promise<CalculatorProductData | null> {
     if (id === PRODUCT_BEER.id) return PRODUCT_BEER;
     if (id === PRODUCT_PIPELINE.id) return PRODUCT_PIPELINE;
+    if (id === PRODUCT_CARRIER.id) return PRODUCT_CARRIER;
     return null;
   }
 
@@ -937,11 +958,19 @@ describe('Historical price intelligence — ingestion → observation → aggreg
         expect(rows[i].containerDutyRuleVersionId).toBeNull();
         expect(rows[i].inputReliability).toEqual({
           retailPrice: 'VERIFIED',
-          transport: 'VERIFIED',
+          // Pin moved VERIFIED → ESTIMATED (transport-confidence-unlock
+          // D6): the recorder resolves its quantity=1 baseline weight from
+          // the product master's volume estimate — no stored weight — so
+          // even an exact bracket caps at ESTIMATED. Status-only change:
+          // every landed-cost figure and transport cent below is
+          // untouched.
+          transport: 'ESTIMATED',
           exciseRule: 'VERIFIED',
           containerDutyRule: 'VERIFIED',
         });
-        expect(rows[i].confidence).toBe('HIGH');
+        // MEDIUM for the same reason: an ESTIMATED transport input can no
+        // longer yield an all-VERIFIED HIGH.
+        expect(rows[i].confidence).toBe('MEDIUM');
       }
 
       // Transport selection per merchant (baseline route DE → FI).
@@ -949,6 +978,51 @@ describe('Historical price intelligence — ingestion → observation → aggreg
       expect(rows[0].transportCostCents).toBe(150);
       expect(rows[3].transportOfferId).toBe(901);
       expect(rows[3].transportCostCents).toBe(180);
+    });
+
+    it('normalizes a mixed-case merchant onto its seeded carrier rows and caps the status at ESTIMATED', async () => {
+      // Merchant stored as 'Beverage-DE' — the recorder resolves carrier =
+      // merchant; the estimator's domain-boundary normalization (D2) maps
+      // it onto the lowercase seeded rows.
+      await hook.onOfferChanged({
+        productId: PRODUCT_CARRIER.id,
+        offerId: 210,
+        merchant: 'Beverage-DE',
+        country: 'DE',
+        priceCents: 260,
+        reliabilityStatus: 'VERIFIED',
+        observedAt: new Date('2026-01-04T10:00:00Z'),
+      });
+
+      const rows = observations.rows.filter(
+        (r) => r.productId === PRODUCT_CARRIER.id,
+      );
+      expect(rows).toHaveLength(1);
+      const row = rows[0];
+
+      // Fixed matching through normalization: real carrier row, real cents.
+      // January 4 → excise v2 (40 ¢/cl → 100 ¢), deposit-exempt duty 0 ¢.
+      expect(row.transportOfferId).toBe(900);
+      expect(row.transportCostCents).toBe(150);
+      expect(row.landedCostCents).toBe(260 + 100 + 150);
+      // D6 cap: the recorder's baseline weight basis is the volume
+      // estimate, so the exact bracket reads ESTIMATED — never VERIFIED.
+      expect(row.inputReliability.transport).toBe('ESTIMATED');
+      expect(row.confidence).toBe('MEDIUM');
+
+      // The same rows WOULD certify VERIFIED on a stored product weight —
+      // the downgrade is status-only: identical row, identical cents.
+      const estimator = new TransportEstimationService(
+        new InMemoryTransportOfferQuery(),
+      );
+      const stored = await estimator.estimate('Beverage-DE', 'DE', 'FI', 0.55, 550);
+      expect(stored.reliabilityStatus).toBe('VERIFIED');
+      expect(stored.offer.id).toBe(900);
+      expect(stored.offer.priceCents).toBe(150);
+      const volume = await estimator.estimate('Beverage-DE', 'DE', 'FI', 0.55);
+      expect(volume.reliabilityStatus).toBe('ESTIMATED');
+      expect(volume.offer.id).toBe(900);
+      expect(volume.offer.priceCents).toBe(150);
     });
   });
 
@@ -1038,7 +1112,11 @@ describe('Historical price intelligence — ingestion → observation → aggreg
         landedCostMaxCents: 571,
         landedCostAvgCents: 506, // (441 + 571) / 2
         observationCount: 2,
-        strictestReliability: 'VERIFIED',
+        // D6 (transport-confidence-unlock): every January observation's
+        // transport input is ESTIMATED (recorder volume-estimate basis),
+        // so the strictest snapshot status is ESTIMATED — amounts
+        // untouched.
+        strictestReliability: 'ESTIMATED',
       });
 
       // 2026-01-02: same retail prices, excise v2 lifts landed costs.
@@ -1053,7 +1131,7 @@ describe('Historical price intelligence — ingestion → observation → aggreg
         landedCostMaxCents: 580,
         landedCostAvgCents: 515, // (450 + 580) / 2
         observationCount: 2,
-        strictestReliability: 'VERIFIED',
+        strictestReliability: 'ESTIMATED',
       });
 
       // 2026-01-03: single observation of the merchant price move.
@@ -1068,7 +1146,7 @@ describe('Historical price intelligence — ingestion → observation → aggreg
         landedCostCloseCents: 500,
         landedCostAvgCents: 500,
         observationCount: 1,
-        strictestReliability: 'VERIFIED',
+        strictestReliability: 'ESTIMATED',
       });
 
       // Weekly bucket — ISO week anchored on Monday 2025-12-29 holds all
@@ -1094,7 +1172,7 @@ describe('Historical price intelligence — ingestion → observation → aggreg
         landedCostMaxCents: 580,
         landedCostAvgCents: 508,
         observationCount: 5,
-        strictestReliability: 'VERIFIED',
+        strictestReliability: 'ESTIMATED',
       });
 
       // Per-merchant rows exist alongside the product-wide rows.
@@ -1150,7 +1228,9 @@ describe('Historical price intelligence — ingestion → observation → aggreg
         maxCents: 300,
         avgCents: 250,
         observationCount: 2,
-        reliability: 'VERIFIED',
+        // Bucket strictest reliability — ESTIMATED under the D6 transport
+        // cap (see stage 2); the price figures themselves are untouched.
+        reliability: 'ESTIMATED',
       });
       expect(series[1].periodStart).toBe('2026-01-02');
       expect(series[1].avgCents).toBe(250);
@@ -1174,7 +1254,7 @@ describe('Historical price intelligence — ingestion → observation → aggreg
         maxCents: 571,
         avgCents: 506,
         observationCount: 2,
-        reliability: 'VERIFIED',
+        reliability: 'ESTIMATED',
       });
       expect(series[2].openCents).toBe(500);
       expect(series[2].closeCents).toBe(500);
@@ -1197,7 +1277,7 @@ describe('Historical price intelligence — ingestion → observation → aggreg
         maxCents: 300,
         avgCents: 250,
         observationCount: 5,
-        reliability: 'VERIFIED',
+        reliability: 'ESTIMATED',
       });
     });
 
@@ -1260,7 +1340,7 @@ describe('Historical price intelligence — ingestion → observation → aggreg
         maxCents: 300,
         avgCents: 300,
         observationCount: 1,
-        reliability: 'VERIFIED',
+        reliability: 'ESTIMATED',
       });
 
       const attribution = res.body.attribution;

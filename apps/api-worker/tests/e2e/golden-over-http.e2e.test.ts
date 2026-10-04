@@ -37,24 +37,39 @@ const AGE = { 'x-age-confirmed': 'confirmed' };
 // Golden transport offers — verbatim from tests/golden/golden-dataset.test.ts
 // ---------------------------------------------------------------------------
 
+/**
+ * Offer for carrierA: DE → FI, parcel up to 1 kg, seller involved. Same
+ * fixture repairs as the in-memory twin (transport-confidence-unlock, task
+ * 4.1): tier 'parcel' (shipping packaging — the containerType join is gone,
+ * design D3) and a lowercase stored carrier ID (D2) so the requests'
+ * mixed-case `transportMethod: 'carrierA'` exercises the domain-boundary
+ * normalization.
+ */
 const OFFER_CARRIER_A: GoldenTransportSeed = {
   id: 900,
-  carrier: 'carrierA',
+  carrier: 'carriera',
   originCountry: 'DE',
   destinationCountry: 'FI',
   weightBracket: { minKg: 0, maxKg: 1 },
-  packageTier: 'can',
+  packageTier: 'parcel',
   priceCents: 150,
   sellerInvolvementIndicator: true,
 };
 
+/**
+ * Offer for carrierB: ES → FI, parcel 0–31.5 kg, independent. The tier said
+ * 'glass' under the dropped containerType join → 'parcel'; the 2 kg ceiling
+ * priced a PER-UNIT weight, and Case 2 ships 3 × 1.2 kg = 3.6 kg under the
+ * quantity-total rule (D4) — the ceiling widens to the same Fransberg-shaped
+ * parcel cap as the in-memory twin so every Case 2 pin stays byte-identical.
+ */
 const OFFER_CARRIER_B: GoldenTransportSeed = {
   id: 901,
-  carrier: 'carrierB',
+  carrier: 'carrierb',
   originCountry: 'ES',
   destinationCountry: 'FI',
-  weightBracket: { minKg: 0, maxKg: 2 },
-  packageTier: 'glass',
+  weightBracket: { minKg: 0, maxKg: 31.5 },
+  packageTier: 'parcel',
   priceCents: 200,
   sellerInvolvementIndicator: false,
 };
@@ -235,7 +250,10 @@ describe('Golden over HTTP — golden-dataset.test.ts', () => {
 // Each case uses a UNIQUE carrier so one carrier+route+tier holds exactly
 // one offer (the in-memory suite builds a fresh single-offer query per
 // case; uniqueness over a shared D1 reproduces that isolation). Origin
-// countries and prices are verbatim from the in-memory cases.
+// countries and prices are verbatim from the in-memory cases. Tiers are
+// 'parcel' (transport-confidence-unlock D3): the containerType join is
+// gone — every qty=1 case weight (≤ 1.3 kg) fits its carrier's {0,5} kg
+// parcel bracket, so the weight-derived tier is parcel throughout.
 // ---------------------------------------------------------------------------
 
 interface PerCategoryCase {
@@ -261,7 +279,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     productId: 5,
     carrier: 'pc-beer-low',
     originCountry: 'DE',
-    packageTier: 'can',
+    packageTier: 'parcel',
     transportPriceCents: 100,
     expectExciseCents: 25, // round(28.35 × 0.027 × 0.33 × 100)
     expectContainerCents: 0, // deposit system → exempt
@@ -272,7 +290,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     productId: 6,
     carrier: 'pc-beer-high',
     originCountry: 'DE',
-    packageTier: 'glass',
+    packageTier: 'parcel',
     transportPriceCents: 100,
     expectExciseCents: 102, // round(36.20 × 0.085 × 0.33 × 100)
     expectContainerCents: 0,
@@ -283,7 +301,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     productId: 7,
     carrier: 'pc-sparkling',
     originCountry: 'ES',
-    packageTier: 'glass',
+    packageTier: 'parcel',
     transportPriceCents: 200,
     expectExciseCents: 342, // round(4.56 × 0.75 × 100)
     expectContainerCents: 0,
@@ -294,7 +312,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     productId: 8,
     carrier: 'pc-intermediate',
     originCountry: 'ES',
-    packageTier: 'glass',
+    packageTier: 'parcel',
     transportPriceCents: 200,
     expectExciseCents: 284, // round(5.68 × 0.5 × 100)
     expectContainerCents: 0,
@@ -305,7 +323,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     productId: 9,
     carrier: 'pc-other',
     originCountry: 'DE',
-    packageTier: 'glass',
+    packageTier: 'parcel',
     transportPriceCents: 150,
     expectExciseCents: 99, // round(1.98 × 0.5 × 100)
     expectContainerCents: 0,
@@ -316,7 +334,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     productId: 10,
     carrier: 'pc-no-deposit',
     originCountry: 'DE',
-    packageTier: 'can',
+    packageTier: 'parcel',
     transportPriceCents: 150,
     expectExciseCents: 91,
     expectContainerCents: 26, // round(0.51 × 0.5 × 100)
@@ -327,7 +345,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     productId: 11,
     carrier: 'pc-zero-abv',
     originCountry: 'DE',
-    packageTier: 'can',
+    packageTier: 'parcel',
     transportPriceCents: 100,
     expectExciseCents: 0,
     expectContainerCents: 0,
@@ -338,7 +356,7 @@ const PER_CATEGORY_CASES: PerCategoryCase[] = [
     productId: 12,
     carrier: 'pc-null-deposit',
     originCountry: 'DE',
-    packageTier: 'can',
+    packageTier: 'parcel',
     transportPriceCents: 150,
     expectExciseCents: 91,
     expectContainerCents: 26,

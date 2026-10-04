@@ -42,7 +42,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 /** Bump this when adding scenarios or changing expected values. */
-export const GOLDEN_DATASET_VERSION = '3.0' as const;
+export const GOLDEN_DATASET_VERSION = '3.1' as const;
 
 // ---------------------------------------------------------------------------
 // Product definitions

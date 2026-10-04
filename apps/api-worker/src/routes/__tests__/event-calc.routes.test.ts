@@ -408,6 +408,49 @@ describe('POST /api/v1/event-calc — V2 plan', () => {
     expect(plan.budget).toBeNull();
   });
 
+  it('keeps the transport zero structural even with matching carrier rows seeded', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedNorm(d1);
+    seedSourcingTaxRules(db);
+    const app = eventCalcApp();
+    const env = eventCalcEnv(d1);
+
+    // Carrier data exists for the exact import lane (EE → FI, parcel tier,
+    // stored lowercase per the curated-write convention) — yet the plan
+    // must be byte-identical to the no-carrier test above. The event-calc
+    // MVP request carries no carrier dimension to feed
+    // TransportEstimationService, so its transport component is a
+    // STRUCTURAL zero/UNAVAILABLE, never an empty-table accident; wiring a
+    // carrier choice is the trip module's territory.
+    db.prepare(
+      `INSERT INTO transport_offers (
+         id, carrier, origin_country, destination_country,
+         weight_min_kg, weight_max_kg, package_tier, price_cents,
+         seller_involvement_indicator, observed_at, refreshed_at,
+         reliability_status
+       ) VALUES (
+         9001, 'fransberg', 'EE', 'FI', 0, 31.5, 'parcel', 490,
+         1, '2026-05-01T00:00:00.000Z', '2026-05-01T00:00:00.000Z',
+         'ESTIMATED'
+       )`,
+    ).run();
+
+    const res = await postV2(app, env, sourcingBeer(500, [{ country: 'EE', pricePerLitreCents: 200 }]));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as V2Json;
+
+    const line = body.plan!.lines[0]!;
+    // Byte-identical to the no-carrier run: same components, same total,
+    // same savings — the seeded lane is invisible to this surface.
+    expect(line.components.transportCents).toBe(0);
+    expect(line.statuses.transport).toBe('UNAVAILABLE');
+    expect(line.components.retailCents).toBe(BEER_RETAIL_CENTS_AT(200));
+    expect(line.components.exciseCents).toBe(34);
+    expect(line.components.containerDutyCents).toBe(1020);
+    expect(line.totalCents).toBe(4000 + 34 + 1020);
+    expect(line.savingsVsDomesticCents).toBe(10_000 - 5_054);
+  });
+
   it('keeps the domestic store when Finnish taxes erase the shelf-price gap', async () => {
     const { db, d1 } = openMigratedD1();
     await seedPublishedNorm(d1);

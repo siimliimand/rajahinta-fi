@@ -35,6 +35,8 @@ import {
   NoRetailOffersError,
 } from '../calculator.types';
 import type { ITravellerAllowancePort, TripResolvedAllowances } from '../../optimizer/ports/traveller-allowance.port';
+import type { ITransportOfferQuery } from '../../transport/transport-offer-query.interface';
+import type { TransportOffer } from '../../transport/transport-offer.type';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -106,6 +108,12 @@ function createService(options?: {
   productData?: IProductDataPort;
   calculationRecords?: ICalculationRecordPort;
   transportEstimate?: ReturnType<typeof createTransportEstimateStub>;
+  /**
+   * A real TransportEstimationService (task 3.3 weight-basis tests) —
+   * takes precedence over `transportEstimate` when provided, so the
+   * estimator's own tier/basis logic runs for real behind the calculator.
+   */
+  transportService?: TransportEstimationService;
   travellerAllowances?: ITravellerAllowancePort | null;
 }): {
   service: LandedCostCalculatorService;
@@ -159,16 +167,18 @@ function createService(options?: {
   } as unknown as ContainerDutyService;
 
   // Mock for transport estimation
-  const transportEstimation = {
-    estimate: vi.fn().mockResolvedValue({
-      offer: { id: 200, priceCents: 150, sellerInvolvementIndicator: false },
-      matchedWeightBracket: { minKg: 0, maxKg: 1 },
-      reliabilityStatus: 'VERIFIED' as const,
-    }),
-  } as unknown as TransportEstimationService;
+  const transportEstimation =
+    options?.transportService ??
+    ({
+      estimate: vi.fn().mockResolvedValue({
+        offer: { id: 200, priceCents: 150, sellerInvolvementIndicator: false },
+        matchedWeightBracket: { minKg: 0, maxKg: 1 },
+        reliabilityStatus: 'VERIFIED' as const,
+      }),
+    } as unknown as TransportEstimationService);
 
-  // Override transport mock if provided
-  if (options?.transportEstimate) {
+  // Override transport mock if provided (a real service wins over the stub)
+  if (options?.transportEstimate && !options?.transportService) {
     const stub = options.transportEstimate;
     transportEstimation.estimate = stub;
   }
@@ -218,6 +228,49 @@ function createTransportEstimateStub(
     matchedWeightBracket: { minKg: 0, maxKg: 1 },
     reliabilityStatus: result.reliabilityStatus ?? 'VERIFIED',
   });
+}
+
+// ---------------------------------------------------------------------------
+// Real-estimator fixtures (task 3.3 weight-basis tests)
+// ---------------------------------------------------------------------------
+
+const TRANSPORT_BASE_DATE = new Date('2026-08-16T12:00:00Z');
+
+/** Minimal transport_offers row — the fields estimate() consumes. */
+function makeTransportOffer(
+  overrides: Partial<TransportOffer> & {
+    carrier: string;
+    originCountry: string;
+    destinationCountry: string;
+  },
+): TransportOffer {
+  return {
+    id: overrides.id ?? 1,
+    carrier: overrides.carrier,
+    originCountry: overrides.originCountry,
+    destinationCountry: overrides.destinationCountry,
+    weightBracket: overrides.weightBracket ?? { minKg: null, maxKg: null },
+    packageTier: overrides.packageTier ?? 'pallet',
+    priceCents: overrides.priceCents ?? 5000,
+    currency: overrides.currency ?? 'EUR',
+    sellerInvolvementIndicator: overrides.sellerInvolvementIndicator ?? false,
+    observedAt: overrides.observedAt ?? TRANSPORT_BASE_DATE,
+    refreshedAt: overrides.refreshedAt ?? TRANSPORT_BASE_DATE,
+    reliabilityStatus: overrides.reliabilityStatus ?? 'VERIFIED',
+  };
+}
+
+/** In-memory ITransportOfferQuery — the estimator sees only these rows. */
+class StubOfferQuery implements ITransportOfferQuery {
+  constructor(private readonly offers: TransportOffer[]) {}
+
+  async findAllActive(): Promise<TransportOffer[]> {
+    return this.offers;
+  }
+
+  async findByCarrier(carrierId: string): Promise<TransportOffer[]> {
+    return this.offers.filter((o) => o.carrier === carrierId);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -437,11 +490,11 @@ describe('LandedCostCalculatorService', () => {
       await service.calculate(DEFAULT_INPUT);
 
       expect(mocks.transportEstimation.estimate).toHaveBeenCalledWith(
-        'test-merchant-de', // carrier = input.transportMethod ?? bestOffer.merchant
+        'test-merchant-de', // carrier = transportMethod ?? carrierId ?? merchant
         'DE',              // origin = bestOffer.country
         'FI',              // destination = input.destination
-        0.55,              // weightKg from product
-        'can',             // containerType from product
+        0.55,              // shipmentWeightKg = unit weight × quantity
+        undefined,         // storedWeightGrams absent on the fixture product
       );
     });
 
@@ -465,7 +518,7 @@ describe('LandedCostCalculatorService', () => {
         expect.any(String),
         expect.any(String),
         expect.any(Number),
-        expect.any(String),
+        undefined,
       );
     });
 
@@ -484,6 +537,191 @@ describe('LandedCostCalculatorService', () => {
       );
       expect(transportLine).toBeDefined();
       expect(transportLine!.cents).toBe(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Transport weight + carrier resolution (task 3.3, design D1/D4/D5)
+  // ---------------------------------------------------------------------------
+
+  describe('transport weight and carrier resolution (task 3.3)', () => {
+    /** Product/offer fixtures with explicit per-test overrides. */
+    function productDataWith(
+      product: Partial<CalculatorProductData>,
+      offers: CalculatorRetailOfferData[],
+    ): IProductDataPort {
+      return {
+        findProductById: vi.fn().mockResolvedValue({
+          ...DEFAULT_PRODUCT,
+          ...product,
+        }),
+        findRetailOffers: vi.fn().mockResolvedValue(offers),
+      };
+    }
+
+    it('scales the lookup weight by quantity — 12 × 1 kg prices a 12 kg shipment (D4)', async () => {
+      const { service, mocks } = createService({
+        productData: productDataWith({ weightKg: 1 }, DEFAULT_OFFERS),
+      });
+
+      await service.calculate({ ...DEFAULT_INPUT, quantity: 12 });
+
+      expect(mocks.transportEstimation.estimate).toHaveBeenCalledWith(
+        'test-merchant-de',
+        'DE',
+        'FI',
+        12, // 1 kg unit × 12 units — the TOTAL shipment weight
+        undefined,
+      );
+    });
+
+    it('resolves the unit weight from stored grams and passes them through (D5)', async () => {
+      const { service, mocks } = createService({
+        productData: productDataWith(
+          { weightKg: 1, storedWeightGrams: 1200 },
+          DEFAULT_OFFERS,
+        ),
+      });
+
+      await service.calculate({ ...DEFAULT_INPUT, quantity: 2 });
+
+      expect(mocks.transportEstimation.estimate).toHaveBeenCalledWith(
+        'test-merchant-de',
+        'DE',
+        'FI',
+        2.4, // 1.2 kg stored unit × 2 units — stored weight, not the 1 kg guess
+        1200,
+      );
+    });
+
+    it('treats a non-positive stored weight as unknown — volume estimate, honest basis', async () => {
+      const { service, mocks } = createService({
+        productData: productDataWith(
+          { weightKg: 0.55, storedWeightGrams: 0 },
+          DEFAULT_OFFERS,
+        ),
+      });
+
+      await service.calculate({ ...DEFAULT_INPUT, quantity: 1 });
+
+      expect(mocks.transportEstimation.estimate).toHaveBeenCalledWith(
+        'test-merchant-de',
+        'DE',
+        'FI',
+        0.55,
+        0, // passes through; the estimator reads any non-positive as VOLUME_ESTIMATE
+      );
+    });
+
+    it('prefers the registry carrierId over the merchant name (D1)', async () => {
+      const { service, mocks } = createService({
+        productData: productDataWith({}, [
+          { ...DEFAULT_OFFERS[0], merchant: 'Fransberg', carrierId: 'fransberg' },
+        ]),
+      });
+
+      await service.calculate(DEFAULT_INPUT);
+
+      expect(mocks.transportEstimation.estimate).toHaveBeenCalledWith(
+        'fransberg',
+        expect.any(String),
+        expect.any(String),
+        expect.any(Number),
+        undefined, // no stored weight on this fixture
+      );
+    });
+
+    it('falls back to the merchant name when carrierId is null — honest unknown', async () => {
+      const { service, mocks } = createService({
+        productData: productDataWith({}, [
+          { ...DEFAULT_OFFERS[0], carrierId: null },
+        ]),
+      });
+
+      await service.calculate(DEFAULT_INPUT);
+
+      expect(mocks.transportEstimation.estimate).toHaveBeenCalledWith(
+        'test-merchant-de',
+        expect.any(String),
+        expect.any(String),
+        expect.any(Number),
+        undefined, // no stored weight on this fixture
+      );
+    });
+
+    it('keeps transportMethod ahead of the registry carrierId (D1)', async () => {
+      const { service, mocks } = createService({
+        productData: productDataWith({}, [
+          { ...DEFAULT_OFFERS[0], carrierId: 'fransberg' },
+        ]),
+      });
+
+      await service.calculate({ ...DEFAULT_INPUT, transportMethod: 'dhl' });
+
+      expect(mocks.transportEstimation.estimate).toHaveBeenCalledWith(
+        'dhl',
+        expect.any(String),
+        expect.any(String),
+        expect.any(Number),
+        undefined, // no stored weight on this fixture
+      );
+    });
+
+    it('caps at ESTIMATED on a volume basis and verifies only on a stored weight (D6/D7)', async () => {
+      // Real estimator + real bracket selection over an in-memory query —
+      // the carrier's own dataset derives the parcel tier (D3), and the
+      // 0.55 kg shipment fits the exact bracket either way, so the ONLY
+      // variable is the weight basis behind the match.
+      const query = new StubOfferQuery([
+        makeTransportOffer({
+          carrier: 'test-merchant-de',
+          originCountry: 'DE',
+          destinationCountry: 'FI',
+          packageTier: 'parcel',
+          weightBracket: { minKg: 0, maxKg: 31.5 },
+          priceCents: 1490,
+        }),
+      ]);
+
+      const estimated = await createService({
+        productData: productDataWith({ weightKg: 0.55 }, DEFAULT_OFFERS),
+        transportService: new TransportEstimationService(query),
+      }).service.calculate(DEFAULT_INPUT);
+      const estimatedLine = estimated.itemizedCosts.find(
+        (c) => c.label === 'Transport',
+      );
+      expect(estimatedLine?.reliability).toBe('ESTIMATED');
+      expect(estimatedLine?.cents).toBe(1490);
+
+      const verified = await createService({
+        productData: productDataWith(
+          { weightKg: 0.55, storedWeightGrams: 550 },
+          DEFAULT_OFFERS,
+        ),
+        transportService: new TransportEstimationService(query),
+      }).service.calculate(DEFAULT_INPUT);
+      const verifiedLine = verified.itemizedCosts.find(
+        (c) => c.label === 'Transport',
+      );
+      expect(verifiedLine?.reliability).toBe('VERIFIED');
+      // Same bracket, same cents — the basis never moves money.
+      expect(verifiedLine?.cents).toBe(1490);
+    });
+
+    it('degrades a NotFoundError to the 0 ¢ / UNAVAILABLE transport line, unchanged', async () => {
+      const { service } = createService({
+        productData: productDataWith({ weightKg: 0.55 }, DEFAULT_OFFERS),
+        // No rows for any carrier — the real estimator throws NotFoundError.
+        transportService: new TransportEstimationService(new StubOfferQuery([])),
+      });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      const transportLine = result.itemizedCosts.find(
+        (c) => c.label === 'Transport',
+      );
+      expect(transportLine?.cents).toBe(0);
+      expect(transportLine?.reliability).toBe('UNAVAILABLE');
     });
   });
 

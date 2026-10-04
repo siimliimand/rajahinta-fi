@@ -408,7 +408,7 @@ describe('D1ProductSearchRepository — contract row shapes', () => {
     await expect(repo.findById(999_999)).resolves.toBeNull();
   });
 
-  it('findOffers maps observed_at TEXT → Date', async () => {
+  it('findOffers maps observed_at TEXT → Date and carries the registry carrier (task 3.3)', async () => {
     await d1
       .prepare(
         `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
@@ -429,9 +429,59 @@ describe('D1ProductSearchRepository — contract row shapes', () => {
       sourceUrl: null,
       observedAt: new Date('2026-08-20T10:00:00.000Z'),
       reliabilityStatus: 'VERIFIED',
+      // No merchant_registry row for 'alko' in this fixture — the honest
+      // unknown, never a guessed carrier.
+      carrierId: null,
     });
     expect(await repo.findRetailOfferById(500)).not.toBeNull();
     expect(await repo.findRetailOfferById(999_999)).toBeNull();
+  });
+
+  it('findOffers joins merchant_registry.carrier_id per merchant, LEFT so unregistered merchants survive (task 3.3, design D1)', async () => {
+    // Dedicated product — no other test asserts on this id's offer set.
+    await d1
+      .prepare(
+        `INSERT INTO product_master (id, name, manufacturer, brand, category,
+            unit_volume, container_type, regulatory_classification)
+         VALUES (990, 'Carrier Join Fixture', 'm', 'b', 'beer', 0.33, 'can', 'beer')`,
+      )
+      .run();
+    // 'fransberg-de' registered with an assignment, 'unassigned-de'
+    // registered with a NULL assignment, 'ghost-de' not in the registry at
+    // all — all three offers must come back, each with its honest carrier.
+    await d1
+      .prepare(
+        `INSERT INTO merchant_registry (id, merchant_id, name, country, feed_url, feed_format, polling_interval_ms, carrier_id)
+         VALUES (9001, 'fransberg-de', 'Fransberg DE', 'DE', '', 'json', 3600000, 'fransberg'),
+                (9002, 'unassigned-de', 'Unassigned DE', 'DE', '', 'json', 3600000, NULL)`,
+      )
+      .run();
+    await d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+            observed_at, reliability_status)
+         VALUES (540, 'fransberg-de', 'DE', 990, 300, '2026-09-03T10:00:00.000Z', 'VERIFIED'),
+                (541, 'unassigned-de', 'DE', 990, 310, '2026-09-03T10:00:00.000Z', 'VERIFIED'),
+                (542, 'ghost-de', 'DE', 990, 320, '2026-09-03T10:00:00.000Z', 'ESTIMATED')`,
+      )
+      .run();
+
+    const offers = await repo.findOffers(990);
+    expect(
+      Object.fromEntries(offers.map((o) => [o.merchant, o.carrierId])),
+    ).toEqual({
+      'fransberg-de': 'fransberg',
+      'unassigned-de': null,
+      // LEFT JOIN: a merchant missing from the registry reads as null,
+      // never drops the offer.
+      'ghost-de': null,
+    });
+
+    // The suite shares one migrated database — remove every fixture row so
+    // later tests see exactly the state they seeded.
+    await d1.prepare(`DELETE FROM retail_offers WHERE id IN (540, 541, 542)`).run();
+    await d1.prepare(`DELETE FROM merchant_registry WHERE id IN (9001, 9002)`).run();
+    await d1.prepare(`DELETE FROM product_master WHERE id = 990`).run();
   });
 
   // -------------------------------------------------------------------------
