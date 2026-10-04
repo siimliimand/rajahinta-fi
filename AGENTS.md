@@ -60,6 +60,7 @@ The `ob-plan-apply` skill is authoritative for subagent waves, dependency orderi
 ## Tool and repository safety
 
 - Never expose or commit secrets, credentials, tokens, or production data.
+- Environment credentials (this deployment host): the Cloudflare API token for wrangler lives at `/root/.cloudflare-token` and the ops console bearer token at `/root/.ops-token`. Use them inline without echoing (`CLOUDFLARE_API_TOKEN="$(cat /root/.cloudflare-token)" wrangler …`). Never print their contents, copy them into files, logs, or commits.
 - Read before editing. Respect repository ownership, generated files, and existing local changes.
 - Run only commands appropriate to the task. Do not bypass checks, weaken tests, or silence lint rules to get a green result.
 - Commit, push, create pull requests, alter dependencies, or change deployment configuration only with the user's explicit approval and the repository's stated process.
