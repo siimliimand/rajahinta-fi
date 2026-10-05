@@ -25,6 +25,9 @@ import type {
   CalculatorInput,
   CalculatorProductData,
   CalculatorRetailOfferData,
+  CostCategory,
+  CostLineCode,
+  ItemizedCost,
   IProductDataPort,
   ICalculationRecordPort,
 } from '../calculator.types';
@@ -2299,6 +2302,275 @@ describe('LandedCostCalculatorService', () => {
       // Exactly one port read in total — the PERSONAL branch's; the
       // callout branch never runs for a traveller request.
       expect(port.resolveForTravelDate).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cost-line codes (task 2.1, change fi-locale-surface-hardening, design
+  // D1): every line the service emits carries an additive closed-set `code`
+  // next to the unchanged English `label` — the machine-readable join key
+  // consumers localize against, never a re-parsed label.
+  // ---------------------------------------------------------------------------
+
+  describe('cost-line codes (design D1)', () => {
+    /** The closed set, pinned in full — removing a member breaks the array's type. */
+    const ALL_CODES: readonly CostLineCode[] = [
+      'foreign_retail_price',
+      'foreign_unit_price',
+      'transport',
+      'alcohol_excise',
+      'container_duty',
+      'alcohol_excise_within_allowance',
+      'container_duty_within_allowance',
+      'alcohol_excise_over_allowance',
+      'container_duty_over_allowance',
+      'import_vat',
+      'import_vat_over_allowance',
+      'import_vat_within_allowance',
+    ];
+
+    /**
+     * Exhaustive code → canonical-category mapping. The `default: never`
+     * assignment makes a union member without a case a compile error, so
+     * the switch can never drift from the closed set.
+     */
+    function codeToCategory(code: CostLineCode): CostCategory {
+      switch (code) {
+        case 'foreign_retail_price':
+        case 'foreign_unit_price':
+          return 'foreignRetailPrice';
+        case 'transport':
+          return 'transportCost';
+        case 'alcohol_excise':
+        case 'alcohol_excise_within_allowance':
+        case 'alcohol_excise_over_allowance':
+          return 'alcoholExciseEstimate';
+        case 'container_duty':
+        case 'container_duty_within_allowance':
+        case 'container_duty_over_allowance':
+          return 'containerDutyEstimate';
+        case 'import_vat':
+        case 'import_vat_over_allowance':
+        case 'import_vat_within_allowance':
+          return 'importVatEstimate';
+        default: {
+          const exhaustive: never = code;
+          return exhaustive;
+        }
+      }
+    }
+
+    /** Flatten a line tree — nested breakdown lines carry codes too. */
+    function flattenLines(lines: readonly ItemizedCost[]): ItemizedCost[] {
+      return lines.flatMap((line) => [
+        line,
+        ...flattenLines(line.breakdown ?? []),
+      ]);
+    }
+
+    /** Every emitted line: code present, from the closed set, category-consistent. */
+    function expectCodesWellFormed(
+      result: Awaited<
+        ReturnType<LandedCostCalculatorService['calculate']>
+      >,
+    ): void {
+      const lines = flattenLines(result.itemizedCosts);
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) {
+        expect(line.code).toBeDefined();
+        expect(ALL_CODES).toContain(line.code);
+        expect(codeToCategory(line.code!)).toBe(line.category);
+      }
+    }
+
+    /** Minimal PERSONAL harness: spirits product, no transport, wired port. */
+    function createPersonalService(resolved: TripResolvedAllowances | null) {
+      const productData = createMockProductDataPort({
+        findProductById: vi.fn().mockResolvedValue({
+          ...DEFAULT_PRODUCT,
+          regulatoryClassification: 'spirits',
+          category: 'spirits',
+          volumeLitres: 1.0,
+          alcoholByVolume: 0.4,
+          containerType: 'glass',
+          depositSystemStatus: false,
+          weightKg: 1.75,
+          normalizedName: 'Jameson Irish Whiskey 40% 1 l',
+        }),
+        findRetailOffers: vi.fn().mockResolvedValue([
+          {
+            id: 700,
+            priceCents: 3690,
+            merchant: 'test-merchant-ee',
+            country: 'EE',
+            reliabilityStatus: 'VERIFIED',
+          },
+        ]),
+      });
+      return createService({
+        productData,
+        transportEstimate: createTransportEstimateStub(null),
+        travellerAllowances: {
+          resolveForTravelDate: vi.fn().mockResolvedValue(resolved),
+        },
+      });
+    }
+
+    const PERSONAL_INPUT: CalculatorInput = {
+      productId: 1,
+      quantity: 6,
+      destination: 'FI',
+      transportArrangement: 'PERSONAL',
+      transactionDate: '2026-03-15T12:00:00.000Z',
+    };
+
+    const SPIRITS_CAP: TripResolvedAllowances = {
+      dataset: { versionLabel: 'fi-allowances-2026.1' },
+      limits: [{ category: 'spirits', volumeCapLitres: 6, quantityCap: null }],
+    };
+
+    it('exercises the exhaustive switch over every member of the closed set', () => {
+      expect(ALL_CODES).toHaveLength(12);
+      for (const code of ALL_CODES) {
+        expect([
+          'foreignRetailPrice',
+          'transportCost',
+          'alcoholExciseEstimate',
+          'containerDutyEstimate',
+          'importVatEstimate',
+        ]).toContain(codeToCategory(code));
+      }
+    });
+
+    it('every emitted line — top level and nested — carries a code from the closed set', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expectCodesWellFormed(result);
+      const codes = flattenLines(result.itemizedCosts).map((l) => l.code);
+      expect(codes).toContain('foreign_retail_price');
+      expect(codes).toContain('foreign_unit_price');
+      expect(codes).toContain('transport');
+      expect(codes).toContain('alcohol_excise');
+      expect(codes).toContain('container_duty');
+      expect(codes).toContain('import_vat');
+    });
+
+    it('labels stay byte-identical — codes ride next to the unchanged English copy', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      const byLabel = new Map(result.itemizedCosts.map((c) => [c.label, c]));
+      expect(byLabel.get('Retail price')!.code).toBe('foreign_retail_price');
+      expect(byLabel.get('Transport')!.code).toBe('transport');
+      expect(byLabel.get('Alcohol excise')!.code).toBe('alcohol_excise');
+      expect(byLabel.get('Container duty')!.code).toBe('container_duty');
+      expect(byLabel.get('Import VAT (estimated)')!.code).toBe('import_vat');
+
+      // The VAT base breakdown repeats the component codes under the
+      // SAME labels — one kind, one code, regardless of nesting.
+      const baseByLabel = new Map(
+        byLabel.get('Import VAT (estimated)')!.breakdown!.map((b) => [
+          b.label,
+          b,
+        ]),
+      );
+      expect(baseByLabel.get('Retail price')!.code).toBe(
+        'foreign_retail_price',
+      );
+      expect(baseByLabel.get('Transport')!.code).toBe('transport');
+      expect(baseByLabel.get('Alcohol excise')!.code).toBe('alcohol_excise');
+      expect(baseByLabel.get('Container duty')!.code).toBe('container_duty');
+    });
+
+    it('the code never varies with the interpolated label — quantity rewording, stable code', async () => {
+      const { service } = createService();
+
+      const result = await service.calculate({ ...DEFAULT_INPUT, quantity: 3 });
+
+      const retail = result.itemizedCosts.find(
+        (c) => c.code === 'foreign_retail_price',
+      )!;
+      expect(retail.breakdown![0].label).toBe('Unit price (x3)');
+      expect(retail.breakdown![0].code).toBe('foreign_unit_price');
+    });
+
+    it('a domestic delivery keeps the plain codes and emits no import-VAT line', async () => {
+      const productData = createMockProductDataPort({
+        findRetailOffers: vi.fn().mockResolvedValue([
+          {
+            id: 100,
+            priceCents: 200,
+            merchant: 'alko',
+            country: 'FI',
+            reliabilityStatus: 'VERIFIED',
+          },
+        ]),
+      });
+      const { service } = createService({ productData });
+
+      const result = await service.calculate(DEFAULT_INPUT);
+
+      expectCodesWellFormed(result);
+      const codes = flattenLines(result.itemizedCosts).map((l) => l.code);
+      expect(codes).not.toContain('import_vat');
+      expect(codes).toEqual([
+        'foreign_retail_price',
+        'foreign_unit_price',
+        'transport',
+        'alcohol_excise',
+        'container_duty',
+      ]);
+    });
+
+    it('within-allowance lines carry the *_within_allowance codes', async () => {
+      const { service } = createPersonalService(SPIRITS_CAP);
+
+      const result = await service.calculate({
+        ...PERSONAL_INPUT,
+        quantity: 6,
+      });
+
+      expectCodesWellFormed(result);
+      const byLabel = new Map(result.itemizedCosts.map((c) => [c.label, c]));
+      expect(
+        byLabel.get('Alcohol excise (within traveller allowance)')!.code,
+      ).toBe('alcohol_excise_within_allowance');
+      expect(
+        byLabel.get('Container duty (within traveller allowance)')!.code,
+      ).toBe('container_duty_within_allowance');
+      expect(
+        byLabel.get('Import VAT (within traveller allowance)')!.code,
+      ).toBe('import_vat_within_allowance');
+      // The capped components have no surplus lines and no plain lines.
+      expect(byLabel.has('Alcohol excise (over-allowance surplus)')).toBe(
+        false,
+      );
+      expect(byLabel.has('Alcohol excise')).toBe(false);
+    });
+
+    it('over-allowance lines carry the *_over_allowance codes — the plain VAT code stays out', async () => {
+      const { service } = createPersonalService(SPIRITS_CAP);
+
+      const result = await service.calculate({
+        ...PERSONAL_INPUT,
+        quantity: 12,
+      });
+
+      expectCodesWellFormed(result);
+      const byLabel = new Map(result.itemizedCosts.map((c) => [c.label, c]));
+      expect(byLabel.get('Alcohol excise (over-allowance surplus)')!.code).toBe(
+        'alcohol_excise_over_allowance',
+      );
+      expect(
+        byLabel.get('Container duty (over-allowance surplus)')!.code,
+      ).toBe('container_duty_over_allowance');
+      expect(
+        byLabel.get('Import VAT (over-allowance surplus, estimated)')!.code,
+      ).toBe('import_vat_over_allowance');
+      expect(byLabel.has('Import VAT (estimated)')).toBe(false);
     });
   });
 });
