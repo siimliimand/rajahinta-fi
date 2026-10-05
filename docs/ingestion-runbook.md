@@ -649,29 +649,37 @@ the one that qualifies them; extra same-day ticks converge).
 
 ---
 
-## 7. History summary backfill (`scripts/backfill-history-summaries.ts`)
+## 7. History summary backfill (initial convergence and targeted re-scans)
 
 Operational sequence for closing `price_history_summaries` coverage
 gaps — products whose observation history exists but whose daily
-buckets were never materialized (task 1.3, change
-`watermark-isolation-history-backfill`, design D3). The client-visible
-symptom is the calculator result page's "Hintahistoria" panel stuck on
-its gray loading skeleton and product pages missing the 90-day
-price-context figures. Run this when the summary-coverage metric or a
-spot check shows products with observations but empty historical
-series, after an aggregation outage window, or after an incident
-investigation names specific gap products. Nothing schedules the
-backfill — it runs when an operator runs it.
+buckets were never materialized. The client-visible symptom is the
+calculator result page's "Hintahistoria" panel stuck on its gray
+loading skeleton and product pages missing the 90-day price-context
+figures. Two procedures, by state:
 
-The mechanism is the aggregation job's own documented contract:
-"manual re-scans can lower the watermark directly"
-(`apps/api-worker/src/cron/time-series-aggregation.ts`). The script
-only moves the watermark and verifies; every summary row is written by
-the aggregation job's own idempotent per-bucket upserts during a
-regular tick. Request-path aggregation is never involved — "charts
+- **Initial backfill (§7.1) — the primary path.** The aggregation pass
+  is cursor-chunked (change `aggregation-cursor-chunking`): each */30
+  tick aggregates a bounded ≤300-product slice just above the
+  `time-series-backfill-cursor` row and advances the cursor only after
+  that chunk's writes succeed. The ticks converge on their own —
+  deploy and wait, no script, no per-tick operator action.
+- **Targeted re-scan (§7.3–§7.5) — post-convergence corrections.**
+  `scripts/backfill-history-summaries.ts` `--lower`/`--restore` close
+  specific gaps: a correction whose offers were re-observed, an
+  aggregation outage window, incident-named products. It assumes a
+  persisted `time-series-aggregation` watermark exists to lower and
+  restore — exactly the post-convergence state — and runs only when an
+  operator runs it.
+
+In both procedures every summary row is written by the aggregation
+job's idempotent per-bucket upserts during a regular tick (the
+targeted path through the job's documented "manual re-scans can lower
+the watermark directly" contract); the script only moves the watermark
+and verifies. Request-path aggregation is never involved — "charts
 never recompute raw history" is an architecture rule, and the gap is
 filled by the batch job exactly as the spec's backfill scenario
-requires. Re-running the procedure converges: an extra tick over an
+requires. Re-running either procedure converges: an extra tick over an
 already-summarized range rewrites identical rows and re-running the
 script's phases is a no-op.
 
@@ -679,29 +687,103 @@ Every artifact this section references is in the repository:
 
 | Artifact | Path |
 |---|---|
-| Backfill script (plan/lower/restore/verify) | `scripts/backfill-history-summaries.ts` |
-| Aggregation job (watermark `time-series-aggregation`, idempotent upserts) | `apps/api-worker/src/cron/time-series-aggregation.ts` |
+| Aggregation job (watermark `time-series-aggregation`, backfill cursor, idempotent upserts) | `apps/api-worker/src/cron/time-series-aggregation.ts` |
+| Backfill script (plan/lower/restore/verify — targeted re-scans) | `scripts/backfill-history-summaries.ts` |
+| Coverage alert (`RajahintaHistorySummaryCoverageBelowInvariant`) | `infra/grafana/data-quality-alerts.yaml` |
+| Coverage dashboard panel ("History summary coverage") | `infra/grafana/data-quality-dashboard.json` |
 | Watermark repository (read/upsert contract) | `packages/data-platform/src/repositories/d1/aggregation-watermark.repository.ts` |
 | Weekly bucket anchor (`startOfIsoWeek`, reused by the script) | `packages/data-platform/src/d1/summary-aggregation.ts` |
 | Cron dispatch (the shared 30-minute tick) | `apps/api-worker/src/cron/router.ts` |
 | Historical route (serves series from summaries only) | `apps/api-worker/src/routes/historical.routes.ts` |
 
-Roles: the **ops lead** executes the backfill against an environment
-and records the before/after numbers; the **platform engineer** owns
-the script and the aggregation job.
+Roles: the **ops lead** deploys, watches convergence, silences and
+un-silences the coverage alert, and executes targeted re-scans against
+an environment, recording before/after numbers; the **platform
+engineer** owns the script and the aggregation job.
 
-### 7.1 How the procedure works (design D3)
+### 7.1 Primary procedure — initial backfill: deploy and let the */30 ticks converge
+
+The initial backfill needs no script. Before the first convergence
+there is no `time-series-aggregation` watermark to lower — the
+production execution of the original procedure paused at `--plan` on
+exactly that outcome (2026-10-05: the pass had never completed; every
+tick died at the 15-minute wall re-aggregating the same ~880-product
+prefix) — and the cursor-chunked pass turns the ticks themselves into
+bounded, resumable progress.
+
+1. **Deploy** the cursor-chunked aggregation (change
+   `aggregation-cursor-chunking`). Nothing else to configure.
+2. **Wait for convergence.** 10,264 products / 300 per tick ≈ 35
+   ticks ≈ 17 h at the */30 cadence. Each tick logs
+   `Scanning observations from <date> (watermark: none)` followed by
+   `Aggregated N summary buckets across M products (chunk of K active,
+   cursor was C); backfill continues next tick` — N ≈ 300 every tick,
+   and a killed invocation resumes at its last completed chunk. Ticks
+   re-scan the R2 partitions each pass until the watermark lands:
+   expected, and it disappears at convergence.
+3. **Watch convergence.** The `rajahinta_history_summary_coverage_ratio`
+   gauge (written after each tick's chunk writes) must rise
+   tick-over-tick — the data-quality dashboard's "History summary
+   coverage" panel plots it (~0.09 → 1). Read-only spot checks at any
+   point: the script's `--verify`, or the §7.6 SQL.
+4. **Done when all three hold:** the §7.6 verification query answers
+   `products_missing_summaries = 0`; `aggregation_watermarks` has the
+   `time-series-aggregation` row at the activity high water; and the
+   `time-series-backfill-cursor` row is gone (the final tick's log
+   ends `; pass complete, watermark now <instant>`).
+
+```bash
+cd apps/api-worker
+wrangler d1 execute DB --remote --env production --command \
+  "SELECT job_name, watermark FROM aggregation_watermarks \
+     WHERE job_name IN ('time-series-aggregation', 'time-series-backfill-cursor')" -y
+```
+
+Expected: exactly one row — `time-series-aggregation`, at the activity
+high water.
+
+**The coverage alert fires BY DESIGN during this window — read §7.2
+before reacting to it.**
+
+### 7.2 Grafana during convergence — `RajahintaHistorySummaryCoverageBelowInvariant` fires by design
+
+The alert (`infra/grafana/data-quality-alerts.yaml`, `lt 1` on
+`rajahinta_history_summary_coverage_ratio`, `for: 1h`) firing during
+the convergence window is the alert doing its job: the invariant IS
+unmet while the backfill runs.
+
+- **Silence it for the window** in Grafana Cloud (a silence rule or
+  mute timing), expiry ≈ deploy + 17 h.
+- **Confirm it clears** when the coverage check answers 0 (§7.6 /
+  `--verify`), then lift the silence.
+- **A ratio that FAILS to rise tick-over-tick is the real regression
+  signal** — the chunked pass is not progressing. Do not ride the
+  silence: check the tick logs (`exceededWallTime` or error outcomes,
+  the per-tick cursor advance of §7.1's log lines) and escalate to the
+  aggregation-job owners. The alert's `noDataState: Alerting` firing
+  (the gauge not written at all) is likewise a real regression.
+
+### 7.3 Targeted re-scan path — dry-run first, then lower (post-convergence corrections)
+
+The script's `--lower`/`--restore` assume a persisted
+`time-series-aggregation` watermark exists to lower and restore — the
+post-convergence state after §7.1. Run this path for corrections whose
+offers were re-observed, to re-scan an aggregation outage window, or
+for the named gap products of an incident investigation. During the
+initial backfill it is the wrong tool — there is nothing to lower; the
+convergence procedure of §7.1 owns that state. The mechanism
+(watermark-isolation-history-backfill design D3):
 
 1. **Read the watermark.** The script reads the persisted watermark of
    the `time-series-aggregation` row ONLY — the job-scoped read is the
-   table's contract, and the incident this change fixed was exactly a
+   table's contract, and the incident that change fixed was exactly a
    non-ISO row (`9194`) shadowing table-wide reads. The script never
    touches any other job's row.
 2. **Find the earliest unsummarized observation.** Products with
    `retail_offers` rows in the window but zero `daily` summary buckets
-   (the coverage check of design D4's D1 pair — the R2 observation log
-   mirrors these offer appends via `retail_offer_id`). The window is
-   bounded to the last 365 days (design D3; the historical route's
+   (the coverage check of that change's D1 pair — the R2 observation
+   log mirrors these offer appends via `retail_offer_id`). The window
+   is bounded to the last 365 days (the historical route's
    `MAX_RANGE_DAYS`), changeable with `--window-days`.
 3. **Lower the watermark** to the earliest unsummarized observation's
    ISO-week Monday (`startOfIsoWeek`, the same pure helper the job's
@@ -712,8 +794,10 @@ the script and the aggregation job.
 4. **Trigger the aggregation** (§7.4). The tick scans from the lowered
    watermark, upserts every missing bucket idempotently, and — only
    after all writes succeed — advances the watermark to the activity
-   high water by itself.
-5. **Restore and verify.** The verification query must answer
+   high water by itself. A lowered window too large for one
+   invocation's budget chunk-walks through the same cursor protocol as
+   §7.1, so a multi-tick re-scan is progress, not a failure.
+5. **Restore and verify** (§7.5). The verification query must answer
    `products_missing_summaries = 0`. The restore step never regresses
    the watermark: a completed tick leaves it at the activity high
    water (≥ the pre-backfill value), which supersedes the restore; the
@@ -721,14 +805,13 @@ the script and the aggregation job.
    still below it, or explicitly via `--force` (abort).
 
 The apply path is deliberately two operator steps with the trigger
-between them — there is no single "--apply", because the aggregation
+between them — there is no single `--apply`, because the aggregation
 cannot be fired synchronously by the script.
 
-### 7.2 Dry-run first (always)
-
-Run from the repo root (the path is relative to the `data-platform`
-package cwd, same convention as `scripts/seed-d1.ts`). `--plan` is the
-default phase and writes nothing:
+**Dry-run first (always).** Run from the repo root (the path is
+relative to the `data-platform` package cwd, same convention as
+`scripts/seed-d1.ts`). `--plan` is the default phase and writes
+nothing:
 
 ```bash
 pnpm --filter @rajahinta/data-platform exec tsx ../../scripts/backfill-history-summaries.ts --remote --env production --plan
@@ -742,11 +825,13 @@ follow the seed-d1 conventions: `--remote --env staging|production`,
 credentials; used by the script's own verification).
 
 Expected plan outcomes: `coverage invariant HOLDS` (nothing to do),
-`no persisted watermark` (the next tick scans from the epoch by
-contract — skip §7.3), `already at/below the lowering target` (skip
-§7.3), or the `WOULD lower` plan (proceed).
+`no persisted watermark` (**the pre-convergence state — do not lower;
+there is nothing to lower, the next tick scans from the epoch by
+contract and §7.1's convergence does the work**), `already at/below
+the lowering target` (skip the lowering below), or the `WOULD lower`
+plan (proceed).
 
-### 7.3 Apply step 1 — lower the watermark
+**Apply step 1 — lower the watermark.**
 
 ```bash
 pnpm --filter @rajahinta/data-platform exec tsx ../../scripts/backfill-history-summaries.ts --remote --env production --lower
@@ -763,18 +848,24 @@ superseded attempt it starts a fresh lowering.
 
 ### 7.4 Trigger the aggregation
 
-There is no one-off "aggregate now" command for the deployed Worker —
-the time-series aggregation fires on the shared 30-minute tick
+Under §7.1 no trigger is needed — the ticks run themselves. This
+subsection is the manual trigger for the targeted re-scan path (and
+for out-of-band verification ticks). There is no one-off "aggregate
+now" command for the deployed Worker — the time-series aggregation
+fires on the shared 30-minute tick
 (`*/30 * * * *`, `AGGREGATION_CRON`), exactly like the savings
 snapshots in §6.1. Two established paths:
 
 1. **Wait for the next tick** (at most 30 minutes). Workers Logs,
-   `time-series-aggregation` handler, expect one line per the job's
-   protocol: `Scanning observations from <date> (watermark: <lowered>)`
-   followed by `Aggregated N summary buckets across M products;
-   watermark now <instant>`. The watermark in that line must be the
-   activity high water (≥ the pre-backfill value) — the tick advances
-   it only after every summary write succeeded.
+   `time-series-aggregation` handler, expect the job's protocol lines:
+   `Scanning observations from <date> (watermark: <lowered>)` followed
+   by `Aggregated N summary buckets across M products (chunk of K
+   active, cursor was C)…`. A mid-pass tick appends
+   `; backfill continues next tick` and leaves the watermark untouched
+   (the cursor is the progress marker); the pass-completing tick
+   appends `; pass complete, watermark now <instant>` and that instant
+   must be the activity high water (≥ the pre-backfill value) — the
+   tick advances it only after every summary write succeeded.
 2. **Out-of-band trigger against real bindings** (the proven
    curated-rate-refresh path, transport-confidence-unlock change
    notes) — uploads the working-tree bundle and fires the scheduled
@@ -801,7 +892,7 @@ pnpm --filter @rajahinta/data-platform exec tsx ../../scripts/backfill-history-s
 ```
 
 `--restore` runs the verification query and applies the restore rule
-of §7.1 step 5. Outcomes:
+of §7.3 step 5. Outcomes:
 
 - **PASSED** — coverage holds; the watermark ends at or above the
   pre-backfill value (the tick's own advance) and the state file is
@@ -844,22 +935,47 @@ pnpm --filter @rajahinta/data-platform exec tsx ../../scripts/backfill-history-s
 
 ### 7.7 Verification checklist (history summary backfill)
 
+Initial backfill (§7.1):
+
+- [ ] Cursor-chunked aggregation deployed; first post-deploy tick logs
+      `Scanning observations from <date> (watermark: none)`.
+- [ ] `RajahintaHistorySummaryCoverageBelowInvariant` silenced for the
+      window (§7.2); silence expiry recorded (≈ deploy + 17 h).
+- [ ] Coverage ratio rising tick-over-tick on the "History summary
+      coverage" panel; a flat or falling ratio treated as the
+      regression signal (escalate), not silenced through.
+- [ ] Per-tick log cadence `Aggregated N summary buckets across M
+      products (chunk of K active, cursor was C); backfill continues
+      next tick` with no `exceededWallTime` on the handler.
+- [ ] §7.6 verification query answers `products_missing_summaries = 0`
+      (or `--verify` exit 0).
+- [ ] §7.1's watermark/cursor query answered exactly one row:
+      `time-series-aggregation` at the activity high water;
+      `time-series-backfill-cursor` gone.
+- [ ] Alert unsilenced and confirmed cleared.
+- [ ] A previously gapped product's series is served end to end:
+      `curl -H "x-age-confirmed: 1" "$API_URL/api/v1/products/<gapId>/price-history?granularity=day&from=...&to=..."`
+      returns a non-empty `series` (the calculator's Hintahistoria
+      panel renders).
+- [ ] Before/after numbers transcribed with the verified-at timestamp
+      — filled by the operator only, never pre-filled.
+
+Targeted re-scan (§7.3–§7.5):
+
 - [ ] `--plan` run first; the gap products and lowering target from
       its output recorded in the change notes or an ops note.
 - [ ] `--lower` succeeded; state file present; the only watermark
       change is the `time-series-aggregation` row (spot-checkable with
       a `SELECT job_name, watermark FROM aggregation_watermarks` —
-      other jobs' rows, including the savings cursor, untouched).
-- [ ] Aggregation tick observed (§7.4): `Aggregated N summary buckets`
-      log line with the watermark advanced to the activity high water.
+      other jobs' rows, including the backfill cursor, untouched).
+- [ ] Aggregation tick observed (§7.4): the
+      `; pass complete, watermark now <instant>` log line with the
+      watermark at the activity high water.
 - [ ] `--restore` PASSED (exit 0); state file removed; the watermark
       ended at or above the pre-backfill value.
 - [ ] §7.6 verification query answers `products_missing_summaries = 0`
       (or `--verify` exit 0).
-- [ ] A gapped product's series is served end to end:
-      `curl -H "x-age-confirmed: 1" "$API_URL/api/v1/products/<gapId>/price-history?granularity=day&from=...&to=..."`
-      returns a non-empty `series` (the calculator's Hintahistoria
-      panel renders).
+- [ ] A gapped product's series is served end to end (the curl above).
 - [ ] Before/after numbers transcribed with the verified-at timestamp
       — filled by the operator only, never pre-filled.
 
