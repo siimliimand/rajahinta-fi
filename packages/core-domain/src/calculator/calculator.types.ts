@@ -320,11 +320,49 @@ export type CostCategory =
   | 'importVatEstimate';
 
 /**
+ * Closed-set machine-readable code identifying WHICH line a cost line is
+ * (design D1, change fi-locale-surface-hardening) — the stable join key
+ * consumers localize against, emitted next to the unchanged English
+ * `label`. One code per distinct line kind; the traveller-allowance
+ * portions are distinct kinds from their plain engine counterparts, and
+ * the same kind shares one code across nesting (the import-VAT base
+ * breakdown repeats the component codes). Unlike `label`, a code never
+ * carries display copy and is never quantity-interpolated, so a label
+ * rewording cannot break a consumer mapping.
+ *
+ * Closed on purpose: a new line kind adds a member here and a case at
+ * every exhaustive switch — an unknown code never exists silently.
+ * Optional on the type because the contract also re-materializes persisted
+ * breakdowns: every line the calculator emits carries a code, while lines
+ * replayed from pre-code records lack the key, and consumers fall back to
+ * the verbatim label (absence is the legacy state, never a blank render).
+ */
+export type CostLineCode =
+  | 'foreign_retail_price'
+  | 'foreign_unit_price'
+  | 'transport'
+  | 'alcohol_excise'
+  | 'container_duty'
+  | 'alcohol_excise_within_allowance'
+  | 'container_duty_within_allowance'
+  | 'alcohol_excise_over_allowance'
+  | 'container_duty_over_allowance'
+  | 'import_vat'
+  | 'import_vat_over_allowance'
+  | 'import_vat_within_allowance';
+
+/**
  * A single itemized cost line in the calculation result.
  */
 export interface ItemizedCost {
   /** Human-readable label (e.g. "Retail price", "Transport", "Excise duty"). */
   readonly label: string;
+  /**
+   * Closed-set line code (see {@link CostLineCode}) — additive in change
+   * fi-locale-surface-hardening; the English `label` is unchanged display
+   * copy and stays byte-identical on the wire.
+   */
+  readonly code?: CostLineCode;
   /** Machine-readable category identifying the cost component. */
   readonly category: CostCategory;
   /** Amount in euro-cents. */

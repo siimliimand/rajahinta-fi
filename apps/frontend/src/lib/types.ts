@@ -95,6 +95,14 @@ export interface ProductDetail {
 export interface RetailOffer {
   readonly id: number;
   readonly merchant: string;
+  /**
+   * Registry display name for `merchant` (fi-locale-surface-hardening
+   * 2.5, additive) — resolved by the API from merchant_registry at read
+   * time. Absent when the merchant is unregistered or the lookup
+   * degraded: render `merchantName ?? merchant`, and keep `merchant` as
+   * the id for links, filters, and analytics.
+   */
+  readonly merchantName?: string;
   readonly country: string;
   readonly priceCents: number;
   readonly currency: string;

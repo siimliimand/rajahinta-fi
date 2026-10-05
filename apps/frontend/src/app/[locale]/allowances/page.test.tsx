@@ -177,6 +177,44 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
+// Localized date prose (fi-locale-surface-hardening 2.4): the effective-
+// window bounds and the caps date are date-only ISO values in the
+// payload and must render as Finnish calendar dates, never raw ISO.
+// ---------------------------------------------------------------------------
+
+describe('AllowancesPage localized date prose (2.4)', () => {
+  it('renders the window bounds and the caps date as localized numeric dates', async () => {
+    await renderAllowancesPage();
+
+    // "1.1.2026 alkaen, toistaiseksi" — not "2026-01-01 alkaen".
+    expect(screen.getAllByText('1.1.2026 alkaen, toistaiseksi').length).toBeGreaterThan(0);
+    // The caps heading carries the localized requested date.
+    expect(screen.getByText('Määrät päivälle 4.10.2026')).toBeInTheDocument();
+    // Raw ISO never leaks into the prose.
+    expect(screen.queryByText(/2026-01-01/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/2026-10-04/)).not.toBeInTheDocument();
+  });
+
+  it('states a closed window with both bounds localized', async () => {
+    const closed: AllowancesOutcome = {
+      kind: 'ok',
+      payload: {
+        ...OK_OUTCOME.payload,
+        limits: [
+          {
+            ...OK_OUTCOME.payload.limits[0]!,
+            effectiveTo: '2026-06-30',
+          },
+        ],
+      },
+    };
+    await renderAllowancesPage(closed);
+
+    expect(screen.getByText('1.1.2026 – 30.6.2026')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Summary lines (5.1)
 // ---------------------------------------------------------------------------
 

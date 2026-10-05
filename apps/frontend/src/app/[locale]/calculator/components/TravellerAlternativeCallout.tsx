@@ -4,18 +4,10 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
+import { formatMoney } from '@/lib/format/money';
 import type { TravellerAlternative } from '@/lib/types';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Format cents to a euro string (shared frontend convention). */
-function formatEur(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`;
-}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -53,6 +45,7 @@ export default function TravellerAlternativeCallout({
   quantity,
 }: TravellerAlternativeCalloutProps) {
   const t = useTranslations('CalculatorResult');
+  const locale = useLocale();
 
   return (
     <div
@@ -65,10 +58,10 @@ export default function TravellerAlternativeCallout({
       <p className="mt-1 text-sm leading-relaxed text-gray-700">
         {alternative.withinAllowance
           ? t('travellerAlternative.estimateWithin', {
-              amount: formatEur(alternative.estimatedTotalCents),
+              amount: formatMoney(alternative.estimatedTotalCents, locale),
             })
           : t('travellerAlternative.estimatePartial', {
-              amount: formatEur(alternative.estimatedTotalCents),
+              amount: formatMoney(alternative.estimatedTotalCents, locale),
             })}
       </p>
       <p

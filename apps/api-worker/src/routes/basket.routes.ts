@@ -14,7 +14,20 @@
  *
  * The response additionally carries an advisory `packing` section
  * (PackingSuggestion) computed from the curated product_dimensions /
- * carrier_box_types tables.
+ * carrier_box_types tables, and the additive `merchantName` display
+ * name on every shipment, recommended combination and alternatives
+ * alike (fi-locale-surface-hardening 2.5, design D3): resolved from
+ * merchant_registry by the shipment's `merchant` id, falling back to
+ * the raw id. The enrichment composes after the content hash, so the
+ * cached payload keeps identifying the optimization.
+ *
+ * Cost lines pass through untouched (fi-locale-surface-hardening 2.2):
+ * every shipment `items` line keeps the additive closed-set `code` beside
+ * its byte-identical English `label` (legacy/absent codes stay absent,
+ * never nulled). The response assembly spreads the optimizer result
+ * rather than re-mapping cost lines — a field-selective mapping or a
+ * strict response schema here would silently strip `code`, the stable
+ * join key the fi surface localizes against.
  *
  * @module BasketRoutes
  */
@@ -43,6 +56,7 @@ import type {
   BasketOptimizationResult,
   BasketOptimizationInput,
 } from '../../../../packages/core-domain/src/optimizer/optimizer.types';
+import type { BasketShipment } from '../../../../packages/core-domain/src/optimizer/optimizer.types';
 import type { TransportArrangement } from '../../../../packages/core-domain/src/calculator/calculator.types';
 import {
   D1ProductDataPort,
@@ -60,6 +74,7 @@ import {
 import { D1TaxRuleRepositoryAdapter } from '../../../../packages/data-platform/src/repositories/d1/tax-rate.repository';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 import { D1TransportOfferRepository } from '../../../../packages/data-platform/src/repositories/d1/transport-offer.repository';
+import { D1MerchantRegistryRepository } from '../../../../packages/data-platform/src/repositories/d1/merchant-registry.repository';
 import type { ITaxRuleRepositoryPort } from '../../../../packages/core-domain/src/tax/ports/tax-rule-repository.port';
 import {
   LandedCostCalculatorService,
@@ -114,6 +129,73 @@ export function buildBasketOptimizerService(d1: AppEnv['Bindings']['DB']): {
 type BasketOptimizeResponse = BasketOptimizationResult & {
   readonly packing?: PackingSuggestion;
 };
+
+/** A shipment with the additive registry display name beside its id. */
+type BasketShipmentResponse = BasketShipment & {
+  readonly merchantName: string;
+};
+
+/**
+ * Registry display names for the response's merchant ids
+ * (fi-locale-surface-hardening 2.5, design D3) — one list read (the
+ * registry is operator-scale), keyed by merchant id. Fail-open: a
+ * registry failure returns an empty map and every shipment falls back
+ * to the raw id.
+ */
+async function merchantDisplayNames(
+  d1: AppEnv['Bindings']['DB'],
+  merchants: readonly string[],
+): Promise<Map<string, string>> {
+  if (merchants.length === 0) return new Map();
+  try {
+    const rows = await new D1MerchantRegistryRepository(d1).list();
+    return new Map(rows.map((row) => [row.merchantId, row.name]));
+  } catch {
+    return new Map();
+  }
+}
+
+/**
+ * Attach the additive `merchantName` to every shipment — recommended
+ * combination and alternatives alike — and the advisory packing
+ * section. Strictly additive display data: figures, ordering, and
+ * confidence are the optimizer result verbatim, and the enrichment runs
+ * after the content hash is taken so the cached payload keeps
+ * identifying the optimization.
+ */
+function withMerchantNames(
+  result: BasketOptimizationResult,
+  names: ReadonlyMap<string, string>,
+  packing: PackingSuggestion,
+): BasketOptimizeResponse {
+  const namedShipment = (
+    shipment: BasketShipment,
+  ): BasketShipmentResponse => ({
+    ...shipment,
+    merchantName: names.get(shipment.merchant) ?? shipment.merchant,
+  });
+  return {
+    ...result,
+    shipments: result.shipments.map(namedShipment),
+    alternatives: result.alternatives.map((alternative) => ({
+      ...alternative,
+      shipments: alternative.shipments.map(namedShipment),
+    })),
+    packing,
+  };
+}
+
+/** Distinct merchant ids across a result's shipments and alternatives. */
+function merchantIdsOf(result: BasketOptimizationResult): string[] {
+  return [
+    ...new Set([
+      ...result.shipments.map((shipment) => shipment.merchant),
+      ...result.alternatives.flatMap((alternative) =>
+        alternative.shipments.map((shipment) => shipment.merchant),
+      ),
+    ]),
+  ];
+}
 
 /**
  * Build the packing suggestion for the requested basket lines (task 3.3).
@@ -288,10 +370,15 @@ async function optimize(c: Context<AppEnv>): Promise<Response> {
   if (cached !== null) {
     c.header('X-Cache', 'HIT');
     c.header('X-Content-Hash', await idempotencyContentHash(cached.result));
-    return c.json({
-      ...(cached.result as BasketOptimizationResult),
-      packing,
-    } satisfies BasketOptimizeResponse);
+    const cachedResult = cached.result as BasketOptimizationResult;
+    // Names resolve from the cached result's own merchants — the cache
+    // stores the optimizer result only, so an operator's registry edit
+    // shows on the next read without invalidating anything.
+    const names = await merchantDisplayNames(
+      c.env.DB,
+      merchantIdsOf(cachedResult),
+    );
+    return c.json(withMerchantNames(cachedResult, names, packing));
   }
 
   try {
@@ -308,7 +395,10 @@ async function optimize(c: Context<AppEnv>): Promise<Response> {
 
     c.header('X-Cache', 'MISS');
     c.header('X-Content-Hash', await idempotencyContentHash(result));
-    return c.json({ ...result, packing } satisfies BasketOptimizeResponse);
+    // Names resolve after the optimizer (it picks the merchants) and
+    // after the hash — strictly additive display enrichment.
+    const names = await merchantDisplayNames(c.env.DB, merchantIdsOf(result));
+    return c.json(withMerchantNames(result, names, packing));
   } catch (err) {
     if (err instanceof BasketValidationError) {
       // Specific codes map to 404; the rest carry the validation payload.

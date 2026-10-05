@@ -343,10 +343,11 @@ describe('ProductPage Retail prices table', () => {
     const saksoinetRow = rows.find((row) =>
       row.textContent?.includes('saksoinet'),
     );
-    // Each row carries the CURRENT price and the LATEST observed date.
-    expect(alkoRow).toHaveTextContent('19.99 €');
+    // Each row carries the CURRENT price and the LATEST observed date
+    // (fi money form, fi-locale-surface-hardening 2.4).
+    expect(alkoRow).toHaveTextContent('19,99 €');
     expect(alkoRow).toHaveTextContent('10.9.2026');
-    expect(saksoinetRow).toHaveTextContent('15.00 €');
+    expect(saksoinetRow).toHaveTextContent('15,00 €');
     expect(saksoinetRow).toHaveTextContent('5.9.2026');
   });
 
@@ -374,5 +375,47 @@ describe('ProductPage Retail prices table', () => {
 
     expect(screen.getByText('Ei aktiivisia hintahavaintoja.')).toBeInTheDocument();
     expect(screen.queryByText('Myyjä')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Merchant display names (fi-locale-surface-hardening 2.5): the offer
+// row presents the registry display name the API resolves additively;
+// an unregistered merchant renders its raw id — never a blank row.
+// ---------------------------------------------------------------------------
+
+describe('ProductPage merchant display names (2.5)', () => {
+  it('renders the registry display name on the offer row when the API resolves one', async () => {
+    mockedGetServerProductDetail.mockResolvedValue(
+      detailResponse([
+        offer({ merchant: 'alko', merchantName: 'Alko Oy' }),
+        offer({
+          id: 13,
+          merchant: 'saksoinet',
+          merchantName: 'Saksoinet.fi',
+          priceCents: 1500,
+        }),
+      ]),
+    );
+
+    render(
+      await ProductPage({ params: Promise.resolve({ locale: 'fi', id: '42' }) }),
+    );
+
+    const table = screen.getByText('Myyjä').closest('table')!;
+    expect(table.textContent).toContain('Alko Oy');
+    expect(table.textContent).toContain('Saksoinet.fi');
+  });
+
+  it('falls back to the raw merchant id when no display name is present', async () => {
+    mockedGetServerProductDetail.mockResolvedValue(
+      detailResponse([offer({ merchant: 'mydrink' })]),
+    );
+
+    render(
+      await ProductPage({ params: Promise.resolve({ locale: 'fi', id: '42' }) }),
+    );
+
+    expect(screen.getByText('mydrink')).toBeInTheDocument();
   });
 });

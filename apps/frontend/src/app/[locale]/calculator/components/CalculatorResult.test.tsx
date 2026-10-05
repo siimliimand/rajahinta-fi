@@ -17,8 +17,9 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { NextIntlClientProvider } from 'next-intl';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CalculatorResult, { EVIDENCE_MESSAGE_KEYS } from './CalculatorResult';
 import { renderWithIntl } from '@/lib/testing/test-intl';
@@ -171,10 +172,11 @@ describe('CalculatorResult alkoBenchmark line (task 4.3)', () => {
     const line = screen.getByTestId('alko-benchmark');
     expect(line).toBeVisible();
 
-    // Reference price reuses the view's EUR helper; difference is signed
-    // in euros and percent at one decimal, matching the API's rounding.
-    expect(line.textContent).toContain('Alkon hinta: €31.50');
-    expect(line.textContent).toContain('Ero: +€8.50 (+27.0 %)');
+    // Reference price reuses the shared money helper; difference is
+    // signed in euros and percent at one decimal, matching the API's
+    // rounding. fi money form (2.4): comma decimals, suffix symbol.
+    expect(line.textContent).toContain('Alkon hinta: 31,50\u00a0€');
+    expect(line.textContent).toContain('Ero: +8,50\u00a0€ (+27.0 %)');
     // Positive difference → the plain, non-recommendation statement.
     expect(line.textContent).toContain('Alko on edullisempi');
     // Self-consistent expected timestamp: the same locale formatting the
@@ -208,7 +210,7 @@ describe('CalculatorResult alkoBenchmark line (task 4.3)', () => {
     );
 
     const line = screen.getByTestId('alko-benchmark');
-    expect(line.textContent).toContain('Ero: -€4.50 (-14.3 %)');
+    expect(line.textContent).toContain('Ero: -4,50\u00a0€ (-14.3 %)');
     expect(line.textContent).toContain('Tuonti on edullisempaa');
     expect(line.textContent).not.toContain('Alko on edullisempi');
   });
@@ -227,7 +229,7 @@ describe('CalculatorResult alkoBenchmark line (task 4.3)', () => {
     );
 
     const line = screen.getByTestId('alko-benchmark');
-    expect(line.textContent).toContain('Ero: €0.00 (0.0 %)');
+    expect(line.textContent).toContain('Ero: 0,00\u00a0€ (0.0 %)');
     expect(line.textContent).toContain('Hinta on sama');
   });
 });
@@ -292,7 +294,7 @@ describe('CalculatorResult without alkoBenchmark (pre-change records)', () => {
     renderWithIntl(<CalculatorResult result={baseResult()} />);
 
     expect(screen.getByText('Yhteensä')).toBeInTheDocument();
-    expect(screen.getByText('€46.50')).toBeInTheDocument();
+    expect(screen.getByText('46,50 €')).toBeInTheDocument();
   });
 });
 
@@ -329,7 +331,7 @@ describe('CalculatorResult travellerAlternative callout (task 2.2)', () => {
       within(callout).getByText('Matkalaskurin arvio'),
     ).toBeInTheDocument();
     expect(callout.textContent).toContain(
-      'Yksi matkustaja, sama määrä — arvio yhteensä €40.00.',
+      'Yksi matkustaja, sama määrä — arvio yhteensä 40,00\u00a0€.',
     );
     // Allowance framing pinned to the dataset version it resolves against.
     expect(
@@ -364,7 +366,7 @@ describe('CalculatorResult travellerAlternative callout (task 2.2)', () => {
       hero.compareDocumentPosition(callout) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     // The delivery amount is byte-identical and stays the hero's figure.
-    expect(within(hero).getByText('€46.50')).toBeInTheDocument();
+    expect(within(hero).getByText('46,50 €')).toBeInTheDocument();
     // The traveller estimate never enters the delivery hero.
     expect(hero.textContent).not.toContain('Matkalaskurin arvio');
     // The delivery result's confidence badge stays outside the traveller
@@ -580,6 +582,41 @@ describe('CalculatorResult evidence message mapping (task 3.2)', () => {
       ).toBeDefined();
       expect(key.endsWith(code)).toBe(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Explicit-'en' money rendering (fi-locale-surface-hardening 2.4): the
+// money pins the fi tests replaced move here — the EN convention is
+// symbol-first dot decimals, unchanged from the pre-helper form.
+// ---------------------------------------------------------------------------
+
+describe('CalculatorResult explicit-en money rendering (2.4)', () => {
+  function renderWithEn(ui: React.ReactElement) {
+    return render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        {ui}
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('keeps the EN convention on the total and the benchmark line', () => {
+    renderWithEn(
+      <CalculatorResult
+        result={resultWithBenchmark({
+          referencePriceCents: 3150,
+          differenceCents: 850,
+          differencePercent: 27,
+          reliabilityStatus: 'VERIFIED',
+          observedAt: '2026-08-30T09:30:00.000Z',
+        })}
+      />,
+    );
+
+    expect(screen.getByText('€46.50')).toBeInTheDocument();
+    const line = screen.getByTestId('alko-benchmark');
+    expect(line.textContent).toContain('Alko price: €31.50');
+    expect(line.textContent).toContain('Difference: +€8.50 (+27.0 %)');
   });
 });
 

@@ -4,9 +4,10 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import { Card } from '@/components/ui';
+import { formatMoney } from '@/lib/format/money';
 import type { TripBreakEvenLine } from './trip.types';
 
 // ---------------------------------------------------------------------------
@@ -91,13 +92,9 @@ export function breakEvenBaskets(
 }
 
 // ---------------------------------------------------------------------------
-// Formatting — the TripBreakEvenResult conventions (figures formatted,
-// never re-rounded)
+// Formatting — the shared formatters plus the card's litre/count helpers
+// (figures formatted, never re-rounded)
 // ---------------------------------------------------------------------------
-
-function formatEur(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`;
-}
 
 function formatLitres(litres: number): string {
   return `${new Intl.NumberFormat('fi-FI', { maximumFractionDigits: 2 }).format(litres)} l`;
@@ -148,6 +145,7 @@ export default function BreakEvenCard({
   otherCostsCents,
 }: BreakEvenCardProps) {
   const t = useTranslations('TripPage');
+  const locale = useLocale();
 
   const otherCostsCollected = otherCostsCents !== undefined;
   const otherCostsCentsValue = otherCostsCollected ? otherCostsCents : 0;
@@ -170,7 +168,7 @@ export default function BreakEvenCard({
             data-testid="trip-break-even-transport"
             className="text-sm font-medium text-gray-900"
           >
-            {formatEur(transportCostCents)}
+            {formatMoney(transportCostCents, locale)}
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-4">
@@ -181,7 +179,7 @@ export default function BreakEvenCard({
             data-testid="trip-break-even-other"
             className="text-sm font-medium text-gray-900"
           >
-            {formatEur(otherCostsCentsValue)}
+            {formatMoney(otherCostsCentsValue, locale)}
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-4">
@@ -190,7 +188,7 @@ export default function BreakEvenCard({
             data-testid="trip-break-even-saving"
             className="text-sm font-medium text-gray-900"
           >
-            {formatEur(basketSaving.totalCents)}
+            {formatMoney(basketSaving.totalCents, locale)}
           </dd>
         </div>
       </dl>
@@ -216,8 +214,11 @@ export default function BreakEvenCard({
                 {t(`category.${contribution.category}`)}:{' '}
                 {t('breakEvenCard.compositionLine', {
                   litres: formatLitres(contribution.litres),
-                  difference: formatEur(contribution.differenceCentsPerLitre),
-                  saving: formatEur(contribution.savingCents),
+                  difference: formatMoney(
+                    contribution.differenceCentsPerLitre,
+                    locale,
+                  ),
+                  saving: formatMoney(contribution.savingCents, locale),
                 })}
               </li>
             ))}
@@ -242,9 +243,9 @@ export default function BreakEvenCard({
           className="mt-3 text-sm font-semibold text-gray-900"
         >
           {t('breakEvenCard.formula', {
-            transport: formatEur(transportCostCents),
-            other: formatEur(otherCostsCentsValue),
-            saving: formatEur(basketSaving.totalCents),
+            transport: formatMoney(transportCostCents, locale),
+            other: formatMoney(otherCostsCentsValue, locale),
+            saving: formatMoney(basketSaving.totalCents, locale),
             baskets: t('breakEvenCard.baskets', {
               count: formatBaskets(baskets),
             }),

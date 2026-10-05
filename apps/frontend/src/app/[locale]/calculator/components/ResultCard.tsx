@@ -4,7 +4,7 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import type {
   AlkoBenchmark,
   CalculatorResult as CalculatorResultType,
@@ -13,6 +13,8 @@ import type {
 } from '@/lib/types';
 import { RELIABILITY_STATUS_META } from '@/lib/design/status';
 import { ReliabilityBadge } from '@/components/ui';
+import { formatMoney, formatSignedMoney } from '@/lib/format/money';
+import { formatDate, formatDateTime } from '@/lib/format/date';
 import DisclaimerBanner from './DisclaimerBanner';
 import SanityNoteList from './SanityNoteList';
 import TravellerAlternativeCallout from './TravellerAlternativeCallout';
@@ -20,22 +22,6 @@ import TravellerAlternativeCallout from './TravellerAlternativeCallout';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Format cents to a euro string. */
-function formatEur(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`;
-}
-
-/**
- * Signed variant for the benchmark gap — the API's sign convention is
- * positive when the calculated offer costs more than the reference, so
- * the sign stays visible even at zero or negative figures (WhatIfResult
- * precedent).
- */
-function formatSignedEur(cents: number): string {
-  const sign = cents > 0 ? '+' : cents < 0 ? '-' : '';
-  return `${sign}${formatEur(Math.abs(cents))}`;
-}
 
 /** Signed percent at one decimal — matches the API's rounding precision. */
 function formatSignedPercent(percent: number): string {
@@ -122,6 +108,7 @@ interface ResultCardProps {
 export default function ResultCard({ result }: ResultCardProps) {
   const t = useTranslations('CalculatorResult');
   const tCommon = useTranslations('Common');
+  const locale = useLocale();
   const meta = result.metadata;
   const benchmark = result.alkoBenchmark;
   // Traveller mode (task 2.1): the allowance dataset version is present
@@ -179,7 +166,7 @@ export default function ResultCard({ result }: ResultCardProps) {
             data-testid="landed-cost-total"
             className="tabular-money mt-1 text-4xl font-extrabold text-gray-900"
           >
-            {formatEur(result.totalCents)}
+            {formatMoney(result.totalCents, locale)}
           </p>
           <p className="mt-0.5 text-xs text-gray-500">
             {t('unitsTimesDestination', {
@@ -212,12 +199,12 @@ export default function ResultCard({ result }: ResultCardProps) {
           >
             <p className="text-sm font-semibold text-primary-900">
               {t('savingsSummary.title', {
-                amount: formatEur(-benchmark.differenceCents),
+                amount: formatMoney(-benchmark.differenceCents, locale),
               })}
             </p>
             <p className="mt-1 text-xs text-primary-800">
               {t('savingsSummary.asOf', {
-                date: new Date(benchmark.observedAt).toLocaleDateString('fi-FI'),
+                date: formatDate(benchmark.observedAt.slice(0, 10), locale),
               })}
             </p>
           </div>
@@ -234,7 +221,7 @@ export default function ResultCard({ result }: ResultCardProps) {
           <span className="text-xs text-gray-500">
             {tCommon('calculatedAt')}{' '}
             <time dateTime={meta.calculationTimestamp}>
-              {new Date(meta.calculationTimestamp).toLocaleString('fi-FI')}
+              {formatDateTime(meta.calculationTimestamp, locale)}
             </time>
           </span>
         </div>
@@ -269,7 +256,7 @@ export default function ResultCard({ result }: ResultCardProps) {
           <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm text-gray-700">
               {t('alkoBenchmark.referencePrice', {
-                price: formatEur(benchmark.referencePriceCents),
+                price: formatMoney(benchmark.referencePriceCents, locale),
               })}
             </span>
             <span
@@ -277,14 +264,14 @@ export default function ResultCard({ result }: ResultCardProps) {
               className="text-sm tabular-nums text-gray-600"
             >
               {t('alkoBenchmark.difference', {
-                difference: formatSignedEur(benchmark.differenceCents),
+                difference: formatSignedMoney(benchmark.differenceCents, locale),
                 percent: formatSignedPercent(benchmark.differencePercent),
               })}
             </span>
           </div>
           <p className="mt-1 text-xs text-gray-500">
             {t('alkoBenchmark.observedAt', {
-              timestamp: new Date(benchmark.observedAt).toLocaleString('fi-FI'),
+              timestamp: formatDateTime(benchmark.observedAt, locale),
             })}
           </p>
         </div>
@@ -345,7 +332,7 @@ export default function ResultCard({ result }: ResultCardProps) {
                   ) : (
                     <div className="flex items-center gap-2">
                       <span className="text-sm tabular-nums text-gray-600">
-                        {formatEur(cost.cents)}
+                        {formatMoney(cost.cents, locale)}
                       </span>
                       <LocalizedReliabilityBadge status={cost.reliability} />
                     </div>

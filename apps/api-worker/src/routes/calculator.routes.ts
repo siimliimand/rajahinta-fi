@@ -15,6 +15,14 @@
  * controller uses IdempotencyService: version-aware derived keys,
  * verbatim client keys, X-Cache / X-Content-Hash headers.
  *
+ * Cost-line passthrough (fi-locale-surface-hardening 2.2): the calculate
+ * response serializes the service result verbatim, so every itemized line
+ * reaches the wire with the additive closed-set `code` beside its
+ * byte-identical English `label` (legacy/absent codes stay absent, never
+ * nulled). The response must not pass through a field-selective mapping
+ * or a strict response schema — either would silently strip `code`, the
+ * stable join key the fi surface localizes against.
+ *
  * @module CalculatorRoutes
  */
 

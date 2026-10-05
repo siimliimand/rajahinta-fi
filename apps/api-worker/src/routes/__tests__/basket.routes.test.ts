@@ -20,10 +20,12 @@ import {
   openMigratedD1,
   permissiveEnv,
   request,
+  seedMerchant,
   seedOffer,
   seedProduct,
   seedTaxRule,
 } from './harness';
+import type { CostLineCode } from '../../../../../packages/core-domain/src/calculator/calculator.types';
 
 const AGE = { 'x-age-confirmed': 'confirmed' };
 const JSON_HDRS = { 'content-type': 'application/json', ...AGE };
@@ -355,6 +357,74 @@ function seedOptimizableProducts(db: DatabaseSync, ids: number[]): void {
   });
 }
 
+// ---------------------------------------------------------------------------
+// fi-locale-surface-hardening 2.5 (design D3): every shipment — the
+// recommended combination and the alternatives alike — carries the
+// additive registry display name beside its unchanged merchant id.
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/basket/optimize — merchant display names (2.5)', () => {
+  it('names shipments from the registry, with the raw id as fallback on unregistered merchants', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, depositSystemStatus: 0 });
+    seedProduct(db, { id: 2, depositSystemStatus: 0 });
+    // Two merchants on one product: the recommended combination picks
+    // one, the alternative set holds the other assignment.
+    seedOffer(db, { id: 11, productId: 1, merchant: 'alko', priceCents: 350 });
+    seedOffer(db, { id: 12, productId: 1, merchant: 'mydrink', priceCents: 400 });
+    seedOffer(db, { id: 21, productId: 2, merchant: 'alko', priceCents: 500 });
+    seedMerchant(db, { merchantId: 'alko', name: 'Alko Oy' });
+    seedTaxRule(db, { taxType: 'excise', productCategory: 'beer', rate: 0.365 });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+      verified: false,
+    });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/basket/optimize', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify({ items: [{ productId: 1, quantity: 2 }], destination: 'FI' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, any>;
+
+    const named = (shipment: Record<string, unknown>) => ({
+      merchant: shipment.merchant,
+      merchantName: shipment.merchantName,
+    });
+    // Registered merchant → registry display name; unregistered → id.
+    for (const shipment of body.shipments as Array<Record<string, unknown>>) {
+      expect(named(shipment).merchantName).toBe(
+        shipment.merchant === 'alko' ? 'Alko Oy' : 'mydrink',
+      );
+    }
+    for (const alternative of body.alternatives as Array<{
+      shipments: Array<Record<string, unknown>>;
+    }>) {
+      for (const shipment of alternative.shipments) {
+        expect(named(shipment).merchantName).toBe(
+          shipment.merchant === 'alko' ? 'Alko Oy' : 'mydrink',
+        );
+      }
+    }
+    // The identifier stays byte-identical — the wire/analytics key.
+    const merchants = [
+      ...(body.shipments as Array<Record<string, unknown>>).map((s) => s.merchant),
+      ...(body.alternatives as Array<{ shipments: Array<Record<string, unknown>> }>).flatMap(
+        (a) => a.shipments.map((s) => s.merchant),
+      ),
+    ];
+    expect(merchants.length).toBeGreaterThan(0);
+    for (const merchant of merchants) {
+      expect(['alko', 'mydrink']).toContain(merchant);
+    }
+  });
+});
+
 describe('packing section', () => {
   it('appends the packing section — smallest sufficient box, COMPUTED, exact fill rate', async () => {
     const { db, d1 } = openMigratedD1();
@@ -586,5 +656,103 @@ describe('packing section', () => {
     // The cached payload is section-free; the section is attached per
     // request, so the HIT body equals the MISS body including packing.
     expect(await second.json()).toEqual(missBody);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fi-locale-surface-hardening 2.2: every shipment cost line — the
+// recommended combination and the alternatives alike — carries the
+// additive closed-set `code` beside the byte-identical English `label`,
+// spread through the merchant-name enrichment untouched.
+// ---------------------------------------------------------------------------
+
+/** The closed set every wire code must belong to (CostLineCode members). */
+const COST_LINE_CODES: readonly CostLineCode[] = [
+  'foreign_retail_price',
+  'foreign_unit_price',
+  'transport',
+  'alcohol_excise',
+  'container_duty',
+  'alcohol_excise_within_allowance',
+  'container_duty_within_allowance',
+  'alcohol_excise_over_allowance',
+  'container_duty_over_allowance',
+  'import_vat',
+  'import_vat_over_allowance',
+  'import_vat_within_allowance',
+];
+
+/** Wire shape of one itemized cost line (the ItemizedCost surface). */
+interface WireCostLine {
+  label: string;
+  code?: string;
+  category: string;
+  cents: number;
+  reliability: string;
+  breakdown?: WireCostLine[];
+}
+
+/** Depth-first flatten of a cost-line tree. */
+function flattenCostLines(lines: readonly WireCostLine[]): WireCostLine[] {
+  return lines.flatMap((line) => [
+    line,
+    ...(line.breakdown ? flattenCostLines(line.breakdown) : []),
+  ]);
+}
+
+describe('POST /api/v1/basket/optimize — cost-line wire contract (2.2)', () => {
+  it('carries the closed-set code beside the byte-identical English label on every shipment line', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedOptimizableProducts(db, [1]);
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/basket/optimize', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify(VALID_REQUEST),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      shipments: Array<{ items: WireCostLine[] }>;
+      alternatives: Array<{ shipments: Array<{ items: WireCostLine[] }> }>;
+    };
+
+    const shipments = [
+      ...body.shipments,
+      ...body.alternatives.flatMap((alternative) => alternative.shipments),
+    ];
+    expect(shipments.length).toBeGreaterThan(0);
+    for (const shipment of shipments) {
+      const lines = flattenCostLines(shipment.items);
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) {
+        expect(COST_LINE_CODES).toContain(line.code);
+      }
+    }
+
+    // Known lines keep their pre-code English labels and exact codes.
+    // The shipment view of the shared computation excludes the transport
+    // line — it is consolidated separately on the shipment.
+    const recommended = body.shipments[0];
+    expect(recommended.items.map((line) => line.label)).toEqual([
+      'Retail price',
+      'Alcohol excise',
+      'Container duty',
+    ]);
+    expect(recommended.items.map((line) => line.code)).toEqual([
+      'foreign_retail_price',
+      'alcohol_excise',
+      'container_duty',
+    ]);
+    // The retail line's unit-price breakdown rides the same contract.
+    expect(recommended.items[0].breakdown).toEqual([
+      {
+        label: 'Unit price (x2)',
+        code: 'foreign_unit_price',
+        category: 'foreignRetailPrice',
+        cents: recommended.items[0].cents,
+        reliability: recommended.items[0].reliability,
+      },
+    ]);
   });
 });

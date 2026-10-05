@@ -344,6 +344,7 @@ export type {
   AlkoBenchmarkSnapshot,
   TravellerAlternativeCallout,
   CostCategory,
+  CostLineCode,
   ItemizedCost,
   CreateCalculationRecordInput,
   Disclaimer,

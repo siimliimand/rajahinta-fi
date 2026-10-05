@@ -26,6 +26,7 @@ import {
   request,
   seedAccount,
   seedCalculationRecord,
+  seedMerchant,
   seedOffer,
   seedProduct,
 } from './harness';
@@ -882,6 +883,47 @@ describe('GET /api/v1/products/:id (detail)', () => {
     const res = await request(app, permissiveEnv(d1), '/api/v1/products/999', { headers: AGE });
     await expectEnvelope(res, 404, { message: 'Product 999 not found' });
   });
+
+  // fi-locale-surface-hardening 2.5 (design D3): the registry display
+  // name rides beside the identifier — additive, id fallback, no
+  // reordering, no schema change.
+  it('carries the registry display name on each offer, with the raw id as fallback', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    seedMerchant(db, { merchantId: 'alko', name: 'Alko Oy' });
+    seedOffer(db, { id: 11, productId: 1, merchant: 'alko', priceCents: 350 });
+    seedOffer(db, { id: 12, productId: 1, merchant: 'mydrink', priceCents: 420 });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products/1', { headers: AGE });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { offers: Array<Record<string, unknown>> };
+
+    // Registered merchant → its registry display name.
+    expect(body.offers[0]).toMatchObject({ merchant: 'alko', merchantName: 'Alko Oy' });
+    // Unregistered merchant → the raw id (the row stays renderable).
+    expect(body.offers[1]).toMatchObject({ merchant: 'mydrink', merchantName: 'mydrink' });
+
+    // The identifier stays byte-identical — it remains the wire and
+    // analytics key; the name is one additive field per offer.
+    expect(body.offers.map((o) => o.merchant)).toEqual(['alko', 'mydrink']);
+  });
+
+  it('degrades a registry read failure to id fallbacks — the detail response never fails on it', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    seedOffer(db, { id: 11, productId: 1, merchant: 'alko', priceCents: 350 });
+    // Partial registry outage: the offers join (merchant_id key) keeps
+    // working while the name column is gone, so the route's own list
+    // read fails and must fail open.
+    db.exec('ALTER TABLE merchant_registry DROP COLUMN name');
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products/1', { headers: AGE });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { offers: Array<Record<string, unknown>> };
+    expect(body.offers[0]).toMatchObject({ merchant: 'alko', merchantName: 'alko' });
+  });
 });
 
 describe('GET /api/v1/products/:id — current-offer collapse (task 4.3)', () => {
@@ -998,9 +1040,14 @@ describe('eurPerGram embed', () => {
     'lowestPriceCents',
     'merchantCount',
   ];
-  const LEGACY_OFFER_KEYS = [
+  // fi-locale-surface-hardening 2.5 adds the registry display name
+  // beside the identifier — additive, on top of the legacy key set
+  // (id..reliabilityStatus) and the €/g embed (whose insertion position
+  // is unchanged).
+  const OFFER_KEYS_WITH_MERCHANT_NAME = [
     'id',
     'merchant',
+    'merchantName',
     'country',
     'priceCents',
     'currency',
@@ -1008,6 +1055,7 @@ describe('eurPerGram embed', () => {
     'sourceUrl',
     'observedAt',
     'reliabilityStatus',
+    'eurPerGram',
   ];
 
   it('search items carry the metric — explicitly unavailable with MISSING_PRICE when no current offer exists', async () => {
@@ -1078,7 +1126,7 @@ describe('eurPerGram embed', () => {
     expect(body.offers[0]!.eurPerGram.ethanolGrams).toBeCloseTo(12.23739, 5);
     expect(body.offers[0]!.eurPerGram.centsPerGram).toBeCloseTo(28.60087, 4);
     expect(body.offers[0]!.eurPerGram.priceReliability).toBe('VERIFIED');
-    expect(Object.keys(body.offers[0]!)).toEqual([...LEGACY_OFFER_KEYS, 'eurPerGram']);
+    expect(Object.keys(body.offers[0]!)).toEqual(OFFER_KEYS_WITH_MERCHANT_NAME);
   });
 
   it('a pack row prices the package on the detail path too (task 6.1): ≈ 6.64 ¢/g, was 159.35', async () => {
@@ -1203,8 +1251,8 @@ describe('eurPerGram embed', () => {
     // mapped in place.
     expect(secondBody.offers.map((o) => o.id)).toEqual(firstBody.offers.map((o) => o.id));
     expect(secondBody.offers.map((o) => Object.keys(o))).toEqual([
-      [...LEGACY_OFFER_KEYS, 'eurPerGram'],
-      [...LEGACY_OFFER_KEYS, 'eurPerGram'],
+      OFFER_KEYS_WITH_MERCHANT_NAME,
+      OFFER_KEYS_WITH_MERCHANT_NAME,
     ]);
     expect(secondBody.offers).toEqual(firstBody.offers);
   });

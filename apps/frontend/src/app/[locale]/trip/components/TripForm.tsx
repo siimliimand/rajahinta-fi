@@ -5,8 +5,9 @@
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Button, Input } from '@/components/ui';
+import { formatDate } from '@/lib/format/date';
 import type { TripCategoryKey, TripVehicleType } from '../trip.types';
 import {
   fetchCategoryAverages,
@@ -174,6 +175,7 @@ export default function TripForm({
   validationMessages,
 }: TripFormProps) {
   const t = useTranslations('TripPage');
+  const locale = useLocale();
 
   // ── Field state (strings — parse and clamp at the submit boundary) ──
   const [passengers, setPassengers] = useState(prefill?.passengers ?? '2');
@@ -465,7 +467,11 @@ export default function TripForm({
               }
               return (
                 <p className="text-xs text-gray-500">
-                  {t('form.benchmarkNote', { asOf: latestAsOf })}
+                  {t('form.benchmarkNote', {
+                    // Localized calendar date (2.4) — "Havainnot
+                    // 4.10.2026 asti", never the raw ISO ordering key.
+                    asOf: formatDate(latestAsOf, locale),
+                  })}
                 </p>
               );
             })()

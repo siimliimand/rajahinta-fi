@@ -85,7 +85,7 @@ test.describe('calculator flow journey', () => {
     await expect(
       page.getByText(COPY.total, { exact: true }).first(),
     ).toBeVisible();
-    await expect(page.getByText(/€\d+[.,]\d{2}/).first()).toBeVisible();
+    await expect(page.getByText(/\d+[.,]\d{2}\s€/).first()).toBeVisible();
 
     // ── Quantity × destination summary (6 units, Finland) ──
     await expect(page.getByText('6 kpl × FI', { exact: true })).toBeVisible();

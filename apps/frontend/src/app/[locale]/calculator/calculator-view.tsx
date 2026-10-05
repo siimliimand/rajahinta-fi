@@ -22,7 +22,7 @@ import {
   ApiFetchError,
 } from '@/lib/api';
 import { useDebouncedCallback } from '@/lib/use-debounced-callback';
-import { formatVolume } from '@/lib/format/product-attributes';
+import { formatAttributeRow, formatVolume } from '@/lib/format/product-attributes';
 import { emitFunnelEvent } from '@/lib/telemetry/funnel-events';
 import {
   captureTimeToResultMs,
@@ -817,11 +817,11 @@ export default function CalculatorView() {
                     {selectedProduct.name}
                   </p>
                   <p className="text-xs text-gray-500">
-                    {selectedProduct.brand}
-                    {selectedProduct.category
-                      ? ` · ${selectedProduct.category}`
-                      : ''}
-                    {selectedUnitVolume ? ` · ${selectedUnitVolume}` : ''}
+                    {formatAttributeRow(
+                      selectedProduct.brand,
+                      selectedProduct.category,
+                      selectedUnitVolume,
+                    )}
                   </p>
                   {selectedProduct.lowestPriceCents !== null && (
                     <p

@@ -438,8 +438,8 @@ describe('TripPage', () => {
     expect(await screen.findByTestId('trip-result')).toBeInTheDocument();
 
     // Travel-cost derivation, echoed from the response.
-    expect(screen.getByText('Matkakustannus yhteensä: €300.00')).toBeInTheDocument();
-    expect(screen.getByText('Matkustajaa kohden: €150.00 (2 matkustajaa)')).toBeInTheDocument();
+    expect(screen.getByText('Matkakustannus yhteensä: 300,00 €')).toBeInTheDocument();
+    expect(screen.getByText('Matkustajaa kohden: 150,00 € (2 matkustajaa)')).toBeInTheDocument();
 
     // R5/R7 provenance: the allowance dataset version is named.
     expect(
@@ -628,7 +628,7 @@ describe('TripPage fill mode', () => {
     expect(await screen.findByTestId('trip-fill-result')).toBeInTheDocument();
 
     // Totals and provenance, echoed from the response.
-    expect(screen.getByText('Täytetty arvo yhteensä: €36.00')).toBeInTheDocument();
+    expect(screen.getByText('Täytetty arvo yhteensä: 36,00 €')).toBeInTheDocument();
     expect(screen.getByText('Yksiköitä yhteensä: 24 kpl')).toBeInTheDocument();
     expect(
       screen.getByText('Tullimäärärajojen aineistoversio: allowances-trip-2026.1'),
@@ -640,9 +640,9 @@ describe('TripPage fill mode', () => {
     expect(within(beerLine).getByText('Saku Originaal')).toBeInTheDocument();
     expect(within(beerLine).getByText('Mukana täytössä')).toBeInTheDocument();
     expect(within(beerLine).getByText('24 kpl')).toBeInTheDocument();
-    expect(within(beerLine).getByText('€1.50')).toBeInTheDocument();
+    expect(within(beerLine).getByText('1,50 €')).toBeInTheDocument();
     expect(within(beerLine).getByText('Tallinna Kauppa')).toBeInTheDocument();
-    expect(within(beerLine).getByText('€36.00')).toBeInTheDocument();
+    expect(within(beerLine).getByText('36,00 €')).toBeInTheDocument();
     expect(within(beerLine).getByText('12 l')).toBeInTheDocument();
     expect(within(beerLine).getByText('Olut: jäljellä')).toBeInTheDocument();
     expect(within(beerLine).getByText('98 l')).toBeInTheDocument();

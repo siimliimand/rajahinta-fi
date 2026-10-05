@@ -4,7 +4,7 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import type {
   TripBreakEvenLine,
   TripBreakEvenVolumeLine,
@@ -12,6 +12,7 @@ import type {
   TripNoBreakEvenLine,
 } from '../trip.types';
 import { Badge, Card } from '@/components/ui';
+import { formatMoney } from '@/lib/format/money';
 import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
 
 // ---------------------------------------------------------------------------
@@ -19,16 +20,13 @@ import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
 // ---------------------------------------------------------------------------
 
 /**
- * Format cents to a euro string — the CalculatorResult/EventPlanResult
- * precedent. Figures are formatted, never re-rounded.
+ * Euro amounts render through the shared formatter (fi-locale-surface-
+ * hardening 2.4): figures are formatted, never re-rounded.
  */
-function formatEur(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`;
-}
 
-/** Per-litre variant of the above — price bases and differences are cents/l. */
-function formatEurPerLitre(cents: number): string {
-  return `${formatEur(cents)}/l`;
+/** Per-litre variant — price bases and differences are cents/l. */
+function formatEurPerLitre(cents: number, locale: string): string {
+  return `${formatMoney(cents, locale)}/l`;
 }
 
 /**
@@ -56,6 +54,7 @@ function StateNote({ title, body }: { readonly title: string; readonly body: str
 
 function BreakEvenLineCard({ line }: { readonly line: TripBreakEvenVolumeLine }) {
   const t = useTranslations('TripPage');
+  const locale = useLocale();
 
   return (
     <Card padding="md" shadow="sm" data-testid={`trip-line-${line.category}`}>
@@ -66,7 +65,7 @@ function BreakEvenLineCard({ line }: { readonly line: TripBreakEvenVolumeLine })
         <div className="flex items-baseline justify-between gap-4">
           <dt className="text-sm text-gray-500">{t('result.priceDifference')}</dt>
           <dd className="text-sm font-medium text-gray-900">
-            {formatEurPerLitre(line.priceDifferenceCentsPerLitre)}
+            {formatEurPerLitre(line.priceDifferenceCentsPerLitre, locale)}
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-4">
@@ -123,6 +122,7 @@ function BreakEvenLineCard({ line }: { readonly line: TripBreakEvenVolumeLine })
 
 function NoBreakEvenLineCard({ line }: { readonly line: TripNoBreakEvenLine }) {
   const t = useTranslations('TripPage');
+  const locale = useLocale();
 
   return (
     <Card padding="md" shadow="sm" data-testid={`trip-line-${line.category}`}>
@@ -133,7 +133,7 @@ function NoBreakEvenLineCard({ line }: { readonly line: TripNoBreakEvenLine }) {
         <div className="flex items-baseline justify-between gap-4">
           <dt className="text-sm text-gray-500">{t('result.priceDifference')}</dt>
           <dd className="text-sm font-medium text-gray-900">
-            {formatEurPerLitre(line.priceDifferenceCentsPerLitre)}
+            {formatEurPerLitre(line.priceDifferenceCentsPerLitre, locale)}
           </dd>
         </div>
       </dl>
@@ -222,6 +222,7 @@ export default function TripBreakEvenResult({
 }: TripBreakEvenResultProps) {
   const t = useTranslations('TripPage');
   const tCommon = useTranslations('Common');
+  const locale = useLocale();
 
   return (
     <>
@@ -240,11 +241,13 @@ export default function TripBreakEvenResult({
 
         {/* Travel-cost derivation, echoed from the response. */}
         <p className="mb-1 text-sm text-gray-700">
-          {t('result.travelCost', { total: formatEur(result.travelCostCents) })}
+          {t('result.travelCost', {
+            total: formatMoney(result.travelCostCents, locale),
+          })}
         </p>
         <p className="mb-4 text-sm text-gray-700">
           {t('result.perTraveller', {
-            amount: formatEur(result.travelCostPerTravellerCents),
+            amount: formatMoney(result.travelCostPerTravellerCents, locale),
             passengers: result.passengers,
           })}
         </p>

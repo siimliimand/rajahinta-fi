@@ -26,6 +26,7 @@ import {
   getServerProductDetail,
 } from '@/lib/api';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
+import { formatMoney } from '@/lib/format/money';
 import type { PriceHistoryResponse, ProductDetailResponse } from '@/lib/types';
 import { Badge, type BadgeTone } from '@/components/ui';
 import MerchantWarningNotice from '../../components/MerchantWarningNotice';
@@ -364,7 +365,13 @@ export default async function ProductPage({ params }: ProductPageProps) {
                 return (
                   <tr key={offer.id} className={rowClasses}>
                     <td className="py-2 pr-4 font-medium text-gray-900">
-                      {offer.merchant}
+                      {/* Registry display name (fi-locale-surface-
+                          hardening 2.5): the API resolves the name from
+                          merchant_registry; an unregistered merchant or
+                          a degraded lookup falls back to the raw id —
+                          the row can never render blank. The identifier
+                          stays the wire/link key. */}
+                      {offer.merchantName ?? offer.merchant}
                       {/* Outbound CTA (task 2.2): routes through the shared
                           /api/v1/outbound/:offerId redirect controller, the
                           same click-recording path the compare page uses —
@@ -382,8 +389,12 @@ export default async function ProductPage({ params }: ProductPageProps) {
                       )}
                     </td>
                     <td className="py-2 pr-4 text-gray-700">
-                      {(offer.priceCents / 100).toFixed(2)}{' '}
-                      {offer.currency === 'EUR' ? '€' : offer.currency}
+                      {/* Locale money form (2.4); a non-EUR quote keeps
+                          its currency code verbatim — no conversion is
+                          invented for a rendered figure. */}
+                      {offer.currency === 'EUR'
+                        ? formatMoney(offer.priceCents, locale)
+                        : `${(offer.priceCents / 100).toFixed(2)} ${offer.currency}`}
                     </td>
                     <td className="py-2 pr-4">
                       {isAvailabilityState(offer.availability) ? (
@@ -437,7 +448,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
           API's same current-best-price selection as the offers above, so
           the sentence and the panel cannot contradict each other; absent
           from the HTML when the context is unavailable ── */}
-      <ProductPriceContextLine productId={productId} />
+      <ProductPriceContextLine productId={productId} locale={locale} />
 
       {/* ── Price history (task 5.1) — server-fetched series, client
           range views; renders NOTHING when there is no history ── */}

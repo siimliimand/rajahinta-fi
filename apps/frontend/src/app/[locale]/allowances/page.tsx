@@ -5,6 +5,7 @@ import * as React from 'react';
 import type { Metadata } from 'next';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { EmptyState, ErrorState } from '@/components/ui';
+import { formatDate } from '@/lib/format/date';
 import {
   getServerAllowanceVersions,
   getServerAllowances,
@@ -110,10 +111,17 @@ export default async function AllowancesPage({
   const date = resolveRequestedDate(raw);
 
   const t = await getTranslations('AllowancesPage');
+  // Dates ride the shared localized formatters (fi-locale-surface-
+  // hardening 2.4): the effective-window bounds and the caps date are
+  // date-only ISO strings and render as calendar dates ("1.1.2026
+  // alkaen"), never raw ISO inside Finnish prose.
   const windowText = (from: string, to: string | null) =>
     to === null
-      ? t('effectiveWindowOpen', { from })
-      : t('effectiveWindow', { from, to });
+      ? t('effectiveWindowOpen', { from: formatDate(from, locale) })
+      : t('effectiveWindow', {
+          from: formatDate(from, locale),
+          to: formatDate(to, locale),
+        });
 
   // Locale-shaped numbers for cap figures (products page precedent);
   // container sizes are baked into the locale-worded helper messages.
@@ -228,7 +236,7 @@ export default async function AllowancesPage({
           data-testid="allowances-caps"
         >
           <h2 className="mb-1 text-lg font-semibold text-gray-900">
-            {t('capsTitle', { date: outcome.payload.date })}
+            {t('capsTitle', { date: formatDate(outcome.payload.date, locale) })}
           </h2>
           {/* Version label + effective window sit with the caps (spec). */}
           <p className="text-sm text-gray-600">
@@ -252,7 +260,9 @@ export default async function AllowancesPage({
 
           <table className="mt-5 w-full text-sm">
             <caption className="sr-only">
-              {t('capsTableCaption', { date: outcome.payload.date })}
+              {t('capsTableCaption', {
+                date: formatDate(outcome.payload.date, locale),
+              })}
             </caption>
             <thead>
               <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">

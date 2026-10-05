@@ -40,6 +40,7 @@ import type {
   CalculatorResult,
   CalculatorProductData,
   CalculatorRetailOfferData,
+  CostLineCode,
   ItemizedCost,
   ComputeItemCostsTransportContext,
   ComputedItemCostsResult,
@@ -261,6 +262,7 @@ export class LandedCostCalculatorService {
     // -----------------------------------------------------------------------
     const transportItem: ItemizedCost = {
       label: 'Transport',
+      code: 'transport',
       category: 'transportCost',
       cents: transportCostCents,
       reliability: transportStatus,
@@ -641,12 +643,14 @@ export class LandedCostCalculatorService {
               ? ([
                   {
                     label: 'Alcohol excise (within traveller allowance)',
+                    code: 'alcohol_excise_within_allowance',
                     category: 'alcoholExciseEstimate',
                     cents: 0,
                     reliability: 'VERIFIED',
                   },
                   {
                     label: 'Container duty (within traveller allowance)',
+                    code: 'container_duty_within_allowance',
                     category: 'containerDutyEstimate',
                     cents: 0,
                     reliability: 'VERIFIED',
@@ -657,12 +661,14 @@ export class LandedCostCalculatorService {
               ? ([
                   {
                     label: 'Alcohol excise (over-allowance surplus)',
+                    code: 'alcohol_excise_over_allowance',
                     category: 'alcoholExciseEstimate',
                     cents: exciseTotal,
                     reliability: exciseStatus,
                   },
                   {
                     label: 'Container duty (over-allowance surplus)',
+                    code: 'container_duty_over_allowance',
                     category: 'containerDutyEstimate',
                     cents: containerDutyTotal,
                     reliability: containerDutyStatus,
@@ -673,12 +679,14 @@ export class LandedCostCalculatorService {
         : [
             {
               label: 'Alcohol excise',
+              code: 'alcohol_excise',
               category: 'alcoholExciseEstimate',
               cents: exciseTotal,
               reliability: exciseStatus,
             },
             {
               label: 'Container duty',
+              code: 'container_duty',
               category: 'containerDutyEstimate',
               cents: containerDutyTotal,
               reliability: containerDutyStatus,
@@ -688,12 +696,14 @@ export class LandedCostCalculatorService {
     const itemizedCosts: ItemizedCost[] = [
       {
         label: 'Retail price',
+        code: 'foreign_retail_price',
         category: 'foreignRetailPrice',
         cents: retailTotal,
         reliability: retailStatus,
         breakdown: [
           {
             label: `Unit price (x${input.quantity})`,
+            code: 'foreign_unit_price',
             category: 'foreignRetailPrice' as const,
             cents: retailTotal,
             reliability: retailStatus,
@@ -712,6 +722,7 @@ export class LandedCostCalculatorService {
     if (isImport && allowanceSplit !== null && allowanceSplit.capApplied && allowanceSplit.allowedQuantity > 0) {
       itemizedCosts.push({
         label: 'Import VAT (within traveller allowance)',
+        code: 'import_vat_within_allowance',
         category: 'importVatEstimate',
         cents: 0,
         reliability: 'VERIFIED',
@@ -721,34 +732,44 @@ export class LandedCostCalculatorService {
       const baseLines: readonly ItemizedCost[] = [
         {
           label: 'Retail price',
+          code: 'foreign_retail_price',
           category: 'foreignRetailPrice',
           cents: offer.priceCents * taxedQuantity,
           reliability: importVat.reliability,
         },
         {
           label: 'Transport',
+          code: 'transport',
           category: 'transportCost',
           cents: transportCtx?.transportCents ?? 0,
           reliability: importVat.reliability,
         },
         {
           label: 'Alcohol excise',
+          code: 'alcohol_excise',
           category: 'alcoholExciseEstimate',
           cents: exciseTotal,
           reliability: importVat.reliability,
         },
         {
           label: 'Container duty',
+          code: 'container_duty',
           category: 'containerDutyEstimate',
           cents: containerDutyTotal,
           reliability: importVat.reliability,
         },
       ];
+      // The two label variants are distinct line kinds (design D1): the
+      // over-allowance portion carries its own code, not a reworded one.
+      const importVatLine: { label: string; code: CostLineCode } =
+        allowanceSplit !== null && allowanceSplit.capApplied
+          ? {
+              label: 'Import VAT (over-allowance surplus, estimated)',
+              code: 'import_vat_over_allowance',
+            }
+          : { label: 'Import VAT (estimated)', code: 'import_vat' };
       itemizedCosts.push({
-        label:
-          allowanceSplit !== null && allowanceSplit.capApplied
-            ? 'Import VAT (over-allowance surplus, estimated)'
-            : 'Import VAT (estimated)',
+        ...importVatLine,
         category: 'importVatEstimate',
         cents: importVat.vatCents,
         reliability: importVat.reliability,

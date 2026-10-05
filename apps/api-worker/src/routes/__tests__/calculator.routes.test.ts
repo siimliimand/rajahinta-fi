@@ -27,6 +27,7 @@ import {
   seedProduct,
   seedTaxRule,
 } from './harness';
+import type { CostLineCode } from '../../../../../packages/core-domain/src/calculator/calculator.types';
 
 /** Beer excise math for the fixture rule: 0.3650 €/cl ethanol × abv × litres. */
 function expectedBeerExciseCents(abv: number, volumeLitres: number): number {
@@ -381,6 +382,221 @@ describe('POST /api/v1/calculator', () => {
     expect(Array.isArray(body.itemizedCosts)).toBe(true);
     // No allowance bound rode along — delivery stays un-capped.
     expect(body.allowanceDatasetVersion).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fi-locale-surface-hardening 2.2: the calculate wire carries the additive
+// closed-set `code` beside the byte-identical English `label` on every
+// cost line — live and on the idempotency HIT replay alike — while
+// code-less legacy records keep serializing with the key absent.
+// ---------------------------------------------------------------------------
+
+/** The closed set every wire code must belong to (CostLineCode members). */
+const COST_LINE_CODES: readonly CostLineCode[] = [
+  'foreign_retail_price',
+  'foreign_unit_price',
+  'transport',
+  'alcohol_excise',
+  'container_duty',
+  'alcohol_excise_within_allowance',
+  'container_duty_within_allowance',
+  'alcohol_excise_over_allowance',
+  'container_duty_over_allowance',
+  'import_vat',
+  'import_vat_over_allowance',
+  'import_vat_within_allowance',
+];
+
+/** Wire shape of one itemized cost line (the ItemizedCost surface). */
+interface WireCostLine {
+  label: string;
+  code?: string;
+  category: string;
+  cents: number;
+  reliability: string;
+  breakdown?: WireCostLine[];
+}
+
+/** Depth-first flatten of a cost-line tree. */
+function flattenCostLines(lines: readonly WireCostLine[]): WireCostLine[] {
+  return lines.flatMap((line) => [
+    line,
+    ...(line.breakdown ? flattenCostLines(line.breakdown) : []),
+  ]);
+}
+
+describe('POST /api/v1/calculator — cost-line wire contract (2.2)', () => {
+  /** MISS/HIT fixture parity with the idempotency suite above. */
+  async function seedCalculatableProductAndFire(): Promise<{
+    missBody: Record<string, unknown>;
+    hitBody: Record<string, unknown>;
+  }> {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, depositSystemStatus: 0 });
+    seedOffer(db, { productId: 1, priceCents: 350 });
+    seedTaxRule(db, { taxType: 'excise', productCategory: 'beer', rate: 0.365 });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+      verified: false,
+      versionLabel: 'v2.0-2025',
+    });
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+    const init: RequestInit = {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AGE },
+      body: JSON.stringify({ productId: 1, quantity: 2, destination: 'FI' }),
+    };
+
+    const first = await request(app, env, '/api/v1/calculator', init);
+    expect(first.status).toBe(200);
+    const missBody = (await first.json()) as Record<string, unknown>;
+    const second = await request(app, env, '/api/v1/calculator', init);
+    expect(second.headers.get('X-Cache')).toBe('HIT');
+    const hitBody = (await second.json()) as Record<string, unknown>;
+    return { missBody, hitBody };
+  }
+
+  it('carries the closed-set code beside the byte-identical English label on every line', async () => {
+    const { missBody } = await seedCalculatableProductAndFire();
+    const lines = missBody.itemizedCosts as WireCostLine[];
+
+    // Byte-identity: the pre-code English labels, verbatim and in order.
+    expect(lines.map((line) => line.label)).toEqual([
+      'Retail price',
+      'Transport',
+      'Alcohol excise',
+      'Container duty',
+    ]);
+    // The additive codes — one closed-set member per line kind.
+    expect(lines.map((line) => line.code)).toEqual([
+      'foreign_retail_price',
+      'transport',
+      'alcohol_excise',
+      'container_duty',
+    ]);
+    // The retail line's unit-price breakdown rides the same contract:
+    // the label stays quantity-interpolated display copy, the code stays
+    // the stable join key.
+    expect(lines[0].breakdown).toEqual([
+      {
+        label: 'Unit price (x2)',
+        code: 'foreign_unit_price',
+        category: 'foreignRetailPrice',
+        cents: lines[0].cents,
+        reliability: lines[0].reliability,
+      },
+    ]);
+    for (const line of flattenCostLines(lines)) {
+      expect(COST_LINE_CODES).toContain(line.code);
+    }
+  });
+
+  it('serves the same codes and labels on the idempotency HIT replay', async () => {
+    const { missBody, hitBody } = await seedCalculatableProductAndFire();
+    const missLines = flattenCostLines(missBody.itemizedCosts as WireCostLine[]);
+    const hitLines = flattenCostLines(hitBody.itemizedCosts as WireCostLine[]);
+    expect(hitLines.map((line) => [line.label, line.code, line.cents])).toEqual(
+      missLines.map((line) => [line.label, line.code, line.cents]),
+    );
+    expect(hitLines.map((line) => line.code)).toContain('foreign_retail_price');
+  });
+
+  it('codes the import-VAT line and its base breakdown for a cross-border seller', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, {
+      id: 2,
+      name: 'Koskenkorva 38% 50cl PET x 10 pullon laatikko',
+      category: 'spirits',
+      alcoholByVolume: 0.38,
+      unitVolume: 0.5,
+      containerType: 'plastic',
+      regulatoryClassification: 'spirits',
+      depositSystemStatus: 0,
+    });
+    seedOffer(db, { productId: 2, merchant: 'alks', country: 'EE', priceCents: 9870 });
+    seedTaxRule(db, { taxType: 'excise', productCategory: 'spirits', rate: 4.43 });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+      verified: false,
+      versionLabel: 'v2.0-2025',
+    });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/calculator', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AGE },
+      body: JSON.stringify({ productId: 2, quantity: 1, destination: 'FI' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    const lines = body.itemizedCosts as WireCostLine[];
+
+    expect(lines.map((line) => line.label)).toEqual([
+      'Retail price',
+      'Transport',
+      'Alcohol excise',
+      'Container duty',
+      'Import VAT (estimated)',
+    ]);
+    expect(lines.map((line) => line.code)).toEqual([
+      'foreign_retail_price',
+      'transport',
+      'alcohol_excise',
+      'container_duty',
+      'import_vat',
+    ]);
+    // The VAT base breakdown repeats the component codes (same kinds,
+    // one code per kind across nesting).
+    expect(lines[4].breakdown?.map((line) => line.label)).toEqual([
+      'Retail price',
+      'Transport',
+      'Alcohol excise',
+      'Container duty',
+    ]);
+    expect(lines[4].breakdown?.map((line) => line.code)).toEqual([
+      'foreign_retail_price',
+      'transport',
+      'alcohol_excise',
+      'container_duty',
+    ]);
+  });
+});
+
+describe('GET /api/v1/calculator/result/:recordId — legacy code-less breakdown (2.2)', () => {
+  it('replays code-less legacy lines with the key absent — never null, labels verbatim', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1, name: 'Karhu III' });
+    // The fixture breakdown carries no `code` — the pre-code record shape.
+    seedCalculationRecord(db, { id: 9, productMasterId: 1, totalCents: 873 });
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/calculator/result/9', {
+      headers: AGE,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    const lines = body.itemizedCosts as WireCostLine[];
+
+    // Byte-identity: the seeded legacy labels and figures replay verbatim.
+    expect(lines.map((line) => line.label)).toEqual([
+      'Retail price',
+      'Transport',
+      'Alcohol excise',
+      'Container duty',
+    ]);
+    expect(lines.map((line) => line.cents)).toEqual([350, 500, 6, 17]);
+    // Absence is the legacy state — the key is omitted, never nulled.
+    for (const line of lines) {
+      expect(Object.prototype.hasOwnProperty.call(line, 'code')).toBe(false);
+    }
   });
 });
 

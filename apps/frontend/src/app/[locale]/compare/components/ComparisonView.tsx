@@ -1,5 +1,9 @@
 'use client';
 
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import type {
   ComparisonProduct,
@@ -9,7 +13,11 @@ import {
   CONFIDENCE_LEVEL_META,
   RELIABILITY_STATUS_META,
 } from '@/lib/design/status';
-import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
+import {
+  formatAbv,
+  formatAttributeRow,
+  formatVolume,
+} from '@/lib/format/product-attributes';
 import { Button, Card } from '@/components/ui';
 import { logClick } from '@/lib/api';
 import { MerchantLink } from './MerchantLink';
@@ -95,9 +103,7 @@ function ProductColumn({
       {/* Product info — every column looks the same */}
       <h3 className="text-sm font-semibold text-gray-900">{product.name}</h3>
       <p className="mt-0.5 text-xs text-gray-500">
-        {product.brand}
-        {product.category ? ` · ${product.category}` : ''}
-        {volume ? ` · ${volume}` : ''}
+        {formatAttributeRow(product.brand, product.category, volume)}
       </p>
       {abv !== null && (
         <p className="mt-0.5 text-xs text-gray-400">{abv}</p>

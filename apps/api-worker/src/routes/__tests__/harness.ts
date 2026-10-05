@@ -257,6 +257,26 @@ export function seedProduct(
   return id;
 }
 
+/**
+ * Insert a merchant_registry row (fi-locale-surface-hardening 2.5) —
+ * the display-name source the read paths resolve `merchantName` from.
+ * All columns are NOT NULL in the table; the feed columns take minimal
+ * valid values (the registry's commercial fields are irrelevant to the
+ * read paths under test).
+ */
+export function seedMerchant(
+  db: DatabaseSync,
+  merchant: { merchantId: string; name: string },
+): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO merchant_registry (
+       merchant_id, name, country, feed_url, feed_format,
+       polling_interval_ms, created_at, updated_at
+     ) VALUES (?, ?, 'SE', 'https://example.invalid/feed.xml', 'xml', 3600000, ?, ?)`,
+  ).run(merchant.merchantId, merchant.name, now, now);
+}
+
 /** Insert a retail_offers row and return its id. */
 export function seedOffer(
   db: DatabaseSync,

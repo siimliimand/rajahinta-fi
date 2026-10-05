@@ -80,7 +80,10 @@ beforeEach(() => {
 
 /** Straight renderToString — the component renders null or an element. */
 async function renderLine(productId: number): Promise<string> {
-  const element = await ProductPriceContextLine({ productId });
+  const element = await ProductPriceContextLine({
+    productId,
+    locale: testLocale,
+  });
   return renderToString(element);
 }
 
@@ -115,11 +118,14 @@ describe('ProductPriceContextLine', () => {
 
     expect(html).toContain('product-price-context');
     expect(html).toContain('Nykyhinta ja 90 päivän mediaani');
-    expect(html).toContain('12.34 €'); // current best
-    expect(html).toContain('11.00 €'); // median
-    expect(html).toContain('1.34 €'); // delta in cents
+    // fi money form (fi-locale-surface-hardening 2.4): comma decimals,
+    // suffix symbol — Intl separates them with a non-breaking space.
+    expect(html).toContain('12,34\u00a0€'); // current best
+    expect(html).toContain('11,00\u00a0€'); // median
+    expect(html).toContain('1,34\u00a0€'); // delta in cents
     expect(html).toContain('90 päivältä'); // window bucket count
-    expect(html).toContain('2026-09-08'); // as-of
+    expect(html).toContain('8.9.2026'); // as-of, localized calendar date
+    expect(html).not.toContain('2026-09-08'); // never raw ISO in the prose
     // Percentile fact (task 2.3): 2857 bps → integer percent 29
     // (Math.round(28.57)), a statistic about the window's days.
     expect(html).toContain('halvempi kuin 29 % 90 päivän aikavälin päivistä');
@@ -176,6 +182,11 @@ describe('ProductPriceContextLine', () => {
       'The lowest current offer price is cheaper than 29% of the days in this 90-day window.',
     );
     expect(html).not.toContain('halvempi'); // the FI catalog is not bled in
+    // EN convention (2.4): symbol-first dot decimals, en-GB numeric date.
+    expect(html).toContain('€12.34');
+    expect(html).toContain('€11.00');
+    expect(html).toContain('€1.34');
+    expect(html).toContain('08/09/2026');
   });
 
   it('renders the honest insufficient-history state with the figures that explain it, and none of the window facts', async () => {
@@ -203,7 +214,7 @@ describe('ProductPriceContextLine', () => {
     expect(html).toContain('data-state="unavailable"');
     expect(html).toContain('ei ole riittävästi');
     expect(html).toContain('4 päivältä');
-    expect(html).toContain('2026-09-08');
+    expect(html).toContain('8.9.2026');
     expect(html).not.toContain('€'); // no delta figure exists to show
     // The window facts arrive null on this branch and are never fabricated.
     expect(html).not.toContain('halvempi kuin');

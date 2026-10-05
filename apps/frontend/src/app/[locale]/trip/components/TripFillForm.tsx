@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui';
 import { getProductDetail, searchProducts } from '@/lib/api';
+import { formatAttributeRow } from '@/lib/format/product-attributes';
 import type { ProductSearchItem } from '@/lib/types';
 import type { TripPrefill } from '../trip.client';
 
@@ -296,8 +297,7 @@ export default function TripFillForm({
                         {product.name}
                       </span>
                       <span className="block text-xs text-gray-500">
-                        {product.brand}
-                        {product.unitVolume ? ` · ${product.unitVolume}` : ''}
+                        {formatAttributeRow(product.brand, product.unitVolume)}
                       </span>
                     </button>
                   </li>

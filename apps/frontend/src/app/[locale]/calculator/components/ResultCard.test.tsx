@@ -174,8 +174,9 @@ describe('ResultCard answer-first total (task 4.1)', () => {
 
     const total = screen.getByTestId('landed-cost-total');
     expect(total).toBeVisible();
-    // The figure is the result object's totalCents, verbatim.
-    expect(total).toHaveTextContent('€51.50');
+    // The figure is the result object's totalCents, verbatim — fi money
+    // form (comma decimals, suffix symbol; fi-locale-surface-hardening 2.4).
+    expect(total).toHaveTextContent('51,50 €');
     // It carries the total label, so its origin is obvious.
     expect(screen.getByText('Yhteensä')).toBeInTheDocument();
 
@@ -214,9 +215,9 @@ describe('ResultCard Finland comparison (task 4.1)', () => {
       within(comparison).getByText('Tuonti on edullisempaa'),
     ).toBeInTheDocument();
     // The figure rides with the statement, signed in euros and percent.
-    expect(comparison.textContent).toContain('Alkon hinta: €31.50');
+    expect(comparison.textContent).toContain('Alkon hinta: 31,50\u00a0€');
     expect(
-      within(comparison).getByText('Ero: -€4.50 (-14.3 %)'),
+      within(comparison).getByText('Ero: -4,50 € (-14.3 %)'),
     ).toBeInTheDocument();
     // Reference observation timestamp stays traceable.
     expect(comparison.textContent).toContain(
@@ -249,7 +250,7 @@ describe('ResultCard Finland comparison (task 4.1)', () => {
     expect(
       within(comparison).getByText('Alko on edullisempi'),
     ).toBeInTheDocument();
-    expect(comparison.textContent).toContain('Ero: +€8.50 (+27.0 %)');
+    expect(comparison.textContent).toContain('Ero: +8,50\u00a0€ (+27.0 %)');
     expect(comparison.textContent).not.toContain('Tuonti on edullisempaa');
   });
 
@@ -268,7 +269,7 @@ describe('ResultCard Finland comparison (task 4.1)', () => {
 
     const comparison = screen.getByTestId('finland-comparison');
     expect(within(comparison).getByText('Hinta on sama')).toBeInTheDocument();
-    expect(comparison.textContent).toContain('Ero: €0.00 (0.0 %)');
+    expect(comparison.textContent).toContain('Ero: 0,00\u00a0€ (0.0 %)');
   });
 
   it('renders no comparison block when the result carries no Finland reference', () => {
@@ -289,9 +290,9 @@ describe('ResultCard breakdown rows (task 4.1)', () => {
     renderWithIntl(<ResultCard result={baseResult()} />);
 
     const rows = [
-      { label: 'Ulkomainen vähittäishinta', amount: '€40.00' },
-      { label: 'Kuljetuskustannus', amount: '€5.00' },
-      { label: 'Arvio alkoholin valmisteverosta', amount: '€6.50' },
+      { label: 'Ulkomainen vähittäishinta', amount: '40,00\u00a0€' },
+      { label: 'Kuljetuskustannus', amount: '5,00\u00a0€' },
+      { label: 'Arvio alkoholin valmisteverosta', amount: '6,50\u00a0€' },
     ];
     for (const row of rows) {
       const label = screen.getByText(row.label);
@@ -343,11 +344,12 @@ describe('ResultCard transport-unavailable honest state (3.1)', () => {
     const transportLabel = screen.getByText('Kuljetuskustannus');
     const row = transportLabel.closest('div');
     expect(row).not.toBeNull();
-    // The honest line replaces the amount — no €0.00 transport figure.
+    // The honest line replaces the amount — no €0.00 transport figure
+    // (fi money form: 0,00 €).
     expect(
       within(row!).getByTestId('transport-not-included').textContent,
     ).toBe('Ei sisällytetty – tietoaineisto odottaa');
-    expect(row!.textContent).not.toContain('€0.00');
+    expect(row!.textContent).not.toContain('0,00\u00a0€');
     // The status stays visible through the canonical badge label.
     expect(within(row!).getByText('Ei saatavilla')).toBeInTheDocument();
   });
@@ -367,13 +369,13 @@ describe('ResultCard transport-unavailable honest state (3.1)', () => {
 
     // The API total (4650 cents without transport) is shown unchanged.
     expect(screen.getByTestId('landed-cost-total')).toHaveTextContent(
-      '€46.50',
+      '46,50 €',
     );
     // The non-transport rows keep their amounts.
     expect(screen.getByText('Ulkomainen vähittäishinta').closest('div'))
-      .toHaveTextContent('€40.00');
+      .toHaveTextContent('40,00 €');
     expect(screen.getByText('Arvio alkoholin valmisteverosta').closest('div'))
-      .toHaveTextContent('€6.50');
+      .toHaveTextContent('6,50 €');
   });
 
   it('renders no pending state when transport is usable', () => {
@@ -383,7 +385,7 @@ describe('ResultCard transport-unavailable honest state (3.1)', () => {
     // amount exactly as before — zero pending-state copy anywhere.
     expect(
       screen.getByText('Kuljetuskustannus').closest('div'),
-    ).toHaveTextContent('€5.00');
+    ).toHaveTextContent('5,00 €');
     expect(screen.queryByTestId('transport-not-included')).toBeNull();
     expect(screen.queryByTestId('transport-pending-note')).toBeNull();
     expect(container.textContent).not.toContain('Ei sisällytetty');
@@ -523,14 +525,14 @@ describe('ResultCard traveller-mode split labels (task 2.1)', () => {
         'Arvio pakkausverosta (sallitun määrän sisällä, veroton)',
       ),
     ).toBeInTheDocument();
-    // The dataset-fact zeros render as €0.00 amounts — honest dataset
+    // The dataset-fact zeros render as 0,00 € amounts — honest dataset
     // facts, not missing figures.
     const zeroLine = screen
       .getByText(
         'Arvio alkoholin valmisteverosta (sallitun määrän sisällä, veroton)',
       )
       .closest('div');
-    expect(zeroLine).toHaveTextContent('€0.00');
+    expect(zeroLine).toHaveTextContent('0,00 €');
   });
 
   it('labels the taxed lines as the over-allowance surplus with the engine figures', () => {
@@ -539,11 +541,11 @@ describe('ResultCard traveller-mode split labels (task 2.1)', () => {
     const surplusExcise = screen
       .getByText('Arvio alkoholin valmisteverosta (sallitun määrän ylittävä osa)')
       .closest('div');
-    expect(surplusExcise).toHaveTextContent('€12.00');
+    expect(surplusExcise).toHaveTextContent('12,00 €');
     const surplusDuty = screen
       .getByText('Arvio pakkausverosta (sallitun määrän ylittävä osa)')
       .closest('div');
-    expect(surplusDuty).toHaveTextContent('€3.00');
+    expect(surplusDuty).toHaveTextContent('3,00 €');
   });
 
   it('states the single-traveller assumption and cites the allowance dataset version', () => {
@@ -629,7 +631,7 @@ describe('ResultCard travellerAlternative callout (task 2.2)', () => {
       within(callout).getByText('Matkalaskurin arvio'),
     ).toBeInTheDocument();
     expect(callout.textContent).toContain(
-      'Yksi matkustaja, sama määrä — arvio yhteensä €40.00.',
+      'Yksi matkustaja, sama määrä — arvio yhteensä 40,00\u00a0€.',
     );
     expect(callout.textContent).toContain(
       'Matkustajamäärien tietoaineisto: allowances-trip-2026.1',
@@ -671,13 +673,13 @@ describe('ResultCard travellerAlternative callout (task 2.2)', () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     // The delivery amount is byte-identical and stays the hero's figure.
-    expect(within(hero).getByText('€51.50')).toBeInTheDocument();
+    expect(within(hero).getByText('51,50 €')).toBeInTheDocument();
     // The traveller estimate never enters the delivery hero.
     expect(hero.textContent).not.toContain('Matkalaskurin arvio');
-    // The estimate keeps its own amount — €40.00 lives in the callout,
+    // The estimate keeps its own amount — 40,00 € lives in the callout,
     // never beside the delivery total.
-    expect(callout.textContent).toContain('€40.00');
-    expect(hero.textContent).not.toContain('€40.00');
+    expect(callout.textContent).toContain('40,00\u00a0€');
+    expect(hero.textContent).not.toContain('40,00\u00a0€');
   });
 
   it('keeps the delivery-only hero presentation when no callout is present', () => {
@@ -717,5 +719,44 @@ describe('ResultCard travellerAlternative callout (task 2.2)', () => {
 
     expect(screen.queryByTestId('traveller-alternative')).toBeNull();
     expect(container.textContent).not.toContain('Matkalaskurin arvio');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Explicit-'en' rendering (fi-locale-surface-hardening 2.4): the money
+// pins the fi tests replaced move here — the EN convention is
+// symbol-first dot decimals, unchanged from the pre-helper form.
+// ---------------------------------------------------------------------------
+
+import { NextIntlClientProvider } from 'next-intl';
+import { render as rtlRender } from '@testing-library/react';
+import enMessages from '@/messages/en.json';
+
+function renderWithEn(ui: React.ReactElement) {
+  return rtlRender(
+    <NextIntlClientProvider locale="en" messages={enMessages}>
+      {ui}
+    </NextIntlClientProvider>,
+  );
+}
+
+describe('ResultCard explicit-en money rendering (2.4)', () => {
+  it('keeps the EN convention: symbol-first dot decimals and signed figures', () => {
+    renderWithEn(
+      <ResultCard
+        result={resultWithBenchmark({
+          referencePriceCents: 3150,
+          differenceCents: 850,
+          differencePercent: 27,
+          reliabilityStatus: 'VERIFIED',
+          observedAt: '2026-08-30T09:30:00.000Z',
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId('landed-cost-total')).toHaveTextContent('€51.50');
+    const comparison = screen.getByTestId('finland-comparison');
+    expect(comparison.textContent).toContain('Alko price: €31.50');
+    expect(comparison.textContent).toContain('Difference: +€8.50 (+27.0 %)');
   });
 });

@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { formatAbv, formatVolume } from './product-attributes';
+import { formatAbv, formatAttributeRow, formatVolume } from './product-attributes';
 
 // ---------------------------------------------------------------------------
 // formatAbv
@@ -95,5 +95,55 @@ describe('formatVolume', () => {
     expect(formatVolume('0,7 l')).toBeNull();
     expect(formatVolume(0)).toBeNull();
     expect(formatVolume(-0.5)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatAttributeRow
+// ---------------------------------------------------------------------------
+
+describe('formatAttributeRow', () => {
+  it('joins the present parts with the " · " separator', () => {
+    expect(formatAttributeRow('Anchor', 'viinit', '75 cl', '12.5 %')).toBe(
+      'Anchor · viinit · 75 cl · 12.5 %',
+    );
+  });
+
+  it('renders a brandless product without a leading separator', () => {
+    // The proposal's dangling "· spirits ·" bug: brand is '' on the wire
+    // when the feed name yields none, and the row must start with the
+    // category, never the separator.
+    expect(formatAttributeRow('', 'spirituosat', '50 cl', '4.7 %')).toBe(
+      'spirituosat · 50 cl · 4.7 %',
+    );
+    expect(formatAttributeRow(null, 'viinit', '75 cl', '12.5 %')).toBe(
+      'viinit · 75 cl · 12.5 %',
+    );
+  });
+
+  it('treats a whitespace-only brand as absent', () => {
+    expect(formatAttributeRow('  ', 'oluet', '33 cl')).toBe('oluet · 33 cl');
+  });
+
+  it('closes the gap when a middle part is absent — never a doubled separator', () => {
+    expect(formatAttributeRow('Anchor', null, '75 cl', '12.5 %')).toBe(
+      'Anchor · 75 cl · 12.5 %',
+    );
+  });
+
+  it('renders a lone part bare, with no separator around it', () => {
+    expect(formatAttributeRow('Anchor')).toBe('Anchor');
+    expect(formatAttributeRow(null, null, '75 cl', null)).toBe('75 cl');
+  });
+
+  it('accepts undefined parts alongside null (optional props at call sites)', () => {
+    expect(formatAttributeRow(undefined, 'viinit', undefined, '12.5 %')).toBe(
+      'viinit · 12.5 %',
+    );
+  });
+
+  it('is null when every part is absent — the caller decides render-nothing', () => {
+    expect(formatAttributeRow(null, '', undefined, '  ')).toBeNull();
+    expect(formatAttributeRow()).toBeNull();
   });
 });
