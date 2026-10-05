@@ -15,9 +15,10 @@
  *   and a null share (never a fabricated percentage);
  * - the additive coverage block (change honest-trust-surfaces): true
  *   stored catalog aggregates — product count, offer observations, the
- *   latest aggregation watermark (null when none exists) — added without
- *   touching the statistic fields and without entering the breakdown
- *   response;
+ *   time-series-aggregation job's watermark, read JOB-SCOPED so rows of
+ *   other jobs (e.g. the savings cursor) cannot shadow it (null when
+ *   that job has no row) — added without touching the statistic fields
+ *   and without entering the breakdown response;
  * - the accuracy breakdowns (`?groupBy=category|carrier`, change
  *   expand-alerts-accuracy-breakdowns): cells under the 10-outcome
  *   floor carry NO share (a count-only state distinct from the empty
@@ -42,6 +43,7 @@ import {
   seedOffer,
   seedProduct,
 } from './harness';
+import { WATERMARK_KEY } from '../../cron/time-series-aggregation';
 import { D1CalculationOutcomeRepository } from '../../../../../packages/data-platform/src/repositories/d1/calculation-outcome.repository';
 import { USER_REPORTED_OUTCOMES_LABEL_EN, USER_REPORTED_OUTCOMES_LABEL_FI } from '../../../../../packages/core-domain/src/outcomes/outcomes.types';
 
@@ -342,9 +344,12 @@ describe('GET /api/v1/accuracy — additive coverage block (honest-trust-surface
     seedOffer(s.db, { id: 11, productId: 1 });
     seedOffer(s.db, { id: 12, productId: 1, merchant: 'eu-import' });
     seedOffer(s.db, { id: 21, productId: 2 });
-    // Two consuming jobs — the reported watermark is the LATEST one.
-    seedWatermark(s.db, 'price-history-daily', '2026-09-30T06:00:00.000Z');
-    seedWatermark(s.db, 'price-history-weekly', '2026-10-01T06:00:00.000Z');
+    // Two consuming jobs share aggregation_watermarks — coverage reads
+    // ONLY the time-series-aggregation row (per-job read contract,
+    // watermark-isolation-history-backfill D1); the other job's row here
+    // is even lexicographically greater, so a table-wide MAX would fail.
+    seedWatermark(s.db, 'price-history-daily', '2026-10-02T06:00:00.000Z');
+    seedWatermark(s.db, WATERMARK_KEY, '2026-10-01T06:00:00.000Z');
 
     const app = buildApp();
     const res = await request(app, permissiveEnv(s.d1), '/api/v1/accuracy');
@@ -353,6 +358,29 @@ describe('GET /api/v1/accuracy — additive coverage block (honest-trust-surface
     expect(body.coverage).toEqual({
       productCount: 2,
       offerObservations: 3,
+      lastIngestAt: '2026-10-01T06:00:00.000Z',
+    });
+  });
+
+  it('non-ISO cursor row of another job cannot shadow the read (job-scoped, spec watermark-isolation-history-backfill)', async () => {
+    const s = await setup();
+    // The aggregation job's watermark: an ISO-8601 instant.
+    seedWatermark(s.db, WATERMARK_KEY, '2026-10-01T06:00:00.000Z');
+    // The savings-snapshot pass stores its product-id cursor in the SAME
+    // table (watermark = String(productId)); "9194" > "2026-…" lexically,
+    // so a table-wide MAX(watermark) would shadow the real watermark
+    // forever — the read must scope to the aggregation job's row.
+    seedWatermark(s.db, 'savings-snapshot-cursor', '9194');
+
+    const app = buildApp();
+    const res = await request(app, permissiveEnv(s.d1), '/api/v1/accuracy');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { coverage: CoverageBody };
+    // Scenario "Non-ISO watermark rows cannot shadow the read":
+    // lastIngestAt is the ISO watermark, not the numeric cursor.
+    expect(body.coverage).toEqual({
+      productCount: 0,
+      offerObservations: 0,
       lastIngestAt: '2026-10-01T06:00:00.000Z',
     });
   });
