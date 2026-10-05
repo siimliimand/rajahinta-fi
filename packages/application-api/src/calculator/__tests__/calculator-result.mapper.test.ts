@@ -151,6 +151,7 @@ function makeProduct(
     depositSystemStatus: true,
     ean: null,
     weightGrams: null,
+    reviewHoldReason: null, // not held (change nonalcoholic-catalog-hygiene)
     createdAt: CALCULATED_AT,
     updatedAt: CALCULATED_AT,
     ...overrides,

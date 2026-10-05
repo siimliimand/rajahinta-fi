@@ -503,3 +503,63 @@ describe('mapSourceCategory — the 22 % intermediate-products boundary (design 
     expect(() => mapSourceCategory('Olut', -0.1)).toThrow(RangeError);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Non-alcoholic ingestion guard (change nonalcoholic-catalog-hygiene,
+// design D3) — category eligibility: a keyed-zero or unparseable (null)
+// ABV can never be placed in a typed alcohol category
+// ---------------------------------------------------------------------------
+
+describe('mapSourceCategory — non-alcoholic ingestion guard (nonalcoholic-catalog-hygiene)', () => {
+  it('re-keys a typed alcohol outcome to non-alcoholic on a keyed-zero ABV, attributable', () => {
+    expect(mapSourceCategory('Olut', 0)).toEqual({
+      canonicalCategory: 'non-alcoholic',
+      taxCategory: 'other_fermented',
+      nonAlcoholicHold: true,
+    });
+    expect(mapSourceCategory('Siideri', 0)!.nonAlcoholicHold).toBe(true);
+    expect(mapSourceCategory('Viski', 0)!.canonicalCategory).toBe('non-alcoholic');
+  });
+
+  it('re-keys on an unparseable ABV (null — the adapters\u2019 explicit value)', () => {
+    expect(mapSourceCategory('Olut', null)).toEqual({
+      canonicalCategory: 'non-alcoholic',
+      taxCategory: 'other_fermented',
+      nonAlcoholicHold: true,
+    });
+  });
+
+  it('stays unkeyed when no ABV was offered (undefined) — historical outcome stands', () => {
+    expect(mapSourceCategory('Olut')).toEqual({
+      canonicalCategory: 'beer',
+      taxCategory: 'beer',
+    });
+  });
+
+  it('any ABV above zero keeps the keyword outcome entirely', () => {
+    expect(mapSourceCategory('Olut', 0.0001)).toEqual({
+      canonicalCategory: 'beer',
+      taxCategory: 'beer',
+    });
+  });
+
+  it('non-alcoholic and explicit-other outcomes pass through without a hold', () => {
+    expect(mapSourceCategory('Energiajuomat', 0)).toEqual({
+      canonicalCategory: 'non-alcoholic',
+      taxCategory: 'other_fermented',
+    });
+    expect(mapSourceCategory('Muut juomat', 0)).toEqual({
+      canonicalCategory: 'other',
+      taxCategory: 'other_fermented',
+    });
+    expect(mapSourceCategory('Alkoholfritt', null)!.nonAlcoholicHold).toBeUndefined();
+  });
+
+  it('never fights the boundary rule — above 22 % the ABV is above zero anyway', () => {
+    expect(mapSourceCategory('Muut juomat', 0.41)).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+      boundaryApplied: true,
+    });
+  });
+});

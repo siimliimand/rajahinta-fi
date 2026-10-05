@@ -43,7 +43,7 @@
  * @module AlkoFeedAdapter
  */
 
-import { mapSourceCategory } from '@rajahinta/core-domain';
+import { mapSourceCategory, NONALCOHOLIC_HOLD_REASON } from '@rajahinta/core-domain';
 import type { IFeedAdapter, RawFeedRecord } from '../interfaces/feed-adapter.interface';
 
 // ---------------------------------------------------------------------------
@@ -383,6 +383,22 @@ export function parseAlkoAssortment(payload: unknown): {
 
     const volumeLitres = readPositiveNumber(row.volume);
 
+    // Non-alcoholic ingestion guard (change nonalcoholic-catalog-hygiene,
+    // design D3): the mapper re-keyed a typed alcohol outcome to
+    // non-alcoholic because this row's ABV is 0 or unparseable. The row
+    // still ingests (ESTIMATED-status contract untouched) with the hold
+    // reason on the record — the correction-flag error rides the same
+    // per-row error surface as every other held shape.
+    const held = mapping.nonAlcoholicHold === true;
+    if (held) {
+      errors.push(
+        `Held for review ${label}: ABV is ${abvPercent === 0 ? '0' : 'unparseable'} but the ` +
+          'storefront groups resolve to an alcohol category — non-alcoholic rows are barred ' +
+          `from alcohol categories, ingested as non-alcoholic with hold reason ` +
+          `${NONALCOHOLIC_HOLD_REASON}, flagged for the correction queue`,
+      );
+    }
+
     records.push({
       productId: readNonEmptyString(row.id) ?? '',
       productName: readNonEmptyString(row.name) ?? '',
@@ -413,6 +429,7 @@ export function parseAlkoAssortment(payload: unknown): {
       originalCurrency: 'EUR',
       availability: readAvailability(row.webshopStock),
       sourceUrl: null,
+      reviewHoldReason: held ? NONALCOHOLIC_HOLD_REASON : null,
     });
   });
 

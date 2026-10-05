@@ -232,7 +232,7 @@ describe('GET /api/v1/products — server-side sort (task 1.2, change client-exp
     expect(third.ids).toEqual(first.ids);
   });
 
-  it('ALCOHOL_PERCENTAGE orders descending with unknown ABV last and the id tiebreaker', async () => {
+  it('ALCOHOL_PERCENTAGE orders descending with the id tiebreaker; unknown ABV is outside the universe', async () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1, name: 'Vahva Olut', alcoholByVolume: 0.085 });
     seedProduct(db, { id: 2, name: 'Keski Olut', alcoholByVolume: 0.047 });
@@ -240,9 +240,12 @@ describe('GET /api/v1/products — server-side sort (task 1.2, change client-exp
     // Two rows share the ABV — the id tiebreak resolves them deterministically.
     seedProduct(db, { id: 4, name: 'Tasu A', alcoholByVolume: 0.053 });
     seedProduct(db, { id: 5, name: 'Tasu B', alcoholByVolume: 0.053 });
+    // Unknown ABV used to sort last; the shared listing predicate (change
+    // nonalcoholic-catalog-hygiene) keeps it outside the catalog.
     seedProduct(db, { id: 6, name: 'Tuntematon', alcoholByVolume: null });
-    const { ids } = await listIds(buildApp(), permissiveEnv(d1), 'sort=ALCOHOL_PERCENTAGE');
-    expect(ids).toEqual([1, 4, 5, 2, 3, 6]);
+    const { ids, body } = await listIds(buildApp(), permissiveEnv(d1), 'sort=ALCOHOL_PERCENTAGE');
+    expect(ids).toEqual([1, 4, 5, 2, 3]);
+    expect(body.total).toBe(5);
   });
 
   it('ALCOHOL_PERCENTAGE is deterministic across repeat requests', async () => {
@@ -1084,7 +1087,7 @@ describe('eurPerGram embed', () => {
     expect(Object.keys(body.items[0]!)).toEqual([...LEGACY_ITEM_KEYS, 'eurPerGram']);
   });
 
-  it('search metric names a missing alcohol fraction before the absent price (module precedence)', async () => {
+  it('a product with no parseable ABV is outside the listing universe (shared predicate)', async () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1, alcoholByVolume: null });
     const app = buildApp();
@@ -1092,15 +1095,13 @@ describe('eurPerGram embed', () => {
     const res = await request(app, permissiveEnv(d1), '/api/v1/products', {
       headers: AGE,
     });
-    const body = (await res.json()) as {
-      items: Array<{ eurPerGram: Record<string, unknown> }>;
-    };
-    expect(body.items[0]!.eurPerGram).toEqual({
-      status: 'unavailable',
-      centsPerGram: null,
-      ethanolGrams: null,
-      reason: 'MISSING_ALCOHOL_FRACTION',
-    });
+    const body = (await res.json()) as { items: Array<Record<string, unknown>>; total: number };
+    // Change nonalcoholic-catalog-hygiene: the MISSING_ALCOHOL_FRACTION
+    // embed path is unreachable through the listing — an alcohol-category
+    // product without a parsed ABV renders nowhere at all. The reason's
+    // precedence stays pinned by the pure module's unit tests.
+    expect(body.items).toEqual([]);
+    expect(body.total).toBe(0);
   });
 
   it('offer metric is computed from the exact inputs while VERIFIED (density 789 g/l)', async () => {
@@ -1212,7 +1213,7 @@ describe('eurPerGram embed', () => {
     expect(body.offers[0]!.eurPerGram.centsPerGram).toBeCloseTo(28.60087, 4);
   });
 
-  it('missing alcohol percentage → explicit unavailable, no value substituted', async () => {
+  it('a product with no parseable ABV degrades to not found on the detail route (shared predicate)', async () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1, alcoholByVolume: null });
     seedOffer(db, { id: 11, productId: 1, priceCents: 350 });
@@ -1221,15 +1222,10 @@ describe('eurPerGram embed', () => {
     const res = await request(app, permissiveEnv(d1), '/api/v1/products/1', {
       headers: AGE,
     });
-    const body = (await res.json()) as {
-      offers: Array<{ eurPerGram: Record<string, unknown> }>;
-    };
-    expect(body.offers[0]!.eurPerGram).toEqual({
-      status: 'unavailable',
-      centsPerGram: null,
-      ethanolGrams: null,
-      reason: 'MISSING_ALCOHOL_FRACTION',
-    });
+    // The detail read resolves through the same listing universe (design
+    // D2): the offer embed can never render for a product the catalog
+    // cannot list — consistent degradation, not a half-rendered page.
+    expect(res.status).toBe(404);
   });
 
   it('the embed never reorders the offers across identical requests', async () => {
@@ -1518,24 +1514,20 @@ describe('GET /api/v1/products — listing €/g embed from the cheapest current
     });
   });
 
-  it('an alcohol-free product reports ZERO_ETHANOL on the listing', async () => {
+  it('a zero-ABV (alcohol-free) product is outside the listing universe (shared predicate)', async () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1, name: 'Karhu 0,0', alcoholByVolume: 0 });
     seedOffer(db, { id: 11, productId: 1, priceCents: 320 });
     const app = buildApp();
 
     const res = await request(app, permissiveEnv(d1), '/api/v1/products', { headers: AGE });
-    const body = (await res.json()) as {
-      items: Array<{ id: number; eurPerGram: Record<string, unknown> }>;
-    };
-    // Present and valid ABV data, physically undefined metric — the
-    // honest reason, never INVALID_ALCOHOL_FRACTION (design D2).
-    expect(body.items[0]!.eurPerGram).toEqual({
-      status: 'unavailable',
-      centsPerGram: null,
-      ethanolGrams: null,
-      reason: 'ZERO_ETHANOL',
-    });
+    const body = (await res.json()) as { items: Array<{ id: number }>; total: number };
+    // Change nonalcoholic-catalog-hygiene: the ZERO_ETHANOL embed path is
+    // unreachable through the listing — an alcohol-category product with
+    // nothing to compute excise on renders nowhere at all. The reason
+    // stays pinned by the pure module's unit tests.
+    expect(body.items).toEqual([]);
+    expect(body.total).toBe(0);
   });
 
   it('the live 2900 pack row prices the package: 24 name-parsed units × per-unit 0.33 l → ≈ 6.64 ¢/g', async () => {

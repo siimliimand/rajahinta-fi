@@ -1,0 +1,17 @@
+-- Task 3.1 (change nonalcoholic-catalog-hygiene, design D1): the review
+-- hold behind the non-alcoholic ingestion guard — a zero- or
+-- unparseable-ABV row is never assigned into an alcohol category; it
+-- still ingests (the ESTIMATED-status contract is untouched) but is
+-- correction-flagged and HELD from every user-facing surface pending
+-- review, through the existing correction queue. Hold-for-review, never
+-- delete (design D1): provenance, offer history, and the correction
+-- queue's evidence all reference the row.
+--
+-- Nullable forward column per the weight_grams precedent (0020): NULL is
+-- the meaningful birth state of every product (not held), not missing
+-- data. The only writer value today is the core-domain
+-- NONALCOHOLIC_HOLD_REASON token 'nonalcoholic_in_alcohol_category';
+-- clearing the hold is the correction review flow's decision, not a
+-- migration's (design D4: the queue, not the schema, owns review state —
+-- the ~120 affected production rows are enumerated by the audit script).
+ALTER TABLE `product_master` ADD COLUMN `review_hold_reason` text;

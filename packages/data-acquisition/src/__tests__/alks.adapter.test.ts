@@ -232,10 +232,12 @@ describe('AlksFeedAdapter — per-row errors, ESTIMATED encoding, feed weight', 
 
     const { records, errors } = await new AlksFeedAdapter().fetch(CONFIG);
 
-    // 4 records (contradiction row dropped by the parser) + 2 per-row
-    // correction errors (non-matching SKU, contradiction).
-    expect(records).toHaveLength(4);
-    expect(errors).toHaveLength(2);
+    // 7 records (contradiction row dropped by the parser) + 6 per-row
+    // correction errors: the non-matching SKU, the contradiction, and
+    // the four non-alcoholic-guard holds (change
+    // nonalcoholic-catalog-hygiene).
+    expect(records).toHaveLength(7);
+    expect(errors).toHaveLength(6);
     expect(records[0]).toMatchObject({
       ean: '4740077005916',
       weightGrams: 530,
@@ -259,12 +261,17 @@ describe('AlksFeedAdapter — per-row errors, ESTIMATED encoding, feed weight', 
 
     const { records, errors } = await new AlksFeedAdapter().fetch(CONFIG);
 
-    // No record dropped for the parse failure, no error either — the
-    // ESTIMATED encoding (null ABV / 0 ml) IS the resolved outcome.
+    // No record dropped for the parse failure — the ESTIMATED encoding
+    // (null ABV / 0 ml) IS the resolved outcome. Since the change
+    // nonalcoholic-catalog-hygiene guard the row ALSO carries the review
+    // hold (its category maps to beer): one correction error, the
+    // product held from user-facing surfaces.
     expect(records).toHaveLength(1);
-    expect(errors).toEqual([]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('nonalcoholic_in_alcohol_category');
     expect(records[0].alcoholByVolume).toBeNull();
     expect(records[0].volumeMl).toBe(0);
+    expect(records[0].reviewHoldReason).toBe('nonalcoholic_in_alcohol_category');
   });
 
   it('feed weight passes through: 0.53 kg → 530 g, absent → null', async () => {

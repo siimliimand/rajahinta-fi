@@ -16,6 +16,16 @@
  * field), and a name/category contradiction (correction error, no
  * record).
  *
+ * Rows 6–8 (change nonalcoholic-catalog-hygiene) pin the live feed's
+ * non-alcoholic drift shapes the proposal documents (2026-10-04 sample):
+ * an energy drink, a mineral water, and a juice, each filed by the
+ * storefront under the cider parent — the parent term plus its mappable
+ * leaf, the payload shape the parser resolves first-mappable-term — with
+ * no parseable ABV. Each ingests — the ESTIMATED-status contract is
+ * untouched — re-keyed to the non-alcoholic category with the review
+ * hold and a correction error, held from user-facing surfaces by the
+ * shared listing predicate.
+ *
  * @module AlksStoreProductsFixture
  */
 
@@ -105,6 +115,46 @@ export const ALKS_GOLDEN_PRODUCTS: readonly AlksFixtureProduct[] = [
     prices: { price: '449', currency_code: 'EUR' },
     categories: [{ name: 'Viini' }],
     weight: '0.66',
+    is_in_stock: true,
+  },
+  // Non-alcoholic guard, live drift shape 1 (change
+  // nonalcoholic-catalog-hygiene): the energy drink the proposal quotes
+  // ("Red Bull Sugarfree tölkki", other_fermented, alcoholByVolume 0) —
+  // no parseable ABV, storefront cider parent → ingested re-keyed to
+  // non-alcoholic with the review hold plus a correction error.
+  {
+    id: 756335,
+    name: 'Red Bull Sugarfree tölkki 0,355 l',
+    sku: 'fi-9016290000018',
+    permalink: 'https://alks.fi/product/red-bull-sugarfree-tolkki/',
+    prices: { price: '189', currency_code: 'EUR' },
+    categories: [{ name: 'Siideri ja pitkäjuoma' }, { name: 'Siideri' }],
+    brands: [{ name: 'Red Bull' }],
+    weight: '0.37',
+    is_in_stock: true,
+  },
+  // Live drift shape 2: mineral water under the same cider parent —
+  // held exactly like the energy drink (unparseable ABV).
+  {
+    id: 756336,
+    name: 'Ramlösa Citrus 0,5 l pullo',
+    sku: 'se-7310870004017',
+    permalink: 'https://alks.fi/product/ramlosa-citrus/',
+    prices: { price: '169', currency_code: 'EUR' },
+    categories: [{ name: 'Siideri ja pitkäjuoma' }, { name: 'Siideri' }],
+    brands: [{ name: 'Ramlösa' }],
+    weight: '0.55',
+    is_in_stock: true,
+  },
+  // Live drift shape 3: cherry juice under the same cider parent —
+  // held exactly like the energy drink (unparseable ABV, no weight).
+  {
+    id: 756337,
+    name: 'Kirsikkamehu 1 l',
+    sku: 'fi-6410405001235',
+    permalink: 'https://alks.fi/product/kirsikkamehu/',
+    prices: { price: '249', currency_code: 'EUR' },
+    categories: [{ name: 'Siideri ja pitkäjuoma' }, { name: 'Siideri' }],
     is_in_stock: true,
   },
 ];

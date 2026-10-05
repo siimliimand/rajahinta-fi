@@ -68,6 +68,16 @@ export interface RawFeedRecord {
    * the PER-UNIT volume. Feeds without multipack names omit the field.
    */
   readonly packCount?: number | null;
+  /**
+   * Review hold (change nonalcoholic-catalog-hygiene, design D1/D3) —
+   * present exactly when the ingestion guard re-assigned the row out of
+   * an alcohol category (a zero or unparseable ABV can never be placed
+   * in one): the machine-readable reason (`NONALCOHOLIC_HOLD_REASON`)
+   * the persistence layer stamps onto product_master.review_hold_reason,
+   * alongside the per-row correction error the parser already emits.
+   * Feeds with no guard outcome omit the field; null is not held.
+   */
+  readonly reviewHoldReason?: string | null;
 }
 
 /**

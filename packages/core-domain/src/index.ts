@@ -301,6 +301,7 @@ export {
   mapSourceCategory,
   isKnownTaxCategory,
   SWEDISH_SOURCE_CATEGORY_MAP,
+  NONALCOHOLIC_HOLD_REASON,
 } from './normalization/source-category.mapper';
 export type { SourceCategoryMapping } from './normalization/source-category.mapper';
 

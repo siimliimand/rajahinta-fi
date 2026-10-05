@@ -51,6 +51,16 @@ function weightGramsOf(input: UpsertProductInput): number | null {
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
 }
 
+/**
+ * The ingestion guard's review hold arrives the same way (the MappedPair
+ * widening, change nonalcoholic-catalog-hygiene); plain UpsertProductInput
+ * callers carry none. Absent or non-string reads as null — not held.
+ */
+function reviewHoldReasonOf(input: UpsertProductInput): string | null {
+  const raw = (input as { reviewHoldReason?: unknown }).reviewHoldReason;
+  return typeof raw === 'string' && raw !== '' ? raw : null;
+}
+
 @Injectable()
 export class DrizzleUpsertRepository implements IUpsertRepository {
   constructor(
@@ -84,6 +94,7 @@ export class DrizzleUpsertRepository implements IUpsertRepository {
             regulatoryClassification: input.regulatoryClassification,
             depositSystemStatus: input.depositSystemStatus,
             weightGrams: weightGramsOf(input),
+            reviewHoldReason: reviewHoldReasonOf(input),
             updatedAt: new Date(),
           })
           .where(eq(productMaster.id, existing[0].id));
@@ -138,6 +149,7 @@ export class DrizzleUpsertRepository implements IUpsertRepository {
         regulatoryClassification: input.regulatoryClassification,
         depositSystemStatus: input.depositSystemStatus,
         weightGrams: weightGramsOf(input),
+        reviewHoldReason: reviewHoldReasonOf(input),
         ean: input.ean,
       })
       .returning({ id: productMaster.id });

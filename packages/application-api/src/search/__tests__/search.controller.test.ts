@@ -45,6 +45,7 @@ const PROD_Z = {
   regulatoryClassification: 'beer',
   depositSystemStatus: false,
   ean: '0642000123456',
+  reviewHoldReason: null, // not held (change nonalcoholic-catalog-hygiene)
   weightGrams: 520, // 0.33 l glass bottle, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
@@ -62,6 +63,7 @@ const PROD_A = {
   regulatoryClassification: 'beer',
   depositSystemStatus: false,
   ean: '0642000654321',
+  reviewHoldReason: null, // not held (change nonalcoholic-catalog-hygiene)
   weightGrams: 720, // 0.50 l glass bottle, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
@@ -82,6 +84,7 @@ const PROD_KARHU_NAME = {
   regulatoryClassification: 'beer',
   depositSystemStatus: true,
   ean: '0641000111111',
+  reviewHoldReason: null, // not held (change nonalcoholic-catalog-hygiene)
   weightGrams: 345, // 0.33 l can, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
@@ -99,6 +102,7 @@ const PROD_KARHU_BRAND = {
   regulatoryClassification: 'beer',
   depositSystemStatus: true,
   ean: '0641000222222',
+  reviewHoldReason: null, // not held (change nonalcoholic-catalog-hygiene)
   weightGrams: 345, // 0.33 l can, filled
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),

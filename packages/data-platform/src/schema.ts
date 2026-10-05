@@ -62,6 +62,13 @@ export const productMaster = pgTable('product_master', {
    * default (change alks-feed-and-import-vat task 2.1).
    */
   weightGrams: integer('weight_grams'),
+  /**
+   * Review hold — mirrors the D1 column 1:1 (migration 0029, change
+   * nonalcoholic-catalog-hygiene). NULL = not held; non-null carries the
+   * machine-readable hold reason (the ingestion guard's
+   * 'nonalcoholic_in_alcohol_category' token today).
+   */
+  reviewHoldReason: text('review_hold_reason'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
