@@ -1,6 +1,9 @@
 # Rajahinta data-quality threshold alerts (task 4.1, change
-# data-quality-and-publication-trust) — Grafana-managed alert rules in
-# provisioning format (apiVersion: 1), importable into Grafana Cloud.
+# data-quality-and-publication-trust; extended by task 1.6 of
+# watermark-isolation-history-backfill with the summary-coverage
+# invariant rule and the accuracy-watermark canary at the bottom of the
+# same group) — Grafana-managed alert rules in provisioning format
+# (apiVersion: 1), importable into Grafana Cloud.
 #
 # Every rule queries the Cloudflare Analytics Engine SQL dataset the
 # Worker writes (see apps/api-worker/src/observability/METRICS.md,
@@ -23,16 +26,61 @@
 #     for 1 h. The +Inf sentinel (9007199254740991) for a
 #     never-successful feed exceeds it by construction.
 #
+# TASK 1.6 PROVENANCE (watermark-isolation-history-backfill):
+#   - summary coverage: < 1 — the threshold is the invariant itself (the
+#     pinned test: one aggregation pass ⇒ every product with
+#     observations has ≥ 1 daily summary bucket). The pass writes the
+#     gauge only AFTER its writes, so a sub-1 ratio is the pass's real
+#     end state, never mid-write ordering; real drift persists tick over
+#     tick, while a gap the pass just fixed never shows as a one-tick
+#     dip. `for: 1h` = the breach must span ≥ 2 producer ticks (the
+#     gauge cadence is the 30-min cron; one point per 30-min window), so
+#     one quiet window never pages. The +Inf sentinel
+#     (9007199254740991 = 0 products-with-observations, the vacuously-
+#     complete window) is excluded from firing BY CONSTRUCTION: it fails
+#     `lt 1`, so the rule stays Normal on it. A SQL filter
+#     (double1 < sentinel) was deliberately NOT used: the filtered
+#     empty result would turn every vacuous window into NoData — and
+#     this rule ships noDataState: Alerting (the aggregation cron is the
+#     writer; its silence is the blind spot, same as the three cadence
+#     rules above) — so the filter would page on exactly the vacuous
+#     state the sentinel exists to keep quiet. NoData instead means the
+#     cron stopped writing the gauge.
+#   - accuracy watermark canary: GETs the PUBLIC accuracy endpoint
+#     (https://rajahinta.fi/api/v1/accuracy, no credentials) and
+#     computes, in the Infinity query's computed column, 0 when
+#     coverage.lastIngestAt matches the display guard's strict ISO-8601
+#     instant shape (AccuracyStat.tsx ISO_INSTANT_SHAPE — shape parity;
+#     impossible-but-shape-valid values stay the guard's Date.parse job)
+#     and 1 otherwise: null, missing, empty (trim coerces non-strings to
+#     "") and any corrupt string — the "9194" incident class — all
+#     render 1. Fires on > 0.5 for 10 m = two consecutive 5-min
+#     evaluations: one flaky fetch never pages, a persisted corrupt
+#     value pages immediately after. noDataState is NOT Alerting: an
+#     unreachable endpoint is a transport failure, not a corrupt
+#     watermark — the deploy health gates (GET /api/v1/health/ready) and
+#     the cron freshness checker own that failure; a changed response
+#     shape shows as NoData here for forensics without paging.
+#     execErrState stays Error like every rule in this file.
+#
 # ROUTING: rules carry only `severity` labels — route them through your
 # Grafana Cloud notification policy / contact points (Alerting →
 # Notification policies). No credentials or endpoints are hardcoded
 # here; the data source carries them.
 #
 # IMPORT: replace RAJAHINTA_AE_DATASOURCE_UID with your AE SQL data
-# source's uid (see infra/README.md, "Data-quality panel"). Pre-wiring
-# the gauges (before the writer seam is live) shows as NoData — three
-# rules deliberately treat NoData as Alerting, because a silent writer
-# is itself the blind spot the deployment-observability spec forbids.
+# source's uid (see infra/README.md, "Data-quality panel"). The canary
+# rule additionally needs a SECOND, credential-free Infinity data source
+# that GETs https://rajahinta.fi/api/v1/accuracy (allowedHosts
+# https://rajahinta.fi) — replace RAJAHINTA_PUBLIC_API_DATASOURCE_UID
+# with its uid. NEVER point the canary at the AE data source: its
+# Cloudflare credentials would ride along to the public host. Pre-wiring
+# the gauges (before the writer seam is live) shows as NoData — four
+# rules deliberately treat NoData as Alerting (the three cadence rules
+# and the summary-coverage invariant; the accuracy canary deliberately
+# does not — an unreachable endpoint is a different failure than a
+# corrupt value), because a silent writer is itself the blind spot the
+# deployment-observability spec forbids.
 apiVersion: 1
 groups:
   - orgId: 1
@@ -296,6 +344,159 @@ groups:
               conditions:
                 - evaluator:
                     params: [172800]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: threshold
+      - title: RajahintaHistorySummaryCoverageBelowInvariant
+        condition: C
+        for: 1h
+        noDataState: Alerting
+        execErrState: Error
+        annotations:
+          summary: >-
+            The 30-min aggregation pass wrote a summary-coverage ratio below 1 for two
+            consecutive ticks (rajahinta_history_summary_coverage_ratio =
+            {{ $labels.rendered_value }}): products with observations in the pass's window lack
+            price_history_summaries daily buckets — their calculator result pages render a
+            permanent gray "Hintahistoria" skeleton and product pages lose the 90-day price
+            context (the coverage-gap failure class watermark-isolation-history-backfill fixed
+            for products 2180, 1000, 3000). The gauge is written AFTER the pass's writes, so a
+            sub-1 ratio is real end-state drift; the +Inf sentinel (0 products with observations
+            — vacuously complete) fails `lt 1` and can never fire this rule. NoData means the
+            aggregation cron stopped writing the gauge.
+          runbook: >-
+            1) Run the backfill script's coverage check
+            (scripts/backfill-history-summaries.ts): products with observations but zero
+            summaries in the last 365 days — expect > 0 while the alert fires.
+            2) Check the */30 aggregation cron ran and its summary writes succeeded (Workflows
+            instance state / logs) — the ratio is written after the pass, so the breach is the
+            pass's real end state, not mid-write ordering.
+            3) Fill bounded gaps with the documented manual re-scan: lower the aggregation
+            watermark to the earliest missing observation date, let the idempotent per-bucket
+            upserts converge, restore the watermark (the change's runbook section).
+            4) A ratio above 1 is drift in the other direction (summarized rows without matching
+            observations) — investigate orphaned price_history_summaries rows.
+        labels:
+          severity: critical
+          team: rajahinta
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: RAJAHINTA_AE_DATASOURCE_UID
+            model:
+              datasource:
+                type: yesoreyeram-infinity-datasource
+                uid: RAJAHINTA_AE_DATASOURCE_UID
+              data: >-
+                SELECT blob2 AS rendered_value,
+                       double1 AS summary_coverage
+                FROM rajahinta-api-metrics-production
+                WHERE index1 = 'rajahinta_history_summary_coverage_ratio'
+                  AND timestamp > NOW() - INTERVAL '30' MINUTE
+                ORDER BY timestamp DESC
+                LIMIT 1
+              format: table
+              method: POST
+              parser: backend
+              refId: A
+              source: response
+              type: json
+              url: https://api.cloudflare.com/client/v4/accounts/CF_ACCOUNT_ID/analytics_engine/sql?dataset=rajahinta-api-metrics-production
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [1]
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: threshold
+      - title: RajahintaAccuracyWatermarkNotIso
+        condition: C
+        for: 10m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: >-
+            The public accuracy endpoint (GET /api/v1/accuracy) returned a coverage.lastIngestAt
+            that is not an ISO-8601 instant — the exact production incident
+            watermark-isolation-history-backfill fixed: a savings-cursor row ("9194") shadowed
+            the real ingestion watermark through a table-wide MAX(watermark) read, and the trust
+            row rendered "Viimeisin päivitys: 1.1.9194" to every visitor. The producer read is
+            job-scoped (task 1.1) and the display is strictly shape-checked (task 1.2); this
+            canary fires on any regression of either at the public surface. The canary computes
+            0 = ISO instant shape, 1 = not (null/missing/empty included) and fires on > 0.5.
+          runbook: >-
+            1) GET the endpoint and read coverage.lastIngestAt — the returned value is the
+            corrupted watermark.
+            2) A numeric-cursor-shaped value ("9194" class): a non-ISO row re-entered
+            aggregation_watermarks AND a table-wide watermark read is still in place — confirm
+            COVERAGE_SQL in apps/api-worker/src/routes/outcomes.routes.ts is still scoped to
+            job_name = 'time-series-aggregation' and search for new table-wide watermark reads.
+            3) null/empty while the catalog is non-empty: the aggregation job's watermark row is
+            missing — check the job's write path (WATERMARK_KEY = 'time-series-aggregation') and
+            recent D1 state.
+            4) Visitor impact is bounded: the display guard renders no sync row for a corrupt
+            value, so the page shows a missing sync date, never a wrong one.
+        labels:
+          severity: critical
+          team: rajahinta
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: RAJAHINTA_PUBLIC_API_DATASOURCE_UID
+            model:
+              datasource:
+                type: yesoreyeram-infinity-datasource
+                uid: RAJAHINTA_PUBLIC_API_DATASOURCE_UID
+              source: url
+              url: https://rajahinta.fi/api/v1/accuracy
+              method: GET
+              format: table
+              parser: backend
+              refId: A
+              type: json
+              root_selector: coverage
+              computed_columns:
+                - selector: >-
+                    (trim(lastIngestAt) =~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$') ? 0 : 1
+                  text: non_iso
+              summarizeExpression: max(non_iso)
+              summarizeAlias: non_iso_watermark
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0.5]
                     type: gt
                   operator:
                     type: and

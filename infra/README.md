@@ -74,7 +74,9 @@ Enforced in staging and production (unchanged across the migration):
 ## Data-quality panel
 
 `infra/grafana/` holds the Grafana Cloud artifacts for the data-quality
-surface (task 4.1, change `data-quality-and-publication-trust`). The
+surface (task 4.1, change `data-quality-and-publication-trust`;
+extended by task 1.6 of `watermark-isolation-history-backfill` with the
+summary-coverage invariant and the accuracy-watermark canary). The
 metric data itself lives in the Workers Analytics Engine dataset the
 api-worker writes (`rajahinta-api-metrics-{dev,staging,production}` —
 metric names, write shapes, and AE SQL queries are documented in
@@ -91,6 +93,8 @@ alerts:
 | Alko reference coverage % | `rajahinta_data_quality_alko_reference_coverage_ratio` | `RajahintaAlkoReferenceCoverageNearZero` (critical) | coverage `< 0.05` for `2h` (the `== 0` scenario included) while the savings surface is enabled |
 | Transport offer rows per carrier | `rajahinta_transport_offer_rows` (`carrier` label) | `RajahintaTransportOfferRowsZero` (warning) | a carrier sits at `< 1` row for `30m`; expected carriers are written as honest 0s |
 | Per-feed last-success age | `rajahinta_feed_last_success_age_seconds` (`merchant` label) | `RajahintaFeedLastSuccessStale` (warning) | age `> 2d` (2× the registry's daily cadence) for `1h`; a never-successful feed's `+Inf` sentinel breaches it by construction |
+| History summary coverage | `rajahinta_history_summary_coverage_ratio` | `RajahintaHistorySummaryCoverageBelowInvariant` (critical) | ratio `< 1` for `1h` — the invariant itself (every product with observations has summary buckets; the breach must span ≥ 2 producer ticks so one quiet window never pages). The `+Inf` sentinel (0 products-with-observations window) fails `lt 1` and never fires |
+| — (no panel; public-endpoint canary) | — | `RajahintaAccuracyWatermarkNotIso` (critical) | `GET https://rajahinta.fi/api/v1/accuracy`'s `coverage.lastIngestAt` fails the display guard's strict ISO-8601 instant shape for `10m` (the "1.1.9194" incident class; null/missing included). NoData (endpoint unreachable) does **not** page — a transport failure is the health gates' job, not a corrupt watermark |
 
 Thresholds and `for` clauses track the merchant-registry feed cadences
 (daily price feeds; 6-hourly transport refresh; 30-min gauge tick) —
@@ -119,10 +123,20 @@ email Worker.
    literal in the panel URLs, then provisioning it (self-managed Grafana:
    drop into the provisioning directory; Grafana Cloud: import the rules
    via UI or the `/api/v1/provisioning/alert-rules` API, or `grafana-cli
-   --cloud …` provisioning). Note the three cadence-gauge rules ship with
-   `noDataState: Alerting` on purpose — a silent gauge writer is itself
+   --cloud …` provisioning). The `RajahintaAccuracyWatermarkNotIso`
+   canary additionally needs a second, **credential-free** Infinity
+   data source that GETs `https://rajahinta.fi/api/v1/accuracy`
+   (`allowedHosts: [https://rajahinta.fi]`) — replace
+   `RAJAHINTA_PUBLIC_API_DATASOURCE_UID` with its uid. Never point the
+   canary at the AE data source: its Cloudflare credentials would ride
+   along to the public host. Note the four cadence-gauge rules ship with
+   `noDataState: Alerting` on purpose (the three original cadence rules
+   and the summary-coverage invariant) — a silent gauge writer is itself
    the blind spot the deployment-observability spec forbids, so expect a
-   NoData→Alerting page until the writer seam is live.
+   NoData→Alerting page until the writer seam is live; the
+   accuracy-watermark canary deliberately ships `noDataState: NoData`
+   (an unreachable endpoint is a different failure than a corrupt
+   value).
 
 **Where alerts route** — the rules carry only `severity` + `team`
 labels; routing (email/Slack/on-call) is your Grafana Cloud notification
