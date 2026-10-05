@@ -2,7 +2,7 @@
  * Display formatters for stored product attributes (change
  * unit-integrity-and-result-trust, task 4.1).
  *
- * Both helpers are pure and locale-independent: the decimal separator is
+ * These helpers are pure and locale-independent: the decimal separator is
  * always a dot (the formatEur convention across calculator/basket/compare
  * components), so server and client renders are byte-identical and
  * hydration-safe. Absent or unparseable data returns null — the caller
@@ -51,4 +51,25 @@ export function formatVolume(litres: string | number | null): string | null {
   if (!Number.isFinite(value) || value <= 0) return null;
   if (value < 1) return `${trimDecimal((value * 100).toFixed(2))} cl`;
   return `${trimDecimal(value.toFixed(2))} l`;
+}
+
+/**
+ * Join product-attribute parts into one display row: "Anchor · viinit ·
+ * 75 cl · 12.5 %". Absent parts (null, undefined, empty or whitespace-only
+ * text) contribute nothing — including no separator — so a product whose
+ * feed name yields no brand renders "viinit · 75 cl", never the dangling
+ * "· viinit · …" that per-part ``brand + (part ? ` · ${part}` : '')``
+ * interpolation produced when brand is empty (change
+ * fi-locale-surface-hardening). Every part absent → null, matching the
+ * module's absent-means-null convention; the caller decides
+ * render-nothing.
+ */
+export function formatAttributeRow(
+  ...parts: Array<string | null | undefined>
+): string | null {
+  const present = parts.filter(
+    (part): part is string => typeof part === 'string' && part.trim() !== '',
+  );
+  if (present.length === 0) return null;
+  return present.join(' · ');
 }
