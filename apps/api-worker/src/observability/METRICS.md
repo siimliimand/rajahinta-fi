@@ -62,6 +62,18 @@ Gauges and their producers:
   `double1 = 9007199254740991` (`Number.MAX_SAFE_INTEGER`, the documented
   +Inf sentinel — AE doubles cannot carry Infinity, and the sentinel
   keeps `> threshold` / `max()` alert semantics firing)).
+- `rajahinta_history_summary_coverage_ratio` — share of the aggregation
+  window's products with observations that have `daily` summary buckets
+  (written by the 30-minute aggregation cron AFTER its writes; design D4
+  of watermark-isolation-history-backfill — "coverage measured where the
+  gap is produced"). Measured over the same D1 pair the backfill script's
+  coverage query uses: `retail_offers` rows as the observations,
+  `price_history_summaries` daily buckets at/after the window's floor
+  day (the pass's ISO-week Monday). A window with no products-with-
+  observations has no defined ratio: the point is still written, encoded
+  with the +Inf sentinel (`blob2 = "+Inf"`, `double1 = 9007199254740991`)
+  — an empty window is vacuously complete, never a gap, so a
+  below-threshold coverage alert must not fire on it (see "Querying").
 
 ### Price-alert job counters — one discrete write per counter per kind per run
 
@@ -211,6 +223,34 @@ WHERE index1 = 'rajahinta_transport_newest_offer_age_seconds'
 ORDER BY timestamp DESC
 LIMIT 1
 ```
+
+### Summary-coverage ratio (`rajahinta_history_summary_coverage_ratio`)
+
+One point per aggregation pass (design D4,
+watermark-isolation-history-backfill), written after the pass's writes —
+a 30-minute window holds exactly one, so "latest in window" is a
+bounded-window read like the freshness gauges:
+
+```sql
+SELECT timestamp,
+       blob2 AS rendered_value,
+       double1 AS summary_coverage
+FROM rajahinta-api-metrics-production
+WHERE index1 = 'rajahinta_history_summary_coverage_ratio'
+  AND timestamp > NOW() - INTERVAL '30' MINUTE
+ORDER BY timestamp DESC
+LIMIT 1
+```
+
+Zero-denominator encoding (documented decision): a window with zero
+products-with-observations writes the +Inf sentinel
+(`double1 = 9007199254740991`, `blob2 = '+Inf'`). It means "0/0 —
+nothing to summarize", NOT "0% covered": the coverage alert (task 1.6)
+fires on `double1 < threshold`, so the sentinel keeps a quiet window
+silent, while a real drift (a ratio strictly below 1 measured over a
+window WITH observations) persists tick over tick and trips it. A ratio
+above 1 is written unclamped — summarized products without matching
+observations is a drift signal in the other direction, rendered as-is.
 
 ### Data-quality gauges (task 4.1) — latest per label
 

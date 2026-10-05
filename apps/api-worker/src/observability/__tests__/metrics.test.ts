@@ -9,6 +9,9 @@
  *   tolerance of a throwing binding;
  * - the freshness gauge writers (stale share, transport age + the +Inf
  *   sentinel) and the status-class mapping;
+ * - the summary-coverage gauge writer (design D4,
+ *   watermark-isolation-history-backfill): contract name, ratio pairing,
+ *   the 0/0 +Inf encoding, the unclamped drift ratio;
  * - the price-alert job counters: one point per counter per run, the
  *   per-kind sweep-kind stamp (task 6.1), the kindless legacy shape,
  *   and the skipped-sweep zeros;
@@ -22,6 +25,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../../env';
 import {
+  HISTORY_SUMMARY_COVERAGE_GAUGE,
   PRICE_ALERT_FAILED_COUNTER,
   PRICE_ALERT_MATCHED_COUNTER,
   PRICE_ALERT_NOTIFIED_COUNTER,
@@ -31,11 +35,13 @@ import {
   TRANSPORT_AGE_INFINITE,
   TRANSPORT_NEWEST_OFFER_AGE_GAUGE,
   metricsEmitter,
+  recordHistorySummaryCoverage,
   recordPriceAlertEvaluationCounters,
   recordStalePriceShare,
   recordTransportAge,
   requestMetrics,
   statusClassOf,
+  summaryCoverageRatioOf,
 } from '../metrics';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -270,6 +276,61 @@ describe('freshness gauge writers (fake AE binding)', () => {
       labels: { carrier: '*' },
     });
     expect(ae.points[0].blobs?.[2]).toBe('{"carrier":"*"}');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Summary-coverage gauge (design D4, watermark-isolation-history-backfill)
+// ---------------------------------------------------------------------------
+
+describe('summary-coverage gauge writer (fake AE binding)', () => {
+  it('writes the contract name and the ratio over the counts', () => {
+    const ae = fakeAnalyticsEngine();
+    recordHistorySummaryCoverage(envWith(ae), 7, 8);
+    expect(ae.points).toHaveLength(1);
+    const [point] = ae.points;
+    expect(point.indexes).toEqual([HISTORY_SUMMARY_COVERAGE_GAUGE]);
+    expect(point.blobs?.[0]).toBe(HISTORY_SUMMARY_COVERAGE_GAUGE);
+    expect(point.blobs?.[1]).toBe(String(7 / 8));
+    expect(point.doubles?.[0]).toBeCloseTo(0.875);
+    // No labels — the ratio is run-wide (count-valued labels would
+    // explode the blob3 cardinality).
+    expect(point.blobs?.[2]).toBe('{}');
+  });
+
+  it('encodes a 0/0 window as the +Inf sentinel with faithful text — never a lying 0', () => {
+    const ae = fakeAnalyticsEngine();
+    recordHistorySummaryCoverage(envWith(ae), 0, 0);
+    expect(ae.points[0].doubles?.[0]).toBe(TRANSPORT_AGE_INFINITE);
+    expect(Number.isFinite(ae.points[0].doubles?.[0])).toBe(true); // AE-safe
+    expect(ae.points[0].blobs?.[1]).toBe('+Inf');
+  });
+
+  it('summaryCoverageRatioOf keeps the computation and label locked together', () => {
+    expect(summaryCoverageRatioOf(3, 4)).toEqual({
+      ratio: 0.75,
+      valueLabel: '0.75',
+    });
+    expect(summaryCoverageRatioOf(2, 0)).toEqual({
+      ratio: TRANSPORT_AGE_INFINITE,
+      valueLabel: '+Inf',
+    });
+  });
+
+  it('does not clamp a ratio above 1 — summarized without observations is a visible drift signal', () => {
+    const ae = fakeAnalyticsEngine();
+    recordHistorySummaryCoverage(envWith(ae), 3, 2);
+    expect(ae.points[0].doubles?.[0]).toBe(1.5);
+    expect(ae.points[0].blobs?.[1]).toBe('1.5');
+  });
+
+  it('no-ops safely without the METRICS binding', () => {
+    expect(() =>
+      recordHistorySummaryCoverage(envWith(null), 1, 1),
+    ).not.toThrow();
+    expect(() =>
+      recordHistorySummaryCoverage(envWith(null), 0, 0),
+    ).not.toThrow();
   });
 });
 
