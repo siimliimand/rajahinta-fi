@@ -14,9 +14,11 @@
  * copied verbatim, extended by the objective server-side sort orders
  * (task 1.2, change client-experience-improvement: LOWEST_PRICE,
  * ALPHABETICAL, ALCOHOL_PERCENTAGE — unknown values 400 like unknown
- * categories; task 1.3, change first-impression-pass flips the absent-
- * sort default to LOWEST_PRICE across the browse, ranked-q, and ids
- * paths). The detail response embeds per-merchant reliability
+ * categories; task 4.1, change catalog-first-run-polish flips the
+ * absent-sort default to ALPHABETICAL across the browse, ranked-q, and
+ * ids paths, superseding the first-impression-pass LOWEST_PRICE flip —
+ * LOWEST_PRICE stays an explicit option). The detail response embeds
+ * per-merchant reliability
  * scores (informational only — see src/services/merchant-reliability.ts).
  * Search items and detail offers carry the read-time €/g metric
  * (`eurPerGram`) with its status; on listings the metric derives from
@@ -120,9 +122,10 @@ function isCanonicalCategory(value: string): value is ProductCategory {
 /**
  * `sort` parameter (task 1.2, change client-experience-improvement) —
  * parsed against the repository's shared order set. Blank counts as
- * absent, and absent defaults to LOWEST_PRICE (task 1.3, change
- * first-impression-pass — the listing leads with the lowest observed
- * prices, offer-less products after all priced rows), matching the
+ * absent, and absent defaults to ALPHABETICAL (task 4.1, change
+ * catalog-first-run-polish, design D1 — the FI-collated name order with
+ * the id tie; supersedes the first-impression-pass LOWEST_PRICE flip,
+ * which survives only as an explicit option), matching the
  * q/ids/category blankness handling; an unknown value stays a
  * contract-level parameter error — a 400 with the same shape as the
  * unknown-category treatment, never a silent fallback (proposal
@@ -130,7 +133,7 @@ function isCanonicalCategory(value: string): value is ProductCategory {
  */
 function parseSortOrder(raw: string | undefined): CatalogSortOrder {
   const trimmed = raw?.trim() ?? '';
-  if (trimmed.length === 0) return 'LOWEST_PRICE';
+  if (trimmed.length === 0) return 'ALPHABETICAL';
   if ((CATALOG_SORT_ORDERS as readonly string[]).includes(trimmed)) {
     return trimmed as CatalogSortOrder;
   }
@@ -557,9 +560,10 @@ async function search(c: Context<AppEnv>): Promise<Response> {
       // Base items plus inputs; the embed is computed when the aggregate
       // merge resolves each product's cheapest current offer.
       const { items: baseItems, inputsById } = toSearchItems(found);
-      // Aggregates merge BEFORE ordering — LOWEST_PRICE (also the
-      // absent-sort default, task 1.3 change first-impression-pass)
-      // sorts on them; ALPHABETICAL keeps the name order with the id tie.
+      // Aggregates merge BEFORE ordering — LOWEST_PRICE sorts on them;
+      // ALPHABETICAL (also the absent-sort default since task 4.1,
+      // change catalog-first-run-polish) keeps the name order with the
+      // id tie.
       items = withOfferAggregates(
         baseItems,
         await offerAggregatesByProductId(
@@ -575,8 +579,8 @@ async function search(c: Context<AppEnv>): Promise<Response> {
       // category together with the keyword, so the result set contains
       // only keyword matches in the category. The category is NEVER
       // silently ignored because q is present (spec product-search); the
-      // sort — explicit, or the absent-sort LOWEST_PRICE default (task
-      // 1.3, change first-impression-pass) — orders the filtered set.
+      // sort — explicit, or the absent-sort ALPHABETICAL default (task
+      // 4.1, change catalog-first-run-polish) — orders the filtered set.
       //
       // searchRankedWithSuggestion (task 3.2) computes the advisory
       // did-you-mean only when the ranked search came back empty — a
@@ -602,9 +606,9 @@ async function search(c: Context<AppEnv>): Promise<Response> {
         ),
         inputsById,
       );
-      // Unconditional: the default (absent sort) is LOWEST_PRICE too
-      // (task 1.3), so the keyword path leads with the cheapest priced
-      // matches exactly as an explicit sort would — never the raw
+      // Unconditional: the default (absent sort) is ALPHABETICAL too
+      // (task 4.1, change catalog-first-run-polish), so the keyword path
+      // orders deterministically by the resolved sort — never the raw
       // relevance order of the ranked fetch.
       items.sort(compareBySortOrder(sortBy));
     } else {
