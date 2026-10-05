@@ -770,16 +770,15 @@ describe('CalculatorView per-unit price context on pack rows (catalog-first-run-
 // ---------------------------------------------------------------------------
 
 /** DOMRect for a card whose viewport geometry the test pins. */
-function rectAt(top: number, bottom: number, height: number): DOMRect {
+function rectAt(y: number, bottom: number, height: number): DOMRect {
   return {
-    top,
+    y,
     bottom,
     height,
     width: 375,
     left: 0,
     right: 375,
     x: 0,
-    y: top,
     toJSON: () => ({}),
   } as DOMRect;
 }

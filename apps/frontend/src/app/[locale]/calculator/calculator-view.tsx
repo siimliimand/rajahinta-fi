@@ -116,8 +116,8 @@ function isSubstantiallyInView(el: HTMLElement): boolean {
   // No laid-out box — nothing to bring into view; counts as visible.
   if (rect.height <= 0) return true;
   const visibleHeight =
-    Math.min(rect.bottom, viewportHeight) - Math.max(rect.top, 0);
-  return rect.top >= 0 && visibleHeight >= rect.height / 2;
+    Math.min(rect.bottom, viewportHeight) - Math.max(rect.y, 0);
+  return rect.y >= 0 && visibleHeight >= rect.height / 2;
 }
 
 // ---------------------------------------------------------------------------
