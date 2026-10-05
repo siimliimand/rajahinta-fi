@@ -316,6 +316,54 @@
       "options": { "code": { "language": "plaintext", "showLineNumbers": false }, "content": "Freshness invariants (stale-price share > 0.10/0.25, transport age > 45/90 d) are evaluated from D1 by the api-worker freshness-alert cron (src/cron/freshness-alert.ts) and delivered via the email Worker — they intentionally do not page from this dashboard. This panel documents the split: data-quality regressions page from Grafana; freshness invariants page from the cron checker.", "mode": "markdown" },
       "title": "Where freshness alerts live",
       "type": "text"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "${DS_AE_METRICS}" },
+      "description": "Share of the aggregation pass's products-with-observations that have daily price_history_summaries buckets — rajahinta_history_summary_coverage_ratio, latest observation (design D4, watermark-isolation-history-backfill; written AFTER the pass's writes). Healthy = exactly 1; below 1 is the coverage-gap failure class (permanent gray \"Hintahistoria\" skeletons) — alert RajahintaHistorySummaryCoverageBelowInvariant. A vacuously-complete window (0 products with observations) writes the +Inf sentinel (9007199254740991), filtered out here: gaps in the series are empty windows, not missing data.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 20 },
+      "id": 7,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "${DS_AE_METRICS}" },
+          "data": "SELECT timestamp, double1 AS summary_coverage FROM ${AE_DATASET} WHERE index1 = 'rajahinta_history_summary_coverage_ratio' AND double1 < 9007199254740991 AND timestamp > NOW() - INTERVAL '7' DAY ORDER BY timestamp ASC",
+          "format": "timeseries",
+          "method": "POST",
+          "parser": "backend",
+          "refId": "A",
+          "source": "response",
+          "timeField": "timestamp",
+          "type": "json",
+          "url": "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/analytics_engine/sql?dataset=${AE_DATASET}",
+          "valueField": "summary_coverage"
+        }
+      ],
+      "title": "History summary coverage",
+      "type": "stat"
     }
   ],
   "refresh": "5m",

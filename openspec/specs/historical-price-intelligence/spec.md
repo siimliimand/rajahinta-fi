@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change 2026-08-26-phase2-historical-price-intelligence. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Append-only observation log
 
 The system SHALL persist one `price_observations` row per observation of a merchant offer, recording the foreign retail price, the transport cost used, the excise and container-duty rule versions applicable at the observation timestamp, the resulting quantity=1 baseline landed cost, and the reliability status of each input. Observation rows SHALL never be updated or deleted by application code.
@@ -29,7 +31,7 @@ The landed cost stored in an observation SHALL be computed by the same tax and t
 
 ### Requirement: Materialized aggregates
 
-The system SHALL materialize daily and weekly summary rows per product (and per merchant offer) from the observation log, containing open, close, minimum, maximum, and average values for price and landed cost, plus the observation count and the strictest source reliability. Materialization SHALL run as a background job, SHALL be incremental from the last processed watermark, and SHALL be idempotent under job retries.
+The system SHALL materialize daily and weekly summary rows per product (and per merchant offer) from the observation log, containing open, close, minimum, maximum, and average values for price and landed cost, plus the observation count and the strictest source reliability. Materialization SHALL run as a background job, SHALL be incremental from the last processed watermark, SHALL be idempotent under job retries, and SHALL satisfy the coverage invariant: after a successful pass, every product with at least one observation inside the processed range SHALL have at least one summary bucket. A documented backfill procedure (lowering the watermark to re-scan, then restoring it) SHALL close coverage gaps without ever aggregating on the request path.
 
 #### Scenario: Aggregates produced incrementally
 
@@ -45,6 +47,16 @@ The system SHALL materialize daily and weekly summary rows per product (and per 
 
 - **WHEN** a chart requests a historical series
 - **THEN** the system SHALL serve it from materialized summaries, not by scanning and aggregating raw observations on the request path
+
+#### Scenario: Coverage invariant holds after a pass
+
+- **WHEN** the aggregation processes a range containing observations for a product
+- **THEN** that product has at least one summary bucket covering those observations, and a coverage check (products with observations but zero summary rows) answers zero
+
+#### Scenario: Backfill closes gaps without touching the request path
+
+- **WHEN** products exist with observations but missing summary buckets
+- **THEN** the documented backfill procedure (watermark lowered, aggregation re-run idempotently, watermark restored) fills the missing buckets, and the historical endpoints begin serving their series without any change to the request path
 
 ### Requirement: Tax-change attribution
 
@@ -111,4 +123,3 @@ Product pages SHALL render a price-history view for the observed price with 30/9
 
 - **WHEN** a product has no observed history
 - **THEN** the page renders without the history section and without an empty-state error
-

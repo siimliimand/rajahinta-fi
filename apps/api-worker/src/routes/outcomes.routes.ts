@@ -65,6 +65,10 @@ import { D1CalculationOutcomeRepository } from '../../../../packages/data-platfo
 import { DuplicateOutcomeError } from '../../../../packages/data-platform/src/abstracts';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 import { D1AccountStore } from '../adapters/account-store';
+// The canonical watermark key lives with its writer; the module is already
+// in the Worker graph (cron/router), so this adds no bundle weight and no
+// cycle (cron imports data-platform, never routes).
+import { WATERMARK_KEY } from '../cron/time-series-aggregation';
 
 function requireUser(c: Context<AppEnv>): AuthenticatedAccount {
   return c.get(USER_CONTEXT_KEY) as AuthenticatedAccount;
@@ -229,17 +233,25 @@ function toFloorResponseCell(
 
 /**
  * Catalog coverage aggregate (change honest-trust-surfaces, task 3.1) —
- * ONE statement, three scalar subqueries: the true stored counts and
- * the true latest watermark. `MAX(watermark)` over the per-job rows is
- * the ingestion watermark (ISO TEXT compares chronologically); over an
- * empty table it is NULL → null, the honest no-ingest-yet state, never
- * a fabricated instant. Read-time only — no caching, no materialization.
+ * ONE statement, three scalar subqueries: the true stored counts and the
+ * ingestion watermark.
+ *
+ * Per-job read contract (change watermark-isolation-history-backfill,
+ * design D1): `aggregation_watermarks` is a generic keyed table — every
+ * row's `watermark` carries THAT job's own semantics (ISO-8601 instants
+ * for the aggregation job, numeric product-id cursors stored as TEXT for
+ * chunked cursor jobs). Every reader MUST scope to its own job's row;
+ * table-wide aggregates over the `watermark` column are forbidden —
+ * non-ISO rows break the ISO ordering assumption and lexicographically
+ * shadow the real watermark (e.g. `"9194" > "2026-…"`). A missing job row
+ * yields NULL → null, the honest no-ingest-yet state, never a fabricated
+ * instant. Read-time only — no caching, no materialization.
  */
 const COVERAGE_SQL = `
   SELECT
     (SELECT COUNT(*) FROM product_master) AS product_count,
     (SELECT COUNT(*) FROM retail_offers) AS offer_observations,
-    (SELECT MAX(watermark) FROM aggregation_watermarks) AS last_ingest_at`;
+    (SELECT watermark FROM aggregation_watermarks WHERE job_name = '${WATERMARK_KEY}') AS last_ingest_at`;
 
 interface D1CoverageRow {
   readonly product_count: number;

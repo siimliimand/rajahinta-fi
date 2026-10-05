@@ -10,6 +10,10 @@
  * - freshness gauges (stale price share, transport newest-offer age),
  *   written as discrete data points by the task-4.3 cron handlers via
  *   `recordStalePriceShare` / `recordTransportAge`;
+ * - the summary-coverage ratio (summarized products / products with
+ *   observations over the aggregation pass's window — design D4 of the
+ *   watermark-isolation-history-backfill change), written by the
+ *   aggregation cron handler itself via `recordHistorySummaryCoverage`;
  * - price-alert evaluation job counters (evaluated / matched / notified
  *   / failed / cooldown-suppressed), one discrete point per counter per
  *   run, written by the task-2.2 cron handler via
@@ -64,10 +68,22 @@ export const TRANSPORT_NEWEST_OFFER_AGE_GAUGE =
   'rajahinta_transport_newest_offer_age_seconds';
 
 /**
+ * Summary-coverage gauge (design D4, change
+ * watermark-isolation-history-backfill) — share of the aggregation
+ * window's products with observations that have `daily` summary buckets.
+ * The Prometheus-contract-style name: a `history` surface (the price
+ * history the job materializes), a `coverage` kind, a ratio gauge.
+ */
+export const HISTORY_SUMMARY_COVERAGE_GAUGE =
+  'rajahinta_history_summary_coverage_ratio';
+
+/**
  * +Inf encoding for gauge doubles. AE doubles are JSON numbers — Infinity
- * cannot be written. The sentinel is far above any real age (seconds) so
- * `max(double1)` and `> threshold` alert semantics keep firing, while
- * blob2 carries the faithful "+Inf" text for humans.
+ * cannot be written. The sentinel is far above any real gauge value (an
+ * age in seconds, a bounded 0..1 ratio) so `max(double1)` and
+ * `> threshold` alert semantics keep firing — and a `< threshold` alert
+ * (summary coverage) stays silent on the vacuous state — while blob2
+ * carries the faithful "+Inf" text for humans.
  */
 export const TRANSPORT_AGE_INFINITE = Number.MAX_SAFE_INTEGER;
 
@@ -354,5 +370,57 @@ export function recordTransportAge(
     name: TRANSPORT_NEWEST_OFFER_AGE_GAUGE,
     value: ageSeconds ?? TRANSPORT_AGE_INFINITE,
     valueLabel: ageSeconds === null ? '+Inf' : String(ageSeconds),
+  });
+}
+
+/**
+ * Summary-coverage ratio of one aggregation window (design D4, change
+ * watermark-isolation-history-backfill): summarized products over
+ * products with observations — the same D1 pair the history-backfill
+ * script's coverage query measures
+ * (scripts/backfill-history-summaries.ts), exported here so the gauge
+ * value and any future checker can never re-derive it differently.
+ *
+ * Zero-denominator contract: 0 products with observations → the ratio is
+ * undefined (0/0). It is deliberately NOT rendered as 0 — for a coverage
+ * gauge a 0 reads as "everything missing" and would page the
+ * below-threshold coverage alert on every quiet window. The +Inf
+ * sentinel stands in ({@link TRANSPORT_AGE_INFINITE}, the module's
+ * documented encoding for a state an AE double cannot carry) and blob2
+ * keeps the faithful "+Inf" text: an empty window is the vacuously
+ * complete state, not a gap, so `ratio < threshold` alert semantics stay
+ * silent on it. A ratio above 1 is never clamped — summarized products
+ * without matching observations is a real drift signal, rendered as-is.
+ */
+export function summaryCoverageRatioOf(
+  summarizedProducts: number,
+  productsWithObservations: number,
+): { ratio: number; valueLabel: string } {
+  if (productsWithObservations <= 0) {
+    return { ratio: TRANSPORT_AGE_INFINITE, valueLabel: '+Inf' };
+  }
+  const ratio = summarizedProducts / productsWithObservations;
+  return { ratio, valueLabel: String(ratio) };
+}
+
+/**
+ * Summary-coverage gauge — the cron-callable write from the aggregation
+ * handler (design D4: coverage measured where the gap is produced, once
+ * per pass after its writes). No-op without METRICS; best-effort like
+ * every emitter.
+ */
+export function recordHistorySummaryCoverage(
+  env: Env,
+  summarizedProducts: number,
+  productsWithObservations: number,
+): void {
+  const { ratio, valueLabel } = summaryCoverageRatioOf(
+    summarizedProducts,
+    productsWithObservations,
+  );
+  metricsEmitter(env).recordGauge({
+    name: HISTORY_SUMMARY_COVERAGE_GAUGE,
+    value: ratio,
+    valueLabel,
   });
 }

@@ -257,12 +257,30 @@ export default function AccuracyStat({
 // ---------------------------------------------------------------------------
 
 /**
+ * Strict ISO-8601 instant shape (design D2, change
+ * watermark-isolation-history-backfill): the aggregation job persists
+ * `new Date(...).toISOString()` output (`YYYY-MM-DDTHH:mm:ss.sssZ`), so a
+ * watermark must carry the full date-time-instant shape before
+ * `Date.parse` is allowed to speak. `Date.parse` alone accepts loose
+ * forms — a bare year (`Date.parse("9194")` parses as year 9194) once
+ * rendered as "1.1.9194" in production — so anything not instant-shaped
+ * (year-only, date-only, prose) is treated exactly like an absent
+ * watermark: no sync row, no fabricated date. Fraction and zone offset
+ * stay optional so a manually lowered watermark in a valid instant
+ * format still renders; the `Date.parse` guard follows regardless and
+ * catches shape-valid but impossible values (month 13, hour 99).
+ */
+const ISO_INSTANT_SHAPE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/**
  * The catalog-coverage presentation: the three true values from the
  * accuracy response's additive `coverage` block, labeled as catalog
  * coverage and laid out as a label/value list — deliberately unlike the
  * share/count paragraphs of the user-reported statistic, so the two
- * modes cannot be mistaken for each other. An absent or unparseable
- * watermark renders no sync row: only what exists.
+ * modes cannot be mistaken for each other. An absent watermark — or one
+ * that is not instant-shaped, regardless of whether `Date.parse`
+ * accepts it — renders no sync row: only what exists.
  */
 function AccuracyCoverageBlock({
   coverage,
@@ -275,6 +293,7 @@ function AccuracyCoverageBlock({
 
   const lastSync =
     coverage.lastIngestAt !== null &&
+    ISO_INSTANT_SHAPE.test(coverage.lastIngestAt) &&
     !Number.isNaN(Date.parse(coverage.lastIngestAt))
       ? new Date(coverage.lastIngestAt).toLocaleDateString(
           locale === 'fi' ? 'fi-FI' : 'en-GB',

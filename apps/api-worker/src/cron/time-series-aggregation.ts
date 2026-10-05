@@ -48,8 +48,12 @@ import {
 } from '../../../../packages/data-platform/src/d1/observation-log';
 import { D1AggregationWatermarkRepository } from '../../../../packages/data-platform/src/repositories/d1/aggregation-watermark.repository';
 import { D1PriceHistorySummaryRepository } from '../../../../packages/data-platform/src/repositories/d1/price-history-summary.repository';
+import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 import { observationLogStore } from '../adapters/r2-observation-log.store';
-import { recordStalePriceShare } from '../observability/metrics';
+import {
+  recordHistorySummaryCoverage,
+  recordStalePriceShare,
+} from '../observability/metrics';
 import type { Env } from '../env';
 import type { Logger } from '../logger';
 
@@ -132,6 +136,10 @@ export async function handleTimeSeriesAggregation(
       message: 'No observations in scan range — nothing to aggregate',
       watermark: watermark?.toISOString() ?? 'none',
     });
+    // Design D4: a quiet tick still reports its window's coverage —
+    // likely the 0/0 +Inf sentinel (see summaryCoverageRatioOf), so the
+    // panel reflects THIS tick instead of the last active one.
+    await emitSummaryCoverage(env, readFrom, log);
     return { products: 0, bucketsWritten: 0, watermark: null };
   }
 
@@ -176,6 +184,13 @@ export async function handleTimeSeriesAggregation(
     products: activeByProduct.size,
   });
 
+  // Design D4 (watermark-isolation-history-backfill): the pass reports
+  // its window's summary-coverage ratio, measured AFTER its writes — a
+  // gap this pass just fixed never shows as a one-tick dip, while real
+  // drift persists tick over tick for the coverage alert to catch.
+  // Best-effort: emission must not gate the returned result below.
+  await emitSummaryCoverage(env, readFrom, log);
+
   return {
     products: activeByProduct.size,
     bucketsWritten,
@@ -216,6 +231,110 @@ function emitStalePriceShare(
 ): void {
   const { stale, total } = stalePriceShareOf(records);
   recordStalePriceShare(env, stale, total);
+}
+
+// ---------------------------------------------------------------------------
+// Summary-coverage gauge (design D4, change
+// watermark-isolation-history-backfill)
+// ---------------------------------------------------------------------------
+
+/**
+ * The coverage pair over the pass's read window — the SAME D1 pair the
+ * history-backfill script's coverage query measures
+ * (scripts/backfill-history-summaries.ts, design D4: "coverage measured
+ * where the gap is produced"). "Products with observations" are
+ * `retail_offers` rows (every R2 observation-log line mirrors one of
+ * these appends via `retail_offer_id`); "summarized" is a `daily` bucket
+ * at/after the window's floor day — an in-window observation's daily
+ * anchor is its own UTC day, so `period_start >= <window-start day>`
+ * covers every daily bucket the job would have written for in-window
+ * observations, and weekly rows are redundant for existence.
+ */
+const SUMMARY_COVERAGE_BOUNDED_SQL = `
+  SELECT
+    (SELECT COUNT(DISTINCT product_id) FROM retail_offers
+      WHERE observed_at >= ?) AS products_with_observations,
+    (SELECT COUNT(DISTINCT product_id) FROM price_history_summaries
+      WHERE granularity = 'daily' AND period_start >= ?) AS summarized_products`;
+
+/** The unbounded pair — first run (no watermark): the scan covers the whole log. */
+const SUMMARY_COVERAGE_UNBOUNDED_SQL = `
+  SELECT
+    (SELECT COUNT(DISTINCT product_id) FROM retail_offers)
+      AS products_with_observations,
+    (SELECT COUNT(DISTINCT product_id) FROM price_history_summaries
+      WHERE granularity = 'daily') AS summarized_products`;
+
+/** One window's coverage counts, in ratio order (numerator / denominator). */
+export interface SummaryCoverageCounts {
+  /** Products with a `daily` summary bucket at/after the window floor. */
+  readonly summarizedProducts: number;
+  /** Products with an in-window `retail_offers` observation. */
+  readonly productsWithObservations: number;
+}
+
+/**
+ * Measure the coverage pair over the window the pass reads: bounded by
+ * the scan's ISO-week Monday, unbounded on the first run (no watermark —
+ * the scan covers the whole log, so the processed window is everything).
+ * Exported so the parity claim with the backfill script's coverage query
+ * stays pinnable in one place.
+ */
+export async function measureSummaryCoverage(
+  db: D1DatabaseLike,
+  readFrom: Date | null,
+): Promise<SummaryCoverageCounts> {
+  const row =
+    readFrom === null
+      ? await db
+          .prepare(SUMMARY_COVERAGE_UNBOUNDED_SQL)
+          .first<{
+            products_with_observations: number;
+            summarized_products: number;
+          }>()
+      : await db
+          .prepare(SUMMARY_COVERAGE_BOUNDED_SQL)
+          .bind(
+            readFrom.toISOString(),
+            readFrom.toISOString().slice(0, 10),
+          )
+          .first<{
+            products_with_observations: number;
+            summarized_products: number;
+          }>();
+  return {
+    summarizedProducts: row?.summarized_products ?? 0,
+    productsWithObservations: row?.products_with_observations ?? 0,
+  };
+}
+
+/**
+ * Coverage-gauge emission for one pass — the window's counts through
+ * {@link recordHistorySummaryCoverage}. Best-effort at BOTH steps: a
+ * failed coverage read or a failed AE write is logged and dropped —
+ * telemetry must never take the aggregation tick down (the metrics
+ * module doctrine; the writeDataPoint call inside recordGauge is
+ * already guarded, this guards the D1 measurement too).
+ */
+async function emitSummaryCoverage(
+  env: Env,
+  readFrom: Date | null,
+  log: Logger,
+): Promise<void> {
+  try {
+    const counts = await measureSummaryCoverage(env.DB, readFrom);
+    recordHistorySummaryCoverage(
+      env,
+      counts.summarizedProducts,
+      counts.productsWithObservations,
+    );
+  } catch (err) {
+    log.error({
+      message: `Summary-coverage gauge emission failed: ${
+        err instanceof Error ? err.message : 'unknown error'
+      }`,
+    });
+  }
 }
 
 /**
