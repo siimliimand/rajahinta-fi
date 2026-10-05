@@ -25,11 +25,13 @@
  *   6. Unknown ?category= values are forgiven (design D2): the page
  *      renders the unfiltered view and never sends the value to the API
  *      (the API would answer 400).
- *   7. Sort state (task 1.3, change first-impression-pass): the default
- *      LOWEST_PRICE stays out of the fetch and URLs (canonical-clean);
- *      an explicit non-default sort travels through the fetch, the
- *      links, and the control; an unknown ?sort= value forgives to the
- *      default price ordering — the strict 400 lives at the API only.
+ *   7. Sort state (task 4.1, change catalog-first-run-polish): the
+ *      default ALPHABETICAL stays out of the fetch and URLs
+ *      (canonical-clean), superseding the first-impression-pass
+ *      LOWEST_PRICE flip; LOWEST_PRICE remains selectable and
+ *      URL-addressable as an explicit non-default sort; an unknown
+ *      ?sort= value forgives to the default ordering — the strict 400
+ *      lives at the API only.
  *
  * @module CatalogPageTest
  */
@@ -463,20 +465,22 @@ describe('ProductsPage pagination', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Sort state (task 1.3, change first-impression-pass): the catalog's
-// default order is LOWEST_PRICE. The default stays out of the fetch and
-// URLs (canonical-clean href builder); an explicit non-default sort
-// travels through every control; an unknown ?sort= value forgives to the
-// default — the API's strict 400 never happens.
+// Sort state (task 4.1, change catalog-first-run-polish): the catalog's
+// default order is ALPHABETICAL, superseding the first-impression-pass
+// LOWEST_PRICE flip. The default stays out of the fetch and URLs
+// (canonical-clean href builder); an explicit non-default sort —
+// LOWEST_PRICE among them — travels through every control; an unknown
+// ?sort= value forgives to the default — the API's strict 400 never
+// happens.
 // ---------------------------------------------------------------------------
 
-describe('ProductsPage sort state (task 1.3)', () => {
-  it('defaults to LOWEST_PRICE: the select shows the price order and the default stays out of the fetch and links', async () => {
+describe('ProductsPage sort state (task 4.1)', () => {
+  it('defaults to ALPHABETICAL: the select shows the name order and the default stays out of the fetch and links', async () => {
     await renderCatalog();
 
     const select = screen.getByLabelText('Järjestys') as HTMLSelectElement;
-    expect(select.value).toBe('LOWEST_PRICE');
-    // The API's absent-sort default is the price order too, so the
+    expect(select.value).toBe('ALPHABETICAL');
+    // The API's absent-sort default is the name order too, so the
     // canonical-clean fetch omits sort entirely.
     expect(mockedRequest).toHaveBeenCalledWith(
       '/api/v1/products?page=1&limit=24',
@@ -492,33 +496,33 @@ describe('ProductsPage sort state (task 1.3)', () => {
     ).toHaveAttribute('href', '/products?category=beer');
   });
 
-  it('carries an explicit non-default sort through the fetch, the links, and the control state', async () => {
+  it('carries an explicit non-default sort through the fetch, the links, and the control state (LOWEST_PRICE stays URL-addressable)', async () => {
     mockedRequest.mockResolvedValue(
       catalogResult([catalogItem()], { total: 60, page: 1, totalPages: 3 }),
     );
 
-    await renderCatalog({ sort: 'ALPHABETICAL' });
+    await renderCatalog({ sort: 'LOWEST_PRICE' });
 
     expect(mockedRequest).toHaveBeenCalledWith(
-      '/api/v1/products?sort=ALPHABETICAL&page=1&limit=24',
+      '/api/v1/products?sort=LOWEST_PRICE&page=1&limit=24',
       {
         headers: { 'x-age-confirmed': 'server-prerender' },
         next: { revalidate: 900 },
       },
     );
     const select = screen.getByLabelText('Järjestys') as HTMLSelectElement;
-    expect(select.value).toBe('ALPHABETICAL');
+    expect(select.value).toBe('LOWEST_PRICE');
     const nav = screen.getByTestId('catalog-pagination');
     expect(
       within(nav).getByRole('link', { name: '2' }),
-    ).toHaveAttribute('href', '/products?sort=ALPHABETICAL&page=2');
+    ).toHaveAttribute('href', '/products?sort=LOWEST_PRICE&page=2');
   });
 
-  it('forgives an unknown sort value: the default price ordering renders and nothing unknown reaches the API', async () => {
+  it('forgives an unknown sort value: the default name ordering renders and nothing unknown reaches the API', async () => {
     await renderCatalog({ sort: 'PROMOTED' });
 
     const select = screen.getByLabelText('Järjestys') as HTMLSelectElement;
-    expect(select.value).toBe('LOWEST_PRICE');
+    expect(select.value).toBe('ALPHABETICAL');
     // The strict API would 400 — the page resolves the parameter before
     // fetching and sends the default (omitted) instead of the value.
     expect(mockedRequest).toHaveBeenCalledWith(

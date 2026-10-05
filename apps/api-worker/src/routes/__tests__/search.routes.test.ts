@@ -55,15 +55,13 @@ describe('GET /api/v1/products (search)', () => {
     seedProduct(db, { id: 2, name: 'Bock Svec' });
     const app = buildApp();
 
-    // Explicit ALPHABETICAL: the absent-sort default is LOWEST_PRICE
-    // since task 1.3 (change first-impression-pass) — the name order is
-    // now an explicit contract, never the default.
-    const res = await request(
-      app,
-      permissiveEnv(d1),
-      '/api/v1/products?sort=ALPHABETICAL',
-      { headers: AGE },
-    );
+    // Absent sort (task 4.1, change catalog-first-run-polish): the
+    // default order is ALPHABETICAL — the FI-collated name order is the
+    // default again, superseding the first-impression-pass LOWEST_PRICE
+    // flip.
+    const res = await request(app, permissiveEnv(d1), '/api/v1/products', {
+      headers: AGE,
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       items: Array<{ id: number; name: string; lowestPriceCents: number | null }>;
@@ -308,25 +306,29 @@ describe('GET /api/v1/products — server-side sort (task 1.2, change client-exp
     expect(ids).toEqual([2, 1]);
   });
 
-  it('an omitted sort defaults to LOWEST_PRICE — identical to the explicit price sort (task 1.3)', async () => {
+  it('an omitted sort defaults to ALPHABETICAL — identical to the explicit name sort (task 4.1)', async () => {
     const { db, d1 } = openMigratedD1();
     seedSortCatalog(db);
     const app = buildApp();
     const env = permissiveEnv(d1);
 
     const { ids } = await listIds(app, env, '');
-    // Price ascending, offer-less product 7 strictly after every priced
-    // row — the exact order of an explicit LOWEST_PRICE request.
-    expect(ids).toEqual([2, 5, 6, 1, 4, 3, 7]);
-    const explicit = await listIds(app, env, 'sort=LOWEST_PRICE');
+    // FI-collated name order with the id tie (task 4.1, change
+    // catalog-first-run-polish, design D1 — supersedes the
+    // first-impression-pass LOWEST_PRICE flip): 1 Karhu III < 2 Koff III
+    // < 4 Lapin Kulta < 7 Offerless Olut < 5 Olvi I < 6 Olvi II <
+    // 3 Sandels IVA.
+    expect(ids).toEqual([1, 2, 4, 7, 5, 6, 3]);
+    const explicit = await listIds(app, env, 'sort=ALPHABETICAL');
     expect(explicit.ids).toEqual(ids);
-    // And the legacy alphabetical default is gone: the name order of this
-    // fixture differs from the price order.
-    const alphabetical = await listIds(app, env, 'sort=ALPHABETICAL');
-    expect(alphabetical.ids).not.toEqual(ids);
+    // The price order of this fixture differs — the default is no longer
+    // the LOWEST_PRICE flip; it stays an explicit option only.
+    const priced = await listIds(app, env, 'sort=LOWEST_PRICE');
+    expect(priced.ids).toEqual([2, 5, 6, 1, 4, 3, 7]);
+    expect(priced.ids).not.toEqual(ids);
   });
 
-  it('the ranked-q path defaults to LOWEST_PRICE when sort is absent (keyword-search path, task 1.3)', async () => {
+  it('the ranked-q path defaults to ALPHABETICAL when sort is absent (keyword-search path, task 4.1)', async () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1, name: 'Karhu III' });
     seedOffer(db, { id: 11, productId: 1, merchant: 'alko', priceCents: 350 });
@@ -337,13 +339,13 @@ describe('GET /api/v1/products — server-side sort (task 1.2, change client-exp
 
     const { ids } = await listIds(app, permissiveEnv(d1), 'q=iii');
     // The ranked fetch returns all three rows (name match); the absent
-    // sort defaults to the merged-aggregate price order — 250 < 350,
-    // offer-less row strictly last.
-    expect(ids).toEqual([2, 1, 3]);
+    // sort defaults to the FI-collated name order with the id tie —
+    // never the raw relevance order of the ranked fetch.
+    expect(ids).toEqual([1, 2, 3]);
     const explicit = await listIds(
       app,
       permissiveEnv(d1),
-      'q=iii&sort=LOWEST_PRICE',
+      'q=iii&sort=ALPHABETICAL',
     );
     expect(explicit.ids).toEqual(ids);
   });

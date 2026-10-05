@@ -18,7 +18,7 @@
 import React from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CalculatorView from './calculator-view';
 import { ApiFetchError, searchProducts, calculateLandedCost, listScenarios } from '@/lib/api';
 import { renderWithIntl } from '@/lib/testing/test-intl';
@@ -363,8 +363,10 @@ describe('CalculatorView price-before-calculation (task 3.2)', () => {
 
     // The price comes from the selected search item's aggregates — shown
     // before any calculation runs, and never from a result object.
+    // Terminology unified on "Halvin havaittu hinta"
+    // (catalog-first-run-polish 4.4).
     expect(screen.getByTestId('observed-price')).toHaveTextContent(
-      'Alin havaittu hinta: €9.99',
+      'Halvin havaittu hinta: €9.99',
     );
     expect(mockedCalculateLandedCost).not.toHaveBeenCalled();
     expect(screen.queryByTestId('result-card')).toBeNull();
@@ -648,5 +650,295 @@ describe('CalculatorView brandless attribute row (fi-locale-surface-hardening 2.
     await user.click(hit.closest('button') as HTMLButtonElement);
 
     expect(screen.getByText('Vodka · 70 cl')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-unit price context on pack rows (catalog-first-run-polish 4.2):
+// dropdown rows surface the read-time €/g embed and an "≈ x,xx €/kpl"
+// helper on multi-unit pack rows; single-unit rows stay unchanged.
+// Display-only — the derivation reads the row's own embed (design D2:
+// no duplicated parser, no new API surface) and never touches a
+// calculation input, ranking, or sort order.
+// ---------------------------------------------------------------------------
+
+/**
+ * A 24-pack row carrying the listing embed the API computes for it: the
+ * cheapest current offer priced against the package total volume the
+ * read-time pack-units parser produced
+ * (`0.33 l × 24 × 0.047 × 789 g/l` grams of ethanol).
+ */
+const PACK_HIT: ProductSearchItem = {
+  id: 77,
+  name: 'Karhu Olut 4.7% 24 × 0,33 l tölkki',
+  brand: 'Karhu',
+  category: 'Beer',
+  alcoholByVolume: 0.047,
+  unitVolume: '0.33',
+  containerType: 'CAN',
+  lowestPriceCents: 2999,
+  merchantCount: 2,
+  eurPerGram: {
+    status: 'computed',
+    centsPerGram: 2999 / (0.33 * 24 * 0.047 * 789),
+    ethanolGrams: 0.33 * 24 * 0.047 * 789,
+    priceReliability: 'VERIFIED',
+  },
+};
+
+/** Single-unit product WITH a computed embed — must stay helper-free. */
+const SINGLE_UNIT_WITH_EMBED: ProductSearchItem = {
+  ...HIT,
+  id: 43,
+  eurPerGram: {
+    status: 'computed',
+    centsPerGram: 999 / (0.7 * 0.375 * 789),
+    ethanolGrams: 0.7 * 0.375 * 789,
+    priceReliability: 'VERIFIED',
+  },
+};
+
+describe('CalculatorView per-unit price context on pack rows (catalog-first-run-polish 4.2)', () => {
+  it('surfaces the €/g embed and the ≈ €/kpl helper with Finnish decimal comma on a pack row', async () => {
+    mockedSearchProducts.mockResolvedValue(searchResponse([PACK_HIT]));
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'karhu');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+
+    const row = (
+      await screen.findByText(PACK_HIT.name)
+    ).closest('li') as HTMLElement;
+    // The €/g embed renders in the catalog chip's presentation.
+    expect(within(row).getByTestId('row-eur-per-gram')).toHaveTextContent(
+      '10.21 snt/g',
+    );
+    // 2999 ¢ ÷ 24 units → "≈ 1,25 €/kpl" — beside the absolute price
+    // (fi money form via the shared formatter, decimal comma).
+    expect(within(row).getByTestId('row-per-unit-price')).toHaveTextContent(
+      '≈ 1,25 €/kpl',
+    );
+    expect(
+      within(row).getByTestId('row-lowest-price'),
+    ).toHaveTextContent('Halvin havaittu hinta: 29,99 €');
+  });
+
+  it('keeps single-unit rows unchanged: the embed renders but no per-unit helper', async () => {
+    mockedSearchProducts.mockResolvedValue(
+      searchResponse([SINGLE_UNIT_WITH_EMBED]),
+    );
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+
+    const row = (
+      await screen.findByText('Renat')
+    ).closest('li') as HTMLElement;
+    expect(within(row).getByTestId('row-eur-per-gram')).toBeInTheDocument();
+    expect(within(row).queryByTestId('row-per-unit-price')).toBeNull();
+  });
+
+  it('renders the per-unit helper beside the selected pack absolute price on the Configure step', async () => {
+    mockedSearchProducts.mockResolvedValue(searchResponse([PACK_HIT]));
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'karhu');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    const hit = await screen.findByText(PACK_HIT.name);
+    await user.click(hit.closest('button') as HTMLButtonElement);
+
+    expect(screen.getByTestId('observed-price')).toHaveTextContent(
+      'Halvin havaittu hinta: €29.99',
+    );
+    expect(screen.getByTestId('observed-per-unit-price')).toHaveTextContent(
+      '≈ 1,25 €/kpl',
+    );
+    expect(mockedCalculateLandedCost).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Result visibility after calculation (catalog-first-run-polish 4.3,
+// design D3): when a calculation lands, the result card scrolls into view
+// only when it is not already substantially in the viewport — smoothly by
+// default, instantly under prefers-reduced-motion. The desktop sticky
+// summary, on screen by construction, never moves.
+// ---------------------------------------------------------------------------
+
+/** DOMRect for a card whose viewport geometry the test pins. */
+function rectAt(y: number, bottom: number, height: number): DOMRect {
+  return {
+    y,
+    bottom,
+    height,
+    width: 375,
+    left: 0,
+    right: 375,
+    x: 0,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
+describe('CalculatorView result visibility after calculation (catalog-first-run-polish 4.3)', () => {
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
+  const originalMatchMedia = window.matchMedia;
+  const scrollIntoView = vi.fn();
+
+  /** Pin the summary card's viewport geometry for the current render. */
+  const stubSummaryRect = (rect: DOMRect) => {
+    vi.spyOn(
+      screen.getByTestId('calculator-summary'),
+      'getBoundingClientRect',
+    ).mockReturnValue(rect);
+  };
+
+  /** Replace matchMedia; returns the mock for query assertions. */
+  const stubMotionPreference = (reducedMotion: boolean) => {
+    const matcher = vi.fn(
+      (query: string) =>
+        ({
+          matches:
+            reducedMotion && query === '(prefers-reduced-motion: reduce)',
+          media: query,
+          onchange: null,
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as unknown as MediaQueryList,
+    );
+    window.matchMedia = matcher as unknown as typeof window.matchMedia;
+    return matcher;
+  };
+
+  /** Search → select the hit → calculate, and wait for the result card. */
+  const driveToResult = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    const hit = await screen.findByText('Renat');
+    await user.click(hit.closest('button') as HTMLButtonElement);
+    await user.click(
+      screen.getByRole('button', { name: 'Laske kokonaiskustannus' }),
+    );
+    await screen.findByTestId('result-card');
+  };
+
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = scrollIntoView;
+  });
+
+  afterEach(() => {
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('scrolls the out-of-view result card into view with smooth behavior', async () => {
+    stubMotionPreference(false);
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+    // Entirely below the 768px jsdom fold.
+    stubSummaryRect(rectAt(900, 1400, 500));
+
+    await driveToResult(user);
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  });
+
+  it('scrolls when visibility is marginal (barely peeking above the fold)', async () => {
+    stubMotionPreference(false);
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+    // 68 of 500px inside the 768px viewport — not substantially visible.
+    stubSummaryRect(rectAt(700, 1200, 500));
+
+    await driveToResult(user);
+
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  });
+
+  it('does not scroll when the result card is already substantially in view', async () => {
+    stubMotionPreference(false);
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+    stubSummaryRect(rectAt(100, 500, 400));
+
+    await driveToResult(user);
+
+    expect(screen.getByTestId('result-card')).toBeInTheDocument();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it('scrolls instantly when prefers-reduced-motion is set', async () => {
+    const matcher = stubMotionPreference(true);
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+    stubSummaryRect(rectAt(900, 1400, 500));
+
+    await driveToResult(user);
+
+    expect(matcher).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'instant',
+      block: 'start',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Selection collapses the result list (catalog-first-run-polish 4.3): a
+// selection replaces the inline result list with the chosen-product state,
+// the collapse holds through the calculation, and "Vaihda" restores the
+// list for another pick.
+// ---------------------------------------------------------------------------
+
+describe('CalculatorView selection collapses the result list (catalog-first-run-polish 4.3)', () => {
+  it('replaces the result list with the chosen-product state and restores it on Vaihda', async () => {
+    mockedSearchProducts.mockResolvedValue(
+      searchResponse([HIT, NO_OFFER_HIT]),
+    );
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'kotilo');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    expect(await screen.findByText('Renat')).toBeInTheDocument();
+    expect(screen.getByText('Tarjouskotilo')).toBeInTheDocument();
+
+    await user.click(
+      screen.getByText('Renat').closest('button') as HTMLButtonElement,
+    );
+
+    // The chosen-product state renders in the list's place: the selected
+    // row's name, with the un-chosen rows gone and the section header
+    // naming the selection.
+    expect(screen.getByTestId('chosen-product')).toHaveTextContent('Renat');
+    expect(screen.queryByText('Tarjouskotilo')).toBeNull();
+    expect(screen.getByText('Valittu tuote')).toBeInTheDocument();
+
+    // The collapse holds through the calculation — the list never
+    // reappears behind the result.
+    await user.click(
+      screen.getByRole('button', { name: 'Laske kokonaiskustannus' }),
+    );
+    await screen.findByTestId('result-card');
+    expect(screen.getByTestId('chosen-product')).toHaveTextContent('Renat');
+
+    // "Vaihda" brings the list back for another pick.
+    await user.click(screen.getByRole('button', { name: 'Vaihda' }));
+    expect(await screen.findByText('Tarjouskotilo')).toBeInTheDocument();
+    expect(screen.queryByTestId('chosen-product')).toBeNull();
   });
 });

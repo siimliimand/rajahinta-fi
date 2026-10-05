@@ -186,6 +186,7 @@
     "quantityUnit": "pcs",
     "countryLabel": "Destination country",
     "observedPrice": "Lowest observed price: {price}",
+    "perUnitPrice": "≈ {price}/pc",
     "advancedToggle": "Advanced options",
     "transportMethodLabel": "Carrier (optional)",
     "transportMethodHint": "Leave empty to use the published transport dataset.",
@@ -229,6 +230,8 @@
     "typeToSearch": "Type a product name to start searching.",
     "noResults": "No products found for \"{query}\".",
     "lowestPrice": "Lowest observed price: {price}",
+    "perUnitPrice": "≈ {price}/pc",
+    "eurPerGramChip": "{value} ¢/g",
     "loading": "Calculating…"
   },
   "QuantitySelector": {
@@ -1722,6 +1725,7 @@
     "description": "Email notices about rate-dataset changes and service change announcements.",
     "emailLabel": "Email address",
     "consentLabel": "I want to receive the newsletter and consent to my email address being stored to manage the subscription.",
+    "consentHint": "Subscribing requires ticking the consent checkbox.",
     "separationNote": "The newsletter is a separate consent — it is not tied to price alerts or to an account. Every email carries a one-click unsubscribe link, and unsubscribing takes effect immediately.",
     "submit": "Subscribe",
     "submitting": "Subscribing…",

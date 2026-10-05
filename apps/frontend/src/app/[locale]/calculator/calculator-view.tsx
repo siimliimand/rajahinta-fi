@@ -5,7 +5,7 @@
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import type {
   ProductSearchItem,
   CalculatorResult,
@@ -23,6 +23,7 @@ import {
 } from '@/lib/api';
 import { useDebouncedCallback } from '@/lib/use-debounced-callback';
 import { formatAttributeRow, formatVolume } from '@/lib/format/product-attributes';
+import { formatMoney } from '@/lib/format/money';
 import { emitFunnelEvent } from '@/lib/telemetry/funnel-events';
 import {
   captureTimeToResultMs,
@@ -31,7 +32,7 @@ import {
 import { Link } from '@/i18n/navigation';
 import { EmptyState, ErrorState } from '@/components/ui';
 import ProductSearch from './components/ProductSearch';
-import ProductSelector from './components/ProductSelector';
+import ProductSelector, { packUnitsPerPackage } from './components/ProductSelector';
 import MerchantWarningNotice from '../components/MerchantWarningNotice';
 import QuantitySelector from './components/QuantitySelector';
 import ResultCard from './components/ResultCard';
@@ -96,6 +97,27 @@ const DESTINATION_COUNTRIES: readonly string[] = [
 /** Format cents to a euro string (shared frontend convention). */
 function formatEur(cents: number): string {
   return `€${(cents / 100).toFixed(2)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Result-card visibility (catalog-first-run-polish 4.3, design D3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the element is already substantially inside the viewport: its
+ * top edge on screen and at least half of its box visible. A card below
+ * the fold — or barely peeking — reads as out of view, while the desktop
+ * sticky summary, pinned on screen by construction, always passes.
+ */
+function isSubstantiallyInView(el: HTMLElement): boolean {
+  const rect = el.getBoundingClientRect();
+  const viewportHeight =
+    window.innerHeight || document.documentElement.clientHeight;
+  // No laid-out box — nothing to bring into view; counts as visible.
+  if (rect.height <= 0) return true;
+  const visibleHeight =
+    Math.min(rect.bottom, viewportHeight) - Math.max(rect.y, 0);
+  return rect.y >= 0 && visibleHeight >= rect.height / 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,6 +241,7 @@ export default function CalculatorView() {
   const tCommon = useTranslations('Common');
   const tAgeGate = useTranslations('AgeGate');
   const tProductPage = useTranslations('ProductPage');
+  const locale = useLocale();
 
   // ── Search state ──
   const [query, setQuery] = useState('');
@@ -284,6 +307,11 @@ export default function CalculatorView() {
   // Cancels the in-flight search when a newer one supersedes it, so a
   // slow stale response can never overwrite a newer one's results.
   const searchAbortRef = useRef<AbortController | null>(null);
+
+  // The result summary card (catalog-first-run-polish 4.3) — the scroll
+  // target that brings a landed result into view on the mobile
+  // single-column flow.
+  const resultSummaryRef = useRef<HTMLElement | null>(null);
 
   // Abort an in-flight search on unmount — a late response has no page
   // to update.
@@ -618,6 +646,27 @@ export default function CalculatorView() {
     );
   }, [result]);
 
+  // ── Result visibility (catalog-first-run-polish 4.3, design D3): when
+  //    a calculation lands, the result card scrolls into view — but only
+  //    when it is not already substantially on screen. The desktop sticky
+  //    summary is on screen by construction and never moves; the mobile
+  //    single-column flow, where the card sits below the fold after the
+  //    Configure step, is the case this fixes. `prefers-reduced-motion`
+  //    picks the instant jump over the smooth scroll.
+  useEffect(() => {
+    if (result === null) return;
+    const el = resultSummaryRef.current;
+    if (el === null || typeof el.scrollIntoView !== 'function') return;
+    if (isSubstantiallyInView(el)) return;
+    const reduceMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    ).matches;
+    el.scrollIntoView({
+      behavior: reduceMotion ? 'instant' : 'smooth',
+      block: 'start',
+    });
+  }, [result]);
+
   // ── Render ──
   const canCalculate = selectedProduct !== null && !calculating;
 
@@ -642,6 +691,24 @@ export default function CalculatorView() {
   const selectedUnitVolume = selectedProduct
     ? formatVolume(selectedProduct.unitVolume)
     : null;
+
+  // Per-unit context for the selected pack (catalog-first-run-polish 4.2,
+  // design D2): display-only derivation from the selected row's own €/g
+  // embed — beside the absolute lowest-observed-price label, so a 24-pack
+  // selection can never be read as a single-unit price. Null on
+  // single-unit rows and whenever the embed cannot support the ratio.
+  const selectedPerUnitPrice =
+    selectedProduct !== null &&
+    selectedProduct.lowestPriceCents !== null &&
+    packUnitsPerPackage(selectedProduct) !== null
+      ? formatMoney(
+          Math.round(
+            selectedProduct.lowestPriceCents /
+              packUnitsPerPackage(selectedProduct)!,
+          ),
+          locale,
+        )
+      : null;
 
   const stepLabels = [
     t('stepSearch'),
@@ -767,11 +834,34 @@ export default function CalculatorView() {
                       </nav>
                     }
                   />
+                ) : selectedProduct ? (
+                  /* ── Chosen-product state (catalog-first-run-polish
+                      4.3): the result list collapses on selection — the
+                      chosen product renders in its place, and the
+                      "Vaihda" control on the Configure card brings the
+                      list back. ── */
+                  <p
+                    data-testid="chosen-product"
+                    className="flex items-center gap-2 rounded-md border border-primary-200 bg-primary-50 px-3 py-2 text-sm font-medium text-gray-900"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      focusable="false"
+                      className="h-4 w-4 shrink-0 text-primary-600"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    {selectedProduct.name}
+                  </p>
                 ) : (
                   <>
                     <ProductSelector
                       items={searchResults}
-                      selectedId={selectedProduct?.id ?? null}
+                      // Only reached with nothing selected (the collapse
+                      // above owns the selected state).
+                      selectedId={null}
                       onSelect={handleSelect}
                       loading={searchLoading}
                       query={searchedQuery}
@@ -831,6 +921,17 @@ export default function CalculatorView() {
                       {t('observedPrice', {
                         price: formatEur(selectedProduct.lowestPriceCents),
                       })}
+                    </p>
+                  )}
+                  {/* ── Pack-row per-unit helper (catalog-first-run-polish
+                      4.2): "≈ x,xx €/kpl" beside the absolute price —
+                      display-only. ── */}
+                  {selectedPerUnitPrice !== null && (
+                    <p
+                      className="mt-0.5 text-xs text-gray-500"
+                      data-testid="observed-per-unit-price"
+                    >
+                      {t('perUnitPrice', { price: selectedPerUnitPrice })}
                     </p>
                   )}
                 </div>
@@ -1089,6 +1190,7 @@ export default function CalculatorView() {
             stays visible while the visitor scrolls or edits inputs on
             desktop; below lg it renders in the normal flow. ── */}
         <aside
+          ref={resultSummaryRef}
           data-testid="calculator-summary"
           className="mt-5 lg:sticky lg:[inset-block-start:5rem] lg:mt-0 lg:self-start"
         >

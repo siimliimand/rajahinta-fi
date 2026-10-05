@@ -185,7 +185,8 @@
     "resetForm": "Tyhjennä lomake",
     "quantityUnit": "kpl",
     "countryLabel": "Kohdemaa",
-    "observedPrice": "Alin havaittu hinta: {price}",
+    "observedPrice": "Halvin havaittu hinta: {price}",
+    "perUnitPrice": "≈ {price}/kpl",
     "advancedToggle": "Lisäasetukset",
     "transportMethodLabel": "Kuljetusyhtiö (valinnainen)",
     "transportMethodHint": "Jätä tyhjäksi, jotta arvio käyttää julkaistua kuljetusaineistoa.",
@@ -229,6 +230,8 @@
     "typeToSearch": "Kirjoita tuotteen nimi aloittaaksesi haun.",
     "noResults": "Tuotteita ei löytynyt haulla \"{query}\".",
     "lowestPrice": "Halvin havaittu hinta: {price}",
+    "perUnitPrice": "≈ {price}/kpl",
+    "eurPerGramChip": "{value} snt/g",
     "loading": "Lasketaan…"
   },
   "QuantitySelector": {
@@ -1722,6 +1725,7 @@
     "description": "Sähköpostitiedot verotietojen muutoksista ja palvelun muutosilmoituksista.",
     "emailLabel": "Sähköpostiosoite",
     "consentLabel": "Haluan uutiskirjeen ja hyväksyn, että sähköpostiosoitteeni tallennetaan tilauksen hoitamista varten.",
+    "consentHint": "Tilaaminen edellyttää suostumuksen rastittamista.",
     "separationNote": "Uutiskirje on erillinen suostumus, joka ei liity hintaherätyksiin eikä tiliin. Jokainen viesti sisältää kertaklikkauslinkin tilauksen peruuttamiseen, ja peruutus on välitön.",
     "submit": "Tilaa",
     "submitting": "Tilataan…",
