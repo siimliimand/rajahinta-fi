@@ -1,6 +1,6 @@
 ---
 name: ob-ops-finish
-description: Finish a completed OpenSpec change on a feature branch — archive the change, create the PR, watch GitHub Actions until green (fix-and-rewatch loop), merge the PR, then sync the default branch. Invoked by the /finish command.
+description: Finish a completed OpenSpec change on a feature branch — archive the change, create the PR, watch GitHub Actions until green (fix-and-rewatch loop), merge the PR, sync the default branch, then promote staging → production. Invoked by the /finish command.
 license: MIT
 ---
 
@@ -13,12 +13,14 @@ Close out a finished feature branch end to end: archive → PR → CI to green �
 The caller provides (all optional):
 - A change id to finish. When absent, detect it (Stage 0).
 - A skip hint `no-archive` — the change is already archived; start at Stage 2.
+- A skip hint `no-prod` — stop after the staging deploy; do not promote to production (Stage 7).
 
 ## Hard rules
 
 - **GitHub only through the `gh` CLI**, always with `--repo {owner}/{repo}` explicit. Never webfetch, HTTP, or browser tools for GitHub. If `gh` is unavailable or unauthenticated, report as a blocker and stop.
 - **Never push the default branch.** The default branch changes only through PR merge.
 - **Fix-forward only.** No force-push, no `--admin` merge override, no weakening/disabling checks or tests to get green.
+- **Production only after a green staging deploy on the same commit, and only with the user's explicit confirmation in that run.** Never dispatch the production workflow for a commit whose staging deploy failed or has not run.
 - **Max 3 CI fix rounds.** A round = diagnose → fix → commit → push → re-watch. Exhausted rounds: stop, leave the PR open, report.
 - Commit specific paths (`git add <paths>`), never `git add .`.
 - Keep credentials and tokens out of logs and output.
@@ -144,15 +146,41 @@ git branch -d "$BRANCH" 2>/dev/null || true
 
 Verify the merge landed: `git log --oneline -3` shows the `Merge pull request #{pr-number}` commit at HEAD.
 
-## Stage 6: Post-merge watch (report-only)
+## Stage 6: Post-merge staging watch (report-only for failures)
 
-The merge push fires `deploy-staging.yml` (and the gated production deploy). Watch it and report; failures here are a follow-up for the user — do not start fixing master from this run:
+The merge push fires `deploy-staging.yml`. Watch it; record the commit SHA it deployed. Failures here are a follow-up for the user — do not start fixing master from this run, and skip Stage 7 entirely:
 
 ```bash
-gh run list --repo "$OWNER_REPO" --branch "$DEFAULT_BRANCH" --limit 3 --json databaseId,workflowName,status,conclusion
+gh run list --repo "$OWNER_REPO" --branch "$DEFAULT_BRANCH" --limit 3 --json databaseId,workflowName,status,conclusion,headSha
 # when a run is still in progress:
 gh run watch {run-id} --repo "$OWNER_REPO" --exit-status
 ```
+
+## Stage 7: Production deploy
+
+Skip when the `no-prod` hint was given. Require: staging green on the current `$DEFAULT_BRANCH` HEAD, working tree clean.
+
+Production is the gated `deploy-production.yml` (`workflow_dispatch` with a typed confirmation). Confirm with the user (irreversible, customer-facing):
+
+```text
+Staging green on {short-sha}. Deploy to PRODUCTION? [yes/no]
+```
+
+On yes:
+
+```bash
+gh workflow run deploy-production.yml --repo "$OWNER_REPO" --ref "$DEFAULT_BRANCH" -f confirm_deploy=yes
+```
+
+Then find the new run and watch it to completion:
+
+```bash
+sleep 15
+run_id="$(gh run list --repo "$OWNER_REPO" --workflow deploy-production.yml --branch "$DEFAULT_BRANCH" --limit 1 --json databaseId -q '.[0].databaseId')"
+gh run watch "$run_id" --repo "$OWNER_REPO" --exit-status
+```
+
+Exit 0 → deployed. Any failure → report the decisive error line, do not retry unattended, point the user at `wrangler rollback` for recovery.
 
 ## Final report
 
@@ -164,7 +192,8 @@ Finish complete
   CI rounds:     {0-3} fix round(s){, failing checks if stopped}
   Archive:       openspec/changes/archive/{YYYY-MM-DD-change-id}/
   $DEFAULT_BRANCH: synced at {short-sha}
-  Post-merge:    {deploy-staging conclusion | not watched}
+  Staging:       {deploy-staging conclusion}
+  Production:    {deployed | skipped (no-prod) | failed — wrangler rollback}
 ```
 
 If stopped early: state the exact stage, what is done, what remains, and the decision needed.
