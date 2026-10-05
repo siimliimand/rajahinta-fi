@@ -596,7 +596,35 @@
     "recommended": "Suositeltu yhdistelmä",
     "alternatives": "Vaihtoehdot",
     "alternative": "Vaihtoehto {index}",
-    "dataReliability": "Tietojen luotettavuus"
+    "dataReliability": "Tietojen luotettavuus",
+    "line": {
+      "foreign_retail_price": "Vähittäishinta",
+      "foreign_unit_price": "Yksikköhinta",
+      "transport": "Kuljetus",
+      "alcohol_excise": "Alkoholivalmistevero",
+      "container_duty": "Pakkausvero",
+      "alcohol_excise_within_allowance": "Alkoholivalmistevero (sallitun määrän sisällä, veroton)",
+      "container_duty_within_allowance": "Pakkausvero (sallitun määrän sisällä, veroton)",
+      "alcohol_excise_over_allowance": "Alkoholivalmistevero (sallitun määrän ylittävä osa)",
+      "container_duty_over_allowance": "Pakkausvero (sallitun määrän ylittävä osa)",
+      "import_vat": "Tuonnin arvonlisävero (arvio)",
+      "import_vat_over_allowance": "Tuonnin arvonlisävero (sallitun määrän ylittävä osa, arvio)",
+      "import_vat_within_allowance": "Tuonnin arvonlisävero (sallitun määrän sisällä, veroton)"
+    },
+    "explanation": {
+      "VERIFIED": "[{dimension}] Tieto on vahvistettu luotettavasta lähteestä.",
+      "ESTIMATED": "[{dimension}] Tieto on arvioitu puutteellisen tai epäsuoran aineiston perusteella.",
+      "STALE": "[{dimension}] Tieto on ylittänyt tuoreusrajan.",
+      "UNAVAILABLE": "[{dimension}] Tietoa ei ole saatavilla."
+    },
+    "dimension": {
+      "price": "Hinta",
+      "transport": "Kuljetus",
+      "excise": "Valmistevero",
+      "containerDuty": "Pakkausvero",
+      "classification": "Luokittelu",
+      "thresholdTerms": "Vähimmäistilausehdot ({merchant})"
+    }
   },
   "BasketPacking": {
     "title": "Pakkausehdotus",

@@ -16,9 +16,15 @@
  * (`@/lib/design/status`) and the ui primitives, matching CalculatorResult:
  * green VERIFIED, blue ESTIMATED, amber STALE, gray UNAVAILABLE (D1/D2).
  *
+ * Line labels and reliability-explanation sentences localize from the
+ * message catalogs keyed by the closed-set machine `code` the API lines
+ * carry (D1, change fi-locale-surface-hardening); unknown or absent codes
+ * fall back to the verbatim API copy so a line never renders blank.
+ *
  * @module BasketResults
  */
 
+import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import type {
   BasketOptimizationResult,
@@ -28,7 +34,9 @@ import type {
   MinimumOrderThresholdCheck,
 } from '@/lib/basket.types';
 import type {
+  ConfidenceDetail,
   ConfidenceLevel,
+  ItemizedCost,
   ReliabilityStatus,
 } from '@/lib/types';
 import {
@@ -68,6 +76,143 @@ const TRANSPORT_RELIABILITY_TONE: Record<
   ESTIMATED: 'estimated',
   PARTIAL: 'error',
 };
+
+// ---------------------------------------------------------------------------
+// Cost-line localization (D1, change fi-locale-surface-hardening)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirror of core-domain `CostLineCode` — the frontend mirrors backend
+ * contracts without importing them (basket.types.ts precedent). The code
+ * is the stable join key the message catalogs localize from; the English
+ * `label` stays byte-identical on the wire and serves as the fallback. A
+ * new core-domain code lands here AND in the catalogs'
+ * `BasketResults.line` group together — an unknown code never maps to copy.
+ */
+export type CostLineCode =
+  | 'foreign_retail_price'
+  | 'foreign_unit_price'
+  | 'transport'
+  | 'alcohol_excise'
+  | 'container_duty'
+  | 'alcohol_excise_within_allowance'
+  | 'container_duty_within_allowance'
+  | 'alcohol_excise_over_allowance'
+  | 'container_duty_over_allowance'
+  | 'import_vat'
+  | 'import_vat_over_allowance'
+  | 'import_vat_within_allowance';
+
+const COST_LINE_CODES: ReadonlySet<string> = new Set<string>([
+  'foreign_retail_price',
+  'foreign_unit_price',
+  'transport',
+  'alcohol_excise',
+  'container_duty',
+  'alcohol_excise_within_allowance',
+  'container_duty_within_allowance',
+  'alcohol_excise_over_allowance',
+  'container_duty_over_allowance',
+  'import_vat',
+  'import_vat_over_allowance',
+  'import_vat_within_allowance',
+]);
+
+/**
+ * The line's machine code, or null when the line lacks one (a pre-code
+ * persisted record — the optional key is absent) or carries a value
+ * outside the closed set. Null means: render the verbatim API label, so
+ * an appended line can never render blank.
+ */
+export function costLineCode(item: ItemizedCost): CostLineCode | null {
+  if (!('code' in item)) return null;
+  const code: unknown = item.code;
+  return typeof code === 'string' && COST_LINE_CODES.has(code)
+    ? (code as CostLineCode)
+    : null;
+}
+
+/**
+ * The line's display label: catalog copy keyed by the machine code, or
+ * the verbatim API label for unknown/absent codes.
+ */
+export function localizedLineLabel(
+  item: ItemizedCost,
+  t: ReturnType<typeof useTranslations>,
+): string {
+  const code = costLineCode(item);
+  return code !== null ? t(`line.${code}`) : item.label;
+}
+
+/**
+ * Reliability-explanation sentences localize from the wire structure the
+ * confidence framework emits: `detail` is `"[Dimension] English
+ * sentence"` and each entry carries its closed-set `status`. The catalog
+ * recomposes dimension + status in the active locale.
+ */
+
+/** The bracketed dimension prefix the wire sentence starts with. */
+const EXPLANATION_DIMENSION_RE = /^\[([^\]]+)\] /;
+
+/** Wire dimension (English display copy from the optimizer) → catalog key. */
+const EXPLANATION_DIMENSIONS: ReadonlyMap<string, string> = new Map([
+  ['Price', 'dimension.price'],
+  ['Transport', 'dimension.transport'],
+  ['Excise', 'dimension.excise'],
+  ['Container duty', 'dimension.containerDuty'],
+  ['Classification', 'dimension.classification'],
+]);
+
+/**
+ * The threshold-terms dimension embeds a locale-neutral merchant id;
+ * the template keeps the id riding as-is, like the shipment header does.
+ */
+const THRESHOLD_TERMS_PREFIX = 'Threshold terms (';
+
+/** Status → sentence key; `Record` over the closed ladder = exhaustiveness. */
+const EXPLANATION_KEYS: Record<
+  ReliabilityStatus,
+  `explanation.${ReliabilityStatus}`
+> = {
+  VERIFIED: 'explanation.VERIFIED',
+  ESTIMATED: 'explanation.ESTIMATED',
+  STALE: 'explanation.STALE',
+  UNAVAILABLE: 'explanation.UNAVAILABLE',
+};
+
+/**
+ * One localized reliability-explanation line. Anything the wire structure
+ * does not recognize — no bracket prefix, an unknown dimension, an
+ * unknown status — renders the verbatim API sentence.
+ */
+export function localizedExplanation(
+  detail: ConfidenceDetail,
+  t: ReturnType<typeof useTranslations>,
+): string {
+  const match = EXPLANATION_DIMENSION_RE.exec(detail.detail);
+  if (match === null) return detail.detail;
+
+  const englishDimension = match[1];
+  const dimensionKey = EXPLANATION_DIMENSIONS.get(englishDimension);
+  if (dimensionKey !== undefined) {
+    return t(EXPLANATION_KEYS[detail.status], {
+      dimension: t(dimensionKey),
+    });
+  }
+
+  if (
+    englishDimension.startsWith(THRESHOLD_TERMS_PREFIX) &&
+    englishDimension.endsWith(')')
+  ) {
+    return t(EXPLANATION_KEYS[detail.status], {
+      dimension: t('dimension.thresholdTerms', {
+        merchant: englishDimension.slice(THRESHOLD_TERMS_PREFIX.length, -1),
+      }),
+    });
+  }
+
+  return detail.detail;
+}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -174,29 +319,24 @@ function TransportSection({
 }
 
 /** Per-item cost line in a shipment. */
-function ShipmentItemCost({
-  label,
-  cents,
-  reliability,
-}: {
-  label: string;
-  cents: number;
-  reliability: ReliabilityStatus;
-}) {
-  const dot = RELIABILITY_STATUS_META[reliability].dot;
+function ShipmentItemCost({ item }: { item: ItemizedCost }) {
+  const t = useTranslations('BasketResults');
+  const dot = RELIABILITY_STATUS_META[item.reliability].dot;
   return (
     <div className="flex items-center justify-between py-1.5">
       <div className="flex items-center gap-2">
         <span
           className={`inline-block h-1.5 w-1.5 shrink-0 ${dot}`}
         />
-        <span className="text-sm text-gray-700">{label}</span>
+        <span className="text-sm text-gray-700">
+          {localizedLineLabel(item, t)}
+        </span>
       </div>
       <div className="flex items-center gap-2">
         <span className="text-sm tabular-nums text-gray-600">
-          {formatEur(cents)}
+          {formatEur(item.cents)}
         </span>
-        <LocalizedReliabilityBadge status={reliability} />
+        <LocalizedReliabilityBadge status={item.reliability} />
       </div>
     </div>
   );
@@ -226,9 +366,7 @@ function ShipmentCard({ shipment }: { shipment: BasketShipment }) {
         {shipment.items.map((item, i) => (
           <ShipmentItemCost
             key={`${item.label}-${i}`}
-            label={item.label}
-            cents={item.cents}
-            reliability={item.reliability}
+            item={item}
           />
         ))}
       </div>
@@ -267,7 +405,9 @@ function ConfidenceBreakdown({
             <span
               className={`mt-0.5 inline-block h-1.5 w-1.5 shrink-0 ${RELIABILITY_STATUS_META[detail.status].dot}`}
             />
-            <span className="text-gray-600">{detail.detail}</span>
+            <span className="text-gray-600">
+              {localizedExplanation(detail, t)}
+            </span>
           </li>
         ))}
       </ul>

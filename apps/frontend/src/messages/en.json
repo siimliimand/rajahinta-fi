@@ -596,7 +596,35 @@
     "recommended": "Recommended combination",
     "alternatives": "Alternatives",
     "alternative": "Alternative {index}",
-    "dataReliability": "Data reliability"
+    "dataReliability": "Data reliability",
+    "line": {
+      "foreign_retail_price": "Retail price",
+      "foreign_unit_price": "Unit price",
+      "transport": "Transport",
+      "alcohol_excise": "Alcohol excise",
+      "container_duty": "Container duty",
+      "alcohol_excise_within_allowance": "Alcohol excise (within allowance, untaxed)",
+      "container_duty_within_allowance": "Container duty (within allowance, untaxed)",
+      "alcohol_excise_over_allowance": "Alcohol excise (over-allowance surplus)",
+      "container_duty_over_allowance": "Container duty (over-allowance surplus)",
+      "import_vat": "Import VAT (estimated)",
+      "import_vat_over_allowance": "Import VAT (over-allowance surplus, estimated)",
+      "import_vat_within_allowance": "Import VAT (within allowance, untaxed)"
+    },
+    "explanation": {
+      "VERIFIED": "[{dimension}] Data point is verified against an authoritative source.",
+      "ESTIMATED": "[{dimension}] Data point is estimated from incomplete or indirect data.",
+      "STALE": "[{dimension}] Data point has exceeded its freshness threshold.",
+      "UNAVAILABLE": "[{dimension}] No data is available for this data point."
+    },
+    "dimension": {
+      "price": "Price",
+      "transport": "Transport",
+      "excise": "Excise",
+      "containerDuty": "Container duty",
+      "classification": "Classification",
+      "thresholdTerms": "Threshold terms ({merchant})"
+    }
   },
   "BasketPacking": {
     "title": "Packing suggestion",

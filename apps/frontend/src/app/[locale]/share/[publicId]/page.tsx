@@ -27,18 +27,40 @@ const COST_CATEGORIES: ReadonlySet<string> = new Set([
   'importVatEstimate',
 ]);
 
+/**
+ * Mirror of core-domain `CostLineCode` — the same closed set the basket
+ * result localizes from (D1). Snapshots frozen after the code landed
+ * carry it per breakdown line; legacy snapshots lack the key entirely.
+ */
+const COST_LINE_CODES: ReadonlySet<string> = new Set([
+  'foreign_retail_price',
+  'foreign_unit_price',
+  'transport',
+  'alcohol_excise',
+  'container_duty',
+  'alcohol_excise_within_allowance',
+  'container_duty_within_allowance',
+  'alcohol_excise_over_allowance',
+  'container_duty_over_allowance',
+  'import_vat',
+  'import_vat_over_allowance',
+  'import_vat_within_allowance',
+]);
+
 interface BreakdownLine {
   readonly category: string | null;
+  readonly code: string | null;
   readonly label: string | null;
   readonly cents: number;
 }
 
 /**
  * Validate the frozen breakdown into display lines. Only objects with a
- * numeric `cents` render; labels prefer the canonical category key
- * (localized by the caller's translator), falling back to the stored
- * label. Anything else is skipped — a corrupt or unexpected snapshot
- * renders a shorter table, never fabricated rows.
+ * numeric `cents` render; labels prefer the closed-set line `code`
+ * (localized by the caller through the basket-result catalog), then the
+ * canonical category key, falling back to the stored label. Anything
+ * else is skipped — a corrupt or unexpected snapshot renders a shorter
+ * table, never fabricated rows.
  */
 function parseBreakdown(breakdown: unknown): readonly BreakdownLine[] {
   if (!Array.isArray(breakdown)) return [];
@@ -53,6 +75,10 @@ function parseBreakdown(breakdown: unknown): readonly BreakdownLine[] {
       category:
         typeof entry.category === 'string' && COST_CATEGORIES.has(entry.category)
           ? entry.category
+          : null,
+      code:
+        typeof entry.code === 'string' && COST_LINE_CODES.has(entry.code)
+          ? entry.code
           : null,
       label: typeof entry.label === 'string' ? entry.label : null,
       cents: entry.cents,
@@ -184,16 +210,24 @@ export default async function SharePage({ params }: SharePageProps) {
       ? tCommon(`confidence.${confidenceKey}`)
       : confidenceKey;
 
-  // Resolve breakdown labels here, where the awaited translator is in
-  // scope: canonical categories localize through the result catalog,
-  // stored labels are the fallback, unresolvable lines keep no name.
+  // Resolve breakdown labels here, where the awaited translators are in
+  // scope, along the same code-based path the basket result uses: the
+  // closed line code localizes through the basket-result catalog,
+  // pre-code snapshots fall back to the canonical category key, and the
+  // stored label is the last resort; unresolvable lines keep no name.
   const tResult = await getTranslations({ locale, namespace: 'CalculatorResult' });
+  const tBasketResults = await getTranslations({
+    locale,
+    namespace: 'BasketResults',
+  });
   const lines = parseBreakdown(snapshot.breakdown).map((line) => ({
     ...line,
     displayLabel:
-      line.category !== null
-        ? tResult(`category.${line.category}`)
-        : line.label,
+      line.code !== null
+        ? tBasketResults(`line.${line.code}`)
+        : line.category !== null
+          ? tResult(`category.${line.category}`)
+          : line.label,
   }));
   const disclaimer = parseDisclaimer(snapshot.disclaimer);
 

@@ -19,6 +19,10 @@
  *      card carries no identifier echo.
  *   5. The import-VAT line localizes through the canonical catalog;
  *      a snapshot without the line renders no VAT row at all.
+ *   6. Coded breakdown lines (task 2.3, fi-locale-surface-hardening)
+ *      localize through the basket-result catalog — the same path the
+ *      basket result renders from — while unknown codes and pre-code
+ *      lines fall back verbatim / to the canonical category.
  *
  * @module SharePageTest
  */
@@ -177,6 +181,41 @@ const SNAPSHOT_WITH_IMPORT_VAT = {
   },
 };
 
+// Task 2.3 (fi-locale-surface-hardening): snapshots frozen after the
+// closed-set `code` landed carry it per line and localize along the same
+// path the basket result uses; unknown codes and pre-code lines fall
+// back exactly like the basket result does.
+const SNAPSHOT_WITH_CODE = {
+  ...SNAPSHOT_OK,
+  snapshot: {
+    ...SNAPSHOT_OK.snapshot,
+    breakdown: [
+      {
+        label: 'Import VAT (estimated)',
+        code: 'import_vat',
+        category: 'importVatEstimate',
+        cents: 720,
+        reliability: 'ESTIMATED',
+      },
+      {
+        // Unknown code AND no canonical category — both fallbacks miss,
+        // so the verbatim stored label renders (never blank).
+        label: 'Future line',
+        code: 'future_line',
+        category: 'somethingNew',
+        cents: 100,
+        reliability: 'VERIFIED',
+      },
+      {
+        label: 'Legacy transport',
+        category: 'transportCost',
+        cents: 500,
+        reliability: 'VERIFIED',
+      },
+    ],
+  },
+};
+
 function apiError(status: number): ApiError {
   return {
     statusCode: status,
@@ -235,6 +274,22 @@ describe('SharePage', () => {
     // The stored label is the fallback for non-canonical lines only — a
     // whitelisted category must never surface the raw stored copy.
     expect(html).not.toContain('Import VAT');
+  });
+
+  it('localizes coded lines through the basket-result catalog and falls back like the basket result', async () => {
+    mockedRequest.mockResolvedValue(SNAPSHOT_WITH_CODE);
+
+    const html = await renderPage();
+
+    // Known code → the basket-result catalog label (the same path the
+    // basket result renders from), stored label suppressed.
+    expect(html).toContain('Tuonnin arvonlisävero (arvio)');
+    expect(html).not.toContain('Import VAT (estimated)');
+    // Unknown code → the verbatim stored label.
+    expect(html).toContain('Future line');
+    // Pre-code line → the canonical category label (legacy path intact).
+    expect(html).toContain('Kuljetuskustannus');
+    expect(html).not.toContain('Legacy transport');
   });
 
   it('renders no VAT row for a snapshot without the import-VAT line', async () => {
