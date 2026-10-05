@@ -22,6 +22,7 @@ import {
   request,
   seedAccount,
   seedCalculationRecord,
+  seedMerchant,
   seedOffer,
   seedProduct,
   seedTaxRule,
@@ -278,8 +279,64 @@ describe('GET /api/v1/products/:id/price-history', () => {
     expect(body.attribution[0].exciseRuleBoundary).toBeNull();
   });
 
-  it('returns an empty attribution for a single observation (no steps)', async () => {
+  // fi-locale-surface-hardening 2.5 (design D3): attribution entries
+  // carry the registry display name beside the merchant id — additive,
+  // id fallback, ordering and classification evidence untouched.
+  it('carries the registry display name on attribution entries, id fallback for unregistered merchants', async () => {
     const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    seedTaxRule(db, { taxType: 'excise', productCategory: 'beer', rate: 0.365 });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+    });
+    // 'alko' is registered; 'mydrink' is deliberately not.
+    seedMerchant(db, { merchantId: 'alko', name: 'Alko Oy' });
+
+    const day1 = serializeObservationLog([
+      observation({ id: 1, product_id: 1, merchant: 'alko', observed_at: '2026-03-01T10:00:00.000Z', foreign_retail_price_cents: 350, landed_cost_cents: 850 }),
+      observation({ id: 2, product_id: 1, merchant: 'mydrink', observed_at: '2026-03-01T11:00:00.000Z', foreign_retail_price_cents: 400, landed_cost_cents: 900 }),
+    ]);
+    const day2 = serializeObservationLog([
+      observation({ id: 3, product_id: 1, merchant: 'alko', observed_at: '2026-03-02T10:00:00.000Z', foreign_retail_price_cents: 360, landed_cost_cents: 860 }),
+      observation({ id: 4, product_id: 1, merchant: 'mydrink', observed_at: '2026-03-02T11:00:00.000Z', foreign_retail_price_cents: 420, landed_cost_cents: 920 }),
+    ]);
+
+    const env = permissiveEnv(d1, {
+      OBSERVATION_LOG: createMemoryR2({
+        'observations/2026-03-01.jsonl': day1,
+        'observations/2026-03-02.jsonl': day2,
+      }),
+    } as never);
+    const app = buildApp();
+
+    const res = await request(
+      app,
+      env,
+      '/api/v1/products/1/price-history?from=2026-03-01&to=2026-03-02',
+      { headers: AGE },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, any>;
+
+    // Two per-merchant steps, ordered by time then merchant id.
+    expect(body.attribution).toHaveLength(2);
+    expect(body.attribution[0]).toMatchObject({
+      merchant: 'alko',
+      merchantName: 'Alko Oy',
+      classification: 'MERCHANT_PRICE_CHANGE',
+    });
+    // Unregistered merchant → the raw id (the entry stays renderable).
+    expect(body.attribution[1]).toMatchObject({
+      merchant: 'mydrink',
+      merchantName: 'mydrink',
+      classification: 'MERCHANT_PRICE_CHANGE',
+    });
+  });
+
+  it('returns an empty attribution for a single observation (no steps)', async () => {    const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1 });
     const day1 = serializeObservationLog([
       observation({ product_id: 1, merchant: 'alko' }),

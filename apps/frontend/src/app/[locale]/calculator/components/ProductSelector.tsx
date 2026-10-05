@@ -4,19 +4,11 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
+import { formatMoney } from '@/lib/format/money';
 import { LoadingSkeleton } from '@/components/ui';
 import type { ProductSearchItem } from '@/lib/types';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Format cents to a euro string (shared frontend convention). */
-function formatEur(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`;
-}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -53,6 +45,7 @@ export default function ProductSelector({
   query,
 }: ProductSelectorProps) {
   const t = useTranslations('ProductSelector');
+  const locale = useLocale();
 
   // Loading state — the shared skeleton primitive plus a visible
   // status line (task 3.3: never a blank screen; the skeleton itself is
@@ -117,7 +110,7 @@ export default function ProductSelector({
                   data-testid="row-lowest-price"
                 >
                   {t('lowestPrice', {
-                    price: formatEur(product.lowestPriceCents),
+                    price: formatMoney(product.lowestPriceCents, locale),
                   })}
                 </span>
               )}

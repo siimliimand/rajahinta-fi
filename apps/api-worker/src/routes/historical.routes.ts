@@ -36,6 +36,7 @@ import type { ReliabilityStatus } from '../../../../packages/core-domain/src/rel
 import { D1PriceHistorySummaryRepository } from '../../../../packages/data-platform/src/repositories/d1/price-history-summary.repository';
 import { D1TaxRateRepository } from '../../../../packages/data-platform/src/repositories/d1/tax-rate.repository';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
+import { D1MerchantRegistryRepository } from '../../../../packages/data-platform/src/repositories/d1/merchant-registry.repository';
 import {
   observationKeysToScan,
   parseObservationLine,
@@ -52,6 +53,26 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const CONTAINER_DUTY_PRODUCT_CATEGORY = 'all_beverages';
 /** API granularity vocabulary → the summary-row discriminator. */
 const GRANULARITY_TO_SUMMARY: Record<string, string> = { day: 'daily', week: 'weekly' };
+
+/**
+ * Registry display names for the attribution's merchant ids
+ * (fi-locale-surface-hardening 2.5, design D3) — one list read (the
+ * registry is operator-scale), keyed by merchant id. Fail-open: a
+ * registry failure returns an empty map and the attribution entries
+ * fall back to the raw id.
+ */
+async function merchantDisplayNames(
+  d1: D1Database,
+  merchants: readonly string[],
+): Promise<Map<string, string>> {
+  if (merchants.length === 0) return new Map();
+  try {
+    const rows = await new D1MerchantRegistryRepository(d1).list();
+    return new Map(rows.map((row) => [row.merchantId, row.name]));
+  } catch {
+    return new Map();
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Query validation — verbatim port of validateQuery
@@ -396,6 +417,14 @@ async function getPriceHistory(c: Context<AppEnv>): Promise<Response> {
         seriesByMerchant.set(record.merchant, list);
       }
 
+      // Registry display names for the attributed merchants (2.5,
+      // design D3): resolved once for the response, before the steps
+      // are emitted; the raw id stays the entry's `merchant` key.
+      const names = await merchantDisplayNames(
+        c.env.DB,
+        [...seriesByMerchant.keys()],
+      );
+
       const attributionService = new TaxChangeAttributionService();
       for (const [seriesMerchant, observations] of seriesByMerchant) {
         const steps = attributionService.attribute({
@@ -407,6 +436,8 @@ async function getPriceHistory(c: Context<AppEnv>): Promise<Response> {
           if (step.classification === 'UNCHANGED') continue;
           attribution.push({
             merchant: seriesMerchant,
+            // Additive display name — registry name, id fallback.
+            merchantName: names.get(seriesMerchant) ?? seriesMerchant,
             classification: step.classification,
             fromObservedAt: step.fromObservedAt.toISOString(),
             toObservedAt: step.toObservedAt.toISOString(),

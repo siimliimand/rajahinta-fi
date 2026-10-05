@@ -29,6 +29,13 @@
  * listing and detail embed paths, so a pack row can never price a
  * 24-pack against one can.
  *
+ * Detail offers carry the additive registry display name `merchantName`
+ * (fi-locale-surface-hardening 2.5, design D3): resolved from
+ * merchant_registry by the offer's `merchant` id, falling back to the
+ * raw id. The identifier stays the wire contract and the
+ * redirect/analytics key; the registry is never read on the listing
+ * paths.
+ *
  * Zero-result did-you-mean (task 3.2, change
  * finnish-first-client-experience): a ranked-q search that found nothing
  * carries the repository's advisory `suggestion` as an additive optional
@@ -76,12 +83,34 @@ import {
   PRODUCT_CATEGORIES,
   type ProductCategory,
 } from '../../../../packages/data-platform/src/d1/schema';
+import { D1MerchantRegistryRepository } from '../../../../packages/data-platform/src/repositories/d1/merchant-registry.repository';
 import { lowestCurrentOfferPriceCents } from './current-best-price';
 
 /** Default page size for product listing (controller parity). */
 const DEFAULT_PAGE_SIZE = 20;
 /** Maximum page size to prevent abuse. */
 const MAX_PAGE_SIZE = 100;
+
+/**
+ * Registry display names for the response's merchant ids
+ * (fi-locale-surface-hardening 2.5, design D3) — one list read (the
+ * registry is operator-scale, far smaller than the offer set), keyed by
+ * merchant id. Fail-open: a registry failure returns an empty map and
+ * every caller falls back to the raw id, so the rows stay renderable.
+ * Detail/basket/history read paths only — never the catalog listing.
+ */
+async function merchantDisplayNames(
+  d1: D1Database,
+  merchants: readonly string[],
+): Promise<Map<string, string>> {
+  if (merchants.length === 0) return new Map();
+  try {
+    const rows = await new D1MerchantRegistryRepository(d1).list();
+    return new Map(rows.map((row) => [row.merchantId, row.name]));
+  } catch {
+    return new Map();
+  }
+}
 
 /** Canonical-category membership — the one shared value set (design D2). */
 function isCanonicalCategory(value: string): value is ProductCategory {
@@ -654,6 +683,15 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
     // never contradict each other.
     const currentBestPriceCents = lowestCurrentOfferPriceCents(offers);
 
+    // Registry display names for the offer merchants (2.5, design D3):
+    // one list read for the whole response, resolved BEFORE mapping so
+    // every offer carries the same additive `merchantName` beside its
+    // unchanged `merchant` identifier (the wire/analytics key).
+    const names = await merchantDisplayNames(
+      c.env.DB,
+      offers.map((o) => o.merchant),
+    );
+
     // Each offer carries the eurPerGram embed. The embed never reorders
     // the offers — it maps in place.
     // Physical inputs are per-product: parsed once and shared by every
@@ -686,6 +724,9 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
       offers: offers.map((o) => ({
         id: o.id,
         merchant: o.merchant,
+        // Additive display name (2.5): the registry name, or the raw id
+        // when the merchant is unregistered — never null, never absent.
+        merchantName: names.get(o.merchant) ?? o.merchant,
         country: o.country,
         priceCents: o.priceCents,
         currency: o.currency,

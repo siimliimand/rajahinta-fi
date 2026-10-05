@@ -5,7 +5,7 @@
  * Pins the card's contract:
  *   1. Positive saving: the derivation `(transport + other costs) ÷
  *      per-basket saving` is displayed WITH its input values — the
- *      echoed transport figure, the €0.00 other-costs gap slot, the
+ *      echoed transport figure, the 0,00 € other-costs gap slot, the
  *      per-basket saving with its per-line trace, and the basket count —
  *      plus the allowance hint linking /allowances.
  *   2. Zero saving: the card states the trip does not pay for itself
@@ -158,17 +158,18 @@ describe('BreakEvenCard positive saving (task 4.4)', () => {
       />,
     );
 
-    // Input values beside their labels — every number traceable.
+    // Input values beside their labels — every number traceable (fi
+    // money form, fi-locale-surface-hardening 2.4).
     expect(screen.getByTestId('trip-break-even-transport')).toHaveTextContent(
-      '€660.00',
+      '660,00 €',
     );
     expect(screen.getByTestId('trip-break-even-other')).toHaveTextContent(
-      '€0.00',
+      '0,00 €',
     );
     expect(screen.getByTestId('trip-break-even-saving')).toHaveTextContent(
-      '€330.00',
+      '330,00 €',
     );
-    // The €0.00 other-costs slot says why it is zero (no source yet).
+    // The zero other-costs slot says why it is zero (no source yet).
     expect(
       screen.getByText(
         'Lomake ei kerää muita matkakustannuksia — käytetään arvoa 0,00 €.',
@@ -177,14 +178,14 @@ describe('BreakEvenCard positive saving (task 4.4)', () => {
 
     // The derivation itself, formula and inputs in one line.
     expect(screen.getByTestId('trip-break-even-baskets')).toHaveTextContent(
-      '( €660.00 + €0.00 ) ÷ €330.00 = 2 koria',
+      '( 660,00 € + 0,00 € ) ÷ 330,00 € = 2 koria',
     );
 
     // The per-line trace of the basket saving.
-    expect(screen.getByText(/Olut: 60 l × €2\.50\/l = €150\.00/))
+    expect(screen.getByText(/Olut: 60 l × 2,50 €\/l = 150,00 €/))
       .toBeInTheDocument();
     // "Viini" — TripPage.category.wine_still (consumer labels, 0b98cce).
-    expect(screen.getByText(/Viini: 90 l × €2\.00\/l = €180\.00/))
+    expect(screen.getByText(/Viini: 90 l × 2,00 €\/l = 180,00 €/))
       .toBeInTheDocument();
     // The excluded category is named, not silently dropped.
     expect(
@@ -206,9 +207,9 @@ describe('BreakEvenCard zero saving (task 4.4)', () => {
       <BreakEvenCard transportCostCents={66_000} basketSaving={EMPTY_SAVING} />,
     );
 
-    // The input values stay visible — including the €0.00 saving.
+    // The input values stay visible — including the 0,00 € saving.
     expect(screen.getByTestId('trip-break-even-saving')).toHaveTextContent(
-      '€0.00',
+      '0,00 €',
     );
     expect(screen.getByTestId('trip-break-even-not-paying'))
       .toHaveTextContent('Matka ei maksa itseään takaisin');

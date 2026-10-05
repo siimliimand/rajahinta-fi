@@ -271,8 +271,11 @@ describe('CalculatorView quick/full-path parity (task 4.2)', () => {
       destination: 'FI',
     });
     // …and identical rendered results (one pipeline, one result object).
+    // fi money form via the shared formatter (fi-locale-surface-
+    // hardening 2.4) — the exact string including the non-breaking
+    // space Intl puts before the symbol.
     expect(fullTotal).toBe(quickTotal);
-    expect(quickTotal).toBe('€51.50');
+    expect(quickTotal).toBe('51,50\u00a0€');
   });
 
   it('the advanced carrier override is the only payload difference, and only when set', async () => {
@@ -332,13 +335,14 @@ describe('CalculatorView price-before-calculation (task 3.2)', () => {
     await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
     await user.click(screen.getByRole('button', { name: 'Hae' }));
 
-    // Priced row: the lowest observed price renders in euros.
+    // Priced row: the lowest observed price renders in euros — fi money
+    // form via the shared formatter (fi-locale-surface-hardening 2.4).
     const pricedRow = (
       await screen.findByText('Renat')
     ).closest('li') as HTMLElement;
     expect(
       within(pricedRow).getByTestId('row-lowest-price'),
-    ).toHaveTextContent('Halvin havaittu hinta: €9.99');
+    ).toHaveTextContent('Halvin havaittu hinta: 9,99 €');
 
     // Offer-less row: honestly empty — no price element, never €0.00.
     const emptyRow = screen

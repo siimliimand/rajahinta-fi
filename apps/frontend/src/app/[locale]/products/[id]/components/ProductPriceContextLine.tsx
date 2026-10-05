@@ -3,11 +3,16 @@
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
 import { getTranslations } from 'next-intl/server';
+import { formatDate } from '@/lib/format/date';
+import { formatMoney } from '@/lib/format/money';
 import { getServerProductPriceContext } from '../price-context';
 
 interface ProductPriceContextLineProps {
   /** The product page's resolved product id. */
   readonly productId: number;
+  /** The active request locale — dates and amounts render through the
+   * shared formatters (fi-locale-surface-hardening 2.4). */
+  readonly locale: string;
 }
 
 /**
@@ -42,6 +47,7 @@ interface ProductPriceContextLineProps {
  */
 export default async function ProductPriceContextLine({
   productId,
+  locale,
 }: ProductPriceContextLineProps) {
   const payload = await getServerProductPriceContext(productId);
   if (payload === null) {
@@ -50,7 +56,9 @@ export default async function ProductPriceContextLine({
 
   const t = await getTranslations('ProductPriceContext');
   const { context } = payload;
-  const asOf = context.asOf;
+  // Localized calendar date for the window's as-of (2.4) — the raw
+  // response value stays the date-only ISO string.
+  const asOf = formatDate(context.asOf, locale);
 
   if (context.status === 'unavailable') {
     return (
@@ -73,9 +81,9 @@ export default async function ProductPriceContextLine({
     );
   }
 
-  const current = formatEuros(payload.currentBestPriceCents);
-  const median = formatEuros(context.medianCents);
-  const delta = formatEuros(Math.abs(context.deltaVsMedianCents));
+  const current = formatMoney(payload.currentBestPriceCents, locale);
+  const median = formatMoney(context.medianCents, locale);
+  const delta = formatMoney(Math.abs(context.deltaVsMedianCents), locale);
   const key =
     context.deltaVsMedianCents > 0
       ? 'above'
@@ -127,9 +135,4 @@ export default async function ProductPriceContextLine({
       </p>
     </section>
   );
-}
-
-/** Euros with two decimals — the same presentation as the offers table. */
-function formatEuros(cents: number): string {
-  return `${(cents / 100).toFixed(2)} €`;
 }

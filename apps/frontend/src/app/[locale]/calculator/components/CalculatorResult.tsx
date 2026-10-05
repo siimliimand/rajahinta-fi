@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { useTranslations } from 'next-intl';
+import * as React from 'react';
+import { useLocale, useTranslations } from 'next-intl';
 import type {
   AlkoBenchmark,
   CalculatorResult as CalculatorResultType,
@@ -12,6 +12,8 @@ import type {
   RetailOffer,
 } from '@/lib/types';
 import { logClick } from '@/lib/api';
+import { formatMoney, formatSignedMoney } from '@/lib/format/money';
+import { formatDate, formatDateTime } from '@/lib/format/date';
 import {
   CONFIDENCE_LEVEL_META,
   RELIABILITY_STATUS_META,
@@ -28,22 +30,6 @@ import TravellerAlternativeCallout from './TravellerAlternativeCallout';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Format cents to a euro string. */
-function formatEur(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`;
-}
-
-/**
- * Signed variant for the benchmark gap — the API's sign convention is
- * positive when the calculated offer costs more than the reference, so
- * the sign stays visible even at zero or negative figures (WhatIfResult
- * precedent).
- */
-function formatSignedEur(cents: number): string {
-  const sign = cents > 0 ? '+' : cents < 0 ? '-' : '';
-  return `${sign}${formatEur(Math.abs(cents))}`;
-}
 
 /** Signed percent at one decimal — matches the API's rounding precision. */
 function formatSignedPercent(percent: number): string {
@@ -73,6 +59,7 @@ function LocalizedReliabilityBadge({ status }: { status: ReliabilityStatus }) {
  */
 function AlkoBenchmarkLine({ benchmark }: { benchmark: AlkoBenchmark }) {
   const t = useTranslations('CalculatorResult');
+  const locale = useLocale();
   const postureKey =
     benchmark.differenceCents > 0
       ? 'alkoCheaper'
@@ -90,12 +77,12 @@ function AlkoBenchmarkLine({ benchmark }: { benchmark: AlkoBenchmark }) {
       <div className="mt-1.5 flex items-center justify-between gap-2">
         <span className="text-sm text-gray-700">
           {t('alkoBenchmark.referencePrice', {
-            price: formatEur(benchmark.referencePriceCents),
+            price: formatMoney(benchmark.referencePriceCents, locale),
           })}
         </span>
         <span className="text-sm tabular-nums text-gray-600">
           {t('alkoBenchmark.difference', {
-            difference: formatSignedEur(benchmark.differenceCents),
+            difference: formatSignedMoney(benchmark.differenceCents, locale),
             percent: formatSignedPercent(benchmark.differencePercent),
           })}
         </span>
@@ -103,7 +90,7 @@ function AlkoBenchmarkLine({ benchmark }: { benchmark: AlkoBenchmark }) {
       <p className="mt-1 text-xs text-gray-500">
         {t(`alkoBenchmark.${postureKey}`)} ·{' '}
         {t('alkoBenchmark.observedAt', {
-          timestamp: new Date(benchmark.observedAt).toLocaleString('fi-FI'),
+          timestamp: formatDateTime(benchmark.observedAt, locale),
         })}
       </p>
     </div>
@@ -247,6 +234,7 @@ function CostLine({
   reliability: ReliabilityStatus;
 }) {
   const t = useTranslations('CalculatorResult');
+  const locale = useLocale();
   return (
     <div className="flex items-center justify-between py-1.5">
       <span className="text-sm text-gray-700">
@@ -254,7 +242,7 @@ function CostLine({
       </span>
       <div className="flex items-center gap-2">
         <span className="text-sm tabular-nums text-gray-600">
-          {formatEur(cents)}
+          {formatMoney(cents, locale)}
         </span>
         <LocalizedReliabilityBadge status={reliability} />
       </div>
@@ -269,6 +257,7 @@ function FreshnessLine({
   timestamp,
   detail,
 }: DataFreshnessEntry) {
+  const locale = useLocale();
   const dot = RELIABILITY_STATUS_META[status].dot;
   return (
     <div className="flex items-center justify-between py-1.5">
@@ -279,7 +268,7 @@ function FreshnessLine({
       <div className="flex items-center gap-2">
         {timestamp && (
           <span className="text-xs text-gray-400">
-            {new Date(timestamp).toLocaleString('fi-FI')}
+            {formatDateTime(timestamp, locale)}
           </span>
         )}
         <LocalizedReliabilityBadge status={status} />
@@ -340,6 +329,7 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
   const t = useTranslations('CalculatorResult');
   const tAll = useTranslations();
   const tCommon = useTranslations('Common');
+  const locale = useLocale();
   const meta = result.metadata;
   const freshnessEntries = useFreshnessEntries(result);
   const benchmark = result.alkoBenchmark;
@@ -420,7 +410,7 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
               {t('total')}
             </p>
             <p className="tabular-money mt-1 text-3xl font-extrabold text-white">
-              {formatEur(result.totalCents)}
+              {formatMoney(result.totalCents, locale)}
             </p>
           </div>
           {result.travellerAlternative && (
@@ -444,12 +434,12 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
         >
           <p className="text-sm font-semibold text-primary-900">
             {t('savingsSummary.title', {
-              amount: formatEur(-benchmark.differenceCents),
+              amount: formatMoney(-benchmark.differenceCents, locale),
             })}
           </p>
           <p className="mt-1 text-xs text-primary-800">
             {t('savingsSummary.asOf', {
-              date: new Date(benchmark.observedAt).toLocaleDateString('fi-FI'),
+              date: formatDate(benchmark.observedAt.slice(0, 10), locale),
             })}
           </p>
         </div>
@@ -565,7 +555,7 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
           <div className="flex justify-between">
             <dt>{tCommon('calculatedAt')}</dt>
             <dd className="tabular-nums">
-              {new Date(meta.calculationTimestamp).toLocaleString('fi-FI')}
+              {formatDateTime(meta.calculationTimestamp, locale)}
             </dd>
           </div>
           <div className="flex justify-between">

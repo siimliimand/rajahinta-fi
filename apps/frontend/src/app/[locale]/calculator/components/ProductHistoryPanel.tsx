@@ -104,6 +104,9 @@ export default function ProductHistoryPanel({
   const [metric, setMetric] = useState<PriceHistoryMetric>('price');
   const [merchant, setMerchant] = useState<string | null>(null);
   const [merchants, setMerchants] = useState<readonly string[]>([]);
+  const [merchantNames, setMerchantNames] = useState<ReadonlyMap<string, string>>(
+    new Map(),
+  );
   const [data, setData] = useState<PriceHistoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [failure, setFailure] = useState<FailureState>(null);
@@ -116,8 +119,23 @@ export default function ProductHistoryPanel({
     getProductDetail(productId)
       .then((detail) => {
         if (cancelled) return;
-        const names = [...new Set(detail.offers.map((o) => o.merchant))].sort();
-        setMerchants(names);
+        // Option VALUES stay the raw merchant id — it is the history
+        // query's filter key. The LABEL prefers the registry display
+        // name the detail offers carry (fi-locale-surface-hardening
+        // 2.5, additive `merchantName`); an unregistered merchant
+        // falls back to its id, so every option stays renderable.
+        const ids = [...new Set(detail.offers.map((o) => o.merchant))].sort();
+        const names = new Map<string, string>();
+        for (const offer of detail.offers) {
+          if (
+            offer.merchantName !== undefined &&
+            !names.has(offer.merchant)
+          ) {
+            names.set(offer.merchant, offer.merchantName);
+          }
+        }
+        setMerchants(ids);
+        setMerchantNames(names);
       })
       .catch(() => {
         // Degrade to the product-wide series only — the chart still works.
@@ -210,7 +228,7 @@ export default function ProductHistoryPanel({
               <option value="">{t('allMerchants')}</option>
               {merchants.map((m) => (
                 <option key={m} value={m}>
-                  {m}
+                  {merchantNames.get(m) ?? m}
                 </option>
               ))}
             </select>

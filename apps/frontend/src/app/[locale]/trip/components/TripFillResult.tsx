@@ -4,23 +4,20 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import type {
   TripFillCategoryHeadroom,
   TripFillLine,
   TripFillResponse,
 } from '../trip.types';
 import { Badge, Card } from '@/components/ui';
+import { formatMoney } from '@/lib/format/money';
 import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
 
 // ---------------------------------------------------------------------------
-// Formatting — the TripBreakEvenResult precedent: figures are formatted,
-// never re-rounded
+// Formatting — figures are formatted, never re-rounded. Euro amounts go
+// through the shared formatter (fi-locale-surface-hardening 2.4).
 // ---------------------------------------------------------------------------
-
-function formatEur(cents: number): string {
-  return `€${(cents / 100).toFixed(2)}`;
-}
 
 function formatLitres(litres: number): string {
   return `${new Intl.NumberFormat('fi-FI', { maximumFractionDigits: 2 }).format(litres)} l`;
@@ -45,6 +42,7 @@ function FillLineCard({
   readonly productName: string;
 }) {
   const t = useTranslations('TripPage');
+  const locale = useLocale();
 
   return (
     <Card padding="md" shadow="sm" data-testid={`trip-fill-line-${line.productId}`}>
@@ -64,7 +62,7 @@ function FillLineCard({
         <div className="flex items-baseline justify-between gap-4">
           <dt className="text-sm text-gray-500">{t('fill.line.unitPrice')}</dt>
           <dd className="text-sm font-medium text-gray-900">
-            {formatEur(line.unitPriceCents)}
+            {formatMoney(line.unitPriceCents, locale)}
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-4">
@@ -74,7 +72,7 @@ function FillLineCard({
         <div className="flex items-baseline justify-between gap-4">
           <dt className="text-sm text-gray-500">{t('fill.line.contribution')}</dt>
           <dd className="text-sm font-medium text-gray-900">
-            {formatEur(line.valueContributionCents)}
+            {formatMoney(line.valueContributionCents, locale)}
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-4">
@@ -215,6 +213,7 @@ export default function TripFillResult({
 }: TripFillResultProps) {
   const t = useTranslations('TripPage');
   const tCommon = useTranslations('Common');
+  const locale = useLocale();
 
   return (
     <>
@@ -238,7 +237,9 @@ export default function TripFillResult({
 
         {/* Totals — the maximized objective, echoed from the response. */}
         <p className="mb-1 text-sm text-gray-700">
-          {t('fill.result.filledValue', { total: formatEur(result.filledValueCents) })}
+          {t('fill.result.filledValue', {
+            total: formatMoney(result.filledValueCents, locale),
+          })}
         </p>
         <p className="mb-4 text-sm text-gray-700">
           {t('fill.result.filledUnits', {

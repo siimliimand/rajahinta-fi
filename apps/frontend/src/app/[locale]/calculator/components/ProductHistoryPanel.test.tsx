@@ -224,6 +224,57 @@ describe('ProductHistoryPanel', () => {
     expect((await screen.findAllByText('merchant-a')).length).toBeGreaterThanOrEqual(2);
   });
 
+  it('labels the options with the registry display name but keeps the id as the value (2.5)', async () => {
+    const user = userEvent.setup();
+    mockedGetProductDetail.mockResolvedValue({
+      ...detailWithMerchants('alks', 'mydrink'),
+      offers: [
+        {
+          id: 1,
+          merchant: 'alks',
+          merchantName: 'Alko Oy',
+          country: 'SE',
+          priceCents: 1099,
+          currency: 'EUR',
+          availability: 'in_stock',
+          sourceUrl: null,
+          observedAt: '2026-08-25T06:00:00.000Z',
+          reliabilityStatus: 'VERIFIED',
+        },
+        {
+          id: 2,
+          merchant: 'mydrink',
+          // No registry name resolved — the id stays the label.
+          country: 'SE',
+          priceCents: 1099,
+          currency: 'EUR',
+          availability: 'in_stock',
+          sourceUrl: null,
+          observedAt: '2026-08-25T06:00:00.000Z',
+          reliabilityStatus: 'VERIFIED',
+        },
+      ],
+    } as never);
+    mockedGetPriceHistory.mockResolvedValue(historyResponse());
+
+    renderWithIntl(<ProductHistoryPanel productId={42} showMerchantFilter />);
+
+    const select = await screen.findByTestId('history-merchant-select');
+    expect(select).toHaveTextContent('Alko Oy');
+    expect(select).toHaveTextContent('mydrink');
+    // The option VALUE stays the raw id — it is the history filter key.
+    const alksOption = select.querySelector('option[value="alks"]')!;
+    expect(alksOption).not.toBeNull();
+    expect(alksOption.textContent).toBe('Alko Oy');
+
+    // Selecting the named option filters by the id, not the label.
+    await user.selectOptions(select, 'alks');
+    await waitFor(() =>
+      expect(mockedGetPriceHistory).toHaveBeenCalledTimes(2),
+    );
+    expect(mockedGetPriceHistory.mock.calls[1][1].merchant).toBe('alks');
+  });
+
   it('degrades a rate-limited failure to a neutral retry affordance that refetches', async () => {
     const user = userEvent.setup();
     mockedGetPriceHistory.mockRejectedValueOnce(

@@ -54,7 +54,7 @@ describe('TravellerAlternativeCallout', () => {
       within(callout).getByText('Matkalaskurin arvio'),
     ).toBeInTheDocument();
     expect(callout.textContent).toContain(
-      'Yksi matkustaja, sama määrä — arvio yhteensä €68.00.',
+      'Yksi matkustaja, sama määrä — arvio yhteensä 68,00\u00a0€.',
     );
     expect(
       within(callout).getByText(
@@ -74,7 +74,7 @@ describe('TravellerAlternativeCallout', () => {
 
     const callout = screen.getByTestId('traveller-alternative');
     expect(callout.textContent).toContain(
-      'Sama määrä ylittää yhden matkustajan määräajat — arvio yhteensä €68.00 kattaa vain sallitun määrän osuuden.',
+      'Sama määrä ylittää yhden matkustajan määräajat — arvio yhteensä 68,00\u00a0€ kattaa vain sallitun määrän osuuden.',
     );
   });
 
@@ -90,5 +90,25 @@ describe('TravellerAlternativeCallout', () => {
     const link = screen.getByTestId('traveller-alternative-link');
     expect(link.getAttribute('href')).toBe('/trip?product=42&quantity=6');
     expect(link.textContent).toBe('Kokeile matkalaskuria');
+  });
+
+  it('renders the EN convention under an explicit en provider (2.4)', async () => {
+    const { NextIntlClientProvider } = await import('next-intl');
+    const { render } = await import('@testing-library/react');
+    const { default: enMessages } = await import('@/messages/en.json');
+
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <TravellerAlternativeCallout
+          alternative={alternative()}
+          productId={42}
+          quantity={6}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    expect(screen.getByTestId('traveller-alternative').textContent).toContain(
+      '€68.00',
+    );
   });
 });
