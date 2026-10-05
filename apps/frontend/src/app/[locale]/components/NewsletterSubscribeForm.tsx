@@ -120,7 +120,7 @@ export default function NewsletterSubscribeForm() {
         </label>
         <p className="mt-2 text-xs text-gray-500">{t('separationNote')}</p>
 
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <Button
             type="submit"
             size="sm"
@@ -128,6 +128,19 @@ export default function NewsletterSubscribeForm() {
           >
             {phase === 'submitting' ? t('submitting') : t('submit')}
           </Button>
+          {/* Consent affordance (catalog-first-run-polish 4.4): the locked
+              state explains itself — the hint beside the disabled button
+              names the consent requirement and disappears once the
+              checkbox is ticked. The gating itself is unchanged: explicit
+              consent stays a hard requirement for submission. */}
+          {!consent && (
+            <span
+              data-testid="newsletter-consent-hint"
+              className="text-xs text-gray-500"
+            >
+              {t('consentHint')}
+            </span>
+          )}
         </div>
 
         {failure === 'rate-limited' && (

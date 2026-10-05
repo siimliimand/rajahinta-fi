@@ -5,7 +5,7 @@
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import type {
   ProductSearchItem,
   CalculatorResult,
@@ -23,6 +23,7 @@ import {
 } from '@/lib/api';
 import { useDebouncedCallback } from '@/lib/use-debounced-callback';
 import { formatAttributeRow, formatVolume } from '@/lib/format/product-attributes';
+import { formatMoney } from '@/lib/format/money';
 import { emitFunnelEvent } from '@/lib/telemetry/funnel-events';
 import {
   captureTimeToResultMs,
@@ -31,7 +32,7 @@ import {
 import { Link } from '@/i18n/navigation';
 import { EmptyState, ErrorState } from '@/components/ui';
 import ProductSearch from './components/ProductSearch';
-import ProductSelector from './components/ProductSelector';
+import ProductSelector, { packUnitsPerPackage } from './components/ProductSelector';
 import MerchantWarningNotice from '../components/MerchantWarningNotice';
 import QuantitySelector from './components/QuantitySelector';
 import ResultCard from './components/ResultCard';
@@ -219,6 +220,7 @@ export default function CalculatorView() {
   const tCommon = useTranslations('Common');
   const tAgeGate = useTranslations('AgeGate');
   const tProductPage = useTranslations('ProductPage');
+  const locale = useLocale();
 
   // ── Search state ──
   const [query, setQuery] = useState('');
@@ -643,6 +645,24 @@ export default function CalculatorView() {
     ? formatVolume(selectedProduct.unitVolume)
     : null;
 
+  // Per-unit context for the selected pack (catalog-first-run-polish 4.2,
+  // design D2): display-only derivation from the selected row's own €/g
+  // embed — beside the absolute lowest-observed-price label, so a 24-pack
+  // selection can never be read as a single-unit price. Null on
+  // single-unit rows and whenever the embed cannot support the ratio.
+  const selectedPerUnitPrice =
+    selectedProduct !== null &&
+    selectedProduct.lowestPriceCents !== null &&
+    packUnitsPerPackage(selectedProduct) !== null
+      ? formatMoney(
+          Math.round(
+            selectedProduct.lowestPriceCents /
+              packUnitsPerPackage(selectedProduct)!,
+          ),
+          locale,
+        )
+      : null;
+
   const stepLabels = [
     t('stepSearch'),
     t('stepConfigure'),
@@ -831,6 +851,17 @@ export default function CalculatorView() {
                       {t('observedPrice', {
                         price: formatEur(selectedProduct.lowestPriceCents),
                       })}
+                    </p>
+                  )}
+                  {/* ── Pack-row per-unit helper (catalog-first-run-polish
+                      4.2): "≈ x,xx €/kpl" beside the absolute price —
+                      display-only. ── */}
+                  {selectedPerUnitPrice !== null && (
+                    <p
+                      className="mt-0.5 text-xs text-gray-500"
+                      data-testid="observed-per-unit-price"
+                    >
+                      {t('perUnitPrice', { price: selectedPerUnitPrice })}
                     </p>
                   )}
                 </div>

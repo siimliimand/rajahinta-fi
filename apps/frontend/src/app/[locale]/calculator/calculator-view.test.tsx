@@ -363,8 +363,10 @@ describe('CalculatorView price-before-calculation (task 3.2)', () => {
 
     // The price comes from the selected search item's aggregates — shown
     // before any calculation runs, and never from a result object.
+    // Terminology unified on "Halvin havaittu hinta"
+    // (catalog-first-run-polish 4.4).
     expect(screen.getByTestId('observed-price')).toHaveTextContent(
-      'Alin havaittu hinta: €9.99',
+      'Halvin havaittu hinta: €9.99',
     );
     expect(mockedCalculateLandedCost).not.toHaveBeenCalled();
     expect(screen.queryByTestId('result-card')).toBeNull();
@@ -648,5 +650,113 @@ describe('CalculatorView brandless attribute row (fi-locale-surface-hardening 2.
     await user.click(hit.closest('button') as HTMLButtonElement);
 
     expect(screen.getByText('Vodka · 70 cl')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-unit price context on pack rows (catalog-first-run-polish 4.2):
+// dropdown rows surface the read-time €/g embed and an "≈ x,xx €/kpl"
+// helper on multi-unit pack rows; single-unit rows stay unchanged.
+// Display-only — the derivation reads the row's own embed (design D2:
+// no duplicated parser, no new API surface) and never touches a
+// calculation input, ranking, or sort order.
+// ---------------------------------------------------------------------------
+
+/**
+ * A 24-pack row carrying the listing embed the API computes for it: the
+ * cheapest current offer priced against the package total volume the
+ * read-time pack-units parser produced
+ * (`0.33 l × 24 × 0.047 × 789 g/l` grams of ethanol).
+ */
+const PACK_HIT: ProductSearchItem = {
+  id: 77,
+  name: 'Karhu Olut 4.7% 24 × 0,33 l tölkki',
+  brand: 'Karhu',
+  category: 'Beer',
+  alcoholByVolume: 0.047,
+  unitVolume: '0.33',
+  containerType: 'CAN',
+  lowestPriceCents: 2999,
+  merchantCount: 2,
+  eurPerGram: {
+    status: 'computed',
+    centsPerGram: 2999 / (0.33 * 24 * 0.047 * 789),
+    ethanolGrams: 0.33 * 24 * 0.047 * 789,
+    priceReliability: 'VERIFIED',
+  },
+};
+
+/** Single-unit product WITH a computed embed — must stay helper-free. */
+const SINGLE_UNIT_WITH_EMBED: ProductSearchItem = {
+  ...HIT,
+  id: 43,
+  eurPerGram: {
+    status: 'computed',
+    centsPerGram: 999 / (0.7 * 0.375 * 789),
+    ethanolGrams: 0.7 * 0.375 * 789,
+    priceReliability: 'VERIFIED',
+  },
+};
+
+describe('CalculatorView per-unit price context on pack rows (catalog-first-run-polish 4.2)', () => {
+  it('surfaces the €/g embed and the ≈ €/kpl helper with Finnish decimal comma on a pack row', async () => {
+    mockedSearchProducts.mockResolvedValue(searchResponse([PACK_HIT]));
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'karhu');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+
+    const row = (
+      await screen.findByText(PACK_HIT.name)
+    ).closest('li') as HTMLElement;
+    // The €/g embed renders in the catalog chip's presentation.
+    expect(within(row).getByTestId('row-eur-per-gram')).toHaveTextContent(
+      '10.21 snt/g',
+    );
+    // 2999 ¢ ÷ 24 units → "≈ 1,25 €/kpl" — beside the absolute price
+    // (fi money form via the shared formatter, decimal comma).
+    expect(within(row).getByTestId('row-per-unit-price')).toHaveTextContent(
+      '≈ 1,25 €/kpl',
+    );
+    expect(
+      within(row).getByTestId('row-lowest-price'),
+    ).toHaveTextContent('Halvin havaittu hinta: 29,99 €');
+  });
+
+  it('keeps single-unit rows unchanged: the embed renders but no per-unit helper', async () => {
+    mockedSearchProducts.mockResolvedValue(
+      searchResponse([SINGLE_UNIT_WITH_EMBED]),
+    );
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+
+    const row = (
+      await screen.findByText('Renat')
+    ).closest('li') as HTMLElement;
+    expect(within(row).getByTestId('row-eur-per-gram')).toBeInTheDocument();
+    expect(within(row).queryByTestId('row-per-unit-price')).toBeNull();
+  });
+
+  it('renders the per-unit helper beside the selected pack absolute price on the Configure step', async () => {
+    mockedSearchProducts.mockResolvedValue(searchResponse([PACK_HIT]));
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'karhu');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    const hit = await screen.findByText(PACK_HIT.name);
+    await user.click(hit.closest('button') as HTMLButtonElement);
+
+    expect(screen.getByTestId('observed-price')).toHaveTextContent(
+      'Halvin havaittu hinta: €29.99',
+    );
+    expect(screen.getByTestId('observed-per-unit-price')).toHaveTextContent(
+      '≈ 1,25 €/kpl',
+    );
+    expect(mockedCalculateLandedCost).not.toHaveBeenCalled();
   });
 });

@@ -143,3 +143,43 @@ describe('NewsletterSubscribeForm', () => {
     ).toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Consent affordance (catalog-first-run-polish 4.4): the locked state is
+// self-explanatory — a visible hint beside the disabled Tilaa button
+// states the consent requirement and disappears once the checkbox is
+// ticked. The gating itself is unchanged (spec: explicit consent stays a
+// hard gate).
+// ---------------------------------------------------------------------------
+
+describe('NewsletterSubscribeForm consent affordance (catalog-first-run-polish 4.4)', () => {
+  it('states beside the disabled Tilaa button that consent is required while unticked', () => {
+    renderWithIntl(<NewsletterSubscribeForm />);
+
+    const submit = screen.getByRole('button', { name: 'Tilaa' });
+    expect(submit).toBeDisabled();
+
+    const hint = screen.getByTestId('newsletter-consent-hint');
+    expect(hint).toHaveTextContent(
+      'Tilaaminen edellyttää suostumuksen rastittamista.',
+    );
+    // Beside the button: the hint shares the submit row's container.
+    expect(submit.parentElement).toContainElement(hint);
+  });
+
+  it('hides the hint and enables submission once consent is ticked', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<NewsletterSubscribeForm />);
+    await user.type(
+      screen.getByLabelText('Sähköpostiosoite'),
+      'henkilo@example.invalid',
+    );
+
+    expect(screen.getByTestId('newsletter-consent-hint')).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('newsletter-consent'));
+
+    expect(screen.queryByTestId('newsletter-consent-hint')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Tilaa' })).toBeEnabled();
+  });
+});
