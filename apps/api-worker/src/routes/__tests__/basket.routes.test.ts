@@ -25,6 +25,7 @@ import {
   seedProduct,
   seedTaxRule,
 } from './harness';
+import type { CostLineCode } from '../../../../../packages/core-domain/src/calculator/calculator.types';
 
 const AGE = { 'x-age-confirmed': 'confirmed' };
 const JSON_HDRS = { 'content-type': 'application/json', ...AGE };
@@ -655,5 +656,103 @@ describe('packing section', () => {
     // The cached payload is section-free; the section is attached per
     // request, so the HIT body equals the MISS body including packing.
     expect(await second.json()).toEqual(missBody);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fi-locale-surface-hardening 2.2: every shipment cost line — the
+// recommended combination and the alternatives alike — carries the
+// additive closed-set `code` beside the byte-identical English `label`,
+// spread through the merchant-name enrichment untouched.
+// ---------------------------------------------------------------------------
+
+/** The closed set every wire code must belong to (CostLineCode members). */
+const COST_LINE_CODES: readonly CostLineCode[] = [
+  'foreign_retail_price',
+  'foreign_unit_price',
+  'transport',
+  'alcohol_excise',
+  'container_duty',
+  'alcohol_excise_within_allowance',
+  'container_duty_within_allowance',
+  'alcohol_excise_over_allowance',
+  'container_duty_over_allowance',
+  'import_vat',
+  'import_vat_over_allowance',
+  'import_vat_within_allowance',
+];
+
+/** Wire shape of one itemized cost line (the ItemizedCost surface). */
+interface WireCostLine {
+  label: string;
+  code?: string;
+  category: string;
+  cents: number;
+  reliability: string;
+  breakdown?: WireCostLine[];
+}
+
+/** Depth-first flatten of a cost-line tree. */
+function flattenCostLines(lines: readonly WireCostLine[]): WireCostLine[] {
+  return lines.flatMap((line) => [
+    line,
+    ...(line.breakdown ? flattenCostLines(line.breakdown) : []),
+  ]);
+}
+
+describe('POST /api/v1/basket/optimize — cost-line wire contract (2.2)', () => {
+  it('carries the closed-set code beside the byte-identical English label on every shipment line', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedOptimizableProducts(db, [1]);
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(d1), '/api/v1/basket/optimize', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify(VALID_REQUEST),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      shipments: Array<{ items: WireCostLine[] }>;
+      alternatives: Array<{ shipments: Array<{ items: WireCostLine[] }> }>;
+    };
+
+    const shipments = [
+      ...body.shipments,
+      ...body.alternatives.flatMap((alternative) => alternative.shipments),
+    ];
+    expect(shipments.length).toBeGreaterThan(0);
+    for (const shipment of shipments) {
+      const lines = flattenCostLines(shipment.items);
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) {
+        expect(COST_LINE_CODES).toContain(line.code);
+      }
+    }
+
+    // Known lines keep their pre-code English labels and exact codes.
+    // The shipment view of the shared computation excludes the transport
+    // line — it is consolidated separately on the shipment.
+    const recommended = body.shipments[0];
+    expect(recommended.items.map((line) => line.label)).toEqual([
+      'Retail price',
+      'Alcohol excise',
+      'Container duty',
+    ]);
+    expect(recommended.items.map((line) => line.code)).toEqual([
+      'foreign_retail_price',
+      'alcohol_excise',
+      'container_duty',
+    ]);
+    // The retail line's unit-price breakdown rides the same contract.
+    expect(recommended.items[0].breakdown).toEqual([
+      {
+        label: 'Unit price (x2)',
+        code: 'foreign_unit_price',
+        category: 'foreignRetailPrice',
+        cents: recommended.items[0].cents,
+        reliability: recommended.items[0].reliability,
+      },
+    ]);
   });
 });

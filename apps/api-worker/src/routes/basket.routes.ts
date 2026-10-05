@@ -21,6 +21,14 @@
  * the raw id. The enrichment composes after the content hash, so the
  * cached payload keeps identifying the optimization.
  *
+ * Cost lines pass through untouched (fi-locale-surface-hardening 2.2):
+ * every shipment `items` line keeps the additive closed-set `code` beside
+ * its byte-identical English `label` (legacy/absent codes stay absent,
+ * never nulled). The response assembly spreads the optimizer result
+ * rather than re-mapping cost lines — a field-selective mapping or a
+ * strict response schema here would silently strip `code`, the stable
+ * join key the fi surface localizes against.
+ *
  * @module BasketRoutes
  */
 
