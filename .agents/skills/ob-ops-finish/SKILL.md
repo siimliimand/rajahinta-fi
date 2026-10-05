@@ -87,13 +87,15 @@ OWNER_REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
    ```
 
    If it reports "no checks", sleep ~30 s and retry (cap ~5 min). Still none: the PR has no CI — ask the user whether to merge anyway.
-2. **Watch** (blocks until every check finishes; exit 0 = all green, nonzero = at least one failed):
-
+2. **Watch** (progress display only — this gh version can exit 0 while checks are still failing, as seen on PR #88):
    ```bash
-   gh pr checks "{pr-number}" --repo "$OWNER_REPO" --watch --interval 30 --fail-fast
+   gh pr checks "{pr-number}" --repo "$OWNER_REPO" --watch --interval 30
    ```
-
-3. **Green → Stage 4.**
+3. **Verify authoritatively** — the plain re-run's exit code is the only truth:
+   ```bash
+   gh pr checks "{pr-number}" --repo "$OWNER_REPO"
+   ```
+   Exit 0 and no `fail`/`pending` rows → green → Stage 4. Any `fail` row → fix round.
 4. **Failure round** (repeat, max 3):
    1. List what failed: `gh pr checks "{pr-number}" --repo "$OWNER_REPO"` (nonzero exit rows).
    2. Pull the failing logs:
