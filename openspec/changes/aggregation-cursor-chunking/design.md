@@ -81,12 +81,22 @@ the read-only checks).
   daily JSONL objects every tick until first convergence. Measured
   harmless (the 15-minute budget is spent on D1 writes; R2 reads are a
   small fraction), and it disappears once W is written.
-- Chunk size 300 is the savings precedent's number, not a measurement
-  for this job (aggregation writes ~25 buckets/product vs savings' 1
-  row/product). The budget pin (≤1,000 D1 statements/invocation) is the
-  real guard; if 300 products ≈ 7,500 statements violates it, the pin
-  fails in CI and the constant drops (e.g. 120) — the pin decides, not
-  the guess.
+- Chunk size is set by measurement, not the savings precedent's number.
+  The pin measured 96 D1 statements/product (the summary repository's
+  `upsertBucket` is an unbatched lookup+write pair per bucket row,
+  ~48 rows/product) → 300 products ≈ 28,804 statements/invocation.
+  The binding production constraint is WALL TIME, not a statement cap:
+  the 2026-10-05 killed pass processed ~880 products (~84k statements)
+  in 15:00 min before `exceededWallTime`, never hitting a subrequest
+  error. 300 products ≈ 5-6 min of the 15-min budget shared with the
+  sibling handlers — the pin guards the ≤35,000-statement envelope
+  (~18% headroom) so a per-product statement regression fails CI before
+  production ticks stop converging. An initial fallback to 5
+  products/tick (1,000-statement budget imported from the savings
+  precedent) was rejected by arithmetic: ~2,053 ticks ≈ 43 days to
+  converge. Follow-up optimization candidate: batching the per-product
+  upsert into one statement cuts the cost ~96× and would make any
+  budget trivially comfortable.
 - Concurrent safety: only one */30 invocation runs at a time (cron
   serialization), so cursor races are not a live concern; the
   write-then-advance ordering plus idempotent upserts keep a
