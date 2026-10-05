@@ -30,6 +30,10 @@
  *   9. Non-zero count → the user-reported presentation unchanged, even
  *      when a coverage block rides along (the data-driven flip back).
  *  10. lastIngestAt null → coverage renders without the sync row.
+ *  11. A watermark not shaped like an ISO-8601 instant renders no sync
+ *      row even when Date.parse accepts it (year-only "9194" — the
+ *      production incident), in BOTH render variants
+ *      (watermark-isolation-history-backfill task 1.2, design D2).
  *
  * @module AccuracyStatTest
  */
@@ -429,6 +433,61 @@ describe('AccuracyStat coverage mode (count 0 + coverage block)', () => {
 
     expect(cov).toHaveTextContent('Seurattuja tuotteita');
     expect(cov).toHaveTextContent('Tallennettuja hintahavaintoja');
+    expect(screen.queryByTestId('accuracy-coverage-last-sync')).toBeNull();
+    expect(cov).not.toHaveTextContent('Viimeisin päivitys');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Corrupt watermark gate (watermark-isolation-history-backfill task 1.2,
+// design D2)
+// ---------------------------------------------------------------------------
+
+describe('AccuracyStat corrupt watermark (no sync row)', () => {
+  // A bare year parses as year 9194 — the production incident
+  // ("Viimeisin päivitys: 1.1.9194"). It must be treated exactly like an
+  // absent watermark: the coverage block still renders, the sync row
+  // never does. The spec scenario names both renderings explicitly, so
+  // the corrupt state is exercised through each variant's own render
+  // path, not just the shared AccuracyCoverageBlock.
+  const yearOnly = coverage({ lastIngestAt: '9194' });
+
+  it('section variant: a year-only watermark renders no sync row and no fabricated date', async () => {
+    mockedAccuracy.mockResolvedValue(statWithCoverage(0, yearOnly));
+
+    renderWithIntl(<AccuracyStat variant="section" />);
+    const cov = await screen.findByTestId('accuracy-coverage');
+
+    // The block itself still renders with its true values…
+    expect(cov).toHaveTextContent('Seurattuja tuotteita');
+    expect(cov).toHaveTextContent('1284');
+    expect(cov).toHaveTextContent('Tallennettuja hintahavaintoja');
+    // …but the sync row is gone entirely — no label, no "1.1.9194".
+    expect(screen.queryByTestId('accuracy-coverage-last-sync')).toBeNull();
+    expect(cov).not.toHaveTextContent('Viimeisin päivitys');
+    expect(cov).not.toHaveTextContent('9194');
+  });
+
+  it('trust-row variant: a year-only watermark renders no sync row (the home-page incident)', async () => {
+    mockedAccuracy.mockResolvedValue(statWithCoverage(0, yearOnly));
+
+    renderWithIntl(<AccuracyStat variant="trust-row" />);
+    const cov = await screen.findByTestId('accuracy-coverage');
+
+    expect(cov).toHaveTextContent('Seurattuja tuotteita');
+    expect(screen.queryByTestId('accuracy-coverage-last-sync')).toBeNull();
+    expect(cov).not.toHaveTextContent('Viimeisin päivitys');
+    expect(cov).not.toHaveTextContent('9194');
+  });
+
+  it('a date-only watermark is not an instant and renders no sync row either', async () => {
+    mockedAccuracy.mockResolvedValue(
+      statWithCoverage(0, coverage({ lastIngestAt: '2026-09-30' })),
+    );
+
+    renderWithIntl(<AccuracyStat variant="section" />);
+    const cov = await screen.findByTestId('accuracy-coverage');
+
     expect(screen.queryByTestId('accuracy-coverage-last-sync')).toBeNull();
     expect(cov).not.toHaveTextContent('Viimeisin päivitys');
   });
