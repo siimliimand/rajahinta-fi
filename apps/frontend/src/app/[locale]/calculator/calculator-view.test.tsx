@@ -18,7 +18,7 @@
 import React from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CalculatorView from './calculator-view';
 import { ApiFetchError, searchProducts, calculateLandedCost, listScenarios } from '@/lib/api';
 import { renderWithIntl } from '@/lib/testing/test-intl';
@@ -758,5 +758,188 @@ describe('CalculatorView per-unit price context on pack rows (catalog-first-run-
       '≈ 1,25 €/kpl',
     );
     expect(mockedCalculateLandedCost).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Result visibility after calculation (catalog-first-run-polish 4.3,
+// design D3): when a calculation lands, the result card scrolls into view
+// only when it is not already substantially in the viewport — smoothly by
+// default, instantly under prefers-reduced-motion. The desktop sticky
+// summary, on screen by construction, never moves.
+// ---------------------------------------------------------------------------
+
+/** DOMRect for a card whose viewport geometry the test pins. */
+function rectAt(top: number, bottom: number, height: number): DOMRect {
+  return {
+    top,
+    bottom,
+    height,
+    width: 375,
+    left: 0,
+    right: 375,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
+describe('CalculatorView result visibility after calculation (catalog-first-run-polish 4.3)', () => {
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
+  const originalMatchMedia = window.matchMedia;
+  const scrollIntoView = vi.fn();
+
+  /** Pin the summary card's viewport geometry for the current render. */
+  const stubSummaryRect = (rect: DOMRect) => {
+    vi.spyOn(
+      screen.getByTestId('calculator-summary'),
+      'getBoundingClientRect',
+    ).mockReturnValue(rect);
+  };
+
+  /** Replace matchMedia; returns the mock for query assertions. */
+  const stubMotionPreference = (reducedMotion: boolean) => {
+    const matcher = vi.fn(
+      (query: string) =>
+        ({
+          matches:
+            reducedMotion && query === '(prefers-reduced-motion: reduce)',
+          media: query,
+          onchange: null,
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as unknown as MediaQueryList,
+    );
+    window.matchMedia = matcher as unknown as typeof window.matchMedia;
+    return matcher;
+  };
+
+  /** Search → select the hit → calculate, and wait for the result card. */
+  const driveToResult = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'renat');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    const hit = await screen.findByText('Renat');
+    await user.click(hit.closest('button') as HTMLButtonElement);
+    await user.click(
+      screen.getByRole('button', { name: 'Laske kokonaiskustannus' }),
+    );
+    await screen.findByTestId('result-card');
+  };
+
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = scrollIntoView;
+  });
+
+  afterEach(() => {
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('scrolls the out-of-view result card into view with smooth behavior', async () => {
+    stubMotionPreference(false);
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+    // Entirely below the 768px jsdom fold.
+    stubSummaryRect(rectAt(900, 1400, 500));
+
+    await driveToResult(user);
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  });
+
+  it('scrolls when visibility is marginal (barely peeking above the fold)', async () => {
+    stubMotionPreference(false);
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+    // 68 of 500px inside the 768px viewport — not substantially visible.
+    stubSummaryRect(rectAt(700, 1200, 500));
+
+    await driveToResult(user);
+
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  });
+
+  it('does not scroll when the result card is already substantially in view', async () => {
+    stubMotionPreference(false);
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+    stubSummaryRect(rectAt(100, 500, 400));
+
+    await driveToResult(user);
+
+    expect(screen.getByTestId('result-card')).toBeInTheDocument();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it('scrolls instantly when prefers-reduced-motion is set', async () => {
+    const matcher = stubMotionPreference(true);
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+    stubSummaryRect(rectAt(900, 1400, 500));
+
+    await driveToResult(user);
+
+    expect(matcher).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'instant',
+      block: 'start',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Selection collapses the result list (catalog-first-run-polish 4.3): a
+// selection replaces the inline result list with the chosen-product state,
+// the collapse holds through the calculation, and "Vaihda" restores the
+// list for another pick.
+// ---------------------------------------------------------------------------
+
+describe('CalculatorView selection collapses the result list (catalog-first-run-polish 4.3)', () => {
+  it('replaces the result list with the chosen-product state and restores it on Vaihda', async () => {
+    mockedSearchProducts.mockResolvedValue(
+      searchResponse([HIT, NO_OFFER_HIT]),
+    );
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'kotilo');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    expect(await screen.findByText('Renat')).toBeInTheDocument();
+    expect(screen.getByText('Tarjouskotilo')).toBeInTheDocument();
+
+    await user.click(
+      screen.getByText('Renat').closest('button') as HTMLButtonElement,
+    );
+
+    // The chosen-product state renders in the list's place: the selected
+    // row's name, with the un-chosen rows gone and the section header
+    // naming the selection.
+    expect(screen.getByTestId('chosen-product')).toHaveTextContent('Renat');
+    expect(screen.queryByText('Tarjouskotilo')).toBeNull();
+    expect(screen.getByText('Valittu tuote')).toBeInTheDocument();
+
+    // The collapse holds through the calculation — the list never
+    // reappears behind the result.
+    await user.click(
+      screen.getByRole('button', { name: 'Laske kokonaiskustannus' }),
+    );
+    await screen.findByTestId('result-card');
+    expect(screen.getByTestId('chosen-product')).toHaveTextContent('Renat');
+
+    // "Vaihda" brings the list back for another pick.
+    await user.click(screen.getByRole('button', { name: 'Vaihda' }));
+    expect(await screen.findByText('Tarjouskotilo')).toBeInTheDocument();
+    expect(screen.queryByTestId('chosen-product')).toBeNull();
   });
 });
