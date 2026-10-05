@@ -4,7 +4,7 @@
 
 ### Requirement: Materialized aggregates
 
-The system SHALL materialize daily and weekly summary rows per product (and per merchant offer) from the observation log, containing open, close, minimum, maximum, and average values for price and landed cost, plus the observation count and the strictest source reliability. Materialization SHALL run as a background job, SHALL be incremental from the last processed watermark, SHALL be idempotent under job retries, and SHALL make bounded, resumable progress per invocation: a pass SHALL process at most a fixed product slice per tick (cursor-scoped, id-ascending, write-then-advance), SHALL stay within a per-invocation statement budget of at most 1,000 D1 statements, and SHALL satisfy the coverage invariant at pass-sequence completion — when the cursor wraps, every product with at least one observation inside the processed range SHALL have at least one summary bucket, and the persisted watermark SHALL then equal the activity high water. A documented backfill procedure SHALL close coverage gaps without ever aggregating on the request path: the initial gap-filling converges through scheduled ticks alone, and targeted re-scans lower the watermark to re-scan, then restore it.
+The system SHALL materialize daily and weekly summary rows per product (and per merchant offer) from the observation log, containing open, close, minimum, maximum, and average values for price and landed cost, plus the observation count and the strictest source reliability. Materialization SHALL run as a background job, SHALL be incremental from the last processed watermark, SHALL be idempotent under job retries, SHALL make bounded, resumable progress per invocation (cursor-scoped product slice, write-then-advance, within the per-invocation D1 statement budget), and SHALL satisfy the coverage invariant: at pass-sequence completion (cursor wraps), every product with at least one observation inside the processed range SHALL have at least one summary bucket. A documented backfill procedure SHALL close coverage gaps without ever aggregating on the request path: the initial gap-filling converges through scheduled ticks alone, and targeted re-scans lower the watermark to re-scan, then restore it.
 
 #### Scenario: Aggregates produced incrementally
 
@@ -21,10 +21,15 @@ The system SHALL materialize daily and weekly summary rows per product (and per 
 - **WHEN** a chart requests a historical series
 - **THEN** the system SHALL serve it from materialized summaries, not by scanning and aggregating raw observations on the request path
 
-#### Scenario: Coverage invariant holds at pass-sequence completion
+#### Scenario: Coverage invariant holds after a pass
 
 - **WHEN** the aggregation's cursor-chunked pass sequence over a range containing observations for a product completes (cursor wraps)
 - **THEN** that product has at least one summary bucket covering those observations, a coverage check (products with observations but zero summary rows) answers zero, and the watermark is written at the activity high water
+
+#### Scenario: Backfill closes gaps without touching the request path
+
+- **WHEN** products exist with observations but missing summary buckets
+- **THEN** the documented backfill procedure fills the missing buckets — the initial gap-filling converges through scheduled ticks alone (cursor-chunked passes), and targeted re-scans lower the watermark, re-run idempotently through ticks, and restore it — and the historical endpoints serve their series without any change to the request path
 
 #### Scenario: Bounded progress per invocation
 
@@ -40,8 +45,3 @@ The system SHALL materialize daily and weekly summary rows per product (and per 
 
 - **WHEN** products exist with observations but no summary buckets and no watermark has ever been written
 - **THEN** successive scheduled ticks fill the missing buckets chunk by chunk until the coverage check answers zero, without any request-path aggregation and without a manual watermark edit
-
-#### Scenario: Backfill closes targeted gaps through the documented re-scan
-
-- **WHEN** a targeted gap remains after convergence (corrections, partial re-scans)
-- **THEN** the documented backfill procedure (watermark lowered, aggregation re-run idempotently through ticks, watermark restored) fills the missing buckets, and the historical endpoints serve their series without any change to the request path
