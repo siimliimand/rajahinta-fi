@@ -7,6 +7,9 @@
  * "Aggregation survives restart"). Also the design-D4 coverage gauge
  * (watermark-isolation-history-backfill): ratio over the pass window,
  * the 0/0 +Inf sentinel, and emission that never alters pass semantics.
+ * And the cursor-chunked pass (aggregation-cursor-chunking): bounded
+ * id-ascending slices, write-then-advance cursor persistence, wrap
+ * semantics, and resume after a mid-backfill cursor.
  *
  * @module TimeSeriesAggregationCronTest
  */
@@ -15,6 +18,8 @@ import { describe, it, expect } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
 import {
   handleTimeSeriesAggregation,
+  AGGREGATION_CHUNK_PRODUCTS,
+  BACKFILL_CURSOR_KEY,
   WATERMARK_KEY,
 } from '../time-series-aggregation';
 import type { R2ObservationLogStore } from '../../adapters/r2-observation-log.store';
@@ -551,5 +556,210 @@ describe('summary-coverage gauge emission (design D4)', () => {
         (point) => point.indexes?.[0] === STALE_PRICE_SHARE_GAUGE,
       ),
     ).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cursor-chunked backfill pass (aggregation-cursor-chunking, design D2/D3)
+// ---------------------------------------------------------------------------
+
+/** Observation instant `second` seconds past 10:00 UTC on 2026-08-28. */
+function backfillObservedAt(second: number): string {
+  return new Date(Date.UTC(2026, 7, 28, 10, 0, second)).toISOString();
+}
+
+/** The backfill-cursor row's persisted value, read off the fixture. */
+function backfillCursorOf(db: DatabaseSync): string | undefined {
+  return (
+    db
+      .prepare('SELECT watermark FROM aggregation_watermarks WHERE job_name = ?')
+      .get(BACKFILL_CURSOR_KEY) as { watermark: string } | undefined
+  )?.watermark;
+}
+
+function backfillCursorRowCount(db: DatabaseSync): number {
+  return (
+    db
+      .prepare('SELECT COUNT(*) AS n FROM aggregation_watermarks WHERE job_name = ?')
+      .get(BACKFILL_CURSOR_KEY) as { n: number }
+  ).n;
+}
+
+/**
+ * Real summary repository wrapped with an upsert counter — the
+ * savings-suite discipline: delegation stays real, only the call is
+ * recorded. The count is the "no re-aggregation" observable.
+ */
+function countingSummaries(
+  d1: D1DatabaseLike,
+  counter: { upserts: number },
+): D1PriceHistorySummaryRepository {
+  const real = new D1PriceHistorySummaryRepository(d1);
+  return {
+    upsertBucket: async (summary: Parameters<typeof real.upsertBucket>[0]) => {
+      counter.upserts++;
+      return real.upsertBucket(summary);
+    },
+  } as unknown as D1PriceHistorySummaryRepository;
+}
+
+/**
+ * One observation per product, ids 1..count, instants ascending with the
+ * id — the activity high water is then always `backfillObservedAt(count)`.
+ * One observation → 4 buckets per product (daily + weekly × merchant +
+ * product-wide).
+ */
+function seedBackfillLog(count: number): {
+  store: R2ObservationLogStore;
+} {
+  const records = Array.from({ length: count }, (_, i) => {
+    const productId = i + 1;
+    return record({
+      id: productId,
+      productId,
+      merchant: 'alko',
+      observedAt: backfillObservedAt(productId),
+      priceCents: 1000,
+    });
+  });
+  return { store: createFakeStore({ 'observations/2026-08-28.jsonl': records }) };
+}
+
+describe('cursor-chunked backfill (aggregation-cursor-chunking)', () => {
+  it('pins the chunk cap and cursor row key the budget math depends on', () => {
+    expect(AGGREGATION_CHUNK_PRODUCTS).toBe(300);
+    expect(BACKFILL_CURSOR_KEY).toBe('time-series-backfill-cursor');
+  });
+
+  it('processes exactly the 300-product slice per tick — cursor persisted, watermark withheld until the tail', async () => {
+    const { env, db } = createEnv();
+    seedProducts(db, Array.from({ length: 320 }, (_, i) => i + 1));
+    const { store } = seedBackfillLog(320);
+
+    const first = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(first.products).toBe(300);
+    expect(first.bucketsWritten).toBe(1200); // 300 products × 4 buckets
+    // The pass is not complete — no watermark, neither returned nor persisted.
+    expect(first.watermark).toBeNull();
+    expect(watermarkOf(db)).toBeNull();
+    // Write-then-advance: the cursor sits at the 300th (last completed) id.
+    expect(backfillCursorOf(db)).toBe('300');
+
+    const second = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(second.products).toBe(20);
+    expect(second.bucketsWritten).toBe(80);
+    expect(second.watermark).toBe(backfillObservedAt(320));
+    expect(watermarkOf(db)).toBe(backfillObservedAt(320));
+    expect(backfillCursorOf(db)).toBeUndefined();
+  });
+
+  it('the final chunk writes the watermark at the activity high water and deletes the cursor row', async () => {
+    const { env, db } = createEnv();
+    seedProducts(db, Array.from({ length: 301 }, (_, i) => i + 1));
+    const { store } = seedBackfillLog(301);
+
+    await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(backfillCursorOf(db)).toBe('300');
+
+    const last = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(last.products).toBe(1);
+    expect(last.watermark).toBe(backfillObservedAt(301));
+    expect(watermarkOf(db)).toBe(backfillObservedAt(301));
+    // The cursor row is GONE, not zeroed — the watermark alone drives
+    // every later tick.
+    expect(backfillCursorRowCount(db)).toBe(0);
+    expect(backfillCursorOf(db)).toBeUndefined();
+  });
+
+  it('resumes strictly after the persisted cursor — completed products are not re-aggregated', async () => {
+    const { env, db } = createEnv();
+    seedProducts(db, Array.from({ length: 620 }, (_, i) => i + 1));
+    const { store } = seedBackfillLog(620);
+
+    const first = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(first.products).toBe(300);
+    expect(backfillCursorOf(db)).toBe('300');
+
+    // The next tick starts AFTER cursor 300: the upsert counter sees
+    // exactly the 301..600 slice — none of the completed 1..300 products
+    // re-appear in the bucket writes.
+    const counter = { upserts: 0 };
+    const second = await handleTimeSeriesAggregation(env, LOG, {
+      store,
+      summaries: countingSummaries(env.DB, counter),
+    });
+    expect(second.products).toBe(300);
+    expect(second.bucketsWritten).toBe(1200);
+    expect(counter.upserts).toBe(1200); // the slice only, no re-aggregation
+    expect(second.watermark).toBeNull();
+    expect(backfillCursorOf(db)).toBe('600');
+
+    const third = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(third.products).toBe(20);
+    expect(third.watermark).toBe(backfillObservedAt(620));
+    expect(backfillCursorOf(db)).toBeUndefined();
+
+    // Convergence: every product has exactly its 4 buckets — no
+    // duplicates from the chunked walk.
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM price_history_summaries').get(),
+    ).toEqual({ n: 620 * 4 });
+  });
+
+  it('degenerates to the one-chunk shape on a settled watermark — cursor never appears, advance rule unchanged', async () => {
+    const { env, db } = createEnv();
+    seedProducts(db, [7, 8]);
+    const store = createFakeStore({
+      'observations/2026-08-28.jsonl': [
+        record({ id: 1, productId: 7, merchant: 'alko', observedAt: '2026-08-28T10:00:00.000Z', priceCents: 1000 }),
+      ],
+      'observations/2026-08-29.jsonl': [
+        record({ id: 2, productId: 8, merchant: 'alko', observedAt: '2026-08-29T15:00:00.000Z', priceCents: 3000 }),
+      ],
+    });
+
+    // First pass: the whole active set fits one chunk — the final-chunk
+    // branch fires and the result is byte-identical to the pre-chunking
+    // handler's.
+    const first = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(first).toEqual({
+      products: 2,
+      bucketsWritten: 8,
+      watermark: '2026-08-29T15:00:00.000Z',
+    });
+    expect(backfillCursorOf(db)).toBeUndefined();
+
+    // The settled tick: one chunk, watermark held (never backwards), the
+    // exact shape today's callers depend on.
+    const second = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(second).toEqual({
+      products: 1,
+      bucketsWritten: 4,
+      watermark: '2026-08-29T15:00:00.000Z',
+    });
+    expect(backfillCursorOf(db)).toBeUndefined();
+  });
+
+  it('cursor row semantics: insert-or-update on the single keyed row, delete on completion', async () => {
+    const { env, db } = createEnv();
+    seedProducts(db, Array.from({ length: 620 }, (_, i) => i + 1));
+    const { store } = seedBackfillLog(620);
+
+    await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(backfillCursorOf(db)).toBe('300');
+    expect(backfillCursorRowCount(db)).toBe(1); // INSERT
+
+    await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(backfillCursorOf(db)).toBe('600');
+    expect(backfillCursorRowCount(db)).toBe(1); // UPDATE — never a second row
+
+    await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(backfillCursorRowCount(db)).toBe(0); // DELETE on wrap
+    // The watermark row is untouched by the cursor lifecycle beyond the
+    // completion write itself.
+    expect(watermarkOf(db)).toBe(backfillObservedAt(620));
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM aggregation_watermarks').get(),
+    ).toEqual({ n: 1 });
   });
 });
