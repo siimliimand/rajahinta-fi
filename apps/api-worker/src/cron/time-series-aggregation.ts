@@ -39,9 +39,15 @@
  *    the pre-chunking single pass is the degenerate one-chunk shape
  *    (design D3) — no mode flag, no divergent path.
  *
- * Budget intent: one invocation writes at most one chunk (~300 products;
- * the ≤1,000-statement per-invocation target is pinned by the task-1.2
- * budget test — the pin decides, design Risks).
+ * Budget intent: one invocation writes at most one chunk (300 products;
+ * measured ≈28.8k D1 statements ≈ 5-6 min of the 15-minute WALL budget —
+ * the binding constraint: production observed ~880 products ≈ 84k
+ * statements per 15-min tick before the wall kill, 1.0 s/product, no
+ * subrequest cap). The task-1.2 budget pin (≤35,000 statements per
+ * invocation) guards that envelope against statement-count regressions;
+ * the design Risks arithmetic that guessed a ≤1,000-statement budget
+ * was superseded by the production wall-time evidence (the pin decided,
+ * then the evidence re-decided the constant).
  *
  * The scheduled run carries no payload window — a pure watermark-driven
  * incremental scan (the BullMQ payload's backfill trigger had no cron
@@ -100,10 +106,21 @@ export const BACKFILL_CURSOR_KEY = 'time-series-backfill-cursor';
 
 /**
  * Products processed per invocation (design D2): the chunk cap that
- * bounds one tick's D1 write round-trips — the savings precedent's
- * number, not a measurement for this job (~25 buckets/product). The
- * per-invocation statement budget (≤1,000 D1 statements) is pinned by
- * the task-1.2 budget test; that pin decides, not this guess.
+ * bounds one tick's share of the 15-minute scheduled-event WALL budget —
+ * the binding constraint in production (2026-10-05 11:30 UTC tick:
+ * ~880 products aggregated ≈ 84,000 D1 statements before the
+ * `exceededWallTime` kill at 1.0 s/product; no subrequest cap was hit).
+ * MEASURED statement cost: the summary repository's `upsertBucket` is a
+ * lookup + write statement PAIR per bucket row (not a batch), so a
+ * production-shaped product (~3 weeks of daily observations, one
+ * merchant → 48 bucket rows) costs 96 statements → 300 products ≈ 28.8k
+ * statements ≈ 5-6 min of the 15-min wall shared with the tick's
+ * sibling handlers. The task-1.2 budget pin (≤35,000 statements/
+ * invocation ≈ the chunk's measured cost + headroom) guards the
+ * envelope: a per-product statement-count increase is exactly the kind
+ * of regression that would push a tick past the wall. Recorded
+ * optimization candidate: one batched upsert per product in the summary
+ * repository would cut the statement cost ~96×.
  */
 export const AGGREGATION_CHUNK_PRODUCTS = 300;
 
