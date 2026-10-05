@@ -5,7 +5,11 @@
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
+import {
+  formatAbv,
+  formatAttributeRow,
+  formatVolume,
+} from '@/lib/format/product-attributes';
 import { formatMoney } from '@/lib/format/money';
 import { LoadingSkeleton } from '@/components/ui';
 import type { ProductSearchItem } from '@/lib/types';
@@ -95,10 +99,7 @@ export default function ProductSelector({
                 {product.name}
               </span>
               <span className="block text-xs text-gray-500">
-                {product.brand}
-                {product.category ? ` · ${product.category}` : ''}
-                {volume ? ` · ${volume}` : ''}
-                {abv ? ` · ${abv}` : ''}
+                {formatAttributeRow(product.brand, product.category, volume, abv)}
               </span>
               {/* ── Lowest observed price (change
                   unit-integrity-and-result-trust, task 3.2): rendered only

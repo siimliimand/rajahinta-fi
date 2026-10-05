@@ -606,3 +606,47 @@ describe('CalculatorView did-you-mean suggestion chip (task 3.3)', () => {
     expect(screen.queryByTestId('search-suggestion')).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Brandless attribute row (fi-locale-surface-hardening, task 2.6)
+// ---------------------------------------------------------------------------
+
+/** Feed rows can carry an empty brand when the name yields no token. */
+const BRANDLESS_HIT: ProductSearchItem = {
+  id: 9,
+  name: 'Nimetön kotilo',
+  brand: '',
+  category: 'Vodka',
+  alcoholByVolume: 0.375,
+  unitVolume: '0.7',
+  containerType: 'BOTTLE',
+  lowestPriceCents: null,
+  merchantCount: 0,
+};
+
+describe('CalculatorView brandless attribute row (fi-locale-surface-hardening 2.6)', () => {
+  it('renders the search-result row without a leading separator when the brand is empty', async () => {
+    mockedSearchProducts.mockResolvedValue(searchResponse([BRANDLESS_HIT]));
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'kotilo');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+
+    // The empty brand contributes neither text nor the dangling ' · '.
+    expect(await screen.findByText('Vodka · 70 cl · 37.5 %')).toBeInTheDocument();
+  });
+
+  it('renders the configure-step summary as the category alone when the brand is empty', async () => {
+    mockedSearchProducts.mockResolvedValue(searchResponse([BRANDLESS_HIT]));
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'kotilo');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+    const hit = await screen.findByText('Nimetön kotilo');
+    await user.click(hit.closest('button') as HTMLButtonElement);
+
+    expect(screen.getByText('Vodka · 70 cl')).toBeInTheDocument();
+  });
+});

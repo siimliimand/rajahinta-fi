@@ -26,6 +26,7 @@ import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import type { ProductSearchItem } from '@/lib/types';
 import { searchProducts } from '@/lib/api';
+import { formatAttributeRow } from '@/lib/format/product-attributes';
 import type { TransportArrangement } from '@/lib/basket.types';
 import QuantitySelector from '../../calculator/components/QuantitySelector';
 
@@ -241,16 +242,16 @@ export default function BasketBuilder({
                             {product.name}
                           </span>
                           <span className="block text-xs text-gray-500">
-                            {product.brand}
-                            {product.category
-                              ? ` · ${product.category}`
-                              : ''}
-                            {product.unitVolume
-                              ? ` · ${product.unitVolume}`
-                              : ''}
-                            {product.alcoholByVolume !== null
-                              ? ` · ${tCommon('abvValue', { value: product.alcoholByVolume })}`
-                              : ''}
+                            {formatAttributeRow(
+                              product.brand,
+                              product.category,
+                              product.unitVolume,
+                              product.alcoholByVolume !== null
+                                ? tCommon('abvValue', {
+                                    value: product.alcoholByVolume,
+                                  })
+                                : null,
+                            )}
                           </span>
                         </button>
                       </li>

@@ -15,13 +15,16 @@
 
 import React from 'react';
 import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import BasketBuilder from './BasketBuilder';
 import type { BasketItem } from './BasketBuilder';
+import { searchProducts } from '@/lib/api';
 import { renderWithIntl } from '@/lib/testing/test-intl';
+import type { ProductSearchItem } from '@/lib/types';
 
-// No search fires in these tests — the API client mock only guards the
-// module import.
+// The progress-indicator tests below never fire a search; the
+// attribute-row tests override this default with their own fixtures.
 vi.mock('@/lib/api', () => ({
   searchProducts: vi.fn().mockResolvedValue({ items: [] }),
 }));
@@ -71,5 +74,63 @@ describe('BasketBuilder — item-cap progress indicator (task 2.4)', () => {
     expect(screen.getByTestId('basket-item-progress')).toHaveTextContent(
       /^0\/30$/,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Attribute row (fi-locale-surface-hardening, task 2.6)
+// ---------------------------------------------------------------------------
+
+/** Feed rows can carry an empty brand when the name yields no token. */
+const BRANDLESS_HIT: ProductSearchItem = {
+  id: 5,
+  name: 'Nimetön kotilo',
+  brand: '',
+  category: 'Vodka',
+  alcoholByVolume: null,
+  unitVolume: '0.5',
+  containerType: 'BOTTLE',
+  lowestPriceCents: null,
+  merchantCount: 0,
+};
+
+function searchResponse(items: readonly ProductSearchItem[]) {
+  return {
+    items: [...items],
+    total: items.length,
+    page: 1,
+    limit: 20,
+    totalPages: items.length > 0 ? 1 : 0,
+  };
+}
+
+describe('BasketBuilder attribute row (fi-locale-surface-hardening 2.6)', () => {
+  it('renders the result row without a leading separator when the brand is empty', async () => {
+    vi.mocked(searchProducts).mockResolvedValue(
+      searchResponse([BRANDLESS_HIT]),
+    );
+    const user = userEvent.setup();
+    renderBuilder([], 30);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'kotilo');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+
+    // The empty brand contributes neither text nor the dangling ' · '.
+    expect(await screen.findByText('Vodka · 0.5')).toBeInTheDocument();
+  });
+
+  it('renders the identical join when the brand is present', async () => {
+    vi.mocked(searchProducts).mockResolvedValue(
+      searchResponse([{ ...BRANDLESS_HIT, brand: 'Sprit' }]),
+    );
+    const user = userEvent.setup();
+    renderBuilder([], 30);
+
+    await user.type(screen.getByPlaceholderText('Hae tuotteita…'), 'kotilo');
+    await user.click(screen.getByRole('button', { name: 'Hae' }));
+
+    expect(
+      await screen.findByText('Sprit · Vodka · 0.5'),
+    ).toBeInTheDocument();
   });
 });
