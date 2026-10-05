@@ -20,14 +20,39 @@
  *    converges) get EVERY overlapped daily/weekly bucket recomputed from
  *    ALL of their lines in the read partitions, then idempotently
  *    upserted. Partial-period rows stay correct as observations arrive.
- * 4. Only after ALL summary writes succeed, advance the watermark to the
- *    activity high water (never the extended pre-watermark week, never
- *    backwards). Any failure propagates: the watermark is left
- *    untouched and the next tick redoes the window.
+ * 4. Process the active products as a bounded CHUNK of the pass, not the
+ *    whole walk (aggregation-cursor-chunking, design D2/D3): the active
+ *    products are enumerated id-ASCENDING and the invocation takes the
+ *    {@link AGGREGATION_CHUNK_PRODUCTS} slice just above the persisted
+ *    backfill cursor ({@link BACKFILL_CURSOR_KEY} row in
+ *    `aggregation_watermarks`, repository-parity raw SQL — the
+ *    savings-snapshot-cursor precedent). Per-chunk write-then-advance:
+ *    the cursor moves to the slice's last completed product id only
+ *    AFTER the slice's bucket upserts succeed. A kill between a chunk's
+ *    writes and its cursor persist re-does that chunk's idempotent
+ *    upserts next tick — ground is never lost, nothing is ever
+ *    incorrect.
+ * 5. The FINAL chunk (nothing left above the slice) completes the pass:
+ *    the watermark advances to the activity high water (never the
+ *    extended pre-watermark week, never backwards) and the cursor row is
+ *    deleted. A settled watermark's small active set fits one chunk, so
+ *    the pre-chunking single pass is the degenerate one-chunk shape
+ *    (design D3) — no mode flag, no divergent path.
+ *
+ * Budget intent: one invocation writes at most one chunk (300 products;
+ * measured ≈28.8k D1 statements ≈ 5-6 min of the 15-minute WALL budget —
+ * the binding constraint: production observed ~880 products ≈ 84k
+ * statements per 15-min tick before the wall kill, 1.0 s/product, no
+ * subrequest cap). The task-1.2 budget pin (≤35,000 statements per
+ * invocation) guards that envelope against statement-count regressions;
+ * the design Risks arithmetic that guessed a ≤1,000-statement budget
+ * was superseded by the production wall-time evidence (the pin decided,
+ * then the evidence re-decided the constant).
  *
  * The scheduled run carries no payload window — a pure watermark-driven
  * incremental scan (the BullMQ payload's backfill trigger had no cron
- * caller; manual re-scans can lower the watermark directly).
+ * caller; manual re-scans can lower the watermark directly, and the
+ * lowered window chunk-walks through the same cursor protocol).
  *
  * @module TimeSeriesAggregationCron
  */
@@ -69,17 +94,107 @@ export const AGGREGATION_CRON = '*/30 * * * *';
  */
 export const WATERMARK_KEY = 'time-series-aggregation';
 
+/**
+ * Backfill-cursor row key — the in-flight pass's last completed product
+ * id (aggregation-cursor-chunking D1/D2). A second keyed row in the same
+ * `aggregation_watermarks` table as {@link WATERMARK_KEY}, written and
+ * cleared by the raw statements below (repository-parity SQL, the
+ * savings-snapshot-cursor precedent — no schema change, no dedicated
+ * table for a transient cursor).
+ */
+export const BACKFILL_CURSOR_KEY = 'time-series-backfill-cursor';
+
+/**
+ * Products processed per invocation (design D2): the chunk cap that
+ * bounds one tick's share of the 15-minute scheduled-event WALL budget —
+ * the binding constraint in production (2026-10-05 11:30 UTC tick:
+ * ~880 products aggregated ≈ 84,000 D1 statements before the
+ * `exceededWallTime` kill at 1.0 s/product; no subrequest cap was hit).
+ * MEASURED statement cost: the summary repository's `upsertBucket` is a
+ * lookup + write statement PAIR per bucket row (not a batch), so a
+ * production-shaped product (~3 weeks of daily observations, one
+ * merchant → 48 bucket rows) costs 96 statements → 300 products ≈ 28.8k
+ * statements ≈ 5-6 min of the 15-min wall shared with the tick's
+ * sibling handlers. The task-1.2 budget pin (≤35,000 statements/
+ * invocation ≈ the chunk's measured cost + headroom) guards the
+ * envelope: a per-product statement-count increase is exactly the kind
+ * of regression that would push a tick past the wall. Recorded
+ * optimization candidate: one batched upsert per product in the summary
+ * repository would cut the statement cost ~96×.
+ */
+export const AGGREGATION_CHUNK_PRODUCTS = 300;
+
 /** Summary granularities materialized by this handler. */
 const GRANULARITIES: readonly SummaryGranularity[] = ['daily', 'weekly'];
 
 /** One aggregation run's outcome — logged by the cron dispatch. */
 export interface AggregationResult {
-  /** Products with observations in the scan range. */
+  /** Products processed THIS TICK — the pass's chunk slice. */
   readonly products: number;
   /** Summary buckets upserted (per-merchant + product-wide rows). */
   readonly bucketsWritten: number;
-  /** New watermark (null when the scan found nothing). */
+  /**
+   * The tick's resulting watermark state: the advanced instant on a
+   * pass-completing (final-chunk) tick, the unchanged persisted instant
+   * on a settled one-chunk tick, and null when the scan found nothing or
+   * a mid-backfill chunk has not yet wrapped (the watermark is written
+   * only by a pass's final chunk).
+   */
   readonly watermark: string | null;
+}
+
+/**
+ * The pass cursor (aggregation-cursor-chunking D1/D2): the last completed
+ * product id of the in-flight pass, read/written as raw prepared
+ * statements against the generic `aggregation_watermarks` table — the
+ * same repository-parity statement shapes the savings-snapshot cursor
+ * uses (the Date-typed AggregationWatermarkRepository abstract is not
+ * bent for an integer cursor). Absent row → 0: no pass in flight, the
+ * slice starts at the lowest active id.
+ */
+async function readBackfillCursor(d1: D1DatabaseLike): Promise<number> {
+  const row = await d1
+    .prepare('SELECT watermark FROM aggregation_watermarks WHERE job_name = ?')
+    .bind(BACKFILL_CURSOR_KEY)
+    .first<{ watermark: string }>();
+  if (row === null) {
+    return 0;
+  }
+  const parsed = Number(row.watermark);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+/**
+ * Per-chunk write-then-advance persist step (design D2): called only
+ * after the chunk's bucket upserts succeeded, so the cursor never
+ * promises work the tick did not do. Upsert keyed on the job_name
+ * UNIQUE index — insert-or-update, never a second row.
+ */
+async function writeBackfillCursor(
+  d1: D1DatabaseLike,
+  productId: number,
+): Promise<void> {
+  await d1
+    .prepare(
+      `INSERT INTO aggregation_watermarks (job_name, watermark, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT (job_name) DO UPDATE SET
+         watermark = excluded.watermark,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(BACKFILL_CURSOR_KEY, String(productId), new Date().toISOString())
+    .run();
+}
+
+/**
+ * Pass-completion cleanup (design D2): the final chunk deletes the
+ * cursor row — the watermark alone drives every later tick.
+ */
+async function deleteBackfillCursor(d1: D1DatabaseLike): Promise<void> {
+  await d1
+    .prepare('DELETE FROM aggregation_watermarks WHERE job_name = ?')
+    .bind(BACKFILL_CURSOR_KEY)
+    .run();
 }
 
 /**
@@ -102,8 +217,9 @@ export async function handleTimeSeriesAggregation(
   const watermarks =
     deps.watermarks ?? new D1AggregationWatermarkRepository(env.DB);
 
-  // -- 1. Watermark -------------------------------------------------------
+  // -- 1. Watermark + backfill cursor -------------------------------------
   const watermark = await watermarks.find(WATERMARK_KEY);
+  const cursor = await readBackfillCursor(env.DB);
 
   // -- 2. R2 partition scan ------------------------------------------------
   // Partitions are read from the watermark's ISO-week Monday onward:
@@ -151,37 +267,79 @@ export async function handleTimeSeriesAggregation(
     observations: allRecords.length,
   });
 
-  // -- 3. Per-product bucket recompute + upsert ----------------------------
+  // -- 3. Chunked per-product bucket recompute + upsert --------------------
+  // One invocation = the id-ascending active slice just above the
+  // backfill cursor, capped at AGGREGATION_CHUNK_PRODUCTS (design D2).
+  // The cursor skip is what makes a killed invocation resume after its
+  // last completed product instead of restarting the walk.
   const activeByProduct = groupByProduct(activeRecords);
   const allByProduct = groupByProduct(allRecords);
+  const activeProductIds = [...activeByProduct.keys()].sort((a, b) => a - b);
+  let sliceStart = 0;
+  while (
+    sliceStart < activeProductIds.length &&
+    activeProductIds[sliceStart] <= cursor
+  ) {
+    sliceStart++;
+  }
+  const slice = activeProductIds.slice(
+    sliceStart,
+    sliceStart + AGGREGATION_CHUNK_PRODUCTS,
+  );
+  // Nothing left above the slice — the tail chunk completes the pass
+  // (an exactly-at-cap tail included; the savings precedent's rule).
+  const isFinalChunk =
+    sliceStart + slice.length >= activeProductIds.length;
+
   let bucketsWritten = 0;
-  for (const [, records] of activeByProduct) {
-    const productId = records[0].product_id;
+  for (const productId of slice) {
     bucketsWritten += await aggregateProduct(
       summaries,
       allByProduct.get(productId) ?? [],
     );
   }
 
-  // -- 4. Watermark advance — sole write-then-advance point ---------------
-  // The high water comes from the ACTIVITY range only — the extended
-  // pre-watermark week must never hold the cursor back.
-  const scannedHighWater = activeRecords.reduce(
-    (max, record) =>
-      record.observed_at > max.observed_at ? record : max,
-    activeRecords[0],
-  );
-  const nextInstant = new Date(scannedHighWater.observed_at);
-  const next =
-    watermark !== null && watermark > nextInstant ? watermark : nextInstant;
-  if (watermark === null || next > watermark) {
-    await watermarks.save(WATERMARK_KEY, next);
+  // -- 4. Write-then-advance — cursor per chunk, watermark on wrap --------
+  let resultingWatermark: string | null;
+  if (isFinalChunk) {
+    // The high water comes from the ACTIVITY range only — the extended
+    // pre-watermark week must never hold the cursor back. Never
+    // backwards; the watermark is the pass's commit point.
+    const scannedHighWater = activeRecords.reduce(
+      (max, record) =>
+        record.observed_at > max.observed_at ? record : max,
+      activeRecords[0],
+    );
+    const nextInstant = new Date(scannedHighWater.observed_at);
+    const next =
+      watermark !== null && watermark > nextInstant ? watermark : nextInstant;
+    // The cursor delete LEADS the watermark save: a kill between the two
+    // leaves "old watermark, no cursor" — the next tick re-walks the tail
+    // idempotently — never "advanced watermark + stale cursor", which
+    // would skip active products below the stale position.
+    await deleteBackfillCursor(env.DB);
+    if (watermark === null || next > watermark) {
+      await watermarks.save(WATERMARK_KEY, next);
+    }
+    resultingWatermark = next.toISOString();
+  } else {
+    // Mid-pass: the watermark stays untouched — the pass is not done —
+    // and the cursor advances only now that the slice's writes succeeded.
+    await writeBackfillCursor(env.DB, slice[slice.length - 1]);
+    resultingWatermark = watermark?.toISOString() ?? null;
   }
 
   log.info({
-    message: `Aggregated ${bucketsWritten} summary buckets across ${activeByProduct.size} products; watermark now ${next.toISOString()}`,
+    message: `Aggregated ${bucketsWritten} summary buckets across ${slice.length} products (chunk of ${activeProductIds.length} active, cursor was ${cursor})${
+      isFinalChunk
+        ? `; pass complete, watermark now ${resultingWatermark}`
+        : '; backfill continues next tick'
+    }`,
     bucketsWritten,
-    products: activeByProduct.size,
+    products: slice.length,
+    activeProducts: activeProductIds.length,
+    cursor,
+    finalChunk: isFinalChunk,
   });
 
   // Design D4 (watermark-isolation-history-backfill): the pass reports
@@ -192,9 +350,9 @@ export async function handleTimeSeriesAggregation(
   await emitSummaryCoverage(env, readFrom, log);
 
   return {
-    products: activeByProduct.size,
+    products: slice.length,
     bucketsWritten,
-    watermark: next.toISOString(),
+    watermark: resultingWatermark,
   };
 }
 

@@ -74,6 +74,17 @@ Gauges and their producers:
   with the +Inf sentinel (`blob2 = "+Inf"`, `double1 = 9007199254740991`)
   — an empty window is vacuously complete, never a gap, so a
   below-threshold coverage alert must not fire on it (see "Querying").
+  Chunked convergence (aggregation-cursor-chunking): during the INITIAL
+  backfill the pass has no watermark yet, so both counts run unbounded —
+  the ratio is the global share of ALL products with observations that
+  have buckets — and it climbs tick over tick as cursor chunks land (the
+  pass emits after each tick's chunk writes; a quiet tick still emits).
+  `RajahintaHistorySummaryCoverageBelowInvariant` therefore fires BY
+  DESIGN for the whole convergence window — the invariant IS unmet;
+  silence it for the window per the runbook (§7) and expect it to clear
+  when the coverage check answers zero. A ratio that stops climbing
+  tick over tick after the chunked deploy is the regression signal the
+  alert exists for.
 
 ### Price-alert job counters — one discrete write per counter per kind per run
 

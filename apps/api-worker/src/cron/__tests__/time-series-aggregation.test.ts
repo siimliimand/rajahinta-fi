@@ -7,6 +7,9 @@
  * "Aggregation survives restart"). Also the design-D4 coverage gauge
  * (watermark-isolation-history-backfill): ratio over the pass window,
  * the 0/0 +Inf sentinel, and emission that never alters pass semantics.
+ * And the cursor-chunked pass (aggregation-cursor-chunking): bounded
+ * id-ascending slices, write-then-advance cursor persistence, wrap
+ * semantics, and resume after a mid-backfill cursor.
  *
  * @module TimeSeriesAggregationCronTest
  */
@@ -15,7 +18,10 @@ import { describe, it, expect } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
 import {
   handleTimeSeriesAggregation,
+  AGGREGATION_CHUNK_PRODUCTS,
+  BACKFILL_CURSOR_KEY,
   WATERMARK_KEY,
+  type AggregationResult,
 } from '../time-series-aggregation';
 import type { R2ObservationLogStore } from '../../adapters/r2-observation-log.store';
 import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
@@ -552,4 +558,646 @@ describe('summary-coverage gauge emission (design D4)', () => {
       ),
     ).toHaveLength(1);
   });
+
+  it('a chunked backfill walk emits one global point per tick and the ratio climbs tick over tick', async () => {
+    const catalog = 2 * AGGREGATION_CHUNK_PRODUCTS + 2; // chunks [N, N, 2]
+    const { db, d1 } = openMigratedD1();
+    seedProducts(db, Array.from({ length: catalog }, (_, i) => i + 1));
+    const { store } = seedBackfillLog(catalog);
+    // Mirror offer rows for EVERY product — the global denominator is
+    // all products with observations, not the tick's chunk slice.
+    for (let p = 1; p <= catalog; p++) {
+      seedOffer(db, {
+        productId: p,
+        merchant: 'alko',
+        observedAt: backfillObservedAt(p),
+      });
+    }
+    const ae = fakeAnalyticsEngine();
+    const env = { DB: d1, METRICS: ae.binding } as unknown as Env;
+
+    const ratios: number[] = [];
+    for (let tick = 0; tick < 16; tick++) {
+      const before = ae.points.length;
+      const result = await handleTimeSeriesAggregation(env, LOG, { store });
+      const tickPoints = coveragePoints(ae.points.slice(before));
+      // Exactly ONE coverage point per tick, emitted AFTER that tick's
+      // chunk writes — the point already includes the chunk that just
+      // landed (the climb below is only possible post-write).
+      expect(tickPoints).toHaveLength(1);
+      ratios.push(tickPoints[0].doubles?.[0] ?? NaN);
+      if (result.watermark !== null) break;
+    }
+
+    // The GLOBAL pair (summarized / products with observations, both
+    // cheap all-catalog D1 counts) after each tick: the ratio is the
+    // chunk union's share, climbing tick over tick toward 1 — the
+    // convergence signal the METRICS.md note documents and the coverage
+    // alert rides (it fires by design until the walk completes).
+    expect(ratios).toEqual([
+      AGGREGATION_CHUNK_PRODUCTS / catalog,
+      (2 * AGGREGATION_CHUNK_PRODUCTS) / catalog,
+      1,
+    ]);
+    for (let i = 1; i < ratios.length; i++) {
+      expect(ratios[i]).toBeGreaterThan(ratios[i - 1]);
+    }
+  });
+
+  it('the quiet-tick early-return path still emits (bounded window, settled watermark)', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProducts(db, [7]);
+    const store = createFakeStore({
+      'observations/2026-08-26.jsonl': [
+        record({ id: 1, productId: 7, merchant: 'alko', observedAt: '2026-08-26T10:00:00.000Z', priceCents: 1000 }),
+      ],
+    });
+    seedOffer(db, { productId: 7, merchant: 'alko', observedAt: '2026-08-26T10:00:00.000Z' });
+    const ae = fakeAnalyticsEngine();
+    const env = { DB: d1, METRICS: ae.binding } as unknown as Env;
+
+    const first = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(first.watermark).toBe('2026-08-26T10:00:00.000Z');
+    expect(coveragePoints(ae.points)).toHaveLength(1);
+
+    // The documented --restore end state (backfill-history-summaries.ts
+    // writes the watermark row directly): a watermark ABOVE everything
+    // the log holds. The scan keeps the Wednesday partition (readFrom is
+    // the ISO Monday 08-24) but no observation is ≥ W — the quiet
+    // early-return fires, and it still emits the bounded pair (1/1).
+    db
+      .prepare('UPDATE aggregation_watermarks SET watermark = ? WHERE job_name = ?')
+      .run('2026-08-29T12:00:00.000Z', WATERMARK_KEY);
+
+    const second = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(second).toEqual({ products: 0, bucketsWritten: 0, watermark: null });
+    const coverage = coveragePoints(ae.points);
+    expect(coverage).toHaveLength(2);
+    expect(coverage[1].doubles?.[0]).toBe(1);
+    expect(coverage[1].blobs?.[1]).toBe('1');
+  });
+
+  it('emission never alters a multi-chunk walk — per-tick results byte-identical with, without, and against a throwing METRICS', async () => {
+    const catalog = 2 * AGGREGATION_CHUNK_PRODUCTS + 2;
+    async function walk(
+      metrics?: AnalyticsEngineDataset,
+    ): Promise<{ results: AggregationResult[]; db: DatabaseSync }> {
+      const { db, d1 } = openMigratedD1();
+      seedProducts(db, Array.from({ length: catalog }, (_, i) => i + 1));
+      const { store } = seedBackfillLog(catalog);
+      const env = (
+        metrics ? { DB: d1, METRICS: metrics } : { DB: d1 }
+      ) as unknown as Env;
+      const results: AggregationResult[] = [];
+      for (let tick = 0; tick < 16; tick++) {
+        const result = await handleTimeSeriesAggregation(env, LOG, { store });
+        results.push(result);
+        if (result.watermark !== null) break;
+      }
+      return { results, db };
+    }
+
+    const ae = fakeAnalyticsEngine();
+    const withMetrics = await walk(ae.binding);
+    const noMetrics = await walk();
+    const aeThrow = fakeAnalyticsEngine(() => {
+      throw new Error('AE unavailable');
+    });
+    const throwing = await walk(aeThrow.binding);
+
+    // A chunked walk is 3 invocations (N, N, tail) — every one of them
+    // byte-identical across the three binding postures.
+    expect(withMetrics.results).toHaveLength(3);
+    expect(withMetrics.results).toEqual(noMetrics.results);
+    expect(withMetrics.results).toEqual(throwing.results);
+    for (const walk of [withMetrics, noMetrics, throwing]) {
+      expect(watermarkOf(walk.db)).toBe(backfillObservedAt(catalog));
+      expect(backfillCursorRowCount(walk.db)).toBe(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cursor-chunked backfill pass (aggregation-cursor-chunking, design D2/D3)
+// ---------------------------------------------------------------------------
+
+/** Observation instant `second` seconds past 10:00 UTC on 2026-08-28. */
+function backfillObservedAt(second: number): string {
+  return new Date(Date.UTC(2026, 7, 28, 10, 0, second)).toISOString();
+}
+
+/** The backfill-cursor row's persisted value, read off the fixture. */
+function backfillCursorOf(db: DatabaseSync): string | undefined {
+  return (
+    db
+      .prepare('SELECT watermark FROM aggregation_watermarks WHERE job_name = ?')
+      .get(BACKFILL_CURSOR_KEY) as { watermark: string } | undefined
+  )?.watermark;
+}
+
+function backfillCursorRowCount(db: DatabaseSync): number {
+  return (
+    db
+      .prepare('SELECT COUNT(*) AS n FROM aggregation_watermarks WHERE job_name = ?')
+      .get(BACKFILL_CURSOR_KEY) as { n: number }
+  ).n;
+}
+
+/**
+ * Real summary repository wrapped with an upsert counter — the
+ * savings-suite discipline: delegation stays real, only the call is
+ * recorded. The count is the "no re-aggregation" observable.
+ */
+function countingSummaries(
+  d1: D1DatabaseLike,
+  counter: { upserts: number },
+): D1PriceHistorySummaryRepository {
+  const real = new D1PriceHistorySummaryRepository(d1);
+  return {
+    upsertBucket: async (summary: Parameters<typeof real.upsertBucket>[0]) => {
+      counter.upserts++;
+      return real.upsertBucket(summary);
+    },
+  } as unknown as D1PriceHistorySummaryRepository;
+}
+
+/**
+ * One observation per product, ids 1..count, instants ascending with the
+ * id — the activity high water is then always `backfillObservedAt(count)`.
+ * One observation → 4 buckets per product (daily + weekly × merchant +
+ * product-wide).
+ */
+function seedBackfillLog(count: number): {
+  store: R2ObservationLogStore;
+} {
+  const records = Array.from({ length: count }, (_, i) => {
+    const productId = i + 1;
+    return record({
+      id: productId,
+      productId,
+      merchant: 'alko',
+      observedAt: backfillObservedAt(productId),
+      priceCents: 1000,
+    });
+  });
+  return { store: createFakeStore({ 'observations/2026-08-28.jsonl': records }) };
+}
+
+describe('cursor-chunked backfill (aggregation-cursor-chunking)', () => {
+  it('pins the chunk cap and cursor row key the budget math depends on', () => {
+    // 300: the measured wall-time envelope (task 1.2) — 300 products ≈
+    // 28.8k statements ≈ 5-6 min of the 15-min wall that production
+    // showed binding (~880 products/15 min, 1.0 s/product). The
+    // ≤35,000-statement pin guards the envelope; a batched per-product
+    // upsert in the summary repository is the recorded ~96× optimization
+    // candidate.
+    expect(AGGREGATION_CHUNK_PRODUCTS).toBe(300);
+    expect(BACKFILL_CURSOR_KEY).toBe('time-series-backfill-cursor');
+  });
+
+  it('processes exactly one chunk slice per tick — cursor persisted, watermark withheld until the tail', async () => {
+    const { env, db } = createEnv();
+    const tail = AGGREGATION_CHUNK_PRODUCTS - 1;
+    const catalog = AGGREGATION_CHUNK_PRODUCTS + tail;
+    seedProducts(db, Array.from({ length: catalog }, (_, i) => i + 1));
+    const { store } = seedBackfillLog(catalog);
+
+    const first = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(first.products).toBe(AGGREGATION_CHUNK_PRODUCTS);
+    expect(first.bucketsWritten).toBe(AGGREGATION_CHUNK_PRODUCTS * 4);
+    // The pass is not complete — no watermark, neither returned nor persisted.
+    expect(first.watermark).toBeNull();
+    expect(watermarkOf(db)).toBeNull();
+    // Write-then-advance: the cursor sits at the chunk's last completed id.
+    expect(backfillCursorOf(db)).toBe(String(AGGREGATION_CHUNK_PRODUCTS));
+
+    const second = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(second.products).toBe(tail);
+    expect(second.bucketsWritten).toBe(tail * 4);
+    expect(second.watermark).toBe(backfillObservedAt(catalog));
+    expect(watermarkOf(db)).toBe(backfillObservedAt(catalog));
+    expect(backfillCursorOf(db)).toBeUndefined();
+  });
+
+  it('the final chunk writes the watermark at the activity high water and deletes the cursor row', async () => {
+    const { env, db } = createEnv();
+    const catalog = AGGREGATION_CHUNK_PRODUCTS + 1;
+    seedProducts(db, Array.from({ length: catalog }, (_, i) => i + 1));
+    const { store } = seedBackfillLog(catalog);
+
+    await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(backfillCursorOf(db)).toBe(String(AGGREGATION_CHUNK_PRODUCTS));
+
+    const last = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(last.products).toBe(1);
+    expect(last.watermark).toBe(backfillObservedAt(catalog));
+    expect(watermarkOf(db)).toBe(backfillObservedAt(catalog));
+    // The cursor row is GONE, not zeroed — the watermark alone drives
+    // every later tick.
+    expect(backfillCursorRowCount(db)).toBe(0);
+    expect(backfillCursorOf(db)).toBeUndefined();
+  });
+
+  it('resumes strictly after the persisted cursor — completed products are not re-aggregated', async () => {
+    const { env, db } = createEnv();
+    const tail = AGGREGATION_CHUNK_PRODUCTS - 1;
+    const catalog = 2 * AGGREGATION_CHUNK_PRODUCTS + tail;
+    seedProducts(db, Array.from({ length: catalog }, (_, i) => i + 1));
+    const { store } = seedBackfillLog(catalog);
+
+    const first = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(first.products).toBe(AGGREGATION_CHUNK_PRODUCTS);
+    expect(backfillCursorOf(db)).toBe(String(AGGREGATION_CHUNK_PRODUCTS));
+
+    // The next tick starts AFTER cursor N: the upsert counter sees
+    // exactly the N+1..2N slice — none of the completed 1..N products
+    // re-appear in the bucket writes.
+    const counter = { upserts: 0 };
+    const second = await handleTimeSeriesAggregation(env, LOG, {
+      store,
+      summaries: countingSummaries(env.DB, counter),
+    });
+    expect(second.products).toBe(AGGREGATION_CHUNK_PRODUCTS);
+    expect(second.bucketsWritten).toBe(AGGREGATION_CHUNK_PRODUCTS * 4);
+    expect(counter.upserts).toBe(AGGREGATION_CHUNK_PRODUCTS * 4); // the slice only, no re-aggregation
+    expect(second.watermark).toBeNull();
+    expect(backfillCursorOf(db)).toBe(String(2 * AGGREGATION_CHUNK_PRODUCTS));
+
+    const third = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(third.products).toBe(tail);
+    expect(third.watermark).toBe(backfillObservedAt(catalog));
+    expect(backfillCursorOf(db)).toBeUndefined();
+
+    // Convergence: every product has exactly its 4 buckets — no
+    // duplicates from the chunked walk.
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM price_history_summaries').get(),
+    ).toEqual({ n: catalog * 4 });
+  });
+
+  it('degenerates to the one-chunk shape on a settled watermark — cursor never appears, advance rule unchanged', async () => {
+    const { env, db } = createEnv();
+    seedProducts(db, [7, 8]);
+    const store = createFakeStore({
+      'observations/2026-08-28.jsonl': [
+        record({ id: 1, productId: 7, merchant: 'alko', observedAt: '2026-08-28T10:00:00.000Z', priceCents: 1000 }),
+      ],
+      'observations/2026-08-29.jsonl': [
+        record({ id: 2, productId: 8, merchant: 'alko', observedAt: '2026-08-29T15:00:00.000Z', priceCents: 3000 }),
+      ],
+    });
+
+    // First pass: the whole active set fits one chunk — the final-chunk
+    // branch fires and the result is byte-identical to the pre-chunking
+    // handler's.
+    const first = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(first).toEqual({
+      products: 2,
+      bucketsWritten: 8,
+      watermark: '2026-08-29T15:00:00.000Z',
+    });
+    expect(backfillCursorOf(db)).toBeUndefined();
+
+    // The settled tick: one chunk, watermark held (never backwards), the
+    // exact shape today's callers depend on.
+    const second = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(second).toEqual({
+      products: 1,
+      bucketsWritten: 4,
+      watermark: '2026-08-29T15:00:00.000Z',
+    });
+    expect(backfillCursorOf(db)).toBeUndefined();
+  });
+
+  it('cursor row semantics: insert-or-update on the single keyed row, delete on completion', async () => {
+    const { env, db } = createEnv();
+    const catalog = 2 * AGGREGATION_CHUNK_PRODUCTS + (AGGREGATION_CHUNK_PRODUCTS - 1);
+    seedProducts(db, Array.from({ length: catalog }, (_, i) => i + 1));
+    const { store } = seedBackfillLog(catalog);
+
+    await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(backfillCursorOf(db)).toBe(String(AGGREGATION_CHUNK_PRODUCTS));
+    expect(backfillCursorRowCount(db)).toBe(1); // INSERT
+
+    await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(backfillCursorOf(db)).toBe(String(2 * AGGREGATION_CHUNK_PRODUCTS));
+    expect(backfillCursorRowCount(db)).toBe(1); // UPDATE — never a second row
+
+    await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(backfillCursorRowCount(db)).toBe(0); // DELETE on wrap
+    // The watermark row is untouched by the cursor lifecycle beyond the
+    // completion write itself.
+    expect(watermarkOf(db)).toBe(backfillObservedAt(catalog));
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM aggregation_watermarks').get(),
+    ).toEqual({ n: 1 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Budget + monotonic-progress pins (task 1.2, aggregation-cursor-chunking
+// design D2 + Risks — the counting-proxy mirror of the savings-cron budget
+// regression pin, savings-snapshots.test.ts)
+// ---------------------------------------------------------------------------
+
+describe('budget + monotonic-progress pins (task 1.2)', () => {
+  /**
+   * Bucket rows the REALISTIC fixture produces per product: 21 daily
+   * buckets + 3 ISO-weekly buckets (Mon 2026-08-03 .. Sun 2026-08-23),
+   * one merchant → 2 rows (per-merchant + product-wide) per bucket.
+   */
+  const REALISTIC_ROWS_PER_PRODUCT = 48;
+
+  /** Production-shaped cadence: one observation per product per day, 3 full ISO weeks. */
+  function realisticBackfillStore(productCount: number): {
+    store: R2ObservationLogStore;
+    highWater: string;
+  } {
+    const objects: Record<string, ObservationLogRecord[]> = {};
+    let highWater = '';
+    for (let day = 0; day < 21; day++) {
+      const key = `observations/2026-08-${String(3 + day).padStart(2, '0')}.jsonl`;
+      objects[key] = [];
+      for (let p = 1; p <= productCount; p++) {
+        // Distinct instants via whole seconds from 10:00 (Date.UTC rolls
+        // over cleanly for catalogs larger than a minute's worth).
+        const observedAt = new Date(
+          Date.UTC(2026, 7, 3 + day, 10, 0, p - 1),
+        ).toISOString();
+        objects[key].push(
+          record({
+            id: p * 100 + day,
+            productId: p,
+            merchant: 'alko',
+            observedAt,
+            priceCents: 1000 + p,
+          }),
+        );
+        if (observedAt > highWater) highWater = observedAt;
+      }
+    }
+    return { store: createFakeStore(objects), highWater };
+  }
+
+  const ids = (count: number): number[] =>
+    Array.from({ length: count }, (_, i) => i + 1);
+
+  /**
+   * D1-statement counting wrapper — every `prepare` (and batch member)
+   * is one subrequest against the budget. Invocations share the SAME
+   * underlying fixture: the cursor state crosses invocations through the
+   * `aggregation_watermarks` row, exactly as consecutive production
+   * ticks share the real database.
+   */
+  function countingD1(
+    d1: D1DatabaseLike,
+    counter: { count: number },
+  ): D1DatabaseLike {
+    return {
+      prepare(query: string) {
+        counter.count++;
+        return d1.prepare(query);
+      },
+      batch(statements) {
+        counter.count += statements.length;
+        return d1.batch(statements);
+      },
+    };
+  }
+
+  function summaryRowCountFor(db: DatabaseSync, productId: number): number {
+    return (
+      db
+        .prepare(
+          'SELECT COUNT(*) AS n FROM price_history_summaries WHERE product_id = ?',
+        )
+        .get(productId) as { n: number }
+    ).n;
+  }
+
+  /** Upsert capture — which product ids the pass re-aggregated, in order. */
+  function capturingSummaries(
+    d1: D1DatabaseLike,
+    sink: { productIds: number[] },
+  ): D1PriceHistorySummaryRepository {
+    const real = new D1PriceHistorySummaryRepository(d1);
+    return {
+      upsertBucket: async (
+        summary: Parameters<typeof real.upsertBucket>[0],
+      ) => {
+        sink.productIds.push(summary.productId);
+        return real.upsertBucket(summary);
+      },
+    } as unknown as D1PriceHistorySummaryRepository;
+  }
+
+  /** Invoke until the pass wraps (watermark written), collecting results. */
+  async function walkToWrap(
+    env: Env,
+    store: R2ObservationLogStore,
+    deps: {
+      summaries?: D1PriceHistorySummaryRepository;
+    } = {},
+  ): Promise<AggregationResult[]> {
+    const results: AggregationResult[] = [];
+    for (let tick = 0; tick < 16; tick++) {
+      const result = await handleTimeSeriesAggregation(env, LOG, {
+        store,
+        ...deps,
+      });
+      results.push(result);
+      if (result.watermark !== null) return results;
+    }
+    throw new Error('pass did not wrap within 16 ticks');
+  }
+
+  /**
+   * THE BUDGET PIN (task 1.2; evidence-based envelope, design Risks).
+   * Multi-invocation walk over a production-shaped catalog (products
+   * with ~3 weeks of DAILY observations, the density the R2 log
+   * actually holds): every invocation must stay ≤35,000 D1 statements.
+   *
+   * Production envelope (2026-10-05 11:30 UTC tick, live tail): the
+   * aggregation processed ~880 products (~84,000 statements at the
+   * measured 96/product) and died at `exceededWallTime` — the 15-minute
+   * WALL budget is the binding constraint, 1.0 s/product; no subrequest
+   * cap was hit. This pin therefore guards the chunk's measured cost:
+   * 300 products × 96 statements (48 bucket rows × the summary
+   * repository's unbatched lookup+write pair) + 4 fixed (watermark find
+   * + cursor read + cursor write + coverage read) = 28,804 max — ~18%
+   * headroom under 35,000. A per-product statement-count increase is
+   * exactly the regression that would push a 300-product tick past the
+   * wall budget shared with the tick's sibling handlers.
+   */
+  it('walks a 3-week-realistic catalog across invocations with EVERY invocation inside the 35,000-statement wall envelope', async () => {
+    const catalog = 3 * AGGREGATION_CHUNK_PRODUCTS + 7;
+    const { env, db } = createEnv();
+    seedProducts(db, ids(catalog));
+    const { store } = realisticBackfillStore(catalog);
+
+    const counter = { count: 0 };
+    const countingEnv = (): Env =>
+      ({ DB: countingD1(env.DB, counter) }) as unknown as Env;
+
+    const invocationCounts: number[] = [];
+    for (let tick = 0; tick < 64; tick++) {
+      counter.count = 0;
+      const result = await handleTimeSeriesAggregation(
+        countingEnv(),
+        LOG,
+        { store },
+      );
+      invocationCounts.push(counter.count);
+      if (result.watermark !== null) break;
+    }
+    // Multiple full chunks + a ragged tail — the chunking is load-bearing.
+    expect(invocationCounts.length).toBeGreaterThanOrEqual(4);
+
+    // EVERY invocation inside the envelope — the pin's assertion
+    // (measured max on this fixture: 28,804 for a full chunk).
+    for (const count of invocationCounts) {
+      expect(count).toBeLessThanOrEqual(35_000);
+      expect(count).toBeGreaterThan(0);
+    }
+
+    // Teeth: the FULL pass costs far more than one invocation's
+    // envelope — the v1 single-walk shape of this catalog (~87k
+    // statements in ONE invocation) fails the same pin ~2.5×.
+    const passTotal = invocationCounts.reduce((sum, count) => sum + count, 0);
+    expect(passTotal).toBeGreaterThan(35_000);
+
+    // Exactly-once-semantics: the union of chunks covers every active
+    // product with exactly its 48 buckets — no gaps, no duplicates.
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM price_history_summaries').get(),
+    ).toEqual({ n: catalog * REALISTIC_ROWS_PER_PRODUCT });
+    expect(
+      db
+        .prepare(
+          'SELECT COUNT(DISTINCT product_id) AS n FROM price_history_summaries',
+        )
+        .get(),
+    ).toEqual({ n: catalog });
+
+    // Idempotent re-runs stay correct: a settled re-run re-upserts the
+    // boundary product's buckets and the content is byte-identical.
+    const before = summaryRows(db);
+    await handleTimeSeriesAggregation(countingEnv(), LOG, { store });
+    expect(summaryRows(db)).toEqual(before);
+  }, 30_000);
+
+  /**
+   * KILLED-INVOCATION SIMULATION (spec: "Killed invocation resumes
+   * without losing ground"): tick 2 dies mid-chunk at the D1 executor
+   * (the budget kill). The cursor must still sit at chunk 1's last id
+   * (write-then-advance held), the next tick must resume STRICTLY after
+   * it (re-doing only the interrupted chunk's idempotent upserts), and
+   * the pass sequence must converge — content byte-identical to a clean
+   * uninterrupted walk.
+   */
+  it('a kill mid-pass holds the cursor at the last completed chunk; the next tick resumes strictly after it and the sequence converges', async () => {
+    const catalog = 2 * AGGREGATION_CHUNK_PRODUCTS + 2; // chunks [N, N, 2]
+    const { env, db } = createEnv();
+    seedProducts(db, ids(catalog));
+    const { store, highWater } = realisticBackfillStore(catalog);
+
+    // Tick 1 completes chunk 1 cleanly.
+    const first = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(first.products).toBe(AGGREGATION_CHUNK_PRODUCTS);
+    expect(backfillCursorOf(db)).toBe(String(AGGREGATION_CHUNK_PRODUCTS));
+
+    // Tick 2 is killed mid-chunk: 149 statements execute, the 150th
+    // throws at the D1 executor — inside the chunk's SECOND product
+    // (per-product cost is 96 statements on this fixture).
+    const capped = { count: 0 };
+    const rawD1 = env.DB as unknown as D1DatabaseLike;
+    const cappedD1: D1DatabaseLike = {
+      prepare(query: string) {
+        if (++capped.count > 149) {
+          throw new Error('D1 budget exceeded — invocation killed mid-pass');
+        }
+        return rawD1.prepare(query);
+      },
+      batch: (statements) => rawD1.batch(statements),
+    };
+    await expect(
+      handleTimeSeriesAggregation(
+        { DB: cappedD1 } as unknown as Env,
+        LOG,
+        { store },
+      ),
+    ).rejects.toThrow('killed mid-pass');
+
+    // Write-then-advance held: the cursor is STILL chunk 1's last id —
+    // the interrupted chunk's partial writes never moved it, and the
+    // watermark was never touched.
+    expect(backfillCursorOf(db)).toBe(String(AGGREGATION_CHUNK_PRODUCTS));
+    expect(watermarkOf(db)).toBeNull();
+    // The chunk's first product completed before the kill point, the
+    // interrupted product is partial (idempotent upserts), everything
+    // above it is untouched.
+    expect(summaryRowCountFor(db, AGGREGATION_CHUNK_PRODUCTS + 1)).toBe(
+      REALISTIC_ROWS_PER_PRODUCT,
+    );
+    const interrupted = summaryRowCountFor(db, AGGREGATION_CHUNK_PRODUCTS + 2);
+    expect(interrupted).toBeGreaterThan(0);
+    expect(interrupted).toBeLessThan(REALISTIC_ROWS_PER_PRODUCT);
+    for (let p = AGGREGATION_CHUNK_PRODUCTS + 3; p <= catalog; p++) {
+      expect(summaryRowCountFor(db, p)).toBe(0);
+    }
+
+    // Tick 3 resumes STRICTLY after cursor N: the capture sees exactly
+    // the interrupted chunk's products — completed products (1..N) are
+    // never re-aggregated, the tail (2N+1..) is not touched early.
+    const sink = { productIds: [] as number[] };
+    const third = await handleTimeSeriesAggregation(env, LOG, {
+      store,
+      summaries: capturingSummaries(env.DB, sink),
+    });
+    expect([...new Set(sink.productIds)].sort((a, b) => a - b)).toEqual(
+      Array.from(
+        { length: AGGREGATION_CHUNK_PRODUCTS },
+        (_, i) => AGGREGATION_CHUNK_PRODUCTS + 1 + i,
+      ),
+    );
+    expect(third.products).toBe(AGGREGATION_CHUNK_PRODUCTS);
+    expect(backfillCursorOf(db)).toBe(String(2 * AGGREGATION_CHUNK_PRODUCTS));
+
+    // Tick 4 (the tail) wraps: watermark at the activity high water,
+    // cursor deleted.
+    const fourth = await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(fourth.products).toBe(catalog - 2 * AGGREGATION_CHUNK_PRODUCTS);
+    expect(fourth.watermark).toBe(highWater);
+    expect(watermarkOf(db)).toBe(highWater);
+    expect(backfillCursorRowCount(db)).toBe(0);
+
+    // The sequence converged, exactly-once: every active product has
+    // exactly its 48 buckets — no duplicates from the re-done chunk.
+    expect(
+      db.prepare('SELECT COUNT(*) AS n FROM price_history_summaries').get(),
+    ).toEqual({ n: catalog * REALISTIC_ROWS_PER_PRODUCT });
+    expect(
+      db
+        .prepare(
+          'SELECT COUNT(DISTINCT product_id) AS n FROM price_history_summaries',
+        )
+        .get(),
+    ).toEqual({ n: catalog });
+
+    // ...and the CONTENT is byte-identical to a clean uninterrupted walk
+    // of the same fixture — the re-done upserts converged on the same
+    // values, nothing drifted while interrupted.
+    const reference = createEnv();
+    seedProducts(reference.db, ids(catalog));
+    const { store: refStore, highWater: refHighWater } =
+      realisticBackfillStore(catalog);
+    const cleanWalk = await walkToWrap(reference.env, refStore);
+    expect(cleanWalk).toHaveLength(3); // N, N, tail — no kill, no redo tick
+    expect(cleanWalk[2].watermark).toBe(refHighWater);
+    expect(summaryRows(db)).toEqual(summaryRows(reference.db));
+
+    // An idempotent settled re-run over the converged state stays correct.
+    await handleTimeSeriesAggregation(env, LOG, { store });
+    expect(summaryRows(db)).toEqual(summaryRows(reference.db));
+  }, 30_000);
 });
