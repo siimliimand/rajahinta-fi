@@ -6,6 +6,14 @@
  * should never change without a version bump and a corresponding update
  * to every test assertion in golden-dataset.test.ts.
  *
+ * @version 3.2
+ *   2026-10-05: nonalcoholic-catalog-hygiene task 3.4 — product 14 added
+ *   for the ESTIMATED-alcohol-provenance pin (design D3): a parsed
+ *   ABV > 0 row keeps today's calculator behavior entirely, even when its
+ *   alcohol fields were estimated at ingestion. The catalog hold itself
+ *   (review_hold_reason) is a persistence-layer listing concept — the
+ *   calculator is a direct-input surface and has no listing predicate,
+ *   which the 0 %-ABV product 11's vector now doubles as the witness for.
  * @version 3.0
  *   2026-09-09: import-VAT golden vectors (task 4.4, change
  *   alks-feed-and-import-vat) — foreign-seller totals include the VAT
@@ -42,7 +50,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 /** Bump this when adding scenarios or changing expected values. */
-export const GOLDEN_DATASET_VERSION = '3.1' as const;
+export const GOLDEN_DATASET_VERSION = '3.2' as const;
 
 // ---------------------------------------------------------------------------
 // Product definitions
@@ -312,6 +320,16 @@ export const OFFER_NO_DEPOSIT: CalculatorRetailOfferData = {
 /**
  * Product 11 — Zero ABV beverage (can, 0.5 L, 0 % ABV).
  * Edge case: 0 % ABV should produce 0 excise duty.
+ *
+ * nonalcoholic-catalog-hygiene (task 3.4): this is exactly the row shape
+ * the ingestion guard now holds from every listing surface
+ * (`review_hold_reason = NONALCOHOLIC_HOLD_REASON` — zero ABV in an
+ * alcohol category). The hold is review state, never deletion (design
+ * D1): provenance and offer history stay intact, and the calculator is a
+ * direct-input surface with no listing predicate — so this vector's 0 ¢
+ * excise line doubles as the pin that a held row remains computable when
+ * addressed directly. Its exclusion from listings is pinned at the
+ * compliance/D1-integration layers, not here.
  */
 export const PRODUCT_ZERO_ABV: CalculatorProductData = {
   id: 11,
@@ -407,6 +425,37 @@ export const OFFER_BEER_MULTI_C: CalculatorRetailOfferData = {
   reliabilityStatus: 'ESTIMATED',
 };
 
+/**
+ * Product 14 — ESTIMATED-alcohol-provenance beer (can, 0.5 L, 5 % ABV).
+ * nonalcoholic-catalog-hygiene task 3.4, design D3: a row whose alcohol
+ * fields were ESTIMATED at ingestion (the unparseable-fields contract,
+ * untouched by the change) keeps today's behavior ENTIRELY as long as the
+ * parsed ABV is greater than zero — it is a full listing-universe member,
+ * and here, a byte-identical tax vector to its EXACT twin (product 1):
+ * same category/ABV/volume/deposit shape, same 200 ¢ price, only the
+ * offer's reliability status differs. The catalog predicate reads the
+ * parsed value, never a status.
+ */
+export const PRODUCT_ESTIMATED_ABV: CalculatorProductData = {
+  id: 14,
+  regulatoryClassification: 'beer',
+  category: 'beer',
+  volumeLitres: 0.5,
+  alcoholByVolume: 0.05,
+  containerType: 'can',
+  depositSystemStatus: true,
+  weightKg: 0.55,
+  normalizedName: 'Estimated Provenance Lager 5%',
+};
+
+export const OFFER_ESTIMATED_ABV: CalculatorRetailOfferData = {
+  id: 116,
+  priceCents: 200,
+  merchant: 'beverage-de',
+  country: 'DE',
+  reliabilityStatus: 'ESTIMATED',
+};
+
 // ---------------------------------------------------------------------------
 // Lookup helpers
 // ---------------------------------------------------------------------------
@@ -426,6 +475,7 @@ export const PRODUCT_BY_ID: Record<number, CalculatorProductData> = {
   [PRODUCT_ZERO_ABV.id]: PRODUCT_ZERO_ABV,
   [PRODUCT_NULL_DEPOSIT.id]: PRODUCT_NULL_DEPOSIT,
   [PRODUCT_BEER_MULTI_OFFER.id]: PRODUCT_BEER_MULTI_OFFER,
+  [PRODUCT_ESTIMATED_ABV.id]: PRODUCT_ESTIMATED_ABV,
 };
 
 /** Map product ID to its retail offers. */
@@ -447,4 +497,5 @@ export const OFFERS_BY_PRODUCT_ID: Record<number, CalculatorRetailOfferData[]> =
     OFFER_BEER_MULTI_A,
     OFFER_BEER_MULTI_B,
   ],
+  [PRODUCT_ESTIMATED_ABV.id]: [OFFER_ESTIMATED_ABV],
 };

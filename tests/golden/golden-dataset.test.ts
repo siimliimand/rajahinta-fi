@@ -347,7 +347,7 @@ const OFFER_CARRIER_B: TransportOffer = {
 
 describe('Golden dataset', () => {
   it(`has dataset version ${GOLDEN_DATASET_VERSION}`, () => {
-    expect(GOLDEN_DATASET_VERSION).toBe('3.1');
+    expect(GOLDEN_DATASET_VERSION).toBe('3.2');
   });
 
   // -----------------------------------------------------------------------
