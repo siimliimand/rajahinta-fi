@@ -42,15 +42,15 @@ test.describe('product flow — mobile viewports', () => {
       .click();
 
     // Product surface: the seeded product's identity and its observed
-    // offers render. The offers price renders "1.49 €" — cents/100
-    // with the currency sign trailing, unlike the calculator's totals.
+    // offers render. The offers price renders "1,49 €" through the shared
+    // formatMoney helper — the same Finnish convention as the calculator.
     await expect(
       page.getByRole('heading', { name: SEED.beer.name, exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole('heading', { name: COPY.offersTitle, exact: true }),
     ).toBeVisible();
-    await expect(page.getByText('1.49 €').first()).toBeVisible();
+    await expect(page.getByText('1,49 €').first()).toBeVisible();
 
     // The product surface must fit the phone viewport — no sideways
     // scroll.

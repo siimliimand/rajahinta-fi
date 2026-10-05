@@ -782,12 +782,16 @@ describe('Golden dataset', () => {
       itemizedCosts: [
         {
           label: 'Retail price',
+          // fi-locale-surface-hardening: additive closed-set code beside the
+          // unchanged label — every monetary field here stays byte-identical.
+          code: 'foreign_retail_price',
           category: 'foreignRetailPrice',
           cents: 340,
           reliability: 'ESTIMATED',
           breakdown: [
             {
               label: 'Unit price (x1)',
+              code: 'foreign_unit_price',
               category: 'foreignRetailPrice',
               cents: 340,
               reliability: 'ESTIMATED',
@@ -796,18 +800,21 @@ describe('Golden dataset', () => {
         },
         {
           label: 'Transport',
+          code: 'transport',
           category: 'transportCost',
           cents: 0,
           reliability: 'UNAVAILABLE',
         },
         {
           label: 'Alcohol excise',
+          code: 'alcohol_excise',
           category: 'alcoholExciseEstimate',
           cents: 91,
           reliability: 'VERIFIED',
         },
         {
           label: 'Container duty',
+          code: 'container_duty',
           category: 'containerDutyEstimate',
           cents: 0,
           reliability: 'VERIFIED',
