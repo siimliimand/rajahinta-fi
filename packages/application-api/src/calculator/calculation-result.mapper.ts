@@ -47,6 +47,7 @@ import type {
   AlkoBenchmarkSnapshot,
   ConfidenceLevel,
   CostCategory,
+  CostLineCode,
   Disclaimer,
   ItemizedCost,
   ReliabilityStatus,
@@ -91,6 +92,37 @@ const COST_CATEGORIES: readonly CostCategory[] = [
 
 const CONFIDENCE_LEVELS: readonly ConfidenceLevel[] = ['HIGH', 'MEDIUM', 'LOW'];
 
+/**
+ * Line-code vocabulary (change fi-locale-surface-hardening): the closed
+ * CostLineCode union, restated for runtime narrowing of the persisted JSON.
+ */
+const COST_LINE_CODES = [
+  'foreign_retail_price',
+  'foreign_unit_price',
+  'transport',
+  'alcohol_excise',
+  'container_duty',
+  'alcohol_excise_within_allowance',
+  'container_duty_within_allowance',
+  'alcohol_excise_over_allowance',
+  'container_duty_over_allowance',
+  'import_vat',
+  'import_vat_over_allowance',
+  'import_vat_within_allowance',
+] as const satisfies readonly CostLineCode[];
+
+// Compile-time tripwire: the restated vocabulary above must cover EVERY
+// CostLineCode member — a union member missing from this list would silently
+// degrade a valid persisted line to label-fallback on the replay path.
+// Exported solely so noUnusedLocals keeps the assertion in the build.
+type UncoveredCostLineCode = Exclude<
+  CostLineCode,
+  (typeof COST_LINE_CODES)[number]
+>;
+export const _costLineCodesCoverUnion: UncoveredCostLineCode extends never
+  ? true
+  : never = true;
+
 function isReliabilityStatus(value: unknown): value is ReliabilityStatus {
   return (
     typeof value === 'string' &&
@@ -102,6 +134,13 @@ function isCostCategory(value: unknown): value is CostCategory {
   return (
     typeof value === 'string' &&
     (COST_CATEGORIES as readonly string[]).includes(value)
+  );
+}
+
+function isCostLineCode(value: unknown): value is CostLineCode {
+  return (
+    typeof value === 'string' &&
+    (COST_LINE_CODES as readonly string[]).includes(value)
   );
 }
 
@@ -171,8 +210,16 @@ function toItemizedCost(raw: unknown): ItemizedCost | null {
       ? entry.calculatedAt
       : undefined;
 
+  // Line code (change fi-locale-surface-hardening): echoed verbatim when
+  // the persisted line carries a vocabulary member — task 2.3 localizes
+  // labels by it. Pre-code legacy rows and corrupt values stay key-absent
+  // (the documented fallback state: consumers use the verbatim label),
+  // never null and never a fabricated code.
+  const code = isCostLineCode(entry.code) ? entry.code : undefined;
+
   return {
     label: typeof entry.label === 'string' ? entry.label : '',
+    ...(code !== undefined ? { code } : {}),
     category: entry.category,
     cents,
     reliability,

@@ -68,6 +68,33 @@ const PERSISTED_BREAKDOWN: ItemizedCost[] = [
   { label: 'Container duty', category: 'containerDutyEstimate', cents: 34, reliability: 'VERIFIED' },
 ];
 
+/**
+ * The same breakdown as persisted after upstream 79a4d40 (change
+ * fi-locale-surface-hardening): every line — nested included — carries the
+ * closed-set `code` next to the unchanged English label.
+ */
+const PERSISTED_CODED_BREAKDOWN: ItemizedCost[] = [
+  {
+    label: 'Retail price',
+    code: 'foreign_retail_price',
+    category: 'foreignRetailPrice',
+    cents: 2460,
+    reliability: 'VERIFIED',
+    breakdown: [
+      {
+        label: 'Unit price (x2)',
+        code: 'foreign_unit_price',
+        category: 'foreignRetailPrice',
+        cents: 2460,
+        reliability: 'VERIFIED',
+      },
+    ],
+  },
+  { label: 'Transport', code: 'transport', category: 'transportCost', cents: 1490, reliability: 'ESTIMATED' },
+  { label: 'Alcohol excise', code: 'alcohol_excise', category: 'alcoholExciseEstimate', cents: 1160, reliability: 'VERIFIED' },
+  { label: 'Container duty', code: 'container_duty', category: 'containerDutyEstimate', cents: 34, reliability: 'VERIFIED' },
+];
+
 const DISCLAIMER = {
   text: 'Arvioitu kokonaiskustannus Suomessa. Ei ole lopullinen verovelvollisuuden määrä.',
   language: 'fi',
@@ -470,6 +497,90 @@ describe('mapCalculationRecordToResult', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Line codes (change fi-locale-surface-hardening, upstream 79a4d40)
+  //
+  // Task 2.3 localizes line labels by `code`. The replay path must pass
+  // persisted codes through untouched — a replay that loses them degrades
+  // to the verbatim English label, the exact leak this change fixes.
+  // -------------------------------------------------------------------------
+
+  it('passes persisted line codes through verbatim, including nested breakdown lines', () => {
+    const result = mapCalculationRecordToResult({
+      record: makeRecord({ breakdown: PERSISTED_CODED_BREAKDOWN }),
+      product: makeProduct(),
+      exciseVersionLabel: 'v3.0-2026',
+      containerVersionLabel: 'v2.0-2025',
+    });
+
+    // Round-trip fidelity: the exact coded lines come back — codes included.
+    expect(result.itemizedCosts).toEqual(PERSISTED_CODED_BREAKDOWN);
+    expect(result.itemizedCosts.map((c) => c.code)).toEqual([
+      'foreign_retail_price',
+      'transport',
+      'alcohol_excise',
+      'container_duty',
+    ]);
+    // Nesting keeps its own code — the retail line's per-unit breakdown.
+    expect(result.itemizedCosts[0]!.breakdown![0]!.code).toBe(
+      'foreign_unit_price',
+    );
+    // Codes are display-inert: figures and labels stay byte-identical.
+    expect(result.totalCents).toBe(5144);
+    expect(result.foreignRetailPrice).toBe(2460);
+    expect(result.itemizedCosts.every((c) => c.label.length > 0)).toBe(true);
+  });
+
+  it('serves a pre-code legacy record with no code key on any line (absence, never null)', () => {
+    // makeRecord's default breakdown predates the code field — the replay
+    // must not invent the key.
+    const result = mapCalculationRecordToResult({
+      record: makeRecord(),
+      product: makeProduct(),
+      exciseVersionLabel: 'v3.0-2026',
+      containerVersionLabel: 'v2.0-2025',
+    });
+
+    for (const line of result.itemizedCosts) {
+      expect('code' in line).toBe(false);
+      for (const nested of line.breakdown ?? []) {
+        expect('code' in nested).toBe(false);
+      }
+    }
+    // Key absence changes nothing else — the mapped shape is identical to
+    // the legacy fixture.
+    expect(result.itemizedCosts).toEqual(PERSISTED_BREAKDOWN);
+    expect(result.totalCents).toBe(5144);
+  });
+
+  it('drops a code value outside the closed vocabulary instead of emitting it', () => {
+    // Task 2.3 switches exhaustively on codes — a garbage code must never
+    // reach the response typed as a CostLineCode. Degrade to key-absent:
+    // the consumer falls back to the verbatim label.
+    const result = mapCalculationRecordToResult({
+      record: makeRecord({
+        breakdown: [
+          {
+            label: 'Transport',
+            code: 'mystery_code',
+            category: 'transportCost',
+            cents: 1490,
+            reliability: 'ESTIMATED',
+          },
+        ],
+      }),
+      product: makeProduct(),
+      exciseVersionLabel: null,
+      containerVersionLabel: null,
+    });
+
+    expect(result.itemizedCosts).toHaveLength(1);
+    expect('code' in result.itemizedCosts[0]!).toBe(false);
+    expect(result.itemizedCosts[0]!.label).toBe('Transport');
+    expect(result.itemizedCosts[0]!.cents).toBe(1490);
+    expect(result.transportCost).toBe(1490);
+  });
+
+  // -------------------------------------------------------------------------
   // travellerAlternative (task 1.2, change finnish-first-client-experience)
   //
   // The callout is computed LIVE per delivery request against the allowance
@@ -661,6 +772,23 @@ describe('CalculatorController — getResult', () => {
     // The GET response carries the benchmark the live POST response had —
     // the past result renders its benchmark line identically.
     expect(result.alkoBenchmark).toEqual(PERSISTED_BENCHMARK);
+  });
+
+  it('maps a code-bearing record through GET with every code intact', async () => {
+    const controller = buildController({
+      record: makeRecord({ breakdown: PERSISTED_CODED_BREAKDOWN }),
+      products: [makeProduct()],
+      rules: [makeTaxRule(3, 'v3.0-2026')],
+    });
+
+    const result = await controller.getResult(42);
+
+    // The replay response carries the codes the live POST response had —
+    // task 2.3 localizes past results by the same join key.
+    expect(result.itemizedCosts).toEqual(PERSISTED_CODED_BREAKDOWN);
+    expect(
+      result.itemizedCosts.every((c) => typeof c.code === 'string'),
+    ).toBe(true);
   });
 
   it('returns 404 (unchanged) for a missing record', async () => {
