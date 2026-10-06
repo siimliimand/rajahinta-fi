@@ -1676,6 +1676,13 @@
     "coverageSyncLabel": "Last sync",
     "coverageNote": "These figures describe the tracked catalog, not user-reported outcomes. The accuracy statistic is published once outcomes are reported."
   },
+  "ConfidenceMeter": {
+    "label": "Observed spread",
+    "percentLine": "±{percent} %",
+    "sampleLine": "n={count}",
+    "asOfLine": "computed {date}",
+    "methodologyLink": "Methodology"
+  },
   "OutcomeReport": {
     "formTitle": "Report the actual total",
     "formIntro": "Did the final total differ from the estimate? Report what you actually paid \u2014 reported outcomes feed the public accuracy statistic. One report per calculation.",

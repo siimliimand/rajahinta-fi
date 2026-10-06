@@ -218,7 +218,31 @@ export interface TripFillResult {
   readonly disclaimer: TripDisclaimerPayload;
 }
 
+/**
+ * Empirical result margin — structurally mirrors `EmpiricalMarginView`
+ * (apps/api-worker/src/routes/empirical-margin.ts, change
+ * hedge-dedup-confidence-meter), re-declared to keep this scope
+ * self-contained (the DisclaimerPayload precedent). Display-only: it
+ * never enters the fill figures. Key absent when no ladder rung meets
+ * the sample floor — render-nothing, never null.
+ */
+export interface TripEmpiricalMargin {
+  /** Relative margin as a fraction of the total (0.05 → ±5 %). */
+  readonly quantile: number;
+  /** Outcome reports behind the quantile (≥ the calibration floor). */
+  readonly sampleCount: number;
+  /** The ladder rung that won (deepest floored cell). */
+  readonly cell: { readonly dimension: string; readonly key: string };
+  /** ISO-8601 instant the quantile was computed at. */
+  readonly asOf: string;
+}
+
 /** The 200 payload: the fill result + the separate partner block. */
 export type TripFillResponse = TripFillResult & {
   readonly ferryOffers: readonly TripFerryOfferRef[];
+  /**
+   * Display-only empirical margin (hedge-dedup-confidence-meter 2.2),
+   * composed after the ferry merge, never inside the cached fill body.
+   */
+  readonly empiricalMargin?: TripEmpiricalMargin;
 };

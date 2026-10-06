@@ -15,10 +15,18 @@
 
 import * as React from 'react';
 import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import EventShoppingListResult from './EventShoppingListResult';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import type { EventCalcResponse } from '../event.types';
+
+// The empirical-margin meter (hedge-dedup-confidence-meter 4.1) renders
+// its /ranking link through the i18n navigation Link; stub it with the
+// plain-anchor shape the other view tests use.
+vi.mock('@/i18n/navigation', () => ({
+  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
+    React.createElement('a', props),
+}));
 
 // ---------------------------------------------------------------------------
 // Fixtures — the serialized 200 shape (event.types.ts mirrors)
@@ -106,5 +114,66 @@ describe('EventShoppingListResult disclaimer single render (hedge-dedup 3.2)', (
     expect(banner.className).toContain('status-stale');
     expect(within(banner).getByText(DISCLAIMER.text)).toBeInTheDocument();
     expect(banner.textContent).toContain('v1.0 · suomi');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Empirical-margin meter (hedge-dedup-confidence-meter 4.1, design D4):
+// the margin qualifies the priced plan total and renders beside it; a
+// list without a plan has no euro total to qualify, and an absent
+// margin renders nothing.
+// ---------------------------------------------------------------------------
+
+describe('EventShoppingListResult empirical-margin meter (hedge-dedup 4.1)', () => {
+  const MARGIN = {
+    quantile: 0.05,
+    sampleCount: 16,
+    cell: { dimension: 'global', key: 'global' },
+    asOf: '2026-09-28T12:00:00.000Z',
+  } as const;
+
+  // The union spread is narrowed by the cast (the fixture-cast precedent).
+  const COMPUTED_WITH_PLAN = {
+    ...COMPUTED,
+    plan: {
+      lines: [],
+      unpricedDrinkTypes: [],
+      totalCents: 8000,
+      budget: null,
+    },
+  } as EventCalcResponse;
+
+  it('renders the ± figure beside the plan total when the response carries a margin', () => {
+    renderWithIntl(
+      <EventShoppingListResult
+        result={
+          { ...COMPUTED_WITH_PLAN, empiricalMargin: MARGIN } as EventCalcResponse
+        }
+      />,
+    );
+
+    const meter = screen.getByTestId('confidence-meter');
+    // 0.05 × 8000 ¢ = 400 ¢ → "±4,00 €" (fi money form).
+    expect(meter.textContent).toContain('±4,00\u00a0€');
+    // The basis is adjacent, never dropped.
+    expect(meter.textContent).toContain('±5,0 %');
+    expect(meter.textContent).toContain('n=16');
+    expect(within(meter).getByRole('link').getAttribute('href')).toBe(
+      '/ranking',
+    );
+  });
+
+  it('renders nothing when the margin is absent', () => {
+    renderWithIntl(<EventShoppingListResult result={COMPUTED_WITH_PLAN} />);
+    expect(screen.queryByTestId('confidence-meter')).toBeNull();
+  });
+
+  it('renders no meter on a plan-less list — no euro total to qualify', () => {
+    renderWithIntl(
+      <EventShoppingListResult
+        result={{ ...COMPUTED, empiricalMargin: MARGIN } as EventCalcResponse}
+      />,
+    );
+    expect(screen.queryByTestId('confidence-meter')).toBeNull();
   });
 });

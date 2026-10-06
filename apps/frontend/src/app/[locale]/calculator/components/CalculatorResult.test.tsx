@@ -844,3 +844,45 @@ describe('CalculatorResult outcome nudge (task 3.3)', () => {
     expect(screen.queryByTestId('outcome-nudge')).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Empirical-margin meter (hedge-dedup-confidence-meter 4.1, design D4):
+// display-only ± figure beside the hero total, basis always adjacent;
+// absent margin renders nothing.
+// ---------------------------------------------------------------------------
+
+describe('CalculatorResult empirical-margin meter (hedge-dedup 4.1)', () => {
+  const MARGIN = {
+    quantile: 0.05,
+    sampleCount: 16,
+    cell: { dimension: 'global', key: 'global' },
+    asOf: '2026-09-28T12:00:00.000Z',
+  } as const;
+
+  it('renders the ± figure beside the hero total when the response carries a margin', () => {
+    renderWithIntl(
+      <CalculatorResult result={{ ...baseResult(), empiricalMargin: MARGIN }} />,
+    );
+
+    const meter = screen.getByTestId('confidence-meter');
+    // 0.05 × 4650 ¢ = 232.5 ¢ → 233 ¢ (fi money form with the ± prefix).
+    expect(meter.textContent).toContain('±2,33\u00a0€');
+    // The basis is adjacent, never dropped: relative percent, sample
+    // count, as-of, and the methodology link.
+    expect(meter.textContent).toContain('±5,0 %');
+    expect(meter.textContent).toContain('n=16');
+    expect(within(meter).getByRole('link').getAttribute('href')).toBe(
+      '/ranking',
+    );
+    // Adjacent to the hero total: the meter follows the hero pair block.
+    const hero = screen.getByTestId('hero-pair');
+    expect(
+      hero.compareDocumentPosition(meter) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('renders nothing when the margin is absent', () => {
+    renderWithIntl(<CalculatorResult result={baseResult()} />);
+    expect(screen.queryByTestId('confidence-meter')).toBeNull();
+  });
+});

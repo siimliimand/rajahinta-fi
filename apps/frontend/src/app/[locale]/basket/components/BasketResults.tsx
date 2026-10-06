@@ -35,6 +35,7 @@ import type {
   BasketShipment,
   ConsolidatedTransport,
   ConsolidatedTransportReliability,
+  EmpiricalMargin,
   MinimumOrderThresholdCheck,
 } from '@/lib/basket.types';
 import type {
@@ -55,6 +56,7 @@ import {
 } from '@/components/ui';
 import type { BadgeTone } from '@/components/ui';
 import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
+import ConfidenceMeter from '../../components/ConfidenceMeter';
 import BasketPackingPanel from './BasketPackingPanel';
 
 // ---------------------------------------------------------------------------
@@ -467,6 +469,7 @@ function OptimizationCombination({
   disclaimer,
   metadata,
   heading,
+  empiricalMargin,
 }: {
   readonly shipments: readonly BasketShipment[];
   readonly totalCents: number;
@@ -487,6 +490,12 @@ function OptimizationCombination({
     readonly calculationRecordId: number | null;
   };
   readonly heading: string;
+  /**
+   * The response's optional empirical margin (hedge-dedup-confidence-meter
+   * 4.1) — it qualifies the recommended combination's total only; the
+   * wire attaches it to the body, so alternatives never carry one.
+   */
+  readonly empiricalMargin?: EmpiricalMargin;
 }) {
   return (
     <div className="mb-8 space-y-4" data-testid="optimization-combination">
@@ -497,6 +506,11 @@ function OptimizationCombination({
           <p className="mt-0.5 text-2xl font-bold tabular-nums text-primary-700">
             {formatEur(totalCents)}
           </p>
+          {/* ── Empirical margin (hedge-dedup-confidence-meter 4.1,
+              design D4): display-only ± figure beside the combination
+              total, basis always adjacent; absent margin renders
+              nothing. ── */}
+          <ConfidenceMeter margin={empiricalMargin} totalCents={totalCents} />
         </div>
         <LocalizedConfidenceBadge level={confidence} />
       </div>
@@ -558,6 +572,7 @@ export default function BasketResults({ result, productNames }: BasketResultsPro
         confidenceBreakdown={result.confidenceBreakdown}
         disclaimer={result.disclaimer}
         metadata={result.metadata}
+        empiricalMargin={result.empiricalMargin}
         heading={t('recommended')}
       />
 

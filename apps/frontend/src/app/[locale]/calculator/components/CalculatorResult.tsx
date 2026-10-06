@@ -19,6 +19,7 @@ import {
   RELIABILITY_STATUS_META,
 } from '@/lib/design/status';
 import { ConfidenceBadge, ReliabilityBadge } from '@/components/ui';
+import ConfidenceMeter from '../../components/ConfidenceMeter';
 import { MerchantLink } from '../../compare/components/MerchantLink';
 import DisclaimerBanner from './DisclaimerBanner';
 import OutcomeNudge from './OutcomeNudge';
@@ -421,6 +422,15 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
             />
           )}
         </div>
+
+        {/* ── Empirical margin (hedge-dedup-confidence-meter 4.1,
+            design D4): display-only ± figure beside the hero total,
+            basis (percent, n, as-of) always adjacent; the margin never
+            enters any figure. Absent margin renders nothing. ── */}
+        <ConfidenceMeter
+          margin={result.empiricalMargin}
+          totalCents={result.totalCents}
+        />
       </div>
 
       {/* ── Savings summary (task 5.1) — display-only: prominent factual

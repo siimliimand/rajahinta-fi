@@ -1676,6 +1676,13 @@
     "coverageSyncLabel": "Viimeisin päivitys",
     "coverageNote": "Nämä luvut kuvaavat seurattua valikoimaa, eivät käyttäjien raportoimia lopputuloksia. Tarkkuustilasto julkaistaan, kun lopputuloksia on raportoitu."
   },
+  "ConfidenceMeter": {
+    "label": "Havaittu hajonta",
+    "percentLine": "±{percent} %",
+    "sampleLine": "n={count}",
+    "asOfLine": "laskettu {date}",
+    "methodologyLink": "Menetelmä"
+  },
   "OutcomeReport": {
     "formTitle": "Raportoi todellinen loppusumma",
     "formIntro": "J\u00e4ik\u00f6 lopullinen summa muuksi kuin arvioksi? Raportoi, paljonko todellisuudessa maksoit \u2014 raportoidut lopputulokset sy\u00f6tt\u00e4v\u00e4t julkista tarkkuustilastoa. Yksi raportti per laskelma.",

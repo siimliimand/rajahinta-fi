@@ -11,7 +11,9 @@ import type {
   EventSourcingPlan,
   SourcingPlanLine,
 } from '../event.types';
+import type { EmpiricalMargin } from '@/lib/types';
 import { Badge, Card, ConfidenceBadge } from '@/components/ui';
+import ConfidenceMeter from '../../components/ConfidenceMeter';
 
 // ---------------------------------------------------------------------------
 // Formatting
@@ -204,6 +206,12 @@ function PackingPanel({ packing }: { readonly packing: EventPackingSection }) {
 interface EventPlanResultProps {
   readonly plan: EventSourcingPlan;
   readonly packing?: EventPackingSection | undefined;
+  /**
+   * The response's optional empirical margin (hedge-dedup-confidence-meter
+   * 4.1, passed through EventShoppingListResult) — it qualifies this
+   * plan's total and renders beside it; absent renders nothing.
+   */
+  readonly empiricalMargin?: EmpiricalMargin;
 }
 
 /**
@@ -216,7 +224,11 @@ interface EventPlanResultProps {
  *
  * @module EventPlanResult
  */
-export default function EventPlanResult({ plan, packing }: EventPlanResultProps) {
+export default function EventPlanResult({
+  plan,
+  packing,
+  empiricalMargin,
+}: EventPlanResultProps) {
   const t = useTranslations('EventPage');
 
   return (
@@ -225,9 +237,19 @@ export default function EventPlanResult({ plan, packing }: EventPlanResultProps)
         <h2 id="event-plan-heading" className="text-lg font-semibold text-gray-900">
           {t('plan.heading')}
         </h2>
-        <p className="text-sm text-gray-700">
-          {t('plan.total')} <span className="font-bold">{formatEur(plan.totalCents)}</span>
-        </p>
+        <div className="flex flex-wrap items-baseline justify-end gap-x-3">
+          <p className="text-sm text-gray-700">
+            {t('plan.total')} <span className="font-bold">{formatEur(plan.totalCents)}</span>
+          </p>
+          {/* ── Empirical margin (hedge-dedup-confidence-meter 4.1,
+                  design D4): display-only ± figure beside the plan
+                  total, basis always adjacent; absent renders
+                  nothing. ── */}
+          <ConfidenceMeter
+            margin={empiricalMargin}
+            totalCents={plan.totalCents}
+          />
+        </div>
       </div>
 
       {plan.budget && <BudgetBanner budget={plan.budget} />}

@@ -104,6 +104,7 @@ export const ROUTE_CLIENT_NAMESPACES = {
     'BasketResults',
     'Calculator',
     'Common',
+    'ConfidenceMeter',
     'DisclaimerBanner',
     'ProductSearch',
     'ProductSelector',
@@ -128,6 +129,7 @@ export const ROUTE_CLIENT_NAMESPACES = {
   '/calculator/result/:recordId': [
     'CalculatorResult',
     'Common',
+    'ConfidenceMeter',
     'CorrectionFlag',
     'DeclarationGuidance',
     'DisclaimerBanner',
@@ -158,7 +160,7 @@ export const ROUTE_CLIENT_NAMESPACES = {
     'SortOrders',
     'SortSelector',
   ],
-  '/event': ['Common', 'DisclaimerBanner', 'EventPage'],
+  '/event': ['Common', 'ConfidenceMeter', 'DisclaimerBanner', 'EventPage'],
   '/group-order': ['GroupOrder'],
   '/group-order/:token': ['GroupOrder', 'ProductSearch', 'ProductSelector'],
   '/login': ['Auth', 'Login'],
@@ -173,6 +175,7 @@ export const ROUTE_CLIENT_NAMESPACES = {
   '/share/:publicId': ['DisclaimerBanner'],
   '/trip': [
     'Common',
+    'ConfidenceMeter',
     'DisclaimerBanner',
     'ProductSearch',
     'ProductSelector',

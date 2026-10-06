@@ -24,7 +24,7 @@
 
 import React from 'react';
 import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { NextIntlClientProvider } from 'next-intl';
 import BasketResults from './BasketResults';
 import { renderWithIntl } from '@/lib/testing/test-intl';
@@ -34,6 +34,14 @@ import type {
   BasketShipment,
 } from '@/lib/basket.types';
 import type { ConfidenceDetail, ItemizedCost } from '@/lib/types';
+
+// The empirical-margin meter (hedge-dedup-confidence-meter 4.1) renders
+// its /ranking link through the i18n navigation Link; stub it with the
+// plain-anchor shape the other view tests use.
+vi.mock('@/i18n/navigation', () => ({
+  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
+    React.createElement('a', props),
+}));
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -510,5 +518,61 @@ describe('BasketResults under the en locale', () => {
     );
 
     expect(screen.getByText('Surplus fee')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Empirical-margin meter (hedge-dedup-confidence-meter 4.1, design D4):
+// the wire attaches the margin to the body, so it qualifies the
+// recommended combination's total only — alternatives never carry one —
+// and an absent margin renders nothing.
+// ---------------------------------------------------------------------------
+
+describe('BasketResults empirical-margin meter (hedge-dedup 4.1)', () => {
+  const MARGIN = {
+    quantile: 0.05,
+    sampleCount: 16,
+    cell: { dimension: 'global', key: 'global' },
+    asOf: '2026-09-28T12:00:00.000Z',
+  } as const;
+
+  it('renders the ± figure beside the recommended combination total when the response carries a margin', () => {
+    renderWithIntl(
+      <BasketResults result={makeResult({ empiricalMargin: MARGIN })} />,
+    );
+
+    const meter = screen.getByTestId('confidence-meter');
+    // 0.05 × 5000 ¢ = 250 ¢ → "±2,50 €" (fi money form).
+    expect(meter.textContent).toContain('±2,50\u00a0€');
+    // The basis is adjacent, never dropped.
+    expect(meter.textContent).toContain('±5,0 %');
+    expect(meter.textContent).toContain('n=16');
+    expect(within(meter).getByRole('link').getAttribute('href')).toBe(
+      '/ranking',
+    );
+  });
+
+  it('renders exactly one meter even with alternatives present — the margin qualifies the body total only', () => {
+    const withMargin = makeResult({ empiricalMargin: MARGIN });
+    const alternative = {
+      shipments: withMargin.shipments,
+      totalCents: 4900,
+      itemizedTotals: 3900,
+      confidence: 'MEDIUM' as const,
+      confidenceBreakdown: [],
+      disclaimer: withMargin.disclaimer,
+      metadata: withMargin.metadata,
+    };
+    renderWithIntl(
+      <BasketResults
+        result={{ ...withMargin, alternatives: [alternative] }}
+      />,
+    );
+    expect(screen.getAllByTestId('confidence-meter')).toHaveLength(1);
+  });
+
+  it('renders nothing when the margin is absent', () => {
+    renderWithIntl(<BasketResults result={makeResult()} />);
+    expect(screen.queryByTestId('confidence-meter')).toBeNull();
   });
 });

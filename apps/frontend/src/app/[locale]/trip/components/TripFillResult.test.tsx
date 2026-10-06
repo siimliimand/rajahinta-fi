@@ -15,10 +15,18 @@
 
 import * as React from 'react';
 import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import TripFillResult from './TripFillResult';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import type { TripFillResponse } from '../trip.types';
+
+// The empirical-margin meter (hedge-dedup-confidence-meter 4.1) renders
+// its /ranking link through the i18n navigation Link; stub it with the
+// plain-anchor shape the other view tests use.
+vi.mock('@/i18n/navigation', () => ({
+  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
+    React.createElement('a', props),
+}));
 
 // ---------------------------------------------------------------------------
 // Fixtures — the serialized 200 shape (trip.types.ts mirrors)
@@ -100,5 +108,50 @@ describe('TripFillResult disclaimer single render (hedge-dedup 3.2)', () => {
     expect(banner.className).toContain('status-stale');
     expect(within(banner).getByText(DISCLAIMER.text)).toBeInTheDocument();
     expect(banner.textContent).toContain('v1.0 · suomi');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Empirical-margin meter (hedge-dedup-confidence-meter 4.1, design D4):
+// display-only ± figure beside the filled-value total; the margin rides
+// the fill response only (the feasibility path carries none), and an
+// absent margin renders nothing.
+// ---------------------------------------------------------------------------
+
+describe('TripFillResult empirical-margin meter (hedge-dedup 4.1)', () => {
+  const MARGIN = {
+    quantile: 0.05,
+    sampleCount: 16,
+    cell: { dimension: 'global', key: 'global' },
+    asOf: '2026-09-28T12:00:00.000Z',
+  } as const;
+
+  it('renders the ± figure for the filled value when the response carries a margin', () => {
+    renderWithIntl(
+      <TripFillResult
+        result={{ ...FILL_RESULT, empiricalMargin: MARGIN }}
+        productNames={new Map([[42, 'Saku Originaal']])}
+      />,
+    );
+
+    const meter = screen.getByTestId('confidence-meter');
+    // 0.05 × 3600 ¢ = 180 ¢ → "±1,80 €" (fi money form).
+    expect(meter.textContent).toContain('±1,80\u00a0€');
+    // The basis is adjacent, never dropped.
+    expect(meter.textContent).toContain('±5,0 %');
+    expect(meter.textContent).toContain('n=16');
+    expect(within(meter).getByRole('link').getAttribute('href')).toBe(
+      '/ranking',
+    );
+  });
+
+  it('renders nothing when the margin is absent', () => {
+    renderWithIntl(
+      <TripFillResult
+        result={FILL_RESULT}
+        productNames={new Map([[42, 'Saku Originaal']])}
+      />,
+    );
+    expect(screen.queryByTestId('confidence-meter')).toBeNull();
   });
 });
