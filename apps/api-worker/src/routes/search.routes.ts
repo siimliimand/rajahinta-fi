@@ -53,6 +53,22 @@
  * for the page's rows) — the product-search repository imports no savings
  * module, and no calculation, ranking, or optimization input changes.
  *
+ * Default order BIGGEST_SAVING (task 1.2, same change): the absent sort
+ * resolves to the savings-first order — covered rows (a latest-day
+ * snapshot row exists) by gap basis points ascending (gap = landed −
+ * reference, so the most negative gap is the biggest relative saving; a
+ * positive gap is dearer than Alko and sorts after the savers, still
+ * covered), with the FI-collated product name then the product id as the
+ * deterministic ties; uncovered rows come after every covered row,
+ * alphabetical with the same ties. The order composes at THIS route level
+ * over the SAME one-read latest-day map the embeds use (design D3, one
+ * read two uses): the browse path fetches the full matched key list
+ * (listCatalogKeys — the repository's own sort orders stay untouched),
+ * sorts it with the map, and slices the page itself, so every page cuts
+ * the same total order; the ids and ranked-q paths sort their fetched set
+ * with the same comparator. Explicit ALPHABETICAL / LOWEST_PRICE /
+ * ALCOHOL_PERCENTAGE are unchanged; an unknown value stays a 400.
+ *
  * @module SearchRoutes
  */
 
@@ -137,18 +153,18 @@ function isCanonicalCategory(value: string): value is ProductCategory {
 /**
  * `sort` parameter (task 1.2, change client-experience-improvement) —
  * parsed against the repository's shared order set. Blank counts as
- * absent, and absent defaults to ALPHABETICAL (task 4.1, change
- * catalog-first-run-polish, design D1 — the FI-collated name order with
- * the id tie; supersedes the first-impression-pass LOWEST_PRICE flip,
- * which survives only as an explicit option), matching the
- * q/ids/category blankness handling; an unknown value stays a
- * contract-level parameter error — a 400 with the same shape as the
- * unknown-category treatment, never a silent fallback (proposal
- * decision D3).
+ * absent, and absent defaults to BIGGEST_SAVING (task 1.2, change
+ * savings-first-catalog-and-prefill — the savings-first order, design D2;
+ * supersedes catalog-first-run-polish's ALPHABETICAL default, which
+ * survives only as an explicit option, as does the first-impression-pass
+ * LOWEST_PRICE), matching the q/ids/category blankness handling; an
+ * unknown value stays a contract-level parameter error — a 400 with the
+ * same shape as the unknown-category treatment, never a silent fallback
+ * (client-experience-improvement decision D3).
  */
 function parseSortOrder(raw: string | undefined): CatalogSortOrder {
   const trimmed = raw?.trim() ?? '';
-  if (trimmed.length === 0) return 'ALPHABETICAL';
+  if (trimmed.length === 0) return 'BIGGEST_SAVING';
   if ((CATALOG_SORT_ORDERS as readonly string[]).includes(trimmed)) {
     return trimmed as CatalogSortOrder;
   }
@@ -200,14 +216,61 @@ function compareByAlcoholDescThenId(a: SearchItem, b: SearchItem): number {
 }
 
 /**
+ * Savings-first ordering (task 1.2, change
+ * savings-first-catalog-and-prefill, design D2) — the savings listing's
+ * `sortSavingsRows` rule (gap basis points ascending: the most negative
+ * gap is the biggest relative saving) extended with the catalog's
+ * alphabetical tie-break, so the order is total and deterministic per
+ * (data, day):
+ *
+ * - covered rows — a latest-day snapshot row exists — by gap basis
+ *   points ascending; a POSITIVE gap (dearer than the Alko reference) is
+ *   still covered and sorts after the savers, stating the fact plainly;
+ * - ties break by FI-collated name, then product id (two distinct
+ *   products can share a name and a gap);
+ * - uncovered rows come after EVERY covered row — honest absence is
+ *   last, never interpolated into the gap order — alphabetical with the
+ *   same ties. With no materialized day at all every row is uncovered
+ *   and the order degrades to the plain alphabetical contract.
+ *
+ * Generic over the row shape: the browse path sorts `(id, name)` keys
+ * BEFORE hydrating the page, the ids/ranked-q paths sort full items.
+ * Pure — reads the snapshot map, mutates nothing.
+ */
+function compareByBiggestSavingThenId<T extends { id: number; name: string }>(
+  snapshotByProductId: ReadonlyMap<number, SavingsSnapshotRecord>,
+): (a: T, b: T) => number {
+  return (a, b) => {
+    const aRow = snapshotByProductId.get(a.id);
+    const bRow = snapshotByProductId.get(b.id);
+    if (aRow === undefined || bRow === undefined) {
+      // Same tier only when BOTH are uncovered (alphabetical); a mixed
+      // pair always puts the covered row first.
+      if (aRow === undefined && bRow === undefined) {
+        return compareByNameThenId(a, b);
+      }
+      return aRow === undefined ? 1 : -1;
+    }
+    return (
+      aRow.gapBasisPoints - bRow.gapBasisPoints || compareByNameThenId(a, b)
+    );
+  };
+}
+
+/**
  * The item comparator for an explicit sort over the ids/ranked-q paths
  * (task 1.2). These paths fetch product rows without the repository's
  * SQL key ordering, so the same objective order is applied app-side over
- * the fetched set.
+ * the fetched set. BIGGEST_SAVING composes over the request's latest-day
+ * snapshot map (the same map the embeds use — never a second read).
  */
 function compareBySortOrder(
   sortBy: CatalogSortOrder,
+  snapshotByProductId: ReadonlyMap<number, SavingsSnapshotRecord>,
 ): (a: SearchItem, b: SearchItem) => number {
+  if (sortBy === 'BIGGEST_SAVING') {
+    return compareByBiggestSavingThenId(snapshotByProductId);
+  }
   switch (sortBy) {
     case 'LOWEST_PRICE':
       return compareByLowestPriceThenId;
@@ -557,6 +620,9 @@ async function search(c: Context<AppEnv>): Promise<Response> {
 
   const pageNum = parsePositiveInt(page, 1);
   const limitNum = Math.min(parsePositiveInt(limit, DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
+  // Page offset for the fetch-then-slice paths (ids, ranked-q, and the
+  // BIGGEST_SAVING browse branch below — all slice the sorted set here).
+  const start = (pageNum - 1) * limitNum;
   // Raised outside the try below so the parameter error renders as its own
   // 400, never a wrapped 500 (unknown-category treatment parity).
   const sortBy = parseSortOrder(sort);
@@ -580,12 +646,39 @@ async function search(c: Context<AppEnv>): Promise<Response> {
 
   try {
     const repo = new D1ProductSearchRepository(c.env.DB);
+    // Display-only savings embed + BIGGEST_SAVING ordering (tasks 1.1
+    // and 1.2, change savings-first-catalog-and-prefill, design D1/D3):
+    // ONE full latest-day read per request, TWO uses — the sort map for
+    // the default order and the embed lookup for the page's rows (the
+    // savings routes' one-read-two-uses pattern; the full-day fetch is
+    // safe at registry scale per the repository contract). The join
+    // lives in this route file only — the product-search repository
+    // imports no savings module. Items without a snapshot row for the
+    // day keep the base shape — no placeholder, no zero. A
+    // never-materialized day answers savingsAsOf: null (the honest zero
+    // state, parity with the savings routes) and leaves every row
+    // uncovered, so the default order degrades to the plain
+    // alphabetical contract.
+    const latestDay = await new D1SavingsSnapshotRepository(
+      c.env.DB,
+    ).findLatestDay();
+    const snapshotByProductId = new Map(
+      latestDay.map((row) => [row.productId, row] as const),
+    );
+    const savingsAsOf: string | null =
+      latestDay.length > 0 ? latestDay[0]!.asOf : null;
+
     let items: SearchItemResponse[] = [];
     const query = q !== undefined ? q.trim() : '';
     // Set only on the browse path, where the repository owns pagination
     // (true totals, design D3); the ids and ranked-q paths keep
     // fetch-and-slice below.
     let catalogPage: CatalogProductListPage | undefined;
+    // Set ONLY on the BIGGEST_SAVING browse branch, which sorts the full
+    // matched key set with the snapshot map and slices the page itself:
+    // the exact total is that key list's length, and the generic slice
+    // below must not re-cut the already-page-sized items.
+    let browseFullTotal: number | undefined;
     // Zero-result did-you-mean (task 3.2) — only the ranked-q path can
     // produce one; the ids path is not a text query and the browse path
     // paginates the catalog.
@@ -606,9 +699,9 @@ async function search(c: Context<AppEnv>): Promise<Response> {
       // merge resolves each product's cheapest current offer.
       const { items: baseItems, inputsById } = toSearchItems(found);
       // Aggregates merge BEFORE ordering — LOWEST_PRICE sorts on them;
-      // ALPHABETICAL (also the absent-sort default since task 4.1,
-      // change catalog-first-run-polish) keeps the name order with the
-      // id tie.
+      // BIGGEST_SAVING (the absent-sort default since task 1.2, change
+      // savings-first-catalog-and-prefill) sorts over the snapshot map;
+      // ALPHABETICAL keeps the name order with the id tie.
       items = withOfferAggregates(
         baseItems,
         await offerAggregatesByProductId(
@@ -617,15 +710,16 @@ async function search(c: Context<AppEnv>): Promise<Response> {
         ),
         inputsById,
       );
-      items.sort(compareBySortOrder(sortBy));
+      items.sort(compareBySortOrder(sortBy, snapshotByProductId));
     } else if (query.length > 0) {
       // Ranked search — combined category+q filtering (task 2.1, change
       // client-experience-improvement): the repository applies the
       // category together with the keyword, so the result set contains
       // only keyword matches in the category. The category is NEVER
       // silently ignored because q is present (spec product-search); the
-      // sort — explicit, or the absent-sort ALPHABETICAL default (task
-      // 4.1, change catalog-first-run-polish) — orders the filtered set.
+      // sort — explicit, or the absent-sort BIGGEST_SAVING default (task
+      // 1.2, change savings-first-catalog-and-prefill) — orders the
+      // filtered set.
       //
       // searchRankedWithSuggestion (task 3.2) computes the advisory
       // did-you-mean only when the ranked search came back empty — a
@@ -651,16 +745,50 @@ async function search(c: Context<AppEnv>): Promise<Response> {
         ),
         inputsById,
       );
-      // Unconditional: the default (absent sort) is ALPHABETICAL too
-      // (task 4.1, change catalog-first-run-polish), so the keyword path
-      // orders deterministically by the resolved sort — never the raw
-      // relevance order of the ranked fetch.
-      items.sort(compareBySortOrder(sortBy));
+      // Unconditional: the default (absent sort) is BIGGEST_SAVING too
+      // (task 1.2, change savings-first-catalog-and-prefill), so the
+      // keyword path orders deterministically by the resolved sort —
+      // never the raw relevance order of the ranked fetch.
+      items.sort(compareBySortOrder(sortBy, snapshotByProductId));
+    } else if (sortBy === 'BIGGEST_SAVING') {
+      // Savings-first browse (task 1.2, design D3): the gap order needs
+      // every matching row's snapshot BEFORE the page is cut, so the
+      // route fetches the full matched key set — the same narrow
+      // (id, name) read the alphabetical contract sorts app-side, exposed
+      // unsorted by listCatalogKeys (the repository's sort orders are
+      // untouched; it never sees BIGGEST_SAVING) — orders it with the
+      // snapshot map, and slices the page itself. Only the page's rows
+      // are then hydrated (findById plus ONE grouped aggregate query —
+      // the ids-path shape), so the full-set cost stays the key list's.
+      const keys = await repo.listCatalogKeys(categoryParam);
+      browseFullTotal = keys.length;
+      const pageKeys = [...keys]
+        .sort(compareByBiggestSavingThenId(snapshotByProductId))
+        .slice(start, start + limitNum);
+      const products = await Promise.all(
+        pageKeys.map((key) => repo.findById(key.id)),
+      );
+      const found = products.filter(
+        (p): p is NonNullable<typeof p> => p !== null,
+      );
+      const { items: baseItems, inputsById } = toSearchItems(found);
+      // withOfferAggregates maps in place, so the items follow the sorted
+      // key order — the comparator is a total order (gap, FI name, id),
+      // which makes the mapping order the final order.
+      items = withOfferAggregates(
+        baseItems,
+        await offerAggregatesByProductId(
+          c.env.DB,
+          baseItems.map((item) => item.id),
+        ),
+        inputsById,
+      );
     } else {
       // Blank or absent q — the catalog listing (design D3, change
       // product-catalog): the repository paginates (exact totals, FI
-      // collation; task 1.2 adds the objective sort orders) and
-      // aggregates the page's offers (design D4).
+      // collation; task 1.2 adds the objective sort orders). BIGGEST_
+      // SAVING never reaches the repository — the branch above composes
+      // it at route level.
       catalogPage = await repo.listCatalogPage(
         pageNum,
         limitNum,
@@ -670,32 +798,28 @@ async function search(c: Context<AppEnv>): Promise<Response> {
       items = catalogPage.items.map(toCatalogItem);
     }
 
-    const start = (pageNum - 1) * limitNum;
     const paginated =
-      catalogPage !== undefined ? items : items.slice(start, start + limitNum);
-    const total = catalogPage !== undefined ? catalogPage.total : items.length;
+      catalogPage !== undefined || browseFullTotal !== undefined
+        ? items
+        : items.slice(start, start + limitNum);
+    const total =
+      catalogPage !== undefined
+        ? catalogPage.total
+        : (browseFullTotal ?? items.length);
 
     // The ids/ranked-q paths merged their offer aggregates before the
     // sort above (bounded IN list over the fetched rows); the catalog
-    // browse path keeps the repository's own page aggregates untouched.
+    // browse paths keep the repository's page aggregates (or, for the
+    // BIGGEST_SAVING branch, the same one grouped query over the page's
+    // ids — the ids-path shape).
 
     // Display-only savings embed (task 1.1, change
-    // savings-first-catalog-and-prefill, design D1/D3): ONE full
-    // latest-day read — the same read /api/v1/savings uses, safe at
-    // registry scale per the repository contract — then a map lookup for
-    // the page's rows. The join lives in this route file only; ordering
-    // is untouched (strictly additive per item). Items without a
-    // snapshot row for that day keep the base shape — no placeholder, no
-    // zero. A never-materialized day answers savingsAsOf: null (the
-    // honest zero state, parity with the savings routes).
-    const latestDay = await new D1SavingsSnapshotRepository(
-      c.env.DB,
-    ).findLatestDay();
-    const snapshotByProductId = new Map(
-      latestDay.map((row) => [row.productId, row] as const),
-    );
-    const savingsAsOf: string | null =
-      latestDay.length > 0 ? latestDay[0]!.asOf : null;
+    // savings-first-catalog-and-prefill): a map lookup against the
+    // request's ONE latest-day read (hoisted above — the BIGGEST_SAVING
+    // sort consumes the same map; design D3, one read two uses). The
+    // join never reorders the page — strictly additive per item. Items
+    // without a snapshot row for that day keep the base shape — no
+    // placeholder, no zero.
     const withSavings = paginated.map((item) => {
       const row = snapshotByProductId.get(item.id);
       return row === undefined ? item : { ...item, savings: toSavingsEmbed(row) };

@@ -151,7 +151,7 @@ describe('GET /api/v1/products (search)', () => {
     // unified envelope, the offending value echoed, the valid set named.
     await expectEnvelope(res, 400, {
       message:
-        "Unknown sort 'LOWEST_LANDED_COST'. Valid sort orders: ALPHABETICAL, LOWEST_PRICE, ALCOHOL_PERCENTAGE.",
+        "Unknown sort 'LOWEST_LANDED_COST'. Valid sort orders: ALPHABETICAL, LOWEST_PRICE, ALCOHOL_PERCENTAGE, BIGGEST_SAVING.",
     });
   });
 
@@ -163,7 +163,7 @@ describe('GET /api/v1/products (search)', () => {
     });
     await expectEnvelope(res, 400, {
       message:
-        "Unknown sort 'PROMOTED'. Valid sort orders: ALPHABETICAL, LOWEST_PRICE, ALCOHOL_PERCENTAGE.",
+        "Unknown sort 'PROMOTED'. Valid sort orders: ALPHABETICAL, LOWEST_PRICE, ALCOHOL_PERCENTAGE, BIGGEST_SAVING.",
     });
   });
 });
