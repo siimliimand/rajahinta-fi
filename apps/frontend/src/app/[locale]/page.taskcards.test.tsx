@@ -161,22 +161,22 @@ const TASK_CARDS = [
     href: '/trip',
     fi: {
       title: 'Matkalaskuri',
-      body: 'Vertaa kokonaisen matkan ostoskoreja: matkakustannuksen osuus, kategoriakohtainen hintaero ja tullimäärärajojen vaikutus.',
+      body: 'Vertaa kokonaisen matkan ostoskoreja: matkakustannuksen osuus, kategoriakohtainen hintaero ja tullivapaiden määrien vaikutus.',
     },
     en: {
       title: 'Trip calculator',
-      body: 'Compare baskets for a whole trip: the shared travel cost, the per-category price difference, and the effect of the traveller allowance caps.',
+      body: 'Compare baskets for a whole trip: the shared travel cost, the per-category price difference, and the effect of the duty-free allowances.',
     },
   },
   {
     href: '/event',
     fi: {
       title: 'Tilaisuuslaskuri',
-      body: 'Arvioi juonetarve vieraiden määrän ja tilaisuuden keston perusteella — eriteltynä ostoslistana rivi riviltä.',
+      body: 'Arvioi juomatarve vieraiden määrän ja tilaisuuden keston perusteella — eriteltynä ostoslistana rivi riviltä.',
     },
     en: {
       title: 'Event calculator',
-      body: 'Estimate the drink requirement from the guest count and the event duration, itemized line by line as a shopping list.',
+      body: 'Estimate the drink demand from the guest count and the event duration, itemized line by line as a shopping list.',
     },
   },
   {
@@ -194,11 +194,11 @@ const TASK_CARDS = [
     href: '/savings',
     fi: {
       title: 'Kokonaishinta-ero Alko-viitehintaan',
-      body: 'Päivittäin materialisoitu luettelo arvioiduista kokonaishinnoista ja niiden erosta Alkon viitehintaan kategorioittain.',
+      body: 'Päivittäin päivitetty luettelo arvioiduista kokonaishinnoista ja niiden erosta Alkon viitehintaan kategorioittain.',
     },
     en: {
       title: 'Landed-cost gap versus the Alko reference',
-      body: 'A listing materialized daily of estimated landed totals and their gap against the Alko reference price, by category.',
+      body: 'A daily updated listing of estimated landed totals and their gap against the Alko reference price, by category.',
     },
   },
 ] as const;

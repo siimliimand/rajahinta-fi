@@ -127,7 +127,7 @@ describe('HomePage trust row (task 4.2, D6)', () => {
   it('links the methodology item to /ranking, the shared methodology route', () => {
     expect(html).toContain('Menetelmä');
     expect(html).toContain('href="/ranking"');
-    expect(html).toContain('Miten järjestäminen toimii');
+    expect(html).toContain('Järjestysperiaatteet');
   });
 });
 

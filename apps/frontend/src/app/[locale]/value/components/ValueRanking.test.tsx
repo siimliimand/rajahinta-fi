@@ -100,6 +100,17 @@ describe('ValueRanking', () => {
     // €/g presentation matches the compare view (toFixed(2) + unit).
     expect(screen.getByText('8.90 snt/g')).toBeInTheDocument();
     expect(screen.getByText('12.34 snt/g')).toBeInTheDocument();
+    // Unit agreement (fi-native-copy-pass 3.2): the column header states
+    // the same snt/g unit the cells render — the API transports cents per
+    // gram, so the rendered figure equals the wire value verbatim.
+    const headerCells = screen.getAllByRole('columnheader');
+    expect(headerCells[2]).toHaveTextContent('Etanolin grammahinta (snt/g)');
+    const cellUnitToken = screen
+      .getByText('8.90 snt/g')
+      .textContent?.trim()
+      .split(' ')[1];
+    expect(cellUnitToken).toBe('snt/g');
+    expect(headerCells[2].textContent).toContain(cellUnitToken ?? '');
     // A missing brand simply renders no brand line — never a placeholder.
     expect(screen.queryByText('Merkki B')).not.toBeInTheDocument();
   });

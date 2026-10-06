@@ -993,7 +993,7 @@ describe('ProductsPage €/g chip and single-seller framing (task 2.3)', () => {
     await renderCatalog({}, 'en');
 
     const card = screen.getByText('Kotikalja 0.5 l').closest('article');
-    expect(card).toHaveTextContent('9.40 ¢/g');
+    expect(card).toHaveTextContent('9.40 snt/g');
     expect(card).toHaveTextContent('Estimated');
     expect(card).toHaveTextContent('Tracked price');
     expect(card).not.toHaveTextContent('Merchants: 1');

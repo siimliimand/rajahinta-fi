@@ -51,7 +51,7 @@ describe('ValuePage metadata (task 2.5)', () => {
       // the shared page props type.
       searchParams: Promise.resolve({}),
     });
-    expect(meta.title).toBe('Etanoli-€/g hintaluokittain: yksikköhinta-listaus');
+    expect(meta.title).toBe('Etanolin grammahinta hintaluokittain: yksikköhinta-listaus');
     expect(meta.description).toContain('puhdasta etanolia');
     // Unique against the site-default metadata title, not a restatement.
     const root = (await import('@/messages/fi.json')).default as {
@@ -71,7 +71,7 @@ describe('ValuePage metadata (task 2.5)', () => {
       </NextIntlClientProvider>,
     );
 
-    expect(html).toContain('Etanoli-€/g hintaluokittain');
+    expect(html).toContain('Etanolin grammahinta hintaluokittain');
     // Unknown or missing category falls back to the default (beer):
     // the aria-current selector state proves the handling is unchanged.
     expect(

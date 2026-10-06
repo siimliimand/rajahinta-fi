@@ -215,7 +215,7 @@ Administration.")
   carrying undeclared properties. A compliance test suite
   (`pnpm test:compliance`, `tests/compliance/`) fails the build if any ranking result can
   correlate with a commercial or payment signal.
-- The methodology is published: a public page ("Miten järjestäminen toimii") and
+- The methodology is published: a public page ("Miten järjestys muodostuu") and
   `GET /api/v1/ranking/methodology`, kept in lockstep with the implementation (task
   T1.53). The page states: *"Rajahinta käyttää tuotteiden järjestämiseen vain
   objektiivisia, ei-kaupallisia tekijöitä. Mikään myyjän maksu, mainoslippu tai
