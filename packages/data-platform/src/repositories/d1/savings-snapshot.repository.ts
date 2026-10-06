@@ -166,6 +166,18 @@ const LATEST_DAY_SQL = `
    WHERE as_of = (SELECT MAX(as_of) FROM savings_snapshots)
    ORDER BY product_id ASC`;
 
+// The most recent distinct as_of days, newest first, capped by the
+// caller's lookback — the day-selection read behind the top-N fallback.
+const RECENT_DAYS_SQL = `
+  SELECT DISTINCT as_of FROM savings_snapshots
+   ORDER BY as_of DESC LIMIT ?`;
+
+// One day's rows, same ordering contract as LATEST_DAY_SQL.
+const DAY_SQL = `
+  SELECT ${SNAPSHOT_COLUMNS} FROM savings_snapshots
+   WHERE as_of = ?
+   ORDER BY product_id ASC`;
+
 const CATEGORY_RANGE_SQL = `
   SELECT ${SNAPSHOT_COLUMNS} FROM savings_snapshots
    WHERE category = ? AND as_of >= ? AND as_of <= ?
@@ -216,6 +228,34 @@ export class D1SavingsSnapshotRepository extends SavingsSnapshotRepository {
   async findLatestDay(): Promise<SnapshotRecord[]> {
     const rows = (
       await this.d1.prepare(LATEST_DAY_SQL).all<D1SnapshotRow>()
+    ).results;
+    return rows.map(toContractRecord);
+  }
+
+  /**
+   * The most recent distinct as_of days, newest first, at most `limit`
+   * of them — the fallback window the top-N route walks. Empty when no
+   * snapshot has been written yet. DISTINCT because a day holds one row
+   * per product; the days come back as bare date strings, no row read.
+   */
+  async listRecentAsOfDays(limit: number): Promise<string[]> {
+    const rows = (
+      await this.d1
+        .prepare(RECENT_DAYS_SQL)
+        .bind(limit)
+        .all<{ as_of: string }>()
+    ).results;
+    return rows.map((row) => row.as_of);
+  }
+
+  /**
+   * All snapshots of exactly one asOf day, product_id ascending — the
+   * single-day read the top-N fallback iterates over (same ordering
+   * contract as {@link findLatestDay}). Empty when the day has no rows.
+   */
+  async findDay(asOf: string): Promise<SnapshotRecord[]> {
+    const rows = (
+      await this.d1.prepare(DAY_SQL).bind(asOf).all<D1SnapshotRow>()
     ).results;
     return rows.map(toContractRecord);
   }

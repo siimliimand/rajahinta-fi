@@ -3,7 +3,8 @@
  * listing GET /api/v1/savings (task 2.3, change insight-surfaces), the
  * cross-category overview GET /api/v1/savings/overview, the
  * cross-category top-N GET /api/v1/savings/top (task 1.1, change
- * homepage-live-gap-hero), and the best deal per cross-border merchant
+ * homepage-live-gap-hero; 3-day eligible-day fallback, change
+ * savings-top-day-fallback), and the best deal per cross-border merchant
  * GET /api/v1/savings/best-per-merchant (task 1.3, change
  * savings-first-catalog-and-prefill).
  *
@@ -81,6 +82,12 @@ const MAX_LIMIT = 500;
 const TOP_DEFAULT_LIMIT = 5;
 /** Hard cap — the top-N is a homepage hero surface, not a bulk export. */
 const TOP_MAX_LIMIT = 25;
+/**
+ * How many recent snapshot days the top-N may consult when the maximal
+ * day holds no eligible row (change savings-top-day-fallback) — the
+ * fallback walks this many distinct as_of days, newest first.
+ */
+const TOP_LOOKBACK_DAYS = 3;
 
 /**
  * Largest observed cross-border difference within one candidate group —
@@ -339,25 +346,38 @@ async function getSavings(c: Context<AppEnv>): Promise<Response> {
 
 /**
  * Cross-category top-N import-favourable listing (task 1.1, change
- * homepage-live-gap-hero) — GET /api/v1/savings/top.
+ * homepage-live-gap-hero; day fallback, change savings-top-day-fallback)
+ * — GET /api/v1/savings/top.
  *
  * The homepage hero's read: the N rows with the largest gaps among
  * import-favourable rows — gapCents < 0, the landed total below the Alko
- * reference — from the same single-day snapshot read as the listing,
- * across ALL categories, in the core-domain deterministic order
- * ({@link sortSavingsRows}). The explicit negative-gap filter is the
- * no-padding guarantee: a dearer-than-reference row is never filled in,
- * so fewer eligible rows than N returns exactly those.
+ * reference — from ONE snapshot day, across ALL categories, in the
+ * core-domain deterministic order ({@link sortSavingsRows}). The
+ * explicit negative-gap filter is the no-padding guarantee: a
+ * dearer-than-reference row is never filled in, so fewer eligible rows
+ * than N returns exactly those.
+ *
+ * ## Day selection — the 3-day fallback
+ *
+ * The endpoint reads the {@link TOP_LOOKBACK_DAYS} most recent distinct
+ * as_of days and walks them newest first, selecting the first day that
+ * holds at least one eligible row. The walk short-circuits: an eligible
+ * maximal day answers without reading any earlier day. Rows are never
+ * mixed across days — the response carries exactly the selected day's
+ * rows, its as-of, and its coverage. When no day within the lookback
+ * holds an eligible row the answer is the honest zero state: an empty
+ * list, the maximal day's as-of (null before the first materialization),
+ * and zero import-favourable coverage — never an error.
  *
  * ## Coverage counts — derivation decision
  *
  * - `evaluated` — the product registry count, sourced exactly as the
  *   listing sources it; the same one registry read also builds the name
  *   map the eligibility defenses require (one read, two uses).
- * - `importFavourable` — the eligible rows counted BEFORE the limit
- *   slice, eligibility being the listing's staleness defenses (a
- *   computed reference, a name the registry still resolves) AND the
- *   negative gap.
+ * - `importFavourable` — the eligible rows of the SELECTED day counted
+ *   BEFORE the limit slice, eligibility being the listing's staleness
+ *   defenses (a computed reference, a name the registry still resolves)
+ *   AND the negative gap.
  * - `listed` — the rows returned.
  *
  * A snapshot day with no eligible rows answers 200 with an empty list
@@ -374,40 +394,67 @@ async function getSavingsTop(c: Context<AppEnv>): Promise<Response> {
     TOP_MAX_LIMIT,
   );
 
-  const [products, latestDay] = await Promise.all([
+  const snapshots = new D1SavingsSnapshotRepository(c.env.DB);
+  const [products, recentDays] = await Promise.all([
     new D1ProductSearchRepository(c.env.DB).searchByName(
       null,
       Number.MAX_SAFE_INTEGER,
     ),
-    new D1SavingsSnapshotRepository(c.env.DB).findLatestDay(),
+    snapshots.listRecentAsOfDays(TOP_LOOKBACK_DAYS),
   ]);
 
   // The registry count and the name map come from the one read (see the
   // derivation decision above).
   const nameByProductId = new Map(products.map((p) => [p.id, p.name]));
 
-  // All findLatestDay rows share the maximal as_of (single-day read) —
-  // null while the pass has never written (honest zero state).
-  const asOf: string | null = latestDay.length > 0 ? latestDay[0]!.asOf : null;
-
   // Eligible = the listing's staleness defenses AND the import-favourable
   // half of the gap sign. A row failing any predicate is excluded before
   // ordering and counting — never guessed into a position.
-  const eligible: (SavingsSnapshotRecord & {
+  const eligibleOn = (
+    rows: SavingsSnapshotRecord[],
+  ): (SavingsSnapshotRecord & {
+    alkoReferenceCents: number;
+    productName: string;
+  })[] => {
+    const eligible: (SavingsSnapshotRecord & {
+      alkoReferenceCents: number;
+      productName: string;
+    })[] = [];
+    for (const row of rows) {
+      if (row.alkoReferenceCents === null) continue;
+      if (row.gapCents >= 0) continue;
+      const productName = nameByProductId.get(row.productId);
+      if (productName === undefined) continue;
+      eligible.push({
+        ...row,
+        alkoReferenceCents: row.alkoReferenceCents,
+        productName,
+      });
+    }
+    return eligible;
+  };
+
+  // Walk the lookback window newest first and take the first day with an
+  // eligible row — the latest day short-circuits, an earlier one is the
+  // fallback. Never a mix: the whole answer comes from this one day.
+  let selectedDay: string | null = null;
+  let eligible: (SavingsSnapshotRecord & {
     alkoReferenceCents: number;
     productName: string;
   })[] = [];
-  for (const row of latestDay) {
-    if (row.alkoReferenceCents === null) continue;
-    if (row.gapCents >= 0) continue;
-    const productName = nameByProductId.get(row.productId);
-    if (productName === undefined) continue;
-    eligible.push({
-      ...row,
-      alkoReferenceCents: row.alkoReferenceCents,
-      productName,
-    });
+  for (const day of recentDays) {
+    const dayEligible = eligibleOn(await snapshots.findDay(day));
+    if (dayEligible.length > 0) {
+      selectedDay = day;
+      eligible = dayEligible;
+      break;
+    }
   }
+
+  // No eligible day in the window: the honest zero state — the maximal
+  // day's as-of (recentDays[0]; null while the pass has never written).
+  const asOf: string | null =
+    selectedDay ?? (recentDays.length > 0 ? recentDays[0]! : null);
 
   const eligibleByProductId = new Map(
     eligible.map((row) => [row.productId, row] as const),
