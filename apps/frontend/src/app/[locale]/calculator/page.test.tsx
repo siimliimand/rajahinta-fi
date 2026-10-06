@@ -75,6 +75,13 @@ vi.mock('@/lib/api', async (importOriginal) => {
     searchProducts: vi.fn(),
     calculateLandedCost: vi.fn(),
     listScenarios: vi.fn(),
+    // The pristine view's example prefill (task 3.1) reads the
+    // per-merchant listing on mount; an empty listing renders nothing
+    // new, which is what this page shell's assertions expect.
+    getSavingsBestPerMerchant: vi.fn().mockResolvedValue({
+      asOf: null,
+      merchants: [],
+    }),
     request: vi.fn(),
   };
 });

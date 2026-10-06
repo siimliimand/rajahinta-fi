@@ -232,7 +232,12 @@
       "personalDescription": "You carry the goods yourself — duties are computed against one traveller's allowances."
     },
     "travellerUnavailableTitle": "Traveller-mode calculation is unavailable right now",
-    "travellerUnavailableBody": "No published traveller-allowance dataset is effective on the calculation date, and the estimate cannot be computed without one. Try again later, or choose Delivery as the buying mode — it works as before."
+    "travellerUnavailableBody": "No published traveller-allowance dataset is effective on the calculation date, and the estimate cannot be computed without one. Try again later, or choose Delivery as the buying mode — it works as before.",
+    "exampleBadge": "Example",
+    "examplesHeading": "Examples of cross-border landed totals",
+    "examplesLink": "See the full listing",
+    "exampleLandedTotal": "Estimated landed total: {price}",
+    "exampleGap": "Gap to the Alko reference: {gap}"
   },
   "ProductSearch": {
     "placeholder": "Search products…",
@@ -537,7 +542,9 @@
         "priceReliability": "Price input reliability: {status}.",
         "unavailableReason": "No value: {reason}."
       }
-    }
+    },
+    "exampleBadge": "Example",
+    "examplesNote": "Example columns from the daily snapshot: each cross-border merchant's materialized landed-total gap against the Alko reference price. <link>See the full listing</link>."
   },
   "SortSelector": {
     "label": "Sort by"
@@ -576,7 +583,14 @@
     "transportReliability": {
       "EXACT": "Exact",
       "PARTIAL": "Partial"
-    }
+    },
+    "exampleDealsHeading": "Examples from the daily snapshot",
+    "exampleBadge": "Example",
+    "exampleDealsNote": "Each row is one cross-border merchant's materialized snapshot figure. <link>See the full listing</link>.",
+    "exampleLandedTotal": "Estimated landed total: {price}",
+    "addExample": "Add",
+    "addExampleAria": "Add {name} to the basket",
+    "fillExampleBasket": "Fill example basket"
   },
   "BasketPage": {
     "title": "Basket optimization",
@@ -1790,12 +1804,19 @@
     "sortOptionAlphabetical": "Name (alphabetical)",
     "sortOptionLowestPrice": "Lowest observed price first",
     "sortOptionAlcoholPercentage": "Alcohol percentage (highest first)",
+    "sortOptionBiggestSaving": "Biggest saving first",
     "sortApply": "Apply",
     "fromPriceLabel": "Lowest observed price",
     "noPrice": "No observed prices",
     "merchantCount": "Merchants: {count}",
     "unitPriceChip": "{value} ¢/g",
     "trackedPrice": "Tracked price",
+    "savingsLandedLabel": "Landed total to Finland",
+    "savingsReferenceLabel": "Alko reference price",
+    "savingsGapCheaper": "{figure} cheaper than the Alko reference price",
+    "savingsGapDearer": "{figure} more expensive than the Alko reference price",
+    "savingsGapEqual": "Equal to the Alko reference price",
+    "noReferenceTierLabel": "No Alko reference",
     "paginationNavLabel": "Pagination",
     "prevPage": "Previous page",
     "nextPage": "Next page",

@@ -1,9 +1,11 @@
 /**
  * Savings discovery routes (spec savings-discovery) — the per-category
  * listing GET /api/v1/savings (task 2.3, change insight-surfaces), the
- * cross-category overview GET /api/v1/savings/overview, and the
+ * cross-category overview GET /api/v1/savings/overview, the
  * cross-category top-N GET /api/v1/savings/top (task 1.1, change
- * homepage-live-gap-hero).
+ * homepage-live-gap-hero), and the best deal per cross-border merchant
+ * GET /api/v1/savings/best-per-merchant (task 1.3, change
+ * savings-first-catalog-and-prefill).
  *
  * Public, deterministic listing of the daily materialized snapshot rows
  * for ONE category, ordered by the core-domain sortSavingsRows rule
@@ -41,6 +43,18 @@
  * counting, never guessed into a position. An unknown category returns
  * 200 with an empty list and the counts — never an error.
  *
+ * ## Best per merchant — derivation decision
+ *
+ * One row per cross-border merchant: the argmax of the objective
+ * magnitude |gapCents| over that merchant's day rows, ties broken by
+ * productId ascending — the same fixed selection the overview applies
+ * to its largestDifference, regrouped by best-offer merchant instead of
+ * category. No editorial picks, no registration step: a newly onboarded
+ * merchant appears when its rows materialize. Merchant `alko` is
+ * excluded — the domestic reference is the comparison side of every
+ * stored gap, not a deal provider; a self-comparison is not a
+ * cross-border saving.
+ *
  * @module SavingsRoutes
  */
 
@@ -69,11 +83,13 @@ const TOP_DEFAULT_LIMIT = 5;
 const TOP_MAX_LIMIT = 25;
 
 /**
- * Largest observed cross-border difference within one category — the
- * objective euro delta |gapCents| (the sign carries the direction, the
- * absolute value the magnitude), with the fixed deterministic tie-break
- * of productId ascending. No editorial picks, no trending, no boost:
- * the same input always selects the same row.
+ * Largest observed cross-border difference within one candidate group —
+ * the objective euro delta |gapCents| (the sign carries the direction,
+ * the absolute value the magnitude), with the fixed deterministic
+ * tie-break of productId ascending. The overview groups per category,
+ * best-per-merchant per merchant; both select with this argmax. No
+ * editorial picks, no trending, no boost: the same input always selects
+ * the same row.
  */
 function selectLargestDifference(
   candidates: readonly (SavingsSnapshotRecord & {
@@ -428,6 +444,72 @@ async function getSavingsTop(c: Context<AppEnv>): Promise<Response> {
   });
 }
 
+/**
+ * Best deal per cross-border merchant (task 1.3, change
+ * savings-first-catalog-and-prefill) — GET
+ * /api/v1/savings/best-per-merchant.
+ *
+ * Deterministic per-merchant listing over the same single-day snapshot
+ * read as the listing and overview: exactly one row per cross-border
+ * merchant — that merchant's row with the largest |gapCents|, ties
+ * broken by productId ascending ({@link selectLargestDifference}; the
+ * module docblock's derivation decision). Merchant `alko` never groups:
+ * it is the reference side of every stored gap, not a deal provider.
+ * The listing's staleness defenses apply unchanged — a row without a
+ * computed reference or whose product name the registry no longer
+ * resolves is omitted, never guessed; a merchant left without
+ * qualifying rows disappears (an empty merchant entry is never
+ * manufactured).
+ *
+ * Merchants sort by code-unit name ascending and the JSON key order is
+ * fixed by construction: the same D1 state yields a byte-identical body
+ * on every request. A never-materialized snapshot answers 200 with an
+ * empty list and a null as-of — the honest zero state, never an error.
+ * Read-only, behind the same per-route age gate and the SAVINGS limiter
+ * as the listing.
+ */
+async function getSavingsBestPerMerchant(c: Context<AppEnv>): Promise<Response> {
+  const [products, latestDay] = await Promise.all([
+    new D1ProductSearchRepository(c.env.DB).searchByName(
+      null,
+      Number.MAX_SAFE_INTEGER,
+    ),
+    new D1SavingsSnapshotRepository(c.env.DB).findLatestDay(),
+  ]);
+
+  // The name map comes from the one registry read (same shape as the
+  // overview — one read, one use here).
+  const nameByProductId = new Map(products.map((p) => [p.id, p.name]));
+
+  // All findLatestDay rows share the maximal as_of (single-day read) —
+  // null while the pass has never written (honest zero state).
+  const asOf: string | null = latestDay.length > 0 ? latestDay[0]!.asOf : null;
+
+  // Group the sufficient-data rows by the best-offer merchant.
+  const byMerchant = new Map<
+    string,
+    (SavingsSnapshotRecord & { alkoReferenceCents: number; productName: string })[]
+  >();
+  for (const row of latestDay) {
+    if (row.bestMerchant === 'alko') continue;
+    if (row.alkoReferenceCents === null) continue;
+    const productName = nameByProductId.get(row.productId);
+    if (productName === undefined) continue;
+    const group = byMerchant.get(row.bestMerchant) ?? [];
+    group.push({ ...row, alkoReferenceCents: row.alkoReferenceCents, productName });
+    byMerchant.set(row.bestMerchant, group);
+  }
+
+  const merchants = [...byMerchant.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return c.json({
+    asOf,
+    merchants: merchants.map((merchant) => {
+      const best = selectLargestDifference(byMerchant.get(merchant)!)!;
+      return toSavingsRowJson(best, best.productName);
+    }),
+  });
+}
+
 /** Register the savings routes behind their gate and limiter. */
 export function registerSavingsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.on('GET', '/api/v1/savings', ageGate());
@@ -448,6 +530,15 @@ export function registerSavingsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
     '/api/v1/savings/top',
     requireRateLimit('SAVINGS'),
     getSavingsTop,
+  );
+  // Best deal per cross-border merchant (task 1.3,
+  // savings-first-catalog-and-prefill) — read-only, same guard chain as
+  // the listing: per-route age gate plus the SAVINGS limiter.
+  app.on('GET', '/api/v1/savings/best-per-merchant', ageGate());
+  app.get(
+    '/api/v1/savings/best-per-merchant',
+    requireRateLimit('SAVINGS'),
+    getSavingsBestPerMerchant,
   );
   return app;
 }

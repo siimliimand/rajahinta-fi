@@ -11,6 +11,23 @@
 // Product search (GET /api/v1/products)
 // ---------------------------------------------------------------------------
 
+/**
+ * Display-only savings embed on one catalog item (task 1.1, change
+ * savings-first-catalog-and-prefill): the latest materialized day's
+ * computed figures for this product, read from the savings snapshot at
+ * the API's route layer. Present only when the product has a snapshot row
+ * for the `savingsAsOf` day — no placeholder, no zero. Display face only:
+ * never feeds a calculation, ranking input, or basket optimization.
+ */
+export interface ProductSavingsEmbed {
+  readonly landedTotalCents: number;
+  readonly alkoReferenceCents: number | null;
+  readonly gapCents: number;
+  readonly gapBasisPoints: number;
+  readonly reliability: string;
+  readonly confidence: string;
+}
+
 export interface ProductSearchItem {
   readonly id: number;
   readonly name: string;
@@ -31,6 +48,16 @@ export interface ProductSearchItem {
    * no zero. Never reorders the listing.
    */
   readonly eurPerGram?: UnitPriceResult;
+  /**
+   * Display-only savings embed (task 1.1, change
+   * savings-first-catalog-and-prefill): the product's landed total, Alko
+   * reference, and gap figures from the latest materialized day. Optional
+   * so the type tolerates cached responses captured before the embed
+   * existed; absent when the product has no snapshot row for the
+   * `savingsAsOf` day — no placeholder, no zero. Never reorders the
+   * listing and never feeds a calculation.
+   */
+  readonly savings?: ProductSavingsEmbed;
 }
 
 export interface ProductSearchResult {
@@ -39,6 +66,14 @@ export interface ProductSearchResult {
   readonly page: number;
   readonly limit: number;
   readonly totalPages: number;
+  /**
+   * The materialized day the items' `savings` embeds were read from
+   * (task 1.1, change savings-first-catalog-and-prefill) — null while no
+   * day has materialized. Optional in this mirror so cached responses
+   * captured before the field existed still parse; the live API always
+   * carries it.
+   */
+  readonly savingsAsOf?: string | null;
   /**
    * Additive merchant-warnings block (trust-and-reach-roadmap task 2.2):
    * PUBLISHED blacklist entries matching the page's offer merchants.

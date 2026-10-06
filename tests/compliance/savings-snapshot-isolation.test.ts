@@ -12,7 +12,16 @@
  *   calculation input (core-domain ranking / calculator / tax /
  *   optimizer / tripcalc, the product-search repository) imports any
  *   savings module; the snapshot repository is reachable only from the
- *   data layer and its own display/backfill surfaces.
+ *   data layer and sanctioned display/backfill surfaces. Sanctioned
+ *   display readers: the savings surface itself — savings.routes.ts,
+ *   including its best-per-merchant route (task 1.3, change
+ *   savings-first-catalog-and-prefill) — and, since that same change
+ *   (task 1.1), the catalog listing in search.routes.ts with its
+ *   display-only savings embed and BIGGEST_SAVING display ordering.
+ *   The embed and the ordering are display concerns: no calculation,
+ *   ranking input, or optimization consumes them, and the
+ *   product-search repository remains savings-free (its new
+ *   listCatalogKeys method adds no imports).
  * - **Output-identity** (dynamic): with ZERO, ONE, and MANY savings
  *   snapshot rows present, the landed-cost calculation, the €/g ranking,
  *   and the basket optimization are byte-identical (same
@@ -183,6 +192,7 @@ describe('import-analysis: ranking/calculation input producers never import savi
     const allowed = (file: string): boolean =>
       file.includes(`${path.sep}data-platform${path.sep}`) || // the data layer itself
       file.endsWith(path.join(WORKER_ROUTES_DIR, 'savings.routes.ts')) ||
+      file.endsWith(path.join(WORKER_ROUTES_DIR, 'search.routes.ts')) || // catalog display reader (savings-first-catalog-and-prefill D1: display-only embed + BIGGEST_SAVING ordering)
       file.endsWith(
         path.join('apps', 'api-worker', 'src', 'cron', 'savings-snapshots.ts'),
       ); // the only writer
@@ -193,8 +203,9 @@ describe('import-analysis: ranking/calculation input producers never import savi
       'the savings-snapshot repository leaked outside its display/backfill ' +
         'surfaces — it must never feed a calculation, ranking, or basket input',
     ).toEqual([]);
-    // Non-vacuity: the display route really does import it.
+    // Non-vacuity: the display routes really do import it.
     expect(importers).toContain(path.join(WORKER_ROUTES_DIR, 'savings.routes.ts'));
+    expect(importers).toContain(path.join(WORKER_ROUTES_DIR, 'search.routes.ts'));
   });
 });
 

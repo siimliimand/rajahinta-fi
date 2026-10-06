@@ -232,7 +232,12 @@
       "personalDescription": "Kuljet tavarat itse — verot lasketaan yhden matkustajan määräajojen mukaan."
     },
     "travellerUnavailableTitle": "Matkustajalla laskeminen ei ole juuri nyt mahdollista",
-    "travellerUnavailableBody": "Voimassa olevaa matkustajamäärien tietoaineistoa ei ole laskentapäivälle, eikä arviota voi laskea ilman sitä. Yritä myöhemmin uudelleen tai valitse ostotavaksi Toimitus — se toimii kuten ennenkin."
+    "travellerUnavailableBody": "Voimassa olevaa matkustajamäärien tietoaineistoa ei ole laskentapäivälle, eikä arviota voi laskea ilman sitä. Yritä myöhemmin uudelleen tai valitse ostotavaksi Toimitus — se toimii kuten ennenkin.",
+    "exampleBadge": "Esimerkki",
+    "examplesHeading": "Esimerkkejä rajat ylittävistä kokonaishinnoista",
+    "examplesLink": "Katso koko luettelo",
+    "exampleLandedTotal": "Arvioitu kokonaishinta: {price}",
+    "exampleGap": "Ero Alkon vertailuhintaan: {gap}"
   },
   "ProductSearch": {
     "placeholder": "Hae tuotteita…",
@@ -537,7 +542,9 @@
         "priceReliability": "Hintatiedon luotettavuus: {status}.",
         "unavailableReason": "Arvoa ei ole: {reason}."
       }
-    }
+    },
+    "exampleBadge": "Esimerkki",
+    "examplesNote": "Esimerkkisarakkeet päivittäisestä tilannekuvasta: jokaisen rajat ylittävän myyjän materiaalistunut kokonaishintaero Alkon vertailuhintaan. <link>Katso koko luettelo</link>."
   },
   "SortSelector": {
     "label": "Järjestä:"
@@ -576,7 +583,14 @@
     "transportReliability": {
       "EXACT": "Tarkka",
       "PARTIAL": "Osittainen"
-    }
+    },
+    "exampleDealsHeading": "Esimerkkejä päivittäisestä tilannekuvasta",
+    "exampleBadge": "Esimerkki",
+    "exampleDealsNote": "Jokainen rivi on yhden rajat ylittävän myyjän materiaalistunut tilannekuva. <link>Katso koko luettelo</link>.",
+    "exampleLandedTotal": "Arvioitu kokonaishinta: {price}",
+    "addExample": "Lisää",
+    "addExampleAria": "Lisää {name} ostoskoriin",
+    "fillExampleBasket": "Täytä esimerkkikori"
   },
   "BasketPage": {
     "title": "Ostoskorin optimointi",
@@ -1790,12 +1804,19 @@
     "sortOptionAlphabetical": "Nimi (aakkosjärjestys)",
     "sortOptionLowestPrice": "Halvin hinta ensin",
     "sortOptionAlcoholPercentage": "Alkoholiprosentti (suurin ensin)",
+    "sortOptionBiggestSaving": "Suurin säästö ensin",
     "sortApply": "Järjestä",
     "fromPriceLabel": "Halvin havaittu hinta",
     "noPrice": "Ei havaittuja hintoja",
     "merchantCount": "Myyjiä: {count}",
     "unitPriceChip": "{value} snt/g",
     "trackedPrice": "Seurattu hinta",
+    "savingsLandedLabel": "Kokonaishinta Suomeen",
+    "savingsReferenceLabel": "Alkon vertailuhinta",
+    "savingsGapCheaper": "{figure} halvempi kuin Alkon vertailuhinta",
+    "savingsGapDearer": "{figure} kalliimpi kuin Alkon vertailuhinta",
+    "savingsGapEqual": "Sama kuin Alkon vertailuhinta",
+    "noReferenceTierLabel": "Ei Alko-vertailua",
     "paginationNavLabel": "Sivutus",
     "prevPage": "Edellinen sivu",
     "nextPage": "Seuraava sivu",

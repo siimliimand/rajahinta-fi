@@ -17,21 +17,37 @@
  *   3. The filter row carries all products plus exactly the six
  *      canonical categories with localized labels; every category link
  *      targets page 1 (no page param); the active option is marked.
- *   4. Pagination links the exact page range and stays in bounds —
- *      prev/next degrade to disabled spans at the edges; current page is
- *      not a link.
+ *   4. Windowed pagination (task 2.3, change
+ *      savings-first-catalog-and-prefill): the strip renders prev/next,
+ *      page 1 and the last page, and a clamped ±2 window with ellipsis
+ *      gaps — a bounded anchor set even at live-catalog scale — and
+ *      stays in bounds: prev/next degrade to disabled spans at the
+ *      edges, the current page is not a link, and the page-status
+ *      sentence remains.
  *   5. A zero-result view renders the shared EmptyState, not an empty
  *      grid or an error.
  *   6. Unknown ?category= values are forgiven (design D2): the page
  *      renders the unfiltered view and never sends the value to the API
  *      (the API would answer 400).
- *   7. Sort state (task 4.1, change catalog-first-run-polish): the
- *      default ALPHABETICAL stays out of the fetch and URLs
- *      (canonical-clean), superseding the first-impression-pass
- *      LOWEST_PRICE flip; LOWEST_PRICE remains selectable and
- *      URL-addressable as an explicit non-default sort; an unknown
- *      ?sort= value forgives to the default ordering — the strict 400
- *      lives at the API only.
+ *   7. Sort state (task 2.4, change savings-first-catalog-and-prefill):
+ *      the default order is BIGGEST_SAVING — the API's absent-sort
+ *      default — superseding task 4.1's ALPHABETICAL flip
+ *      (catalog-first-run-polish, itself superseding the
+ *      first-impression-pass LOWEST_PRICE flip). The default stays out
+ *      of the fetch and URLs (canonical-clean), the dropdown gains the
+ *      option, ALPHABETICAL and LOWEST_PRICE remain selectable and
+ *      URL-addressable as explicit non-default sorts, and an unknown
+ *      ?sort= value forgives to the default — the strict 400 lives at
+ *      the API only.
+ *   8. Savings figures (task 2.1, change
+ *      savings-first-catalog-and-prefill): a covered card renders the
+ *      snapshot's landed total, Alko reference, and factual gap beside
+ *      the "from" price; an absent embed renders none of it.
+ *   9. No-reference tier (task 2.2, same change): in the default order
+ *      only, a mixed-coverage page renders the quiet "Ei Alko-vertailua"
+ *      divider before the first uncovered row — covered cards above,
+ *      uncovered cards after — while an only-uncovered page and every
+ *      non-default sort render no divider at all.
  *
  * @module CatalogPageTest
  */
@@ -44,6 +60,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductsPage from '../page';
 import { request } from '@/lib/api';
 import type {
+  ProductSavingsEmbed,
   ProductSearchItem,
   ProductSearchResult,
   ReliabilityStatus,
@@ -172,6 +189,25 @@ function unavailableEmbed(
     centsPerGram: null,
     ethanolGrams: null,
     reason,
+  };
+}
+
+/**
+ * A savings embed exactly as the listing API emits it (task 2.1,
+ * savings-first-catalog-and-prefill): the default row is covered (a
+ * reference exists) and cheaper than Alko.
+ */
+function savingsEmbed(
+  overrides: Partial<ProductSavingsEmbed> = {},
+): ProductSavingsEmbed {
+  return {
+    landedTotalCents: 1543,
+    alkoReferenceCents: 2809,
+    gapCents: -1266,
+    gapBasisPoints: -4507,
+    reliability: 'VERIFIED',
+    confidence: 'HIGH',
+    ...overrides,
   };
 }
 
@@ -462,25 +498,130 @@ describe('ProductsPage pagination', () => {
 
     expect(screen.queryByTestId('catalog-pagination')).not.toBeInTheDocument();
   });
+
+  it('caps the anchors and keeps both edges reachable on a many-page catalog', async () => {
+    // Live-catalog scale: the old render-every-page strip produced
+    // ~443 anchors; the windowed one stays bounded.
+    mockedRequest.mockResolvedValue(
+      catalogResult([catalogItem()], {
+        total: 10632,
+        page: 200,
+        totalPages: 443,
+      }),
+    );
+
+    await renderCatalog({ page: '200' });
+
+    const nav = screen.getByTestId('catalog-pagination');
+    expect(within(nav).getAllByRole('link').length).toBeLessThanOrEqual(9);
+
+    // Edges: page 1 canonical-clean, the last page always linked.
+    expect(within(nav).getByRole('link', { name: '1' })).toHaveAttribute(
+      'href',
+      '/products',
+    );
+    expect(within(nav).getByRole('link', { name: '443' })).toHaveAttribute(
+      'href',
+      '/products?page=443',
+    );
+
+    // The ±2 window rides with the current page; far pages stay unlinked.
+    for (const number of ['198', '199', '201', '202']) {
+      expect(within(nav).getByRole('link', { name: number })).toHaveAttribute(
+        'href',
+        `/products?page=${number}`,
+      );
+    }
+    expect(within(nav).queryByRole('link', { name: '2' })).not.toBeInTheDocument();
+
+    // The current page is an indicator, not a link; prev/next step ±1.
+    expect(within(nav).getByText('200')).not.toHaveAttribute('href');
+    expect(
+      within(nav).getByRole('link', { name: 'Edellinen sivu' }),
+    ).toHaveAttribute('href', '/products?page=199');
+    expect(
+      within(nav).getByRole('link', { name: 'Seuraava sivu' }),
+    ).toHaveAttribute('href', '/products?page=201');
+
+    // Ellipsis gaps are decorative spans, never links.
+    const gaps = within(nav).getAllByText('…');
+    expect(gaps).toHaveLength(2);
+    for (const gap of gaps) {
+      expect(gap).toHaveAttribute('aria-hidden', 'true');
+      expect(gap).not.toHaveAttribute('href');
+    }
+
+    // The page-status sentence survives the windowed control.
+    expect(nav).toHaveTextContent('Sivu 200 / 443');
+  });
+
+  it('slides the window to hug the last page and disables next there', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([catalogItem()], {
+        total: 10632,
+        page: 443,
+        totalPages: 443,
+      }),
+    );
+
+    await renderCatalog({ page: '443' });
+
+    const nav = screen.getByTestId('catalog-pagination');
+    // The shifted window keeps the tail reachable without far pages.
+    expect(within(nav).getByRole('link', { name: '441' })).toHaveAttribute(
+      'href',
+      '/products?page=441',
+    );
+    expect(
+      within(nav).queryByRole('link', { name: '438' }),
+    ).not.toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: '1' })).toHaveAttribute(
+      'href',
+      '/products',
+    );
+    const next = within(nav).getByText('Seuraava sivu');
+    expect(next).not.toHaveAttribute('href');
+    expect(next).toHaveAttribute('aria-disabled', 'true');
+    expect(
+      within(nav).getByRole('link', { name: 'Edellinen sivu' }),
+    ).toHaveAttribute('href', '/products?page=442');
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Sort state (task 4.1, change catalog-first-run-polish): the catalog's
-// default order is ALPHABETICAL, superseding the first-impression-pass
-// LOWEST_PRICE flip. The default stays out of the fetch and URLs
-// (canonical-clean href builder); an explicit non-default sort —
-// LOWEST_PRICE among them — travels through every control; an unknown
-// ?sort= value forgives to the default — the API's strict 400 never
-// happens.
+// Sort state (task 2.4, change savings-first-catalog-and-prefill): the
+// catalog's default order is BIGGEST_SAVING — the API's absent-sort
+// default (task 1.2) — superseding task 4.1's ALPHABETICAL flip. The
+// default stays out of the fetch and URLs (canonical-clean href builder);
+// explicit non-default sorts — ALPHABETICAL and LOWEST_PRICE among them —
+// travel through every control; an unknown ?sort= value forgives to the
+// default — the API's strict 400 never happens.
 // ---------------------------------------------------------------------------
 
-describe('ProductsPage sort state (task 4.1)', () => {
-  it('defaults to ALPHABETICAL: the select shows the name order and the default stays out of the fetch and links', async () => {
+describe('ProductsPage sort state (task 2.4)', () => {
+  it('defaults to BIGGEST_SAVING: the select shows the savings order, the dropdown gains the option, and the default stays out of the fetch and links', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([catalogItem()], { total: 60, page: 1, totalPages: 3 }),
+    );
+
     await renderCatalog();
 
     const select = screen.getByLabelText('Järjestys') as HTMLSelectElement;
-    expect(select.value).toBe('ALPHABETICAL');
-    // The API's absent-sort default is the name order too, so the
+    expect(select.value).toBe('BIGGEST_SAVING');
+
+    // The dropdown offers the full contract set, new option included,
+    // in the contract's order.
+    const optionLabels = within(select)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(optionLabels).toEqual([
+      'Nimi (aakkosjärjestys)',
+      'Halvin hinta ensin',
+      'Alkoholiprosentti (suurin ensin)',
+      'Suurin säästö ensin',
+    ]);
+
+    // The API's absent-sort default is BIGGEST_SAVING too, so the
     // canonical-clean fetch omits sort entirely.
     expect(mockedRequest).toHaveBeenCalledWith(
       '/api/v1/products?page=1&limit=24',
@@ -489,11 +630,22 @@ describe('ProductsPage sort state (task 4.1)', () => {
         next: { revalidate: 900 },
       },
     );
+
     // Category links stay canonical-clean: the default sort is omitted.
     const row = screen.getByTestId('catalog-filter-row');
     expect(
       within(row).getByRole('link', { name: 'Olut' }),
     ).toHaveAttribute('href', '/products?category=beer');
+    // Pagination links omit it as well.
+    const nav = screen.getByTestId('catalog-pagination');
+    expect(
+      within(nav).getByRole('link', { name: '2' }),
+    ).toHaveAttribute('href', '/products?page=2');
+    // The no-JS sort form carries no hidden sort field for the default —
+    // submitting it unchanged must stay on the default order.
+    expect(
+      screen.getByTestId('catalog-sort').querySelector('input[name="sort"]'),
+    ).toBeNull();
   });
 
   it('carries an explicit non-default sort through the fetch, the links, and the control state (LOWEST_PRICE stays URL-addressable)', async () => {
@@ -518,11 +670,45 @@ describe('ProductsPage sort state (task 4.1)', () => {
     ).toHaveAttribute('href', '/products?sort=LOWEST_PRICE&page=2');
   });
 
-  it('forgives an unknown sort value: the default name ordering renders and nothing unknown reaches the API', async () => {
+  it('treats an explicit ALPHABETICAL as a non-default sort: it travels to the fetch and links and renders one undivided list', async () => {
+    // ALPHABETICAL lost the default to BIGGEST_SAVING (task 2.4) but
+    // stays selectable — and now URL-addressable, like every
+    // non-default order.
+    mockedRequest.mockResolvedValue(
+      catalogResult(
+        [
+          catalogItem({ id: 11, name: 'Iso Säästö 0.7 l', savings: savingsEmbed() }),
+          catalogItem({ id: 13, name: 'Aurinko Viini 0.75 l' }),
+        ],
+        { total: 60, page: 1, totalPages: 3 },
+      ),
+    );
+
+    await renderCatalog({ sort: 'ALPHABETICAL' });
+
+    expect(mockedRequest).toHaveBeenCalledWith(
+      '/api/v1/products?sort=ALPHABETICAL&page=1&limit=24',
+      {
+        headers: { 'x-age-confirmed': 'server-prerender' },
+        next: { revalidate: 900 },
+      },
+    );
+    const select = screen.getByLabelText('Järjestys') as HTMLSelectElement;
+    expect(select.value).toBe('ALPHABETICAL');
+    // Non-default sorts render one undivided list — no tier divider.
+    expect(screen.queryByTestId('catalog-no-reference-divider')).toBeNull();
+    expect(screen.queryByRole('separator')).toBeNull();
+    const nav = screen.getByTestId('catalog-pagination');
+    expect(
+      within(nav).getByRole('link', { name: '2' }),
+    ).toHaveAttribute('href', '/products?sort=ALPHABETICAL&page=2');
+  });
+
+  it('forgives an unknown sort value: the default savings ordering renders and nothing unknown reaches the API', async () => {
     await renderCatalog({ sort: 'PROMOTED' });
 
     const select = screen.getByLabelText('Järjestys') as HTMLSelectElement;
-    expect(select.value).toBe('ALPHABETICAL');
+    expect(select.value).toBe('BIGGEST_SAVING');
     // The strict API would 400 — the page resolves the parameter before
     // fetching and sends the default (omitted) instead of the value.
     expect(mockedRequest).toHaveBeenCalledWith(
@@ -811,5 +997,239 @@ describe('ProductsPage €/g chip and single-seller framing (task 2.3)', () => {
     expect(card).toHaveTextContent('Estimated');
     expect(card).toHaveTextContent('Tracked price');
     expect(card).not.toHaveTextContent('Merchants: 1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Savings figures (task 2.1, change savings-first-catalog-and-prefill):
+// a covered card renders the snapshot's landed total, Alko reference, and
+// factual gap beside the "from" price; both gap directions state the fact
+// the same way; an absent embed renders none of it — the €/g chip
+// precedent of honest absence.
+// ---------------------------------------------------------------------------
+
+describe('ProductsPage savings figures (task 2.1)', () => {
+  it('renders landed total, Alko reference, gap, and reliability beside the from price on a covered card', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([catalogItem({ savings: savingsEmbed() })]),
+    );
+
+    await renderCatalog();
+
+    const card = screen.getByText('Kotikalja 0.5 l').closest('article');
+    // The /savings vocabulary, both labels present.
+    expect(card).toHaveTextContent('Kokonaishinta Suomeen');
+    expect(card).toHaveTextContent('Alkon vertailuhinta');
+    // Figures: landed 15,43 € and reference 28,09 €.
+    expect(card).toHaveTextContent('15,43 €');
+    expect(card).toHaveTextContent('28,09 €');
+    // The gap sentence names the direction factually.
+    expect(card).toHaveTextContent('halvempi kuin Alkon vertailuhinta');
+    // The input figure's reliability rides with the canonical badge label.
+    expect(card).toHaveTextContent('Vahvistettu');
+    // The "from" price line is untouched.
+    expect(card).toHaveTextContent('Halvin havaittu hinta');
+    expect(card).toHaveTextContent('1,99 €');
+  });
+
+  it('states the dearer direction with the same factual framing as the cheaper one', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([
+        catalogItem({
+          id: 1,
+          name: 'Cheaper Import',
+          savings: savingsEmbed(),
+        }),
+        catalogItem({
+          id: 2,
+          name: 'Dearer Import',
+          savings: savingsEmbed({
+            landedTotalCents: 3409,
+            alkoReferenceCents: 2809,
+            gapCents: 600,
+            gapBasisPoints: 2136,
+            reliability: 'ESTIMATED',
+            confidence: 'MEDIUM',
+          }),
+        }),
+      ]),
+    );
+
+    await renderCatalog();
+
+    const cheaper = screen.getByText('Cheaper Import').closest('article');
+    expect(cheaper).toHaveTextContent('12,66 €');
+    expect(cheaper).toHaveTextContent('halvempi kuin Alkon vertailuhinta');
+    expect(cheaper).not.toHaveTextContent('kalliimpi kuin Alkon vertailuhinta');
+
+    const dearer = screen.getByText('Dearer Import').closest('article');
+    expect(dearer).toHaveTextContent('6,00 €');
+    expect(dearer).toHaveTextContent('kalliimpi kuin Alkon vertailuhinta');
+    expect(dearer).not.toHaveTextContent('halvempi kuin Alkon vertailuhinta');
+    // The embed's own reliability labels the dearer figures.
+    expect(dearer).toHaveTextContent('Arvioitu');
+  });
+
+  it('renders no savings element when the embed is absent — no placeholder, no zero', async () => {
+    mockedRequest.mockResolvedValue(catalogResult([catalogItem()]));
+
+    await renderCatalog();
+
+    const card = screen.getByText('Kotikalja 0.5 l').closest('article');
+    expect(screen.queryByTestId('card-savings')).toBeNull();
+    expect(card).not.toHaveTextContent('Kokonaishinta Suomeen');
+    expect(card).not.toHaveTextContent('Alkon vertailuhinta');
+    expect(card).not.toHaveTextContent('halvempi kuin Alkon vertailuhinta');
+    expect(card).not.toHaveTextContent('kalliimpi kuin Alkon vertailuhinta');
+    // The rest of the card is unchanged.
+    expect(card).toHaveTextContent('1,99 €');
+    expect(card).toHaveTextContent('Myyjiä: 2');
+  });
+
+  it('renders the landed total alone when the snapshot has no Alko reference — no gap without its reference', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([
+        catalogItem({
+          savings: savingsEmbed({ alkoReferenceCents: null }),
+        }),
+      ]),
+    );
+
+    await renderCatalog();
+
+    const card = screen.getByText('Kotikalja 0.5 l').closest('article');
+    expect(card).toHaveTextContent('Kokonaishinta Suomeen');
+    expect(card).toHaveTextContent('15,43 €');
+    expect(card).not.toHaveTextContent('Alkon vertailuhinta');
+    expect(card).not.toHaveTextContent('halvempi kuin Alkon vertailuhinta');
+  });
+
+  it('renders EN savings copy for the EN locale', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([catalogItem({ savings: savingsEmbed() })]),
+    );
+
+    await renderCatalog({}, 'en');
+
+    const card = screen.getByText('Kotikalja 0.5 l').closest('article');
+    expect(card).toHaveTextContent('Landed total to Finland');
+    expect(card).toHaveTextContent('Alko reference price');
+    expect(card).toHaveTextContent('cheaper than the Alko reference price');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// No-reference tier (task 2.2, change savings-first-catalog-and-prefill):
+// in the default order the API lists covered rows (a savings snapshot for
+// the latest day) first and uncovered rows alphabetical after it. The page
+// renders that boundary as a quiet divider — and only when both tiers are
+// on the page: a divider with nothing above it is noise. Every non-default
+// sort renders one undivided list (design D2).
+// ---------------------------------------------------------------------------
+
+describe('ProductsPage no-reference tier (task 2.2)', () => {
+  /** A covered/uncovered page exactly as the API's default order emits it:
+   *  covered rows by gap first (most negative first), then uncovered
+   *  rows alphabetically. */
+  function mixedCoveragePage(): ProductSearchResult {
+    return catalogResult([
+      catalogItem({
+        id: 11,
+        name: 'Iso Säästö 0.7 l',
+        savings: savingsEmbed({ gapBasisPoints: -6000 }),
+      }),
+      catalogItem({
+        id: 12,
+        name: 'Pieni Säästö 0.5 l',
+        savings: savingsEmbed({ gapBasisPoints: -1000 }),
+      }),
+      catalogItem({ id: 13, name: 'Aurinko Viini 0.75 l' }),
+      catalogItem({ id: 14, name: 'Kotikalja 0.5 l' }),
+    ]);
+  }
+
+  it('renders the divider before the first uncovered row in the default order, covered cards above', async () => {
+    mockedRequest.mockResolvedValue(mixedCoveragePage());
+
+    await renderCatalog();
+
+    // The divider is a real separator with the honest label — reachable
+    // by role, not just visible text.
+    const divider = screen.getByRole('separator', {
+      name: 'Ei Alko-vertailua',
+    });
+    expect(divider).toHaveAttribute(
+      'data-testid',
+      'catalog-no-reference-divider',
+    );
+
+    // Tier order: the grid children read covered, covered, DIVIDER,
+    // uncovered, uncovered — the exact sequence the API's default order
+    // delivered, with the divider on the tier boundary.
+    const grid = screen.getByTestId('catalog-grid');
+    const sequence = Array.from(grid.children).map((child) =>
+      child.getAttribute('data-testid') === 'catalog-no-reference-divider'
+        ? 'DIVIDER'
+        : (child.querySelector('h2')?.textContent ?? ''),
+    );
+    expect(sequence).toEqual([
+      'Iso Säästö 0.7 l',
+      'Pieni Säästö 0.5 l',
+      'DIVIDER',
+      'Aurinko Viini 0.75 l',
+      'Kotikalja 0.5 l',
+    ]);
+  });
+
+  it('renders the divider as a full-width quiet row, not a card', async () => {
+    mockedRequest.mockResolvedValue(mixedCoveragePage());
+
+    await renderCatalog();
+
+    const divider = screen.getByTestId('catalog-no-reference-divider');
+    expect(divider.tagName).toBe('LI');
+    // No card, no link, no price — a muted label between rules.
+    expect(within(divider).queryByRole('link')).toBeNull();
+    expect(divider.textContent).toBe('Ei Alko-vertailua');
+  });
+
+  it('renders no divider when the page has only uncovered rows', async () => {
+    // A category without Alko coverage (or a never-materialized snapshot
+    // day): every row uncovered — the divider would have nothing above it.
+    mockedRequest.mockResolvedValue(
+      catalogResult([
+        catalogItem({ id: 13, name: 'Aurinko Viini 0.75 l' }),
+        catalogItem({ id: 14, name: 'Kotikalja 0.5 l' }),
+      ]),
+    );
+
+    await renderCatalog();
+
+    expect(
+      screen.queryByTestId('catalog-no-reference-divider'),
+    ).toBeNull();
+    expect(screen.queryByRole('separator')).toBeNull();
+    expect(screen.getByTestId('catalog-grid')).toBeInTheDocument();
+  });
+
+  it('renders no divider on a non-default sort — one undivided list', async () => {
+    mockedRequest.mockResolvedValue(mixedCoveragePage());
+
+    await renderCatalog({ sort: 'LOWEST_PRICE' });
+
+    expect(
+      screen.queryByTestId('catalog-no-reference-divider'),
+    ).toBeNull();
+    expect(screen.queryByRole('separator')).toBeNull();
+  });
+
+  it('renders the EN divider label for the EN locale', async () => {
+    mockedRequest.mockResolvedValue(mixedCoveragePage());
+
+    await renderCatalog({}, 'en');
+
+    expect(
+      screen.getByRole('separator', { name: 'No Alko reference' }),
+    ).toBeInTheDocument();
   });
 });

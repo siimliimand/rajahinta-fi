@@ -17,6 +17,10 @@
  * @module BasketComparisonSection
  */
 
+// Namespace import: vitest's esbuild transform emits classic JSX
+// (`React.createElement`) for these files (tsconfig jsx: preserve), so the
+// React binding must exist at runtime, not just in Next's automatic runtime.
+import * as React from 'react';
 import { useState, useCallback, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import type { ProductSearchItem } from '@/lib/types';
