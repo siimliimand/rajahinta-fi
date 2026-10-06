@@ -77,5 +77,20 @@ surface, no promotional copy, no change to calculator/ranking/basket.
 
 ## Compliance note
 
-(task 4.4 records its finding here: which recorded opinion document
-covers homepage price-list display, and its location.)
+Verified 2026-10-06 (task 4.4): the written Finnish legal opinion is
+recorded as obtained in `docs/launch-signoff-record.md` (T1.65,
+signed off 2026-09-03, evidence archived), covering all 12 statutory
+topics under *Alkoholilaki 1102/2017* — among them **price-list /
+price-information provisions** and **comparative advertising**, the
+two topics this section engages. The homepage live section publishes
+the same data kind (per-product observed prices, Alko reference, gap)
+as the already-shipped `/savings` market overview, under the same
+neutrality constraints (content-policy lint, as-of labeling, no
+advice phrasing).
+
+Caveat recorded: the opinion predates this homepage surface. Its
+published record does not enumerate placement- or prominence-specific
+conditions; if the archived opinion evidence attaches any such
+conditions to price-information display, they should be re-checked
+against a hero placement before archive. No new claim type is
+introduced by this change.
