@@ -6,13 +6,13 @@
 
 ## 2. Homepage hero + example demotion
 
-- [ ] 2.1 Add fi+en message keys: live section heading and neutral copy (observed differences vs the Alko reference), as-of line, pending/unavailable states, and the demoted how-it-works step strings. Verify: content lint passes in both locales (`pnpm vitest run` content-lint suites). <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] -->
+- [x] 2.1 Add fi+en message keys: live section heading and neutral copy (observed differences vs the Alko reference), as-of line, pending/unavailable states, and the demoted how-it-works step strings. Verify: content lint passes in both locales (`pnpm vitest run` content-lint suites). <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] -->
 - [x] 2.2 Add the homepage live section: server fetch of `/api/v1/savings/top` (prerender token, `revalidate: 900`, 3-day staleness cutoff per design D4), render `HomeGapHero` (new component) with whole-row `/products/[id]` links and the as-of line; pending state when no eligible rows, unavailable state on failed/stale read. SSR tests: rows render with links and as-of when data present; pending and unavailable states render no figures. Verify: `pnpm vitest run apps/frontend/src/app/[locale]/page.ssr.test.tsx` green. <!-- agent: platform-engineer.build, depends_on: [1.1, 2.1], touches: [apps/frontend/src/app/[locale]/page.tsx, apps/frontend/src/app/[locale]/components/HomeGapHero.tsx, apps/frontend/src/app/[locale]/page.ssr.test.tsx] -->
 - [x] 2.3 Demote the worked example: compact the section into a static "how it works" step strip below the live section, keep example labeling and zero data fetch, drop the old hero-adjacent placement. Verify: `pnpm vitest run apps/frontend/src/app/[locale]/page.example.test.tsx` green with updated assertions. <!-- agent: platform-engineer.build, depends_on: [2.2], touches: [apps/frontend/src/app/[locale]/page.tsx, apps/frontend/src/app/[locale]/page.example.test.tsx, apps/frontend/src/messages/fi.json, apps/frontend/src/messages/en.json] -->
 
 ## 3. Savings listing consistency
 
-- [ ] 3.1 Make `SavingsListing` rows whole-row links to `/products/[id]`; figures, ordering, and coverage rendering unchanged. Verify: `pnpm vitest run apps/frontend/src/app/[locale]/savings/savings-page.test.tsx` green with link assertions added. <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/frontend/src/app/[locale]/savings/components/SavingsListing.tsx, apps/frontend/src/app/[locale]/savings/savings-page.test.tsx] -->
+- [x] 3.1 Make `SavingsListing` rows whole-row links to `/products/[id]`; figures, ordering, and coverage rendering unchanged. Verify: `pnpm vitest run apps/frontend/src/app/[locale]/savings/savings-page.test.tsx` green with link assertions added. <!-- agent: platform-engineer.fast, depends_on: [], touches: [apps/frontend/src/app/[locale]/savings/components/SavingsListing.tsx, apps/frontend/src/app/[locale]/savings/savings-page.test.tsx] -->
 
 ## 4. Verification & compliance
 
