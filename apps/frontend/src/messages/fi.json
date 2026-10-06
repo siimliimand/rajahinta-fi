@@ -1307,7 +1307,15 @@
     "layer3Name": "Tuntematon tieto pysäyttää laskennan",
     "layer3Desc": " — jos tietojen joukossa ilmestyy tuntematon kenttä, laskenta hylkää syötteen kokonaan eikä ohita kenttää hiljaisesti.",
     "spotTitle": "Huomasitko ongelman?",
-    "spotBody": "Jos arvioit, että tuotteen sijoitus, laskenta tai tieto on virheellinen, voit ilmoittaa siitä tarkistettavaksi <link>laskurin tulossivulta</link>. Jokaisessa tuloksessa on \\\"Ilmoita virheestä\\\"-toiminto, joka välittää palautteesi suoraan katselmointitiimillemme."
+    "spotBody": "Jos arvioit, että tuotteen sijoitus, laskenta tai tieto on virheellinen, voit ilmoittaa siitä tarkistettavaksi <link>laskurin tulossivulta</link>. Jokaisessa tuloksessa on \\\"Ilmoita virheestä\\\"-toiminto, joka välittää palautteesi suoraan katselmointitiimillemme.",
+    "marginTitle": "Havaittu hajonta: mitä ±-luku tarkoittaa",
+    "marginBody1": "Osassa tuloksia loppusumman vieressä näkyy ±-luku. Se on havaittu hajonta: 80 %:n persentiili niistä suhteellisista eroista, jotka ovat jääneet käyttäjien raportoimien todellisten loppusummien ja arvioiden välille. Luku perustuu vain vierailijoiden raportoimiin lopputuloksiin, ja sen vieressä näkyvät aina otoskoko (n=) ja laskentapäivä.",
+    "marginLadderIntro": "Hajonta valitaan kapeimmasta ryhmästä, jossa on tarpeeksi raportoituja lopputuloksia. Ryhmät tarkistetaan järjestyksessä:",
+    "marginLadder1": "Tuoteryhmä ja kuljetusyhtiö yhdessä",
+    "marginLadder2": "Pelkkä tuoteryhmä",
+    "marginLadder3": "Koko aineisto",
+    "marginFloorNote": "Jokainen taso vaatii vähintään 10 raportoitua lopputulosta. Jos mikään taso ei täytä vaatimusta, ±-lukua ei näytetä lainkaan — mitään lukua ei arvailla.",
+    "marginDisplayNote": "Havaittu hajonta on vain tiedoksi: se ei vaikuta laskentaan, loppusummiin, vertailuihin tai järjestykseen."
   },
   "ValuePage": {
     "title": "Etanolin grammahinta hintaluokittain",

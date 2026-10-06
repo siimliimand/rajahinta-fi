@@ -1307,7 +1307,15 @@
     "layer3Name": "Unexpected data rejected",
     "layer3Desc": " — if an unexpected field appears in the input, the system rejects the input instead of quietly ignoring the field.",
     "spotTitle": "Spot a problem?",
-    "spotBody": "If you believe a product ranking, calculation, or data point is incorrect, you can flag it for review from the <link>calculator result page</link>. Each result includes a \"Flag a problem\" affordance that sends your feedback directly to our review team."
+    "spotBody": "If you believe a product ranking, calculation, or data point is incorrect, you can flag it for review from the <link>calculator result page</link>. Each result includes a \"Flag a problem\" affordance that sends your feedback directly to our review team.",
+    "marginTitle": "Observed spread: what the ± figure means",
+    "marginBody1": "Some results show a ± figure next to the total. It is the observed spread: the 80th percentile of the relative differences between user-reported actual totals and the estimates. The figure is built only from outcomes visitors have reported, and the sample size (n=) and the computation date are always shown next to it.",
+    "marginLadderIntro": "The figure is taken from the narrowest group with enough reported outcomes. The groups are checked in order:",
+    "marginLadder1": "Product category and carrier together",
+    "marginLadder2": "Product category alone",
+    "marginLadder3": "The whole dataset",
+    "marginFloorNote": "Each level requires at least 10 reported outcomes. If no level meets the requirement, no ± figure is shown at all — no number is invented.",
+    "marginDisplayNote": "The observed spread is informational only: it never affects calculations, totals, comparisons, or ordering."
   },
   "ValuePage": {
     "title": "Ethanol unit price by category",
