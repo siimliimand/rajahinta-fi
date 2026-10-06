@@ -17,9 +17,13 @@
  *   3. The filter row carries all products plus exactly the six
  *      canonical categories with localized labels; every category link
  *      targets page 1 (no page param); the active option is marked.
- *   4. Pagination links the exact page range and stays in bounds —
- *      prev/next degrade to disabled spans at the edges; current page is
- *      not a link.
+ *   4. Windowed pagination (task 2.3, change
+ *      savings-first-catalog-and-prefill): the strip renders prev/next,
+ *      page 1 and the last page, and a clamped ±2 window with ellipsis
+ *      gaps — a bounded anchor set even at live-catalog scale — and
+ *      stays in bounds: prev/next degrade to disabled spans at the
+ *      edges, the current page is not a link, and the page-status
+ *      sentence remains.
  *   5. A zero-result view renders the shared EmptyState, not an empty
  *      grid or an error.
  *   6. Unknown ?category= values are forgiven (design D2): the page
@@ -461,6 +465,94 @@ describe('ProductsPage pagination', () => {
     await renderCatalog();
 
     expect(screen.queryByTestId('catalog-pagination')).not.toBeInTheDocument();
+  });
+
+  it('caps the anchors and keeps both edges reachable on a many-page catalog', async () => {
+    // Live-catalog scale: the old render-every-page strip produced
+    // ~443 anchors; the windowed one stays bounded.
+    mockedRequest.mockResolvedValue(
+      catalogResult([catalogItem()], {
+        total: 10632,
+        page: 200,
+        totalPages: 443,
+      }),
+    );
+
+    await renderCatalog({ page: '200' });
+
+    const nav = screen.getByTestId('catalog-pagination');
+    expect(within(nav).getAllByRole('link').length).toBeLessThanOrEqual(9);
+
+    // Edges: page 1 canonical-clean, the last page always linked.
+    expect(within(nav).getByRole('link', { name: '1' })).toHaveAttribute(
+      'href',
+      '/products',
+    );
+    expect(within(nav).getByRole('link', { name: '443' })).toHaveAttribute(
+      'href',
+      '/products?page=443',
+    );
+
+    // The ±2 window rides with the current page; far pages stay unlinked.
+    for (const number of ['198', '199', '201', '202']) {
+      expect(within(nav).getByRole('link', { name: number })).toHaveAttribute(
+        'href',
+        `/products?page=${number}`,
+      );
+    }
+    expect(within(nav).queryByRole('link', { name: '2' })).not.toBeInTheDocument();
+
+    // The current page is an indicator, not a link; prev/next step ±1.
+    expect(within(nav).getByText('200')).not.toHaveAttribute('href');
+    expect(
+      within(nav).getByRole('link', { name: 'Edellinen sivu' }),
+    ).toHaveAttribute('href', '/products?page=199');
+    expect(
+      within(nav).getByRole('link', { name: 'Seuraava sivu' }),
+    ).toHaveAttribute('href', '/products?page=201');
+
+    // Ellipsis gaps are decorative spans, never links.
+    const gaps = within(nav).getAllByText('…');
+    expect(gaps).toHaveLength(2);
+    for (const gap of gaps) {
+      expect(gap).toHaveAttribute('aria-hidden', 'true');
+      expect(gap).not.toHaveAttribute('href');
+    }
+
+    // The page-status sentence survives the windowed control.
+    expect(nav).toHaveTextContent('Sivu 200 / 443');
+  });
+
+  it('slides the window to hug the last page and disables next there', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([catalogItem()], {
+        total: 10632,
+        page: 443,
+        totalPages: 443,
+      }),
+    );
+
+    await renderCatalog({ page: '443' });
+
+    const nav = screen.getByTestId('catalog-pagination');
+    // The shifted window keeps the tail reachable without far pages.
+    expect(within(nav).getByRole('link', { name: '441' })).toHaveAttribute(
+      'href',
+      '/products?page=441',
+    );
+    expect(
+      within(nav).queryByRole('link', { name: '438' }),
+    ).not.toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: '1' })).toHaveAttribute(
+      'href',
+      '/products',
+    );
+    const next = within(nav).getByText('Seuraava sivu');
+    expect(next).not.toHaveAttribute('href');
+    expect(next).toHaveAttribute('aria-disabled', 'true');
+    expect(
+      within(nav).getByRole('link', { name: 'Edellinen sivu' }),
+    ).toHaveAttribute('href', '/products?page=442');
   });
 });
 

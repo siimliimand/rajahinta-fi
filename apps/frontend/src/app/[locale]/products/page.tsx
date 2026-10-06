@@ -17,6 +17,7 @@ import {
   ReliabilityBadge,
 } from '@/components/ui';
 import CategoryAlertAction from './components/CategoryAlertAction';
+import { paginationSlots } from './pagination';
 import {
   CANONICAL_CATEGORIES,
   CATEGORY_LABELS,
@@ -670,9 +671,13 @@ export default async function ProductsPage({
             ))}
           </ul>
 
-          {/* ── Pagination over the exact total; pages beyond the range
-              are not linkable (prev/next degrade to disabled spans, the
-              numbered set is exactly 1..totalPages) ── */}
+          {/* ── Windowed pagination (task 2.3, change
+              savings-first-catalog-and-prefill): prev/next, page 1 and the
+              last page, and a clamped ±2 window with ellipsis gaps — a
+              bounded anchor set no matter how deep the catalog grows.
+              Out-of-range steps stay non-linkable: prev/next degrade to
+              disabled spans at the edges, and paginationSlots never emits
+              a number outside [1, totalPages]. ── */}
           {totalPages > 1 ? (
             <nav
               aria-label={t('paginationNavLabel')}
@@ -688,25 +693,32 @@ export default async function ProductsPage({
                   {t('prevPage')}
                 </span>
               )}
-              {Array.from({ length: totalPages }, (_, index) => index + 1).map(
-                (pageNumber) =>
-                  pageNumber === page ? (
-                    <span
-                      key={pageNumber}
-                      aria-current="page"
-                      className={PAGE_CURRENT_CLASSES}
-                    >
-                      {pageNumber}
-                    </span>
-                  ) : (
-                    <Link
-                      key={pageNumber}
-                      href={pageHref(pageNumber)}
-                      className={PAGE_LINK_CLASSES}
-                    >
-                      {pageNumber}
-                    </Link>
-                  ),
+              {paginationSlots(page, totalPages).map((slot, index) =>
+                slot.kind === 'gap' ? (
+                  <span
+                    key={`gap-${index}`}
+                    aria-hidden="true"
+                    className={PAGE_SPAN_CLASSES}
+                  >
+                    …
+                  </span>
+                ) : slot.page === page ? (
+                  <span
+                    key={slot.page}
+                    aria-current="page"
+                    className={PAGE_CURRENT_CLASSES}
+                  >
+                    {slot.page}
+                  </span>
+                ) : (
+                  <Link
+                    key={slot.page}
+                    href={pageHref(slot.page)}
+                    className={PAGE_LINK_CLASSES}
+                  >
+                    {slot.page}
+                  </Link>
+                ),
               )}
               {page < totalPages ? (
                 <Link href={pageHref(page + 1)} className={PAGE_LINK_CLASSES}>
