@@ -93,6 +93,23 @@ jobs:
           --project=mobile-chrome-375
           --project=mobile-chrome-390
 
+      # Homepage pending-state branch (homepage-live-gap-hero 4.3): the
+      # journeys above boot the stack WITH the savings-snapshot seed; this
+      # invocation re-boots WITHOUT it (E2E_SAVINGS_SNAPSHOT=0 strips the
+      # fixture and resets the fetch/ISR caches) so the homepage renders
+      # its designed pending state. One mobile project suffices — the
+      # pending rendering is viewport-independent — keeping CI minutes
+      # near the minimum. CI=true forbids webServer reuse, so this boots
+      # a fresh stack of its own.
+      - name: Run homepage pending-state journey (Workers stack, unseeded snapshot)
+        env:
+          E2E_SAVINGS_SNAPSHOT: '0'
+        run: >-
+          pnpm exec playwright test
+          -c tests/e2e-browser/playwright.workers.config.ts
+          homepage-flow
+          --project=mobile-chrome-375
+
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4

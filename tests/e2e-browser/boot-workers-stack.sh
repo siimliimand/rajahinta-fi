@@ -12,12 +12,18 @@
 #                 files + loud verification, idempotent)
 #              2. apply the journey fixtures (seed-journeys.d1.sql — TEST
 #                 Beer / TEST Wine) through the same real D1 path
-#              3. exec `wrangler dev` on :8788 with the launch gates open
+#              3. apply the savings-snapshot fixture (seed-savings-
+#                 snapshot.d1.sql — the homepage hero's populated state)
+#                 unless E2E_SAVINGS_SNAPSHOT=0, which leaves NO snapshot
+#                 day so the homepage renders its pending state
+#              4. exec `wrangler dev` on :8788 with the launch gates open
 #                 and the CORS origin set to the frontend Worker
 #
-#   `frontend` 1. build the OpenNext Worker with the API base inlined at
-#                 build time (NEXT_PUBLIC_API_URL=http://localhost:8788 —
-#                 runtime vars cannot change it, see apps/frontend/OPENNEXT.md)
+#   `frontend` 1. reset the local ISR/R2 sim state (see the frontend case
+#                 below), then build the OpenNext Worker with the API
+#                 base inlined at build time (NEXT_PUBLIC_API_URL=
+#                 http://localhost:8788 — runtime vars cannot change it,
+#                 see apps/frontend/OPENNEXT.md)
 #              2. exec `wrangler dev` on :8787 (the frontend owns 8787)
 #
 #   `down`     best-effort cleanup of manually started workers.
@@ -74,6 +80,17 @@ case "${1:-}" in
     (cd "$ROOT" && pnpm --filter @rajahinta/api-worker exec wrangler d1 execute DB \
       --local --file "$ROOT/tests/e2e-browser/seed-journeys.d1.sql" -y)
 
+    # The homepage hero's populated state (homepage-live-gap-hero 4.3): a
+    # today-dated snapshot over the journey products. Default on;
+    # E2E_SAVINGS_SNAPSHOT=0 boots WITHOUT it — D1 then carries no
+    # snapshot day and the homepage renders its pending state, the
+    # snapshot-absent scenario its journey asserts.
+    if [ "${E2E_SAVINGS_SNAPSHOT:-1}" != "0" ]; then
+      echo "==> [workers-e2e] Applying savings snapshot fixture (seed-savings-snapshot.d1.sql)…"
+      (cd "$ROOT" && pnpm --filter @rajahinta/api-worker exec wrangler d1 execute DB \
+        --local --file "$ROOT/tests/e2e-browser/seed-savings-snapshot.d1.sql" -y)
+    fi
+
     echo "==> [workers-e2e] Starting API Worker on :$API_PORT…"
     cd "$ROOT/apps/api-worker"
     exec pnpm exec wrangler dev --port "$API_PORT" \
@@ -81,6 +98,20 @@ case "${1:-}" in
     ;;
 
   frontend)
+    # Reset the frontend's local ISR state (R2 sim under .wrangler/state)
+    # and Next's persistent fetch cache (.next/cache/fetch-cache): the
+    # homepage's data-cache entries live 900 s (revalidate: 900), so a
+    # stale entry from a previous boot — a ready hero cached by an
+    # earlier seeded run, say — would outlive the D1 state this boot
+    # seeded and mask it. Resetting makes every boot equivalent to a
+    # clean CI runner, the same policy as the api branch's D1 reset
+    # (KEEP_D1=1 keeps both).
+    if [ "${KEEP_D1:-0}" != "1" ]; then
+      echo "==> [workers-e2e] Resetting frontend ISR + fetch-cache state (KEEP_D1=1 to keep)…"
+      rm -rf "$ROOT/apps/frontend/.wrangler/state"
+      rm -rf "$ROOT/apps/frontend/.next/cache/fetch-cache"
+    fi
+
     if [ "${SKIP_BUILD:-0}" != "1" ]; then
       echo "==> [workers-e2e] Building frontend Worker (NEXT_PUBLIC_API_URL=$API_URL)…"
       if ! (cd "$ROOT" && NEXT_PUBLIC_API_URL="$API_URL" \

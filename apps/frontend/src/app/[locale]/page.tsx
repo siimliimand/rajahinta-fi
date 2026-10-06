@@ -3,12 +3,16 @@
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { BASE_URL, SERVER_AGE_CONFIRMATION_TOKEN } from '@/lib/api';
+import { BASE_URL, SERVER_AGE_CONFIRMATION_TOKEN, SAVINGS_TOP_PATH } from '@/lib/api';
 import { Link } from '@/i18n/navigation';
 import { RELIABILITY_STATUS_META } from '@/lib/design/status';
 import type { ReliabilityStatus } from '@/lib/types';
 import { getServerGuidesIndex } from './guides/guides.server';
 import AccuracyStat from './components/AccuracyStat';
+import HomeGapHero, {
+  type HomeGapHeroState,
+  type SavingsTopResponse,
+} from './components/HomeGapHero';
 
 /**
  * Canonical status order for the trust-row legend: the same hue ladder the
@@ -195,15 +199,92 @@ async function getSavingsOverview(): Promise<SavingsOverviewResponse | null> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Live gap hero — server read (homepage-live-gap-hero task 2.2). The
+// cross-category top-N import-favourable listing, fetched exactly like
+// the overview above: the fixed first-party prerender token (age-gated
+// endpoint), 900 s revalidation, and degrade-to-null on any failure or
+// unexpected shape.
+// ---------------------------------------------------------------------------
+
+/**
+ * Design D4 freshness cutoff: a snapshot day older than this renders the
+ * unavailable state instead of figures — a stalled cron must not headline
+ * old numbers as current. Coarse at the 15-minute ISR grain, acceptable
+ * for a daily-grain dataset.
+ */
+const FRESHNESS_CUTOFF_DAYS = 3;
+const FRESHNESS_CUTOFF_MS = FRESHNESS_CUTOFF_DAYS * 24 * 60 * 60 * 1000;
+
+/**
+ * Server-side top-N read of GET /api/v1/savings/top (no query params —
+ * the API's default limit is the hero's five rows). Any failure or
+ * unexpected shape degrades to null and the section renders its honest
+ * unavailable state — never an error, never a guessed figure.
+ */
+async function getSavingsTop(): Promise<SavingsTopResponse | null> {
+  try {
+    const res = await fetch(`${BASE_URL}${SAVINGS_TOP_PATH}`, {
+      headers: {
+        accept: 'application/json',
+        'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN,
+      },
+      next: { revalidate: 900 },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as SavingsTopResponse | null;
+    if (
+      body === null ||
+      typeof body !== 'object' ||
+      !Array.isArray(body.rows) ||
+      (body.asOf !== null && typeof body.asOf !== 'string')
+    ) {
+      return null;
+    }
+    return body;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the hero's render state from the top read (D3/D4): a failed
+ * read is unavailable; no materialized day or no eligible rows is the
+ * pending state (the comparison has not compiled yet — not an outage);
+ * a day older than the freshness cutoff — or an unparseable one, which
+ * fails closed — is unavailable rather than stale-as-current figures.
+ */
+function deriveHomeGapHeroState(
+  read: SavingsTopResponse | null,
+  nowMs: number,
+): HomeGapHeroState {
+  if (read === null) return { kind: 'unavailable' };
+  if (read.asOf === null || read.rows.length === 0) return { kind: 'pending' };
+  // The day-grain as-of parses as UTC midnight — the listing's own
+  // formatAsOf construction.
+  const dayMs = Date.parse(`${read.asOf}T00:00:00.000Z`);
+  if (Number.isNaN(dayMs) || nowMs - dayMs > FRESHNESS_CUTOFF_MS) {
+    return { kind: 'unavailable' };
+  }
+  return { kind: 'ready', asOf: read.asOf, rows: read.rows };
+}
+
 /**
  * Homepage (OpenSpec: design-system-foundation, tasks 4.1 + 4.2;
  * trust-and-reach-roadmap task 3.3 extends the trust row;
- * funnel-evidence-and-value-surfaces task 3.1 adds the task cards).
+ * funnel-evidence-and-value-surfaces task 3.1 adds the task cards;
+ * homepage-live-gap-hero task 2.2 adds the live observed-difference
+ * section).
  *
  * Static catalog copy plus server-side reads that degrade gracefully
  * (D6, D4): the gradient hero with a floating search card as the primary
- * CTA, a fixed worked example labeled as an example (task 3.1, D7 — no
- * API call, the figures cannot drift with live data), a task-card
+ * CTA, a live observed-difference section over the day's top-N savings
+ * snapshot (homepage-live-gap-hero task 2.2 — pending when no eligible
+ * rows exist, unavailable on a failed or stale read, figures never
+ * guessed), a compact worked-example step strip below the live section
+ * (homepage-live-gap-hero task 2.3, demoting the task 3.1 D7 breakdown
+ * — labeled as an example, no API call, the figures cannot drift with
+ * live data), a task-card
  * section linking the task tools (links only — the hero search stays
  * the homepage's single input, funnel D4), a "Why Rajahinta.fi" feature
  * section surfacing the platform's genuine differentiators, the trust
@@ -254,6 +335,14 @@ export default async function HomePage({
   // an unverified listing, no invented figures, no claimed data state.
   const savingsListingReady =
     savingsOverview !== null && savingsWithReference > 0;
+
+  // Live gap hero state (homepage-live-gap-hero task 2.2). The top-N
+  // read rides the same 15-minute ISR cadence as the overview; the D3/D4
+  // degradation split is derived here so the component stays
+  // presentational: a failed read → unavailable, no day or no eligible
+  // rows → pending, a day older than the freshness cutoff → unavailable.
+  const savingsTop = await getSavingsTop();
+  const homeGapHeroState = deriveHomeGapHeroState(savingsTop, Date.now());
 
   // The hero form is plain HTML (GET), so it navigates before hydration.
   // next-intl's `as-needed` prefixing: Finnish serves the bare path,
@@ -356,18 +445,34 @@ export default async function HomePage({
         </div>
       </section>
 
-      {/* ── Worked example (task 3.1, D7) ───────────────────────────────
-          A fixed, illustrative breakdown labeled as an example — no API
-          call, fully crawlable, cannot drift with live data. Live
-          sophistication stays with the AccuracyStat island and the trust
-          row. The difference line spells out cheaper/dearer in words;
-          color alone never carries the comparison. */}
+      {/* ── Live observed-difference section (homepage-live-gap-hero
+          task 2.2, D3/D4) ──────────────────────────────────────────────
+          The day's largest observed landed-cost gaps against the Alko
+          reference, re-read every 15 minutes. Pending when the snapshot
+          day has no eligible rows yet, unavailable when the read fails
+          or the day is older than the freshness cutoff — figures are
+          never guessed and never shown stale-as-current. Links only —
+          the hero search stays the homepage's single input (D4). */}
+      <HomeGapHero state={homeGapHeroState} locale={locale} t={t} />
+
+      {/* ── Worked example — demoted how-it-works step strip
+          (homepage-live-gap-hero task 2.3; superseding the task 3.1 D7
+          hero-adjacent breakdown) ─────────────────────────────────────
+          Below the live section, the example is a compact three-step
+          strip: pick the foreign retail price, land transport + taxes
+          into the total, compare against the Alko reference. The
+          figures stay the fixed illustrative Home-namespace strings —
+          explicitly labeled as an example, no API call, unable to
+          drift with live data. The exampleNote (fixed figures, totals
+          compared, dearer possibility) survives under the steps; the
+          difference line spells out cheaper in words, color alone
+          never carries it. */}
       <section
         aria-labelledby="home-example-heading"
-        className="border-b border-gray-100 bg-gray-50 px-4 py-16 sm:px-6"
+        className="border-b border-gray-100 bg-gray-50 px-4 py-12 sm:px-6"
       >
-        <div className="mx-auto max-w-3xl">
-          <div className="mb-4 text-center">
+        <div className="mx-auto max-w-4xl">
+          <div className="mb-3 text-center">
             <span className="inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary-800">
               {t('exampleBadge')}
             </span>
@@ -375,58 +480,65 @@ export default async function HomePage({
 
           <h2
             id="home-example-heading"
-            className="mb-2 text-center text-2xl font-bold tracking-tight text-gray-900"
+            className="mb-2 text-center text-xl font-bold tracking-tight text-gray-900"
           >
-            {t('exampleTitle')}
+            {t('howItWorksHeading')}
           </h2>
           <p className="mx-auto mb-8 max-w-2xl text-center text-sm leading-relaxed text-gray-600">
-            {t('exampleIntro')}
+            {t('exampleTitle')}
           </p>
 
-          <dl className="mx-auto max-w-xl divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white p-5">
-            <div className="flex items-baseline justify-between gap-4 py-2">
-              <dt className="text-sm text-gray-600">
+          <ol className="grid gap-4 text-left sm:grid-cols-3">
+            <li className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-primary-700">
+                {t('exampleStepLabel', { step: 1 })}
+              </h3>
+              <p className="mt-2 text-sm font-medium text-gray-900">
                 {t('exampleForeignPriceLabel')}
-              </dt>
-              <dd className="text-sm font-semibold text-gray-900">
+              </p>
+              <p className="mt-1 text-lg font-bold tabular-nums text-gray-900">
                 {t('exampleForeignPriceValue')}
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4 py-2">
-              <dt className="text-sm text-gray-600">
-                {t('exampleTransportLabel')}
-              </dt>
-              <dd className="text-sm font-semibold text-gray-900">
-                {t('exampleTransportValue')}
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4 py-2">
-              <dt className="text-sm font-medium text-gray-900">
-                {t('exampleLandedLabel')}
-              </dt>
-              <dd className="text-sm font-semibold text-gray-900">
-                {t('exampleLandedValue')}
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4 py-2">
-              <dt className="text-sm text-gray-600">
-                {t('exampleReferenceLabel')}
-              </dt>
-              <dd className="text-sm font-semibold text-gray-900">
-                {t('exampleReferenceValue')}
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4 py-2">
-              <dt className="text-sm font-medium text-gray-900">
-                {t('exampleDifferenceLabel')}
-              </dt>
-              <dd className="text-sm font-semibold text-gray-900">
-                {t('exampleDifferenceValue')}
-              </dd>
-            </div>
-          </dl>
+              </p>
+            </li>
 
-          <p className="mx-auto mt-4 max-w-xl text-center text-xs leading-relaxed text-gray-500">
+            <li className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-primary-700">
+                {t('exampleStepLabel', { step: 2 })}
+              </h3>
+              <p className="mt-2 text-sm text-gray-600">
+                {t('exampleTransportLabel')}:{' '}
+                <span className="font-semibold tabular-nums text-gray-900">
+                  {t('exampleTransportValue')}
+                </span>
+              </p>
+              <p className="mt-1 text-sm font-medium text-gray-900">
+                {t('exampleLandedLabel')}
+              </p>
+              <p className="mt-1 text-lg font-bold tabular-nums text-gray-900">
+                {t('exampleLandedValue')}
+              </p>
+            </li>
+
+            <li className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-primary-700">
+                {t('exampleStepLabel', { step: 3 })}
+              </h3>
+              <p className="mt-2 text-sm text-gray-600">
+                {t('exampleReferenceLabel')}:{' '}
+                <span className="font-semibold tabular-nums text-gray-900">
+                  {t('exampleReferenceValue')}
+                </span>
+              </p>
+              <p className="mt-1 text-sm font-medium text-gray-900">
+                {t('exampleDifferenceLabel')}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-gray-900">
+                {t('exampleDifferenceValue')}
+              </p>
+            </li>
+          </ol>
+
+          <p className="mx-auto mt-4 max-w-3xl text-center text-xs leading-relaxed text-gray-500">
             {t('exampleNote')}
           </p>
         </div>
