@@ -22,7 +22,7 @@
 
 ## 5. EN alignment
 
-- [ ] 5.1 EN catalog alignment: units + terminology parity + wrong-word equivalents fixed; methodology section deliberately keeps semi-technical register (asymmetry documented in glossary) <!-- agent: platform-engineer.fast, depends_on: [2.1, 3.1, 4.2], touches: [apps/frontend/src/messages/en.json] -->
+- [x] 5.1 EN catalog alignment: units + terminology parity + wrong-word equivalents fixed; methodology section deliberately keeps semi-technical register (asymmetry documented in glossary) <!-- agent: platform-engineer.fast, depends_on: [2.1, 3.1, 4.2], touches: [apps/frontend/src/messages/en.json] -->
 
 ## 6. Verification
 
