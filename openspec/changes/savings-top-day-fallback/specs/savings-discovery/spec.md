@@ -41,7 +41,7 @@ rate-limited like the per-category listing.
 - **WHEN** fewer than N eligible import-favourable rows exist on the selected day
 - **THEN** the endpoint SHALL return exactly those rows, never filled with dearer-than-reference rows
 
-#### Scenario: Honest zero state within the lookback
+#### Scenario: Honest zero state
 
 - **WHEN** no snapshot day within the lookback contains an eligible row
 - **THEN** the endpoint SHALL return an empty list with the maximal day's as-of date and zero eligible coverage instead of an error
