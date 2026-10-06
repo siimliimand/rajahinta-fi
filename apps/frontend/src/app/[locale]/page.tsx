@@ -281,8 +281,10 @@ function deriveHomeGapHeroState(
  * CTA, a live observed-difference section over the day's top-N savings
  * snapshot (homepage-live-gap-hero task 2.2 — pending when no eligible
  * rows exist, unavailable on a failed or stale read, figures never
- * guessed), a fixed worked example labeled as an example (task 3.1, D7 — no
- * API call, the figures cannot drift with live data), a task-card
+ * guessed), a compact worked-example step strip below the live section
+ * (homepage-live-gap-hero task 2.3, demoting the task 3.1 D7 breakdown
+ * — labeled as an example, no API call, the figures cannot drift with
+ * live data), a task-card
  * section linking the task tools (links only — the hero search stays
  * the homepage's single input, funnel D4), a "Why Rajahinta.fi" feature
  * section surfacing the platform's genuine differentiators, the trust
@@ -453,18 +455,24 @@ export default async function HomePage({
           the hero search stays the homepage's single input (D4). */}
       <HomeGapHero state={homeGapHeroState} locale={locale} t={t} />
 
-      {/* ── Worked example (task 3.1, D7) ───────────────────────────────
-          A fixed, illustrative breakdown labeled as an example — no API
-          call, fully crawlable, cannot drift with live data. Live
-          sophistication stays with the AccuracyStat island and the trust
-          row. The difference line spells out cheaper/dearer in words;
-          color alone never carries the comparison. */}
+      {/* ── Worked example — demoted how-it-works step strip
+          (homepage-live-gap-hero task 2.3; superseding the task 3.1 D7
+          hero-adjacent breakdown) ─────────────────────────────────────
+          Below the live section, the example is a compact three-step
+          strip: pick the foreign retail price, land transport + taxes
+          into the total, compare against the Alko reference. The
+          figures stay the fixed illustrative Home-namespace strings —
+          explicitly labeled as an example, no API call, unable to
+          drift with live data. The exampleNote (fixed figures, totals
+          compared, dearer possibility) survives under the steps; the
+          difference line spells out cheaper in words, color alone
+          never carries it. */}
       <section
         aria-labelledby="home-example-heading"
-        className="border-b border-gray-100 bg-gray-50 px-4 py-16 sm:px-6"
+        className="border-b border-gray-100 bg-gray-50 px-4 py-12 sm:px-6"
       >
-        <div className="mx-auto max-w-3xl">
-          <div className="mb-4 text-center">
+        <div className="mx-auto max-w-4xl">
+          <div className="mb-3 text-center">
             <span className="inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary-800">
               {t('exampleBadge')}
             </span>
@@ -472,58 +480,65 @@ export default async function HomePage({
 
           <h2
             id="home-example-heading"
-            className="mb-2 text-center text-2xl font-bold tracking-tight text-gray-900"
+            className="mb-2 text-center text-xl font-bold tracking-tight text-gray-900"
           >
-            {t('exampleTitle')}
+            {t('howItWorksHeading')}
           </h2>
           <p className="mx-auto mb-8 max-w-2xl text-center text-sm leading-relaxed text-gray-600">
-            {t('exampleIntro')}
+            {t('exampleTitle')}
           </p>
 
-          <dl className="mx-auto max-w-xl divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white p-5">
-            <div className="flex items-baseline justify-between gap-4 py-2">
-              <dt className="text-sm text-gray-600">
+          <ol className="grid gap-4 text-left sm:grid-cols-3">
+            <li className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-primary-700">
+                {t('exampleStepLabel', { step: 1 })}
+              </h3>
+              <p className="mt-2 text-sm font-medium text-gray-900">
                 {t('exampleForeignPriceLabel')}
-              </dt>
-              <dd className="text-sm font-semibold text-gray-900">
+              </p>
+              <p className="mt-1 text-lg font-bold tabular-nums text-gray-900">
                 {t('exampleForeignPriceValue')}
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4 py-2">
-              <dt className="text-sm text-gray-600">
-                {t('exampleTransportLabel')}
-              </dt>
-              <dd className="text-sm font-semibold text-gray-900">
-                {t('exampleTransportValue')}
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4 py-2">
-              <dt className="text-sm font-medium text-gray-900">
-                {t('exampleLandedLabel')}
-              </dt>
-              <dd className="text-sm font-semibold text-gray-900">
-                {t('exampleLandedValue')}
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4 py-2">
-              <dt className="text-sm text-gray-600">
-                {t('exampleReferenceLabel')}
-              </dt>
-              <dd className="text-sm font-semibold text-gray-900">
-                {t('exampleReferenceValue')}
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4 py-2">
-              <dt className="text-sm font-medium text-gray-900">
-                {t('exampleDifferenceLabel')}
-              </dt>
-              <dd className="text-sm font-semibold text-gray-900">
-                {t('exampleDifferenceValue')}
-              </dd>
-            </div>
-          </dl>
+              </p>
+            </li>
 
-          <p className="mx-auto mt-4 max-w-xl text-center text-xs leading-relaxed text-gray-500">
+            <li className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-primary-700">
+                {t('exampleStepLabel', { step: 2 })}
+              </h3>
+              <p className="mt-2 text-sm text-gray-600">
+                {t('exampleTransportLabel')}:{' '}
+                <span className="font-semibold tabular-nums text-gray-900">
+                  {t('exampleTransportValue')}
+                </span>
+              </p>
+              <p className="mt-1 text-sm font-medium text-gray-900">
+                {t('exampleLandedLabel')}
+              </p>
+              <p className="mt-1 text-lg font-bold tabular-nums text-gray-900">
+                {t('exampleLandedValue')}
+              </p>
+            </li>
+
+            <li className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-primary-700">
+                {t('exampleStepLabel', { step: 3 })}
+              </h3>
+              <p className="mt-2 text-sm text-gray-600">
+                {t('exampleReferenceLabel')}:{' '}
+                <span className="font-semibold tabular-nums text-gray-900">
+                  {t('exampleReferenceValue')}
+                </span>
+              </p>
+              <p className="mt-1 text-sm font-medium text-gray-900">
+                {t('exampleDifferenceLabel')}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-gray-900">
+                {t('exampleDifferenceValue')}
+              </p>
+            </li>
+          </ol>
+
+          <p className="mx-auto mt-4 max-w-3xl text-center text-xs leading-relaxed text-gray-500">
             {t('exampleNote')}
           </p>
         </div>
