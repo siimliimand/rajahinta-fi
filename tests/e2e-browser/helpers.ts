@@ -44,6 +44,17 @@ export const COPY = {
   compareTitle: 'Tuotevertailu',
   addProductButton: '+ Lisää tuote',
   sortLabel: 'Järjestä:',
+  // Homepage live observed-difference section (homepage-live-gap-hero
+  // 2.1/2.2/2.3 — Home namespace).
+  liveGapHeading:
+    'Päivän suurimmat havaitut hintaerot Alkon hintoihin verrattuna',
+  liveGapAsOfPrefix: 'Laskettu viimeisimmästä havaintopäivästä',
+  liveGapPendingBody:
+    'Päivän vertailua ei ole vielä koostettu. Nykytilanne näkyy kokonaishintaerojen luettelossa.',
+  liveGapPendingLink: 'Kokonaishinta-ero Alko-viitehintaan',
+  liveGapUnavailableBody:
+    'Päivän vertailua ei voitu ladata juuri nyt. Voit yrittää myöhemmin uudelleen.',
+  howItWorksHeading: 'Näin se toimii',
 } as const;
 
 /** Structural disclaimer (packages/core-domain/src/disclaimer.ts, fi). */
@@ -66,6 +77,17 @@ export const SEED = {
   },
   /** Query matching both seeded products. */
   query: 'TEST',
+  /**
+   * Homepage hero snapshot fixtures (seed-savings-snapshot.d1.sql,
+   * homepage-live-gap-hero 4.3): one materialized day over the two
+   * journey products. The wine's more import-favourable gap (−3161 bps)
+   * lists before the beer (−1972 bps) — sortSavingsRows' deterministic
+   * basis-point order.
+   */
+  savings: {
+    beerId: 9001,
+    wineId: 9002,
+  },
 } as const;
 
 // ---------------------------------------------------------------------------
