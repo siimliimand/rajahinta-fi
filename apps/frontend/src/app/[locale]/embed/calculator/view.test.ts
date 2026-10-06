@@ -172,7 +172,7 @@ describe('renderEmbedCalculatorHtml — result outcome', () => {
   it('renders the itemized costs, total, quantity, and confidence', () => {
     const html = renderEmbedCalculatorHtml('fi', { kind: 'result', result: RESULT });
     expect(html).toContain('Ulkomainen vähittäishinta');
-    expect(html).toContain('Arvio alkoholin valmisteverosta');
+    expect(html).toContain('Alkoholin valmistevero');
     expect(html).toContain('€12.98');
     expect(html).toContain('<strong>€14.68</strong>');
     expect(html).toContain('2 × Suomi');

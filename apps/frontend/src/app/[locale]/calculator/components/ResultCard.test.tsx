@@ -12,8 +12,9 @@
  *   4. Reliability statuses render through `RELIABILITY_STATUS_META`
  *      labels (LocalizedReliabilityBadge pattern) with the calculation
  *      timestamp beside the price-data status.
- *   5. The structural disclaimer text rendered is the result object's
- *      own disclaimer field.
+ *   5. The structural disclaimer renders exactly once from the result
+ *      object's own disclaimer field — amber at LOW confidence, quiet
+ *      neutral one-liner otherwise (hedge-dedup-confidence-meter 3.1).
  *   6. A result without the Finland reference renders no comparison —
  *      no placeholder, no empty container.
  *   7. A transport component with `reliability: UNAVAILABLE` renders
@@ -292,7 +293,7 @@ describe('ResultCard breakdown rows (task 4.1)', () => {
     const rows = [
       { label: 'Ulkomainen vähittäishinta', amount: '40,00\u00a0€' },
       { label: 'Kuljetuskustannus', amount: '5,00\u00a0€' },
-      { label: 'Arvio alkoholin valmisteverosta', amount: '6,50\u00a0€' },
+      { label: 'Alkoholin valmistevero', amount: '6,50\u00a0€' },
     ];
     for (const row of rows) {
       const label = screen.getByText(row.label);
@@ -374,7 +375,7 @@ describe('ResultCard transport-unavailable honest state (3.1)', () => {
     // The non-transport rows keep their amounts.
     expect(screen.getByText('Ulkomainen vähittäishinta').closest('div'))
       .toHaveTextContent('40,00 €');
-    expect(screen.getByText('Arvio alkoholin valmisteverosta').closest('div'))
+    expect(screen.getByText('Alkoholin valmistevero').closest('div'))
       .toHaveTextContent('6,50 €');
   });
 
@@ -415,22 +416,21 @@ describe('ResultCard price-data reliability and timestamp (task 4.1)', () => {
 // Sanity-note degraded state — visible only when notes are present
 // ---------------------------------------------------------------------------
 
-describe('ResultCard sanity-note degraded state (task 2.2)', () => {
+describe('ResultCard sanity-note degraded state (task 2.2, retitled by hedge-dedup 3.1)', () => {
   it('renders the visible LOW-confidence note block when the result carries sanityNotes', () => {
     renderWithIntl(<ResultCard result={resultWithSanityNotes()} />);
 
     const note = screen.getByTestId('sanity-note');
     expect(note).toBeVisible();
-    // The heading states the degradation factually — confidence downgraded,
-    // the result is an estimate.
-    expect(
-      within(note).getByText('Luotettavuus alennettu: tulos on arvio'),
-    ).toBeInTheDocument();
-    // Each note lists the affected component via the shared category
+    // The generic framing label is retired: the note names the degraded
+    // input directly, via the plain (no estimate qualifier) category
     // label, plus the API's own detail string naming the breach —
     // figures verbatim, never reworded UI copy.
     expect(
-      within(note).getByText('Arvio alkoholin valmisteverosta'),
+      within(note).queryByText('Luotettavuus alennettu: tulos on arvio'),
+    ).toBeNull();
+    expect(
+      within(note).getByText('Alkoholin valmistevero'),
     ).toBeInTheDocument();
     expect(note.textContent).toContain(
       'Line alcohol excise 65000 cents exceeds 5× the line retail price 4000 cents',
@@ -446,16 +446,33 @@ describe('ResultCard sanity-note degraded state (task 2.2)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Structural disclaimer — consumed from the result object
+// Structural disclaimer — the card's single render from the result
+// object, intensity keyed to the result confidence (hedge-dedup 3.1, D1)
 // ---------------------------------------------------------------------------
 
-describe('ResultCard disclaimer (task 4.1)', () => {
-  it('renders the result object disclaimer text verbatim', () => {
-    renderWithIntl(<ResultCard result={baseResult()} />);
+describe('ResultCard disclaimer dedup + intensity (hedge-dedup 3.1)', () => {
+  it('renders the result object disclaimer text exactly once, quiet at MEDIUM', () => {
+    const { container } = renderWithIntl(<ResultCard result={baseResult()} />);
 
-    // The fixture's own disclaimer string appears; the card never
-    // restates disclaimer copy as a UI string of its own.
-    expect(screen.getByText('Testirakennevastuuvapautus')).toBeInTheDocument();
+    // The fixture's own disclaimer string appears exactly once; the
+    // card never restates disclaimer copy as a UI string of its own.
+    expect(container.textContent.split('Testirakennevastuuvapautus').length - 1)
+      .toBe(1);
+    const banner = screen.getByTestId('disclaimer-banner');
+    expect(banner.getAttribute('data-confidence')).toBe('MEDIUM');
+    expect(banner.className).toContain('bg-gray-50');
+    expect(banner.className).not.toContain('status-stale');
+    // Same payload text and version/language line — byte-identical.
+    expect(banner.textContent).toContain('Testirakennevastuuvapautus');
+    expect(banner.textContent).toContain('vtest · suomi');
+  });
+
+  it('renders the amber status-stale banner at LOW confidence', () => {
+    renderWithIntl(<ResultCard result={resultWithSanityNotes()} />);
+
+    const banner = screen.getByTestId('disclaimer-banner');
+    expect(banner.getAttribute('data-confidence')).toBe('LOW');
+    expect(banner.className).toContain('status-stale');
   });
 });
 
@@ -517,19 +534,19 @@ describe('ResultCard traveller-mode split labels (task 2.1)', () => {
 
     expect(
       screen.getByText(
-        'Arvio alkoholin valmisteverosta (sallitun määrän sisällä, veroton)',
+        'Alkoholin valmistevero (sallitun määrän sisällä, veroton)',
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Arvio pakkausverosta (sallitun määrän sisällä, veroton)',
+        'Pakkausvero (sallitun määrän sisällä, veroton)',
       ),
     ).toBeInTheDocument();
     // The dataset-fact zeros render as 0,00 € amounts — honest dataset
     // facts, not missing figures.
     const zeroLine = screen
       .getByText(
-        'Arvio alkoholin valmisteverosta (sallitun määrän sisällä, veroton)',
+        'Alkoholin valmistevero (sallitun määrän sisällä, veroton)',
       )
       .closest('div');
     expect(zeroLine).toHaveTextContent('0,00 €');
@@ -539,11 +556,11 @@ describe('ResultCard traveller-mode split labels (task 2.1)', () => {
     renderWithIntl(<ResultCard result={personalSplitResult()} />);
 
     const surplusExcise = screen
-      .getByText('Arvio alkoholin valmisteverosta (sallitun määrän ylittävä osa)')
+      .getByText('Alkoholin valmistevero (sallitun määrän ylittävä osa)')
       .closest('div');
     expect(surplusExcise).toHaveTextContent('12,00 €');
     const surplusDuty = screen
-      .getByText('Arvio pakkausverosta (sallitun määrän ylittävä osa)')
+      .getByText('Pakkausvero (sallitun määrän ylittävä osa)')
       .closest('div');
     expect(surplusDuty).toHaveTextContent('3,00 €');
   });
@@ -581,11 +598,11 @@ describe('ResultCard traveller-mode split labels (task 2.1)', () => {
     // The single taxed line is the ordinary category label — no within/
     // surplus copy is invented for an unsplit line.
     expect(
-      screen.getByText('Arvio alkoholin valmisteverosta'),
+      screen.getByText('Alkoholin valmistevero'),
     ).toBeInTheDocument();
     expect(
       screen.queryByText(
-        'Arvio alkoholin valmisteverosta (sallitun määrän sisällä, veroton)',
+        'Alkoholin valmistevero (sallitun määrän sisällä, veroton)',
       ),
     ).toBeNull();
   });

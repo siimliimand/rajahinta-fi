@@ -311,9 +311,6 @@
       "title": "Tilaamalla ulkomailta säästät arviolta {amount} verrattuna Alkon hintaan.",
       "asOf": "Vertailu perustuu Alkon {date} hintahavaintoon."
     },
-    "sanityNote": {
-      "label": "Luotettavuus alennettu: tulos on arvio"
-    },
     "transportPending": {
       "notIncluded": "Ei sisällytetty – tietoaineisto odottaa",
       "explanation": "Kuljetuskustannuksen tietoaineisto ei ole vielä saatavilla, joten kuljetusta ei ole sisällytetty arvioon."
@@ -340,9 +337,9 @@
     "category": {
       "foreignRetailPrice": "Ulkomainen vähittäishinta",
       "transportCost": "Kuljetuskustannus",
-      "alcoholExciseEstimate": "Arvio alkoholin valmisteverosta",
-      "containerDutyEstimate": "Arvio pakkausverosta",
-      "importVatEstimate": "Arvio tuonnin arvonlisäverosta"
+      "alcoholExciseEstimate": "Alkoholin valmistevero",
+      "containerDutyEstimate": "Pakkausvero",
+      "importVatEstimate": "Tuonnin arvonlisävero"
     }
   },
   "DisclaimerBanner": {

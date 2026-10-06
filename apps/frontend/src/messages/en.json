@@ -311,9 +311,6 @@
       "title": "Ordering from abroad saves an estimated {amount} compared with the Alko price.",
       "asOf": "The comparison is based on the Alko price observation from {date}."
     },
-    "sanityNote": {
-      "label": "Confidence downgraded: the result is an estimate"
-    },
     "transportPending": {
       "notIncluded": "Not included — dataset pending",
       "explanation": "The transport dataset is not yet available, so transport is not included in the estimate."
@@ -340,9 +337,9 @@
     "category": {
       "foreignRetailPrice": "Foreign retail price",
       "transportCost": "Transport cost",
-      "alcoholExciseEstimate": "Alcohol excise estimate",
-      "containerDutyEstimate": "Container duty estimate",
-      "importVatEstimate": "Import VAT estimate"
+      "alcoholExciseEstimate": "Alcohol excise",
+      "containerDutyEstimate": "Container duty",
+      "importVatEstimate": "Import VAT"
     }
   },
   "DisclaimerBanner": {

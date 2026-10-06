@@ -11,6 +11,10 @@
  *     localizes from the ClassificationLabel enum; evidence lines
  *     compose locale sentences from the closed evidence codes, falling
  *     back to the English `observation` for evidence without a code.
+ *   - Single disclaimer render with confidence-keyed intensity, plain
+ *     tax labels, retired sanity-note framing label, and the
+ *     confidence breakdown behind a collapsed disclosure
+ *     (hedge-dedup-confidence-meter 3.1, designs D1/D2/D7).
  *
  * @module CalculatorResultTest
  */
@@ -238,22 +242,22 @@ describe('CalculatorResult alkoBenchmark line (task 4.3)', () => {
 // Sanity-note degraded state — visible only when notes are present
 // ---------------------------------------------------------------------------
 
-describe('CalculatorResult sanity-note degraded state (task 2.2)', () => {
+describe('CalculatorResult sanity-note degraded state (task 2.2, retitled by hedge-dedup 3.1)', () => {
   it('renders the visible LOW-confidence note block when the result carries sanityNotes', () => {
     renderWithIntl(<CalculatorResult result={resultWithSanityNotes()} />);
 
     const note = screen.getByTestId('sanity-note');
     expect(note).toBeVisible();
-    // The heading states the degradation factually — confidence downgraded,
-    // the result is an estimate.
+    // The generic framing label is retired: the note names the degraded
+    // input directly, via the plain (no estimate qualifier) category label.
     expect(
-      within(note).getByText('Luotettavuus alennettu: tulos on arvio'),
-    ).toBeInTheDocument();
-    // Component label via the shared category keys plus the API's own
-    // detail string — figures verbatim, never reworded UI copy.
+      within(note).queryByText('Luotettavuus alennettu: tulos on arvio'),
+    ).toBeNull();
     expect(
-      within(note).getByText('Arvio alkoholin valmisteverosta'),
+      within(note).getByText('Alkoholin valmistevero'),
     ).toBeInTheDocument();
+    // The API's own detail string names the breach — figures verbatim,
+    // never reworded UI copy.
     expect(note.textContent).toContain(
       'Line alcohol excise 65000 cents exceeds 5× the line retail price 4000 cents',
     );
@@ -272,6 +276,132 @@ describe('CalculatorResult sanity-note degraded state (task 2.2)', () => {
 
     expect(screen.queryByTestId('sanity-note')).toBeNull();
     expect(container.textContent).not.toContain('Luotettavuus alennettu');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plain tax labels (hedge-dedup-confidence-meter 3.1, design D2): excise,
+// container duty, and import VAT are deterministic given classification —
+// their category labels carry no estimate qualifier. Estimate-ness rides
+// on the per-value reliability badges, and the genuinely estimated
+// transport line keeps its explicit estimate wording.
+// ---------------------------------------------------------------------------
+
+describe('CalculatorResult plain tax labels (hedge-dedup 3.1)', () => {
+  it('labels the excise line without the estimate qualifier', () => {
+    renderWithIntl(<CalculatorResult result={baseResult()} />);
+
+    // The label renders on both the cost line and its freshness entry.
+    expect(screen.getAllByText('Alkoholin valmistevero').length).toBe(2);
+    expect(screen.queryByText('Arvio alkoholin valmisteverosta')).toBeNull();
+    // Estimate-ness stays on the per-value badge, never the name.
+    expect(screen.getAllByText('Arvioitu').length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Single disclaimer render with confidence-keyed intensity (3.1, D1):
+// exactly one render per result view, sourced from the result object's
+// `disclaimer` field, byte-identical text in both intensities — amber
+// `status-stale-*` at LOW, quiet neutral gray one-liner otherwise.
+// ---------------------------------------------------------------------------
+
+describe('CalculatorResult disclaimer dedup + intensity (hedge-dedup 3.1)', () => {
+  it('renders the result disclaimer exactly once per view', () => {
+    const { container } = renderWithIntl(
+      <CalculatorResult result={baseResult()} />,
+    );
+
+    expect(screen.getAllByText('Testidisclaimer')).toHaveLength(1);
+    // Byte-level single occurrence in the whole rendered output — no heap.
+    expect(container.textContent.split('Testidisclaimer').length - 1).toBe(1);
+  });
+
+  it('renders the amber status-stale banner at LOW confidence', () => {
+    renderWithIntl(<CalculatorResult result={resultWithSanityNotes()} />);
+
+    const banner = screen.getByTestId('disclaimer-banner');
+    expect(banner.getAttribute('data-confidence')).toBe('LOW');
+    expect(banner.className).toContain('status-stale');
+    expect(within(banner).getByText('Testidisclaimer')).toBeInTheDocument();
+  });
+
+  it('renders the quiet neutral one-liner at MEDIUM confidence with the same text', () => {
+    renderWithIntl(<CalculatorResult result={baseResult()} />);
+
+    const banner = screen.getByTestId('disclaimer-banner');
+    expect(banner.getAttribute('data-confidence')).toBe('MEDIUM');
+    expect(banner.className).toContain('border-gray-200');
+    expect(banner.className).toContain('bg-gray-50');
+    expect(banner.className).not.toContain('status-stale');
+    // Same payload text and version/language line — only the
+    // presentation differs, never a word of the disclaimer.
+    expect(within(banner).getByText('Testidisclaimer')).toBeInTheDocument();
+    expect(banner.textContent).toContain('vtest · suomi');
+  });
+
+  it('renders the quiet one-liner at HIGH confidence too', () => {
+    renderWithIntl(
+      <CalculatorResult
+        result={{ ...baseResult(), confidence: 'HIGH' }}
+      />,
+    );
+
+    const banner = screen.getByTestId('disclaimer-banner');
+    expect(banner.getAttribute('data-confidence')).toBe('HIGH');
+    expect(banner.className).not.toContain('status-stale');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Confidence breakdown behind the derivation-style disclosure (3.1, D7):
+// the per-input detail is reachable in one interaction instead of
+// always-on. The SanityNoteList stays visible at LOW — that is the
+// degraded-state exception, pinned by the sanity-note block above.
+// ---------------------------------------------------------------------------
+
+/** Result carrying composed confidence-breakdown rows. */
+function resultWithBreakdown(): CalculatorResultType {
+  return {
+    ...baseResult(),
+    confidenceBreakdown: [
+      {
+        status: 'VERIFIED',
+        detail: 'Vähittäishinta: kaupan oma hintahavainto',
+      },
+      {
+        status: 'ESTIMATED',
+        detail: 'Valmistevero: virallinen verotaulukko',
+      },
+    ],
+  };
+}
+
+describe('CalculatorResult confidence-breakdown disclosure (hedge-dedup 3.1)', () => {
+  it('keeps the breakdown behind a collapsed disclosure, reachable in one interaction', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorResult result={resultWithBreakdown()} />);
+
+    const disclosure = screen.getByTestId('confidence-breakdown-disclosure');
+    // Collapsed by default — not always-on.
+    expect(disclosure).not.toHaveAttribute('open');
+    // One interaction (toggling the summary) reveals the detail.
+    await user.click(
+      within(disclosure).getByText('Tietojen luotettavuus'),
+    );
+    expect(disclosure).toHaveAttribute('open');
+    expect(
+      within(disclosure).getByText('Valmistevero: virallinen verotaulukko'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders no disclosure when the result carries no breakdown rows', () => {
+    const { container } = renderWithIntl(
+      <CalculatorResult result={baseResult()} />,
+    );
+
+    expect(screen.queryByTestId('confidence-breakdown-disclosure')).toBeNull();
+    expect(container.textContent).not.toContain('Tietojen luotettavuus');
   });
 });
 

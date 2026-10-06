@@ -269,7 +269,7 @@ describe('SharePage', () => {
 
     const html = await renderPage();
 
-    expect(html).toContain('Arvio tuonnin arvonlisäverosta');
+    expect(html).toContain('Tuonnin arvonlisävero');
     expect(html).toContain('7,20 €');
     // The stored label is the fallback for non-canonical lines only — a
     // whitelisted category must never surface the raw stored copy.
@@ -297,7 +297,7 @@ describe('SharePage', () => {
 
     const html = await renderPage();
 
-    expect(html).not.toContain('Arvio tuonnin arvonlisäverosta');
+    expect(html).not.toContain('Tuonnin arvonlisävero');
     expect(html).not.toContain('importVatEstimate');
   });
 
