@@ -43,12 +43,13 @@ describe('cron routing table (task 4.3 — BullMQ repeat-schedule parity)', () =
     expect(handlerNames('0 * * * *')).toEqual(['ingestion-producer']);
   });
 
-  it('routes the aggregation, freshness alert, price-alert evaluation, savings snapshots, and data-quality gauges on the 30-minute pattern', () => {
+  it('routes the aggregation, freshness alert, price-alert evaluation, savings snapshots, outcome margins, and data-quality gauges on the 30-minute pattern', () => {
     expect(handlerNames('*/30 * * * *')).toEqual([
       'time-series-aggregation',
       'freshness-alert',
       'price-alert-evaluation',
       'savings-snapshots',
+      'outcome-margins',
       'data-quality-gauges',
     ]);
   });

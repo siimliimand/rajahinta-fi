@@ -2239,6 +2239,54 @@ export const contactMessages = sqliteTable(
 );
 
 /**
+ * Outcome margins — the persisted empirical-margin ladder (task 1.2,
+ * change hedge-dedup-confidence-meter, design D3, spec:
+ * calculation-outcomes delta "Persisted empirical margins").
+ *
+ * One row per calibrated cell of the margin ladder
+ * (`category_carrier` → `category` → `global`), recomputed from the
+ * stored calculation_outcomes by the outcome-margins step of the
+ * aggregation tick — never written from anything else. The composite
+ * (dimension, cell_key) primary key IS the re-run idempotency
+ * (delete-then-insert per run); rows exist only at or above the
+ * calibration floor (core-domain MARGIN_SAMPLE_FLOOR — enforced by the
+ * calibration, not duplicated in SQL), so an empty outcome corpus
+ * persists no rows and no synthesized values.
+ *
+ * DISPLAY-ONLY (design D4, same precedent as alkoBenchmark): nothing
+ * here may enter a total, a ranking, or any computed output — the
+ * margin renders read-only next to its basis (sample_count, as_of).
+ */
+export const outcomeMargins = sqliteTable(
+  'outcome_margins',
+  {
+    /** Ladder rung: 'category_carrier' | 'category' | 'global' (CHECK below). */
+    dimension: text('dimension', { length: 16 }).notNull(),
+    /** Cell key — 'global', a canonical category, or a `category|carrier` composite. */
+    cellKey: text('cell_key', { length: 256 }).notNull(),
+    /** Relative-error p80 of the cell, a fraction of the estimate (0.052 = ±5.2 %). */
+    quantile: real('quantile').notNull(),
+    /** Outcome reports behind the quantile — the basis, always rendered beside it. */
+    sampleCount: integer('sample_count').notNull(),
+    /** Run instant the margin was computed for (ISO-8601 TEXT). */
+    asOf: text('as_of').notNull(),
+  },
+  (table) => [
+    // One row per cell however often the aggregation step re-runs.
+    primaryKey({ columns: [table.dimension, table.cellKey] }),
+    check(
+      'outcome_margins_dimension_check',
+      sql`${table.dimension} IN ('category_carrier', 'category', 'global')`,
+    ),
+    // A blank key is a calibration bug, not a cell (the producer_links
+    // non-empty CHECK precedent).
+    check('outcome_margins_cell_key_check', sql`${table.cellKey} <> ''`),
+    check('outcome_margins_quantile_check', sql`${table.quantile} >= 0`),
+    check('outcome_margins_sample_count_check', sql`${table.sampleCount} > 0`),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -2283,4 +2331,5 @@ export const d1Schema = {
   sourceGovernance,
   emailTokens,
   contactMessages,
+  outcomeMargins,
 };
