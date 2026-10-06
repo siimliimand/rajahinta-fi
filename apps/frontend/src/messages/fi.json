@@ -544,7 +544,7 @@
       }
     },
     "exampleBadge": "Esimerkki",
-    "examplesNote": "Esimerkkisarakkeet päivittäisestä tilannekuvasta: jokaisen rajat ylittävän myyjän materiaalistunut kokonaishintaero Alkon vertailuhintaan. <link>Katso koko luettelo</link>."
+    "examplesNote": "Esimerkkisarakkeet päivittäisestä tilannekuvasta: jokaisen rajat ylittävän myyjän päivittynyt kokonaishintaero Alkon vertailuhintaan. <link>Katso koko luettelo</link>."
   },
   "SortSelector": {
     "label": "Järjestä:"
@@ -586,7 +586,7 @@
     },
     "exampleDealsHeading": "Esimerkkejä päivittäisestä tilannekuvasta",
     "exampleBadge": "Esimerkki",
-    "exampleDealsNote": "Jokainen rivi on yhden rajat ylittävän myyjän materiaalistunut tilannekuva. <link>Katso koko luettelo</link>.",
+    "exampleDealsNote": "Jokainen rivi on yhden rajat ylittävän myyjän päivittynyt tilannekuva. <link>Katso koko luettelo</link>.",
     "exampleLandedTotal": "Arvioitu kokonaishinta: {price}",
     "addExample": "Lisää",
     "addExampleAria": "Lisää {name} ostoskoriin",

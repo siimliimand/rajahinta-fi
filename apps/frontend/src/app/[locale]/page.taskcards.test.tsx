@@ -165,7 +165,7 @@ const TASK_CARDS = [
     },
     en: {
       title: 'Trip calculator',
-      body: 'Compare baskets for a whole trip: the shared travel cost, the per-category price difference, and the effect of the traveller allowance caps.',
+      body: 'Compare baskets for a whole trip: the shared travel cost, the per-category price difference, and the effect of the duty-free allowances.',
     },
   },
   {
@@ -176,7 +176,7 @@ const TASK_CARDS = [
     },
     en: {
       title: 'Event calculator',
-      body: 'Estimate the drink requirement from the guest count and the event duration, itemized line by line as a shopping list.',
+      body: 'Estimate the drink demand from the guest count and the event duration, itemized line by line as a shopping list.',
     },
   },
   {

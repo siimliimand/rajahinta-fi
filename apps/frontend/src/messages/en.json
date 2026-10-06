@@ -151,9 +151,9 @@
     "taskCardsBasketTitle": "Basket optimization",
     "taskCardsBasketBody": "Combine several products into one basket and compute the optimal store combination as a landed-cost estimate for Finland.",
     "taskCardsTripTitle": "Trip calculator",
-    "taskCardsTripBody": "Compare baskets for a whole trip: the shared travel cost, the per-category price difference, and the effect of the traveller allowance caps.",
+    "taskCardsTripBody": "Compare baskets for a whole trip: the shared travel cost, the per-category price difference, and the effect of the duty-free allowances.",
     "taskCardsEventTitle": "Event calculator",
-    "taskCardsEventBody": "Estimate the drink requirement from the guest count and the event duration, itemized line by line as a shopping list.",
+    "taskCardsEventBody": "Estimate the drink demand from the guest count and the event duration, itemized line by line as a shopping list.",
     "taskCardsWhatIfTitle": "Scenario calculator",
     "taskCardsWhatIfBody": "Substitute the excise duty rate with a value of your choice and compare product totals. The calculation is hypothetical.",
     "taskCardsSavingsTitle": "Landed-cost gap versus the Alko reference",
@@ -512,7 +512,7 @@
     "addProduct": "Add product",
     "addProductTitle": "Add a product",
     "aboutTitle": "About this comparison",
-    "aboutBody": "All landed-cost estimates are calculated for Finland (FI) with default transport. Products are sorted by {sort}. No product position is influenced by commercial factors — every product has equal visual weight. See <link>how ranking works</link>.",
+    "aboutBody": "All landed-cost estimates are calculated for Finland (FI) with default transport. Products are sorted by {sort}. No product position is influenced by commercial factors — every product has equal visual weight. See <link>ordering principles</link>.",
     "sortedBy": "Sorted by {sort}",
     "productsCompared": "{count, plural, one {# product} other {# products}} compared",
     "empty": "No products added to comparison yet.",
@@ -535,8 +535,8 @@
         "INVALID_PRICE": "the price is invalid"
       },
       "tooltip": {
-        "triggerLabel": "How is the unit price calculated?",
-        "title": "Unit price: cents per gram of pure ethanol",
+        "triggerLabel": "How is the ethanol unit price calculated?",
+        "title": "Ethanol unit price: cents per gram of pure ethanol",
         "formula": "Formula: price ÷ (volume in litres × alcohol fraction × 789 g/l).",
         "density": "The density of pure ethanol is 789 g/l.",
         "priceReliability": "Price input reliability: {status}.",
@@ -544,7 +544,7 @@
       }
     },
     "exampleBadge": "Example",
-    "examplesNote": "Example columns from the daily snapshot: each cross-border merchant's materialized landed-total gap against the Alko reference price. <link>See the full listing</link>."
+    "examplesNote": "Example columns from the daily snapshot: each cross-border merchant's updated landed-total gap against the Alko reference price. <link>See the full listing</link>."
   },
   "SortSelector": {
     "label": "Sort by"
@@ -586,7 +586,7 @@
     },
     "exampleDealsHeading": "Examples from the daily snapshot",
     "exampleBadge": "Example",
-    "exampleDealsNote": "Each row is one cross-border merchant's materialized snapshot figure. <link>See the full listing</link>.",
+    "exampleDealsNote": "Each row is one cross-border merchant's updated snapshot figure. <link>See the full listing</link>.",
     "exampleLandedTotal": "Estimated landed total: {price}",
     "addExample": "Add",
     "addExampleAria": "Add {name} to the basket",
@@ -858,9 +858,9 @@
   },
   "EventPage": {
     "title": "Event calculator",
-    "subtitle": "Estimate the drink requirement from the number of guests, the duration, and the event type. Each line of the resulting shopping list shows the need, the suggested purchase, and the surplus.",
-    "metaTitle": "Event calculator: drink need and shopping list",
-    "metaDescription": "Estimate your event's drink requirement from the guest count and duration, and get a shopping list showing the need, the suggested purchase, and the surplus — also compared against foreign stores.",
+    "subtitle": "Estimate the drink demand from the number of guests, the duration, and the event type. Each line of the resulting shopping list shows the need, the suggested purchase, and the surplus.",
+    "metaTitle": "Event calculator: drink demand and shopping list",
+    "metaDescription": "Estimate your event's drink demand from the guest count and duration, and get a shopping list showing the need, the suggested purchase, and the surplus — also compared against foreign stores.",
     "howTitle": "How this calculation works",
     "howBody": "Enter the guest count, the duration, and the event type: the calculation combines published consumption norms with per-product prices into a shopping list where each line shows the need, the suggested purchase quantity, and the surplus. The result is always an estimate — not tax or customs advice.",
     "form": {
@@ -970,11 +970,11 @@
   },
   "TripPage": {
     "title": "Trip calculator",
-    "subtitle": "Calculate how many litres are worth importing on a trip: the shared travel cost, the per-category price difference, and where the traveller allowance caps bite. Each line shows the break-even import volume and the effect of the allowance cap.",
+    "subtitle": "Calculate how many litres are worth importing on a trip: the shared travel cost, the per-category price difference, and where the duty-free allowances are exceeded. Each line shows the break-even import volume and the effect of the duty-free allowance.",
     "metaTitle": "Trip calculator: break-even import at the border",
-    "metaDescription": "Work out how many litres are worth bringing back from abroad: the shared travel cost, the per-category price difference, and the effect of customs allowance limits — an estimate before you travel.",
+    "metaDescription": "Work out how many litres are worth bringing back from abroad: the shared travel cost, the per-category price difference, and the effect of duty-free allowances — an estimate before you travel.",
     "howTitle": "How this calculation works",
-    "howBody": "Enter the trip costs and the per-category prices: the calculation splits the travel cost across travellers, compares domestic and foreign prices, and shows how many litres are worth bringing before the customs allowance cap is crossed. The result is always an estimate — not tax or customs advice.",
+    "howBody": "Enter the trip costs and the per-category prices: the calculation splits the travel cost across travellers, compares domestic and foreign prices, and shows how many litres are worth bringing before the duty-free allowance is exceeded. The result is always an estimate — not tax or customs advice.",
     "form": {
       "passengers": "Passengers",
       "vehicle": "Vehicle",
@@ -1067,7 +1067,7 @@
       "heading": "Break-even volumes",
       "priceDifference": "Price difference (Finland − abroad)",
       "breakEven": "Break-even volume",
-      "cap": "Allowance cap (duty-free maximum)",
+      "cap": "Duty-free allowance (duty-free maximum)",
       "suggested": "Suggested duty-free volume",
       "capExceeded": "Cap exceeded",
       "withinAllowance": "Within the allowance",
@@ -1080,7 +1080,7 @@
       "noBreakEvenBody": "The foreign price is not below the domestic comparison price, so there is no break-even volume.",
       "travelCost": "Total travel cost: {total}",
       "perTraveller": "Per traveller: {amount} ({passengers} travellers)",
-      "allowanceVersion": "Allowance dataset version: {version}"
+      "allowanceVersion": "Duty-free allowance dataset version: {version}"
     },
     "breakEvenCard": {
       "heading": "Break-even baskets",
@@ -1105,8 +1105,8 @@
       "stat": "On the latest observation day ({date}), beers ordered from webstores in {country} were on average {percent}% below the Alko reference price."
     },
     "noAllowances": {
-      "title": "No published traveller allowances",
-      "body": "There is no published allowance dataset version effective on the selected date, so the calculation cannot be produced. Try again later."
+      "title": "No published duty-free allowances",
+      "body": "There is no published duty-free allowance dataset version effective on the selected date, so the calculation cannot be produced. Try again later."
     },
  "errors": {
   "validation": "Check the input values: 1–9 passengers, costs above €0.",
@@ -1316,7 +1316,7 @@
     "title": "Ethanol unit price by category",
     "metaTitle": "Ethanol unit price by category: unit-price listing",
     "metaDescription": "See what one gram of pure ethanol costs when computed from product offer prices, by category and ascending. An informational listing where every value uses the same formula.",
-    "subtitle": "Each row states what one gram of pure ethanol costs when computed from the product's offer price. The value uses the same formula as the comparison view, and the listing is ordered by the unit price, ascending.",
+    "subtitle": "Each row states what one gram of pure ethanol costs when computed from the product's offer price. The value uses the same formula as the comparison view, and the listing is ordered by the ethanol unit price, ascending.",
     "informationalNote": "This listing is informational: it presents the computed values as they are. The order shown here is a separate read-only view and does not affect search, other listings, or the calculator.",
     "categorySelectorLabel": "Price category",
     "category": {
@@ -1327,7 +1327,7 @@
       "other_fermented": "Cider and long drink",
       "spirits": "Spirits"
     },
-    "tableCaption": "Products in the {category} price category by unit price, ascending",
+    "tableCaption": "Products in the {category} price category by ethanol unit price, ascending",
     "columnPosition": "#",
     "columnProduct": "Product",
     "columnEurPerGram": "Ethanol unit price (snt/g)",
@@ -1338,7 +1338,7 @@
     "errorTitle": "The listing could not be loaded",
     "errorBody": "The backend did not respond. You can try again.",
     "emptyTitle": "No rows to show",
-    "emptyBody": "No offer in this price category currently has a computable unit price."
+    "emptyBody": "No offer in this price category currently has a computable ethanol unit price."
   },
   "SavingsPage": {
     "metaTitle": "Landed-cost gap versus the Alko reference",
@@ -1463,7 +1463,7 @@
     "metaTitle": "Traveller duty-free alcohol allowances",
     "metaDescription": "Traveller duty-free alcohol allowances by date, with the published source citations and version history. Informational reference — not legal advice.",
     "title": "Traveller duty-free alcohol allowances",
-    "subtitle": "The published traveller allowances effective on the chosen date, by category: the dataset version, its effective window, and each cap's source citation exactly as stored.",
+    "subtitle": "The published duty-free allowances effective on the chosen date, by category: the dataset version, its effective window, and each cap's source citation exactly as stored.",
     "informationalNote": "This page is an informational summary of published allowances together with their source citations. It is guidance, not legal advice, and does not replace official rules — always verify current limits with the authorities.",
     "datePickerLabel": "Date",
     "dateSubmit": "Show allowances",
@@ -1486,7 +1486,7 @@
     "containerEquivalentIntermediateProducts": "≈ {count} × 0.75 l bottles",
     "containerEquivalentOtherFermented": "≈ {count} × 0.5 l cans",
     "containerEquivalentSpirits": "≈ {count} × 0.5 l bottles",
-    "capsTableCaption": "Traveller allowances by category on {date}",
+    "capsTableCaption": "Duty-free allowances by category on {date}",
     "effectiveWindow": "{from} – {to}",
     "effectiveWindowOpen": "from {from}, open-ended",
     "notFoundTitle": "No published version covers this date",
