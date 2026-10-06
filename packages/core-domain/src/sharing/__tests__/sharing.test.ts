@@ -128,6 +128,29 @@ describe('assembleShareSnapshot (frozen copy, closed projection)', () => {
       ].sort(),
     );
   });
+
+  // Design D6 (hedge-dedup-confidence-meter): the frozen margin is an
+  // ADDITIVE field — present only when the freeze resolved a ladder
+  // rung, so legacy and new-absent payloads keep one shape.
+  const margin = {
+    quantile: 0.02,
+    sampleCount: 12,
+    cell: { dimension: 'category', key: 'beer' },
+    asOf: '2026-10-06T00:00:00.000Z',
+  };
+
+  it('freezes the margin as an additive field when the source carries one', () => {
+    const snapshot = assembleShareSnapshot({ ...source, empiricalMargin: margin });
+    expect(snapshot.empiricalMargin).toEqual(margin);
+    expect(Object.keys(snapshot)).toContain('empiricalMargin');
+    // Aggregate-only data — the strip assertion stays clean with it in.
+    expect(() => assertNoPersonalData(snapshot)).not.toThrow();
+  });
+
+  it('freezes NO margin key when the source has none (absent, not null)', () => {
+    const snapshot = assembleShareSnapshot(source);
+    expect('empiricalMargin' in snapshot).toBe(false);
+  });
 });
 
 describe('assertNoPersonalData (strip assertion)', () => {

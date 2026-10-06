@@ -365,6 +365,7 @@ export function seedCalculationRecord(
     sessionId?: string | null;
     exciseRuleVersionId?: number | null;
     containerDutyRuleVersionId?: number | null;
+    transportOfferId?: number | null;
   },
 ): number {
   const id = record.id ?? 1;
@@ -385,10 +386,13 @@ export function seedCalculationRecord(
        excise_rule_version_id, container_duty_rule_version_id, total_cents,
        breakdown, confidence, quantity, destination, disclaimer, session_id,
        calculated_at
-     ) VALUES (?, ?, '[]', NULL, ?, ?, ?, ?, ?, ?, 'FI', ?, ?, ?)`,
+     ) VALUES (?, ?, '[]', ?, ?, ?, ?, ?, ?, ?, 'FI', ?, ?, ?)`,
   ).run(
     id,
     record.productMasterId,
+    // `?? null` so an explicit undefined keeps the historical NULL
+    // transport offer (the join-honest freeze path keys it only when set).
+    record.transportOfferId ?? null,
     record.exciseRuleVersionId ?? null,
     record.containerDutyRuleVersionId ?? null,
     record.totalCents ?? 873,

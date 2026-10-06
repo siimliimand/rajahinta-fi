@@ -34,6 +34,13 @@ export interface OwnedCalculationRecord {
   readonly productName: string;
   readonly productBrand: string | null;
   readonly productCategory: string;
+  /**
+   * The record's stored transport offer id (or null) — the join key the
+   * corpus attribution resolves the attribution carrier from
+   * (outcome-margin.repository: `tor.carrier`), so the share freeze's
+   * ladder query keys the same cells the record's own outcomes did.
+   */
+  readonly transportOfferId: number | null;
 }
 
 interface OwnedRecordRow {
@@ -49,11 +56,13 @@ interface OwnedRecordRow {
   readonly product_name: string;
   readonly product_brand: string | null;
   readonly product_category: string;
+  readonly transport_offer_id: number | null;
 }
 
 const OWNED_RECORD_SQL = `
   SELECT r.id, r.session_id, r.calculated_at, r.total_cents, r.breakdown,
          r.confidence, r.quantity, r.destination, r.disclaimer,
+         r.transport_offer_id,
          p.name AS product_name, p.brand AS product_brand,
          p.category AS product_category
     FROM calculation_records r
@@ -103,5 +112,6 @@ export async function findOwnedCalculationRecord(
     productName: row.product_name,
     productBrand: row.product_brand,
     productCategory: row.product_category,
+    transportOfferId: row.transport_offer_id,
   };
 }

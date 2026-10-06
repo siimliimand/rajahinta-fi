@@ -1,8 +1,8 @@
 /**
- * Read-time empirical-margin composition (task 2.2, change
- * hedge-dedup-confidence-meter; design D3/D4) — the display-only
+ * Empirical-margin composition (tasks 2.2/4.3, change
+ * hedge-dedup-confidence-meter; design D3/D4/D6) — the display-only
  * `empiricalMargin` field attached to the calculator, basket, trip, and
- * event responses.
+ * event responses, and frozen into new share snapshots.
  *
  * The domain results stay pure: exactly like the `packing` section on
  * the basket response (and unlike `alkoBenchmark`, which is assembled
@@ -123,17 +123,35 @@ export function withEmpiricalMargin<T extends object>(
   ladder: readonly EmpiricalMargin[],
   query: MarginLadderQuery,
 ): WithEmpiricalMargin<T> {
-  const margin = resolveEmpiricalMarginFromCells(ladder, query);
+  const margin = resolveEmpiricalMarginView(ladder, query);
   if (margin === null) {
     return body;
   }
+  return { ...body, empiricalMargin: margin };
+}
+
+/**
+ * The resolved wire-face margin for `query`, or null when no ladder
+ * rung qualifies — the one place the domain {@link EmpiricalMargin}
+ * (as-of as Date) becomes the wire view (as-of as ISO string). Shared
+ * by the read-time response attachment ({@link withEmpiricalMargin})
+ * and the share-snapshot FREEZE side (design D6: the snapshot carries
+ * the same view the result routes render, resolved at freeze time — a
+ * snapshot is immutable, so the figure must be frozen, not recomposed
+ * per read).
+ */
+export function resolveEmpiricalMarginView(
+  ladder: readonly EmpiricalMargin[],
+  query: MarginLadderQuery,
+): EmpiricalMarginView | null {
+  const margin = resolveEmpiricalMarginFromCells(ladder, query);
+  if (margin === null) {
+    return null;
+  }
   return {
-    ...body,
-    empiricalMargin: {
-      quantile: margin.quantile,
-      sampleCount: margin.sampleCount,
-      cell: margin.cell,
-      asOf: margin.asOf.toISOString(),
-    },
+    quantile: margin.quantile,
+    sampleCount: margin.sampleCount,
+    cell: margin.cell,
+    asOf: margin.asOf.toISOString(),
   };
 }

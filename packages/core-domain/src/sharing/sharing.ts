@@ -112,6 +112,13 @@ export function assembleShareSnapshot(source: ShareSnapshotSource): ShareSnapsho
     destination: source.destination,
     disclaimer: source.disclaimer,
     calculatedAt: source.calculatedAt,
+    // Design D6 (hedge-dedup-confidence-meter): the margin freezes as
+    // an ADDITIVE field — the key exists only when a rung resolved at
+    // freeze time, so legacy and new-absent payloads stay one shape
+    // (absent, never null-spelled).
+    ...(source.empiricalMargin === undefined
+      ? {}
+      : { empiricalMargin: source.empiricalMargin }),
   };
 }
 
