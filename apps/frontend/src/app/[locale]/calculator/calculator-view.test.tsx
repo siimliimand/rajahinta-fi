@@ -20,12 +20,20 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CalculatorView from './calculator-view';
-import { ApiFetchError, searchProducts, calculateLandedCost, listScenarios } from '@/lib/api';
+import {
+  ApiFetchError,
+  searchProducts,
+  calculateLandedCost,
+  listScenarios,
+  getSavingsBestPerMerchant,
+  request,
+} from '@/lib/api';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import type {
   CalculatorResult as CalculatorResultType,
   ProductSearchItem,
 } from '@/lib/types';
+import type { SavingsBestPerMerchantRow } from '@/lib/api';
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
@@ -34,6 +42,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
     searchProducts: vi.fn(),
     calculateLandedCost: vi.fn(),
     listScenarios: vi.fn(),
+    getSavingsBestPerMerchant: vi.fn(),
     request: vi.fn(),
     // The result view's outcome nudge (task 3.3) probes the session on
     // mount; failing closed here keeps the render offline and the nudge
@@ -52,6 +61,8 @@ vi.mock('@/i18n/navigation', () => ({
 const mockedSearchProducts = vi.mocked(searchProducts);
 const mockedCalculateLandedCost = vi.mocked(calculateLandedCost);
 const mockedListScenarios = vi.mocked(listScenarios);
+const mockedGetSavingsBestPerMerchant = vi.mocked(getSavingsBestPerMerchant);
+const mockedRequest = vi.mocked(request);
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -184,6 +195,12 @@ beforeEach(() => {
   mockedListScenarios.mockResolvedValue([]);
   mockedSearchProducts.mockResolvedValue(searchResponse([HIT]));
   mockedCalculateLandedCost.mockResolvedValue(baseResult());
+  // Default: no materialized day — the pristine view renders no example
+  // cards, so every pre-existing test's assumptions hold unchanged.
+  mockedGetSavingsBestPerMerchant.mockResolvedValue({
+    asOf: null,
+    merchants: [],
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -940,5 +957,174 @@ describe('CalculatorView selection collapses the result list (catalog-first-run-
     await user.click(screen.getByRole('button', { name: 'Vaihda' }));
     expect(await screen.findByText('Tarjouskotilo')).toBeInTheDocument();
     expect(screen.queryByTestId('chosen-product')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Example cards from the per-merchant savings listing (task 3.1, change
+// savings-first-catalog-and-prefill): a pristine first paint renders one
+// snapshot-figure card per cross-border merchant — no calculation call, no
+// calculation record; picking a card enters the existing selector flow; an
+// empty or failed listing renders nothing new.
+// ---------------------------------------------------------------------------
+
+/** One per-merchant snapshot row, in the route's serialization shape. */
+const ROW: SavingsBestPerMerchantRow = {
+  productId: 42,
+  productName: 'Renat',
+  category: 'Vodka',
+  merchant: 'systembolaget',
+  merchantCountry: 'SE',
+  priceCents: 3099,
+  observedAt: '2026-10-05T10:00:00.000Z',
+  landedTotalCents: 3890,
+  alkoReferenceCents: 4499,
+  alkoObservedAt: '2026-10-05T10:00:00.000Z',
+  gapCents: -609,
+  gapBasisPoints: -1354,
+  reliability: 'VERIFIED',
+  confidence: 'HIGH',
+  taxDatasetVersion: 'test',
+};
+
+/** A second merchant's row for the one-row-per-merchant assertion. */
+const ROW_OTHER_MERCHANT: SavingsBestPerMerchantRow = {
+  ...ROW,
+  productId: 77,
+  productName: 'Karhu Olut 4.7% 24 × 0,33 l tölkki',
+  category: 'Beer',
+  merchant: 'alko',
+  merchantCountry: 'FI',
+};
+
+describe('CalculatorView example cards (task 3.1, savings-first-catalog-and-prefill)', () => {
+  it('renders one snapshot-figure card per merchant with the example label and /savings link', async () => {
+    mockedGetSavingsBestPerMerchant.mockResolvedValue({
+      asOf: '2026-10-05',
+      merchants: [ROW, ROW_OTHER_MERCHANT],
+    });
+    renderWithIntl(<CalculatorView />);
+
+    const section = await screen.findByTestId('savings-examples');
+    const cards = within(section).getAllByTestId('savings-example-card');
+    expect(cards).toHaveLength(2);
+
+    // Snapshot figures, verbatim from the row (fi money form): observed
+    // price, landed total, signed gap against the Alko reference.
+    const first = cards[0] as HTMLElement;
+    expect(within(first).getByText('Renat')).toBeInTheDocument();
+    expect(within(first).getByText('systembolaget · SE')).toBeInTheDocument();
+    expect(within(first).getByText('Halvin havaittu hinta: 30,99 €')).toBeInTheDocument();
+    expect(within(first).getByText('Arvioitu kokonaishinta: 38,90 €')).toBeInTheDocument();
+    expect(within(first).getByText('Ero Alkon vertailuhintaan: -6,09 €')).toBeInTheDocument();
+
+    // Every card carries the example badge; the section links to the
+    // full listing.
+    expect(
+      within(section).getAllByTestId('savings-example-badge'),
+    ).toHaveLength(2);
+    expect(within(section).getAllByText('Esimerkki').length).toBeGreaterThan(0);
+    const listingLink = within(section).getByText(
+      'Katso koko luettelo',
+    ).closest('a');
+    expect(listingLink).toHaveAttribute('href', '/savings');
+  });
+
+  it('renders the pristine examples without any calculation call or record', async () => {
+    mockedGetSavingsBestPerMerchant.mockResolvedValue({
+      asOf: '2026-10-05',
+      merchants: [ROW],
+    });
+    renderWithIntl(<CalculatorView />);
+
+    await screen.findByTestId('savings-examples');
+
+    // The hard constraint: rendering the cards never calls the
+    // calculation API — and never posts a calculation record (the only
+    // request() write in this view is the post-calculation history
+    // entry).
+    expect(mockedCalculateLandedCost).not.toHaveBeenCalled();
+    expect(mockedRequest).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('result-card')).toBeNull();
+  });
+
+  it('loads the picked example into the existing selector flow; calculation waits for the explicit action', async () => {
+    mockedGetSavingsBestPerMerchant.mockResolvedValue({
+      asOf: '2026-10-05',
+      merchants: [ROW],
+    });
+    const user = userEvent.setup();
+    renderWithIntl(<CalculatorView />);
+
+    const card = await screen.findByTestId('savings-example-card');
+    await user.click(card);
+
+    // The picked row becomes the selected product — the chosen-product
+    // state, the Configure step, and the row's observed price.
+    expect(screen.getByTestId('chosen-product')).toHaveTextContent('Renat');
+    expect(screen.getByTestId('observed-price')).toHaveTextContent(
+      'Halvin havaittu hinta: €30.99',
+    );
+    expect(screen.getByTestId('calc-destination')).toBeInTheDocument();
+    expect(screen.queryByTestId('savings-examples')).toBeNull();
+
+    // Still no calculation — the card pick is not one…
+    expect(mockedCalculateLandedCost).not.toHaveBeenCalled();
+
+    // …and the explicit calculate action runs the normal flow.
+    await user.click(
+      screen.getByRole('button', { name: 'Laske kokonaiskustannus' }),
+    );
+    await screen.findByTestId('result-card');
+    expect(mockedCalculateLandedCost).toHaveBeenCalledTimes(1);
+    expect(mockedCalculateLandedCost.mock.calls[0]![0]).toEqual({
+      productId: ROW.productId,
+      quantity: 1,
+      destination: 'FI',
+    });
+  });
+
+  it('renders nothing new on an empty listing — the type-to-search guidance stands', async () => {
+    mockedGetSavingsBestPerMerchant.mockResolvedValue({
+      asOf: null,
+      merchants: [],
+    });
+    renderWithIntl(<CalculatorView />);
+
+    // Let the (empty) fetch settle before asserting the honest zero.
+    await waitFor(() =>
+      expect(mockedGetSavingsBestPerMerchant).toHaveBeenCalledTimes(1),
+    );
+    expect(screen.queryByTestId('savings-examples')).toBeNull();
+    expect(
+      screen.getByPlaceholderText('Hae tuotteita…'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders nothing new when the listing read fails', async () => {
+    mockedGetSavingsBestPerMerchant.mockRejectedValue(
+      new ApiFetchError(500, null),
+    );
+    renderWithIntl(<CalculatorView />);
+
+    await waitFor(() =>
+      expect(mockedGetSavingsBestPerMerchant).toHaveBeenCalledTimes(1),
+    );
+    expect(screen.queryByTestId('savings-examples')).toBeNull();
+    expect(mockedCalculateLandedCost).not.toHaveBeenCalled();
+  });
+
+  it('skips the example fetch on a hero-search handoff mount (?q=)', async () => {
+    window.history.replaceState(null, '', '/calculator?q=vodka');
+    try {
+      renderWithIntl(<CalculatorView />);
+      // The handoff runs the search; the examples stay unfetched — the
+      // search owns the first paint.
+      await screen.findByText('Renat');
+      expect(mockedGetSavingsBestPerMerchant).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('savings-examples')).toBeNull();
+    } finally {
+      window.history.replaceState(null, '', '/calculator');
+    }
   });
 });

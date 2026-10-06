@@ -17,10 +17,12 @@ import {
   searchProducts,
   calculateLandedCost,
   getProductDetail,
+  getSavingsBestPerMerchant,
   saveScenario,
   request,
   ApiFetchError,
 } from '@/lib/api';
+import type { SavingsBestPerMerchantRow } from '@/lib/api';
 import { useDebouncedCallback } from '@/lib/use-debounced-callback';
 import { formatAttributeRow, formatVolume } from '@/lib/format/product-attributes';
 import { formatMoney } from '@/lib/format/money';
@@ -33,6 +35,7 @@ import { Link } from '@/i18n/navigation';
 import { EmptyState, ErrorState } from '@/components/ui';
 import ProductSearch from './components/ProductSearch';
 import ProductSelector, { packUnitsPerPackage } from './components/ProductSelector';
+import SavingsExampleCards from './components/SavingsExampleCards';
 import MerchantWarningNotice from '../components/MerchantWarningNotice';
 import QuantitySelector from './components/QuantitySelector';
 import ResultCard from './components/ResultCard';
@@ -277,6 +280,15 @@ export default function CalculatorView() {
   // the untouched input value.
   const [searchedQuery, setSearchedQuery] = useState('');
 
+  // ── Example cards (task 3.1, change savings-first-catalog-and-prefill):
+  // the per-merchant snapshot rows rendered while the view is pristine.
+  // Snapshot figures only — the read is a savings listing, never a
+  // calculation input.
+  const [exampleDeals, setExampleDeals] = useState<
+    readonly SavingsBestPerMerchantRow[]
+  >([]);
+  const examplesFetchedRef = useRef(false);
+
   // ── Selection state ──
   const [selectedProduct, setSelectedProduct] =
     useState<ProductSearchItem | null>(null);
@@ -452,6 +464,33 @@ export default function CalculatorView() {
       runSearch(q);
     }
   }, [runSearch]);
+
+  // ── Example fetch (task 3.1): exactly one per-merchant read per view,
+  // and only for a pristine mount — a hero-search handoff (?q=) leaves
+  // the examples unfetched, because the search owns that first paint.
+  // Rendering the cards performs no calculation call and creates no
+  // calculation record: the cards show the snapshot's own figures. An
+  // empty listing (no materialized day) or a failed read degrades to
+  // nothing — the type-to-search guidance stands, never an invented
+  // example.
+  useEffect(() => {
+    if (examplesFetchedRef.current) return;
+    examplesFetchedRef.current = true;
+    const initialQuery =
+      new URLSearchParams(window.location.search).get('q') ?? '';
+    if (initialQuery.trim() !== '') return;
+    let cancelled = false;
+    getSavingsBestPerMerchant()
+      .then((res) => {
+        if (!cancelled) setExampleDeals(res.merchants);
+      })
+      .catch(() => {
+        // Honest degrade: no examples, the guidance stands.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ── Select handler ──
   const handleSelect = useCallback((product: ProductSearchItem) => {
@@ -765,6 +804,23 @@ export default function CalculatorView() {
               onSuggestion={handleSuggestion}
             />
 
+            {/* ── Example cards (task 3.1, change
+                savings-first-catalog-and-prefill): snapshot figures from
+                the per-merchant savings listing while the view is
+                pristine — no query, no selection, no search in flight.
+                Display face only: no calculation call, no calculation
+                records. Any search interaction hands the space back to
+                the results flow. ── */}
+            {!hasSearched &&
+              !searchLoading &&
+              !selectedProduct &&
+              query.trim() === '' && (
+                <SavingsExampleCards
+                  deals={exampleDeals}
+                  onPick={handleSelect}
+                />
+              )}
+
             {/* ── Too-short search term: inline, specific (task 4.7) ── */}
             {shortQuery && (
               <p
@@ -776,8 +832,11 @@ export default function CalculatorView() {
               </p>
             )}
 
-            {/* ── Search results ── */}
-            {hasSearched && (
+            {/* ── Search results ──
+                The block also hosts the chosen-product line after an
+                example-card pick (task 3.1): that path sets a selection
+                without a search, so the gate opens for either. ── */}
+            {(hasSearched || selectedProduct !== null) && (
               <div className="mt-4">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
                   {selectedProduct ? t('selectedProduct') : t('searchResults')}

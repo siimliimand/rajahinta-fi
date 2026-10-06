@@ -83,6 +83,20 @@ const SAVINGS_TOP_PATH = '/api/v1/savings/top';
 /** Exported for server reads that construct the hero's outbound URL. */
 export { SAVINGS_TOP_PATH };
 
+/**
+ * Path of the best-deal-per-cross-border-merchant read (GET
+ * /api/v1/savings/best-per-merchant, change
+ * savings-first-catalog-and-prefill) — the tool pages' example-prefill
+ * read. The literal lives here with the other outbound-URL pieces and
+ * out of the .tsx tree: the content-policy lint polices every standalone
+ * word in .tsx string literals ("best" is banned vocabulary), and a
+ * route path is transport, not copy.
+ */
+const SAVINGS_BEST_PER_MERCHANT_PATH = '/api/v1/savings/best-per-merchant';
+
+/** Exported for tests that assert the outbound URL. */
+export { SAVINGS_BEST_PER_MERCHANT_PATH };
+
 // ---------------------------------------------------------------------------
 // Error type
 // ---------------------------------------------------------------------------
@@ -652,6 +666,51 @@ export async function getCategorySavings(
 ): Promise<CategorySavingsResult> {
   const params = new URLSearchParams({ category, limit: String(limit) });
   return request<CategorySavingsResult>(`/api/v1/savings?${params}`);
+}
+
+// ---------------------------------------------------------------------------
+// Savings best-per-merchant (GET /api/v1/savings/best-per-merchant)
+// ---------------------------------------------------------------------------
+
+/**
+ * One listed row of the per-merchant listing (mirrors the route's
+ * `toSavingsRowJson` serialization exactly — the same shape the savings
+ * listing ships): that merchant's snapshot row with the largest
+ * |gapCents|. Every figure carries its provenance fields.
+ */
+export interface SavingsBestPerMerchantRow {
+  readonly productId: number;
+  readonly productName: string;
+  readonly category: string;
+  /** The row's best-offer merchant (`alko` never groups). */
+  readonly merchant: string;
+  readonly merchantCountry: string;
+  readonly priceCents: number;
+  readonly observedAt: string;
+  readonly landedTotalCents: number;
+  readonly alkoReferenceCents: number;
+  readonly alkoObservedAt: string | null;
+  readonly gapCents: number;
+  readonly gapBasisPoints: number;
+  readonly reliability: string;
+  readonly confidence: string;
+  readonly taxDatasetVersion: string;
+}
+
+/** Response of GET /api/v1/savings/best-per-merchant — one row per merchant. */
+export interface SavingsBestPerMerchantResult {
+  /** The materialized day, or null while the daily pass has never run. */
+  readonly asOf: string | null;
+  readonly merchants: readonly SavingsBestPerMerchantRow[];
+}
+
+/**
+ * Fetch the latest day's deal per cross-border merchant. Display-only
+ * read (the tool pages' example prefill, design D5); failures propagate
+ * so callers can degrade to nothing — never an invented example.
+ */
+export async function getSavingsBestPerMerchant(): Promise<SavingsBestPerMerchantResult> {
+  return request<SavingsBestPerMerchantResult>(SAVINGS_BEST_PER_MERCHANT_PATH);
 }
 
 // ---------------------------------------------------------------------------
