@@ -1236,6 +1236,15 @@ export interface ShareSnapshotPayload {
   /** The structural disclaimer object copied at share time. */
   readonly disclaimer: unknown;
   readonly calculatedAt: string;
+  /**
+   * Display-only empirical margin frozen into the digest
+   * (hedge-dedup-confidence-meter 4.2, design D6). Additive and optional:
+   * snapshots frozen before the field existed lack the key entirely, and
+   * absence is the share page's render-nothing state. Stored JSON — the
+   * share page validates it structurally before rendering, like the
+   * breakdown and the disclaimer.
+   */
+  readonly empiricalMargin?: EmpiricalMargin;
 }
 
 /** GET /api/v1/share/:publicId response — no account fields by contract. */

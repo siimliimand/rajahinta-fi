@@ -23,6 +23,11 @@
  *      localize through the basket-result catalog — the same path the
  *      basket result renders from — while unknown codes and pre-code
  *      lines fall back verbatim / to the canonical category.
+ *   7. The empirical margin (hedge-dedup-confidence-meter 4.2, design
+ *      D6): a snapshot frozen WITH the margin renders the meter beside
+ *      the total; a legacy snapshot without the key renders exactly as
+ *      before, and a corrupt margin degrades byte-identically to the
+ *      legacy output — never a crash, never a fabricated figure.
  *
  * @module SharePageTest
  */
@@ -117,6 +122,27 @@ vi.mock('../../calculator/components/DisclaimerBanner', () => ({
       { 'data-testid': 'disclaimer-banner-stub' },
       disclaimer.text,
     ),
+}));
+
+// The ConfidenceMeter is a client component too — same stub precedent.
+// The stub mirrors the real component's render-nothing contract
+// (absent margin → null) so the page's pass-through of the parsed
+// margin is exactly what the assertions observe.
+vi.mock('../../components/ConfidenceMeter', () => ({
+  default: ({
+    margin,
+    totalCents,
+  }: {
+    margin?: { quantile: number; sampleCount: number } | undefined;
+    totalCents: number;
+  }) =>
+    margin === undefined
+      ? null
+      : React.createElement(
+          'p',
+          { 'data-testid': 'confidence-meter' },
+          `meter q=${margin.quantile} n=${margin.sampleCount} total=${totalCents}`,
+        ),
 }));
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -216,6 +242,24 @@ const SNAPSHOT_WITH_CODE = {
   },
 };
 
+// Task 4.2 (hedge-dedup-confidence-meter, design D6): snapshots frozen
+// after the margin joined the digest carry it additively; legacy
+// snapshots lack the key entirely (render-nothing, never null).
+const MARGIN = {
+  quantile: 0.05,
+  sampleCount: 16,
+  cell: { dimension: 'global', key: 'global' },
+  asOf: '2026-09-28T12:00:00.000Z',
+};
+
+const SNAPSHOT_WITH_MARGIN = {
+  ...SNAPSHOT_OK,
+  snapshot: {
+    ...SNAPSHOT_OK.snapshot,
+    empiricalMargin: MARGIN,
+  },
+};
+
 function apiError(status: number): ApiError {
   return {
     statusCode: status,
@@ -302,6 +346,76 @@ describe('SharePage', () => {
 
     expect(html).not.toContain('Tuonnin arvonlisävero');
     expect(html).not.toContain('importVatEstimate');
+  });
+
+  // Task 4.2 (hedge-dedup-confidence-meter, design D6): the meter joins
+  // the share page's frozen total.
+  it('renders the confidence meter beside the total when the snapshot froze a margin', async () => {
+    mockedRequest.mockResolvedValue(SNAPSHOT_WITH_MARGIN);
+
+    const html = await renderPage();
+
+    // The meter renders and receives the parsed frozen margin verbatim.
+    expect(html).toContain('data-testid="confidence-meter"');
+    expect(html).toContain('meter q=0.05 n=16 total=4560');
+    // Beside the total: same section as the share-total figure.
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const meter = doc.querySelector('[data-testid="confidence-meter"]');
+    expect(
+      meter?.closest('section')?.querySelector('[data-testid="share-total"]'),
+    ).not.toBeNull();
+    // The frozen total itself is untouched by the margin.
+    expect(html).toContain('45,60 €');
+  });
+
+  it('renders a legacy snapshot exactly as before — no meter, pinned unchanged parts', async () => {
+    mockedRequest.mockResolvedValue(SNAPSHOT_OK);
+
+    const html = await renderPage();
+
+    // No meter anywhere — the render-nothing state for the absent key.
+    expect(html).not.toContain('confidence-meter');
+    // The unchanged parts, pinned: total, single disclaimer render,
+    // currency line, breakdown, confidence label, frozen-copy note,
+    // and the accuracy cross-link.
+    expect(html).toContain('data-testid="share-total"');
+    expect(html).toContain('45,60 €');
+    expect(html.split('Arvioitu kokonaishinta on arvio, ei lopullinen verovelka.')).toHaveLength(2);
+    expect(html).toContain('Ulkomainen vähittäishinta');
+    expect(html).toContain('Kohtalainen luotettavuus');
+    expect(html).toContain('jäädytetyn kopion');
+    expect(html).toContain('href="/ranking#accuracy"');
+    // Structure unchanged: the currency line directly follows the
+    // total — no meter element inserted between them.
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const next = doc.querySelector('[data-testid="share-total"]')?.nextElementSibling;
+    expect(next?.tagName).toBe('P');
+    expect(next?.textContent).toContain('EUR');
+  });
+
+  it('degrades a corrupt margin byte-identically to the legacy output', async () => {
+    mockedRequest.mockResolvedValue(SNAPSHOT_OK);
+    const legacyHtml = await renderPage();
+
+    // Wrong-typed fields (stored JSON is untrusted) must parse to null
+    // and render EXACTLY the legacy DOM — never a crash, never a
+    // fabricated figure.
+    mockedRequest.mockResolvedValue({
+      ...SNAPSHOT_OK,
+      snapshot: {
+        ...SNAPSHOT_OK.snapshot,
+        empiricalMargin: {
+          quantile: '5 %',
+          sampleCount: 'sixteen',
+          cell: { dimension: 3, key: null },
+          asOf: 12345,
+        },
+      },
+    });
+    const corruptHtml = await renderPage();
+
+    expect(corruptHtml).toBe(legacyHtml);
+    expect(corruptHtml).not.toContain('confidence-meter');
   });
 
   it('degrades to the fallback disclaimer copy on a corrupt disclaimer', async () => {

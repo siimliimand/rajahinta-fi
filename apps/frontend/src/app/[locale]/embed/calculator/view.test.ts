@@ -195,6 +195,36 @@ describe('renderEmbedCalculatorHtml — result outcome', () => {
     expect(html).not.toContain('<script>alert(1)');
     expect(html).toContain('v3.0-2026&lt;script&gt;');
   });
+
+  // Hedge-dedup-confidence-meter 4.2 pin: the embed's result view is
+  // its own document body, NOT the CalculatorResult component, so the
+  // read-time empiricalMargin on the API response (task 2.2) adds
+  // nothing here — and the "disclaimers intact" pin holds: exactly one
+  // structural disclaimer render, above the figures, with or without
+  // the margin.
+  it('keeps the disclaimer intact and the output unchanged when the result carries an empirical margin', () => {
+    const withMargin: CalculatorResult = {
+      ...RESULT,
+      empiricalMargin: {
+        quantile: 0.05,
+        sampleCount: 16,
+        cell: { dimension: 'global', key: 'global' },
+        asOf: '2026-09-28T12:00:00.000Z',
+      },
+    };
+    const html = renderEmbedCalculatorHtml('fi', { kind: 'result', result: withMargin });
+
+    // Byte-identical to the margin-less render — the embed gained no UI.
+    expect(html).toBe(renderEmbedCalculatorHtml('fi', { kind: 'result', result: RESULT }));
+    // The disclaimer pin: exactly one structural render, from the
+    // result object, above the figures.
+    expect(html.split('role="note"')).toHaveLength(2);
+    expect(html).toContain(`role="note">${DISCLAIMER.text}`);
+    expect(html.indexOf('role="note"')).toBeLessThan(html.indexOf('Yhteensä'));
+    // No meter markup leaked into the embed document.
+    expect(html).not.toContain('confidence-meter');
+    expect(html).not.toContain('Havaittu hajonta');
+  });
 });
 
 describe('renderEmbedCalculatorHtml — non-result outcomes', () => {
