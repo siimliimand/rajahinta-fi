@@ -88,9 +88,17 @@ as the already-shipped `/savings` market overview, under the same
 neutrality constraints (content-policy lint, as-of labeling, no
 advice phrasing).
 
-Caveat recorded: the opinion predates this homepage surface. Its
-published record does not enumerate placement- or prominence-specific
-conditions; if the archived opinion evidence attaches any such
-conditions to price-information display, they should be re-checked
-against a hero placement before archive. No new claim type is
-introduced by this change.
+Caveat narrowed 2026-10-06 (pre-archive re-check): the opinion document
+itself is externally archived (the record states only "Opinion evidence
+archived"), so its text cannot be re-read from this repository. What
+this repository DOES record is the briefing package counsel opined on
+(`docs/legal-briefing-package.md`), whose §4.2/§4.4 conditions the hero
+satisfies by construction: prices presented as collected observations
+with merchant and observation date, freshness never silently stale
+(the as-of line plus the 3-day cutoff rendering the unavailable state
+instead of old figures), deterministic objective ordering with equal
+visual weight, and no promotional framing (content-policy lint). The
+briefing predates the hero and names no homepage price surface; the
+residual open item is therefore exactly one owner action: confirm the
+archived opinion text attaches no placement- or prominence-specific
+condition. No new claim type is introduced by this change.
