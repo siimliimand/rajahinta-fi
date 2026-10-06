@@ -15,7 +15,9 @@
  *      narrows to nothing.
  *   3. Rows render the landed total, the Alko reference, the gap
  *      (cents + basis points), and the reliability badge.
- *   4. Fetch failure → the retryable error state.
+ *   4. Each row is a whole-row link to that product's detail page,
+ *      with the figures and position of the unlinked form.
+ *   5. Fetch failure → the retryable error state.
  *
  * @module SavingsPagesTest
  */
@@ -23,7 +25,7 @@
 
 import * as React from 'react';
 import { renderToString } from 'react-dom/server';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import {
   afterEach,
@@ -318,6 +320,56 @@ describe('SavingsListing', () => {
     expect(listing.textContent).toContain('18363 bp'); // gap, basis points
     // Reliability label resolves through the canonical fi catalog key.
     expect(listing.textContent).toContain('Vahvistettu');
+  });
+
+  it('links each row to its product detail page with figures and position unchanged', async () => {
+    mockedRequest.mockResolvedValue({
+      asOf: '2026-09-08',
+      category: 'beer',
+      coverage: { evaluated: 42, withReference: 2, listed: 2 },
+      rows: [
+        savingsRow(),
+        savingsRow({
+          productId: 7,
+          productName: 'Toinen juoma 0,33 l',
+          landedTotalCents: 999,
+          alkoReferenceCents: 2100,
+          gapCents: 1101,
+          gapBasisPoints: 11010,
+        }),
+      ],
+    });
+
+    render(<SavingsListing category="beer" />, { wrapper: Provider });
+
+    const listing = await screen.findByTestId('savings-listing');
+    const rows = [
+      ...listing.querySelectorAll('tbody tr'),
+    ] as HTMLTableRowElement[];
+    expect(rows.length).toBe(2);
+
+    // The spec scenario (homepage-live-gap-hero): the row is a link to
+    // that product's detail page — one anchor per row, resolved through
+    // the i18n navigation (locale prefix handled there, none for fi).
+    expect(
+      within(rows[0]).getByRole('link', { name: 'Testia olut 0,5 l' })
+        .getAttribute('href'),
+    ).toBe('/products/1');
+    expect(
+      within(rows[1]).getByRole('link', { name: 'Toinen juoma 0,33 l' })
+        .getAttribute('href'),
+    ).toBe('/products/7');
+
+    // Figures and position identical to the unlinked form, in API order
+    // (largest saving first — the endpoint's contract).
+    expect(within(rows[0]).getByText('1')).toBeTruthy(); // position
+    expect(within(rows[0]).getByText('12.34 €')).toBeTruthy(); // landed total
+    expect(within(rows[0]).getByText('35.00 €')).toBeTruthy(); // Alko reference
+    expect(within(rows[0]).getByText('22.66 €')).toBeTruthy(); // gap
+    expect(within(rows[0]).getByText('18363 bp')).toBeTruthy(); // gap, bp
+    expect(within(rows[1]).getByText('2')).toBeTruthy(); // position
+    expect(within(rows[1]).getByText('9.99 €')).toBeTruthy();
+    expect(within(rows[1]).getByText('21.00 €')).toBeTruthy();
   });
 
   it('renders the retryable error state when the backend fails', async () => {
