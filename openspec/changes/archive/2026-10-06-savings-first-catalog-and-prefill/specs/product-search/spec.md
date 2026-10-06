@@ -15,31 +15,29 @@ tie-breaks. Products without a savings-snapshot row for the latest materialized
 day SHALL list after all covered rows, ordered alphabetically with the same
 tie-break. `BIGGEST_SAVING` SHALL be computed only from the materialized
 savings snapshot read at the route/display layer; the product-search repository
-SHALL NOT import any savings module, and no calculation, ranking, or
+SHALL NOT import any savings module, and no calculation, ranking input, or
 optimization input SHALL change. Sort orders SHALL use only objective product,
 observed-offer, and published materialized-gap fields; no commercial or
 promotional signal can affect ordering. An unknown `sort` value SHALL be
 rejected as a 400 contract error, matching the unknown-category treatment.
+(The absent-sort default scenario below keeps its historical name as a stable
+identifier; since change `catalog-first-run-polish` it names the absent-sort
+default whatever the current contract is.)
 
 #### Scenario: Price sort orders by observed lowest price
 
 - **WHEN** the request carries `sort=LOWEST_PRICE`
 - **THEN** rows order by lowest observed offer price ascending, and products without offers render after all priced rows
 
-#### Scenario: Absent sort parameter defaults to biggest saving
+#### Scenario: Absent sort parameter defaults to alphabetical order
 
-- **WHEN** the request carries no `sort` parameter and the latest savings day has covered rows
-- **THEN** rows order by gap basis points ascending (largest saving first) with deterministic tie-breaks, and the same data always produces the same order
+- **WHEN** the request carries no `sort` parameter
+- **THEN** rows order by the savings gap in basis points ascending (largest saving first) with FI-name and product-id tie-breaks, products without a savings row list last alphabetically, and the same data always produces the same order
 
-#### Scenario: Products without a savings row list last
+#### Scenario: ABV sort is deterministic
 
-- **WHEN** the request uses the default order and some products have no snapshot row for the latest day
-- **THEN** every covered row renders before every uncovered row, and uncovered rows order alphabetically with a deterministic tiebreaker
-
-#### Scenario: Alphabetical order remains available and deterministic
-
-- **WHEN** the request carries `sort=ALPHABETICAL`
-- **THEN** rows order by product name under FI collation with a deterministic tiebreaker
+- **WHEN** the request carries `sort=ALCOHOL_PERCENTAGE`
+- **THEN** rows order by alcohol by volume descending with a deterministic tiebreaker, and the same data always produces the same order
 
 #### Scenario: Unknown sort value is a contract error
 
