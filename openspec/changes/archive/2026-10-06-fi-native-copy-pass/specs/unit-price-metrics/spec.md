@@ -13,6 +13,16 @@ All Finnish surfaces presenting the metric SHALL render one canonical name (`eta
 - **WHEN** the ranking endpoint is queried twice for the same category and dataset state
 - **THEN** both responses SHALL contain the products in identical order
 
+#### Scenario: Status carried per row
+
+- **WHEN** the ranking is rendered or returned
+- **THEN** each row SHALL include its reliability status and the interface SHALL render it with the standard status components
+
+#### Scenario: Unavailable prices omitted
+
+- **WHEN** a product in the category has no computable unit price
+- **THEN** it SHALL NOT appear in the ranking
+
 #### Scenario: Header and cells agree on the unit
 
 - **WHEN** the value page, a comparison sort option, a product chip, or the calculator embed renders the metric in Finnish
