@@ -161,8 +161,10 @@ function buildApplySql(ids: readonly number[]): readonly string[] {
 // ---------------------------------------------------------------------------
 
 /**
- * One D1 access path. `execute` returns the changed-row count so apply
- * can report exactly what it held.
+ * One D1 access path. `execute` returns the backend's changed-row count —
+ * informational only: on remote D1, meta.changes includes trigger-driven
+ * FTS sync ops, so it must never be reported as the applied-row figure
+ * (the summary derives that from the held-row delta instead).
  */
 interface D1Backend {
   readonly label: string;
@@ -504,11 +506,16 @@ function runAudit(backend: D1Backend, options: AuditOptions): number {
   }
 
   const statements = buildApplySql(report.affected.map((row) => row.id));
-  let applied = 0;
   for (const statement of statements) {
-    applied += backend.execute(statement);
+    backend.execute(statement);
   }
-  const remaining = collectAuditReport(backend).affected.length;
+  // The authoritative applied count is the DB's own held-row delta, not
+  // the backend's changed-row returns: on remote D1, meta.changes counts
+  // trigger-driven FTS sync ops too (observed 5× the true figure on
+  // production), so summing execute() returns over-reports.
+  const after = collectAuditReport(backend);
+  const applied = after.heldRows - report.heldRows;
+  const remaining = after.affected.length;
   console.log(
     `[nonalcoholic-audit] applied: ${applied} row(s) now held with ${sqlLiteral(NONALCOHOLIC_HOLD_REASON)}.`,
   );

@@ -20,7 +20,7 @@
  *
  * @module NonalcoholicCatalogAuditTest
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -199,6 +199,37 @@ describe('nonalcoholic-catalog-audit apply', () => {
     expect(rowState(db, 5).hold).toBe('operator_review');
     for (const fixture of FIXTURES) {
       expect(rowState(db, fixture.id).updatedAt).toBe(before.get(fixture.id)?.updatedAt);
+    }
+  });
+
+  it('applied summary reports the held-row delta, not the backend changed-row sum', () => {
+    // Remote-D1 shape: an UPDATE's meta.changes includes trigger-driven
+    // FTS sync ops (observed 5× the true figure on production 2026-10-05,
+    // 1810 reported vs 362 held). The summary must derive from the DB's
+    // own held-row delta and stay immune to that over-count.
+    const { db } = openMigratedD1();
+    seedFixtures(db);
+    const real = sqliteBackendOf(db);
+    const inflated = {
+      ...real,
+      execute: (sql: string) => real.execute(sql) * 5,
+    };
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    try {
+      const exit = runAudit(inflated, { apply: true, sample: 0 });
+      expect(exit).toBe(0);
+      const applied = logs.find((line) => line.includes('applied:'));
+      expect(applied).toContain(`applied: ${EXPECTED_AFFECTED_IDS.length} row(s)`);
+      expect(applied).not.toContain(`applied: ${EXPECTED_AFFECTED_IDS.length * 5} row(s)`);
+    } finally {
+      spy.mockRestore();
+    }
+    // The DB itself still holds exactly the affected rows.
+    for (const id of EXPECTED_AFFECTED_IDS) {
+      expect(rowState(db, id).hold).toBe(NONALCOHOLIC_HOLD_REASON);
     }
   });
 
