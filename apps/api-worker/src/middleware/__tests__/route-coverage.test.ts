@@ -435,6 +435,9 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   // Savings discovery listing (insight-surfaces 2.3) — route-local
   // ageGate + SAVINGS.
   ['/api/v1/savings', ['GET'], 'SAVINGS + ageGate'],
+  // Best deal per cross-border merchant (savings-first-catalog-and-prefill
+  // 1.3) — same guard chain as the listing: route-local ageGate + SAVINGS.
+  ['/api/v1/savings/best-per-merchant', ['GET'], 'SAVINGS + ageGate'],
   // Market overview (price-intelligence-roadmap 5.2) — same guard chain
   // as the listing: route-local ageGate + SAVINGS.
   ['/api/v1/savings/overview', ['GET'], 'SAVINGS + ageGate'],
