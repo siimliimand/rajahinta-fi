@@ -445,7 +445,10 @@ describe('EventPage server shell (task 2.3)', () => {
 
     expect(html).toContain('Tilaisuuslaskuri');
     expect(html).toContain('Miten tilaisuuslaskenta toimii');
-    // The summary is content, not advice — the estimates stance holds.
-    expect(html).toContain('ei vero- tai tullineuvontaa');
+    // The hedging heap is retired (hedge-dedup-confidence-meter 3.3):
+    // the summary describes the calculation; the "always an estimate"
+    // reassurance is gone — the footer carries the legal line.
+    expect(html).toContain('ehdotetun ostomäärän ja ylijäämän.');
+    expect(html).not.toContain('ei vero- tai tullineuvontaa');
   });
 });

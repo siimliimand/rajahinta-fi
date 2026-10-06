@@ -40,7 +40,7 @@ export const COPY = {
   total: 'Yhteensä',
   foreignRetailPrice: 'Ulkomainen vähittäishinta',
   transportCost: 'Kuljetuskustannus',
-  alcoholExcise: 'Arvio alkoholin valmisteverosta',
+  alcoholExcise: 'Alkoholin valmistevero',
   compareTitle: 'Tuotevertailu',
   addProductButton: '+ Lisää tuote',
   sortLabel: 'Järjestä:',

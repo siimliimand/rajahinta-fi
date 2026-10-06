@@ -282,8 +282,11 @@ describe('SharePage', () => {
     const html = await renderPage();
 
     // Known code → the basket-result catalog label (the same path the
-    // basket result renders from), stored label suppressed.
-    expect(html).toContain('Tuonnin arvonlisävero (arvio)');
+    // basket result renders from), stored label suppressed. The plain
+    // label carries no estimate qualifier (hedge-dedup-confidence-meter
+    // 3.2, design D2 — the catalog drives this shared path).
+    expect(html).toContain('Tuonnin arvonlisävero');
+    expect(html).not.toContain('Tuonnin arvonlisävero (arvio)');
     expect(html).not.toContain('Import VAT (estimated)');
     // Unknown code → the verbatim stored label.
     expect(html).toContain('Future line');

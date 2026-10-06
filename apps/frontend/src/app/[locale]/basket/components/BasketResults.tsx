@@ -8,7 +8,11 @@
  *    badges, consolidated transport (weight tier, package tier, reliability),
  *    retail subtotal, minimum-order threshold check.
  *  - Aggregate confidence with per-data-point breakdown.
- *  - Structural disclaimer from the API response (never a UI-only string).
+ *  - The structural disclaimer from the API response (never a UI-only
+ *    string), rendered exactly once per combination with the intensity
+ *    keyed to that combination's confidence (hedge-dedup-confidence-meter
+ *    3.2, design D1) — amber `status-stale-*` at LOW, quiet neutral
+ *    one-liner otherwise.
  *  - Up to three alternatives with identical styling — zero visual preference
  *    cues beyond objective cost ordering.
  *
@@ -507,8 +511,11 @@ function OptimizationCombination({
         <ConfidenceBreakdown breakdown={confidenceBreakdown} />
       )}
 
-      {/* Disclaimer — structural, from the API response */}
-      <DisclaimerBanner disclaimer={disclaimer} />
+      {/* Disclaimer — structural, from the API response; the single
+          render of this combination's view, intensity keyed to the
+          combination's own confidence (hedge-dedup-confidence-meter
+          3.2, design D1) */}
+      <DisclaimerBanner disclaimer={disclaimer} confidence={confidence} />
 
       {/* Metadata */}
       <ResultMetadata metadata={metadata} />

@@ -312,7 +312,11 @@ describe('CalculatorPage server shell (task 2.1)', () => {
 
     expect(html).toContain('Kokonaiskustannuslaskuri');
     expect(html).toContain('Miten laskenta toimii');
-    // The summary is content, not advice — the estimates stance holds.
-    expect(html).toContain('ei vero- tai tullineuvontaa');
+    // The hedging heap is retired (hedge-dedup-confidence-meter 3.3):
+    // the summary describes the calculation and the reliability-status
+    // fact; the "always an estimate" reassurance is gone — the footer
+    // carries the legal line.
+    expect(html).toContain('Jokainen luku kantaa luotettavuusmerkinnän');
+    expect(html).not.toContain('ei vero- tai tullineuvontaa');
   });
 });
