@@ -35,7 +35,7 @@ export {
 export type { ReliabilityStatus } from '../../../../packages/core-domain/src/reliability/reliability.types';
 
 // Feed mapping
-export { mapSourceCategory } from '../../../../packages/core-domain/src/normalization/source-category.mapper';
+export { mapSourceCategory, NONALCOHOLIC_HOLD_REASON } from '../../../../packages/core-domain/src/normalization/source-category.mapper';
 export { standardizeContainerType } from '../../../../packages/core-domain/src/normalization/normalization.service';
 
 // Calculator engines + port contracts (offer-change recorder chain)
