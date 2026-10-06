@@ -216,6 +216,50 @@ describe('D1SavingsSnapshotRepository.findLatestDay', () => {
   });
 });
 
+// The fallback-window reads behind the top-N day selection (change
+// savings-top-day-fallback): distinct days newest first, and one day's
+// exact row set.
+describe('D1SavingsSnapshotRepository.listRecentAsOfDays', () => {
+  it('returns the most recent distinct as_of days newest first, capped at the limit', async () => {
+    const { d1, repo } = makeRepo();
+    await seedProduct(d1, 7);
+    await seedProduct(d1, 8);
+
+    await repo.upsertSnapshot(snapshot({ asOf: '2026-09-01', productId: 7 }));
+    await repo.upsertSnapshot(snapshot({ asOf: '2026-09-02', productId: 7 }));
+    // One day, two products — DISTINCT must collapse it to one entry.
+    await repo.upsertSnapshot(snapshot({ asOf: '2026-09-03', productId: 7 }));
+    await repo.upsertSnapshot(snapshot({ asOf: '2026-09-03', productId: 8 }));
+
+    expect(await repo.listRecentAsOfDays(2)).toEqual(['2026-09-03', '2026-09-02']);
+    expect(await repo.listRecentAsOfDays(10)).toEqual([
+      '2026-09-03', '2026-09-02', '2026-09-01',
+    ]);
+  });
+
+  it('returns empty before any snapshot exists', async () => {
+    const { repo } = makeRepo();
+    expect(await repo.listRecentAsOfDays(3)).toEqual([]);
+  });
+});
+
+describe('D1SavingsSnapshotRepository.findDay', () => {
+  it('returns exactly that day\'s rows, product_id ascending, and empty for an absent day', async () => {
+    const { d1, repo } = makeRepo();
+    await seedProduct(d1, 7);
+    await seedProduct(d1, 8);
+
+    await repo.upsertSnapshot(snapshot({ asOf: '2026-08-31', productId: 7 }));
+    await repo.upsertSnapshot(snapshot({ asOf: '2026-09-01', productId: 8 }));
+    await repo.upsertSnapshot(snapshot({ asOf: '2026-09-01', productId: 7 }));
+
+    const day = await repo.findDay('2026-09-01');
+    expect(day.map((r) => r.productId)).toEqual([7, 8]);
+    expect(day.every((r) => r.asOf === '2026-09-01')).toBe(true);
+    expect(await repo.findDay('2026-09-02')).toEqual([]);
+  });
+});
+
 describe('D1SavingsSnapshotRepository.findByCategoryRange', () => {
   it('reads a closed [from, to] range for one category in asOf order', async () => {
     const { d1, repo } = makeRepo();
