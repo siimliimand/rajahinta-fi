@@ -1,6 +1,9 @@
 /**
- * Savings listing route (task 2.3, change insight-surfaces, spec
- * savings-discovery) — GET /api/v1/savings.
+ * Savings discovery routes (spec savings-discovery) — the per-category
+ * listing GET /api/v1/savings (task 2.3, change insight-surfaces), the
+ * cross-category overview GET /api/v1/savings/overview, and the
+ * cross-category top-N GET /api/v1/savings/top (task 1.1, change
+ * homepage-live-gap-hero).
  *
  * Public, deterministic listing of the daily materialized snapshot rows
  * for ONE category, ordered by the core-domain sortSavingsRows rule
@@ -60,6 +63,10 @@ import type { SavingsSnapshotRecord } from '../../../../packages/data-platform/s
 const DEFAULT_LIMIT = 200;
 /** Hard cap — the listing is a discovery surface, not a bulk export. */
 const MAX_LIMIT = 500;
+/** Top-N rows returned when the client sends no limit (hero scale). */
+const TOP_DEFAULT_LIMIT = 5;
+/** Hard cap — the top-N is a homepage hero surface, not a bulk export. */
+const TOP_MAX_LIMIT = 25;
 
 /**
  * Largest observed cross-border difference within one category — the
@@ -177,16 +184,19 @@ async function getSavingsOverview(c: Context<AppEnv>): Promise<Response> {
 }
 
 /**
- * Absent/blank/invalid limit values fall back to DEFAULT (search-route
- * parsePositiveInt parity — a malformed limit never 400s a read); a
- * present valid value is clamped to MAX.
+ * Absent/blank/invalid limit values fall back to the route's default
+ * (search-route parsePositiveInt parity — a malformed limit never 400s a
+ * read); a present valid value is clamped to the route's max.
  */
-function parseLimit(raw: string | undefined): number {
-  const fallback = DEFAULT_LIMIT;
+function parseLimit(
+  raw: string | undefined,
+  fallback: number,
+  max: number,
+): number {
   if (raw === undefined || raw === '') return fallback;
   const parsed = Number.parseInt(raw, 10);
   const value = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-  return Math.min(value, MAX_LIMIT);
+  return Math.min(value, max);
 }
 
 /** The listing row — every figure carries its provenance fields. */
@@ -208,6 +218,31 @@ interface SavingsRowJson {
   readonly taxDatasetVersion: string;
 }
 
+/** Materialize one listed row — every figure carries its provenance. */
+function toSavingsRowJson(
+  row: SavingsSnapshotRecord & { alkoReferenceCents: number },
+  productName: string,
+): SavingsRowJson {
+  return {
+    productId: row.productId,
+    productName,
+    category: row.category,
+    merchant: row.bestMerchant,
+    merchantCountry: row.bestMerchantCountry,
+    priceCents: row.bestPriceCents,
+    observedAt: row.bestObservedAt.toISOString(),
+    landedTotalCents: row.landedTotalCents,
+    alkoReferenceCents: row.alkoReferenceCents,
+    alkoObservedAt:
+      row.alkoObservedAt === null ? null : row.alkoObservedAt.toISOString(),
+    gapCents: row.gapCents,
+    gapBasisPoints: row.gapBasisPoints,
+    reliability: row.landedReliability,
+    confidence: row.confidence,
+    taxDatasetVersion: row.taxDatasetVersion,
+  };
+}
+
 async function getSavings(c: Context<AppEnv>): Promise<Response> {
   const category = (c.req.query('category') ?? '').trim();
   if (category.length === 0) {
@@ -217,7 +252,7 @@ async function getSavings(c: Context<AppEnv>): Promise<Response> {
       error: 'ValidationError',
     });
   }
-  const limit = parseLimit(c.req.query('limit'));
+  const limit = parseLimit(c.req.query('limit'), DEFAULT_LIMIT, MAX_LIMIT);
 
   const [products, latestDay] = await Promise.all([
     new D1ProductSearchRepository(c.env.DB).searchByName(
@@ -267,27 +302,12 @@ async function getSavings(c: Context<AppEnv>): Promise<Response> {
   }
 
   const listed = sortSavingsRows(values).slice(0, limit);
-  const rows: SavingsRowJson[] = listed.map((value) => {
-    const row = snapshotByProductId.get(value.productId)!;
-    return {
-      productId: row.productId,
-      productName: value.productName,
-      category: row.category,
-      merchant: row.bestMerchant,
-      merchantCountry: row.bestMerchantCountry,
-      priceCents: row.bestPriceCents,
-      observedAt: row.bestObservedAt.toISOString(),
-      landedTotalCents: row.landedTotalCents,
-      alkoReferenceCents: row.alkoReferenceCents,
-      alkoObservedAt:
-        row.alkoObservedAt === null ? null : row.alkoObservedAt.toISOString(),
-      gapCents: row.gapCents,
-      gapBasisPoints: row.gapBasisPoints,
-      reliability: row.landedReliability,
-      confidence: row.confidence,
-      taxDatasetVersion: row.taxDatasetVersion,
-    };
-  });
+  const rows = listed.map((value) =>
+    toSavingsRowJson(
+      snapshotByProductId.get(value.productId)!,
+      value.productName,
+    ),
+  );
 
   return c.json({
     asOf,
@@ -295,6 +315,113 @@ async function getSavings(c: Context<AppEnv>): Promise<Response> {
     coverage: {
       evaluated: products.length,
       withReference: withReference.length,
+      listed: rows.length,
+    },
+    rows,
+  });
+}
+
+/**
+ * Cross-category top-N import-favourable listing (task 1.1, change
+ * homepage-live-gap-hero) — GET /api/v1/savings/top.
+ *
+ * The homepage hero's read: the N rows with the largest gaps among
+ * import-favourable rows — gapCents < 0, the landed total below the Alko
+ * reference — from the same single-day snapshot read as the listing,
+ * across ALL categories, in the core-domain deterministic order
+ * ({@link sortSavingsRows}). The explicit negative-gap filter is the
+ * no-padding guarantee: a dearer-than-reference row is never filled in,
+ * so fewer eligible rows than N returns exactly those.
+ *
+ * ## Coverage counts — derivation decision
+ *
+ * - `evaluated` — the product registry count, sourced exactly as the
+ *   listing sources it; the same one registry read also builds the name
+ *   map the eligibility defenses require (one read, two uses).
+ * - `importFavourable` — the eligible rows counted BEFORE the limit
+ *   slice, eligibility being the listing's staleness defenses (a
+ *   computed reference, a name the registry still resolves) AND the
+ *   negative gap.
+ * - `listed` — the rows returned.
+ *
+ * A snapshot day with no eligible rows answers 200 with an empty list
+ * and the counts — never an error; a never-materialized snapshot answers
+ * with a null as-of. The JSON key order is fixed by construction: the
+ * same D1 state yields a byte-identical body on every request.
+ * Read-only, behind the same per-route age gate and the SAVINGS limiter
+ * as the listing.
+ */
+async function getSavingsTop(c: Context<AppEnv>): Promise<Response> {
+  const limit = parseLimit(
+    c.req.query('limit'),
+    TOP_DEFAULT_LIMIT,
+    TOP_MAX_LIMIT,
+  );
+
+  const [products, latestDay] = await Promise.all([
+    new D1ProductSearchRepository(c.env.DB).searchByName(
+      null,
+      Number.MAX_SAFE_INTEGER,
+    ),
+    new D1SavingsSnapshotRepository(c.env.DB).findLatestDay(),
+  ]);
+
+  // The registry count and the name map come from the one read (see the
+  // derivation decision above).
+  const nameByProductId = new Map(products.map((p) => [p.id, p.name]));
+
+  // All findLatestDay rows share the maximal as_of (single-day read) —
+  // null while the pass has never written (honest zero state).
+  const asOf: string | null = latestDay.length > 0 ? latestDay[0]!.asOf : null;
+
+  // Eligible = the listing's staleness defenses AND the import-favourable
+  // half of the gap sign. A row failing any predicate is excluded before
+  // ordering and counting — never guessed into a position.
+  const eligible: (SavingsSnapshotRecord & {
+    alkoReferenceCents: number;
+    productName: string;
+  })[] = [];
+  for (const row of latestDay) {
+    if (row.alkoReferenceCents === null) continue;
+    if (row.gapCents >= 0) continue;
+    const productName = nameByProductId.get(row.productId);
+    if (productName === undefined) continue;
+    eligible.push({
+      ...row,
+      alkoReferenceCents: row.alkoReferenceCents,
+      productName,
+    });
+  }
+
+  const eligibleByProductId = new Map(
+    eligible.map((row) => [row.productId, row] as const),
+  );
+  const values: SavingsGapValue[] = eligible.map((row) => ({
+    status: 'computed',
+    productId: row.productId,
+    productName: row.productName,
+    landedTotalCents: row.landedTotalCents,
+    alkoReferenceCents: row.alkoReferenceCents,
+    gapCents: row.gapCents,
+    gapBasisPoints: row.gapBasisPoints,
+  }));
+
+  // Most import-favourable gap first (the most negative bps), then the
+  // listing's name/id tiebreaks; the slice is all the limit does — it
+  // never pads.
+  const listed = sortSavingsRows(values).slice(0, limit);
+  const rows = listed.map((value) =>
+    toSavingsRowJson(
+      eligibleByProductId.get(value.productId)!,
+      value.productName,
+    ),
+  );
+
+  return c.json({
+    asOf,
+    coverage: {
+      evaluated: products.length,
+      importFavourable: eligible.length,
       listed: rows.length,
     },
     rows,
@@ -312,6 +439,15 @@ export function registerSavingsRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
     '/api/v1/savings/overview',
     requireRateLimit('SAVINGS'),
     getSavingsOverview,
+  );
+  // Cross-category top-N (task 1.1, homepage-live-gap-hero) — read-only,
+  // same guard chain as the listing: per-route age gate plus the SAVINGS
+  // limiter.
+  app.on('GET', '/api/v1/savings/top', ageGate());
+  app.get(
+    '/api/v1/savings/top',
+    requireRateLimit('SAVINGS'),
+    getSavingsTop,
   );
   return app;
 }
