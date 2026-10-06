@@ -45,6 +45,14 @@
  * field, the ordering, and the customer's original query text are
  * untouched (design Q5 trust posture; task 3.3 renders the chip).
  *
+ * Display-only savings embed (task 1.1, change
+ * savings-first-catalog-and-prefill): every listed item with a
+ * latest-materialized-day snapshot row carries a `savings` embed, and the
+ * response states `savingsAsOf`. The join is composed in THIS route file
+ * from D1SavingsSnapshotRepository.findLatestDay() (one read, map lookup
+ * for the page's rows) — the product-search repository imports no savings
+ * module, and no calculation, ranking, or optimization input changes.
+ *
  * @module SearchRoutes
  */
 
@@ -77,6 +85,13 @@ import {
   type CatalogProductListPage,
   type CatalogSortOrder,
 } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
+// Display-surface composition (design D1, change
+// savings-first-catalog-and-prefill): the savings snapshot repository is
+// imported HERE, in the route file — never in the product-search
+// repository, which must stay free of savings imports (isolation
+// compliance, tests/compliance/savings-snapshot-isolation.test.ts).
+import { D1SavingsSnapshotRepository } from '../../../../packages/data-platform/src/repositories/d1/savings-snapshot.repository';
+import type { SavingsSnapshotRecord } from '../../../../packages/data-platform/src/abstracts';
 // Deep source import (route-file parity — see the header comment): the
 // canonical category set is defined ONCE in the D1 schema module (design
 // D2, change product-catalog), so route validation and the column CHECK
@@ -231,6 +246,36 @@ type SearchItem = {
  * Search item as returned: the base shape plus the €/g metric embed.
  */
 type SearchItemResponse = SearchItem & { eurPerGram: UnitPriceResult };
+
+/**
+ * Display-only savings embed (task 1.1, change
+ * savings-first-catalog-and-prefill): one covered product's latest
+ * materialized-day figures, mirrored verbatim from its snapshot row —
+ * the same fields the /api/v1/savings rows carry. Display face only: it
+ * never feeds a calculation, ranking input, or basket optimization
+ * (isolation compliance), and `alkoReferenceCents` travels as stored
+ * (null is corrupt-row defense, never substituted).
+ */
+interface SavingsEmbedJson {
+  readonly landedTotalCents: number;
+  readonly alkoReferenceCents: number | null;
+  readonly gapCents: number;
+  readonly gapBasisPoints: number;
+  readonly reliability: string;
+  readonly confidence: string;
+}
+
+/** Mirror one snapshot row's display figures (SavingsRowJson parity). */
+function toSavingsEmbed(row: SavingsSnapshotRecord): SavingsEmbedJson {
+  return {
+    landedTotalCents: row.landedTotalCents,
+    alkoReferenceCents: row.alkoReferenceCents,
+    gapCents: row.gapCents,
+    gapBasisPoints: row.gapBasisPoints,
+    reliability: row.landedReliability,
+    confidence: row.confidence,
+  };
+}
 
 /** Map a product row to a search-result item (toSearchItem parity). */
 function toSearchItem(p: ProductRow): SearchItem {
@@ -634,6 +679,28 @@ async function search(c: Context<AppEnv>): Promise<Response> {
     // sort above (bounded IN list over the fetched rows); the catalog
     // browse path keeps the repository's own page aggregates untouched.
 
+    // Display-only savings embed (task 1.1, change
+    // savings-first-catalog-and-prefill, design D1/D3): ONE full
+    // latest-day read — the same read /api/v1/savings uses, safe at
+    // registry scale per the repository contract — then a map lookup for
+    // the page's rows. The join lives in this route file only; ordering
+    // is untouched (strictly additive per item). Items without a
+    // snapshot row for that day keep the base shape — no placeholder, no
+    // zero. A never-materialized day answers savingsAsOf: null (the
+    // honest zero state, parity with the savings routes).
+    const latestDay = await new D1SavingsSnapshotRepository(
+      c.env.DB,
+    ).findLatestDay();
+    const snapshotByProductId = new Map(
+      latestDay.map((row) => [row.productId, row] as const),
+    );
+    const savingsAsOf: string | null =
+      latestDay.length > 0 ? latestDay[0]!.asOf : null;
+    const withSavings = paginated.map((item) => {
+      const row = snapshotByProductId.get(item.id);
+      return row === undefined ? item : { ...item, savings: toSavingsEmbed(row) };
+    });
+
     // Additive merchantWarnings join (task 2.2): the merchants of this
     // page's products' offers, matched against PUBLISHED blacklist
     // entries. Strictly additive — items, ordering, and totals above are
@@ -645,11 +712,12 @@ async function search(c: Context<AppEnv>): Promise<Response> {
     );
 
     const payload: Record<string, unknown> = {
-      items: paginated,
+      items: withSavings,
       total,
       page: pageNum,
       limit: limitNum,
       totalPages: Math.ceil(total / limitNum),
+      savingsAsOf,
     };
     // Advisory did-you-mean (task 3.2): strictly additive optional field —
     // attached only when the zero-result ranked search produced a
