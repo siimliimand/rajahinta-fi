@@ -40,6 +40,11 @@
  *      savings-first-catalog-and-prefill): a covered card renders the
  *      snapshot's landed total, Alko reference, and factual gap beside
  *      the "from" price; an absent embed renders none of it.
+ *   9. No-reference tier (task 2.2, same change): in the default order
+ *      only, a mixed-coverage page renders the quiet "Ei Alko-vertailua"
+ *      divider before the first uncovered row — covered cards above,
+ *      uncovered cards after — while an only-uncovered page and every
+ *      non-default sort render no divider at all.
  *
  * @module CatalogPageTest
  */
@@ -1045,5 +1050,121 @@ describe('ProductsPage savings figures (task 2.1)', () => {
     expect(card).toHaveTextContent('Landed total to Finland');
     expect(card).toHaveTextContent('Alko reference price');
     expect(card).toHaveTextContent('cheaper than the Alko reference price');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// No-reference tier (task 2.2, change savings-first-catalog-and-prefill):
+// in the default order the API lists covered rows (a savings snapshot for
+// the latest day) first and uncovered rows alphabetical after it. The page
+// renders that boundary as a quiet divider — and only when both tiers are
+// on the page: a divider with nothing above it is noise. Every non-default
+// sort renders one undivided list (design D2).
+// ---------------------------------------------------------------------------
+
+describe('ProductsPage no-reference tier (task 2.2)', () => {
+  /** A covered/uncovered page exactly as the API's default order emits it:
+   *  covered rows by gap first (most negative first), then uncovered
+   *  rows alphabetically. */
+  function mixedCoveragePage(): ProductSearchResult {
+    return catalogResult([
+      catalogItem({
+        id: 11,
+        name: 'Iso Säästö 0.7 l',
+        savings: savingsEmbed({ gapBasisPoints: -6000 }),
+      }),
+      catalogItem({
+        id: 12,
+        name: 'Pieni Säästö 0.5 l',
+        savings: savingsEmbed({ gapBasisPoints: -1000 }),
+      }),
+      catalogItem({ id: 13, name: 'Aurinko Viini 0.75 l' }),
+      catalogItem({ id: 14, name: 'Kotikalja 0.5 l' }),
+    ]);
+  }
+
+  it('renders the divider before the first uncovered row in the default order, covered cards above', async () => {
+    mockedRequest.mockResolvedValue(mixedCoveragePage());
+
+    await renderCatalog();
+
+    // The divider is a real separator with the honest label — reachable
+    // by role, not just visible text.
+    const divider = screen.getByRole('separator', {
+      name: 'Ei Alko-vertailua',
+    });
+    expect(divider).toHaveAttribute(
+      'data-testid',
+      'catalog-no-reference-divider',
+    );
+
+    // Tier order: the grid children read covered, covered, DIVIDER,
+    // uncovered, uncovered — the exact sequence the API's default order
+    // delivered, with the divider on the tier boundary.
+    const grid = screen.getByTestId('catalog-grid');
+    const sequence = Array.from(grid.children).map((child) =>
+      child.getAttribute('data-testid') === 'catalog-no-reference-divider'
+        ? 'DIVIDER'
+        : (child.querySelector('h2')?.textContent ?? ''),
+    );
+    expect(sequence).toEqual([
+      'Iso Säästö 0.7 l',
+      'Pieni Säästö 0.5 l',
+      'DIVIDER',
+      'Aurinko Viini 0.75 l',
+      'Kotikalja 0.5 l',
+    ]);
+  });
+
+  it('renders the divider as a full-width quiet row, not a card', async () => {
+    mockedRequest.mockResolvedValue(mixedCoveragePage());
+
+    await renderCatalog();
+
+    const divider = screen.getByTestId('catalog-no-reference-divider');
+    expect(divider.tagName).toBe('LI');
+    // No card, no link, no price — a muted label between rules.
+    expect(within(divider).queryByRole('link')).toBeNull();
+    expect(divider.textContent).toBe('Ei Alko-vertailua');
+  });
+
+  it('renders no divider when the page has only uncovered rows', async () => {
+    // A category without Alko coverage (or a never-materialized snapshot
+    // day): every row uncovered — the divider would have nothing above it.
+    mockedRequest.mockResolvedValue(
+      catalogResult([
+        catalogItem({ id: 13, name: 'Aurinko Viini 0.75 l' }),
+        catalogItem({ id: 14, name: 'Kotikalja 0.5 l' }),
+      ]),
+    );
+
+    await renderCatalog();
+
+    expect(
+      screen.queryByTestId('catalog-no-reference-divider'),
+    ).toBeNull();
+    expect(screen.queryByRole('separator')).toBeNull();
+    expect(screen.getByTestId('catalog-grid')).toBeInTheDocument();
+  });
+
+  it('renders no divider on a non-default sort — one undivided list', async () => {
+    mockedRequest.mockResolvedValue(mixedCoveragePage());
+
+    await renderCatalog({ sort: 'LOWEST_PRICE' });
+
+    expect(
+      screen.queryByTestId('catalog-no-reference-divider'),
+    ).toBeNull();
+    expect(screen.queryByRole('separator')).toBeNull();
+  });
+
+  it('renders the EN divider label for the EN locale', async () => {
+    mockedRequest.mockResolvedValue(mixedCoveragePage());
+
+    await renderCatalog({}, 'en');
+
+    expect(
+      screen.getByRole('separator', { name: 'No Alko reference' }),
+    ).toBeInTheDocument();
   });
 });

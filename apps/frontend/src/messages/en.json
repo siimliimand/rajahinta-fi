@@ -1815,6 +1815,7 @@
     "savingsGapCheaper": "{figure} cheaper than the Alko reference price",
     "savingsGapDearer": "{figure} more expensive than the Alko reference price",
     "savingsGapEqual": "Equal to the Alko reference price",
+    "noReferenceTierLabel": "No Alko reference",
     "paginationNavLabel": "Pagination",
     "prevPage": "Previous page",
     "nextPage": "Next page",

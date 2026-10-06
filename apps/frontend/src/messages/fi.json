@@ -1815,6 +1815,7 @@
     "savingsGapCheaper": "{figure} halvempi kuin Alkon vertailuhinta",
     "savingsGapDearer": "{figure} kalliimpi kuin Alkon vertailuhinta",
     "savingsGapEqual": "Sama kuin Alkon vertailuhinta",
+    "noReferenceTierLabel": "Ei Alko-vertailua",
     "paginationNavLabel": "Sivutus",
     "prevPage": "Edellinen sivu",
     "nextPage": "Seuraava sivu",
