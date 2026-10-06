@@ -145,13 +145,6 @@ export default function RankingView() {
             ? apiData!.tiebreaker
             : t('tiebreakerStatement')}
         </p>
-        {showApi && (
-          <p className="mt-2 text-xs text-gray-400">
-            {t('deterministic', {
-              value: apiData!.deterministic ? t('yes') : t('no'),
-            })}
-          </p>
-        )}
       </section>
 
       {/* ── Technical enforcement ── */}

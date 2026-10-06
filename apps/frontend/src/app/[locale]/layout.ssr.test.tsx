@@ -139,7 +139,7 @@ const DESTINATIONS = [
   { href: '/trip', fi: 'Matkalaskuri', en: 'Trip calculator' },
   { href: '/what-if', fi: 'Skenaariolaskuri', en: 'Scenario calculator' },
   { href: '/account', fi: 'Oma tili', en: 'My account' },
-  { href: '/ranking', fi: 'Miten järjestäminen toimii', en: 'How ranking works' },
+  { href: '/ranking', fi: 'Järjestysperiaatteet', en: 'Ordering principles' },
 ] as const;
 
 /**

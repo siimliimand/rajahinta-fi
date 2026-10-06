@@ -54,7 +54,7 @@
     "backToCalculator": "← Back to calculator",
     "openCalculator": "Open calculator",
     "compareProducts": "Compare products",
-    "howRankingWorks": "How ranking works",
+    "howRankingWorks": "Ordering principles",
     "myAccount": "My account",
     "calculateAnother": "Calculate another product"
   },
@@ -68,24 +68,24 @@
     "trip": "Trip calculator",
     "whatIf": "Scenario calculator",
     "account": "My account",
-    "ranking": "How ranking works",
+    "ranking": "Ordering principles",
     "planning": "Planning",
     "localeSwitcherLabel": "Switch language"
   },
   "SiteFooter": {
     "disclaimer": "Rajahinta.fi is an independent price comparison and landed-cost calculator. All prices, taxes, and duties are estimates rather than official figures. The service does not provide tax or customs advice. Always verify current details with official sources.",
     "privacyAnalytics": "Product analytics are anonymous and session-scoped: they collect no user identifiers, no account data, and no form contents. They are used to understand feature usage at cohort level only.",
-    "methodology": "How ranking works",
+    "methodology": "Ordering principles",
     "tagline": "Finnish cross-border beverage price index and landed-cost calculator.",
     "servicesHeading": "Services",
     "aboutHeading": "About",
     "linkCalculator": "Landed-cost calculator",
     "linkCompare": "Compare products",
-    "linkBasket": "Basket optimizer",
+    "linkBasket": "Basket calculator",
     "linkTrip": "Trip calculator",
     "linkEvent": "Event calculator",
     "linkGroupOrder": "Group order",
-    "linkValue": "Value (€/g ethanol)",
+    "linkValue": "Ethanol unit price (snt/g)",
     "linkBlog": "Blog",
     "linkGuides": "Guides",
     "copyright": "© Rajahinta.fi",
@@ -157,7 +157,7 @@
     "taskCardsWhatIfTitle": "Scenario calculator",
     "taskCardsWhatIfBody": "Substitute the excise duty rate with a value of your choice and compare product totals. The calculation is hypothetical.",
     "taskCardsSavingsTitle": "Landed-cost gap versus the Alko reference",
-    "taskCardsSavingsBody": "A listing materialized daily of estimated landed totals and their gap against the Alko reference price, by category.",
+    "taskCardsSavingsBody": "A daily updated listing of estimated landed totals and their gap against the Alko reference price, by category.",
     "taskCardsSavingsPendingBody": "Alko reference prices are not yet matched to the products' landed-cost calculations, so the listing is not published yet.",
     "taskCardsSavingsUnavailableBody": "The listing's availability could not be verified just now."
   },
@@ -250,7 +250,7 @@
     "noResults": "No products found for \"{query}\".",
     "lowestPrice": "Lowest observed price: {price}",
     "perUnitPrice": "≈ {price}/pc",
-    "eurPerGramChip": "{value} ¢/g",
+    "eurPerGramChip": "{value} snt/g",
     "loading": "Calculating…"
   },
   "QuantitySelector": {
@@ -523,9 +523,9 @@
     "distanceBuyingBadge": "Distance buying",
     "distanceSellingNote": "The seller badges derive from the seller's country: with distance selling the merchant handles the Finnish alcohol taxes; with distance buying you arrange the transport and file the required declarations yourself. General information, not legal advice.",
     "eurPerGram": {
-      "columnHeader": "€/g pure ethanol",
-      "sortOptionLabel": "€/g ethanol (lowest first)",
-      "unit": "¢/g",
+      "columnHeader": "snt/g pure ethanol",
+      "sortOptionLabel": "Ethanol unit price (cheapest first)",
+      "unit": "snt/g",
       "noValue": "No value",
       "reason": {
         "MISSING_VOLUME": "product volume is missing",
@@ -535,8 +535,8 @@
         "INVALID_PRICE": "the price is invalid"
       },
       "tooltip": {
-        "triggerLabel": "How is €/g calculated?",
-        "title": "€/g pure ethanol",
+        "triggerLabel": "How is the unit price calculated?",
+        "title": "Unit price: cents per gram of pure ethanol",
         "formula": "Formula: price ÷ (volume in litres × alcohol fraction × 789 g/l).",
         "density": "The density of pure ethanol is 789 g/l.",
         "priceReliability": "Price input reliability: {status}.",
@@ -1297,7 +1297,6 @@
     "neutralityStatement": "Rajahinta uses only objective, non-commercial factors to sort products. No merchant payment, promotional flag, or manual boost can affect the position of any product.",
     "tiebreakerTitle": "Tiebreaker & determinism",
     "tiebreakerStatement": "All sort orders use the product name as a tiebreaker when the primary sort values are equal. Rankings are deterministic: the same data always produces the same order.",
-    "deterministic": "Deterministic: {value}",
     "yes": "Yes",
     "no": "No",
     "sortOrdersTitle": "Available sort orders",
@@ -1314,10 +1313,10 @@
     "spotBody": "If you believe a product ranking, calculation, or data point is incorrect, you can flag it for review from the <link>calculator result page</link>. Each result includes a \"Flag a problem\" affordance that sends your feedback directly to our review team."
   },
   "ValuePage": {
-    "title": "Ethanol €/g by category",
-    "metaTitle": "Ethanol €/g by category: unit-price listing",
+    "title": "Ethanol unit price by category",
+    "metaTitle": "Ethanol unit price by category: unit-price listing",
     "metaDescription": "See what one gram of pure ethanol costs when computed from product offer prices, by category and ascending. An informational listing where every value uses the same formula.",
-    "subtitle": "Each row states what one gram of pure ethanol costs when computed from the product's offer price. The value uses the same formula as the comparison view, and the listing is ordered by the €/g value, ascending.",
+    "subtitle": "Each row states what one gram of pure ethanol costs when computed from the product's offer price. The value uses the same formula as the comparison view, and the listing is ordered by the unit price, ascending.",
     "informationalNote": "This listing is informational: it presents the computed values as they are. The order shown here is a separate read-only view and does not affect search, other listings, or the calculator.",
     "categorySelectorLabel": "Price category",
     "category": {
@@ -1328,25 +1327,25 @@
       "other_fermented": "Cider and long drink",
       "spirits": "Spirits"
     },
-    "tableCaption": "Products in the {category} price category by €/g value, ascending",
+    "tableCaption": "Products in the {category} price category by unit price, ascending",
     "columnPosition": "#",
     "columnProduct": "Product",
-    "columnEurPerGram": "Ethanol €/g",
+    "columnEurPerGram": "Ethanol unit price (snt/g)",
     "columnEthanol": "Ethanol per unit (g)",
     "columnReliability": "Price data reliability",
-    "unit": "¢/g",
+    "unit": "snt/g",
     "loading": "Loading the listing…",
     "errorTitle": "The listing could not be loaded",
     "errorBody": "The backend did not respond. You can try again.",
     "emptyTitle": "No rows to show",
-    "emptyBody": "No offer in this price category currently has a computable €/g value."
+    "emptyBody": "No offer in this price category currently has a computable unit price."
   },
   "SavingsPage": {
     "metaTitle": "Landed-cost gap versus the Alko reference",
-    "metaDescription": "Estimated landed costs in Finland for foreign offers and their gaps against the Alko reference price, materialized daily. Informational listing.",
+    "metaDescription": "Estimated landed costs in Finland for foreign offers and their gaps against the Alko reference price, updated daily. Informational listing.",
     "title": "Landed-cost gap versus the Alko reference",
     "subtitle": "Each row shows a foreign offer's estimated landed cost in Finland (including duties, taxes, and transport) and its gap against the Alko reference price for the same product. Rows are ordered by the largest saving first; ties are broken by product name in alphabetical order.",
-    "informationalNote": "This listing is informational: it presents the computed gaps as they are. The order is deterministic (largest saving first, ties by product name) and does not affect search, other listings, or the calculator. The figures come from the daily materialized snapshot.",
+    "informationalNote": "This listing is informational: it presents the computed gaps as they are. The order is deterministic (largest saving first, ties by product name) and does not affect search, other listings, or the calculator. The figures come from the daily updated dataset.",
     "categorySelectorLabel": "Category",
     "category": {
       "beer": "Beer",
@@ -1371,7 +1370,7 @@
     "errorTitle": "The listing could not be loaded",
     "errorBody": "The backend did not respond. You can try again.",
     "emptyTitle": "No rows to show",
-    "emptyBody": "No rows with a comparable Alko reference price have been materialized for this category yet. Rows appear here once the daily pass produces them."
+    "emptyBody": "No rows with a comparable Alko reference price have appeared for this category yet. Rows appear here once the daily pass produces them."
   },
   "ContentSafetyBadge": {
     "promotional": "Promotional language detected: \"{pattern}\" ({language})",
@@ -1809,7 +1808,7 @@
     "fromPriceLabel": "Lowest observed price",
     "noPrice": "No observed prices",
     "merchantCount": "Merchants: {count}",
-    "unitPriceChip": "{value} ¢/g",
+    "unitPriceChip": "{value} snt/g",
     "trackedPrice": "Tracked price",
     "savingsLandedLabel": "Landed total to Finland",
     "savingsReferenceLabel": "Alko reference price",

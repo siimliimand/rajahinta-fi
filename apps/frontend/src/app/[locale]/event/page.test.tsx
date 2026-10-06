@@ -424,7 +424,7 @@ describe('EventPage server shell (task 2.3)', () => {
     const meta = await eventMetadata({
       params: Promise.resolve({ locale: 'fi' }),
     });
-    expect(meta.title).toBe('Tilaisuuslaskuri: juonetarve ja ostoslista');
+    expect(meta.title).toBe('Tilaisuuslaskuri: juomatarve ja ostoslista');
     expect(meta.description).toContain('ostoslistan');
     // Unique against the site-default metadata title, not a restatement.
     const root = (await import('@/messages/fi.json')).default as {

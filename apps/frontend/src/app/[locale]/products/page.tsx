@@ -807,7 +807,10 @@ export default async function ProductsPage({
                       {item.eurPerGram !== undefined &&
                       item.eurPerGram.status !== 'unavailable' ? (
                         <p className="mt-1 flex flex-wrap items-center gap-1.5">
-                          <span className="font-semibold tabular-nums text-gray-900">
+                          <span
+                            className="font-semibold tabular-nums text-gray-900"
+                            title={tRoot('Compare.eurPerGram.tooltip.title')}
+                          >
                             {t('unitPriceChip', {
                               value: item.eurPerGram.centsPerGram.toFixed(2),
                             })}
