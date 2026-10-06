@@ -170,6 +170,11 @@ import {
   idempotencyStore,
   idempotencyContentHash,
 } from '../adapters/idempotency-facade';
+import {
+  readEmpiricalMarginLadder,
+  withEmpiricalMargin,
+  type WithEmpiricalMargin,
+} from './empirical-margin';
 
 // ---------------------------------------------------------------------------
 // Structural disclaimer — norms are estimates (DISCLAIMER_FI precedent:
@@ -334,6 +339,14 @@ const eventCalcRequestSchema = z.object({
 
 /** The module result decorated with the structural disclaimer field. */
 type EventCalcResponse = EventCalcResult & { readonly disclaimer: Disclaimer };
+
+/**
+ * The event margin query (task 2.2): an event list has no single
+ * product category (its lines span drink types) and no transport
+ * carrier — only the ladder's global rung is reachable
+ * (margin-calibration geometry; the query stays honest, never guessed).
+ */
+const EVENT_MARGIN_QUERY = { category: null, carrier: null } as const;
 
 /** Echo mapping the packing section's synthetic productIds back to drink types. */
 interface EventPackingSection {
@@ -615,6 +628,8 @@ async function calculateEvent(c: Context<AppEnv>): Promise<Response> {
     // see the module doc's idempotency decision. Identical with or
     // without a sourcing section: no norms ⇒ no lines to source.
     const empty: EventCalcResponse = { ...result, disclaimer: NORMS_ESTIMATES_DISCLAIMER_FI };
+    // No empiricalMargin here (task 2.2): there is no estimate to hedge —
+    // the empty state stays byte-compatible with its pre-field shape.
     return c.json(empty);
   }
 
@@ -672,7 +687,7 @@ async function calculateEvent(c: Context<AppEnv>): Promise<Response> {
     if (cached !== null) {
       c.header('X-Cache', 'HIT');
       c.header('X-Content-Hash', await idempotencyContentHash(cached.result));
-      return c.json(cached.result);
+      return c.json(await withMargin(c, cached.result as EventCalcV2Response));
     }
 
     const body: EventCalcV2Response = {
@@ -685,7 +700,7 @@ async function calculateEvent(c: Context<AppEnv>): Promise<Response> {
 
     c.header('X-Cache', 'MISS');
     c.header('X-Content-Hash', await idempotencyContentHash(body));
-    return c.json(body);
+    return c.json(await withMargin(c, body));
   }
 
   const normsVersion: string = result.normsVersion;
@@ -707,7 +722,7 @@ async function calculateEvent(c: Context<AppEnv>): Promise<Response> {
   if (cached !== null) {
     c.header('X-Cache', 'HIT');
     c.header('X-Content-Hash', await idempotencyContentHash(cached.result));
-    return c.json(cached.result);
+    return c.json(await withMargin(c, cached.result as EventCalcResponse));
   }
 
   const body: EventCalcResponse = { ...result, disclaimer: NORMS_ESTIMATES_DISCLAIMER_FI };
@@ -715,7 +730,23 @@ async function calculateEvent(c: Context<AppEnv>): Promise<Response> {
 
   c.header('X-Cache', 'MISS');
   c.header('X-Content-Hash', await idempotencyContentHash(body));
-  return c.json(body);
+  return c.json(await withMargin(c, body));
+}
+
+/**
+ * The served COMPUTED body plus the display-only `empiricalMargin`
+ * (task 2.2, change hedge-dedup-confidence-meter) — resolved fresh from
+ * the persisted margins snapshot on every read, after the idempotency
+ * store and content hash (the basket `packing` precedent). An event
+ * list has no single product category and no transport carrier, so only
+ * the ladder's global rung is reachable (see ./empirical-margin).
+ */
+async function withMargin(
+  c: Context<AppEnv>,
+  body: EventCalcResponse,
+): Promise<WithEmpiricalMargin<EventCalcResponse>> {
+  const ladder = await readEmpiricalMarginLadder(c.env.DB);
+  return withEmpiricalMargin(body, ladder, EVENT_MARGIN_QUERY);
 }
 
 // ---------------------------------------------------------------------------

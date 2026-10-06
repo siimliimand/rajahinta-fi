@@ -29,6 +29,12 @@
  * strict response schema here would silently strip `code`, the stable
  * join key the fi surface localizes against.
  *
+ * The display-only `empiricalMargin` (task 2.2, change
+ * hedge-dedup-confidence-meter) composes after the same hash, like the
+ * other read-time enrichment: resolved from the persisted margins
+ * snapshot (see ./empirical-margin), the basket has no single product
+ * category so only the ladder's global rung is reachable.
+ *
  * @module BasketRoutes
  */
 
@@ -58,6 +64,12 @@ import type {
 } from '../../../../packages/core-domain/src/optimizer/optimizer.types';
 import type { BasketShipment } from '../../../../packages/core-domain/src/optimizer/optimizer.types';
 import type { TransportArrangement } from '../../../../packages/core-domain/src/calculator/calculator.types';
+import {
+  normalizedTransportMethod,
+  readEmpiricalMarginLadder,
+  withEmpiricalMargin,
+  type WithEmpiricalMargin,
+} from './empirical-margin';
 import {
   D1ProductDataPort,
   D1TransportOfferQuery,
@@ -183,6 +195,30 @@ function withMerchantNames(
     })),
     packing,
   };
+}
+
+/**
+ * Attach the display-only `empiricalMargin` (task 2.2, change
+ * hedge-dedup-confidence-meter) — the last read-time enrichment, after
+ * the merchant names and packing section, still strictly additive over
+ * the hash-identified optimization. The basket spans merchants and
+ * products, so there is no single product category to attribute: the
+ * query carries only the request's transport method through the
+ * domain's carrier normalization (D2), and with no carrier-only rung in
+ * the ladder geometry (margin-calibration) only the global cell is
+ * reachable — the carrier rides the query honestly for when the ladder
+ * ever grows one.
+ */
+async function withMargin(
+  d1: AppEnv['Bindings']['DB'],
+  body: BasketOptimizeResponse,
+  dto: BasketOptimizeDto,
+): Promise<WithEmpiricalMargin<BasketOptimizeResponse>> {
+  const ladder = await readEmpiricalMarginLadder(d1);
+  return withEmpiricalMargin(body, ladder, {
+    category: null,
+    carrier: normalizedTransportMethod(dto.transportMethod),
+  });
 }
 
 /** Distinct merchant ids across a result's shipments and alternatives. */
@@ -378,7 +414,13 @@ async function optimize(c: Context<AppEnv>): Promise<Response> {
       c.env.DB,
       merchantIdsOf(cachedResult),
     );
-    return c.json(withMerchantNames(cachedResult, names, packing));
+    return c.json(
+      await withMargin(
+        c.env.DB,
+        withMerchantNames(cachedResult, names, packing),
+        dto,
+      ),
+    );
   }
 
   try {
@@ -398,7 +440,9 @@ async function optimize(c: Context<AppEnv>): Promise<Response> {
     // Names resolve after the optimizer (it picks the merchants) and
     // after the hash — strictly additive display enrichment.
     const names = await merchantDisplayNames(c.env.DB, merchantIdsOf(result));
-    return c.json(withMerchantNames(result, names, packing));
+    return c.json(
+      await withMargin(c.env.DB, withMerchantNames(result, names, packing), dto),
+    );
   } catch (err) {
     if (err instanceof BasketValidationError) {
       // Specific codes map to 404; the rest carry the validation payload.

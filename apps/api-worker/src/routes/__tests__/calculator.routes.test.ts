@@ -18,11 +18,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildApp,
+  byteProxyWithoutMargin,
   expectEnvelope,
+  MARGIN_LADDER_AS_OF,
   openMigratedD1,
   permissiveEnv,
   request,
   seedCalculationRecord,
+  seedMarginLadder,
   seedOffer,
   seedProduct,
   seedTaxRule,
@@ -930,5 +933,179 @@ describe('POST /api/v1/calculations/landed-cost', () => {
       }),
     });
     await expectEnvelope(res, 400, { error: 'ValidationError' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// empiricalMargin — read-time composition (task 2.2, change
+// hedge-dedup-confidence-meter): display-only, after the idempotency
+// store/hash, resolved from the persisted ladder — the shared fixture's
+// beer|posti (0.01, 10) is the deepest floored rung for a beer result
+// carried by posti. Byte-identity of every monetary figure with the
+// field present vs absent is pinned in the compliance suite AND here.
+// ---------------------------------------------------------------------------
+
+describe('empiricalMargin — calculator composition (hedge-dedup-confidence-meter 2.2)', () => {
+  /** The identical request every scenario fires (posti-carried beer). */
+  const CALC_BODY = JSON.stringify({
+    productId: 1,
+    quantity: 1,
+    destination: 'FI',
+    transportMethod: 'posti',
+  });
+
+  /** The per-run volatile fields the byte proxy strips (alko-suite proxy). */
+  const VOLATILE = (clone: Record<string, any>): void => {
+    clone.metadata.calculationTimestamp = '';
+    clone.calculationRecordId = 0;
+    // The import-VAT line embeds its own per-compute clock read (task
+    // 4.3's line shape) — the same volatile class as the top-level
+    // timestamp, never a margin effect.
+    for (const line of clone.itemizedCosts ?? []) {
+      if (line.category === 'importVatEstimate') line.calculatedAt = '';
+    }
+  };
+
+  function seedCalculableDataset(
+    db: ReturnType<typeof openMigratedD1>['db'],
+    offerCountry: 'DE' | 'FI' = 'DE',
+  ): void {
+    seedProduct(db, { id: 1, depositSystemStatus: 0 });
+    seedOffer(db, {
+      id: 11,
+      productId: 1,
+      merchant: 'kauppa',
+      country: offerCountry,
+      priceCents: 250,
+      observedAt: '2026-08-06T10:00:00.000Z',
+    });
+    seedTaxRule(db, { taxType: 'excise', productCategory: 'beer', rate: 0.365 });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+      verified: false,
+      versionLabel: 'v2.0-2025',
+    });
+    // Independent carriage (no seller involvement): the result carries no
+    // import-VAT term, so the version-aware idempotency store/lookup
+    // agree on the active tax labels and a repeat can HIT — the D1
+    // schema's tax_rules CHECK admits only excise/container_duty labels,
+    // so an import-VAT result could never HIT in this world. The
+    // transport route follows the seller country (offer country → FI),
+    // so the origin tracks it too.
+    db.prepare(
+      `INSERT INTO transport_offers (id, carrier, origin_country, destination_country,
+          weight_min_kg, weight_max_kg, package_tier, price_cents, seller_involvement_indicator)
+       VALUES (90, 'posti', ?, 'FI', 0, 1, 'parcel', 150, 0)`,
+    ).run(offerCountry);
+  }
+
+  async function postCalculator(
+    app: ReturnType<typeof buildApp>,
+    d1: ReturnType<typeof openMigratedD1>['d1'],
+  ): Promise<Record<string, any>> {
+    const res = await request(app, permissiveEnv(d1), '/api/v1/calculator', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AGE },
+      body: CALC_BODY,
+    });
+    expect(res.status).toBe(200);
+    return (await res.json()) as Record<string, any>;
+  }
+
+  it('attaches the deepest floored rung with its basis beside the quantile', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedCalculableDataset(db);
+    await seedMarginLadder(db, d1);
+
+    const body = await postCalculator(buildApp(), d1);
+    expect(body.empiricalMargin).toEqual({
+      quantile: 0.01,
+      sampleCount: 10,
+      cell: { dimension: 'category_carrier', key: 'beer|posti' },
+      asOf: MARGIN_LADDER_AS_OF.toISOString(),
+    });
+    // Display-only: the field is beside the numbers, never inside them.
+    expect(Array.isArray(body.itemizedCosts)).toBe(true);
+    expect(body.itemizedCosts.length).toBeGreaterThan(0);
+    expect(JSON.stringify(body.itemizedCosts)).not.toContain('empiricalMargin');
+  });
+
+  it('an empty margins store leaves the key absent — never null, never a placeholder', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedCalculableDataset(db);
+
+    const body = await postCalculator(buildApp(), d1);
+    expect(body).not.toHaveProperty('empiricalMargin');
+  });
+
+  it('the margin rides the HIT payload too — resolved fresh from the snapshot per read', async () => {
+    const { db, d1 } = openMigratedD1();
+    // Domestic seller: no import-VAT term, so the stored versions are
+    // exactly the active labels and the repeat can HIT (module comment
+    // on seedCalculableDataset).
+    seedCalculableDataset(db, 'FI');
+    await seedMarginLadder(db, d1);
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+    const init: RequestInit = {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AGE },
+      body: CALC_BODY,
+    };
+
+    const miss = await request(app, env, '/api/v1/calculator', init);
+    expect(miss.headers.get('X-Cache')).toBe('MISS');
+    const hit = await request(app, env, '/api/v1/calculator', init);
+    expect(hit.headers.get('X-Cache')).toBe('HIT');
+    const hitBody = (await hit.json()) as Record<string, any>;
+    expect(hitBody.empiricalMargin).toEqual({
+      quantile: 0.01,
+      sampleCount: 10,
+      cell: { dimension: 'category_carrier', key: 'beer|posti' },
+      asOf: MARGIN_LADDER_AS_OF.toISOString(),
+    });
+  });
+
+  it('GET result/:id attaches the same margin the live result carried', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedCalculableDataset(db);
+    await seedMarginLadder(db, d1);
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+
+    const posted = await postCalculator(app, d1);
+    const res = await request(
+      app,
+      env,
+      `/api/v1/calculator/result/${posted.calculationRecordId}`,
+      { headers: AGE },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, any>;
+    expect(body.empiricalMargin).toEqual(posted.empiricalMargin);
+  });
+
+  it('every monetary figure is byte-identical with the field present vs absent', async () => {
+    // Two fully separate compositions (fresh DO namespaces → both MISS),
+    // identical seeding except the persisted ladder.
+    const withLadder = openMigratedD1();
+    seedCalculableDataset(withLadder.db);
+    await seedMarginLadder(withLadder.db, withLadder.d1);
+    const withoutLadder = openMigratedD1();
+    seedCalculableDataset(withoutLadder.db);
+
+    const present = await postCalculator(buildApp(), withLadder.d1);
+    const absent = await postCalculator(buildApp(), withoutLadder.d1);
+
+    expect(present.empiricalMargin).toBeDefined();
+    expect(absent).not.toHaveProperty('empiricalMargin');
+    // Totals, itemized lines, taxes, confidence, classification — the
+    // whole projection minus volatile fields is byte-equal.
+    expect(byteProxyWithoutMargin(present, VOLATILE)).toBe(
+      byteProxyWithoutMargin(absent, VOLATILE),
+    );
   });
 });

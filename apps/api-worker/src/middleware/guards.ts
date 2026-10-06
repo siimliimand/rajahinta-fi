@@ -51,7 +51,9 @@
  *
  * Guard-free surfaces with no rate limit (reviewed-safe public reads and
  * token-capability exchanges): GET /api/v1/health(+/ready), GET
- * /api/v1/accuracy (trust-and-reach-roadmap 3.3), GET /api/v1/blog/posts
+ * /api/v1/accuracy + /api/v1/accuracy/margins (trust-and-reach-roadmap
+ * 3.3; hedge-dedup-confidence-meter 2.1 — the margins ladder is the
+ * statistic's display-only companion read), GET /api/v1/blog/posts
  * (+:/:slug, 5.1) + GET /api/v1/guides (insight-surfaces 5.1), GET
  * /api/v1/share/:publicId (6.1), POST
  * /api/v1/analytics/click, GET /api/v1/newsletter/confirm +

@@ -21,8 +21,12 @@ import {
   quantileOfRelativeErrors,
   relativeErrorFraction,
   resolveEmpiricalMargin,
+  resolveEmpiricalMarginFromCells,
 } from '../margin-calibration';
-import type { OutcomeMarginReport } from '../margin-calibration.types';
+import type {
+  EmpiricalMargin,
+  OutcomeMarginReport,
+} from '../margin-calibration.types';
 import {
   categoryCarrierCellKey,
   GLOBAL_CELL_KEY,
@@ -510,5 +514,103 @@ describe('resolveEmpiricalMargin — determinism', () => {
     const snapshot = reports.map((r) => ({ ...r }));
     resolveEmpiricalMargin(reports, { category: 'beer', carrier: 'posti' }, AS_OF);
     expect(reports).toEqual(snapshot);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveEmpiricalMarginFromCells — the persisted-snapshot resolver
+// (task 2.2's read-time composition resolves the SAME geometry from the
+// outcome_margins snapshot; delegating both resolvers here keeps
+// deepest-wins and the clamp in one source of truth)
+// ---------------------------------------------------------------------------
+
+describe('resolveEmpiricalMarginFromCells — snapshot resolution', () => {
+  /** A hand-built snapshot cell, shaped exactly like a persisted row. */
+  function cell(
+    dimension: 'category_carrier' | 'category' | 'global',
+    key: string,
+    quantile: number,
+    sampleCount = 10,
+  ): EmpiricalMargin {
+    return { quantile, sampleCount, cell: { dimension, key }, asOf: AS_OF };
+  }
+
+  it('an empty snapshot resolves null — never a fabricated margin', () => {
+    expect(
+      resolveEmpiricalMarginFromCells([], { category: 'beer', carrier: 'posti' }),
+    ).toBeNull();
+  });
+
+  it('the deepest snapshot cell on the query path wins', () => {
+    const ladder = [
+      cell('category_carrier', 'beer|posti', 0.01),
+      cell('category', 'beer', 0.02),
+      cell('global', GLOBAL_CELL_KEY, 0.05),
+    ];
+    const margin = resolveEmpiricalMarginFromCells(ladder, {
+      category: 'beer',
+      carrier: 'posti',
+    });
+    expect(margin!.cell).toEqual({ dimension: 'category_carrier', key: 'beer|posti' });
+    expect(margin!.quantile).toBe(0.01);
+    expect(margin!.sampleCount).toBe(10);
+  });
+
+  it('an unknown category cannot enter category rungs — global fallback', () => {
+    const ladder = [
+      cell('category_carrier', 'beer|posti', 0.01),
+      cell('category', 'beer', 0.02),
+      cell('global', GLOBAL_CELL_KEY, 0.05),
+    ];
+    // The trip/event/basket shape: no category, at most a carrier —
+    // and there is no carrier-only rung to enter.
+    const margin = resolveEmpiricalMarginFromCells(ladder, {
+      category: null,
+      carrier: 'posti',
+    });
+    expect(margin!.cell).toEqual({ dimension: 'global', key: GLOBAL_CELL_KEY });
+    expect(margin!.quantile).toBe(0.05);
+  });
+
+  it('cells off the query path never bind, even at the same rung', () => {
+    const ladder = [
+      cell('category_carrier', 'wine_still|dhl', 0.5),
+      cell('category', 'wine_still', 0.4),
+      cell('global', GLOBAL_CELL_KEY, 0.05),
+    ];
+    const margin = resolveEmpiricalMarginFromCells(ladder, {
+      category: 'beer',
+      carrier: 'posti',
+    });
+    expect(margin!.cell).toEqual({ dimension: 'global', key: GLOBAL_CELL_KEY });
+    expect(margin!.quantile).toBe(0.05);
+  });
+
+  it('the clamp spans every surviving path rung — parity with the calibrating resolver', () => {
+    // Corpus whose deep cell over-represents the error tail: the
+    // resolver must report the deepest rung's cell/sampleCount with the
+    // parent-clamped quantile — from cells AND from reports alike. The
+    // snapshot is the path's persisted write shape: every outcome_margins
+    // row IS a {@link computeCellMargin} result (the repository tests
+    // pin that write path).
+    const reports = [
+      ...Array.from({ length: 3 }, () => reportAt(0.09, { carrier: 'posti' })),
+      ...Array.from({ length: 7 }, () => reportAt(0.01, { carrier: 'posti' })),
+      ...Array.from({ length: 20 }, () => reportAt(0.01)),
+    ];
+    const query = { category: 'beer', carrier: 'posti' } as const;
+    const fromReports = resolveEmpiricalMargin(reports, query, AS_OF);
+    const snapshot = [
+      computeCellMargin(reports, 'category_carrier', 'beer', 'posti', AS_OF),
+      computeCellMargin(reports, 'category', 'beer', null, AS_OF),
+      computeCellMargin(reports, 'global', null, null, AS_OF),
+    ].filter((margin): margin is EmpiricalMargin => margin !== null);
+    const fromCells = resolveEmpiricalMarginFromCells(snapshot, query);
+    expect(fromCells).toEqual(fromReports);
+    expect(fromReports!.cell).toEqual({
+      dimension: 'category_carrier',
+      key: 'beer|posti',
+    });
+    expect(fromReports!.quantile).toBe(0.01);
   });
 });

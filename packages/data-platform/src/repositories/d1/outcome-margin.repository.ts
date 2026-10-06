@@ -152,6 +152,23 @@ function distinctAttributedPairs(
   );
 }
 
+/**
+ * One persisted row → the core-domain {@link EmpiricalMargin} the
+ * ladder consumers resolve through — the read layers' single mapping
+ * (the margins endpoint and the task-2.2 read-time composition both
+ * call this, so no reader re-parses a row ad hoc).
+ */
+export function marginRowToEmpiricalMargin(
+  row: OutcomeMarginRow,
+): EmpiricalMargin {
+  return {
+    quantile: row.quantile,
+    sampleCount: row.sampleCount,
+    cell: { dimension: row.dimension, key: row.cellKey },
+    asOf: row.asOf,
+  };
+}
+
 @Injectable()
 export class D1OutcomeMarginRepository {
   constructor(private readonly d1: D1DatabaseLike) {}

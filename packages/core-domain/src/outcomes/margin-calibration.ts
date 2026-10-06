@@ -190,6 +190,47 @@ function requireCellValue(value: string | null, detail: string): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * The rungs of one query's ladder path, deepest first — the calibration
+ * descriptors (the category/carrier the cell math attributes over) and
+ * the resulting cell identities share this one geometry, so both
+ * resolvers below walk the same path.
+ */
+interface LadderRung {
+  readonly dimension: MarginCellDimension;
+  readonly category: string | null;
+  readonly carrier: string | null;
+  /** The rung's cell identity (see {@link MarginCell}). */
+  readonly key: string;
+}
+
+function ladderPath(query: MarginLadderQuery): LadderRung[] {
+  const path: LadderRung[] = [];
+  if (query.category !== null && query.carrier !== null) {
+    path.push({
+      dimension: 'category_carrier',
+      category: query.category,
+      carrier: query.carrier,
+      key: categoryCarrierCellKey(query.category, query.carrier),
+    });
+  }
+  if (query.category !== null) {
+    path.push({
+      dimension: 'category',
+      category: query.category,
+      carrier: null,
+      key: query.category,
+    });
+  }
+  path.push({
+    dimension: 'global',
+    category: null,
+    carrier: null,
+    key: GLOBAL_CELL_KEY,
+  });
+  return path;
+}
+
+/**
  * Resolve the empirical margin for a result through the cell ladder:
  * `category×carrier` → `category` → `global` — the deepest rung with
  * a sample count at or above the {@link MARGIN_SAMPLE_FLOOR} wins the
@@ -216,26 +257,12 @@ export function resolveEmpiricalMargin(
   query: MarginLadderQuery,
   asOf: Date,
 ): EmpiricalMargin | null {
-  const rungs: Array<{
-    dimension: MarginCellDimension;
-    category: string | null;
-    carrier: string | null;
-  }> = [];
-  if (query.category !== null && query.carrier !== null) {
-    rungs.push({
-      dimension: 'category_carrier',
-      category: query.category,
-      carrier: query.carrier,
-    });
-  }
-  if (query.category !== null) {
-    rungs.push({ dimension: 'category', category: query.category, carrier: null });
-  }
-  rungs.push({ dimension: 'global', category: null, carrier: null });
-
-  let winner: EmpiricalMargin | null = null;
-  let clampedQuantile = Number.POSITIVE_INFINITY;
-  for (const rung of rungs) {
+  // Calibrate the path's rungs from the report corpus, then resolve
+  // through the same cell resolution a persisted ladder reads through
+  // ({@link resolveEmpiricalMarginFromCells}) — deepest-wins and the
+  // clamp have exactly one source of truth.
+  const cells: EmpiricalMargin[] = [];
+  for (const rung of ladderPath(query)) {
     const margin = computeCellMargin(
       reports,
       rung.dimension,
@@ -243,11 +270,39 @@ export function resolveEmpiricalMargin(
       rung.carrier,
       asOf,
     );
-    if (margin === null) continue;
+    if (margin !== null) cells.push(margin);
+  }
+  return resolveEmpiricalMarginFromCells(cells, query);
+}
+
+/**
+ * Resolve a margin from an ALREADY-CALIBRATED ladder — the persisted
+ * `outcome_margins` snapshot (task 2.2's read-time composition; the
+ * calibrating resolver {@link resolveEmpiricalMargin} delegates here
+ * too, so deepest-wins and the monotonicity clamp live in exactly one
+ * place). The snapshot contains only cells that met the floor at write
+ * time, so the deepest snapshot cell on the query's path IS the deepest
+ * floored rung; the clamp still applies across the surviving path
+ * rungs. No cell on the path (an empty snapshot, or every path rung
+ * under the floor at the last write) is `null` — never a fabricated
+ * margin. Pure and display-only (design D4).
+ */
+export function resolveEmpiricalMarginFromCells(
+  cells: readonly EmpiricalMargin[],
+  query: MarginLadderQuery,
+): EmpiricalMargin | null {
+  let winner: EmpiricalMargin | null = null;
+  let clampedQuantile = Number.POSITIVE_INFINITY;
+  for (const { dimension, key } of ladderPath(query)) {
+    const cell = cells.find(
+      (candidate) =>
+        candidate.cell.dimension === dimension && candidate.cell.key === key,
+    );
+    if (cell === undefined) continue;
     if (winner === null) {
-      winner = margin;
+      winner = cell;
     }
-    clampedQuantile = Math.min(clampedQuantile, margin.quantile);
+    clampedQuantile = Math.min(clampedQuantile, cell.quantile);
   }
 
   if (winner === null) {

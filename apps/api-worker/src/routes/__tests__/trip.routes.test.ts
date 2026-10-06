@@ -24,12 +24,15 @@ import { describe, it, expect } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
 import {
   buildApp,
+  byteProxyWithoutMargin,
   expectEnvelope,
+  MARGIN_LADDER_AS_OF,
   openMigratedD1,
   permissiveEnv,
   issueSessionToken,
   request,
   seedAccount,
+  seedMarginLadder,
   seedOffer,
   seedProduct,
 } from './harness';
@@ -748,5 +751,48 @@ describe('POST /api/v1/trip/fill — rate-limit profile', () => {
     });
     await expectEnvelope(overLimit, 429, { error: 'TooManyRequests' });
     expect(overLimit.headers.get('Retry-After')).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// empiricalMargin — read-time composition (task 2.2, change
+// hedge-dedup-confidence-meter): a traveller fill has no carrier (the
+// traveller IS the carrier) and no single product category, so only the
+// ladder's global rung is reachable. The margin composes after the
+// ferry merge, never inside the cached fill body.
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/trip/fill — empiricalMargin (hedge-dedup-confidence-meter 2.2)', () => {
+  /** The per-run volatile field the byte proxy strips. */
+  const VOLATILE = (clone: Record<string, any>): void => {
+    clone.metadata.calculationTimestamp = '';
+  };
+
+  it('attaches the global rung and keeps every figure byte-identical with the field absent', async () => {
+    const withLadder = openMigratedD1();
+    await seedFillProducts(withLadder.db);
+    await seedPublishedFillAllowances(withLadder.d1);
+    await seedMarginLadder(withLadder.db, withLadder.d1);
+    const withoutLadder = openMigratedD1();
+    await seedFillProducts(withoutLadder.db);
+    await seedPublishedFillAllowances(withoutLadder.d1);
+
+    const present = (await (
+      await postFill(fillApp(), fillEnv(withLadder.d1))
+    ).json()) as Record<string, any>;
+    const absent = (await (
+      await postFill(fillApp(), fillEnv(withoutLadder.d1))
+    ).json()) as Record<string, any>;
+
+    expect(present.empiricalMargin).toEqual({
+      quantile: 0.05,
+      sampleCount: 16,
+      cell: { dimension: 'global', key: 'global' },
+      asOf: MARGIN_LADDER_AS_OF.toISOString(),
+    });
+    expect(absent).not.toHaveProperty('empiricalMargin');
+    expect(byteProxyWithoutMargin(present, VOLATILE)).toBe(
+      byteProxyWithoutMargin(absent, VOLATILE),
+    );
   });
 });
