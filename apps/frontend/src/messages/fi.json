@@ -1804,6 +1804,7 @@
     "sortOptionAlphabetical": "Nimi (aakkosjärjestys)",
     "sortOptionLowestPrice": "Halvin hinta ensin",
     "sortOptionAlcoholPercentage": "Alkoholiprosentti (suurin ensin)",
+    "sortOptionBiggestSaving": "Suurin säästö ensin",
     "sortApply": "Järjestä",
     "fromPriceLabel": "Halvin havaittu hinta",
     "noPrice": "Ei havaittuja hintoja",

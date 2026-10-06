@@ -1804,6 +1804,7 @@
     "sortOptionAlphabetical": "Name (alphabetical)",
     "sortOptionLowestPrice": "Lowest observed price first",
     "sortOptionAlcoholPercentage": "Alcohol percentage (highest first)",
+    "sortOptionBiggestSaving": "Biggest saving first",
     "sortApply": "Apply",
     "fromPriceLabel": "Lowest observed price",
     "noPrice": "No observed prices",

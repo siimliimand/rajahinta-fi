@@ -29,13 +29,16 @@
  *   6. Unknown ?category= values are forgiven (design D2): the page
  *      renders the unfiltered view and never sends the value to the API
  *      (the API would answer 400).
- *   7. Sort state (task 4.1, change catalog-first-run-polish): the
- *      default ALPHABETICAL stays out of the fetch and URLs
- *      (canonical-clean), superseding the first-impression-pass
- *      LOWEST_PRICE flip; LOWEST_PRICE remains selectable and
- *      URL-addressable as an explicit non-default sort; an unknown
- *      ?sort= value forgives to the default ordering — the strict 400
- *      lives at the API only.
+ *   7. Sort state (task 2.4, change savings-first-catalog-and-prefill):
+ *      the default order is BIGGEST_SAVING — the API's absent-sort
+ *      default — superseding task 4.1's ALPHABETICAL flip
+ *      (catalog-first-run-polish, itself superseding the
+ *      first-impression-pass LOWEST_PRICE flip). The default stays out
+ *      of the fetch and URLs (canonical-clean), the dropdown gains the
+ *      option, ALPHABETICAL and LOWEST_PRICE remain selectable and
+ *      URL-addressable as explicit non-default sorts, and an unknown
+ *      ?sort= value forgives to the default — the strict 400 lives at
+ *      the API only.
  *   8. Savings figures (task 2.1, change
  *      savings-first-catalog-and-prefill): a covered card renders the
  *      snapshot's landed total, Alko reference, and factual gap beside
@@ -586,22 +589,39 @@ describe('ProductsPage pagination', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Sort state (task 4.1, change catalog-first-run-polish): the catalog's
-// default order is ALPHABETICAL, superseding the first-impression-pass
-// LOWEST_PRICE flip. The default stays out of the fetch and URLs
-// (canonical-clean href builder); an explicit non-default sort —
-// LOWEST_PRICE among them — travels through every control; an unknown
-// ?sort= value forgives to the default — the API's strict 400 never
-// happens.
+// Sort state (task 2.4, change savings-first-catalog-and-prefill): the
+// catalog's default order is BIGGEST_SAVING — the API's absent-sort
+// default (task 1.2) — superseding task 4.1's ALPHABETICAL flip. The
+// default stays out of the fetch and URLs (canonical-clean href builder);
+// explicit non-default sorts — ALPHABETICAL and LOWEST_PRICE among them —
+// travel through every control; an unknown ?sort= value forgives to the
+// default — the API's strict 400 never happens.
 // ---------------------------------------------------------------------------
 
-describe('ProductsPage sort state (task 4.1)', () => {
-  it('defaults to ALPHABETICAL: the select shows the name order and the default stays out of the fetch and links', async () => {
+describe('ProductsPage sort state (task 2.4)', () => {
+  it('defaults to BIGGEST_SAVING: the select shows the savings order, the dropdown gains the option, and the default stays out of the fetch and links', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([catalogItem()], { total: 60, page: 1, totalPages: 3 }),
+    );
+
     await renderCatalog();
 
     const select = screen.getByLabelText('Järjestys') as HTMLSelectElement;
-    expect(select.value).toBe('ALPHABETICAL');
-    // The API's absent-sort default is the name order too, so the
+    expect(select.value).toBe('BIGGEST_SAVING');
+
+    // The dropdown offers the full contract set, new option included,
+    // in the contract's order.
+    const optionLabels = within(select)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(optionLabels).toEqual([
+      'Nimi (aakkosjärjestys)',
+      'Halvin hinta ensin',
+      'Alkoholiprosentti (suurin ensin)',
+      'Suurin säästö ensin',
+    ]);
+
+    // The API's absent-sort default is BIGGEST_SAVING too, so the
     // canonical-clean fetch omits sort entirely.
     expect(mockedRequest).toHaveBeenCalledWith(
       '/api/v1/products?page=1&limit=24',
@@ -610,11 +630,22 @@ describe('ProductsPage sort state (task 4.1)', () => {
         next: { revalidate: 900 },
       },
     );
+
     // Category links stay canonical-clean: the default sort is omitted.
     const row = screen.getByTestId('catalog-filter-row');
     expect(
       within(row).getByRole('link', { name: 'Olut' }),
     ).toHaveAttribute('href', '/products?category=beer');
+    // Pagination links omit it as well.
+    const nav = screen.getByTestId('catalog-pagination');
+    expect(
+      within(nav).getByRole('link', { name: '2' }),
+    ).toHaveAttribute('href', '/products?page=2');
+    // The no-JS sort form carries no hidden sort field for the default —
+    // submitting it unchanged must stay on the default order.
+    expect(
+      screen.getByTestId('catalog-sort').querySelector('input[name="sort"]'),
+    ).toBeNull();
   });
 
   it('carries an explicit non-default sort through the fetch, the links, and the control state (LOWEST_PRICE stays URL-addressable)', async () => {
@@ -639,11 +670,45 @@ describe('ProductsPage sort state (task 4.1)', () => {
     ).toHaveAttribute('href', '/products?sort=LOWEST_PRICE&page=2');
   });
 
-  it('forgives an unknown sort value: the default name ordering renders and nothing unknown reaches the API', async () => {
+  it('treats an explicit ALPHABETICAL as a non-default sort: it travels to the fetch and links and renders one undivided list', async () => {
+    // ALPHABETICAL lost the default to BIGGEST_SAVING (task 2.4) but
+    // stays selectable — and now URL-addressable, like every
+    // non-default order.
+    mockedRequest.mockResolvedValue(
+      catalogResult(
+        [
+          catalogItem({ id: 11, name: 'Iso Säästö 0.7 l', savings: savingsEmbed() }),
+          catalogItem({ id: 13, name: 'Aurinko Viini 0.75 l' }),
+        ],
+        { total: 60, page: 1, totalPages: 3 },
+      ),
+    );
+
+    await renderCatalog({ sort: 'ALPHABETICAL' });
+
+    expect(mockedRequest).toHaveBeenCalledWith(
+      '/api/v1/products?sort=ALPHABETICAL&page=1&limit=24',
+      {
+        headers: { 'x-age-confirmed': 'server-prerender' },
+        next: { revalidate: 900 },
+      },
+    );
+    const select = screen.getByLabelText('Järjestys') as HTMLSelectElement;
+    expect(select.value).toBe('ALPHABETICAL');
+    // Non-default sorts render one undivided list — no tier divider.
+    expect(screen.queryByTestId('catalog-no-reference-divider')).toBeNull();
+    expect(screen.queryByRole('separator')).toBeNull();
+    const nav = screen.getByTestId('catalog-pagination');
+    expect(
+      within(nav).getByRole('link', { name: '2' }),
+    ).toHaveAttribute('href', '/products?sort=ALPHABETICAL&page=2');
+  });
+
+  it('forgives an unknown sort value: the default savings ordering renders and nothing unknown reaches the API', async () => {
     await renderCatalog({ sort: 'PROMOTED' });
 
     const select = screen.getByLabelText('Järjestys') as HTMLSelectElement;
-    expect(select.value).toBe('ALPHABETICAL');
+    expect(select.value).toBe('BIGGEST_SAVING');
     // The strict API would 400 — the page resolves the parameter before
     // fetching and sends the default (omitted) instead of the value.
     expect(mockedRequest).toHaveBeenCalledWith(

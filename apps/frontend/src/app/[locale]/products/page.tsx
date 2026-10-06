@@ -47,7 +47,9 @@ import {
  * (400 on unknown values), so the page resolves the parameter BEFORE
  * fetching and never sends a value the contract rejects. The ?sort=
  * value gets the same forgiving treatment (task 1.3): unknown values
- * fall back to the default order instead of a 400.
+ * fall back to the default order instead of a 400 — the default is
+ * BIGGEST_SAVING since task 2.4 (change
+ * savings-first-catalog-and-prefill).
  *
  * Copy note (task 3.2): all catalog copy lives in the message catalogs
  * under the ProductsPage namespace; the category labels are the shared
@@ -79,6 +81,15 @@ import {
  * with nothing above it is noise, and a fully covered page has no
  * boundary. Every other sort renders one undivided list (design D2).
  *
+ * Default order (task 2.4, change savings-first-catalog-and-prefill):
+ * the page's default is BIGGEST_SAVING, mirroring the API's absent-sort
+ * default (task 1.2). The recorded rationale (design D2):
+ * LOWEST_PRICE fronted a miniature wall, ALPHABETICAL fronted a
+ * junk-name wall; BIGGEST_SAVING orders by the value proposition, with
+ * uncovered rows following an honest divider. The omission of the
+ * default from fetches and links (canonical-clean URLs) keeps its
+ * single meaning: absent sort = BIGGEST_SAVING at both ends.
+ *
  * @module CatalogPage
  */
 
@@ -88,20 +99,23 @@ import {
 
 /**
  * Sort orders the listing API contract accepts (task 1.3) — mirrors
- * CATALOG_SORT_ORDERS in the worker route, which is the enforcing
- * authority (unknown values are a 400 there). The page resolves the
- * parameter forgivingly before fetching, mirroring the category
- * treatment above.
+ * CATALOG_SORT_ORDERS in the worker route (the enforcing authority:
+ * unknown values are a 400 there) value for value, in the contract's
+ * order. BIGGEST_SAVING joined the set in task 1.2 and became the
+ * page's default in task 2.4 (change
+ * savings-first-catalog-and-prefill). The page resolves the parameter
+ * forgivingly before fetching, mirroring the category treatment above.
  */
 const CATALOG_SORT_ORDERS = [
   'ALPHABETICAL',
   'LOWEST_PRICE',
   'ALCOHOL_PERCENTAGE',
+  'BIGGEST_SAVING',
 ] as const;
 
 type CatalogSortOrder = (typeof CATALOG_SORT_ORDERS)[number];
 
-const DEFAULT_SORT: CatalogSortOrder = 'ALPHABETICAL';
+const DEFAULT_SORT: CatalogSortOrder = 'BIGGEST_SAVING';
 
 /**
  * Search-query cap, mirroring the embed widget's MAX_QUERY_LENGTH —
@@ -124,6 +138,7 @@ const SORT_LABEL_KEYS: Record<CatalogSortOrder, string> = {
   ALPHABETICAL: 'sortOptionAlphabetical',
   LOWEST_PRICE: 'sortOptionLowestPrice',
   ALCOHOL_PERCENTAGE: 'sortOptionAlcoholPercentage',
+  BIGGEST_SAVING: 'sortOptionBiggestSaving',
 };
 
 /**
@@ -150,11 +165,17 @@ function resolvePageParam(raw: string | string[] | undefined): number {
 }
 
 /**
- * Forgiving sort resolution (task 1.3; default flipped in task 4.1,
- * change catalog-first-run-polish): absent, blank, and unknown values
- * all render the default name ordering (ALPHABETICAL — the API's
- * absent-sort default too) — the API's strict 400 never happens because
- * only resolved canonical values are sent.
+ * Forgiving sort resolution (task 1.3; default flipped twice — task 4.1,
+ * change catalog-first-run-polish, then task 2.4, change
+ * savings-first-catalog-and-prefill): absent, blank, and unknown values
+ * all render the default BIGGEST_SAVING ordering — the API's absent-sort
+ * default too (task 1.2), so an omitted sort means the same thing at
+ * both ends. The recorded rationale (design D2): LOWEST_PRICE fronted a
+ * miniature wall and ALPHABETICAL fronted a junk-name wall;
+ * BIGGEST_SAVING orders by the value proposition, and uncovered rows
+ * follow an honest divider (the no-reference tier, task 2.2). The API's
+ * strict 400 never happens because only resolved canonical values are
+ * sent.
  */
 function resolveSortParam(
   raw: string | string[] | undefined,
@@ -535,9 +556,10 @@ export default async function ProductsPage({
           is URL state like category and page. A sort change resets to
           page 1 (no page field in the form); the category and the active
           search travel in hidden fields. The default order is a real
-          option value (ALPHABETICAL — an explicit contract value;
-          LOWEST_PRICE stays selectable and URL-addressable) so the
-          select always submits a value the API accepts. ── */}
+          option value (BIGGEST_SAVING — an explicit contract value since
+          task 1.2 and the default since task 2.4; ALPHABETICAL stays
+          selectable and URL-addressable as an explicit non-default
+          order) so the select always submits a value the API accepts. ── */}
       <form
         method="get"
         action="/products"
