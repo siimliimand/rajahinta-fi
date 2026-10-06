@@ -7,7 +7,12 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import { request, SERVER_AGE_CONFIRMATION_TOKEN } from '@/lib/api';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
-import type { ProductSearchItem, ProductSearchResult } from '@/lib/types';
+import type {
+  ProductSavingsEmbed,
+  ProductSearchItem,
+  ProductSearchResult,
+  ReliabilityStatus,
+} from '@/lib/types';
 import { RELIABILITY_STATUS_META } from '@/lib/design/status';
 import {
   Badge,
@@ -58,6 +63,12 @@ import {
  * unit + the canonical reliability badge) and renders nothing for an
  * unavailable or absent embed; a single-seller card replaces the
  * "Myyjiä: 1" count with the tracked-price framing (design D6).
+ *
+ * Savings figures (task 2.1, change savings-first-catalog-and-prefill):
+ * a present `savings` embed renders the snapshot's landed total, Alko
+ * reference, and factual gap beside the "from" price, in the /savings
+ * vocabulary; an absent embed renders nothing at all — the €/g chip
+ * precedent.
  *
  * @module CatalogPage
  */
@@ -237,6 +248,17 @@ function formatEuro(cents: number, locale: CatalogLocale): string {
   } catch {
     return `${(cents / 100).toFixed(2)} €`;
   }
+}
+
+/**
+ * The savings embed's reliability status, with the /savings listing's
+ * degradation rule: an unknown status string falls to the UNAVAILABLE
+ * ladder rung instead of crashing the card.
+ */
+function savingsReliability(savings: ProductSavingsEmbed): ReliabilityStatus {
+  return savings.reliability in RELIABILITY_STATUS_META
+    ? (savings.reliability as ReliabilityStatus)
+    : 'UNAVAILABLE';
 }
 
 interface ProductsPageProps {
@@ -629,6 +651,77 @@ export default async function ProductsPage({
                     ) : (
                       <p className="text-gray-500">{t('noPrice')}</p>
                     )}
+                    {/* ── Savings figures (task 2.1, change
+                        savings-first-catalog-and-prefill): the snapshot's
+                        landed total, Alko reference, and factual gap, in
+                        the /savings vocabulary. ONLY a present embed
+                        renders — an absent embed renders nothing at all
+                        (the €/g chip precedent). The reference and gap
+                        lines need a reference price; with a null one the
+                        landed total stands alone (a gap without its
+                        reference would be unexplainable). A dearer-than-
+                        Alko gap states the fact plainly, the same framing
+                        as the cheaper direction (design D2). Confidence
+                        stays on the /savings listing — the card surfaces
+                        the reliability ladder only. ── */}
+                    {item.savings !== undefined ? (
+                      <div
+                        data-testid="card-savings"
+                        className="mt-2 rounded-md bg-gray-50 px-2 py-1.5 text-xs"
+                      >
+                        <p className="flex items-baseline justify-between gap-2">
+                          <span className="text-gray-500">
+                            {t('savingsLandedLabel')}
+                          </span>
+                          <span className="font-semibold tabular-nums text-gray-900">
+                            {formatEuro(item.savings.landedTotalCents, locale)}
+                          </span>
+                        </p>
+                        {item.savings.alkoReferenceCents !== null ? (
+                          <>
+                            <p className="flex items-baseline justify-between gap-2">
+                              <span className="text-gray-500">
+                                {t('savingsReferenceLabel')}
+                              </span>
+                              <span className="tabular-nums text-gray-700">
+                                {formatEuro(
+                                  item.savings.alkoReferenceCents,
+                                  locale,
+                                )}
+                              </span>
+                            </p>
+                            <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                              <span className="text-gray-700">
+                                {item.savings.gapCents < 0
+                                  ? t('savingsGapCheaper', {
+                                      figure: formatEuro(
+                                        Math.abs(item.savings.gapCents),
+                                        locale,
+                                      ),
+                                    })
+                                  : item.savings.gapCents > 0
+                                    ? t('savingsGapDearer', {
+                                        figure: formatEuro(
+                                          Math.abs(item.savings.gapCents),
+                                          locale,
+                                        ),
+                                      })
+                                    : t('savingsGapEqual')}
+                              </span>
+                              <ReliabilityBadge
+                                status={savingsReliability(item.savings)}
+                              >
+                                {tRoot(
+                                  RELIABILITY_STATUS_META[
+                                    savingsReliability(item.savings)
+                                  ].labelKey,
+                                )}
+                              </ReliabilityBadge>
+                            </p>
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {/* ── €/g chip (task 2.3, change honest-trust-surfaces):
                         ONLY a computed metric renders — an unavailable or
                         absent embed renders nothing at all (no placeholder,

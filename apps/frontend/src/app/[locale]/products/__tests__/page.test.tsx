@@ -36,6 +36,10 @@
  *      URL-addressable as an explicit non-default sort; an unknown
  *      ?sort= value forgives to the default ordering — the strict 400
  *      lives at the API only.
+ *   8. Savings figures (task 2.1, change
+ *      savings-first-catalog-and-prefill): a covered card renders the
+ *      snapshot's landed total, Alko reference, and factual gap beside
+ *      the "from" price; an absent embed renders none of it.
  *
  * @module CatalogPageTest
  */
@@ -48,6 +52,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductsPage from '../page';
 import { request } from '@/lib/api';
 import type {
+  ProductSavingsEmbed,
   ProductSearchItem,
   ProductSearchResult,
   ReliabilityStatus,
@@ -176,6 +181,25 @@ function unavailableEmbed(
     centsPerGram: null,
     ethanolGrams: null,
     reason,
+  };
+}
+
+/**
+ * A savings embed exactly as the listing API emits it (task 2.1,
+ * savings-first-catalog-and-prefill): the default row is covered (a
+ * reference exists) and cheaper than Alko.
+ */
+function savingsEmbed(
+  overrides: Partial<ProductSavingsEmbed> = {},
+): ProductSavingsEmbed {
+  return {
+    landedTotalCents: 1543,
+    alkoReferenceCents: 2809,
+    gapCents: -1266,
+    gapBasisPoints: -4507,
+    reliability: 'VERIFIED',
+    confidence: 'HIGH',
+    ...overrides,
   };
 }
 
@@ -903,5 +927,123 @@ describe('ProductsPage €/g chip and single-seller framing (task 2.3)', () => {
     expect(card).toHaveTextContent('Estimated');
     expect(card).toHaveTextContent('Tracked price');
     expect(card).not.toHaveTextContent('Merchants: 1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Savings figures (task 2.1, change savings-first-catalog-and-prefill):
+// a covered card renders the snapshot's landed total, Alko reference, and
+// factual gap beside the "from" price; both gap directions state the fact
+// the same way; an absent embed renders none of it — the €/g chip
+// precedent of honest absence.
+// ---------------------------------------------------------------------------
+
+describe('ProductsPage savings figures (task 2.1)', () => {
+  it('renders landed total, Alko reference, gap, and reliability beside the from price on a covered card', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([catalogItem({ savings: savingsEmbed() })]),
+    );
+
+    await renderCatalog();
+
+    const card = screen.getByText('Kotikalja 0.5 l').closest('article');
+    // The /savings vocabulary, both labels present.
+    expect(card).toHaveTextContent('Kokonaishinta Suomeen');
+    expect(card).toHaveTextContent('Alkon vertailuhinta');
+    // Figures: landed 15,43 € and reference 28,09 €.
+    expect(card).toHaveTextContent('15,43 €');
+    expect(card).toHaveTextContent('28,09 €');
+    // The gap sentence names the direction factually.
+    expect(card).toHaveTextContent('halvempi kuin Alkon vertailuhinta');
+    // The input figure's reliability rides with the canonical badge label.
+    expect(card).toHaveTextContent('Vahvistettu');
+    // The "from" price line is untouched.
+    expect(card).toHaveTextContent('Halvin havaittu hinta');
+    expect(card).toHaveTextContent('1,99 €');
+  });
+
+  it('states the dearer direction with the same factual framing as the cheaper one', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([
+        catalogItem({
+          id: 1,
+          name: 'Cheaper Import',
+          savings: savingsEmbed(),
+        }),
+        catalogItem({
+          id: 2,
+          name: 'Dearer Import',
+          savings: savingsEmbed({
+            landedTotalCents: 3409,
+            alkoReferenceCents: 2809,
+            gapCents: 600,
+            gapBasisPoints: 2136,
+            reliability: 'ESTIMATED',
+            confidence: 'MEDIUM',
+          }),
+        }),
+      ]),
+    );
+
+    await renderCatalog();
+
+    const cheaper = screen.getByText('Cheaper Import').closest('article');
+    expect(cheaper).toHaveTextContent('12,66 €');
+    expect(cheaper).toHaveTextContent('halvempi kuin Alkon vertailuhinta');
+    expect(cheaper).not.toHaveTextContent('kalliimpi kuin Alkon vertailuhinta');
+
+    const dearer = screen.getByText('Dearer Import').closest('article');
+    expect(dearer).toHaveTextContent('6,00 €');
+    expect(dearer).toHaveTextContent('kalliimpi kuin Alkon vertailuhinta');
+    expect(dearer).not.toHaveTextContent('halvempi kuin Alkon vertailuhinta');
+    // The embed's own reliability labels the dearer figures.
+    expect(dearer).toHaveTextContent('Arvioitu');
+  });
+
+  it('renders no savings element when the embed is absent — no placeholder, no zero', async () => {
+    mockedRequest.mockResolvedValue(catalogResult([catalogItem()]));
+
+    await renderCatalog();
+
+    const card = screen.getByText('Kotikalja 0.5 l').closest('article');
+    expect(screen.queryByTestId('card-savings')).toBeNull();
+    expect(card).not.toHaveTextContent('Kokonaishinta Suomeen');
+    expect(card).not.toHaveTextContent('Alkon vertailuhinta');
+    expect(card).not.toHaveTextContent('halvempi kuin Alkon vertailuhinta');
+    expect(card).not.toHaveTextContent('kalliimpi kuin Alkon vertailuhinta');
+    // The rest of the card is unchanged.
+    expect(card).toHaveTextContent('1,99 €');
+    expect(card).toHaveTextContent('Myyjiä: 2');
+  });
+
+  it('renders the landed total alone when the snapshot has no Alko reference — no gap without its reference', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([
+        catalogItem({
+          savings: savingsEmbed({ alkoReferenceCents: null }),
+        }),
+      ]),
+    );
+
+    await renderCatalog();
+
+    const card = screen.getByText('Kotikalja 0.5 l').closest('article');
+    expect(card).toHaveTextContent('Kokonaishinta Suomeen');
+    expect(card).toHaveTextContent('15,43 €');
+    expect(card).not.toHaveTextContent('Alkon vertailuhinta');
+    expect(card).not.toHaveTextContent('halvempi kuin Alkon vertailuhinta');
+  });
+
+  it('renders EN savings copy for the EN locale', async () => {
+    mockedRequest.mockResolvedValue(
+      catalogResult([catalogItem({ savings: savingsEmbed() })]),
+    );
+
+    await renderCatalog({}, 'en');
+
+    const card = screen.getByText('Kotikalja 0.5 l').closest('article');
+    expect(card).toHaveTextContent('Landed total to Finland');
+    expect(card).toHaveTextContent('Alko reference price');
+    expect(card).toHaveTextContent('cheaper than the Alko reference price');
   });
 });
