@@ -22,7 +22,7 @@ base form; compounds inflect on the final element (*tullivapaiden määriin*,
 | Ranking page (nav/footer slot) | `Järjestysperiaatteet` | ordering principles | `Miten järjestäminen toimii` | Short nav slot; same *järjestys* stem as the title |
 | Allowance limits | `tullivapaat määrät` / `tullivapaa määrä` | duty-free allowances | `tullimäärärajat` (and inflections) | Tulli's official phrasing; already used on `/allowances`; one term everywhere |
 | Ethanol unit price | `etanolin grammahinta` | ethanol unit price | `Etanoli-€/g`, `€/g-arvo` (prose) | One term and one unit everywhere; analog of the standard *litrahinta*. Display unit is `snt/g` (cents per gram of pure ethanol) |
-| Price sort | `halvin ensin` | cheapest first | `matalin ensin` | Natural price phrasing; scope in §3.1 |
+| Price sort | `halvin ensin` | lowest first (EN; *cheapest* is a banned pattern in `content-lint.ts`) | `matalin ensin` | Natural price phrasing; scope in §3.1 |
 | Daily snapshot | `päivittäin päivitetty aineisto` | daily updated dataset | `materialisoitu tilannekuva`, `materialisoitu` (as dataset qualifier) | *Materialisoitu* is DB jargon; consumer register |
 | Informational framing | `vain tiedoksi` | for information only | `tiedollinen` (and inflections) | Rare administrative word; *— ei neuvontaa* disclaimers keep their legal intent unchanged |
 | Dataset version | `aineiston versio` | dataset version | `aineistoversio` (consumer copy) | Parses cleanly for consumers; compact form allowed only in technical dashboard labels — see §3.2 |

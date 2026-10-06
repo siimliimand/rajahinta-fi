@@ -524,7 +524,7 @@
     "distanceSellingNote": "The seller badges derive from the seller's country: with distance selling the merchant handles the Finnish alcohol taxes; with distance buying you arrange the transport and file the required declarations yourself. General information, not legal advice.",
     "eurPerGram": {
       "columnHeader": "snt/g pure ethanol",
-      "sortOptionLabel": "Ethanol unit price (cheapest first)",
+      "sortOptionLabel": "Ethanol unit price (lowest first)",
       "unit": "snt/g",
       "noValue": "No value",
       "reason": {

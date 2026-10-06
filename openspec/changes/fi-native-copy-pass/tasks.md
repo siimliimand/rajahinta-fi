@@ -26,4 +26,4 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Verify: typecheck, full vitest battery, content-vocabulary lint over the new copy (no promotional adjectives introduced), SEO surfaces render the new meta, every rendered snt/g figure equals the API centsPerGram value (no computed figure moved) <!-- agent: platform-engineer.fast, depends_on: [2.1, 2.2, 2.3, 3.1, 3.2, 4.1, 4.2, 5.1], touches: [] -->
+- [x] 6.1 Verify: typecheck, full vitest battery, content-vocabulary lint over the new copy (no promotional adjectives introduced), SEO surfaces render the new meta, every rendered snt/g figure equals the API centsPerGram value (no computed figure moved) <!-- agent: platform-engineer.fast, depends_on: [2.1, 2.2, 2.3, 3.1, 3.2, 4.1, 4.2, 5.1], touches: [] --> *(2026-10-06: typecheck, eslint, lint:content, frontend vitest 1327/1327, SEO SSR tests all green. Full-workspace `pnpm test`/`test:compliance` fail only on pre-existing environmental `no such module: fts5` (node v22.14.0 node:sqlite) in packages/data-platform suites this branch never touches (`git diff master -- packages/` empty); one lint violation (EN "cheapest first") found by this task and fixed in the 3.2 retry.)*
