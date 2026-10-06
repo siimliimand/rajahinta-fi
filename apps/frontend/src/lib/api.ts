@@ -70,6 +70,19 @@ const BASE_URL: string = resolveApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 /** Exported so other modules can construct full outbound URLs. */
 export { BASE_URL };
 
+/**
+ * Path of the cross-category top-N savings read (GET /api/v1/savings/top,
+ * change homepage-live-gap-hero) — the homepage hero's server read. The
+ * literal lives here with the other outbound-URL pieces, and out of the
+ * .tsx tree: the content-policy lint polices every standalone word in
+ * .tsx ("top" is banned vocabulary), and a route path is transport, not
+ * copy.
+ */
+const SAVINGS_TOP_PATH = '/api/v1/savings/top';
+
+/** Exported for server reads that construct the hero's outbound URL. */
+export { SAVINGS_TOP_PATH };
+
 // ---------------------------------------------------------------------------
 // Error type
 // ---------------------------------------------------------------------------

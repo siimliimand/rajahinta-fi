@@ -3,12 +3,16 @@
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { BASE_URL, SERVER_AGE_CONFIRMATION_TOKEN } from '@/lib/api';
+import { BASE_URL, SERVER_AGE_CONFIRMATION_TOKEN, SAVINGS_TOP_PATH } from '@/lib/api';
 import { Link } from '@/i18n/navigation';
 import { RELIABILITY_STATUS_META } from '@/lib/design/status';
 import type { ReliabilityStatus } from '@/lib/types';
 import { getServerGuidesIndex } from './guides/guides.server';
 import AccuracyStat from './components/AccuracyStat';
+import HomeGapHero, {
+  type HomeGapHeroState,
+  type SavingsTopResponse,
+} from './components/HomeGapHero';
 
 /**
  * Canonical status order for the trust-row legend: the same hue ladder the
@@ -195,14 +199,89 @@ async function getSavingsOverview(): Promise<SavingsOverviewResponse | null> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Live gap hero — server read (homepage-live-gap-hero task 2.2). The
+// cross-category top-N import-favourable listing, fetched exactly like
+// the overview above: the fixed first-party prerender token (age-gated
+// endpoint), 900 s revalidation, and degrade-to-null on any failure or
+// unexpected shape.
+// ---------------------------------------------------------------------------
+
+/**
+ * Design D4 freshness cutoff: a snapshot day older than this renders the
+ * unavailable state instead of figures — a stalled cron must not headline
+ * old numbers as current. Coarse at the 15-minute ISR grain, acceptable
+ * for a daily-grain dataset.
+ */
+const FRESHNESS_CUTOFF_DAYS = 3;
+const FRESHNESS_CUTOFF_MS = FRESHNESS_CUTOFF_DAYS * 24 * 60 * 60 * 1000;
+
+/**
+ * Server-side top-N read of GET /api/v1/savings/top (no query params —
+ * the API's default limit is the hero's five rows). Any failure or
+ * unexpected shape degrades to null and the section renders its honest
+ * unavailable state — never an error, never a guessed figure.
+ */
+async function getSavingsTop(): Promise<SavingsTopResponse | null> {
+  try {
+    const res = await fetch(`${BASE_URL}${SAVINGS_TOP_PATH}`, {
+      headers: {
+        accept: 'application/json',
+        'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN,
+      },
+      next: { revalidate: 900 },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as SavingsTopResponse | null;
+    if (
+      body === null ||
+      typeof body !== 'object' ||
+      !Array.isArray(body.rows) ||
+      (body.asOf !== null && typeof body.asOf !== 'string')
+    ) {
+      return null;
+    }
+    return body;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the hero's render state from the top read (D3/D4): a failed
+ * read is unavailable; no materialized day or no eligible rows is the
+ * pending state (the comparison has not compiled yet — not an outage);
+ * a day older than the freshness cutoff — or an unparseable one, which
+ * fails closed — is unavailable rather than stale-as-current figures.
+ */
+function deriveHomeGapHeroState(
+  read: SavingsTopResponse | null,
+  nowMs: number,
+): HomeGapHeroState {
+  if (read === null) return { kind: 'unavailable' };
+  if (read.asOf === null || read.rows.length === 0) return { kind: 'pending' };
+  // The day-grain as-of parses as UTC midnight — the listing's own
+  // formatAsOf construction.
+  const dayMs = Date.parse(`${read.asOf}T00:00:00.000Z`);
+  if (Number.isNaN(dayMs) || nowMs - dayMs > FRESHNESS_CUTOFF_MS) {
+    return { kind: 'unavailable' };
+  }
+  return { kind: 'ready', asOf: read.asOf, rows: read.rows };
+}
+
 /**
  * Homepage (OpenSpec: design-system-foundation, tasks 4.1 + 4.2;
  * trust-and-reach-roadmap task 3.3 extends the trust row;
- * funnel-evidence-and-value-surfaces task 3.1 adds the task cards).
+ * funnel-evidence-and-value-surfaces task 3.1 adds the task cards;
+ * homepage-live-gap-hero task 2.2 adds the live observed-difference
+ * section).
  *
  * Static catalog copy plus server-side reads that degrade gracefully
  * (D6, D4): the gradient hero with a floating search card as the primary
- * CTA, a fixed worked example labeled as an example (task 3.1, D7 — no
+ * CTA, a live observed-difference section over the day's top-N savings
+ * snapshot (homepage-live-gap-hero task 2.2 — pending when no eligible
+ * rows exist, unavailable on a failed or stale read, figures never
+ * guessed), a fixed worked example labeled as an example (task 3.1, D7 — no
  * API call, the figures cannot drift with live data), a task-card
  * section linking the task tools (links only — the hero search stays
  * the homepage's single input, funnel D4), a "Why Rajahinta.fi" feature
@@ -254,6 +333,14 @@ export default async function HomePage({
   // an unverified listing, no invented figures, no claimed data state.
   const savingsListingReady =
     savingsOverview !== null && savingsWithReference > 0;
+
+  // Live gap hero state (homepage-live-gap-hero task 2.2). The top-N
+  // read rides the same 15-minute ISR cadence as the overview; the D3/D4
+  // degradation split is derived here so the component stays
+  // presentational: a failed read → unavailable, no day or no eligible
+  // rows → pending, a day older than the freshness cutoff → unavailable.
+  const savingsTop = await getSavingsTop();
+  const homeGapHeroState = deriveHomeGapHeroState(savingsTop, Date.now());
 
   // The hero form is plain HTML (GET), so it navigates before hydration.
   // next-intl's `as-needed` prefixing: Finnish serves the bare path,
@@ -355,6 +442,16 @@ export default async function HomePage({
           </p>
         </div>
       </section>
+
+      {/* ── Live observed-difference section (homepage-live-gap-hero
+          task 2.2, D3/D4) ──────────────────────────────────────────────
+          The day's largest observed landed-cost gaps against the Alko
+          reference, re-read every 15 minutes. Pending when the snapshot
+          day has no eligible rows yet, unavailable when the read fails
+          or the day is older than the freshness cutoff — figures are
+          never guessed and never shown stale-as-current. Links only —
+          the hero search stays the homepage's single input (D4). */}
+      <HomeGapHero state={homeGapHeroState} locale={locale} t={t} />
 
       {/* ── Worked example (task 3.1, D7) ───────────────────────────────
           A fixed, illustrative breakdown labeled as an example — no API
