@@ -275,35 +275,6 @@ The frontend SHALL use a message-catalog localization setup (next-intl or equiva
 - **WHEN** either the Finnish or English catalog introduces disallowed vocabulary
 - **THEN** the content-policy lint SHALL fail
 
-### Requirement: Shared navigation
-
-The application SHALL provide a layout-level header with the five destinations (calculator, compare, basket, account, ranking) on every page, and a footer carrying the disclaimer and methodology link. Per-page hand-rolled back-links SHALL be removed. The header SHALL indicate the active destination, SHALL include the site logo linking home, and SHALL provide a keyboard-operable mobile menu at small viewports. The header SHALL also group the planning tools (trip, event, what-if) under one Planning dropdown alongside the existing primary group, and SHALL offer an `FI | EN` locale switcher that preserves the current path when changing locale. Dropdown and switcher SHALL be keyboard-operable with visible focus states.
-
-#### Scenario: Navigation on every page
-
-- **WHEN** a user lands on any route
-- **THEN** the header SHALL offer the five destinations without returning home first
-
-#### Scenario: Active destination is visible
-
-- **WHEN** a user is on the calculator page
-- **THEN** the header SHALL visually distinguish the calculator link from the others
-
-#### Scenario: Mobile menu is keyboard operable
-
-- **WHEN** a keyboard user focuses the mobile menu toggle at a small viewport
-- **THEN** the toggle SHALL open and close the menu, and focus SHALL remain visible
-
-#### Scenario: Planning dropdown opens by keyboard
-
-- **WHEN** the visitor focuses the Planning trigger and presses Enter or Space
-- **THEN** the dropdown lists trip, event, and scenario links, each reachable by Tab and activated by Enter
-
-#### Scenario: Locale switch preserves path
-
-- **WHEN** the visitor switches locale on `/en/calculator`
-- **THEN** the browser navigates to `/calculator` (and vice versa) with content in the selected locale
-
 ### Requirement: Debounced search input
 
 Search input SHALL debounce submissions by approximately 300 ms so rapid keystrokes do not queue requests.
@@ -390,7 +361,7 @@ Buttons, badges, cards, and inputs SHALL be shared React components under `compo
 
 ### Requirement: Homepage value proposition
 
-The homepage value proposition and trust row SHALL describe the service without naming Sweden or Systembolaget: the landed-cost proposition in one sentence, the data model phrased as published retailer datasets plus the Alko domestic reference, the reliability model with its four statuses, and the methodology link. The homepage SHALL additionally render a static, server-rendered task section linking the existing task tools — basket, trip, event, what-if, and savings — styled from the design tokens, present in both locales, and introducing no new input surface: the hero search remains the homepage's only input. All copy SHALL exist in both locales and pass the content-policy lint.
+The homepage value proposition and trust row SHALL describe the service without naming Sweden or Systembolaget: the landed-cost proposition in one sentence, the data model phrased as published retailer datasets plus the Alko domestic reference, the reliability model with its four statuses, and the methodology link. The homepage SHALL additionally render a static, server-rendered task section whose cards mirror the three header task groups — shopping (linking the savings listing with its pending and unavailable state variants), trip, and event — styled from the design tokens, present in both locales, and introducing no new input surface: the hero search remains the homepage's only input. The what-if card SHALL NOT appear in the task section. All copy SHALL exist in both locales and pass the content-policy lint.
 
 #### Scenario: No residual market naming
 
@@ -400,7 +371,7 @@ The homepage value proposition and trust row SHALL describe the service without 
 #### Scenario: Task section links shipped tools
 
 - **WHEN** a visitor loads the homepage
-- **THEN** a server-rendered task section links the basket, trip, event, what-if, and savings pages, styled from the shared design tokens and fully rendered in the server HTML in both locales
+- **THEN** a server-rendered task section shows one card per header task group — shopping linking the savings listing, trip, and event — styled from the shared design tokens, fully rendered in the server HTML in both locales, with the savings card degrading to its pending or unavailable variant when the listing is not published
 
 #### Scenario: Single input surface
 
@@ -888,3 +859,42 @@ Finnish UI copy SHALL carry exactly one canonical term per concept as defined in
 
 - **WHEN** a change replaces or introduces a canonical term in the catalogs
 - **THEN** `docs/fi-copy-glossary.md` documents the term, its replaced variants, and its rationale
+
+### Requirement: Task-based navigation
+
+The application SHALL provide a layout-level header presenting three task-based disclosure groups — "Mitä kannattaa ostaa?" (shopping), "Suunnittele matka" (trip), and "Suunnittele juhlat" (event) — plus account/auth actions and the `FI | EN` locale switcher as chrome. The shopping panel SHALL link savings (lead), value, products, calculator, and compare; the trip panel SHALL link trip (lead), basket, and allowances; the event panel SHALL link event (lead) and basket. Group triggers SHALL speak task language and panel items tool names. Each disclosure SHALL be keyboard-operable (Enter/Space toggles, ArrowUp/ArrowDown move focus among items, Escape and tab-out close) with visible focus states. When any child route of a group is active, the group trigger SHALL be visually distinguished, the active child SHALL carry `aria-current`, and active state SHALL never be carried by color alone. The scenario (what-if) tool and the ranking methodology SHALL NOT appear in the header; the scenario tool SHALL be linked from the footer's About column. The footer SHALL remain the complete tool sitemap. Routes SHALL NOT change: no redirect, sitemap, or share-permalink impact. Mobile SHALL present the same three groups plus chrome. The locale switcher SHALL preserve the current path when changing locale.
+
+#### Scenario: Navigation on every page
+
+- **WHEN** a user lands on any route
+- **THEN** the header SHALL offer the three task groups without returning home first
+
+#### Scenario: Panel membership matches the task map
+
+- **WHEN** each disclosure is opened
+- **THEN** the shopping panel lists savings, value, products, calculator, and compare; the trip panel lists trip, basket, and allowances; the event panel lists event and basket
+
+#### Scenario: Active destination is visible
+
+- **WHEN** a user is on the calculator page
+- **THEN** the shopping group trigger is visually distinguished, the calculator panel item carries `aria-current`, and a deeper route such as `/account/saved-baskets` still activates the account chrome
+
+#### Scenario: Keyboard-operable disclosures
+
+- **WHEN** a keyboard user focuses a group trigger and presses Enter or Space
+- **THEN** the panel opens, ArrowUp/ArrowDown cycle focus among the panel links, Escape returns focus to the closed trigger, and tab-out closes the panel
+
+#### Scenario: Mobile groups mirror desktop
+
+- **WHEN** the mobile menu is opened at a small viewport
+- **THEN** it presents the same three task groups with keyboard-operable disclosures plus the account/auth and locale controls
+
+#### Scenario: Demoted tools live in the footer
+
+- **WHEN** the header and footer are rendered on any page
+- **THEN** the scenario tool and the ranking methodology are absent from the header, the scenario tool is linked from the footer's About column, and the footer's services column still links every tool route
+
+#### Scenario: Locale switch preserves path
+
+- **WHEN** the visitor switches locale on `/en/calculator`
+- **THEN** the browser navigates to `/calculator` (and vice versa) with content in the selected locale
