@@ -19,6 +19,7 @@ import {
   RELIABILITY_STATUS_META,
 } from '@/lib/design/status';
 import { ConfidenceBadge, ReliabilityBadge } from '@/components/ui';
+import ConfidenceMeter from '../../components/ConfidenceMeter';
 import { MerchantLink } from '../../compare/components/MerchantLink';
 import DisclaimerBanner from './DisclaimerBanner';
 import OutcomeNudge from './OutcomeNudge';
@@ -421,6 +422,15 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
             />
           )}
         </div>
+
+        {/* ── Empirical margin (hedge-dedup-confidence-meter 4.1,
+            design D4): display-only ± figure beside the hero total,
+            basis (percent, n, as-of) always adjacent; the margin never
+            enters any figure. Absent margin renders nothing. ── */}
+        <ConfidenceMeter
+          margin={result.empiricalMargin}
+          totalCents={result.totalCents}
+        />
       </div>
 
       {/* ── Savings summary (task 5.1) — display-only: prominent factual
@@ -449,13 +459,24 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
           renders nothing when the result carries no reference ── */}
       {benchmark && <AlkoBenchmarkLine benchmark={benchmark} />}
 
-      {/* ── Confidence breakdown ── */}
+      {/* ── Confidence breakdown (hedge-dedup-confidence-meter 3.1,
+          design D7): reachable in one interaction behind the collapsed
+          disclosure — the same `<details>` pattern the declaration
+          guidance panel uses — instead of always-on. LOW-confidence
+          results keep the SanityNoteList above always visible; that is
+          the degraded-state exception. ── */}
       {result.confidenceBreakdown.length > 0 && (
-        <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+        <details
+          className="group rounded-md border border-gray-200 bg-white"
+          data-testid="confidence-breakdown-disclosure"
+        >
+          <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold text-gray-700 marker:hidden">
+            <span className="mr-1 inline-block transition-transform group-open:rotate-90">
+              &rsaquo;
+            </span>
             {tCommon('dataReliability')}
-          </h3>
-          <ul className="space-y-1">
+          </summary>
+          <ul className="space-y-1 border-t border-gray-100 px-3 py-2">
             {result.confidenceBreakdown.map((detail, i) => (
               <li key={i} className="flex items-start gap-2 text-xs">
                 <span
@@ -465,7 +486,7 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
               </li>
             ))}
           </ul>
-        </div>
+        </details>
       )}
 
       {/* ── Data freshness ── */}
@@ -587,8 +608,13 @@ export default function CalculatorResult({ result, offers }: CalculatorResultPro
           blocks the result, sends nothing on its own. ── */}
       <OutcomeNudge recordId={result.calculationRecordId} />
 
-      {/* ── Disclaimer ── */}
-      <DisclaimerBanner disclaimer={result.disclaimer} />
+      {/* ── Disclaimer — the view's single render, sourced from the
+          result object; intensity keys to the result confidence
+          (hedge-dedup-confidence-meter 3.1, design D1) ── */}
+      <DisclaimerBanner
+        disclaimer={result.disclaimer}
+        confidence={result.confidence}
+      />
     </div>
   );
 }

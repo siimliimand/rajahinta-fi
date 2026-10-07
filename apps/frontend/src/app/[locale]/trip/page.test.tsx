@@ -443,7 +443,7 @@ describe('TripPage', () => {
 
     // R5/R7 provenance: the allowance dataset version is named.
     expect(
-      screen.getByText('Tullimäärärajojen aineistoversio: allowances-trip-2026.1'),
+      screen.getByText('Tullivapaiden määrien aineiston versio: allowances-trip-2026.1'),
     ).toBeInTheDocument();
 
     // WITHIN_ALLOWANCE line: break-even figure and the cap, fi-FI format.
@@ -555,7 +555,7 @@ describe('TripPage', () => {
     );
 
     expect(
-      await screen.findByText('Ei julkaistuja tullimäärärajoja'),
+      await screen.findByText('Ei julkaistuja tullivapaita määriä'),
     ).toBeInTheDocument();
     // The empty state is role="status", not an alert — a data state, not an error.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -631,7 +631,7 @@ describe('TripPage fill mode', () => {
     expect(screen.getByText('Täytetty arvo yhteensä: 36,00 €')).toBeInTheDocument();
     expect(screen.getByText('Yksiköitä yhteensä: 24 kpl')).toBeInTheDocument();
     expect(
-      screen.getByText('Tullimäärärajojen aineistoversio: allowances-trip-2026.1'),
+      screen.getByText('Tullivapaiden määrien aineiston versio: allowances-trip-2026.1'),
     ).toBeInTheDocument();
 
     // Filled line: candidate name, status badge, quantity, unit price,
@@ -762,7 +762,7 @@ describe('TripPage fill mode', () => {
     );
 
     expect(
-      await screen.findByText('Ei julkaistuja tullimäärärajoja'),
+      await screen.findByText('Ei julkaistuja tullivapaita määriä'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -778,7 +778,7 @@ describe('TripPage server shell (task 2.3)', () => {
       params: Promise.resolve({ locale: 'fi' }),
     });
     expect(meta.title).toBe('Matkalaskuri: kannattava tuontimäärä rajalla');
-    expect(meta.description).toContain('tullimäärärajojen');
+    expect(meta.description).toContain('tullivapaiden määrien');
     // Unique against the site-default metadata title, not a restatement.
     const root = (await import('@/messages/fi.json')).default as {
       Metadata: { title: string };
@@ -798,8 +798,13 @@ describe('TripPage server shell (task 2.3)', () => {
 
     expect(html).toContain('Matkalaskuri');
     expect(html).toContain('Miten matkalaskenta toimii');
-    // The summary is content, not advice — the estimates stance holds.
-    expect(html).toContain('ei vero- tai tullineuvontaa');
+    // The hedging heap is retired (hedge-dedup-confidence-meter 3.3):
+    // the summary describes the calculation; the "always an estimate"
+    // reassurance is gone — the footer carries the legal line.
+    expect(html).toContain(
+      'ennen tullivapaan määrän ylittymistä.',
+    );
+    expect(html).not.toContain('ei vero- tai tullineuvontaa');
   });
 });
 

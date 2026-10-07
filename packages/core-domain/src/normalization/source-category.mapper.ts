@@ -264,6 +264,70 @@ export const SWEDISH_SOURCE_CATEGORY_MAP: Readonly<Record<string, CanonicalCateg
   siider: 'cider',
   'alkoholivaba ▾': 'non-alcoholic',
   karastusjoogid: 'non-alcoholic',
+
+  // --- araxes.ee catalog vocabulary (sweep decision 2026-10-07, change
+  // onboard-araxes-merchant). Additive only: every term maps to an
+  // existing canonical category, keyed by the live census's exact
+  // spellings — undecorated singular Estonian, so the mydrink decorated
+  // and plural keys above do not match. These keys carry the beverage
+  // rows behind most of that catalog's 688 category-driven drops
+  // (1630-row sweep, design D3); 'viski', 'konjak', 'rumm', 'bitter',
+  // 'liköör' and 'siider' already map above.
+  //
+  // Deliberately NOT mapped:
+  // - 'vein' (498 rows — the parent and its identically named leaf
+  //   share one lowercase key): category mapping takes the first
+  //   mappable term in payload order, so mapping the parent would
+  //   misfile Vahuvein/Šampanja rows as still wine whenever the parent
+  //   sorts first — still vs sparkling carry different excise rates.
+  //   Sparkling resolves only from its own leaves; the genuinely
+  //   ambiguous Vein-only rows stay unmapped (correction queue; measured
+  //   by the 1.2 re-sweep).
+  // - 'lahja alkohol' (131): heterogeneous children (beer, cider, long
+  //   drink, fortified, RTD) each resolve from their own leaf term, so
+  //   the parent would be a guess.
+  // - 'kokteilid' (23, RTD cocktails): span spirits-based and
+  //   fermented-based taxation; no grounded canonical exists (mydrink
+  //   'kokteilijoogid' precedent).
+  // - Merch terms ('suupisted', 'krõpsud', 'pähklid', 'lihasnäkid',
+  //   'kommid', 'pakend'): snacks and packaging, not beverage
+  //   categories.
+  'kange alkohol': 'spirits',
+  viin: 'spirits', // Estonian for vodka; the Finnish 'viina'/'viini' already map
+  brändi: 'spirits',
+  džinn: 'spirits', // Estonian spelling; 'gin' already maps
+  tekiila: 'spirits', // census spelling — the design table's 'tekila' occurs nowhere
+  kalvados: 'spirits', // Estonian k-spelling; 'calvados' already maps
+  armanjakk: 'spirits', // Estonian spelling; 'armagnac' already maps
+  absint: 'spirits',
+  // Still-wine leaves — leaf-first like the mydrink 'punased'/'valged'
+  // set, with the bare 'vein' parent staying unmapped (see above).
+  'punane vein': 'wine',
+  'valge vein': 'wine',
+  'roosa vein': 'wine',
+  'puuvilja- ja marjavein': 'wine',
+  // Sparkling leaves — kept separate from still wine for the excise
+  // split, exactly like 'mousserande vin' above.
+  vahuvein: 'sparkling-wine',
+  šampanja: 'sparkling-wine', // Estonian spelling; the Finnish 'samppanja' already maps
+  // Fortified/aromatised leaves — same family as 'starkvin'/'vermutti'.
+  hõõgvein: 'fortified-wine', // mulled wine, the 'glögg' family
+  vermut: 'fortified-wine', // Estonian spelling; 'vermutti'/'vermouth' already map
+  'liköörvein, portvein, šerri': 'fortified-wine', // the store's one fortified group term
+  õlu: 'beer', // bare singular — a distinct key from the mydrink 'õlu ▾'
+  // normalizeCategory already resolves 'long drink'; keyed explicitly so
+  // the feed's vocabulary is pinned here like every other term (D3).
+  'long drink': 'long-drink',
+  // Non-alcoholic section and its children — one tax family
+  // (other_fermented), like the mydrink 'alkoholivaba ▾' parent.
+  alkoholivaba: 'non-alcoholic',
+  energiajook: 'non-alcoholic',
+  karastusjook: 'non-alcoholic',
+  mahl: 'non-alcoholic',
+  vesi: 'non-alcoholic',
+  'alkoholivaba õlu': 'non-alcoholic',
+  'alkoholivaba vein': 'non-alcoholic',
+  'alkoholivaba vahuvein': 'non-alcoholic',
 };
 
 /** Explicit "other" tokens in the sources we ingest — mappable, unlike garbage. */

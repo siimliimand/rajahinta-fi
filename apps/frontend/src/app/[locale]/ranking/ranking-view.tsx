@@ -135,6 +135,37 @@ export default function RankingView() {
         <AccuracyStat variant="section" />
       </div>
 
+      {/* ── Observed spread (task 5.3) ──
+          The empirical-margin methodology behind the ConfidenceMeter
+          ± figure: what the percentile is, that it comes only from
+          user-reported outcomes with the sample size always shown, the
+          category×carrier → category → global ladder with the ≥10
+          sample floor (below it nothing renders), and the display-only
+          invariant. Static copy from the Ranking namespace — this is
+          the destination the meter's methodology link points at. */}
+      <section
+        aria-labelledby="margin-heading"
+        className="mb-8 rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
+      >
+        <h2
+          id="margin-heading"
+          className="mb-2 text-sm font-semibold text-gray-700"
+        >
+          {t('marginTitle')}
+        </h2>
+        <div className="space-y-3 text-xs leading-relaxed text-gray-600">
+          <p>{t('marginBody1')}</p>
+          <p>{t('marginLadderIntro')}</p>
+          <ol className="ml-4 list-decimal space-y-1">
+            <li>{t('marginLadder1')}</li>
+            <li>{t('marginLadder2')}</li>
+            <li>{t('marginLadder3')}</li>
+          </ol>
+          <p>{t('marginFloorNote')}</p>
+          <p>{t('marginDisplayNote')}</p>
+        </div>
+      </section>
+
       {/* ── Tiebreaker and determinism ── */}
       <section className="mb-8 rounded-lg border border-gray-200 bg-gray-50 p-5">
         <h2 className="mb-2 text-sm font-semibold text-gray-700">
@@ -145,13 +176,6 @@ export default function RankingView() {
             ? apiData!.tiebreaker
             : t('tiebreakerStatement')}
         </p>
-        {showApi && (
-          <p className="mt-2 text-xs text-gray-400">
-            {t('deterministic', {
-              value: apiData!.deterministic ? t('yes') : t('no'),
-            })}
-          </p>
-        )}
       </section>
 
       {/* ── Technical enforcement ── */}

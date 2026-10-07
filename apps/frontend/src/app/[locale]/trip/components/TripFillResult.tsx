@@ -12,6 +12,7 @@ import type {
 } from '../trip.types';
 import { Badge, Card } from '@/components/ui';
 import { formatMoney } from '@/lib/format/money';
+import ConfidenceMeter from '../../components/ConfidenceMeter';
 import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
 
 // ---------------------------------------------------------------------------
@@ -246,6 +247,18 @@ export default function TripFillResult({
             count: t('fill.line.unitsValue', { count: result.filledUnits }),
           })}
         </p>
+
+        {/* ── Empirical margin (hedge-dedup-confidence-meter 4.1, design
+            D4): display-only ± figure beside the filled-value total,
+            basis (percent, n, as-of) always adjacent. The route attaches
+            the margin to the fill response only (the feasibility path
+            carries none); absent renders nothing. ── */}
+        <div className="mb-4">
+          <ConfidenceMeter
+            margin={result.empiricalMargin}
+            totalCents={result.filledValueCents}
+          />
+        </div>
 
         {/* Honest empty fills — explicit result values, never errors. */}
         {result.status === 'BOUND_EXHAUSTED' && (

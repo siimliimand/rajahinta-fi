@@ -29,6 +29,21 @@ export const PUBLIC_ID_CHARSET = /^[A-Za-z0-9_-]+$/;
 export const PUBLIC_ID_RANDOM_BYTES = 16;
 
 /**
+ * The empirical margin frozen into a snapshot (hedge-dedup-confidence-
+ * meter, design D6) — aggregate cell facts only: quantile, sample
+ * count, the named ladder cell, and the as-of instant. No user
+ * identifier can appear: the shape has no field for one, and the
+ * pre-persistence strip assertion walks it like every other payload
+ * member.
+ */
+export interface ShareSnapshotEmpiricalMargin {
+  readonly quantile: number;
+  readonly sampleCount: number;
+  readonly cell: { readonly dimension: string; readonly key: string };
+  readonly asOf: string;
+}
+
+/**
  * Snapshot assembly input — the record facts the public copy carries.
  * Deliberately a CLOSED shape: there is no passthrough of raw record
  * rows, so an account column cannot ride along by accident.
@@ -46,6 +61,12 @@ export interface ShareSnapshotSource {
   readonly disclaimer: unknown;
   /** The record's calculation timestamp (ISO string) — provenance. */
   readonly calculatedAt: string;
+  /**
+   * The ladder-resolved margin to freeze (design D6). OPTIONAL by
+   * absence, not null: when no rung resolves the key is left out so
+   * legacy and new-absent payloads keep one shape.
+   */
+  readonly empiricalMargin?: ShareSnapshotEmpiricalMargin;
 }
 
 /** The frozen public copy as stored and rendered (JSON-safe). */
@@ -64,6 +85,8 @@ export interface ShareSnapshotPayload {
   readonly destination: string;
   readonly disclaimer: unknown;
   readonly calculatedAt: string;
+  /** Present only when a rung resolved at freeze time (design D6). */
+  readonly empiricalMargin?: ShareSnapshotEmpiricalMargin;
 }
 
 /**

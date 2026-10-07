@@ -19,10 +19,13 @@ import type { DatabaseSync } from 'node:sqlite';
 import { describe, it, expect } from 'vitest';
 import {
   createApp,
+  byteProxyWithoutMargin,
   expectEnvelope,
+  MARGIN_LADDER_AS_OF,
   openMigratedD1,
   permissiveEnv,
   request,
+  seedMarginLadder,
   seedTaxRule,
 } from './harness';
 import { registerEventCalcRoutes } from '../event-calc.routes';
@@ -647,5 +650,52 @@ describe('POST /api/v1/event-calc — V2 validation', () => {
     expect(body.status).toBe('COMPUTED');
     expect('plan' in body).toBe(false);
     expect('packing' in body).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// empiricalMargin — read-time composition (task 2.2, change
+// hedge-dedup-confidence-meter): an event list has no single product
+// category and no transport carrier, so only the ladder's global rung
+// is reachable; the NO_PUBLISHED_NORMS empty state carries no margin at
+// all (there is no estimate to hedge).
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/event-calc — empiricalMargin (hedge-dedup-confidence-meter 2.2)', () => {
+  it('attaches the global rung on a COMPUTED list, byte-identical figures with the field absent', async () => {
+    const withLadder = openMigratedD1();
+    await seedPublishedNorm(withLadder.d1);
+    await seedMarginLadder(withLadder.db, withLadder.d1);
+    const withoutLadder = openMigratedD1();
+    await seedPublishedNorm(withoutLadder.d1);
+
+    const present = (await (
+      await postEvent(eventCalcApp(), eventCalcEnv(withLadder.d1))
+    ).json()) as Record<string, any>;
+    const absent = (await (
+      await postEvent(eventCalcApp(), eventCalcEnv(withoutLadder.d1))
+    ).json()) as Record<string, any>;
+
+    expect(present.empiricalMargin).toEqual({
+      quantile: 0.05,
+      sampleCount: 16,
+      cell: { dimension: 'global', key: 'global' },
+      asOf: MARGIN_LADDER_AS_OF.toISOString(),
+    });
+    expect(absent).not.toHaveProperty('empiricalMargin');
+    // The event body carries no clock read — the WHOLE bodies are
+    // byte-identical once the field itself is stripped.
+    expect(byteProxyWithoutMargin(present)).toBe(byteProxyWithoutMargin(absent));
+  });
+
+  it('the NO_PUBLISHED_NORMS empty state carries no empiricalMargin (no estimate to hedge)', async () => {
+    const { db, d1 } = openMigratedD1();
+    // The ladder exists — but a norms-less result has no total to hedge.
+    await seedMarginLadder(db, d1);
+    const res = await postEvent(eventCalcApp(), eventCalcEnv(d1));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.status).toBe('NO_PUBLISHED_NORMS');
+    expect(body).not.toHaveProperty('empiricalMargin');
   });
 });

@@ -73,6 +73,13 @@
  *   422 (basket parity); the engine's search-budget exhaustion is a
  *   500 (an engine bound, not a caller fault).
  *
+ * The display-only `empiricalMargin` (task 2.2, change
+ * hedge-dedup-confidence-meter) attaches AFTER the ferry merge — the
+ * third independent read-time path. A traveller fill has no transport
+ * carrier (the traveller IS the carrier) and no single product
+ * category, so only the ladder's global rung is reachable (see
+ * ./empirical-margin).
+ *
  * @module TripRoutes
  */
 
@@ -102,6 +109,23 @@ import {
   idempotencyStore,
   idempotencyContentHash,
 } from '../adapters/idempotency-facade';
+import {
+  readEmpiricalMarginLadder,
+  withEmpiricalMargin,
+  type WithEmpiricalMargin,
+} from './empirical-margin';
+
+/**
+ * The trip-fill margin query (task 2.2): a traveller fill has no single
+ * product category and no transport carrier (the traveller IS the
+ * carrier) — the ladder path simply cannot enter the rungs that need
+ * either, so only the global rung is reachable (margin-calibration
+ * geometry; the query stays honest, never guessed).
+ */
+const TRIP_MARGIN_QUERY = { category: null, carrier: null } as const;
+
+/** The served fill body: fill result + ferry block + the optional margin. */
+type TripFillServedResponse = WithEmpiricalMargin<TripFillResponse>;
 
 // ---------------------------------------------------------------------------
 // Validation — caps mirror the fill module's contracts exactly
@@ -271,7 +295,9 @@ async function fillTripAllowance(c: Context<AppEnv>): Promise<Response> {
   if (cached !== null) {
     c.header('X-Cache', 'HIT');
     c.header('X-Content-Hash', await idempotencyContentHash(cached.result));
-    return c.json(await withFerryBlock(c, cached.result as AllowanceFillResult));
+    return c.json(
+      await serveWithMargin(c, cached.result as AllowanceFillResult),
+    );
   }
 
   await idempotencyStore(c.env, cacheKey, result, {
@@ -280,7 +306,25 @@ async function fillTripAllowance(c: Context<AppEnv>): Promise<Response> {
 
   c.header('X-Cache', 'MISS');
   c.header('X-Content-Hash', await idempotencyContentHash(result));
-  return c.json(await withFerryBlock(c, result));
+  return c.json(await serveWithMargin(c, result));
+}
+
+/**
+ * The served body: the ferry merge, then the display-only
+ * `empiricalMargin` resolved fresh from the margins snapshot (task 2.2)
+ * — both AFTER the content hash, so the cached payload keeps identifying
+ * the fill (the ferry-neutrality contract extends to the margin: the
+ * fill body inside the cache never carries either per-request block).
+ */
+async function serveWithMargin(
+  c: Context<AppEnv>,
+  result: AllowanceFillResult,
+): Promise<TripFillServedResponse> {
+  const [withFerry, ladder] = await Promise.all([
+    withFerryBlock(c, result),
+    readEmpiricalMarginLadder(c.env.DB),
+  ]);
+  return withEmpiricalMargin(withFerry, ladder, TRIP_MARGIN_QUERY);
 }
 
 /**

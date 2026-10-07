@@ -7,7 +7,12 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import { request, SERVER_AGE_CONFIRMATION_TOKEN } from '@/lib/api';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
-import type { ProductSearchItem, ProductSearchResult } from '@/lib/types';
+import type {
+  ProductSavingsEmbed,
+  ProductSearchItem,
+  ProductSearchResult,
+  ReliabilityStatus,
+} from '@/lib/types';
 import { RELIABILITY_STATUS_META } from '@/lib/design/status';
 import {
   Badge,
@@ -17,6 +22,7 @@ import {
   ReliabilityBadge,
 } from '@/components/ui';
 import CategoryAlertAction from './components/CategoryAlertAction';
+import { paginationSlots } from './pagination';
 import {
   CANONICAL_CATEGORIES,
   CATEGORY_LABELS,
@@ -41,7 +47,9 @@ import {
  * (400 on unknown values), so the page resolves the parameter BEFORE
  * fetching and never sends a value the contract rejects. The ?sort=
  * value gets the same forgiving treatment (task 1.3): unknown values
- * fall back to the default order instead of a 400.
+ * fall back to the default order instead of a 400 — the default is
+ * BIGGEST_SAVING since task 2.4 (change
+ * savings-first-catalog-and-prefill).
  *
  * Copy note (task 3.2): all catalog copy lives in the message catalogs
  * under the ProductsPage namespace; the category labels are the shared
@@ -58,6 +66,30 @@ import {
  * unavailable or absent embed; a single-seller card replaces the
  * "Myyjiä: 1" count with the tracked-price framing (design D6).
  *
+ * Savings figures (task 2.1, change savings-first-catalog-and-prefill):
+ * a present `savings` embed renders the snapshot's landed total, Alko
+ * reference, and factual gap beside the "from" price, in the /savings
+ * vocabulary; an absent embed renders nothing at all — the €/g chip
+ * precedent.
+ *
+ * No-reference tier (task 2.2, change savings-first-catalog-and-prefill):
+ * in the default order only, the API lists rows with a savings snapshot
+ * (covered) first and rows without one (uncovered) alphabetically after
+ * (task 1.2's comparator). The page marks that tier boundary with a
+ * quiet divider labelled honestly ("Ei Alko-vertailua" / "No Alko
+ * reference") — and only when both tiers are on the page: a divider
+ * with nothing above it is noise, and a fully covered page has no
+ * boundary. Every other sort renders one undivided list (design D2).
+ *
+ * Default order (task 2.4, change savings-first-catalog-and-prefill):
+ * the page's default is BIGGEST_SAVING, mirroring the API's absent-sort
+ * default (task 1.2). The recorded rationale (design D2):
+ * LOWEST_PRICE fronted a miniature wall, ALPHABETICAL fronted a
+ * junk-name wall; BIGGEST_SAVING orders by the value proposition, with
+ * uncovered rows following an honest divider. The omission of the
+ * default from fetches and links (canonical-clean URLs) keeps its
+ * single meaning: absent sort = BIGGEST_SAVING at both ends.
+ *
  * @module CatalogPage
  */
 
@@ -67,20 +99,23 @@ import {
 
 /**
  * Sort orders the listing API contract accepts (task 1.3) — mirrors
- * CATALOG_SORT_ORDERS in the worker route, which is the enforcing
- * authority (unknown values are a 400 there). The page resolves the
- * parameter forgivingly before fetching, mirroring the category
- * treatment above.
+ * CATALOG_SORT_ORDERS in the worker route (the enforcing authority:
+ * unknown values are a 400 there) value for value, in the contract's
+ * order. BIGGEST_SAVING joined the set in task 1.2 and became the
+ * page's default in task 2.4 (change
+ * savings-first-catalog-and-prefill). The page resolves the parameter
+ * forgivingly before fetching, mirroring the category treatment above.
  */
 const CATALOG_SORT_ORDERS = [
   'ALPHABETICAL',
   'LOWEST_PRICE',
   'ALCOHOL_PERCENTAGE',
+  'BIGGEST_SAVING',
 ] as const;
 
 type CatalogSortOrder = (typeof CATALOG_SORT_ORDERS)[number];
 
-const DEFAULT_SORT: CatalogSortOrder = 'ALPHABETICAL';
+const DEFAULT_SORT: CatalogSortOrder = 'BIGGEST_SAVING';
 
 /**
  * Search-query cap, mirroring the embed widget's MAX_QUERY_LENGTH —
@@ -103,6 +138,7 @@ const SORT_LABEL_KEYS: Record<CatalogSortOrder, string> = {
   ALPHABETICAL: 'sortOptionAlphabetical',
   LOWEST_PRICE: 'sortOptionLowestPrice',
   ALCOHOL_PERCENTAGE: 'sortOptionAlcoholPercentage',
+  BIGGEST_SAVING: 'sortOptionBiggestSaving',
 };
 
 /**
@@ -129,11 +165,17 @@ function resolvePageParam(raw: string | string[] | undefined): number {
 }
 
 /**
- * Forgiving sort resolution (task 1.3; default flipped in task 4.1,
- * change catalog-first-run-polish): absent, blank, and unknown values
- * all render the default name ordering (ALPHABETICAL — the API's
- * absent-sort default too) — the API's strict 400 never happens because
- * only resolved canonical values are sent.
+ * Forgiving sort resolution (task 1.3; default flipped twice — task 4.1,
+ * change catalog-first-run-polish, then task 2.4, change
+ * savings-first-catalog-and-prefill): absent, blank, and unknown values
+ * all render the default BIGGEST_SAVING ordering — the API's absent-sort
+ * default too (task 1.2), so an omitted sort means the same thing at
+ * both ends. The recorded rationale (design D2): LOWEST_PRICE fronted a
+ * miniature wall and ALPHABETICAL fronted a junk-name wall;
+ * BIGGEST_SAVING orders by the value proposition, and uncovered rows
+ * follow an honest divider (the no-reference tier, task 2.2). The API's
+ * strict 400 never happens because only resolved canonical values are
+ * sent.
  */
 function resolveSortParam(
   raw: string | string[] | undefined,
@@ -236,6 +278,17 @@ function formatEuro(cents: number, locale: CatalogLocale): string {
   } catch {
     return `${(cents / 100).toFixed(2)} €`;
   }
+}
+
+/**
+ * The savings embed's reliability status, with the /savings listing's
+ * degradation rule: an unknown status string falls to the UNAVAILABLE
+ * ladder rung instead of crashing the card.
+ */
+function savingsReliability(savings: ProductSavingsEmbed): ReliabilityStatus {
+  return savings.reliability in RELIABILITY_STATUS_META
+    ? (savings.reliability as ReliabilityStatus)
+    : 'UNAVAILABLE';
 }
 
 interface ProductsPageProps {
@@ -382,6 +435,24 @@ export default async function ProductsPage({
       ? result.suggestion
       : undefined;
 
+  // No-reference tier (task 2.2, change savings-first-catalog-and-prefill,
+  // design D2): only the default order tiers. The covered/uncovered split
+  // mirrors the API's BIGGEST_SAVING comparator exactly — covered is a
+  // present snapshot row (the embed, even one without an Alko reference
+  // figure), uncovered is its absence — so the divider lands on the same
+  // boundary the API ordered, before the first uncovered row. The divider
+  // renders only when both tiers are on the page: a page of only
+  // uncovered rows (a category without Alko coverage, or a
+  // never-materialized snapshot day) skips it — nothing above it, nothing
+  // to divide.
+  const firstUncoveredIndex = items.findIndex(
+    (item: ProductSearchItem) => item.savings === undefined,
+  );
+  const showNoReferenceDivider =
+    sort === DEFAULT_SORT &&
+    firstUncoveredIndex !== -1 &&
+    items.some((item: ProductSearchItem) => item.savings !== undefined);
+
   const pageHref = (target: number): string =>
     catalogHref(category, target, sort, q);
 
@@ -485,9 +556,10 @@ export default async function ProductsPage({
           is URL state like category and page. A sort change resets to
           page 1 (no page field in the form); the category and the active
           search travel in hidden fields. The default order is a real
-          option value (ALPHABETICAL — an explicit contract value;
-          LOWEST_PRICE stays selectable and URL-addressable) so the
-          select always submits a value the API accepts. ── */}
+          option value (BIGGEST_SAVING — an explicit contract value since
+          task 1.2 and the default since task 2.4; ALPHABETICAL stays
+          selectable and URL-addressable as an explicit non-default
+          order) so the select always submits a value the API accepts. ── */}
       <form
         method="get"
         action="/products"
@@ -585,94 +657,198 @@ export default async function ProductsPage({
             data-testid="catalog-grid"
             className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
           >
-            {items.map((item: ProductSearchItem) => (
-              <li key={item.id}>
-                <Card as="article" padding="md" className="flex h-full flex-col gap-3">
-                  <div className="flex min-w-0 items-start justify-between gap-2">
-                    <h2 className="min-w-0 break-words text-base font-semibold leading-snug">
-                      <Link
-                        href={`/products/${item.id}`}
-                        className="text-primary-700 hover:underline"
-                      >
-                        {item.name}
-                      </Link>
-                    </h2>
-                    <Badge tone="neutral" size="sm">
-                      {categoryLabel(item.category, locale)}
-                    </Badge>
-                  </div>
-                  {item.brand ? (
-                    <p className="text-sm text-gray-500">{item.brand}</p>
-                  ) : null}
-                  <p className="text-sm text-gray-700">
-                    {[
-                      // Shared attribute formatters (task 4.1): labelled
-                      // volume ("50 cl") and percentage ABV ("4.7 %") —
-                      // the previous `× 100` interpolation rendered float
-                      // artifacts and the raw text leaked the bare litre
-                      // value without a unit.
-                      formatVolume(item.unitVolume),
-                      formatAbv(item.alcoholByVolume),
-                    ]
-                      .filter((part): part is string => part !== null && part !== '')
-                      .join(' · ')}
-                  </p>
-                  <div className="mt-auto border-t border-gray-100 pt-2 text-sm">
-                    {item.lowestPriceCents !== null ? (
-                      <>
-                        <p className="text-gray-500">{t('fromPriceLabel')}</p>
-                        <p className="font-medium text-gray-900">
-                          {formatEuro(item.lowestPriceCents, locale)}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-gray-500">{t('noPrice')}</p>
-                    )}
-                    {/* ── €/g chip (task 2.3, change honest-trust-surfaces):
-                        ONLY a computed metric renders — an unavailable or
-                        absent embed renders nothing at all (no placeholder,
-                        no zero). Value + localized unit + the input price's
-                        reliability badge, the canonical presentation the
-                        compare view's UnitPriceCell and the value ranking
-                        use; the badge's icon shape keeps the label off
-                        color alone. ── */}
-                    {item.eurPerGram !== undefined &&
-                    item.eurPerGram.status !== 'unavailable' ? (
-                      <p className="mt-1 flex flex-wrap items-center gap-1.5">
-                        <span className="font-semibold tabular-nums text-gray-900">
-                          {t('unitPriceChip', {
-                            value: item.eurPerGram.centsPerGram.toFixed(2),
-                          })}
-                        </span>
-                        <ReliabilityBadge status={item.eurPerGram.priceReliability}>
-                          {tRoot(
-                            RELIABILITY_STATUS_META[item.eurPerGram.priceReliability]
-                              .labelKey,
-                          )}
-                        </ReliabilityBadge>
-                      </p>
+            {items.map((item: ProductSearchItem, index: number) => (
+              <React.Fragment key={item.id}>
+                {/* ── No-reference tier divider (task 2.2): a full-width,
+                    quiet separator carrying the honest label — covered
+                    cards above, uncovered cards after. A separator role
+                    keeps it out of the card list semantics. ── */}
+                {index === firstUncoveredIndex && showNoReferenceDivider ? (
+                  <li
+                    role="separator"
+                    aria-label={t('noReferenceTierLabel')}
+                    data-testid="catalog-no-reference-divider"
+                    className="col-span-full mt-1 flex items-center gap-3"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="h-px flex-1 bg-gray-200"
+                    />
+                    <span className="text-xs font-medium text-gray-400">
+                      {t('noReferenceTierLabel')}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="h-px flex-1 bg-gray-200"
+                    />
+                  </li>
+                ) : null}
+                <li>
+                  <Card as="article" padding="md" className="flex h-full flex-col gap-3">
+                    <div className="flex min-w-0 items-start justify-between gap-2">
+                      <h2 className="min-w-0 break-words text-base font-semibold leading-snug">
+                        <Link
+                          href={`/products/${item.id}`}
+                          className="text-primary-700 hover:underline"
+                        >
+                          {item.name}
+                        </Link>
+                      </h2>
+                      <Badge tone="neutral" size="sm">
+                        {categoryLabel(item.category, locale)}
+                      </Badge>
+                    </div>
+                    {item.brand ? (
+                      <p className="text-sm text-gray-500">{item.brand}</p>
                     ) : null}
-                    {/* ── Single-seller reframe (task 2.3, design D6): one
-                        seller is not advertised as a count — the
-                        merchant-agnostic tracked-price line replaces
-                        "Myyjiä: 1". Zero and multi-seller counts render as
-                        before. ── */}
-                    {item.merchantCount === 1 ? (
-                      <p className="text-gray-500">{t('trackedPrice')}</p>
-                    ) : (
-                      <p className="text-gray-500">
-                        {t('merchantCount', { count: item.merchantCount })}
-                      </p>
-                    )}
-                  </div>
-                </Card>
-              </li>
+                    <p className="text-sm text-gray-700">
+                      {[
+                        // Shared attribute formatters (task 4.1): labelled
+                        // volume ("50 cl") and percentage ABV ("4.7 %") —
+                        // the previous `× 100` interpolation rendered float
+                        // artifacts and the raw text leaked the bare litre
+                        // value without a unit.
+                        formatVolume(item.unitVolume),
+                        formatAbv(item.alcoholByVolume),
+                      ]
+                        .filter((part): part is string => part !== null && part !== '')
+                        .join(' · ')}
+                    </p>
+                    <div className="mt-auto border-t border-gray-100 pt-2 text-sm">
+                      {item.lowestPriceCents !== null ? (
+                        <>
+                          <p className="text-gray-500">{t('fromPriceLabel')}</p>
+                          <p className="font-medium text-gray-900">
+                            {formatEuro(item.lowestPriceCents, locale)}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-gray-500">{t('noPrice')}</p>
+                      )}
+                      {/* ── Savings figures (task 2.1, change
+                          savings-first-catalog-and-prefill): the snapshot's
+                          landed total, Alko reference, and factual gap, in
+                          the /savings vocabulary. ONLY a present embed
+                          renders — an absent embed renders nothing at all
+                          (the €/g chip precedent). The reference and gap
+                          lines need a reference price; with a null one the
+                          landed total stands alone (a gap without its
+                          reference would be unexplainable). A dearer-than-
+                          Alko gap states the fact plainly, the same framing
+                          as the cheaper direction (design D2). Confidence
+                          stays on the /savings listing — the card surfaces
+                          the reliability ladder only. ── */}
+                      {item.savings !== undefined ? (
+                        <div
+                          data-testid="card-savings"
+                          className="mt-2 rounded-md bg-gray-50 px-2 py-1.5 text-xs"
+                        >
+                          <p className="flex items-baseline justify-between gap-2">
+                            <span className="text-gray-500">
+                              {t('savingsLandedLabel')}
+                            </span>
+                            <span className="font-semibold tabular-nums text-gray-900">
+                              {formatEuro(item.savings.landedTotalCents, locale)}
+                            </span>
+                          </p>
+                          {item.savings.alkoReferenceCents !== null ? (
+                            <>
+                              <p className="flex items-baseline justify-between gap-2">
+                                <span className="text-gray-500">
+                                  {t('savingsReferenceLabel')}
+                                </span>
+                                <span className="tabular-nums text-gray-700">
+                                  {formatEuro(
+                                    item.savings.alkoReferenceCents,
+                                    locale,
+                                  )}
+                                </span>
+                              </p>
+                              <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                                <span className="text-gray-700">
+                                  {item.savings.gapCents < 0
+                                    ? t('savingsGapCheaper', {
+                                        figure: formatEuro(
+                                          Math.abs(item.savings.gapCents),
+                                          locale,
+                                        ),
+                                      })
+                                    : item.savings.gapCents > 0
+                                      ? t('savingsGapDearer', {
+                                          figure: formatEuro(
+                                            Math.abs(item.savings.gapCents),
+                                            locale,
+                                          ),
+                                        })
+                                      : t('savingsGapEqual')}
+                                </span>
+                                <ReliabilityBadge
+                                  status={savingsReliability(item.savings)}
+                                >
+                                  {tRoot(
+                                    RELIABILITY_STATUS_META[
+                                      savingsReliability(item.savings)
+                                    ].labelKey,
+                                  )}
+                                </ReliabilityBadge>
+                              </p>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {/* ── €/g chip (task 2.3, change honest-trust-surfaces):
+                          ONLY a computed metric renders — an unavailable or
+                          absent embed renders nothing at all (no placeholder,
+                          no zero). Value + localized unit + the input price's
+                          reliability badge, the canonical presentation the
+                          compare view's UnitPriceCell and the value ranking
+                          use; the badge's icon shape keeps the label off
+                          color alone. ── */}
+                      {item.eurPerGram !== undefined &&
+                      item.eurPerGram.status !== 'unavailable' ? (
+                        <p className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <span
+                            className="font-semibold tabular-nums text-gray-900"
+                            title={tRoot('Compare.eurPerGram.tooltip.title')}
+                          >
+                            {t('unitPriceChip', {
+                              value: item.eurPerGram.centsPerGram.toFixed(2),
+                            })}
+                          </span>
+                          <ReliabilityBadge status={item.eurPerGram.priceReliability}>
+                            {tRoot(
+                              RELIABILITY_STATUS_META[item.eurPerGram.priceReliability]
+                                .labelKey,
+                            )}
+                          </ReliabilityBadge>
+                        </p>
+                      ) : null}
+                      {/* ── Single-seller reframe (task 2.3, design D6): one
+                          seller is not advertised as a count — the
+                          merchant-agnostic tracked-price line replaces
+                          "Myyjiä: 1". Zero and multi-seller counts render as
+                          before. ── */}
+                      {item.merchantCount === 1 ? (
+                        <p className="text-gray-500">{t('trackedPrice')}</p>
+                      ) : (
+                        <p className="text-gray-500">
+                          {t('merchantCount', { count: item.merchantCount })}
+                        </p>
+                      )}
+                    </div>
+                  </Card>
+                </li>
+              </React.Fragment>
             ))}
           </ul>
 
-          {/* ── Pagination over the exact total; pages beyond the range
-              are not linkable (prev/next degrade to disabled spans, the
-              numbered set is exactly 1..totalPages) ── */}
+          {/* ── Windowed pagination (task 2.3, change
+              savings-first-catalog-and-prefill): prev/next, page 1 and the
+              last page, and a clamped ±2 window with ellipsis gaps — a
+              bounded anchor set no matter how deep the catalog grows.
+              Out-of-range steps stay non-linkable: prev/next degrade to
+              disabled spans at the edges, and paginationSlots never emits
+              a number outside [1, totalPages]. ── */}
           {totalPages > 1 ? (
             <nav
               aria-label={t('paginationNavLabel')}
@@ -688,25 +864,32 @@ export default async function ProductsPage({
                   {t('prevPage')}
                 </span>
               )}
-              {Array.from({ length: totalPages }, (_, index) => index + 1).map(
-                (pageNumber) =>
-                  pageNumber === page ? (
-                    <span
-                      key={pageNumber}
-                      aria-current="page"
-                      className={PAGE_CURRENT_CLASSES}
-                    >
-                      {pageNumber}
-                    </span>
-                  ) : (
-                    <Link
-                      key={pageNumber}
-                      href={pageHref(pageNumber)}
-                      className={PAGE_LINK_CLASSES}
-                    >
-                      {pageNumber}
-                    </Link>
-                  ),
+              {paginationSlots(page, totalPages).map((slot, index) =>
+                slot.kind === 'gap' ? (
+                  <span
+                    key={`gap-${index}`}
+                    aria-hidden="true"
+                    className={PAGE_SPAN_CLASSES}
+                  >
+                    …
+                  </span>
+                ) : slot.page === page ? (
+                  <span
+                    key={slot.page}
+                    aria-current="page"
+                    className={PAGE_CURRENT_CLASSES}
+                  >
+                    {slot.page}
+                  </span>
+                ) : (
+                  <Link
+                    key={slot.page}
+                    href={pageHref(slot.page)}
+                    className={PAGE_LINK_CLASSES}
+                  >
+                    {slot.page}
+                  </Link>
+                ),
               )}
               {page < totalPages ? (
                 <Link href={pageHref(page + 1)} className={PAGE_LINK_CLASSES}>

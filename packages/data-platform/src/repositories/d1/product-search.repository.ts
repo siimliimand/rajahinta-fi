@@ -796,11 +796,21 @@ const UPDATE_BY_EAN_SQL = `
  * and the API route's `sort` validation. Every order keys on objective
  * product/offer fields only; no commercial or promotional signal can enter
  * an ordering (proposal decision D3).
+ *
+ * BIGGEST_SAVING (savings-first-catalog-and-prefill) joins the value set
+ * so the route's validation and its 400 message stay single-sourced, but
+ * its ordering is NOT performed here: it composes at the route level over
+ * the latest-day savings snapshot map, which this repository must never
+ * import (isolation compliance). {@link D1ProductSearchRepository.listCatalogPage}
+ * rejects the value rather than silently falling back, and exposes the
+ * full matched key list via {@link D1ProductSearchRepository.listCatalogKeys}
+ * for the route's own sort-then-slice.
  */
 export const CATALOG_SORT_ORDERS = [
   'ALPHABETICAL',
   'LOWEST_PRICE',
   'ALCOHOL_PERCENTAGE',
+  'BIGGEST_SAVING',
 ] as const;
 
 export type CatalogSortOrder = (typeof CATALOG_SORT_ORDERS)[number];
@@ -1266,6 +1276,32 @@ export class D1ProductSearchRepository extends ProductRepository {
   }
 
   /**
+   * The full matched catalog key list — the same narrow `(id, name)`
+   * selection the alphabetical contract sorts app-side inside
+   * {@link D1ProductSearchRepository.listCatalogPage}, exposed WITHOUT an
+   * ordering opinion (savings-first-catalog-and-prefill design D1/D3):
+   * BIGGEST_SAVING composes its order at the route level over the
+   * latest-day savings snapshot map, which this repository must never
+   * import, so the route fetches the whole matched set here, sorts it
+   * with its own comparator, and slices the page itself. Category is the
+   * caller-validated canonical value (an unknown value filters strictly
+   * and yields zero rows, listCatalogPage parity). Unsorted — SQL row
+   * order; the caller owns the order entirely. Kept on the D1 concrete
+   * class only (the listCatalogPage precedent).
+   */
+  async listCatalogKeys(
+    category?: string,
+  ): Promise<ReadonlyArray<{ readonly id: number; readonly name: string }>> {
+    const filtered = category !== undefined;
+    return (
+      await this.d1
+        .prepare(`${CATALOG_KEYS_SQL}${filtered ? ' WHERE category = ?' : ''}`)
+        .bind(...(filtered ? [category] : []))
+        .all<D1CatalogKeyRow>()
+    ).results;
+  }
+
+  /**
    * Catalog listing page — category-filtered, exact-total,
    * Finnish-collation pagination (design D1 "keys-then-page", change
    * product-catalog). D1 ships no Finnish collation and no custom
@@ -1304,7 +1340,10 @@ export class D1ProductSearchRepository extends ProductRepository {
    * ascending order — a bare `min_price ASC` would silently render
    * offer-less rows first — and the id tie keeps the order total, so
    * every page and every run slice the identical sequence. The value
-   * set is {@link CATALOG_SORT_ORDERS}; the route validates it.
+   * set is {@link CATALOG_SORT_ORDERS}; the route validates it — EXCEPT
+   * BIGGEST_SAVING, which is ordered at the route level over the
+   * savings snapshot map (savings-first-catalog-and-prefill design D1)
+   * and rejected here rather than silently mis-ordered.
    *
    * Kept on the D1 concrete class only (no abstract counterpart yet):
    * the route binds the concrete type (the D1-only repository precedent).
@@ -1323,6 +1362,15 @@ export class D1ProductSearchRepository extends ProductRepository {
     if (!Number.isInteger(pageSize) || pageSize < 1) {
       throw new TypeError(
         `pageSize must be a positive integer, got ${pageSize}`,
+      );
+    }
+    // BIGGEST_SAVING's key — the materialized savings gap — lives in the
+    // snapshot map the route reads; this repository must never import it
+    // (isolation compliance). An alphabetical fallback would silently
+    // mis-order the default view, so the misuse is loud instead.
+    if (sort === 'BIGGEST_SAVING') {
+      throw new TypeError(
+        'BIGGEST_SAVING is ordered at the route level over the savings snapshot map (savings-first-catalog-and-prefill D1) — fetch listCatalogKeys and sort there',
       );
     }
 

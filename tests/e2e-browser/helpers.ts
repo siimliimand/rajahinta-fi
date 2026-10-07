@@ -40,10 +40,30 @@ export const COPY = {
   total: 'Yhteensä',
   foreignRetailPrice: 'Ulkomainen vähittäishinta',
   transportCost: 'Kuljetuskustannus',
-  alcoholExcise: 'Arvio alkoholin valmisteverosta',
+  alcoholExcise: 'Alkoholin valmistevero',
   compareTitle: 'Tuotevertailu',
   addProductButton: '+ Lisää tuote',
   sortLabel: 'Järjestä:',
+  // Homepage live observed-difference section (homepage-live-gap-hero
+  // 2.1/2.2/2.3 — Home namespace).
+  liveGapHeading:
+    'Päivän suurimmat havaitut hintaerot Alkon hintoihin verrattuna',
+  liveGapAsOfPrefix: 'Laskettu viimeisimmästä havaintopäivästä',
+  liveGapPendingBody:
+    'Päivän vertailua ei ole vielä koostettu. Nykytilanne näkyy kokonaishintaerojen luettelossa.',
+  liveGapPendingLink: 'Kokonaishinta-ero Alko-viitehintaan',
+  liveGapUnavailableBody:
+    'Päivän vertailua ei voitu ladata juuri nyt. Voit yrittää myöhemmin uudelleen.',
+  howItWorksHeading: 'Näin se toimii',
+  // Header navigation (SiteHeader namespace — three-task-navigation):
+  // the mobile menu toggle and the three task-group triggers, which
+  // speak task language; panel items keep the tool names.
+  navToggle: 'Päävalikko',
+  groupShopping: 'Mitä kannattaa ostaa?',
+  groupTrip: 'Suunnittele matka',
+  groupEvent: 'Suunnittele juhlat',
+  navCalculator: 'Laskuri',
+  navBasket: 'Ostoskori',
 } as const;
 
 /** Structural disclaimer (packages/core-domain/src/disclaimer.ts, fi). */
@@ -66,6 +86,17 @@ export const SEED = {
   },
   /** Query matching both seeded products. */
   query: 'TEST',
+  /**
+   * Homepage hero snapshot fixtures (seed-savings-snapshot.d1.sql,
+   * homepage-live-gap-hero 4.3): one materialized day over the two
+   * journey products. The wine's more import-favourable gap (−3161 bps)
+   * lists before the beer (−1972 bps) — sortSavingsRows' deterministic
+   * basis-point order.
+   */
+  savings: {
+    beerId: 9001,
+    wineId: 9002,
+  },
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -80,12 +111,21 @@ export const SEED = {
  */
 export async function acceptAgeGate(page: Page): Promise<void> {
   await page.goto('/');
-  await page
-    .getByRole('button', { name: COPY.ageGateConfirm, exact: true })
-    .click();
-  await expect(
-    page.getByRole('button', { name: COPY.ageGateConfirm, exact: true }),
-  ).toBeHidden();
+  const confirm = page.getByRole('button', {
+    name: COPY.ageGateConfirm,
+    exact: true,
+  });
+  await confirm.click();
+  // The confirm handler is a client-only cookie write, so a click that
+  // lands before React hydration can be a no-op — re-click once if the
+  // gate is still up. The gate MUST hide either way; that assertion is
+  // the contract and is never relaxed.
+  try {
+    await expect(confirm).toBeHidden({ timeout: 3_000 });
+  } catch {
+    await confirm.click();
+    await expect(confirm).toBeHidden();
+  }
 }
 
 /**

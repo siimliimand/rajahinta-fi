@@ -39,6 +39,13 @@
  * the block is display-only and feeds no calculation input (spec
  * calculation-outcomes).
  *
+ * `GET /api/v1/accuracy/margins` (task 2.1, change
+ * hedge-dedup-confidence-meter) serves the persisted empirical-margin
+ * ladder — the `outcome_margins` snapshot the aggregation tick writes,
+ * read verbatim in ladder order. Same public-read posture as the
+ * statistic; the honest empty state (`margins: [], asOf: null`) is
+ * served as-is, never padded with a fabricated cell or instant.
+ *
  * @module OutcomesRoutes
  */
 
@@ -62,6 +69,10 @@ import { USER_CONTEXT_KEY } from '../auth/authenticated-account';
 import type { AuthenticatedAccount } from '../auth/authenticated-account';
 import { findOwnedCalculationRecord } from '../adapters/calculation-record-reads';
 import { D1CalculationOutcomeRepository } from '../../../../packages/data-platform/src/repositories/d1/calculation-outcome.repository';
+import {
+  D1OutcomeMarginRepository,
+  marginRowToEmpiricalMargin,
+} from '../../../../packages/data-platform/src/repositories/d1/outcome-margin.repository';
 import { DuplicateOutcomeError } from '../../../../packages/data-platform/src/abstracts';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 import { D1AccountStore } from '../adapters/account-store';
@@ -333,9 +344,50 @@ async function getAccuracy(c: Context<AppEnv>): Promise<Response> {
   });
 }
 
-/** Register the accuracy handler; POST registers via registerOutcomeRoutes. */
+/**
+ * The persisted empirical-margin ladder (task 2.1, change
+ * hedge-dedup-confidence-meter; spec: calculation-outcomes delta
+ * "Persisted empirical margins") — the `outcome_margins` snapshot read
+ * verbatim, ladder order (deepest rung first, keys ascending — the
+ * cron write order). Display-only data (design D4): the numbers
+ * describe the calibration of past estimates and feed no calculation.
+ *
+ * The empty store is served honestly: `{ margins: [], asOf: null }` —
+ * no outcomes yet, or every cell below the sample floor at the last
+ * refresh, is a real state, not an error. The top-level `asOf` is the
+ * ladder's own run instant — the maximum over its cells (one refresh
+ * writes the whole ladder in one batch, so the cells share it); it is
+ * derived from the snapshot, never from the clock.
+ */
+async function getAccuracyMargins(c: Context<AppEnv>): Promise<Response> {
+  const margins = (
+    await new D1OutcomeMarginRepository(c.env.DB).findMargins()
+  ).map(marginRowToEmpiricalMargin);
+
+  if (margins.length === 0) {
+    return c.json({ margins: [], asOf: null });
+  }
+
+  const asOf = margins.reduce(
+    (latest, margin) => (margin.asOf > latest ? margin.asOf : latest),
+    margins[0]!.asOf,
+  );
+  return c.json({
+    margins: margins.map((margin) => ({
+      dimension: margin.cell.dimension,
+      key: margin.cell.key,
+      quantile: margin.quantile,
+      sampleCount: margin.sampleCount,
+      asOf: margin.asOf.toISOString(),
+    })),
+    asOf: asOf.toISOString(),
+  });
+}
+
+/** Register the accuracy handlers; POST registers via registerOutcomeRoutes. */
 export function registerAccuracyRoutes(app: Hono<AppEnv>): Hono<AppEnv> {
   app.get('/api/v1/accuracy', getAccuracy);
+  app.get('/api/v1/accuracy/margins', getAccuracyMargins);
   return app;
 }
 

@@ -201,6 +201,29 @@ describe('GET /embed/calculator — search and calculate via the normal API path
     expect(html).toContain('<strong>€14.68</strong>');
   });
 
+  it('keeps the disclaimer intact through the flow when the API response carries the empirical margin (hedge-dedup 4.2 pin)', async () => {
+    // Task 2.2 attaches the display-only margin at read time on the
+    // same POST the embed route makes — the embed neither renders a
+    // meter nor regresses its single structural disclaimer.
+    mockedRequest.mockResolvedValueOnce({
+      ...RESULT_RESPONSE,
+      empiricalMargin: {
+        quantile: 0.05,
+        sampleCount: 16,
+        cell: { dimension: 'global', key: 'global' },
+        asOf: '2026-09-28T12:00:00.000Z',
+      },
+    });
+    const res = await get('fi', '?confirm=1&q=beer&product=12&quantity=2');
+    const html = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(html.split('role="note"')).toHaveLength(2);
+    expect(html).toContain('role="note">Estimoitu hinta: laskelma ei ole tarjous.');
+    expect(html.indexOf('role="note"')).toBeLessThan(html.indexOf('<strong>€14.68</strong>'));
+    expect(html).not.toContain('confidence-meter');
+  });
+
   it('clamps an out-of-range quantity like the page does', async () => {
     mockedRequest.mockResolvedValueOnce(RESULT_RESPONSE);
     await get('fi', '?confirm=1&product=12&quantity=5000');

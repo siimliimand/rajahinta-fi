@@ -35,15 +35,20 @@ import {
   buildApp,
   expectEnvelope,
   issueSessionToken,
+  MARGIN_LADDER_AS_OF,
   openMigratedD1,
   permissiveEnv,
   request,
   seedAccount,
   seedCalculationRecord,
+  seedMarginLadder,
   seedOffer,
   seedProduct,
 } from './harness';
 import { WATERMARK_KEY } from '../../cron/time-series-aggregation';
+import { handleOutcomeMargins } from '../../cron/outcome-margins';
+import { createLogger } from '../../logger';
+import type { Env } from '../../env';
 import { D1CalculationOutcomeRepository } from '../../../../../packages/data-platform/src/repositories/d1/calculation-outcome.repository';
 import { USER_REPORTED_OUTCOMES_LABEL_EN, USER_REPORTED_OUTCOMES_LABEL_FI } from '../../../../../packages/core-domain/src/outcomes/outcomes.types';
 
@@ -577,5 +582,83 @@ describe('history outcome flags (GET /api/v1/account/history)', () => {
       { recordId: 100, outcomeReported: false },
       { recordId: 101, outcomeReported: true },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/accuracy/margins — the persisted empirical-margin ladder
+// (task 2.1, change hedge-dedup-confidence-meter) — the endpoint's read
+// of whatever the REAL write path (the shared margin-ladder fixture →
+// handleOutcomeMargins) persisted; no margin math runs here.
+// ---------------------------------------------------------------------------
+
+/** Wire shape of one ladder cell on the margins response. */
+interface MarginCellBody {
+  dimension: string;
+  key: string;
+  quantile: number;
+  sampleCount: number;
+  asOf: string;
+}
+
+interface MarginsBody {
+  margins: MarginCellBody[];
+  asOf: string | null;
+}
+
+describe('GET /api/v1/accuracy/margins — persisted ladder (hedge-dedup-confidence-meter 2.1)', () => {
+  it('honest empty state: margins [], asOf null — never a fabricated cell', async () => {
+    const s = await setup();
+    const app = buildApp();
+    const res = await request(app, permissiveEnv(s.d1), '/api/v1/accuracy/margins');
+    expect(res.status).toBe(200);
+    expect((await res.json()) as MarginsBody).toEqual({ margins: [], asOf: null });
+  });
+
+  it('an under-floor corpus serves the empty state (no cell below the floor)', async () => {
+    const s = await setup();
+    let reporter = 100;
+    for (let i = 0; i < 9; i += 1) {
+      reporter += 1;
+      seedAccount(s.db, {
+        id: reporter,
+        userId: `under-floor-${reporter}`,
+        email: `under-floor-${reporter}@example.invalid`,
+        tier: 'FREE',
+      });
+      // Record 999 has no row — every report lands global-only.
+      await new D1CalculationOutcomeRepository(s.d1).create({
+        calculationRecordId: 999,
+        reporterAccountId: reporter,
+        estimateDigest: { totalCents: 10_000 },
+        estimatedTotalCents: 10_000,
+        reportedTotalCents: 10_100,
+      });
+    }
+    await handleOutcomeMargins({ DB: s.d1 } as unknown as Env, createLogger('error'), {
+      asOf: MARGIN_LADDER_AS_OF,
+    });
+
+    const app = buildApp();
+    const res = await request(app, permissiveEnv(s.d1), '/api/v1/accuracy/margins');
+    expect(res.status).toBe(200);
+    expect((await res.json()) as MarginsBody).toEqual({ margins: [], asOf: null });
+  });
+
+  it('serves the persisted ladder in write order with the run asOf on top', async () => {
+    const s = await setup();
+    await seedMarginLadder(s.db, s.d1);
+
+    const app = buildApp();
+    const res = await request(app, permissiveEnv(s.d1), '/api/v1/accuracy/margins');
+    expect(res.status).toBe(200);
+    expect((await res.json()) as MarginsBody).toEqual({
+      margins: [
+        { dimension: 'category_carrier', key: 'beer|posti', quantile: 0.01, sampleCount: 10, asOf: MARGIN_LADDER_AS_OF.toISOString() },
+        { dimension: 'category', key: 'beer', quantile: 0.02, sampleCount: 12, asOf: MARGIN_LADDER_AS_OF.toISOString() },
+        { dimension: 'global', key: 'global', quantile: 0.05, sampleCount: 16, asOf: MARGIN_LADDER_AS_OF.toISOString() },
+      ],
+      asOf: MARGIN_LADDER_AS_OF.toISOString(),
+    });
   });
 });

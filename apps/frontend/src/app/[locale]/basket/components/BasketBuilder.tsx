@@ -18,15 +18,21 @@
  * @module BasketBuilder
  */
 
-import { useState, useCallback, useRef } from 'react';
 // Namespace import: vitest's esbuild transform emits classic JSX
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useTranslations } from 'next-intl';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
+import { Link } from '@/i18n/navigation';
 import type { ProductSearchItem } from '@/lib/types';
-import { searchProducts } from '@/lib/api';
+import {
+  searchProducts,
+  getSavingsBestPerMerchant,
+} from '@/lib/api';
+import type { SavingsBestPerMerchantRow } from '@/lib/api';
 import { formatAttributeRow } from '@/lib/format/product-attributes';
+import { formatMoney } from '@/lib/format/money';
 import type { TransportArrangement } from '@/lib/basket.types';
 import QuantitySelector from '../../calculator/components/QuantitySelector';
 
@@ -116,6 +122,7 @@ export default function BasketBuilder({
   const tSearch = useTranslations('ProductSearch');
   const tSel = useTranslations('ProductSelector');
   const tCalc = useTranslations('Calculator');
+  const locale = useLocale();
 
   // ── Search state ──
   const [query, setQuery] = useState('');
@@ -123,6 +130,33 @@ export default function BasketBuilder({
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+
+  // ── Example deals (task 3.3, change savings-first-catalog-and-prefill):
+  // the empty state's per-merchant examples, fetched once per mount.
+  // Display face only — the rows are never added to the basket
+  // automatically.
+  const [exampleDeals, setExampleDeals] = useState<
+    readonly SavingsBestPerMerchantRow[]
+  >([]);
+  const examplesFetchedRef = useRef(false);
+
+  useEffect(() => {
+    if (examplesFetchedRef.current) return;
+    examplesFetchedRef.current = true;
+    let cancelled = false;
+    getSavingsBestPerMerchant()
+      .then((res) => {
+        if (!cancelled) setExampleDeals(res.merchants);
+      })
+      .catch(() => {
+        // Honest degrade: an empty listing (no materialized day) or a
+        // failed read leaves the plain empty text standing — never an
+        // invented example.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const searchInFlight = useRef(false);
 
@@ -164,6 +198,22 @@ export default function BasketBuilder({
   );
 
   const atCapacity = items.length >= maxItems;
+
+  /**
+   * One-click example-basket fill (task 3.3): adds every listed row
+   * through the same `onAddItem` path a search selection uses, up to the
+   * remaining capacity. The basket never fills itself — this runs only
+   * on the visitor's click, and the added rows are regular items the
+   * visitor can re-quantity or remove.
+   */
+  const fillExampleBasket = useCallback(() => {
+    let count = items.length;
+    for (const row of exampleDeals) {
+      if (count >= maxItems) break;
+      onAddItem(row.productId, row.productName);
+      count += 1;
+    }
+  }, [exampleDeals, items.length, maxItems, onAddItem]);
 
   return (
     <div className="space-y-6">
@@ -284,7 +334,93 @@ export default function BasketBuilder({
         </div>
 
         {items.length === 0 ? (
-          <p className="text-sm text-gray-400">{t('emptyBasket')}</p>
+          <div>
+            <p className="text-sm text-gray-400">{t('emptyBasket')}</p>
+
+            {/* ── Example deals (task 3.3, change
+                savings-first-catalog-and-prefill): the empty state lists
+                the per-merchant snapshot deals with per-item add buttons
+                and a one-click example-basket fill. Nothing is ever
+                auto-added — the basket starts empty, and both actions run
+                through the same onAddItem path a search selection uses.
+                An empty listing (no materialized day) or a failed read
+                renders nothing new. ── */}
+            {exampleDeals.length > 0 && (
+              <div
+                data-testid="basket-examples"
+                className="mt-3 rounded-md border border-gray-200 bg-gray-50 p-3"
+              >
+                <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    {t('exampleDealsHeading')}{' '}
+                    <span
+                      data-testid="basket-example-badge"
+                      className="inline-flex rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700"
+                    >
+                      {t('exampleBadge')}
+                    </span>
+                  </p>
+                </div>
+                <p className="mb-1 text-xs leading-relaxed text-gray-500">
+                  {t.rich('exampleDealsNote', {
+                    link: (chunks) => (
+                      <Link
+                        href="/savings"
+                        className="text-primary-600 underline hover:text-primary-800"
+                      >
+                        {chunks}
+                      </Link>
+                    ),
+                  })}
+                </p>
+                <ul className="divide-y divide-gray-200">
+                  {exampleDeals.map((row) => (
+                    <li
+                      key={row.productId}
+                      data-testid="basket-example-row"
+                      className="flex items-center justify-between gap-2 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-gray-900">
+                          {row.productName}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {row.merchant} · {row.merchantCountry}
+                        </p>
+                        <p className="text-xs tabular-nums text-gray-600">
+                          {t('exampleLandedTotal', {
+                            price: formatMoney(row.landedTotalCents, locale),
+                          })}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid="basket-example-add"
+                        onClick={() =>
+                          onAddItem(row.productId, row.productName)
+                        }
+                        aria-label={t('addExampleAria', {
+                          name: row.productName,
+                        })}
+                        className="touch-target inline-flex shrink-0 items-center rounded-md border border-primary-600 bg-white px-3 py-1.5 text-xs font-medium text-primary-700 transition-colors hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                      >
+                        {t('addExample')}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  data-testid="fill-example-basket"
+                  onClick={fillExampleBasket}
+                  disabled={atCapacity}
+                  className="touch-target mt-3 inline-flex items-center rounded-md border border-primary-600 bg-white px-3 py-1.5 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {t('fillExampleBasket')}
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
           <>
             {/* Item cap warning */}

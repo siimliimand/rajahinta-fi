@@ -363,6 +363,9 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/api/v1/account/verify-email/request', ['POST'], '— (sessionAuth)'],
   // Trust-and-reach public trust statistic (task 3.3) — no guard, no limit.
   ['/api/v1/accuracy', ['GET'], '—'],
+  // Persisted empirical-margin ladder (hedge-dedup-confidence-meter
+  // 2.1) — display-only public read beside the statistic, no guard.
+  ['/api/v1/accuracy/margins', ['GET'], '—'],
   // Traveller allowances (insight-surfaces 4.1) — route-local DEFAULT +
   // ageGate (PUBLISHED dataset reads).
   ['/api/v1/allowances', ['GET'], 'DEFAULT + ageGate'],
@@ -435,9 +438,15 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   // Savings discovery listing (insight-surfaces 2.3) — route-local
   // ageGate + SAVINGS.
   ['/api/v1/savings', ['GET'], 'SAVINGS + ageGate'],
+  // Best deal per cross-border merchant (savings-first-catalog-and-prefill
+  // 1.3) — same guard chain as the listing: route-local ageGate + SAVINGS.
+  ['/api/v1/savings/best-per-merchant', ['GET'], 'SAVINGS + ageGate'],
   // Market overview (price-intelligence-roadmap 5.2) — same guard chain
   // as the listing: route-local ageGate + SAVINGS.
   ['/api/v1/savings/overview', ['GET'], 'SAVINGS + ageGate'],
+  // Cross-category top-N (homepage-live-gap-hero 1.1) — same guard chain
+  // as the listing: route-local ageGate + SAVINGS.
+  ['/api/v1/savings/top', ['GET'], 'SAVINGS + ageGate'],
   // Share permalink read (task 6.1) — public, frozen snapshot.
   ['/api/v1/share/:publicId', ['GET'], '—'],
   // Trip feasibility — route-local CALCULATOR (anonymous surface).

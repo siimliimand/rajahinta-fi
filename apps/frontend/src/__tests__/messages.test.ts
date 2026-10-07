@@ -134,18 +134,26 @@ describe('layout and navigation catalog completeness', () => {
   it('SiteHeader carries every destination plus the nav label', () => {
     expectNamespaceKeys('SiteHeader', [
       'navLabel',
+      // three-task-navigation 1.2: the three task-group trigger labels
+      // (task language) and the panel item labels (tool names).
+      'groupShopping',
+      'groupTrip',
+      'groupEvent',
+      'savings',
+      'value',
       'calculator',
       'compare',
       'basket',
       'products',
       'event',
       'trip',
-      'whatIf',
+      'allowances',
+      // Demoted from the header by three-task-navigation: 2.1 removed the
+      // whatIf/ranking catalog keys — no code renders them (the footer's
+      // linkWhatIf and methodology keys cover those destinations).
+      // `account` stays until its follow-up task re-homes it.
       'account',
-      'ranking',
-      // planning-dropdown: 3.2 adds the Planning disclosure label and the
-      // locale switcher's accessible label.
-      'planning',
+      // The locale switcher's accessible label.
       'localeSwitcherLabel',
     ]);
     expectTranslated('SiteHeader');
@@ -177,6 +185,9 @@ describe('layout and navigation catalog completeness', () => {
       // about-contact: 3.3 adds both pages to the footer nav.
       'linkAbout',
       'linkContact',
+      // three-task-navigation D6: the scenario calculator joins the
+      // footer's About column.
+      'linkWhatIf',
       'copyright',
     ]);
     expectTranslated('SiteFooter', ['copyright']);
@@ -220,9 +231,11 @@ describe('layout and navigation catalog completeness', () => {
 
 // ---------------------------------------------------------------------------
 // Honest-state catalog keys (data-quality-and-publication-trust 3.1 +
-// 3.2): the calculator's transport-unavailable line and the homepage
-// savings-card pending copy must exist as full key sets in BOTH locales
-// — parity is what the honest states render from.
+// 3.2; three-task-navigation 3.2): the calculator's transport-unavailable
+// line and the homepage task-card copy (heading, three task-language
+// titles, bodies, and the shopping card's pending/unavailable variants)
+// must exist as full key sets in BOTH locales — parity is what the honest
+// states render from.
 // ---------------------------------------------------------------------------
 
 describe('honest-state catalog key parity (3.1 + 3.2)', () => {
@@ -273,12 +286,17 @@ describe('honest-state catalog key parity (3.1 + 3.2)', () => {
     ]);
   });
 
-  it('Home carries both savings-card honest-state bodies in parity', () => {
+  it('Home carries the full task-card key set in parity (three-task-navigation 3.2)', () => {
     expectParity('Home', null, [
-      'taskCardsSavingsTitle',
-      'taskCardsSavingsBody',
-      'taskCardsSavingsPendingBody',
-      'taskCardsSavingsUnavailableBody',
+      'taskCardsHeading',
+      'taskCardsShoppingTitle',
+      'taskCardsShoppingBody',
+      'taskCardsShoppingPendingBody',
+      'taskCardsShoppingUnavailableBody',
+      'taskCardsTripTitle',
+      'taskCardsTripBody',
+      'taskCardsEventTitle',
+      'taskCardsEventBody',
     ]);
   });
 

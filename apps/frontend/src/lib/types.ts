@@ -11,6 +11,23 @@
 // Product search (GET /api/v1/products)
 // ---------------------------------------------------------------------------
 
+/**
+ * Display-only savings embed on one catalog item (task 1.1, change
+ * savings-first-catalog-and-prefill): the latest materialized day's
+ * computed figures for this product, read from the savings snapshot at
+ * the API's route layer. Present only when the product has a snapshot row
+ * for the `savingsAsOf` day — no placeholder, no zero. Display face only:
+ * never feeds a calculation, ranking input, or basket optimization.
+ */
+export interface ProductSavingsEmbed {
+  readonly landedTotalCents: number;
+  readonly alkoReferenceCents: number | null;
+  readonly gapCents: number;
+  readonly gapBasisPoints: number;
+  readonly reliability: string;
+  readonly confidence: string;
+}
+
 export interface ProductSearchItem {
   readonly id: number;
   readonly name: string;
@@ -31,6 +48,16 @@ export interface ProductSearchItem {
    * no zero. Never reorders the listing.
    */
   readonly eurPerGram?: UnitPriceResult;
+  /**
+   * Display-only savings embed (task 1.1, change
+   * savings-first-catalog-and-prefill): the product's landed total, Alko
+   * reference, and gap figures from the latest materialized day. Optional
+   * so the type tolerates cached responses captured before the embed
+   * existed; absent when the product has no snapshot row for the
+   * `savingsAsOf` day — no placeholder, no zero. Never reorders the
+   * listing and never feeds a calculation.
+   */
+  readonly savings?: ProductSavingsEmbed;
 }
 
 export interface ProductSearchResult {
@@ -39,6 +66,14 @@ export interface ProductSearchResult {
   readonly page: number;
   readonly limit: number;
   readonly totalPages: number;
+  /**
+   * The materialized day the items' `savings` embeds were read from
+   * (task 1.1, change savings-first-catalog-and-prefill) — null while no
+   * day has materialized. Optional in this mirror so cached responses
+   * captured before the field existed still parse; the live API always
+   * carries it.
+   */
+  readonly savingsAsOf?: string | null;
   /**
    * Additive merchant-warnings block (trust-and-reach-roadmap task 2.2):
    * PUBLISHED blacklist entries matching the page's offer merchants.
@@ -593,6 +628,28 @@ export interface TravellerAlternative {
   readonly categoryKey: string;
 }
 
+/**
+ * Empirical result margin (mirrors `EmpiricalMarginView` in
+ * apps/api-worker/src/routes/empirical-margin.ts, change
+ * hedge-dedup-confidence-meter): the persisted p80 quantile of relative
+ * error over user-reported outcomes, resolved through the calibration
+ * ladder. Display-only — it never enters totals, breakdowns, rankings,
+ * or any computed output — and it renders only beside its basis (the
+ * relative percent, the sample count, and the as-of date), never alone.
+ * Key absent when no ladder rung meets the sample floor: render-nothing,
+ * never null, never a placeholder.
+ */
+export interface EmpiricalMargin {
+  /** Relative margin as a fraction of the total (0.05 → ±5 %). */
+  readonly quantile: number;
+  /** Outcome reports behind the quantile (≥ the calibration floor). */
+  readonly sampleCount: number;
+  /** The ladder rung that won (deepest floored cell). */
+  readonly cell: { readonly dimension: string; readonly key: string };
+  /** ISO-8601 instant the quantile was computed at. */
+  readonly asOf: string;
+}
+
 export interface CalculatorResult {
   readonly itemizedCosts: readonly ItemizedCost[];
   /** Offers excluded for lacking a valid EUR conversion (task 1.5). */
@@ -631,6 +688,12 @@ export interface CalculatorResult {
    * Live POST responses only — GET/persisted results never carry it.
    */
   readonly travellerAlternative?: TravellerAlternative | null;
+  /**
+   * Display-only empirical margin (hedge-dedup-confidence-meter 2.2),
+   * composed at read time from the outcome-margins snapshot. Absent when
+   * no ladder rung meets the sample floor — render-nothing, never null.
+   */
+  readonly empiricalMargin?: EmpiricalMargin;
   readonly disclaimer: Disclaimer;
   readonly classification: ClassificationResult;
   readonly metadata: {
@@ -1173,6 +1236,15 @@ export interface ShareSnapshotPayload {
   /** The structural disclaimer object copied at share time. */
   readonly disclaimer: unknown;
   readonly calculatedAt: string;
+  /**
+   * Display-only empirical margin frozen into the digest
+   * (hedge-dedup-confidence-meter 4.2, design D6). Additive and optional:
+   * snapshots frozen before the field existed lack the key entirely, and
+   * absence is the share page's render-nothing state. Stored JSON — the
+   * share page validates it structurally before rendering, like the
+   * breakdown and the disclaimer.
+   */
+  readonly empiricalMargin?: EmpiricalMargin;
 }
 
 /** GET /api/v1/share/:publicId response — no account fields by contract. */

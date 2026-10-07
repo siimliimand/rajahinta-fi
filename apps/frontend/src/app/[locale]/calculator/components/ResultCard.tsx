@@ -376,8 +376,13 @@ export default function ResultCard({ result }: ResultCardProps) {
         )}
       </div>
 
-      {/* ── Structural disclaimer — consumed from the result object ── */}
-      <DisclaimerBanner disclaimer={result.disclaimer} />
+      {/* ── Structural disclaimer — consumed from the result object,
+          the card's single render; intensity keys to the result
+          confidence (hedge-dedup-confidence-meter 3.1, design D1) ── */}
+      <DisclaimerBanner
+        disclaimer={result.disclaimer}
+        confidence={result.confidence}
+      />
     </div>
   );
 }

@@ -4,16 +4,29 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import type {
   CompareSortOrder,
   ComparisonProduct,
+  ConfidenceLevel,
   MerchantWarning,
+  ProductDetailResponse,
   ProductSearchItem,
+  ReliabilityStatus,
 } from '@/lib/types';
-import { searchProducts, calculateLandedCost, getProductDetail } from '@/lib/api';
+import {
+  searchProducts,
+  calculateLandedCost,
+  getProductDetail,
+  getSavingsBestPerMerchant,
+} from '@/lib/api';
+import type { SavingsBestPerMerchantRow } from '@/lib/api';
+import {
+  CONFIDENCE_LEVEL_META,
+  RELIABILITY_STATUS_META,
+} from '@/lib/design/status';
 import SortSelector from './components/SortSelector';
 import ComparisonView from './components/ComparisonView';
 import BasketComparisonSection from './components/BasketComparisonSection';
@@ -30,6 +43,79 @@ import { bestOfferUnitPrice } from './unit-price';
 const MIN_QUERY_LENGTH = 2;
 const DEFAULT_SORT: CompareSortOrder = 'LOWEST_LANDED_COST';
 const DEFAULT_DESTINATION = 'FI';
+
+/**
+ * Map a snapshot status string onto the display ladder, degrading an
+ * unknown value to the lowest rung — the same defensive resolution the
+ * /savings rows use, since the snapshot ships provenance as plain
+ * strings. A wrong value renders the least-trustworthy shape, never a
+ * crash.
+ */
+function toReliabilityStatus(value: string): ReliabilityStatus {
+  return (value in RELIABILITY_STATUS_META
+    ? value
+    : 'UNAVAILABLE') as ReliabilityStatus;
+}
+
+/** Confidence counterpart of {@link toReliabilityStatus}. */
+function toConfidenceLevel(value: string): ConfidenceLevel {
+  return (value in CONFIDENCE_LEVEL_META ? value : 'LOW') as ConfidenceLevel;
+}
+
+/**
+ * Build one prefilled example column from a per-merchant snapshot row
+ * (task 3.2, change savings-first-catalog-and-prefill). The column
+ * carries the snapshot's own figures — `landedTotalCents` as the total,
+ * the row's observed retail price as its one itemized component — plus
+ * whatever the read-only product detail resolves for the display fields
+ * (master data, offering merchants, €/g, warnings). A failed detail read
+ * degrades that column to the row alone. No calculation runs: the total
+ * is the snapshot's, not a fresh one.
+ */
+function comparisonProductFromDeal(
+  row: SavingsBestPerMerchantRow,
+  detail: ProductDetailResponse | null,
+): ComparisonProduct & { example: true; offerCountries?: readonly string[] } {
+  const merchants =
+    detail !== null
+      ? [...new Set(detail.offers.map((o) => o.merchant))].sort()
+      : [];
+  // Distinct seller countries of the current offers — display input for
+  // the distance-selling badges only.
+  const offerCountries =
+    detail !== null
+      ? [...new Set(detail.offers.map((o) => o.country))].sort()
+      : [];
+  const unitPrice =
+    detail !== null ? bestOfferUnitPrice(detail.offers) : undefined;
+
+  return {
+    id: row.productId,
+    name: row.productName,
+    brand: detail?.product.brand ?? '',
+    category: row.category,
+    unitVolume: detail?.product.unitVolume ?? '',
+    alcoholByVolume: detail?.product.alcoholByVolume ?? null,
+    totalCents: row.landedTotalCents,
+    itemizedCosts: [
+      {
+        label: row.productName,
+        category: 'foreignRetailPrice',
+        cents: row.priceCents,
+        reliability: toReliabilityStatus(row.reliability),
+      },
+    ],
+    confidence: toConfidenceLevel(row.confidence),
+    reliability: toReliabilityStatus(row.reliability),
+    merchants,
+    offerCountries,
+    merchantWarnings: detail?.merchantWarnings ?? [],
+    example: true,
+    // Present only when the detail payload resolved — mirrors the API's
+    // key-absent-when-unresolved contract; undefined renders as no value.
+    ...(unitPrice !== undefined ? { eurPerGram: unitPrice } : {}),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // View component
@@ -63,6 +149,44 @@ export default function CompareView() {
   const [products, setProducts] = useState<ComparisonProduct[]>([]);
   const [calcLoading, setCalcLoading] = useState(false);
   const [calcError, setCalcError] = useState<string | null>(null);
+
+  // ── Example prefill (task 3.2, change savings-first-catalog-and-prefill):
+  // while the columns load, the grid shows its loading shape — never a
+  // finished-looking empty state.
+  const [prefilling, setPrefilling] = useState(true);
+  const prefillStartedRef = useRef(false);
+
+  useEffect(() => {
+    if (prefillStartedRef.current) return;
+    prefillStartedRef.current = true;
+    let cancelled = false;
+    getSavingsBestPerMerchant()
+      .then(async (res) => {
+        // One example column per cross-border merchant. The read-only
+        // product detail feeds the display fields; a failed read degrades
+        // that column to the row alone. Read-only end to end: no
+        // calculation, no ranking write, no persistence — the totals are
+        // the snapshot's own.
+        const columns = await Promise.all(
+          res.merchants.map((row) =>
+            getProductDetail(row.productId)
+              .catch(() => null)
+              .then((detail) => comparisonProductFromDeal(row, detail)),
+          ),
+        );
+        if (!cancelled) setProducts(columns);
+      })
+      .catch(() => {
+        // Honest degrade: an empty listing (no materialized day) or a
+        // failed read leaves the existing empty state standing.
+      })
+      .finally(() => {
+        if (!cancelled) setPrefilling(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Guard against duplicate submissions
   const searchInFlight = useRef(false);
@@ -263,7 +387,7 @@ export default function CompareView() {
       <ComparisonView
         products={sortedProducts}
         sortBy={sortBy}
-        loading={calcLoading}
+        loading={calcLoading || prefilling}
         onAddProduct={handleAddProduct}
       />
 

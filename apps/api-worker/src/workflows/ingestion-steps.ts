@@ -74,6 +74,7 @@ import { AlksFeedAdapter } from '../../../../packages/data-acquisition/src/adapt
 import { KippisFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/kippis.adapter';
 import { LongeroFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/longero.adapter';
 import { MydrinkFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/mydrink.adapter';
+import { AraxesFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/araxes.adapter';
 import type { IFeedAdapter } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { RawFeedRecord } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { MerchantConfig } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
@@ -206,7 +207,7 @@ export interface IngestionStageCompositionOptions {
   readonly governanceRepository?: ISourceGovernanceRepository;
   /** Observation log binding override (tests use an in-memory store). */
   readonly observationStoreOverride?: ObservationLogStore;
-  /** Feed adapters; default registers the Alko, alks, longero, kippis, and mydrink feed adapters as pipeline.ts does. */
+  /** Feed adapters; default registers the Alko, alks, longero, kippis, mydrink, and araxes feed adapters as pipeline.ts does. */
   readonly feedAdaptersOverride?: Map<string, IFeedAdapter>;
   /** Write-port override (tests force upsert failures through it). */
   readonly upsertRepositoryOverride?: IUpsertRepository;
@@ -236,6 +237,8 @@ export function composeIngestionStageServices(
       map.set(kippis.merchantId, kippis);
       const mydrink = new MydrinkFeedAdapter();
       map.set(mydrink.merchantId, mydrink);
+      const araxes = new AraxesFeedAdapter();
+      map.set(araxes.merchantId, araxes);
       return map;
     })();
 
@@ -475,11 +478,27 @@ export const UPSERT_CHUNK_SIZE = 250;
 /**
  * Chunks per D1 API-request budget window — every this-many chunk steps
  * the workflow crosses a durable sleep boundary so subsequent chunks run
- * in a fresh Worker invocation (see the upsert loop). Sized from the
- * 2026-09-30 production run: the quota died between chunks 40 and 41 of
- * 250 rows each, so 16 keeps a >2× margin. Each boundary costs ~1 s.
+ * in a fresh Worker invocation (see the upsert loop). Sized against the
+ * FIRST-run per-pair cost — the worst case: a fresh product INSERT +
+ * offer INSERT + changed-offer observation append per pair, ~4× a
+ * re-run pair (unchanged offers skip the writes). Both measured points:
+ *
+ * - 2026-09-30 production, re-run profile (full alks): quota death
+ *   between chunks 40–41 of 250 rows each ≈ 10k RE-run pairs.
+ * - 2026-10-07 staging, first-run araxes (1,540 pairs = 7 chunks,
+ *   workflow instance 1c2cddc7, change onboard-araxes-merchant):
+ *   quota death after ~4 chunk-steps ≈ 1k FIRST-run pairs — with the
+ *   then-constant 16, the first reset sat beyond chunk 16 and never
+ *   fired at all for a 7-chunk catalog.
+ *
+ * 2 caps each invocation window at ≤ 2 × 250 = 500 first-run pairs —
+ * a ≥2× margin under the observed ~1,100-pair first-run death window —
+ * and the boundary arrives before the death window for ANY mid-size
+ * catalog (a window longer than the catalog is the bug class). Each
+ * boundary costs ~1 s: a full alks re-run = 12 chunks = 5 extra sleeps,
+ * far inside the 10-minute step timeout.
  */
-export const CHUNK_BUDGET_RESET_EVERY = 16;
+export const CHUNK_BUDGET_RESET_EVERY = 2;
 
 /**
  * upsert-offers chunk — the orchestrator's upsert loop + offer-change

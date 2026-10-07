@@ -196,12 +196,14 @@ export default function ProductSelector({
                   className="mt-1 flex flex-wrap items-center gap-1.5"
                   data-testid="row-eur-per-gram"
                 >
-                  <span className="font-semibold tabular-nums text-gray-900">
+                  <span
+                    className="font-semibold tabular-nums text-gray-900"
+                    title={tRoot('Compare.eurPerGram.tooltip.title')}
+                  >
                     {t('eurPerGramChip', {
                       value: embed.centsPerGram.toFixed(2),
                     })}
-                  </span>
-                  <ReliabilityBadge status={embed.priceReliability}>
+                  </span>                  <ReliabilityBadge status={embed.priceReliability}>
                     {tRoot(
                       RELIABILITY_STATUS_META[embed.priceReliability]
                         .labelKey,

@@ -7,7 +7,26 @@ TBD - created by archiving change phase1-mvp. Update Purpose after archive.
 
 ### Requirement: Calculator UI
 
-The calculator result view SHALL render an Alko benchmark line when the result carries the optional `alkoBenchmark` field: the Alko price, the difference in euros and percent, and the reference's reliability badge and timestamp. Wording SHALL be factual in both locales, including the plain statement when importing is not cheaper. The line SHALL NOT render when the field is absent, and SHALL never display as part of the total. After a successful calculation, the result SHALL be made visible to the visitor: on viewports where the result card is not already in view, it SHALL scroll into view (instantly under `prefers-reduced-motion`). The product search results SHALL collapse when a product is selected, so the chosen-product state — not the result list — remains on screen. Search dropdown rows SHALL carry the same per-unit price context as catalog rows (see per-unit price context requirement), so a pack row can never be read as a single-unit price.
+The calculator result view SHALL render an Alko benchmark line when the result
+carries the optional `alkoBenchmark` field: the Alko price, the difference in
+euros and percent, and the reference's reliability badge and timestamp.
+Wording SHALL be factual in both locales, including the plain statement when
+importing is not cheaper. The line SHALL NOT render when the field is absent,
+and SHALL never display as part of the total. After a successful calculation,
+the result SHALL be made visible to the visitor: on viewports where the result
+card is not already in view, it SHALL scroll into view (instantly under
+`prefers-reduced-motion`). The product search results SHALL collapse when a
+product is selected, so the chosen-product state — not the result list —
+remains on screen. Search dropdown rows SHALL carry the same per-unit price
+context as catalog rows (see per-unit price context requirement), so a pack
+row can never be read as a single-unit price. When opened without a selected
+product and without a search query, the calculator SHALL render example
+product cards derived from the best-deal-per-merchant savings listing, each
+showing the snapshot's landed total and Alko gap and clearly labeled as an
+example, with a link to the /savings listing. Rendering the examples SHALL NOT
+invoke the calculation API and SHALL NOT create calculation records; selecting
+an example SHALL load that product into the existing selector flow, after
+which calculation happens only through the visitor's explicit action.
 
 #### Scenario: Benchmark line rendering
 
@@ -24,6 +43,21 @@ The calculator result view SHALL render an Alko benchmark line when the result c
 - **WHEN** a visitor selects a product from the inline search results
 - **THEN** the result list collapses and the chosen-product state renders in its place
 
+#### Scenario: First paint shows real examples without side effects
+
+- **WHEN** a visitor opens /calculator directly with no query
+- **THEN** example cards render the best current deal per cross-border merchant, no calculation request fires, and no calculation record is created
+
+#### Scenario: Selecting an example enters the normal flow
+
+- **WHEN** the visitor activates an example card
+- **THEN** that product becomes the selected product in the existing selector flow and calculation happens on the visitor's explicit action
+
+#### Scenario: Empty savings state degrades to the existing guidance
+
+- **WHEN** the best-per-merchant listing is empty (no materialized day)
+- **THEN** no example cards render and the existing type-to-search guidance stands
+
 ### Requirement: Explanation page
 
 The application SHALL provide a calculation explanation page surfacing every figure's traceable inputs, rate dataset version, and timestamp.
@@ -35,12 +69,29 @@ The application SHALL provide a calculation explanation page surfacing every fig
 
 ### Requirement: Neutral comparison views
 
-Comparison views SHALL use neutral, objective ranking with no design element suggesting a paid or promoted position.
+Comparison views SHALL use neutral, objective ranking with no design element
+suggesting a paid or promoted position. When opened with no products selected,
+the comparison view SHALL prefill one column per cross-border merchant with
+that merchant's best current deal from the savings listing, each column
+labeled as an example with a link to /savings; the add-product tile SHALL
+remain. Prefilled columns use read-only offer data and SHALL NOT trigger
+calculations, records, or rankings, and no prefill element SHALL suggest a
+paid or curated position.
 
 #### Scenario: No promoted styling
 
 - **WHEN** results are ranked in a comparison view
 - **THEN** no visual element SHALL indicate any paid or curated position
+
+#### Scenario: Compare opens with real merchant-diverse columns
+
+- **WHEN** a visitor opens /compare directly
+- **THEN** the grid shows one best-deal column per cross-border merchant plus the add tile, each example-labeled
+
+#### Scenario: Prefill stays read-only
+
+- **WHEN** the prefilled view renders
+- **THEN** no calculation, ranking, or persistence call fires from the prefill itself
 
 ### Requirement: Freshness indicators
 
@@ -122,7 +173,18 @@ Every chart series SHALL display the reliability status and the timestamp of the
 
 ### Requirement: Basket builder and optimization UI
 
-The web application SHALL provide a basket UI to add multiple products with quantities (reusing the existing product search), select destination and transport arrangement, and display the optimization result: the recommended combination and up to three neutral cost-ordered alternatives, per-store cards with per-item breakdowns, reliability and freshness badges, the aggregated confidence level, and the structural disclaimer. The UI SHALL be hidden entirely when the `enable_basket_optimization` flag is off, and copy SHALL follow the controlled vocabulary.
+The web application SHALL provide a basket UI to add multiple products with
+quantities (reusing the existing product search), select destination and
+transport arrangement, and display the optimization result: the recommended
+combination and up to three neutral cost-ordered alternatives, per-store cards
+with per-item breakdowns, reliability and freshness badges, the aggregated
+confidence level, and the structural disclaimer. The UI SHALL be hidden
+entirely when the `enable_basket_optimization` flag is off, and copy SHALL
+follow the controlled vocabulary. The basket builder's empty state SHALL list
+the best current deal per cross-border merchant from the savings listing with
+per-item add actions and a one-click example-basket fill action; the builder
+SHALL NOT auto-add items. The example list SHALL be labeled as an example and
+link to /savings.
 
 #### Scenario: User optimizes a basket
 
@@ -138,6 +200,16 @@ The web application SHALL provide a basket UI to add multiple products with quan
 
 - **WHEN** the `enable_basket_optimization` flag is disabled
 - **THEN** the basket UI SHALL not appear and no optimization request SHALL be made
+
+#### Scenario: Empty basket offers examples without auto-adding
+
+- **WHEN** a visitor opens /basket directly
+- **THEN** the builder lists the per-merchant best deals with add buttons and an example-basket fill action, and the basket starts empty
+
+#### Scenario: One-click fill respects the visitor's intent
+
+- **WHEN** the visitor activates the example-basket fill
+- **THEN** the deals are added as basket items the visitor can remove or re-quantity like any other item
 
 ### Requirement: Multi-store comparison view
 
@@ -202,35 +274,6 @@ The frontend SHALL use a message-catalog localization setup (next-intl or equiva
 
 - **WHEN** either the Finnish or English catalog introduces disallowed vocabulary
 - **THEN** the content-policy lint SHALL fail
-
-### Requirement: Shared navigation
-
-The application SHALL provide a layout-level header with the five destinations (calculator, compare, basket, account, ranking) on every page, and a footer carrying the disclaimer and methodology link. Per-page hand-rolled back-links SHALL be removed. The header SHALL indicate the active destination, SHALL include the site logo linking home, and SHALL provide a keyboard-operable mobile menu at small viewports. The header SHALL also group the planning tools (trip, event, what-if) under one Planning dropdown alongside the existing primary group, and SHALL offer an `FI | EN` locale switcher that preserves the current path when changing locale. Dropdown and switcher SHALL be keyboard-operable with visible focus states.
-
-#### Scenario: Navigation on every page
-
-- **WHEN** a user lands on any route
-- **THEN** the header SHALL offer the five destinations without returning home first
-
-#### Scenario: Active destination is visible
-
-- **WHEN** a user is on the calculator page
-- **THEN** the header SHALL visually distinguish the calculator link from the others
-
-#### Scenario: Mobile menu is keyboard operable
-
-- **WHEN** a keyboard user focuses the mobile menu toggle at a small viewport
-- **THEN** the toggle SHALL open and close the menu, and focus SHALL remain visible
-
-#### Scenario: Planning dropdown opens by keyboard
-
-- **WHEN** the visitor focuses the Planning trigger and presses Enter or Space
-- **THEN** the dropdown lists trip, event, and scenario links, each reachable by Tab and activated by Enter
-
-#### Scenario: Locale switch preserves path
-
-- **WHEN** the visitor switches locale on `/en/calculator`
-- **THEN** the browser navigates to `/calculator` (and vice versa) with content in the selected locale
 
 ### Requirement: Debounced search input
 
@@ -318,7 +361,7 @@ Buttons, badges, cards, and inputs SHALL be shared React components under `compo
 
 ### Requirement: Homepage value proposition
 
-The homepage value proposition and trust row SHALL describe the service without naming Sweden or Systembolaget: the landed-cost proposition in one sentence, the data model phrased as published retailer datasets plus the Alko domestic reference, the reliability model with its four statuses, and the methodology link. The homepage SHALL additionally render a static, server-rendered task section linking the existing task tools — basket, trip, event, what-if, and savings — styled from the design tokens, present in both locales, and introducing no new input surface: the hero search remains the homepage's only input. All copy SHALL exist in both locales and pass the content-policy lint.
+The homepage value proposition and trust row SHALL describe the service without naming Sweden or Systembolaget: the landed-cost proposition in one sentence, the data model phrased as published retailer datasets plus the Alko domestic reference, the reliability model with its four statuses, and the methodology link. The homepage SHALL additionally render a static, server-rendered task section whose cards mirror the three header task groups — shopping (linking the savings listing with its pending and unavailable state variants), trip, and event — styled from the design tokens, present in both locales, and introducing no new input surface: the hero search remains the homepage's only input. The what-if card SHALL NOT appear in the task section. All copy SHALL exist in both locales and pass the content-policy lint.
 
 #### Scenario: No residual market naming
 
@@ -328,7 +371,7 @@ The homepage value proposition and trust row SHALL describe the service without 
 #### Scenario: Task section links shipped tools
 
 - **WHEN** a visitor loads the homepage
-- **THEN** a server-rendered task section links the basket, trip, event, what-if, and savings pages, styled from the shared design tokens and fully rendered in the server HTML in both locales
+- **THEN** a server-rendered task section shows one card per header task group — shopping linking the savings listing, trip, and event — styled from the shared design tokens, fully rendered in the server HTML in both locales, with the savings card degrading to its pending or unavailable variant when the listing is not published
 
 #### Scenario: Single input surface
 
@@ -383,12 +426,45 @@ Product pages SHALL embed the price-history chart (reusing the existing history 
 
 ### Requirement: Structural disclaimers on all new result surfaces
 
-The event calculator, trip calculator, what-if simulator, and packing suggestion SHALL render their respective disclaimers as structural parts of the result presentation, sourced from the result objects, not as decorative footer text.
+The event calculator, trip calculator, what-if simulator, and packing
+suggestion SHALL render their respective disclaimers as structural parts of
+the result presentation, sourced from the result objects. Each result view
+SHALL render its disclaimer exactly once in the result presentation — never
+repeated within the view; the site footer's own legal strip is a separate
+page-level line and SHALL remain unchanged. The what-if simulator's
+HYPOTHETICAL disclaimer SHALL keep its prominent render and remains governed
+by its own stronger-wording requirement, counted as that view's one render.
+The disclaimer text SHALL remain byte-identical to the result object's field.
+A result view whose API response carries no result confidence (the trip and
+event calculators) SHALL render the banner at its documented default
+intensity and SHALL NOT fabricate or display a confidence value. The
+exactly-once counts SHALL be pinned by the disclaimer-single-render
+compliance suite, which renders the real views and counts byte-level
+occurrences of the payload text.
 
 #### Scenario: Disclaimer rendered from result
 
-- **WHEN** any new calculation result renders
-- **THEN** its disclaimer text SHALL come from the result object and SHALL be visually prominent
+- **WHEN** a new result surface renders a calculation outcome
+- **THEN** its disclaimer text comes from the result object and appears exactly
+  once in the view
+
+#### Scenario: No heap
+
+- **WHEN** a result view is rendered
+- **THEN** the disclaimer string appears exactly once in the rendered output,
+  and estimate framing is carried by reliability badges and status dots rather
+  than repeated prose
+
+#### Scenario: What-if keeps its prominent hypothetical banner
+
+- **WHEN** a what-if result is rendered
+- **THEN** the HYPOTHETICAL disclaimer renders prominently and prominently only
+
+#### Scenario: No confidence is fabricated
+
+- **WHEN** a trip or event API response carries no result confidence
+- **THEN** the banner renders at its documented default intensity and no
+  confidence value is fabricated or shown as the result's
 
 ### Requirement: Tool page server shells
 
@@ -401,12 +477,22 @@ Each tool page (`calculator`, `compare`, `basket`, `trip`, `event`, `what-if`, `
 
 ### Requirement: Homepage worked example
 
-The homepage SHALL include a static, server-rendered worked-example section showing a Finland-versus-cross-border cost breakdown with figures explicitly labeled as an example. The section SHALL make no API call and SHALL NOT present example figures as observed or live data.
+The homepage SHALL include a static, server-rendered worked-example
+section positioned BELOW the live observed-difference section and
+compacted into a small "how it works" step format, showing a
+Finland-versus-cross-border cost breakdown with figures explicitly
+labeled as an example. The section SHALL make no API call and SHALL
+NOT present example figures as observed or live data.
 
 #### Scenario: Example is labeled and static
 
 - **WHEN** the homepage renders
 - **THEN** the worked-example section appears in the server HTML with example-labeled figures and no data fetch
+
+#### Scenario: Example is demoted below the live section
+
+- **WHEN** the homepage renders
+- **THEN** the worked-example section appears in the server HTML below the live observed-difference section in step form
 
 ### Requirement: About and Contact pages
 
@@ -716,3 +802,99 @@ The newsletter subscribe form SHALL state, visibly beside its disabled-until-con
 
 - **WHEN** the visitor ticks the consent checkbox
 - **THEN** the submit button enables and the hint disappears
+
+### Requirement: Homepage live observed-difference section
+
+The homepage SHALL render a server-side section presenting the day's
+largest observed landed-cost gaps among products cheaper than their
+Alko reference, sourced from the public top-N savings read. The
+section SHALL display the snapshot as-of date beside the figures, and
+each row SHALL link to that product's detail page as one whole-row
+link. All copy SHALL state observed facts neutrally (observed
+differences against the Alko reference), pass the content-policy lint
+in both locales, and SHALL NOT contain advice, recommendation, or
+promotional phrasing. When no snapshot rows exist, the section SHALL
+render a designed pending state; when the server read fails or the
+latest snapshot day is older than a fixed freshness cutoff, it SHALL
+render a designed unavailable state — figures SHALL NEVER be guessed
+or presented as current when the snapshot is not. The section
+introduces no input surface: the hero search remains the homepage's
+only input.
+
+#### Scenario: Live figures with as-of provenance
+
+- **WHEN** the homepage renders with an available snapshot within the freshness cutoff
+- **THEN** the section shows up to five rows with product name, observed figures, gap, and the as-of date, each row linking to the product's detail page
+
+#### Scenario: Pending state instead of figures
+
+- **WHEN** no eligible snapshot rows exist
+- **THEN** the section renders a designed pending state and renders no figures
+
+#### Scenario: Unavailable state on failed or stale read
+
+- **WHEN** the server read fails or the latest snapshot day is older than the freshness cutoff
+- **THEN** the section renders a designed unavailable state instead of stale or absent-looking figures
+
+#### Scenario: Neutral lint-clean copy
+
+- **WHEN** the section's strings are linted in both locales
+- **THEN** the content-policy lint passes with no promotional or advice violations
+
+### Requirement: Canonical Finnish terminology and native register
+
+Finnish UI copy SHALL carry exactly one canonical term per concept as defined in `docs/fi-copy-glossary.md`, and SHALL read in native consumer register: no malformed compounds, no coined feature names, no engineering or build-time vocabulary on consumer surfaces. The glossary SHALL be updated in the same change whenever a canonical term is introduced or replaced. English copy SHALL follow the same one-term-per-concept rule; its register MAY differ where spec-register language is conventional (per the glossary's documented asymmetry).
+
+#### Scenario: One term per concept across surfaces
+
+- **WHEN** any Finnish surface names a glossary concept (drink demand, basket feature, ranking page, allowance limits, ethanol unit price)
+- **THEN** it uses the glossary's canonical term, and no superseded variant (`juonetarve`, `Ostoskorioptimointori`, `tullimäärärajat`, `Etanoli-€/g`) renders anywhere in the UI
+
+#### Scenario: Consumer register on informational surfaces
+
+- **WHEN** an informational note, dataset label, or explanation renders in Finnish
+- **THEN** it uses the glossary's plain-Finnish phrasing (`vain tiedoksi`, `päivittäin päivitetty aineisto`, `aineiston versio`), and any informational-not-advice disclaimer remains stated with its legal intent intact
+
+#### Scenario: Glossary updated with terminology changes
+
+- **WHEN** a change replaces or introduces a canonical term in the catalogs
+- **THEN** `docs/fi-copy-glossary.md` documents the term, its replaced variants, and its rationale
+
+### Requirement: Task-based navigation
+
+The application SHALL provide a layout-level header presenting three task-based disclosure groups — "Mitä kannattaa ostaa?" (shopping), "Suunnittele matka" (trip), and "Suunnittele juhlat" (event) — plus account/auth actions and the `FI | EN` locale switcher as chrome. The shopping panel SHALL link savings (lead), value, products, calculator, and compare; the trip panel SHALL link trip (lead), basket, and allowances; the event panel SHALL link event (lead) and basket. Group triggers SHALL speak task language and panel items tool names. Each disclosure SHALL be keyboard-operable (Enter/Space toggles, ArrowUp/ArrowDown move focus among items, Escape and tab-out close) with visible focus states. When any child route of a group is active, the group trigger SHALL be visually distinguished, the active child SHALL carry `aria-current`, and active state SHALL never be carried by color alone. The scenario (what-if) tool and the ranking methodology SHALL NOT appear in the header; the scenario tool SHALL be linked from the footer's About column. The footer SHALL remain the complete tool sitemap. Routes SHALL NOT change: no redirect, sitemap, or share-permalink impact. Mobile SHALL present the same three groups plus chrome. The locale switcher SHALL preserve the current path when changing locale.
+
+#### Scenario: Navigation on every page
+
+- **WHEN** a user lands on any route
+- **THEN** the header SHALL offer the three task groups without returning home first
+
+#### Scenario: Panel membership matches the task map
+
+- **WHEN** each disclosure is opened
+- **THEN** the shopping panel lists savings, value, products, calculator, and compare; the trip panel lists trip, basket, and allowances; the event panel lists event and basket
+
+#### Scenario: Active destination is visible
+
+- **WHEN** a user is on the calculator page
+- **THEN** the shopping group trigger is visually distinguished, the calculator panel item carries `aria-current`, and a deeper route such as `/account/saved-baskets` still activates the account chrome
+
+#### Scenario: Keyboard-operable disclosures
+
+- **WHEN** a keyboard user focuses a group trigger and presses Enter or Space
+- **THEN** the panel opens, ArrowUp/ArrowDown cycle focus among the panel links, Escape returns focus to the closed trigger, and tab-out closes the panel
+
+#### Scenario: Mobile groups mirror desktop
+
+- **WHEN** the mobile menu is opened at a small viewport
+- **THEN** it presents the same three task groups with keyboard-operable disclosures plus the account/auth and locale controls
+
+#### Scenario: Demoted tools live in the footer
+
+- **WHEN** the header and footer are rendered on any page
+- **THEN** the scenario tool and the ranking methodology are absent from the header, the scenario tool is linked from the footer's About column, and the footer's services column still links every tool route
+
+#### Scenario: Locale switch preserves path
+
+- **WHEN** the visitor switches locale on `/en/calculator`
+- **THEN** the browser navigates to `/calculator` (and vice versa) with content in the selected locale

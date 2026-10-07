@@ -60,12 +60,26 @@ A public API endpoint SHALL return the latest snapshot rows for one category, or
 
 ### Requirement: Savings page is informational and display-only
 
-The `/savings` page SHALL render the listing with factual comparative copy only, showing each row's landed total, Alko reference, gap, reliability badge, and the as-of date and coverage counts. The page SHALL state its ordering rule and SHALL NOT contain advice, recommendation, or marketing phrasing. Savings data SHALL NOT feed the calculator, ranking, basket optimization, or any other computed ordering; a compliance test SHALL prove those outputs byte-identical with zero, one, and many savings snapshots present.
+The `/savings` page SHALL render the listing with factual comparative
+copy only, showing each row's landed total, Alko reference, gap,
+reliability badge, and the as-of date and coverage counts. Each
+listing row SHALL link to that product's detail page; the link SHALL
+NOT alter the row's figures or its position in the deterministic
+order. The page SHALL state its ordering rule and SHALL NOT contain
+advice, recommendation, or marketing phrasing. Savings data SHALL NOT
+feed the calculator, ranking, basket optimization, or any other
+computed ordering; a compliance test SHALL prove those outputs
+byte-identical with zero, one, and many savings snapshots present.
 
 #### Scenario: Page renders facts with provenance
 
 - **WHEN** a visitor opens `/savings` for a category with data
 - **THEN** each row SHALL show its landed total, reference, gap, reliability badge, and the page SHALL show the as-of date and coverage counts
+
+#### Scenario: Listing rows link to product detail pages
+
+- **WHEN** a listing row renders for a product
+- **THEN** the row is a link to that product's detail page and its figures and position are identical to the unlinked form
 
 #### Scenario: Savings data isolated from computations
 
@@ -108,3 +122,84 @@ Savings and suggestion copy SHALL state figures factually with their estimate an
 
 - **WHEN** the savings summary and trip-suggestion strings are added to the message catalogs
 - **THEN** the content lint passes in both locales with no advice-phrasing violations
+
+### Requirement: Public deterministic cross-category top-N listing
+
+A public API endpoint SHALL return the N rows (default five, clamped to
+a fixed maximum) with the largest gaps among import-favourable rows —
+rows whose computed gap against the Alko reference is negative — from
+the single snapshot day selected as follows: the maximal snapshot day
+when it contains at least one eligible row, otherwise the most recent
+earlier snapshot day within a fixed 3-day lookback that does. The
+selection SHALL apply the same sufficiency defenses as the per-category
+listing: only rows with a computed Alko reference and a product name
+the registry still resolves are eligible. When fewer than N eligible
+rows exist on the selected day, the endpoint SHALL return those rows
+without padding. The response SHALL include the selected day's as-of
+date and coverage counts computed over that day, and each row SHALL
+carry the product id and name, merchant, merchant country, observed
+price, landed total, Alko reference, gap figures, and reliability
+status and confidence. The endpoint SHALL be age-gated and
+rate-limited like the per-category listing.
+
+#### Scenario: Deterministic import-favourable order
+
+- **WHEN** the top-N listing is requested twice on the same snapshot day
+- **THEN** the rows and their order SHALL be identical, with the most import-favourable gap first and equal gaps broken by product id
+
+#### Scenario: Eligibility matches the listing's defenses
+
+- **WHEN** a snapshot row has a non-negative gap, lacks a computed Alko reference, or its product name no longer resolves from the registry
+- **THEN** that row SHALL NOT appear in the top-N listing
+
+#### Scenario: Fallback to the most recent day with eligible rows
+
+- **WHEN** the maximal snapshot day contains no eligible row and an earlier day within the lookback does
+- **THEN** the endpoint SHALL return that earlier day's eligible rows with that day's as-of date and coverage counts
+
+#### Scenario: No padding beyond what qualifies
+
+- **WHEN** fewer than N eligible import-favourable rows exist on the selected day
+- **THEN** the endpoint SHALL return exactly those rows, never filled with dearer-than-reference rows
+
+#### Scenario: Honest zero state
+
+- **WHEN** no snapshot day within the lookback contains an eligible row
+- **THEN** the endpoint SHALL return an empty list with the maximal day's as-of date and zero eligible coverage instead of an error
+
+### Requirement: Best deal per merchant listing
+
+`GET /api/v1/savings/best-per-merchant` SHALL return, for the latest
+materialized savings day, one row per cross-border merchant: that merchant's
+observed row with the largest absolute gap in cents, ties broken by product id
+ascending. Merchant `alko` SHALL be excluded (the domestic reference is not a
+deal provider). Each row SHALL carry the same provenance fields as the savings
+listing (product, category, merchant, merchant country, observed price,
+landed total, Alko reference, gap in cents and basis points, reliability,
+confidence, tax dataset version) plus the `asOf` day. The endpoint SHALL be
+read-only and deterministic — the same D1 state yields a byte-identical body —
+behind the same age gate and rate limiter as the savings listing. While no day
+has materialized, it SHALL return 200 with an empty list and a null `asOf`
+(the honest zero state). A newly onboarded merchant SHALL appear
+automatically once its rows materialize; no registration or editorial step
+exists.
+
+#### Scenario: One row per cross-border merchant, biggest gap first provenance
+
+- **WHEN** the latest day holds rows for alks, longero, kippis, and mydrink
+- **THEN** the response lists exactly one row per merchant — that merchant's largest-|gap| row — and excludes alko
+
+#### Scenario: Deterministic tie-break
+
+- **WHEN** one merchant's two rows share the same absolute gap
+- **THEN** the row with the lower product id is returned, and repeated requests return a byte-identical body
+
+#### Scenario: Honest empty state before first materialization
+
+- **WHEN** no savings day has been materialized
+- **THEN** the endpoint responds 200 with an empty list and null asOf — never an error
+
+#### Scenario: New merchant joins without an editorial step
+
+- **WHEN** a newly onboarded merchant's offers materialize into the latest day
+- **THEN** the merchant's best deal appears in the listing on the next read

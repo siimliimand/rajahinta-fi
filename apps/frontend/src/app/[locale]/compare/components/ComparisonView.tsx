@@ -20,6 +20,7 @@ import {
 } from '@/lib/format/product-attributes';
 import { Button, Card } from '@/components/ui';
 import { logClick } from '@/lib/api';
+import { Link } from '@/i18n/navigation';
 import { MerchantLink } from './MerchantLink';
 import {
   SellingDistanceBadge,
@@ -54,6 +55,13 @@ interface CompareColumnProduct extends ComparisonProduct {
    * the detail payload resolved nothing.
    */
   readonly offerCountries?: readonly string[];
+  /**
+   * True on a prefilled example column (task 3.2, change
+   * savings-first-catalog-and-prefill): the column carries the snapshot's
+   * own figures and renders the example label. Display flag only — it
+   * never affects ordering or visual weight beyond the label.
+   */
+  readonly example?: boolean;
 }
 
 interface ComparisonViewProps {
@@ -100,6 +108,16 @@ function ProductColumn({
 
   return (
     <Card padding="sm" className="flex flex-col">
+      {/* Example label (task 3.2, change savings-first-catalog-and-prefill):
+          the column carries the snapshot's own figures and says so — the
+          label never appears on a visitor-added column. */}
+      {product.example && (
+        <p className="mb-1.5" data-testid="example-column-badge">
+          <span className="inline-flex rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">
+            {t('exampleBadge')}
+          </span>
+        </p>
+      )}
       {/* Product info — every column looks the same */}
       <h3 className="text-sm font-semibold text-gray-900">{product.name}</h3>
       <p className="mt-0.5 text-xs text-gray-500">
@@ -299,6 +317,27 @@ export default function ComparisonView({
           {t('sortedBy', { sort: sortLabel })}
         </p>
       </div>
+
+      {/* Example framing (task 3.2, change savings-first-catalog-and-prefill):
+          prefilled columns carry the snapshot's own figures; the note says
+          so once for the grid and links to the full listing. */}
+      {products.some((product) => product.example) && (
+        <p
+          data-testid="comparison-examples-note"
+          className="mb-3 text-xs leading-relaxed text-gray-500"
+        >
+          {t.rich('examplesNote', {
+            link: (chunks) => (
+              <Link
+                href="/savings"
+                className="text-primary-600 underline hover:text-primary-800"
+              >
+                {chunks}
+              </Link>
+            ),
+          })}
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {products.map((product) => (

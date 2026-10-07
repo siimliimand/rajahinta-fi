@@ -16,10 +16,13 @@ import type { DatabaseSync } from 'node:sqlite';
 import { describe, it, expect } from 'vitest';
 import {
   buildApp,
+  byteProxyWithoutMargin,
   expectEnvelope,
+  MARGIN_LADDER_AS_OF,
   openMigratedD1,
   permissiveEnv,
   request,
+  seedMarginLadder,
   seedMerchant,
   seedOffer,
   seedProduct,
@@ -185,6 +188,42 @@ describe('POST /api/v1/basket/optimize — composed guards + idempotency', () =>
       }),
     });
     expect(third.headers.get('X-Cache')).toBe('MISS');
+  });
+
+  it('serves HIT for an import-bearing basket — the VAT label is symmetric on both cache sides', async () => {
+    const { db, d1 } = openMigratedD1();
+    // Cross-border offer (DE → FI): the optimizer's per-item dataset
+    // versions gain `import-vat-2024.2`. Regression pin for the
+    // idempotency version-set fix — the stored set and the lookup set
+    // must be identical route-derived arrays, or every import-bearing
+    // basket recomputes forever.
+    seedProduct(db, { id: 1, depositSystemStatus: 0 });
+    seedOffer(db, { productId: 1, priceCents: 350, country: 'DE' });
+    seedTaxRule(db, { taxType: 'excise', productCategory: 'beer', rate: 0.365 });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+      verified: false,
+    });
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+    const init: RequestInit = {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify(VALID_REQUEST),
+    };
+
+    const first = await request(app, env, '/api/v1/basket/optimize', init);
+    expect(first.status).toBe(200);
+    expect(first.headers.get('X-Cache')).toBe('MISS');
+    const missBody = (await first.json()) as Record<string, any>;
+    expect(missBody.metadata.datasetVersions).toContain('import-vat-2024.2');
+
+    const second = await request(app, env, '/api/v1/basket/optimize', init);
+    expect(second.headers.get('X-Cache')).toBe('HIT');
+    expect(await second.json()).toEqual(missBody);
   });
 });
 
@@ -754,5 +793,75 @@ describe('POST /api/v1/basket/optimize — cost-line wire contract (2.2)', () =>
         reliability: recommended.items[0].reliability,
       },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// empiricalMargin — read-time composition (task 2.2, change
+// hedge-dedup-confidence-meter): a basket spans merchants and products,
+// so the ladder query carries no category — only the global rung is
+// reachable. Byte-identity of every figure with the field present vs
+// absent is the compliance assertion, pinned here per surface.
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/basket/optimize — empiricalMargin (hedge-dedup-confidence-meter 2.2)', () => {
+  /** The per-run volatile fields the byte proxy strips. */
+  const VOLATILE = (clone: Record<string, any>): void => {
+    clone.metadata.calculationTimestamp = '';
+    clone.metadata.calculationRecordId = 0;
+  };
+
+  async function postOptimize(
+    d1: ReturnType<typeof openMigratedD1>['d1'],
+  ): Promise<Record<string, any>> {
+    const res = await request(buildApp(), permissiveEnv(d1), '/api/v1/basket/optimize', {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify(VALID_REQUEST),
+    });
+    expect(res.status).toBe(200);
+    return (await res.json()) as Record<string, any>;
+  }
+
+  /** Deterministic basket fixture — the offer's observedAt pinned (it
+   * echoes into finlandReference; a default clock seed would differ per
+   * composition and break the byte proxy for reasons no margin caused). */
+  function seedBasketDataset(db: DatabaseSync): void {
+    seedProduct(db, { id: 1, depositSystemStatus: 0 });
+    seedOffer(db, {
+      productId: 1,
+      priceCents: 350,
+      observedAt: '2026-08-06T10:00:00.000Z',
+    });
+    seedTaxRule(db, { taxType: 'excise', productCategory: 'beer', rate: 0.365 });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+      verified: false,
+    });
+  }
+
+  it('attaches the global rung and keeps every figure byte-identical with the field absent', async () => {
+    const withLadder = openMigratedD1();
+    seedBasketDataset(withLadder.db);
+    await seedMarginLadder(withLadder.db, withLadder.d1);
+    const withoutLadder = openMigratedD1();
+    seedBasketDataset(withoutLadder.db);
+
+    const present = await postOptimize(withLadder.d1);
+    const absent = await postOptimize(withoutLadder.d1);
+
+    expect(present.empiricalMargin).toEqual({
+      quantile: 0.05,
+      sampleCount: 16,
+      cell: { dimension: 'global', key: 'global' },
+      asOf: MARGIN_LADDER_AS_OF.toISOString(),
+    });
+    expect(absent).not.toHaveProperty('empiricalMargin');
+    expect(byteProxyWithoutMargin(present, VOLATILE)).toBe(
+      byteProxyWithoutMargin(absent, VOLATILE),
+    );
   });
 });

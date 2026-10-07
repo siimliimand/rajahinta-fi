@@ -30,7 +30,7 @@ describe('SortSelector', () => {
 
     const labels = optionLabels();
     expect(labels).toHaveLength(7);
-    expect(labels).toContain('Etanoli-€/g (matalin ensin)');
+    expect(labels).toContain('Etanolin grammahinta (halvin ensin)');
   });
 
   it('reports the selected order through onChange', async () => {

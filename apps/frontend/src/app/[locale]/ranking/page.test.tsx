@@ -54,8 +54,8 @@ describe('RankingPage server shell (task 2.4)', () => {
     const meta = await rankingMetadata({
       params: Promise.resolve({ locale: 'fi' }),
     });
-    expect(meta.title).toBe('Järjestäminen: objektiivinen, avoin ja neutraali');
-    expect(meta.description).toContain('objektiivisiin tekijöihin');
+    expect(meta.title).toBe('Miten järjestys muodostuu');
+    expect(meta.description).toContain('saman järjestyksen');
     // Unique against the site-default metadata title, not a restatement.
     const root = (await import('@/messages/fi.json')).default as {
       Metadata: { title: string };
@@ -71,9 +71,35 @@ describe('RankingPage server shell (task 2.4)', () => {
       </NextIntlClientProvider>,
     );
 
-    expect(html).toContain('Miten järjestäminen toimii');
+    expect(html).toContain('Miten järjestys muodostuu');
     expect(html).toContain('Miten järjestykset muodostuvat');
     // The neutrality stance holds in the crawlable summary.
     expect(html).toContain('myyjän maksu tai manuaalinen korostus');
+  });
+
+  it('renders the methodology in consumer register with every enforcement fact stated', async () => {
+    const messages = (await import('@/messages/fi.json')).default;
+    const html = renderToString(
+      <NextIntlClientProvider locale="fi" messages={messages}>
+        {await RankingPage({ params: Promise.resolve({ locale: 'fi' }) })}
+      </NextIntlClientProvider>,
+    );
+
+    // The consumer sentence leads (R1); no engineering-noun badge or label.
+    expect(html).toContain('Sama aineisto tuottaa aina saman järjestyksen');
+    expect(html).not.toContain('Deterministinen:');
+    expect(html).not.toContain('Rajattu syöte');
+    expect(html).not.toContain('Testeillä lukittu muoto');
+    expect(html).not.toContain('Odottamattoman tiedon hylkäys');
+
+    // The three enforcement layers keep their checkable claims (R3):
+    // bounded input with no paid-placement field, test-pinned shape, and
+    // unknown-field rejection.
+    expect(html).toContain('kenttää maksullista sijoittelua varten ei ole olemassa');
+    expect(html).toContain('Laskenta näkee vain olennaisen tiedon');
+    expect(html).toContain('Automaattiset testit lukitsevat syötteen muodon');
+    expect(html).toContain('hiljainen muutos ei pääse käyttöön asti');
+    expect(html).toContain('Tuntematon tieto pysäyttää laskennan');
+    expect(html).toContain('eikä ohita kenttää hiljaisesti');
   });
 });

@@ -23,6 +23,11 @@
  * or a strict response schema — either would silently strip `code`, the
  * stable join key the fi surface localizes against.
  *
+ * The one exception to verbatim serialization is the display-only
+ * `empiricalMargin` (task 2.2, change hedge-dedup-confidence-meter):
+ * resolved at READ time from the margins snapshot, after the idempotency
+ * store and content hash — see {@link withMarginFromResult}.
+ *
  * @module CalculatorRoutes
  */
 
@@ -67,6 +72,7 @@ import {
   idempotencyStore,
   idempotencyContentHash,
 } from '../adapters/idempotency-facade';
+import { resolveIdempotencyVersions } from './idempotency-versions';
 import {
   D1TaxRuleRepositoryAdapter,
   D1TaxRateRepository,
@@ -75,9 +81,41 @@ import { D1CalculationRecordRepository } from '../../../../packages/data-platfor
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 import { D1TransportOfferRepository } from '../../../../packages/data-platform/src/repositories/d1/transport-offer.repository';
 import { mapCalculationRecordToResult } from '../../../../packages/application-api/src/calculator/calculation-result.mapper';
+import {
+  readEmpiricalMarginLadder,
+  resolveStoredCarrierById,
+  withEmpiricalMargin,
+  type WithEmpiricalMargin,
+} from './empirical-margin';
 
-/** Composition — the G3 vertical-slice wiring over D1 (per request). */
-export function buildLandedCostCalculatorService(d1: AppEnv['Bindings']['DB']): {
+/**
+ * Attach the display-only `empiricalMargin` (task 2.2, change
+ * hedge-dedup-confidence-meter) to a calculator result — POST and GET
+ * parity. The margin is composed at READ time from the persisted
+ * margins snapshot (the domain result stays pure, unlike the in-domain
+ * `alkoBenchmark`): the ladder query keys the result's own product
+ * category (`metadata.category` — the same product_master column the
+ * corpus attribution joins) plus the STORED carrier of its transport
+ * offer — the `tor.carrier` value the carrier cells were calibrated
+ * from. Strictly additive: callers apply it after the idempotency store
+ * and content hash (the basket `packing` precedent), so a cached
+ * payload keeps identifying the optimization and every monetary figure
+ * stays the domain result verbatim.
+ */
+async function withMarginFromResult<T extends {
+  metadata: { category: string; transportOfferId: number | null };
+}>(d1: AppEnv['Bindings']['DB'], result: T): Promise<WithEmpiricalMargin<T>> {
+  const [ladder, carrier] = await Promise.all([
+    readEmpiricalMarginLadder(d1),
+    resolveStoredCarrierById(d1, result.metadata.transportOfferId),
+  ]);
+  return withEmpiricalMargin(result, ladder, {
+    category: result.metadata.category,
+    carrier,
+  });
+}
+
+/** Composition — the G3 vertical-slice wiring over D1 (per request). */export function buildLandedCostCalculatorService(d1: AppEnv['Bindings']['DB']): {
   calculator: LandedCostCalculatorService;
   taxRepo: ITaxRuleRepositoryPort;
 } {
@@ -163,7 +201,13 @@ async function calculate(c: Context<AppEnv>): Promise<Response> {
   const { calculator, taxRepo } = buildLandedCostCalculatorService(c.env.DB);
 
   // Version-aware key — versions resolved FIRST (§15 known-issue fix kept).
-  const currentVersions = await taxRepo.findActiveVersionLabels();
+  // The set is route-owned (resolveIdempotencyVersions): tax labels plus the
+  // import-VAT dataset version, identical on store and lookup — the result
+  // metadata's conditional composition can never serve as the lookup side
+  // (import-VAT label vs the CHECK-constrained tax_rules read). The HTTP
+  // DTO carries no transaction date, matching the service's now-based VAT
+  // resolution.
+  const currentVersions = await resolveIdempotencyVersions(taxRepo);
   const cacheKey =
     idempotencyKey ??
     (await idempotencyCacheKey({ ...input, datasetVersions: currentVersions }));
@@ -172,18 +216,30 @@ async function calculate(c: Context<AppEnv>): Promise<Response> {
   if (cached !== null) {
     c.header('X-Cache', 'HIT');
     c.header('X-Content-Hash', await idempotencyContentHash(cached.result));
-    return c.json(cached.result);
+    // empiricalMargin (task 2.2) rides the HIT payload too — the cached
+    // result keeps identifying the optimization; the margin is resolved
+    // fresh from the snapshot on every read.
+    const cachedResult = cached.result as CalculatorResult;
+    return c.json(
+      await withMarginFromResult(c.env.DB, cachedResult),
+    );
   }
 
   try {
     const result: CalculatorResult = await calculator.calculate(input);
 
-    // store() parity: the entry's versions come from the result metadata.
-    await idempotencyStore(c.env, cacheKey, result);
+    // store() parity: the entry's versions are the route-resolved set —
+    // explicit, not the result metadata (see resolveIdempotencyVersions).
+    await idempotencyStore(c.env, cacheKey, result, {
+      datasetVersions: currentVersions,
+    });
 
     c.header('X-Cache', 'MISS');
     c.header('X-Content-Hash', await idempotencyContentHash(result));
-    return c.json(result);
+    // empiricalMargin (task 2.2) — read-time display composition, applied
+    // after the store and content hash (the basket `packing` precedent):
+    // the hashed/stored payload stays the domain result verbatim.
+    return c.json(await withMarginFromResult(c.env.DB, result));
   } catch (err) {
     if (err instanceof ProductNotFoundError || err instanceof NoRetailOffersError) {
       throw new ApiHttpError(404, err.message);
@@ -243,12 +299,15 @@ async function getResult(c: Context<AppEnv>): Promise<Response> {
   ]);
 
   return c.json(
-    mapCalculationRecordToResult({
-      record,
-      product,
-      exciseVersionLabel: exciseRule?.versionLabel ?? null,
-      containerVersionLabel: containerRule?.versionLabel ?? null,
-    }),
+    await withMarginFromResult(
+      d1,
+      mapCalculationRecordToResult({
+        record,
+        product,
+        exciseVersionLabel: exciseRule?.versionLabel ?? null,
+        containerVersionLabel: containerRule?.versionLabel ?? null,
+      }),
+    ),
   );
 }
 

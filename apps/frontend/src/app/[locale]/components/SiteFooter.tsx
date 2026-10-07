@@ -103,6 +103,7 @@ export default async function SiteFooter() {
             <ul className="mt-4 space-y-2.5">
               {[
                 { href: '/ranking', labelKey: 'methodology' },
+                { href: '/what-if', labelKey: 'linkWhatIf' },
                 { href: '/blog',    labelKey: 'linkBlog',    visible: showBlogLink },
                 { href: '/guides',  labelKey: 'linkGuides',  visible: showGuidesLink },
                 { href: '/about',   labelKey: 'linkAbout' },

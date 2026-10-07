@@ -151,7 +151,7 @@ describe('GET /api/v1/products (search)', () => {
     // unified envelope, the offending value echoed, the valid set named.
     await expectEnvelope(res, 400, {
       message:
-        "Unknown sort 'LOWEST_LANDED_COST'. Valid sort orders: ALPHABETICAL, LOWEST_PRICE, ALCOHOL_PERCENTAGE.",
+        "Unknown sort 'LOWEST_LANDED_COST'. Valid sort orders: ALPHABETICAL, LOWEST_PRICE, ALCOHOL_PERCENTAGE, BIGGEST_SAVING.",
     });
   });
 
@@ -163,7 +163,7 @@ describe('GET /api/v1/products (search)', () => {
     });
     await expectEnvelope(res, 400, {
       message:
-        "Unknown sort 'PROMOTED'. Valid sort orders: ALPHABETICAL, LOWEST_PRICE, ALCOHOL_PERCENTAGE.",
+        "Unknown sort 'PROMOTED'. Valid sort orders: ALPHABETICAL, LOWEST_PRICE, ALCOHOL_PERCENTAGE, BIGGEST_SAVING.",
     });
   });
 });
@@ -563,8 +563,11 @@ describe('GET /api/v1/products — zero-result suggestion over the widened vocab
     expect(body.total).toBe(0);
     expect(body.items).toEqual([]);
     // The envelope contract is otherwise frozen: the legacy pagination
-    // fields intact, then the advisory field, then the additive warnings
-    // embed — nothing reordered, nothing removed.
+    // fields intact, then the materialized day the savings embeds were
+    // read from (task 1.1, change savings-first-catalog-and-prefill —
+    // always present, null before the first materialization), then the
+    // advisory field, then the additive warnings embed — nothing
+    // reordered, nothing removed.
     expect(body.page).toBe(1);
     expect(body.limit).toBe(20);
     expect(body.totalPages).toBe(0);
@@ -574,6 +577,7 @@ describe('GET /api/v1/products — zero-result suggestion over the widened vocab
       'page',
       'limit',
       'totalPages',
+      'savingsAsOf',
       'suggestion',
       'merchantWarnings',
     ]);

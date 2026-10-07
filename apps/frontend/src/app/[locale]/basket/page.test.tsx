@@ -73,7 +73,11 @@ describe('BasketPage server shell (task 2.2)', () => {
 
     expect(html).toContain('Ostoskorin optimointi');
     expect(html).toContain('Miten optimointi toimii');
-    // The estimates stance holds — the summary is content, not advice.
-    expect(html).toContain('Tulos on aina arvio');
+    // The hedging heap is retired (hedge-dedup-confidence-meter 3.3):
+    // the summary states what the optimization does — the reliability
+    // status fact stays, the "always an estimate" reassurance is gone
+    // (the footer carries the legal line).
+    expect(html).toContain('Jokainen luku kantaa luotettavuusmerkintää');
+    expect(html).not.toContain('Tulos on aina arvio');
   });
 });

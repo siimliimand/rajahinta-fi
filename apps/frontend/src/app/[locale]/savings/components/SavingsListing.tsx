@@ -10,6 +10,7 @@ import { ConfidenceBadge, ReliabilityBadge } from '@/components/ui';
 import { EmptyState } from '@/components/ui';
 import { ErrorState } from '@/components/ui';
 import { LoadingSkeleton } from '@/components/ui';
+import { Link } from '@/i18n/navigation';
 import { request } from '@/lib/api';
 import {
   CONFIDENCE_LEVEL_META,
@@ -222,6 +223,16 @@ export default function SavingsListing({
  * visually; the reliability and confidence badges resolve their labels
  * through the canonical status metadata, and an unknown status string
  * degrades to the UNAVAILABLE ladder rung instead of crashing.
+ *
+ * The row is the navigation affordance (whole-row link to the product
+ * detail page): the anchor in the product cell stretches over the row
+ * via its ::after pseudo-element against the row's containing block.
+ * `position: relative` alone is not honored as a containing block on
+ * `<tr>` by Safari (WebKit bug 240961 — the overlay would escape to the
+ * viewport), so the row also carries a zero transform, which creates a
+ * containing block in every engine, and clips painting to its own box.
+ * The focus ring stays on the anchor inside the row, so the row clip
+ * never hides it.
  */
 function SavingsRowView({
   row,
@@ -241,10 +252,15 @@ function SavingsRowView({
     : null;
 
   return (
-    <tr>
+    <tr className="relative transform-gpu [clip-path:inset(0)] transition-colors hover:bg-gray-50">
       <td className="py-2 pr-4 tabular-nums text-gray-400">{position}</td>
       <td className="py-2 pr-4">
-        <span className="font-medium text-gray-900">{row.productName}</span>
+        <Link
+          href={`/products/${row.productId}`}
+          className="font-medium text-primary-700 hover:underline after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+        >
+          {row.productName}
+        </Link>
         <span className="block text-xs text-gray-500">
           {row.merchant} · {row.merchantCountry}
         </span>

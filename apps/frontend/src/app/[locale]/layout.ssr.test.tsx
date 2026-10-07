@@ -130,16 +130,20 @@ vi.mock('./components/SiteFooter', () => ({
 // Fixtures
 // ---------------------------------------------------------------------------
 
-/** The primary destinations (web-application spec: shared navigation). */
+/** The header destinations (three-task navigation: shopping, trip, event
+    groups + the account chrome link). The meta pages (/what-if, /ranking)
+    live in the footer, not the header. */
 const DESTINATIONS = [
+  { href: '/savings', fi: 'Säästölista', en: 'Savings listing' },
+  { href: '/value', fi: 'Etanolin grammahinta (snt/g)', en: 'Ethanol unit price (snt/g)' },
+  { href: '/products', fi: 'Tuotteet', en: 'Products' },
   { href: '/calculator', fi: 'Laskuri', en: 'Calculator' },
   { href: '/compare', fi: 'Vertailu', en: 'Compare' },
-  { href: '/basket', fi: 'Ostoskori', en: 'Basket' },
-  { href: '/event', fi: 'Tilaisuuslaskuri', en: 'Event calculator' },
   { href: '/trip', fi: 'Matkalaskuri', en: 'Trip calculator' },
-  { href: '/what-if', fi: 'Skenaariolaskuri', en: 'Scenario calculator' },
+  { href: '/basket', fi: 'Ostoskori', en: 'Basket' },
+  { href: '/allowances', fi: 'Tullivapaat määrät', en: 'Duty-free allowances' },
+  { href: '/event', fi: 'Tilaisuuslaskuri', en: 'Event calculator' },
   { href: '/account', fi: 'Oma tili', en: 'My account' },
-  { href: '/ranking', fi: 'Miten järjestäminen toimii', en: 'How ranking works' },
 ] as const;
 
 /**
@@ -223,7 +227,7 @@ describe('SiteHeader SSR — every destination, both locales', () => {
     const segmentHtml = await renderHeaderHtml('fi');
     expect((segmentHtml.match(/aria-current="page"/g) ?? []).length).toBe(2);
 
-    // The home route is not one of the five destinations: no indicator.
+    // The home route is not one of the header destinations: no indicator.
     state.pathname = '/';
     const homeHtml = await renderHeaderHtml('fi');
     expect(homeHtml).not.toContain('aria-current="page"');

@@ -22,6 +22,9 @@ import { openMigratedD1 } from '../../analytics/__tests__/fake-d1';
 import { FAKE_OPS_TOKEN, mintOpaqueToken } from '../../middleware/__tests__/guard-test-fixtures';
 import { hashToken } from '../../auth/session-resolver';
 import { D1SessionRepository } from '../../../../../packages/data-platform/src/repositories/d1/session.repository';
+import { D1CalculationOutcomeRepository } from '../../../../../packages/data-platform/src/repositories/d1/calculation-outcome.repository';
+import { handleOutcomeMargins } from '../../cron/outcome-margins';
+import { createLogger } from '../../logger';
 import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
 
 export { openMigratedD1 };
@@ -362,6 +365,7 @@ export function seedCalculationRecord(
     sessionId?: string | null;
     exciseRuleVersionId?: number | null;
     containerDutyRuleVersionId?: number | null;
+    transportOfferId?: number | null;
   },
 ): number {
   const id = record.id ?? 1;
@@ -382,10 +386,13 @@ export function seedCalculationRecord(
        excise_rule_version_id, container_duty_rule_version_id, total_cents,
        breakdown, confidence, quantity, destination, disclaimer, session_id,
        calculated_at
-     ) VALUES (?, ?, '[]', NULL, ?, ?, ?, ?, ?, ?, 'FI', ?, ?, ?)`,
+     ) VALUES (?, ?, '[]', ?, ?, ?, ?, ?, ?, ?, 'FI', ?, ?, ?)`,
   ).run(
     id,
     record.productMasterId,
+    // `?? null` so an explicit undefined keeps the historical NULL
+    // transport offer (the join-honest freeze path keys it only when set).
+    record.transportOfferId ?? null,
     record.exciseRuleVersionId ?? null,
     record.containerDutyRuleVersionId ?? null,
     record.totalCents ?? 873,
@@ -401,3 +408,102 @@ export function seedCalculationRecord(
 
 /** AppEnv typed view for handlers under test. */
 export type { AppEnv };
+
+// ---------------------------------------------------------------------------
+// Empirical-margin ladder fixture (task 2.1/2.2, change
+// hedge-dedup-confidence-meter) — the hand-computed corpus the cron
+// suite pins, seeded through the REAL write path (outcome repository →
+// handleOutcomeMargins) on ids far above every surface fixture, so the
+// margins/margin-composition suites share one calibrated ladder:
+// beer|posti (0.01, 10), beer (0.02, 12), global (0.05, 16).
+// ---------------------------------------------------------------------------
+
+/** The pinned run instant the ladder is computed for. */
+export const MARGIN_LADDER_AS_OF = new Date('2026-10-06T00:00:00.000Z');
+
+/**
+ * Seed the 16-report outcome corpus (products 81 beer / 82 wine_still,
+ * carriers posti/matkahuolto, one pruned record) and refresh the
+ * persisted `outcome_margins` ladder through the cron handler at the
+ * pinned as-of. No margin math runs in test code — the ladder is
+ * whatever the production calibration persisted.
+ */
+export async function seedMarginLadder(
+  db: DatabaseSync,
+  d1: D1DatabaseLike,
+  asOf: Date = MARGIN_LADDER_AS_OF,
+): Promise<void> {
+  db.prepare(
+    `INSERT INTO product_master (id, name, manufacturer, brand, category,
+        unit_volume, container_type, regulatory_classification)
+     VALUES (81, 'Margin Beer', 'B', 'B', 'beer', 0.33, 'can', 'beer'),
+            (82, 'Margin Wine', 'W', 'W', 'wine_still', 0.75, 'glass', 'wine')`,
+  ).run();
+  db.prepare(
+    `INSERT INTO transport_offers (id, carrier, origin_country,
+        destination_country, package_tier, price_cents)
+     VALUES (81, 'posti', 'EE', 'FI', 'parcel', 500),
+            (82, 'matkahuolto', 'EE', 'FI', 'parcel', 500)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO calculation_records (id, product_master_id, retail_offer_ids,
+        transport_offer_id, total_cents, breakdown, confidence, quantity,
+        destination, disclaimer, calculated_at)
+     VALUES (81, 81, '[]', 81, 873, '[]', 'MEDIUM', 1, 'FI', '{}', ?),
+            (82, 81, '[]', 82, 873, '[]', 'MEDIUM', 1, 'FI', '{}', ?),
+            (83, 82, '[]', 81, 1730, '[]', 'MEDIUM', 1, 'FI', '{}', ?)`,
+  ).run(asOf.toISOString(), asOf.toISOString(), asOf.toISOString());
+
+  let reporter = 200; // past every surface fixture's accounts
+  const report = async (
+    calculationRecordId: number,
+    estimatedTotalCents: number,
+    reportedTotalCents: number,
+  ): Promise<void> => {
+    reporter += 1;
+    seedAccount(db, {
+      id: reporter,
+      userId: `margin-reporter-${reporter}`,
+      email: `margin-reporter-${reporter}@example.invalid`,
+      tier: 'FREE',
+    });
+    await new D1CalculationOutcomeRepository(d1).create({
+      calculationRecordId,
+      reporterAccountId: reporter,
+      estimateDigest: { totalCents: estimatedTotalCents },
+      estimatedTotalCents,
+      reportedTotalCents,
+    });
+  };
+
+  // beer×posti: ten reports at 1% (8× +100, then +300, +500 — p80 = 0.01);
+  // beer×matkahuolto: two more beer reports; wine: three at 5%; one
+  // pruned-record report (record 999 has no row) — global only.
+  for (let i = 0; i < 8; i += 1) await report(81, 10_000, 10_100);
+  await report(81, 10_000, 10_300);
+  await report(81, 10_000, 10_500);
+  for (let i = 0; i < 2; i += 1) await report(82, 10_000, 10_200);
+  for (let i = 0; i < 3; i += 1) await report(83, 20_000, 21_000);
+  await report(999, 20_000, 21_000);
+
+  await handleOutcomeMargins({ DB: d1 } as unknown as Env, createLogger('error'), {
+    asOf,
+  });
+}
+
+/**
+ * Byte proxy for the margin-neutrality assertions (the alko-suite
+ * precedent): deep-clone the parsed response, let the caller strip its
+ * inherently volatile fields, drop `empiricalMargin` (the ONE field
+ * allowed to vary), and stringify. Identical inputs must produce
+ * identical proxies with and without a persisted ladder.
+ */
+export function byteProxyWithoutMargin(
+  body: unknown,
+  mutate?: (clone: Record<string, any>) => void,
+): string {
+  const clone = structuredClone(body) as Record<string, any>;
+  mutate?.(clone);
+  delete clone.empiricalMargin;
+  return JSON.stringify(clone);
+}
