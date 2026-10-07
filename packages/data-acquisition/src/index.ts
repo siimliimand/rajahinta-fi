@@ -159,6 +159,21 @@ export {
 export { runCrawlCycle } from './crawl/crawl-cycle';
 export type { CrawlCycleOptions } from './crawl/crawl-cycle';
 export {
+  CRAWL_CHUNK_FETCHES,
+  InMemoryCrawlCursorStore,
+} from './crawl/crawl-chunk-cycle';
+export type {
+  CrawlCursorState,
+  CrawlChunkOutcome,
+  CrawlDiscoverOutcome,
+  ICrawlCursorStore,
+} from './crawl/crawl-chunk-cycle';
+export {
+  advanceCrawlCursor,
+  beginCrawlCycle,
+  walkCrawlChunk,
+} from './crawl/crawl-chunk-cycle';
+export {
   walkProductPages,
   CRAWLER_USER_AGENT,
   MIN_REQUEST_SPACING_MS,

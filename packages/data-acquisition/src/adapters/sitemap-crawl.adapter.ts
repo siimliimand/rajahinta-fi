@@ -24,10 +24,32 @@
  * recoverable failures and returns records plus collected errors — the
  * `IFeedAdapter` must-not-throw contract verbatim.
  *
+ * ## Chunked protocol (task 3.1, design D5)
+ *
+ * `fetch()` runs the whole cycle in one call — a full first crawl
+ * exceeds every Workers budget, so the ingestion Workflow drives the
+ * same cycle through {@link SitemapCrawlFeedAdapter.beginCrawlCycle} /
+ * {@link SitemapCrawlFeedAdapter.crawlChunk} /
+ * {@link SitemapCrawlFeedAdapter.advanceCrawl} instead, ≤ 300 fetches
+ * per durable step, resumable via the injected `ICrawlCursorStore`
+ * (default in-memory, safe-direction). The identity gate is the
+ * adapter itself: the workflow composes `SitemapCrawlFeedAdapter`
+ * instances in its crawl map, so presence — not a flag — selects the
+ * chunked path.
+ *
  * @module SitemapCrawlAdapter
  */
 
 import { runCrawlCycle } from '../crawl/crawl-cycle';
+import {
+  advanceCrawlCursor,
+  beginCrawlCycle,
+  InMemoryCrawlCursorStore,
+  walkCrawlChunk,
+  type CrawlChunkOutcome,
+  type CrawlDiscoverOutcome,
+  type ICrawlCursorStore,
+} from '../crawl/crawl-chunk-cycle';
 import {
   defaultPageFetcher,
   type PageFetcher,
@@ -77,6 +99,8 @@ export interface SitemapCrawlOptions {
   /** No sitemap `lastmod` (drinkonline): every cycle is a full set. */
   readonly fullRefresh: boolean;
   readonly watermarkStore?: ILastmodWatermarkStore;
+  /** In-flight crawl cursor backing (task 3.1); default in-memory. */
+  readonly cursorStore?: ICrawlCursorStore;
   readonly fetcher?: PageFetcher;
   readonly sleep?: Sleep;
 }
@@ -84,7 +108,7 @@ export interface SitemapCrawlOptions {
 /** The injection surface tests (and task 3.1) substitute. */
 export type SitemapCrawlWiring = Pick<
   SitemapCrawlOptions,
-  'watermarkStore' | 'fetcher' | 'sleep'
+  'watermarkStore' | 'cursorStore' | 'fetcher' | 'sleep'
 >;
 
 export abstract class SitemapCrawlFeedAdapter implements IFeedAdapter {
@@ -92,12 +116,14 @@ export abstract class SitemapCrawlFeedAdapter implements IFeedAdapter {
 
   private readonly options: SitemapCrawlOptions;
   private readonly watermarkStore: ILastmodWatermarkStore;
+  private readonly cursorStore: ICrawlCursorStore;
   private readonly fetcher: PageFetcher;
 
   protected constructor(options: SitemapCrawlOptions) {
     this.options = options;
     this.watermarkStore =
       options.watermarkStore ?? new InMemoryLastmodWatermarkStore();
+    this.cursorStore = options.cursorStore ?? new InMemoryCrawlCursorStore();
     this.fetcher = options.fetcher ?? defaultPageFetcher;
   }
 
@@ -115,6 +141,52 @@ export abstract class SitemapCrawlFeedAdapter implements IFeedAdapter {
         extractProductPage(url, body, this.options.extractorConfig),
       fetcher: this.fetcher,
       sleep: this.options.sleep,
+    });
+  }
+
+  // -- Chunked protocol (task 3.1): the workflow drives these instead of
+  // fetch() so a full crawl crosses durable step boundaries. Same cycle,
+  // same stores, same politeness — only the step slicing differs.
+
+  /**
+   * Begin (or resume) the cycle: sitemap once → filter → lastmod diff →
+   * cursor + watermark persisted. Store failures throw (the workflow
+   * step retries); cycle-level failures come back collected.
+   */
+  async beginCrawlCycle(feedUrl: string): Promise<CrawlDiscoverOutcome> {
+    return beginCrawlCycle({
+      merchantId: this.merchantId,
+      sitemapUrl: feedUrl,
+      productUrlPredicate: this.options.productUrlPredicate,
+      fullRefresh: this.options.fullRefresh,
+      watermarkStore: this.watermarkStore,
+      cursorStore: this.cursorStore,
+      fetcher: this.fetcher,
+    });
+  }
+
+  /** Walk the next ≤ 300-URL slice of the in-flight queue. */
+  async crawlChunk(): Promise<CrawlChunkOutcome> {
+    return walkCrawlChunk({
+      merchantId: this.merchantId,
+      cursorStore: this.cursorStore,
+      extractPage: (url, body) =>
+        extractProductPage(url, body, this.options.extractorConfig),
+      fetcher: this.fetcher,
+      sleep: this.options.sleep,
+    });
+  }
+
+  /**
+   * Move the cursor past the chunk whose records already committed;
+   * the final chunk's advance ends the cycle.
+   */
+  async advanceCrawl(fetched: number, done: boolean): Promise<void> {
+    return advanceCrawlCursor({
+      merchantId: this.merchantId,
+      cursorStore: this.cursorStore,
+      fetched,
+      done,
     });
   }
 }
