@@ -115,6 +115,13 @@ export { KippisFeedAdapter } from './adapters/kippis.adapter';
 // additively in task 1.2.
 export { MydrinkFeedAdapter } from './adapters/mydrink.adapter';
 
+// araxes.ee Store API adapter — the fifth WooCommerce merchant
+// (task 2.1, change onboard-araxes-merchant): a thin subclass of the
+// shared walk; the bare-spelling Estonian category vocabulary it
+// consumes was mapped additively in task 1.2. Composition (adapter
+// maps) is wired in the api-worker compositions, not here.
+export { AraxesFeedAdapter } from './adapters/araxes.adapter';
+
 export type { IUpsertRepository, UpsertProductInput, UpsertOfferInput, UpsertResult, UpsertOfferResult } from './interfaces/upsert-port.interface';
 export { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
 

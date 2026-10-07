@@ -59,6 +59,14 @@ export const MERCHANT_REGISTRY_SEED: readonly MerchantRegistrySeedRow[] = [
     feedFormat: 'json',
     pollingIntervalMs: 86_400_000,
   },
+  {
+    merchantId: 'araxes',
+    name: 'Araxes',
+    country: 'EE',
+    feedUrl: 'https://araxes.ee',
+    feedFormat: 'json',
+    pollingIntervalMs: 86_400_000,
+  },
 ];
 
 /**

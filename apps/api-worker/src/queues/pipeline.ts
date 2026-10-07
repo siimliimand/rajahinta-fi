@@ -44,6 +44,7 @@ import { AlksFeedAdapter } from '../../../../packages/data-acquisition/src/adapt
 import { KippisFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/kippis.adapter';
 import { LongeroFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/longero.adapter';
 import { MydrinkFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/mydrink.adapter';
+import { AraxesFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/araxes.adapter';
 import type { IFeedAdapter } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { MerchantConfig } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
 import { merchantConfigFromRegistry } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
@@ -102,8 +103,9 @@ export function composeGovernanceService(
  * Compose the ingestion pipeline over the Worker bindings.
  *
  * Feed adapters register under their merchantId exactly as the
- * DataAcquisitionModule factory did (alko, alks, longero, kippis, mydrink); the
- * offer-change hook appends one R2 observation per changed offer.
+ * DataAcquisitionModule factory did (alko, alks, longero, kippis,
+ * mydrink, araxes); the offer-change hook appends one R2 observation
+ * per changed offer.
  */
 export function composeIngestionPipeline(
   env: Env,
@@ -121,6 +123,8 @@ export function composeIngestionPipeline(
   adapters.set(kippis.merchantId, kippis);
   const mydrink = new MydrinkFeedAdapter();
   adapters.set(mydrink.merchantId, mydrink);
+  const araxes = new AraxesFeedAdapter();
+  adapters.set(araxes.merchantId, araxes);
   const feedIngestion = new FeedIngestionService(adapters);
   const dataMapping = new DataMappingService();
   const dataQuality = new DataQualityService(new ReliabilityService());
