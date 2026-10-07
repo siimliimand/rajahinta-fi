@@ -122,6 +122,77 @@ export { MydrinkFeedAdapter } from './adapters/mydrink.adapter';
 // maps) is wired in the api-worker compositions, not here.
 export { AraxesFeedAdapter } from './adapters/araxes.adapter';
 
+// ---------------------------------------------------------------------------
+// Sitemap crawl sources (change sitemap-crawl-merchants) — one shared
+// cycle (sitemap once → product-URL filter → lastmod diff → polite walk →
+// watermark save) over one shared extractor, behind IFeedAdapter; the four
+// v1 merchants pin only merchantId + extractor config + URL predicate +
+// refresh mode.
+// ---------------------------------------------------------------------------
+
+export {
+  SitemapCrawlFeedAdapter,
+  InMemoryLastmodWatermarkStore,
+} from './adapters/sitemap-crawl.adapter';
+export type {
+  SitemapCrawlOptions,
+  SitemapCrawlWiring,
+} from './adapters/sitemap-crawl.adapter';
+
+export {
+  ViinarannastaFeedAdapter,
+  VIINARANNASTA_PRODUCT_URL_PATTERN,
+} from './adapters/viinarannasta.adapter';
+export {
+  ViinikauppaFeedAdapter,
+  VIINIKAUPPA_PRODUCT_URL_PATTERN,
+} from './adapters/viinikauppa.adapter';
+export {
+  LicoreaFeedAdapter,
+  LICOREA_PRODUCT_URL_PATTERN,
+} from './adapters/licorea.adapter';
+export {
+  DrinkonlineFeedAdapter,
+  DRINKONLINE_PRODUCT_URL_PATTERN,
+} from './adapters/drinkonline.adapter';
+
+export { runCrawlCycle } from './crawl/crawl-cycle';
+export type { CrawlCycleOptions } from './crawl/crawl-cycle';
+export {
+  walkProductPages,
+  CRAWLER_USER_AGENT,
+  MIN_REQUEST_SPACING_MS,
+  defaultSleep,
+  defaultPageFetcher,
+} from './crawl/crawl-walker';
+export type {
+  PageFetcher,
+  PageProcessor,
+  PageWalkOptions,
+  PageWalkResult,
+  CrawlPageOutcome,
+  Sleep,
+} from './crawl/crawl-walker';
+export type { ILastmodWatermarkStore } from './crawl/lastmod-watermark.port';
+export type { SitemapWatermark, SitemapDiffConfig, SitemapDiffResult } from './crawl/lastmod-diff';
+export { diffSitemapEntries } from './crawl/lastmod-diff';
+export { filterSitemapEntries, urlPatternPredicate } from './crawl/product-url-filter';
+export type { ProductUrlPredicate } from './crawl/product-url-filter';
+export { fetchSitemap } from './crawl/sitemap.fetch';
+export type { SitemapFetchResult } from './crawl/sitemap.fetch';
+export { parseSitemapXml } from './crawl/sitemap.parse';
+export type { SitemapEntry } from './crawl/sitemap.parse';
+export { extractProductPage } from './crawl/extract/extract-page';
+export type { PageExtraction } from './crawl/extract/extract-page';
+export type { ExtractorConfig } from './crawl/extract/extractor-config';
+export {
+  abvPercentFromFinnishDescription,
+  DRINKONLINE_EXTRACTOR_CONFIG,
+  LICOREA_EXTRACTOR_CONFIG,
+  VIINARANNASTA_EXTRACTOR_CONFIG,
+  VIINIKAUPPA_EXTRACTOR_CONFIG,
+} from './crawl/extract/source-configs';
+
 export type { IUpsertRepository, UpsertProductInput, UpsertOfferInput, UpsertResult, UpsertOfferResult } from './interfaces/upsert-port.interface';
 export { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
 
@@ -217,6 +288,10 @@ import { UPSERT_REPOSITORY_TOKEN } from './interfaces/upsert-port.interface';
 import type { IFeedAdapter } from './interfaces/feed-adapter.interface';
 import { AlkoFeedAdapter } from './adapters/alko.adapter';
 import { AlksFeedAdapter } from './adapters/alks.adapter';
+import { DrinkonlineFeedAdapter } from './adapters/drinkonline.adapter';
+import { LicoreaFeedAdapter } from './adapters/licorea.adapter';
+import { ViinarannastaFeedAdapter } from './adapters/viinarannasta.adapter';
+import { ViinikauppaFeedAdapter } from './adapters/viinikauppa.adapter';
 import { DrizzleUpsertRepository } from './adapters/upsert-port.adapter';
 import { PipelinePriceIngestionAdapter } from './adapters/pipeline-price-ingestion.adapter';
 import { PipelineTransportRateAdapter } from './adapters/pipeline-transport-rate.adapter';
@@ -257,21 +332,42 @@ import type { ICarrierRateSource } from './interfaces/carrier-rate-source.port';
     // gate; its registry row keeps an empty feedUrl until a live feed is
     // entitled — the golden fixture pins the parser. alks (change
     // alks-feed-and-import-vat): the alks.fi store as the second row,
-    // resolved through the same map.
+    // resolved through the same map. The four sitemap-crawl merchants
+    // (task 2.1, change sitemap-crawl-merchants) join the same map —
+    // their workflow/producer wiring is task 3.1, not here.
     AlkoFeedAdapter,
     AlksFeedAdapter,
+    ViinarannastaFeedAdapter,
+    ViinikauppaFeedAdapter,
+    LicoreaFeedAdapter,
+    DrinkonlineFeedAdapter,
     {
       provide: FEED_ADAPTERS_TOKEN,
       useFactory: (
         alko: AlkoFeedAdapter,
         alks: AlksFeedAdapter,
+        viinarannasta: ViinarannastaFeedAdapter,
+        viinikauppa: ViinikauppaFeedAdapter,
+        licorea: LicoreaFeedAdapter,
+        drinkonline: DrinkonlineFeedAdapter,
       ): Map<string, IFeedAdapter> => {
         const map = new Map<string, IFeedAdapter>();
         map.set(alko.merchantId, alko);
         map.set(alks.merchantId, alks);
+        map.set(viinarannasta.merchantId, viinarannasta);
+        map.set(viinikauppa.merchantId, viinikauppa);
+        map.set(licorea.merchantId, licorea);
+        map.set(drinkonline.merchantId, drinkonline);
         return map;
       },
-      inject: [AlkoFeedAdapter, AlksFeedAdapter],
+      inject: [
+        AlkoFeedAdapter,
+        AlksFeedAdapter,
+        ViinarannastaFeedAdapter,
+        ViinikauppaFeedAdapter,
+        LicoreaFeedAdapter,
+        DrinkonlineFeedAdapter,
+      ],
     },
 
     // Rate-review scheduler with default 24h interval
