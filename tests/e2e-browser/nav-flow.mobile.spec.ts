@@ -25,6 +25,13 @@ import { expectNoHorizontalOverflow } from './mobile.helpers';
 
 test.describe('header navigation through the task groups — mobile viewports', () => {
   test.beforeEach(async ({ page }) => {
+    // The desktop-only CI project (playwright.config.ts) has no phone
+    // viewports; this journey verifies MOBILE chrome, so shrink the
+    // viewport to a phone width when running wide. The phone-viewport
+    // projects (playwright.workers.config.ts) keep their own sizes.
+    if ((page.viewportSize()?.width ?? 0) > 640) {
+      await page.setViewportSize({ width: 375, height: 667 });
+    }
     await acceptAgeGate(page);
   });
 
