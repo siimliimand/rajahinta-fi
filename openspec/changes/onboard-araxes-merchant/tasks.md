@@ -23,8 +23,8 @@
 
 ## 5. Production rollout
 
-- [ ] 5.1 Production deploy via the gated workflow (`gh workflow run deploy-production.yml` with `confirm_deploy=yes`); health gate green <!-- agent: devops-engineer.fast, depends_on: [4.2], touches: [] -->
-- [ ] 5.2 Production registration via the ops console (`POST /ops/console/merchants` upserts the registry row and auto-grants a merchant with no governance records — blanket-permission policy, two audited entries; pin `feedFormat` and `pollingIntervalMs` explicitly on any update — the upsert overwrites the whole row, runbook §2.0); trigger the first ingest manually; verify the public API + product page serving araxes items; record the follow-up checklist for the next scheduled 00:00 UTC boundary (exactly one `araxes` enqueue, one workflow instance, offers refreshed) <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [openspec/changes/onboard-araxes-merchant/notes.md] -->
+- [x] 5.1 Production deploy via the gated workflow (`gh workflow run deploy-production.yml` with `confirm_deploy=yes`); health gate green <!-- agent: devops-engineer.fast, depends_on: [4.2], touches: [] -->
+- [x] 5.2 Production registration via the ops console (`POST /ops/console/merchants` upserts the registry row and auto-grants a merchant with no governance records — blanket-permission policy, two audited entries; pin `feedFormat` and `pollingIntervalMs` explicitly on any update — the upsert overwrites the whole row, runbook §2.0); trigger the first ingest manually; verify the public API + product page serving araxes items; record the follow-up checklist for the next scheduled 00:00 UTC boundary (exactly one `araxes` enqueue, one workflow instance, offers refreshed) <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [openspec/changes/onboard-araxes-merchant/notes.md] -->
 
 ## 6. Verification
 

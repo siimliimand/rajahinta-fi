@@ -156,7 +156,61 @@ Run 1 (instance **`1c2cddc7-f0cb-47bf-a2dc-897a91b4681c`**, complete 13:14:48Z) 
 
 ## Production rollout (task 5.2)
 
-TBD
+Executed 2026-10-07, ~14:17–16:00 UTC, with the user's explicit production approval (staging verified in 4.2). Deploy first, then registration, then ingest — runbook §3 order. All commands name-only; tokens used inline (`$(cat /root/.cloudflare-token)`, `$(cat /root/.ops-token)`), never echoed, never committed.
+
+### 5.1 — Gated production deploy (green)
+
+`gh workflow run deploy-production.yml --ref master -f confirm_deploy=yes` → run **37635518440** (master @ `8da227e` — six-adapter code + chunk-budget fix; the branch differs from master only by notes/tasks files). All steps ✓: build → **Apply D1 migrations (production)** → API/email/frontend Worker deploys → **health gate** (`/api/v1/health/ready` 200). Dispatched 14:17:56Z, completed ~14:23Z. Only pre-existing deprecation-warning annotations.
+
+### Secret precondition — already provisioned (no action, unlike staging)
+
+`wrangler secret list --env production` (name-only) → **`OPS_BEARER_TOKEN` present** (alongside `CONTACT_IP_HASH_SALT`, `EMAIL_SEND_SECRET`). Confirmed working before any write: `GET /ops/console/governance` with the ops token → **HTTP 200** (staging's 403-provision path not needed). No `audit_events` deviation this change.
+
+### Fail-closed sanity before registration (STOP condition clear)
+
+`GET /ops/console/governance`: 5 merchants (alko, alks, kippis, longero, mydrink — all `GRANTED`), **araxes absent** — no governance records, not GRANTED ✓. Pre-ingest baselines (read-only D1): `product_master` **11,585 / max 11,585**; `retail_offers` **120,707 total, araxes 0**; per-merchant alko 14,037/7,116 · alks 62,172/2,883 · kippis 14,233/637 · longero 23,163/982 · mydrink 7,102/652.
+
+### Registration — audited console upsert + auto-grant (§2.0, one action)
+
+`POST /ops/console/merchants` (`feedFormat`/`pollingIntervalMs` pinned per §2.0) → **`registered: "created"`, `autoGranted: true`, `permissionStatus: "GRANTED"`, `sourceCount: 1`** at 14:23:44Z. Audit verified (`GET /ops/console/audit?limit=5`) — **exactly two entries**, author `siim (owner)`, note "owner blanket permission policy — change onboard-araxes-merchant" on both: `merchant_registry`/`araxes`/`created` (id `85cc87b2…`, 14:23:44.318Z) and `source_governance`/`araxes`/`created` (id `a51ea590…`, 14:23:44.818Z). Governance re-check: `araxes` **GRANTED**, sourceCount 1, total 6 merchants.
+
+### First ingest — run 1: 1,000 of ~1,539; 539 quota rejections (DEVIATION — boundary did not reset quota)
+
+`POST …/workflows/rajahinta-price-ingestion-production/instances` body `{"id":"price-ingestion-araxes-2026-10-07-14","params":{"merchantId":"araxes","sourceUrl":"https://araxes.ee","dedupeKey":"price-ingestion-araxes-2026-10-07-14"}}` (params mirror the producer message; `-14` hour key cannot collide with the daily key `price-ingestion-araxes-2026-10-08-00`) → uuid **`ac23e53d-f6ee-4486-b57e-2852cff5f51e`**, `queued`, first attempt → `complete` 15:14:08Z.
+
+Output **`productsIngested: 1000`**, `errors` 2,262 lines: **exactly 539** per-row `Failed to upsert product "…": Too many API requests by single Worker invocation` + 91 no-canonical + 1,632 SKU notes. Reconciliation: **1,630 raw = 1,000 landed + 539 quota-rejected + 91 drops** ✓ (1.1 sweep census). Same 1,000/539 split as staging run 1 — **but this time WITH the fix deployed** (instance `versionId 079e50fc…` = the 8da227e deploy). Step timeline is the finding: `upsert-offers-1..4` each ~8.5 min (real work, 250 pairs), then after the 1s `chunk-budget-reset-3/5/7` sleeps, **`upsert-offers-5/6/7` completed near-instantly with every pair quota-rejected** — the durable sleep boundary did **not** produce a fresh D1 API-request window in production, unlike staging run 2 (same code: parks observed, all pairs landed). The `waiting` my status poll saw 15:11–15:14 was `complete-job-claim` retry backoff (6 attempts × exponential 30 s ≈ 15.5 min), not a hibernation park. **Production-falsified premise recorded for the platform engineer: `CHUNK_BUDGET_RESET_EVERY = 2`'s 1 s `step.sleep` is not a reliable invocation/quota reset in production — a future cold mid-size catalog (~1,540 pairs) will reproduce run 1's tail-chunk failure shape.** The 539 rejected pairs persisted nothing: `product_master` 11,585 → 12,585 (**+1,000 exact**, EAN-less), single araxes batch 1,000 rows @ 14:24:48.129Z, no other merchant moved.
+
+### Run 2 — reconciliation re-run: everything landed
+
+Idempotent manual re-trigger (mydrink-5.2/staging-4.2 method; re-run pairs are cheap — the 2026-09-30 Alko measurement puts quota death at ~10 k re-run pairs): body `{"id":"price-ingestion-araxes-2026-10-07-15",…}` → uuid **`f17e96f5-e64b-4ad2-90cb-d65b7de633e6`** → `complete` 15:55:50Z (~28 min). Output **`productsIngested: 1539`**, `errors` 1,724 lines, **ZERO quota rejections** ✓: 1,632 SKU notes + 92 no-canonical; **1,539 + 92 = 1,631 raw** (feed drifted +1 item since run 1's 14:24 fetch). Chunks 1–4 (1,000 re-run pairs) 2–2.5 min each; chunks 5–7 (the 539 first-run pairs) 8.5–9 min each — all inside one effective budget window, confirming both the diagnosis and the re-run economics.
+
+### Final state — reconciled
+
+- **`retail_offers`**: **2,539 araxes rows across exactly two `observed_at` batches** — batch 1: 1,000 @ 2026-10-07T14:24:48.129Z (run 1, preserved); batch 2: **1,539 rows @ 15:27:56.390Z over 1,539 distinct products** (run 2). Total **1,539 distinct products** ✓. Clean two-batch shape — **no** duplicate-row replay wrinkle this time (batch 2 rows = products 1:1; staging's 250-dup signature absent).
+- **`product_master`**: 12,585 → **13,124 (+539 exact, all EAN-less)** — the run-1-rejected products. **No other merchant changed**: alko 14,037 · alks 62,172 · kippis 14,233 · longero 23,163 · mydrink 7,102 — byte-identical to baseline across both runs.
+- **Public API** (`https://api.rajahinta.fi`, product **12585** `MARTINI ROSE 0.75L 11.5% Vahuvein`, araxes-created): bare → **HTTP 403** (age gate) ✅; `x-age-confirmed: 1` → HTTP 200, araxes offer **1,005¢** / EUR / `in_stock` / ESTIMATED / `sourceUrl https://araxes.ee/toode/martini-rose-…` / `observedAt` = batch 2 ✅. Merchant aggregate: **`araxes` offerCount 1539**, all ESTIMATED, `freshestObservedAt` = batch 2 ✅ (known read-model artifact: `governancePermissionStatus: "PENDING"` despite the GRANTED D1 row — kippis/mydrink/local precedent, recorded not chased).
+- **Public product page** (`https://rajahinta.fi/products/12585`, HTTP 200): server-rendered araxes offer row (offer id 152987 after run 1 → **153987** after run 2) with the outbound CTA (`Katso kaupassa →`, `rel="nofollow noopener"`) — the page serves araxes items without client fetches (mydrink 5.2 method; crawlable-soft-gate satisfied).
+- Post-ingest readiness: `/api/v1/health/ready` 200 (`d1` up), `https://rajahinta.fi/` 200.
+
+### Commands executed (names)
+
+`gh workflow run deploy-production.yml --ref master -f confirm_deploy=yes` + `gh run watch` · `npx wrangler secret list --env production` (names only) · `curl GET /ops/console/governance` + `POST /ops/console/merchants` + `GET /ops/console/audit?limit=5` (bearer `$(cat /root/.ops-token)` inline, never echoed) · read-only `npx wrangler d1 execute DB --remote --env production --json --command "…"` (baselines, batch splits, per-merchant post-checks, product/verification queries) · `npx wrangler whoami --json` (account id captured same-invocation, never emitted) + `curl -X POST /accounts/{account}/workflows/rajahinta-price-ingestion-production/instances` ×2 + `curl …/instances/<uuid>` polls (Cloudflare API token inline, never echoed; step/error output to `/tmp/opencode` scratch, deleted) · `npx wrangler deployments list --env production` (version check) · `curl /api/v1/products/12585` ± `x-age-confirmed: 1` · `curl https://rajahinta.fi/products/12585` · `curl /api/v1/health/ready` · `curl https://rajahinta.fi/`.
+
+### Deviations / notes vs the staging 4.2 playbook
+
+1. **Run-1 quota rejections with the fix deployed** (explicit, for the platform engineer): production's instance ran `8da227e` (reset every 2) and still lost chunks 5–7 to the shared per-invocation D1 quota — the 1 s sleep boundary did not yield a fresh window. Follow-up: make the reset quota-aware or verify engine hibernation semantics per environment; until then, treat a cold mid-size catalog ingest in production as a two-run procedure (or re-run on quota-tail errors). Tonight's 00:00 UTC pass is a full re-run profile and should land clean regardless (see checklist).
+2. Two manual instances for one task (run 2 = sanctioned idempotent remediation; the producer's daily key `…-10-08-00` remains reserved for the boundary pass — no collision).
+3. Read-model artifact (recurring, out of scope): merchant aggregate `governancePermissionStatus: "PENDING"` despite the GRANTED D1 row; the governance-gate step itself evaluated `permitted: true, status: GRANTED`.
+
+### FOLLOW-UP CHECKLIST — next scheduled boundary 2026-10-08 00:00 UTC
+
+The manual instances above are trigger `api` with hour-suffixed ids; araxes is daily (86,400,000 ms — interval-bucket gate fires on the 00:00 UTC pass). Operator observation for tomorrow (NOT blocking this task):
+
+- [ ] **Exactly one `araxes` enqueue** from the producer tick: one queue message with dedupe key **`price-ingestion-araxes-2026-10-08-00`** (the other daily merchants — alks, longero, mydrink, kippis, alko — enqueue their own separate messages; one per permitted merchant).
+- [ ] **Exactly one new araxes workflow instance** in `rajahinta-price-ingestion-production`, id `price-ingestion-araxes-2026-10-08-00` — no duplicates; the manual `-14`/`-15` instances above must NOT re-run.
+- [ ] **Offers refreshed**: a fresh batch 3 of ~1,539 rows at `observed_at` ≈ the boundary (re-run profile — expect zero or a tiny quota-rejection tail; if any "Too many API requests" lines appear, they are deviation 1's bug class on the drifted-new items — record and re-run once). Read path serves the freshest observation per product; alks/longero/kippis/mydrink/alko rows untouched by the araxes run.
+- [ ] Check commands: `npx wrangler tail --env production` on the api-worker across the tick, or Workers Logs; `GET /accounts/{account}/workflows/rajahinta-price-ingestion-production/instances` (auth: wrangler-stored token via 0600 temp header file, deleted after) for the single-instance check; read-only `npx wrangler d1 execute DB --remote --env production --json --command "SELECT observed_at, COUNT(*) FROM retail_offers WHERE merchant='araxes' GROUP BY observed_at ORDER BY observed_at"` for the refresh check.
+- [ ] Recorded 2026-10-07 ~16:05 UTC, ~8 h before the boundary.
 
 ## Verification evidence (task 6.1)
 
