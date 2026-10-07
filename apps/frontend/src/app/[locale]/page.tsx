@@ -26,20 +26,26 @@ const TRUST_ROW_STATUSES = [
 ] as const satisfies readonly ReliabilityStatus[];
 
 /**
- * Static task-card links (funnel-evidence-and-value-surfaces task 3.1,
- * D4). Order follows the visitor funnel: one basket, a whole trip, an
- * event's drink need, and a hypothetical duty scenario — the daily
- * landed-cost gap listing's card renders separately below, gated on the
- * overview confirming listing content (data-quality-and-publication-
- * trust 3.2). Icons are decorative (aria-hidden); each linked card is
- * ONE link, so the touch target is the full card (≥44 px, asserted by
- * the mobile e2e journeys).
+ * The homepage's three task cards, mirroring the header's three task
+ * groups in the same display order (three-task-navigation 3.2):
+ * shopping — whose lead is the savings listing — trip, and event. The
+ * titles speak the groups' task language (the header triggers' wording);
+ * the bodies keep the tool descriptions. The shopping card is the only
+ * gated one (`gated: true`, carrying over data-quality-and-publication-
+ * trust 3.2): it links into /savings only while the overview confirms
+ * listing content — zero references or an unreadable overview render its
+ * pending/unavailable non-link variant instead (see the section below).
+ * Icons are decorative (aria-hidden); each linked card is ONE link, so
+ * the touch target is the full card (≥44 px, asserted by the mobile e2e
+ * journeys). Links only — the hero search stays the homepage's single
+ * input (funnel D4).
  */
 const TASK_CARDS = [
   {
-    href: '/basket',
-    titleKey: 'taskCardsBasketTitle',
-    bodyKey: 'taskCardsBasketBody',
+    href: '/savings',
+    gated: true,
+    titleKey: 'taskCardsShoppingTitle',
+    bodyKey: 'taskCardsShoppingBody',
     icon: (
       <svg
         aria-hidden="true"
@@ -52,14 +58,14 @@ const TASK_CARDS = [
         strokeLinecap="round"
         strokeLinejoin="round"
       >
-        <circle cx="9" cy="21" r="1" />
-        <circle cx="20" cy="21" r="1" />
-        <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6" />
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+        <polyline points="17 6 23 6 23 12" />
       </svg>
     ),
   },
   {
     href: '/trip',
+    gated: false,
     titleKey: 'taskCardsTripTitle',
     bodyKey: 'taskCardsTripBody',
     icon: (
@@ -81,6 +87,7 @@ const TASK_CARDS = [
   },
   {
     href: '/event',
+    gated: false,
     titleKey: 'taskCardsEventTitle',
     bodyKey: 'taskCardsEventBody',
     icon: (
@@ -102,58 +109,7 @@ const TASK_CARDS = [
       </svg>
     ),
   },
-  {
-    href: '/what-if',
-    titleKey: 'taskCardsWhatIfTitle',
-    bodyKey: 'taskCardsWhatIfBody',
-    icon: (
-      <svg
-        aria-hidden="true"
-        focusable="false"
-        className="h-5 w-5"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <line x1="4" y1="21" x2="4" y2="14" />
-        <line x1="4" y1="10" x2="4" y2="3" />
-        <line x1="12" y1="21" x2="12" y2="12" />
-        <line x1="12" y1="8" x2="12" y2="3" />
-        <line x1="20" y1="21" x2="20" y2="16" />
-        <line x1="20" y1="12" x2="20" y2="3" />
-        <line x1="1" y1="14" x2="7" y2="14" />
-        <line x1="9" y1="8" x2="15" y2="8" />
-        <line x1="17" y1="16" x2="23" y2="16" />
-      </svg>
-    ),
-  },
 ] as const;
-
-/**
- * The savings-listing card's decorative icon, shared by the linked and
- * the pending state (data-quality-and-publication-trust 3.2).
- */
-function SavingsCardIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      focusable="false"
-      className="h-5 w-5"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-      <polyline points="17 6 23 6 23 12" />
-    </svg>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Savings-listing overview — server read (data-quality-and-publication-
@@ -285,18 +241,20 @@ function deriveHomeGapHeroState(
  * (homepage-live-gap-hero task 2.3, demoting the task 3.1 D7 breakdown
  * — labeled as an example, no API call, the figures cannot drift with
  * live data), a task-card
- * section linking the task tools (links only — the hero search stays
- * the homepage's single input, funnel D4), a "Why Rajahinta.fi" feature
+ * section mirroring the header's three task groups (three-task-
+ * navigation 3.2 — links only, the hero search stays the homepage's
+ * single input, funnel D4), a "Why Rajahinta.fi" feature
  * section surfacing the platform's genuine differentiators, the trust
  * row (data sources, reliability model, accuracy statistic,
  * methodology), and a FAQ section linking PUBLISHED guide entries. The
  * FAQ fetch follows the sitemap degradation contract: a fetch failure or
- * no published entries renders NO section at all. The savings-listing
- * card follows the same honesty contract one level up: with no rows
- * carrying an Alko reference (overview `withReference: 0`), or when the
- * overview cannot be read, the card states the pending state and does
- * NOT link into the listing; the CTA returns with no code change once
- * references exist. AccuracyStat is a self-contained client island.
+ * no published entries renders NO section at all. The shopping card
+ * (the savings listing, the header's shopping-group lead) follows the
+ * same honesty contract: with no rows carrying an Alko reference
+ * (overview `withReference: 0`), or when the overview cannot be read,
+ * the card states the pending/unavailable state and does NOT link into
+ * the listing; the CTA returns with no code change once references
+ * exist. AccuracyStat is a self-contained client island.
  */
 export default async function HomePage({
   params,
@@ -544,12 +502,15 @@ export default async function HomePage({
         </div>
       </section>
 
-      {/* ── Task cards (funnel-evidence-and-value-surfaces task 3.1, D4) ──
-          Server-rendered links to the task tools; the savings-listing
-          card links only once the overview confirms listing content
-          (3.2). Links only — the hero search stays the homepage's
-          single input (D4): no form, no origin selector. Each linked
-          card is one anchor, so the touch target is the full card. */}
+      {/* ── Task cards — the header's three task groups (three-task-
+          navigation 3.2) ──────────────────────────────────────────────
+          Server-rendered links, same display order as the header groups.
+          The shopping card links into /savings only once the overview
+          confirms listing content; zero references or an unreadable
+          overview render its honest non-link state instead (3.2).
+          Links only — the hero search stays the homepage's single
+          input (D4): no form, no origin selector. Each linked card is
+          one anchor, so the touch target is the full card. */}
       <section
         aria-labelledby="home-taskcards-heading"
         className="border-b border-gray-100 bg-white px-4 py-16 sm:px-6"
@@ -563,64 +524,47 @@ export default async function HomePage({
           </h2>
 
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {TASK_CARDS.map((card) => (
-              <Link
-                key={card.href}
-                href={card.href}
-                className="group flex flex-col rounded-xl border border-gray-100 bg-gray-50 p-5 transition-colors hover:border-primary-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
-              >
-                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary-100 text-primary-700">
-                  {card.icon}
+            {TASK_CARDS.map((card) =>
+              card.gated && !savingsListingReady ? (
+                /* The gated shopping card's honest non-link state (3.2):
+                   pending at `withReference: 0`, could-not-verify on a
+                   failed overview read — never a CTA into a listing that
+                   may have no content. Same title and icon as the linked
+                   branch, so the card set stays at three in every state. */
+                <div
+                  key={card.href}
+                  data-testid="savings-card-pending"
+                  className="flex flex-col rounded-xl border border-gray-100 bg-gray-50 p-5"
+                >
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-gray-200 text-gray-600">
+                    {card.icon}
+                  </div>
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    {t(card.titleKey)}
+                  </h3>
+                  <p className="mt-1.5 text-xs leading-relaxed text-gray-600">
+                    {savingsOverview === null
+                      ? t('taskCardsShoppingUnavailableBody')
+                      : t('taskCardsShoppingPendingBody')}
+                  </p>
                 </div>
-                <h3 className="text-sm font-semibold text-gray-900 transition-colors group-hover:text-primary-800">
-                  {t(card.titleKey)}
-                </h3>
-                <p className="mt-1.5 text-xs leading-relaxed text-gray-600">
-                  {t(card.bodyKey)}
-                </p>
-              </Link>
-            ))}
-
-            {/* ── Savings-listing card (3.2) ──────────────────────────
-                Links into /savings only when the overview confirms
-                rows with an Alko reference; zero references render the
-                honest pending state and a failed overview read the
-                could-not-verify state — both as a plain card, never a
-                link into a listing that may have no content. The
-                linked branch is byte-identical to the previous static
-                card, so the CTA returns unchanged at non-zero. */}
-            {savingsListingReady ? (
-              <Link
-                href="/savings"
-                className="group flex flex-col rounded-xl border border-gray-100 bg-gray-50 p-5 transition-colors hover:border-primary-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
-              >
-                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary-100 text-primary-700">
-                  <SavingsCardIcon />
-                </div>
-                <h3 className="text-sm font-semibold text-gray-900 transition-colors group-hover:text-primary-800">
-                  {t('taskCardsSavingsTitle')}
-                </h3>
-                <p className="mt-1.5 text-xs leading-relaxed text-gray-600">
-                  {t('taskCardsSavingsBody')}
-                </p>
-              </Link>
-            ) : (
-              <div
-                data-testid="savings-card-pending"
-                className="flex flex-col rounded-xl border border-gray-100 bg-gray-50 p-5"
-              >
-                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-gray-200 text-gray-600">
-                  <SavingsCardIcon />
-                </div>
-                <h3 className="text-sm font-semibold text-gray-900">
-                  {t('taskCardsSavingsTitle')}
-                </h3>
-                <p className="mt-1.5 text-xs leading-relaxed text-gray-600">
-                  {savingsOverview === null
-                    ? t('taskCardsSavingsUnavailableBody')
-                    : t('taskCardsSavingsPendingBody')}
-                </p>
-              </div>
+              ) : (
+                <Link
+                  key={card.href}
+                  href={card.href}
+                  className="group flex flex-col rounded-xl border border-gray-100 bg-gray-50 p-5 transition-colors hover:border-primary-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+                >
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary-100 text-primary-700">
+                    {card.icon}
+                  </div>
+                  <h3 className="text-sm font-semibold text-gray-900 transition-colors group-hover:text-primary-800">
+                    {t(card.titleKey)}
+                  </h3>
+                  <p className="mt-1.5 text-xs leading-relaxed text-gray-600">
+                    {t(card.bodyKey)}
+                  </p>
+                </Link>
+              ),
             )}
           </div>
         </div>

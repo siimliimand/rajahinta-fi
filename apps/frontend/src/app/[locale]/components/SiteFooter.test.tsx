@@ -127,6 +127,7 @@ describe('SiteFooter blog/guides link visibility (task 4.1)', () => {
     expect(html).toContain('href="/guides"');
     // The rest of the footer is untouched by the gating.
     expect(html).toContain('href="/ranking"');
+    expect(html).toContain('href="/what-if"');
     expect(html).toContain('data-testid="newsletter-subscribe"');
   });
 
@@ -154,6 +155,8 @@ describe('SiteFooter blog/guides link visibility (task 4.1)', () => {
     expect(html).not.toContain('href="/guides"');
     // The ungated chrome still renders.
     expect(html).toContain('href="/ranking"');
+    // The scenario calculator link is publication-independent too.
+    expect(html).toContain('href="/what-if"');
     expect(html).toContain('Rajahinta.fi on riippumaton hintavertailu-');
   });
 
@@ -165,6 +168,7 @@ describe('SiteFooter blog/guides link visibility (task 4.1)', () => {
     const html = await renderFooterHtml();
 
     expect(html).toContain('href="/en/blog"');
+    expect(html).toContain('href="/en/what-if"');
     expect(html).not.toContain('href="/guides"');
     expect(html).not.toContain('href="/en/guides"');
     const paths = mockedRequest.mock.calls.map(([p]) => String(p));

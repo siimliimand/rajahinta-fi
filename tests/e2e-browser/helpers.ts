@@ -55,6 +55,15 @@ export const COPY = {
   liveGapUnavailableBody:
     'Päivän vertailua ei voitu ladata juuri nyt. Voit yrittää myöhemmin uudelleen.',
   howItWorksHeading: 'Näin se toimii',
+  // Header navigation (SiteHeader namespace — three-task-navigation):
+  // the mobile menu toggle and the three task-group triggers, which
+  // speak task language; panel items keep the tool names.
+  navToggle: 'Päävalikko',
+  groupShopping: 'Mitä kannattaa ostaa?',
+  groupTrip: 'Suunnittele matka',
+  groupEvent: 'Suunnittele juhlat',
+  navCalculator: 'Laskuri',
+  navBasket: 'Ostoskori',
 } as const;
 
 /** Structural disclaimer (packages/core-domain/src/disclaimer.ts, fi). */
@@ -102,12 +111,21 @@ export const SEED = {
  */
 export async function acceptAgeGate(page: Page): Promise<void> {
   await page.goto('/');
-  await page
-    .getByRole('button', { name: COPY.ageGateConfirm, exact: true })
-    .click();
-  await expect(
-    page.getByRole('button', { name: COPY.ageGateConfirm, exact: true }),
-  ).toBeHidden();
+  const confirm = page.getByRole('button', {
+    name: COPY.ageGateConfirm,
+    exact: true,
+  });
+  await confirm.click();
+  // The confirm handler is a client-only cookie write, so a click that
+  // lands before React hydration can be a no-op — re-click once if the
+  // gate is still up. The gate MUST hide either way; that assertion is
+  // the contract and is never relaxed.
+  try {
+    await expect(confirm).toBeHidden({ timeout: 3_000 });
+  } catch {
+    await confirm.click();
+    await expect(confirm).toBeHidden();
+  }
 }
 
 /**

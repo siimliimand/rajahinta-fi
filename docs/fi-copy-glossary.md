@@ -134,7 +134,7 @@ rules R1–R3; the implementing tasks set the exact final strings.
 - After: `Etanolin grammahinta (halvin ensin)`
 - Rule: §3.1 scope + §1 term (example deliberately shows both fixes in one string).
 
-**E8 — Daily snapshot.** `taskCardsSavingsBody`; savings metaDescription; value `emptyBody`.
+**E8 — Daily snapshot.** `taskCardsShoppingBody` (homepage shopping card, three-task-navigation 3.2 renamed the key from `taskCardsSavingsBody`); savings metaDescription; value `emptyBody`.
 - Before: `"Päivittäin materialisoitu luettelo arvioiduista kokonaishinnoista…"`; `…päivittäin materialisoituna. Tiedollinen luettelo.`; `"Tälle tuoteryhmälle ei ole vielä materialisoitunut yhtään riviä…"`
 - After: `Päivittäin päivitetty luettelo arvioiduista kokonaishinnoista…`; `…päivittäin päivitettynä. Luettelo vain tiedoksi.`; `Tälle tuoteryhmälle ei ole vielä päivittynyt yhtään riviä…`
 - Rule: consumer register for dataset freshness (§1).
