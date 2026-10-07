@@ -373,6 +373,56 @@ describe('runIngestionWorkflow — staged pipeline', () => {
     expect(names.filter((n) => n.startsWith('upsert-offers-'))).toHaveLength(2);
   });
 
+  it('crosses a chunk-budget sleep boundary during the upsert loop for a first-run araxes-sized catalog (≥7 chunks)', async () => {
+    // Regression (staging 2026-10-07, instance 1c2cddc7, change
+    // onboard-araxes-merchant): araxes' 1,540 first-run pairs = 7 chunks
+    // exhausted the per-invocation D1 quota (~1k first-run pairs) before
+    // the then-16-chunk window ever fired — chunks 5–7 died
+    // deterministically. A mid-size catalog must cross at least one
+    // durable boundary mid-loop so later chunks get a fresh quota.
+    const records = Array.from(
+      { length: 7 * UPSERT_CHUNK_SIZE },
+      (_, i) => feedRecord({ productId: `alko-${i}`, ean: null }),
+    );
+    const services = stageServices({ feedRecords: records });
+    const { step, promise } = runWorkflow(services, {
+      complete: noopClaim,
+      release: noopClaim,
+    });
+
+    const result = (await promise) as { productsIngested: number };
+
+    expect(result.productsIngested).toBe(7 * UPSERT_CHUNK_SIZE);
+    expect(
+      step.sleeps.filter((s) => s.name.startsWith('chunk-budget-reset-')),
+    ).not.toHaveLength(0);
+  });
+
+  it('pins the chunk-budget cadence: a 7-chunk catalog sleeps after chunks 2, 4, and 6', async () => {
+    const records = Array.from(
+      { length: 7 * UPSERT_CHUNK_SIZE },
+      (_, i) => feedRecord({ productId: `alko-${i}`, ean: null }),
+    );
+    const services = stageServices({ feedRecords: records });
+    const { step, promise } = runWorkflow(services, {
+      complete: noopClaim,
+      release: noopClaim,
+    });
+
+    await promise;
+
+    // DELIBERATE PIN on CHUNK_BUDGET_RESET_EVERY = 2 — a constant change
+    // must update this list on purpose: the boundary fires before chunks
+    // 3, 5, 7 (after 2, 4, 6), i.e. ≤ 500 first-run pairs per invocation
+    // window, with no sleep after the final chunk of this run.
+    expect(step.sleeps.map((s) => s.name)).toEqual([
+      'chunk-budget-reset-3',
+      'chunk-budget-reset-5',
+      'chunk-budget-reset-7',
+    ]);
+    expect(step.sleeps.map((s) => s.sleepFor)).toEqual([1_000, 1_000, 1_000]);
+  });
+
   it('reports a zero-product run with the registry error and still completes the claim (runIngestion parity)', async () => {
     const services = stageServices({ registryRow: null });
     const complete = vi.fn(noopClaim);
