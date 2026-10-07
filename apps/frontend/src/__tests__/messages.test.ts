@@ -231,9 +231,11 @@ describe('layout and navigation catalog completeness', () => {
 
 // ---------------------------------------------------------------------------
 // Honest-state catalog keys (data-quality-and-publication-trust 3.1 +
-// 3.2): the calculator's transport-unavailable line and the homepage
-// savings-card pending copy must exist as full key sets in BOTH locales
-// — parity is what the honest states render from.
+// 3.2; three-task-navigation 3.2): the calculator's transport-unavailable
+// line and the homepage task-card copy (heading, three task-language
+// titles, bodies, and the shopping card's pending/unavailable variants)
+// must exist as full key sets in BOTH locales — parity is what the honest
+// states render from.
 // ---------------------------------------------------------------------------
 
 describe('honest-state catalog key parity (3.1 + 3.2)', () => {
@@ -284,12 +286,17 @@ describe('honest-state catalog key parity (3.1 + 3.2)', () => {
     ]);
   });
 
-  it('Home carries both savings-card honest-state bodies in parity', () => {
+  it('Home carries the full task-card key set in parity (three-task-navigation 3.2)', () => {
     expectParity('Home', null, [
-      'taskCardsSavingsTitle',
-      'taskCardsSavingsBody',
-      'taskCardsSavingsPendingBody',
-      'taskCardsSavingsUnavailableBody',
+      'taskCardsHeading',
+      'taskCardsShoppingTitle',
+      'taskCardsShoppingBody',
+      'taskCardsShoppingPendingBody',
+      'taskCardsShoppingUnavailableBody',
+      'taskCardsTripTitle',
+      'taskCardsTripBody',
+      'taskCardsEventTitle',
+      'taskCardsEventBody',
     ]);
   });
 

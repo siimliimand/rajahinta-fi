@@ -1,25 +1,30 @@
 /**
- * Homepage task-card section tests (funnel-evidence-and-value-surfaces
- * tasks 3.1 + 3.2, D4; data-quality-and-publication-trust 3.2).
+ * Homepage task-card section tests (three-task-navigation task 3.2;
+ * carries over the gating contract of data-quality-and-publication-
+ * trust 3.2).
  *
  * Renders the REAL server component to an HTML string (page.ssr.test.tsx
  * precedent; only Next server plumbing is mocked), pinning the static
  * task-card contract in BOTH locales (layout.ssr.test.tsx precedent for
  * steering the catalog):
  *
- *   1. The section renders server-side with its localized heading.
- *   2. All five task destinations are linked (/basket, /trip, /event,
- *      /what-if, /savings), each card being ONE anchor wrapping the
- *      localized title and body — /savings only while the savings
- *      overview confirms listing content.
+ *   1. The section renders server-side with its localized heading and
+ *      mirrors the header's three task groups in display order:
+ *      shopping (→ /savings), trip (→ /trip), event (→ /event).
+ *   2. Each card is ONE anchor wrapping the localized task-language
+ *      title and tool body — the whole card is the touch target.
  *   3. The section is static: links only — no form, input, or button.
  *      The hero search stays the homepage's single input (funnel D4),
  *      so the only form on the page remains the hero search.
- *   4. The savings card mirrors the overview honestly (3.2): zero
- *      rows with an Alko reference (`withReference: 0`) and a failed
- *      overview read BOTH render the non-link pending card — no CTA
- *      into an empty or unverified listing; a non-zero count restores
- *      the linked card with no copy change.
+ *   4. The demoted cards are gone: no /basket or /what-if anchor and no
+ *      basket-optimization/scenario catalog copy anywhere on the page
+ *      (the footer owns those destinations — three-task-navigation
+ *      D5/D6).
+ *   5. The shopping card mirrors the savings overview honestly (3.2):
+ *      zero rows with an Alko reference (`withReference: 0`) and a
+ *      failed overview read BOTH render the non-link pending card — no
+ *      CTA into an empty or unverified listing; a non-zero count
+ *      restores the linked card with no copy change.
  *
  * @module HomePageTaskCardsTest
  */
@@ -97,9 +102,9 @@ vi.mock('./components/AccuracyStat', () => ({
 // ---------------------------------------------------------------------------
 // Savings overview — the homepage's server fetch (3.2) goes through
 // global fetch; default every render to a POPULATED overview so the
-// established five-anchor pins keep exercising the linked card
-// (savings-page.test.tsx stubbing precedent). The honest-state tests
-// override it.
+// established three-anchor pins keep exercising the linked shopping
+// card (savings-page.test.tsx stubbing precedent). The honest-state
+// tests override it.
 // ---------------------------------------------------------------------------
 
 /** Shape GET /api/v1/savings/overview serves; only the fields page.tsx reads. */
@@ -137,71 +142,61 @@ function mockOverviewFetch(body: unknown | null): void {
 }
 
 // ---------------------------------------------------------------------------
-// Fixtures — verbatim catalog copy (source of truth: messages/{fi,en}.json).
+// Fixtures — verbatim catalog copy (source of truth: messages/{fi,en}.json),
+// in the header's group order: shopping, trip, event. The shopping card's
+// pending/unavailable bodies are pinned separately (5).
 // ---------------------------------------------------------------------------
 
 const HEADING = {
-  fi: 'Laskurityökalut muihin tilanteisiin',
-  en: 'Calculation tools for other tasks',
+  fi: 'Valitse tilanteesi',
+  en: 'Pick your task',
 } as const;
 
 const TASK_CARDS = [
   {
-    href: '/basket',
+    href: '/savings',
     fi: {
-      title: 'Ostoskorin optimointi',
-      body: 'Yhdistä useita tuotteita yhdeksi ostoskoriksi ja laske optimaalinen myyjäyhdistelmä kokonaiskustannusarviona Suomeen.',
+      title: 'Mitä kannattaa ostaa?',
+      body: 'Päivittäin päivitetty luettelo arvioiduista kokonaishinnoista ja niiden erosta Alkon viitehintaan kategorioittain.',
     },
     en: {
-      title: 'Basket optimization',
-      body: 'Combine several products into one basket and compute the optimal store combination as a landed-cost estimate for Finland.',
+      title: "What's worth buying?",
+      body: 'A daily updated listing of estimated landed totals and their gap against the Alko reference price, by category.',
     },
   },
   {
     href: '/trip',
     fi: {
-      title: 'Matkalaskuri',
+      title: 'Suunnittele matka',
       body: 'Vertaa kokonaisen matkan ostoskoreja: matkakustannuksen osuus, kategoriakohtainen hintaero ja tullivapaiden määrien vaikutus.',
     },
     en: {
-      title: 'Trip calculator',
+      title: 'Plan a trip',
       body: 'Compare baskets for a whole trip: the shared travel cost, the per-category price difference, and the effect of the duty-free allowances.',
     },
   },
   {
     href: '/event',
     fi: {
-      title: 'Tilaisuuslaskuri',
+      title: 'Suunnittele juhlat',
       body: 'Arvioi juomatarve vieraiden määrän ja tilaisuuden keston perusteella — eriteltynä ostoslistana rivi riviltä.',
     },
     en: {
-      title: 'Event calculator',
+      title: 'Plan a party',
       body: 'Estimate the drink demand from the guest count and the event duration, itemized line by line as a shopping list.',
     },
   },
-  {
-    href: '/what-if',
-    fi: {
-      title: 'Skenaariolaskuri',
-      body: 'Korvaa valmisteveron verokanta valitsemallasi arvolla ja vertaa tuotteiden kokonaishintoja. Laskelma on hypoteettinen.',
-    },
-    en: {
-      title: 'Scenario calculator',
-      body: 'Substitute the excise duty rate with a value of your choice and compare product totals. The calculation is hypothetical.',
-    },
-  },
-  {
-    href: '/savings',
-    fi: {
-      title: 'Kokonaishinta-ero Alko-viitehintaan',
-      body: 'Päivittäin päivitetty luettelo arvioiduista kokonaishinnoista ja niiden erosta Alkon viitehintaan kategorioittain.',
-    },
-    en: {
-      title: 'Landed-cost gap versus the Alko reference',
-      body: 'A daily updated listing of estimated landed totals and their gap against the Alko reference price, by category.',
-    },
-  },
 ] as const;
+
+const SHOPPING_PENDING_BODY = {
+  fi: 'Alkon viitehintoja ei ole vielä yhdistetty tuotteiden kokonaishintalaskelmiin, joten luetteloa ei ole vielä julkaistu.',
+  en: "Alko reference prices are not yet matched to the products' landed-cost calculations, so the listing is not published yet.",
+} as const;
+
+const SHOPPING_UNAVAILABLE_BODY = {
+  fi: 'Luettelon saatavuutta ei voitu tarkistaa juuri nyt.',
+  en: "The listing's availability could not be verified just now.",
+} as const;
 
 /** Localized href the Link mock produces for a bare app path. */
 function localizedHref(href: string, locale: 'fi' | 'en'): string {
@@ -230,22 +225,30 @@ function taskCardSection(page: HTMLElement): HTMLElement {
 // Pins
 // ---------------------------------------------------------------------------
 
-describe('HomePage task cards (funnel-evidence-and-value-surfaces task 3.1, D4)', () => {
+describe('HomePage task cards (three-task-navigation 3.2)', () => {
   it.each(['fi', 'en'] as const)(
     'renders the static task-card section with its localized heading (%s)',
     async (locale) => {
       const section = taskCardSection(await renderHome(locale));
 
       expect(section.querySelector('h2')?.textContent).toBe(HEADING[locale]);
-      // Exactly five cards: the section is one anchor per task tool.
+      // Exactly three cards: the section mirrors the header's three
+      // task groups, one anchor per group.
       expect(section.querySelectorAll('a')).toHaveLength(TASK_CARDS.length);
     },
   );
 
   it.each(['fi', 'en'] as const)(
-    'links all five task destinations, each card one anchor with the localized title (%s)',
+    'links the three task groups in header order, each card one anchor with the task-language title (%s)',
     async (locale) => {
       const section = taskCardSection(await renderHome(locale));
+
+      const anchors = Array.from(
+        section.querySelectorAll<HTMLAnchorElement>('a'),
+      );
+      expect(anchors.map((a) => a.getAttribute('href'))).toEqual(
+        TASK_CARDS.map((card) => localizedHref(card.href, locale)),
+      );
 
       for (const card of TASK_CARDS) {
         const anchor = section.querySelector<HTMLAnchorElement>(
@@ -275,9 +278,26 @@ describe('HomePage task cards (funnel-evidence-and-value-surfaces task 3.1, D4)'
           card[locale].body,
         );
       }
-      // Heading, all five titles, and all five bodies resolved from
+      // Heading, all three titles, and all three bodies resolved from
       // this locale's catalog — a missing key would render __MISSING__.
       expect(page.textContent).not.toContain('__MISSING_');
+    },
+  );
+
+  it.each(['fi', 'en'] as const)(
+    'renders no demoted card: no /basket or /what-if anchor or copy (%s)',
+    async (locale) => {
+      const page = await renderHome(locale);
+
+      // The basket card and the what-if card were removed with the
+      // header's flat links (three-task-navigation D5/D6) — their
+      // destinations and catalog copy are absent from the homepage.
+      expect(page.querySelector('a[href*="basket"], a[href*="what-if"]'))
+        .toBeNull();
+      expect(page.textContent).not.toContain('Ostoskorin optimointi');
+      expect(page.textContent).not.toContain('Skenaariolaskuri');
+      expect(page.textContent).not.toContain('Basket optimization');
+      expect(page.textContent).not.toContain('Scenario calculator');
     },
   );
 
@@ -300,15 +320,15 @@ describe('HomePage task cards (funnel-evidence-and-value-surfaces task 3.1, D4)'
 });
 
 // ---------------------------------------------------------------------------
-// Savings-card honesty (data-quality-and-publication-trust 3.2) — the
-// card mirrors the overview: `withReference: 0` (the overview's summed
-// productCount) and a failed read render the non-link pending state;
-// a non-zero count keeps the established anchor.
+// Shopping-card honesty (3.2, carried over) — the card mirrors the
+// overview: `withReference: 0` (the overview's summed productCount) and
+// a failed read render the non-link pending state; a non-zero count
+// keeps the established anchor.
 // ---------------------------------------------------------------------------
 
-describe('HomePage savings-card honest state (3.2)', () => {
+describe('HomePage shopping-card honest state (3.2)', () => {
   it.each(['fi', 'en'] as const)(
-    'keeps the five anchors when the overview reports a non-zero reference count (%s)',
+    'keeps the three anchors when the overview reports a non-zero reference count (%s)',
     async (locale) => {
       const section = taskCardSection(await renderHome(locale));
 
@@ -337,20 +357,15 @@ describe('HomePage savings-card honest state (3.2)', () => {
           'a[href="/savings"], a[href="/en/savings"]',
         ),
       ).toBeNull();
-      // The card stays present and names the pending state, keeping the
-      // section's grid at five cards.
+      // The card stays present and names the pending state, keeping
+      // the section at three cards (the other two keep their anchors).
       const pending = section.querySelector('[data-testid="savings-card-pending"]');
       expect(pending).not.toBeNull();
       expect(
         pending?.querySelector('h3')?.textContent,
       ).toBe(TASK_CARDS.find((card) => card.href === '/savings')![locale].title);
-      expect(pending?.textContent).toContain(
-        locale === 'fi'
-          ? 'Alkon viitehintoja ei ole vielä yhdistetty tuotteiden kokonaishintalaskelmiin, joten luetteloa ei ole vielä julkaistu.'
-          : "Alko reference prices are not yet matched to the products' landed-cost calculations, so the listing is not published yet.",
-      );
-      // The other four task tools keep their anchors.
-      expect(section.querySelectorAll('a')).toHaveLength(4);
+      expect(pending?.textContent).toContain(SHOPPING_PENDING_BODY[locale]);
+      expect(section.querySelectorAll('a')).toHaveLength(2);
       // Every catalog key resolved (a missing key would render __MISSING__).
       expect(section.textContent).not.toContain('__MISSING_');
     },
@@ -367,12 +382,8 @@ describe('HomePage savings-card honest state (3.2)', () => {
       ).toBeNull();
       const pending = section.querySelector('[data-testid="savings-card-pending"]');
       expect(pending).not.toBeNull();
-      expect(pending?.textContent).toContain(
-        locale === 'fi'
-          ? 'Luettelon saatavuutta ei voitu tarkistaa juuri nyt.'
-          : "The listing's availability could not be verified just now.",
-      );
-      expect(section.querySelectorAll('a')).toHaveLength(4);
+      expect(pending?.textContent).toContain(SHOPPING_UNAVAILABLE_BODY[locale]);
+      expect(section.querySelectorAll('a')).toHaveLength(2);
     },
   );
 });
