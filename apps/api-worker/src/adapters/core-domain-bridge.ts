@@ -85,7 +85,11 @@ export { DISCLAIMER_FI } from '../../../../packages/core-domain/src/disclaimer';
 export { TAX_TYPES } from '../../../../packages/core-domain/src/tax/tax-categories';
 export { normaliseCategory } from '../../../../packages/core-domain/src/tax/services/alcohol-excise.math';
 // Outcomes — the spec-fixed margin fraction interpolated into the D1
-// accuracy aggregate's SQL (calculation-outcome.repository.ts).
+// accuracy aggregate's SQL (calculation-outcome.repository.ts). The
+// empirical margin calibration is deliberately NOT re-exported here:
+// the accuracy input-isolation guard allows the bridge only the
+// value-free outcomes contact, and the margin step imports the pure
+// calibration via the package's deep source paths instead.
 export { WITHIN_MARGIN_FRACTION } from '../../../../packages/core-domain/src/outcomes/outcomes.types';
 
 // ---------------------------------------------------------------------------

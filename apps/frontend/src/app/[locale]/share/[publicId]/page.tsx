@@ -7,8 +7,9 @@ import { notFound } from 'next/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
+import ConfidenceMeter from '../../components/ConfidenceMeter';
 import { getServerShareSnapshot } from '../share.server';
-import type { Disclaimer } from '@/lib/types';
+import type { Disclaimer, EmpiricalMargin } from '@/lib/types';
 
 interface SharePageProps {
   params: Promise<{ locale: string; publicId: string }>;
@@ -99,6 +100,45 @@ function parseDisclaimer(disclaimer: unknown): Disclaimer | null {
     return null;
   }
   return { text: d.text, language: d.language, version: d.version };
+}
+
+/**
+ * The empirical margin frozen into the digest (hedge-dedup-confidence-
+ * meter 4.2, design D6). Like every stored-JSON face on this page, it is
+ * validated structurally before render: a legacy snapshot lacks the key
+ * entirely and a corrupt value degrades to null — both leave the meter
+ * unrendered, never a crash, never a fabricated figure.
+ */
+function parseEmpiricalMargin(value: unknown): EmpiricalMargin | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const m = value as Record<string, unknown>;
+  const cell =
+    typeof m.cell === 'object' && m.cell !== null
+      ? (m.cell as Record<string, unknown>)
+      : null;
+  if (
+    typeof m.quantile !== 'number' ||
+    !Number.isFinite(m.quantile) ||
+    m.quantile < 0 ||
+    typeof m.sampleCount !== 'number' ||
+    !Number.isInteger(m.sampleCount) ||
+    m.sampleCount < 1 ||
+    cell === null ||
+    typeof cell.dimension !== 'string' ||
+    cell.dimension === '' ||
+    typeof cell.key !== 'string' ||
+    cell.key === '' ||
+    typeof m.asOf !== 'string' ||
+    m.asOf === ''
+  ) {
+    return null;
+  }
+  return {
+    quantile: m.quantile,
+    sampleCount: m.sampleCount,
+    cell: { dimension: cell.dimension, key: cell.key },
+    asOf: m.asOf,
+  };
 }
 
 function formatEuro(cents: number, locale: string): string {
@@ -230,6 +270,11 @@ export default async function SharePage({ params }: SharePageProps) {
           : line.label,
   }));
   const disclaimer = parseDisclaimer(snapshot.disclaimer);
+  // The margin is a frozen digest field (design D6): legacy snapshots
+  // lack it, corrupt values degrade to null — both leave the meter
+  // unrendered (the component's render-nothing contract), and the
+  // legacy snapshot's DOM is unchanged byte-for-byte.
+  const margin = parseEmpiricalMargin(snapshot.empiricalMargin);
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
@@ -274,6 +319,15 @@ export default async function SharePage({ params }: SharePageProps) {
         >
           {formatEuro(snapshot.totalCents, locale)}
         </p>
+        {/* ── Empirical margin (hedge-dedup-confidence-meter 4.2,
+            design D6): display-only ± figure beside the frozen total,
+            basis (percent, n, as-of) always adjacent. Absent or corrupt
+            margin renders nothing — the legacy snapshot's output is
+            unchanged. ── */}
+        <ConfidenceMeter
+          margin={margin ?? undefined}
+          totalCents={snapshot.totalCents}
+        />
         <p className="mt-1 text-xs text-gray-400">
           {snapshot.currency} · {calculated !== null ? t('calculatedLabel', { date: calculated }) : ''}
         </p>

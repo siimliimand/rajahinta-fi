@@ -34,6 +34,15 @@ vi.mock('@/lib/api', async (importOriginal) => {
 
 const mockedRequest = vi.mocked(request);
 
+// The empirical-margin meter (hedge-dedup-confidence-meter 4.1) joins
+// the event tree's import graph with the i18n navigation Link; stub it
+// with the plain-anchor shape the other view/page tests use.
+vi.mock('@/i18n/navigation', () => ({
+  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
+    React.createElement('a', props),
+}));
+
+
 const WEDDING = EVENT_OCCASION_TEMPLATES.find((t) => t.id === 'wedding')!;
 
 /** Today in the user's local calendar — what the view sends as eventDate. */

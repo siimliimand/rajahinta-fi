@@ -13,7 +13,11 @@
  * - ownership: a foreign or unclaimed record is the same 404 (no
  *   record-id oracle);
  * - the public GET is anonymous, treats malformed and unknown ids
- *   identically, and includes the structural disclaimer.
+ *   identically, and includes the structural disclaimer;
+ * - the freeze-side empirical margin (hedge-dedup-confidence-meter
+ *   D6): a new snapshot freezes the ladder margin as an additive
+ *   aggregate-only field, and an empty ladder freezes no key at all
+ *   (absent, never null — legacy shape untouched).
  *
  * @module ShareRoutesTest
  */
@@ -23,11 +27,13 @@ import {
   buildApp,
   expectEnvelope,
   issueSessionToken,
+  MARGIN_LADDER_AS_OF,
   openMigratedD1,
   permissiveEnv,
   request,
   seedAccount,
   seedCalculationRecord,
+  seedMarginLadder,
   seedProduct,
 } from './harness';
 
@@ -139,6 +145,111 @@ describe('POST /api/v1/calculations/:id/share', () => {
       await s.d1.prepare('SELECT COUNT(*) AS n FROM share_snapshots').first<{ n: number }>()
     )!.n;
     expect(count).toBe(0);
+  });
+});
+
+describe('share freeze — empirical margin (hedge-dedup-confidence-meter D6)', () => {
+  it('freezes the ladder margin as an additive field when the ladder has data', async () => {
+    const s = await setup();
+    // The shared calibrated ladder (beer|posti 0.01/10, beer 0.02/12,
+    // global 0.05/16) — seeded through the real cron write path.
+    await seedMarginLadder(s.db, s.d1);
+    seedProduct(s.db, { id: 1 }); // category 'beer'
+    seedCalculationRecord(s.db, {
+      id: 100,
+      productMasterId: 1,
+      sessionId: 'user-7',
+      transportOfferId: 81, // the corpus's posti offer
+    });
+
+    const created = await postShare(s, s.token7, 100);
+    expect(created.status).toBe(201);
+    const { publicId } = (await created.json()) as ShareBody;
+    const app = buildApp();
+    const res = await request(app, permissiveEnv(s.d1), `/api/v1/share/${publicId}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      snapshot: Record<string, unknown>;
+    };
+    // Deepest rung wins, quantile clamped across the surviving path —
+    // the exact view the result routes attach, now frozen.
+    expect(body.snapshot.empiricalMargin).toEqual({
+      quantile: 0.01,
+      sampleCount: 10,
+      cell: { dimension: 'category_carrier', key: 'beer|posti' },
+      asOf: MARGIN_LADDER_AS_OF.toISOString(),
+    });
+
+    // Additive: exactly the documented key set plus the one new field.
+    expect(Object.keys(body.snapshot).sort()).toEqual(
+      [
+        'breakdown',
+        'calculatedAt',
+        'confidence',
+        'currency',
+        'destination',
+        'disclaimer',
+        'empiricalMargin',
+        'product',
+        'quantity',
+        'totalCents',
+        'type',
+      ].sort(),
+    );
+    // Aggregate-only: no account identifier rides the frozen field.
+    const serialized = JSON.stringify(body.snapshot).toLowerCase();
+    for (const banned of ['userid', 'user_id', 'session', 'user-7', 'email']) {
+      expect(serialized).not.toContain(banned);
+    }
+  });
+
+  it('the frozen margin survives the record and the ladder afterwards (freeze-time, not read-time)', async () => {
+    const s = await setup();
+    await seedMarginLadder(s.db, s.d1);
+    seedProduct(s.db, { id: 1 });
+    seedCalculationRecord(s.db, {
+      id: 100,
+      productMasterId: 1,
+      sessionId: 'user-7',
+      transportOfferId: 81,
+    });
+
+    const created = await postShare(s, s.token7, 100);
+    expect(created.status).toBe(201);
+    const { publicId } = (await created.json()) as ShareBody;
+
+    // The record is pruned and the ladder rewritten — the snapshot is
+    // a COPY frozen at creation; its margin cannot drift with them.
+    s.db.prepare('DELETE FROM outcome_margins').run();
+    s.db.prepare('DELETE FROM calculation_records WHERE id = 100').run();
+
+    const res = await request(
+      buildApp(),
+      permissiveEnv(s.d1),
+      `/api/v1/share/${publicId}`,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      snapshot: Record<string, unknown>;
+    };
+    expect(body.snapshot.empiricalMargin).toEqual({
+      quantile: 0.01,
+      sampleCount: 10,
+      cell: { dimension: 'category_carrier', key: 'beer|posti' },
+      asOf: MARGIN_LADDER_AS_OF.toISOString(),
+    });
+  });
+
+  it('freezes NO margin key when the ladder is empty (absent, not null)', async () => {
+    const s = await setup();
+    const { publicId } = await createShareForOwnedRecord(s);
+    const app = buildApp();
+
+    const res = await request(app, permissiveEnv(s.d1), `/api/v1/share/${publicId}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { snapshot: Record<string, unknown> };
+    expect('empiricalMargin' in body.snapshot).toBe(false);
+    expect(JSON.stringify(body.snapshot)).not.toContain('empiricalMargin');
   });
 });
 

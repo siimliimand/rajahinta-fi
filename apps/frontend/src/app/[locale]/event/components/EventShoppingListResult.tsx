@@ -133,10 +133,18 @@ export default function EventShoppingListResult({
             ))}
           </div>
           {/* ── V2 sourcing plan (task 4.5) — present only when the
-                  request carried the sourcing section. ── */}
+                  request carried the sourcing section. The response's
+                  empirical margin (hedge-dedup-confidence-meter 4.1)
+                  rides along: it qualifies the priced plan total and
+                  renders beside it; without a priced plan there is no
+                  euro total to qualify, so no meter is implied. ── */}
           {result.plan && (
             <div className="mt-8">
-              <EventPlanResult plan={result.plan} packing={result.packing} />
+              <EventPlanResult
+                plan={result.plan}
+                packing={result.packing}
+                empiricalMargin={result.empiricalMargin}
+              />
             </div>
           )}
         </>

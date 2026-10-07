@@ -14,14 +14,17 @@
  *   4. Reliability-explanation sentences recompose in the active locale
  *      from the wire's dimension prefix + closed status; an unknown
  *      dimension or a sentence without the prefix renders verbatim.
+ *   5. Single disclaimer render per combination with confidence-keyed
+ *      intensity, and the de-qualified (no estimate qualifier) plain
+ *      line labels (hedge-dedup-confidence-meter 3.2, designs D1/D2).
  *
  * @module BasketResultsLocalizationTest
  */
 // @vitest-environment jsdom
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { NextIntlClientProvider } from 'next-intl';
 import BasketResults from './BasketResults';
 import { renderWithIntl } from '@/lib/testing/test-intl';
@@ -31,6 +34,14 @@ import type {
   BasketShipment,
 } from '@/lib/basket.types';
 import type { ConfidenceDetail, ItemizedCost } from '@/lib/types';
+
+// The empirical-margin meter (hedge-dedup-confidence-meter 4.1) renders
+// its /ranking link through the i18n navigation Link; stub it with the
+// plain-anchor shape the other view tests use.
+vi.mock('@/i18n/navigation', () => ({
+  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
+    React.createElement('a', props),
+}));
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -201,14 +212,14 @@ describe('BasketResults line labels (code-keyed, D1)', () => {
       screen.getByText('Pakkausvero (sallitun määrän ylittävä osa)'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText('Tuonnin arvonlisävero (arvio)'),
+      screen.getByText('Tuonnin arvonlisävero'),
     ).toBeInTheDocument();
     expect(
       screen.getByText('Tuonnin arvonlisävero (sallitun määrän sisällä, veroton)'),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Tuonnin arvonlisävero (sallitun määrän ylittävä osa, arvio)',
+        'Tuonnin arvonlisävero (sallitun määrän ylittävä osa)',
       ),
     ).toBeInTheDocument();
     // A coded line never surfaces the English wire copy.
@@ -331,6 +342,132 @@ describe('BasketResults reliability explanations (code-keyed, D1)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Single disclaimer render with confidence-keyed intensity, and the plain
+// (de-qualified) line labels (hedge-dedup-confidence-meter 3.2, D1/D2):
+// each combination renders its own API disclaimer exactly once — amber
+// `status-stale-*` at LOW, quiet neutral gray one-liner otherwise, the
+// payload text byte-identical in both intensities. The import-VAT line
+// label reads without the estimate qualifier; estimate-ness stays on the
+// per-value reliability badges.
+// ---------------------------------------------------------------------------
+
+describe('BasketResults disclaimer dedup + intensity (hedge-dedup 3.2)', () => {
+  it('renders the combination disclaimer exactly once per view', () => {
+    const { container } = renderWithIntl(
+      <BasketResults result={makeResult()} />,
+    );
+
+    // Byte-level single occurrence in the whole rendered output — no heap.
+    expect(
+      container.textContent.split(
+        'Arvioitu kokonaishinta on arvio, ei lopullinen verovelka.',
+      ).length - 1,
+    ).toBe(1);
+    expect(screen.getAllByTestId('disclaimer-banner')).toHaveLength(1);
+  });
+
+  it('renders one disclaimer per combination, each sourced from its own payload', () => {
+    const { container } = renderWithIntl(
+      <BasketResults
+        result={makeResult({
+          alternatives: [
+            {
+              shipments: [
+                shipment([
+                  costItem({ label: 'Retail price', code: 'foreign_retail_price' }),
+                ]),
+              ],
+              totalCents: 5100,
+              itemizedTotals: 4100,
+              confidence: 'LOW',
+              confidenceBreakdown: [],
+              disclaimer: {
+                text: 'Vaihtoehdon oma vastuuvapauslause.',
+                language: 'fi',
+                version: '1.0',
+              },
+              metadata: {
+                input: { items: [{ productId: 101, quantity: 1 }], destination: 'FI' },
+                calculationTimestamp: '2026-10-04T12:00:00.000Z',
+                datasetVersions: [],
+                calculationRecordId: null,
+              },
+            },
+          ],
+        })}
+      />,
+    );
+
+    // Each combination carries its own disclaimer from the API — one
+    // render each, never a duplicated heap inside a combination.
+    expect(screen.getAllByTestId('disclaimer-banner')).toHaveLength(2);
+    expect(container.textContent.split(
+      'Arvioitu kokonaishinta on arvio, ei lopullinen verovelka.',
+    ).length - 1).toBe(1);
+    expect(container.textContent.split(
+      'Vaihtoehdon oma vastuuvapauslause.',
+    ).length - 1).toBe(1);
+  });
+
+  it('renders the amber status-stale banner at LOW confidence', () => {
+    renderWithIntl(<BasketResults result={makeResult({ confidence: 'LOW' })} />);
+
+    const banner = screen.getByTestId('disclaimer-banner');
+    expect(banner.getAttribute('data-confidence')).toBe('LOW');
+    expect(banner.className).toContain('status-stale');
+    expect(
+      within(banner).getByText(
+        'Arvioitu kokonaishinta on arvio, ei lopullinen verovelka.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the quiet neutral one-liner at MEDIUM confidence with the same text', () => {
+    renderWithIntl(<BasketResults result={makeResult()} />);
+
+    const banner = screen.getByTestId('disclaimer-banner');
+    expect(banner.getAttribute('data-confidence')).toBe('MEDIUM');
+    expect(banner.className).toContain('border-gray-200');
+    expect(banner.className).toContain('bg-gray-50');
+    expect(banner.className).not.toContain('status-stale');
+    // Same payload text and version/language line — only the
+    // presentation differs, never a word of the disclaimer.
+    expect(
+      within(banner).getByText(
+        'Arvioitu kokonaishinta on arvio, ei lopullinen verovelka.',
+      ),
+    ).toBeInTheDocument();
+    expect(banner.textContent).toContain('v1.0 · suomi');
+  });
+
+  it('labels the import-VAT line without the estimate qualifier', () => {
+    renderWithIntl(
+      <BasketResults
+        result={makeResult({
+          shipments: [
+            shipment([
+              costItem({
+                label: 'Import VAT (estimated)',
+                reliability: 'ESTIMATED',
+                code: 'import_vat',
+              }),
+            ]),
+          ],
+        })}
+      />,
+    );
+
+    // The catalog label carries no estimate qualifier — estimate-ness
+    // stays on the per-value badge, never the name.
+    expect(screen.getByText('Tuonnin arvonlisävero')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Tuonnin arvonlisävero (arvio)'),
+    ).toBeNull();
+    expect(screen.getAllByText('Arvioitu').length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Explicit-en rendering — the same code path under the English catalog
 // ---------------------------------------------------------------------------
 
@@ -381,5 +518,61 @@ describe('BasketResults under the en locale', () => {
     );
 
     expect(screen.getByText('Surplus fee')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Empirical-margin meter (hedge-dedup-confidence-meter 4.1, design D4):
+// the wire attaches the margin to the body, so it qualifies the
+// recommended combination's total only — alternatives never carry one —
+// and an absent margin renders nothing.
+// ---------------------------------------------------------------------------
+
+describe('BasketResults empirical-margin meter (hedge-dedup 4.1)', () => {
+  const MARGIN = {
+    quantile: 0.05,
+    sampleCount: 16,
+    cell: { dimension: 'global', key: 'global' },
+    asOf: '2026-09-28T12:00:00.000Z',
+  } as const;
+
+  it('renders the ± figure beside the recommended combination total when the response carries a margin', () => {
+    renderWithIntl(
+      <BasketResults result={makeResult({ empiricalMargin: MARGIN })} />,
+    );
+
+    const meter = screen.getByTestId('confidence-meter');
+    // 0.05 × 5000 ¢ = 250 ¢ → "±2,50 €" (fi money form).
+    expect(meter.textContent).toContain('±2,50\u00a0€');
+    // The basis is adjacent, never dropped.
+    expect(meter.textContent).toContain('±5,0 %');
+    expect(meter.textContent).toContain('n=16');
+    expect(within(meter).getByRole('link').getAttribute('href')).toBe(
+      '/ranking',
+    );
+  });
+
+  it('renders exactly one meter even with alternatives present — the margin qualifies the body total only', () => {
+    const withMargin = makeResult({ empiricalMargin: MARGIN });
+    const alternative = {
+      shipments: withMargin.shipments,
+      totalCents: 4900,
+      itemizedTotals: 3900,
+      confidence: 'MEDIUM' as const,
+      confidenceBreakdown: [],
+      disclaimer: withMargin.disclaimer,
+      metadata: withMargin.metadata,
+    };
+    renderWithIntl(
+      <BasketResults
+        result={{ ...withMargin, alternatives: [alternative] }}
+      />,
+    );
+    expect(screen.getAllByTestId('confidence-meter')).toHaveLength(1);
+  });
+
+  it('renders nothing when the margin is absent', () => {
+    renderWithIntl(<BasketResults result={makeResult()} />);
+    expect(screen.queryByTestId('confidence-meter')).toBeNull();
   });
 });

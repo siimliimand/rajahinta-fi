@@ -42,6 +42,7 @@ import {
 import { handleFreshnessAlert } from './freshness-alert';
 import { handlePriceAlertEvaluation } from './price-alert-evaluation';
 import { handleSavingsSnapshots } from './savings-snapshots';
+import { handleOutcomeMargins } from './outcome-margins';
 import { handleRetentionSweep, RETENTION_CRON } from './retention-sweep';
 import { handleContactRetention } from './contact-retention';
 import { measureAndRecordDataQualityGauges } from '../observability/data-quality';
@@ -134,6 +135,16 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   add(AGGREGATION_CRON, {
     name: 'savings-snapshots',
     run: (env, log) => handleSavingsSnapshots(env, log),
+  });
+  // Task 1.2 (change hedge-dedup-confidence-meter) shares the same
+  // 30-minute tick, registered after the aggregation handler: the
+  // margin ladder is recomputed from the stored calculation outcomes
+  // and persisted delete-then-insert — an empty corpus persists no
+  // rows (the honest degrade), and the write touches only
+  // outcome_margins, never any aggregate.
+  add(AGGREGATION_CRON, {
+    name: 'outcome-margins',
+    run: (env, log) => handleOutcomeMargins(env, log),
   });
   // Task 4.1 (data-quality-and-publication-trust) shares the same 30-min
   // tick: the cadence gauges (Alko reference coverage, transport rows,

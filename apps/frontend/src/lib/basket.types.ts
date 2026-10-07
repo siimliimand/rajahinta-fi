@@ -18,8 +18,11 @@ import type {
   ConfidenceLevel,
   ConfidenceDetail,
   Disclaimer,
+  EmpiricalMargin,
   ReliabilityStatus,
 } from './types';
+
+export type { EmpiricalMargin };
 
 // ---------------------------------------------------------------------------
 // Request types (POST /api/v1/basket/optimize)
@@ -375,4 +378,12 @@ export interface BasketOptimizationResult {
    * the UI gates on this key's presence and never on its own flag state.
    */
   readonly packing?: PackingSuggestion;
+  /**
+   * Display-only empirical margin (hedge-dedup-confidence-meter 2.2) —
+   * composed at read time from the outcome-margins snapshot; it qualifies
+   * the body's recommended-combination total only (alternatives carry no
+   * margin of their own). Absent when no ladder rung meets the sample
+   * floor — render-nothing, never null.
+   */
+  readonly empiricalMargin?: EmpiricalMargin;
 }

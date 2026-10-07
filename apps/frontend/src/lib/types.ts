@@ -628,6 +628,28 @@ export interface TravellerAlternative {
   readonly categoryKey: string;
 }
 
+/**
+ * Empirical result margin (mirrors `EmpiricalMarginView` in
+ * apps/api-worker/src/routes/empirical-margin.ts, change
+ * hedge-dedup-confidence-meter): the persisted p80 quantile of relative
+ * error over user-reported outcomes, resolved through the calibration
+ * ladder. Display-only — it never enters totals, breakdowns, rankings,
+ * or any computed output — and it renders only beside its basis (the
+ * relative percent, the sample count, and the as-of date), never alone.
+ * Key absent when no ladder rung meets the sample floor: render-nothing,
+ * never null, never a placeholder.
+ */
+export interface EmpiricalMargin {
+  /** Relative margin as a fraction of the total (0.05 → ±5 %). */
+  readonly quantile: number;
+  /** Outcome reports behind the quantile (≥ the calibration floor). */
+  readonly sampleCount: number;
+  /** The ladder rung that won (deepest floored cell). */
+  readonly cell: { readonly dimension: string; readonly key: string };
+  /** ISO-8601 instant the quantile was computed at. */
+  readonly asOf: string;
+}
+
 export interface CalculatorResult {
   readonly itemizedCosts: readonly ItemizedCost[];
   /** Offers excluded for lacking a valid EUR conversion (task 1.5). */
@@ -666,6 +688,12 @@ export interface CalculatorResult {
    * Live POST responses only — GET/persisted results never carry it.
    */
   readonly travellerAlternative?: TravellerAlternative | null;
+  /**
+   * Display-only empirical margin (hedge-dedup-confidence-meter 2.2),
+   * composed at read time from the outcome-margins snapshot. Absent when
+   * no ladder rung meets the sample floor — render-nothing, never null.
+   */
+  readonly empiricalMargin?: EmpiricalMargin;
   readonly disclaimer: Disclaimer;
   readonly classification: ClassificationResult;
   readonly metadata: {
@@ -1208,6 +1236,15 @@ export interface ShareSnapshotPayload {
   /** The structural disclaimer object copied at share time. */
   readonly disclaimer: unknown;
   readonly calculatedAt: string;
+  /**
+   * Display-only empirical margin frozen into the digest
+   * (hedge-dedup-confidence-meter 4.2, design D6). Additive and optional:
+   * snapshots frozen before the field existed lack the key entirely, and
+   * absence is the share page's render-nothing state. Stored JSON — the
+   * share page validates it structurally before rendering, like the
+   * breakdown and the disclaimer.
+   */
+  readonly empiricalMargin?: EmpiricalMargin;
 }
 
 /** GET /api/v1/share/:publicId response — no account fields by contract. */

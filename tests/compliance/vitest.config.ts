@@ -7,6 +7,13 @@ import ts from 'typescript';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Config is at tests/compliance/vitest.config.ts; repo root is two levels up
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
+// Task 5.1 (hedge-dedup-confidence-meter) renders the REAL frontend result
+// views server-side (react-dom/server, node environment — no jsdom), so
+// react / react-dom / next-intl must resolve to the frontend package's
+// physical copies: pnpm only places them in apps/frontend/node_modules, and
+// pinning the alias also guarantees ONE react instance across the test file
+// and the component graph (dual-react breaks hooks).
+const FRONTEND_NM = path.resolve(REPO_ROOT, 'apps/frontend/node_modules');
 
 // Path to core-domain's node_modules for NestJS decorator support.
 // In pnpm workspaces, @nestjs/common is only available in the package
@@ -55,7 +62,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['tests/compliance/**/*.test.ts'],
+    // .test.tsx joined for the hedge-dedup-confidence-meter 5.1 view
+    // suites (JSX elements rendered through react-dom/server).
+    include: ['tests/compliance/**/*.test.ts', 'tests/compliance/**/*.test.tsx'],
     root: REPO_ROOT,
     passWithNoTests: false,
   },
@@ -65,41 +74,98 @@ export default defineConfig({
   // transpilation of workspace package sources.
   plugins: [tsTranspilePlugin],
   resolve: {
-    alias: {
-      '@rajahinta/core-domain': path.resolve(REPO_ROOT, 'packages/core-domain/src'),
-      '@rajahinta/frontend': path.resolve(REPO_ROOT, 'apps/frontend/src'),
-      '@rajahinta/data-platform': path.resolve(REPO_ROOT, 'packages/data-platform/src'),
+    // Array form (required to mix plain-string aliases with regex finds).
+    alias: [
+      { find: '@rajahinta/core-domain', replacement: path.resolve(REPO_ROOT, 'packages/core-domain/src') },
+      { find: '@rajahinta/frontend', replacement: path.resolve(REPO_ROOT, 'apps/frontend/src') },
+      { find: '@rajahinta/data-platform', replacement: path.resolve(REPO_ROOT, 'packages/data-platform/src') },
+      // Frontend source imports resolve through the same '@' → src mapping
+      // apps/frontend/vitest.config.ts gives the component tests.
+      { find: '@', replacement: path.resolve(REPO_ROOT, 'apps/frontend/src') },
+      // The 5.1 view suites import react / react-dom / next-intl directly
+      // from tests/compliance — resolve them (and dedupe them for the whole
+      // component graph) to the frontend package's physical copies. The
+      // next-intl subpath exports don't resolve through a bare directory
+      // alias, so each specifier maps to its production ESM file.
+      { find: /^react$/, replacement: path.join(FRONTEND_NM, 'react') },
+      {
+        find: /^react-dom(\/.*)?$/,
+        replacement: path.join(FRONTEND_NM, 'react-dom') + '$1',
+      },
+      {
+        find: /^next-intl$/,
+        replacement: path.join(
+          FRONTEND_NM,
+          'next-intl/dist/esm/production/index.react-client.js',
+        ),
+      },
+      {
+        find: /^next-intl\/navigation$/,
+        replacement: path.join(
+          FRONTEND_NM,
+          'next-intl/dist/esm/production/navigation.react-client.js',
+        ),
+      },
+      {
+        find: /^next-intl\/server$/,
+        replacement: path.join(
+          FRONTEND_NM,
+          'next-intl/dist/esm/production/server.react-server.js',
+        ),
+      },
+      {
+        find: /^next-intl\/routing$/,
+        replacement: path.join(
+          FRONTEND_NM,
+          'next-intl/dist/esm/production/routing.js',
+        ),
+      },
       // pnpm instantiates @nestjs/core twice (two peer-set variants), giving
       // two Reflector/classes and breaking DI across packages. Pin every
       // resolution to one physical instance (ARCHITECTURE.md §15).
-      '@nestjs/core': path.dirname(
-        createRequire(import.meta.url).resolve('@nestjs/core/package.json'),
-      ),
+      {
+        find: '@nestjs/core',
+        replacement: path.dirname(
+          createRequire(import.meta.url).resolve('@nestjs/core/package.json'),
+        ),
+      },
       // @nestjs/common — runtime imports of guards/exceptions in the worker
       // app graph; pinned to one physical instance like @nestjs/core.
-      '@nestjs/common': path.dirname(
-        createRequire(import.meta.url).resolve('@nestjs/common/package.json', {
-          paths: [path.resolve(REPO_ROOT, 'apps/backend')],
-        }),
-      ),
+      {
+        find: '@nestjs/common',
+        replacement: path.dirname(
+          createRequire(import.meta.url).resolve('@nestjs/common/package.json', {
+            paths: [path.resolve(REPO_ROOT, 'apps/backend')],
+          }),
+        ),
+      },
       // drizzle-orm is a data-platform dependency, not a root one — pin to
       // the data-platform copy, the same instance its repositories use.
-      'drizzle-orm': path.resolve(
-        REPO_ROOT,
-        'packages/data-platform/node_modules/drizzle-orm',
-      ),
+      {
+        find: 'drizzle-orm',
+        replacement: path.resolve(
+          REPO_ROOT,
+          'packages/data-platform/node_modules/drizzle-orm',
+        ),
+      },
       // The api-worker app graph (createApp) imports `cloudflare:workers`/
       // `cloudflare:workflows` through src/workflows, which the Node vitest
       // pool cannot resolve — collection-time stub, same as the d1 config.
-      'cloudflare:workers': path.resolve(
-        REPO_ROOT,
-        'apps/api-worker/src/testing/cloudflare-modules-stub.ts',
-      ),
-      'cloudflare:workflows': path.resolve(
-        REPO_ROOT,
-        'apps/api-worker/src/testing/cloudflare-modules-stub.ts',
-      ),
-    },
+      {
+        find: 'cloudflare:workers',
+        replacement: path.resolve(
+          REPO_ROOT,
+          'apps/api-worker/src/testing/cloudflare-modules-stub.ts',
+        ),
+      },
+      {
+        find: 'cloudflare:workflows',
+        replacement: path.resolve(
+          REPO_ROOT,
+          'apps/api-worker/src/testing/cloudflare-modules-stub.ts',
+        ),
+      },
+    ],
     // Include data-platform's and api-worker's node_modules so drizzle /
     // hono / zod / reflect-metadata resolve for the worker app graph the
     // 5.5 compliance test composes. Same reason as CORE_DOMAIN_NM above.

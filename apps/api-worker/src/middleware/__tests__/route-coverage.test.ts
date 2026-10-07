@@ -363,6 +363,9 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/api/v1/account/verify-email/request', ['POST'], '— (sessionAuth)'],
   // Trust-and-reach public trust statistic (task 3.3) — no guard, no limit.
   ['/api/v1/accuracy', ['GET'], '—'],
+  // Persisted empirical-margin ladder (hedge-dedup-confidence-meter
+  // 2.1) — display-only public read beside the statistic, no guard.
+  ['/api/v1/accuracy/margins', ['GET'], '—'],
   // Traveller allowances (insight-surfaces 4.1) — route-local DEFAULT +
   // ageGate (PUBLISHED dataset reads).
   ['/api/v1/allowances', ['GET'], 'DEFAULT + ageGate'],

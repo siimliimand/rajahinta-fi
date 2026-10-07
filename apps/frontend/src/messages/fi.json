@@ -222,7 +222,7 @@
     "metaTitle": "Rajat ylittävä kustannuslaskuri",
     "metaDescription": "Hae tuote, valitse määrä ja saat eritelty arvion alkoholin tuonnin kokonaiskustannuksesta Suomeen: vähittäishinta, kuljetus sekä Suomen valmistevero ja pakkausvero.",
     "howTitle": "Miten laskenta toimii",
-    "howBody": "Hae tuote, valitse määrä ja laske: arvio yhdistää tuotteen vähittäishintaan kuljetusarvion sekä kohteena olevan Suomen valmisteveron ja pakkausveron. Jokainen luku kantaa luotettavuusmerkinnän, ja tulos on aina arvio — ei vero- tai tullineuvontaa.",
+    "howBody": "Hae tuote, valitse määrä ja laske: tulos yhdistää tuotteen vähittäishintaan kuljetusarvion sekä kohteena olevan Suomen valmisteveron ja pakkausveron. Jokainen luku kantaa luotettavuusmerkinnän.",
     "buyingMode": {
       "label": "Ostotapa",
       "description": "Hinta lasketaan valitun tavan mukaan: {delivery} sisältää kuljetuskustannuksen, {personal} noudattaa yhden matkustajan määräaikoja.",
@@ -311,9 +311,6 @@
       "title": "Tilaamalla ulkomailta säästät arviolta {amount} verrattuna Alkon hintaan.",
       "asOf": "Vertailu perustuu Alkon {date} hintahavaintoon."
     },
-    "sanityNote": {
-      "label": "Luotettavuus alennettu: tulos on arvio"
-    },
     "transportPending": {
       "notIncluded": "Ei sisällytetty – tietoaineisto odottaa",
       "explanation": "Kuljetuskustannuksen tietoaineisto ei ole vielä saatavilla, joten kuljetusta ei ole sisällytetty arvioon."
@@ -340,9 +337,9 @@
     "category": {
       "foreignRetailPrice": "Ulkomainen vähittäishinta",
       "transportCost": "Kuljetuskustannus",
-      "alcoholExciseEstimate": "Arvio alkoholin valmisteverosta",
-      "containerDutyEstimate": "Arvio pakkausverosta",
-      "importVatEstimate": "Arvio tuonnin arvonlisäverosta"
+      "alcoholExciseEstimate": "Alkoholin valmistevero",
+      "containerDutyEstimate": "Pakkausvero",
+      "importVatEstimate": "Tuonnin arvonlisävero"
     }
   },
   "DisclaimerBanner": {
@@ -598,7 +595,7 @@
     "metaTitle": "Ostoskorin optimointi: usean tuotteen kokonaiskustannus",
     "metaDescription": "Kokoa usean tuotteen ostoskori ja saat arvion optimaalisesta myyjäyhdistelmästä ja kokonaiskustannuksista Suomeen, mukaan lukien kuljetus- ja verotuserittely.",
     "howTitle": "Miten optimointi toimii",
-    "howBody": "Lisää ostoskoriin tuotteita määrineen ja valitse kohdemaa sekä kuljetusjärjestely: laskelma yhdistää tuotteiden hinnat, kuljetusarvion ja Suomen verot ja maksut kokonaiskustannusarvioksi sekä ehdottaa myyjäyhdistelmän, joka tuottaa matalan arvion. Tulos on aina arvio, jonka jokainen luku kantaa luotettavuusmerkintää.",
+    "howBody": "Lisää ostoskoriin tuotteita määrineen ja valitse kohdemaa sekä kuljetusjärjestely: laskelma yhdistää tuotteiden hinnat, kuljetuksen ja Suomen verot ja maksut kokonaiskustannukseksi sekä ehdottaa myyjäyhdistelmän, joka tuottaa matalimman kokonaiskustannuksen. Jokainen luku kantaa luotettavuusmerkintää.",
     "optimize": "Optimoi ostoskori",
     "optimizing": "Optimoidaan…",
     "summary": {
@@ -638,8 +635,8 @@
       "container_duty_within_allowance": "Pakkausvero (sallitun määrän sisällä, veroton)",
       "alcohol_excise_over_allowance": "Alkoholivalmistevero (sallitun määrän ylittävä osa)",
       "container_duty_over_allowance": "Pakkausvero (sallitun määrän ylittävä osa)",
-      "import_vat": "Tuonnin arvonlisävero (arvio)",
-      "import_vat_over_allowance": "Tuonnin arvonlisävero (sallitun määrän ylittävä osa, arvio)",
+      "import_vat": "Tuonnin arvonlisävero",
+      "import_vat_over_allowance": "Tuonnin arvonlisävero (sallitun määrän ylittävä osa)",
       "import_vat_within_allowance": "Tuonnin arvonlisävero (sallitun määrän sisällä, veroton)"
     },
     "explanation": {
@@ -862,7 +859,7 @@
     "metaTitle": "Tilaisuuslaskuri: juomatarve ja ostoslista",
     "metaDescription": "Arvioi tilaisuuden juomatarve vieraiden määrän ja keston perusteella ja saat ostoslistan tarpeesta, ehdotetusta ostomäärästä ja ylijäämästä — myös vertailuna ulkomaisiin kauppoihin.",
     "howTitle": "Miten tilaisuuslaskenta toimii",
-    "howBody": "Syötä vieraiden määrä, kesto ja tilaisuuden tyyppi: laskelma yhdistää julkaistut kulutusnormit ja tuotekohtaiset hinnat ostoslistaksi, jossa jokainen rivi näyttää tarpeen, ehdotetun ostomäärän ja ylijäämän. Tulos on aina arvio — ei vero- tai tullineuvontaa.",
+    "howBody": "Syötä vieraiden määrä, kesto ja tilaisuuden tyyppi: laskelma yhdistää julkaistut kulutusnormit ja tuotekohtaiset hinnat ostoslistaksi, jossa jokainen rivi näyttää tarpeen, ehdotetun ostomäärän ja ylijäämän.",
     "form": {
       "guests": "Vieraiden määrä (kpl)",
       "guestsError": "Vieraiden määrän on oltava kokonaisluku väliltä 1–500.",
@@ -901,7 +898,7 @@
     },
     "templates": {
       "heading": "Valmiit tilaisuudet",
-      "hint": "Esimerkkiarvot täyttävät lomakkeen — vieraiden määrä, kesto ja tilaisuuden tyyppi jäävät vapaasti muokattaviksi, ja ostoslista lasketaan aina syötettyjen arvojen perusteella.",
+      "hint": "Esimerkkiarvot täyttävät lomakkeen — vieraiden määrä, kesto ja tilaisuuden tyyppi jäävät vapaasti muokattaviksi.",
       "wedding": "Häät",
       "birthday": "Syntymäpäivät",
       "companyParty": "Yritystilaisuus",
@@ -972,9 +969,9 @@
     "title": "Matkalaskuri",
     "subtitle": "Laske, kuinka monta litraa kannattaa tuoda matkalla: jaettu matkakustannus, hintaero kategorioittain ja tullivapaiden määrien ylittymiskohta. Jokainen rivi näyttää kannattavan tuontimäärän ja tullivapaan määrän vaikutuksen.",
     "metaTitle": "Matkalaskuri: kannattava tuontimäärä rajalla",
-    "metaDescription": "Laske, kuinka monta litraa kannattaa tuoda ulkomailta: jaettu matkakustannus, hintaero kategorioittain ja tullivapaiden määrien vaikutus — arvio ennen matkaa.",
+    "metaDescription": "Laske, kuinka monta litraa kannattaa tuoda ulkomailta: jaettu matkakustannus, hintaero kategorioittain ja tullivapaiden määrien vaikutus.",
     "howTitle": "Miten matkalaskenta toimii",
-    "howBody": "Syötä matkan kustannukset ja hinnat kategorioittain: laskelma jakaa matkakustannuksen matkustajien kesken, vertaa kotimaista ja ulkomaista hintaa sekä näyttää, kuinka monta litraa kannattaa tuoda ennen tullivapaan määrän ylittymistä. Tulos on aina arvio — ei vero- tai tullineuvontaa.",
+    "howBody": "Syötä matkan kustannukset ja hinnat kategorioittain: laskelma jakaa matkakustannuksen matkustajien kesken, vertaa kotimaista ja ulkomaista hintaa sekä näyttää, kuinka monta litraa kannattaa tuoda ennen tullivapaan määrän ylittymistä.",
     "form": {
       "passengers": "Matkustajat (kpl)",
       "vehicle": "Ajoneuvo",
@@ -1000,7 +997,7 @@
     },
     "presets": {
       "heading": "Valmiit reitit",
-      "hint": "Esimerkkiarvot täyttävät lomakkeen — kaikkia kenttiä voi muokata vapaasti, ja arvio lasketaan aina syötettyjen arvojen perusteella.",
+      "hint": "Esimerkkiarvot täyttävät lomakkeen — kaikkia kenttiä voi muokata vapaasti.",
       "helsinkiTallinnCar": {
         "label": "Helsinki–Tallinna · henkilöauto",
         "description": "Esimerkki: paluuliput autolla ja 2 matkustajalla n. 120 €; polttoaine n. 55 € (n. 400 km, 7 l/100 km, 1,95 €/l)."
@@ -1310,7 +1307,15 @@
     "layer3Name": "Tuntematon tieto pysäyttää laskennan",
     "layer3Desc": " — jos tietojen joukossa ilmestyy tuntematon kenttä, laskenta hylkää syötteen kokonaan eikä ohita kenttää hiljaisesti.",
     "spotTitle": "Huomasitko ongelman?",
-    "spotBody": "Jos arvioit, että tuotteen sijoitus, laskenta tai tieto on virheellinen, voit ilmoittaa siitä tarkistettavaksi <link>laskurin tulossivulta</link>. Jokaisessa tuloksessa on \\\"Ilmoita virheestä\\\"-toiminto, joka välittää palautteesi suoraan katselmointitiimillemme."
+    "spotBody": "Jos arvioit, että tuotteen sijoitus, laskenta tai tieto on virheellinen, voit ilmoittaa siitä tarkistettavaksi <link>laskurin tulossivulta</link>. Jokaisessa tuloksessa on \\\"Ilmoita virheestä\\\"-toiminto, joka välittää palautteesi suoraan katselmointitiimillemme.",
+    "marginTitle": "Havaittu hajonta: mitä ±-luku tarkoittaa",
+    "marginBody1": "Osassa tuloksia loppusumman vieressä näkyy ±-luku. Se on havaittu hajonta: 80 %:n persentiili niistä suhteellisista eroista, jotka ovat jääneet käyttäjien raportoimien todellisten loppusummien ja arvioiden välille. Luku perustuu vain vierailijoiden raportoimiin lopputuloksiin, ja sen vieressä näkyvät aina otoskoko (n=) ja laskentapäivä.",
+    "marginLadderIntro": "Hajonta valitaan kapeimmasta ryhmästä, jossa on tarpeeksi raportoituja lopputuloksia. Ryhmät tarkistetaan järjestyksessä:",
+    "marginLadder1": "Tuoteryhmä ja kuljetusyhtiö yhdessä",
+    "marginLadder2": "Pelkkä tuoteryhmä",
+    "marginLadder3": "Koko aineisto",
+    "marginFloorNote": "Jokainen taso vaatii vähintään 10 raportoitua lopputulosta. Jos mikään taso ei täytä vaatimusta, ±-lukua ei näytetä lainkaan — mitään lukua ei arvailla.",
+    "marginDisplayNote": "Havaittu hajonta on vain tiedoksi: se ei vaikuta laskentaan, loppusummiin, vertailuihin tai järjestykseen."
   },
   "ValuePage": {
     "title": "Etanolin grammahinta hintaluokittain",
@@ -1679,6 +1684,13 @@
     "coverageSyncLabel": "Viimeisin päivitys",
     "coverageNote": "Nämä luvut kuvaavat seurattua valikoimaa, eivät käyttäjien raportoimia lopputuloksia. Tarkkuustilasto julkaistaan, kun lopputuloksia on raportoitu."
   },
+  "ConfidenceMeter": {
+    "label": "Havaittu hajonta",
+    "percentLine": "±{percent} %",
+    "sampleLine": "n={count}",
+    "asOfLine": "laskettu {date}",
+    "methodologyLink": "Menetelmä"
+  },
   "OutcomeReport": {
     "formTitle": "Raportoi todellinen loppusumma",
     "formIntro": "J\u00e4ik\u00f6 lopullinen summa muuksi kuin arvioksi? Raportoi, paljonko todellisuudessa maksoit \u2014 raportoidut lopputulokset sy\u00f6tt\u00e4v\u00e4t julkista tarkkuustilastoa. Yksi raportti per laskelma.",
@@ -1731,7 +1743,7 @@
   },
   "SharePage": {
     "metaTitle": "Jaettu kokonaishinta-arvio: {name}",
-    "metaDescription": "J\u00e4\u00e4dytetty kokonaishinta-arvio: {quantity} \u00d7 {name} kohteeseen {destination}, yhteens\u00e4 {total}. Arvio on arvio, ei lopullinen verovelka.",
+    "metaDescription": "J\u00e4\u00e4dytetty kokonaishinta-arvio: {quantity} \u00d7 {name} kohteeseen {destination}, yhteens\u00e4 {total}.",
     "metaTitleFallback": "Jaettu kokonaishinta-arvio",
     "metaDescriptionFallback": "Rajahinta.fi:ss\u00e4 laskettu ja jaettu kokonaishinta-arvio.",
     "eyebrow": "Jaettu arvio",

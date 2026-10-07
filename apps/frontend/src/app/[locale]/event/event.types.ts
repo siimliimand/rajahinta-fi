@@ -125,6 +125,21 @@ export interface EventShoppingListResult extends EventCalcResultBase {
   readonly plan?: EventSourcingPlan;
   /** Packing section — present when the API supplies one for an opted-in request. */
   readonly packing?: EventPackingSection;
+  /**
+   * Display-only empirical margin (hedge-dedup-confidence-meter 2.2) —
+   * structurally mirrors `EmpiricalMarginView` (empirical-margin.ts),
+   * re-declared to keep this scope self-contained (DisclaimerPayload
+   * precedent). It qualifies the priced plan total; a COMPUTED list
+   * without a plan carries no euro total, so no meter is implied. Absent
+   * when no ladder rung meets the sample floor — render-nothing, never
+   * null, never a placeholder.
+   */
+  readonly empiricalMargin?: {
+    readonly quantile: number;
+    readonly sampleCount: number;
+    readonly cell: { readonly dimension: string; readonly key: string };
+    readonly asOf: string;
+  };
 }
 
 // ---------------------------------------------------------------------------

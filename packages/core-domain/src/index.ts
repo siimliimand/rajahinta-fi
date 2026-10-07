@@ -799,6 +799,27 @@ export type {
   OutcomeAccuracyBreakdownCell,
   OutcomeAccuracyBreakdown,
 } from './outcomes/outcomes.types';
+export {
+  computeCellMargin,
+  quantileOfRelativeErrors,
+  relativeErrorFraction,
+  resolveEmpiricalMargin,
+  resolveEmpiricalMarginFromCells,
+  computeOutcomeMarginCells,
+} from './outcomes/margin-calibration';
+export {
+  categoryCarrierCellKey,
+  GLOBAL_CELL_KEY,
+  MARGIN_QUANTILE_P,
+  MARGIN_SAMPLE_FLOOR,
+} from './outcomes/margin-calibration.types';
+export type {
+  EmpiricalMargin,
+  MarginCell,
+  MarginCellDimension,
+  MarginLadderQuery,
+  OutcomeMarginReport,
+} from './outcomes/margin-calibration.types';
 
 // ---------------------------------------------------------------------------
 // Blog content — rate-change explainer drafts at the confirmation gate

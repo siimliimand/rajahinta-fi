@@ -23,6 +23,11 @@
  * or a strict response schema — either would silently strip `code`, the
  * stable join key the fi surface localizes against.
  *
+ * The one exception to verbatim serialization is the display-only
+ * `empiricalMargin` (task 2.2, change hedge-dedup-confidence-meter):
+ * resolved at READ time from the margins snapshot, after the idempotency
+ * store and content hash — see {@link withMarginFromResult}.
+ *
  * @module CalculatorRoutes
  */
 
@@ -75,9 +80,41 @@ import { D1CalculationRecordRepository } from '../../../../packages/data-platfor
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 import { D1TransportOfferRepository } from '../../../../packages/data-platform/src/repositories/d1/transport-offer.repository';
 import { mapCalculationRecordToResult } from '../../../../packages/application-api/src/calculator/calculation-result.mapper';
+import {
+  readEmpiricalMarginLadder,
+  resolveStoredCarrierById,
+  withEmpiricalMargin,
+  type WithEmpiricalMargin,
+} from './empirical-margin';
 
-/** Composition — the G3 vertical-slice wiring over D1 (per request). */
-export function buildLandedCostCalculatorService(d1: AppEnv['Bindings']['DB']): {
+/**
+ * Attach the display-only `empiricalMargin` (task 2.2, change
+ * hedge-dedup-confidence-meter) to a calculator result — POST and GET
+ * parity. The margin is composed at READ time from the persisted
+ * margins snapshot (the domain result stays pure, unlike the in-domain
+ * `alkoBenchmark`): the ladder query keys the result's own product
+ * category (`metadata.category` — the same product_master column the
+ * corpus attribution joins) plus the STORED carrier of its transport
+ * offer — the `tor.carrier` value the carrier cells were calibrated
+ * from. Strictly additive: callers apply it after the idempotency store
+ * and content hash (the basket `packing` precedent), so a cached
+ * payload keeps identifying the optimization and every monetary figure
+ * stays the domain result verbatim.
+ */
+async function withMarginFromResult<T extends {
+  metadata: { category: string; transportOfferId: number | null };
+}>(d1: AppEnv['Bindings']['DB'], result: T): Promise<WithEmpiricalMargin<T>> {
+  const [ladder, carrier] = await Promise.all([
+    readEmpiricalMarginLadder(d1),
+    resolveStoredCarrierById(d1, result.metadata.transportOfferId),
+  ]);
+  return withEmpiricalMargin(result, ladder, {
+    category: result.metadata.category,
+    carrier,
+  });
+}
+
+/** Composition — the G3 vertical-slice wiring over D1 (per request). */export function buildLandedCostCalculatorService(d1: AppEnv['Bindings']['DB']): {
   calculator: LandedCostCalculatorService;
   taxRepo: ITaxRuleRepositoryPort;
 } {
@@ -172,7 +209,13 @@ async function calculate(c: Context<AppEnv>): Promise<Response> {
   if (cached !== null) {
     c.header('X-Cache', 'HIT');
     c.header('X-Content-Hash', await idempotencyContentHash(cached.result));
-    return c.json(cached.result);
+    // empiricalMargin (task 2.2) rides the HIT payload too — the cached
+    // result keeps identifying the optimization; the margin is resolved
+    // fresh from the snapshot on every read.
+    const cachedResult = cached.result as CalculatorResult;
+    return c.json(
+      await withMarginFromResult(c.env.DB, cachedResult),
+    );
   }
 
   try {
@@ -183,7 +226,10 @@ async function calculate(c: Context<AppEnv>): Promise<Response> {
 
     c.header('X-Cache', 'MISS');
     c.header('X-Content-Hash', await idempotencyContentHash(result));
-    return c.json(result);
+    // empiricalMargin (task 2.2) — read-time display composition, applied
+    // after the store and content hash (the basket `packing` precedent):
+    // the hashed/stored payload stays the domain result verbatim.
+    return c.json(await withMarginFromResult(c.env.DB, result));
   } catch (err) {
     if (err instanceof ProductNotFoundError || err instanceof NoRetailOffersError) {
       throw new ApiHttpError(404, err.message);
@@ -243,12 +289,15 @@ async function getResult(c: Context<AppEnv>): Promise<Response> {
   ]);
 
   return c.json(
-    mapCalculationRecordToResult({
-      record,
-      product,
-      exciseVersionLabel: exciseRule?.versionLabel ?? null,
-      containerVersionLabel: containerRule?.versionLabel ?? null,
-    }),
+    await withMarginFromResult(
+      d1,
+      mapCalculationRecordToResult({
+        record,
+        product,
+        exciseVersionLabel: exciseRule?.versionLabel ?? null,
+        containerVersionLabel: containerRule?.versionLabel ?? null,
+      }),
+    ),
   );
 }
 

@@ -13,7 +13,10 @@
  * through the closed payload projection, stripped of personal data and
  * ASSERTED clean (PersonalDataFieldError → 500 invariant, nothing
  * stored), and persisted under a fresh 22-character random public id
- * (collision retries are bounded and astronomically unlikely).
+ * (collision retries are bounded and astronomically unlikely). New
+ * snapshots additionally freeze the empirical margin (hedge-dedup-
+ * confidence-meter D6) — an additive aggregate-only field, absent when
+ * no ladder rung resolves.
  *
  * The snapshot is a COPY: later edits or the record retention prune
  * never affect what the share link renders (spec share-permalinks).
@@ -40,6 +43,11 @@ import { USER_CONTEXT_KEY } from '../auth/authenticated-account';
 import type { AuthenticatedAccount } from '../auth/authenticated-account';
 import { findOwnedCalculationRecord } from '../adapters/calculation-record-reads';
 import { D1ShareSnapshotRepository } from '../../../../packages/data-platform/src/repositories/d1/share-snapshot.repository';
+import {
+  readEmpiricalMarginLadder,
+  resolveEmpiricalMarginView,
+  resolveStoredCarrierById,
+} from './empirical-margin';
 
 /** Public-id collision retries before giving up (astronomically unlikely). */
 const MAX_PUBLIC_ID_ATTEMPTS = 3;
@@ -63,6 +71,24 @@ async function createShare(c: Context<AppEnv>): Promise<Response> {
     });
   }
 
+  // Design D6 (hedge-dedup-confidence-meter): freeze-time margin
+  // composition — the snapshot is immutable, so the figure the share
+  // page renders is frozen HERE, through the same ladder lookup and
+  // view mapping the result routes use (empirical-margin.ts). The
+  // query keys the record's own attribution geometry: product_master
+  // category plus the STORED carrier of its transport offer (the
+  // outcome-margin corpus join), never a client echo. No resolvable
+  // rung → no field (absent, never null), keeping legacy and
+  // new-absent snapshots one shape.
+  const [ladder, carrier] = await Promise.all([
+    readEmpiricalMarginLadder(c.env.DB),
+    resolveStoredCarrierById(c.env.DB, record.transportOfferId),
+  ]);
+  const empiricalMargin = resolveEmpiricalMarginView(ladder, {
+    category: record.productCategory,
+    carrier,
+  });
+
   const snapshot = assembleShareSnapshot({
     productName: record.productName,
     productBrand: record.productBrand,
@@ -74,6 +100,7 @@ async function createShare(c: Context<AppEnv>): Promise<Response> {
     destination: record.destination,
     disclaimer: record.disclaimer,
     calculatedAt: record.calculatedAt.toISOString(),
+    ...(empiricalMargin === null ? {} : { empiricalMargin }),
   });
 
   // The strip assertion runs on the ASSEMBLED payload — including the

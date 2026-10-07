@@ -8,7 +8,11 @@
  *    badges, consolidated transport (weight tier, package tier, reliability),
  *    retail subtotal, minimum-order threshold check.
  *  - Aggregate confidence with per-data-point breakdown.
- *  - Structural disclaimer from the API response (never a UI-only string).
+ *  - The structural disclaimer from the API response (never a UI-only
+ *    string), rendered exactly once per combination with the intensity
+ *    keyed to that combination's confidence (hedge-dedup-confidence-meter
+ *    3.2, design D1) — amber `status-stale-*` at LOW, quiet neutral
+ *    one-liner otherwise.
  *  - Up to three alternatives with identical styling — zero visual preference
  *    cues beyond objective cost ordering.
  *
@@ -31,6 +35,7 @@ import type {
   BasketShipment,
   ConsolidatedTransport,
   ConsolidatedTransportReliability,
+  EmpiricalMargin,
   MinimumOrderThresholdCheck,
 } from '@/lib/basket.types';
 import type {
@@ -51,6 +56,7 @@ import {
 } from '@/components/ui';
 import type { BadgeTone } from '@/components/ui';
 import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
+import ConfidenceMeter from '../../components/ConfidenceMeter';
 import BasketPackingPanel from './BasketPackingPanel';
 
 // ---------------------------------------------------------------------------
@@ -463,6 +469,7 @@ function OptimizationCombination({
   disclaimer,
   metadata,
   heading,
+  empiricalMargin,
 }: {
   readonly shipments: readonly BasketShipment[];
   readonly totalCents: number;
@@ -483,6 +490,12 @@ function OptimizationCombination({
     readonly calculationRecordId: number | null;
   };
   readonly heading: string;
+  /**
+   * The response's optional empirical margin (hedge-dedup-confidence-meter
+   * 4.1) — it qualifies the recommended combination's total only; the
+   * wire attaches it to the body, so alternatives never carry one.
+   */
+  readonly empiricalMargin?: EmpiricalMargin;
 }) {
   return (
     <div className="mb-8 space-y-4" data-testid="optimization-combination">
@@ -493,6 +506,11 @@ function OptimizationCombination({
           <p className="mt-0.5 text-2xl font-bold tabular-nums text-primary-700">
             {formatEur(totalCents)}
           </p>
+          {/* ── Empirical margin (hedge-dedup-confidence-meter 4.1,
+              design D4): display-only ± figure beside the combination
+              total, basis always adjacent; absent margin renders
+              nothing. ── */}
+          <ConfidenceMeter margin={empiricalMargin} totalCents={totalCents} />
         </div>
         <LocalizedConfidenceBadge level={confidence} />
       </div>
@@ -507,8 +525,11 @@ function OptimizationCombination({
         <ConfidenceBreakdown breakdown={confidenceBreakdown} />
       )}
 
-      {/* Disclaimer — structural, from the API response */}
-      <DisclaimerBanner disclaimer={disclaimer} />
+      {/* Disclaimer — structural, from the API response; the single
+          render of this combination's view, intensity keyed to the
+          combination's own confidence (hedge-dedup-confidence-meter
+          3.2, design D1) */}
+      <DisclaimerBanner disclaimer={disclaimer} confidence={confidence} />
 
       {/* Metadata */}
       <ResultMetadata metadata={metadata} />
@@ -551,6 +572,7 @@ export default function BasketResults({ result, productNames }: BasketResultsPro
         confidenceBreakdown={result.confidenceBreakdown}
         disclaimer={result.disclaimer}
         metadata={result.metadata}
+        empiricalMargin={result.empiricalMargin}
         heading={t('recommended')}
       />
 
