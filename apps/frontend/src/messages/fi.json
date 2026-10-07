@@ -60,16 +60,21 @@
   },
   "SiteHeader": {
     "navLabel": "Päävalikko",
+    "groupShopping": "Mitä kannattaa ostaa?",
+    "groupTrip": "Suunnittele matka",
+    "groupEvent": "Suunnittele juhlat",
+    "savings": "Säästölista",
+    "value": "Etanolin grammahinta (snt/g)",
     "calculator": "Laskuri",
     "compare": "Vertailu",
     "basket": "Ostoskori",
     "products": "Tuotteet",
     "event": "Tilaisuuslaskuri",
     "trip": "Matkalaskuri",
+    "allowances": "Tullivapaat määrät",
     "whatIf": "Skenaariolaskuri",
     "account": "Oma tili",
     "ranking": "Järjestysperiaatteet",
-    "planning": "Suunnittelu",
     "localeSwitcherLabel": "Vaihda kieltä"
   },
   "SiteFooter": {
@@ -88,6 +93,7 @@
     "linkValue": "Etanolin grammahinta (snt/g)",
     "linkBlog": "Blogi",
     "linkGuides": "Oppaat",
+    "linkWhatIf": "Skenaariolaskuri",
     "copyright": "© Rajahinta.fi",
     "linkAbout": "Tietoja Rajahinta.fi:stä",
     "linkContact": "Yhteystiedot"

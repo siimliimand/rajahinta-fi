@@ -134,18 +134,27 @@ describe('layout and navigation catalog completeness', () => {
   it('SiteHeader carries every destination plus the nav label', () => {
     expectNamespaceKeys('SiteHeader', [
       'navLabel',
+      // three-task-navigation 1.2: the three task-group trigger labels
+      // (task language) and the panel item labels (tool names).
+      'groupShopping',
+      'groupTrip',
+      'groupEvent',
+      'savings',
+      'value',
       'calculator',
       'compare',
       'basket',
       'products',
       'event',
       'trip',
+      'allowances',
+      // Demoted from the header by three-task-navigation; the keys stay
+      // until their follow-up tasks re-home them (whatIf joins the
+      // footer's About column; account/ranking per 2.1/3.x).
       'whatIf',
       'account',
       'ranking',
-      // planning-dropdown: 3.2 adds the Planning disclosure label and the
-      // locale switcher's accessible label.
-      'planning',
+      // The locale switcher's accessible label.
       'localeSwitcherLabel',
     ]);
     expectTranslated('SiteHeader');
@@ -177,6 +186,9 @@ describe('layout and navigation catalog completeness', () => {
       // about-contact: 3.3 adds both pages to the footer nav.
       'linkAbout',
       'linkContact',
+      // three-task-navigation D6: the scenario calculator joins the
+      // footer's About column.
+      'linkWhatIf',
       'copyright',
     ]);
     expectTranslated('SiteFooter', ['copyright']);

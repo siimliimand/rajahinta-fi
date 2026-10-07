@@ -60,16 +60,21 @@
   },
   "SiteHeader": {
     "navLabel": "Main navigation",
+    "groupShopping": "What's worth buying?",
+    "groupTrip": "Plan a trip",
+    "groupEvent": "Plan a party",
+    "savings": "Savings listing",
+    "value": "Ethanol unit price (snt/g)",
     "calculator": "Calculator",
     "compare": "Compare",
     "basket": "Basket",
     "products": "Products",
     "event": "Event calculator",
     "trip": "Trip calculator",
+    "allowances": "Duty-free allowances",
     "whatIf": "Scenario calculator",
     "account": "My account",
     "ranking": "Ordering principles",
-    "planning": "Planning",
     "localeSwitcherLabel": "Switch language"
   },
   "SiteFooter": {
@@ -88,6 +93,7 @@
     "linkValue": "Ethanol unit price (snt/g)",
     "linkBlog": "Blog",
     "linkGuides": "Guides",
+    "linkWhatIf": "Scenario calculator",
     "copyright": "© Rajahinta.fi",
     "linkAbout": "About Rajahinta.fi",
     "linkContact": "Contact"

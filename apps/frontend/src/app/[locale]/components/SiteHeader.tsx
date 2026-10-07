@@ -14,15 +14,23 @@ import { ensureSession, revokeSession } from '@/lib/api';
 import type { SessionStatus } from '@/lib/types';
 
 /**
- * Layout-level header: the primary destinations on every page. Placed
- * outside the age gate so navigation exists in the SSR payload —
- * per-page back-links were removed in its favour.
+ * Layout-level header: three task-based disclosure groups (change
+ * three-task-navigation, decisions D1/D2/D4). `NAV_GROUPS` maps the three
+ * visitor tasks — shopping, trip, event — to their tool links, and each is
+ * rendered by `NavDisclosureGroup`, the Planning-dropdown pattern
+ * parameterized, not rewritten. The trigger speaks task language; the
+ * panel lists the group's real tools. When any child route is active the
+ * group trigger is visually distinguished and the active child carries
+ * `aria-current`. The footer remains the complete sitemap, so tools and
+ * meta pages outside the header (scenario calculator, ranking
+ * methodology) stay reachable there.
  *
+ * Placed outside the age gate so navigation exists in the SSR payload.
  * A client component (the smallest one in the chrome) because the active
- * destination and the mobile disclosure need pathname and toggle state.
+ * destination and the disclosures need pathname and toggle state.
  * Everything else stays server-friendly: the links are real anchors in
- * both navs, so the closed mobile menu is `display: none` — present in
- * the server HTML, never a focus trap. One nav is exposed per viewport
+ * both navs, so a closed panel is `display: none` — present in the
+ * server HTML, never a focus trap. One nav is exposed per viewport
  * (desktop row, mobile panel); they never render side by side.
  *
  * Auth awareness (design D8, change email-password-auth): the SSR payload
@@ -33,50 +41,265 @@ import type { SessionStatus } from '@/lib/types';
  * client-side navigation never remounts the header.
  */
 
-/** The primary destinations, in display order (web-application spec:
- *  shared navigation). */
-const NAV_ITEMS = [
-  { href: '/calculator', messageKey: 'calculator' },
-  { href: '/compare', messageKey: 'compare' },
-  { href: '/basket', messageKey: 'basket' },
-  { href: '/products', messageKey: 'products' },
-  { href: '/event', messageKey: 'event' },
-  { href: '/trip', messageKey: 'trip' },
-  { href: '/what-if', messageKey: 'whatIf' },
-  { href: '/account', messageKey: 'account' },
-  { href: '/ranking', messageKey: 'ranking' },
+/** One tool link inside a task group's panel, label already translated. */
+type NavGroupItem = { href: string; label: string };
+
+/**
+ * The three task groups, in display order (spec: shared navigation).
+ * Triggers use the `group*` trigger labels; panel items use the tool
+ * names. Routes are unchanged — the groups only regroup existing URLs.
+ */
+const NAV_GROUPS = [
+  {
+    key: 'shopping',
+    labelKey: 'groupShopping',
+    items: [
+      { href: '/savings', messageKey: 'savings' },
+      { href: '/value', messageKey: 'value' },
+      { href: '/products', messageKey: 'products' },
+      { href: '/calculator', messageKey: 'calculator' },
+      { href: '/compare', messageKey: 'compare' },
+    ],
+  },
+  {
+    key: 'trip',
+    labelKey: 'groupTrip',
+    items: [
+      { href: '/trip', messageKey: 'trip' },
+      { href: '/basket', messageKey: 'basket' },
+      { href: '/allowances', messageKey: 'allowances' },
+    ],
+  },
+  {
+    key: 'event',
+    labelKey: 'groupEvent',
+    items: [
+      { href: '/event', messageKey: 'event' },
+      { href: '/basket', messageKey: 'basket' },
+    ],
+  },
 ] as const;
 
 const MOBILE_NAV_ID = 'site-header-mobile-nav';
 
-const PLANNING_MENU_ID = 'site-header-planning-menu';
-
 const AUTH_STATE_CHANGED_EVENT = 'auth:state-changed';
 
 /**
- * Exact match or a deeper segment: /account marks "Oma tili" active on
- * /account/saved-baskets too. The boundary keeps /calculatorx from
- * matching /calculator.
+ * Exact match or a deeper segment: a group child marks its group active
+ * on deeper routes too (any /savings/… page keeps the shopping group
+ * distinguished). The boundary keeps /calculatorx from matching
+ * /calculator.
  */
 function isRouteActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 /**
- * The planning tools (task 3.2, price-intelligence-roadmap) — grouped
- * behind one desktop dropdown instead of three flat links. The scenario
- * item is the what-if calculator's established destination.
+ * One task group as a disclosure — the former Planning-dropdown pattern,
+ * parameterized (decision D2): a real button opens a panel of real
+ * links. Enter/Space activation is the button's native behaviour;
+ * ArrowDown/ArrowUp move focus among the items (from the trigger:
+ * first/last item); Escape and tab-out close it. Focus is always visible
+ * (`focus-visible` ring, never `outline: none` alone) and the open state
+ * is carried by `aria-expanded`, not by color. Active state propagates
+ * from any child route to the trigger; the active child carries
+ * `aria-current`.
+ *
+ * Desktop instances drop the panel over the page; the stacked variant
+ * (mobile panel) expands it in flow and appends `-mobile` to the
+ * per-instance testids.
  */
-const PLANNING_ITEMS = [
-  { href: '/trip', messageKey: 'trip' },
-  { href: '/event', messageKey: 'event' },
-  { href: '/what-if', messageKey: 'whatIf' },
-] as const;
+function NavDisclosureGroup({
+  menuId,
+  testId,
+  label,
+  items,
+  pathname,
+  stacked = false,
+}: {
+  menuId: string;
+  testId: string;
+  label: string;
+  items: readonly NavGroupItem[];
+  pathname: string;
+  stacked?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
-const PLANNING_HREFS = PLANNING_ITEMS.map((item) => item.href);
+  // Following a nav link must close the disclosure — otherwise the
+  // panel stays open over the page the visitor just navigated to.
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
 
-/** Desktop meta links that trail the Planning dropdown, in display order. */
-const META_TAIL_HREFS = ['/account', '/ranking'];
+  /**
+   * Focus the n-th panel item (wrapped): ArrowDown from the trigger
+   * enters at 0, ArrowUp at the last item — items keep their natural
+   * tab order inside the open panel.
+   */
+  const focusItem = (index: number) => {
+    const anchors = rootRef.current?.querySelectorAll<HTMLAnchorElement>('a');
+    if (!anchors || anchors.length === 0) return;
+    const next = ((index % anchors.length) + anchors.length) % anchors.length;
+    anchors[next]!.focus();
+  };
+
+  const handleTriggerKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setOpen(true);
+      focusItem(0);
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setOpen(true);
+      focusItem(-1);
+    }
+  };
+
+  const handleItemKeyDown = (
+    index: number,
+    event: React.KeyboardEvent<HTMLElement>,
+  ) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      focusItem(index + 1);
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      focusItem(index - 1);
+    }
+  };
+
+  // Escape closes and refocuses the trigger; the handler sits on the
+  // wrapper so it catches the key from both the trigger and the open
+  // panel.
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape' && open) {
+      setOpen(false);
+      triggerRef.current?.focus();
+    }
+  };
+
+  // Tab-out closes: focus leaving the wrapper (relatedTarget outside it,
+  // including a null relatedTarget when focus reaches the page body)
+  // collapses the panel without stranding an open disclosure.
+  const handleBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    if (
+      open &&
+      (event.relatedTarget === null ||
+        !rootRef.current?.contains(event.relatedTarget as Node))
+    ) {
+      setOpen(false);
+    }
+  };
+
+  // Any active child route distinguishes the group trigger (border +
+  // semibold); the open state stays with aria-expanded, so color is
+  // never the sole carrier.
+  const groupActive = items.some((item) => isRouteActive(pathname, item.href));
+
+  const testIdSuffix = stacked ? '-mobile' : '';
+
+  const triggerClassName = stacked
+    ? [
+        'flex w-full items-center justify-between gap-x-1 border-l-4 px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500',
+        groupActive
+          ? 'border-primary-700 bg-primary-50 font-semibold text-gray-900'
+          : 'border-transparent font-medium text-gray-600 hover:bg-gray-50 hover:text-primary-700',
+      ].join(' ')
+    : [
+        'border-b-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+        groupActive
+          ? 'border-primary-700 font-semibold text-gray-900'
+          : 'border-transparent font-medium text-gray-600 hover:text-primary-700',
+      ].join(' ');
+
+  const itemClassName = (itemActive: boolean) =>
+    stacked
+      ? [
+          'block border-l-4 py-2 pl-6 pr-3 text-sm font-medium',
+          itemActive
+            ? 'border-primary-700 bg-primary-50 text-gray-900'
+            : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-primary-700',
+        ].join(' ')
+      : [
+          'block px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500',
+          itemActive
+            ? 'bg-primary-50 font-semibold text-gray-900'
+            : 'font-medium text-gray-600 hover:bg-gray-50 hover:text-primary-700',
+        ].join(' ');
+
+  return (
+    <div
+      ref={rootRef}
+      className="relative"
+      data-testid={`${testId}${testIdSuffix}`}
+      onKeyDown={handleKeyDown}
+      onBlur={handleBlur}
+    >
+      <button
+        type="button"
+        ref={triggerRef}
+        data-testid={`${testId}-trigger${testIdSuffix}`}
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-controls={menuId}
+        onClick={() => setOpen((wasOpen) => !wasOpen)}
+        onKeyDown={handleTriggerKeyDown}
+        className={triggerClassName}
+      >
+        {label}
+        <svg
+          aria-hidden="true"
+          focusable="false"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="ml-1 inline-block h-3 w-3"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      <div
+        id={menuId}
+        data-testid={`${testId}-menu${testIdSuffix}`}
+        className={
+          stacked
+            ? open
+              ? 'block'
+              : 'hidden'
+            : `${
+                open ? 'block' : 'hidden'
+              } absolute left-0 [inset-block-start:100%] z-50 mt-1 w-56 rounded-md border border-gray-200 bg-white py-1 shadow-lg`
+        }
+      >
+        {items.map((item, index) => {
+          const itemActive = isRouteActive(pathname, item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              {...(itemActive ? { 'aria-current': 'page' as const } : {})}
+              onClick={() => setOpen(false)}
+              onKeyDown={(event) => handleItemKeyDown(index, event)}
+              className={itemClassName(itemActive)}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function SiteHeader() {
   const t = useTranslations('SiteHeader');
@@ -86,18 +309,14 @@ export default function SiteHeader() {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
-  const [planningOpen, setPlanningOpen] = useState(false);
-  const planningRef = useRef<HTMLDivElement>(null);
-  const planningTriggerRef = useRef<HTMLButtonElement>(null);
   const [session, setSession] = useState<SessionStatus | null>(null);
   const [signingOut, setSigningOut] = useState(false);
 
-  // Following a nav link must close the menu — otherwise the panel stays
-  // open over the page the visitor just navigated to. Same for the
-  // Planning dropdown.
+  // Following a nav link must close the mobile panel — otherwise it
+  // stays open over the page the visitor just navigated to. The
+  // disclosures close themselves on the same pathname change.
   useEffect(() => {
     setMenuOpen(false);
-    setPlanningOpen(false);
   }, [pathname]);
 
   useEffect(() => {
@@ -141,97 +360,25 @@ export default function SiteHeader() {
       setMenuOpen(false);
       toggleRef.current?.focus();
     }
-    if (event.key === 'Escape' && planningOpen) {
-      setPlanningOpen(false);
-      planningTriggerRef.current?.focus();
-    }
   };
 
-  /**
-   * Focus the n-th Planning menu item (wrapped): ArrowDown from the
-   * trigger enters at 0, ArrowUp at the last item — items keep their
-   * natural tab order inside the open dropdown.
-   */
-  const focusPlanningItem = (index: number) => {
-    const items =
-      planningRef.current?.querySelectorAll<HTMLAnchorElement>('a');
-    if (!items || items.length === 0) return;
-    const next = ((index % items.length) + items.length) % items.length;
-    items[next]!.focus();
-  };
-
-  const handlePlanningTriggerKeyDown = (
-    event: React.KeyboardEvent<HTMLButtonElement>,
-  ) => {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      setPlanningOpen(true);
-      focusPlanningItem(0);
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setPlanningOpen(true);
-      focusPlanningItem(-1);
-    }
-  };
-
-  const handlePlanningItemKeyDown = (
-    index: number,
-    event: React.KeyboardEvent<HTMLElement>,
-  ) => {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      focusPlanningItem(index + 1);
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      focusPlanningItem(index - 1);
-    }
-  };
-
-  // Tab-out closes: focus leaving the dropdown wrapper (relatedTarget
-  // outside it, including a null relatedTarget when focus reaches the
-  // page body) collapses the menu without stranding an open panel.
-  const handlePlanningBlur = (event: React.FocusEvent<HTMLDivElement>) => {
-    if (
-      planningOpen &&
-      (event.relatedTarget === null ||
-        !planningRef.current?.contains(event.relatedTarget as Node))
-    ) {
-      setPlanningOpen(false);
-    }
-  };
-
-  const renderNavLink = (item: { href: string; messageKey: string }, mobile: boolean) => {
-    const active = isRouteActive(pathname, item.href);
-    // The active state is never carried by color alone: the desktop row
-    // underlines the link (2px border) and the mobile panel keeps a
-    // visible left bar; aria-current states it for assistive tech.
-    const className = mobile
-      ? [
-          'block border-l-4 px-3 py-2 text-sm font-medium',
-          active
-            ? 'border-primary-700 bg-primary-50 text-gray-900'
-            : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-primary-700',
-        ].join(' ')
-      : [
-          'border-b-2 py-1 text-sm',
-          active
-            ? 'border-primary-700 font-semibold text-gray-900'
-            : 'border-transparent font-medium text-gray-600 hover:text-primary-700',
-        ].join(' ');
-
-    return (
-      <Link
-        key={item.href}
-        href={item.href}
-        {...(active ? { 'aria-current': 'page' as const } : {})}
-        className={className}
-      >
-        {t(item.messageKey)}
-      </Link>
-    );
-  };
+  const renderNavGroup = (
+    group: (typeof NAV_GROUPS)[number],
+    stacked: boolean,
+  ) => (
+    <NavDisclosureGroup
+      key={group.key}
+      stacked={stacked}
+      menuId={`site-header-${group.key}-menu${stacked ? '-mobile' : ''}`}
+      testId={`nav-group-${group.key}`}
+      label={t(group.labelKey)}
+      items={group.items.map((item) => ({
+        href: item.href,
+        label: t(item.messageKey),
+      }))}
+      pathname={pathname}
+    />
+  );
 
   const renderAuthActions = (mobile: boolean) => {
     if (session) {
@@ -275,88 +422,6 @@ export default function SiteHeader() {
           {tAuth('register')}
         </Link>
       </>
-    );
-  };
-
-  /**
-   * Desktop Planning dropdown (disclosure pattern): a real button opens
-   * a panel of real links. Enter/Space activation is the button's
-   * native behaviour; ArrowDown/ArrowUp move focus among the items;
-   * Escape (header-level handler) and tab-out close it. Focus is always
-   * visible (`focus-visible` ring, never `outline: none` alone) and the
-   * open state is carried by `aria-expanded`, not by color.
-   */
-  const renderPlanningDropdown = () => {
-    const planningActive = PLANNING_ITEMS.some((item) =>
-      isRouteActive(pathname, item.href),
-    );
-    return (
-      <div
-        ref={planningRef}
-        className="relative"
-        data-testid="planning-dropdown"
-        onBlur={handlePlanningBlur}
-      >
-        <button
-          type="button"
-          ref={planningTriggerRef}
-          data-testid="planning-dropdown-trigger"
-          aria-haspopup="true"
-          aria-expanded={planningOpen}
-          aria-controls={PLANNING_MENU_ID}
-          onClick={() => setPlanningOpen((open) => !open)}
-          onKeyDown={handlePlanningTriggerKeyDown}
-          className={[
-            'border-b-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
-            planningActive
-              ? 'border-primary-700 font-semibold text-gray-900'
-              : 'border-transparent font-medium text-gray-600 hover:text-primary-700',
-          ].join(' ')}
-        >
-          {t('planning')}
-          <svg
-            aria-hidden="true"
-            focusable="false"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="ml-1 inline-block h-3 w-3"
-          >
-            <path d="m6 9 6 6 6-6" />
-          </svg>
-        </button>
-        <div
-          id={PLANNING_MENU_ID}
-          data-testid="planning-dropdown-menu"
-          className={`${
-            planningOpen ? 'block' : 'hidden'
-          } absolute left-0 [inset-block-start:100%] z-50 mt-1 w-56 rounded-md border border-gray-200 bg-white py-1 shadow-lg`}
-        >
-          {PLANNING_ITEMS.map((item, index) => {
-            const itemActive = isRouteActive(pathname, item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                {...(itemActive ? { 'aria-current': 'page' as const } : {})}
-                onClick={() => setPlanningOpen(false)}
-                onKeyDown={(event) => handlePlanningItemKeyDown(index, event)}
-                className={[
-                  'block px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500',
-                  itemActive
-                    ? 'bg-primary-50 font-semibold text-gray-900'
-                    : 'font-medium text-gray-600 hover:bg-gray-50 hover:text-primary-700',
-                ].join(' ')}
-              >
-                {t(item.messageKey)}
-              </Link>
-            );
-          })}
-        </div>
-      </div>
     );
   };
 
@@ -413,59 +478,14 @@ export default function SiteHeader() {
           <Logo />
         </Link>
 
-        {/* Desktop row — always visible from md up.
-            Primary tools (calculator, compare, basket) are grouped first;
-            a subtle separator precedes the secondary destinations.
-            The Calculator link uses a distinct pill to signal primacy
-            without using color as the sole differentiator (aria-current
-            still marks the active page). */}
+        {/* Desktop row — always visible from md up: the three task-group
+            disclosures, then nothing else; the locale switcher and auth
+            actions trail on the row's far side. */}
         <nav
           aria-label={t('navLabel')}
           className="hidden flex-wrap items-center gap-x-1 gap-y-1 md:flex"
         >
-          {/* ── Primary tool group ── */}
-          {NAV_ITEMS.filter((item) =>
-            ['/calculator', '/compare', '/basket'].includes(item.href)
-          ).map((item) => {
-            const active = isRouteActive(pathname, item.href);
-            if (item.href === '/calculator') {
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  {...(active ? { 'aria-current': 'page' as const } : {})}
-                  className={[
-                    'rounded-md px-3 py-1.5 text-sm font-semibold transition-colors',
-                    active
-                      ? 'bg-primary-700 text-white'
-                      : 'bg-primary-50 text-primary-700 ring-1 ring-primary-200 hover:bg-primary-100',
-                  ].join(' ')}
-                >
-                  {t(item.messageKey)}
-                </Link>
-              );
-            }
-            return renderNavLink(item, false);
-          })}
-
-          {/* ── Separator ── */}
-          <span aria-hidden="true" className="mx-2 h-4 w-px bg-gray-200" />
-
-          {/* ── Secondary / meta group ──
-              The planning tools (trip / event / what-if scenario) live
-              behind the Planning dropdown; account and ranking trail it. */}
-          {NAV_ITEMS.filter(
-            (item) =>
-              !['/calculator', '/compare', '/basket', ...PLANNING_HREFS].includes(
-                item.href,
-              ) && !META_TAIL_HREFS.includes(item.href),
-          ).map((item) => renderNavLink(item, false))}
-
-          {renderPlanningDropdown()}
-
-          {NAV_ITEMS.filter((item) => META_TAIL_HREFS.includes(item.href)).map(
-            (item) => renderNavLink(item, false),
-          )}
+          {NAV_GROUPS.map((group) => renderNavGroup(group, false))}
         </nav>
 
         {/* Desktop actions — visible from md up: locale switcher, then
@@ -509,7 +529,7 @@ export default function SiteHeader() {
         aria-label={t('navLabel')}
         className={`${menuOpen ? 'flex' : 'hidden'} flex-col gap-1 border-t border-gray-200 px-4 pb-3 pt-2 md:hidden`}
       >
-        {NAV_ITEMS.map((item) => renderNavLink(item, true))}
+        {NAV_GROUPS.map((group) => renderNavGroup(group, true))}
         <div className="mt-2 flex items-center gap-2 border-t border-gray-200 pt-2">
           {renderLocaleSwitcher(true)}
           {renderAuthActions(true)}
