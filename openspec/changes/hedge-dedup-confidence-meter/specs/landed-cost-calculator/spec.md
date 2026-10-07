@@ -20,14 +20,30 @@ reliability status indicators; the transport line SHALL keep an explicit
 estimate label when no transport offer was selected. The confidence breakdown
 SHALL be reachable from the result presentation (behind the derivation
 disclosure) rather than always-on; degraded-state sanity notes SHALL remain
-visible when result confidence is LOW. When an empirical margin is composed
-for the result, the card SHALL render it adjacent to the primary figure with
-its sample count and as-of date, as a display-only figure.
+visible when result confidence is LOW, naming the degraded input directly
+(the former generic framing label is retired). When an empirical margin is
+composed for the result, the calculator result view SHALL render it beside
+the primary figure with its sample count and as-of date, as a display-only
+figure.
 
 #### Scenario: Answer before breakdown
 
 - **WHEN** a calculation completes
-- **THEN** the landed cost and Finland difference appear before any breakdown
+- **THEN** the landed cost and Finland difference appear before any breakdown,
+  with the explicit cheaper/dearer text — the comparison is never conveyed by
+  color alone
+
+#### Scenario: Freshness is visible
+
+- **WHEN** a result renders
+- **THEN** the card shows the reliability status and observation timestamp of
+  the price data feeding the result
+
+#### Scenario: Disclaimer comes from the result object
+
+- **WHEN** a result renders
+- **THEN** the disclaimer text rendered is the result object's structural
+  disclaimer field
 
 #### Scenario: One disclaimer per result
 
@@ -49,6 +65,6 @@ its sample count and as-of date, as a display-only figure.
 
 #### Scenario: Margin shows its basis
 
-- **WHEN** the result carries an empirical margin
+- **WHEN** a calculator result view renders a composed empirical margin
 - **THEN** the ± figure, relative percent, sample count, and as-of date render
   beside the primary figure, and every monetary figure is unchanged

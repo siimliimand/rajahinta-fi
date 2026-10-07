@@ -95,3 +95,28 @@ were deterministic all along, and add one factual, data-backed accuracy
 figure. Re-review requested against the
 Alcohol Act marketing provisions previously opined on (estimate framing,
 comparative presentation); no other reviewed surface is affected.
+
+## Finalization notes
+
+Spec deltas (task 5.4) brought in line with the implemented behavior:
+
+- **calculation-outcomes**: restated the writer as the error-isolated margin
+  step on the existing aggregation tick (no dedicated cron), pinned the
+  whole-ladder delete-then-insert replacement per run, and pinned the
+  endpoint's verbatim ladder-order shape with the cell-derived top-level
+  as-of and the `{ margins: [], asOf: null }` empty state.
+- **confidence-framework**: named the quantile nearest-rank p80 (an observed
+  sample value, inclusive), added the implemented monotonicity clamp (deeper
+  never resolves wider than its qualifying parent), and pinned the
+  methodology link's /ranking target.
+- **landed-cost-calculator**: scoped the margin render to the calculator
+  result view (the answer-first summary card renders no meter), restored the
+  base color-independence and freshness scenarios validation requires,
+  recorded the retired sanity-note framing label, and kept the banner
+  intensity wording as implemented (amber `status-stale-*` at LOW, quiet
+  neutral otherwise).
+- **web-application**: replaced the draft's "result body or site footer"
+  either/or with the implemented coexistence (one payload render per view;
+  the footer's own strip unchanged), added the default-intensity /
+  no-fabrication rule for confidence-less trip/event responses, and pinned
+  the exactly-once counts to the disclaimer-single-render compliance suite.

@@ -7,11 +7,18 @@
 The event calculator, trip calculator, what-if simulator, and packing
 suggestion SHALL render their respective disclaimers as structural parts of
 the result presentation, sourced from the result objects. Each result view
-SHALL render its disclaimer exactly once: either in the result body or in the
-site footer, never both nor repeated within the view. The what-if simulator's
+SHALL render its disclaimer exactly once in the result presentation — never
+repeated within the view; the site footer's own legal strip is a separate
+page-level line and SHALL remain unchanged. The what-if simulator's
 HYPOTHETICAL disclaimer SHALL keep its prominent render and remains governed
-by its own stronger-wording requirement. The disclaimer text SHALL remain
-byte-identical to the result object's field.
+by its own stronger-wording requirement, counted as that view's one render.
+The disclaimer text SHALL remain byte-identical to the result object's field.
+A result view whose API response carries no result confidence (the trip and
+event calculators) SHALL render the banner at its documented default
+intensity and SHALL NOT fabricate or display a confidence value. The
+exactly-once counts SHALL be pinned by the disclaimer-single-render
+compliance suite, which renders the real views and counts byte-level
+occurrences of the payload text.
 
 #### Scenario: Disclaimer rendered from result
 
@@ -30,3 +37,9 @@ byte-identical to the result object's field.
 
 - **WHEN** a what-if result is rendered
 - **THEN** the HYPOTHETICAL disclaimer renders prominently and prominently only
+
+#### Scenario: No confidence is fabricated
+
+- **WHEN** a trip or event API response carries no result confidence
+- **THEN** the banner renders at its documented default intensity and no
+  confidence value is fabricated or shown as the result's
