@@ -25,7 +25,10 @@ stating a dearer-than-Alko gap factually. Cards without the embed SHALL render
 no gap UI at all (the render-nothing precedent of the €/g chip). In the
 default order the page SHALL separate covered rows from uncovered rows with a
 quiet divider labeled honestly ("Ei Alko-vertailua" / "No Alko reference");
-other sort orders render a single undivided list.
+other sort orders render a single undivided list. The catalog's product
+universe SHALL exclude non-alcoholic rows — products with zero or unknown ABV
+in an alcohol category, and rows held for review — through the same shared
+predicate every listing surface uses.
 
 #### Scenario: Catalog renders products with prices
 
@@ -66,6 +69,11 @@ other sort orders render a single undivided list.
 
 - **WHEN** the default order renders both covered and uncovered rows
 - **THEN** a quiet labeled divider separates the tiers, and uncovered rows follow it alphabetically
+
+#### Scenario: Non-alcoholic rows are outside the catalog
+
+- **WHEN** a product in an alcohol category has zero ABV, unknown ABV, or an active review hold
+- **THEN** it renders nowhere in the catalog listing, and the product's detail page degrades consistently with the same predicate
 
 ### Requirement: Category filter over canonical values
 
