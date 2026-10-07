@@ -699,9 +699,11 @@ ${perMerchantSelects},
 /**
  * Fields asserted at-least (a floor) rather than exact. Two families:
  * tables that ingestion or the curated sync also write (the seed owns its
- * fixture rows as a floor there: staging's hourly producer — merchant
+ * fixture rows as a floor there: production's hourly producer — merchant
  * feeds — legitimately grows product_master, retail_offers and the FTS
- * index past the fixture counts, and the monthly curated-rate-refresh
+ * index past the fixture counts (staging's producer is disabled as of
+ * 2026-10-07; manual Workflows-API ingestions there play the same role),
+ * and the monthly curated-rate-refresh
  * cron (2026-09-28) legitimately grows transport_offers with the curated
  * carrier datasets — exact equality would fail on every post-sync deploy),
  * and the append-only reference datasets (consumption_norms,

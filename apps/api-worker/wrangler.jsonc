@@ -167,7 +167,9 @@
   // schedules documented in packages/application-api/src/jobs/:
   //
   //   0 * * * *     price-ingestion producer — hourly (@Cron(EVERY_HOUR));
-  //                 one Queue message per GRANTED merchant
+  //                 one Queue message per GRANTED merchant. DISABLED in
+  //                 staging (env.staging.triggers override below) — staging
+  //                 ingestion is manual-only via the Workflows API.
   //   */30 * * * *  time-series aggregation — every 30 min (EVERY_30_MINUTES)
   //                 AND the task-6.3 freshness alert (design D7/D8): the
   //                 cron checker evaluating the stale-price-share and
@@ -360,6 +362,27 @@
         "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
         // CORS (task 5.2): exact origins, comma-separated; never "*".
         "CORS_ORIGIN": "https://rajahinta.fi,https://rajahinta-frontend-staging.siim-liimand.workers.dev"
+      },
+      // Cron override (2026-10-07): staging ingestion is MANUAL-ONLY. The
+      // hourly `0 * * * *` producer tick is dropped from this env's cron set
+      // (triggers is inheritable — this array REPLACES the top-level one for
+      // `--env staging` deploys), so the price-ingestion Workflow
+      // (rajahinta-price-ingestion-staging) no longer receives automatic
+      // instances via queue → consumer handoff. Instances are created only
+      // through the Workflows REST API:
+      //   POST /accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances
+      // All non-ingestion cadences keep the shared top-level schedule:
+      //   */30 aggregation + freshness alert · 0 */6 transport refresh +
+      //   click flush · 0 2 tax review · 30 3 retention sweep · 0 5 1
+      //   fransberg refresh. Production keeps the full top-level array.
+      "triggers": {
+        "crons": [
+          "*/30 * * * *",
+          "0 */6 * * *",
+          "0 2 * * *",
+          "30 3 * * *",
+          "0 5 1 * *"
+        ]
       },
       "queues": {
         "producers": [
