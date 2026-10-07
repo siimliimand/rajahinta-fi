@@ -1174,6 +1174,27 @@ export class D1ProductSearchRepository extends ProductRepository {
     // other surface (design D2, change nonalcoholic-catalog-hygiene): a
     // held or non-alcoholic row degrades consistently to not-found
     // instead of half-rendering a product the catalog cannot list.
+    return this.findByIdInUniverse(id);
+  }
+
+  /**
+   * The unpredicated id read — the direct-input/compute path (golden
+   * fixture v3.2, change nonalcoholic-catalog-hygiene): the calculator,
+   * basket, and allowance-fill ports address one exact persisted row and
+   * carry no listing semantics, so a held row stays computable when
+   * addressed directly even though it renders on no surface. Listing
+   * surfaces use {@link findById} (the universe read).
+   */
+  async findByIdDirect(id: number): Promise<ProductRecord | null> {
+    const row = await this.d1
+      .prepare(`SELECT ${PRODUCT_COLUMNS} FROM product_master p WHERE p.id = ?`)
+      .bind(id)
+      .first<D1ProductRow>();
+    return row ? toContractProduct(row) : null;
+  }
+
+  /** The universe-scoped id read backing {@link findById}. */
+  private async findByIdInUniverse(id: number): Promise<ProductRecord | null> {
     const row = await this.d1
       .prepare(
         `SELECT ${PRODUCT_COLUMNS} FROM product_master p
