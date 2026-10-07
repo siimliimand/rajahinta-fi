@@ -85,8 +85,14 @@ export { DISCLAIMER_FI } from '../../../../packages/core-domain/src/disclaimer';
 export { TAX_TYPES } from '../../../../packages/core-domain/src/tax/tax-categories';
 export { normaliseCategory } from '../../../../packages/core-domain/src/tax/services/alcohol-excise.math';
 // Outcomes — the spec-fixed margin fraction interpolated into the D1
-// accuracy aggregate's SQL (calculation-outcome.repository.ts).
+// accuracy aggregate's SQL (calculation-outcome.repository.ts), plus the
+// empirical margin calibration consumed by outcome-margin.repository.ts
+// (read via the @rajahinta/core-domain alias, which this bridge serves).
 export { WITHIN_MARGIN_FRACTION } from '../../../../packages/core-domain/src/outcomes/outcomes.types';
+export {
+  categoryCarrierCellKey,
+  computeCellMargin,
+} from '../../../../packages/core-domain/src/outcomes/margin-calibration';
 
 // ---------------------------------------------------------------------------
 // Declaration + attribution services (route ports, tasks 3.5–3.6)
