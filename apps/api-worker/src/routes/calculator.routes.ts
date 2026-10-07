@@ -72,6 +72,7 @@ import {
   idempotencyStore,
   idempotencyContentHash,
 } from '../adapters/idempotency-facade';
+import { resolveIdempotencyVersions } from './idempotency-versions';
 import {
   D1TaxRuleRepositoryAdapter,
   D1TaxRateRepository,
@@ -200,7 +201,13 @@ async function calculate(c: Context<AppEnv>): Promise<Response> {
   const { calculator, taxRepo } = buildLandedCostCalculatorService(c.env.DB);
 
   // Version-aware key — versions resolved FIRST (§15 known-issue fix kept).
-  const currentVersions = await taxRepo.findActiveVersionLabels();
+  // The set is route-owned (resolveIdempotencyVersions): tax labels plus the
+  // import-VAT dataset version, identical on store and lookup — the result
+  // metadata's conditional composition can never serve as the lookup side
+  // (import-VAT label vs the CHECK-constrained tax_rules read). The HTTP
+  // DTO carries no transaction date, matching the service's now-based VAT
+  // resolution.
+  const currentVersions = await resolveIdempotencyVersions(taxRepo);
   const cacheKey =
     idempotencyKey ??
     (await idempotencyCacheKey({ ...input, datasetVersions: currentVersions }));
@@ -221,8 +228,11 @@ async function calculate(c: Context<AppEnv>): Promise<Response> {
   try {
     const result: CalculatorResult = await calculator.calculate(input);
 
-    // store() parity: the entry's versions come from the result metadata.
-    await idempotencyStore(c.env, cacheKey, result);
+    // store() parity: the entry's versions are the route-resolved set —
+    // explicit, not the result metadata (see resolveIdempotencyVersions).
+    await idempotencyStore(c.env, cacheKey, result, {
+      datasetVersions: currentVersions,
+    });
 
     c.header('X-Cache', 'MISS');
     c.header('X-Content-Hash', await idempotencyContentHash(result));

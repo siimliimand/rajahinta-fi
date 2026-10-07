@@ -83,6 +83,7 @@ import {
   idempotencyStore,
   idempotencyContentHash,
 } from '../adapters/idempotency-facade';
+import { resolveIdempotencyVersions } from './idempotency-versions';
 import { D1TaxRuleRepositoryAdapter } from '../../../../packages/data-platform/src/repositories/d1/tax-rate.repository';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 import { D1TransportOfferRepository } from '../../../../packages/data-platform/src/repositories/d1/transport-offer.repository';
@@ -391,7 +392,12 @@ async function optimize(c: Context<AppEnv>): Promise<Response> {
   const cacheKey = idempotencyKey ?? `basket:${rawKey}`;
 
   const { optimizer, taxRepo } = buildBasketOptimizerService(c.env.DB);
-  const currentVersions = await taxRepo.findActiveVersionLabels();
+  // Route-owned version set, identical on store and lookup — the optimizer
+  // result's metadata composition is conditional (import-VAT label only on
+  // import-bearing baskets) while the tax_rules read can never carry that
+  // label; see resolveIdempotencyVersions. The basket input carries no
+  // transaction date, matching the optimizer's now-based VAT resolution.
+  const currentVersions = await resolveIdempotencyVersions(taxRepo);
 
   // The packing suggestion is computed per request from the curated
   // tables and attached to both MISS and HIT payloads — the idempotency
@@ -426,13 +432,11 @@ async function optimize(c: Context<AppEnv>): Promise<Response> {
   try {
     const result: BasketOptimizationResult = await optimizer.optimize(input);
 
-    // Nest storeCached: prefer the result's own versions, fall back to
-    // the current labels.
+    // Store the route-resolved version set explicitly — the result
+    // metadata's conditional composition is provenance, not cache
+    // identity (see resolveIdempotencyVersions).
     await idempotencyStore(c.env, cacheKey, result, {
-      datasetVersions:
-        result.metadata.datasetVersions.length > 0
-          ? result.metadata.datasetVersions
-          : currentVersions,
+      datasetVersions: currentVersions,
     });
 
     c.header('X-Cache', 'MISS');

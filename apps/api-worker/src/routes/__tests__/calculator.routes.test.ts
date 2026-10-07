@@ -153,6 +153,51 @@ describe('POST /api/v1/calculator', () => {
     expect(hitBody).toEqual(missBody);
   });
 
+  it('serves a HIT for an import-bearing result — the VAT label is symmetric on both cache sides', async () => {
+    const { db, d1 } = openMigratedD1();
+    // Cross-border offer (DE → FI): the calculator computes import VAT and
+    // its metadata.datasetVersions gains `import-vat-2024.2`. Regression
+    // pin for the idempotency version-set fix: the tax_rules read alone
+    // can never produce that label (the CHECK-constrained tax_type), so
+    // a lookup side derived from it alone misses forever — the version
+    // set must be route-owned and identical on store and lookup.
+    seedProduct(db, { id: 2, depositSystemStatus: 0 });
+    seedOffer(db, { productId: 2, priceCents: 350, country: 'DE' });
+    seedTaxRule(db, { taxType: 'excise', productCategory: 'beer', rate: 0.365 });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+      verified: false,
+      versionLabel: 'v2.0-2025',
+    });
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+    const init: RequestInit = {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...AGE },
+      body: JSON.stringify({ productId: 2, quantity: 2, destination: 'FI' }),
+    };
+
+    const first = await request(app, env, '/api/v1/calculator', init);
+    expect(first.status).toBe(200);
+    expect(first.headers.get('X-Cache')).toBe('MISS');
+    // The fixture premise: this result really is import-VAT-bearing (the
+    // public result exposes the figure; the version label stays internal
+    // metadata).
+    const missBody = (await first.json()) as Record<string, unknown>;
+    expect(typeof missBody.importVatEstimate).toBe('number');
+
+    const second = await request(app, env, '/api/v1/calculator', init);
+    expect(second.status).toBe(200);
+    expect(second.headers.get('X-Cache')).toBe('HIT');
+    expect(second.headers.get('X-Content-Hash')).toBe(
+      first.headers.get('X-Content-Hash'),
+    );
+    expect(await second.json()).toEqual(missBody);
+  });
+
   it('resolves an Alko reference WITH observedAt into the live alkoBenchmark', async () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1 });
