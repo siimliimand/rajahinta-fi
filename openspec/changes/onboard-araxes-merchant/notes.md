@@ -214,4 +214,29 @@ The manual instances above are trigger `api` with hour-suffixed ids; araxes is d
 
 ## Verification evidence (task 6.1)
 
-TBD
+Recorded 2026-10-07, branch `feature/onboard-araxes-merchant` at the post-merge HEAD (origin/master merged in first — the verified tree is what production runs). All commands exit 0 unless marked.
+
+| Command (CI-canonical, mirrored from `.github/workflows/ci.yml`) | Result |
+|---|---|
+| `git fetch origin && git merge origin/master` | merge commit `604e588` (ort) |
+| `pnpm install --frozen-lockfile` | exit 0 |
+| `pnpm --filter @rajahinta/core-domain build` | exit 0 (rebuild-first contract) |
+| `pnpm run typecheck` (workspace `-r`) | exit 0 |
+| `pnpm run lint` | exit 0 |
+| `pnpm run lint:content` (FI copy rules; no copy touched — clean) | exit 0 |
+| `pnpm run test` (unit, workspace-wide, **Node 24**) | exit 0 — **6,368 passed, 3 skipped**: core-domain 1,599 · data-platform 843 · data-acquisition 433 · api-worker 1,261 · frontend 1,392 · application-api 738 (+3 skipped) · email-worker 83 · backend 19 |
+| `pnpm run test:e2e` (vitest HTTP-level, in-memory backend) | exit 0 — 15/15 |
+| `pnpm --filter @rajahinta/api-worker run test:e2e` (CI worker-checks) | exit 0 — 25/25 |
+| `pnpm run test:d1` (`vitest.config.d1.ts`) | exit 0 — 168/168 |
+
+**Node 24 is load-bearing for the whole battery** (not just the D1 harness): under the host's Node 22 the first unit pass failed 129 data-platform + api-worker tests with `no such module: fts5` (`node:sqlite` without FTS5); re-run under `/tmp/opencode/node24` (v24.13.0, CI's version) all green. Playwright browser-e2e (`test:e2e-browser`) stays CI-only per the task note — its local-infra-heavy path is exercised by the green CI runs below; the vitest e2e suite (the canonical local command) ran green above.
+
+**CI references (e2e evidence via green runs on the three merged PRs):** PR #99 (`9b4be74`) run **37614170640**, PR #100 (`426f310`) run **37619808876**, PR #101 (`8da227e`) run **37629508377** — all `CI / ci-pass` success on 2026-10-07, each carrying e2e-tests, d1-tests, worker-checks (api-worker e2e + OpenNext build + wrangler dry-runs), golden-dataset, data-quality, compliance, composition-smoke, and integration against Postgres/TimescaleDB+Redis.
+
+**Four evidence points → note-section pointers:**
+
+1. **Sweep before/after drop rates** — [Sweep baseline (task 1.1)] + [Vocabulary re-sweep (task 1.2)]: 942/1,630 parsed (57.8%, 688 dropped 42.2%) → 1,540/1,630 (94.5%, 87 no-canonical + 3 disagreement); 1,540+3+87 = 1,630 ✓.
+2. **Staging serving the araxes catalog** — [Staging rollout (task 4.2), final state]: API product 6203 403-without-header / araxes offer with header, `araxes` offerCount 1540 across exactly two batches, staging deploy run 37629508334 green.
+3. **Production serving the araxes catalog** — [Production rollout (task 5.2), final state]: API product 12585 403/200 with araxes offer (1,539 distinct products), public page `rajahinta.fi/products/12585` HTTP 200 with the server-rendered araxes row + CTA, production deploy run 37635518440 green.
+4. **Compound-key idempotency across runs** — [Local rollout (task 3.1), workflow results]: run 2 matched all 1,540 araxes rows by (name, `''` brand, containerType, unitVolume) with `product_master` stable at 1,587; same shape held at staging (7,161 → 7,701 only for first-run-rejected products, then stable) and production (12,585 → 13,124, no other merchant moved across either run).
+5. **Daily-single-enqueue from the producer logs** — [Local rollout (task 3.1), producer tick]: fail-closed pre-grant (`Not scheduling merchant "araxes": no governance records — defaulting to PENDING` + `enqueued 0/3`), interval-bucket defer post-grant (`enqueued 0/3 … (1 not due this tick)`), then the due tick `enqueued 1/3` with exactly one message `{"dedupeKey":"price-ingestion-araxes-2026-10-08-00","merchantId":"araxes","sourceUrl":"https://araxes.ee"}` and the consumer handoff line `Ingesting prices for merchant araxes (dedupe key …)` → `Handed off … to Workflow instance …` — one enqueue + one instance per daily key across both harness runs (also `-10-09-00`). The raw dev log was deleted in the 3.1 cleanup; these quoted fragments are the recorded run output. Production's first scheduled boundary (2026-10-08 00:00 UTC) is the follow-up checklist above — observation pending, explicitly not a 6.1 blocker.
