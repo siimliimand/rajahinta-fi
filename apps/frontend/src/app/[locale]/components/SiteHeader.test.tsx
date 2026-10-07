@@ -1,14 +1,30 @@
 /**
- * SiteHeader auth-awareness tests (task 3.1, change email-password-auth).
+ * SiteHeader tests (task 3.1, change three-task-navigation).
  *
- * The header's SSR payload always renders the signed-out actions; after
- * mount it probes `GET /account/me` and swaps the actions for logout on a
- * session. Verified here:
- *   1. Probe failure (signed-out / unreachable) → Kirjaudu + Rekisteröidy.
- *   2. Probe success → logout button replaces the links.
- *   3. Logout revokes the session and returns to the signed-out actions.
- *   4. The `auth:state-changed` event re-runs the probe (sign-in on a
- *      client-side navigation never remounts the header).
+ * The header renders three task-based disclosure groups — shopping,
+ * trip, event — all instantiated from one `NavDisclosureGroup`, plus
+ * the auth actions and the locale switcher. Verified here:
+ *   1. Structure: exactly three desktop triggers with task-language
+ *      labels; every tool link sits inside a group panel, none flat in
+ *      the header; the demoted scenario and ranking tools are absent.
+ *   2. Panel membership: each opened panel lists exactly its group's
+ *      tool hrefs.
+ *   3. Keyboard: Enter/Space toggle, ArrowDown/ArrowUp enter at the
+ *      first/last item and cycle both ways, Escape closes back to the
+ *      trigger, tab-out closes — for every group.
+ *   4. Active propagation: /calculator distinguishes the shopping
+ *      trigger and marks the calculator item `aria-current`; a deeper
+ *      child route keeps the group active; the account area (no
+ *      route-active destination in the header since the rewire) must
+ *      not light up any group.
+ *   5. Mobile: the mobile panel presents the same three groups with
+ *      `-mobile` testids and operable disclosures.
+ *   6. Auth: the SSR probe swap (signed-out ↔ logout) and the
+ *      `auth:state-changed` re-probe keep working unchanged.
+ *
+ * Both navs (desktop row and mobile panel) are always in the DOM —
+ * closed panels are `display: none` — so panel-scoped queries go
+ * through the per-group menu testids, never by role alone.
  *
  * @module SiteHeaderTest
  */
@@ -54,11 +70,35 @@ const SESSION: SessionStatus = {
   verified: true,
 };
 
+/**
+ * The three task groups with their FI trigger labels (source-of-truth
+ * catalog) and panel hrefs, mirroring `NAV_GROUPS` in the component.
+ */
+const GROUPS = [
+  {
+    key: 'shopping',
+    label: 'Mitä kannattaa ostaa?',
+    hrefs: ['/savings', '/value', '/products', '/calculator', '/compare'],
+  },
+  {
+    key: 'trip',
+    label: 'Suunnittele matka',
+    hrefs: ['/trip', '/basket', '/allowances'],
+  },
+  {
+    key: 'event',
+    label: 'Suunnittele juhlat',
+    hrefs: ['/event', '/basket'],
+  },
+] as const;
+
+const TOOL_HREFS: readonly string[] = GROUPS.flatMap((group) => [
+  ...group.hrefs,
+]);
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockPathname = '/';
-  // The nav destinations also render a plain /account link — keep the
-  // assertions on the auth-action testids specific.
 });
 
 describe('SiteHeader auth actions', () => {
@@ -85,8 +125,10 @@ describe('SiteHeader auth actions', () => {
     );
     expect(screen.queryByTestId('header-sign-in')).not.toBeInTheDocument();
     expect(screen.queryByTestId('header-register')).not.toBeInTheDocument();
-    // The account destination stays in the nav.
-    expect(screen.getAllByRole('link', { name: 'Oma tili' }).length).toBeGreaterThan(0);
+    // The mobile panel carries the same logout action.
+    expect(screen.getByTestId('header-sign-out-mobile')).toHaveTextContent(
+      'Kirjaudu ulos',
+    );
   });
 
   it('signs out, returns to the signed-out actions, and navigates home', async () => {
@@ -130,83 +172,238 @@ describe('SiteHeader auth actions', () => {
   });
 });
 
-describe('SiteHeader planning dropdown (task 3.2)', () => {
-  async function renderHeader(): Promise<HTMLElement> {
-    mockedEnsureSession.mockRejectedValue(new Error('401'));
-    renderWithIntl(<SiteHeader />);
-    await screen.findByTestId('header-sign-in');
-    return screen.getByTestId('planning-dropdown-menu');
-  }
+/** Render the header signed-out and return the banner once settled. */
+async function renderHeader(): Promise<HTMLElement> {
+  mockedEnsureSession.mockRejectedValue(new Error('401'));
+  renderWithIntl(<SiteHeader />);
+  await screen.findByTestId('header-sign-in');
+  return screen.getByRole('banner');
+}
 
-  it('opens with Enter and lists the trip, event, and scenario destinations', async () => {
-    const user = userEvent.setup();
+describe('SiteHeader three task groups (task 3.1)', () => {
+  it('renders exactly the three task-group triggers with task-language labels', async () => {
     await renderHeader();
-    const trigger = screen.getByTestId('planning-dropdown-trigger');
-    expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    expect(trigger).toHaveAttribute('aria-controls', 'site-header-planning-menu');
 
-    trigger.focus();
-    await user.keyboard('{Enter}');
-    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    for (const group of GROUPS) {
+      expect(screen.getByTestId(`nav-group-${group.key}-trigger`)).toHaveTextContent(
+        group.label,
+      );
+    }
+    // The desktop row carries exactly these three disclosures — the
+    // `$`-anchored regex excludes the `-mobile` variants.
+    expect(
+      screen.getAllByTestId(/-trigger$/).map((el) => el.getAttribute('data-testid')),
+    ).toEqual([
+      'nav-group-shopping-trigger',
+      'nav-group-trip-trigger',
+      'nav-group-event-trigger',
+    ]);
+  });
 
-    const menu = screen.getByTestId('planning-dropdown-menu');
-    const hrefs = within(menu)
+  it('keeps every tool link inside a group panel — none sit flat in the header', async () => {
+    const header = await renderHeader();
+
+    const toolLinks = within(header)
       .getAllByRole('link')
-      .map((link) => link.getAttribute('href'));
-    expect(hrefs).toEqual(['/trip', '/event', '/what-if']);
+      .filter((link) => TOOL_HREFS.includes(link.getAttribute('href') ?? ''));
+    // All ten panel items, in both the desktop and the mobile nav.
+    expect(toolLinks).toHaveLength(20);
+    for (const link of toolLinks) {
+      expect(link.closest('[data-testid*="-menu"]')).not.toBeNull();
+    }
   });
 
-  it('moves focus into the items with ArrowDown/ArrowUp and closes on Escape back to the trigger', async () => {
-    const user = userEvent.setup();
-    await renderHeader();
-    const trigger = screen.getByTestId('planning-dropdown-trigger');
+  it('leaves the scenario tool and the ranking methodology out of the header', async () => {
+    const header = await renderHeader();
 
-    trigger.focus();
-    await user.keyboard('{ArrowDown}');
-    expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    const items = within(screen.getByTestId('planning-dropdown-menu')).getAllByRole(
-      'link',
-    );
-    expect(document.activeElement).toBe(items[0]);
-
-    await user.keyboard('{ArrowUp}');
-    // Wrap: ArrowUp from the first item lands on the last.
-    expect(document.activeElement).toBe(items[items.length - 1]);
-
-    await user.keyboard('{Escape}');
-    expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    expect(document.activeElement).toBe(trigger);
+    expect(header.querySelectorAll('a[href="/what-if"]')).toHaveLength(0);
+    expect(header.querySelectorAll('a[href="/ranking"]')).toHaveLength(0);
   });
 
-  it('closes on tab-out', async () => {
+  it.each(GROUPS)('$key panel lists exactly its group tools', async (group) => {
     const user = userEvent.setup();
     await renderHeader();
-    const trigger = screen.getByTestId('planning-dropdown-trigger');
 
+    const trigger = screen.getByTestId(`nav-group-${group.key}-trigger`);
     await user.click(trigger);
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
 
-    // Focus leaves the dropdown wrapper entirely.
+    const menu = screen.getByTestId(`nav-group-${group.key}-menu`);
+    expect(
+      within(menu).getAllByRole('link').map((link) => link.getAttribute('href')),
+    ).toEqual([...group.hrefs]);
+  });
+
+  it.each(GROUPS)(
+    '$key: Enter/Space toggle, arrows cycle, Escape returns to the trigger',
+    async (group) => {
+      const user = userEvent.setup();
+      await renderHeader();
+
+      const trigger = screen.getByTestId(`nav-group-${group.key}-trigger`);
+      expect(trigger).toHaveAttribute('aria-haspopup', 'true');
+      expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      expect(trigger).toHaveAttribute(
+        'aria-controls',
+        `site-header-${group.key}-menu`,
+      );
+
+      trigger.focus();
+      await user.keyboard('{Enter}');
+      expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      await user.keyboard('{Enter}');
+      expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+      await user.keyboard(' ');
+      expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+      const items = within(
+        screen.getByTestId(`nav-group-${group.key}-menu`),
+      ).getAllByRole('link');
+
+      // ArrowDown enters at the first item; ArrowUp from there wraps
+      // to the last, and both directions cycle around the ends.
+      await user.keyboard('{ArrowDown}');
+      expect(document.activeElement).toBe(items[0]);
+      await user.keyboard('{ArrowUp}');
+      expect(document.activeElement).toBe(items[items.length - 1]);
+      await user.keyboard('{ArrowUp}');
+      expect(document.activeElement).toBe(items[items.length - 2]);
+      await user.keyboard('{ArrowDown}');
+      expect(document.activeElement).toBe(items[items.length - 1]);
+      await user.keyboard('{ArrowDown}');
+      expect(document.activeElement).toBe(items[0]);
+
+      await user.keyboard('{Escape}');
+      expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      expect(document.activeElement).toBe(trigger);
+    },
+  );
+
+  it.each(GROUPS)('$key: closes on tab-out', async (group) => {
+    const user = userEvent.setup();
+    await renderHeader();
+
+    const trigger = screen.getByTestId(`nav-group-${group.key}-trigger`);
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    // Focus leaves the group wrapper entirely.
     (screen.getByTestId('header-sign-in') as HTMLElement).focus();
     await waitFor(() =>
       expect(trigger).toHaveAttribute('aria-expanded', 'false'),
     );
   });
 
-  it('marks the trigger active while a planning route is current', async () => {
-    mockPathname = '/trip';
+  it('marks the shopping group active on /calculator', async () => {
+    mockPathname = '/calculator';
     await renderHeader();
 
-    const trigger = screen.getByTestId('planning-dropdown-trigger');
+    // Border + semibold distinguish the trigger; aria-expanded stays
+    // the open-state carrier, so color is never the sole signal.
+    const trigger = screen.getByTestId('nav-group-shopping-trigger');
     expect(trigger.className).toContain('font-semibold');
-    const active = within(screen.getByTestId('planning-dropdown-menu'))
+    expect(trigger.className).toContain('border-primary-700');
+
+    const items = within(
+      screen.getByTestId('nav-group-shopping-menu'),
+    ).getAllByRole('link');
+    const calculator = items.find(
+      (link) => link.getAttribute('href') === '/calculator',
+    );
+    expect(calculator).toHaveAttribute('aria-current', 'page');
+    for (const link of items) {
+      if (link !== calculator) expect(link).not.toHaveAttribute('aria-current');
+    }
+
+    for (const key of ['trip', 'event']) {
+      const inactive = screen.getByTestId(`nav-group-${key}-trigger`);
+      expect(inactive.className).toContain('font-medium');
+      expect(inactive.className).not.toContain('font-semibold');
+    }
+  });
+
+  it('keeps the group distinguished on a deeper child route', async () => {
+    mockPathname = '/savings/price-history';
+    await renderHeader();
+
+    expect(
+      screen.getByTestId('nav-group-shopping-trigger').className,
+    ).toContain('font-semibold');
+    const savings = within(screen.getByTestId('nav-group-shopping-menu'))
       .getAllByRole('link')
-      .find((link) => link.getAttribute('href') === '/trip');
-    expect(active).toHaveAttribute('aria-current', 'page');
+      .find((link) => link.getAttribute('href') === '/savings');
+    expect(savings).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('the account area activates no group; the auth chrome stays put', async () => {
+    // The header carries no route-active account destination since the
+    // rewire (the auth actions are static chrome), so the guarantee is
+    // the negative one: /account/saved-baskets must not distinguish any
+    // group, no link may claim aria-current, and the chrome stays.
+    mockPathname = '/account/saved-baskets';
+    const header = await renderHeader();
+
+    for (const group of GROUPS) {
+      const trigger = screen.getByTestId(`nav-group-${group.key}-trigger`);
+      expect(trigger.className).toContain('font-medium');
+      expect(trigger.className).not.toContain('font-semibold');
+    }
+    for (const link of within(header).getAllByRole('link')) {
+      expect(link).not.toHaveAttribute('aria-current');
+    }
+    expect(screen.getByTestId('header-sign-in')).toBeInTheDocument();
   });
 });
 
-describe('SiteHeader locale switcher (task 3.2)', () => {
+describe('SiteHeader mobile panel (task 3.1)', () => {
+  it('presents the three task groups with operable disclosures', async () => {
+    const user = userEvent.setup();
+    await renderHeader();
+
+    const toggle = screen.getByRole('button', { name: 'Päävalikko' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveAttribute('aria-controls', 'site-header-mobile-nav');
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    for (const group of GROUPS) {
+      const trigger = screen.getByTestId(
+        `nav-group-${group.key}-trigger-mobile`,
+      );
+      expect(trigger).toHaveTextContent(group.label);
+      expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      // Closed stacked panels are display:none.
+      expect(
+        screen.getByTestId(`nav-group-${group.key}-menu-mobile`).className,
+      ).toContain('hidden');
+    }
+
+    const shopping = screen.getByTestId('nav-group-shopping-trigger-mobile');
+    shopping.focus();
+    await user.keyboard('{ArrowDown}');
+    expect(shopping).toHaveAttribute('aria-expanded', 'true');
+    const menu = screen.getByTestId('nav-group-shopping-menu-mobile');
+    expect(menu.className).not.toContain('hidden');
+    expect(
+      within(menu).getAllByRole('link').map((link) => link.getAttribute('href')),
+    ).toEqual([...GROUPS[0].hrefs]);
+    expect(document.activeElement).toBe(within(menu).getAllByRole('link')[0]);
+  });
+
+  it('carries the locale switcher and auth actions', async () => {
+    await renderHeader();
+
+    const mobileNav = document.getElementById('site-header-mobile-nav');
+    expect(mobileNav).not.toBeNull();
+    const panel = within(mobileNav as HTMLElement);
+    expect(panel.getByTestId('locale-switcher-mobile')).toBeInTheDocument();
+    expect(panel.getByTestId('header-sign-in-mobile')).toBeInTheDocument();
+    expect(panel.getByTestId('header-register-mobile')).toBeInTheDocument();
+  });
+});
+
+describe('SiteHeader locale switcher', () => {
   it('switches to EN preserving the current pathname', async () => {
     mockPathname = '/calculator';
     const user = userEvent.setup();
