@@ -1295,7 +1295,9 @@ export class D1ProductSearchRepository extends ProductRepository {
     const filtered = category !== undefined;
     return (
       await this.d1
-        .prepare(`${CATALOG_KEYS_SQL}${filtered ? ' WHERE category = ?' : ''}`)
+        // CATALOG_KEYS_SQL already carries the shared listing universe in
+        // its WHERE — the category filter conjoins it (AND, not WHERE).
+        .prepare(`${CATALOG_KEYS_SQL}${filtered ? ' AND p.category = ?' : ''}`)
         .bind(...(filtered ? [category] : []))
         .all<D1CatalogKeyRow>()
     ).results;
