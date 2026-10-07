@@ -426,6 +426,41 @@ export default function SiteHeader() {
   };
 
   /**
+   * Account chrome (design: "Oma tili stays as chrome, right side"):
+   * a flat link rendered in both auth states, ahead of the locale
+   * switcher, outside the task groups. Its active treatment follows
+   * the chrome-link pattern — border/semibold plus `aria-current`,
+   * never color alone.
+   */
+  const renderAccountLink = (mobile: boolean) => {
+    const accountActive = isRouteActive(pathname, '/account');
+    return (
+      <Link
+        href="/account"
+        data-testid={mobile ? 'header-account-mobile' : 'header-account'}
+        {...(accountActive ? { 'aria-current': 'page' as const } : {})}
+        className={
+          mobile
+            ? [
+                'inline-flex items-center rounded-md px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+                accountActive
+                  ? 'bg-primary-50 font-semibold text-gray-900'
+                  : 'font-medium text-gray-600 hover:bg-gray-50 hover:text-primary-700',
+              ].join(' ')
+            : [
+                'inline-flex items-center border-b-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+                accountActive
+                  ? 'border-primary-700 font-semibold text-gray-900'
+                  : 'border-transparent font-medium text-gray-600 hover:text-primary-700',
+              ].join(' ')
+        }
+      >
+        {t('account')}
+      </Link>
+    );
+  };
+
+  /**
    * `FI | EN` locale switcher (task 3.2): swaps the locale while keeping
    * the current pathname — next-intl's router rewrites the prefix, so a
    * visitor on /en/calculator lands on /calculator and vice versa. The
@@ -488,9 +523,10 @@ export default function SiteHeader() {
           {NAV_GROUPS.map((group) => renderNavGroup(group, false))}
         </nav>
 
-        {/* Desktop actions — visible from md up: locale switcher, then
-            the auth actions. */}
+        {/* Desktop actions — visible from md up: the account chrome,
+            then the locale switcher and the auth actions. */}
         <div className="hidden items-center gap-x-3 md:flex">
+          {renderAccountLink(false)}
           {renderLocaleSwitcher(false)}
           {renderAuthActions(false)}
         </div>
@@ -531,6 +567,7 @@ export default function SiteHeader() {
       >
         {NAV_GROUPS.map((group) => renderNavGroup(group, true))}
         <div className="mt-2 flex items-center gap-2 border-t border-gray-200 pt-2">
+          {renderAccountLink(true)}
           {renderLocaleSwitcher(true)}
           {renderAuthActions(true)}
         </div>

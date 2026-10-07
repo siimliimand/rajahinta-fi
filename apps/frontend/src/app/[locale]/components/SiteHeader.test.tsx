@@ -14,9 +14,12 @@
  *      trigger, tab-out closes — for every group.
  *   4. Active propagation: /calculator distinguishes the shopping
  *      trigger and marks the calculator item `aria-current`; a deeper
- *      child route keeps the group active; the account area (no
- *      route-active destination in the header since the rewire) must
- *      not light up any group.
+ *      child route keeps the group active; the account area still
+ *      lights up no group.
+ *   5. Account chrome (reopened scope): "Oma tili" stays as chrome in
+ *      both navs and both auth states — desktop chrome and the mobile
+ *      bottom row — and carries the chrome-link active treatment
+ *      (border/semibold + `aria-current`) only on /account routes.
  *   5. Mobile: the mobile panel presents the same three groups with
  *      `-mobile` testids and operable disclosures.
  *   6. Auth: the SSR probe swap (signed-out ↔ logout) and the
@@ -336,23 +339,57 @@ describe('SiteHeader three task groups (task 3.1)', () => {
     expect(savings).toHaveAttribute('aria-current', 'page');
   });
 
-  it('the account area activates no group; the auth chrome stays put', async () => {
-    // The header carries no route-active account destination since the
-    // rewire (the auth actions are static chrome), so the guarantee is
-    // the negative one: /account/saved-baskets must not distinguish any
-    // group, no link may claim aria-current, and the chrome stays.
-    mockPathname = '/account/saved-baskets';
-    const header = await renderHeader();
+  it('renders the account chrome in the signed-in state too', async () => {
+    mockedEnsureSession.mockResolvedValue(SESSION);
 
+    renderWithIntl(<SiteHeader />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('header-sign-out')).toBeInTheDocument(),
+    );
+    // The account link is auth-state-independent chrome — it survives
+    // the SSR probe swap exactly as it did as a nav item.
+    expect(screen.getByTestId('header-account')).toHaveAttribute(
+      'href',
+      '/account',
+    );
+  });
+
+  it('keeps the account chrome active on its routes and present in both navs', async () => {
+    // "Oma tili stays as chrome, right side": the link lives outside the
+    // task groups, and its active treatment follows the chrome-link
+    // pattern — border + semibold plus `aria-current`, never color
+    // alone. A deeper /account child marks it active.
+    mockPathname = '/account/saved-baskets';
+    await renderHeader();
+
+    const account = screen.getByTestId('header-account');
+    expect(account).toHaveAttribute('href', '/account');
+    expect(account).toHaveAttribute('aria-current', 'page');
+    expect(account.className).toContain('font-semibold');
+    expect(account.className).toContain('border-primary-700');
+
+    // The account area still belongs to no task group.
     for (const group of GROUPS) {
       const trigger = screen.getByTestId(`nav-group-${group.key}-trigger`);
       expect(trigger.className).toContain('font-medium');
       expect(trigger.className).not.toContain('font-semibold');
     }
-    for (const link of within(header).getAllByRole('link')) {
-      expect(link).not.toHaveAttribute('aria-current');
-    }
     expect(screen.getByTestId('header-sign-in')).toBeInTheDocument();
+
+    const mobileNav = document.getElementById('site-header-mobile-nav');
+    expect(mobileNav).not.toBeNull();
+    expect(
+      within(mobileNav as HTMLElement).getByTestId('header-account-mobile'),
+    ).toHaveAttribute('href', '/account');
+  });
+
+  it('the account chrome carries no active state on unrelated routes', async () => {
+    await renderHeader();
+
+    const account = screen.getByTestId('header-account');
+    expect(account).not.toHaveAttribute('aria-current');
+    expect(account.className).not.toContain('font-semibold');
   });
 });
 
