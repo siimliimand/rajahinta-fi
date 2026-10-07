@@ -90,7 +90,69 @@ Checks: `pnpm --filter @rajahinta/core-domain build` exit 0; mapper suite `sourc
 
 ## Staging rollout (task 4.2)
 
-TBD
+**COMPLETE — grant landed and audited; ingest verified after the chunk-budget fix: all 1,540 araxes products carry offers across exactly two observation batches.** Executed 2026-10-07 12:16–14:20 UTC. Zero production contact throughout.
+
+### Deploy blocker (incident, resolved upstream)
+
+The first deploy of the change (run **37614170668**, PR #99 merge `9b4be74`) failed at the seed gate: the D1 seed emitted registry rows with dense explicit PKs (araxes→3), which staging's operator-added **longero** row (id 3) swallowed via `INSERT OR IGNORE` → verification `merchant_registry_araxes: expected 1, got 0` → deploy aborted. Fixed upstream as a natural-key upsert on the UNIQUE `merchant_id` (PR #100, merge `426f310`); redeploy run **37619808775 GREEN** (migrate → seed verified → workers rolled out → readiness gate OK). Staging now runs the six-adapter code with the araxes registry row (read-back: Araxes / EE / `https://araxes.ee` / json / 86,400,000).
+
+### Ops-console precondition — staging `OPS_BEARER_TOKEN` was NEVER provisioned
+
+First `GET /ops/console/governance` attempt → generic 403 (fail-closed by design, `ops-access.ts`). `wrangler secret list --env staging` showed a single secret (`CONTACT_IP_HASH_SALT`) — **no `OPS_BEARER_TOKEN`** (runbook §1 precondition never met for staging; this is the deeper form of the mydrink-4.2 blocker, which only lacked the value locally). Provisioned 2026-10-07 via `wrangler secret put OPS_BEARER_TOKEN --env staging` from the environment credential file (value piped via stdin, never displayed). The audited console path then worked — **no direct-D1 fallback was needed; no `audit_events` deviation this time.** Note for 5.x: verify the production secret exists before the production grant (checked by NAME only here; production not probed).
+
+### Fail-closed pre-grant check (console, post-deploy)
+
+`GET /ops/console/governance`: **`araxes` PENDING, sourceCount 0** (registry row from seed, no governance records) — the §0 fail-closed contract, verified before any grant. `alks` still `REVOKED` (staging halt untouched); kippis/longero/mydrink `GRANTED` unchanged.
+
+### Grant through the operator console (audited path)
+
+`POST /ops/console/governance/araxes/grant` — operator **`siim (owner)`** (the audit-trail convention, from the 2026-09-11 alks entry), `acquisitionMethod: RETAILER_API`, `sourceUrl: https://araxes.ee/wp-json/wc/store/v1/products`, note "change onboard-araxes-merchant: staging grant" → **`permissionStatus: GRANTED`, `changed: true`, `updatedSources: 1`** ✅. Audit verified (`GET /ops/console/audit?limit=5`): entry `73a22145…`, `entityType: source_governance`, `entityId: araxes`, `action: created`, author + note exact, 2026-10-07T12:23:58Z ✅.
+
+### Pre-ingest baselines (read-only D1)
+
+`product_master` **6,161 rows, max id 6,161**; `retail_offers` **114,434 total, araxes 0**; per-merchant: alks 67,600 · longero 24,962 · kippis 14,235 · mydrink 7,593 · seed merchants 8–10.
+
+### First ingest via the Workflows REST API
+
+- `POST /accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances` body `{"id":"price-ingestion-araxes-2026-10-07-12","params":{"merchantId":"araxes","sourceUrl":"https://araxes.ee","dedupeKey":"price-ingestion-araxes-2026-10-07-12"}}` (params mirror the producer's queue message: registry feedUrl as sourceUrl — the adapter appends the Store API path; `-12` hour key cannot collide with the disabled producer) → `success: true`, internal uuid **`1c2cddc7-f0cb-47bf-a2dc-897a91b4681c`**, `status: "queued"`, first attempt.
+- Poll: `queued` → `running` 12:24:54Z → **`waiting` 13:11:35Z** (~47 min; the designed chunk-budget hibernation boundary — araxes at 7 upsert chunks is the first mid-size catalog to reach the sleep path) → **`complete` 13:14:48Z (≈50 min total)**, `error: null`.
+
+### Run result — 1,000 of 1,540 offers; the rest rejected by the D1 API-request quota (BUG)
+
+Instance output: **`productsIngested: 1000`**, `errors`: **2,266 lines** (2,265 unique). Exact reconciliation: **1,630 raw = 1,000 ingested + 540 quota-rejected + ~90 expected drops** ✓. Of the error lines, **exactly 540** are per-row `Failed to upsert product "…": Too many API requests by single Worker invocation` — upsert chunks **5–7** (250+250+40 pairs); the remaining ~1,726 lines are the expected adapter noise (kept-without-EAN note per raw row + the drop lines, local-3.1 shape). The instance reports `complete` because upsert failures ride the in-band error list by design (completed-with-errors), not step failure.
+
+Root cause (diagnosed; fix owned by the workflow owner): `ingestion-steps.ts` chunks the upsert at `UPSERT_CHUNK_SIZE = 250` and crosses a durable-sleep boundary (fresh invocation → fresh D1 API-request quota) only every `CHUNK_BUDGET_RESET_EVERY = 16` chunks — sized from the 2026-09-30 production Alko run (~350 chunks). A 1,540-pair catalog needs only **7 chunks**, so the quota (shared across the instance's executions within one invocation stretch) dies at ~1,000 rows, before the first boundary. mydrink's 643 (3 chunks) never reached the failure window; Alko/alks-scale runs cross boundaries long before it. Deterministic: re-triggering lands the same 1,000 and rejects the same 540 — a re-run is NOT a remediation. Remediation direction: shrink the reset interval (e.g. every 4 chunks ≈ 1,000-row budget) or make the reset quota-aware. The 540 rejected pairs persisted nothing (product upsert itself failed; no partial rows — see +1,000 exact below).
+
+### Verification of what landed
+
+- **`retail_offers`**: **1,000 araxes rows / 1,000 distinct products** (expected 1,540), min 159 / max 34,499 cents (max = `MACALLAN RARE CASK 0.7L 43% Whisky`, the local-3.1 sample item), single `observed_at` batch **2026-10-07T12:25:22.205Z** (= fetch step), reliability **all 1,000 ESTIMATED** — matching local 3.1's verified behavior ("offerCount 1540, all ESTIMATED"; the ~4.5% figure is the sweep's parse-share estimate, not the ingestion reliability distribution).
+- **`product_master`**: 6,161 → **7,161 (+1,000 exact)**; all 1,000 new rows EAN-less (araxes internal 5-digit SKUs, D4 parallel-catalog shape). **No other merchant changed**: post-run per-merchant counts byte-identical to baseline.
+- **API** (`https://rajahinta-api-staging.siim-liimand.workers.dev`, product **6203** — araxes-created max-price row): negative control `GET /api/v1/products/6203` without header → **HTTP 403** (age gate) ✅; with `x-age-confirmed: 1` → the araxes offer: `merchant "araxes"` / EE / 34,499¢ / EUR / ESTIMATED / `sourceUrl: https://araxes.ee/toode/macallan-rare-cask-0-7l-43-whisky/` / `observedAt` = fetch batch ✅. Merchant aggregate: **`araxes` offerCount 1000**, all ESTIMATED, `freshestObservedAt` = fetch batch ✅, with the known read-model artifact (`governancePermissionStatus: "PENDING"` despite the GRANTED row — kippis/mydrink/local precedent, recorded not chased).
+
+### Commands executed (names) — run-1 phase (pre-fix)
+
+`gh run list --workflow deploy-staging.yml` · `curl GET/POST $STAGING_API_URL/ops/console/governance|audit|governance/araxes/grant` (bearer: `$(cat /root/.ops-token)` inline, never echoed) · `npx wrangler secret list --env staging` · `npx wrangler secret put OPS_BEARER_TOKEN --env staging` (value from the environment credential file via stdin, never displayed) · `npx wrangler whoami --json` + `curl POST /accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances` + `curl …/instances/1c2cddc7-…` (poll; Cloudflare API token inline, never echoed; account id same-invocation, never emitted) · read-only `npx wrangler d1 execute DB --remote --env staging --json --command "…"` (baselines, offer/product/verification queries, per-merchant post-checks) · `curl /api/v1/products/6203` ± `x-age-confirmed: 1` · `curl /api/v1/merchants/reliability`. Instance error lines fetched via the Workflows API to a `/tmp/opencode` scratch file (product names only, no credentials), deleted after analysis. No writes against staging D1 by hand; no production contact.
+
+### Blocker — quota bug found by run 1, FIXED, reconciled by run 2
+
+Run 1 (instance **`1c2cddc7-f0cb-47bf-a2dc-897a91b4681c`**, complete 13:14:48Z) exposed the bug: `CHUNK_BUDGET_RESET_EVERY = 16` meant a 7-chunk (1,540-pair) catalog exhausted the shared per-invocation D1 API-request quota before the first sleep boundary — chunks 5–7 rejected all 540 rows per-row ("Too many API requests"), landing only 1,000/1,540. **Fixed upstream (PR #101, `8da227e`: reset interval 16 → 2; deploy run 37629508334 green).** Deterministic-failure analysis held: a plain re-run after the fix reconciled everything.
+
+### Second ingest — run 2 (post-fix) — all pairs landed
+
+- Pre-run baselines: araxes 1,000 rows / 1,000 products; `product_master` 7,161.
+- `POST …/workflows/rajahinta-price-ingestion-staging/instances` body `{"id":"price-ingestion-araxes-2026-10-07-13","params":{…same shape…}}` → uuid **`9f0cd8da-5de9-43a3-a551-2f4f2df84cfa`**, `queued`, first attempt → **`complete` 14:10:50Z (≈32 min)**, `error: null`.
+- Output **`productsIngested: 1539`**, `errors`: **1,724 lines, ZERO quota rejections** ✓. Feed drift, not loss: the raw catalog moved 1,630 → **1,629** between runs (12:24 vs 13:38 fetch), and run 2 reconciles exactly: **1,539 parsed + 87 no-canonical + 3 disagreement = 1,629 ✓**, with **1,629 SKU correction notes** (one per raw row — the accepted D2 discipline).
+
+### Final state (reconciled against local 3.1 semantics)
+
+- **`retail_offers`**: **2,789 araxes rows across exactly two `observed_at` batches** — the designed per-observation append shape (mydrink local 3.1: run 2 appended a full fresh batch): batch 1 **1,000 rows @ 2026-10-07T12:25:22.205Z** (run 1, preserved), batch 2 **1,789 rows @ 13:39:02.774Z** over 1,539 products. Total **1,540 distinct products with offers** ✓ (1,000 refreshed + 540 previously-rejected landed).
+- **Chunk-replay wrinkle (recorded for the workflow owner, not a 4.2 blocker)**: batch 2 carries **250 same-price duplicate rows** (1,289 products ×1 + 250 ×2 = 1,789) — exactly one `UPSERT_CHUNK_SIZE = 250` chunk appended twice at the same instant, the at-least-once signature of a chunk whose D1 writes committed before its step checkpoint was lost (run 2 crossed the new sleep boundaries at chunks 2/4/6). The upsert comment's "same-instant offer upsert is a no-op" contract did not hold on replay. Harmless to numbers (identical rows; the read path serves only the freshest observation per product; time-series aggregation is bucket-idempotent), but per-product offer listings could double-count — dedupe/append-guard follow-up for the platform engineer.
+- **`product_master`**: 7,161 → **7,701 (+540 exact, all EAN-less)** — the previously-rejected products. **No other merchant changed**: mydrink 7,593 · kippis 14,235 · longero 24,962 · alks 67,600 — byte-identical to the 4.2 baseline and unchanged across both runs.
+- **API** (`https://rajahinta-api-staging.siim-liimand.workers.dev`, product **6203**, araxes-created max-price row — one offer row per batch, the clean two-batch shape): no header → **HTTP 403** ✅; `x-age-confirmed: 1` → araxes offer at the fresh batch (`34,499`¢, `observedAt` 13:39:02.774Z) ✅. Merchant aggregate: **`araxes` offerCount 1540**, all ESTIMATED, `freshestObservedAt` = batch 2 ✅ (known read-model artifact: `governancePermissionStatus: "PENDING"` despite the GRANTED row — kippis/mydrink/local precedent, recorded not chased).
+
+### Commands executed (names) — run-2 phase (post-fix verification)
+
+`gh run list --workflow deploy-staging.yml` (run 37629508334 green) · read-only `npx wrangler d1 execute DB --remote --env staging --json --command "…"` (pre-run baselines; post-run batch split, duplicate-row census, product/merchant checks) · `npx wrangler whoami --json` + `curl POST …/workflows/rajahinta-price-ingestion-staging/instances` (key `price-ingestion-araxes-2026-10-07-13`) + `curl …/instances/9f0cd8da-…` (poll; Cloudflare API token inline, never echoed) · instance error-line fetch to a `/tmp/opencode` scratch file for category counting (SKU notes / no-canonical / disagreement / quota-rejection greps; file deleted) · `curl /api/v1/products/6203` ± `x-age-confirmed: 1` · `curl /api/v1/merchants/reliability`.
 
 ## Production rollout (task 5.2)
 
