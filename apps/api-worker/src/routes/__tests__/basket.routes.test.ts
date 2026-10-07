@@ -189,6 +189,42 @@ describe('POST /api/v1/basket/optimize — composed guards + idempotency', () =>
     });
     expect(third.headers.get('X-Cache')).toBe('MISS');
   });
+
+  it('serves HIT for an import-bearing basket — the VAT label is symmetric on both cache sides', async () => {
+    const { db, d1 } = openMigratedD1();
+    // Cross-border offer (DE → FI): the optimizer's per-item dataset
+    // versions gain `import-vat-2024.2`. Regression pin for the
+    // idempotency version-set fix — the stored set and the lookup set
+    // must be identical route-derived arrays, or every import-bearing
+    // basket recomputes forever.
+    seedProduct(db, { id: 1, depositSystemStatus: 0 });
+    seedOffer(db, { productId: 1, priceCents: 350, country: 'DE' });
+    seedTaxRule(db, { taxType: 'excise', productCategory: 'beer', rate: 0.365 });
+    seedTaxRule(db, {
+      id: 2,
+      taxType: 'container_duty',
+      productCategory: 'all_beverages',
+      rate: 0.51,
+      verified: false,
+    });
+    const app = buildApp();
+    const env = permissiveEnv(d1);
+    const init: RequestInit = {
+      method: 'POST',
+      headers: JSON_HDRS,
+      body: JSON.stringify(VALID_REQUEST),
+    };
+
+    const first = await request(app, env, '/api/v1/basket/optimize', init);
+    expect(first.status).toBe(200);
+    expect(first.headers.get('X-Cache')).toBe('MISS');
+    const missBody = (await first.json()) as Record<string, any>;
+    expect(missBody.metadata.datasetVersions).toContain('import-vat-2024.2');
+
+    const second = await request(app, env, '/api/v1/basket/optimize', init);
+    expect(second.headers.get('X-Cache')).toBe('HIT');
+    expect(await second.json()).toEqual(missBody);
+  });
 });
 
 // ---------------------------------------------------------------------------
