@@ -2156,8 +2156,12 @@ export const shareSnapshots = sqliteTable(
  * sources; `checkPermission` aggregates); status changes UPDATE the row
  * in place — forward-only transitions (PENDING/EXPIRED → GRANTED →
  * REVOKED) are enforced by the repository layer, not by triggers, and the
- * audit event carries the history. Rows are never deleted. Operator-
- * created runtime data only — never seeded.
+ * audit event carries the history. Rows are never deleted. Production
+ * rows are operator-created runtime data; local and staging bootstrap
+ * rows are seeded by `seedSourceGovernance`
+ * (packages/data-platform/src/seed/source-governance.seed.ts, change
+ * sitemap-crawl-merchants) behind a presence guard that never
+ * resurrects or downgrades an operator-mutated row.
  */
 export const sourceGovernance = sqliteTable(
   'source_governance',
