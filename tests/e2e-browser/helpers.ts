@@ -55,6 +55,15 @@ export const COPY = {
   liveGapUnavailableBody:
     'Päivän vertailua ei voitu ladata juuri nyt. Voit yrittää myöhemmin uudelleen.',
   howItWorksHeading: 'Näin se toimii',
+  // Header navigation (SiteHeader namespace — three-task-navigation):
+  // the mobile menu toggle and the three task-group triggers, which
+  // speak task language; panel items keep the tool names.
+  navToggle: 'Päävalikko',
+  groupShopping: 'Mitä kannattaa ostaa?',
+  groupTrip: 'Suunnittele matka',
+  groupEvent: 'Suunnittele juhlat',
+  navCalculator: 'Laskuri',
+  navBasket: 'Ostoskori',
 } as const;
 
 /** Structural disclaimer (packages/core-domain/src/disclaimer.ts, fi). */
