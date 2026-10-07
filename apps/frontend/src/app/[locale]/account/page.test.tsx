@@ -224,7 +224,9 @@ describe('AccountPage outcome deep-link (?outcome=, task 3.3)', () => {
     const form = await screen.findByTestId('outcome-report-form-42');
     const entry = form.closest('li');
     expect(entry?.hasAttribute('data-outcome-preselected')).toBe(true);
-    expect(scrollIntoView).toHaveBeenCalled();
+    // The scroll runs in an effect after the history resolves — the spy
+    // can lag the form's first paint, so await it instead of racing it.
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
   });
 
   it('leaves no highlight when the requested record is not in the history', async () => {
