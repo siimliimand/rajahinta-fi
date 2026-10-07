@@ -14,7 +14,7 @@
 // @vitest-environment jsdom
 
 import * as React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import TripBreakEvenResult from './TripBreakEvenResult';
 import { renderWithIntl } from '@/lib/testing/test-intl';

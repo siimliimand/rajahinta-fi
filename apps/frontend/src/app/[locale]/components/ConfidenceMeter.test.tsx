@@ -18,7 +18,7 @@
 // @vitest-environment jsdom
 
 import * as React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import ConfidenceMeter from './ConfidenceMeter';
 import { renderWithIntl } from '@/lib/testing/test-intl';
