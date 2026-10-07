@@ -805,6 +805,7 @@ export {
   relativeErrorFraction,
   resolveEmpiricalMargin,
   resolveEmpiricalMarginFromCells,
+  computeOutcomeMarginCells,
 } from './outcomes/margin-calibration';
 export {
   categoryCarrierCellKey,

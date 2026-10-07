@@ -12,10 +12,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { openMigratedD1 } from './d1-test-harness';
-import {
-  D1OutcomeMarginRepository,
-  computeOutcomeMarginCells,
-} from '../outcome-margin.repository';
+import { D1OutcomeMarginRepository } from '../outcome-margin.repository';
+import { computeOutcomeMarginCells } from '@rajahinta/core-domain';
 import type { OutcomeMarginReport } from '@rajahinta/core-domain';
 
 const AS_OF = new Date('2026-10-06T00:00:00.000Z');

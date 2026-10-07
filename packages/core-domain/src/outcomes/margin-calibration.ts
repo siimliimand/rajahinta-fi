@@ -310,3 +310,58 @@ export function resolveEmpiricalMarginFromCells(
   }
   return { ...winner, quantile: clampedQuantile };
 }
+
+/**
+ * Enumerate the corpus's ladder cells and calibrate each one — the
+ * write-side enumeration the aggregation tick persists (cells deepest
+ * rung first, keys ascending within a rung, so the persisted ladder
+ * and any read-back are byte-deterministic). Every margin comes from
+ * {@link computeCellMargin}: below-floor cells are skipped (null — no
+ * fabrication), and an empty corpus enumerates no cells at all. Pure —
+ * the SQL read and the row persistence live in the callers.
+ */
+export function computeOutcomeMarginCells(
+  reports: readonly OutcomeMarginReport[],
+  asOf: Date,
+): EmpiricalMargin[] {
+  const cells: EmpiricalMargin[] = [];
+  for (const { category, carrier } of distinctAttributedPairs(reports)) {
+    const margin = computeCellMargin(reports, 'category_carrier', category, carrier, asOf);
+    if (margin !== null) cells.push(margin);
+  }
+  for (const category of distinctValues(reports.map((report) => report.category))) {
+    const margin = computeCellMargin(reports, 'category', category, null, asOf);
+    if (margin !== null) cells.push(margin);
+  }
+  const global = computeCellMargin(reports, 'global', null, null, asOf);
+  if (global !== null) cells.push(global);
+  return cells;
+}
+
+/** Distinct non-null values, ascending — one `category`-rung cell each. */
+function distinctValues(values: ReadonlyArray<string | null>): string[] {
+  return [...new Set(values.filter((value): value is string => value !== null))].sort();
+}
+
+/**
+ * Distinct fully-attributed `category × carrier` pairs, ascending by
+ * the composite key — one `category_carrier`-rung cell each. The key
+ * format is {@link categoryCarrierCellKey} (single source of truth);
+ * the pair itself rides along so the calibration never re-parses a
+ * key it owns.
+ */
+function distinctAttributedPairs(
+  reports: readonly OutcomeMarginReport[],
+): Array<{ category: string; carrier: string }> {
+  const byKey = new Map<string, { category: string; carrier: string }>();
+  for (const report of reports) {
+    if (report.category === null || report.carrier === null) continue;
+    byKey.set(categoryCarrierCellKey(report.category, report.carrier), {
+      category: report.category,
+      carrier: report.carrier,
+    });
+  }
+  return [...byKey.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(
+    ([, pair]) => pair,
+  );
+}

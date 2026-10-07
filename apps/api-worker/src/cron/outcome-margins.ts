@@ -27,8 +27,8 @@
 
 import {
   D1OutcomeMarginRepository,
-  computeOutcomeMarginCells,
 } from '../../../../packages/data-platform/src/repositories/d1/outcome-margin.repository';
+import { computeOutcomeMarginCells } from '../../../../packages/core-domain/src/outcomes/margin-calibration';
 import type { Env } from '../env';
 import type { Logger } from '../logger';
 

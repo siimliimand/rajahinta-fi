@@ -18,12 +18,14 @@
  *   convention as the read-time accuracy breakdowns, which INNER-join
  *   because they must not stretch cells; the ladder's global cell wants
  *   every report, so the join is outer and the null is meaningful).
- * - The pure cell computation delegates to core-domain's
- *   {@link computeCellMargin} — the ladder math (nearest-rank p80,
- *   MARGIN_SAMPLE_FLOOR, composite key) has exactly one source of
- *   truth; this module only enumerates the cells present in the corpus
- *   and persists the ones that calibrate. Below-floor cells yield null
- *   and are skipped; an empty corpus persists no rows at all.
+ * - The pure cell computation lives in core-domain
+ *   (`computeOutcomeMarginCells` in margin-calibration.ts) — the ladder
+ *   math (nearest-rank p80, MARGIN_SAMPLE_FLOOR, composite key) has
+ *   exactly one source of truth, and this module is persistence only:
+ *   the caller (the api-worker's aggregation-tick step) enumerates and
+ *   calibrates, then hands the calibrated cells to
+ *   {@link D1OutcomeMarginRepository.persistMargins}. Below-floor cells
+ *   are skipped by the calibration; an empty corpus persists no rows.
  * - Persistence is delete-then-insert per run in ONE batch: a cell the
  *   corpus no longer calibrates disappears with its reports, and the
  *   composite (dimension, cell_key) primary key keeps a re-run from
@@ -39,7 +41,6 @@
  */
 import { Injectable } from '@nestjs/common';
 import type { EmpiricalMargin, MarginCellDimension, OutcomeMarginReport } from '@rajahinta/core-domain';
-import { categoryCarrierCellKey, computeCellMargin } from '@rajahinta/core-domain';
 import type { D1DatabaseLike } from '../../d1/executor';
 
 /** One persisted margin row — the outcome_margins table's contract face. */
@@ -95,62 +96,6 @@ const INSERT_MARGIN_SQL = `
 
 /** A cell's margin is derived state — the whole ladder rewrites per run. */
 const DELETE_ALL_MARGINS_SQL = `DELETE FROM outcome_margins`;
-
-/**
- * Enumerate the corpus's ladder cells and calibrate each one — the pure
- * half of this module (the category-benchmarks precedent: the math is
- * exported so tests pin it without SQL). Cells are enumerated deepest
- * rung first, keys ascending within a rung, so the persisted ladder and
- * any read-back are byte-deterministic. Every value comes from
- * core-domain's {@link computeCellMargin}: below-floor cells are
- * skipped (null — no fabrication), and an empty corpus enumerates no
- * cells at all.
- */
-export function computeOutcomeMarginCells(
-  reports: readonly OutcomeMarginReport[],
-  asOf: Date,
-): EmpiricalMargin[] {
-  const cells: EmpiricalMargin[] = [];
-  for (const { category, carrier } of distinctAttributedPairs(reports)) {
-    const margin = computeCellMargin(reports, 'category_carrier', category, carrier, asOf);
-    if (margin !== null) cells.push(margin);
-  }
-  for (const category of distinctValues(reports.map((report) => report.category))) {
-    const margin = computeCellMargin(reports, 'category', category, null, asOf);
-    if (margin !== null) cells.push(margin);
-  }
-  const global = computeCellMargin(reports, 'global', null, null, asOf);
-  if (global !== null) cells.push(global);
-  return cells;
-}
-
-/** Distinct non-null values, ascending — one `category`-rung cell each. */
-function distinctValues(values: ReadonlyArray<string | null>): string[] {
-  return [...new Set(values.filter((value): value is string => value !== null))].sort();
-}
-
-/**
- * Distinct fully-attributed `category × carrier` pairs, ascending by
- * the core-domain composite key — one `category_carrier`-rung cell
- * each. The key format is core-domain's {@link categoryCarrierCellKey}
- * (single source of truth); the pair itself rides along so the
- * calibration never re-parses a key it owns.
- */
-function distinctAttributedPairs(
-  reports: readonly OutcomeMarginReport[],
-): Array<{ category: string; carrier: string }> {
-  const byKey = new Map<string, { category: string; carrier: string }>();
-  for (const report of reports) {
-    if (report.category === null || report.carrier === null) continue;
-    byKey.set(categoryCarrierCellKey(report.category, report.carrier), {
-      category: report.category,
-      carrier: report.carrier,
-    });
-  }
-  return [...byKey.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(
-    ([, pair]) => pair,
-  );
-}
 
 /**
  * One persisted row → the core-domain {@link EmpiricalMargin} the
@@ -218,7 +163,7 @@ export class D1OutcomeMarginRepository {
 
   /**
    * The persisted ladder, ladder order (deepest rung first, keys
-   * ascending — the {@link computeOutcomeMarginCells} write order) —
+   * ascending — the core-domain computeOutcomeMarginCells write order) —
    * the margins endpoint's read.
    */
   async findMargins(): Promise<OutcomeMarginRow[]> {
