@@ -72,9 +72,7 @@
     "event": "Tilaisuuslaskuri",
     "trip": "Matkalaskuri",
     "allowances": "Tullivapaat määrät",
-    "whatIf": "Skenaariolaskuri",
     "account": "Oma tili",
-    "ranking": "Järjestysperiaatteet",
     "localeSwitcherLabel": "Vaihda kieltä"
   },
   "SiteFooter": {

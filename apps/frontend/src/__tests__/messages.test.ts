@@ -148,12 +148,11 @@ describe('layout and navigation catalog completeness', () => {
       'event',
       'trip',
       'allowances',
-      // Demoted from the header by three-task-navigation; the keys stay
-      // until their follow-up tasks re-home them (whatIf joins the
-      // footer's About column; account/ranking per 2.1/3.x).
-      'whatIf',
+      // Demoted from the header by three-task-navigation: 2.1 removed the
+      // whatIf/ranking catalog keys — no code renders them (the footer's
+      // linkWhatIf and methodology keys cover those destinations).
+      // `account` stays until its follow-up task re-homes it.
       'account',
-      'ranking',
       // The locale switcher's accessible label.
       'localeSwitcherLabel',
     ]);
