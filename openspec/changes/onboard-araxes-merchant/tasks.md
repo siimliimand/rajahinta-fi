@@ -14,7 +14,7 @@
 
 ## 3. Local rollout
 
-- [ ] 3.1 Local D1: registry row (via the seed) + governance record (`RETAILER_API`, `GRANTED`, sourceUrl `https://araxes.ee/wp-json/wc/store/v1/products`); run the producer tick + ingestion workflow end-to-end locally against the live feed (read-only GETs); verify `retail_offers` rows land, compound-key matching is idempotent across a second run (no duplicate `product_master` rows), and the API serves araxes offers <!-- agent: platform-engineer.fast, depends_on: [2.1, 2.2], touches: [openspec/changes/onboard-araxes-merchant/notes.md] -->
+- [x] 3.1 Local D1: registry row (via the seed) + governance record (`RETAILER_API`, `GRANTED`, sourceUrl `https://araxes.ee/wp-json/wc/store/v1/products`); run the producer tick + ingestion workflow end-to-end locally against the live feed (read-only GETs); verify `retail_offers` rows land, compound-key matching is idempotent across a second run (no duplicate `product_master` rows), and the API serves araxes offers <!-- agent: platform-engineer.fast, depends_on: [2.1, 2.2], touches: [openspec/changes/onboard-araxes-merchant/notes.md] -->
 
 ## 4. Staging rollout
 

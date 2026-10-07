@@ -46,7 +46,47 @@ Checks: `pnpm --filter @rajahinta/core-domain build` exit 0; mapper suite `sourc
 
 ## Local rollout (task 3.1)
 
-TBD
+**Date**: 2026-10-07, ~10:47–11:10 UTC. Branch `feature/onboard-araxes-merchant`, clean tree. All steps LOCAL (`wrangler dev --port 8787 --test-scheduled`, `wrangler d1 execute DB --local` from apps/api-worker); live **read-only GETs** to araxes.ee only; zero staging/production contact. `@rajahinta/core-domain` rebuilt first (`pnpm --filter @rajahinta/core-domain build` exit 0 — the kippis/mydrink 3.1 stale-dist lesson). Nothing committed; only this notes section touched.
+
+**Local D1 state found (read-only probes before any write)**: the local store had been **re-seeded since the mydrink era** — registry = alko (empty feed URL, id 1) + alks (id 2, DE, daily 86,400,000), no mydrink/longero/kippis rows; `source_governance` = 0 rows; `retail_offers` = 48 seed rows, zero araxes; `product_master` = **47 rows** (baseline count; ids are sparse — match pre-existing rows by count/created range, not `id <= 47`).
+
+### Registry + governance inserts
+
+- **Registry row via the seed** (task 2.2's row): `pnpm --filter @rajahinta/data-platform exec tsx ../../scripts/seed-d1.ts --local` → migrations no-op (already applied), staging seed re-applied (explicit-id `INSERT OR IGNORE`, idempotent), **verification PASSED** — the seed's gate asserts `merchant_registry_araxes = 1`. Read-back: row **id 3**, `('araxes','Araxes','EE','https://araxes.ee','json',86400000)`, fields exact; alko/alks untouched.
+- **Governance**: no `.dev.vars` on the api-worker → `OPS_BEARER_TOKEN` absent → every `/ops` route is 403 by design → **direct local INSERT** (the mydrink 3.1 path; the audited console path is for 4.2/5.2). `NOT EXISTS`-guarded INSERT (no unique key — kippis/longero/mydrink 3.1 idempotency pattern), `RETAILER_API`/`GRANTED`, sourceUrl `https://araxes.ee/wp-json/wc/store/v1/products`, reason "operator holds usage rights to the store API (adapter docblock, design D1); local GRANT for first-ingest verification". Read-back row **id 1**, all fields exact. **Local-only row — disposable.**
+
+### Producer tick + ingestion end-to-end (mydrink 3.1 playbook)
+
+1. **Pre-grant real-clock tick**: `curl /cdn-cgi/handler/scheduled?cron=0+*+*+*+*` → `Not scheduling merchant "araxes": no governance records — defaulting to PENDING` + `enqueued 0/3` — the §0 fail-closed contract observed (bonus verification; alko no-URL skip + alks fail-closed skip unchanged).
+2. **Post-grant real-clock tick**: araxes recognized as permitted, deferred by the daily interval-bucket gate — `enqueued 0/3 … (1 not due this tick)`.
+3. **Due-tick**: temporary vitest harness (deleted after the run) running the unmodified `schedulePriceIngestions` against real local bindings via `wrangler.getPlatformProxy` over the same `.wrangler/state`, with `now` = 2026-10-08T00:30:00Z (next daily boundary pass; tsx can't transform the cross-package decorator sources — vitest can) and a send-spy wrapping the real queue binding. Result: `enqueued 1/3`, exactly one message `{"dedupeKey":"price-ingestion-araxes-2026-10-08-00","merchantId":"araxes","sourceUrl":"https://araxes.ee"}` (asserted). Consumer handoff in the dev log: `Ingesting prices for merchant araxes (dedupe key price-ingestion-araxes-2026-10-08-00)` → `Handed off … to Workflow instance price-ingestion-araxes-2026-10-08-00` — no manual handoff needed, zero retries.
+4. **Run 2**: same harness, `now` = 2026-10-09T00:30:00Z → key `price-ingestion-araxes-2026-10-09-00`; consumer handoff identical. Exactly one enqueue + one instance per key across both runs.
+
+### Workflow results + idempotency evidence
+
+| | Run 1 (`…2026-10-08-00`) | Run 2 (`…2026-10-09-00`) |
+|---|---|---|
+| `retail_offers` araxes | 0 → **1,540 rows / 1,540 distinct products**, min 75 / max 34,499 c | → **3,080 rows / 1,540 products** — fresh per-observation batch |
+| `observed_at` batch | single batch 10:55:30.374Z→.410Z (36 ms-precision stamps = the upsert's chunk stamps within one step) | second batch ≈ 10:59:14.318Z |
+| Value set | single EUR / EE / `in_stock` / ESTIMATED | unchanged |
+| `product_master` | 47 → **1,587 (+1,540**, exact) | **1,587 — unchanged** |
+
+- Reconciliation: 1,630 raw − 87 `no canonical beverage category` − 3 disagreement = **1,540** ✓ — the exact task-1.2 numbers. Max-price sample: `MACALLAN RARE CASK 0.7L 43% Whisky` 34,499 c on araxes-created row (araxes master ids span **9003–10542** = 1,540 rows exactly).
+- **Compound-key idempotency holds**: run 2 matched all 1,540 of araxes's own rows by (name, `''` brand, containerType, unitVolume) — zero new `product_master` rows; offers re-upserted as a fresh per-observation batch (designed time-series shape; kippis/mydrink 3.1 precedent).
+- **Parallel catalog (D4) confirmed**: all 1,540 offers sit on araxes-created rows (+1,540 exact — zero compound matches against the 47-row seed master; 100% internal 5-digit SKUs → no EAN join, per the adapter-docblock reality).
+- Per-row correction lines (kept-without-EAN one per row, plus the 87 + 3 drops) are the adapter-deterministic D2 noise per the 1.2 sweep; the landed offer count reconciles exactly. The step-error list itself lives in miniflare's private workflow store (not decoded) — staging 4.2 observes it through the Workflows API, as mydrink 4.2 did.
+- wrangler-dev artifact (recorded, not chased): right after each queue batch completed (`QUEUE rajahinta-price-ingestion-dev 1/1 (114ms)`) the dev runtime logged `Uncaught Error: … canceled … hung` — the consumer had already returned after the durable handoff; the workflow continued and every row landed (both runs), zero retries.
+- R2: an observation blob containing araxes lines appeared under the local `rajahinta-observations-dev` bucket — the offer-change hook fired on the first changed-offer pass (§2.3 shape).
+
+### API verification (local worker :8787, product **9044** `MACALLAN RARE CASK 0.7L 43% Whisky`, an araxes-created row)
+
+- Without `x-age-confirmed`: **403 `AGE_GATE_REQUIRED`** ✅.
+- With `x-age-confirmed: 1`: araxes offer — `merchant: "araxes"`, `country: "EE"`, `priceCents: 34499`, EUR, `in_stock`, `sourceUrl: https://araxes.ee/toode/macallan-rare-cask-0-7l-43-whisky/`, `reliabilityStatus: ESTIMATED`, `observedAt: 2026-10-07T10:59:14.303Z` (= run-2 batch) ✅. Product row `ean: null`, `depositSystemStatus: false` (D5) ✅.
+- Merchant aggregate (product payload and `GET /api/v1/merchants/reliability`): **`araxes` offerCount 1540**, all ESTIMATED, `freshestObservedAt` = run-2 batch ✅.
+- Ranked search serves araxes-created products (`q=macallan` → the id-9044 row, `lowestPriceCents: 34499`) ✅.
+- Same read-model artifact as kippis/mydrink: the aggregate reports `governancePermissionStatus: "PENDING"` while the D1 row is `GRANTED` (the producer + workflow gates honored the grant) — observation recorded, not investigated.
+
+**Environment cleanup**: harness file deleted; `wrangler dev` stopped; `/tmp` log removed. No tracked file changed except this notes section.
 
 ## Staging rollout (task 4.2)
 
