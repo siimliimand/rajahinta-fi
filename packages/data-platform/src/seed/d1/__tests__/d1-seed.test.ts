@@ -34,6 +34,7 @@ import {
   buildExpectations,
   buildVerifySql,
   generateSeedSqlFiles,
+  generateSourceGovernanceSql,
   generateStagingSql,
   generateTaxRulesSql,
   writeSeedSqlFiles,
@@ -182,6 +183,7 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
     expect(result.seedFilesApplied).toEqual([
       'tax-rules.d1.sql',
       'staging.d1.sql',
+      'source-governance.d1.sql',
       'consumption-norms.d1.sql',
       'carrier-box-types.d1.sql',
     ]);
@@ -298,7 +300,120 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
       const rows = db
         .prepare('SELECT merchant_id FROM merchant_registry ORDER BY merchant_id')
         .all() as Array<{ merchant_id: string }>;
-      expect(rows.map((r) => r.merchant_id)).toEqual(['alko', 'alks', 'araxes', 'fake-operator']);
+      expect(rows.map((r) => r.merchant_id)).toEqual([
+        'alko',
+        'alks',
+        'araxes',
+        'drinkonline',
+        'fake-operator',
+        'lazyshop',
+        'licorea',
+        'spritxxl',
+        'viinarannasta',
+        'viinikauppa',
+      ]);
+    } finally {
+      db.close();
+    }
+  }, DB_TEST_TIMEOUT_MS);
+
+  it('guards each governance seed row on source presence, excluding permission_status (never resurrects, never downgrades)', () => {
+    const sql = generateSourceGovernanceSql();
+    // One guarded INSERT per seed row…
+    const guards = sql.match(/WHERE NOT EXISTS \(/g) ?? [];
+    expect(guards).toHaveLength(Object.keys(buildExpectations().sourceGovernanceRows).length);
+    // …and the guard names the source identity but NOT the status: an
+    // operator's in-place GRANTED→REVOKED transition must survive every
+    // re-seed (the seed is bootstrap-only).
+    expect(sql).toContain(`"acquisition_method" = 'COMPLIANT_CRAWLING'`);
+    expect(sql).toContain(`"source_url" = 'https://viinarannasta.eu/1_fi_0_sitemap.xml'`);
+    const guardBlocks = sql.split('WHERE NOT EXISTS (').slice(1);
+    for (const block of guardBlocks) {
+      // Scope to the guard's own SELECT (it ends at the first `);`) — the
+      // next statement's INSERT column list legitimately names
+      // permission_status.
+      const guardSelect = block.slice(0, block.indexOf(');'));
+      expect(guardSelect).not.toContain('permission_status');
+    }
+  });
+
+  it('seeds the sitemap-crawl merchants — GRANTED crawl rows, parked PENDING rows without feedUrl', () => {
+    const dbPath = freshDatabasePath();
+    applySeedToSqlite(dbPath, { migrationsDir: MIGRATIONS_DIR, seedSqlFiles: seedFiles });
+
+    const db = new DatabaseSync(dbPath);
+    try {
+      const registry = db
+        .prepare(
+          `SELECT merchant_id, feed_url, feed_format, polling_interval_ms
+           FROM merchant_registry WHERE merchant_id IN ('viinarannasta','viinikauppa','licorea','drinkonline','spritxxl','lazyshop')`,
+        )
+        .all() as Array<{
+        merchant_id: string;
+        feed_url: string;
+        feed_format: string;
+        polling_interval_ms: number;
+      }>;
+      // All six present, xml, daily cadence…
+      expect(registry).toHaveLength(6);
+      for (const row of registry) {
+        expect(row.feed_format).toBe('xml');
+        expect(row.polling_interval_ms).toBe(86_400_000);
+      }
+      const feedUrlByMerchant = new Map(registry.map((r) => [r.merchant_id, r.feed_url]));
+      expect(feedUrlByMerchant.get('viinarannasta')).toBe('https://viinarannasta.eu/1_fi_0_sitemap.xml');
+      expect(feedUrlByMerchant.get('viinikauppa')).toBe('https://www.viinikauppa.com/catalog/xmlsitemap/products');
+      expect(feedUrlByMerchant.get('licorea')).toBe('https://www.licorea.com/sitemapproducts_en.xml');
+      expect(feedUrlByMerchant.get('drinkonline')).toBe('https://www.drinkonline.eu/sitemap-products.xml');
+      // …the parked two carry the empty feedUrl the producer skips on.
+      expect(feedUrlByMerchant.get('spritxxl')).toBe('');
+      expect(feedUrlByMerchant.get('lazyshop')).toBe('');
+
+      const governance = db
+        .prepare(
+          `SELECT merchant_id, permission_status FROM source_governance
+           WHERE acquisition_method = 'COMPLIANT_CRAWLING'
+           ORDER BY merchant_id`,
+        )
+        .all() as Array<{ merchant_id: string; permission_status: string }>;
+      expect(governance).toEqual([
+        { merchant_id: 'drinkonline', permission_status: 'GRANTED' },
+        { merchant_id: 'lazyshop', permission_status: 'PENDING' },
+        { merchant_id: 'licorea', permission_status: 'GRANTED' },
+        { merchant_id: 'spritxxl', permission_status: 'PENDING' },
+        { merchant_id: 'viinarannasta', permission_status: 'GRANTED' },
+        { merchant_id: 'viinikauppa', permission_status: 'GRANTED' },
+      ]);
+    } finally {
+      db.close();
+    }
+  }, DB_TEST_TIMEOUT_MS);
+
+  it('never resurrects a REVOKED governance row on re-apply (operator withdrawal survives re-seeding)', () => {
+    // The high-liability property of the presence guard: status moves in
+    // place through the console (GRANTED → REVOKED, forward-only), so a
+    // re-run of the seed over an environment where the operator withdrew
+    // a permission must re-insert NOTHING — resurrecting GRANTED would
+    // reopen crawling behind the operator's back.
+    const dbPath = freshDatabasePath();
+    applySeedToSqlite(dbPath, { migrationsDir: MIGRATIONS_DIR, seedSqlFiles: seedFiles });
+
+    let db = new DatabaseSync(dbPath);
+    db.exec(
+      `UPDATE source_governance SET permission_status = 'REVOKED' WHERE merchant_id = 'viinarannasta'`,
+    );
+    db.close();
+
+    applySeedToSqlite(dbPath, { migrationsDir: MIGRATIONS_DIR, seedSqlFiles: seedFiles });
+
+    db = new DatabaseSync(dbPath);
+    try {
+      const rows = db
+        .prepare(
+          `SELECT permission_status FROM source_governance WHERE merchant_id = 'viinarannasta'`,
+        )
+        .all() as Array<{ permission_status: string }>;
+      expect(rows).toEqual([{ permission_status: 'REVOKED' }]);
     } finally {
       db.close();
     }
@@ -344,6 +459,12 @@ describe('assertVerificationRow count semantics', () => {
           count,
         ]),
       ),
+      ...Object.fromEntries(
+        Object.entries(expectations.sourceGovernanceRows).map(([merchantId, count]) => [
+          `source_governance_${merchantId.replace(/[^A-Za-z0-9]/g, '_')}`,
+          count,
+        ]),
+      ),
       transport_offers_total: expectations.transportOffers,
       product_master_total: expectations.productMaster,
       retail_offers_total: expectations.retailOffers,
@@ -386,6 +507,27 @@ describe('assertVerificationRow count semantics', () => {
   it('still fails when a seeded merchant row is missing (seed loss)', () => {
     const firstSeeded = Object.keys(expectations.merchantRegistryRows)[0];
     const field = `merchant_registry_${firstSeeded.replace(/[^A-Za-z0-9]/g, '_')}`;
+    expect(() =>
+      assertVerificationRow(
+        verificationRow({ [field]: 0 }),
+      ),
+    ).toThrow(new RegExp(field));
+  });
+
+  it('tolerates a governance row whose status moved in place (operator GRANTED→REVOKED is not seed loss)', () => {
+    // The presence count keys on (merchant, method, source_url) in any
+    // status, so the console's forward-only transitions never fail the
+    // gate; the row count itself is unchanged.
+    const firstGoverned = Object.keys(expectations.sourceGovernanceRows)[0];
+    const field = `source_governance_${firstGoverned.replace(/[^A-Za-z0-9]/g, '_')}`;
+    expect(() =>
+      assertVerificationRow(verificationRow({ [field]: 1 })),
+    ).not.toThrow();
+  });
+
+  it('still fails when a seeded governance source row is missing entirely', () => {
+    const firstGoverned = Object.keys(expectations.sourceGovernanceRows)[0];
+    const field = `source_governance_${firstGoverned.replace(/[^A-Za-z0-9]/g, '_')}`;
     expect(() =>
       assertVerificationRow(
         verificationRow({ [field]: 0 }),
