@@ -74,6 +74,7 @@ import { AlksFeedAdapter } from '../../../../packages/data-acquisition/src/adapt
 import { KippisFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/kippis.adapter';
 import { LongeroFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/longero.adapter';
 import { MydrinkFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/mydrink.adapter';
+import { AraxesFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/araxes.adapter';
 import type { IFeedAdapter } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { RawFeedRecord } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { MerchantConfig } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
@@ -206,7 +207,7 @@ export interface IngestionStageCompositionOptions {
   readonly governanceRepository?: ISourceGovernanceRepository;
   /** Observation log binding override (tests use an in-memory store). */
   readonly observationStoreOverride?: ObservationLogStore;
-  /** Feed adapters; default registers the Alko, alks, longero, kippis, and mydrink feed adapters as pipeline.ts does. */
+  /** Feed adapters; default registers the Alko, alks, longero, kippis, mydrink, and araxes feed adapters as pipeline.ts does. */
   readonly feedAdaptersOverride?: Map<string, IFeedAdapter>;
   /** Write-port override (tests force upsert failures through it). */
   readonly upsertRepositoryOverride?: IUpsertRepository;
@@ -236,6 +237,8 @@ export function composeIngestionStageServices(
       map.set(kippis.merchantId, kippis);
       const mydrink = new MydrinkFeedAdapter();
       map.set(mydrink.merchantId, mydrink);
+      const araxes = new AraxesFeedAdapter();
+      map.set(araxes.merchantId, araxes);
       return map;
     })();
 
