@@ -371,6 +371,153 @@ describe('mapSourceCategory — mydrink.ee catalog vocabulary (sweep patch 2026-
   });
 });
 
+describe('mapSourceCategory — araxes.ee catalog vocabulary (sweep patch 2026-10-07)', () => {
+  it('maps the strong-alcohol parent and the Estonian spirit nouns to spirits at any ABV', () => {
+    for (const term of [
+      'Kange alkohol',
+      'Viin',
+      'Brändi',
+      'Džinn',
+      'Tekiila',
+      'Kalvados',
+      'Armanjakk',
+      'Absint',
+    ]) {
+      for (const abv of [undefined, 0.58]) {
+        const result = mapSourceCategory(term, abv);
+        expect(result, `term "${term}" at abv ${abv} must map`).not.toBeNull();
+        expect(result!.canonicalCategory, `"${term}" at ${abv}`).toBe('spirits');
+        expect(result!.taxCategory, `"${term}" at ${abv}`).toBe('spirits');
+        // Keyword outcomes at any ABV — never boundary-rule re-assignments.
+        expect(result!.boundaryApplied, `"${term}" at ${abv}`).toBeUndefined();
+      }
+    }
+  });
+
+  it('maps the still-wine leaf terms to still wine — never the fallback rate', () => {
+    for (const term of ['Punane vein', 'Valge vein', 'Roosa vein', 'Puuvilja- ja marjavein']) {
+      expect(mapSourceCategory(term), `term "${term}" must map`).toEqual({
+        canonicalCategory: 'wine',
+        taxCategory: 'wine_still',
+      });
+    }
+  });
+
+  it('maps the sparkling leaves to sparkling wine — kept apart from still wine for the excise split', () => {
+    expect(mapSourceCategory('Vahuvein')).toEqual({
+      canonicalCategory: 'sparkling-wine',
+      taxCategory: 'wine_sparkling',
+    });
+    expect(mapSourceCategory('Šampanja')).toEqual({
+      canonicalCategory: 'sparkling-wine',
+      taxCategory: 'wine_sparkling',
+    });
+  });
+
+  it('maps the fortified leaf terms to fortified wine / intermediate products', () => {
+    for (const term of ['Hõõgvein', 'Vermut', 'Liköörvein, portvein, šerri']) {
+      expect(mapSourceCategory(term), `term "${term}" must map`).toEqual({
+        canonicalCategory: 'fortified-wine',
+        taxCategory: 'intermediate_products',
+      });
+    }
+  });
+
+  it('maps the beer term and the long-drink term', () => {
+    expect(mapSourceCategory('Õlu')).toEqual({
+      canonicalCategory: 'beer',
+      taxCategory: 'beer',
+    });
+    expect(mapSourceCategory('Long drink')).toEqual({
+      canonicalCategory: 'long-drink',
+      taxCategory: 'other_fermented',
+    });
+  });
+
+  it('maps the non-alcoholic section and its children — one tax family', () => {
+    for (const term of [
+      'Alkoholivaba',
+      'Energiajook',
+      'Karastusjook',
+      'Mahl',
+      'Vesi',
+      'Alkoholivaba õlu',
+      'Alkoholivaba vein',
+      'Alkoholivaba vahuvein',
+    ]) {
+      expect(mapSourceCategory(term), `term "${term}" must map`).toEqual({
+        canonicalCategory: 'non-alcoholic',
+        taxCategory: 'other_fermented',
+      });
+    }
+  });
+
+  it('bounds the fermented-bucket terms at 22 % exactly like the older vocabulary', () => {
+    // The boundary is inclusive below, re-assigning above:
+    expect(mapSourceCategory('Alkoholivaba', 0.22)!.taxCategory).toBe('other_fermented');
+    expect(mapSourceCategory('Long drink', 0.25)).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+      boundaryApplied: true,
+    });
+    expect(mapSourceCategory('Alkoholivaba vahuvein', 0.3)!.boundaryApplied).toBe(true);
+    // Spirit and wine outcomes are never fermented buckets, so the guard
+    // does not touch them:
+    expect(mapSourceCategory('Punane vein', 0.13)).toEqual({
+      canonicalCategory: 'wine',
+      taxCategory: 'wine_still',
+    });
+  });
+
+  it('matches the bare Estonian terms case-insensitively with surrounding whitespace', () => {
+    expect(mapSourceCategory('  kange alkohol ')).toEqual(mapSourceCategory('Kange alkohol'));
+    expect(mapSourceCategory('  õlu ')).toEqual(mapSourceCategory('Õlu'));
+    expect(mapSourceCategory('šampanja')).toEqual(mapSourceCategory('Šampanja'));
+    // The bare and the mydrink-decorated forms are distinct keys over
+    // the same canonical categories.
+    expect(SWEDISH_SOURCE_CATEGORY_MAP['kange alkohol']).toBe('spirits');
+    expect(SWEDISH_SOURCE_CATEGORY_MAP['kange alkohol ▾']).toBe('spirits');
+    expect(SWEDISH_SOURCE_CATEGORY_MAP['õlu']).toBe('beer');
+    expect(SWEDISH_SOURCE_CATEGORY_MAP['õlu ▾']).toBe('beer');
+  });
+
+  it('changes no existing mapping — the mydrink and shared keys behave as before', () => {
+    expect(mapSourceCategory('Vahuveinid')).toEqual({
+      canonicalCategory: 'sparkling-wine',
+      taxCategory: 'wine_sparkling',
+    });
+    expect(mapSourceCategory('Viski')).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+    });
+    expect(mapSourceCategory('Liköör')).toEqual({
+      canonicalCategory: 'liqueur',
+      taxCategory: 'spirits',
+    });
+    expect(mapSourceCategory('Siider')).toEqual({
+      canonicalCategory: 'cider',
+      taxCategory: 'other_fermented',
+    });
+  });
+
+  it('leaves the wine parent-and-leaf term, the low-alcohol parent and RTD cocktails unmapped at sub-22 %', () => {
+    // 'vein': parent and its identically named leaf share one lowercase
+    // key; first-mappable-in-payload-order would misfile sparkling rows
+    // as still. 'lahja alkohol': heterogeneous children resolve from
+    // their own leaves. 'kokteilid': RTD spans tax families.
+    for (const term of ['Vein', 'Lahja alkohol', 'Kokteilid']) {
+      expect(mapSourceCategory(term, 0.2), `term "${term}" must stay unmapped`).toBeNull();
+      expect(mapSourceCategory(term), `term "${term}" must stay unmapped`).toBeNull();
+    }
+  });
+
+  it('leaves the merch terms unmapped at sub-22 % — never a guessed category', () => {
+    for (const term of ['Suupisted', 'Krõpsud', 'Pähklid', 'Lihasnäkid', 'Kommid', 'Pakend']) {
+      expect(mapSourceCategory(term, 0.2), `term "${term}" must stay unmapped`).toBeNull();
+    }
+  });
+});
+
 describe('mapSourceCategory — unmappable categories', () => {
   it('returns null for an unrecognized string — flagged, never fallback-assigned', () => {
     expect(mapSourceCategory('Kaffe')).toBeNull();
