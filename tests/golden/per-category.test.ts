@@ -53,6 +53,8 @@ import {
   OFFER_ZERO_ABV,
   PRODUCT_NULL_DEPOSIT,
   OFFER_NULL_DEPOSIT,
+  PRODUCT_ESTIMATED_ABV,
+  OFFER_ESTIMATED_ABV,
 } from './data/products';
 
 import { InMemoryTaxRuleRepository } from './helpers/in-memory-tax-rule.repository';
@@ -447,6 +449,83 @@ describe('Per-category golden regressions', () => {
       );
       expect(containerLine).toBeDefined();
       expect(containerLine!.reliability).toBe('ESTIMATED');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // nonalcoholic-catalog-hygiene (task 3.4) — calculator-layer pins
+  //
+  // The shared listing predicate lives at the repository/read layer; the
+  // calculator is a direct-input surface with NO listing predicate. These
+  // vectors pin the two contracts the change explicitly preserves:
+  //
+  //   D1 (hold for review, never delete): a 0 %-ABV row — the exact shape
+  //   the ingestion guard holds from every listing surface — remains a
+  //   valid calculator input with its full itemised vector (0 ¢ excise),
+  //   because provenance and offer history stay computable for the
+  //   correction review.
+  //
+  //   D3 (the ESTIMATED contract survives): a parsed ABV > 0 row keeps
+  //   today's behavior ENTIRELY even when its alcohol fields were
+  //   ESTIMATED at ingestion — same cents as its EXACT twin.
+  // -------------------------------------------------------------------------
+
+  describe('Listing-hold contracts at the calculator layer (nonalcoholic-catalog-hygiene 3.4)', () => {
+    it('D1: a catalog-held 0 %-ABV row still computes its full vector when addressed directly', async () => {
+      const service = buildService(PRODUCT_ZERO_ABV, [OFFER_ZERO_ABV], 'beverage-de', 100);
+      const result = await service.calculate({
+        productId: 11,
+        quantity: 1,
+        destination: 'FI',
+      });
+      // The full vector, not just the excise line: 120 retail + 100
+      // transport + 0 excise + 0 container duty = 220 base, + 56 import
+      // VAT (round(220 × 0.255), foreign seller DE → FI) = 276 total. No
+      // gate rejection, no listing-universe filter at this layer — the
+      // hold removes the row from listings, never from the record's own
+      // computation.
+      expect(result.alcoholExciseEstimate).toBe(0);
+      expect(result.totalCents).toBe(276);
+      const categories = result.itemizedCosts.map((c) => c.category);
+      expect(categories).toEqual([
+        'foreignRetailPrice',
+        'transportCost',
+        'alcoholExciseEstimate',
+        'containerDutyEstimate',
+        'importVatEstimate',
+      ]);
+      expect(result.itemizedCosts.map((c) => c.cents)).toEqual([
+        120, 100, 0, 0, 56,
+      ]);
+    });
+
+    it('D3: an ESTIMATED-alcohol-provenance row (parsed ABV > 0) prices byte-identically to its EXACT twin', async () => {
+      // Product 14 is product 1's tax twin with an ESTIMATED offer — the
+      // ingestion shape "unparseable alcohol fields ingest as ESTIMATED"
+      // leaves behind once a real ABV IS parsed. Identical input shape ⇒
+      // identical cents; only reliability labels may differ.
+      const estimated = await buildService(
+        PRODUCT_ESTIMATED_ABV,
+        [OFFER_ESTIMATED_ABV],
+        'beverage-de',
+        150,
+      ).calculate({ productId: 14, quantity: 1, destination: 'FI' });
+      const exact = await buildService(PRODUCT_BEER, [OFFER_BEER], 'beverage-de', 150).calculate({
+        productId: 1,
+        quantity: 1,
+        destination: 'FI',
+      });
+
+      // Case 1's pinned vector, per unit: 200 + 150 + 91 + 0 = 441 base,
+      // + 112 import VAT (foreign seller) = 553 total.
+      expect(estimated.alcoholExciseEstimate).toBe(91);
+      expect(estimated.containerDutyEstimate).toBe(0);
+      expect(exact.totalCents).toBe(553);
+      // The twin claim: every itemised amount identical.
+      expect(estimated.itemizedCosts.map((c) => c.cents)).toEqual(
+        exact.itemizedCosts.map((c) => c.cents),
+      );
+      expect(estimated.totalCents).toBe(exact.totalCents);
     });
   });
 });

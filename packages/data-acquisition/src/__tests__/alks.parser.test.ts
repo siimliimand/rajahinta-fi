@@ -25,9 +25,9 @@ import {
 describe('parseAlksStoreProducts — golden dataset', () => {
   const { records, errors } = parseAlksStoreProducts(ALKS_GOLDEN_PAYLOAD);
 
-  it('maps four golden rows and reports two per-row corrections', () => {
-    expect(records).toHaveLength(4);
-    expect(errors).toHaveLength(2);
+  it('maps seven golden rows and reports six per-row corrections', () => {
+    expect(records).toHaveLength(7);
+    expect(errors).toHaveLength(6);
   });
 
   it('produces exactly these canonical records (design D1/D3/D7)', () => {
@@ -68,16 +68,56 @@ describe('parseAlksStoreProducts — golden dataset', () => {
         volumeMl: 750,
         weightGrams: 1250,
       }),
-      // Unparseable name: record kept with the unparsed fields null/0.
+      // Unparseable name: record kept with the unparsed fields null/0 —
+      // and, because the category maps to beer (an alcohol category),
+      // held by the non-alcoholic guard: re-keyed non-alcoholic with the
+      // review hold and a correction error (change
+      // nonalcoholic-catalog-hygiene).
       expect.objectContaining({
         productId: 'ee-6410000000009',
         ean: '6410000000009',
-        category: 'beer',
+        category: 'other_fermented',
+        regulatoryClassification: 'other_fermented',
         alcoholByVolume: null,
         volumeMl: 0,
         containerType: 'other',
         availability: 'out_of_stock',
         weightGrams: null,
+        reviewHoldReason: 'nonalcoholic_in_alcohol_category',
+      }),
+      // Guard rows 6–8: the live non-alcoholic drift shapes — each
+      // ingests re-keyed to the non-alcoholic tax key with the review
+      // hold (change nonalcoholic-catalog-hygiene).
+      expect.objectContaining({
+        productId: 'fi-9016290000018',
+        productName: 'Red Bull Sugarfree tölkki 0,355 l',
+        category: 'other_fermented',
+        alcoholByVolume: null,
+        volumeMl: 355,
+        containerType: 'can',
+        weightGrams: 370,
+        brand: 'Red Bull',
+        reviewHoldReason: 'nonalcoholic_in_alcohol_category',
+      }),
+      expect.objectContaining({
+        productId: 'se-7310870004017',
+        productName: 'Ramlösa Citrus 0,5 l pullo',
+        category: 'other_fermented',
+        alcoholByVolume: null,
+        volumeMl: 500,
+        containerType: 'bottle',
+        weightGrams: 550,
+        reviewHoldReason: 'nonalcoholic_in_alcohol_category',
+      }),
+      expect.objectContaining({
+        productId: 'fi-6410405001235',
+        productName: 'Kirsikkamehu 1 l',
+        category: 'other_fermented',
+        alcoholByVolume: null,
+        volumeMl: 1000,
+        containerType: 'other',
+        weightGrams: null,
+        reviewHoldReason: 'nonalcoholic_in_alcohol_category',
       }),
     ]);
   });
@@ -98,11 +138,24 @@ describe('parseAlksStoreProducts — golden dataset', () => {
   });
 
   it('reports the name/category contradiction naming both sides', () => {
-    expect(errors[1]).toContain('756334');
-    expect(errors[1]).toContain('de-4006421333909');
-    expect(errors[1]).toContain('beer');
-    expect(errors[1]).toContain('wine_still');
-    expect(errors[1]).toContain('correction queue');
+    expect(errors[2]).toContain('756334');
+    expect(errors[2]).toContain('de-4006421333909');
+    expect(errors[2]).toContain('beer');
+    expect(errors[2]).toContain('wine_still');
+    expect(errors[2]).toContain('correction queue');
+  });
+
+  it('reports each held non-alcoholic row naming it and the hold reason', () => {
+    const held = errors.filter((message) => message.startsWith('Held for review'));
+    expect(held).toHaveLength(4);
+    for (const message of held) {
+      expect(message).toContain('nonalcoholic_in_alcohol_category');
+      expect(message).toContain('correction queue');
+    }
+    expect(held[0]).toContain('756333');
+    expect(held[1]).toContain('756335');
+    expect(held[2]).toContain('756336');
+    expect(held[3]).toContain('756337');
   });
 
   it('golden fixture stays exhaustive — every fixture row is mapped or reported', () => {
@@ -153,10 +206,16 @@ describe('parseAlksStoreProduct — spec scenarios', () => {
 
   it('scenario: parse failure keeps the product with the unparsed field null', () => {
     const { record, errors } = parseAlksStoreProduct(ALKS_GOLDEN_PRODUCTS[3]);
-    expect(errors).toEqual([]);
+    // The unparsed field stays null — and, since the category maps to
+    // beer, the non-alcoholic guard holds the row with a correction
+    // error instead of letting it into the alcohol catalog (change
+    // nonalcoholic-catalog-hygiene).
     expect(record).not.toBeNull();
     expect(record?.alcoholByVolume).toBeNull();
     expect(record?.volumeMl).toBe(0);
+    expect(record?.reviewHoldReason).toBe('nonalcoholic_in_alcohol_category');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('Held for review');
   });
 
   it('scenario: contradicting sources produce a correction error and no record', () => {
@@ -322,6 +381,119 @@ describe('parseAlksStoreProduct — ABV-guarded category (first-impression-pass 
     expect(errors[0]).toContain('spirits');
     expect(errors[0]).toContain('beer');
     expect(errors[0]).toContain('correction queue');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Non-alcoholic ingestion guard (change nonalcoholic-catalog-hygiene,
+// design D3) — spec scenarios of the data-acquisition delta
+// ---------------------------------------------------------------------------
+
+describe('parseAlksStoreProduct — non-alcoholic rows barred from alcohol categories', () => {
+  /** Minimal row builder: the category source and the name vary. */
+  const row = (id: number, name: string, categoryName: string) => ({
+    id,
+    name,
+    sku: `fi-6410400${String(id).padStart(6, '0')}`,
+    permalink: `https://alks.fi/product/guard-${id}/`,
+    prices: { price: '299', currency_code: 'EUR' },
+    categories: [{ name: categoryName }],
+    is_in_stock: true,
+  });
+
+  it('scenario: zero-ABV row is held from alcohol categories', () => {
+    // Karhu 0,0 — genuinely alcohol-branded, but with nothing for the
+    // landed-cost engine to compute: held for review, never published
+    // into beer (design risk note).
+    const { record, errors } = parseAlksStoreProduct(
+      row(756420, 'Karhu 0,0% 0,33 l tölkki', 'Olut'),
+    );
+    expect(record).not.toBeNull();
+    expect(record?.alcoholByVolume).toBe(0);
+    expect(record?.category).toBe('other_fermented');
+    expect(record?.regulatoryClassification).toBe('other_fermented');
+    expect(record?.reviewHoldReason).toBe('nonalcoholic_in_alcohol_category');
+    expect(record?.volumeMl).toBe(330);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('ABV is 0');
+    expect(errors[0]).toContain('nonalcoholic_in_alcohol_category');
+    expect(errors[0]).toContain('correction queue');
+  });
+
+  it('scenario: unparseable-ABV row is held, status contract intact', () => {
+    // The Red Bull live shape: no percentage anywhere in the name. The
+    // row still ingests — ABV null, the same ESTIMATED-status contract
+    // as before this change — with the hold and the correction flag as
+    // the only delta.
+    const { record, errors } = parseAlksStoreProduct(
+      ALKS_GOLDEN_PRODUCTS[5],
+    );
+    expect(record).not.toBeNull();
+    expect(record?.alcoholByVolume).toBeNull();
+    expect(record?.category).toBe('other_fermented');
+    expect(record?.reviewHoldReason).toBe('nonalcoholic_in_alcohol_category');
+    // The rest of the parse is untouched: volume/container/brand all
+    // resolve exactly as they did before the guard existed.
+    expect(record?.volumeMl).toBe(355);
+    expect(record?.containerType).toBe('can');
+    expect(record?.brand).toBe('Red Bull');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('ABV is unparseable');
+  });
+
+  it('scenario: parsed non-zero ABV is unchanged — beer stays beer, no hold, no error', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      row(756421, 'Karhu III Olut 4,7% 0,33 l tölkki', 'Olut'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.category).toBe('beer');
+    expect(record?.alcoholByVolume).toBe(0.047);
+    expect(record?.reviewHoldReason).toBeNull();
+  });
+
+  it('a non-alcoholic storefront category is never held — the guard only bars alcohol categories', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      row(756422, 'Energy Drink 0,355 l', 'Energy drink'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.category).toBe('other_fermented');
+    expect(record?.reviewHoldReason).toBeNull();
+  });
+
+  it('an explicit-other category with an alcohol-type name on a zero-ABV row is held through the guarded source', () => {
+    // "Muut juomat" (explicit other) plus the name token 'olut': the
+    // name's guarded outcome carries the hold so agreement never
+    // cancels the correction flag.
+    const { record, errors } = parseAlksStoreProduct(
+      row(756423, 'Olut 0,0% 0,33 l', 'Muut juomat'),
+    );
+    expect(record).not.toBeNull();
+    expect(record?.category).toBe('other_fermented');
+    expect(record?.reviewHoldReason).toBe('nonalcoholic_in_alcohol_category');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('ABV is 0');
+  });
+
+  it('the guard never fights the boundary rule — a >22 % row re-keys to spirits exactly as before', () => {
+    const { record, errors } = parseAlksStoreProduct(
+      row(756424, 'Lignell Akvavit 41% 0,5 l', 'Muut juomat'),
+    );
+    expect(errors).toEqual([]);
+    expect(record?.category).toBe('spirits');
+    expect(record?.alcoholByVolume).toBe(0.41);
+    expect(record?.reviewHoldReason).toBeNull();
+  });
+
+  it('a zero-ABV row whose name alone implies the alcohol category is held (name source)', () => {
+    // No mappable category at all — the name token 'olut' is the only
+    // alcohol-implying source, and it cannot place a 0,0 % row in beer.
+    const { record, errors } = parseAlksStoreProduct(
+      row(756425, 'Karhu 0,0% olut 0,33 l', 'Kesämonsteriaitat'),
+    );
+    expect(record).not.toBeNull();
+    expect(record?.category).toBe('other_fermented');
+    expect(record?.reviewHoldReason).toBe('nonalcoholic_in_alcohol_category');
+    expect(errors).toHaveLength(1);
   });
 });
 
@@ -569,8 +741,12 @@ describe('parseAlksStoreProduct — single-product passthrough unchanged (task 1
     const { record, errors } = parseAlksStoreProduct(
       rowNamed(757023, 'Mysteeri Juoma'),
     );
-    expect(errors).toEqual([]);
+    // The volume encoding is unchanged — and the Olut category plus the
+    // missing ABV additionally earns the non-alcoholic guard's hold
+    // (change nonalcoholic-catalog-hygiene): the row ingests, held.
     expect(record?.volumeMl).toBe(0);
     expect(record?.packCount).toBeNull();
+    expect(record?.reviewHoldReason).toBe('nonalcoholic_in_alcohol_category');
+    expect(errors).toHaveLength(1);
   });
 });

@@ -27,6 +27,7 @@ import {
   D1ProductSearchRepository,
   FINNISH_SYNONYM_GROUPS,
   MAX_MATCH_PHRASES,
+  PRODUCT_LISTING_UNIVERSE_SQL,
   SEARCH_PAGE_SIZE,
   SUGGESTION_MAX_EDIT_DISTANCE,
   boundedEditDistance,
@@ -344,8 +345,8 @@ describe('product_master_fts sync triggers', () => {
     await d1
       .prepare(
         `INSERT INTO product_master (id, name, manufacturer, brand, category,
-            unit_volume, container_type, regulatory_classification, created_at, updated_at)
-         VALUES (900, 'Hartwall Original Gin', 'Hartwall', 'Original', 'other', 0.5, 'glass', 'other', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+            alcohol_by_volume, unit_volume, container_type, regulatory_classification, created_at, updated_at)
+         VALUES (900, 'Hartwall Original Gin', 'Hartwall', 'Original', 'other', 0.4, 0.5, 'glass', 'other', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
       )
       .run();
     expect((await repo.searchRanked('original gin', 10)).map((r) => r.id)).toContain(900);
@@ -366,8 +367,8 @@ describe('product_master_fts sync triggers', () => {
     await d1
       .prepare(
         `INSERT INTO product_master (id, name, manufacturer, brand, category,
-            unit_volume, container_type, regulatory_classification, created_at, updated_at)
-         VALUES (901, 'Kotikalja Ekstra', 'Hartwall', 'Kotikalja', 'beer', 0.33, 'metal', 'beer', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+            alcohol_by_volume, unit_volume, container_type, regulatory_classification, created_at, updated_at)
+         VALUES (901, 'Kotikalja Ekstra', 'Hartwall', 'Kotikalja', 'beer', 0.048, 0.33, 'metal', 'beer', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
       )
       .run();
     expect((await repo.searchRanked('kotikalja', 10)).map((r) => r.id)).toContain(901);
@@ -399,6 +400,9 @@ describe('D1ProductSearchRepository — contract row shapes', () => {
       ean: '0641000111111',
       // Seed row carries no weight — the nullable column maps to null.
       weightGrams: null,
+      // Seed row is not held — the nullable column maps to null (change
+      // nonalcoholic-catalog-hygiene).
+      reviewHoldReason: null,
       createdAt: expect.any(Date),
       updatedAt: expect.any(Date),
     });
@@ -773,7 +777,10 @@ describe('D1ProductSearchRepository.listCatalogPage — catalog listing (design 
         manufacturer: 'Katalogi Panimo',
         brand: 'Koekappale',
         category: 'wine_still',
-        alcoholByVolume: null,
+        // In the listing universe (a real ABV): the shared predicate
+        // excludes null/zero-ABV rows, and these tests exercise
+        // pagination, collation, and aggregates — not the universe.
+        alcoholByVolume: '0.120',
         unitVolume: '0.75',
         containerType: 'glass',
         regulatoryClassification: 'wine',
@@ -877,9 +884,15 @@ describe('D1ProductSearchRepository.listCatalogPage — catalog listing (design 
     expect(wine.total).toBe(CATALOG_FIXTURE_COUNT);
 
     // Exact total against the stored rows for a category the fixture does
-    // not touch — beer rows accumulated by the earlier test blocks.
+    // not touch — beer rows accumulated by the earlier test blocks. The
+    // count reads the SAME shared universe fragment the listing applies
+    // (one definition, design D2) — a null-ABV beer row created by an
+    // earlier contract-shapes test is outside both.
     const beerCount = await d1
-      .prepare(`SELECT count(*) AS n FROM product_master WHERE category = 'beer'`)
+      .prepare(
+        `SELECT count(*) AS n FROM product_master p
+          WHERE p.category = 'beer' AND ${PRODUCT_LISTING_UNIVERSE_SQL}`,
+      )
       .first<{ n: number }>();
     const beer = await repo.listCatalogPage(1, 100, 'beer');
     expect(beer.total).toBe(beerCount?.n);
@@ -912,13 +925,14 @@ describe('D1ProductSearchRepository.listCatalogPage — catalog listing (design 
       manufacturer: 'Katalogi Panimo',
       brand: 'Koekappale',
       category: 'wine_still',
-      alcoholByVolume: null,
+      alcoholByVolume: '0.120',
       unitVolume: '0.7500', // numeric(10,4) text scale, like the pg contract
       containerType: 'glass',
       regulatoryClassification: 'wine',
       depositSystemStatus: null,
       ean: null,
       weightGrams: null,
+      reviewHoldReason: null,
       createdAt: expect.any(Date),
       updatedAt: expect.any(Date),
     });
@@ -1247,7 +1261,7 @@ describe('D1ProductSearchRepository.listCatalogPage — objective sort orders (t
     expect(offers[0]?.priceCents).toBe(750);
   });
 
-  it('ALCOHOL_PERCENTAGE orders descending, ties by id, unknown ABV last', async () => {
+  it('ALCOHOL_PERCENTAGE orders descending, ties by id; unknown ABV is outside the listing universe', async () => {
     const abvDb = openMigratedD1();
     const abvRepo = new D1ProductSearchRepository(abvDb.d1);
     const abvs: ReadonlyArray<{ id: number; name: string; abv: string | null }> = [
@@ -1256,6 +1270,9 @@ describe('D1ProductSearchRepository.listCatalogPage — objective sort orders (t
       { id: 3203, name: 'Koevi Kevyt', abv: '0.035' },
       { id: 3204, name: 'Koevi Tasu A', abv: '0.053' },
       { id: 3205, name: 'Koevi Tasu B', abv: '0.053' },
+      // Unknown ABV used to sort last; since the shared listing
+      // predicate (change nonalcoholic-catalog-hygiene) it is outside
+      // the catalog's universe entirely and must appear on no surface.
       { id: 3206, name: 'Koevi Tuntematon', abv: null },
     ];
     for (const p of abvs) {
@@ -1281,9 +1298,11 @@ describe('D1ProductSearchRepository.listCatalogPage — objective sort orders (t
       3205, // 5.3 %
       3202, // 4.7 %
       3203, // 3.5 %
-      3206, // unknown ABV — last, honest absence
+      // 3206 (unknown ABV) — not rendered at all: the shared predicate
+      // keeps zero/unknown-ABV rows outside every listing surface.
     ]);
-    expect(result.items[result.items.length - 1]!.product.alcoholByVolume).toBeNull();
+    expect(result.items.map((i) => i.product.id)).not.toContain(3206);
+    expect(result.total).toBe(5);
   });
 
   it('LOWEST_PRICE composes with the category filter, total exact', async () => {
@@ -2201,5 +2220,170 @@ describe('D1ProductSearchRepository.listCategoryOfferCandidates (task 1.1)', () 
     const first = await candRepo.listCategoryOfferCandidates('beer');
     const second = await candRepo.listCategoryOfferCandidates('beer');
     expect(second).toEqual(first);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shared listing-universe predicate (task 3.2, change
+// nonalcoholic-catalog-hygiene, design D2) — one fragment, every path:
+// browse, ranked, ids/detail, the registry read, and the €/g candidate
+// set. A held row (review_hold_reason set) and a zero/unknown-ABV row
+// resolve as absent through EACH of them; one fixture product per shape,
+// one database, every surface asserted.
+// ---------------------------------------------------------------------------
+
+describe('D1ProductSearchRepository — shared listing universe (nonalcoholic-catalog-hygiene 3.2)', () => {
+  const uni = openMigratedD1();
+  const uniRepo = new D1ProductSearchRepository(uni.d1);
+
+  /** In-universe control: real ABV, not held — every path must list it. */
+  const CONTROL_ID = 7001;
+  /** Zero-ABV row: outside the universe by the ABV arm. */
+  const ZERO_ABV_ID = 7002;
+  /** Unknown-ABV row: outside the universe by the ABV arm. */
+  const UNKNOWN_ABV_ID = 7003;
+  /** Held row: parseable ABV, but review_hold_reason set. */
+  const HELD_ID = 7004;
+  const HELD_REASON = 'nonalcoholic_in_alcohol_category';
+
+  beforeAll(async () => {
+    await uniRepo.create({
+      id: CONTROL_ID,
+      name: 'Universumi Olut',
+      manufacturer: 'Predikaatti Panimo',
+      brand: 'Predikaatti',
+      category: 'beer',
+      alcoholByVolume: '0.047',
+      unitVolume: '0.33',
+      containerType: 'can',
+      regulatoryClassification: 'beer',
+      depositSystemStatus: true,
+      ean: null,
+    });
+    for (const p of [
+      { id: ZERO_ABV_ID, name: 'Nollaruu Olut', abv: '0.000' as string | null, hold: null },
+      { id: UNKNOWN_ABV_ID, name: 'Tuntematon Olut', abv: null, hold: null },
+      {
+        id: HELD_ID,
+        name: 'Pidätetty Olut',
+        abv: '0.045' as string | null,
+        hold: HELD_REASON,
+      },
+    ]) {
+      await uniRepo.create({
+        id: p.id,
+        name: p.name,
+        manufacturer: 'Predikaatti Panimo',
+        brand: 'Predikaatti',
+        category: 'beer',
+        alcoholByVolume: p.abv,
+        unitVolume: '0.33',
+        containerType: 'can',
+        regulatoryClassification: 'beer',
+        depositSystemStatus: true,
+        ean: null,
+        reviewHoldReason: p.hold,
+      });
+    }
+
+    // Current offers for the control and the held row — the browse
+    // aggregates and the €/g candidates have something to read; the held
+    // row's offer must never surface as a candidate row.
+    await uni.d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+            observed_at, reliability_status)
+         VALUES (800, 'alko', 'FI', ${CONTROL_ID}, 299, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (801, 'alko', 'FI', ${HELD_ID}, 199, '2026-09-01T10:00:00.000Z', 'VERIFIED')`,
+      )
+      .run();
+  });
+
+  it('browse: listCatalogPage excludes held and zero/unknown-ABV rows on every sort', async () => {
+    for (const sort of ['ALPHABETICAL', 'LOWEST_PRICE', 'ALCOHOL_PERCENTAGE'] as const) {
+      const result = await uniRepo.listCatalogPage(1, 24, 'beer', sort);
+      expect(result.items.map((i) => i.product.id)).toEqual([CONTROL_ID]);
+      expect(result.total).toBe(1);
+    }
+  });
+
+  it('browse: the category-less listing excludes them too', async () => {
+    const result = await uniRepo.listCatalogPage(1, 24);
+    expect(result.items.map((i) => i.product.id)).toEqual([CONTROL_ID]);
+  });
+
+  it('ranked: searchRanked and searchRankedWithSuggestion resolve only the control', async () => {
+    for (const query of ['Predikaatti', 'Nollaruu', 'Tuntematon', 'Pidätetty']) {
+      const ranked = await uniRepo.searchRanked(query, 10);
+      expect(ranked.map((r) => r.id)).toEqual(
+        query === 'Predikaatti' ? [CONTROL_ID] : [],
+      );
+      const withSuggestion = await uniRepo.searchRankedWithSuggestion(query, 10);
+      expect(withSuggestion.items.map((r) => r.id)).toEqual(ranked.map((r) => r.id));
+    }
+  });
+
+  it('ranked: the LIKE scarcity-gate count shares the universe — a held-row surplus cannot suppress the merge', async () => {
+    // 'Olut' token-matches all four rows; with the universe applied the
+    // FTS count is 1 (< SEARCH_PAGE_SIZE), so the gate consults the LIKE
+    // merge instead of skipping it — the merged result is still the
+    // control only.
+    const ranked = await uniRepo.searchRanked('olut', SEARCH_PAGE_SIZE);
+    expect(ranked.map((r) => r.id)).toEqual([CONTROL_ID]);
+  });
+
+  it('ids/detail: findById degrades held and non-alcoholic rows to not-found', async () => {
+    await expect(uniRepo.findById(CONTROL_ID)).resolves.toMatchObject({
+      id: CONTROL_ID,
+      reviewHoldReason: null,
+    });
+    await expect(uniRepo.findById(ZERO_ABV_ID)).resolves.toBeNull();
+    await expect(uniRepo.findById(UNKNOWN_ABV_ID)).resolves.toBeNull();
+    await expect(uniRepo.findById(HELD_ID)).resolves.toBeNull();
+  });
+
+  it('registry read: searchByName resolves only in-universe names (the savings aggregates read it)', async () => {
+    const rows = await uniRepo.searchByName(null, 100);
+    expect(rows.map((r) => r.id)).toEqual([CONTROL_ID]);
+  });
+
+  it('€/g candidates: listCategoryOfferCandidates never yields a held product row', async () => {
+    const rows = await uniRepo.listCategoryOfferCandidates('beer');
+    expect(rows.map((r) => r.productId)).toEqual([CONTROL_ID]);
+    expect(rows[0]?.offerId).toBe(800);
+  });
+
+  it('persistence: the hold round-trips through create and upsertByEan', async () => {
+    const created = await uniRepo.create({
+      name: 'Uusi Pidätetty',
+      manufacturer: 'Predikaatti Panimo',
+      brand: 'Predikaatti',
+      category: 'beer',
+      alcoholByVolume: '0.000',
+      unitVolume: '0.33',
+      containerType: 'can',
+      regulatoryClassification: 'beer',
+      depositSystemStatus: false,
+      ean: '0641000999999',
+      reviewHoldReason: HELD_REASON,
+    });
+    expect(created.reviewHoldReason).toBe(HELD_REASON);
+
+    const upserted = await uniRepo.upsertByEan({
+      name: 'Uusi Pidätetty',
+      manufacturer: 'Predikaatti Panimo',
+      brand: 'Predikaatti',
+      category: 'beer',
+      alcoholByVolume: '0.000',
+      unitVolume: '0.33',
+      containerType: 'can',
+      regulatoryClassification: 'beer',
+      depositSystemStatus: false,
+      ean: '0641000999999',
+      // A clean re-ingest clears the hold (last write wins, like every
+      // mutable field).
+      reviewHoldReason: null,
+    });
+    expect(upserted.reviewHoldReason).toBeNull();
   });
 });

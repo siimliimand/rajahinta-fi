@@ -25,9 +25,15 @@ export interface MappedPair {
    * change alks-feed-and-import-vat): the mapping persists the feed's
    * `weightGrams` onto the product master — null when the feed carries
    * no weight (Alko). Weight-unaware upsert implementations stay
-   * source-compatible; weight-aware ones read the field.
+   * source-compatible; weight-aware ones read the field. The review hold
+   * (change nonalcoholic-catalog-hygiene) widens the same way: the
+   * ingestion guard's reason token rides the mapped product onto
+   * `product_master.review_hold_reason`; null when not held.
    */
-  readonly product: UpsertProductInput & { readonly weightGrams: number | null };
+  readonly product: UpsertProductInput & {
+    readonly weightGrams: number | null;
+    readonly reviewHoldReason: string | null;
+  };
   readonly offerInput: Omit<UpsertOfferInput, 'productId'>;
   /**
    * Offer-gate failure messages — present exactly when the mapped offer
@@ -123,6 +129,10 @@ export class DataMappingService {
       // product master; a feed without weight persists null, never an
       // error.
       weightGrams: record.weightGrams ?? null,
+      // The ingestion guard's review hold (change
+      // nonalcoholic-catalog-hygiene) lands on the product master the
+      // same way; a feed with no guard outcome persists null (not held).
+      reviewHoldReason: record.reviewHoldReason ?? null,
     };
 
     // Price floor gate (design D1, data-quality-and-publication-trust):

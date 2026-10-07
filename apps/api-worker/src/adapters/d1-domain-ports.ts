@@ -32,8 +32,8 @@ import type {
   ITransportOfferWritePort,
   TransportOfferWrite,
 } from '../../../../packages/data-acquisition/src/interfaces/transport-offer-write.port';
-import type { ProductRepository } from '../../../../packages/data-platform/src/abstracts';
 import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
+import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 import { D1TransportOfferRepository } from '../../../../packages/data-platform/src/repositories/d1/transport-offer.repository';
 import { D1CalculationRecordRepository } from '../../../../packages/data-platform/src/repositories/d1/calculation-record.repository';
 import { D1MerchantTermsRepository } from '../../../../packages/data-platform/src/repositories/d1/merchant-terms.repository';
@@ -133,11 +133,15 @@ export class D1ProductDataPort implements IProductDataPort {
   /** Products whose parsed volume tripped the guard on this instance. */
   private readonly volumeGuardTrips = new Set<number>();
 
-  constructor(private readonly repo: ProductRepository) {}
+  constructor(private readonly repo: D1ProductSearchRepository) {}
 
   /** @inheritdoc */
   async findProductById(id: number): Promise<CalculatorProductData | null> {
-    const record = await this.repo.findById(id);
+    // The direct-input read (golden fixture v3.2): the calculator
+    // addresses one persisted row, no listing semantics — a held row
+    // stays computable when addressed directly (listing exclusion is
+    // pinned at the listing surfaces, not here).
+    const record = await this.repo.findByIdDirect(id);
     if (record === null) return null;
 
     // Litres pass through untouched — canonical end-to-end (proposal D1):

@@ -87,7 +87,7 @@ import {
 } from '../adapters/d1-domain-ports';
 import { D1TaxRuleRepositoryAdapter } from '../../../../packages/data-platform/src/repositories/d1/tax-rate.repository';
 import { D1TransportOfferRepository } from '../../../../packages/data-platform/src/repositories/d1/transport-offer.repository';
-import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
+import { D1ProductSearchRepository, PRODUCT_LISTING_UNIVERSE_SQL } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 import { D1SavingsSnapshotRepository } from '../../../../packages/data-platform/src/repositories/d1/savings-snapshot.repository';
 import { D1ReferenceLinkRepository } from '../../../../packages/data-platform/src/repositories/d1/reference-link.repository';
 import { strictestReliability } from '../../../../packages/data-platform/src/d1/summary-aggregation';
@@ -178,12 +178,20 @@ const SNAPSHOT_DESTINATION = 'FI';
 
 /** Product ids carrying at least one Alko offer row, id ascending.
  *  Enumeration is a superset of the qualification predicate — the
- *  per-product offer read below applies the observedAt rule. */
+ *  per-product offer read below applies the observedAt rule.
+ *
+ *  Task 3.2 (change nonalcoholic-catalog-hygiene): the enumeration joins
+ *  the SHARED listing universe (one imported fragment, never a reworded
+ *  copy) so a zero/unknown-ABV product or a review-held row can never
+ *  qualify — the savings aggregates observe the same product universe as
+ *  the catalog, so an energy drink can never headline a category. */
 async function findQualifyingProductIds(d1: D1DatabaseLike): Promise<number[]> {
   const rows = await d1
     .prepare(
-      `SELECT DISTINCT product_id FROM retail_offers
-        WHERE merchant = ? ORDER BY product_id ASC`,
+      `SELECT DISTINCT o.product_id FROM retail_offers o
+        JOIN product_master p ON p.id = o.product_id
+        WHERE o.merchant = ? AND ${PRODUCT_LISTING_UNIVERSE_SQL}
+        ORDER BY o.product_id ASC`,
     )
     .bind(ALKO_MERCHANT)
     .all<{ product_id: number }>();
@@ -376,6 +384,18 @@ export async function handleSavingsSnapshots(
           (offer) => offer.merchant === ALKO_MERCHANT && offer.observedAt !== undefined,
         );
         if (!hasReference) {
+          counters.skipped++;
+          continue;
+        }
+      } else {
+        // Linked path (task 3.2, change nonalcoholic-catalog-hygiene):
+        // the CONFIRMED link qualifies the PAIR, but the snapshot's
+        // product universe is still the shared listing universe.
+        // findById resolves through the same imported predicate, so a
+        // held or zero-ABV foreign product degrades to an honest skip —
+        // never a snapshot row, never a guessed one.
+        const product = await products.findById(productId);
+        if (product === null) {
           counters.skipped++;
           continue;
         }

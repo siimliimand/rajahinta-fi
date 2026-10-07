@@ -143,6 +143,19 @@ export const productMaster = sqliteTable(
      * default (change alks-feed-and-import-vat task 2.1).
      */
     weightGrams: integer('weight_grams'),
+    /**
+     * Review hold (migration 0029, design D1, change
+     * nonalcoholic-catalog-hygiene) — the machine-readable reason a row is
+     * held from every user-facing surface pending correction review. NULL =
+     * not held; the only writer value today is the core-domain
+     * `NONALCOHOLIC_HOLD_REASON` token ('nonalcoholic_in_alcohol_category'),
+     * stamped by the ingestion guard when a zero/unparseable-ABV row would
+     * otherwise have been placed in an alcohol category. The hold is review
+     * state, not deletion: provenance and offer history stay intact, and the
+     * shared listing predicate (`review_hold_reason IS NULL`) is what
+     * removes the row from the catalog, savings, and value surfaces.
+     */
+    reviewHoldReason: text('review_hold_reason'),
     createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
     updatedAt: text('updated_at').default(ISO_8601_NOW).notNull(),
   },

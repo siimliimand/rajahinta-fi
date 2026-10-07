@@ -28,6 +28,7 @@ export {
   mapSourceCategory,
   isKnownTaxCategory,
   SWEDISH_SOURCE_CATEGORY_MAP,
+  NONALCOHOLIC_HOLD_REASON,
 } from './source-category.mapper';
 export type { SourceCategoryMapping } from './source-category.mapper';
 

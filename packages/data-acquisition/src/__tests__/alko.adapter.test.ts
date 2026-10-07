@@ -271,11 +271,20 @@ describe('parseAlkoAssortment — ABV-guarded category (first-impression-pass 1.
     expect(records[0].alcoholByVolume).toBe(0.41);
   });
 
-  it('ABV absent leaves the guard unkeyed — the fermented bucket stands (honest unknown)', () => {
+  it('ABV absent bars the alcohol category — the row ingests held for review (nonalcoholic-catalog-hygiene D3)', () => {
+    // The fermented bucket no longer "stands" on a missing ABV: a row
+    // with no parsed ABV cannot be PLACED in an alcohol category. It
+    // still ingests — the ESTIMATED-status contract is untouched —
+    // re-keyed to non-alcoholic with the review hold and a correction
+    // error.
     const { records, errors } = parseOne(guardRow({ abv: undefined }));
-    expect(errors).toEqual([]);
     expect(records[0].category).toBe('other_fermented');
+    expect(records[0].regulatoryClassification).toBe('other_fermented');
     expect(records[0].alcoholByVolume).toBeNull();
+    expect(records[0].reviewHoldReason).toBe('nonalcoholic_in_alcohol_category');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('ABV is unparseable');
+    expect(errors[0]).toContain('correction queue');
   });
 
   it('below-boundary long-drink group keeps the honest fermented bucket', () => {
@@ -283,15 +292,20 @@ describe('parseAlkoAssortment — ABV-guarded category (first-impression-pass 1.
     expect(errors).toEqual([]);
     expect(records[0].category).toBe('other_fermented');
     expect(records[0].alcoholByVolume).toBe(0.055);
+    expect(records[0].reviewHoldReason).toBeNull();
   });
 
-  it('an ABV over 100 is garbage in either scale — the guard is never fed it and nothing throws', () => {
+  it('an ABV over 100 is garbage in either scale — the unusable ABV holds the row, and nothing throws', () => {
     const { records, errors } = parseOne(guardRow({ abv: 145 }));
-    expect(errors).toEqual([]);
-    // Category resolves without the boundary; the record carries the raw
-    // ABV for the existing downstream validation to judge.
+    // The record keeps carrying the raw ABV for the existing downstream
+    // validation — but an alcohol-category row whose ABV yielded nothing
+    // usable is no longer placed in the alcohol category: held for
+    // review, re-keyed non-alcoholic (change nonalcoholic-catalog-hygiene).
     expect(records[0].category).toBe('other_fermented');
+    expect(records[0].reviewHoldReason).toBe('nonalcoholic_in_alcohol_category');
     expect(records[0].alcoholByVolume).toBe(1.45);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('ABV is unparseable');
   });
 });
 

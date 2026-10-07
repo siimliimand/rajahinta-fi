@@ -295,6 +295,48 @@ describe('handleSavingsSnapshots', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].product_id).toBe(2);
   });
+
+  // Task 3.2 (change nonalcoholic-catalog-hygiene): the qualification
+  // enumerates through the SHARED listing universe — a zero/unknown-ABV
+  // product or a review-held product can never qualify, so a soft drink
+  // can never headline a category even with an Alko reference offer.
+  it('does not qualify a zero-ABV product even with an Alko reference offer', async () => {
+    const { env, db } = createEnv();
+    await seedTaxRules(db);
+    await seedProduct(db, 20);
+    // Force the seeded product's ABV to 0 — the Red Bull shape.
+    await db
+      .prepare('UPDATE product_master SET alcohol_by_volume = 0 WHERE id = 20')
+      .run();
+    await seedOffer(db, 201, 20, 'beverage-de', 'DE', 250, '2026-09-01T10:00:00.000Z');
+    await seedOffer(db, 202, 20, 'alko', 'FI', 300, '2026-09-05T12:00:00.000Z');
+
+    const result = await handleSavingsSnapshots(env, LOG, { now: () => RUN_NOW });
+
+    expect(result.qualifyingProducts).toBe(0);
+    expect(result.rowsWritten).toBe(0);
+    expect(snapshotRows(db)).toHaveLength(0);
+  });
+
+  it('does not qualify a review-held product (review_hold_reason set)', async () => {
+    const { env, db } = createEnv();
+    await seedTaxRules(db);
+    await seedProduct(db, 21);
+    await db
+      .prepare(
+        `UPDATE product_master SET review_hold_reason = 'nonalcoholic_in_alcohol_category'
+          WHERE id = 21`,
+      )
+      .run();
+    await seedOffer(db, 211, 21, 'beverage-de', 'DE', 250, '2026-09-01T10:00:00.000Z');
+    await seedOffer(db, 212, 21, 'alko', 'FI', 300, '2026-09-05T12:00:00.000Z');
+
+    const result = await handleSavingsSnapshots(env, LOG, { now: () => RUN_NOW });
+
+    expect(result.qualifyingProducts).toBe(0);
+    expect(result.rowsWritten).toBe(0);
+    expect(snapshotRows(db)).toHaveLength(0);
+  });
 });
 
 describe('handleSavingsSnapshots — linked qualification (v2)', () => {
@@ -429,6 +471,31 @@ describe('handleSavingsSnapshots — linked qualification (v2)', () => {
     expect(result.skipped).toBe(1);
     expect(result.failed).toBe(0);
     expect(snapshotRows(db)).toHaveLength(0);
+  });
+
+  it('skips a held linked foreign product without writing a row (linked path through the same universe)', async () => {
+    const { env, db } = createEnv();
+    await seedLinkedPair(db);
+    // Hold the linked FOREIGN product (id 5): the CONFIRMED link still
+    // stands, but the snapshot's product universe is the shared listing
+    // universe — findById resolves through the same predicate and the
+    // pass degrades to an honest skip.
+    await db
+      .prepare(
+        `UPDATE product_master SET review_hold_reason = 'nonalcoholic_in_alcohol_category'
+          WHERE id = 5`,
+      )
+      .run();
+
+    const result = await handleSavingsSnapshots(env, LOG, { now: () => RUN_NOW });
+
+    // Product 6 (the Alko side) still qualifies directly; the held
+    // foreign product 5 degrades to a skip and writes no row.
+    expect(result.rowsWritten).toBe(1);
+    expect(result.skipped).toBe(1);
+    const rows = snapshotRows(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].product_id).toBe(6);
   });
 
   it('isolates a linked product failure — direct products still materialize', async () => {

@@ -33,6 +33,12 @@
  *   row is a correction error — never a silent pick (design D3). A
  *   product whose name yields no ABV or volume still parses: the
  *   unparsed field is null (ABV) / 0 (volume), never dropped.
+ *   Non-alcoholic guard (change nonalcoholic-catalog-hygiene): a zero or
+ *   unparseable ABV is never placed in a typed alcohol category — the
+ *   mapper re-keys the outcome to non-alcoholic and the row ingests with
+ *   the review hold (`reviewHoldReason`) plus a correction error, held
+ *   from user-facing surfaces by the shared listing predicate. A parsed
+ *   ABV > 0 behaves exactly as before.
  * - Prices are WooCommerce minor-unit strings ("699"); the parser
  *   emits integer cents (699). EUR-only: the sampled catalog is EUR
  *   and a foreign-currency row is another contract, not a conversion
@@ -46,6 +52,7 @@
 
 import {
   mapSourceCategory,
+  NONALCOHOLIC_HOLD_REASON,
 } from '@rajahinta/core-domain';
 import type { RawFeedRecord } from '../interfaces/feed-adapter.interface';
 
@@ -516,7 +523,16 @@ export function parseAlksStoreProduct(row: unknown): AlksProductParseResult {
         ],
       };
     }
-    mapping = fromCategories;
+    // Agreeing sources agree on the tax key; when exactly one side
+    // carried the non-alcoholic guard, the guarded outcome wins so a
+    // hold never cancels on agreement (the category said explicit-other,
+    // the name said an alcohol type on a zero-ABV row — hold it).
+    mapping =
+      fromCategories.nonAlcoholicHold === true
+        ? fromCategories
+        : fromName.nonAlcoholicHold === true
+          ? fromName
+          : fromCategories;
   } else {
     mapping = fromCategories ?? fromName;
   }
@@ -530,6 +546,24 @@ export function parseAlksStoreProduct(row: unknown): AlksProductParseResult {
           'flagged for the correction queue',
       ],
     };
+  }
+
+  // Non-alcoholic ingestion guard (change nonalcoholic-catalog-hygiene,
+  // design D3): the mapper re-keyed a typed alcohol outcome to
+  // non-alcoholic because the ABV is zero or unparseable — category
+  // eligibility is a physical prerequisite. The row STILL ingests (the
+  // ESTIMATED-status contract for unparseable fields is untouched) but
+  // carries the correction error and the machine-readable review hold
+  // the persistence layer stamps onto review_hold_reason, so the shared
+  // listing predicate holds it from every user-facing surface.
+  const held = mapping.nonAlcoholicHold === true;
+  if (held) {
+    errors.push(
+      `Held for review ${label}: ABV is ${abvPercent === 0 ? '0' : 'unparseable'} but the ` +
+        'storefront category or name resolves to an alcohol category — non-alcoholic rows are ' +
+        `barred from alcohol categories, ingested as non-alcoholic with hold reason ` +
+        `${NONALCOHOLIC_HOLD_REASON}, flagged for the correction queue`,
+    );
   }
 
   const volume = parseVolume(name);
@@ -569,6 +603,10 @@ export function parseAlksStoreProduct(row: unknown): AlksProductParseResult {
     availability: readAvailability(product.is_in_stock),
     sourceUrl: readNonEmptyString(product.permalink),
     weightGrams: readWeightGrams(product.weight),
+    // The guard's review hold rides the record to persistence (null when
+    // not held — the AlksParsedRecord shape requires the resolved value,
+    // same pattern as weightGrams).
+    reviewHoldReason: held ? NONALCOHOLIC_HOLD_REASON : null,
   };
 
   return { record, errors };

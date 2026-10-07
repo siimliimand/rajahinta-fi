@@ -250,10 +250,12 @@ describe('LongeroFeedAdapter — per-row errors, ESTIMATED encoding, feed weight
 
     const { records, errors } = await new LongeroFeedAdapter().fetch(CONFIG);
 
-    // 5 records (contradiction row dropped by the parser) + 3 per-row
-    // correction errors (V2- SKU, contradiction, 12-digit SKU).
+    // 5 records (contradiction row dropped by the parser) + 4 per-row
+    // correction errors: the V2- SKU, the contradiction, the 12-digit
+    // SKU, and the non-alcoholic-guard hold on the null-ABV long-drink
+    // row (change nonalcoholic-catalog-hygiene).
     expect(records).toHaveLength(5);
-    expect(errors).toHaveLength(3);
+    expect(errors).toHaveLength(4);
     expect(records[0]).toMatchObject({
       ean: '4740160012345',
       weightGrams: 1400,
@@ -288,12 +290,18 @@ describe('LongeroFeedAdapter — per-row errors, ESTIMATED encoding, feed weight
 
     const { records, errors } = await new LongeroFeedAdapter().fetch(CONFIG);
 
-    // No record dropped for the parse failure, no error either — the
-    // ESTIMATED encoding (null ABV / 0 ml) IS the resolved outcome.
+    // No record dropped for the parse failure — the ESTIMATED encoding
+    // (null ABV / 0 ml) IS the resolved outcome. The non-alcoholic guard
+    // (change nonalcoholic-catalog-hygiene) additionally holds the row:
+    // a long-drink row with no parsed ABV cannot be placed in the
+    // alcohol category, so it carries the review hold and one correction
+    // error.
     expect(records).toHaveLength(1);
-    expect(errors).toEqual([]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('nonalcoholic_in_alcohol_category');
     expect(records[0].alcoholByVolume).toBeNull();
     expect(records[0].volumeMl).toBe(0);
+    expect(records[0].reviewHoldReason).toBe('nonalcoholic_in_alcohol_category');
   });
 
   it('is_in_stock availability passes through: true → in_stock, false → out_of_stock', async () => {
@@ -305,7 +313,10 @@ describe('LongeroFeedAdapter — per-row errors, ESTIMATED encoding, feed weight
 
     const { records, errors } = await new LongeroFeedAdapter().fetch(CONFIG);
 
-    expect(errors).toEqual([]);
+    // The second row carries the non-alcoholic guard's hold error (null
+    // ABV on an alcohol-category row); availability passthrough is the
+    // assertion under test and is unaffected.
+    expect(errors).toHaveLength(1);
     expect(records[0].availability).toBe('in_stock');
     expect(records[1].availability).toBe('out_of_stock');
   });

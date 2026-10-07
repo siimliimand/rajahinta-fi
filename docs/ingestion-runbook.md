@@ -982,3 +982,131 @@ Targeted re-scan (§7.3–§7.5):
 Production execution is a deliberate, gated operator action: the
 script's remote modes require explicit `--remote --env production`
 flags and wrangler authentication, never stored credentials.
+
+---
+
+## 8. Non-alcoholic catalog audit (`scripts/nonalcoholic-catalog-audit.ts`)
+
+One-time cleanup after the non-alcoholic ingestion guard and the shared
+listing predicate landed (change `nonalcoholic-catalog-hygiene`, design
+D4): merchant-feed category mapping used to file energy drinks, mineral
+waters, and juices under canonical alcohol categories, and roughly 120
+production rows are affected (2026-10-04 observation: in the first 300
+`other_fermented` rows, 80 products at 0.0 % ABV and 42 with unknown
+ABV). Those rows are already invisible to every user-facing surface
+(the read-side predicate excludes zero/unknown-ABV and held rows), but
+until they are flagged the correction review flow cannot see why. This
+script enumerates them and — only on the explicit `--apply` — holds
+them for review:
+
+```
+review_hold_reason = 'nonalcoholic_in_alcohol_category'
+```
+
+(the core-domain `NONALCOHOLIC_HOLD_REASON` token, migration 0029's
+column). **Hold, never delete** (design D1): provenance, offer history,
+and correction evidence reference the rows; the hold is what removes
+them from user surfaces, and the correction queue — not the schema —
+owns review state (design D4).
+
+Every artifact this section references is in the repository:
+
+| Artifact | Path |
+|---|---|
+| Audit script (dry-run default, explicit `--apply`) | `scripts/nonalcoholic-catalog-audit.ts` |
+| Hold column (migration 0029) | `packages/data-platform/src/d1/migrations/0029_product_master_review_hold.sql` |
+| Hold-reason token (ingestion guard) | `packages/core-domain/src/normalization/source-category.mapper.ts` |
+| Shared listing predicate (why held rows are invisible) | `packages/data-platform/src/repositories/d1/product-search.repository.ts` |
+| Offer upsert (how re-ingestion re-flags or clears holds) | `apps/api-worker/src/adapters/d1-upsert.repository.ts` |
+
+Roles: the **ops lead** runs the audit against production and records
+the before/after numbers; the **platform engineer** owns the script.
+
+### 8.1 When to run
+
+After the `nonalcoholic-catalog-hygiene` change deploys to the
+environment (guard + predicate live), before recording the §3.5
+post-deploy verification numbers. Re-running at any later time is safe
+and expected — new arrivals are guarded at ingestion, so a growing
+affected set is itself the signal to investigate. Nothing schedules the
+script; it runs when an operator runs it.
+
+### 8.2 Commands (dry-run first, always)
+
+Run from the repo root (the path is relative to the `data-platform`
+package cwd, same convention as §7):
+
+```bash
+pnpm --filter @rajahinta/data-platform exec tsx \
+  ../../scripts/nonalcoholic-catalog-audit.ts --remote --env production
+```
+
+The default mode is a dry-run: it writes nothing. The summary reads:
+
+- `product_master rows: N (already held: H)` — catalog size and how
+  many rows already carry a hold (the audit never touches those).
+- `affected rows (not held, ABV zero/negative/unknown): A` — the set
+  apply would flag: rows outside the listing universe's ABV condition
+  that are not held yet. Every canonical product category is an alcohol
+  category, so no category filter applies (the read-side predicate
+  makes the same assumption).
+- `affected per category: ...` — counts per category, review-flow
+  triage input.
+- `sample` — up to `--sample <n>` (default 10) rows as
+  `id, name, category, ABV, ean`.
+- The exact `--apply` command for the same target.
+
+### 8.3 Apply
+
+```bash
+pnpm --filter @rajahinta/data-platform exec tsx \
+  ../../scripts/nonalcoholic-catalog-audit.ts --remote --env production --apply
+```
+
+One write: `review_hold_reason = 'nonalcoholic_in_alcohol_category'` on
+exactly the enumerated rows (statement-level re-check of the hold
+condition; `updated_at` deliberately untouched). Nothing is deleted, no
+existing hold is lifted or overwritten, and the printed re-enumeration
+must answer `0 remaining`.
+
+**Idempotency.** Already-held rows are outside the enumeration by
+construction, so re-running `--apply` is a no-op — the third run's
+summary reads `affected rows: 0 — nothing to apply` and exits 0. Zero
+affected rows is a SUCCESS (honest shrinkage is the expected end
+state), never an error. Exit codes: 0 success (including zero rows),
+1 connection/execution failure, 2 usage error.
+
+### 8.4 How a held row returns to the catalog
+
+A hold is a review state, and only the correction review flow resolves
+it (design D4):
+
+1. **Explicit review action.** The review confirms the row's real
+   category/ABV, then clears the hold per row with the §6.4 flag
+   pattern (`cd apps/api-worker`,
+   `wrangler d1 execute DB --remote --env production --command "UPDATE product_master SET review_hold_reason = NULL WHERE id = <id>" -y`).
+   The read-side predicate admits the row again immediately — no
+   re-ingestion needed.
+2. **Natural re-ingestion.** The offer upsert's EAN tier rewrites
+   `review_hold_reason` from the fresh mapping on every re-observe: a
+   row whose feed now parses an ABV > 0 returns un-held automatically,
+   and a still-0/unknown-ABV row re-holds itself through the ingestion
+   guard. (The compound-key tier does not touch the column — such a
+   row stays held until route 1.)
+
+### 8.5 Verification checklist
+
+- [ ] Dry-run summary recorded (target, totals, per-category counts)
+      in the change notes or an ops note.
+- [ ] `--apply` run; `applied: A row(s) now held` and
+      `re-enumeration finds 0 remaining` observed.
+- [ ] Post-apply spot check: a flagged row 404-shapes on its detail
+      route and is absent from browse/ranked/ids surfaces.
+- [ ] Re-run of `--apply` answered `affected rows: 0`.
+- [ ] Before/after numbers transcribed with the verified-at timestamp
+      — filled by the operator only, never pre-filled.
+
+Production execution is a deliberate, gated operator action: the
+script's remote modes require explicit `--remote --env production`
+flags and wrangler authentication, never stored credentials.
+

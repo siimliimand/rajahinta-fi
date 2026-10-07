@@ -28,7 +28,7 @@ import {
   resetImplausibleVolumeRowCount,
 } from '../d1-domain-ports';
 import type { CreateCalculationRecordInput } from '@rajahinta/core-domain';
-import type { ProductRepository } from '../../../../../packages/data-platform/src/abstracts';
+import type { D1ProductSearchRepository } from '../../../../../packages/data-platform/src/repositories/d1/product-search.repository';
 import type { RetailOfferRecord } from '../../../../../packages/data-platform/src/interfaces/repository-registry.interface';
 import { D1CalculationRecordRepository } from '../../../../../packages/data-platform/src/repositories/d1/calculation-record.repository';
 // The api-worker harness resolves the committed migrations dir relative to
@@ -56,10 +56,10 @@ function offerRow(
 
 function portWith(rows: RetailOfferRecord[]): D1ProductDataPort {
   const repo = {
-    findById: async () => null,
+    findByIdDirect: async () => null,
     findOffers: async () => rows,
   };
-  return new D1ProductDataPort(repo as unknown as ProductRepository);
+  return new D1ProductDataPort(repo as unknown as D1ProductSearchRepository);
 }
 
 describe('D1ProductDataPort.findRetailOffers', () => {
@@ -160,10 +160,10 @@ function portWithProduct(
   offers: RetailOfferRecord[] = [offerRow()],
 ): D1ProductDataPort {
   const repo = {
-    findById: async (id: number) => findById(id),
+    findByIdDirect: async (id: number) => findById(id),
     findOffers: async () => offers,
   };
-  return new D1ProductDataPort(repo as unknown as ProductRepository);
+  return new D1ProductDataPort(repo as unknown as D1ProductSearchRepository);
 }
 
 describe('D1ProductDataPort volume guard (task 1.5, proposal D1)', () => {

@@ -58,13 +58,26 @@ function weightGramsOf(input: UpsertProductInput): number | null {
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
 }
 
+/**
+ * The ingestion guard's review hold arrives the same way (the MappedPair
+ * widening, change nonalcoholic-catalog-hygiene); plain UpsertProductInput
+ * callers carry none. Absent or non-string reads as null — not held.
+ * Without persisting it the guard would flag rows the catalog would
+ * still list: the shared listing predicate reads this column.
+ */
+function reviewHoldReasonOf(input: UpsertProductInput): string | null {
+  const raw = (input as { reviewHoldReason?: unknown }).reviewHoldReason;
+  return typeof raw === 'string' && raw !== '' ? raw : null;
+}
+
 const FIND_BY_EAN_SQL = `SELECT id FROM product_master WHERE ean = ? LIMIT 1`;
 
 const UPDATE_BY_EAN_SQL = `
   UPDATE product_master SET
     name = ?, manufacturer = ?, brand = ?, category = ?, alcohol_by_volume = ?,
     unit_volume = ?, container_type = ?, regulatory_classification = ?,
-    deposit_system_status = ?, weight_grams = ?, updated_at = ?
+    deposit_system_status = ?, weight_grams = ?, review_hold_reason = ?,
+    updated_at = ?
   WHERE id = ?`;
 
 const FIND_BY_COMPOUND_SQL = `
@@ -81,8 +94,8 @@ const INSERT_PRODUCT_SQL = `
   INSERT INTO product_master (
     name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
     container_type, regulatory_classification, deposit_system_status,
-    weight_grams, ean
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    weight_grams, review_hold_reason, ean
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   RETURNING id`;
 
 const LATEST_OFFER_PRICE_SQL = `
@@ -108,6 +121,7 @@ export class D1UpsertRepository implements IUpsertRepository {
     const unitVolume = toRealRequired(input.unitVolume);
     const depositSystemStatus = toInt(input.depositSystemStatus);
     const weightGrams = weightGramsOf(input);
+    const reviewHoldReason = reviewHoldReasonOf(input);
 
     // ---- Tier 1: Match by EAN — refresh every mutable field --------------
     if (input.ean) {
@@ -128,6 +142,7 @@ export class D1UpsertRepository implements IUpsertRepository {
             input.regulatoryClassification,
             depositSystemStatus,
             weightGrams,
+            reviewHoldReason,
             updatedAt,
             byEan.id,
           )
@@ -163,6 +178,7 @@ export class D1UpsertRepository implements IUpsertRepository {
         input.regulatoryClassification,
         depositSystemStatus,
         weightGrams,
+        reviewHoldReason,
         input.ean ?? null,
       )
       .first<{ id: number }>();

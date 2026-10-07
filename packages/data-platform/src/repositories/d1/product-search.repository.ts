@@ -83,11 +83,36 @@ type RetailOfferWithCarrierRecord = RetailOfferRecord & {
   readonly carrierId: string | null;
 };
 
+/**
+ * The shared listing-universe predicate (task 3.2, change
+ * nonalcoholic-catalog-hygiene, design D2) — ONE definition, imported at
+ * every adoption site (browse keys, ranked search, ids/detail, the
+ * offer-candidate read behind the €/g ranking, and the savings-snapshot
+ * qualification), never reworded per surface: per-surface filters were
+ * rejected as drift-prone, and these surfaces have already diverged once
+ * (the unitprice-ranking-scale-fix post-mortem).
+ *
+ * Every canonical product category is an alcohol category, so the
+ * physical prerequisite is the whole universe condition: an alcohol-
+ * category product must carry a parsed ABV greater than zero and no
+ * review hold. Zero- and unknown-ABV rows and rows held for review
+ * (product_master.review_hold_reason — the non-alcoholic ingestion
+ * guard's correction flag, migration 0029) are outside the catalog's
+ * universe, so held products degrade consistently (a 404-shaped absence
+ * on detail, exclusion from listings and aggregates) instead of
+ * half-rendering.
+ *
+ * The fragment is written for the `p` alias of product_master — every
+ * adoption site aliases the table `p` (add the alias to un-aliased SQL
+ * when adopting; do not fork the condition).
+ */
+export const PRODUCT_LISTING_UNIVERSE_SQL = `p.alcohol_by_volume IS NOT NULL AND p.alcohol_by_volume > 0 AND p.review_hold_reason IS NULL`;
+
 /** Column projection shared by every product_master SELECT. */
 const PRODUCT_COLUMNS = `
   id, name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
   container_type, regulatory_classification, deposit_system_status, ean,
-  weight_grams, created_at, updated_at`;
+  weight_grams, review_hold_reason, created_at, updated_at`;
 
 /** Raw D1 product_master row (snake_case, REAL numbers, ISO-8601 TEXT). */
 interface D1ProductRow {
@@ -103,6 +128,7 @@ interface D1ProductRow {
   readonly deposit_system_status: number | null;
   readonly ean: string | null;
   readonly weight_grams: number | null;
+  readonly review_hold_reason: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -422,6 +448,7 @@ function toContractProduct(row: D1ProductRow): ProductRecord {
     depositSystemStatus: intToBoolean(row.deposit_system_status),
     ean: row.ean,
     weightGrams: row.weight_grams,
+    reviewHoldReason: row.review_hold_reason,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
@@ -476,6 +503,9 @@ function insertParams(record: ProductInsert): unknown[] {
     // Feed weight (design D7, change alks-feed-and-import-vat): absent
     // → null column, never an error.
     record.weightGrams ?? null,
+    // Review hold (change nonalcoholic-catalog-hygiene): absent → null
+    // (not held), never an error — plain callers predate the guard.
+    record.reviewHoldReason ?? null,
     record.createdAt?.toISOString() ?? new Date().toISOString(),
     record.updatedAt?.toISOString() ?? new Date().toISOString(),
   ];
@@ -490,10 +520,10 @@ const FTS_SEARCH_SQL = `
   SELECT p.id, p.name, p.manufacturer, p.brand, p.category,
          p.alcohol_by_volume, p.unit_volume, p.container_type,
          p.regulatory_classification, p.deposit_system_status, p.ean,
-         p.weight_grams, p.created_at, p.updated_at
+         p.weight_grams, p.review_hold_reason, p.created_at, p.updated_at
     FROM product_master_fts f
     JOIN product_master p ON p.id = f.rowid
-   WHERE product_master_fts MATCH ?
+   WHERE product_master_fts MATCH ? AND ${PRODUCT_LISTING_UNIVERSE_SQL}
    ORDER BY ${BM25_COLUMN_WEIGHTS} ASC, p.id ASC
    LIMIT ?`;
 
@@ -508,10 +538,11 @@ const FTS_SEARCH_IN_CATEGORY_SQL = `
   SELECT p.id, p.name, p.manufacturer, p.brand, p.category,
          p.alcohol_by_volume, p.unit_volume, p.container_type,
          p.regulatory_classification, p.deposit_system_status, p.ean,
-         p.weight_grams, p.created_at, p.updated_at
+         p.weight_grams, p.review_hold_reason, p.created_at, p.updated_at
     FROM product_master_fts f
     JOIN product_master p ON p.id = f.rowid
    WHERE product_master_fts MATCH ? AND p.category = ?
+     AND ${PRODUCT_LISTING_UNIVERSE_SQL}
    ORDER BY ${BM25_COLUMN_WEIGHTS} ASC, p.id ASC
    LIMIT ?`;
 
@@ -519,19 +550,25 @@ const FTS_SEARCH_IN_CATEGORY_SQL = `
  * Cheap unbounded candidate count for the LIKE-merge scarcity gate
  * (task 3.1, change finnish-first-client-experience) — the same MATCH
  * expression the ranked fetch runs, counted without the LIMIT so the
- * gate reads the true candidate count, not the fetched window.
+ * gate reads the true candidate count, not the fetched window. The
+ * shared listing universe applies here too (task 3.2, change
+ * nonalcoholic-catalog-hygiene): the gate must count the same candidate
+ * set the fetch can return, or a held-row surplus could suppress the
+ * LIKE merge for a page the fetch under-filled.
  */
 const FTS_COUNT_SQL = `
   SELECT count(*) AS n
-    FROM product_master_fts
-   WHERE product_master_fts MATCH ?`;
+    FROM product_master_fts f
+    JOIN product_master p ON p.id = f.rowid
+   WHERE product_master_fts MATCH ? AND ${PRODUCT_LISTING_UNIVERSE_SQL}`;
 
 /** Category-narrowed candidate count (the combined q+category path). */
 const FTS_COUNT_IN_CATEGORY_SQL = `
   SELECT count(*) AS n
     FROM product_master_fts f
     JOIN product_master p ON p.id = f.rowid
-   WHERE product_master_fts MATCH ? AND p.category = ?`;
+   WHERE product_master_fts MATCH ? AND p.category = ?
+     AND ${PRODUCT_LISTING_UNIVERSE_SQL}`;
 
 /** LIKE candidates — the ILIKE recall analogue; catches mid-token
  *  substrings ('arhu') the token-prefix match cannot express. LIKE is
@@ -539,11 +576,12 @@ const FTS_COUNT_IN_CATEGORY_SQL = `
  *  covered by the unicode61 FTS path above. */
 const RANKED_LIKE_SQL = `
   SELECT ${PRODUCT_COLUMNS}
-    FROM product_master
-   WHERE name LIKE ? ESCAPE '\\'
-      OR brand LIKE ? ESCAPE '\\'
-      OR manufacturer LIKE ? ESCAPE '\\'
-   ORDER BY id ASC
+    FROM product_master p
+   WHERE ${PRODUCT_LISTING_UNIVERSE_SQL}
+     AND (p.name LIKE ? ESCAPE '\\'
+      OR p.brand LIKE ? ESCAPE '\\'
+      OR p.manufacturer LIKE ? ESCAPE '\\')
+   ORDER BY p.id ASC
    LIMIT ?`;
 
 /**
@@ -553,20 +591,22 @@ const RANKED_LIKE_SQL = `
  */
 const RANKED_LIKE_IN_CATEGORY_SQL = `
   SELECT ${PRODUCT_COLUMNS}
-    FROM product_master
-   WHERE (name LIKE ? ESCAPE '\\'
-       OR brand LIKE ? ESCAPE '\\'
-       OR manufacturer LIKE ? ESCAPE '\\')
-     AND category = ?
-   ORDER BY id ASC
+    FROM product_master p
+   WHERE ${PRODUCT_LISTING_UNIVERSE_SQL}
+     AND (p.name LIKE ? ESCAPE '\\'
+      OR p.brand LIKE ? ESCAPE '\\'
+      OR p.manufacturer LIKE ? ESCAPE '\\')
+     AND p.category = ?
+   ORDER BY p.id ASC
    LIMIT ?`;
 
 /** searchByName recall — name only, matching the pg ILIKE(name) contract. */
 const NAME_LIKE_SQL = `
   SELECT ${PRODUCT_COLUMNS}
-    FROM product_master
-   WHERE name LIKE ? ESCAPE '\\'
-   ORDER BY id ASC`;
+    FROM product_master p
+   WHERE ${PRODUCT_LISTING_UNIVERSE_SQL}
+     AND p.name LIKE ? ESCAPE '\\'
+   ORDER BY p.id ASC`;
 
 /**
  * The did-you-mean vocabulary — a closed union (task 2.1, change
@@ -589,11 +629,14 @@ const SUGGESTION_NAMES_SQL = `
 /**
  * Catalog key read (design D1) — deliberately narrow: only the columns
  * the app-side FI sort needs. Category filtering (exact equality) is
- * appended by {@link D1ProductSearchRepository.listCatalogPage}.
+ * appended by {@link D1ProductSearchRepository.listCatalogPage}; the
+ * shared listing universe is part of the base read (task 3.2, change
+ * nonalcoholic-catalog-hygiene).
  */
 const CATALOG_KEYS_SQL = `
-  SELECT id, name
-    FROM product_master`;
+  SELECT p.id AS id, p.name AS name
+    FROM product_master p
+   WHERE ${PRODUCT_LISTING_UNIVERSE_SQL}`;
 
 /**
  * Price-ordered catalog keys (task 1.2): ascending by the product's
@@ -661,7 +704,8 @@ const CATALOG_KEYS_BY_PRICE_SQL = `
                  JOIN ${LATEST_OFFER_PER_MERCHANT_SQL} m
                    ON m.id = o.id
              GROUP BY o.product_id) a
-      ON a.product_id = p.id`;
+      ON a.product_id = p.id
+   WHERE ${PRODUCT_LISTING_UNIVERSE_SQL}`;
 
 /**
  * Defensive cap on ranking candidate rows (task 1.1, change
@@ -693,7 +737,11 @@ export const CATEGORY_OFFER_CANDIDATES_LIMIT = 20_000;
  * undefined. The category must be validated against PRODUCT_CATEGORIES
  * by the caller (the API route 400s unknown values); like
  * {@link D1ProductSearchRepository.listCatalogPage}, an unknown value
- * filters strictly and yields zero rows.
+ * filters strictly and yields zero rows. The shared listing universe
+ * (task 3.2, change nonalcoholic-catalog-hygiene) applies on the outer
+ * join — the €/g ranking can never see a zero/unknown-ABV row or a held
+ * row, for which the whole ethanol-denominator computation is
+ * meaningless.
  */
 const CATEGORY_OFFER_CANDIDATES_SQL = `
   SELECT p.id AS product_id, p.name, p.brand, p.category,
@@ -708,6 +756,7 @@ const CATEGORY_OFFER_CANDIDATES_SQL = `
       ON latest.id = o.id
     JOIN product_master p
       ON p.id = o.product_id
+   WHERE ${PRODUCT_LISTING_UNIVERSE_SQL}
    ORDER BY p.id ASC, o.id ASC
    LIMIT ${CATEGORY_OFFER_CANDIDATES_LIMIT}`;
 
@@ -715,16 +764,16 @@ const INSERT_SQL = `
   INSERT INTO product_master (
     name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
     container_type, regulatory_classification, deposit_system_status, ean,
-    weight_grams, created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    weight_grams, review_hold_reason, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   RETURNING ${PRODUCT_COLUMNS}`;
 
 const INSERT_WITH_ID_SQL = `
   INSERT INTO product_master (
     id, name, manufacturer, brand, category, alcohol_by_volume, unit_volume,
     container_type, regulatory_classification, deposit_system_status, ean,
-    weight_grams, created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    weight_grams, review_hold_reason, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   RETURNING ${PRODUCT_COLUMNS}`;
 
 /** Upsert-by-Ean update — preserves id and createdAt, exactly like pg. */
@@ -732,7 +781,8 @@ const UPDATE_BY_EAN_SQL = `
   UPDATE product_master SET
     name = ?, manufacturer = ?, brand = ?, category = ?, alcohol_by_volume = ?,
     unit_volume = ?, container_type = ?, regulatory_classification = ?,
-    deposit_system_status = ?, weight_grams = ?, updated_at = ?
+    deposit_system_status = ?, weight_grams = ?, review_hold_reason = ?,
+    updated_at = ?
   WHERE ean = ?
   RETURNING ${PRODUCT_COLUMNS}`;
 
@@ -1120,8 +1170,36 @@ export class D1ProductSearchRepository extends ProductRepository {
 
   /** @inheritdoc */
   async findById(id: number): Promise<ProductRecord | null> {
+    // The detail read resolves through the SAME listing universe as every
+    // other surface (design D2, change nonalcoholic-catalog-hygiene): a
+    // held or non-alcoholic row degrades consistently to not-found
+    // instead of half-rendering a product the catalog cannot list.
+    return this.findByIdInUniverse(id);
+  }
+
+  /**
+   * The unpredicated id read — the direct-input/compute path (golden
+   * fixture v3.2, change nonalcoholic-catalog-hygiene): the calculator,
+   * basket, and allowance-fill ports address one exact persisted row and
+   * carry no listing semantics, so a held row stays computable when
+   * addressed directly even though it renders on no surface. Listing
+   * surfaces use {@link findById} (the universe read).
+   */
+  async findByIdDirect(id: number): Promise<ProductRecord | null> {
     const row = await this.d1
-      .prepare(`SELECT ${PRODUCT_COLUMNS} FROM product_master WHERE id = ?`)
+      .prepare(`SELECT ${PRODUCT_COLUMNS} FROM product_master p WHERE p.id = ?`)
+      .bind(id)
+      .first<D1ProductRow>();
+    return row ? toContractProduct(row) : null;
+  }
+
+  /** The universe-scoped id read backing {@link findById}. */
+  private async findByIdInUniverse(id: number): Promise<ProductRecord | null> {
+    const row = await this.d1
+      .prepare(
+        `SELECT ${PRODUCT_COLUMNS} FROM product_master p
+          WHERE p.id = ? AND ${PRODUCT_LISTING_UNIVERSE_SQL}`,
+      )
       .bind(id)
       .first<D1ProductRow>();
     return row ? toContractProduct(row) : null;
@@ -1238,7 +1316,9 @@ export class D1ProductSearchRepository extends ProductRepository {
     const filtered = category !== undefined;
     return (
       await this.d1
-        .prepare(`${CATALOG_KEYS_SQL}${filtered ? ' WHERE category = ?' : ''}`)
+        // CATALOG_KEYS_SQL already carries the shared listing universe in
+        // its WHERE — the category filter conjoins it (AND, not WHERE).
+        .prepare(`${CATALOG_KEYS_SQL}${filtered ? ' AND p.category = ?' : ''}`)
         .bind(...(filtered ? [category] : []))
         .all<D1CatalogKeyRow>()
     ).results;
@@ -1321,19 +1401,22 @@ export class D1ProductSearchRepository extends ProductRepository {
     let keysSql: string;
     const keyParams: string[] = [];
     if (sort === 'LOWEST_PRICE') {
+      // CATALOG_KEYS_BY_PRICE_SQL already carries the shared listing
+      // universe in its WHERE — the category filter conjoins it.
       keysSql = `${CATALOG_KEYS_BY_PRICE_SQL}${
-        filtered ? ' WHERE p.category = ?' : ''
+        filtered ? ' AND p.category = ?' : ''
       }
    ORDER BY (a.min_price_cents IS NULL) ASC, a.min_price_cents ASC, p.id ASC`;
       if (filtered) keyParams.push(category);
     } else if (sort === 'ALCOHOL_PERCENTAGE') {
-      keysSql = `SELECT id, name FROM product_master${
-        filtered ? ' WHERE category = ?' : ''
+      keysSql = `SELECT p.id AS id, p.name AS name FROM product_master p WHERE ${PRODUCT_LISTING_UNIVERSE_SQL}${
+        filtered ? ' AND p.category = ?' : ''
       }
-   ORDER BY (alcohol_by_volume IS NULL) ASC, alcohol_by_volume DESC, id ASC`;
+   ORDER BY (p.alcohol_by_volume IS NULL) ASC, p.alcohol_by_volume DESC, p.id ASC`;
       if (filtered) keyParams.push(category);
     } else {
-      keysSql = `${CATALOG_KEYS_SQL}${filtered ? ' WHERE category = ?' : ''}`;
+      // CATALOG_KEYS_SQL already carries the shared listing universe.
+      keysSql = `${CATALOG_KEYS_SQL}${filtered ? ' AND p.category = ?' : ''}`;
       if (filtered) keyParams.push(category);
     }
     const keys = (
@@ -1468,6 +1551,10 @@ export class D1ProductSearchRepository extends ProductRepository {
           // Feed weight refreshes with the other mutable fields; a
           // weight-less feed persists null (design D7).
           record.weightGrams ?? null,
+          // Review hold refreshes too (change
+          // nonalcoholic-catalog-hygiene): a re-ingest that re-flags the
+          // row holds it; a clean ingest persists null (not held).
+          record.reviewHoldReason ?? null,
           record.updatedAt?.toISOString() ?? new Date().toISOString(),
           record.ean,
         )
@@ -1487,12 +1574,19 @@ export class D1ProductSearchRepository extends ProductRepository {
    * SearchController compareByName contract; SQLite/D1 cannot provide the
    * Finnish collation server-side, so the ordering must stay in
    * application code. The product set is small (~10⁴ rows, design D3),
-   * making the fetch-then-sort-then-limit shape safe.
+   * making the fetch-then-sort-then-limit shape safe. The shared listing
+   * universe applies (task 3.2, change nonalcoholic-catalog-hygiene) —
+   * the savings surface sources its registry read (name map, evaluated
+   * coverage count) from this listing, so held and non-alcoholic rows
+   * can never contribute to an aggregate.
    */
   private async listAlphabetical(limit: number): Promise<ProductRecord[]> {
     const rows = (
       await this.d1
-        .prepare(`SELECT ${PRODUCT_COLUMNS} FROM product_master`)
+        .prepare(
+          `SELECT ${PRODUCT_COLUMNS} FROM product_master p
+            WHERE ${PRODUCT_LISTING_UNIVERSE_SQL}`,
+        )
         .all<D1ProductRow>()
     ).results;
     return sortAlphabetical(rows)

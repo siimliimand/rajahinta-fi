@@ -16,8 +16,28 @@
  * callers flag unmappables for the correction queue; silently assigning
  * a fallback category is forbidden by the product-normalization spec.
  *
+ * The non-alcoholic ingestion guard (change nonalcoholic-catalog-hygiene,
+ * design D3) is the physical prerequisite in the other direction: a row
+ * whose ABV is keyed as zero, or as unparseable (`null` — the value both
+ * feed adapters pass when the name carried no usable percentage), can
+ * never be *placed* in a typed alcohol category. Such a row resolves to
+ * the canonical non-alcoholic category instead, attributable via
+ * `nonAlcoholicHold`, and the caller carries the correction flag and the
+ * {@link NONALCOHOLIC_HOLD_REASON} review hold. An ABV greater than zero
+ * keeps the keyword outcome entirely — including the boundary rule, which
+ * stays untouched (above 22 % the guard cannot fire anyway).
+ *
  * @module SourceCategoryMapper
  */
+
+/**
+ * The machine-readable review-hold reason persisted on
+ * `product_master.review_hold_reason` for a row the non-alcoholic guard
+ * re-assigned: the storefront category said alcohol, the product's ABV
+ * says otherwise, and review — not the read path — resolves the
+ * disagreement. `NULL` in that column means not held.
+ */
+export const NONALCOHOLIC_HOLD_REASON = 'nonalcoholic_in_alcohol_category';
 
 import { TAX_CATEGORY_KEYS, type TaxCategory } from '../tax/tax-categories';
 import { INTERMEDIATE_PRODUCTS_ABV_CEILING } from '../tax/services/alcohol-excise.math';
@@ -46,6 +66,18 @@ export interface SourceCategoryMapping {
    * change first-impression-pass).
    */
   readonly boundaryApplied?: true;
+  /**
+   * Present (true) only when the non-alcoholic ingestion guard determined
+   * the outcome: a keyed-zero or unparseable ABV (`null`) product whose
+   * keyword/category outcome would have been a typed alcohol category is
+   * re-assigned to `non-alcoholic` (design D3, change
+   * nonalcoholic-catalog-hygiene). The caller persists the row with
+   * {@link NONALCOHOLIC_HOLD_REASON} and flags it for the correction
+   * queue — the row still ingests (the ESTIMATED-status contract for
+   * unparseable fields is unchanged); the hold is what removes it from
+   * user-facing surfaces. Absent for keyword outcomes.
+   */
+  readonly nonAlcoholicHold?: true;
 }
 
 /**
@@ -358,6 +390,18 @@ const CANONICAL_TO_TAX_CATEGORY: Readonly<Record<CanonicalCategory, TaxCategory>
  * correction queue instead of assigning a fallback category. An empty
  * string is structural (no source string at all) and stays null at any
  * ABV.
+ *
+ * Non-alcoholic ingestion guard (change nonalcoholic-catalog-hygiene):
+ * a keyed ABV of exactly 0, or `null` — the adapters' explicit
+ * "looked for it, could not parse it" value — re-keys a typed alcohol
+ * outcome to `non-alcoholic` with `nonAlcoholicHold: true`; the caller
+ * holds the row for review. An `undefined` ABV (argument omitted — no
+ * ABV information at all) leaves the guard unkeyed so the historical
+ * keyword outcome stands, exactly as the boundary rule treats it. The
+ * explicit `other` bucket and the `non-alcoholic` category itself pass
+ * through: neither is an alcohol category, and the shared read-side
+ * predicate (ABV > 0, not held) already keeps any zero-ABV row out of
+ * the listing universe.
  */
 export function mapSourceCategory(
   raw: string,
@@ -387,6 +431,29 @@ export function mapSourceCategory(
     // The fermented bucket is capped by taxonomy law: re-assign to
     // spirits, attributable to the boundary rule via `boundaryApplied`.
     return { canonicalCategory: 'spirits', taxCategory: 'spirits', boundaryApplied: true };
+  }
+
+  // Non-alcoholic ingestion guard (change nonalcoholic-catalog-hygiene,
+  // design D3): category eligibility is a physical prerequisite — a row
+  // with no alcohol in it (keyed ABV 0) or no parseable ABV (`null`, the
+  // adapters' explicit unparseable value) cannot be placed in a typed
+  // alcohol category. It resolves to the canonical non-alcoholic
+  // category — the taxonomy's own alcohol-free bucket, not a guess —
+  // attributable via `nonAlcoholicHold`; the caller carries the
+  // correction flag and the review hold. `undefined` leaves the guard
+  // unkeyed (no ABV information was offered), and rows above the
+  // boundary never reach this branch (ABV > 0 there by definition).
+  // Explicit `other` and `non-alcoholic` outcomes pass through unchanged.
+  if (
+    (abv === null || abv === 0) &&
+    canonicalCategory !== 'non-alcoholic' &&
+    canonicalCategory !== 'other'
+  ) {
+    return {
+      canonicalCategory: 'non-alcoholic',
+      taxCategory: CANONICAL_TO_TAX_CATEGORY['non-alcoholic'],
+      nonAlcoholicHold: true,
+    };
   }
 
   const taxCategory = CANONICAL_TO_TAX_CATEGORY[canonicalCategory];
