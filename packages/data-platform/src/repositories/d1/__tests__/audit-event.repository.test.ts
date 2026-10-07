@@ -86,6 +86,21 @@ describe('D1AuditEventRepository', () => {
     expect(page.map((e) => e.id)).toEqual(['audit-q3', 'audit-q2']);
   });
 
+  it('breaks identical-timestamp ties by write order — newest write first', async () => {
+    // Two back-to-back writes can land in the same millisecond (the
+    // WorkerAuditService generates ISO timestamps at ms precision). The
+    // id is a caller-assigned UUID and says nothing about write order, so
+    // the tiebreak is the insertion-order rowid: the newest write must
+    // list first.
+    const sameTs = '2026-08-28T09:00:00.000Z';
+    await repo.save(entry({ id: 'audit-tie-1', timestamp: sameTs, author: 'ops-1' }));
+    await repo.save(entry({ id: 'audit-tie-2', timestamp: sameTs, author: 'ops-2' }));
+
+    const history = await repo.query({ limit: 10 });
+    const tieIds = history.filter((e) => e.id.startsWith('audit-tie')).map((e) => e.id);
+    expect(tieIds).toEqual(['audit-tie-2', 'audit-tie-1']);
+  });
+
   it('runs unfiltered reads without a WHERE clause', async () => {
     const all = await repo.query({});
     expect(all.length).toBeGreaterThanOrEqual(7);

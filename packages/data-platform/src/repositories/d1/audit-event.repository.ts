@@ -99,11 +99,16 @@ export class D1AuditEventRepository implements IAuditRepository {
 
     const whereClause =
       conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+    // Tiebreak on rowid, not id: entry ids are caller-assigned UUIDs, so
+    // id order is uncorrelated with write order and two same-millisecond
+    // events would list in random order. The table is append-only and
+    // never deletes rows, so rowid is a stable insertion-order proxy and
+    // rowid DESC puts the newest write first.
     const sql = `
       SELECT id, entity_type, entity_id, action, author, reason, occurred_at,
              previous_value, new_value
         FROM audit_events${whereClause}
-       ORDER BY occurred_at DESC, id ASC
+       ORDER BY occurred_at DESC, rowid DESC
        LIMIT ? OFFSET ?`;
 
     const rows = (

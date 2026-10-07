@@ -12,8 +12,10 @@
  *    the same engine class D1/miniflare embed) twice produces identical,
  *    expected state: version-guarded inserts skip present tax-rule labels
  *    without repairing them, INSERT OR IGNORE fixtures conflict on their
- *    explicit primary keys, and the verification query asserts exact row
- *    counts, per-version presence, and a value spot check.
+ *    explicit primary keys, the merchant registry upserts on its merchant_id
+ *    natural key (immune to operator-row PK collisions), and the
+ *    verification query asserts exact row counts, per-version presence, and
+ *    a value spot check.
  *
  * The tamper scenario pins the append-only dataset policy: a pre-existing
  * (drifted) version label blocks its whole version and makes verification
@@ -80,16 +82,39 @@ describe('D1 seed SQL generation (task 2.6)', () => {
     expect(valueRows).toHaveLength(buildExpectations().taxRulesTotal);
   });
 
-  it('emits INSERT OR IGNORE with explicit ids for every staging table', () => {
+  it('emits INSERT OR IGNORE with explicit ids for the fixture staging tables', () => {
     const sql = generateStagingSql();
     const statements = sql.match(/INSERT OR IGNORE INTO "[a-z_]+"/g) ?? [];
-    expect(statements).toHaveLength(5); // merchant_registry, transport_offers, product_master, retail_offers, staging_reviews
+    expect(statements).toHaveLength(4); // transport_offers, product_master, retail_offers, staging_reviews
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS "staging_reviews"');
+  });
+
+  it('upserts the merchant registry by natural key (operator-row PK collisions cannot swallow bootstrap rows)', () => {
+    // Staging deploy 37614170668: the old emission assigned explicit ids by
+    // array position under INSERT OR IGNORE, so an operator-added registry
+    // row occupying that id (longero, id 3) silently swallowed the araxes
+    // bootstrap row. The natural-key upsert makes that failure mode
+    // structurally impossible — pin its shape.
+    const sql = generateStagingSql();
+    expect(sql).toContain('ON CONFLICT ("merchant_id")');
+    const statementStart = sql.indexOf('INSERT INTO "merchant_registry"');
+    const statementEnd = sql.indexOf('-- 2. Transport offers');
+    expect(statementStart).toBeGreaterThan(-1);
+    expect(statementEnd).toBeGreaterThan(statementStart);
+    const merchantStatement = sql.slice(statementStart, statementEnd);
+    // No explicit id column — ids are autoassigned, so a pre-existing row's
+    // PK can never conflict with a bootstrap insert.
+    expect(merchantStatement).not.toMatch(/"id"/);
+    // Seed-owned refresh mirrors seedMerchantRegistry's set clause;
+    // carrier_id and created_at are never touched.
+    expect(merchantStatement).toContain('"updated_at"');
+    expect(merchantStatement).not.toContain('"carrier_id"');
+    expect(merchantStatement).not.toContain('"created_at"');
   });
 
   it('seeds the merchant registry alko-only (removed merchant never re-seeded)', () => {
     const sql = generateStagingSql();
-    expect(sql).toContain("(1, 'alko'");
+    expect(sql).toContain("('alko', 'Alko'");
     expect(sql).not.toContain('systembolaget');
   });
 
@@ -240,6 +265,40 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
       );
       const row = db.prepare(buildVerifySql()).get() as Record<string, unknown>;
       expect(() => assertVerificationRow(row)).not.toThrow();
+    } finally {
+      db.close();
+    }
+  }, DB_TEST_TIMEOUT_MS);
+
+  it('seeds the registry alongside an operator row occupying a bootstrap id (staging deploy 37614170668 regression)', () => {
+    // Staging's failure state: an operator-added row (longero) held id 3,
+    // and the old explicit-id INSERT OR IGNORE assigned araxes the same id —
+    // the bootstrap row was silently swallowed and the presence gate failed
+    // with merchant_registry_araxes: expected 1, got 0. The natural-key
+    // upsert autoassigns ids, so the fake operator row and all three seed
+    // rows must coexist.
+    const dbPath = freshDatabasePath();
+    const pre = new DatabaseSync(dbPath);
+    for (const file of listMigrationFiles(MIGRATIONS_DIR)) {
+      pre.exec(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
+    }
+    pre.exec(
+      `INSERT INTO merchant_registry (id, merchant_id, name, country, feed_url, feed_format, polling_interval_ms)
+       VALUES (3, 'fake-operator', 'Fake Operator', 'EE', 'https://fake-operator.example', 'json', 86400000)`,
+    );
+    pre.close();
+
+    // Schema already present → migrations skipped, seed applied on top of
+    // the collision state; verification must PASS with all rows present.
+    const result = applySeedToSqlite(dbPath, { migrationsDir: MIGRATIONS_DIR, seedSqlFiles: seedFiles });
+    expect(result.migrationsApplied).toEqual([]);
+
+    const db = new DatabaseSync(dbPath);
+    try {
+      const rows = db
+        .prepare('SELECT merchant_id FROM merchant_registry ORDER BY merchant_id')
+        .all() as Array<{ merchant_id: string }>;
+      expect(rows.map((r) => r.merchant_id)).toEqual(['alko', 'alks', 'araxes', 'fake-operator']);
     } finally {
       db.close();
     }
