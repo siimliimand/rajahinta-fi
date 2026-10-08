@@ -35,7 +35,7 @@
 
 ## 7. Production rollout
 
-- [ ] 7.1 Production deploy via the gated workflow (`gh workflow run deploy-production.yml` with `confirm_deploy=yes`); health gate green <!-- agent: devops-engineer.fast, depends_on: [6.2], touches: [] -->
+- [x] 7.1 Production deploy via the gated workflow (`gh workflow run deploy-production.yml` with `confirm_deploy=yes`); health gate green <!-- agent: devops-engineer.fast, depends_on: [6.2], touches: [] -->
 - [ ] 7.2 Production registration ×2 via the ops console (`POST /ops/console/merchants` upserts the registry row and auto-grants a merchant with no governance records — blanket-permission policy, two audited entries each; pin `feedFormat` and `pollingIntervalMs` explicitly on any update — the upsert overwrites the whole row, runbook §2.0); first ingest manually triggered per merchant; verify the public API + product pages serving both catalogs; record the next-scheduled-00:00-UTC checklist (exactly one enqueue per merchant, two workflow instances, offers refreshed) <!-- agent: devops-engineer.fast, depends_on: [7.1], touches: [openspec/changes/onboard-shopify-lmdw-merchants/notes.md] -->
 
 ## 8. Verification
