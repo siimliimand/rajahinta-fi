@@ -612,6 +612,30 @@ no production contact.
 
 **Verified at**: 2026-10-08T13:45Z.
 
+## 7.1 Production deploy evidence
+
+Deployed via the gated workflow only (`workflow_dispatch` with
+`confirm_deploy=yes`; no manual `wrangler deploy --env production`).
+
+- **Run**: [`37788209874`](https://github.com/siimliimand/rajahinta-fi/actions/runs/37788209874)
+  — Deploy Production on `master`, triggered 2026-10-08T13:55:15Z, finished
+  2026-10-08T13:58:44Z, **success**.
+- **Deploy SHA**: `3aa253c007562338bc580cb21665a0cffbad5790` (origin/master HEAD;
+  local master ahead only by notes/tasks docs edits — code identical).
+- **Sequence, all green**: build frontend (OpenNext) → D1 migrations
+  (`db:migrate:d1:production`, before rollout per spec ordering; production is
+  never seeded) → API Worker → email Worker → frontend Worker → health gate →
+  rollback-availability job (runbook echo only).
+- **Health gate (in-run)**: `$PRODUCTION_API_URL/api/v1/health/ready` (repo
+  variable → `https://api.rajahinta.fi`) returned 200 within the bounded retry
+  window.
+- **Post-deploy independent check** (read-only curl, 13:59:09Z): HTTP 200 —
+  `status: ok`, `d1: up` (137 ms), `durableObjects: up` (177 ms).
+- Zero data writes to production D1 (registration is 7.2); annotations in the
+  run are GitHub runner deprecation notices only, unrelated to the deploy.
+
+**Verified at**: 2026-10-08T13:59Z.
+
 ## 7.2 Production rollout evidence
 
 TBD (registration audit entries, first-ingest counts, 00:00 UTC scheduled
