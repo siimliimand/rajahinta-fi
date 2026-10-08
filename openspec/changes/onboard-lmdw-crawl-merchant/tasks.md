@@ -4,7 +4,7 @@
 
 ## 1. Crawl probe (read-only)
 
-- [ ] 1.1 `scripts/lmdw-crawl-probe.ts`: read-only probe deciding the integration shape (design D1) — sitemap availability (robots.txt sitemap directives, `sitemap.xml`, product-sitemap index), state-JSON extraction coverage on ~300 sampled product pages (`volume` litres / `strength` ABV share, guarded-parse outcomes), page-side category signal census (JSON-LD category / breadcrumb terms + counts), GTIN13-in-JSON-LD presence, EUR sanity; records the **URL-source decision** (pure `SitemapCrawlFeedAdapter` subclass vs GraphQL-seeded variant) and the extraction targets in the notes with go for task 3.1 <!-- agent: platform-engineer.build, depends_on: [], touches: [scripts/lmdw-crawl-probe.ts, openspec/changes/onboard-lmdw-crawl-merchant/notes.md] -->
+- [x] 1.1 `scripts/lmdw-crawl-probe.ts`: read-only probe deciding the integration shape (design D1) — sitemap availability (robots.txt sitemap directives, `sitemap.xml`, product-sitemap index), state-JSON extraction coverage on ~300 sampled product pages (`volume` litres / `strength` ABV share, guarded-parse outcomes), page-side category signal census (JSON-LD category / breadcrumb terms + counts), GTIN13-in-JSON-LD presence, EUR sanity; records the **URL-source decision** (pure `SitemapCrawlFeedAdapter` subclass vs GraphQL-seeded variant) and the extraction targets in the notes with go for task 3.1 <!-- agent: platform-engineer.build, depends_on: [], touches: [scripts/lmdw-crawl-probe.ts, openspec/changes/onboard-lmdw-crawl-merchant/notes.md] -->
 
 ## 2. Vocabulary
 

@@ -36,9 +36,9 @@ The probe records the decision + evidence in the notes; the adapter task is bloc
 
 The crawl extractor's per-source normalizer gains a whisky.fr reader: the page's embedded state JSON carries `"volume"` (litres — × 1000 → `volumeMl`) and `"strength"` (ABV percent — ÷ 100 → `alcoholByVolume`), with guarded parsing (comma/dot decimals, plausibility window `0 < abv ≤ 100`, `0 < volume < 100` litres per the pipeline's unit window). Missing or unparseable fields ride the keyed-uncertainty ESTIMATED path — never guessed. Price from JSON-LD `price`/`priceCurrency` (EUR minor units; a non-EUR currency is a per-row correction error, Posti precedent). `vendor`/brand from JSON-LD `brand`/`seller` per the established crawl extraction order. `depositSystem: false` — French consigne is not Finnish pantti, and no attested deposit field is read.
 
-### D3 — Page-side French category vocabulary (not the GraphQL m3 labels)
+### D3 — Page-side category vocabulary: the state-JSON m3 taxonomy (probe-refined)
 
-The probe censuses the category signal pages actually carry (JSON-LD `category`, breadcrumbs) and task 2.1 wires those exact spellings as additive keys. The 137-label `m3_family` census from the archived spike stays as reference evidence — no GraphQL surface ships in this change, so wiring its labels would be dead vocabulary. Deliberately unmapped: gift boxes, non-beverage terms, merch — correction queue, never a guessed tax key.
+Task 1.1 measured the category signal: JSON-LD `category` is absent and breadcrumbs are geography/brand noise (Accueil, ecosse, france, LAPHROAIG — not mapper material). The real page-side product-type signal is the **embedded state-JSON m3 taxonomy** (`m3_category`/`m3_family`/`m3_subfamily`/`m3_division`), present on 300/300 probed pages (179 distinct key+label pairs: category 40, family 66, subfamily 71, division 2). Task 2.1 wires those exact spellings as additive keys, fed from the parser's state-JSON extraction (task 3.1). Deliberately unmapped: gift boxes, non-beverage terms, merch — correction queue, never a guessed tax key. (This refines the original "breadcrumbs/JSON-LD category" wording; the GraphQL-side 137-label census stays as reference evidence — the wiring source is the page-attested m3 labels.)
 
 ### D4 — GTIN13: page-attested only
 
