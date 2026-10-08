@@ -105,6 +105,23 @@ describe('viinarannasta.eu — schema.org microdata with GTIN13', () => {
   it('a page with no JSON-LD at all still extracts (microdata tier reached)', () => {
     expect(record).not.toBeNull();
   });
+
+  it('regression: uppercase itemprop GTIN13 (live PrestaShop shape) still extracts the EAN', () => {
+    // Live viinarannasta.eu emits <meta itemprop="GTIN13" content="…"> —
+    // uppercase token, meta content value. Exact-token matching dropped it
+    // and every crawled row ingested EAN-less (2026-10-08 first crawl).
+    const html = VIINARANNASTA_PRODUCT_HTML.replace(
+      'itemprop="gtin13"',
+      'itemprop="GTIN13"',
+    );
+    const { record, errors } = extractProductPage(
+      VIINARANNASTA_PRODUCT_URL,
+      html,
+      VIINARANNASTA_EXTRACTOR_CONFIG,
+    );
+    expect(errors).toEqual([]);
+    expect(record?.ean).toBe('5011013100156');
+  });
 });
 
 describe('drinkonline.eu — JSON-LD with offers as an array', () => {

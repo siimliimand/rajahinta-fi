@@ -136,7 +136,14 @@ function collectProps(element: MiniElement, out: PropEntry[]): void {
 }
 
 function firstProp(props: readonly PropEntry[], token: string): PropEntry | null {
-  return props.find((entry) => entry.tokens.includes(token)) ?? null;
+  // Schema.org itemprop tokens are matched case-insensitively: PrestaShop
+  // themes emit `itemprop="GTIN13"` while the lookups below use the
+  // lowercase schema term — exact matching silently dropped the GTIN.
+  const needle = token.toLowerCase();
+  return (
+    props.find((entry) => entry.tokens.some((t) => t.toLowerCase() === needle)) ??
+    null
+  );
 }
 
 function propText(props: readonly PropEntry[], token: string): string | null {
