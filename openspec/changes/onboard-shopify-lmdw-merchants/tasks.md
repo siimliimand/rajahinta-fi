@@ -26,7 +26,7 @@
 
 ## 5. Local rollout
 
-- [ ] 5.1 Local rollout ×2: registry rows (via the seed) + governance records (`RETAILER_API`, `GRANTED`, per-merchant sourceUrl) in local D1; run the producer tick + ingestion workflow end-to-end locally against the live feeds (read-only GETs); verify `retail_offers` land for both merchants, repeat-run idempotency via the compound-key tier (no duplicate `product_master` rows — no EANs anywhere), and ESTIMATED/merch rows appear in the correction queue; evidence in the notes <!-- agent: platform-engineer.fast, depends_on: [4.1, 4.2], touches: [openspec/changes/onboard-shopify-lmdw-merchants/notes.md] -->
+- [x] 5.1 Local rollout ×2: registry rows (via the seed) + governance records (`RETAILER_API`, `GRANTED`, per-merchant sourceUrl) in local D1; run the producer tick + ingestion workflow end-to-end locally against the live feeds (read-only GETs); verify `retail_offers` land for both merchants, repeat-run idempotency via the compound-key tier (no duplicate `product_master` rows — no EANs anywhere), and ESTIMATED/merch rows appear in the correction queue; evidence in the notes <!-- agent: platform-engineer.fast, depends_on: [4.1, 4.2], touches: [openspec/changes/onboard-shopify-lmdw-merchants/notes.md] -->
 
 ## 6. Staging rollout
 
