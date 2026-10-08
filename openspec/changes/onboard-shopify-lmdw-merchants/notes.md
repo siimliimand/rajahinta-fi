@@ -443,6 +443,40 @@ this notes section.
    restart) is a dev-runtime quirk worth remembering when a pair of
    concurrent workflows starts at once.
 
+## 6.1 PR + merge evidence
+
+- **PR**: [#108](https://github.com/siimliimand/rajahinta-fi/pull/108)
+  `onboard-shopify-lmdw-merchants: Shopify pair (bottleofitaly/IT, kuhns/DE)
+  via a shared products walk`, base master. Branch rebased onto post-#107
+  master before push (fast-forward, no conflicts).
+- **En-route CI fixes** (both seed-count coupling from the 4.2 registry rows):
+  1. `tests/integration/d1/crawl-producer-parked.d1.test.ts` — the producer
+     over the seeds now considers 11 registry rows (was 9) and skips 4
+     fail-closed no-governance rows (alks, araxes + bottleofitaly, kuhns;
+     was 2). Enqueued stays 4 (the GRANTED crawl merchants), skippedNoFeedUrl
+     stays 3.
+  2. `packages/data-platform/src/seed/d1/__tests__/d1-seed.test.ts` — the
+     seed-apply regression test's registry id list gains bottleofitaly/kuhns.
+  - Local verification note: the local Node 22.14 `node:sqlite` build lacks
+    FTS5 (`no such module: fts5`) so the D1-touching suites cannot run
+    locally on it — environmental, pre-exists on master. Verified under
+    Node 24 (CI's runtime, nvm v24.21.0): full `pnpm -r test` green plus
+    `pnpm run test:d1` 190/190.
+- **CI (final head `1b89cc7`)**: 31 checks pass, 1 skipped (Artillery HTTP
+  suite, conditional). Green across: Build, Lint, Unit tests, Integration,
+  Golden-dataset, Data-quality, Compliance, E2E tests, D1 suite, Worker
+  checks (api-worker e2e), Browser E2E (Playwright), Wrangler config
+  validation, Content policy, Composition smoke, Load test (calculator,
+  in-process), CI / ci-pass aggregate — two matrix legs.
+- **Merge**: merge commit `4defad7` (`--merge` per repo convention; the
+  remote branch auto-deleted on merge).
+- **Staging deploy**: run
+  [37778299100](https://github.com/siimliimand/rajahinta-fi/actions/runs/37778299100)
+  `success` — D1 migrate → seed (lands the bottleofitaly + kuhns registry
+  rows in staging D1) → deploy (API / email / frontend Workers) → health
+  gate, all steps green.
+- **Verified at**: 2026-10-08T12:41:55Z.
+
 ## 6.2 Staging rollout evidence
 
 TBD (Workers-egress smoke per source, workflow instance ids, offer counts,
