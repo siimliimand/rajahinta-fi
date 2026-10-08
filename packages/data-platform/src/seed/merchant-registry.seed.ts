@@ -32,7 +32,8 @@ export interface MerchantRegistrySeedRow {
  * merchant-removal purge script under scripts/ removes its rows from
  * environments that ingested it. `alks` joined via change
  * alks-feed-and-import-vat (task 2.2). `bottleofitaly` and `kuhns`
- * joined via change onboard-shopify-lmdw-merchants (task 4.2).
+ * joined via change onboard-shopify-lmdw-merchants (task 4.2). `lmdw`
+ * joined via change onboard-lmdw-crawl-merchant (task 4.2).
  *
  * All rows run a daily cadence (change
  * daily-scrape-cadence-current-offers, task 2.1): the hourly producer
@@ -78,9 +79,9 @@ export const MERCHANT_REGISTRY_SEED: readonly MerchantRegistrySeedRow[] = [
   // --- Shopify Store API merchants (change onboard-shopify-lmdw-merchants,
   // --- task 4.2): JSON collection feeds on the daily cadence, same
   // --- shape as the alks/araxes rows. (A third row, lmdw, was planned
-  // --- here and removed by the change's spike re-scope — the LMDW
-  // --- gateway onboards via a follow-up crawl-pattern change, which
-  // --- brings its registry row.)
+  // --- here and removed by the change's spike re-scope — its registry
+  // --- row joined via change onboard-lmdw-crawl-merchant, in the
+  // --- sitemap-crawl section below.)
   {
     merchantId: 'bottleofitaly',
     name: 'Bottle of Italy',
@@ -152,6 +153,22 @@ export const MERCHANT_REGISTRY_SEED: readonly MerchantRegistrySeedRow[] = [
     // nothing.
     country: 'SK',
     feedUrl: 'https://www.drinkonline.eu/sitemap-products.xml',
+    feedFormat: 'xml',
+    pollingIntervalMs: 86_400_000,
+  },
+  // --- LMDW sitemap crawl (change onboard-lmdw-crawl-merchant, task 4.2;
+  // --- probe 2026-10 decision PURE SITEMAP — the sitemap is the URL
+  // --- source). FR catalog sitemap over the EN sibling
+  // --- (sitemap_whimag_en.xml): the one-sitemap-per-merchant pick,
+  // --- licorea precedent. Unlike the sitemap-crawl rows above, no
+  // --- governance row is seeded: lmdw's `RETAILER_API` grant lands
+  // --- through the ops console (tasks 5.1/6.2/7.2), so the producer
+  // --- holds the feed until an operator grants it.
+  {
+    merchantId: 'lmdw',
+    name: 'La Maison du Whisky',
+    country: 'FR',
+    feedUrl: 'https://www.whisky.fr/media/sitemap/sitemap_whimag.xml',
     feedFormat: 'xml',
     pollingIntervalMs: 86_400_000,
   },
