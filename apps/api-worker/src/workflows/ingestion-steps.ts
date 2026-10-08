@@ -77,6 +77,7 @@ import { MydrinkFeedAdapter } from '../../../../packages/data-acquisition/src/ad
 import { AraxesFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/araxes.adapter';
 import { BottleofItalyFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/bottleofitaly.adapter';
 import { KuhnsFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/kuhns.adapter';
+import { LmdwFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/lmdw.adapter';
 import { SitemapCrawlFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/sitemap-crawl.adapter';
 import { DrinkonlineFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/drinkonline.adapter';
 import { LicoreaFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/licorea.adapter';
@@ -223,13 +224,15 @@ export interface IngestionStageCompositionOptions {
   readonly governanceRepository?: ISourceGovernanceRepository;
   /** Observation log binding override (tests use an in-memory store). */
   readonly observationStoreOverride?: ObservationLogStore;
-  /** Feed adapters; default registers the twelve live adapters — alko, alks, longero, kippis, mydrink, araxes, bottleofitaly, kuhns, and the four crawl merchants — as pipeline.ts does. */
+  /** Feed adapters; default registers the thirteen live adapters — alko, alks, longero, kippis, mydrink, araxes, bottleofitaly, kuhns, and the five crawl merchants (viinarannasta, viinikauppa, licorea, drinkonline, lmdw) — as pipeline.ts does. */
   readonly feedAdaptersOverride?: Map<string, IFeedAdapter>;
   /**
-   * Sitemap-crawl adapters (task 3.1); default composes the four v1
-   * crawl merchants over the durable D1 watermark/cursor store, the
-   * same instances the feeds map carries. Presence in this map — keyed
-   * by merchantId — is the crawl path's identity gate (no flags).
+   * Sitemap-crawl adapters (task 3.1); default composes the five crawl
+   * merchants (the four v1 merchants plus lmdw, change
+   * onboard-lmdw-crawl-merchant) over the durable D1 watermark/cursor
+   * store, the same instances the feeds map carries. Presence in this
+   * map — keyed by merchantId — is the crawl path's identity gate (no
+   * flags).
    */
   readonly crawlFeedAdaptersOverride?: ReadonlyMap<string, SitemapCrawlFeedAdapter>;
   /** Write-port override (tests force upsert failures through it). */
@@ -277,6 +280,15 @@ export function composeIngestionStageServices(
         cursorStore: crawlWatermarks,
       });
       map.set(drinkonline.merchantId, drinkonline);
+      // La Maison du Whisky (change onboard-lmdw-crawl-merchant) — the
+      // fifth crawl merchant, pure-sitemap per the probe decision
+      // (design D1): same durable stores as the four v1 merchants above
+      // (pipeline.ts parity).
+      const lmdw = new LmdwFeedAdapter({
+        watermarkStore: crawlWatermarks,
+        cursorStore: crawlWatermarks,
+      });
+      map.set(lmdw.merchantId, lmdw);
       return map;
     })();
 

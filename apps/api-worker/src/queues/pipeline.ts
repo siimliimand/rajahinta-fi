@@ -47,6 +47,7 @@ import { MydrinkFeedAdapter } from '../../../../packages/data-acquisition/src/ad
 import { AraxesFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/araxes.adapter';
 import { BottleofItalyFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/bottleofitaly.adapter';
 import { KuhnsFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/kuhns.adapter';
+import { LmdwFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/lmdw.adapter';
 import { DrinkonlineFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/drinkonline.adapter';
 import { LicoreaFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/licorea.adapter';
 import { ViinarannastaFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/viinarannasta.adapter';
@@ -111,9 +112,9 @@ export function composeGovernanceService(
  *
  * Feed adapters register under their merchantId exactly as the
  * DataAcquisitionModule factory did (alko, alks, longero, kippis,
- * mydrink, araxes, bottleofitaly, kuhns, then the four crawl merchants
- * viinarannasta, viinikauppa, licorea, drinkonline); the offer-change
- * hook appends one R2 observation per changed offer.
+ * mydrink, araxes, bottleofitaly, kuhns, then the five crawl merchants
+ * viinarannasta, viinikauppa, licorea, drinkonline, and lmdw); the
+ * offer-change hook appends one R2 observation per changed offer.
  */
 export function composeIngestionPipeline(
   env: Env,
@@ -170,6 +171,14 @@ export function composeIngestionPipeline(
     cursorStore: crawlWatermarks,
   });
   adapters.set(drinkonline.merchantId, drinkonline);
+  // La Maison du Whisky (change onboard-lmdw-crawl-merchant) — the fifth
+  // crawl merchant, pure-sitemap per the probe decision (design D1): the
+  // same durable stores and construction shape as the four above.
+  const lmdw = new LmdwFeedAdapter({
+    watermarkStore: crawlWatermarks,
+    cursorStore: crawlWatermarks,
+  });
+  adapters.set(lmdw.merchantId, lmdw);
   const feedIngestion = new FeedIngestionService(adapters);
   const dataMapping = new DataMappingService();
   const dataQuality = new DataQualityService(new ReliabilityService());
