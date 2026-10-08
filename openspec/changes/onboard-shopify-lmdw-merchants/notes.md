@@ -209,7 +209,52 @@ retry-once-after-30 s, `sku` dedupe, hard cap 75 pages):
 
 ## 2.2 Mapper re-sweep drop rates
 
-TBD (drop rates before/after the IT/DE/FR vocabulary)
+Re-sweep run 2026-10-08T07:33Z (verified-at; this host, read-only GETs; both
+scripts re-run sequentially after the 2.2 vocabulary landed — BOI finished
+07:24Z, kuhns 07:33Z). Both walks reproduced the 1.1/1.2 censuses exactly
+(BOI 22,937 products / 92 pages / 0 failures / 0 dupes / 0 429s; kuhns 2,012
+/ 9 pages / 0 failures / 0 dupes), so the before/after comparison below is
+against a live, unchanged catalog.
+
+"Drop rate" = rows whose source `product_type` yields no canonical category
+from `mapSourceCategory` (correction-queue rows), measured from the fresh
+census against the landed vocabulary. The sweeps' own static-list metrics
+are printed for continuity; they do not exercise the mapper (scripts stay
+as-is per task scope).
+
+**bottleofitaly (22,937): category-driven drops 15,321 (66.8 %) → 1,648
+(7.2 %).** Before 2.2 only `Spirits` resolved (via `normalizeCategory`).
+After: Spirits 7,616 + Vino Rosso 6,128 + Vino Bianco 3,668 (+ the census's
+one lowercase `Vino bianco` stray on the same key) + Bollicine 3,064 +
+Vino Rosato 434 + Birra 378 = 21,289 mapped (92.8 %). The residual 1,648 is
+exactly the deliberately-unmapped set → correction queue: Altro 713, Olio
+430, Gadget 320, Aceto 171, bare `Vino` 11, `Buoni regalo` 1, missing 2
+(merch pair Olio+Aceto = 601, 2.6 %, per the D3/D8 merch bucket). Note the
+static sweep metric ("candidate vocabulary covers") reports 20,910 (91.2 %)
+because the script's list predates the `Birra` key — see the deviation
+flag below. Deviation flagged for the lead: `Birra` (378, 1.6 %) was added
+beyond the task's literal five-key BOI list, applying the task's own
+kuhns-side meaningful-volume rule to the 1.1 census — Italian beer, maps to
+the existing canonical `beer`; without it 378 beverage rows drop per run.
+
+**kuhns (2,012): typed-row category-driven drops 29/127 (22.8 %) → 17/127
+(13.4 %); whole-catalog 1,914 (95.1 %) → 1,902 (94.5 %), of which 1,885
+(93.7 %) are the structural empty-`product_type` bucket that 2.2 cannot
+address by design** — the untyped majority rides the parser's name-token
+fallback (design D3 correction, task 3.2). Before 2.2, 98 of the 127 typed
+rows already resolved through pre-existing keys/`normalizeCategory`
+(Whisky 69 incl. the lowercase stray, Rum 12, Likör 9, Vodka 4, Gin 2,
+Tequila 1, calvados 1); the landed DE keys add Wein 8 + Bier 4 + Sekt 0
+(`Sekt` is keyed per the task but measured at zero rows this census) =
+110 mapped. The residual 17 typed rows are exactly the strict
+deliberately-unmapped set: Bio Direktsaft 3, Apfelwein 3, Bundle 2,
+Iced Tea 2, Apfelsaft 2, and singles `champangne` [sic], `wasser`, `Limo`,
+`Portwein`, `giftbox_ghost_product`. The script's static Wein/Bier/Sekt
+metric covers 12 (0.6 %) — census-only, not the mapper view.
+
+FR (`m3_family`) keys from the 1.3 LMDW census were NOT landed in this
+task (scope: IT + DE per the 2.2 task text); the 1.3 note keeps them
+optional — they gate nothing until an LMDW source exists.
 
 ## 5.1 Local rollout evidence
 
