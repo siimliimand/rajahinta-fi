@@ -479,8 +479,138 @@ this notes section.
 
 ## 6.2 Staging rollout evidence
 
-TBD (Workers-egress smoke per source, workflow instance ids, offer counts,
-commands executed)
+**COMPLETE — both merchants registered+auto-granted through the audited console, first
+ingests landed, D6 egress smoke PASSED for both sources, both catalogs live on the staging
+API and product pages.** Executed 2026-10-08 12:47–13:45 UTC. Staging only — zero
+production contact. Staging ingestion is manual-only (producer cron dropped from the env,
+wrangler.jsonc 2026-10-07), so all egress below rode the two manual Workflows-API
+instances; no producer log check applies (optional per task; there is no staging producer).
+
+### Pre-grant state (fail-closed, §0)
+
+`GET /ops/console/governance` (bearer `$(cat /root/.ops-token)` inline, never echoed):
+14 merchants; **`bottleofitaly` PENDING / sourceCount 0** and **`kuhns` PENDING /
+sourceCount 0** — the 6.1 seed rows (deploy run 37778299100) with no governance records,
+exactly the fail-closed contract. (Registry values read back: Bottle of Italy / IT /
+`https://bottleofitaly.com`, Kuhns / DE / `https://kuhns.shop`.)
+
+### Register + auto-grant (runbook §2.0, one call per merchant)
+
+`POST /ops/console/merchants` ×2 — fields `merchantId`/`name`/`country`/`feedUrl` +
+`feedFormat: "json"` and `pollingIntervalMs: 86400000` **pinned explicitly** (§2.0: the
+upsert overwrites the whole row; the values mirror the seed rows exactly), `operator:
+"siim (owner)"` (the audit-trail convention, araxes 4.2/5.2), note "owner blanket
+permission policy — change onboard-shopify-lmdw-merchants task 6.2".
+
+- bottleofitaly → **`registered: "updated"`, `autoGranted: true`, `permissionStatus:
+  "GRANTED"`, `sourceCount: 1`** (12:47:57–58Z)
+- kuhns → **`registered: "updated"`, `autoGranted: true`, `permissionStatus: "GRANTED"`,
+  `sourceCount: 1`** (12:47:59Z)
+
+(`updated` = the seed rows already existed; the auto-grant fired because neither had
+governance records — the §0/§2.0 contract.) Audit verified (`GET /ops/console/audit?limit=6`):
+**exactly two entries per merchant**, author `siim (owner)`, note exact —
+`merchant_registry`/`bottleofitaly`/`updated` (id `67d56605…`, 12:47:57.918Z) +
+`source_governance`/`bottleofitaly`/`created` (`08b7452d…`, 12:47:58.365Z);
+`merchant_registry`/`kuhns`/`updated` (`acca27fd…`, 12:47:59.217Z) +
+`source_governance`/`kuhns`/`created` (`0d5eb524…`, 12:47:59.667Z). Governance re-check:
+both **GRANTED**, sourceCount 1, 14 merchants total.
+
+### D6 Workers-egress smoke — PASS for both sources (no Posti playbook needed)
+
+The first real fetches of both stores from Cloudflare IPs happened inside the two
+instances below (5.1's walk-UA fix is live in staging — **zero HTTP 403 and zero
+error-1031 responses on any page of either source**; the Posti 403/1031 block shape did
+not materialize). What both sources did instead is **Shopify 429 rate-limiting** on the
+unpaced walk, and the D7 3-consecutive-failure bound aborted each walk early:
+
+| Source | Pages fetched ok | Pages 429 | Walk outcome |
+|---|---|---|---|
+| bottleofitaly.com | 1–5 (1,250 raw rows) | 6, 7, 8 (consecutive) | aborted at the 3-consecutive-429 bound; pages 9–92 never fetched |
+| kuhns.shop | 1–3 (750 raw rows) | 4, 5, 6 (consecutive) | aborted at the bound; pages 7–9 never fetched |
+
+Partial catalogs are the accepted D7 evidence (plumbing proof; convergence rides the
+cadence — in staging, a later manual run). Per D6 this is NOT the blocked-source path:
+the fetches succeed, the stores just throttle. No retry loop was run.
+
+### First ingest via the Workflows REST API (araxes 4.2 call shape)
+
+- `POST /accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances`
+  body `{"id":"price-ingestion-bottleofitaly-2026-10-08-12","params":{"merchantId":
+  "bottleofitaly","sourceUrl":"https://bottleofitaly.com","dedupeKey":"price-ingestion-
+  bottleofitaly-2026-10-08-12"}}` (params mirror the producer message; `-12` hour suffix
+  cannot collide) → uuid **`59993b03-0711-4d32-8eb0-7943d122fc60`**, `queued`
+  12:48:54.808Z, trigger `api` → `running` → `waiting` 13:39:43Z→13:42:29Z (the
+  chunk-budget hibernation park, araxes-4.2 shape) → **`complete` 13:42:18.610Z
+  (~53 min)**, `error: null`, 15 steps (5 upsert chunks).
+- Same call for kuhns, id/dedupeKey `price-ingestion-kuhns-2026-10-08-12` → uuid
+  **`2b2971a1-7ac7-4d0b-aa61-ab9ff35e888f`** → **`complete` by ~13:01Z (~13 min)**,
+  `error: null`, 10 steps (2 upsert chunks).
+- Both instances' `governance-gate-1` step: **`{"permitted":true,"status":"GRANTED"}`** —
+  the pipeline gate honored the grant (with the known read-model artifact below).
+
+### Run results (instance output; error-line census exact)
+
+| | bottleofitaly | kuhns |
+|---|---|---|
+| `productsIngested` | **1,000** | **329** (chunks 250 + 79, zero `upsertErrors`) |
+| Raw rows seen | 1,250 (pages 1–5) | 750 (pages 1–3) |
+| Reconciliation | 1,250 EAN notes = one per raw row ✓; 1,000 ingested + 235 no-canonical drops (+3 hygiene holds riding the ingested pairs) | **750 = 329 + 419 no-canonical + 2 disagreement** ✓ exact |
+| Correction lines (total) | 2,031 = 1,250 kept-without-EAN + 235 no-canonical + 525 `unit_volume 0` honest-0-ESTIMATED wine rows + 3 hygiene holds + **15 D1-quota rejections** + 3 page-429 | 1,209 = 749 kept-without-EAN + 419 no-canonical + 26 hygiene holds + 10 zero-volume + 2 disagreement + 3 page-429 |
+
+**Deviation for the platform engineer (recorded, non-blocking):** the BOI run carried
+**15 per-row `Too many API requests by single Worker invocation` rejections** — the
+araxes 4.2/5.2 D1 API-request quota class, still present in staging with the
+reset-every-2 deploy (small tail here: 15 of 1,015 pairs; araxes saw 539 of 1,539 in
+production with the same code). The 15 rejected pairs persisted nothing (same
++1,000-exact arithmetic). The remaining BOI catalog (pages 6–92) plus the 15 pairs land
+on a later manual staging run; per D6/D7 no retry loop was run now.
+
+### Landed state (read-only staging D1)
+
+- **`retail_offers`**: bottleofitaly **1,000 rows / 1,000 distinct products**, single
+  batch **12:49:02.205Z** (= fetch step), min 35 / max **13,391,734 c**; kuhns **329 rows
+  / 329 products**, single batch **12:49:02.404Z**, min 399 / max **599,500 c**. Total
+  118,102 → 119,431 (+1,329 exact).
+- **`product_master`**: 8,292 → **9,621 (+1,329 exact** = 1,000 BOI + 329 kuhns), max id
+  9,621; **zero rows with an EAN** among all new ids (the sweep reality — BOI `custom-…`
+  and kuhns `ML…` SKUs match no accepted EAN form); `review_hold_reason`:
+  29 × `nonalcoholic_in_alcohol_category` (the parser's hygiene guard).
+- **No other merchant moved**: araxes 2,789 · alks 67,600 · kippis 14,235 · longero
+  24,962 · mydrink 7,593 — byte-identical to the 4.2-era baselines.
+
+### Public staging API + product pages (age gate)
+
+- `GET /api/v1/products/8640` (kuhns max-price row, Bowmore 32 Jahre 1968): bare →
+  **HTTP 403** ✅; `x-age-confirmed: 1` → kuhns offer **599,500 c** / EUR / `in_stock` /
+  ESTIMATED / `sourceUrl https://kuhns.shop/products/bowmore-32-jahre-…` /
+  `observedAt` = kuhns batch ✅.
+- `GET /api/v1/products/8439` (BOI max-price row, Cognac Louis XIII 6lt — Astucciato):
+  bare → **HTTP 403** ✅; with header → bottleofitaly offer **13,391,734 c** / EUR /
+  `in_stock` / ESTIMATED / bottleofitaly.com sourceUrl / batch stamp ✅.
+- `GET /api/v1/merchants/reliability`: **`bottleofitaly` offerCount 1000**,
+  **`kuhns` offerCount 329**, all ESTIMATED, `freshestObservedAt` = each batch ✅ — with
+  the known read-model artifact (`governancePermissionStatus: "PENDING"` despite the
+  GRANTED D1 rows; kippis/mydrink/araxes precedent, recorded not chased).
+- Staging frontend product pages: `/products/8640` and `/products/8439` both **HTTP 200**
+  with server-rendered product title ("… — hintatiedot"), the merchant name, and the
+  `Katso kaupassa` CTA — both catalogs render.
+
+### Commands executed (names)
+
+`curl GET/POST $STAGING_API_URL/ops/console/governance|merchants|audit` (bearer:
+`$(cat /root/.ops-token)` inline, never echoed) · `npx wrangler d1 execute DB --remote
+--env staging --json --command "…"` read-only (baselines, offer/batch/product/hold
+censuses, per-merchant post-checks; CLOUDFLARE_API_TOKEN inline) · `npx wrangler whoami
+--json` (account id captured same-invocation, never emitted) + `curl POST
+/accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances` ×2 + instance
+polls (Cloudflare API token inline, never echoed; instance JSON to `/tmp/opencode`
+scratch for the error-line census, deleted after) · `curl /api/v1/products/{8640,8439}`
+± `x-age-confirmed: 1` · `curl /api/v1/merchants/reliability` · `curl
+rajahinta-frontend-staging…/products/{8640,8439}`. No hand writes against staging D1;
+no production contact.
+
+**Verified at**: 2026-10-08T13:45Z.
 
 ## 7.2 Production rollout evidence
 
