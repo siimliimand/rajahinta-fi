@@ -45,6 +45,10 @@ import { KippisFeedAdapter } from '../../../../packages/data-acquisition/src/ada
 import { LongeroFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/longero.adapter';
 import { MydrinkFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/mydrink.adapter';
 import { AraxesFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/araxes.adapter';
+import { DrinkonlineFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/drinkonline.adapter';
+import { LicoreaFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/licorea.adapter';
+import { ViinarannastaFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/viinarannasta.adapter';
+import { ViinikauppaFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/viinikauppa.adapter';
 import type { IFeedAdapter } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { MerchantConfig } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
 import { merchantConfigFromRegistry } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
@@ -58,6 +62,7 @@ import { R2PriceObservationPort } from '../../../../packages/data-platform/src/r
 import type { ObservationLogStore } from '../../../../packages/data-platform/src/d1/observation-log';
 import type { Env } from '../env';
 import { D1UpsertRepository } from '../adapters/d1-upsert.repository';
+import { D1CrawlWatermarkStore } from '../adapters/d1-crawl-watermark.store';
 import { D1ProductDataPort, D1TransportOfferQuery } from '../adapters/d1-domain-ports';
 import { OfferChangeRecorderHook } from '../adapters/offer-change-recorder-hook';
 import { observationLogStore } from '../adapters/r2-observation-log.store';
@@ -112,6 +117,13 @@ export function composeIngestionPipeline(
   options: PipelineCompositionOptions = {},
 ): IngestionPipeline {
   // Data acquisition services
+  // Durable crawl state (task 3.1): one store serves every crawl
+  // merchant — rows are merchant-keyed in aggregation_watermarks. The
+  // direct-runner path below drives the whole-cycle adapter.fetch()
+  // (unchunked fallback; production crawls go through the Workflow's
+  // chunked steps) — the durable watermark keeps even that path
+  // incremental instead of first-crawl-per-process.
+  const crawlWatermarks = new D1CrawlWatermarkStore(env.DB);
   const adapters = new Map<string, IFeedAdapter>();
   const alko = new AlkoFeedAdapter();
   adapters.set(alko.merchantId, alko);
@@ -125,6 +137,29 @@ export function composeIngestionPipeline(
   adapters.set(mydrink.merchantId, mydrink);
   const araxes = new AraxesFeedAdapter();
   adapters.set(araxes.merchantId, araxes);
+  // Sitemap-crawl merchants (task 2.1 seed ids, exact) over the
+  // durable store — same instances, same construction order as
+  // composeIngestionStageServices (the two compositions stay in sync).
+  const viinarannasta = new ViinarannastaFeedAdapter({
+    watermarkStore: crawlWatermarks,
+    cursorStore: crawlWatermarks,
+  });
+  adapters.set(viinarannasta.merchantId, viinarannasta);
+  const viinikauppa = new ViinikauppaFeedAdapter({
+    watermarkStore: crawlWatermarks,
+    cursorStore: crawlWatermarks,
+  });
+  adapters.set(viinikauppa.merchantId, viinikauppa);
+  const licorea = new LicoreaFeedAdapter({
+    watermarkStore: crawlWatermarks,
+    cursorStore: crawlWatermarks,
+  });
+  adapters.set(licorea.merchantId, licorea);
+  const drinkonline = new DrinkonlineFeedAdapter({
+    watermarkStore: crawlWatermarks,
+    cursorStore: crawlWatermarks,
+  });
+  adapters.set(drinkonline.merchantId, drinkonline);
   const feedIngestion = new FeedIngestionService(adapters);
   const dataMapping = new DataMappingService();
   const dataQuality = new DataQualityService(new ReliabilityService());

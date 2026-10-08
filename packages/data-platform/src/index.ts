@@ -352,6 +352,20 @@ export {
 } from './seed/merchant-registry.seed';
 
 // ---------------------------------------------------------------------------
+// Source governance seed — bootstrap permission records for the
+// sitemap-crawl merchants (change sitemap-crawl-merchants, task 2.2);
+// local + staging only, production registers through the ops console
+// ---------------------------------------------------------------------------
+
+export {
+  seedSourceGovernance,
+  SOURCE_GOVERNANCE_SEED,
+  SITEMAP_CRAWL_RECON_DATE,
+  RECON_SCRAPING_RIGHTS_REASON,
+  type SourceGovernanceSeedRow,
+} from './seed/source-governance.seed';
+
+// ---------------------------------------------------------------------------
 // Carrier box-type seed — curated PostNord/DHL standard catalogue (task 3.1),
 // the packing module's only source of box geometry; D1-only table
 // ---------------------------------------------------------------------------

@@ -182,15 +182,20 @@ const MULTIPACK_PATTERN =
 const BUNDLE_NAME_PATTERN = /\+\s+\p{L}/u;
 
 /** Volume resolved from a name: per-unit millilitres plus the pack count. */
-interface ParsedVolume {
+export interface ParsedVolume {
   /** Per-UNIT volume — never multiplied by the pack count (design D1). */
   readonly volumeMl: number;
   /** Units per multipack; null when the name carries no multipack token. */
   readonly packCount: number | null;
 }
 
-/** Percentage ABV from the name, 0–100; null when absent or implausible. */
-function parseAbvPercent(name: string): number | null {
+/**
+ * Percentage ABV from the name, 0–100; null when absent or implausible.
+ * Exported for the sitemap-crawl extractor (change sitemap-crawl-merchants,
+ * design D3), which reuses the Store API name heuristics instead of
+ * duplicating them.
+ */
+export function parseAbvPercent(name: string): number | null {
   const match = ABV_PATTERN.exec(name.toLowerCase());
   if (match === null) return null;
   const value = Number.parseFloat(match[1].replace(',', '.'));
@@ -218,7 +223,7 @@ function volumeToMl(value: string, unit: string): number | null {
  * without a multipack token parses exactly as before, pack count null.
  * Null when no plausible volume token exists.
  */
-function parseVolume(name: string): ParsedVolume | null {
+export function parseVolume(name: string): ParsedVolume | null {
   const lowered = name.toLowerCase();
 
   const multipack = MULTIPACK_PATTERN.exec(lowered);
@@ -318,6 +323,26 @@ function findContainerToken(name: string): string | null {
 }
 
 /**
+ * Container type from a product display name through the parser's token
+ * set, defaulting to 'other' (never 'unknown' — outside the schema
+ * CHECK). Exported for the sitemap-crawl extractor so crawl records land
+ * in the same product_master vocabulary as Store API records.
+ */
+export function containerTypeFromName(name: string): string {
+  const token = findContainerToken(name);
+  return token !== null ? alksContainerType(token) : 'other';
+}
+
+/**
+ * Multi-product bundle marker over a display name ("+ Jägermeister …").
+ * Exported for the sitemap-crawl extractor, which holds such rows for
+ * review exactly as the Store API parser does.
+ */
+export function isMultiProductBundleName(name: string): boolean {
+  return BUNDLE_NAME_PATTERN.test(name.toLowerCase());
+}
+
+/**
  * Token → product_master `container_type` value — the exact set the
  * schema CHECK pins (migration 0002: 'glass', 'plastic', 'metal',
  * 'carton', 'other', 'can', 'bottle'). This is deliberately NOT
@@ -356,7 +381,9 @@ function alksContainerType(token: string): string {
 // Category resolution — categories first, name tokens second
 // ---------------------------------------------------------------------------
 
-type SourceCategoryMapping = NonNullable<ReturnType<typeof mapSourceCategory>>;
+export type SourceCategoryMapping = NonNullable<
+  ReturnType<typeof mapSourceCategory>
+>;
 
 /** First category term with a canonical mapping, in payload order. */
 function categoryImpliedMapping(
@@ -374,8 +401,17 @@ function categoryImpliedMapping(
   return null;
 }
 
-/** First name token with a canonical beverage mapping, in token order. */
-function nameImpliedMapping(name: string, abv: number | null): SourceCategoryMapping | null {
+/**
+ * First name token with a canonical beverage mapping, in token order.
+ * Exported for the sitemap-crawl extractor (change
+ * sitemap-crawl-merchants, design D3/D7): crawl pages expose no
+ * storefront categories, so the ABV-guarded name tokens are the only
+ * category source and the non-alcoholic hold must resolve identically.
+ */
+export function nameImpliedMapping(
+  name: string,
+  abv: number | null,
+): SourceCategoryMapping | null {
   const lowered = name.toLowerCase();
   for (const { token, pattern } of BEVERAGE_PATTERNS) {
     if (!pattern.test(lowered)) continue;
@@ -404,7 +440,7 @@ const GTIN14_PATTERN = /^0\d{13}$/;
  * Null for any other SKU — 12-digit numerics are not zero-padded and
  * internal or suffixed codes are never guessed around.
  */
-function readEanFromSku(sku: string | null): string | null {
+export function readEanFromSku(sku: string | null): string | null {
   if (sku === null) return null;
   if (SKU_PATTERN.test(sku)) return sku.slice(3);
   if (BARE_EAN_PATTERN.test(sku)) return sku;

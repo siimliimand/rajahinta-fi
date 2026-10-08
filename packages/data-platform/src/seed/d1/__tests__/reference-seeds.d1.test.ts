@@ -76,6 +76,7 @@ describe('reference seed generators — registration + shape', () => {
     expect(SEED_SQL_FILES.map((f) => f.name)).toEqual([
       'tax-rules.d1.sql',
       'staging.d1.sql',
+      'source-governance.d1.sql',
       'consumption-norms.d1.sql',
       'carrier-box-types.d1.sql',
     ]);

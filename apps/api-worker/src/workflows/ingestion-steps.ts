@@ -75,6 +75,11 @@ import { KippisFeedAdapter } from '../../../../packages/data-acquisition/src/ada
 import { LongeroFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/longero.adapter';
 import { MydrinkFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/mydrink.adapter';
 import { AraxesFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/araxes.adapter';
+import { SitemapCrawlFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/sitemap-crawl.adapter';
+import { DrinkonlineFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/drinkonline.adapter';
+import { LicoreaFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/licorea.adapter';
+import { ViinarannastaFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/viinarannasta.adapter';
+import { ViinikauppaFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/viinikauppa.adapter';
 import type { IFeedAdapter } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { RawFeedRecord } from '../../../../packages/data-acquisition/src/interfaces/feed-adapter.interface';
 import type { MerchantConfig } from '../../../../packages/data-acquisition/src/interfaces/merchant-config.interface';
@@ -98,12 +103,14 @@ import type { ObservationLogStore } from '../../../../packages/data-platform/src
 import type { Env } from '../env';
 import { completeJob, releaseJob } from '../do/client';
 import { D1UpsertRepository } from '../adapters/d1-upsert.repository';
+import { D1CrawlWatermarkStore } from '../adapters/d1-crawl-watermark.store';
 import {
   D1ProductDataPort,
   D1TransportOfferQuery,
 } from '../adapters/d1-domain-ports';
 import { OfferChangeRecorderHook } from '../adapters/offer-change-recorder-hook';
 import { observationLogStore } from '../adapters/r2-observation-log.store';
+import { runCrawlFetchSteps } from './crawl-fetch-steps';
 import {
   recordImplausibleVolumeShare,
   recordZeroPriceRejections,
@@ -193,6 +200,13 @@ export interface IngestionStageServices {
   readonly registry: MerchantRegistryLookup;
   readonly governance: SourceGovernanceService;
   readonly feeds: FeedIngestionService;
+  /**
+   * Sitemap-crawl adapters keyed by merchantId (task 3.1) — the same
+   * instances the feeds map carries. Optional so test compositions
+   * without crawl merchants stay unchanged; the fetch stage branches on
+   * presence (identity gate, no flags).
+   */
+  readonly crawlFeedAdapters?: ReadonlyMap<string, SitemapCrawlFeedAdapter>;
   readonly mapping: DataMappingService;
   readonly contentLint: ContentLintService;
   readonly upserts: IUpsertRepository;
@@ -209,6 +223,13 @@ export interface IngestionStageCompositionOptions {
   readonly observationStoreOverride?: ObservationLogStore;
   /** Feed adapters; default registers the Alko, alks, longero, kippis, mydrink, and araxes feed adapters as pipeline.ts does. */
   readonly feedAdaptersOverride?: Map<string, IFeedAdapter>;
+  /**
+   * Sitemap-crawl adapters (task 3.1); default composes the four v1
+   * crawl merchants over the durable D1 watermark/cursor store, the
+   * same instances the feeds map carries. Presence in this map — keyed
+   * by merchantId — is the crawl path's identity gate (no flags).
+   */
+  readonly crawlFeedAdaptersOverride?: ReadonlyMap<string, SitemapCrawlFeedAdapter>;
   /** Write-port override (tests force upsert failures through it). */
   readonly upsertRepositoryOverride?: IUpsertRepository;
 }
@@ -223,6 +244,40 @@ export function composeIngestionStageServices(
   env: Env,
   options: IngestionStageCompositionOptions = {},
 ): IngestionStageServices {
+  // Durable crawl state (task 3.1): one store serves every crawl
+  // merchant — rows are merchant-keyed in aggregation_watermarks.
+  const crawlWatermarks = new D1CrawlWatermarkStore(env.DB);
+
+  // Sitemap-crawl adapters (task 2.1) over the durable store: the same
+  // instances register in BOTH maps — the feeds map keeps the generic
+  // fetch-feed path working, the crawl map gates the chunked steps.
+  const crawlAdapters =
+    options.crawlFeedAdaptersOverride ??
+    (() => {
+      const map = new Map<string, SitemapCrawlFeedAdapter>();
+      const viinarannasta = new ViinarannastaFeedAdapter({
+        watermarkStore: crawlWatermarks,
+        cursorStore: crawlWatermarks,
+      });
+      map.set(viinarannasta.merchantId, viinarannasta);
+      const viinikauppa = new ViinikauppaFeedAdapter({
+        watermarkStore: crawlWatermarks,
+        cursorStore: crawlWatermarks,
+      });
+      map.set(viinikauppa.merchantId, viinikauppa);
+      const licorea = new LicoreaFeedAdapter({
+        watermarkStore: crawlWatermarks,
+        cursorStore: crawlWatermarks,
+      });
+      map.set(licorea.merchantId, licorea);
+      const drinkonline = new DrinkonlineFeedAdapter({
+        watermarkStore: crawlWatermarks,
+        cursorStore: crawlWatermarks,
+      });
+      map.set(drinkonline.merchantId, drinkonline);
+      return map;
+    })();
+
   const adapters =
     options.feedAdaptersOverride ??
     (() => {
@@ -239,6 +294,11 @@ export function composeIngestionStageServices(
       map.set(mydrink.merchantId, mydrink);
       const araxes = new AraxesFeedAdapter();
       map.set(araxes.merchantId, araxes);
+      // The crawl adapters join the same lookup (pipeline.ts parity) —
+      // a non-chunked caller still resolves a must-not-throw fetch.
+      for (const [merchantId, crawlAdapter] of crawlAdapters) {
+        map.set(merchantId, crawlAdapter);
+      }
       return map;
     })();
 
@@ -268,6 +328,7 @@ export function composeIngestionStageServices(
     registry: new D1MerchantRegistryRepository(env.DB),
     governance,
     feeds: new FeedIngestionService(adapters),
+    crawlFeedAdapters: crawlAdapters,
     mapping: new DataMappingService(),
     contentLint: new ContentLintService(),
     upserts: upsertRepository,
@@ -854,9 +915,25 @@ export async function runIngestionWorkflow(
     }
 
     // -- Step 3: fetch feed -----------------------------------------------
-    const fetched = await step.do('fetch-feed', INGESTION_STEP_RETRY, () =>
-      fetchFeedStep(services.feeds, config),
-    );
+    // Sitemap-crawl merchants (task 3.1) branch on their adapter's
+    // presence in the crawl map — identity-gated, no flags: the fetch
+    // becomes CHUNKED resumable steps (≤ 300 detail fetches per step,
+    // cursor durable in aggregation_watermarks), and the accumulated
+    // records hand to the SAME map/gate/upsert/quality steps below.
+    // Every other merchant keeps the single fetch-feed step verbatim.
+    const crawlAdapter = services.crawlFeedAdapters?.get(config.merchantId);
+    const fetched =
+      crawlAdapter !== undefined
+        ? await runCrawlFetchSteps({
+            step,
+            adapter: crawlAdapter,
+            config,
+            retry: INGESTION_STEP_RETRY,
+            log,
+          })
+        : await step.do('fetch-feed', INGESTION_STEP_RETRY, () =>
+            fetchFeedStep(services.feeds, config),
+          );
     if (fetched.errors.length > 0) {
       log?.warn({
         message: `Fetch warnings/errors for "${config.merchantId}": ${fetched.errors.join('; ')}`,

@@ -1110,3 +1110,258 @@ Production execution is a deliberate, gated operator action: the
 script's remote modes require explicit `--remote --env production`
 flags and wrangler authentication, never stored credentials.
 
+---
+
+## 9. Sitemap crawl merchants
+
+Operational reference for the four sitemap-crawl merchants
+(viinarannasta, viinikauppa, licorea, drinkonline) and the two parked
+candidates (spritxxl, lazyshop), change `sitemap-crawl-merchants`.
+These sources have no Store API: the registry `feedUrl` is the
+merchant's product sitemap, and the ingestion Workflow discovers and
+fetches individual product pages from it through a polite, chunked
+crawl. Governance works exactly as everywhere else in this runbook;
+only the fetch mechanics and the verification steps differ.
+
+Every artifact this section references is in the repository:
+
+| Artifact | Path |
+|---|---|
+| Shared crawl cycle, walker, sitemap parser, lastmod diff | `packages/data-acquisition/src/crawl/` |
+| Shared sitemap-crawl adapter + per-source subclasses | `packages/data-acquisition/src/adapters/sitemap-crawl.adapter.ts`, `viinarannasta.adapter.ts`, `viinikauppa.adapter.ts`, `licorea.adapter.ts`, `drinkonline.adapter.ts` |
+| Extractor (JSON-LD, microdata, OG/meta with per-source normalizers) | `packages/data-acquisition/src/crawl/extract/` |
+| Chunked crawl steps (crawl-discover, crawl-chunk-N, crawl-advance-N) | `apps/api-worker/src/workflows/crawl-fetch-steps.ts` |
+| Durable watermark + cursor store | `apps/api-worker/src/adapters/d1-crawl-watermark.store.ts` |
+| Registry seed (eight rows, two parked) | `packages/data-platform/src/seed/merchant-registry.seed.ts` |
+| Governance seed (four GRANTED, two PENDING) | `packages/data-platform/src/seed/source-governance.seed.ts` |
+| Read-only crawl sweeps | `scripts/viinarannasta-crawl-sweep.ts` and its three per-source siblings |
+
+Roles: the **ops lead** verifies seeds through the console, performs
+production registration and grants, and watches the first crawl; the
+**platform engineer** owns the crawl packages, the adapters, and the
+sweeps.
+
+### 9.1 Onboarding sequence (staging)
+
+The rows already exist. Staging receives both seeds through the deploy
+pipeline's seed step, the same path as the merchant-registry seed:
+
+1. `merchant_registry` carries eight rows: the four active merchants
+   with their sitemap URLs (`feedFormat: 'xml'`, daily
+   `pollingIntervalMs` of 86,400,000) and the two parked merchants
+   (spritxxl, lazyshop) with an EMPTY `feedUrl`. The empty URL is the
+   producer's skip marker, by design (§9.3).
+2. `source_governance` carries the permission records: the four active
+   merchants are `COMPLIANT_CRAWLING` / `GRANTED` with source URL set
+   to their sitemap and `statusReason`
+   `documented_scraping_rights_recon_2026_10_07`; the parked two are
+   `COMPLIANT_CRAWLING` / `PENDING` with their own machine-readable
+   reasons (§9.3). The seed is presence-guarded: it inserts a row only
+   when the merchant has no record for that (method, source URL) pair
+   in ANY status, so an operator's REVOKED or GRANTED decision always
+   survives a re-seed. Production governance is never seeded.
+3. Verify through the console or the API:
+   `GET $STAGING_API_URL/ops/console/governance` lists all six with
+   the statuses above. No grant action is needed in staging; the seed
+   did it. Do not re-grant through the console "to be sure": granting
+   an already-GRANTED merchant is a no-op, but the console is for
+   operator decisions, not seed verification.
+4. Wait for the next hourly pass (cron `0 * * * *`). A daily row fires
+   on the 00:00 UTC pass (§0 cadence rules). The producer logs
+   `Skipping merchant "spritxxl": registry feed URL is empty` and the
+   same for lazyshop, and the summary line counts the four crawl
+   merchants among the enqueued. Message dedupe follows the §2.3
+   convention (`price-ingestion-<merchantId>-<UTC hour bucket>`).
+5. The workflow then runs `crawl-discover`, pairs of
+   `crawl-chunk-N` / `crawl-advance-N` until the queue drains, and
+   after that the ordinary map, volume-ceiling-gate, upsert, and
+   data-quality steps unchanged. Verify per §9.6.
+
+### 9.2 Politeness parameters
+
+These are code-pinned, not conventions. Do not tune them per run; the
+scheduled crawl and any manual expectation must stay identical.
+
+- Pages are fetched strictly sequentially per host. The spacing
+  (minimum 1,000 ms, `MIN_REQUEST_SPACING_MS`) sits before every
+  request except a walk's first, so consecutive request STARTS are at
+  least 1 s apart regardless of how fast the server answers.
+- Every request carries the descriptive User-Agent
+  `rajahinta-crawler/1.0 (+https://rajahinta.fi)`
+  (`CRAWLER_USER_AGENT`). A site admin can tell who is polling at
+  1 req/s and reach a human. None of the four hosts publishes a
+  `Crawl-delay`; the 1 req/s floor is the self-imposed policy.
+- The sitemap is fetched at most once per cycle. A resumed cycle (a
+  prior invocation left an in-flight cursor) replays the cursor and
+  never re-fetches the sitemap or the already-crawled prefix.
+- A chunk is at most 300 detail-page fetches
+  (`CRAWL_CHUNK_FETCHES`), about 5 min of wall time at 1 req/s. A
+  durable 1 s sleep between chunk steps gives each chunk a fresh
+  invocation, keeping the run inside the roughly 1,000-subrequest
+  ceiling. The step-pair loop caps at 400 chunks (120,000 URLs); a
+  larger queue is a registry-config error and stays resumable.
+- Records commit before the cursor advances past them
+  (write-then-advance). A lost chunk output re-walks its slice; a lost
+  advance resumes from the persisted offset. Pages are re-fetched on
+  failure, never skipped silently.
+- Crawl state lives in two `aggregation_watermarks` rows per merchant:
+  `sitemap-crawl-lastmod-<merchantId>` (the completed cycle's
+  `loc → lastmod` map, JSON) and `sitemap-crawl-cursor-<merchantId>`
+  (the in-flight queue plus offset; an absent row means no cycle is in
+  flight). Reads are job-scoped per the watermark-isolation rule.
+- drinkonline exposes no sitemap `lastmod`, so it is configured as
+  full-refresh: every cycle crawls the whole set (about 1,838 pages,
+  roughly 31 min at 1 req/s, spread over chunks). The first crawl of
+  any source is always a full crawl.
+
+Raising the chunk size or lowering the spacing is a measured change,
+not a setting: both budgets (subrequests per invocation, scheduled
+wall time) were measured with these numbers. Re-measure before
+changing either, and record it in the change notes.
+
+### 9.3 Parked sources (spritxxl, lazyshop)
+
+Both are recorded in governance, not scraped. The producer skips them
+by the registry's empty-feedUrl rule, and no adapter code exists for
+either (the spec forbids it). The governance rows carry the why:
+
+- `spritxxl` (`fastly_js_challenge_blocks_sitemap`): a Fastly JS
+  client challenge blocks the sitemap and robots.txt. This is the
+  Posti blocked-egress precedent: egress blocking is parked and
+  recorded, never fought with workaround clients.
+- `lazyshop` (`no_extractable_product_attributes`): pages expose no
+  structured data and no ABV, volume, EAN, or brand. Rows would be
+  held by the non-alcoholic guard (zero or unparseable ABV cannot
+  enter alcohol categories) and would be unmatchable against
+  `product_master`. Revisit only when an attribute source exists; a
+  working crawler changes nothing about this.
+
+Because both park as data rows, unparking is covered in §9.5.
+
+### 9.4 Read-only crawl sweeps
+
+Each active source has a sweep script:
+`scripts/viinarannasta-crawl-sweep.ts`, `scripts/viinikauppa-crawl-sweep.ts`,
+`scripts/licorea-crawl-sweep.ts`, `scripts/drinkonline-crawl-sweep.ts`.
+They fetch the sitemap ONCE and push it through the production
+discovery path (the shared parser and the adapter's own product-URL
+predicate), reporting total locs, product URLs after the filter,
+lastmod coverage, and, when given a `YYYY-MM-DD` argument, how many
+product entries carry a `lastmod` at or after that date. With
+`--sample` they fetch exactly ONE product page under the crawler
+User-Agent and print what the production extractor would ingest from
+it, field by field. They never bulk-crawl: no chunk loop, no watermark
+or cursor writes, no ingestion.
+
+```bash
+pnpm --filter @rajahinta/data-platform exec tsx ../../scripts/viinarannasta-crawl-sweep.ts [--sample] [YYYY-MM-DD]
+```
+
+Exit codes: 0 complete, 1 unusable sitemap or empty product set,
+2 usage error. `--help` prints usage without touching the network.
+The governance gate does not apply to the sweeps (§4's rule):
+running one against a PENDING or REVOKED merchant is expected and
+harmless, and running it is never a substitute for a grant.
+
+Run a sweep when extraction or predicate changes land, when a source's
+pages look drifted (the design's named HTML-drift risk; the sweeps
+catch it before the scheduled pipeline does), or before onboarding a
+source in a new environment to record its baseline. The changed-since
+count is an estimate: production diffs verbatim `lastmod` strings
+against the persisted watermark, it never parses dates.
+
+### 9.5 Unparking a parked source
+
+Unparking has a code half and a data half, in that order:
+
+1. **Deploy the adapter first.** A parked source has no adapter code,
+   so unparking ships a per-source adapter subclass, its registration
+   in the ingestion compositions, and the workflow crawl-map entry as
+   a normal gated deploy. Order matters: a GRANTED merchant whose
+   adapter is not deployed is SAFE, the run completes in-band with
+   `No feed adapter registered for merchant "<merchantId>"` and
+   nothing is crawled, but do not lean on that; deploy the code
+   before flipping the data.
+2. **Then flip the data.** Set the registry `feedUrl` to the sitemap
+   (production insert per §3's idempotent upsert with
+   `feed_format 'xml'`; staging via the console or a seed-row update)
+   and grant through the console with acquisition method
+   `COMPLIANT_CRAWLING` and the sitemap URL as the source URL (§2.2's
+   action, §3's production origin). Both mutations are audited as
+   usual. Confirm the seller country first: the parked seed rows
+   carry best-effort countries that feed the transport origin and the
+   import-VAT signal, and spritxxl's `FI` is explicitly unverified.
+3. **Verify per §9.6.** The first crawl is a full crawl.
+
+Reversing (re-parking) is revoke (§2.3) plus emptying the registry
+feedUrl; landed offers stay (revocation never purges, §2.3).
+
+### 9.6 First-crawl verification checklist (staging)
+
+- [ ] `GET $STAGING_API_URL/ops/console/governance` lists the six
+      merchants: four GRANTED with one `COMPLIANT_CRAWLING` source
+      each, spritxxl and lazyshop PENDING.
+- [ ] Hourly pass log: no `Not scheduling merchant "viinarannasta"`
+      (or sibling) warnings; the four enqueued; spritxxl and lazyshop
+      appear only as empty-feedUrl skips.
+- [ ] Workflow log shows `crawl-discover`, then `crawl-chunk-N` /
+      `crawl-advance-N` pairs. Chunk steps land about 5 min apart at
+      the polite 1 req/s; no step breaches its wall budget. A resume
+      after an interruption logs the `resumes its in-flight cursor`
+      line and continues without re-fetching the sitemap.
+- [ ] Cursor rows advance: mid-cycle, `aggregation_watermarks` holds
+      `sitemap-crawl-cursor-<merchantId>` for the running merchant;
+      after the final chunk the cursor rows are gone and each merchant
+      has a `sitemap-crawl-lastmod-<merchantId>` row. Spot check:
+
+      ```bash
+      cd apps/api-worker
+      wrangler d1 execute DB --remote --env staging --command \
+        "SELECT job_name, updated_at FROM aggregation_watermarks \
+           WHERE job_name LIKE 'sitemap-crawl-%' ORDER BY job_name" -y
+      ```
+- [ ] Offers land for the four merchants with EUR prices and
+      reliability status ESTIMATED. Every ingestion-pinned offer is
+      ESTIMATED (only the audited operator verify action writes
+      VERIFIED); a non-EUR price surfaces as a per-row correction
+      error, never as a converted row.
+- [ ] Held-row behavior: a page whose name yields no parseable ABV
+      while resolving to an alcohol category ingests as non-alcoholic
+      with `review_hold_reason = 'nonalcoholic_in_alcohol_category'`
+      and stays out of every alcohol category surface. The extraction
+      errors naming these rows appear in the run's collected errors,
+      not as gate failures.
+- [ ] The sweeps (§9.4) run clean against all four sitemaps and their
+      numbers are recorded in the change notes.
+
+### 9.7 First-crawl verification checklist (production)
+
+Production onboarding follows §9.5's data half against the production
+origins (the production database is never seeded, §3): registry rows
+in via the §3 upsert (`feed_format 'xml'`, sitemap as `feed_url`),
+governance via the console grant (`COMPLIANT_CRAWLING`, sitemap source
+URL). The deploy itself is the gated production pipeline
+(`deploy-production.yml`), never a manual `wrangler deploy`.
+
+- [ ] Gated deploy carried the crawl adapter family and workflow
+      steps; the four adapters are registered in the production
+      compositions.
+- [ ] Registry and governance rows in place (§9.5 step 2), audit
+      entries recorded with the production operator identity.
+- [ ] First full crawl completes: chunk pairs advance, cursor rows
+      clear, `sitemap-crawl-lastmod-<merchantId>` rows exist for all
+      four merchants (§9.6's query against `--env production`).
+- [ ] EAN-matched products resolve for viinarannasta and licorea: the
+      two GTIN-bearing sources join existing `product_master` rows
+      through the upsert's EAN tier. viinikauppa and drinkonline have
+      no EAN and are expected to match (if at all) through the
+      compound tier; their match rate is measured honestly by
+      data-quality, not forced.
+- [ ] No held-row leaks: zero rows with
+      `review_hold_reason = 'nonalcoholic_in_alcohol_category'`
+      appear in any alcohol category surface (the listing predicate
+      excludes them; verify the count, not just the surfaces).
+- [ ] Data-quality grades recorded for the new offers in the change
+      notes or an ops note, with the verified-at timestamp filled by
+      the operator only.
+
