@@ -638,8 +638,183 @@ Deployed via the gated workflow only (`workflow_dispatch` with
 
 ## 7.2 Production rollout evidence
 
-TBD (registration audit entries, first-ingest counts, 00:00 UTC scheduled
-checklist results)
+Executed 2026-10-08, 14:01–… UTC, with the owner's explicit production
+approval (staging verified in 6.2; production deploy green in 7.1 — run
+37788209874, version `d9a5341c…` is the instances' `versionId`). Production
+origins: `https://api.rajahinta.fi` / `https://rajahinta.fi`. All ops calls
+carry `Authorization: Bearer $(cat /root/.ops-token)` inline; all Cloudflare
+API/wrangler calls carry `CLOUDFLARE_API_TOKEN="$(cat /root/.cloudflare-token)"`
+inline — never echoed, never committed. D1 access strictly read-only SELECTs
+(registration and governance went through the audited console API only).
+Runbook §2.0 (the one-step call replaces §3's manual D1 insert) + the araxes
+5.2 command shapes throughout.
+
+### Pre-flight — production not seeded, task merchants absent (fail-closed)
+
+`GET /ops/console/governance` → HTTP 200, **10 merchants, all GRANTED**
+(alko, alks, araxes, drinkonline, kippis, licorea, longero, mydrink,
+viinarannasta, viinikauppa) — **`bottleofitaly` and `kuhns` ABSENT**: the 7.1
+deploy's migration step is migrate-only in production (never seeded, by
+design), so no registry rows and no governance records existed. Read-only D1
+pre-write baselines: `retail_offers` **132,539** total (bottleofitaly **0**,
+kuhns **0**); `product_master` **14,339** rows, max id **14,339**;
+per-merchant alko 15,680 · alks 65,193 · araxes 4,078 · drinkonline 140 ·
+kippis 14,868 · licorea 257 · longero 24,149 · mydrink 7,753 ·
+viinarannasta 192 · viinikauppa 229.
+
+### Register + auto-grant (runbook §2.0, one audited call per merchant)
+
+`POST /ops/console/merchants` ×2 at 14:02:34–36Z — fields
+`merchantId`/`name`/`country`/`feedUrl` + **`feedFormat: "json"` and
+`pollingIntervalMs: 86400000` pinned explicitly** (§2.0: the upsert
+overwrites the whole row; values mirror the seed rows exactly), operator
+**`siim (owner)`** (the araxes 5.2 audit convention), note "owner blanket
+permission policy — change onboard-shopify-lmdw-merchants task 7.2":
+
+- bottleofitaly → **`registered: "created"`, `autoGranted: true`,
+  `permissionStatus: "GRANTED"`, `sourceCount: 1`** (HTTP 200)
+- kuhns → **`registered: "created"`, `autoGranted: true`,
+  `permissionStatus: "GRANTED"`, `sourceCount: 1`** (HTTP 200)
+
+(`created` — unlike staging 6.2's `updated` — because production never had
+the seed rows; the auto-grant fired because neither merchant had governance
+records, the §0/§2.0 contract.) Audit verified (`GET /ops/console/audit?limit=10`):
+**exactly four new entries**, two per merchant, author `siim (owner)`, note
+exact on all four — `merchant_registry`/`bottleofitaly`/`created` (id
+`8c909154…`, 14:02:34.524Z) + `source_governance`/`bottleofitaly`/`created`
+(`b7bd46ef…`, 14:02:35.002Z); `merchant_registry`/`kuhns`/`created`
+(`e8d082bf…`, 14:02:35.895Z) + `source_governance`/`kuhns`/`created`
+(`a6a62d6d…`, 14:02:36.337Z). Governance re-check: both **GRANTED**,
+sourceCount 1, feedUrls `https://bottleofitaly.com` / `https://kuhns.shop`,
+12 merchants total.
+
+### Egress smoke, attempt 1 (14:03:22Z trigger) — D6 PASS on the block criteria, 429-abort per D7
+
+`POST …/workflows/rajahinta-price-ingestion-production/instances` ×2 with
+hour-bucket ids `price-ingestion-{bottleofitaly,kuhns}-2026-10-08-14` (params
+mirror the producer message: registry feedUrl as sourceUrl) → uuids
+**`e4751e8f-2931-479e-b818-083e2c982c0b`** (BOI) and
+**`087ed8fa-7926-486f-9dde-fea091025911`** (kuhns), both `queued`, same
+`versionId d9a5341c…` (the 7.1 deploy). Both reached `complete` within ~50 s
+with **`productsIngested: 0`** and exactly 3 error lines each — the D7
+3-consecutive-failure bound firing at the first three pages:
+
+- bottleofitaly pages 1–3: **HTTP 429** ×3; kuhns pages 1–3: **HTTP 429** ×3
+- **Zero HTTP 403 and zero error-1031 responses on any page of either
+  source** — the D6 Workers-egress block shape (Posti precedent) did NOT
+  materialize and 5.1's walk-UA fix is live in production; the sources are
+  throttled, not blocked.
+- Read: the stores' rate windows were already hot — today's staging 6.2 runs
+  (12:48–13:42 UTC, 1,250 + 750 fat rows) plus this unpaced 3-page burst —
+  the 5.1-measured shape ("window re-tripped by the prior burst"; staging
+  tripped BOI at page 6, kuhns outlasted 30-min silences locally). Zero
+  upserts ran (0 rows → `product_master` untouched), so the re-run is
+  cost-free: the sanctioned single re-trigger after a rate-window silence
+  (araxes 5.2 run-2 pattern), fresh hour-bucket keys, no retry loop.
+
+### Attempt 2 (post-silence re-trigger, 15:00:30 UTC) — same 429-abort; no attempt 3 per D7
+
+Both stores' rate windows were given a **≈57 min silence** (attempt 1's last
+store contact 14:03 UTC → trigger held to 15:00:30 UTC — longer than the
+~35 min BOI decay measured locally in 5.1). Re-trigger ×2 with fresh
+hour-bucket ids `price-ingestion-{bottleofitaly,kuhns}-2026-10-08-15` →
+uuids **`f5bf14d5-ac9f-495f-a532-d42db3a38be6`** (BOI) and
+**`44539dbb-f996-4dc2-809a-5f720b8bf16f`** (kuhns), same `versionId
+d9a5341c…`. Both reached `complete` in ~90 s with **`productsIngested: 0`**
+and the identical error shape: **pages 1–3 HTTP 429 per source**, zero
+403/1031, zero upserts.
+
+**Finding (recorded for D7's measured-backoff follow-up):** a 57-minute
+silence did NOT decay either store's window — both 429'd from page 1, before
+the walk could have tripped anything, so the throttle state predates the
+attempt and outlives 30–60 min silences from Cloudflare Workers egress
+ranges (shared egress infrastructure; the 5.1 kuhns long-window precedent,
+stronger in production than the local ~35 min BOI decay). Per D7 ("the daily
+cadence is the retry") and the no-improvisation discipline: **no attempt 3**
+— the manual-run evidence stands as far as it got and catalog convergence
+rides the scheduled boundary below.
+
+**State after both manual attempts (read-only D1, 15:02 UTC):** byte-identical
+to the pre-registration baseline — `retail_offers` **132,539** total
+(bottleofitaly **0**, kuhns **0**), `product_master` **14,339 / max 14,339**,
+all ten other merchants unmoved (alko 15,680 · alks 65,193 · araxes 4,078 ·
+drinkonline 140 · kippis 14,868 · licorea 257 · longero 24,149 · mydrink
+7,753 · viinarannasta 192 · viinikauppa 229). Both aborted walks persisted
+nothing. Public API honest state: `/api/v1/merchants/reliability` serves the
+10 pre-existing merchants; bottleofitaly/kuhns **absent** (no offers yet —
+the honest-absence contract, not an error). The API-serves-both-catalogs and
+product-page checks **transfer to the scheduled-boundary observation** once
+offers land: the serving capability itself is proven by staging 6.2 (offer
+payloads + server-rendered pages with the `Katso kaupassa` CTA for both
+merchants) and the production page-shape dry run (`rajahinta.fi/products/12585`
+HTTP 200 + CTA, araxes 5.2 item, re-checked 14:04 UTC).
+
+*(Recovery note 2026-10-08T15:17Z: the `/tmp` scratch evidence was wiped by a
+concurrent cleanup mid-session; a Workflows API re-query confirmed all four
+manual instances — both `-14` and `-15` buckets — `complete` at 0 ingested
+with the same 3×429 error lines, D1 totals byte-identical, API state
+unchanged; the durable numbers are this section.)*
+
+### Commands executed (names)
+
+`curl GET /ops/console/governance` (pre-flight + re-check), `POST
+/ops/console/merchants` ×2, `GET /ops/console/audit?limit=10` (bearer:
+`$(cat /root/.ops-token)` inline, never echoed) · read-only `npx wrangler d1
+execute DB --remote --env production --json --command "…"` (pre/post
+baselines, per-merchant counts; `CLOUDFLARE_API_TOKEN="$(cat
+/root/.cloudflare-token)"` inline) · `npx wrangler whoami --json` (account id
+captured same-invocation, never emitted) + `curl -X POST
+/accounts/{account}/workflows/rajahinta-price-ingestion-production/instances`
+×4 (buckets `-14`, `-15`) + instance polls ×2 (Cloudflare API token inline,
+never echoed; instance JSON to `/tmp/opencode` scratch, deleted) · `curl
+/api/v1/health/ready`, `curl /api/v1/merchants/reliability` (age-confirmed) ·
+`curl https://rajahinta.fi/products/12585` (page-shape dry run). No hand
+writes against production D1 at any point; registration and governance only
+through the audited console API.
+
+### Scheduled-boundary checklist — next pass 2026-10-09 00:00 UTC
+
+Both task merchants are GRANTED with daily cadence (86,400,000 ms): the
+interval-bucket gate fires them on the first hourly tick of the UTC day.
+The pass happens after this task — operator observation checklist (araxes
+5.2 format), recorded 2026-10-08T15:03Z, ~9 h before the boundary:
+
+- [ ] **Exactly one enqueue per merchant** from the producer tick: one queue
+      message each with dedupe key **`price-ingestion-bottleofitaly-2026-10-09-00`**
+      and **`price-ingestion-kuhns-2026-10-09-00`** (the other daily merchants —
+      alks, araxes, longero, mydrink, kippis, alko — enqueue their own separate
+      messages, one per permitted merchant; crawl merchants per their cadences).
+      Producer log: no `Not scheduling merchant "bottleofitaly"/"kuhns"` warnings.
+- [ ] **Exactly two new workflow instances** in
+      `rajahinta-price-ingestion-production`, ids = the two keys above — no
+      duplicates; the four manual instances (`…-10-08-14`: `e4751e8f…`/`087ed8fa…`,
+      `…-10-08-15`: `f5bf14d5…`/`44539dbb…`, all `complete` at 0 ingested) must
+      NOT re-run.
+- [ ] **Offers landed/refreshed**: fresh `retail_offers` batches for both
+      merchants at `observed_at` ≈ the boundary. The D7 partial-catalog shape is
+      acceptable if the stores still throttle (pages ok, then a
+      3-consecutive-429 abort — partial catalogs are plumbing evidence;
+      convergence accrues across daily passes). Lines reading `Too many API
+      requests by single Worker invocation` are the SEPARATE D1-quota bug class
+      (araxes 5.2 deviation 1) — record and re-run once if present.
+- [ ] **Public API + product pages** (the checks transferred from this task):
+      `GET https://api.rajahinta.fi/api/v1/products/<max-price-id>` per merchant
+      — bare → 403, `x-age-confirmed: 1` → the merchant's offer; `GET
+      /api/v1/products?q=…` serves both catalogs; `GET
+      /api/v1/merchants/reliability` shows both offerCounts;
+      `https://rajahinta.fi/products/<id>` HTTP 200 with the server-rendered
+      offer row + `Katso kaupassa` CTA.
+- [ ] Check commands: `npx wrangler tail --env production` on the api-worker
+      across the tick, or Workers Logs; `GET
+      /accounts/{account}/workflows/rajahinta-price-ingestion-production/instances`
+      (Cloudflare API token inline, never echoed) for the single-instance check;
+      read-only `npx wrangler d1 execute DB --remote --env production --json
+      --command "SELECT merchant, observed_at, COUNT(*) FROM retail_offers WHERE
+      merchant IN ('bottleofitaly','kuhns') GROUP BY merchant, observed_at ORDER
+      BY observed_at"` for the landing check.
+
+**Verified at**: 2026-10-08T15:03Z (registration 14:02, audits verified, egress
+smoke ×2, D1 end-state; ingest convergence = the 00:00 UTC scheduled pass).
 
 ## 8.1 Verification evidence
 
