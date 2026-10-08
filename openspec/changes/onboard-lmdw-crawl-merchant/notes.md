@@ -210,8 +210,236 @@ vocabulary is additive if a later census attests new beverage terms.
 
 ## 5.1 Local rollout evidence
 
-TBD (registry/governance ids, watermark/cursor rows, chunking behavior,
-ingested counts, idempotency second-run proof, correction rows)
+Executed 2026-10-08, ~19:04–19:50 UTC, branch
+`feature/onboard-lmdw-crawl-merchant`. Node v24.21.0
+(`/root/.nvm/versions/node/v24.21.0`) for every command — the host default
+v22.14.0 lacks FTS5 in `node:sqlite` (the 4.1 environmental note).
+`@rajahinta/core-domain` rebuilt first (`tsc`, exit 0). All writes LOCAL
+(`wrangler d1 execute DB --local`, `wrangler dev --port 8787
+--test-scheduled` from apps/api-worker); live contact was **read-only GETs
+to www.whisky.fr only** — 4 sitemap fetches + 668 detail-page fetches
+(300 + 300 chunk walks, a ~17-page interrupted slice, 41 + 8 re-crawl
+pages, 2 spot-checks) at the shared walker's ≥ 1 s spacing (measured
+≈ 1.59 s/page), UA `rajahinta-crawler/1.0 (+https://rajahinta.fi)`, 0
+fetch failures; zero other merchants contacted (the four seeded GRANTED
+crawl merchants were never due and never enqueued); zero staging or
+production contact. Nothing committed.
+
+### Local D1 state found (read-only probes before any write)
+
+Registry 11 rows (no `lmdw` — alko, alks, araxes, bottleofitaly, kuhns,
+the four crawl merchants, spritxxl, lazyshop); `source_governance` 6 rows
+(the 4 GRANTED crawl seeds + spritxxl/lazyshop PENDING); `retail_offers`
+48 (seed fixture merchants only — pohjolan_tuonti, suomi_logistiikka,
+test-merchant-de/se); `product_master` 47 rows, max id 9002;
+`aggregation_watermarks` 0 rows. (This is a reset local state — the
+archived change's local rows are gone; all baselines below are against
+these numbers.)
+
+### Registry row via the seed; governance grant (local)
+
+- **Registry via the seed** (4.2's row): `pnpm --filter
+  @rajahinta/data-platform exec tsx ../../scripts/seed-d1.ts --local` →
+  migrations no-op, seed re-applied idempotently, **verification PASSED**.
+  Read-back: **`lmdw` id 12** `('La Maison du Whisky', 'FR',
+  'https://www.whisky.fr/media/sitemap/sitemap_whimag.xml', 'xml',
+  86400000)` — fields exact. Registry now 12 rows.
+- **Governance** (the seed deliberately does NOT create it — task 4.2's
+  note; no `.dev.vars` → `/ops` 403 locally → direct NOT-EXISTS-guarded
+  INSERT, the araxes-3.1 path; the audited console is 6.2/7.2's):
+  **id 7, `lmdw`, `RETAILER_API`, `GRANTED`, sourceUrl
+  `https://www.whisky.fr`**, reason "local grant for first-ingest
+  verification (task 5.1 onboard-lmdw-crawl-merchant; local-only
+  disposable row)", last_verified_at 2026-10-08T19:10:00Z. All fields
+  read back exact. **Local-only — disposable.**
+
+### Producer ticks (fail-closed → bucket-gate → exactly-one enqueue)
+
+`wrangler dev --port 8787 --test-scheduled`; ticks via
+`curl /cdn-cgi/handler/scheduled?cron=0+*+*+*+*`:
+
+1. **Pre-grant real-clock tick**: `Not scheduling merchant "lmdw": no
+   governance records — defaulting to PENDING`; `enqueued 0/12 … (4 not
+   due this tick)` — the §0 fail-closed contract.
+2. **Post-grant real-clock tick** (daily cadence intact): lmdw
+   recognized, deferred by the interval bucket — `enqueued 0/12 … (5 not
+   due this tick)` (lmdw the 5th; the four crawl merchants the others).
+3. **Due tick** via the runbook §6.6 off-schedule pattern
+   (`pollingIntervalMs` temporarily 3,600,000 — the documented hourly
+   minimum — restored to 86,400,000 immediately after): **`enqueued 1/12`
+   — exactly one message**, `{"dedupeKey":
+   "price-ingestion-lmdw-2026-10-08-19","merchantId":"lmdw","sourceUrl":
+   "https://www.whisky.fr/media/sitemap/sitemap_whimag.xml"}`; consumer
+   log `Ingesting prices for merchant lmdw …` → `Handed off … to Workflow
+   instance price-ingestion-lmdw-2026-10-08-19`.
+
+### Run 1 (queue path) — discover, watermark/cursor rows, chunked resumable crawl
+
+Instance `price-ingestion-lmdw-2026-10-08-19`, status evidence via the
+Local Explorer API (`GET /cdn-cgi/local/explorer/api/workflows/
+rajahinta-price-ingestion-dev/instances/<id>`):
+
+- `governance-gate-1`: `{"permitted":true,"status":"GRANTED"}` — the
+  pipeline gate honored the grant.
+- `crawl-discover-1` (1.8 s): sitemap fetched once → product-URL filter →
+  **full diff, `queueLength` 6,842** (the probe's product-shaped count
+  exactly), `resumed:false`.
+- **Both D1 rows written at begin, cursor-first order (19:09:32.138Z /
+  .173Z)**: `sitemap-crawl-cursor-lmdw` (421,255 bytes —
+  `{queue: [6,842 URLs], offset: 0}`) and `sitemap-crawl-lastmod-lmdw`
+  (612,810 bytes — 6,842 `loc → lastmod` entries), in
+  `aggregation_watermarks`.
+- `crawl-chunk-1-1` 19:09:32→19:17:28 (**7m56s, 300 fetches ≈ 1.59 s/page
+  — the ≤300-fetch D5 cap holding**): 300 fetched, **261 records**, 55
+  collected errors, 0 fetch failures. `crawl-advance-1-1` → **cursor
+  offset 300**. Budget-reset sleep 1 s. `crawl-chunk-2-1`
+  19:17:29→19:25:08 (7m39s): 300 fetched. `crawl-advance-2-1` → **offset
+  600**.
+- Chunk boundary URLs read from the captured cursor JSON:
+  queue[299] `whisky-magazine-numero-5.html` | queue[300]
+  `whisky-magazine-numero-9.html` | queue[599]
+  `wimmer-czerny-2011-gruner-veltiner-blanc.html` | queue[600]
+  `christian-drouin-carafe-xo-pierre-pivet.html`.
+- **Bounded-run stop** (the full 6,842-URL walk ≈ 2 h was explicitly out
+  of scope): worker killed 19:25:36 UTC, ~17 pages into chunk-3 (a
+  partial chunk walk is nondurable by design — the write-then-advance
+  protocol). Cursor row captured at offset 600, then **the cursor row
+  deleted** (recorded local operator action — the bounded-run measure;
+  the safe-direction consequence is the designed vanished-cursor path).
+- **Restart resume**: on restart the instance replayed its durable steps
+  from cache (discover/chunk-1/advance-1/chunk-2/advance-2 outputs
+  instant, no re-fetch — the walked prefix never repeated) and re-ran
+  chunk-3, which returned the designed
+  `lmdw crawl cursor vanished mid-cycle — chunk skipped, cycle ended`
+  (`done:true`) — the cycle ended, nothing further crawled.
+- **Dev-runtime deviation (recorded, not chased)**: the plain restart did
+  NOT resume the mid-step-killed instance (stale `running`, no new step
+  attempts — the archived pair's engine-wedge note, this time not
+  cleared by a restart). The Local Explorer instance-status API
+  (`PATCH …/status {"action":"restart"}`) re-ran the instance at
+  19:34:21Z — and that fresh re-run delivered its own evidence:
+  **`crawl-discover` re-diffed the live sitemap against the 33-minute-old
+  watermark → `queueLength` 0** (all 6,842 product URLs unchanged — the
+  lastmod diff skipping everything), then the vanished-cursor branch
+  ended the cycle (`productsIngested: 0`, instance `complete`). The
+  restart action re-executes from the top (pre-restart step outputs are
+  not replayed), so run 1's 600 walked records never reached
+  map/upsert; the completing runs below were driven explicitly via the
+  local Workflows-API path (the staging-6.2 trigger shape).
+
+### Run r2 (local Workflows API) — offers land with page-extracted ABV/volume
+
+**Watermark lowering** (recorded local operator action — the runbook §7.3
+watermark-lowering precedent, local-only): the lastmod row 6,842 → 6,801
+entries, 41 locs removed — 28 record-bearing product pages across the
+landed categories, 10 deliberately-unmapped-label pages (verres/flasques/
+livre/magazine/coffret-accessoires/bec-verseur), 2 CMS routes.
+`POST /cdn-cgi/local/explorer/api/workflows/rajahinta-price-ingestion-dev/
+instances` with id/params `price-ingestion-lmdw-2026-10-08-r2`
+(mirroring the producer message shape):
+
+- `crawl-discover-1`: **`queueLength` 41 — exactly the lowered set**
+  (6,801 unchanged entries skipped; zero sitemap churn since 19:09). The
+  lastmod diff is thus measured in both directions on the real sitemap:
+  6,842 (first cycle) → 0 (nothing changed) → 41 (only the lowered locs).
+- `crawl-chunk-1-1`: 41 fetched (~60 s), **29 records**, `done:true`
+  (queue drained in one chunk).
+- map → volume-ceiling-gate → **`upsert-offers-1-1`: recordsAdded 29,
+  recordsUpdated 0, offersChanged 29, zero upsertErrors** → data-quality
+  (implausibleVolume 0, zeroPriceRejections 0) → **`complete`,
+  `productsIngested: 29`**. Reconciliation: 41 fetched = 29 ingested
+  + 2 CMS no-record + 10 correction-dropped pages, exact.
+- **Error census (29 collected lines)**: 2 CMS `structured product
+  carries no usable name+price` (the measured ~1.6 % predicate
+  imprecision riding the guarded path); 10 no-usable-strength + 5
+  no-usable-volume keyed-uncertainty lines; **10 no-canonical-category
+  corrections over 10 pages, every source label named** —
+  `AUTRES ALCOOLS SUCREES`, `flasques`, `bartools`/`autres bartools`,
+  `verres`/`verres a vin`/`verres de degustation`, `magazine`,
+  `bec verseur`, `accessoires de degustation retails`, `solide` —
+  **no guessed tax keys anywhere** (dropped, never landed); the
+  whisky+book bundle (`BUNDLE_ARMORIK_LIVRE…`): no usable strength or
+  volume → `Held for review … ABV is unparseable but the name resolves to
+  an alcohol category` — the hygiene hold; +1 data-quality zero-volume
+  note on that held row.
+- **Landed state**: `retail_offers` lmdw **29 rows / 29 distinct
+  products** — `product_master` 47 → **76** (ids 9003–9031 contiguous),
+  single batch 19:41:19.191Z (28 rows) + .193Z (the held row), min 1,790 /
+  max 599,000 c, single FR / EUR / `in_stock`, all reliability
+  **ESTIMATED** (every merchant's local runs land ESTIMATED — the
+  araxes/BOI/kuhns precedent).
+- **ABV/volume from the page extraction**: 28/29 landed rows carry both
+  `alcohol_by_volume` (decimal fractions 0.12–0.80) and `unit_volume`
+  litres (0.7/0.72/0.75) — litres land as litres (0.7), percent ÷ 100
+  (`"strength":40` → 0.40). Categories: spirits (incl. cask-strength
+  STROH 80 0.80, ARDBEG Corryvreckan 0.571), other_fermented ×3 (sakes —
+  the 2.1 sake keys working), intermediate_products (Byrrh, Pommeau,
+  Niepoort ports), wine_sparkling ×3 (Taittinger, Billecart-Salmon ×2).
+- **EAN/GTIN state as measured**: 28/29 = **96.6 % of landed products
+  carry page-attested EANs** (the extractor's GS1 check digit applies;
+  e.g. ABERFELDY 5000277000982 — a probe-sampled value); the bundle row
+  is the one EAN-less product (held). The chunk-1 walk measured 259/261
+  = 99.2 % on its spirits-heavy slice — above the 73.3 % whole-sitemap
+  probe share, slice-dependent as expected; the remainder rides the
+  accepted no-fabrication path.
+- **Live spot-checks** (read-only GETs, crawler UA):
+  `aberfeldy-12-ans.html` → `"volume":"0.7"`, `"strength":40` ↔ DB 0.40 /
+  0.7 L ✓; `stroh-80.html` → `"strength":80` ↔ DB 0.80 / 0.7 L ✓.
+
+### Run r3 — repeat-run idempotency
+
+Watermark lowered again by **8 of the just-upserted locs** (glenlivet-21,
+aberfeldy-12, monkey-shoulder, stroh-80, koi-koi, byrrh-grand-quinquina,
+niepoort-tawny, taittinger-brut); instance
+`price-ingestion-lmdw-2026-10-08-r3` 19:44:53Z:
+
+- `crawl-discover-1`: `queueLength` 8 → 8 records re-crawled from the
+  live pages → **`upsert-offers-1-1`: recordsAdded 0, recordsUpdated 8,
+  offersChanged 0, zero upsertErrors** — the compound-key + EAN tiers
+  matched all 8 to their existing product rows (ids 9003… reused),
+  unchanged prices → no offer-change fire.
+- **`product_master` 76 / max id 9031 — byte-identical, zero duplicate
+  rows** ✓. `retail_offers` 29 → 37: the append-only observation history
+  added a third `observed_at` batch (19:45:06.129Z × 8, same prices) —
+  offer history grows, the product dimension does not.
+- R3's 8 record URLs verified as true re-crawls (all 8 productIds ⊆ r2's
+  set; GLENLIVET 21 price 27,200 c identical across both runs).
+
+### ESTIMATED share vs the probe
+
+On the bounded r2 sample, 28/29 landed records (96.6 %) carry BOTH
+page-extracted ABV and volume — the probe's guarded-parse rates were
+strength 95.7 % / volume 98.3 % usable on a 300-page stride; same
+population, same behavior (the unusable minority rode correction or the
+hold, never a guess). The 1-row landed-but-unusable population is held
+(`nonalcoholic_in_alcohol_category`) and ESTIMATED — invisible to
+user-facing surfaces per the hold rule.
+
+### Final state + cleanup
+
+`aggregation_watermarks` = exactly 1 row (`sitemap-crawl-lastmod-lmdw`,
+6,834 entries after the two recorded lowerings; the cursor row absent —
+cycle closed, the steady-state shape). Dev worker stopped (port 8787
+free); scratch files removed. Working tree carries only this notes
+section; the untracked `openspec/changes/add-de-fi-consumer-carriers/`
+untouched; nothing committed.
+
+### Blockers / notes for the lead
+
+1. **Local workflow engine does not auto-resume a mid-step-killed
+   instance**, and the Local Explorer `restart` action re-runs from the
+   top rather than replaying cached step outputs (run 1's 600 walked
+   records were never upserted — the bounded completing runs went
+   through fresh instances instead). Staging 6.2 uses the real Workflows
+   REST API and engine, so this is a local-dev-only caveat for future
+   bounded runs: stop between chunks only when planning to re-drive, and
+   treat `PATCH …/status {"action":"restart"}` as a fresh re-run.
+2. The bounded-run mechanics (one cursor deletion, two recorded watermark
+   lowerings) are local-only operator measures. No staging/production
+   crawl ever lowers the crawl watermark by hand — the daily cadence +
+   lastmod diff is the convergence mechanism, and r2/r3 demonstrate that
+   convergence behavior end-to-end on a bounded set (diff → small queue →
+   drain → upsert → steady state).
 
 ## 6.1 PR + merge evidence
 

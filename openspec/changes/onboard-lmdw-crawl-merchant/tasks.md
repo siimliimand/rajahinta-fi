@@ -21,7 +21,7 @@
 
 ## 5. Local rollout
 
-- [ ] 5.1 Local rollout: seed row (via the seed) + governance record (`RETAILER_API`, `GRANTED`, sourceUrl per decision) in local D1; producer tick + crawl end-to-end locally against whisky.fr (read-only GETs); verify watermark/cursor rows are written and lastmod diffing works, resumable chunking on a bounded run, `retail_offers` land with ABV/volume from the page extraction, repeat-run idempotency (no duplicate `product_master` rows), GTIN/EAN state as measured, correction rows for unmapped categories; evidence in the notes <!-- agent: platform-engineer.fast, depends_on: [4.1, 4.2], touches: [openspec/changes/onboard-lmdw-crawl-merchant/notes.md] -->
+- [x] 5.1 Local rollout: seed row (via the seed) + governance record (`RETAILER_API`, `GRANTED`, sourceUrl per decision) in local D1; producer tick + crawl end-to-end locally against whisky.fr (read-only GETs); verify watermark/cursor rows are written and lastmod diffing works, resumable chunking on a bounded run, `retail_offers` land with ABV/volume from the page extraction, repeat-run idempotency (no duplicate `product_master` rows), GTIN/EAN state as measured, correction rows for unmapped categories; evidence in the notes <!-- agent: platform-engineer.fast, depends_on: [4.1, 4.2], touches: [openspec/changes/onboard-lmdw-crawl-merchant/notes.md] -->
 
 ## 6. Staging rollout
 
