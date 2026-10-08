@@ -45,6 +45,8 @@ import { KippisFeedAdapter } from '../../../../packages/data-acquisition/src/ada
 import { LongeroFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/longero.adapter';
 import { MydrinkFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/mydrink.adapter';
 import { AraxesFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/araxes.adapter';
+import { BottleofItalyFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/bottleofitaly.adapter';
+import { KuhnsFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/kuhns.adapter';
 import { DrinkonlineFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/drinkonline.adapter';
 import { LicoreaFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/licorea.adapter';
 import { ViinarannastaFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/viinarannasta.adapter';
@@ -109,8 +111,9 @@ export function composeGovernanceService(
  *
  * Feed adapters register under their merchantId exactly as the
  * DataAcquisitionModule factory did (alko, alks, longero, kippis,
- * mydrink, araxes); the offer-change hook appends one R2 observation
- * per changed offer.
+ * mydrink, araxes, bottleofitaly, kuhns, then the four crawl merchants
+ * viinarannasta, viinikauppa, licorea, drinkonline); the offer-change
+ * hook appends one R2 observation per changed offer.
  */
 export function composeIngestionPipeline(
   env: Env,
@@ -137,6 +140,13 @@ export function composeIngestionPipeline(
   adapters.set(mydrink.merchantId, mydrink);
   const araxes = new AraxesFeedAdapter();
   adapters.set(araxes.merchantId, araxes);
+  // Shopify products.json merchants (change onboard-shopify-lmdw-merchants)
+  // — plain construction like the store-API adapters above: no crawl
+  // stores, the shared walk owns the paging.
+  const bottleofitaly = new BottleofItalyFeedAdapter();
+  adapters.set(bottleofitaly.merchantId, bottleofitaly);
+  const kuhns = new KuhnsFeedAdapter();
+  adapters.set(kuhns.merchantId, kuhns);
   // Sitemap-crawl merchants (task 2.1 seed ids, exact) over the
   // durable store — same instances, same construction order as
   // composeIngestionStageServices (the two compositions stay in sync).

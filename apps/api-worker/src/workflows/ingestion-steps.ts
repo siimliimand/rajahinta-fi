@@ -75,6 +75,8 @@ import { KippisFeedAdapter } from '../../../../packages/data-acquisition/src/ada
 import { LongeroFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/longero.adapter';
 import { MydrinkFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/mydrink.adapter';
 import { AraxesFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/araxes.adapter';
+import { BottleofItalyFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/bottleofitaly.adapter';
+import { KuhnsFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/kuhns.adapter';
 import { SitemapCrawlFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/sitemap-crawl.adapter';
 import { DrinkonlineFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/drinkonline.adapter';
 import { LicoreaFeedAdapter } from '../../../../packages/data-acquisition/src/adapters/licorea.adapter';
@@ -221,7 +223,7 @@ export interface IngestionStageCompositionOptions {
   readonly governanceRepository?: ISourceGovernanceRepository;
   /** Observation log binding override (tests use an in-memory store). */
   readonly observationStoreOverride?: ObservationLogStore;
-  /** Feed adapters; default registers the Alko, alks, longero, kippis, mydrink, and araxes feed adapters as pipeline.ts does. */
+  /** Feed adapters; default registers the twelve live adapters — alko, alks, longero, kippis, mydrink, araxes, bottleofitaly, kuhns, and the four crawl merchants — as pipeline.ts does. */
   readonly feedAdaptersOverride?: Map<string, IFeedAdapter>;
   /**
    * Sitemap-crawl adapters (task 3.1); default composes the four v1
@@ -294,6 +296,14 @@ export function composeIngestionStageServices(
       map.set(mydrink.merchantId, mydrink);
       const araxes = new AraxesFeedAdapter();
       map.set(araxes.merchantId, araxes);
+      // Shopify products.json merchants (change
+      // onboard-shopify-lmdw-merchants) — plain construction like the
+      // store-API adapters above: no crawl stores, the shared walk owns
+      // the paging (pipeline.ts parity).
+      const bottleofitaly = new BottleofItalyFeedAdapter();
+      map.set(bottleofitaly.merchantId, bottleofitaly);
+      const kuhns = new KuhnsFeedAdapter();
+      map.set(kuhns.merchantId, kuhns);
       // The crawl adapters join the same lookup (pipeline.ts parity) —
       // a non-chunked caller still resolves a must-not-throw fetch.
       for (const [merchantId, crawlAdapter] of crawlAdapters) {
