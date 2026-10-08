@@ -31,7 +31,7 @@
 ## 6. Staging rollout
 
 - [x] 6.1 Open PR from the feature branch; CI green (all required checks); merge; staging auto-deploys the api-worker <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [] -->
-- [ ] 6.2 Staging rollout ×2: registry rows ship via seed + `RETAILER_API`/`GRANTED` governance via the ops console; first ingest per merchant via the Workflows REST API; **Workers-egress smoke recorded per source** (design D6 — Posti 403/1031 precedent; a blocked source follows the Posti playbook, not a retry loop); end-to-end verify (workflow instance `complete`, `retail_offers` populated, both catalogs in the API and product pages); record executed commands and numbers in the notes <!-- agent: devops-engineer.fast, depends_on: [6.1], touches: [openspec/changes/onboard-shopify-lmdw-merchants/notes.md] -->
+- [x] 6.2 Staging rollout ×2: registry rows ship via seed + `RETAILER_API`/`GRANTED` governance via the ops console; first ingest per merchant via the Workflows REST API; **Workers-egress smoke recorded per source** (design D6 — Posti 403/1031 precedent; a blocked source follows the Posti playbook, not a retry loop); end-to-end verify (workflow instance `complete`, `retail_offers` populated, both catalogs in the API and product pages); record executed commands and numbers in the notes <!-- agent: devops-engineer.fast, depends_on: [6.1], touches: [openspec/changes/onboard-shopify-lmdw-merchants/notes.md] -->
 
 ## 7. Production rollout
 
