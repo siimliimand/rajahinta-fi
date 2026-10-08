@@ -14,11 +14,16 @@
  * - viinikauppa: JSON-LD whose `brand` is the store name (override) and
  *   whose ABV appears only in Finnish description prose (comma-decimal
  *   variants included).
+ * - lmdw (www.whisky.fr): the embedded `__NEXT_DATA__` state JSON is
+ *   the attested ABV/volume/category carrier (design D2, change
+ *   onboard-lmdw-crawl-merchant), and GTINs must pass the GS1 check
+ *   digit (design D4).
  *
  * @module CrawlSourceConfigs
  */
 
 import type { ExtractorConfig } from './extractor-config';
+import { readLmdwPageState } from './lmdw-state.reader';
 
 /**
  * ABV from Finnish description prose: "Alkoholipitoisuus on 4,9 %" /
@@ -54,4 +59,15 @@ export const VIINIKAUPPA_EXTRACTOR_CONFIG: ExtractorConfig = {
   merchantId: 'viinikauppa',
   storeBrandNames: ['viinikauppa'],
   abvFromDescription: abvPercentFromFinnishDescription,
+};
+
+// www.whisky.fr (task 3.1, change onboard-lmdw-crawl-merchant; design
+// D2/D4): the __NEXT_DATA__ state JSON is the attested ABV/volume/
+// category carrier (guarded litres/percent windows, m3 taxonomy
+// labels), and the JSON-LD gtin13 must also pass the GS1 check digit —
+// the probe measured 220/220 valid, so a failure is drift, not form.
+export const LMDW_EXTRACTOR_CONFIG: ExtractorConfig = {
+  merchantId: 'lmdw',
+  pageStateReader: readLmdwPageState,
+  gtinCheckDigit: true,
 };

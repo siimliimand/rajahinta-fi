@@ -33,11 +33,12 @@ const db = opened.db;
 const d1 = opened.d1;
 
 // The 2.2 seeds, exactly as the deploy seed step applies them: the
-// merchant registry bootstrap (11 rows — alko, alks, araxes, the four
-// crawl merchants, the two parked rows, and the two Shopify Store API
-// rows from onboard-shopify-lmdw-merchants task 4.2) and the
+// merchant registry bootstrap (12 rows — alko, alks, araxes, the four
+// crawl merchants, the two parked rows, the two Shopify Store API rows
+// from onboard-shopify-lmdw-merchants task 4.2, and the lmdw sitemap
+// row from onboard-lmdw-crawl-merchant task 4.2) and the
 // source-governance bootstrap (4 GRANTED + 2 PENDING COMPLIANT_CRAWLING
-// rows).
+// rows — no lmdw row; its grant lands via the ops console in task 6.2).
 for (const seed of generateSeedSqlFiles()) {
   db.exec(seed.sql);
 }
@@ -62,13 +63,14 @@ afterAll(() => {
 
 describe('hourly producer over the 2.2 seeds (task 4.1)', () => {
   it('considers every registry row and skips only by the documented reasons', () => {
-    expect(result.merchants).toBe(11);
+    expect(result.merchants).toBe(12);
     expect(result.enqueued).toBe(4);
     // alko (adapter pending) + the parked spritxxl/lazyshop rows.
     expect(result.skippedNoFeedUrl).toBe(3);
-    // alks, araxes, bottleofitaly, and kuhns carry feedUrls but no
-    // governance rows — fail-closed.
-    expect(result.skippedNotPermitted).toBe(4);
+    // alks, araxes, bottleofitaly, kuhns, and lmdw carry feedUrls but no
+    // governance rows — fail-closed (lmdw's grant lands via the ops
+    // console in task 6.2).
+    expect(result.skippedNotPermitted).toBe(5);
     expect(result.skippedNotDue).toBe(0);
     expect(result.enqueueErrors).toBe(0);
   });

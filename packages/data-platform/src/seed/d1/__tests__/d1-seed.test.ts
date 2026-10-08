@@ -310,6 +310,7 @@ describe('D1 seed apply + verify (node:sqlite)', () => {
         'kuhns',
         'lazyshop',
         'licorea',
+        'lmdw',
         'spritxxl',
         'viinarannasta',
         'viinikauppa',

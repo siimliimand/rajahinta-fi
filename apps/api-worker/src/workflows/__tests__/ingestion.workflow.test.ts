@@ -63,6 +63,7 @@ import { openMigratedD1 } from '../../analytics/__tests__/fake-d1';
 import { createLogger, type Logger } from '../../logger';
 import type { Env } from '../../env';
 import { AlkoFeedAdapter } from '../../../../../packages/data-acquisition/src/adapters/alko.adapter';
+import { LmdwFeedAdapter } from '../../../../../packages/data-acquisition/src/adapters/lmdw.adapter';
 import { ALKO_GOLDEN_PAYLOAD } from '../../../../../packages/data-acquisition/src/adapters/__fixtures__/alko-assortment.fixture';
 
 const LOG: Logger = createLogger('error');
@@ -1127,8 +1128,10 @@ describe('composeIngestionStageServices — D1 governance default (task 2.1)', (
 });
 
 describe('composeIngestionStageServices — live feed adapters (task 2.2)', () => {
-  it('registers twelve live adapters — alko, alks, longero, kippis, mydrink, araxes, bottleofitaly, kuhns, viinarannasta, viinikauppa, licorea, and drinkonline all resolve by merchantId', async () => {
-    const { feeds } = composeIngestionStageServices(composedEnv());
+  it('registers thirteen live adapters — alko, alks, longero, kippis, mydrink, araxes, bottleofitaly, kuhns, viinarannasta, viinikauppa, licorea, drinkonline, and lmdw all resolve by merchantId', async () => {
+    const { feeds, crawlFeedAdapters } = composeIngestionStageServices(
+      composedEnv(),
+    );
 
     // Negative control: an unregistered merchantId produces the lookup
     // sentinel, proving the assertions below exercise the real map.
@@ -1159,6 +1162,7 @@ describe('composeIngestionStageServices — live feed adapters (task 2.2)', () =
       'viinikauppa',
       'licorea',
       'drinkonline',
+      'lmdw',
     ]) {
       const result = await feeds.fetchFromMerchant(
         merchantId,
@@ -1170,6 +1174,18 @@ describe('composeIngestionStageServices — live feed adapters (task 2.2)', () =
         `No feed adapter registered for merchant "${merchantId}"`,
       );
     }
+
+    // The crawl path's identity gate (the chunked steps' branch key)
+    // carries exactly the five crawl merchants — lmdw joins the four v1
+    // merchants as the same instance the feeds map resolves above.
+    expect([...(crawlFeedAdapters?.keys() ?? [])].sort()).toEqual([
+      'drinkonline',
+      'licorea',
+      'lmdw',
+      'viinarannasta',
+      'viinikauppa',
+    ]);
+    expect(crawlFeedAdapters?.get('lmdw')).toBeInstanceOf(LmdwFeedAdapter);
   });
 });
 

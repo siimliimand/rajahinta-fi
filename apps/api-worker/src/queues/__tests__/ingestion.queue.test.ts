@@ -300,7 +300,7 @@ describe('composeIngestionPipeline — live feed adapters (task 2.2)', () => {
     };
   }
 
-  it('registers twelve live adapters — alko, alks, longero, kippis, mydrink, araxes, bottleofitaly, kuhns, viinarannasta, viinikauppa, licorea, and drinkonline all resolve by merchantId', async () => {
+  it('registers thirteen live adapters — alko, alks, longero, kippis, mydrink, araxes, bottleofitaly, kuhns, viinarannasta, viinikauppa, licorea, drinkonline, and lmdw all resolve by merchantId', async () => {
     // In-memory governance grants admit all lookups without the durable
     // table; the gated path never writes an observation.
     const governanceRepository = new InMemorySourceGovernanceRepository();
@@ -317,6 +317,7 @@ describe('composeIngestionPipeline — live feed adapters (task 2.2)', () => {
       'viinikauppa',
       'licorea',
       'drinkonline',
+      'lmdw',
       'no-such-adapter',
     ]) {
       await governanceRepository.create({
@@ -358,6 +359,7 @@ describe('composeIngestionPipeline — live feed adapters (task 2.2)', () => {
       'viinikauppa',
       'licorea',
       'drinkonline',
+      'lmdw',
     ]) {
       const result = await pipeline.runForMerchant(merchantConfig(merchantId));
       expect(result.errors.length).toBeGreaterThan(0);

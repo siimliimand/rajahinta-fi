@@ -657,6 +657,279 @@ describe('mapSourceCategory — kuhns.shop catalog vocabulary (sweep patch 2026-
   });
 });
 
+describe('mapSourceCategory — lmdw/whisky.fr m3 vocabulary (sweep patch 2026-10-08, onboard-lmdw-crawl-merchant 2.1)', () => {
+  it('maps the whisky family spellings to spirits — keyword outcomes at any ABV', () => {
+    for (const term of [
+      'Single Malt Whisky',
+      'Blended Whisky',
+      'Blended Malt Whisky',
+      'Single Grain Whisky',
+      'single-blended-whisky', // the subfamily's hyphenated census spelling
+      'Autres Whisky',
+      'Bourbon',
+      'Rye Whiskey',
+      'Corn Whisky',
+      // The bare census spelling rides the existing kuhns key:
+      'Whisky',
+    ]) {
+      for (const abv of [undefined, 0.43]) {
+        const result = mapSourceCategory(term, abv);
+        expect(result, `term "${term}" at abv ${abv} must map`).toEqual({
+          canonicalCategory: 'spirits',
+          taxCategory: 'spirits',
+        });
+        // Keyword outcomes at any ABV — never boundary-rule re-assignments.
+        expect(result!.boundaryApplied, `"${term}" at ${abv}`).toBeUndefined();
+      }
+    }
+  });
+
+  it('maps the rhum family spellings to spirits — the FR "rh" forms are distinct keys from "rum"', () => {
+    for (const term of ['Rhum', 'Rhum Agricole', 'Agricole Rum', 'Rhum Pur Jus de Canne', 'Clairin', 'Cachaca']) {
+      const result = mapSourceCategory(term);
+      expect(result, `term "${term}" must map`).toEqual({
+        canonicalCategory: 'spirits',
+        taxCategory: 'spirits',
+      });
+    }
+    expect(SWEDISH_SOURCE_CATEGORY_MAP['rhum']).toBe('spirits');
+    expect(SWEDISH_SOURCE_CATEGORY_MAP['rum']).toBe('spirits');
+  });
+
+  it('maps the gin/tequila/vodka family compounds to spirits — bare forms already resolve', () => {
+    for (const term of [
+      'Distilled Gin',
+      'London Dry Gin',
+      'Old Tom Gin',
+      'Autres Gin',
+      'Tequila 100% Agave',
+      'Mezcal',
+      'Vodka de Cereale',
+      'Vodka de Pomme de Terre',
+      'Vodka Aromatisee',
+      // Bare census spellings through the existing keys / normalizeCategory:
+      'Gin',
+      'Vodka',
+      'Tequila',
+    ]) {
+      const result = mapSourceCategory(term);
+      expect(result, `term "${term}" must map`).toEqual({
+        canonicalCategory: 'spirits',
+        taxCategory: 'spirits',
+      });
+    }
+  });
+
+  it('maps the bitters/amaro family to spirits at any ABV — the keyword-family rule', () => {
+    for (const term of ['Amers', 'Bitters Cocktails', 'Autres Amers', 'Amaro']) {
+      for (const abv of [undefined, 0.05, 0.58]) {
+        const result = mapSourceCategory(term, abv);
+        expect(result, `term "${term}" at abv ${abv} must map`).toEqual({
+          canonicalCategory: 'spirits',
+          taxCategory: 'spirits',
+        });
+      }
+    }
+  });
+
+  it('maps the brandy plurals and the residual spirit terms to spirits', () => {
+    for (const term of [
+      'Armagnacs', // FR plural; 'armagnac' does not match it
+      'Cognacs', // FR plural; 'cognac' does not match it
+      'Autres Spiritueux', // "other spirits" — self-identifying
+      'Aquavit de Pomme de Terre', // 'aquavit' itself resolves in normalizeCategory
+      'Absinthe',
+      'Absinthe Blanche',
+      'Pastis',
+      'Anises',
+      'Sambuka', // census spelling [sic] of sambuca
+      'Shochu',
+      'Shochu de Patate Douce',
+      'Eaux de Vie de Fruits',
+      'Eaux de Vie de Plantes',
+      'Autres Eaux de Vie de Pomme & de Poire',
+      'Autres Eaux de Vie de Canne',
+    ]) {
+      const result = mapSourceCategory(term);
+      expect(result, `term "${term}" must map`).toEqual({
+        canonicalCategory: 'spirits',
+        taxCategory: 'spirits',
+      });
+    }
+  });
+
+  it('maps the liqueur family plurals and compounds to the canonical liqueur category', () => {
+    for (const term of [
+      'Liqueurs',
+      'Autres Liqueurs',
+      "Liqueurs d'Agrumes",
+      'Liqueurs Herbales',
+      'Liqueurs de Fleurs',
+      'Liqueurs de Whisky',
+      'Liqueurs de Fruits',
+      'Cremes',
+      'Cremes de Fruits',
+    ]) {
+      expect(mapSourceCategory(term), `term "${term}" must map`).toEqual({
+        canonicalCategory: 'liqueur',
+        taxCategory: 'spirits',
+      });
+    }
+  });
+
+  it('maps "Sakes" and the sake subfamilies to the canonical sake category — the taxonomy has a sake home', () => {
+    expect(mapSourceCategory('Sakes')).toEqual({
+      canonicalCategory: 'sake',
+      taxCategory: 'other_fermented',
+    });
+    for (const term of [
+      'Sake Moderne',
+      'sake-moderne', // the subfamily's hyphenated census spelling — a distinct key
+      'Sake Nature',
+      'sake-nature',
+      'Sake Traditionnel Eau',
+      'sake-traditionnel-eau',
+      'Sake Traditionnel Riz',
+      'sake-traditionnel-riz',
+      'Sake Vintage',
+      'sake-vintage',
+      'Sake Sparkling',
+      'sake-sparkling',
+    ]) {
+      expect(mapSourceCategory(term), `term "${term}" must map`).toEqual({
+        canonicalCategory: 'sake',
+        taxCategory: 'other_fermented',
+      });
+    }
+    // The 22 % boundary bounds the fermented bucket exactly like the
+    // singular 'Sake' keyword path:
+    expect(mapSourceCategory('Sakes', 0.22)!.taxCategory).toBe('other_fermented');
+    expect(mapSourceCategory('sake-moderne', 0.41)).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+      boundaryApplied: true,
+    });
+  });
+
+  it('maps the beer, wine, sparkling and fortified families to their own categories', () => {
+    expect(mapSourceCategory('Bieres')).toEqual({ canonicalCategory: 'beer', taxCategory: 'beer' });
+    expect(mapSourceCategory('Pale Ale')).toEqual({ canonicalCategory: 'beer', taxCategory: 'beer' });
+    expect(mapSourceCategory('Vins Tranquilles')).toEqual({
+      canonicalCategory: 'wine',
+      taxCategory: 'wine_still',
+    });
+    expect(mapSourceCategory('Vins Effervescents')).toEqual({
+      canonicalCategory: 'sparkling-wine',
+      taxCategory: 'wine_sparkling',
+    });
+    for (const term of [
+      'Porto',
+      'Xeres',
+      'Vins Fortifies',
+      'Vins Fortifies Aromatises',
+      'Vins de Liqueur',
+      'Vins Mutes',
+      'Pineau des Charentes',
+      'Vermouth Rouge',
+      'Aperitivo', // the Italian spelling of the fortified 'aperitif' family
+    ]) {
+      expect(mapSourceCategory(term), `term "${term}" must map`).toEqual({
+        canonicalCategory: 'fortified-wine',
+        taxCategory: 'intermediate_products',
+      });
+    }
+    // Census spellings that already resolve — 'vermouth' fortified,
+    // 'champagne' sparkling:
+    expect(mapSourceCategory('Vermouth')!.canonicalCategory).toBe('fortified-wine');
+    expect(mapSourceCategory('Champagne')!.canonicalCategory).toBe('sparkling-wine');
+  });
+
+  it('maps "Punch au rhum" to long-drink — the premixed RTD home, bounded at 22 %', () => {
+    expect(mapSourceCategory('Punch au Rhum')).toEqual({
+      canonicalCategory: 'long-drink',
+      taxCategory: 'other_fermented',
+    });
+    expect(mapSourceCategory('Punch au Rhum', 0.3)).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+      boundaryApplied: true,
+    });
+  });
+
+  it('maps the non-alcoholic census terms to non-alcoholic — one tax family', () => {
+    // The census spells this one uppercase; matching lowercases.
+    expect(mapSourceCategory('BOISSONS SANS ALCOOL')).toEqual({
+      canonicalCategory: 'non-alcoholic',
+      taxCategory: 'other_fermented',
+    });
+    expect(mapSourceCategory('Spiritueux sans alcool')!.canonicalCategory).toBe('non-alcoholic');
+    expect(mapSourceCategory('Sodas')!.canonicalCategory).toBe('non-alcoholic');
+    // The non-alcoholic guard passes its own category through without a hold:
+    expect(mapSourceCategory('BOISSONS SANS ALCOOL', 0)).toEqual({
+      canonicalCategory: 'non-alcoholic',
+      taxCategory: 'other_fermented',
+    });
+  });
+
+  it('matches the census casing and whitespace exactly after trim/lowercase', () => {
+    expect(mapSourceCategory('  boissons sans alcool ')).toEqual(mapSourceCategory('BOISSONS SANS ALCOOL'));
+    expect(mapSourceCategory('  Liqueurs ')).toEqual(mapSourceCategory('liqueurs'));
+    expect(mapSourceCategory('tequila 100% agave')).toEqual(mapSourceCategory('Tequila 100% Agave'));
+  });
+
+  it('changes no existing mapping — the kuhns/mydrink keys still carry the bare census spellings', () => {
+    expect(SWEDISH_SOURCE_CATEGORY_MAP['whisky']).toBe('spirits');
+    expect(SWEDISH_SOURCE_CATEGORY_MAP['gin']).toBe('spirits');
+    expect(SWEDISH_SOURCE_CATEGORY_MAP['vodka']).toBe('spirits');
+    expect(mapSourceCategory('Whisky')).toEqual({ canonicalCategory: 'spirits', taxCategory: 'spirits' });
+    expect(mapSourceCategory('Vermutti')).toEqual({
+      canonicalCategory: 'fortified-wine',
+      taxCategory: 'intermediate_products',
+    });
+    expect(mapSourceCategory('Siider')).toEqual({
+      canonicalCategory: 'cider',
+      taxCategory: 'other_fermented',
+    });
+  });
+
+  it('leaves the division, navigation and merch labels unmapped — the correction queue owns them', () => {
+    for (const term of [
+      'liquide', // m3_division — no beverage type, 291 pages
+      'solide', // m3_division — the food/merch branch
+      'Types de produit', // generic navigation family
+      'Verres', // glassware
+      'Verres de Degustation',
+      'Bartools',
+      'Autres Bartools',
+      'Magazine',
+      'Sirops/Cordials', // cocktail syrups — the alks 'Siirappi' precedent
+      'SPICED', // a bare adjective, no beverage family on its own
+      'Autres Alcools Sucrees', // heterogeneous bucket — 'lahja alkohol' precedent
+      // Design D3's gift-box rule, attested nowhere in this sample but kept:
+      'Coffret Cadeau',
+    ]) {
+      expect(mapSourceCategory(term, 0.2), `term "${term}" must stay unmapped`).toBeNull();
+      expect(mapSourceCategory(term), `term "${term}" must stay unmapped`).toBeNull();
+    }
+  });
+
+  it('rejects near-miss spellings — exact matching, no accent/casing/apostrophe forgiveness', () => {
+    for (const term of [
+      'boisson sans alcool', // singular — the census label is the plural
+      'vodka de céréale', // accented — the census spelling is unaccented
+      'tequila 100 % agave', // space before the % — the census has none
+      'single malt whiskies', // over-pluralized
+      'whisky single malt', // word order — controlled vocabulary, not free text
+      'rhum vieux',
+      'liqueurs d\u2019agrumes', // typographic apostrophe — the census one is ASCII
+      'xérès', // accented — the census spelling is unaccented
+      'punch rhum', // dropped "au"
+    ]) {
+      expect(mapSourceCategory(term, 0.2), `term "${term}" must stay unmapped`).toBeNull();
+    }
+  });
+});
+
 describe('mapSourceCategory — unmappable categories', () => {
   it('returns null for an unrecognized string — flagged, never fallback-assigned', () => {
     expect(mapSourceCategory('Kaffe')).toBeNull();

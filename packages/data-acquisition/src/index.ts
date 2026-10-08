@@ -170,6 +170,16 @@ export {
   DRINKONLINE_PRODUCT_URL_PATTERN,
 } from './adapters/drinkonline.adapter';
 
+// La Maison du Whisky (www.whisky.fr) sitemap-crawl adapter — the fifth
+// crawl merchant (task 3.1, change onboard-lmdw-crawl-merchant): PURE
+// SITEMAP per the probe decision (design D1), the identical shape of the
+// four v1 merchants above; no GraphQL-seeded variant. Composition
+// (adapter maps) is wired in the api-worker compositions, not here.
+export {
+  LmdwFeedAdapter,
+  LMDW_PRODUCT_URL_PATTERN,
+} from './adapters/lmdw.adapter';
+
 export { runCrawlCycle } from './crawl/crawl-cycle';
 export type { CrawlCycleOptions } from './crawl/crawl-cycle';
 export {
@@ -218,6 +228,7 @@ export {
   abvPercentFromFinnishDescription,
   DRINKONLINE_EXTRACTOR_CONFIG,
   LICOREA_EXTRACTOR_CONFIG,
+  LMDW_EXTRACTOR_CONFIG,
   VIINARANNASTA_EXTRACTOR_CONFIG,
   VIINIKAUPPA_EXTRACTOR_CONFIG,
 } from './crawl/extract/source-configs';
