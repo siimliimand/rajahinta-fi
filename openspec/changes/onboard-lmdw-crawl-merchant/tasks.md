@@ -26,7 +26,7 @@
 ## 6. Staging rollout
 
 - [x] 6.1 Open PR from the feature branch; CI green (all required checks); merge; staging auto-deploys the api-worker <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [] -->
-- [ ] 6.2 Staging rollout: registry row ships via seed + `RETAILER_API`/`GRANTED` governance via the ops console; first crawl triggered via the Workflows REST API; **Workers-egress smoke recorded** (design D6 — a blocked source follows the Posti playbook, not a retry loop); end-to-end verify (workflow instance `complete`, `retail_offers` populated with page-extracted ABV/volume, API + product pages serve lmdw items); executed commands and numbers in the notes <!-- agent: devops-engineer.fast, depends_on: [6.1], touches: [openspec/changes/onboard-lmdw-crawl-merchant/notes.md] -->
+- [ ] 6.2 Staging rollout <!-- evidence recorded; completion checklist pending the first-crawl walk end (~23:45 UTC 2026-10-08) — instance 986f879b running, 900/6842 at last poll -->: registry row ships via seed + `RETAILER_API`/`GRANTED` governance via the ops console; first crawl triggered via the Workflows REST API; **Workers-egress smoke recorded** (design D6 — a blocked source follows the Posti playbook, not a retry loop); end-to-end verify (workflow instance `complete`, `retail_offers` populated with page-extracted ABV/volume, API + product pages serve lmdw items); executed commands and numbers in the notes <!-- agent: devops-engineer.fast, depends_on: [6.1], touches: [openspec/changes/onboard-lmdw-crawl-merchant/notes.md] -->
 
 ## 7. Production rollout
 

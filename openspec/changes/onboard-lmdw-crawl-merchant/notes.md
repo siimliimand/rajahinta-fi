@@ -474,8 +474,164 @@ untouched; nothing committed.
 
 ## 6.2 Staging rollout evidence
 
-TBD (grant result, egress smoke, workflow instance + status, offer counts,
-API/page checks)
+**EXECUTED 2026-10-08 20:27–20:57 UTC — registry verified, grant audited, first crawl
+triggered and walking; D6 egress smoke PASSED mid-walk. The instance is honestly
+STILL RUNNING at the ~26-minute observation cap (13 steps, cursor offset 900/6,842,
+offers 0 by design — the walk accumulates all chunks before map/upsert), so the
+offer-count / EAN-share / API-page numbers below are recorded as pending with the
+completion checklist; no numbers were invented.** Staging only — zero production
+contact, zero writes to staging D1 outside the audited console API. Staging ingestion
+is manual-only (producer cron dropped from the env, wrangler.jsonc 2026-10-07), so the
+first crawl rode a manual Workflows-API instance; there is no staging producer to
+observe.
+
+### Registry row (seeded by the 6.1 deploy) — verified
+
+Read-only staging D1 (`--remote --env staging --json`): **`lmdw` / La Maison du
+Whisky / FR / feedUrl `https://www.whisky.fr/media/sitemap/sitemap_whimag.xml` /
+`xml` / 86400000** — fields exact vs the 4.2 seed row; registry 15 rows total.
+Pre-grant baselines: lmdw governance rows 0, lmdw `retail_offers` 0, lmdw watermarks
+0, total offers **119,431** and `product_master` **9,621 / max id 9,621** — byte-equal
+to the archived pair's 6.2 end state (no other merchant moved since).
+
+### Pre-grant state (fail-closed, §0)
+
+`GET /ops/console/governance` (bearer `$(cat /root/.ops-token)` inline, never
+echoed): 15 merchants, **`lmdw` `PENDING` / `sourceCount: 0`** with the exact
+feedUrl read back — the 6.1 seed row (deploy run 37838714509) with no governance
+records, exactly the fail-closed contract.
+
+### Grant (runbook §2.2 audited console action)
+
+`POST /ops/console/governance/lmdw/grant` — `operator: "siim (owner)"` (the
+audit-trail convention), `acquisitionMethod: "RETAILER_API"`, `sourceUrl:
+https://www.whisky.fr` (the crawl source root, matching the Shopify pair's grant
+shape), note "owner blanket permission policy — change onboard-lmdw-crawl-merchant
+task 6.2". Result: **`permissionStatus: "GRANTED"`, `changed: true`**. Audit verified
+(`GET /ops/console/audit?limit=4`): **exactly one entry** —
+`source_governance`/`lmdw`/`created`, id **`3f450dda-ed87-40f3-8ca3-4fa4b5187760`**,
+author `siim (owner)`, **2026-10-08T20:27:36.382Z**, reason exact (single entry
+because lmdw had no prior governance records — the grant registers one directly as
+`GRANTED`; the seeded registry row was untouched, so no `merchant_registry` entry).
+Governance re-check: **`lmdw` `GRANTED` / `sourceCount: 1`**, 15 merchants total.
+
+### First crawl via the Workflows REST API (archived 6.2 call shape)
+
+- `POST /accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances`,
+  body id/params `price-ingestion-lmdw-2026-10-08-20` with `{"merchantId":"lmdw",
+  "sourceUrl":"https://www.whisky.fr/media/sitemap/sitemap_whimag.xml","dedupeKey":
+  "price-ingestion-lmdw-2026-10-08-20"}` (params mirror the producer message — the
+  sitemap URL is the crawl source) → uuid **`986f879b-0fed-4261-932a-a54785196820`**,
+  `queued` ~20:28:35Z.
+- `resolve-merchant-1`: config exact (lmdw / FR / feedUrl / xml / 86,400,000).
+  `governance-gate-1`: **`{"permitted":true,"status":"GRANTED"}`** — the pipeline
+  gate honored the grant.
+- `crawl-discover-1`: **`{"queueLength":6842,"resumed":false,"errors":[]}`** — the
+  probe's product-shaped count exactly, full diff on the first cycle.
+- **Both D1 rows written at begin, cursor-first order (20:28:36.804Z / .389Z)**:
+  `sitemap-crawl-cursor-lmdw` (**421,255 bytes** — `{queue: [6,842 URLs], offset: 0}`)
+  and `sitemap-crawl-lastmod-lmdw` (**612,810 bytes** — 6,842 `loc → lastmod`
+  entries) — byte-identical sizes to the local 5.1 walk (same sitemap, same filter).
+
+### D6 Workers-egress smoke — PASS (mid-walk, no Posti playbook)
+
+The first real whisky.fr fetches from Cloudflare IPs happened inside this instance:
+**chunk steps produced mapped records** — chunk-1 opens FAMOUS GROUSE (The) Litre
+(`alcoholByVolume 0.4, volumeMl 1000, ean 5010314101015, 2590¢ EUR, in_stock,
+sourceUrl …/famous-grouse-the-litre-1213.html`) and BALLANTINE'S Finest 200 cl
+(`0.4 / 2000 ml / ean 5010106112854`). **Zero HTTP 403 and zero challenge shape on
+any fetched page** — the Posti blocked-egress pattern did not materialize; per D6 the
+fetching itself (queueLength > 0 → records landing) IS the smoke, and the crawl UA is
+the measured-good shape. No retry loop was run. Live spot-check (read-only GET,
+crawler UA): `famous-grouse-the-litre-1213.html` → **HTTP 200**, `__NEXT_DATA__`
+carrier, `"volume":1` / `"strength":40` / `gtin13 5010314101015` ↔ the crawl record's
+0.4 / 1000 ml / 5010314101015 — **the page→record litres→ml ×1000 and percent→÷100
+conversions verified on live staging-walk data** (probe 1.1 arithmetic, now
+end-to-end).
+
+### Progress at the observation cap (honest: still running)
+
+Last observation **20:54:52Z (~26 min in)**: instance **`running`**, **13 steps** —
+`crawl-chunk-1-1` → `crawl-advance-1-1` → `crawl-chunk-2-1` → `crawl-advance-2-1` →
+`crawl-chunk-3-1` → `crawl-advance-3-1` done, `crawl-chunk-4-1` running. **Cursor
+offset 900** (300 per chunk; measured pacing ≈ **1.73 s/page** = 900 fetches in
+~26 min, the polite ≤300-fetch D5 cap holding). **`retail_offers` lmdw: 0** — by
+design: the chunked walker accumulates ALL records before the map/gate/upsert stages,
+so offers land only at walk end. Full-walk arithmetic: 6,842 × 1.73 s ≈ **3h17m from
+trigger → completion expected ~23:45–00:05 UTC** (23 chunks; `CRAWL_MAX_CHUNK_STEPS`
+400 ≫ 23). The active-wait cap (~25 min) was honored; polling stopped, the instance
+keeps running autonomously (durable chunks — no operator action needed).
+
+**Pending at cap, verifiable on the completed instance (no invented numbers):**
+`productsIngested` + the collected-error census (the Workflows API truncates step
+output ~1 KB mid-run, so the census comes from the final output), offer counts +
+batches, EAN share vs the ~73 % probe band, correction rows for the
+deliberately-unmapped labels (`verres`, `magazine`, `AUTRES ALCOOLS SUCREES`, …),
+ESTIMATED share in the probe band (strength 95.7 % / volume 98.3 % usable → the
+unusable minority rides correction/hold, never a guess).
+
+### Public staging API + product pages — pending the walk's upsert
+
+lmdw has 0 offers until the walk's upsert fires, so: `GET
+/api/v1/merchants/reliability` carries no `lmdw` row yet (pre-existing merchants
+unchanged); no lmdw product ids exist yet → no product page to serve. Both checks are
+checklist items below (the archived 6.2 endpoint shapes: bare → 403 age-gate,
+`x-age-confirmed: 1` → offer; `/products/<id>` HTTP 200 with the `Katso kaupassa`
+CTA).
+
+### Scheduled-boundary checklist — completion ~00:00 UTC, then the daily cadence
+
+The registry cadence is daily (86,400,000 ms). **Staging has no producer** (cron
+dropped 2026-10-07): the 00:00 UTC *enqueue* item applies to PRODUCTION (task 7.2 —
+first hourly tick of the UTC day, dedupeKey `price-ingestion-lmdw-2026-10-09-00`,
+exactly one message, no duplicate instances). In staging the convergence mechanism is
+(a) THIS instance completing autonomously, then (b) the next manual Workflows-API
+instance diffing the refreshed watermark — the lastmod behavior measured locally
+(6,842 → 0 unchanged → only-changed queue; local runs r2/r3). Operator observation
+checklist, recorded 2026-10-08T20:57Z:
+
+- [ ] Instance `986f879b…` (`price-ingestion-lmdw-2026-10-08-20`) reaches **`complete`**
+      with `error: null` ~23:45–00:05 UTC; exactly ONE instance for this first pass (the
+      queue-consumer handoff path is not exercised in staging — no producer — so no
+      second instance may appear).
+- [ ] **Offers refreshed**: fresh `retail_offers` lmdw batches at `observed_at` ≈ the
+      upsert time; reconciliation `fetched ≈ ingested + correction/hold drops` exact;
+      zero guessed categories (every dropped page names its source labels).
+- [ ] **EAN share** in the ~73 % probe band; **ESTIMATED** reliability for the
+      unverified minority per the hold rule; correction rows present for the
+      deliberately-unmapped labels; the ~1.6 % CMS pages ride the guarded path.
+- [ ] **API + pages**: `GET /api/v1/products/<max-price-id>` bare → 403, with
+      `x-age-confirmed: 1` → the lmdw offer (decimal ABV fraction + litres);
+      `GET /api/v1/merchants/reliability` shows the lmdw offerCount (expected
+      `governancePermissionStatus` read-model artifact "PENDING" despite the GRANTED
+      row — kippis/mydrink/araxes/BOI precedent, record not chase);
+      `rajahinta-frontend-staging…/products/<id>` HTTP 200 with the offer row + CTA.
+- [ ] **Post-completion steady state**: a later manual staging instance re-diffs the
+      watermark → near-zero queue (lastmod skip) — the daily-cadence convergence
+      demonstrated end-to-end (local r2/r3 precedent, now on staging data).
+- [ ] Check commands: instance GET on
+      `/accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances/
+      986f879b-0fed-4261-932a-a54785196820` (Cloudflare API token inline, never
+      echoed); read-only `npx wrangler d1 execute DB --remote --env staging --json
+      --command "SELECT … FROM retail_offers WHERE merchant='lmdw' …"` +
+      `aggregation_watermarks` census; the curl set above.
+
+### Commands executed (names)
+
+`npx wrangler d1 execute DB --remote --env staging --json --command "…"` read-only
+(registry read-back, baselines, watermark/cursor/offer polls; `CLOUDFLARE_API_TOKEN=
+"$(cat /root/.cloudflare-token)"` inline, never echoed) · `curl GET/POST
+$STAGING_API_URL/ops/console/governance|governance/lmdw/grant|audit?limit=4`
+(bearer `$(cat /root/.ops-token)` inline, never echoed) · `npx wrangler whoami
+--json` (account id captured same-invocation, never emitted) + `curl -X POST
+/accounts/{account}/workflows/rajahinta-price-ingestion-staging/instances` + instance
+polls ×3 (instance JSON to `/tmp/opencode` scratch, deleted) · read-only `curl
+-A "rajahinta-crawler/1.0 (+https://rajahinta.fi)"` of one live product page
+(spot-check). No hand writes against staging D1; grant only through the audited
+console API; no production contact; nothing committed.
+
+**Verified at**: 2026-10-08T20:57Z (grant audit 20:27:36Z, instance running at cap —
+completion + landing = the checklist above).
 
 ## 7.1 Production deploy evidence
 
