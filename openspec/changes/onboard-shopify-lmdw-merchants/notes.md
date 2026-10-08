@@ -818,4 +818,126 @@ smoke ×2, D1 end-state; ingest convergence = the 00:00 UTC scheduled pass).
 
 ## 8.1 Verification evidence
 
-TBD (suites run + results, hold-rule note for ESTIMATED lmdw rows)
+Full local verification of the merged state (master at `3d0cf8d`; the change
+shipped via PR #108, §6.1). Executed 2026-10-08 ~17:15–18:00 UTC, this host,
+nothing committed. Toolchain: **Node v24.21.0 + pnpm 9.15.9** (`nvm` v24.21.0
+bin dir) for every suite — CI parity (`NODE_VERSION: '24'`, `PNPM_VERSION:
+'9'`); the host defaults (node v22.14.0, pnpm 12.8.1) are both non-CI-parity
+(v22 lacks FTS5 in `node:sqlite`, the task-4.1 environmental note; pnpm 12
+violates `engines: >=9 <10`). Postgres/Redis = this host's running compose
+containers (`timescale/timescaledb:2.16.1-pg16`, `redis:7-alpine` — the exact
+CI service images). Staging/production were NOT touched (read-only reference
+to §6.2/§7.1/§7.2 evidence below).
+
+### Suites (run in this order; exit codes recorded)
+
+| # | Suite (CI job) | Command | Exit | Result |
+|---|---|---|---|---|
+| 1 | core-domain build | `pnpm --filter @rajahinta/core-domain build` | 0 | build clean |
+| 2 | typecheck (build job) | `pnpm typecheck` (root, `-r`) | 0 | 8/8 workspace projects clean |
+| 3 | lint | `pnpm lint` (eslint .) | 0 | zero findings |
+| 4 | content policy | `pnpm run lint:content` | 0 | pass |
+| 5 | unit tests | `pnpm -r test` | 0 | **423 files / 6,589 tests: 6,586 passed + 3 pre-existing skips, 0 failed** (core-domain 1,619 · frontend 1,392 · api-worker 1,278 · data-platform 864 · data-acquisition 593 · application-api 738+3 skip · email-worker 83 · backend 19) |
+| 6a | e2e HTTP (`e2e-tests`) | `pnpm run test:e2e` | 0 | 15/15 |
+| 6b | api-worker e2e (`worker-checks`) | `pnpm --filter @rajahinta/api-worker run test:e2e` | 0 | 25/25 |
+| 6c | Browser E2E desktop (`e2e-browser.yml` leg 1) | `BACKEND_PORT=3002 bash tests/e2e-browser/boot-stack.sh` then `pnpm run test:e2e-browser` | 0 | **16 passed (2.5 m)** — full stack booted hermetically (backend moved to :3002; this host's :3000 is another process; frontend :3001) |
+| 6d | Browser E2E mobile (`e2e-browser.yml` leg 2) | `CI=true pnpm exec playwright test -c tests/e2e-browser/playwright.workers.config.ts --project=mobile-chrome-375 --project=mobile-chrome-390` | 0 | 10 passed (3.6 m; Workers-stack webServer boot) |
+| 6e | Browser E2E pending-state (`e2e-browser.yml` leg 3) | `CI=true E2E_SAVINGS_SNAPSHOT=0 pnpm exec playwright test -c tests/e2e-browser/playwright.workers.config.ts homepage-flow --project=mobile-chrome-375` | 0 | 1 passed (3.0 m) |
+| 7 | D1 suites (Node 24) | `pnpm run test:d1` | 0 | **19 files / 190 tests, 190 passed** (matches the 6.1 Node-24 run) |
+| 8a | golden-dataset | `bash scripts/test-golden-dataset.sh` | 0 | 2 files / 51 tests, 51 passed |
+| 8b | data-quality | `bash scripts/test-data-quality.sh` | 0 | 41 files / 593 tests, 593 passed + SQL checks: migrations applied, all 5 expected tables present, `TAX RULES RANGE VALIDATION PASSED` |
+| 8c | compliance | `bash scripts/test-compliance.sh` | 0 | 21 files / 207 tests, 207 passed + SQL structure checks |
+| + | integration (Timescale+Redis) | `pnpm run test:integration` (`DATABASE_URL` + `TEST_REDIS_URL`) | 0 | 26 files (24 pass + 2 skip) / 292 tests: 267 passed + 25 skipped |
+| + | composition smoke | `pnpm vitest run --config apps/backend/tests/composition/vitest.config.ts` | 0 | 5/5 |
+
+CI-covered, not re-run locally (green on the merged PR #108 head `1b89cc7`,
+§6.1): wrangler config dry-runs (`ci.yml` wrangler-config job) and the load
+suites (`load-tests.yml`; Artillery HTTP leg is skip-conditional on CI).
+
+**One run artifact, recorded honestly:** the first 8b invocation exited 1
+with no error text. Cause: this host has no `psql` client, so the SQL checks
+ran through a `docker exec rajahinta-postgres psql` shim; the script's
+`psql "$DB_URL" -f infra/staging-data/staging-reviews.sql >/dev/null 2>&1`
+cannot see a host path from inside the container and `set -euo pipefail`
+aborted silently. Shim corrected (`docker cp` the file in, `"$@"`-style arg
+quoting preserved) → 8b re-run **fully green including the SQL checks**. Not
+a code failure — the same run had already applied the Drizzle migrations
+successfully. Compliance (only `-c`/`-t` psql calls) was unaffected.
+
+### Consolidated rollout + sweep evidence (pointers; no re-runs)
+
+- **Per-merchant sweep numbers**: §1.1 bottleofitaly (22,937 products /
+  23,039 variants / 92 pages; merch share 2.6 % = 601, not the ~36 % probe
+  read; ABV×volume matrix: both 40.5 %, ABV-only 52.2 %, ESTIMATED-by-type
+  Spirits 7.5 % / Birra 6.6 % / wine 82–90 %); §1.2 kuhns (2,012/2,013/9
+  pages; ESTIMATED 5.4 % = 109; 93.7 % structurally untyped); §1.3 LMDW
+  (6,814 skus / 69 pages; ABV in feed 10.3 %; NO-GO with decision record).
+  Mapper re-sweep after the 2.2 vocabulary: §2.2 (BOI category-driven drops
+  66.8 % → 7.2 %; kuhns typed 22.8 % → 13.4 %; residual = the deliberate
+  merch/no-canonical sets).
+- **Compound-key idempotency across runs**: §5.1 table — BOI run
+  `…-10-13-00` re-ingested all 388 of run `…-10-11-00`'s products with
+  **zero new master rows**; kuhns run `…-10-16-00` re-ingested all 102 of
+  run `…-10-14-00`'s with zero new rows (2 recurring identities
+  compound-matched); explicit no-EAN assertion: 0 EANs across all 1,085 new
+  master rows.
+- **Daily-single-enqueue behavior**: local proof in §5.1 (due-tick harness
+  over the unmodified producer: exactly one queue message per merchant per
+  daily boundary bucket, dedupe key `price-ingestion-<merchant>-<bucket>`;
+  pre-grant tick fail-closed `enqueued 0/11`; consumer-side duplicate
+  observed as `already processed`). Production-side confirmation transfers
+  to the §7.2 scheduled-boundary checklist (first pass 2026-10-09 00:00
+  UTC: one enqueue + one instance per merchant, keys
+  `…-bottleofitaly-2026-10-09-00` / `…-kuhns-2026-10-09-00`).
+- **Staging serving both catalogs**: §6.2 — both merchants registered
+  + auto-granted through the audited console, 1,000 + 329 offers landed,
+  `GET /api/v1/products/{8640,8439}` bare 403 / age-confirmed offer payload,
+  `/merchants/reliability` offerCounts 1000/329, both staging product pages
+  HTTP 200 with the `Katso kaupassa` CTA; D6 Workers-egress smoke PASS
+  (zero 403/1031; only Shopify 429 throttling).
+- **Production**: §7.1 — gated deploy run 37788209874 green, health gate
+  200 (`d1: up`, `durableObjects: up`); §7.2 — registration ×2
+  `created`+`autoGranted` with exactly four audited entries, egress smoke
+  ×2 both **429-abort at the D7 3-consecutive bound with zero 403/1031**
+  (throttled, not blocked — D6 block criteria PASS), D1 byte-identical after
+  both aborts (zero partial writes); the API-serving + product-page checks
+  transfer to the scheduled-boundary checklist (serving capability itself is
+  proven by staging §6.2 and the §7.2 page-shape dry run).
+
+### Hold-rule note — live `nonalcoholic-catalog-hygiene` predicate
+
+- The gate is ONE shared SQL predicate (`PRODUCT_LISTING_UNIVERSE_SQL`,
+  `packages/data-platform/src/repositories/d1/product-search.repository.ts`,
+  adopted at browse keys, ranked search, detail, the €/g ranking candidate
+  read, and savings-snapshot qualification): `alcohol_by_volume IS NOT NULL
+  AND alcohol_by_volume > 0 AND review_hold_reason IS NULL`. Held rows
+  degrade to a 404-shaped absence on every user-facing surface (direct-input
+  calculator compute stays available by design via `findByIdDirect`).
+- The ingestion guard stamps `review_hold_reason =
+  'nonalcoholic_in_alcohol_category'` on alcohol-category rows that resolve
+  as non-alcoholic — observed counts: local §5.1 (BOI 2/867, kuhns 5/218),
+  staging §6.2 (29).
+- **ESTIMATED is a reliability label, not a hold**: the all-ESTIMATED
+  bottleofitaly/kuhns catalogs DO serve on API + product pages (§5.1, §6.2)
+  because their rows carry parsed ABV > 0. Conversely, a row whose ABV never
+  resolves stays OUTSIDE the listing universe until ABV resolves — which is
+  the operative reason the LMDW feed adapter is NO-GO (§1.3): ~89.7 % of the
+  6,814 skus are ABV-less in the feed, so ingested rows would land ESTIMATED
+  and be held out of user-facing surfaces wholesale, with no volume source
+  to pair. Any LMDW follow-up must solve ABV at the source, not the label.
+
+### LMDW follow-up pointer (next change)
+
+The §1.3 spike evidence carries: the sitemap-crawl merchant pattern
+(licorea precedent) — per-page GET `https://www.whisky.fr/<url_key>.html`
+under the honest `rajahinta-crawler` UA, reading the embedded state JSON's
+`"volume"` (litres) + `"strength"` (ABV), 10/10 measured — replaces the
+design's `LmdwFeedAdapter`; the `merchant_registry` row and the FR
+`m3_family` vocabulary (137 labels, census §1.3; `BOISSONS SANS ALCOOL`/
+`sodas`/`ale`/`vins tranquilles`/`magazine`/glassware/`porto` stay
+deliberately unmapped) land with that change — 2.2 intentionally left the FR
+keys unlanded (additive, gate nothing). Honest TBD before any adapter work:
+a full-catalog page-crawl coverage sweep (the 10-row sample measured 100 %;
+a crawl design needs its own §1.x-style sweep first).
+
+**Verified at**: 2026-10-08T18:00Z (all suites exit 0; zero blockers).
