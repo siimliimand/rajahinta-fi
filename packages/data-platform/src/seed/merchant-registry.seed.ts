@@ -31,7 +31,8 @@ export interface MerchantRegistrySeedRow {
  * with its adapter (change drop-sweden-eur-only-alko-benchmark); the
  * merchant-removal purge script under scripts/ removes its rows from
  * environments that ingested it. `alks` joined via change
- * alks-feed-and-import-vat (task 2.2).
+ * alks-feed-and-import-vat (task 2.2). `bottleofitaly`, `kuhns`, and
+ * `lmdw` joined via change onboard-shopify-lmdw-merchants (task 4.2).
  *
  * All rows run a daily cadence (change
  * daily-scrape-cadence-current-offers, task 2.1): the hourly producer
@@ -71,6 +72,34 @@ export const MERCHANT_REGISTRY_SEED: readonly MerchantRegistrySeedRow[] = [
     name: 'Araxes',
     country: 'EE',
     feedUrl: 'https://araxes.ee',
+    feedFormat: 'json',
+    pollingIntervalMs: 86_400_000,
+  },
+  // --- Shopify Store API merchants (change onboard-shopify-lmdw-merchants,
+  // --- task 4.2): JSON collection feeds on the daily cadence, same
+  // --- shape as the alks/araxes rows. lmdw's feed URL is its Shopify
+  // --- gateway host, not the storefront.
+  {
+    merchantId: 'bottleofitaly',
+    name: 'Bottle of Italy',
+    country: 'IT',
+    feedUrl: 'https://bottleofitaly.com',
+    feedFormat: 'json',
+    pollingIntervalMs: 86_400_000,
+  },
+  {
+    merchantId: 'kuhns',
+    name: 'Kuhns',
+    country: 'DE',
+    feedUrl: 'https://kuhns.shop',
+    feedFormat: 'json',
+    pollingIntervalMs: 86_400_000,
+  },
+  {
+    merchantId: 'lmdw',
+    name: 'La Maison du Whisky',
+    country: 'FR',
+    feedUrl: 'https://gateway.prod2.whisky.fr',
     feedFormat: 'json',
     pollingIntervalMs: 86_400_000,
   },
