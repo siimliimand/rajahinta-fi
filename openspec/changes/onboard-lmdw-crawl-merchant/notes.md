@@ -159,7 +159,54 @@ non-alcoholic m3 terms), never guesses.
 
 ## 2.1 Mapper re-probe drop rate
 
-TBD (drop rate before/after the FR page-side vocabulary)
+The 1.1 probe's report prints only the top-40 of its 179 distinct
+key+label pairs, so task 2.1 re-ran the census before wiring (same
+read-only discipline: honest UA, sequential, 1.1 s pacing, 20 s timeout,
+single bounded retry, even-stride 300-page sitemap sample;
+2026-10-08) and captured every pair plus the per-page label sets. The
+re-run reproduced the recorded census exactly: 300/300 pages, 179
+distinct key+label pairs (m3_category 40, m3_family 66, m3_subfamily
+71, m3_division 2), identical top-40 with identical page counts.
+
+Vocabulary wired: **94 of the 105 distinct census labels map (160 of
+the 179 key+label pairs); 11 labels (19 pairs) are deliberately
+unmapped** — `liquide`/`solide` (the m3_division labels carry no
+beverage type; pages classify from their category/family/subfamily
+labels), `Types de produit` (generic navigation family), the
+glassware/barware set (`verres`, `verres de degustation`, `bartools`,
+`autres bartools`), `magazine`, `sirops/cordials` (syrups — the alks
+`Siirappi` precedent), the bare adjective `SPICED`, and the
+heterogeneous `AUTRES ALCOOLS SUCREES` bucket (the araxes `lahja
+alkohol` precedent). Design D3's gift-box/coffret rule stays in force
+(the `solide` branch; none surfaced in this sample). Existing keys
+already carried `whisky`/`gin`/`vodka`/`calvados` and
+`tequila`/`brandy`/`aquavit`/`vermouth`/`champagne`/`ale`/`ipa`/
+`pilsner` (normalizeCategory) — no duplicate keys wired. `sakes` maps
+to the existing canonical `sake` category (other_fermented, bounded at
+22 % like every fermented bucket); the sake subfamilies hyphenate where
+the family labels space (`sake-moderne` vs `sake moderne`), and exact
+matching carries both spellings. `punch au rhum` → long-drink (the
+`cocktails` alks RTD precedent); `aperitivo` → fortified-wine (the
+`aperitif` family's Italian spelling).
+
+Drop rate — offline per-page replay of the re-run census through the
+real `mapSourceCategory` (no ABV argument: the pure vocabulary outcome;
+a page classifies when any of its m3 labels maps — the same
+first-mappable-candidate contract the parser uses):
+
+| vocabulary state | classified | dropped |
+|---|---|---|
+| before the FR vocabulary (17/179 pairs mapped) | 166/300 (55.3 %) | 134/300 (44.7 %) |
+| after — this task (160/179 pairs mapped) | **289/300 (96.3 %)** | **11/300 (3.7 %)** |
+
+The 11 dropped pages carry only deliberately-unmapped labels
+(`Types de produit` ×5, `liquide` ×4, `solide` ×4, `verres de
+degustation` ×4, `AUTRES ALCOOLS SUCREES` ×3, `magazine` ×3,
+`sirops/cordials` ×3, `autres bartools` ×2, `verres` ×2, `bartools` ×1
+— several labels per page) — exactly the correction-queue population,
+never a guessed category. The residual 3.7 % is bounded by design:
+every future gift-box/merch page lands in the same queue, and the
+vocabulary is additive if a later census attests new beverage terms.
 
 ## 5.1 Local rollout evidence
 

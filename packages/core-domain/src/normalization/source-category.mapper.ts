@@ -386,6 +386,145 @@ export const SWEDISH_SOURCE_CATEGORY_MAP: Readonly<Record<string, CanonicalCateg
   sekt: 'sparkling-wine', // kept apart from still wine for the excise split
   whisky: 'spirits', // pinned; normalizeCategory already resolves it — the census's lowercase stray hits the same key
   rum: 'spirits', // pinned; normalizeCategory already resolves it
+
+  // --- lmdw / www.whisky.fr catalog vocabulary (page-side m3 taxonomy,
+  // sweep decision 2026-10-08, change onboard-lmdw-crawl-merchant, 2.1).
+  // Additive only: every term maps to an existing canonical category,
+  // keyed by the crawl probe's exact page-side spellings (matching is
+  // exact after trim/lowercase, so the census's uppercase
+  // 'BOISSONS SANS ALCOOL' hits the lowercase key and the subfamily
+  // hyphenations 'sake-moderne'/'sake-traditionnel-eau' need their own
+  // keys next to the spaced family forms). The labels are the embedded
+  // state-JSON m3 taxonomy fields (m3_category/m3_family/m3_subfamily/
+  // m3_division — design D3), present on 300/300 probed pages with 179
+  // distinct key+label pairs; task 3.1 passes them as this source's
+  // category candidates. Census spellings that already resolve —
+  // 'whisky'/'gin'/'vodka' (map keys), 'tequila'/'brandy'/'aquavit'/
+  // 'calvados'/'vermouth'/'champagne'/'ale'/'ipa'/'pilsner'/
+  // 'sake'/'liqueur' singulars (normalizeCategory) — need no entry here
+  // (kuhns 'Likör' precedent).
+  //
+  // Deliberately NOT mapped:
+  // - 'liquide' (291 pages) / 'solide' (4): the m3_division labels carry
+  //   no beverage type — 'liquide' spans every liquid product (mapping
+  //   it would guess across whisky/wine/non-alcoholic, the mydrink
+  //   'Veinid ▾' parent problem), and 'solide' is the food/merch branch.
+  //   Pages classify from their category/family/subfamily labels.
+  // - 'Types de produit' (10): a generic product-types navigation family,
+  //   the mydrink 'Upsell' precedent.
+  // - Glassware/barware ('verres', 'verres de degustation', 'bartools',
+  //   'autres bartools') and print ('magazine'): merch, not beverages.
+  // - 'sirops/cordials' (1): cocktail syrups — the alks 'Siirappi'
+  //   precedent (a mixer, not a typed beverage).
+  // - 'SPICED' (1): a bare adjective that names no beverage family on
+  //   its own; the page still classifies through its family label.
+  // - 'AUTRES ALCOOLS SUCREES' (3 pairs): a heterogeneous sweet-treats
+  //   bucket — the araxes 'lahja alkohol' precedent (the children each
+  //   resolve from their own leaf, so the parent would be a guess).
+  //   Design D3's gift-box/coffret rule stays: those terms (they live in
+  //   the 'solide' branch, none surfaced in this 300-page sample) are
+  //   correction queue, never a guessed category.
+  //
+  // Whisky families:
+  'single malt whisky': 'spirits',
+  'blended whisky': 'spirits',
+  'blended malt whisky': 'spirits',
+  'single grain whisky': 'spirits',
+  'single-blended-whisky': 'spirits', // the subfamily's hyphenated spelling of the family above
+  'autres whisky': 'spirits', // "other whisky" — self-identifying
+  bourbon: 'spirits',
+  'rye whiskey': 'spirits',
+  'corn whisky': 'spirits',
+  // Rhum family (FR spellings; 'rum' does not match them under exact matching):
+  rhum: 'spirits',
+  'rhum agricole': 'spirits',
+  'agricole rum': 'spirits', // the same family's English subfamily label
+  'rhum pur jus de canne': 'spirits',
+  clairin: 'spirits', // Haitian cane spirit — the rhum family
+  cachaca: 'spirits',
+  // Gin/tequila/vodka families ('gin'/'vodka'/'tequila' already resolve):
+  'distilled gin': 'spirits',
+  'london dry gin': 'spirits',
+  'old tom gin': 'spirits',
+  'autres gin': 'spirits',
+  'tequila 100% agave': 'spirits', // census spelling — no space before the %
+  mezcal: 'spirits', // agave spirit — the tequila family's sibling
+  'vodka de cereale': 'spirits', // census spelling, unaccented
+  'vodka de pomme de terre': 'spirits',
+  'vodka aromatisee': 'spirits',
+  // Bitters/amaro family — keyword outcomes at any ABV ('bitter'/
+  // 'bitters' keyword rule, task 1.1 first-impression-pass):
+  amers: 'spirits', // FR bitters
+  'bitters cocktails': 'spirits',
+  'autres amers': 'spirits',
+  amaro: 'spirits',
+  // Brandy/other-spirits residuals:
+  armagnacs: 'spirits', // FR plural; 'armagnac' does not match it under exact matching
+  cognacs: 'spirits', // FR plural; normalizeCategory's 'cognac' does not match it
+  'autres spiritueux': 'spirits', // "other spirits" — self-identifying, unlike 'muut juomat'
+  'aquavit de pomme de terre': 'spirits', // 'aquavit' itself resolves in normalizeCategory
+  absinthe: 'spirits', // FR spelling; the Estonian 'absint' already maps
+  'absinthe blanche': 'spirits',
+  pastis: 'spirits',
+  anises: 'spirits', // the anise-spirit family pastis sits in
+  sambuka: 'spirits', // census spelling [sic] of sambuca — unambiguous in this taxonomy
+  shochu: 'spirits',
+  'shochu de patate douce': 'spirits',
+  'eaux de vie de fruits': 'spirits',
+  'eaux de vie de plantes': 'spirits',
+  'autres eaux de vie de pomme & de poire': 'spirits', // census spelling with the '&'
+  'autres eaux de vie de canne': 'spirits',
+  // Liqueur family ('liqueur' singular resolves in normalizeCategory):
+  liqueurs: 'liqueur', // FR plural
+  'autres liqueurs': 'liqueur',
+  "liqueurs d'agrumes": 'liqueur', // census apostrophe is ASCII
+  'liqueurs herbales': 'liqueur',
+  'liqueurs de fleurs': 'liqueur',
+  'liqueurs de whisky': 'liqueur',
+  'liqueurs de fruits': 'liqueur',
+  cremes: 'liqueur', // the cream-liqueur category ('cream liqueur' resolves in normalizeCategory)
+  'cremes de fruits': 'liqueur',
+  // Sake family — the taxonomy HAS a sake home (canonical 'sake', the
+  // Swedish 'sake' key above); the subfamily labels hyphenate where the
+  // family labels space, and exact matching needs both spellings:
+  sakes: 'sake', // FR plural; the singular key above does not match it
+  'sake moderne': 'sake',
+  'sake-moderne': 'sake',
+  'sake nature': 'sake',
+  'sake-nature': 'sake',
+  'sake traditionnel eau': 'sake',
+  'sake-traditionnel-eau': 'sake',
+  'sake traditionnel riz': 'sake',
+  'sake-traditionnel-riz': 'sake',
+  'sake vintage': 'sake',
+  'sake-vintage': 'sake',
+  'sake sparkling': 'sake',
+  'sake-sparkling': 'sake',
+  // Beer family ('ale'/'ipa'/'pilsner' resolve in normalizeCategory):
+  bieres: 'beer', // FR plural; the singular form occurs nowhere in the census
+  'pale ale': 'beer', // a compound the bare 'ale' key does not match
+  // Wine family:
+  'vins tranquilles': 'wine', // "still wines"
+  // Sparkling — kept apart from still wine for the excise split:
+  'vins effervescents': 'sparkling-wine',
+  // Fortified/aromatised family ('vermouth' resolves in normalizeCategory):
+  porto: 'fortified-wine', // FR spelling; 'port' does not match it under exact matching
+  xeres: 'fortified-wine', // sherry, census spelling unaccented
+  'vins fortifies': 'fortified-wine',
+  'vins fortifies aromatises': 'fortified-wine',
+  'vins de liqueur': 'fortified-wine',
+  'vins mutes': 'fortified-wine',
+  'pineau des charentes': 'fortified-wine',
+  'vermouth rouge': 'fortified-wine',
+  aperitivo: 'fortified-wine', // the Italian spelling of the 'aperitif' family
+  // Premixed — the RTD home ('cocktails' alks precedent); the boundary
+  // rule bounds it above 22 %:
+  'punch au rhum': 'long-drink',
+  // Non-alcoholic ('BOISSONS SANS ALCOOL' census casing uppercases the
+  // first letters; matching lowercases):
+  'boissons sans alcool': 'non-alcoholic',
+  'spiritueux sans alcool': 'non-alcoholic', // 0.0 spirits alternatives
+  sodas: 'non-alcoholic',
 };
 
 /** Explicit "other" tokens in the sources we ingest — mappable, unlike garbage. */

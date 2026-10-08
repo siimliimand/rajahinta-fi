@@ -8,7 +8,7 @@
 
 ## 2. Vocabulary
 
-- [ ] 2.1 Source-category mapper vocabulary FR: additive exact keys from the probe's page-side census (breadcrumb/JSON-LD category terms → existing canonical categories, census spellings exact); deliberately unmapped: gift boxes, non-beverage terms, merch per census → correction queue; unit tests per vocabulary block + negatives; probe re-run recording the new drop rate in the notes <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [packages/core-domain/src/normalization/source-category.mapper.ts, packages/core-domain/src/normalization/__tests__/source-category.mapper.test.ts, openspec/changes/onboard-lmdw-crawl-merchant/notes.md] -->
+- [x] 2.1 Source-category mapper vocabulary FR: additive exact keys from the probe's page-side census (breadcrumb/JSON-LD category terms → existing canonical categories, census spellings exact); deliberately unmapped: gift boxes, non-beverage terms, merch per census → correction queue; unit tests per vocabulary block + negatives; probe re-run recording the new drop rate in the notes <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [packages/core-domain/src/normalization/source-category.mapper.ts, packages/core-domain/src/normalization/__tests__/source-category.mapper.test.ts, openspec/changes/onboard-lmdw-crawl-merchant/notes.md] -->
 
 ## 3. Adapter + extraction
 
