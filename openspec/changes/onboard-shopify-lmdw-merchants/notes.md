@@ -114,8 +114,98 @@ Sweep run 2026-10-08T06:02Z (verified-at; this host, read-only GETs,
 
 ## 1.3 LMDW sweep + spike decision
 
-TBD (operator fills: ABV share, volume-source decision + evidence, m3_family
-census, EUR check, go/no-go for 3.3 per design D5)
+Sweep run 2026-10-08T06:34Z (verified-at; this host, read-only GraphQL POSTs +
+GETs, `scripts/lmdw-catalog-sweep.ts`, sequential `pageSize: 100` over the
+mandatory `filter: { category_id: { eq: "3" } }`, 3 s pacing, bounded
+retry-once-after-30 s, `sku` dedupe, hard cap 75 pages):
+
+- **Catalog: 6,814 distinct skus over 69 pages (69/69 ok, 0 page failures,
+  0 duplicate-sku rows, 0 sku-less rows)**. `total_count` declared 6,821 →
+  delta 7 (drift warning, mydrink X-WP-Total precedent — every declared page
+  was fetched; the last page ended the walk per `page_info.total_pages`).
+  **The probe's 3,213 is stale**: the live total_count is 6,821 (and the
+  packaging category 76 → 256) — the LMDW catalog changed between the
+  2026-10-07 probe and this sweep (new "Les Anthologistes : Collection
+  Créations 2027" categories are live). The planned 60-page cap could not
+  cover the walk, so it was raised to 75 (still a hard bound, never
+  unbounded) — the bottleofitaly 1.1 precedent, flagged here for the lead.
+- **ABV share of `short_description.html`: 699 of 6,814 = 10.3 %** with the
+  boundary-guarded French `%` pattern `(?<!\d)(\d{1,2}[.,]\d{1,2}|\d{1,2})\s*%`.
+  Cross-checks: the task text's unguarded pattern matches 949 — the delta 250
+  are tail-of-larger-number artifacts (`100% agave` → `00%`; run 1's unguarded
+  top value was literally `00%×276`, which forced the guard); decimal split
+  comma 168 / dot 59 / integer 472; 385 rows (5.7 %) have an empty
+  short_description. The probe's "ABV everywhere" impression was page-1 skew
+  (the same trap as bottleofitaly's merch share): the long descriptive copy
+  (`PROFIL : …` format) usually omits the degree.
+- **Volume hunt (D5 priority order) — no feed-side source exists**:
+  1. `lmdw_label`: introspected (`{ active_from, active_to, id, name,
+     priority, settings, tooltip }` — marketing labels); **0 of 6,814 rows**
+     carry a volume token in any label name; 20-row sample printed (mostly
+     no labels at all). Dead end.
+  2. Name suffixes: **174 rows (2.6 %)** — explicit `cl`/`ml` 163 (2.4 %,
+     mostly coffret/calendrier multipacks `25 x 2cl`), litre decimals 2,
+     unitless `0,x` 9. Dead end as a primary source.
+  3. Packaging category 2841 ("Type de conditionnement"): 256 skus, all 256
+     inside the walk (**3.8 % overlap**) — a cross-reference, not a per-row
+     source.
+  4. **Sampled product pages: 10/10 volume extracted (100 %)** via
+     `https://www.whisky.fr/<url_key>.html` (no lmdw.com fallback needed;
+     HTTP 200 under the honest `rajahinta-crawler` UA) — the pages embed a
+     state JSON with **`"volume":"0.7"` (litres, dot decimal)** and render
+     `data-lmdw-el="volume">70cL`; **`"strength":55.6` (ABV) is in the same
+     payload, 10/10**. Highest measured coverage — but a per-row crawl
+     (~6,814 GETs/run), not a field of the GraphQL feed: the introspected 76
+     `ProductInterface` fields contain **no volume/ABV/strength field**
+     (`custom_attributesV2` stays rejected per the probe — internal server
+     errors).
+- Side-probe (not in the walk): the full `description { html }` field carries
+  ABV for **0.5 % of a 400-row stratified sample** — also a dead end, so
+  `short_description` is the only feed-side ABV text at all.
+- **m3_family census: 137 distinct labels** (for task 2.2's FR vocabulary).
+  Top: `single malt whisky` 2,202 (32.3 %), `rhum` 653 (9.6 %), `blended
+  whisky` 348 (5.1 %), `distilled gin` 270 (4.0 %), `rhum agricole` 249
+  (3.7 %), `cognacs` 153, `bourbon` 133, `tequila 100% agave` 123, `autres
+  spiritueux` 112, `BOISSONS SANS ALCOOL` 110, `calvados` 106, `london dry
+  gin` 99, `mezcal` 95, `bitters cocktails` 88, `armagnacs` 87, `liqueurs
+  herbales` 85, `autres liqueurs` 83, `vodka de cereale` 81, `rhum pur jus de
+  canne` 69, `liqueurs de fruits` 67. Non-beverage terms exist inside the
+  taxonomy and must stay deliberately unmapped: `BOISSONS SANS ALCOOL`,
+  `sodas`, `ale`, `vins tranquilles`, `magazine`, `verres de degustation`
+  (glassware), `porto`. `m3_division`: `liquide` 6,666 (97.8 %) / `solide`
+  146 (2.1 %) — the merch split.
+- **Currency: EUR×6,814, zero non-EUR, zero unparseable prices** — the D5
+  EUR premise holds at full scale.
+- Anomalies: `gift_box` census (packaging presentation, not product type):
+  `sans` 3,897 (57.2 %), `etui` 1,732 (25.4 %), `tube` 246, `coffret` 157,
+  `cof.bois` 126, plus rarities down to `valise`×3 and `coffret 6x70cl`×2
+  (the only volume-bearing label, 2 rows). `stock_status`: IN_STOCK 89.4 % /
+  OUT_OF_STOCK 10.6 %.
+
+**Decision — NO-GO for task 3.3 (design D5's third accepted outcome):**
+
+- **Volume-source decision:** the only measured source is the product page's
+  embedded state JSON (`"volume"` in litres + `"strength"` ABV, 100 % on 10/10
+  samples at whisky.fr) — a crawl-scale extraction, not a GraphQL feed field.
+  Every feed-side candidate measured dead: `lmdw_label` 0 %, name suffixes
+  2.6 %, packaging category 3.8 % cross-reference. A future LMDW follow-up is
+  the sitemap-crawl merchant pattern (licorea precedent: per-page GET of
+  `https://www.whisky.fr/<url_key>.html`, read `"volume"` state JSON, litres →
+  ml), not the design's `LmdwFeedAdapter`.
+- **ABV share is not high enough to ride ESTIMATED:** 10.3 % in
+  `short_description` — with the live hygiene hold rule, a feed adapter lands
+  ~90 % of 6,814 rows ESTIMATED and held from user-facing surfaces, and there
+  is no volume source to pair with it; the compound-key convergence argument
+  behind D5's GO-with-ESTIMATED-volume does not apply. The walk itself is
+  proven (69/69 pages, EUR-clean, `m3_*` taxonomy clean) — only the ABV/volume
+  extraction fails the gate.
+- **NO-GO defers the LMDW adapter tasks** (3.3, and 3.3's shares of 4.1/5.1/
+  6.2/7.2) to a follow-up **while the Shopify pair proceeds** (3.1/3.2 both
+  GO). Task 2.2 can still land the `m3_family` FR keys from the census above —
+  they are additive and gate nothing until an LMDW source exists.
+- Honest TBD for any future re-plan: a full-catalog page-crawl coverage check
+  (the 10-row sample measured 100 %, but a crawl design needs its own sweep
+  before any adapter work).
 
 ## 2.2 Mapper re-sweep drop rates
 
