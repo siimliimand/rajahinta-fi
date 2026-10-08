@@ -53,6 +53,7 @@
  */
 
 import type { IFeedAdapter, RawFeedRecord } from '../interfaces/feed-adapter.interface';
+import { CRAWLER_USER_AGENT } from '../crawl/crawl-walker';
 
 /** Shopify products.json page-size maximum — also the walk's fixed page
  * size and its short-page termination threshold. */
@@ -147,8 +148,16 @@ export abstract class ShopifyProductsFeedAdapter implements IFeedAdapter {
     for (let page = 1; ; page++) {
       let response: Response;
       try {
+        // The honest crawler UA (crawl-walker.ts convention): Shopify
+        // edges hard-403 an empty-UA client — the local 5.1 rollout of
+        // onboard-shopify-lmdw-merchants measured kuhns.shop and
+        // bottleofitaly.com returning `HTTP 403` to the header-less
+        // workerd fetch while every UA-bearing request passed (the D6
+        // egress-fingerprint shape). A named agent is also the polite
+        // thing to send (design D7; the sitemap crawl already does).
         response = await fetch(
           `${productsUrl}?limit=${PAGE_LIMIT}&page=${page}`,
+          { headers: { 'user-agent': CRAWLER_USER_AGENT } },
         );
       } catch (err) {
         errors.push(`${label} page ${page} fetch failed: ${errorOf(err)}`);

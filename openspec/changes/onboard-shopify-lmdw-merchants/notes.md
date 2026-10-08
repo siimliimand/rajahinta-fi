@@ -258,8 +258,190 @@ optional — they gate nothing until an LMDW source exists.
 
 ## 5.1 Local rollout evidence
 
-TBD (per-merchant offer counts, idempotency second-run proof, correction-queue
-rows observed)
+Executed 2026-10-08, ~08:10–11:30 UTC. Branch `feature/onboard-shopify-lmdw-merchants`,
+clean tree at start. All writes LOCAL (`wrangler d1 execute DB --local`,
+`wrangler dev --port 8787 --test-scheduled` from apps/api-worker); live
+**read-only GETs to bottleofitaly.com and kuhns.shop only** — the due-tick
+harness deliberately withheld the other GRANTED daily merchants' messages
+(araxes + the four seeded crawl merchants — and on the solo-retry ticks, one
+of the task merchants) so no other store was contacted;
+zero staging/production contact. Node v24.21.0 (`/root/.nvm/versions/node/v24.21.0`)
+for every command — the host default v22.14.0 lacks FTS5 in `node:sqlite`
+(task 4.1's environmental note). `@rajahinta/core-domain` rebuilt first
+(exit 0). Nothing committed.
+
+### One code change outside this task's touches — flagged for the lead
+
+The shared walk's `fetch()` sent **no User-Agent**, and both Shopify edges
+**hard-403 an empty-UA client**: the first post-grant workflow pair
+(`…-2026-10-09-00`) completed-with-errors at 0 records — `kuhns page 1..3
+returned HTTP 403` / `bottleofitaly page 1..3 returned HTTP 403`, the
+3-consecutive-failure bound firing — while host-side curl with any UA string
+got 200 (then 429 under rapid fire). This is design D6's egress-fingerprint
+shape, surfacing locally ahead of 6.2, and it defeated the task's core
+verification. With the lead's approval (asked mid-task): `shopify-products.walk.ts`
+now sends `user-agent: CRAWLER_USER_AGENT` (`rajahinta-crawler/1.0
+(+https://rajahinta.fi)` — the sitemap-crawl constant) on every page request,
+with a header assertion in the normal-walk test. Walk tests 11/11, full
+data-acquisition suite **592/592**, package `tsc --noEmit` clean. **These two
+files (`shopify-products.walk.ts`, `shopify-products.walk.test.ts`) are the
+lead's to review/commit** — 5.1's declared touch is this notes file only.
+Without it, staging 6.2's egress smoke would 403 both sources identically.
+
+### Local D1 state found (read-only probes before any write)
+
+Registry = alko (empty URL, id 1) + alks (2) + araxes (3) — the araxes-3.1
+end state; `source_governance` = 1 row (araxes GRANTED); `retail_offers` =
+araxes 3,080 (all ESTIMATED) + the seed fixture merchants; `product_master` =
+**1,587 rows, max id 10542** (baseline).
+
+### Registry + governance inserts
+
+- **Registry rows via the seed** (4.2's rows): `pnpm --filter
+  @rajahinta/data-platform exec tsx ../../scripts/seed-d1.ts --local` →
+  migrations no-op, seed re-applied idempotently, **verification PASSED**.
+  Read-back: **`bottleofitaly` id 4** `('Bottle of Italy','IT',
+  'https://bottleofitaly.com','json',86400000)` and **`kuhns` id 5**
+  `('Kuhns','DE','https://kuhns.shop','json',86400000)` — fields exact. The
+  seed also brought the four crawl merchants (ids 6–9) and two empty-URL rows
+  (10–11), and — pre-existing seed behavior, not this change — governance rows
+  for the crawl merchants (`COMPLIANT_CRAWLING`/`GRANTED`) plus
+  spritxxl/lazyshop PENDING (`source-governance.seed.ts`).
+- **Governance** (no `.dev.vars` → `/ops` 403 locally → direct INSERT, the
+  araxes-3.1 path; the audited console is 6.2/7.2's): `NOT EXISTS`-guarded,
+  `RETAILER_API`/`GRANTED`, per-merchant sourceUrl, reason "local grant for
+  first-ingest verification (task 5.1 …; local-only disposable row)".
+  Read-back: **id 8 bottleofitaly → `https://bottleofitaly.com`**, **id 9
+  kuhns → `https://kuhns.shop`**, all fields exact. **Local-only — disposable.**
+
+### Producer tick + ingestion end-to-end (araxes-3.1 playbook, ×2)
+
+1. **Pre-grant real-clock tick** (`curl
+   /cdn-cgi/handler/scheduled?cron=0+*+*+*+*`): `Not scheduling merchant
+   "bottleofitaly": no governance records — defaulting to PENDING` (same for
+   kuhns) + `enqueued 0/11` — the §0 fail-closed contract for both.
+2. **Post-grant real-clock tick**: both recognized, deferred by the daily
+   interval-bucket gate — `enqueued 0/11 … (7 not due this tick)`.
+3. **Due-tick harness**: temporary vitest file (deleted after the run) running
+   the unmodified `schedulePriceIngestions` via `wrangler.getPlatformProxy`
+   over the same `.wrangler/state`, fixed `now` at the next daily boundary
+   passes, send-spy wrapping the real queue binding. Adaptation: the spy
+   **delivered only the two task merchants' messages** and withheld araxes +
+   the four crawl merchants (all GRANTED+daily, hence `enqueued 7`,
+   `skippedNotPermitted 1` = alks, `skippedNoFeedUrl 3`) — keeping live egress
+   on the two stores. Boundary ticks delivered exactly:
+   `{"dedupeKey":"price-ingestion-bottleofitaly-<bucket>",…}` and
+   `{"dedupeKey":"price-ingestion-kuhns-<bucket>",…}` per bucket. Consumer
+   handoff lines in the dev log (`Ingesting prices for merchant … (dedupe key
+   …)` → `Handed off … to Workflow instance …`) for every delivered message;
+   a deliberate duplicate send of `…-kuhns-2026-10-14-00` produced
+   **`Skipping ingestion price-ingestion-kuhns-2026-10-14-00: already
+   processed`** — the consumer-side dedupe key contract observed (bonus).
+   Note: one governance check for a *withheld* merchant once hit D1
+   `SQLITE_BUSY` under the concurrent dev worker and failed closed (the
+   fail-closed default under contention; enqueued 6 not 7 on that tick).
+4. **Workflow-instance logs do not surface in the wrangler dev console** (the
+   araxes-3.1 quoted `Fetch warnings`/`Workflow pipeline run` fragments were
+   captured on a setup where they were; here the evidence channel is the
+   Local Explorer API: `GET /cdn-cgi/local/explorer/api/workflows/
+   rajahinta-price-ingestion-dev/instances/<id>` returns the run output
+   `productsIngested` + the full per-run error list). Two wrangler-dev
+   artifacts recorded, not chased: the known post-batch `Uncaught Error: …
+   canceled … hung` line, and one engine wedge after the first pair (retry
+   timers queued but unserviced) — a dev-worker restart resumed the durable
+   instances cleanly.
+
+### Ingestion runs (all instances `complete`; every run re-walked from page 1)
+
+| Bucket key suffix | bottleofitaly | kuhns |
+|---|---|---|
+| `…-10-09-00` (pre-UA-fix) | **403 ×3**, 0 records | **403 ×3**, 0 records |
+| `…-10-10-00` (post-fix) | 429 ×3, 0 records | 429 ×3, 0 records |
+| `…-10-11-00` | **388 ingested** (pages 2–3 ok = 500 raw; 1/4/5/6 429) | 429 ×3 |
+| `…-10-12-00` | 429 ×3 (window re-tripped by the prior burst) | 429 ×3 |
+| `…-10-13-00` | **867 ingested** (pages 2–5 ok = 1,000 raw; 1/6/7/8 429) | — (withheld) |
+| `…-10-14-00` | — (withheld) | **102 ingested** (page 3 ok = 250 raw; 1/2/4/5/6 429) |
+| `…-10-16-00` | — (withheld) | **220 ingested** (pages 3+6 ok = 500 raw; 1/2/4/5/7/8/9 429 — page 6 recovered past the isolated failures) |
+
+The unpaced walk (D7: sequential, no backoff — "the daily cadence is the
+retry") tripped both stores' IP rate windows within ~2–4 fat pages every
+fresh-window run;
+pages 2–3 of bottleofitaly are the same physical pages across runs, so run
+`…-10-13-00` re-ingested run `…-10-11-00`'s exact rows, and kuhns page 3 is
+identical across `…-10-14-00`/`…-10-16-00`. **Partial catalogs are the
+accepted evidence here** — the plumbing proof — with full-catalog convergence
+riding the 24-h cadence in staging/production (design D7). The 30-min-scale
+silences that let a window decay here do not exist in production.
+
+### Workflow results + idempotency evidence (compound-key tier; no EANs anywhere)
+
+| | bottleofitaly | kuhns |
+|---|---|---|
+| `retail_offers` final | **1,255 rows / 867 distinct products**, exactly two `observed_at` batches (388 @ 08:54:45.005–.006Z; 867 @ 09:30:21.027–.030Z — chunk stamps), min 35 / max 6,059,265 c, single EUR / IT / `in_stock` / **all ESTIMATED** | **322 rows / 218 distinct products**, two batches (102 @ 10:02:30.992Z; 220 @ 11:26:09.072–.073Z), min 690 / max 589,999 c, EUR / DE / **all ESTIMATED** |
+| `product_master` | 1,587 → **2,454 after run 2** (+867, ids 10543–11409 contiguous); run 2's 1,000 raw = 867 ingested + 133 drops | 2,454 → **2,672 final** (+218 for kuhns across runs D+F, ids 11410–11627: +102 in run D, +116 in run F); run F's 500 raw = 220 ingested + 280 drops |
+| **Repeat-run idempotency** | run `…-10-13-00` re-ingested all **388** of run `…-10-11-00`'s products by (name, brand, containerType, unitVolume) — **zero new master rows** for them; +479 = only the new page-4/5 products | run `…-10-16-00` re-ingested all **102** of run `…-10-14-00`'s page-3 products — **zero new master rows**; 118 page-6 landings produced 116 new rows (2 compound-matched existing identities — recurring rows deduped by key) |
+
+- **Explicit no-EAN assertion**: `SELECT COUNT(*) … WHERE id > 10542 AND ean
+  IS NOT NULL` = **0** across all 1,085 new master rows (867 BOI + 218 kuhns;
+  BOI `custom-…` SKUs and kuhns `ML…` SKUs match no accepted EAN form — the
+  sweep reality).
+- `review_hold_reason`: bottleofitaly 2 rows `nonalcoholic_in_alcohol_category`
+  (of 867), kuhns 5 (of 218) — the parser's non-alcoholic-ingestion guard
+  stamping the machine-readable hold, matching the runs' `Held for review`
+  lines (2 + 5 across each merchant's runs).
+- Reconciliations (raw = ingested + dropped, per instance output): BOI run 1
+  500 = 388 + 112 (Aceto 76, Olio 28, Altro 8); BOI run 2 1,000 = 867 + 133
+  (Aceto 77, Olio 29, Altro 27); kuhns run 1 250 = 102 + 148; kuhns run 2
+  500 = 220 + 280. **The merch pair (Olio/Aceto) is present in every ingested
+  subset** — the deliberately-unmapped D3/D8 drops, riding the correction
+  queue as designed.
+- Correction-queue shape per run (the in-band error list): kept-without-EAN
+  one per raw row (500/1,000/250/500 — 100 % of rows, the D8 noise budget
+  reality), the merch/no-canonical drops above, the hygiene holds, and
+  `Data error: unit_volume 0` honest-0-volume ESTIMATED wine rows (236 BOI
+  run 1 / 461 BOI run 2 / 3+3 kuhns — the sweep's 54.6 %-no-volume-token
+  population showing up as designed).
+
+### API verification (local worker :8787)
+
+- `GET /api/v1/products/10572` without `x-age-confirmed`: **403**
+  (AGE_GATE_REQUIRED) ✅; with it: bottleofitaly offer — merchant
+  `bottleofitaly`, IT, **6,059,265 c** (Cognac Louis XIII Rare Cask 70cl),
+  EUR, `in_stock`, `reliabilityStatus: ESTIMATED`, `sourceUrl
+  https://bottleofitaly.com/products/cognac-louis-xiii-rare-cask-70cl-astucciato-remy-martin` ✅.
+- `GET /api/v1/products/11473` with header: kuhns offer — `kuhns`, DE,
+  **589,999 c** (Macallan 30 Jahre Sherry Cask 2023 0,7l, alc. 43 Vol.-%),
+  EUR, `in_stock`, ESTIMATED, kuhns.shop sourceUrl ✅.
+- Ranked search `GET /api/v1/products?q=macallan`: 3 hits — two kuhns-created
+  rows (brand `Kuhns-onlineshop`, category `intermediate_products`, ABV 0.43,
+  unitVolume 0.7000, `lowestPriceCents` set) plus the araxes-created 9044 ✅.
+- `GET /api/v1/merchants/reliability`: **`bottleofitaly` offerCount 867**,
+  freshestObservedAt = run-2 batch (09:30:21.030Z); **`kuhns` offerCount
+  218**, freshestObservedAt = run-F batch (11:26:09.073Z) ✅.
+- R2: today's observation object in local `rajahinta-observations-dev` carries
+  **867 bottleofitaly + 102 kuhns** lines — the offer-change hook fired for
+  both merchants on their first changed-offer passes (§2.3 shape).
+
+### Environment cleanup
+
+Harness file deleted; `wrangler dev` stopped (port 8787 free); scratch JSON
+files removed. Working tree now carries only the two flagged walk files and
+this notes section.
+
+### Blockers / follow-ups for the lead
+
+1. **Walk UA header** (above) — two modified files outside this task's
+   touches; needs review/commit before 6.2 (staging would 403 otherwise).
+2. **D7 pacing measurement**: both stores 429 the unpaced walk within ~2–4 fat
+   pages; kuhns's window outlasted 30-min silences (its full 9-page catalog
+   was never ingested in one local run). This is the "sweeps or staging show
+   persistent 429s" condition D7 names for the measured backoff follow-up;
+   locally it bounded the evidence to partial catalogs by design.
+3. Note for future local rollouts: workflow step logs don't reach the wrangler
+   dev console here — instance output + error list come from the Local
+   Explorer API; the run-0a engine wedge (retry timers unserviced until a
+   restart) is a dev-runtime quirk worth remembering when a pair of
+   concurrent workflows starts at once.
 
 ## 6.2 Staging rollout evidence
 

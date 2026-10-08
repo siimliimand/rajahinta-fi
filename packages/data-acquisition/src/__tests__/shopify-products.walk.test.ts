@@ -16,6 +16,7 @@
  * @module ShopifyProductsWalkTest
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { CRAWLER_USER_AGENT } from '../crawl/crawl-walker';
 import {
   ShopifyProductsFeedAdapter,
   type ShopifyWalkOptions,
@@ -169,6 +170,14 @@ describe('ShopifyProductsFeedAdapter — sequential short-page walk (design D1)'
     expect(fetchMock).toHaveBeenCalledTimes(3);
     for (let page = 1; page <= 3; page++) {
       expect(calls[page - 1]).toBe(`${PRODUCTS_URL}?limit=250&page=${page}`);
+    }
+    // Every page request carries the honest crawler UA (design D7; the
+    // local Shopify 403-without-UA measurement, change
+    // onboard-shopify-lmdw-merchants task 5.1).
+    for (const call of fetchMock.mock.calls) {
+      expect(
+        (call[1] as { headers: Record<string, string> }).headers['user-agent'],
+      ).toBe(CRAWLER_USER_AGENT);
     }
     expect(records).toHaveLength(620);
     expect(errors).toEqual([]);
