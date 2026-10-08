@@ -16,8 +16,9 @@
  * container tokens into the product_master vocabulary, the ABV-guarded
  * name-token category mapping so a zero/unparseable-ABV row lands as
  * non-alcoholic with the same review hold, and bundle names held for
- * review. Per-source knobs (store-brand override, description ABV)
- * come from the {@link ExtractorConfig}.
+ * review. Per-source knobs (store-brand override, description ABV,
+ * whisky.fr's state-JSON reader + GTIN check-digit gate) come from the
+ * {@link ExtractorConfig}.
  *
  * Minimization: the record carries no images and no description —
  * those exist only as reader inputs, and no record field could hold
@@ -38,9 +39,14 @@ import {
   parseAbvPercent,
   parseVolume,
   readEanFromSku,
+  type SourceCategoryMapping,
 } from '../../adapters/alks.parser';
 import { NONALCOHOLIC_HOLD_REASON } from '@rajahinta/core-domain';
 import type { ExtractorConfig } from './extractor-config';
+import {
+  categoryLabelsImpliedMapping,
+  isValidEan13CheckDigit,
+} from './lmdw-state.reader';
 import { readJsonLdProduct } from './json-ld.reader';
 import { readMicrodataProduct } from './microdata.reader';
 import { readOgMetaProduct } from './og-meta.reader';
@@ -168,19 +174,31 @@ export function extractProductPage(
           'EAN form (13 digits, or a leading-zero GTIN-14) — record kept without an EAN, ' +
           'flagged for the correction queue',
       );
+    } else if (
+      config.gtinCheckDigit === true &&
+      !isValidEan13CheckDigit(ean)
+    ) {
+      // D4 (onboard-lmdw-crawl-merchant): the probe measured 220/220
+      // page-attested GTINs check-digit valid, so a failing value is
+      // attestation drift — kept EAN-less, never padded or corrected.
+      errors.push(
+        `Failed to map ${label}: GTIN "${product.gtin}" fails the GS1 check digit — ` +
+          'record kept without an EAN, flagged for the correction queue',
+      );
+      ean = null;
     }
   }
 
-  // ABV: structured fields carry none on any v1 source (recon verdicts),
-  // so the name percentage is the primary carrier and the description
-  // prose is the configured per-source fallback — never the reverse.
-  const abvPercent = parseAbvPercent(name) ??
-    (config.abvFromDescription !== undefined && product.description !== null
-      ? config.abvFromDescription(product.description)
-      : null);
-  const abvFraction = abvPercent !== null ? abvPercent / 100 : null;
+  // ABV/volume/category. With a state reader (whisky.fr), the embedded
+  // state JSON is the attested carrier: guarded fields, keyed-uncertainty
+  // ESTIMATED on absence/rejection (never a name-parse guess), and the
+  // m3 labels as the category candidates. Without one (the v1 sources),
+  // the name heuristics below stand unchanged.
+  const pageState =
+    config.pageStateReader !== undefined
+      ? (config.pageStateReader(html) ?? null)
+      : null;
 
-  const volume = parseVolume(name);
   const brand =
     product.brand !== null &&
     config.storeBrandNames !== undefined &&
@@ -188,24 +206,85 @@ export function extractProductPage(
       ? ''
       : (product.brand ?? '');
 
+  let abvFraction: number | null;
+  let volumeMl: number;
+  let packCount: number | null;
+  let mapping: SourceCategoryMapping | null = null;
+
+  if (config.pageStateReader !== undefined) {
+    abvFraction = pageState?.abvFraction ?? null;
+    volumeMl = pageState?.volumeMl ?? 0;
+    packCount = null;
+    if (pageState?.abvFraction == null) {
+      errors.push(
+        `Failed to map ${label}: page state carries no usable strength (ABV percent) — ` +
+          'ABV rides null through the keyed-uncertainty ESTIMATED path, ' +
+          'flagged for the correction queue',
+      );
+    }
+    if (pageState?.volumeMl == null) {
+      errors.push(
+        `Failed to map ${label}: page state carries no usable volume — ` +
+          'volume rides 0 ml through the keyed-uncertainty ESTIMATED path, ' +
+          'flagged for the correction queue',
+      );
+    }
+
+    // The m3 labels are this source's category evidence. Labels present
+    // but all deliberately-unmapped → correction naming them — the name
+    // tokens are never consulted against a real taxonomy's verdict.
+    const labels = pageState?.categoryLabels ?? [];
+    if (labels.length > 0) {
+      mapping = categoryLabelsImpliedMapping(labels, abvFraction);
+      if (mapping === null) {
+        return {
+          record: null,
+          errors: [
+            ...errors,
+            `Failed to map ${label}: category labels (${labels.map((term) => `"${term}"`).join(', ')}) resolve to ` +
+              'no canonical beverage category — flagged for the correction queue',
+          ],
+        };
+      }
+    }
+  } else {
+    // ABV: structured fields carry none on any v1 source (recon
+    // verdicts), so the name percentage is the primary carrier and the
+    // description prose is the configured per-source fallback — never
+    // the reverse.
+    const abvPercent = parseAbvPercent(name) ??
+      (config.abvFromDescription !== undefined && product.description !== null
+        ? config.abvFromDescription(product.description)
+        : null);
+    abvFraction = abvPercent !== null ? abvPercent / 100 : null;
+
+    const volume = parseVolume(name);
+    volumeMl = volume?.volumeMl ?? 0;
+    packCount = volume?.packCount ?? null;
+  }
+
   // The same ABV-guarded name-token mapping the Store API parser uses:
   // crawl pages expose no storefront categories, so a zero/unparseable
   // ABV re-keys to non-alcoholic with the identical review hold (D7).
-  const mapping = nameImpliedMapping(name, abvFraction);
+  // Sources with m3 labels present already resolved above; pages whose
+  // state carried no labels at all fall back to the shared name tokens.
   if (mapping === null) {
-    return {
-      record: null,
-      errors: [
-        ...errors,
-        `Failed to map ${label}: product name yields no canonical beverage category — ` +
-          'flagged for the correction queue',
-      ],
-    };
+    mapping = nameImpliedMapping(name, abvFraction);
+    if (mapping === null) {
+      return {
+        record: null,
+        errors: [
+          ...errors,
+          `Failed to map ${label}: product name yields no canonical beverage category — ` +
+            'flagged for the correction queue',
+        ],
+      };
+    }
   }
   const held = mapping.nonAlcoholicHold === true;
   if (held) {
     errors.push(
-      `Held for review ${label}: ABV is ${abvPercent === 0 ? '0' : 'unparseable'} but the ` +
+      `Held for review ${label}: ABV is ${abvFraction === 0 ? '0' : 'unparseable'} but the ` +
         'name resolves to an alcohol category — non-alcoholic rows are barred from alcohol ' +
         `categories, ingested as non-alcoholic with hold reason ${NONALCOHOLIC_HOLD_REASON}, ` +
         'flagged for the correction queue',
@@ -218,9 +297,9 @@ export function extractProductPage(
     manufacturer: brand,
     brand,
     category: mapping.taxCategory,
-    alcoholByVolume: abvPercent !== null ? abvPercent / 100 : null,
-    volumeMl: volume?.volumeMl ?? 0,
-    packCount: volume?.packCount ?? null,
+    alcoholByVolume: abvFraction,
+    volumeMl,
+    packCount,
     containerType: containerTypeFromName(name),
     regulatoryClassification: mapping.taxCategory,
     depositSystem: false,
