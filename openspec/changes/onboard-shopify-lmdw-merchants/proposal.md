@@ -53,7 +53,7 @@ None of the three stores exposes EANs (Shopify variants carry no barcodes on the
 
 ### Modified Capabilities
 
-- `data-acquisition`: Permitted-source ingestion gains bottleofitaly, kuhns, and lmdw as live sources 7–9 (registry rows, `RETAILER_API` governance, daily cadence); the adapter registry gains a shared Shopify products walk and the first Magento GraphQL adapter, reaching nine live merchants. SKU/EAN rules unchanged — non-matching SKUs keep records EAN-less and correction-flagged. EUR-native only: all three stores are EUR (verified by probe/cart.js); a non-EUR drift fails the sweep re-check rather than triggering conversion work.
+- `data-acquisition`: Permitted-source ingestion gains bottleofitaly, kuhns, and lmdw as live sources (registry rows, `RETAILER_API` governance, daily cadence); the adapter registry gains a shared Shopify products walk and the first Magento GraphQL adapter — the registered adapter map grows ten → thirteen (six store-API regulars, four sitemap-crawl merchants, three new). SKU/EAN rules unchanged — non-matching SKUs keep records EAN-less and correction-flagged. EUR-native only: all three stores are EUR (verified by probe/cart.js); a non-EUR drift fails the sweep re-check rather than triggering conversion work.
 
 ## Impact
 
