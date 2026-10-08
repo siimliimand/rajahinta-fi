@@ -443,7 +443,34 @@ untouched; nothing committed.
 
 ## 6.1 PR + merge evidence
 
-TBD (PR number, CI summary, merge SHA, staging deploy run id)
+**MERGED — staging auto-deployed green (2026-10-08).**
+
+- PR: [#109](https://github.com/siimliimand/rajahinta-fi/pull/109)
+  (`feature/onboard-lmdw-crawl-merchant` → `master`), merged with a
+  merge commit: **`321aa9d48974c81f1d570ced7351b6b245d8c54b`**.
+- First CI round failed on one deterministic, code-level item:
+  `tests/integration/d1/crawl-producer-parked.d1.test.ts:65` —
+  `expected 12 to be 11` (D1 suite + Integration + the `ci-pass` gate;
+  17 other checks green). The 4.2 lmdw registry seed row grew the
+  bootstrap registry to 12 rows, and this producer test still hardcoded
+  the pre-lmdw counts. lmdw carries a feedUrl but deliberately NO seed
+  governance row (the GRANT is 6.2's ops-console step), so the
+  fail-closed producer counts it as not-permitted, not enqueued.
+- Fix-forward commit **`b50da70`** (test-only, no production code):
+  `merchants` 11→12, `skippedNotPermitted` 4→5, comments updated;
+  `enqueued` stayed 4, enqueued merchantIds unchanged. (The sibling
+  `d1-seed.test.ts` enumeration was already updated in 4.2 — only this
+  file was missed.)
+- Re-run CI: **all 31 checks SUCCESS** (`mergeStateStatus: CLEAN`) —
+  unit, e2e, browser-e2e, build, lint, worker checks, wrangler config,
+  content policy, data-quality, golden-dataset, compliance, composition
+  smoke, load test, **D1 suite** and **Integration** now green
+  (Artillery staging suite skipped by design). Runs 37837653382 (push)
+  + 37837659485 (PR).
+- Staging auto-deploy: `deploy-staging.yml` run
+  **37838714509** on the master push of the merge commit — **success**
+  in 2m50s, including `Health gate — staging readiness` ✓ (jobs:
+  migrations → seed → API/email/frontend Worker deploys → health gate).
 
 ## 6.2 Staging rollout evidence
 
