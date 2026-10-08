@@ -518,6 +518,145 @@ describe('mapSourceCategory — araxes.ee catalog vocabulary (sweep patch 2026-1
   });
 });
 
+describe('mapSourceCategory — bottleofitaly.com catalog vocabulary (sweep patch 2026-10-08)', () => {
+  it('maps the IT product_type wine leaves to still wine — never the fallback rate', () => {
+    for (const term of ['Vino Rosso', 'Vino Bianco', 'Vino Rosato']) {
+      expect(mapSourceCategory(term), `term "${term}" must map`).toEqual({
+        canonicalCategory: 'wine',
+        taxCategory: 'wine_still',
+      });
+    }
+  });
+
+  it('maps "Bollicine" to sparkling wine — kept apart from still wine for the excise split', () => {
+    expect(mapSourceCategory('Bollicine')).toEqual({
+      canonicalCategory: 'sparkling-wine',
+      taxCategory: 'wine_sparkling',
+    });
+  });
+
+  it('maps "Spirits" to spirits — pinned from the feed vocabulary, a keyword outcome at any ABV', () => {
+    for (const abv of [undefined, 0.43]) {
+      const result = mapSourceCategory('Spirits', abv);
+      expect(result, `spirits at abv ${abv} must map`).toEqual({
+        canonicalCategory: 'spirits',
+        taxCategory: 'spirits',
+      });
+      // Keyword outcome, never a boundary-rule re-assignment.
+      expect(result!.boundaryApplied, `spirits at ${abv}`).toBeUndefined();
+    }
+  });
+
+  it('maps "Birra" to beer — the 1.1 census term the probe-page list missed', () => {
+    expect(mapSourceCategory('Birra')).toEqual({
+      canonicalCategory: 'beer',
+      taxCategory: 'beer',
+    });
+  });
+
+  it('matches the census casing exactly after trim/lowercase — the lowercase stray hits the same key', () => {
+    expect(mapSourceCategory('  vino bianco ')).toEqual(mapSourceCategory('Vino Bianco'));
+    expect(mapSourceCategory('bollicine')).toEqual(mapSourceCategory('Bollicine'));
+  });
+
+  it('changes no existing mapping — the Swedish and Estonian keys behave as before', () => {
+    expect(mapSourceCategory('Sprit')).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+    });
+    expect(mapSourceCategory('Punane vein')).toEqual({
+      canonicalCategory: 'wine',
+      taxCategory: 'wine_still',
+    });
+  });
+
+  it('leaves the merch pair and the heterogeneous buckets unmapped — correction queue owns them', () => {
+    for (const term of ['Olio', 'Aceto', 'Altro', 'Gadget', 'Buoni regalo', 'Vino']) {
+      expect(mapSourceCategory(term, 0.2), `term "${term}" must stay unmapped`).toBeNull();
+      expect(mapSourceCategory(term), `term "${term}" must stay unmapped`).toBeNull();
+    }
+  });
+});
+
+describe('mapSourceCategory — kuhns.shop catalog vocabulary (sweep patch 2026-10-08)', () => {
+  it('maps the DE wine and beer terms', () => {
+    expect(mapSourceCategory('Wein')).toEqual({
+      canonicalCategory: 'wine',
+      taxCategory: 'wine_still',
+    });
+    expect(mapSourceCategory('Bier')).toEqual({
+      canonicalCategory: 'beer',
+      taxCategory: 'beer',
+    });
+  });
+
+  it('maps "Sekt" to sparkling wine — kept apart from still wine for the excise split', () => {
+    expect(mapSourceCategory('Sekt')).toEqual({
+      canonicalCategory: 'sparkling-wine',
+      taxCategory: 'wine_sparkling',
+    });
+  });
+
+  it('maps "Whisky" and "Rum" to spirits — keyword outcomes at any ABV', () => {
+    for (const term of ['Whisky', 'whisky', 'Rum']) {
+      for (const abv of [undefined, 0.46]) {
+        const result = mapSourceCategory(term, abv);
+        expect(result, `term "${term}" at abv ${abv} must map`).toEqual({
+          canonicalCategory: 'spirits',
+          taxCategory: 'spirits',
+        });
+        expect(result!.boundaryApplied, `"${term}" at ${abv}`).toBeUndefined();
+      }
+    }
+  });
+
+  it('the census "Likör" and "Vodka" spellings already map through the existing entries — no new key', () => {
+    expect(SWEDISH_SOURCE_CATEGORY_MAP['likör']).toBe('liqueur');
+    expect(SWEDISH_SOURCE_CATEGORY_MAP['vodka']).toBe('spirits');
+    expect(mapSourceCategory('Likör')).toEqual({
+      canonicalCategory: 'liqueur',
+      taxCategory: 'spirits',
+    });
+    expect(mapSourceCategory('Vodka')).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+    });
+  });
+
+  it('matches the census casing and whitespace exactly after trim/lowercase', () => {
+    expect(mapSourceCategory('  wein ')).toEqual(mapSourceCategory('Wein'));
+    expect(mapSourceCategory('sekt')).toEqual(mapSourceCategory('Sekt'));
+  });
+
+  it('changes no existing mapping — the Swedish single-ö "Likör" behaves as before', () => {
+    expect(mapSourceCategory('Likör')).toEqual({
+      canonicalCategory: 'liqueur',
+      taxCategory: 'spirits',
+    });
+    expect(mapSourceCategory('Viski')).toEqual({
+      canonicalCategory: 'spirits',
+      taxCategory: 'spirits',
+    });
+  });
+
+  it('leaves the untyped-majority merch and non-beverage terms unmapped — title inference (3.2) owns the rest', () => {
+    for (const term of [
+      'Bio Direktsaft',
+      'Apfelsaft',
+      'Iced Tea',
+      'Wasser',
+      'Limo',
+      'Bundle',
+      'giftbox_ghost_product',
+      'Apfelwein',
+      'champangne',
+      'Portwein',
+    ]) {
+      expect(mapSourceCategory(term, 0.2), `term "${term}" must stay unmapped`).toBeNull();
+    }
+  });
+});
+
 describe('mapSourceCategory — unmappable categories', () => {
   it('returns null for an unrecognized string — flagged, never fallback-assigned', () => {
     expect(mapSourceCategory('Kaffe')).toBeNull();

@@ -300,11 +300,25 @@ describe('composeIngestionPipeline — live feed adapters (task 2.2)', () => {
     };
   }
 
-  it('registers six live adapters — alko, alks, longero, kippis, mydrink, and araxes all resolve by merchantId', async () => {
+  it('registers twelve live adapters — alko, alks, longero, kippis, mydrink, araxes, bottleofitaly, kuhns, viinarannasta, viinikauppa, licorea, and drinkonline all resolve by merchantId', async () => {
     // In-memory governance grants admit all lookups without the durable
     // table; the gated path never writes an observation.
     const governanceRepository = new InMemorySourceGovernanceRepository();
-    for (const merchantId of ['alko', 'alks', 'longero', 'kippis', 'mydrink', 'araxes', 'no-such-adapter']) {
+    for (const merchantId of [
+      'alko',
+      'alks',
+      'longero',
+      'kippis',
+      'mydrink',
+      'araxes',
+      'bottleofitaly',
+      'kuhns',
+      'viinarannasta',
+      'viinikauppa',
+      'licorea',
+      'drinkonline',
+      'no-such-adapter',
+    ]) {
       await governanceRepository.create({
         merchantId,
         acquisitionMethod: 'RETAILER_API',
@@ -328,8 +342,23 @@ describe('composeIngestionPipeline — live feed adapters (task 2.2)', () => {
 
     // Closed local port: a RESOLVED adapter attempts the fetch and
     // fails fast into errors[] — any error but the sentinel proves the
-    // map resolves the merchantId.
-    for (const merchantId of ['alko', 'alks', 'longero', 'kippis', 'mydrink', 'araxes']) {
+    // map resolves the merchantId. The crawl adapters fail the same way:
+    // their registry feedUrl IS the sitemap URL, so the closed port
+    // kills the sitemap fetch before any crawl state is touched.
+    for (const merchantId of [
+      'alko',
+      'alks',
+      'longero',
+      'kippis',
+      'mydrink',
+      'araxes',
+      'bottleofitaly',
+      'kuhns',
+      'viinarannasta',
+      'viinikauppa',
+      'licorea',
+      'drinkonline',
+    ]) {
       const result = await pipeline.runForMerchant(merchantConfig(merchantId));
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors).not.toContain(

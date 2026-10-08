@@ -122,6 +122,20 @@ export { MydrinkFeedAdapter } from './adapters/mydrink.adapter';
 // maps) is wired in the api-worker compositions, not here.
 export { AraxesFeedAdapter } from './adapters/araxes.adapter';
 
+// bottleofitaly.com Shopify products.json adapter — the first Shopify
+// merchant (task 3.1, change onboard-shopify-lmdw-merchants): a thin
+// subclass of the shared products.json walk; the sweep-proven BOI
+// parser is its parseProducts hook. Composition (adapter maps) is
+// wired in the api-worker compositions, not here.
+export { BottleofItalyFeedAdapter } from './adapters/bottleofitaly.adapter';
+
+// kuhns.shop Shopify products.json adapter — the second Shopify
+// merchant (task 3.2, change onboard-shopify-lmdw-merchants): a thin
+// subclass of the shared walk; the EAN-less-ML-SKU parser rides the
+// keyed-uncertainty ESTIMATED path. Composition (adapter maps) is
+// wired in the api-worker compositions, not here.
+export { KuhnsFeedAdapter } from './adapters/kuhns.adapter';
+
 // ---------------------------------------------------------------------------
 // Sitemap crawl sources (change sitemap-crawl-merchants) — one shared
 // cycle (sitemap once → product-URL filter → lastmod diff → polite walk →

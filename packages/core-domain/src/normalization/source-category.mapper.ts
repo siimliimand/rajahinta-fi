@@ -328,6 +328,64 @@ export const SWEDISH_SOURCE_CATEGORY_MAP: Readonly<Record<string, CanonicalCateg
   'alkoholivaba õlu': 'non-alcoholic',
   'alkoholivaba vein': 'non-alcoholic',
   'alkoholivaba vahuvein': 'non-alcoholic',
+
+  // --- bottleofitaly.com catalog vocabulary (sweep decision 2026-10-08,
+  // change onboard-shopify-lmdw-merchants, 1.1). Additive only: every
+  // term maps to an existing canonical category, keyed by the census's
+  // exact product_type spellings (matching is exact after
+  // trim/lowercase, so the census's one lowercase `Vino bianco` stray
+  // hits the 'vino bianco' key too). These keys carry the beverage rows
+  // behind most of that catalog's category-driven drops (22,937-product
+  // sweep, design D3/D8).
+  //
+  // Deliberately NOT mapped:
+  // - 'Olio' (430) / 'Aceto' (171): olive oil and vinegar — the merch
+  // pair design D3/D8 keeps in the correction queue, never a guessed
+  // beverage category.
+  // - 'Altro' (713, "other") and 'Gadget' (320) / 'Buoni regalo' (1):
+  // heterogeneous merch-and-other buckets — like the mydrink/kippis
+  // merch parents, a mapping would be a guess.
+  // - bare 'Vino' (11): a census stray below any meaningful volume;
+  // the store's own taxonomy expresses still wine through the
+  // 'Vino Rosso/Bianco/Rosato' leaves and sparkling through
+  // 'Bollicine'.
+  spirits: 'spirits', // pinned from the feed vocabulary; normalizeCategory already resolves it (D3)
+  'vino rosso': 'wine',
+  'vino bianco': 'wine',
+  'vino rosato': 'wine',
+  bollicine: 'sparkling-wine', // the store's sparkling term — kept apart from still wine for the excise split
+  birra: 'beer', // 378 rows (1.6 %) in the 1.1 census — the probe-page list missed it; same meaningful-volume rule as the kuhns keys below
+
+  // --- kuhns.shop catalog vocabulary (sweep decision 2026-10-08, change
+  // onboard-shopify-lmdw-merchants, 1.2). Additive only: every term
+  // maps to an existing canonical category, keyed by the census's exact
+  // product_type spellings. The 1.2 sweep measured product_type empty
+  // on 93.7 % of rows (1,885) — the DE vocabulary can only ever hit the
+  // typed minority (~6 %); the untyped majority rides the parser's
+  // name-token fallback (design D3 correction), so these keys stay
+  // narrow: census terms at meaningful volume (≥ the 4-row 'Bier'
+  // bar), everything else → correction queue or title inference.
+  //
+  // 'Likör' and 'Vodka' need no new key: the census spellings
+  // lowercase onto the existing 'likör' (kippis-era Swedish) and
+  // 'vodka' (mydrink) entries. 'Gin' (2), 'Tequila' (1) and 'calvados'
+  // (1) already resolve through normalizeCategory / 'calvados'; single-
+  // row strays ('champangne' [sic], 'Portwein') stay unmapped rather
+  // than guessing a misspelling's intent.
+  //
+  // Deliberately NOT mapped:
+  // - 'Bio Direktsaft' (3), 'Apfelsaft' (2), 'Iced Tea' (2), 'Wasser'
+  //   (1), 'Limo' (1): juice, water and soft drinks — the strict
+  //   non-beverage list.
+  // - 'Bundle' (2), 'giftbox_ghost_product' (1): merch, not beverage
+  //   categories.
+  // - 'Apfelwein' (3): cider-family alcohol, but below the meaningful-
+  //   volume bar — title inference (3.2) owns these rows.
+  wein: 'wine',
+  bier: 'beer',
+  sekt: 'sparkling-wine', // kept apart from still wine for the excise split
+  whisky: 'spirits', // pinned; normalizeCategory already resolves it — the census's lowercase stray hits the same key
+  rum: 'spirits', // pinned; normalizeCategory already resolves it
 };
 
 /** Explicit "other" tokens in the sources we ingest — mappable, unlike garbage. */
