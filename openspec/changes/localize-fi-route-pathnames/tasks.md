@@ -16,7 +16,7 @@
 
 ## 4. Documentation
 
-- [ ] 4.1 Update ARCHITECTURE.md frontend/routing section (pathnames vocabulary table, negotiation matrix from design D3, switcher behavior), DESIGN.md navigation pattern (switcher), and fix stale docblocks that describe bare-path = fi-by-convention (`i18n/navigation.ts`, `sitemap.ts` header comment). Verify: repo content lint passes and the vocabulary table matches `routing.ts` exactly (spot-check by diffing the two lists). <!-- agent: platform-engineer.fast, depends_on: [2.1, 2.2], touches: [ARCHITECTURE.md, DESIGN.md, apps/frontend/src/i18n/navigation.ts] -->
+- [x] 4.1 Update ARCHITECTURE.md frontend/routing section (pathnames vocabulary table, negotiation matrix from design D3, switcher behavior), DESIGN.md navigation pattern (switcher), and fix stale docblocks that describe bare-path = fi-by-convention (`i18n/navigation.ts`, `sitemap.ts` header comment). Verify: repo content lint passes and the vocabulary table matches `routing.ts` exactly (spot-check by diffing the two lists). <!-- agent: platform-engineer.fast, depends_on: [2.1, 2.2], touches: [ARCHITECTURE.md, DESIGN.md, apps/frontend/src/i18n/navigation.ts] -->
 
 ## 5. Verification
 
