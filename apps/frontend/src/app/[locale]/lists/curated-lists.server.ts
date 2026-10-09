@@ -26,7 +26,7 @@
  */
 
 import { ApiFetchError, request, SITE_URL } from '@/lib/api';
-import { routing } from '@/i18n/routing';
+import { localizedPath } from '@/lib/i18n/localized-paths';
 
 /** One validated evidence link — {label, url} as serialized by the API. */
 export interface EvidenceLink {
@@ -126,13 +126,16 @@ export interface CuratedListJsonLd {
 }
 
 /**
- * Locale-prefixed absolute URL for a list page — the sitemap's prefix
- * rule (default locale serves unprefixed, others under /{locale}).
+ * Locale-prefixed absolute URL for a list page — resolved through the
+ * localized pathnames (design D6, change localize-fi-route-pathnames):
+ * the Finnish page lives at /listat/[slug], the English at /lists/[slug],
+ * the same URL the sitemap emits for the route.
  */
 export function curatedListPageUrl(slug: string, locale: string): string {
-  const prefix =
-    locale === routing.defaultLocale ? '' : `/${locale}`;
-  return `${SITE_URL}${prefix}/lists/${slug}`;
+  return `${SITE_URL}${localizedPath(
+    locale === 'en' ? 'en' : 'fi',
+    { pathname: '/lists/[slug]', params: { slug } },
+  )}`;
 }
 
 /**
@@ -160,7 +163,12 @@ export function buildCuratedListJsonLd(
         position: index + 1,
         ...(entry.productId !== null
           ? {
-              url: `${SITE_URL}${locale === routing.defaultLocale ? '' : `/${locale}`}/products/${entry.productId}`,
+              // Localized through the routing vocabulary, same segments
+              // the entry links and the sitemap emit (design D6).
+              url: `${SITE_URL}${localizedPath(
+                locale === 'en' ? 'en' : 'fi',
+                { pathname: '/products/[id]', params: { id: entry.productId } },
+              )}`,
             }
           : {}),
       })),

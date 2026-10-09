@@ -85,7 +85,7 @@ test.describe('homepage live gap hero — mobile viewports', () => {
     // the product page (the fixture's most import-favourable row first).
     await rows.nth(0).click();
     await expect(page).toHaveURL(
-      new RegExp(`/products/${SEED.savings.wineId}$`),
+      new RegExp(`/tuotteet/${SEED.savings.wineId}$`),
     );
 
     // The hero table may scroll inside its own wrapper; the page itself

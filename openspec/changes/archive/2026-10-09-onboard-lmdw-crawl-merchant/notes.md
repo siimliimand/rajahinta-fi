@@ -1074,3 +1074,31 @@ EAN-less products (no-fabrication rule, BOI 22,937 precedent) plus the
 deliberately-unmapped m3 population (209 staging record drops named their
 source labels). Correction noise is bounded and attributable, not
 speculative — every dropped page names its labels; nothing is guessed.
+
+### Re-verification on `feature/localize-fi-route-pathnames` (2026-10-09, post-rebase)
+
+Recorded by the localize change's 5.3 verification battery, which shares this
+section's recipe (core-domain rebuilt first, Node v24.21.0 via nvm, this host,
+nothing committed). The branch is master (`296cf77`, this change included) plus
+the localized-pathnames migration — a frontend/i18n/test-surface change only,
+so the rollout evidence above stands as recorded (§1.1 probe + extraction
+coverage, §2.1 mapper re-probe drop rate, §5.1 idempotency/watermark, §6.2/§7.2
+staging/production serving + the scheduled-boundary checklist, hold-rule and
+correction-noise notes) and data-quality/compliance/integration were not
+re-run. Browser E2E note: the desktop suite is now 23 tests — the D3
+negotiation matrix and the localized nav-flow journeys joined it; the nav-flow
+URL assertions assert the fi canonical vocabulary (`/laskuri`, `/ostoskori`).
+
+| Suite | Command | Exit | Result |
+|---|---|---|---|
+| core-domain build | `pnpm --dir packages/core-domain build` | 0 | clean |
+| lint | `pnpm run lint` | 0 | zero findings |
+| content policy | `pnpm run lint:content` | 0 | pass |
+| typecheck (×4) | `pnpm --dir {packages/core-domain,packages/data-acquisition,apps/api-worker,apps/frontend} run typecheck` | 0 each | clean |
+| Browser E2E | `FRONTEND_PORT=3003 BACKEND_PORT=3002 CORS_ORIGIN=http://localhost:3003 bash tests/e2e-browser/boot-stack.sh`, then `FRONTEND_BASE_URL=http://localhost:3003 pnpm run test:e2e-browser` | 0 | **23 passed (2.9 m)** — :3001 still squatted by the foreign container (artifact 1 above), same alternate-port topology |
+| frontend unit | `pnpm --dir apps/frontend exec vitest run` | 0 | 117 files / 1,425 tests (incl. `sitemap.test.ts` 19 — the advertised-URL serve-invariant) |
+| data-acquisition unit | `pnpm --dir packages/data-acquisition exec vitest run` | 0 | 45 files / 649 tests (the lmdw adapter suites among them) |
+| api-worker (cron · observability · routes · adapters) | `pnpm --dir apps/api-worker exec vitest run src/cron/__tests__ src/observability/__tests__ src/routes/__tests__ src/adapters/__tests__` | 0 | 57 files / 967 tests |
+| golden-dataset | `bash scripts/test-golden-dataset.sh` | 0 | 2 files / 51 tests |
+| D1 suites (Node 24) | `pnpm run test:d1` | 0 | 19 files / 190 tests |
+| e2e HTTP | `pnpm vitest run --config vitest.config.e2e.ts` | 0 | 1 file / 15 tests |

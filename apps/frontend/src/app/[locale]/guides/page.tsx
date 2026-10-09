@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
+import { localizedAlternates } from '@/lib/i18n/localized-paths';
 import RelatedTools from './related-tools';
 import { getServerGuidesIndex } from './guides.server';
 
@@ -16,12 +17,18 @@ interface GuidesIndexPageProps {
 export async function generateMetadata({
   params,
 }: GuidesIndexPageProps): Promise<Metadata> {
-  const { locale } = await params;
+  const { locale: rawLocale } = await params;
+  // Routing serves fi and en only; anything else renders as Finnish
+  // (the products-page precedent).
+  const locale = rawLocale === 'en' ? 'en' : 'fi';
   const t = await getTranslations({ locale, namespace: 'GuidesPage' });
 
   return {
     title: t('metaTitle'),
     description: t('metaDescription'),
+    // Localized canonical + hreflang pair (design D6, change
+    // localize-fi-route-pathnames).
+    alternates: localizedAlternates(locale, { pathname: '/guides' }),
   };
 }
 
@@ -101,7 +108,10 @@ export default async function GuidesIndexPage({ params }: GuidesIndexPageProps) 
                 <article className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
                   <h2 className="text-base font-semibold text-gray-900">
                     <Link
-                      href={`/guides/${guide.slug}`}
+                      href={{
+                        pathname: '/guides/[slug]',
+                        params: { slug: guide.slug },
+                      }}
                       className="hover:text-primary-700"
                     >
                       {guide.title}
@@ -113,7 +123,10 @@ export default async function GuidesIndexPage({ params }: GuidesIndexPageProps) 
                     </p>
                   )}
                   <Link
-                    href={`/guides/${guide.slug}`}
+                    href={{
+                      pathname: '/guides/[slug]',
+                      params: { slug: guide.slug },
+                    }}
                     className="mt-2 inline-block text-sm font-medium text-primary-600 hover:text-primary-800"
                   >
                     {t('readMore')} →

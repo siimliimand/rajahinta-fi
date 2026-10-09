@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { BASE_URL, SERVER_AGE_CONFIRMATION_TOKEN } from '@/lib/api';
 import { Link } from '@/i18n/navigation';
+import { localizedAlternates } from '@/lib/i18n/localized-paths';
 import SavingsListing from './components/SavingsListing';
 import {
   SAVINGS_CATEGORY_KEYS,
@@ -78,13 +79,34 @@ function formatEur(cents: number): string {
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: SavingsPageProps): Promise<Metadata> {
-  const { locale } = await params;
+  const { locale: rawLocale } = await params;
+  // Routing serves fi and en only; anything else renders as Finnish
+  // (the products-page precedent).
+  const locale = rawLocale === 'en' ? 'en' : 'fi';
+
+  // The canonical reflects the browsed state the same way the catalog's
+  // does (design D6): the resolved category travels as its English
+  // contract value (design D7), the default stays out so URLs stay
+  // canonical-clean. The page body's forgiving resolution is mirrored —
+  // unknown values never enter the canonical.
+  const query = await searchParams;
+  const raw = Array.isArray(query.category) ? query.category[0] : query.category;
+  const category = toSavingsCategoryKey(raw) ?? SAVINGS_DEFAULT_CATEGORY;
+
   const t = await getTranslations({ locale, namespace: 'SavingsPage' });
 
   return {
     title: t('metaTitle'),
     description: t('metaDescription'),
+    // Localized canonical + hreflang pair (design D6, change
+    // localize-fi-route-pathnames).
+    alternates: localizedAlternates(locale, {
+      pathname: '/savings',
+      query:
+        category === SAVINGS_DEFAULT_CATEGORY ? undefined : { category },
+    }),
   };
 }
 
@@ -229,7 +251,7 @@ export default async function SavingsPage({ params, searchParams }: SavingsPageP
           return (
             <Link
               key={key}
-              href={`/savings?category=${key}`}
+              href={{ pathname: '/savings', query: { category: key } }}
               aria-current={active ? 'page' : undefined}
               className={[
                 'inline-flex items-center rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',

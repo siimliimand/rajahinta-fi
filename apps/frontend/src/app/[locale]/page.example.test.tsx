@@ -68,18 +68,12 @@ vi.mock('next-intl/server', () => ({
 }));
 
 // The i18n Link renders as a plain anchor under renderToString.
-vi.mock('@/i18n/navigation', () => ({
-  Link: (
-    props: { href?: unknown; children?: React.ReactNode } & Record<string, unknown>,
-  ) => {
-    const { href, children, ...rest } = props;
-    return React.createElement(
-      'a',
-      { ...rest, href: String(href ?? '') },
-      children,
-    );
-  },
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double).
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 // The accuracy statistic (task 3.3) is a client island with its own
 // fetch; stub it so this SSR render stays offline (page.ssr.test.tsx

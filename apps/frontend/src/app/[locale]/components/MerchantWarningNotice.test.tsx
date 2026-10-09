@@ -23,12 +23,12 @@ import MerchantWarningNotice from './MerchantWarningNotice';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import type { MerchantWarning } from '@/lib/types';
 
-vi.mock('@/i18n/navigation', () => ({
-  Link: (props: { href?: unknown; children?: React.ReactNode } & Record<string, unknown>) => {
-    const { href, children, ...rest } = props;
-    return React.createElement('a', { ...rest, href: String(href ?? '') }, children);
-  },
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double).
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 const WARNING: MerchantWarning = {
   merchantDomain: 'example.com',
@@ -61,7 +61,7 @@ describe('MerchantWarningNotice', () => {
     // Finnish catalog basis label for the non-delivery standard.
     expect(html).toContain('useita itsenäisiä, vahvistettuja toimitushäiriöraportteja');
     // Links the warning's methodology destination.
-    expect(html).toContain('href="/ranking"');
+    expect(html).toContain('href="/jarjestys"');
     expect(html).toContain('menetelmäsivulla');
   });
 

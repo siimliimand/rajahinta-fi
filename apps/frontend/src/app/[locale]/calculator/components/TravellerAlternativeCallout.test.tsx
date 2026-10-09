@@ -22,10 +22,12 @@ import TravellerAlternativeCallout from './TravellerAlternativeCallout';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import type { TravellerAlternative } from '@/lib/types';
 
-vi.mock('@/i18n/navigation', () => ({
-  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
-    React.createElement('a', props),
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double).
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 function alternative(
   overrides: Partial<TravellerAlternative> = {},
@@ -88,7 +90,9 @@ describe('TravellerAlternativeCallout', () => {
     );
 
     const link = screen.getByTestId('traveller-alternative-link');
-    expect(link.getAttribute('href')).toBe('/trip?product=42&quantity=6');
+    // The typed href carries the prefill through the localized /trip
+    // segment with the English query values (design D7).
+    expect(link.getAttribute('href')).toBe('/matka?product=42&quantity=6');
     expect(link.textContent).toBe('Kokeile matkalaskuria');
   });
 

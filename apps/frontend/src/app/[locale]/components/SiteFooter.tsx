@@ -74,7 +74,10 @@ export default async function SiteFooter() {
               {t('servicesHeading')}
             </h3>
             <ul className="mt-4 space-y-2.5">
-              {[
+              {/* `as const` keeps every href a literal pathname key so the
+                  typed i18n Link accepts the array (the footer's link table
+                  is data, but its entries are all route vocabulary). */}
+              {([
                 { href: '/calculator', labelKey: 'linkCalculator' },
                 { href: '/compare',    labelKey: 'linkCompare' },
                 { href: '/basket',     labelKey: 'linkBasket' },
@@ -82,7 +85,7 @@ export default async function SiteFooter() {
                 { href: '/event',       labelKey: 'linkEvent' },
                 { href: '/group-order', labelKey: 'linkGroupOrder' },
                 { href: '/value',       labelKey: 'linkValue' },
-              ].map(({ href, labelKey }) => (
+              ] as const).map(({ href, labelKey }) => (
                 <li key={href}>
                   <Link
                     href={href}
@@ -101,14 +104,14 @@ export default async function SiteFooter() {
               {t('aboutHeading')}
             </h3>
             <ul className="mt-4 space-y-2.5">
-              {[
-                { href: '/ranking', labelKey: 'methodology' },
-                { href: '/what-if', labelKey: 'linkWhatIf' },
+              {([
+                { href: '/ranking', labelKey: 'methodology', visible: true },
+                { href: '/what-if', labelKey: 'linkWhatIf', visible: true },
                 { href: '/blog',    labelKey: 'linkBlog',    visible: showBlogLink },
                 { href: '/guides',  labelKey: 'linkGuides',  visible: showGuidesLink },
-                { href: '/about',   labelKey: 'linkAbout' },
-                { href: '/contact', labelKey: 'linkContact' },
-              ]
+                { href: '/about',   labelKey: 'linkAbout', visible: true },
+                { href: '/contact', labelKey: 'linkContact', visible: true },
+              ] as const)
                 .filter((entry) => entry.visible !== false)
                 .map(({ href, labelKey }) => (
                   <li key={href}>

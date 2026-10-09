@@ -11,13 +11,14 @@
  *  - Populated (Workers harness: boot-workers-stack.sh applies
  *    seed-savings-snapshot.d1.sql) — the hero table lists the two
  *    fixture rows in the deterministic basis-point order, each row's
- *    link resolves to /products/{id}, and the row is ONE link (a point
+ *    link resolves to /tuotteet/{id} (the localized fi href of the
+ *    /products/[id] route), and the row is ONE link (a point
  *    in the row clear of the link text still resolves to the anchor —
  *    the ::after overlay construction). The ≥44 px touch-target
  *    measurement of the same rows lives in the mobile journey.
  *  - Pending (Workers harness with E2E_SAVINGS_SNAPSHOT=0 — no snapshot
- *    day) — the pending state renders with its fi copy and the /savings
- *    link, and NO figure renders.
+ *    day) — the pending state renders with its fi copy and the
+ *    /saastolista link, and NO figure renders.
  *  - Unavailable (legacy compose harness — its backend has no savings
  *    routes, so the server read fails) — the unavailable state renders
  *    and NO figure renders.
@@ -76,9 +77,9 @@ test.describe('homepage live gap hero', () => {
           exact: true,
         });
         await expect(listingLink).toBeVisible();
-        await expect(listingLink).toHaveAttribute('href', '/savings');
+        await expect(listingLink).toHaveAttribute('href', '/saastolista');
       } else {
-        // Failed/stale read: the unavailable body, and no /savings link
+        // Failed/stale read: the unavailable body, and no /saastolista link
         // dressed up as data either.
         await expect(
           unavailable.getByText(COPY.liveGapUnavailableBody, { exact: true }),
@@ -109,11 +110,11 @@ test.describe('homepage live gap hero', () => {
       await expect(wineRow).toContainText(SEED.wine.name);
       await expect(
         wineRow.getByRole('link', { name: SEED.wine.name }),
-      ).toHaveAttribute('href', `/products/${SEED.savings.wineId}`);
+      ).toHaveAttribute('href', `/tuotteet/${SEED.savings.wineId}`);
       await expect(beerRow).toContainText(SEED.beer.name);
       await expect(
         beerRow.getByRole('link', { name: SEED.beer.name }),
-      ).toHaveAttribute('href', `/products/${SEED.savings.beerId}`);
+      ).toHaveAttribute('href', `/tuotteet/${SEED.savings.beerId}`);
 
       // The row is ONE link: the anchor's ::after overlay covers the row,
       // so a point in the row clear of the link text still resolves to
@@ -128,7 +129,7 @@ test.describe('homepage live gap hero', () => {
         );
         return el?.closest('a')?.getAttribute('href') ?? null;
       });
-      expect(hitOutsideText).toBe(`/products/${SEED.savings.wineId}`);
+      expect(hitOutsideText).toBe(`/tuotteet/${SEED.savings.wineId}`);
 
       // Figures render in the populated state (the gap column alone
       // carries a signed euro amount).

@@ -46,10 +46,12 @@ import type {
 // The traveller-alternative callout (task 2.2) renders its /trip link
 // through the i18n navigation Link; stub it with the plain-anchor shape
 // the other view tests use.
-vi.mock('@/i18n/navigation', () => ({
-  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
-    React.createElement('a', props),
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double).
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -655,7 +657,7 @@ describe('ResultCard travellerAlternative callout (task 2.2)', () => {
     );
     const link = within(callout).getByTestId('traveller-alternative-link');
     // Seeds the trip fill form with the result's product and quantity.
-    expect(link.getAttribute('href')).toBe('/trip?product=1&quantity=1');
+    expect(link.getAttribute('href')).toBe('/matka?product=1&quantity=1');
   });
 
   it('places the estimate beside the hero total as a co-equal block (3.4, design D4)', () => {

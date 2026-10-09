@@ -74,17 +74,12 @@ vi.mock('next-intl/server', () => ({
 // Finnish serves bare paths, English gets the /en prefix
 // (layout.ssr.test.tsx precedent). Under renderToString it renders as a
 // plain anchor.
-vi.mock('@/i18n/navigation', () => ({
-  Link: (
-    props: { href?: unknown; children?: React.ReactNode } & Record<string, unknown>,
-  ) => {
-    const { href, children, ...rest } = props;
-    const target = String(href ?? '');
-    const prefixed =
-      state.locale === 'en' && target.startsWith('/') ? `/en${target}` : target;
-    return React.createElement('a', { ...rest, href: prefixed }, children);
-  },
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary, prefixed for the steered EN locale (as-needed).
+vi.mock('@/i18n/navigation', async () => {
+  const { createTestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: createTestI18nLink(() => state.locale) };
+});
 
 // The task-card section is independent of the guides fetch; mock it so
 // this render stays fully offline (page.example.test.tsx precedent).
@@ -313,8 +308,12 @@ describe('HomePage task cards (three-task-navigation 3.2)', () => {
       // The hero search stays the homepage's single input (funnel D4):
       // exactly one form on the page, and it is the hero's, not the
       // section's — so the scoping assertion above is not vacuous.
+      // The action carries the active locale's segment (/laskuri fi,
+      // /en/calculator en — the localized pathnames).
       expect(page.querySelectorAll('form')).toHaveLength(1);
-      expect(page.querySelector('form[action="/calculator"], form[action^="/en"]')).not.toBeNull();
+      expect(
+        page.querySelector('form[action="/laskuri"], form[action^="/en"]'),
+      ).not.toBeNull();
     },
   );
 });

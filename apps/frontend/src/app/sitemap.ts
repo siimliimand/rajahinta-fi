@@ -10,9 +10,13 @@
  * guide per locale — plus the per-locale /blog and /guides index URLs,
  * derived from the same slug fetches (no additional requests) and
  * advertised only for locales whose fetch returned published content
- * (sitemap-content-aware-advertisement D1/D2). Finnish serves from the
- * unprefixed paths, English under /en (localePrefix: 'as-needed').
- * Backend reads are cached; an unreachable backend degrades to the
+ * (sitemap-content-aware-advertisement D1/D2). URLs translate through
+ * the localized routing vocabulary (routing.pathnames, design D1): the
+ * Finnish default serves the localized segments bare (`/tuotteet`),
+ * English keeps the internal route names under /en
+ * (localePrefix: 'as-needed'). Every emitted URL pairs its localized
+ * variants as hreflang alternates; x-default is the negotiating bare
+ * (fi) URL (design D6). Backend reads are cached; an unreachable backend degrades to the
  * unconditional static routes rather than a failed sitemap. The
  * sitemap only advertises URLs that serve: a fetch failure or a
  * catalog without published entries yields zero dynamic URLs (the
@@ -25,7 +29,7 @@
 
 import type { MetadataRoute } from 'next';
 import { getServerProductListing, SITE_URL, BASE_URL } from '@/lib/api';
-import { routing } from '@/i18n/routing';
+import { routing, type AppLocale, type AppPathnames } from '@/i18n/routing';
 
 /** Static destinations every locale offers (header navigation surface;
  * /allowances added by insight-surfaces task 4.2; /savings and /guides
@@ -34,11 +38,14 @@ import { routing } from '@/i18n/routing';
  * the tool pages /event, /trip, /what-if and /value by
  * price-intelligence-roadmap task 6.2; /group-order by
  * consumer-clarity-and-discovery task 4.1 — public, individually
- * titled pages every locale serves). The /blog and /guides paths are
+ * titled pages every locale serves). Entries are internal route names
+ * keyed against routing.pathnames (`satisfies` keeps the list in
+ * lockstep with the vocabulary); the emitted URL text is the locale's
+ * localized segment (design D1). The /blog and /guides paths are
  * content-gated per locale: emitted only when that locale's slug
  * fetch returned published content (see the loop in sitemap()). */
 const STATIC_PATHS = [
-  '',
+  '/',
   '/calculator',
   '/compare',
   '/basket',
@@ -55,7 +62,7 @@ const STATIC_PATHS = [
   '/savings',
   '/about',
   '/contact',
-];
+] as const satisfies readonly AppPathnames[];
 
 /** Canonical product categories — mirrors PRODUCT_CATEGORIES in the D1
  *  schema (packages/data-platform), the set the API validates
@@ -164,6 +171,50 @@ async function getServerGuideSlugs(locale: string): Promise<string[]> {
 
 export const revalidate = 900;
 
+/** One advertised URL plus its sitemap attributes. */
+interface AdvertisedUrl {
+  url: string;
+  changeFrequency: NonNullable<MetadataRoute.Sitemap[number]['changeFrequency']>;
+  priority: number;
+}
+
+/** Locale-keyed slot collecting the emitted variants of one route. */
+type AdvertisedVariants = Partial<Record<AppLocale, AdvertisedUrl>>;
+
+/**
+ * Localized pathname for an internal route (design D6) — derived from
+ * routing.pathnames (the vocabulary's single source, pinned by
+ * routing.test.ts), never hand-duplicated: the Finnish default serves
+ * the localized segment bare, English the internal route name under
+ * /en (`localePrefix: 'as-needed'`). Route params substitute into the
+ * bracket templates; query parameters stay English (design D7).
+ */
+function localizedPathname(
+  route: AppPathnames,
+  locale: AppLocale,
+  params: Readonly<Record<string, string | number>> = {},
+): string {
+  const entry = routing.pathnames[route];
+  const template = typeof entry === 'string' ? entry : entry[locale];
+  const segment = template.replace(
+    /\[([a-zA-Z][a-zA-Z0-9]*)\]/g,
+    (_, param: string) => encodeURIComponent(String(params[param] ?? '')),
+  );
+  // The bare root emits without a trailing slash, matching the
+  // historical URL text; the en root is the bare /en prefix.
+  if (segment === '/') return locale === routing.defaultLocale ? '' : `/${locale}`;
+  return locale === routing.defaultLocale ? segment : `/${locale}${segment}`;
+}
+
+/** Absolute localized URL for an internal route (design D6). */
+function localizedUrl(
+  route: AppPathnames,
+  locale: AppLocale,
+  params?: Readonly<Record<string, string | number>>,
+): string {
+  return `${SITE_URL}${localizedPathname(route, locale, params)}`;
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [products, listSlugs, ...slugLists] = await Promise.all([
     getServerProductListing(),
@@ -180,42 +231,54 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     routing.locales.map((locale, index) => [locale, slugLists[index * 2 + 1]]),
   );
 
-  const entries: MetadataRoute.Sitemap = [];
-  for (const locale of routing.locales) {
-    // The default locale serves unprefixed; others get their prefix.
-    const prefix = locale === routing.defaultLocale ? '' : `/${locale}`;
+  // Every URL registers under a locale-neutral key (internal route +
+  // params) so its localized variants can be paired as hreflang
+  // alternates (design D6). Pairing respects the content gates below: a
+  // variant the sitemap omits is absent from the languages map too — no
+  // alternate points at a URL the sitemap does not emit.
+  const advertised = new Map<string, AdvertisedVariants>();
+  function advertise(
+    key: string,
+    locale: AppLocale,
+    entry: AdvertisedUrl,
+  ): void {
+    const variants = advertised.get(key) ?? {};
+    variants[locale] = entry;
+    advertised.set(key, variants);
+  }
 
-    for (const path of STATIC_PATHS) {
+  for (const locale of routing.locales) {
+    for (const route of STATIC_PATHS) {
       // Content-aware index gates (sitemap-content-aware-advertisement
       // D2/D3): a locale's /blog and /guides indexes are advertised only
       // when that locale's slug fetch returned published content — every
       // advertised URL must serve, so a failed or empty fetch (the
       // degradation contract) omits the index too. All other static
       // routes are unconditional.
-      if (path === '/blog' && !blogSlugsByLocale.get(locale)?.length) continue;
-      if (path === '/guides' && !guideSlugsByLocale.get(locale)?.length) continue;
-      entries.push({
-        url: `${SITE_URL}${prefix}${path}`,
-        changeFrequency: path === '' ? 'daily' : 'weekly',
-        priority: path === '' ? 1 : 0.7,
+      if (route === '/blog' && !blogSlugsByLocale.get(locale)?.length) continue;
+      if (route === '/guides' && !guideSlugsByLocale.get(locale)?.length) continue;
+      advertise(`static:${route}`, locale, {
+        url: localizedUrl(route, locale),
+        changeFrequency: route === '/' ? 'daily' : 'weekly',
+        priority: route === '/' ? 1 : 0.7,
       });
     }
 
     // Catalog category views (product-catalog task 3.2) — page-1 state
     // only, matching each state's canonical URL. Page ≥ 2 states stay
     // out of the sitemap: an infinite parameter space with no uniquely
-    // indexable value (design D6).
+    // indexable value (design D6). Category values stay English (D7).
     for (const category of CATALOG_CATEGORIES) {
-      entries.push({
-        url: `${SITE_URL}${prefix}/products?category=${category}`,
+      advertise(`category:${category}`, locale, {
+        url: `${localizedUrl('/products', locale)}?category=${category}`,
         changeFrequency: 'weekly',
         priority: 0.6,
       });
     }
 
     for (const product of products) {
-      entries.push({
-        url: `${SITE_URL}${prefix}/products/${product.id}`,
+      advertise(`product:${product.id}`, locale, {
+        url: localizedUrl('/products/[id]', locale, { id: product.id }),
         changeFrequency: 'daily',
         priority: 0.5,
       });
@@ -224,8 +287,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // Editorial list pages (task 7.3) — SEO content between the static
     // navigation surface and per-product pages.
     for (const slug of listSlugs) {
-      entries.push({
-        url: `${SITE_URL}${prefix}/lists/${slug}`,
+      advertise(`list:${slug}`, locale, {
+        url: localizedUrl('/lists/[slug]', locale, { slug }),
         changeFrequency: 'weekly',
         priority: 0.6,
       });
@@ -234,8 +297,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // Published blog posts (task 5.2) — per-locale content, so each
     // locale advertises only its own posts.
     for (const slug of blogSlugsByLocale.get(locale) ?? []) {
-      entries.push({
-        url: `${SITE_URL}${prefix}/blog/${slug}`,
+      advertise(`blog:${slug}`, locale, {
+        url: localizedUrl('/blog/[slug]', locale, { slug }),
         changeFrequency: 'weekly',
         priority: 0.6,
       });
@@ -244,10 +307,35 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // Published guides (insight-surfaces task 5.2) — per-locale, blog
     // parity, PUBLISHED rows only.
     for (const slug of guideSlugsByLocale.get(locale) ?? []) {
-      entries.push({
-        url: `${SITE_URL}${prefix}/guides/${slug}`,
+      advertise(`guides:${slug}`, locale, {
+        url: localizedUrl('/guides/[slug]', locale, { slug }),
         changeFrequency: 'weekly',
         priority: 0.6,
+      });
+    }
+  }
+
+  // Emit grouped per route (design D6): the localized fi/en variants of
+  // one route share a languages map; x-default is the negotiating bare
+  // (fi) URL, present only when the fi variant itself is advertised.
+  const entries: MetadataRoute.Sitemap = [];
+  for (const variants of advertised.values()) {
+    const languages: Record<string, string> = {};
+    const defaultVariant = variants[routing.defaultLocale];
+    if (defaultVariant) languages['x-default'] = defaultVariant.url;
+    const emitted: AdvertisedUrl[] = [];
+    for (const locale of routing.locales) {
+      const variant = variants[locale];
+      if (!variant) continue;
+      languages[locale] = variant.url;
+      emitted.push(variant);
+    }
+    for (const { url, changeFrequency, priority } of emitted) {
+      entries.push({
+        url,
+        changeFrequency,
+        priority,
+        alternates: { languages: { ...languages } },
       });
     }
   }

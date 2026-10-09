@@ -24,6 +24,11 @@
  *      `-mobile` testids and operable disclosures.
  *   6. Auth: the SSR probe swap (signed-out ↔ logout) and the
  *      `auth:state-changed` re-probe keep working unchanged.
+ *   7. Locale switcher (change localize-fi-route-pathnames): renders in
+ *      both locales with the active one marked, and switching calls
+ *      `router.replace` with the current internal pathname — template
+ *      plus route params for dynamic routes — and the opposite locale
+ *      (cookie-first navigation, design D5).
  *
  * Both navs (desktop row and mobile panel) are always in the DOM —
  * closed panels are `display: none` — so panel-scoped queries go
@@ -48,11 +53,21 @@ const replaceMock = vi.fn();
 /** The pathname the mocked i18n navigation reports — set per test. */
 let mockPathname = '/';
 
+/** The route params the mocked Next.js navigation reports — set per test. */
+let mockParams: Record<string, string> = {};
+
 vi.mock('@/i18n/navigation', () => ({
   Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
     React.createElement('a', props),
   usePathname: () => mockPathname,
   useRouter: () => ({ replace: replaceMock }),
+}));
+
+// SiteHeader reads the current route's dynamic segments from
+// `next/navigation`'s `useParams` to pair them with the routing
+// template it gets from `usePathname` (see the switcher in the header).
+vi.mock('next/navigation', () => ({
+  useParams: () => mockParams,
 }));
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -102,6 +117,7 @@ const TOOL_HREFS: readonly string[] = GROUPS.flatMap((group) => [
 beforeEach(() => {
   vi.clearAllMocks();
   mockPathname = '/';
+  mockParams = {};
 });
 
 describe('SiteHeader auth actions', () => {
@@ -440,7 +456,7 @@ describe('SiteHeader mobile panel (task 3.1)', () => {
   });
 });
 
-describe('SiteHeader locale switcher', () => {
+describe('SiteHeader locale switcher (change localize-fi-route-pathnames)', () => {
   it('switches to EN preserving the current pathname', async () => {
     mockPathname = '/calculator';
     const user = userEvent.setup();
@@ -449,7 +465,10 @@ describe('SiteHeader locale switcher', () => {
     await screen.findByTestId('header-sign-in');
 
     await user.click(screen.getByTestId('locale-switch-en'));
-    expect(replaceMock).toHaveBeenCalledWith('/calculator', { locale: 'en' });
+    expect(replaceMock).toHaveBeenCalledWith(
+      { pathname: '/calculator', params: {} },
+      { locale: 'en' },
+    );
   });
 
   it('switches back to FI on the same preserved path from an EN page', async () => {
@@ -468,12 +487,49 @@ describe('SiteHeader locale switcher', () => {
     );
     await screen.findByTestId('header-sign-in');
 
+    // Renders in the EN locale with the EN catalog label — one group per
+    // nav (desktop row and mobile panel).
+    expect(
+      screen.getAllByRole('group', { name: 'Switch language' }),
+    ).toHaveLength(2);
     expect(screen.getByTestId('locale-switch-en')).toHaveAttribute(
       'aria-current',
       'true',
     );
     await user.click(screen.getByTestId('locale-switch-fi'));
-    expect(replaceMock).toHaveBeenCalledWith('/ranking', { locale: 'fi' });
+    expect(replaceMock).toHaveBeenCalledWith(
+      { pathname: '/ranking', params: {} },
+      { locale: 'fi' },
+    );
+  });
+
+  it('keeps the route template and params so dynamic routes survive the switch', async () => {
+    // `usePathname` reports the routing template for dynamic segments;
+    // the switcher pairs it with the current params so the typed router
+    // can interpolate them per target locale instead of throwing on the
+    // bare template.
+    mockPathname = '/products/[id]';
+    mockParams = { id: '123' };
+    const user = userEvent.setup();
+    mockedEnsureSession.mockRejectedValue(new Error('401'));
+    renderWithIntl(<SiteHeader />);
+    await screen.findByTestId('header-sign-in');
+
+    await user.click(screen.getByTestId('locale-switch-en'));
+    expect(replaceMock).toHaveBeenCalledWith(
+      { pathname: '/products/[id]', params: { id: '123' } },
+      { locale: 'en' },
+    );
+  });
+
+  it('does not navigate when the active locale is selected again', async () => {
+    const user = userEvent.setup();
+    mockedEnsureSession.mockRejectedValue(new Error('401'));
+    renderWithIntl(<SiteHeader />);
+    await screen.findByTestId('header-sign-in');
+
+    await user.click(screen.getByTestId('locale-switch-fi'));
+    expect(replaceMock).not.toHaveBeenCalled();
   });
 
   it('marks the active locale for assistive tech, labelled as a group', () => {

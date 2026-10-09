@@ -39,10 +39,12 @@ import type {
 // The traveller-alternative callout (task 2.2) renders its /trip link
 // through the i18n navigation Link; stub it with the plain-anchor shape
 // the other view tests use.
-vi.mock('@/i18n/navigation', () => ({
-  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
-    React.createElement('a', props),
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double).
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 // The outcome nudge (task 3.3) probes the session on mount; the probe is
 // mocked so the render stays offline and steerable per test. Default is
@@ -471,7 +473,7 @@ describe('CalculatorResult travellerAlternative callout (task 2.2)', () => {
     ).toBeInTheDocument();
     // The handshake link seeds product and quantity.
     const link = within(callout).getByTestId('traveller-alternative-link');
-    expect(link.getAttribute('href')).toBe('/trip?product=1&quantity=1');
+    expect(link.getAttribute('href')).toBe('/matka?product=1&quantity=1');
     expect(link.textContent).toBe('Kokeile matkalaskuria');
   });
 

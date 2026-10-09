@@ -19,7 +19,6 @@
  */
 // @vitest-environment jsdom
 
-import * as React from 'react';
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductDupesPanel from './ProductDupesPanel';
@@ -55,22 +54,12 @@ vi.mock('next-intl/server', () => ({
 }));
 
 // The i18n Link is a Next router-aware component; under renderToString it
-// renders as a plain anchor with the href it was given (fi needs no prefix).
-vi.mock('@/i18n/navigation', () => ({
-  Link: (
-    props: { href?: unknown; children?: React.ReactNode } & Record<
-      string,
-      unknown
-    >,
-  ) => {
-    const { href, children, ...rest } = props;
-    return React.createElement(
-      'a',
-      { ...rest, href: String(href ?? '') },
-      children,
-    );
-  },
-}));
+// renders as a plain anchor with the href next-intl would produce —
+// typed href objects resolve through the shared testing double.
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
@@ -183,8 +172,8 @@ describe('ProductDupesPanel evidence rendering (R9)', () => {
   });
 
   it('links the sibling to its local product page', () => {
-    expect(html).toContain('href="/products/7"');
-    expect(html).toContain('href="/products/9"');
+    expect(html).toContain('href="/tuotteet/7"');
+    expect(html).toContain('href="/tuotteet/9"');
     expect(html).toContain('Tuotesivu #7');
   });
 

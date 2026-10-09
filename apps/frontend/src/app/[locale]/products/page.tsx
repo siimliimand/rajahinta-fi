@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import { request, SERVER_AGE_CONFIRMATION_TOKEN } from '@/lib/api';
+import { localizedAlternates, localizedPath } from '@/lib/i18n/localized-paths';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import type {
   ProductSavingsEmbed,
@@ -200,27 +201,51 @@ function resolveQParam(raw: string | string[] | undefined): string | undefined {
 }
 
 /**
- * Catalog URL for one (category, q, sort, page) state — the single
- * builder every filter, pagination, sort, and search link uses, so all
- * four state dimensions always round-trip together (spec product-search:
- * the search value lives in the URL query state). The default sort is
- * omitted from links so URLs stay canonical-clean, and category and
- * search links pass `page: undefined` to reset to page 1 (both change
- * the result set, invalidating the old pagination).
+ * Catalog URL state as a typed i18n href (pathnames-keyed, change
+ * localize-fi-route-pathnames) — the single builder every filter,
+ * pagination, sort, and search link uses, so all four state dimensions
+ * always round-trip together (spec product-search: the search value
+ * lives in the URL query state). The default sort is omitted from
+ * links so URLs stay canonical-clean, and category and search links
+ * pass `page: undefined` to reset to page 1 (both change the result
+ * set, invalidating the old pagination). Query values stay English
+ * (design D7) — they are API contract values.
  */
+interface CatalogStateHref {
+  pathname: '/products';
+  query: {
+    category?: CanonicalCategory;
+    q?: string;
+    sort?: CatalogSortOrder;
+    page?: string;
+  };
+}
+
 function catalogHref(
   category: CanonicalCategory | undefined,
   page: number | undefined,
   sort: CatalogSortOrder,
   q: string | undefined,
-): string {
-  const params = new URLSearchParams();
-  if (category !== undefined) params.set('category', category);
-  if (q !== undefined) params.set('q', q);
-  if (sort !== DEFAULT_SORT) params.set('sort', sort);
-  if (page !== undefined && page > 1) params.set('page', String(page));
-  const search = params.toString();
-  return `/products${search === '' ? '' : `?${search}`}`;
+): CatalogStateHref {
+  return {
+    pathname: '/products',
+    query: {
+      category,
+      q,
+      sort: sort === DEFAULT_SORT ? undefined : sort,
+      page: page !== undefined && page > 1 ? String(page) : undefined,
+    },
+  };
+}
+
+/**
+ * The no-JS GET forms' action: the catalog's localized path, so an EN
+ * submission lands on /en/products directly instead of taking the
+ * middleware's locale-negotiation redirect (the forms carry their state
+ * in the query string, which the localized action keeps intact).
+ */
+function catalogActionPath(locale: CatalogLocale): string {
+  return localizedPath(locale, { pathname: '/products' });
 }
 
 /** Listing-API path for one (category, q, sort, page) state — the query
@@ -324,31 +349,15 @@ const PAGE_CURRENT_CLASSES =
   'touch-target inline-flex items-center rounded-md border border-primary-600 bg-primary-600 px-3 py-1.5 text-sm font-medium text-white';
 
 /**
- * Canonical path for one (category, page) state (design D6): the clean
- * URL of the state, so parameter permutations do not fragment the index.
- * Page 1 canonicalizes without the page parameter, and nothing else from
- * the query string survives. The layout's metadataBase resolves the path
- * to the absolute URL; English lives under /en (localePrefix 'as-needed').
- */
-function catalogCanonicalPath(
-  locale: CatalogLocale,
-  category: CanonicalCategory | undefined,
-  page: number,
-): string {
-  const prefix = locale === 'en' ? '/en' : '';
-  const params = new URLSearchParams();
-  if (category !== undefined) params.set('category', category);
-  if (page > 1) params.set('page', String(page));
-  const search = params.toString();
-  return `${prefix}/products${search === '' ? '' : `?${search}`}`;
-}
-
-/**
  * Per-state metadata (design D6): the unfiltered view and each category
  * view carry their own localized title and description, plus the
- * canonical URL for the resolved state. Unknown category values never
- * reach this function — the same forgiving resolution as the page body
- * maps them to the unfiltered view before the fetch.
+ * canonical URL for the resolved state through the localized pathnames
+ * (change localize-fi-route-pathnames): the active locale's segment
+ * (`/tuotteet` fi, `/en/products` en) with the English query parameters
+ * (design D7), and the hreflang pair with `x-default` on the bare fi
+ * URL. Unknown category values never reach this function — the same
+ * forgiving resolution as the page body maps them to the unfiltered
+ * view before the fetch.
  */
 export async function generateMetadata({
   params,
@@ -374,9 +383,13 @@ export async function generateMetadata({
       categoryLabel !== null
         ? t('metaCategoryDescription', { category: categoryLabel })
         : t('metaDescription'),
-    alternates: {
-      canonical: catalogCanonicalPath(locale, category, page),
-    },
+    alternates: localizedAlternates(locale, {
+      pathname: '/products',
+      query: {
+        category,
+        page: page > 1 ? String(page) : undefined,
+      },
+    }),
   };
 }
 
@@ -453,7 +466,7 @@ export default async function ProductsPage({
     firstUncoveredIndex !== -1 &&
     items.some((item: ProductSearchItem) => item.savings !== undefined);
 
-  const pageHref = (target: number): string =>
+  const pageHref = (target: number): CatalogStateHref =>
     catalogHref(category, target, sort, q);
 
   return (
@@ -468,7 +481,7 @@ export default async function ProductsPage({
           page 1 (no page field in the form). ── */}
       <form
         method="get"
-        action="/products"
+        action={catalogActionPath(locale)}
         role="search"
         data-testid="catalog-search"
         className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-2"
@@ -562,7 +575,7 @@ export default async function ProductsPage({
           order) so the select always submits a value the API accepts. ── */}
       <form
         method="get"
-        action="/products"
+        action={catalogActionPath(locale)}
         data-testid="catalog-sort"
         className="mb-8 flex flex-wrap items-center gap-x-2 gap-y-2"
       >
@@ -688,7 +701,10 @@ export default async function ProductsPage({
                     <div className="flex min-w-0 items-start justify-between gap-2">
                       <h2 className="min-w-0 break-words text-base font-semibold leading-snug">
                         <Link
-                          href={`/products/${item.id}`}
+                          href={{
+                            pathname: '/products/[id]',
+                            params: { id: item.id },
+                          }}
                           className="text-primary-700 hover:underline"
                         >
                           {item.name}

@@ -111,14 +111,32 @@ export default function MerchantWarningNotice({
                 basis: STANDARD_MET_KEYS.get(warning.standardMet)
                   ? t(STANDARD_MET_KEYS.get(warning.standardMet)!)
                   : t('basisGeneric'),
-                link: (chunks) => (
-                  <Link
-                    href={warning.methodologyUrl}
-                    className="font-medium text-error-fg underline hover:text-error"
-                  >
-                    {chunks}
-                  </Link>
-                ),
+                link: (chunks) => {
+                  // The worker emits exactly one methodology destination —
+                  // the internal /ranking page (RANKING_METHODOLOGY_URL,
+                  // api-worker merchant-warnings.ts). Typed i18n Link for
+                  // that contract value; anything else (an unexpected or
+                  // future external URL) renders as a plain anchor so the
+                  // notice never blocks on the route vocabulary.
+                  if (warning.methodologyUrl === '/ranking') {
+                    return (
+                      <Link
+                        href={{ pathname: '/ranking' }}
+                        className="font-medium text-error-fg underline hover:text-error"
+                      >
+                        {chunks}
+                      </Link>
+                    );
+                  }
+                  return (
+                    <a
+                      href={warning.methodologyUrl}
+                      className="font-medium text-error-fg underline hover:text-error"
+                    >
+                      {chunks}
+                    </a>
+                  );
+                },
               })}
             </p>
           </li>
