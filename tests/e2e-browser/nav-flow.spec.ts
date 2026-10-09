@@ -5,8 +5,9 @@
  * The header is three disclosure groups, not a row of flat links: a
  * visitor reaches a tool by opening its group
  * (`nav-group-<name>-trigger`) and following the panel's real link.
- * The journey walks two groups — shopping → "Laskuri" → /calculator,
- * then trip → "Ostoskori" → /basket from the page the first hop landed
+ * The journey walks two groups — shopping → "Laskuri" → /laskuri,
+ * then trip → "Ostoskori" → /ostoskori from the page the first hop
+ * landed
  * on — so the trigger-opens-panel / panel-link-navigates contract is
  * exercised on real routes, including the second group's panel after a
  * client-side navigation (a route change must have closed the first
@@ -45,7 +46,7 @@ test.describe('header navigation through the task groups', () => {
       .getByRole('link', { name: COPY.navCalculator, exact: true })
       .click();
 
-    await expect(page).toHaveURL(/\/calculator$/);
+    await expect(page).toHaveURL(/\/laskuri$/);
     await expect(
       page.getByRole('heading', { name: COPY.calculatorTitle, exact: true }),
     ).toBeVisible();
@@ -63,7 +64,7 @@ test.describe('header navigation through the task groups', () => {
       .getByRole('link', { name: COPY.navBasket, exact: true })
       .click();
 
-    await expect(page).toHaveURL(/\/basket$/);
+    await expect(page).toHaveURL(/\/ostoskori$/);
     await expect(
       page.getByRole('heading', { name: COPY.basketTitle, exact: true }),
     ).toBeVisible();
@@ -77,10 +78,11 @@ test.describe('header navigation through the task groups', () => {
     const header = page.locator('header');
 
     // Scenario calculator and ranking methodology live in the footer's
-    // About column — no header anchor may point there; the Planning
-    // dropdown is gone entirely (its testids included).
-    await expect(header.locator('a[href="/what-if"]')).toHaveCount(0);
-    await expect(header.locator('a[href="/ranking"]')).toHaveCount(0);
+    // About column — no header anchor may point there (hrefs in the fi
+    // canonical vocabulary — i18n/routing.ts); the Planning dropdown is
+    // gone entirely (its testids included).
+    await expect(header.locator('a[href="/skenaario"]')).toHaveCount(0);
+    await expect(header.locator('a[href="/jarjestys"]')).toHaveCount(0);
     await expect(header.getByTestId('planning-dropdown-trigger')).toHaveCount(
       0,
     );

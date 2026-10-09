@@ -11,7 +11,7 @@
  * account and locale chrome inside the open panel.
  *
  * It then walks one group end to end: open the shopping disclosure,
- * follow "Laskuri" into /calculator, and land on the same calculator
+ * follow "Laskuri" into /laskuri, and land on the same calculator
  * surface the desktop journey drives. While the panel is open the page
  * must not scroll sideways — the open panel is a phone surface like
  * any other (the suite's shared overflow invariant).
@@ -93,7 +93,7 @@ test.describe('header navigation through the task groups — mobile viewports', 
 
     // Following the link lands on the calculator surface — and closes
     // the panel behind the navigation.
-    await expect(page).toHaveURL(/\/calculator$/);
+    await expect(page).toHaveURL(/\/laskuri$/);
     await expect(
       page.getByRole('heading', { name: COPY.calculatorTitle, exact: true }),
     ).toBeVisible();
