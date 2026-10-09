@@ -23,7 +23,6 @@
  */
 // @vitest-environment jsdom
 
-import * as React from 'react';
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CuratedListPage, { generateMetadata } from './page';
