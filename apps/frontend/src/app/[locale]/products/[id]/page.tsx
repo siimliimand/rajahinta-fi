@@ -34,6 +34,7 @@ import MerchantWarningNotice from '../../components/MerchantWarningNotice';
 import { MerchantLink } from '../../compare/components/MerchantLink';
 import { SellingDistanceBadge } from '../../compare/components/SellingDistanceBadge';
 import ProductAlertAction from './components/ProductAlertAction';
+import ProductFavoriteAction from './components/ProductFavoriteAction';
 import ProductDupesPanel from './components/ProductDupesPanel';
 import ProductPriceContextLine from './components/ProductPriceContextLine';
 import PriceHistoryChart from './components/PriceHistoryChart';
@@ -473,6 +474,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
       {/* ── Producer dupe panel — absent from the HTML when no curated
           links exist (design R9) ── */}
       <ProductDupesPanel productId={productId} />
+
+      {/* ── Favorite heart (task 4.3) — mount-time membership check,
+          optimistic toggle, login-modal funnel for signed-out taps ── */}
+      <ProductFavoriteAction productId={productId} />
 
       {/* ── Price-alert action ── */}
       <ProductAlertAction productId={productId} />
