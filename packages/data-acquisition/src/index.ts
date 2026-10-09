@@ -291,6 +291,26 @@ export {
   OMNIVA_OBSERVED_AT,
 } from './adapters/omniva-rate.source';
 
+// Pakettipojat (pakettipojat.com) — manually curated dataset source (the
+// price-list page is gated behind a JS "Client Challenge"; see the module
+// docblock). Ingestion is owned by the api-worker's monthly
+// curated-rate-refresh cron, NOT the CARRIER_RATE_SOURCES map below.
+export {
+  PakettipojatCarrierRateSource,
+  buildPakettipojatRates,
+  PAKETTIPOJAT_OBSERVED_AT,
+} from './adapters/pakettipojat-rate.source';
+
+// Norrlog (norrlog.com) — manually curated dataset source (no
+// machine-readable price feed; see the module docblock). Ingestion is
+// owned by the api-worker's monthly curated-rate-refresh cron, NOT the
+// CARRIER_RATE_SOURCES map below.
+export {
+  NorrlogCarrierRateSource,
+  buildNorrlogRates,
+  NORRLOG_OBSERVED_AT,
+} from './adapters/norrlog-rate.source';
+
 export { DrizzleTransportOfferWriteAdapter } from './adapters/transport-offer-write.adapter';
 
 // ---------------------------------------------------------------------------
