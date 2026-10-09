@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
+import { localizedAlternates } from '@/lib/i18n/localized-paths';
 import { getServerGuidePost } from '../guides.server';
 import BlogPostBody from '../../blog/blog-post-body';
 import RelatedTools from '../related-tools';
@@ -34,8 +35,19 @@ interface GuidePostPageProps {
 export async function generateMetadata({
   params,
 }: GuidePostPageProps): Promise<Metadata> {
-  const { locale, slug } = await params;
+  const { locale: rawLocale, slug } = await params;
+  // Routing serves fi and en only; anything else renders as Finnish
+  // (the products-page precedent).
+  const locale = rawLocale === 'en' ? 'en' : 'fi';
   const t = await getTranslations({ locale, namespace: 'GuidesPage' });
+
+  // Localized canonical + hreflang pair (design D6, change
+  // localize-fi-route-pathnames): the slug is in hand for both branches
+  // — the unavailable state still serves this URL.
+  const alternates = localizedAlternates(locale, {
+    pathname: '/guides/[slug]',
+    params: { slug },
+  });
 
   // Unknown slug / draft / backend down → generic metadata; the page
   // body renders not-found or unavailable anyway.
@@ -44,6 +56,7 @@ export async function generateMetadata({
     return {
       title: t('metaTitle'),
       description: t('metaDescription'),
+      alternates,
     };
   }
 
@@ -55,6 +68,7 @@ export async function generateMetadata({
       published !== null
         ? t('guideMetaDescription', { date: published })
         : t('metaDescription'),
+    alternates,
   };
 }
 

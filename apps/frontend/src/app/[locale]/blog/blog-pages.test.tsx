@@ -30,7 +30,9 @@ import * as React from 'react';
 import { renderToString } from 'react-dom/server';
 import { NextIntlClientProvider } from 'next-intl';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import BlogIndexPage from './page';
+import BlogIndexPage, {
+  generateMetadata as blogIndexMetadata,
+} from './page';
 import BlogPostPage, { generateMetadata } from './[slug]/page';
 import { parsePostBody } from './blog-post-body';
 import { request } from '@/lib/api';
@@ -77,21 +79,12 @@ vi.mock('next-intl/server', () => ({
   },
 }));
 
-vi.mock('@/i18n/navigation', () => ({
-  Link: (
-    props: { href?: unknown; children?: React.ReactNode } & Record<
-      string,
-      unknown
-    >,
-  ) => {
-    const { href, children, ...rest } = props;
-    return React.createElement(
-      'a',
-      { ...rest, href: String(href ?? '') },
-      children,
-    );
-  },
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double).
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 // notFound() in a real render aborts with Next's 404 fallback — a throw is
 // the observable equivalent under renderToString.
@@ -164,8 +157,26 @@ describe('BlogIndexPage', () => {
     const html = await renderPageHtml(element);
 
     expect(html).toContain('Veromuutus 2026-2');
-    expect(html).toContain('href="/blog/veromuutos-2026-2"');
+    // The typed href renders the localized segment (/blogi, design D1).
+    expect(html).toContain('href="/blogi/veromuutos-2026-2"');
     expect(html).toContain('Veroaineiston versio 2026-2');
+  });
+
+  it('emits the localized canonical and hreflang pair for the index (design D6)', async () => {
+    const fi = await blogIndexMetadata({
+      params: Promise.resolve({ locale: 'fi' }),
+    });
+    expect(fi.alternates?.canonical).toBe('/blogi');
+    expect(fi.alternates?.languages).toEqual({
+      fi: '/blogi',
+      en: '/en/blog',
+      'x-default': '/blogi',
+    });
+
+    const en = await blogIndexMetadata({
+      params: Promise.resolve({ locale: 'en' }),
+    });
+    expect(en.alternates?.canonical).toBe('/en/blog');
   });
 
   it('answers a crawler-honest 404 when nothing is published (task 4.1)', async () => {
@@ -246,6 +257,13 @@ describe('BlogPostPage', () => {
       params: Promise.resolve({ locale: 'fi', slug: 'veromuutos-2026-2' }),
     });
     expect(ok.title).toContain('Veromuutus 2026-2');
+    // Localized canonical + hreflang pair (design D6), in both branches.
+    expect(ok.alternates?.canonical).toBe('/blogi/veromuutos-2026-2');
+    expect(ok.alternates?.languages).toEqual({
+      fi: '/blogi/veromuutos-2026-2',
+      en: '/en/blog/veromuutos-2026-2',
+      'x-default': '/blogi/veromuutos-2026-2',
+    });
 
     mockedRequest.mockRejectedValue(
       new (await import('@/lib/api')).ApiFetchError(404, apiError(404), null),
@@ -254,6 +272,7 @@ describe('BlogPostPage', () => {
       params: Promise.resolve({ locale: 'fi', slug: 'ei-olemassa' }),
     });
     expect(fallback.title).toBe('Blogi');
+    expect(fallback.alternates?.canonical).toBe('/blogi/ei-olemassa');
   });
 });
 

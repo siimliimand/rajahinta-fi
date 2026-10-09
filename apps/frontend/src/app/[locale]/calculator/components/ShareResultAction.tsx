@@ -8,6 +8,7 @@ import { useCallback, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Button } from '@/components/ui';
 import { ApiFetchError, createCalculationShare } from '@/lib/api';
+import { localizedPath } from '@/lib/i18n/localized-paths';
 
 // ---------------------------------------------------------------------------
 // State
@@ -50,12 +51,18 @@ export default function ShareResultAction({ recordId }: { recordId: number }) {
     setCopied(false);
     try {
       const { publicId } = await createCalculationShare(recordId);
-      // Locale prefix mirrors next-intl's `as-needed` routing: Finnish
-      // serves the bare path, every other locale the prefixed one.
-      const prefix = locale === 'fi' ? '' : `/${locale}`;
+      // The share URL goes through the localized pathnames (change
+      // localize-fi-route-pathnames): the /share segment is shared by
+      // both locales (routing D2), so only the /en prefix varies.
       setState({
         kind: 'shared',
-        url: `${window.location.origin}${prefix}/share/${publicId}`,
+        url: `${window.location.origin}${localizedPath(
+          locale === 'en' ? 'en' : 'fi',
+          {
+            pathname: '/share/[publicId]',
+            params: { publicId },
+          },
+        )}`,
       });
     } catch (err: unknown) {
       setState({

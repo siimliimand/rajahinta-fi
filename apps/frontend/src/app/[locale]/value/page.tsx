@@ -5,6 +5,7 @@ import * as React from 'react';
 import type { Metadata } from 'next';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
+import { localizedAlternates } from '@/lib/i18n/localized-paths';
 import ValueRanking from './components/ValueRanking';
 import {
   VALUE_CATEGORY_KEYS,
@@ -20,17 +21,33 @@ interface ValuePageProps {
 /**
  * Unique, descriptive metadata for the €/g value route
  * (price-intelligence-roadmap task 2.5): unit-price listing framing,
- * distinct from the site-default and every other page title. The page
- * content and `?category=` handling are unchanged.
+ * distinct from the site-default and every other page title. Since the
+ * localized pathnames (change localize-fi-route-pathnames) the route
+ * also emits the localized canonical + hreflang pair (design D6), with
+ * the browsed category as its English contract value (design D7) — the
+ * default stays out, the same canonical-clean rule the catalog uses.
  */
 export async function generateMetadata({
   params,
+  searchParams,
 }: ValuePageProps): Promise<Metadata> {
-  const { locale } = await params;
+  const { locale: rawLocale } = await params;
+  // Routing serves fi and en only; anything else renders as Finnish
+  // (the products-page precedent).
+  const locale = rawLocale === 'en' ? 'en' : 'fi';
+
+  const query = await searchParams;
+  const raw = Array.isArray(query.category) ? query.category[0] : query.category;
+  const category = toValueCategoryKey(raw) ?? VALUE_DEFAULT_CATEGORY;
+
   const t = await getTranslations({ locale, namespace: 'ValuePage' });
   return {
     title: t('metaTitle'),
     description: t('metaDescription'),
+    alternates: localizedAlternates(locale, {
+      pathname: '/value',
+      query: category === VALUE_DEFAULT_CATEGORY ? undefined : { category },
+    }),
   };
 }
 
@@ -84,7 +101,7 @@ export default async function ValuePage({ params, searchParams }: ValuePageProps
           return (
             <Link
               key={key}
-              href={`/value?category=${key}`}
+              href={{ pathname: '/value', query: { category: key } }}
               aria-current={active ? 'page' : undefined}
               className={[
                 'inline-flex items-center rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',

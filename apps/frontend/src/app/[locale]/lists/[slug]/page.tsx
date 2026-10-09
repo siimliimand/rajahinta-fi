@@ -43,6 +43,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
+import { localizedAlternates } from '@/lib/i18n/localized-paths';
 import { Card } from '@/components/ui';
 import {
   buildCuratedListJsonLd,
@@ -57,8 +58,19 @@ interface ListPageProps {
 export async function generateMetadata({
   params,
 }: ListPageProps): Promise<Metadata> {
-  const { locale, slug } = await params;
+  const { locale: rawLocale, slug } = await params;
+  // Routing serves fi and en only; anything else renders as Finnish
+  // (the products-page precedent).
+  const locale = rawLocale === 'en' ? 'en' : 'fi';
   const t = await getTranslations({ locale, namespace: 'ListsPage' });
+
+  // Localized canonical + hreflang pair (design D6, change
+  // localize-fi-route-pathnames): the slug is in hand for both branches
+  // — the unavailable state still serves this URL.
+  const alternates = localizedAlternates(locale, {
+    pathname: '/lists/[slug]',
+    params: { slug },
+  });
 
   // Unavailable list data (unknown slug, backend down) degrades to
   // generic metadata instead of erroring the response — the product-page
@@ -68,12 +80,14 @@ export async function generateMetadata({
     return {
       title: t('fallbackMetaTitle'),
       description: t('fallbackMetaDescription'),
+      alternates,
     };
   }
 
   return {
     title: t('metaTitle', { title: outcome.list.title }),
     description: t('metaDescription', { title: outcome.list.title }),
+    alternates,
   };
 }
 
@@ -124,7 +138,10 @@ function ListEntry({
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
         {entry.productId !== null ? (
           <Link
-            href={`/products/${entry.productId}`}
+            href={{
+              pathname: '/products/[id]',
+              params: { id: entry.productId },
+            }}
             className="font-medium text-primary-700 hover:underline"
           >
             {productLinkLabel}

@@ -66,18 +66,12 @@ vi.mock('next-intl/server', () => ({
 
 // The i18n Link is a Next router-aware component; under renderToString it
 // renders as a plain anchor with the href it was given (fi needs no prefix).
-vi.mock('@/i18n/navigation', () => ({
-  Link: (
-    props: { href?: unknown; children?: React.ReactNode } & Record<string, unknown>,
-  ) => {
-    const { href, children, ...rest } = props;
-    return React.createElement(
-      'a',
-      { ...rest, href: String(href ?? '') },
-      children,
-    );
-  },
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double).
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 // The accuracy statistic (task 3.3) is a self-contained client island
 // with its own fetch and its own test file. This file pins the STATIC
@@ -245,7 +239,7 @@ describe('HomePage live gap section (homepage-live-gap-hero task 2.2)', () => {
     // listing's Safari-safe ::after construction.
     for (const id of [101, 202]) {
       const link = section?.querySelector<HTMLAnchorElement>(
-        `a[href="/products/${id}"]`,
+        `a[href="/tuotteet/${id}"]`,
       );
       expect(link).not.toBeNull();
       expect(link?.className).toContain('after:absolute');
@@ -290,7 +284,7 @@ describe('HomePage live gap section (homepage-live-gap-hero task 2.2)', () => {
     );
 
     // No product figures render in the pending state.
-    expect(html).not.toContain('href="/products/');
+    expect(html).not.toContain('href="/tuotteet/');
     expect(section?.textContent).not.toContain('21.43 €');
     expect(section?.textContent).not.toContain('-9.56 €');
   });
@@ -308,7 +302,7 @@ describe('HomePage live gap section (homepage-live-gap-hero task 2.2)', () => {
     expect(section?.querySelector('[data-testid="home-gap-hero-pending"]'))
       .not.toBeNull();
     // No figures: a row without its day cannot be presented as current.
-    expect(html).not.toContain('href="/products/');
+    expect(html).not.toContain('href="/tuotteet/');
     expect(section?.textContent).not.toContain('Testiviini 201');
     expect(section?.textContent).not.toContain('21.43 €');
   });
@@ -324,7 +318,7 @@ describe('HomePage live gap section (homepage-live-gap-hero task 2.2)', () => {
     );
 
     // No product figures render in the unavailable state.
-    expect(html).not.toContain('href="/products/');
+    expect(html).not.toContain('href="/tuotteet/');
     expect(section?.textContent).not.toContain('Testiviini 201');
     expect(section?.textContent).not.toContain('21.43 €');
     expect(section?.textContent).not.toContain('-9.56 €');
@@ -343,7 +337,7 @@ describe('HomePage live gap section (homepage-live-gap-hero task 2.2)', () => {
     expect(section?.querySelector('[data-testid="home-gap-hero-unavailable"]'))
       .not.toBeNull();
     // Stale figures never headline as current (D4).
-    expect(html).not.toContain('href="/products/');
+    expect(html).not.toContain('href="/tuotteet/');
     expect(section?.textContent).not.toContain('Testiviini 201');
     expect(section?.textContent).not.toContain('21.43 €');
     expect(section?.textContent).not.toContain('-9.56 €');

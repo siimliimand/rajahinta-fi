@@ -88,21 +88,13 @@ vi.mock('next-intl/server', () => ({
   },
 }));
 
-vi.mock('@/i18n/navigation', () => ({
-  Link: (
-    props: { href?: unknown; children?: React.ReactNode } & Record<
-      string,
-      unknown
-    >,
-  ) => {
-    const { href, children, ...rest } = props;
-    return React.createElement(
-      'a',
-      { ...rest, href: String(href ?? '') },
-      children,
-    );
-  },
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double) — the accuracy
+// cross-link's hash rides through.
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 const NOT_FOUND = new Error('NEXT_NOT_FOUND');
 vi.mock('next/navigation', () => ({
@@ -297,7 +289,7 @@ describe('SharePage', () => {
     expect(html).toContain('jäädytetyn kopion');
     expect(html).toContain('Kopio luotu');
     // The accuracy-stat cross-link anchors to the methodology section.
-    expect(html).toContain('href="/ranking#accuracy"');
+    expect(html).toContain('href="/jarjestys#accuracy"');
     // Confidence renders through the canonical label.
     expect(html).toContain('Kohtalainen luotettavuus');
   });
@@ -384,7 +376,7 @@ describe('SharePage', () => {
     expect(html).toContain('Ulkomainen vähittäishinta');
     expect(html).toContain('Kohtalainen luotettavuus');
     expect(html).toContain('jäädytetyn kopion');
-    expect(html).toContain('href="/ranking#accuracy"');
+    expect(html).toContain('href="/jarjestys#accuracy"');
     // Structure unchanged: the currency line directly follows the
     // total — no meter element inserted between them.
     const doc = new DOMParser().parseFromString(html, 'text/html');

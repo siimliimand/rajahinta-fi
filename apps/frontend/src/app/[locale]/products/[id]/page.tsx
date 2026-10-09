@@ -25,6 +25,7 @@ import {
   SERVER_AGE_CONFIRMATION_TOKEN,
   getServerProductDetail,
 } from '@/lib/api';
+import { localizedAlternates } from '@/lib/i18n/localized-paths';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import { formatMoney } from '@/lib/format/money';
 import type { PriceHistoryResponse, ProductDetailResponse } from '@/lib/types';
@@ -211,7 +212,11 @@ function detailParts(
 export async function generateMetadata({
   params,
 }: ProductPageProps): Promise<Metadata> {
-  const { locale, id } = await params;
+  const { locale: rawLocale, id } = await params;
+  // Routing serves fi and en only (localePrefix 'as-needed'); anything
+  // else can only arrive through a hand-crafted request, which renders
+  // as Finnish — the products-page precedent.
+  const locale = rawLocale === 'en' ? 'en' : 'fi';
   const t = await getTranslations({ locale, namespace: 'ProductPage' });
 
   const productId = Number.parseInt(id, 10);
@@ -220,12 +225,22 @@ export async function generateMetadata({
       ? await getServerProductDetail(productId)
       : null;
 
+  // Canonical + hreflang pair (design D6, change
+  // localize-fi-route-pathnames): the URL is in hand regardless of the
+  // product fetch, so both metadata branches emit it — the degraded
+  // (unavailable) state still serves this URL.
+  const alternates = localizedAlternates(locale, {
+    pathname: '/products/[id]',
+    params: { id },
+  });
+
   // Unavailable product data (unknown id, closed launch gates, backend
   // down) degrades to generic metadata instead of erroring the response.
   if (detail === null) {
     return {
       title: t('notFoundTitle'),
       description: t('metaDescriptionFallback'),
+      alternates,
     };
   }
 
@@ -239,6 +254,7 @@ export async function generateMetadata({
       name: detail.product.name,
       details: detailParts(detail, categoryLabel),
     }),
+    alternates,
   };
 }
 

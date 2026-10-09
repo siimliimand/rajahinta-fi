@@ -379,7 +379,7 @@ export default async function SharePage({ params }: SharePageProps) {
             link: (chunks) => (
               <Link
                 key="accuracy-link"
-                href="/ranking#accuracy"
+                href={{ pathname: '/ranking', hash: '#accuracy' }}
                 className="font-medium text-primary-700 underline hover:text-primary-800"
               >
                 {chunks}
