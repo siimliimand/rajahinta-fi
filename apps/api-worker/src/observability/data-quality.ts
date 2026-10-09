@@ -39,6 +39,8 @@
 import { FransbergCarrierRateSource } from '../../../../packages/data-acquisition/src/adapters/fransberg-rate.source';
 import { PostiCarrierRateSource } from '../../../../packages/data-acquisition/src/adapters/posti-rate.source';
 import { OmnivaCarrierRateSource } from '../../../../packages/data-acquisition/src/adapters/omniva-rate.source';
+import { PakettipojatCarrierRateSource } from '../../../../packages/data-acquisition/src/adapters/pakettipojat-rate.source';
+import { NorrlogCarrierRateSource } from '../../../../packages/data-acquisition/src/adapters/norrlog-rate.source';
 import type {
   DataQualityReport,
   QualityReportHook,
@@ -278,6 +280,8 @@ function expectedTransportCarriers(): string[] {
     new FransbergCarrierRateSource().carrierId,
     new PostiCarrierRateSource().carrierId,
     new OmnivaCarrierRateSource().carrierId,
+    new PakettipojatCarrierRateSource().carrierId,
+    new NorrlogCarrierRateSource().carrierId,
   ];
 }
 

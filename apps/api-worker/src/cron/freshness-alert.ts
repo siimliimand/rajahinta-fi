@@ -125,7 +125,8 @@ export const STALE_PRICE_SHARE_THRESHOLDS = {
  *
  * DEVIATION from the replaced rules (owner decision 2026-09-28): the
  * original literals (432000/604800 s — 5/7 days) monitored LIVE carrier
- * feeds. Both carriers are now manually curated in-repo datasets with a
+ * feeds. The monitored carriers are now manually curated in-repo
+ * datasets (fransberg, posti, omniva, pakettipojat, norrlog) with a
  * few-times-per-year admin review cadence (curated-rate-refresh.ts),
  * against which a 7-day alert would fire permanently. The thresholds
  * now track the review cadence instead — the alert means "the periodic

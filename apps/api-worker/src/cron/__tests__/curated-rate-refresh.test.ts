@@ -1,6 +1,7 @@
 /**
  * Monthly curated-rate refresh handler tests — the in-repo dataset
- * ingestion contract (fransberg + posti + omniva):
+ * ingestion contract (fransberg + posti + omniva + pakettipojat +
+ * norrlog):
  *
  * - a carrier whose stored newest observedAt matches its dataset date is
  *   skipped (append-only history: unchanged data is not new history);
@@ -19,6 +20,8 @@ import {
 import { FRANSBERG_OBSERVED_AT } from '../../../../../packages/data-acquisition/src/adapters/fransberg-rate.source';
 import { POSTI_OBSERVED_AT } from '../../../../../packages/data-acquisition/src/adapters/posti-rate.source';
 import { OMNIVA_OBSERVED_AT } from '../../../../../packages/data-acquisition/src/adapters/omniva-rate.source';
+import { PAKETTIPOJAT_OBSERVED_AT } from '../../../../../packages/data-acquisition/src/adapters/pakettipojat-rate.source';
+import { NORRLOG_OBSERVED_AT } from '../../../../../packages/data-acquisition/src/adapters/norrlog-rate.source';
 import { handlersForCron } from '../router';
 import { createLogger, type Logger } from '../../logger';
 
@@ -40,15 +43,19 @@ describe('handleCuratedRateRefresh', () => {
     );
 
     // Fransberg is current (skip); Posti's dataset is empty-but-dated —
-    // an empty table still refreshes (first sync). Omniva has no stored
-    // observation either (first sync).
+    // an empty table still refreshes (first sync). Omniva, Pakettipojat,
+    // and Norrlog have no stored observation either (first sync).
     expect(storedNewestObservedAt).toHaveBeenCalledWith('fransberg');
     expect(storedNewestObservedAt).toHaveBeenCalledWith('posti');
     expect(storedNewestObservedAt).toHaveBeenCalledWith('omniva');
+    expect(storedNewestObservedAt).toHaveBeenCalledWith('pakettipojat');
+    expect(storedNewestObservedAt).toHaveBeenCalledWith('norrlog');
     expect(refresh).not.toHaveBeenCalledWith('fransberg');
     expect(refresh).toHaveBeenCalledWith('posti');
     expect(refresh).toHaveBeenCalledWith('omniva');
-    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledWith('pakettipojat');
+    expect(refresh).toHaveBeenCalledWith('norrlog');
+    expect(refresh).toHaveBeenCalledTimes(4);
     expect(result).toEqual({ ratesUpdated: 0, skippedCarriers: ['fransberg'] });
   });
 
@@ -65,6 +72,8 @@ describe('handleCuratedRateRefresh', () => {
     expect(refresh).toHaveBeenCalledWith('fransberg');
     expect(refresh).toHaveBeenCalledWith('posti');
     expect(refresh).toHaveBeenCalledWith('omniva');
+    expect(refresh).toHaveBeenCalledWith('pakettipojat');
+    expect(refresh).toHaveBeenCalledWith('norrlog');
     expect(result.skippedCarriers).toEqual([]);
   });
 
@@ -73,6 +82,8 @@ describe('handleCuratedRateRefresh', () => {
     const storedNewestObservedAt = vi.fn(async (carrierId: string) => {
       if (carrierId === 'posti') return POSTI_OBSERVED_AT;
       if (carrierId === 'omniva') return OMNIVA_OBSERVED_AT;
+      if (carrierId === 'pakettipojat') return PAKETTIPOJAT_OBSERVED_AT;
+      if (carrierId === 'norrlog') return NORRLOG_OBSERVED_AT;
       return null;
     });
 
@@ -86,8 +97,15 @@ describe('handleCuratedRateRefresh', () => {
     expect(refresh).toHaveBeenCalledWith('fransberg');
     expect(refresh).not.toHaveBeenCalledWith('posti');
     expect(refresh).not.toHaveBeenCalledWith('omniva');
+    expect(refresh).not.toHaveBeenCalledWith('pakettipojat');
+    expect(refresh).not.toHaveBeenCalledWith('norrlog');
     expect(result.ratesUpdated).toBe(12);
-    expect(result.skippedCarriers).toEqual(['posti', 'omniva']);
+    expect(result.skippedCarriers).toEqual([
+      'posti',
+      'omniva',
+      'pakettipojat',
+      'norrlog',
+    ]);
   });
 });
 
