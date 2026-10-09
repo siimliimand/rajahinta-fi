@@ -21,6 +21,7 @@
  * | Credential routes (NEW, email-password-auth D2) | POST register + login + password/reset-request: rate-limit AUTH (public); GET me + POST verify-email/request: sessionAuth; POST verify-email/confirm + POST password/reset: PUBLIC (the token IS the capability) | AUTH limiter and sessionAuth() per route below; confirm/reset register no guard |
  * | SessionController (/api/v1/account)       | rotate/revoke: SessionAuthGuard            | rotate + DELETE session: sessionAuth(); the anonymous POST /session issuance route is DELETED (register/login replace it) |
  * | PriceAlertsRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/account/alerts) | no Nest counterpart | sessionAuth(); per-account rate limit registers on the routes (needs the resolved identity) |
+ * | FavoritesRoutes (NEW surface, add-product-favorites 2.1) (/api/v1/account/favorites) | no Nest counterpart | sessionAuth(); per-account rate limit registers on the routes (needs the resolved identity) |
  * | GroupOrderRoutes (NEW surface, product-roadmap-phases-1-4) (/api/v1/group-orders) | no Nest counterpart | POST create only: sessionAuth(); the token-scoped participant routes carry NO sessionAuth (the share token is the capability) |
  * | Shop-report submission (NEW surface, trust-and-reach-roadmap 2.2) (POST /api/v1/reports) | no Nest counterpart | requireRateLimit('AUTH') → sessionAuth() |
  * | Outcome + share writes (NEW surface, trust-and-reach-roadmap 3.2/6.1) (POST /api/v1/calculations/:id/{outcome,share}) | no Nest counterpart | sessionAuth() (the prefix's CALCULATOR rate limit registers at index.ts) |
@@ -46,7 +47,7 @@
  * | POST /api/v1/what-if/excise, POST /api/v1/event-calc, POST /api/v1/trip-feasibility (own route files) | requireRateLimit('CALCULATOR') per-route | CALCULATOR |
  * | GET /api/v1/products/:id/dupes, GET /api/v1/lists, GET /api/v1/lists/:slug, GET /api/v1/outbound/:offerId, GET /api/v1/outbound/ferry/:offerId (own route files) | requireRateLimit('DEFAULT') per-route | DEFAULT |
  * | POST /api/v1/account/session/rotate (accounts.routes.ts) | requireRateLimit('DEFAULT') per-route, then sessionAuth() from GUARDED_ROUTES below | DEFAULT |
- * | GET /api/v1/account/alerts(+:alertId), POST /api/v1/group-orders | sessionAuth() from GUARDED_ROUTES below, then requireAccountRateLimit('DEFAULT') on the handlers (keys the bucket on the resolved identity) | DEFAULT (per-account) |
+ * | GET /api/v1/account/alerts(+:alertId), GET+POST /api/v1/account/favorites(+:productId), POST /api/v1/group-orders | sessionAuth() from GUARDED_ROUTES below, then requireAccountRateLimit('DEFAULT') on the handlers (keys the bucket on the resolved identity) | DEFAULT (per-account) |
  * | GET /api/v1/merchants/reliability (merchants.routes.ts) | ageGate() per-route | none (public read) |
  *
  * Guard-free surfaces with no rate limit (reviewed-safe public reads and
@@ -181,6 +182,21 @@ const GUARDED_ROUTES: readonly GuardedRoute[] = [
   {
     methods: ['PATCH', 'DELETE'],
     path: '/api/v1/account/alerts/:alertId',
+    use: [sessionAuth()],
+  },
+
+  // FavoritesRoutes (task 2.1, change add-product-favorites) — the alerts
+  // composition byte-for-byte: session first (an anonymous caller gets
+  // the 401 envelope), the per-account rate limit registering on the
+  // route handlers themselves.
+  {
+    methods: ['GET', 'POST'],
+    path: '/api/v1/account/favorites',
+    use: [sessionAuth()],
+  },
+  {
+    methods: ['DELETE'],
+    path: '/api/v1/account/favorites/:productId',
     use: [sessionAuth()],
   },
 
