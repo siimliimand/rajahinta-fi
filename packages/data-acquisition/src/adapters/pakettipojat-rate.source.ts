@@ -51,7 +51,7 @@
  *   future re-zoning must re-verify the table rather than trust it.
  * - Within the transcribed home-delivery column the 140 kg row is
  *   179,50 € where the ×36,90 unit pattern would say 184,50 €, and the
- *   392 kg row is 502,60 € where the pattern would say 504,60 €. Both
+ *   392 kg row is 502,60 € where the pattern would say 516,60 €. Both
  *   are published values, kept verbatim on purpose — the sanity tests
  *   pin them so a well-meant "fix" cannot silently reprice them.
  *
