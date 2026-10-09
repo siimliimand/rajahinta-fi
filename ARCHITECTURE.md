@@ -269,7 +269,7 @@ No `useValue: null` providers for data repos — all have concrete implementatio
 
 | Component            | Responsibility                                                                              | Key files                                                          |
 | -------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| **Layout**           | Shared header (calculator, compare, basket, products, event, trip, what-if, account, ranking) with a Planning dropdown grouping trip/event/scenario and an `FI | EN` locale switcher preserving the current path, active-page indicator, logo link home, and keyboard-operable mobile menu; footer carries the disclaimer, methodology link, and About/Contact links; per-page back-links removed | `apps/frontend/src/app/[locale]/layout.tsx`, `apps/frontend/src/app/[locale]/components/SiteHeader.tsx`, `apps/frontend/src/app/[locale]/components/SiteFooter.tsx` |
+| **Layout**           | Shared header (calculator, compare, basket, products, event, trip, what-if, account, ranking) with a Planning dropdown grouping trip/event/scenario and an `FI | EN` locale switcher keeping the current route (cookie-first `router.replace` — see Localized routing below), active-page indicator, logo link home, and keyboard-operable mobile menu; footer carries the disclaimer, methodology link, and About/Contact links; per-page back-links removed | `apps/frontend/src/app/[locale]/layout.tsx`, `apps/frontend/src/app/[locale]/components/SiteHeader.tsx`, `apps/frontend/src/app/[locale]/components/SiteFooter.tsx` |
 | **Design system**    | Semantic token layer (status palette, gray scale, radii, shadows as CSS variables mapped into Tailwind), Inter via `next/font`, shared UI primitives (Button, Badge, Card, Input, EmptyState, ErrorState, LoadingSkeleton), and the canonical status module that replaces every per-component color map | `apps/frontend/src/app/globals.css`, `apps/frontend/tailwind.config.ts`, `apps/frontend/src/lib/design/status.ts`, `apps/frontend/src/components/ui/` |
 | **Home page**        | Hero with a one-sentence value proposition and a working product-search form (plain GET to the calculator — the homepage's single input), a static worked-example section after the hero (example-labeled Finland-vs-cross-border figures, no API call), a static server-rendered task-card section linking basket, trip, event, what-if, and savings in both locales (links only — no new input surface, no origin selector), a static trust row (data sources, reliability model, methodology link), and a FAQ section linking PUBLISHED guide entries (server-side fetch, degrades to nothing) | `apps/frontend/src/app/[locale]/page.tsx`                           |
 | **Calculator page**  | Server shell (unique metadata, SSR intro, "How this calculation works") over the client view: product search (300 ms debounce), product selector, quantity selector, answer-first result card (explicit Finland comparison, reliability timestamp, consumed disclaimer), quick/advanced disclosure, sticky desktop summary | `apps/frontend/src/app/[locale]/calculator/`                      |
@@ -285,7 +285,96 @@ No `useValue: null` providers for data repos — all have concrete implementatio
 | **Age Gate**         | Crawlable soft gate (renders in root layout): the server reads `age_confirmed` and passes the decision as initial state; page content always renders in server HTML, unconfirmed visitors get a focus-trapped overlay dialog, declined page and recovery event unchanged; the API boundary remains the enforcement point (gated endpoints keep 403 `AGE_GATE_REQUIRED`); Phase 1 confirmation is self-attestation | `apps/frontend/src/app/[locale]/age-gate/` (incl. `declined/`), `apps/frontend/src/app/[locale]/components/AgeGate.tsx` |
 | **DisclaimerBanner** | Structural disclaimer rendered exactly once per result view — amber (`status-stale`) banner when result confidence is LOW, quiet neutral one-liner otherwise; text byte-identical to the result object's field, and the payload still carries the disclaimer structurally on every response and persisted record | `apps/frontend/src/app/[locale]/calculator/components/DisclaimerBanner.tsx` |
 
-**Technology:** Next.js 15.5 (App Router, `[locale]` segment via next-intl 4.14 with Finnish default and English secondary, message catalogs under content lint), React 19.2, Tailwind CSS 3.4, Vitest 3.2 + Testing Library, Playwright for browser e2e.
+**Technology:** Next.js 15.5 (App Router, `[locale]` segment via next-intl 4.14 with Finnish default, localized Finnish pathnames and English under `/en` — see Localized routing below; message catalogs under content lint), React 19.2, Tailwind CSS 3.4, Vitest 3.2 + Testing Library, Playwright for browser e2e.
+
+#### Localized routing (next-intl)
+
+The filesystem route tree under `[locale]` is locale-neutral; external URLs are
+localized through the `pathnames` vocabulary in
+`apps/frontend/src/i18n/routing.ts` (21 localized + 20 shared entries;
+`localePrefix: 'as-needed'`, Finnish default). The Finnish segment is the
+site's own Finnish label, served from the bare paths; English keeps the
+internal route name under the `/en` prefix. Slugs are ASCII-transliterated
+(`saastolista`, `ryhmatilaus`, `skenaario`, `jarjestys`) for robustness
+against messaging-app link mangling. The i18n `Link`/`useRouter` hrefs are
+typed to the `routing.pathnames` keys.
+
+Localized vocabulary (columns mirror `routing.pathnames` exactly):
+
+| Internal route | fi segment | en segment |
+|---|---|---|
+| `/` | `/` | `/` |
+| `/calculator` | `/laskuri` | `/calculator` |
+| `/compare` | `/vertailu` | `/compare` |
+| `/basket` | `/ostoskori` | `/basket` |
+| `/products` | `/tuotteet` | `/products` |
+| `/products/[id]` | `/tuotteet/[id]` | `/products/[id]` |
+| `/trip` | `/matka` | `/trip` |
+| `/event` | `/tilaisuus` | `/event` |
+| `/what-if` | `/skenaario` | `/what-if` |
+| `/value` | `/grammahinta` | `/value` |
+| `/ranking` | `/jarjestys` | `/ranking` |
+| `/savings` | `/saastolista` | `/savings` |
+| `/allowances` | `/tullivapaat` | `/allowances` |
+| `/group-order` | `/ryhmatilaus` | `/group-order` |
+| `/blog` | `/blogi` | `/blog` |
+| `/blog/[slug]` | `/blogi/[slug]` | `/blog/[slug]` |
+| `/guides` | `/oppaat` | `/guides` |
+| `/guides/[slug]` | `/oppaat/[slug]` | `/guides/[slug]` |
+| `/lists/[slug]` | `/listat/[slug]` | `/lists/[slug]` |
+| `/about` | `/tietoja` | `/about` |
+| `/contact` | `/yhteystiedot` | `/contact` |
+
+Shared segments — one segment in both locales, kept out of the localized set
+deliberately:
+
+| Group | Routes | Why shared |
+|---|---|---|
+| Auth/account (private, noindex) | `/login`, `/register`, `/account`, `/account/alerts`, `/account/saved-baskets`, `/account/forgot`, `/account/reset`, `/account/verify`, `/age-gate`, `/age-gate/declined` | Zero SEO value |
+| Machine/token URLs | `/calculator/result/[recordId]`, `/group-order/[token]`, `/share/[publicId]` | Baked into exported reports and shared invites; a rename would 404 them |
+| Email lifecycle | `/newsletter/confirm`, `/newsletter/unsubscribe` | Arrive from already-sent campaign emails; must not move |
+| Internal ops console | `/ops`, `/ops/appeals`, `/ops/guides`, `/ops/newsletter`, `/ops/reports` | Staff tooling |
+
+The `[...rest]` catch-all deliberately has no vocabulary entry — unknown paths
+route through `notFound()` to the localized 404.
+
+**Negotiation and redirects.** The stock next-intl middleware resolves the
+request locale in priority order: URL prefix → `NEXT_LOCALE` cookie →
+`Accept-Language` → default (fi). The middleware writes `NEXT_LOCALE` on its
+responses, so a negotiated choice persists across later navigations. Because
+segments are now locale-*identified*, requesting a segment owned by one
+locale while the other is negotiated yields a temporary redirect to the
+negotiated locale's canonical URL (307 — correct for header-dependent
+negotiation; `301`s of locale-negotiated URLs must not be cached):
+
+| Request | Negotiated locale | Result |
+|---|---|---|
+| `/tuotteet`, en browser, no cookie | en | `307 → /en/products` |
+| `/tuotteet`, fi browser | fi | `200` Finnish page |
+| `/tuotteet`, no signals (crawler) | fi (default) | `200` Finnish page |
+| legacy `/products`, fi signals | fi | `307 → /tuotteet` |
+| legacy `/products`, en signals | en | `307 → /en/products` |
+| `/en/products` | en (prefix) | `200` English page |
+
+Crawlers send neither cookie nor `Accept-Language`, so resolution falls
+through to fi and they are served the segment-owning Finnish page — the
+load-bearing SEO property of the localized vocabulary. A `/fi/...` request
+redirects to the unprefixed path. There is no hand-written redirect map:
+every legacy bare-URL combination resolves through the wrong-locale-pathname
+rule alone (no new fi segment collides with an existing bare route). The
+middleware contract is pinned by an e2e negotiation matrix, with `next-intl`
+pinned `^4.14.0` in lockstep.
+
+**Locale switcher.** The header `FI | EN` switcher switches through
+`useRouter().replace(pathname, params, { locale })`, which writes the
+`NEXT_LOCALE` cookie client-side before navigating. A plain
+`<Link locale={…}>` is a documented pitfall: for the default locale it
+renders the unprefixed href while the cookie still names the old locale, and
+the middleware redirects the visitor straight back. Dynamic segments carry
+their params across the switch; query strings do not (the switch lands on
+the route's canonical URL). Sitemap URLs, hreflang alternates (`x-default`
+keeps the negotiating bare fi URL), and `generateMetadata` canonicals emit
+the localized segments via `apps/frontend/src/lib/i18n/localized-paths.ts`.
 
 ### 3.3 Agent infrastructure
 
