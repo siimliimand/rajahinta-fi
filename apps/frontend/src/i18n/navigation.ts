@@ -2,9 +2,13 @@
  * Locale-aware navigation primitives.
  *
  * `Link`, `useRouter`, and `usePathname` from this module keep the active
- * locale in the URL automatically (e.g. `Link href="/calculator"` renders
- * `/calculator` in Finnish and `/en/calculator` in English). Use these
- * instead of `next/link` and `next/navigation` inside the app.
+ * locale in the URL automatically and translate hrefs through the
+ * localized vocabulary in `routing.ts` (e.g. `Link href="/calculator"`
+ * renders `/laskuri` in Finnish and `/en/calculator` in English). Hrefs
+ * are typed to the `routing.pathnames` keys — every route navigated
+ * through these primitives needs an entry there, localized or
+ * explicitly shared. Use these instead of `next/link` and
+ * `next/navigation` inside the app.
  *
  * @module i18n/navigation
  */
