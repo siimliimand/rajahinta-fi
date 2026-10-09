@@ -120,21 +120,18 @@ vi.mock('../components/SiteFooter', () => ({
   default: () => React.createElement('footer', { 'data-testid': 'site-footer' }, 'CHROME-FOOTER'),
 }));
 
-// Link applies localePrefix 'as-needed' (English gets /en);
-// usePathname/useRouter stubs serve the AgeGate and the client islands.
-vi.mock('@/i18n/navigation', () => ({
-  Link: (
-    props: { href?: unknown; children?: React.ReactNode } & Record<string, unknown>,
-  ) => {
-    const { href, children, ...rest } = props;
-    const target = String(href ?? '');
-    const prefixed =
-      state.locale === 'en' && target.startsWith('/') ? `/en${target}` : target;
-    return React.createElement('a', { ...rest, href: prefixed }, children);
-  },
-  usePathname: () => state.pathname,
-  useRouter: () => ({ replace: () => undefined }),
-}));
+// Link applies localePrefix 'as-needed' (English gets /en); typed href
+// objects resolve through the real routing vocabulary first (the shared
+// testing double). usePathname/useRouter stubs serve the AgeGate and the
+// client islands.
+vi.mock('@/i18n/navigation', async () => {
+  const { createTestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return {
+    Link: createTestI18nLink(() => state.locale),
+    usePathname: () => state.pathname,
+    useRouter: () => ({ replace: () => undefined }),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Fixtures — shapes mirror the API contracts (blog-pages / products page

@@ -47,18 +47,12 @@ vi.mock('next-intl/server', () => ({
 }));
 
 // The i18n Link renders as a plain anchor under renderToString.
-vi.mock('@/i18n/navigation', () => ({
-  Link: (
-    props: { href?: unknown; children?: React.ReactNode } & Record<string, unknown>,
-  ) => {
-    const { href, children, ...rest } = props;
-    return React.createElement(
-      'a',
-      { ...rest, href: String(href ?? '') },
-      children,
-    );
-  },
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double).
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 // Self-contained client island with its own fetch — stub it (SSR stays
 // offline, page.ssr.test.tsx precedent).
@@ -84,14 +78,14 @@ describe('HomePage FAQ section (task 3.4)', () => {
     mockedGetServerGuidesIndex.mockResolvedValue({ kind: 'unavailable' });
     const html = await renderHome();
     expect(html).not.toContain('Usein kysytyt kysymykset');
-    expect(html).not.toContain('/guides/');
+    expect(html).not.toContain('/oppaat/');
   });
 
   it('renders NO FAQ section when no guides are PUBLISHED (initial state)', async () => {
     mockedGetServerGuidesIndex.mockResolvedValue({ kind: 'ok', items: [] });
     const html = await renderHome();
     expect(html).not.toContain('Usein kysytyt kysymykset');
-    expect(html).not.toContain('/guides/');
+    expect(html).not.toContain('/oppaat/');
   });
 
   it('links each PUBLISHED guide entry when entries exist', async () => {
@@ -105,9 +99,9 @@ describe('HomePage FAQ section (task 3.4)', () => {
     const html = await renderHome();
 
     expect(html).toContain('Usein kysytyt kysymykset');
-    expect(html).toContain('href="/guides/miten-laskenta-toimii"');
+    expect(html).toContain('href="/oppaat/miten-laskenta-toimii"');
     expect(html).toContain('Miten laskenta toimii?');
-    expect(html).toContain('href="/guides/miteiston-tunnisteet"');
+    expect(html).toContain('href="/oppaat/miteiston-tunnisteet"');
     expect(html).toContain('Mistä tiedot tulevat?');
   });
 });

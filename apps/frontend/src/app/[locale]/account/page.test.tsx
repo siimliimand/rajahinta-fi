@@ -34,11 +34,15 @@ import type {
 
 const replaceMock = vi.fn();
 
-vi.mock('@/i18n/navigation', () => ({
-  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
-    React.createElement('a', props),
-  useRouter: () => ({ replace: replaceMock }),
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double).
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return {
+    Link: TestI18nLink,
+    useRouter: () => ({ replace: replaceMock }),
+  };
+});
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();

@@ -21,7 +21,9 @@ import * as React from 'react';
 import { renderToString } from 'react-dom/server';
 import { NextIntlClientProvider } from 'next-intl';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import GuidesIndexPage from './page';
+import GuidesIndexPage, {
+  generateMetadata as guidesIndexMetadata,
+} from './page';
 import { request } from '@/lib/api';
 
 async function renderPageHtml(element: React.ReactElement): Promise<string> {
@@ -60,21 +62,12 @@ vi.mock('next-intl/server', () => ({
   },
 }));
 
-vi.mock('@/i18n/navigation', () => ({
-  Link: (
-    props: { href?: unknown; children?: React.ReactNode } & Record<
-      string,
-      unknown
-    >,
-  ) => {
-    const { href, children, ...rest } = props;
-    return React.createElement(
-      'a',
-      { ...rest, href: String(href ?? '') },
-      children,
-    );
-  },
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double).
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 // notFound() in a real render aborts with Next's 404 fallback — a throw is
 // the observable equivalent under renderToString.
@@ -125,7 +118,20 @@ describe('GuidesIndexPage', () => {
     const html = await renderPageHtml(element);
 
     expect(html).toContain('Tullivapaat määrät');
-    expect(html).toContain('href="/guides/tullivapaat-maarat"');
+    // The typed href renders the localized segment (/oppaat, design D1).
+    expect(html).toContain('href="/oppaat/tullivapaat-maarat"');
+  });
+
+  it('emits the localized canonical and hreflang pair for the index (design D6)', async () => {
+    const fi = await guidesIndexMetadata({
+      params: Promise.resolve({ locale: 'fi' }),
+    });
+    expect(fi.alternates?.canonical).toBe('/oppaat');
+    expect(fi.alternates?.languages).toEqual({
+      fi: '/oppaat',
+      en: '/en/guides',
+      'x-default': '/oppaat',
+    });
   });
 
   it('answers a crawler-honest 404 when nothing is published (task 4.1)', async () => {

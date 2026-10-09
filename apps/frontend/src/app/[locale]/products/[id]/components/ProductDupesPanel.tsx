@@ -78,7 +78,10 @@ export default async function ProductDupesPanel({
 
             <div className="mt-1.5 text-sm">
               <Link
-                href={`/products/${dupe.siblingProductId}`}
+                href={{
+                  pathname: '/products/[id]',
+                  params: { id: dupe.siblingProductId },
+                }}
                 className="font-medium text-primary-700 hover:underline"
               >
                 {t('siblingLink', { id: dupe.siblingProductId })}

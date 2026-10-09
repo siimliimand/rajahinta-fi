@@ -48,6 +48,11 @@
  *      divider before the first uncovered row — covered cards above,
  *      uncovered cards after — while an only-uncovered page and every
  *      non-default sort render no divider at all.
+ *   10. Localized metadata (change localize-fi-route-pathnames, design
+ *       D6/D7): generateMetadata emits the active locale's canonical —
+ *       the Finnish segment /tuotteet with the English query parameters,
+ *       English under /en — plus the hreflang pair with x-default on the
+ *       bare (fi) URL.
  *
  * @module CatalogPageTest
  */
@@ -57,7 +62,7 @@ import * as React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import ProductsPage from '../page';
+import ProductsPage, { generateMetadata as productsMetadata } from '../page';
 import { request } from '@/lib/api';
 import type {
   ProductSavingsEmbed,
@@ -112,14 +117,14 @@ vi.mock('next-intl/server', () => ({
   },
 }));
 
-vi.mock('@/i18n/navigation', () => ({
-  Link: (
-    props: { href?: unknown; children?: React.ReactNode } & Record<string, unknown>,
-  ) => {
-    const { href, children, ...rest } = props;
-    return React.createElement('a', { ...rest, href: String(href ?? '') }, children);
-  },
-}));
+// The i18n Link double renders a plain anchor carrying the href next-intl
+// would produce: typed href OBJECTS resolve through the real routing
+// vocabulary (localized segment + query + hash) via the shared testing
+// double — string hrefs pass through unchanged.
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
@@ -298,11 +303,11 @@ describe('ProductsPage cards', () => {
 
     expect(screen.getByRole('link', { name: 'Kotikalja 0.5 l' })).toHaveAttribute(
       'href',
-      '/products/42',
+      '/tuotteet/42',
     );
     expect(screen.getByRole('link', { name: 'Clear Gin 0.5 l' })).toHaveAttribute(
       'href',
-      '/products/7',
+      '/tuotteet/7',
     );
   });
 
@@ -365,7 +370,7 @@ describe('ProductsPage category filter', () => {
     expect(links).toHaveLength(7);
     expect(within(row).getByRole('link', { name: 'Kaikki tuotteet' })).toHaveAttribute(
       'href',
-      '/products',
+      '/tuotteet',
     );
     for (const label of [
       'Olut',
@@ -391,13 +396,13 @@ describe('ProductsPage category filter', () => {
     const row = screen.getByTestId('catalog-filter-row');
     expect(
       within(row).getByRole('link', { name: 'Olut' }),
-    ).toHaveAttribute('href', '/products?category=beer');
+    ).toHaveAttribute('href', '/tuotteet?category=beer');
     expect(
       within(row).getByRole('link', { name: 'Makuuviini' }),
-    ).toHaveAttribute('href', '/products?category=wine_still');
+    ).toHaveAttribute('href', '/tuotteet?category=wine_still');
     expect(
       within(row).getByRole('link', { name: 'Kaikki tuotteet' }),
-    ).toHaveAttribute('href', '/products');
+    ).toHaveAttribute('href', '/tuotteet');
   });
 
   it('marks the active filter option and no other', async () => {
@@ -444,11 +449,11 @@ describe('ProductsPage pagination', () => {
     // omitted (task 1.3 href builder).
     expect(within(nav).getByRole('link', { name: '1' })).toHaveAttribute(
       'href',
-      '/products',
+      '/tuotteet',
     );
     expect(within(nav).getByRole('link', { name: '3' })).toHaveAttribute(
       'href',
-      '/products?page=3',
+      '/tuotteet?page=3',
     );
     // The current page is an indicator, not a link.
     expect(within(nav).getByText('2')).not.toHaveAttribute('href');
@@ -468,11 +473,11 @@ describe('ProductsPage pagination', () => {
     expect(prev).toHaveAttribute('aria-disabled', 'true');
     expect(within(nav).getByRole('link', { name: 'Seuraava sivu' })).toHaveAttribute(
       'href',
-      '/products?category=beer&page=2',
+      '/tuotteet?category=beer&page=2',
     );
     expect(within(nav).getByRole('link', { name: '2' })).toHaveAttribute(
       'href',
-      '/products?category=beer&page=2',
+      '/tuotteet?category=beer&page=2',
     );
   });
 
@@ -489,7 +494,7 @@ describe('ProductsPage pagination', () => {
     expect(next).toHaveAttribute('aria-disabled', 'true');
     expect(within(nav).getByRole('link', { name: 'Edellinen sivu' })).toHaveAttribute(
       'href',
-      '/products?page=2',
+      '/tuotteet?page=2',
     );
   });
 
@@ -518,18 +523,18 @@ describe('ProductsPage pagination', () => {
     // Edges: page 1 canonical-clean, the last page always linked.
     expect(within(nav).getByRole('link', { name: '1' })).toHaveAttribute(
       'href',
-      '/products',
+      '/tuotteet',
     );
     expect(within(nav).getByRole('link', { name: '443' })).toHaveAttribute(
       'href',
-      '/products?page=443',
+      '/tuotteet?page=443',
     );
 
     // The ±2 window rides with the current page; far pages stay unlinked.
     for (const number of ['198', '199', '201', '202']) {
       expect(within(nav).getByRole('link', { name: number })).toHaveAttribute(
         'href',
-        `/products?page=${number}`,
+        `/tuotteet?page=${number}`,
       );
     }
     expect(within(nav).queryByRole('link', { name: '2' })).not.toBeInTheDocument();
@@ -538,10 +543,10 @@ describe('ProductsPage pagination', () => {
     expect(within(nav).getByText('200')).not.toHaveAttribute('href');
     expect(
       within(nav).getByRole('link', { name: 'Edellinen sivu' }),
-    ).toHaveAttribute('href', '/products?page=199');
+    ).toHaveAttribute('href', '/tuotteet?page=199');
     expect(
       within(nav).getByRole('link', { name: 'Seuraava sivu' }),
-    ).toHaveAttribute('href', '/products?page=201');
+    ).toHaveAttribute('href', '/tuotteet?page=201');
 
     // Ellipsis gaps are decorative spans, never links.
     const gaps = within(nav).getAllByText('…');
@@ -570,21 +575,21 @@ describe('ProductsPage pagination', () => {
     // The shifted window keeps the tail reachable without far pages.
     expect(within(nav).getByRole('link', { name: '441' })).toHaveAttribute(
       'href',
-      '/products?page=441',
+      '/tuotteet?page=441',
     );
     expect(
       within(nav).queryByRole('link', { name: '438' }),
     ).not.toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: '1' })).toHaveAttribute(
       'href',
-      '/products',
+      '/tuotteet',
     );
     const next = within(nav).getByText('Seuraava sivu');
     expect(next).not.toHaveAttribute('href');
     expect(next).toHaveAttribute('aria-disabled', 'true');
     expect(
       within(nav).getByRole('link', { name: 'Edellinen sivu' }),
-    ).toHaveAttribute('href', '/products?page=442');
+    ).toHaveAttribute('href', '/tuotteet?page=442');
   });
 });
 
@@ -635,12 +640,12 @@ describe('ProductsPage sort state (task 2.4)', () => {
     const row = screen.getByTestId('catalog-filter-row');
     expect(
       within(row).getByRole('link', { name: 'Olut' }),
-    ).toHaveAttribute('href', '/products?category=beer');
+    ).toHaveAttribute('href', '/tuotteet?category=beer');
     // Pagination links omit it as well.
     const nav = screen.getByTestId('catalog-pagination');
     expect(
       within(nav).getByRole('link', { name: '2' }),
-    ).toHaveAttribute('href', '/products?page=2');
+    ).toHaveAttribute('href', '/tuotteet?page=2');
     // The no-JS sort form carries no hidden sort field for the default —
     // submitting it unchanged must stay on the default order.
     expect(
@@ -667,7 +672,7 @@ describe('ProductsPage sort state (task 2.4)', () => {
     const nav = screen.getByTestId('catalog-pagination');
     expect(
       within(nav).getByRole('link', { name: '2' }),
-    ).toHaveAttribute('href', '/products?sort=LOWEST_PRICE&page=2');
+    ).toHaveAttribute('href', '/tuotteet?sort=LOWEST_PRICE&page=2');
   });
 
   it('treats an explicit ALPHABETICAL as a non-default sort: it travels to the fetch and links and renders one undivided list', async () => {
@@ -701,7 +706,7 @@ describe('ProductsPage sort state (task 2.4)', () => {
     const nav = screen.getByTestId('catalog-pagination');
     expect(
       within(nav).getByRole('link', { name: '2' }),
-    ).toHaveAttribute('href', '/products?sort=ALPHABETICAL&page=2');
+    ).toHaveAttribute('href', '/tuotteet?sort=ALPHABETICAL&page=2');
   });
 
   it('forgives an unknown sort value: the default savings ordering renders and nothing unknown reaches the API', async () => {
@@ -774,7 +779,7 @@ describe('ProductsPage empty state and forgiveness', () => {
     expect(screen.getByText('Yritä hetken kuluttua uudelleen.')).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: 'Yritä uudelleen' }),
-    ).toHaveAttribute('href', '/products');
+    ).toHaveAttribute('href', '/tuotteet');
     expect(screen.queryByTestId('catalog-grid')).not.toBeInTheDocument();
   });
 });
@@ -858,7 +863,7 @@ describe('ProductsPage did-you-mean suggestion (task 3.3)', () => {
     expect(chip).toHaveTextContent('Koskenkorva');
     // Page 1 of the suggested query; category/sort defaults stay out of
     // the URL (the canonical-clean href builder).
-    expect(chip.getAttribute('href')).toBe('/products?q=Koskenkorva');
+    expect(chip.getAttribute('href')).toBe('/tuotteet?q=Koskenkorva');
     // The customer's original query stays in the input — the suggestion
     // never rewrites what was typed.
     expect(
@@ -1231,5 +1236,58 @@ describe('ProductsPage no-reference tier (task 2.2)', () => {
     expect(
       screen.getByRole('separator', { name: 'No Alko reference' }),
     ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Localized metadata (change localize-fi-route-pathnames, design D6/D7):
+// the canonical carries the ACTIVE locale's segment with the English
+// query parameters (the API contract values), and the hreflang pair
+// maps both localized URLs with x-default on the bare (fi) URL.
+// ---------------------------------------------------------------------------
+
+describe('ProductsPage localized metadata (design D6/D7)', () => {
+  it('canonicalizes the Finnish catalog at its localized segment and pairs the hreflang alternates', async () => {
+    const meta = await productsMetadata({
+      params: Promise.resolve({ locale: 'fi' }),
+      searchParams: Promise.resolve({}),
+    });
+
+    expect(meta.alternates?.canonical).toBe('/tuotteet');
+    expect(meta.alternates?.languages).toEqual({
+      fi: '/tuotteet',
+      en: '/en/products',
+      'x-default': '/tuotteet',
+    });
+  });
+
+  it('canonicalizes a filtered, paginated state with the English parameters, page 1 omitted', async () => {
+    const filtered = await productsMetadata({
+      params: Promise.resolve({ locale: 'fi' }),
+      searchParams: Promise.resolve({ category: 'beer', page: '2' }),
+    });
+    expect(filtered.alternates?.canonical).toBe(
+      '/tuotteet?category=beer&page=2',
+    );
+
+    const firstPage = await productsMetadata({
+      params: Promise.resolve({ locale: 'fi' }),
+      searchParams: Promise.resolve({ category: 'beer', page: '1' }),
+    });
+    expect(firstPage.alternates?.canonical).toBe('/tuotteet?category=beer');
+  });
+
+  it('canonicalizes the English catalog under /en with the same English parameters', async () => {
+    const meta = await productsMetadata({
+      params: Promise.resolve({ locale: 'en' }),
+      searchParams: Promise.resolve({ category: 'spirits' }),
+    });
+
+    expect(meta.alternates?.canonical).toBe('/en/products?category=spirits');
+    expect(meta.alternates?.languages).toEqual({
+      fi: '/tuotteet?category=spirits',
+      en: '/en/products?category=spirits',
+      'x-default': '/tuotteet?category=spirits',
+    });
   });
 });

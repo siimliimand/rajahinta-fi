@@ -256,7 +256,10 @@ function SavingsRowView({
       <td className="py-2 pr-4 tabular-nums text-gray-400">{position}</td>
       <td className="py-2 pr-4">
         <Link
-          href={`/products/${row.productId}`}
+          href={{
+            pathname: '/products/[id]',
+            params: { id: row.productId },
+          }}
           className="font-medium text-primary-700 hover:underline after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
         >
           {row.productName}

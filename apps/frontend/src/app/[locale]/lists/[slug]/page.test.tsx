@@ -58,23 +58,12 @@ vi.mock('next-intl/server', () => ({
   },
 }));
 
-// The i18n Link is a Next router-aware component; under renderToString it
-// renders as a plain anchor with the href it was given (fi needs no prefix).
-vi.mock('@/i18n/navigation', () => ({
-  Link: (
-    props: { href?: unknown; children?: React.ReactNode } & Record<
-      string,
-      unknown
-    >,
-  ) => {
-    const { href, children, ...rest } = props;
-    return React.createElement(
-      'a',
-      { ...rest, href: String(href ?? '') },
-      children,
-    );
-  },
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double).
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 // notFound() in a real render aborts with Next's 404 fallback — a throw is
 // the observable equivalent under renderToString.
@@ -248,13 +237,14 @@ describe('CuratedListPage entry rendering', () => {
   });
 
   it('links productId entries to the local product page', () => {
-    expect(html).toContain('href="/products/7"');
+    // Typed href renders the localized segment (/tuotteet, design D1).
+    expect(html).toContain('href="/tuotteet/7"');
   });
 
   it('renders externalRef-only entries without a local link, showing the reference', () => {
     expect(html).toContain('data-testid="list-entry-external-ref"');
     expect(html).toContain('EXT-42');
-    expect(html).not.toContain('href="/products/EXT-42"');
+    expect(html).not.toContain('href="/tuotteet/EXT-42"');
   });
 
   it('embeds CollectionPage/ItemList JSON-LD with absolute factual URLs', () => {
@@ -273,7 +263,9 @@ describe('CuratedListPage entry rendering', () => {
     expect(items[0]).toMatchObject({
       '@type': 'ListItem',
       position: 1,
-      url: 'https://rajahinta.fi/products/7',
+      // Localized segment (design D6) — the URL the entry link and the
+      // sitemap carry for the same product.
+      url: 'https://rajahinta.fi/tuotteet/7',
     });
     // The externalRef-only entry contributes a position, never a
     // fabricated URL.
@@ -299,6 +291,13 @@ describe('CuratedListPage generateMetadata', () => {
     expect(meta.title).toBe('Alkon hylkäämät — kuratoitu listaus');
     expect(meta.description).toContain('Alkon hylkäämät');
     expect(meta.description).toContain('todistelulinkit');
+    // Localized canonical + hreflang pair (design D6).
+    expect(meta.alternates?.canonical).toBe(`/listat/${SLUG}`);
+    expect(meta.alternates?.languages).toEqual({
+      fi: `/listat/${SLUG}`,
+      en: `/en/lists/${SLUG}`,
+      'x-default': `/listat/${SLUG}`,
+    });
   });
 
   it('unknown slug (404) → generic fallback metadata', async () => {
@@ -313,5 +312,8 @@ describe('CuratedListPage generateMetadata', () => {
     const meta = await generateMetadata(metadataParams());
 
     expect(meta.title).toBe('Listausta ei löytynyt');
+    // The URL is in hand regardless of the list fetch — both branches
+    // emit the localized canonical.
+    expect(meta.alternates?.canonical).toBe(`/listat/${SLUG}`);
   });
 });

@@ -37,18 +37,17 @@ vi.mock('next-intl/server', () => ({
 
 // The category selector renders i18n navigation Links; the router-aware
 // navigation module does not load under this test environment, so stub it
-// with the plain-anchor shape every other page test uses.
-vi.mock('@/i18n/navigation', () => ({
-  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
-    React.createElement('a', props),
-}));
+// with the shared plain-anchor double that serializes typed href objects
+// through the real routing vocabulary.
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 describe('ValuePage metadata (task 2.5)', () => {
   it('emits unique metadata with the €/g unit-price framing', async () => {
     const meta = await valueMetadata({
       params: Promise.resolve({ locale: 'fi' }),
-      // generateMetadata ignores searchParams; the prop is required by
-      // the shared page props type.
       searchParams: Promise.resolve({}),
     });
     expect(meta.title).toBe('Etanolin grammahinta hintaluokittain: yksikköhinta-listaus');
@@ -58,6 +57,33 @@ describe('ValuePage metadata (task 2.5)', () => {
       Metadata: { title: string };
     };
     expect(meta.title).not.toBe(root.Metadata.title);
+  });
+
+  it('emits the localized canonical and hreflang pair (design D6); a non-default category rides as its English value', async () => {
+    const bare = await valueMetadata({
+      params: Promise.resolve({ locale: 'fi' }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(bare.alternates?.canonical).toBe('/grammahinta');
+    expect(bare.alternates?.languages).toEqual({
+      fi: '/grammahinta',
+      en: '/en/value',
+      'x-default': '/grammahinta',
+    });
+
+    const filtered = await valueMetadata({
+      params: Promise.resolve({ locale: 'fi' }),
+      searchParams: Promise.resolve({ category: 'spirits' }),
+    });
+    expect(filtered.alternates?.canonical).toBe(
+      '/grammahinta?category=spirits',
+    );
+
+    const en = await valueMetadata({
+      params: Promise.resolve({ locale: 'en' }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(en.alternates?.canonical).toBe('/en/value');
   });
 
   it('keeps the server-rendered content and default-category handling unchanged', async () => {

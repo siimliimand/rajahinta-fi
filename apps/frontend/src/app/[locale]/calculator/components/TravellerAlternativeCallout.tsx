@@ -73,7 +73,10 @@ export default function TravellerAlternativeCallout({
         })}
       </p>
       <Link
-        href={`/trip?product=${productId}&quantity=${quantity}`}
+        href={{
+          pathname: '/trip',
+          query: { product: productId, quantity },
+        }}
         data-testid="traveller-alternative-link"
         className="touch-target mt-2 inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
       >

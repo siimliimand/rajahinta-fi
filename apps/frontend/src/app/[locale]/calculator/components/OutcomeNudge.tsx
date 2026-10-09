@@ -90,7 +90,11 @@ export default function OutcomeNudge({ recordId }: OutcomeNudgeProps) {
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-3">
         <Link
-          href={signedIn ? `/account?outcome=${recordId}` : '/login'}
+          href={
+            signedIn
+              ? { pathname: '/account', query: { outcome: recordId } }
+              : '/login'
+          }
           data-testid="outcome-nudge-cta"
           className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-primary-700 transition-colors hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
         >

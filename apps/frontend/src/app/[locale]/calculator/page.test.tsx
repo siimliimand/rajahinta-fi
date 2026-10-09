@@ -90,10 +90,12 @@ vi.mock('@/lib/api', async (importOriginal) => {
 // navigation Link; the router-aware navigation module does not load
 // under this test environment, so stub it with the plain-anchor shape
 // every other page test uses.
-vi.mock('@/i18n/navigation', () => ({
-  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
-    React.createElement('a', props),
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double).
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 const mockedSearchProducts = vi.mocked(searchProducts);
 const mockedCalculateLandedCost = vi.mocked(calculateLandedCost);

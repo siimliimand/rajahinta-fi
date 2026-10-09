@@ -328,7 +328,7 @@ export default function AccountPage() {
           </Link>
 
           <Link
-            href="/account#calculation-history"
+            href={{ pathname: '/account', hash: '#calculation-history' }}
             className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-primary-300 hover:shadow-md"
           >
             <h3 className="font-medium text-gray-900">{t('historyFeature')}</h3>

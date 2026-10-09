@@ -4,6 +4,7 @@
 import * as React from 'react';
 import type { Metadata } from 'next';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { localizedAlternates } from '@/lib/i18n/localized-paths';
 
 interface AboutPageProps {
   params: Promise<{ locale: string }>;
@@ -12,11 +13,17 @@ interface AboutPageProps {
 export async function generateMetadata({
   params,
 }: AboutPageProps): Promise<Metadata> {
-  const { locale } = await params;
+  const { locale: rawLocale } = await params;
+  // Routing serves fi and en only; anything else renders as Finnish
+  // (the products-page precedent).
+  const locale = rawLocale === 'en' ? 'en' : 'fi';
   const t = await getTranslations({ locale, namespace: 'AboutPage' });
   return {
     title: t('metaTitle'),
     description: t('metaDescription'),
+    // Localized canonical + hreflang pair (design D6, change
+    // localize-fi-route-pathnames).
+    alternates: localizedAlternates(locale, { pathname: '/about' }),
   };
 }
 

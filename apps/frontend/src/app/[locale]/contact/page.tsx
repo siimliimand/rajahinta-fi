@@ -5,6 +5,7 @@ import * as React from 'react';
 import type { Metadata } from 'next';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { BASE_URL } from '@/lib/api';
+import { localizedAlternates, localizedPath } from '@/lib/i18n/localized-paths';
 
 interface ContactPageProps {
   params: Promise<{ locale: string }>;
@@ -142,11 +143,18 @@ export async function generateMetadata({
 }: {
   params: ContactPageProps['params'];
 }): Promise<Metadata> {
-  const { locale } = await params;
+  const { locale: rawLocale } = await params;
+  // Routing serves fi and en only; anything else renders as Finnish
+  // (the products-page precedent).
+  const locale = rawLocale === 'en' ? 'en' : 'fi';
   const t = await getTranslations({ locale, namespace: 'ContactPage' });
   return {
     title: t('metaTitle'),
     description: t('metaDescription'),
+    // Localized canonical + hreflang pair (design D6, change
+    // localize-fi-route-pathnames). The transactional ?sent/?error
+    // states canonicalize to the clean route.
+    alternates: localizedAlternates(locale, { pathname: '/contact' }),
   };
 }
 
@@ -171,7 +179,10 @@ export default async function ContactPage({
   params,
   searchParams,
 }: ContactPageProps) {
-  const { locale } = await params;
+  const { locale: rawLocale } = await params;
+  // Routing serves fi and en only; anything else renders as Finnish
+  // (the products-page precedent).
+  const locale = rawLocale === 'en' ? 'en' : 'fi';
   setRequestLocale(locale);
 
   const t = await getTranslations('ContactPage');
@@ -210,9 +221,12 @@ export default async function ContactPage({
               {copy.ackBody}
             </p>
             {/* The ack state must not depend on JS: a plain link clears
-               the query and re-renders the form. */}
+               the query and re-renders the form. The href goes through
+               the localized pathnames so the no-JS anchor carries the
+               active locale's segment, the same URL the i18n Link would
+               render (change localize-fi-route-pathnames). */}
             <a
-              href={`/${locale}/contact`}
+              href={localizedPath(locale, { pathname: '/contact' })}
               className="mt-3 inline-block text-sm font-medium text-primary-700 underline"
             >
               {copy.ackAgain}

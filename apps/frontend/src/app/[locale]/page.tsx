@@ -6,6 +6,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { BASE_URL, SERVER_AGE_CONFIRMATION_TOKEN, SAVINGS_TOP_PATH } from '@/lib/api';
 import { Link } from '@/i18n/navigation';
 import { RELIABILITY_STATUS_META } from '@/lib/design/status';
+import { localizedPath } from '@/lib/i18n/localized-paths';
 import type { ReliabilityStatus } from '@/lib/types';
 import { getServerGuidesIndex } from './guides/guides.server';
 import AccuracyStat from './components/AccuracyStat';
@@ -303,9 +304,13 @@ export default async function HomePage({
   const homeGapHeroState = deriveHomeGapHeroState(savingsTop, Date.now());
 
   // The hero form is plain HTML (GET), so it navigates before hydration.
-  // next-intl's `as-needed` prefixing: Finnish serves the bare path,
-  // every other locale the prefixed one.
-  const searchAction = locale === 'fi' ? '/calculator' : `/${locale}/calculator`;
+  // The action goes through the localized pathnames (change
+  // localize-fi-route-pathnames): the active locale's segment, so an EN
+  // submission lands on /en/calculator without a redirect round-trip.
+  const searchAction = localizedPath(
+    locale === 'en' ? 'en' : 'fi',
+    { pathname: '/calculator' },
+  );
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -772,7 +777,10 @@ export default async function HomePage({
               {guides.items.map((guide) => (
                 <li key={guide.slug}>
                   <Link
-                    href={`/guides/${guide.slug}`}
+                    href={{
+                      pathname: '/guides/[slug]',
+                      params: { slug: guide.slug },
+                    }}
                     className="text-sm font-medium text-primary-700 transition-colors hover:text-primary-800"
                   >
                     {guide.title}

@@ -35,7 +35,9 @@ import {
   it,
   vi,
 } from 'vitest';
-import SavingsPage from './page';
+import SavingsPage, {
+  generateMetadata as savingsMetadata,
+} from './page';
 import SavingsListing from './components/SavingsListing';
 import { request } from '@/lib/api';
 
@@ -91,21 +93,12 @@ vi.mock('next-intl/server', () => ({
   },
 }));
 
-vi.mock('@/i18n/navigation', () => ({
-  Link: (
-    props: { href?: unknown; children?: React.ReactNode } & Record<
-      string,
-      unknown
-    >,
-  ) => {
-    const { href, children, ...rest } = props;
-    return React.createElement(
-      'a',
-      { ...rest, href: String(href ?? '') },
-      children,
-    );
-  },
-}));
+// The i18n Link double serializes typed href objects through the real
+// routing vocabulary (the shared testing double).
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
@@ -212,9 +205,42 @@ describe('SavingsPage shell', () => {
     expect(html).toContain('suurimman säästön mukaan ensin');
     expect(html).toContain('tuotenimen aakkosjärjestys');
     expect(html).toContain('suurin säästö ensin');
-    // URL-state category links.
-    expect(html).toContain('href="/savings?category=beer"');
-    expect(html).toContain('href="/savings?category=spirits"');
+    // URL-state category links — localized segment, English param (D7).
+    expect(html).toContain('href="/saastolista?category=beer"');
+    expect(html).toContain('href="/saastolista?category=spirits"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Localized metadata (change localize-fi-route-pathnames, design D6/D7)
+// ---------------------------------------------------------------------------
+
+describe('SavingsPage localized metadata', () => {
+  it('emits the localized canonical and hreflang pair; the default category stays canonical-clean', async () => {
+    const bare = await savingsMetadata({
+      params: Promise.resolve({ locale: 'fi' }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(bare.alternates?.canonical).toBe('/saastolista');
+    expect(bare.alternates?.languages).toEqual({
+      fi: '/saastolista',
+      en: '/en/savings',
+      'x-default': '/saastolista',
+    });
+
+    const filtered = await savingsMetadata({
+      params: Promise.resolve({ locale: 'fi' }),
+      searchParams: Promise.resolve({ category: 'spirits' }),
+    });
+    expect(filtered.alternates?.canonical).toBe(
+      '/saastolista?category=spirits',
+    );
+
+    const en = await savingsMetadata({
+      params: Promise.resolve({ locale: 'en' }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(en.alternates?.canonical).toBe('/en/savings');
   });
 });
 
@@ -270,7 +296,7 @@ describe('SavingsPage market overview (task 5.2)', () => {
 
     expect(html).not.toContain('data-testid="savings-overview"');
     // The rest of the shell is intact.
-    expect(html).toContain('href="/savings?category=beer"');
+    expect(html).toContain('href="/saastolista?category=beer"');
   });
 });
 
@@ -350,15 +376,15 @@ describe('SavingsListing', () => {
 
     // The spec scenario (homepage-live-gap-hero): the row is a link to
     // that product's detail page — one anchor per row, resolved through
-    // the i18n navigation (locale prefix handled there, none for fi).
+    // the i18n navigation into the localized segment (fi bare).
     expect(
       within(rows[0]).getByRole('link', { name: 'Testia olut 0,5 l' })
         .getAttribute('href'),
-    ).toBe('/products/1');
+    ).toBe('/tuotteet/1');
     expect(
       within(rows[1]).getByRole('link', { name: 'Toinen juoma 0,33 l' })
         .getAttribute('href'),
-    ).toBe('/products/7');
+    ).toBe('/tuotteet/7');
 
     // Figures and position identical to the unlinked form, in API order
     // (largest saving first — the endpoint's contract).
