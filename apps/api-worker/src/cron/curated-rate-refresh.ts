@@ -1,7 +1,8 @@
 /**
  * Monthly curated-rate refresh — the manual-dataset ingestion path for
  * every carrier whose rates live as an in-repo curated dataset (currently
- * fransberg, posti, and omniva; see the adapters' module docblocks).
+ * fransberg, posti, omniva, pakettipojat, and norrlog; see the adapters'
+ * module docblocks).
  *
  * None of these carriers publishes a fetchable feed (fransberg.eu serves
  * an HTML page not worth scraping; Posti's JSON endpoint is CDN-blocked
@@ -39,6 +40,14 @@ import {
   OmnivaCarrierRateSource,
   OMNIVA_OBSERVED_AT,
 } from '../../../../packages/data-acquisition/src/adapters/omniva-rate.source';
+import {
+  PakettipojatCarrierRateSource,
+  PAKETTIPOJAT_OBSERVED_AT,
+} from '../../../../packages/data-acquisition/src/adapters/pakettipojat-rate.source';
+import {
+  NorrlogCarrierRateSource,
+  NORRLOG_OBSERVED_AT,
+} from '../../../../packages/data-acquisition/src/adapters/norrlog-rate.source';
 import type { ICarrierRateSource } from '../../../../packages/data-acquisition/src/interfaces/carrier-rate-source.port';
 import { D1SourceGovernanceRepository } from '../../../../packages/data-platform/src/repositories/d1/source-governance.repository';
 import { composeGovernanceService } from '../queues/pipeline';
@@ -66,10 +75,14 @@ function composeCuratedCarriers(): Map<string, CuratedCarrier> {
   const fransberg = new FransbergCarrierRateSource();
   const posti = new PostiCarrierRateSource();
   const omniva = new OmnivaCarrierRateSource();
+  const pakettipojat = new PakettipojatCarrierRateSource();
+  const norrlog = new NorrlogCarrierRateSource();
   const map = new Map<string, CuratedCarrier>();
   map.set(fransberg.carrierId, { source: fransberg, observedAt: FRANSBERG_OBSERVED_AT });
   map.set(posti.carrierId, { source: posti, observedAt: POSTI_OBSERVED_AT });
   map.set(omniva.carrierId, { source: omniva, observedAt: OMNIVA_OBSERVED_AT });
+  map.set(pakettipojat.carrierId, { source: pakettipojat, observedAt: PAKETTIPOJAT_OBSERVED_AT });
+  map.set(norrlog.carrierId, { source: norrlog, observedAt: NORRLOG_OBSERVED_AT });
   return map;
 }
 
