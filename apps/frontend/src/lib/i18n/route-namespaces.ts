@@ -92,18 +92,7 @@ export const ROUTE_CLIENT_NAMESPACES = {
     'SavedScenarios',
   ],
   '/account/alerts': ['Common', 'PriceAlerts', 'ProductSearch', 'ProductSelector'],
-  // add-product-favorites task 4.2: the `Favorites` catalog namespace
-  // itself ships with the messages work (task 5.1) — until that lands,
-  // the cast bridges the catalog-derived union below. Deliberately
-  // interim: getClientMessages throws on a catalog-missing namespace and
-  // the payload-budget tripwire re-pins this entry against both
-  // catalogs, so the gap cannot silently outlive task 5.1.
-  '/account/favorites': [
-    'Common',
-    'Favorites' as unknown as MessageNamespace,
-    'ProductSearch',
-    'ProductSelector',
-  ],
+  '/account/favorites': ['Common', 'Favorites'],
   '/account/forgot': ['Auth', 'ForgotPassword'],
   '/account/reset': ['Auth', 'ResetPassword'],
   '/account/saved-baskets': ['Common', 'SavedBaskets'],
@@ -180,7 +169,15 @@ export const ROUTE_CLIENT_NAMESPACES = {
   '/newsletter/unsubscribe': ['NewsletterUnsubscribe'],
   '/ops': ['OperatorConsole'],
   '/products': ['Common', 'PriceAlerts'],
-  '/products/:id': ['Common', 'MerchantWarning', 'PriceAlerts', 'PriceHistoryChart'],
+  '/products/:id': [
+    'Auth',
+    'Common',
+    'Favorites',
+    'Login',
+    'MerchantWarning',
+    'PriceAlerts',
+    'PriceHistoryChart',
+  ],
   '/ranking': ['AccuracyStat', 'Common', 'Nav', 'Ranking', 'SortOrders'],
   '/register': ['Auth', 'Register'],
   '/savings': ['Common', 'SavingsPage'],
