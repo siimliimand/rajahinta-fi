@@ -897,5 +897,180 @@ running at cap — completion + landing = the checklist above).
 
 ## 8.1 Verification evidence
 
-TBD (suite table, consolidated pointers, hold-rule note, correction-noise
-observation)
+Full local verification of the merged state (master at `296cf77`; the change
+shipped via PR #109, §6.1, and is live in staging + production per §6.2/§7.2).
+Executed 2026-10-09 ~07:15–08:05 UTC, this host, nothing committed. Toolchain:
+**Node v24.21.0 + pnpm 9.15.9** (`nvm` v24.21.0 bin dir) for every suite —
+CI parity (`NODE_VERSION: '24'`, `PNPM_VERSION: '9'`); the host defaults
+(node v22.14.0, pnpm 12.x) are both non-CI-parity (v22 lacks FTS5 in
+`node:sqlite`, the archived task-4.1 environmental note; pnpm 12 violates
+`engines: >=9 <10`). Postgres/Redis = this host's running compose containers
+(`timescale/timescaledb:2.16.1-pg16`, `redis:7-alpine` — the exact CI service
+images). Staging/production were NOT touched beyond the read-only production
+instance poll recorded below.
+
+### Suites (run in this order; exit codes recorded)
+
+| # | Suite (CI job) | Command | Exit | Result |
+|---|---|---|---|---|
+| 1 | core-domain build | `pnpm --filter @rajahinta/core-domain build` | 0 | build clean (rebuilt first, per the archived recipe) |
+| 2 | typecheck (build job) | `pnpm typecheck` (root, `-r`) | 0 | 8/8 workspace projects clean |
+| 3 | lint | `pnpm lint` (eslint .) | 0 | zero findings |
+| 4 | content policy | `pnpm run lint:content` | 0 | pass |
+| 5 | unit tests | `pnpm -r test` | 0 | **425 files / 6,636 tests: 6,633 passed + 3 pre-existing skips, 0 failed** (core-domain 1,633 — incl. the 2.1 FR-vocabulary mapper tests · frontend 1,392 · api-worker 1,278 · data-platform 864 · data-acquisition 626 — the lmdw adapter suites · application-api 738 + 3 skip · email-worker 83 · backend 19) |
+| 6a | e2e HTTP (`e2e-tests`) | `pnpm run test:e2e` | 0 | 15/15 |
+| 6b | api-worker e2e (`worker-checks`) | `pnpm --filter @rajahinta/api-worker run test:e2e` | 0 | 25/25 (the api-worker composition/e2e harness) |
+| 6c | Browser E2E desktop (`e2e-browser.yml` leg 1) | `FRONTEND_PORT=3003 BACKEND_PORT=3002 CORS_ORIGIN=http://localhost:3003 bash tests/e2e-browser/boot-stack.sh` then `FRONTEND_BASE_URL=http://localhost:3003 pnpm run test:e2e-browser` | 0 | **16 passed (2.5 m)** — hermetic stack (backend :3002, frontend :3003; see the run artifact below) |
+| 6d | Browser E2E mobile (`e2e-browser.yml` leg 2) | `CI=true pnpm exec playwright test -c tests/e2e-browser/playwright.workers.config.ts --project=mobile-chrome-375 --project=mobile-chrome-390` | 0 | 10 passed (3.8 m; Workers-stack webServer boot) |
+| 6e | Browser E2E pending-state (`e2e-browser.yml` leg 3) | `CI=true E2E_SAVINGS_SNAPSHOT=0 pnpm exec playwright test -c tests/e2e-browser/playwright.workers.config.ts homepage-flow --project=mobile-chrome-375` | 0 | 1 passed (3.0 m) |
+| 7 | D1 suites (Node 24) | `pnpm run test:d1` | 0 | **19 files / 190 tests, 190 passed** — incl. the 4.2-fixed `crawl-producer-parked.d1.test.ts` (bootstrap registry 12) |
+| 8a | golden-dataset | `bash scripts/test-golden-dataset.sh` | 0 | 2 files / 51 tests, 51 passed |
+| 8b | data-quality | `bash scripts/test-data-quality.sh` | 0 | 43 files / 626 tests, 626 passed + SQL checks: migrations applied, all 5 expected tables present, `TAX RULES RANGE VALIDATION PASSED` |
+| 8c | compliance | `bash scripts/test-compliance.sh` | 0 | 21 files / 207 tests, 207 passed + SQL structure checks |
+| + | integration (Timescale+Redis) | `pnpm run test:integration` (`DATABASE_URL` + `TEST_REDIS_URL`) | 0 | 26 files (24 pass + 2 skip) / 292 tests: 267 passed + 25 skipped |
+| + | composition smoke | `pnpm vitest run --config apps/backend/tests/composition/vitest.config.ts` | 0 | 5/5 |
+
+**Battery total: 8,074 tests across 16 invocations — 8,046 passed +
+28 by-design skips (3 unit + 25 integration), 0 failed, every exit code 0.**
+
+CI-covered, not re-run locally (green on the merged PR #109 head incl. the
+`b50da70` fix-forward, runs 37837653382/37837659485, §6.1): wrangler config
+dry-runs (`ci.yml` wrangler-config job) and the load suites
+(`load-tests.yml`; Artillery HTTP leg skip-conditional on CI).
+
+**Run artifacts, recorded honestly (all host-topology, none code):**
+
+1. **6c, first invocation exit 1 (0/16)**: this host's `:3001` — the
+   boot-stack's default frontend port — is now squatted by an unrelated
+   `docker-proxy` container, so `next dev` could not bind and the
+   script's `wait_http` readiness probe saw the foreign app ("Vane"
+   branding in every failure screenshot). Not a code failure.
+2. **6c, second invocation exit 1 (9/16)**: with the stack moved to
+   `FRONTEND_PORT=3003` + `FRONTEND_BASE_URL`, exactly the seven
+   client-side-search journeys (calculator/basket/compare) failed —
+   `CORS_ORIGIN` defaults to `http://localhost:3001` (apps/backend
+   `main.ts`) and boot-stack never overrides it, so browser-side fetches
+   from :3003 were origin-blocked while SSR server-side fetches (which
+   carry the `server-prerender` token server-side) kept working — the
+   exact passing/failing split. Root cause confirmed from the backend log
+   (zero browser search requests arrived) and the served chunks. Fix:
+   export `CORS_ORIGIN=http://localhost:3003` for the backend boot (same
+   CORS mechanism as the archived :3001→:3000 topology, matched origin) →
+   **third invocation 16/16 in 2.5 m**. The archived run's clean pass came
+   from :3001 still being free that day. `apps/frontend/.next` was cleared
+   once during diagnosis (gitignored dev artifact; the stale-chunk theory
+   it tested was then disproven — the `localhost:3000` string in fresh
+   chunks is `resolveApiBaseUrl`'s literal fallback).
+3. **8b, first invocation exit 1**: this host has no `psql` client, so the
+   SQL checks ran through a `docker exec rajahinta-postgres psql` shim in
+   `/tmp/opencode` (outside the repo). The shim copied `-f` files into the
+   container but left the argument relative — the container's CWD is not
+   `/tmp`, so the staging-reviews load failed. Shim corrected (rewrite `-f`
+   args to the absolute in-container path) → 8b re-run **fully green
+   including the SQL checks**. Same failure class as the archived §8.1 8b
+   artifact, different shim bug.
+
+### Consolidated rollout + sweep evidence (pointers; no re-runs)
+
+- **Probe + URL-source decision**: §1.1 — 300/300 probe pages, 0 failures;
+  **pure-sitemap DECISION** (`LmdwFeedAdapter extends
+  SitemapCrawlFeedAdapter`, registry feedUrl the FR urlset, product-shape
+  predicate; no GraphQL-seeded variant); GraphQL cross-walk **precision
+  98.4 % / recall 98.2 %**; state-JSON extraction **volume 98.3 % /
+  strength 95.7 % usable** after the guarded windows (99.0/99.7 % raw);
+  guard necessity measured (digit-free i18n strings on 300/300); GTIN13
+  page-attested 73.3 %, all 220 values GS1-valid, dual-attested
+  (JSON-LD `gtin13` ≡ state-JSON `ean`); EUR clean. GO conditions carried
+  into 3.1 as ESTIMATED/correction paths, never guesses.
+- **Mapper census replay**: §2.1 — re-run reproduced the 1.1 census exactly
+  (300/300 pages, 179 pairs); vocabulary wired **94/105 labels (160/179
+  pairs), 11 labels deliberately unmapped**; offline replay through the
+  real `mapSourceCategory`: **classified 166/300 (55.3 %) → 289/300
+  (96.3 %)**; residual 3.7 % carries only deliberately-unmapped labels
+  (correction-queue population, never a guessed category).
+- **Local rollout**: §5.1 — fail-closed pre-grant tick (enqueued 0),
+  bucket-gated exactly-one enqueue; run r1 discover `queueLength` 6,842 =
+  the probe count; r2 bounded walk landed **29 offer rows / 29 distinct
+  products** (`product_master` 47 → 76, ids 9003–9031), 28/29 with BOTH
+  page-extracted ABV+volume; **r3 idempotency**: watermark lowered by 8 →
+  8 re-crawled → `recordsAdded 0 / recordsUpdated 8 / offersChanged 0`,
+  master byte-identical at 76/9031, offer history grew (append-only), the
+  one unusable record **held** (`nonalcoholic_in_alcohol_category`);
+  steady state = exactly 1 watermark row, cursor row absent.
+- **Staging rollout (complete)**: §6.2 — audited grant (audit `3f450dda`),
+  instance `986f879b…` **complete ~23:19 UTC ≈ 2h51m** (ahead of the 3h17m
+  estimate); reconciliation **exact**: 6,842 walked − 328 record-null drops
+  (114 no-name+price, 209 deliberately-unmapped m3, 2 bundles, 3×404) =
+  6,514 pairs = 1,057 successful upserts (939 new ids 9,622–10,560 + 118
+  EAN/compound matches) + 5,456 D1-quota rejections + 1 upsert failure;
+  **landed 1,242 offer rows / 1,053 distinct products**, all `ESTIMATED`,
+  single batch, price-drift gate 0 lines, zero persisted holds; **EAN share
+  804/1,053 = 76.4 %** (the ~73 % probe band ✓); **serving PASS**:
+  reliability `offerCount 1,053`, `/api/v1/products/10556` bare 403 →
+  age-confirmed lmdw offer 2,399,000 c exact vs the live page's JSON-LD,
+  staging `/products/10556` HTTP 200 with the `Katso kaupassa` CTA.
+- **Production rollout**: §7.1/§7.2 — gated deploy run
+  [`37893510408`](https://github.com/siimliimand/rajahinta-fi/actions/runs/37893510408)
+  success 2m26s on `ffa748c`, health gate ok; register + auto-grant via
+  runbook §2.0, audits **`470be040`** (registry) + **`fc54d368`**
+  (governance), both `siim (owner)`, GRANTED read back; first crawl
+  instance **`c235e40e…`** queued 06:30:56Z, discover `queueLength`
+  **6,899** (+57 sitemap drift vs staging), both D1 rows written at begin
+  (cursor 425,496 B / watermark 618,647 B), D6 egress PASS mid-walk (zero
+  403/challenge; Famous Grouse record matches the live page). **Honest at
+  verification (08:04Z poll, read-only instance GET): the walk was still
+  `running`** — 37 steps, `crawl-chunk-budget-reset-12-1`/`crawl-chunk-12-1`
+  active (~3,600 of 6,899 pages at the measured ≈1.6 s/page), `error:
+  null` — tracking the §7.2 completion estimate **~09:35 UTC**; landing
+  (`productsIngested`, error census, EAN share, serving) = the §7.2
+  checklist, verifiable on the completed instance, no numbers invented.
+- **Scheduled-boundary checklist — first pass 2026-10-10 00:00 UTC**
+  (§7.2, recorded 2026-10-09T06:57Z): the 10-09 00:00 UTC scheduled pass
+  fired BEFORE production registration, so the first scheduled lmdw pass is
+  10-10; convergence items: exactly one enqueue with dedupe key
+  `price-ingestion-lmdw-2026-10-10-00`, exactly one new instance (manual
+  `c235e40e…` complete and NOT re-run), fresh offer batch at that walk's
+  end (caveat: begin-written watermark → only lastmod-bumped URLs
+  re-crawl), then the API/pages checks — see the §7.2 checklist for the
+  full item list and check commands.
+
+### Named follow-up observations (candidates for a FUTURE change — not tasks of this one)
+
+- **D1-quota class at the 6.8k-pair scale** (recorded §6.2): staging's
+  first pass lost **5,456 of 6,514** pairs to `Too many API requests by
+  single Worker invocation` (84 % of pairs; MAJOR at this scale). The
+  crawl watermark is written at BEGIN with all lastmods, so rejected
+  pages re-crawl only when whisky.fr bumps their `lastmod` — landed state
+  is a partial catalog by the D7 definition and convergence is NOT
+  automatic for the rejected set. Fix shape for a future change:
+  upsert pacing/batching under the D1 quota, or retry-on-quota semantics
+  (per-chunk budget resets exist in production — `crawl-chunk-budget-reset`
+  steps observed — their sufficiency against the quota class is exactly
+  what the §7.2 checklist's error-census item decides).
+- **No in-stock/availability passthrough in the crawl path** (recorded
+  §6.2): mapping pins `in_stock`; page availability tokens are unused —
+  same shape as the archived pair's offers. A future change could carry
+  real availability through the extractor → mapper → offer.
+
+### Hold-rule note
+
+ESTIMATED and held rows stay out of user-facing surfaces: the reliability
+read-model reports lmdw offers as `ESTIMATED` (strictestStatus) and its
+`governancePermissionStatus` shows the known "PENDING" read-model artifact
+despite the GRANTED D1 rows (kippis/mydrink/araxes/BOI precedent —
+observation, record-not-chase); the local r2 hold record stayed invisible
+to user surfaces, and the staging run added **zero persisted holds** (its
+118 hygiene-hold records all sit inside the quota-rejected set). Product
+pages/API only serve lmdw offers with the reliability marking; nothing is
+chased down for presentation.
+
+### Correction-noise observation
+
+The **EAN-attested world won**: staging landed **76.4 %** EAN share
+(804/1,053; 73.5 % among new rows) against the ~73 % probe band — well
+above the EAN-less worst case the correction path was sized for. The
+correction queue deliberately carries the remaining population: the ~24 %
+EAN-less products (no-fabrication rule, BOI 22,937 precedent) plus the
+deliberately-unmapped m3 population (209 staging record drops named their
+source labels). Correction noise is bounded and attributable, not
+speculative — every dropped page names its labels; nothing is guessed.
