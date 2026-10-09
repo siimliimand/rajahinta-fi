@@ -633,14 +633,267 @@ console API; no production contact; nothing committed.
 **Verified at**: 2026-10-08T20:57Z (grant audit 20:27:36Z, instance running at cap —
 completion + landing = the checklist above).
 
+### Completion checklist — closed 2026-10-09
+
+Instance **`986f879b…` reached `complete`, `error: null`** (~23:19 UTC; created
+20:28:35Z → ≈2h51m, ahead of the 3h17m estimate). All checklist items verified
+2026-10-09 06:2x UTC (read-only Workflows-API GET + staging D1 SELECTs + API/page
+curl; instance output JSON to `/tmp/opencode` scratch, deleted after).
+
+**Reconciliation — 6,842 walked URLs, exact:**
+
+- **328 record-null drops**: 114 "structured product carries no usable name+price"
+  (CMS/leaflet-shaped pages), **209 deliberately-unmapped m3 labels** ("magazine"
+  45, "verres" 43, "AUTRES ALCOOLS SUCREES" 20, "Types de produit" 18, "livres" 12,
+  "sirops/cordials" 9, "jus" 8, bartools/accessoires tail), 2 multi-product-bundle
+  names, 3 HTTP 404s. → **6,514 mapped pairs** entered upsert.
+- **Upsert split (exact)**: **1,057 product-upserts succeeded** (final attempts:
+  939 new `product_master` rows id 9,622–10,560 + 118 EAN/compound matches) —
+  **5,457 failed = 5,456 `Too many API requests by single Worker invocation`
+  D1-quota rejections + 1 upsert failure**. 6,514 − 1,057 = 5,457 exact. The
+  araxes-5.2 D1-quota deviation class is now MAJOR at 6.8k-pair scale (84 % of
+  pairs lost on this first pass) — **lead-level follow-up**, together with the
+  convergence caveat below.
+- **Landed: 1,242 offer rows / 1,053 distinct products** (single batch
+  **2026-10-08T23:19:19.452Z**, min 160 / max 2,399,000 c, all `ESTIMATED`, all
+  `in_stock`). 1,242 > 1,053 because **189 duplicate offer rows** re-ran pairs
+  after mid-chunk-step quota deaths (offer path is a plain INSERT with no
+  (merchant, product) uniqueness; duplicates carry identical price + stamp —
+  benign to the read model, which counts distinct). No no-price/sold-out bucket:
+  the extractor drops no-name+price pages at record level, price-drift gate fired
+  0 lines; **no in-stock filter exists in the crawl path** — page availability
+  tokens are unused (mapping pins `in_stock`; observation for the lead, same
+  shape as the archived pair's offers).
+- **EAN share: 804/1,053 = 76.4 %** of lmdw-linked products (690/939 = 73.5 %
+  among the new rows) — the ~73 % probe band ✓, well below the 96.6 % local
+  slice.
+- **Holds: the lmdw run added ZERO persisted holds** — its 118 hygiene-hold
+  records ("Held for review …" lmdw `BUNDLE_…` skus, ABV 0/unparseable + alcohol
+  category) all sit inside the quota-rejected set (`product_master` new-row holds
+  0; held-row `updated_at` shows no 23:xx movement). The 465 pre-existing held
+  rows predate the run: 436 stamped 05:00–09:59 UTC by that morning's staging
+  deploys' review-seed data + 29 from the archived pair's 6.2.
+- Watermark **`sitemap-crawl-lastmod-lmdw` persisted (612,810 bytes = 6,842
+  entries, `updated_at` 20:28:37Z = begin)**; cursor row ABSENT (cycle closed,
+  steady-state shape). **Convergence caveat for the lead**: the watermark was
+  written at crawl BEGIN with all 6,842 lastmods, so the daily/next-pass lastmod
+  diff re-crawls only lastmod-bumped URLs — the 5,456 quota-rejected pages
+  re-crawl only when whisky.fr bumps their `lastmod`. Landed state = partial
+  catalog by the D7 definition; convergence is NOT automatic for the rejected
+  set.
+
+**Serving verdict — staging API + pages PASS:**
+
+- `GET /api/v1/merchants/reliability`: **`lmdw` offerCount 1,053**, all
+  `ESTIMATED`, `freshestObservedAt` = the batch, `strictestStatus: ESTIMATED` —
+  with the known read-model artifact `governancePermissionStatus: "PENDING"`
+  despite the GRANTED D1 row (kippis/mydrink/araxes/BOI precedent, record not
+  chase); 17 merchants listed.
+- `GET /api/v1/products/10556` (max-price row, DALMORE 45 ans): bare → **403** ✅;
+  `x-age-confirmed: 1` → lmdw offer **2,399,000 c / EUR / in_stock / ESTIMATED**,
+  `sourceUrl …/dalmore-45-ans-of.html`, `observedAt` = batch ✅.
+- Staging frontend `/products/10556`: **HTTP 200**, server-rendered "DALMORE
+  45 ans — hintatiedot", merchant **La Maison du Whisky**, `Katso kaupassa` CTA ✅.
+- **Live spot-check** (read-only GET, crawler UA): `whisky.fr/dalmore-45-ans-of.html`
+  → HTTP 200, JSON-LD `"price":23990 "priceCurrency":"EUR"` = **2,399,000 c
+  exact** (schema.org unit-price ×100), `"gtin13":"5013967013391"` =
+  `product_master.ean` exact ✅.
+
 ## 7.1 Production deploy evidence
 
-TBD (run id, health gate)
+Deployed via the gated workflow only (`workflow_dispatch` with
+`confirm_deploy=yes`; no manual `wrangler deploy --env production`).
+
+- **Run**: [`37893510408`](https://github.com/siimliimand/rajahinta-fi/actions/runs/37893510408)
+  — Deploy Production on `master`, triggered 2026-10-09T06:26:12Z, finished
+  2026-10-09T06:28:38Z (**2m26s**), **success**. Pre-dispatch check: no
+  deploy-production run in flight (last was 37788209874, 2026-10-08) and local
+  master == origin/master (`ffa748c…`, the 6.2 notes commit) — the deploy SHA.
+- **Deploy SHA**: `ffa748c310ffb7c5114c42b9fdd2e35534b31b9d` (origin/master
+  HEAD; the working tree's only delta is this notes file, uncommitted).
+- **Sequence, all green**: build frontend (OpenNext) → D1 migrations
+  (`db:migrate:d1:production`, before rollout per spec ordering; production is
+  never seeded) → API Worker → email Worker → frontend Worker → health gate →
+  rollback-availability job (runbook echo only).
+- **Health gate (in-run)**: `Health gate — production readiness` ✓ —
+  `$PRODUCTION_API_URL/api/v1/health/ready` (repo variable →
+  `https://api.rajahinta.fi`) returned 200 within the bounded retry window.
+- **Post-deploy independent check** (read-only curl, 06:28:53Z): HTTP 200 —
+  `status: ok`, `d1: up` (127 ms), `durableObjects: up` (417 ms).
+- Zero data writes to production D1 (registration is 7.2); annotations are
+  GitHub runner deprecation notices only, unrelated to the deploy.
+
+**Verified at**: 2026-10-09T06:29Z.
 
 ## 7.2 Production rollout evidence
 
-TBD (registration audit entries, first crawl outcome — honest about
-throttling if any, next-scheduled checklist)
+Executed 2026-10-09 06:24–06:57 UTC with the owner's explicit production
+approval (staging closed in 6.2; production deploy green in 7.1 — run
+37893510408). Production origins: `https://api.rajahinta.fi` /
+`https://rajahinta.fi`. All ops calls carry `Authorization: Bearer $(cat
+/root/.ops-token)` inline; all Cloudflare API/wrangler calls carry
+`CLOUDFLARE_API_TOKEN="$(cat /root/.cloudflare-token)"` inline — never echoed,
+never committed. D1 access strictly read-only SELECTs (registration and
+governance went through the audited console API only). Runbook §2.0 shapes
+throughout.
+
+### Pre-flight — production not seeded, lmdw absent (fail-closed)
+
+`GET /ops/console/governance` → HTTP 200, **12 merchants, all GRANTED**
+(alko, alks, araxes, bottleofitaly, drinkonline, kippis, kuhns, licorea,
+longero, mydrink, viinarannasta, viinikauppa) — **`lmdw` ABSENT**: production
+is never seeded (the 7.1 migration step is migrate-only), so no registry row
+and no governance records existed. Read-only D1 pre-write baselines:
+`retail_offers` **143,290** total (lmdw **0**, lmdw watermarks **0**);
+`product_master` **16,437** rows, max id **16,437**; per-merchant alko 17,293 ·
+alks 67,651 · araxes 5,617 · bottleofitaly 1,377 · drinkonline 280 · kippis
+15,503 · kuhns 1,371 · licorea 257 · longero 25,116 · mydrink 8,404 ·
+viinarannasta 192 · viinikauppa 229.
+
+### Register + auto-grant (runbook §2.0, one audited call)
+
+`POST /ops/console/merchants` at 06:29:58–59Z — fields
+`merchantId: "lmdw"` / `name: "La Maison du Whisky"` / `country: "FR"` /
+`feedUrl: https://www.whisky.fr/media/sitemap/sitemap_whimag.xml` /
+**`feedFormat: "xml"` and `pollingIntervalMs: 86400000` pinned explicitly**
+(§2.0: the upsert overwrites the whole row), `operator: "siim (owner)"`
+(the audit-trail convention, araxes 4.2/5.2), note "owner blanket permission
+policy — change onboard-lmdw-crawl-merchant task 7.2". Result: **`registered:
+"created"`, `autoGranted: true`, `permissionStatus: "GRANTED"`,
+`sourceCount: 1`** (HTTP 200). Audit verified (`GET /ops/console/audit?limit=4`):
+**exactly two entries**, author `siim (owner)` on both —
+`merchant_registry`/`lmdw`/`created` (id `470be040-96f1-404f-970a-e453acd83ae2`,
+06:29:58.693Z) + `source_governance`/`lmdw`/`created` (id
+`fc54d368-3bf2-42a3-bba4-25180bb4b5a6`, 06:29:59.110Z). Governance re-check:
+**`lmdw` `GRANTED` / `sourceCount: 1`**, exact feedUrl read back, 13 merchants
+total. Read-only production D1 read-back: registry row exact (FR / sitemap URL
+/ `xml` / 86,400,000), one `source_governance` row `GRANTED` with source
+`RETAILER_API: https://www.whisky.fr/media/sitemap/sitemap_whimag.xml`.
+
+### First crawl via the Workflows REST API (archived 6.2 call shape)
+
+- `POST /accounts/{account}/workflows/rajahinta-price-ingestion-production/instances`,
+  body id/params `price-ingestion-lmdw-2026-10-09-06` with `{"merchantId":"lmdw",
+  "sourceUrl":"https://www.whisky.fr/media/sitemap/sitemap_whimag.xml","dedupeKey":
+  "price-ingestion-lmdw-2026-10-09-06"}` (params mirror the producer message —
+  the sitemap URL is the crawl source; the `-06` hour suffix cannot collide with
+  the scheduled `-00` day-bucket keys) → uuid
+  **`c235e40e-f6e9-4eb7-8590-2006ddcda8ba`**, `queued` ~06:30:56Z.
+- `resolve-merchant-1`: config exact (lmdw / FR / feedUrl / xml / 86,400,000).
+  `governance-gate-1`: **`{"permitted":true,"status":"GRANTED","reason":
+  "Permission granted"}`** — the pipeline gate honored the grant.
+- `crawl-discover-1`: **`{"queueLength":6899,"resumed":false,"errors":[]}`** —
+  the sitemap drifted +57 URLs vs staging's first pass (6,842 @ 10-08 → 6,899
+  today), full diff on the first cycle.
+- **Both D1 rows written at begin, cursor-first order (06:30:58.520Z /
+  .59.163Z)**: `sitemap-crawl-cursor-lmdw` (**425,496 bytes** —
+  `{queue: [6,899 URLs], offset: 0}`) and `sitemap-crawl-lastmod-lmdw`
+  (**618,647 bytes** — 6,899 `loc → lastmod` entries).
+
+### D6 Workers-egress smoke — PASS (mid-walk, no Posti playbook)
+
+The first real whisky.fr fetches from Cloudflare IPs happened inside this
+instance: **`crawl-chunk-1-1` output carries mapped records** — opens FAMOUS
+GROUSE (The) Litre (`alcoholByVolume 0.4, volumeMl 1000, ean 5010314101015,
+2590¢ EUR, in_stock`, `sourceUrl …/famous-grouse-the-litre-1213.html`), the
+same record the staging 6.2 smoke verified against the live page. **Cursor
+advanced 0 → 300 → 600 → 900 across chunk/advance step pairs** (read-only D1
+tail polls) — pages are fetching from Workers with the crawl UA and parsing.
+**Zero HTTP 403 and zero challenge shape on any fetched page** (no error lines
+in any chunk output) — the Posti blocked-egress pattern did not materialize;
+per D6 the fetching itself (queueLength > 0 → records landing) IS the smoke.
+No retry loop was run.
+
+### Progress at the observation cap (honest: still running)
+
+Last observation **06:56:52Z (~26 min in)**: instance **`running`**, **13
+steps** — chunk/advance pairs 1–3 done (`crawl-chunk-3-1`/`crawl-advance-3-1`),
+`crawl-chunk-4-1` running. **Cursor offset 900** of 6,899 (300 per chunk;
+measured pacing ≈ **1.6 s/page** = 900 fetches in ~23 min, the polite
+≤300-fetch D5 cap holding). **`retail_offers` lmdw: 0** — by design: the
+chunked walker accumulates ALL records before the map/gate/upsert stages, so
+offers land only at walk end. Full-walk arithmetic: 6,899 × 1.6 s ≈ **3h04m
+from trigger → completion expected ~09:35 UTC** (24 chunks;
+`CRAWL_MAX_CHUNK_STEPS` 400 ≫ 24). The active-wait cap (~25 min) was honored;
+polling stopped, the instance keeps running autonomously (durable chunks — no
+operator action needed).
+
+**Pending at cap, verifiable on the completed instance (no invented numbers):**
+`productsIngested` + the collected-error census (the Workflows API truncates
+step output ~1 KB mid-run), offer counts + batches, EAN share vs the ~73 %
+probe band (staging landed 76.4 %), and the **D1-quota census** — staging's
+first pass lost 5,456 of 6,514 pairs to `Too many API requests by single
+Worker invocation` (6.2 completion block); production's chunk-budget reset
+steps are present (`crawl-chunk-budget-reset-2-1` observed), but if the quota
+class recurs here the same lead-level follow-up applies.
+
+### Scheduled-boundary checklist — first pass 2026-10-10 00:00 UTC
+
+**Explicit, so nobody reads it as a miss: the 2026-10-09 00:00 UTC scheduled
+pass fired BEFORE lmdw existed in production** (registration 06:29 UTC today)
+— no lmdw enqueue happened at it, and the hourly producer passes between
+registration and the next day boundary correctly skip lmdw (daily-cadence
+interval-bucket gate: the 10-09 day bucket was already consumed). The first
+scheduled lmdw pass is **2026-10-10 00:00 UTC**; until then this manual
+instance is the only lmdw crawl. Tomorrow's pass is the convergence mechanism
+(araxes 5.2 format), recorded 2026-10-09T06:57Z:
+
+- [ ] **Exactly one lmdw enqueue** from the producer tick: one queue message
+      with dedupe key **`price-ingestion-lmdw-2026-10-10-00`**; producer log:
+      no `Not scheduling merchant "lmdw"` warning (the other daily merchants
+      enqueue their own separate messages, one per permitted merchant).
+- [ ] **Exactly one new workflow instance** in
+      `rajahinta-price-ingestion-production`, id = the key above — no
+      duplicates; the manual instance `c235e40e…` (`…-10-09-06`) must be
+      `complete` and must NOT re-run.
+- [ ] **Offers refreshed**: fresh `retail_offers` lmdw batch at `observed_at`
+      ≈ the walk end (the 10-09 manual walk's upsert, expected ~09:35 UTC)
+      and then the scheduled pass's own batch at its walk end. **Caveat from
+      staging 6.2**: the crawl watermark was written at BEGIN with all
+      lastmods, so the 10-10 pass re-crawls only lastmod-bumped URLs — pages
+      the 10-09 walk lost to D1-quota rejections re-crawl only when whisky.fr
+      bumps their `lastmod`. Check the run's error census for the
+      `Too many API requests` class and record it per the archived
+      checklist's re-run-once precedent if present.
+- [ ] **Public API + product pages** (only true after walk end — checklist
+      items, not yet verifiable): `GET
+      https://api.rajahinta.fi/api/v1/products/<max-price-id>` — bare → 403,
+      `x-age-confirmed: 1` → the lmdw offer (decimal ABV fraction + litres);
+      `GET /api/v1/merchants/reliability` shows the lmdw offerCount (expected
+      `governancePermissionStatus` read-model artifact "PENDING" despite the
+      GRANTED row — kippis/mydrink/araxes/BOI/staging precedent, record not
+      chase); `https://rajahinta.fi/products/<id>` HTTP 200 with the
+      server-rendered offer row + `Katso kaupassa` CTA.
+- [ ] Check commands: `npx wrangler tail --env production` on the api-worker
+      across the tick, or Workers Logs; instance GET on
+      `/accounts/{account}/workflows/rajahinta-price-ingestion-production/
+      instances/{uuid}` (Cloudflare API token inline, never echoed) for the
+      single-instance check; read-only `npx wrangler d1 execute DB --remote
+      --env production --json --command "SELECT merchant, observed_at,
+      COUNT(*) FROM retail_offers WHERE merchant='lmdw' GROUP BY merchant,
+      observed_at ORDER BY observed_at"` for the landing check + the
+      cursor-row-absent steady-state check on `aggregation_watermarks`.
+
+### Commands executed (names)
+
+`curl GET /ops/console/governance` (pre-flight + re-check), `POST
+/ops/console/merchants`, `GET /ops/console/audit?limit=4` (bearer:
+`$(cat /root/.ops-token)` inline, never echoed) · read-only `npx wrangler d1
+execute DB --remote --env production --json --command "…"` (pre/post
+baselines, registry/governance read-back, watermark + cursor-tail polls, offer
+counts; `CLOUDFLARE_API_TOKEN="$(cat /root/.cloudflare-token)"` inline) ·
+`npx wrangler whoami --json` (account id captured same-invocation, never
+emitted) + `curl -X POST
+/accounts/{account}/workflows/rajahinta-price-ingestion-production/instances`
++ instance polls ×4 (instance JSON to `/tmp/opencode` scratch, deleted) ·
+`curl /api/v1/health/ready`, `curl /api/v1/merchants/reliability` (age
+header). No hand writes against production D1 at any point; registration and
+governance only through the audited console API; instance scratch deleted;
+nothing committed.
+
+**Verified at**: 2026-10-09T06:57Z (registration 06:29, audits verified, gate +
+discover + watermarks verified, egress smoke PASS, instance honestly still
+running at cap — completion + landing = the checklist above).
 
 ## 8.1 Verification evidence
 
