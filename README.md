@@ -206,8 +206,9 @@ All routes are versioned under `/api/v1` and documented in Swagger. Guards vary 
 | `/account/register`, `/account/login` | POST | Email + password registration and login (the email address is the username) |
 | `/account/me` | GET | Current account identity and verification state |
 | `/account/alerts` | GET/POST/PATCH/DELETE | Alert watchlist; PRICE alerts carry a threshold, TAX_CHANGE alerts watch a product's landed cost across rate-version changes |
+| `/account/favorites` | GET/POST/DELETE | Product favorites watchlist (100 per account; `DELETE` takes `/:productId`; rows join the 7-day-fresh daily summary to show saved-price drift; never notifies) |
 | `/account/verify-email/*`, `/account/password/*` | POST | Email verification and password reset via single-use emailed tokens |
-| `/account/*` | GET/POST/DELETE | Registered-account history, baskets, scenarios, GDPR export |
+| `/account/*` | GET/POST/DELETE | Registered-account history, baskets, scenarios, favorites, GDPR export |
 | `/merchants/reliability` | GET | Per-merchant reliability scores |
 | `/analytics/click`, `/outbound/:offerId` | POST/GET | Click counting and merchant-link redirect (no affiliate fields allowed) |
 | `/ranking/methodology` | GET | Public ranking methodology |
