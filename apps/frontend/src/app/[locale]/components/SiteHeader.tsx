@@ -487,6 +487,40 @@ export default function SiteHeader() {
   };
 
   /**
+   * Favorites quick link (add-product-favorites task 4.2): account-area
+   * chrome beside the `/account` link, same auth-state independence and
+   * chrome-link active treatment (border/semibold + `aria-current`,
+   * never color alone).
+   */
+  const renderFavoritesLink = (mobile: boolean) => {
+    const favoritesActive = isRouteActive(pathname, '/account/favorites');
+    return (
+      <Link
+        href="/account/favorites"
+        data-testid={mobile ? 'header-favorites-mobile' : 'header-favorites'}
+        {...(favoritesActive ? { 'aria-current': 'page' as const } : {})}
+        className={
+          mobile
+            ? [
+                'inline-flex items-center rounded-md px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+                favoritesActive
+                  ? 'bg-primary-50 font-semibold text-gray-900'
+                  : 'font-medium text-gray-600 hover:bg-gray-50 hover:text-primary-700',
+              ].join(' ')
+            : [
+                'inline-flex items-center border-b-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+                favoritesActive
+                  ? 'border-primary-700 font-semibold text-gray-900'
+                  : 'border-transparent font-medium text-gray-600 hover:text-primary-700',
+              ].join(' ')
+        }
+      >
+        {t('favorites')}
+      </Link>
+    );
+  };
+
+  /**
    * `FI | EN` locale switcher (change localize-fi-route-pathnames,
    * decision D5): swaps the locale while keeping the current route.
    * Navigation goes through next-intl's `router.replace(href,
@@ -560,6 +594,7 @@ export default function SiteHeader() {
             then the locale switcher and the auth actions. */}
         <div className="hidden items-center gap-x-3 md:flex">
           {renderAccountLink(false)}
+          {renderFavoritesLink(false)}
           {renderLocaleSwitcher(false)}
           {renderAuthActions(false)}
         </div>
@@ -601,6 +636,7 @@ export default function SiteHeader() {
         {NAV_GROUPS.map((group) => renderNavGroup(group, true))}
         <div className="mt-2 flex items-center gap-2 border-t border-gray-200 pt-2">
           {renderAccountLink(true)}
+          {renderFavoritesLink(true)}
           {renderLocaleSwitcher(true)}
           {renderAuthActions(true)}
         </div>
