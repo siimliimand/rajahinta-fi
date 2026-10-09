@@ -6,8 +6,12 @@
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
+// `useParams` is locale-insensitive — it only reports the current route's
+// dynamic segments; the locale-aware primitives below come from
+// `@/i18n/navigation` (the next-intl locale switcher pairs the two).
+import { useParams } from 'next/navigation';
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
-import { routing } from '@/i18n/routing';
+import { routing, type AppPathnames } from '@/i18n/routing';
 import Logo from './Logo';
 import { Button } from '@/components/ui';
 import { ensureSession, revokeSession } from '@/lib/api';
@@ -41,8 +45,15 @@ import type { SessionStatus } from '@/lib/types';
  * client-side navigation never remounts the header.
  */
 
-/** One tool link inside a task group's panel, label already translated. */
-type NavGroupItem = { href: string; label: string };
+/**
+ * One tool link inside a task group's panel, label already translated.
+ * The nav routes are all static; typed `Link` accepts dynamic pathnames
+ * only in object form, so the href type excludes the `[...]` templates.
+ */
+type NavGroupItem = {
+  href: Exclude<AppPathnames, `${string}[${string}`>;
+  label: string;
+};
 
 /**
  * The three task groups, in display order (spec: shared navigation).
@@ -301,12 +312,27 @@ function NavDisclosureGroup({
   );
 }
 
+/**
+ * The typed router's href (change localize-fi-route-pathnames): static
+ * pathnames stay strings, dynamic pathnames are accepted only as
+ * `{ pathname, params }` objects — a bare template string such as
+ * `/products/[id]` is neither a valid href nor a navigable URL.
+ */
+type RouterHref = Parameters<ReturnType<typeof useRouter>['replace']>[0];
+
 export default function SiteHeader() {
   const t = useTranslations('SiteHeader');
   const tAuth = useTranslations('AuthNav');
   const locale = useLocale();
   const pathname = usePathname();
   const router = useRouter();
+  const params = useParams();
+  // The current route in next-intl's internal form: `usePathname` reports
+  // the routing template for dynamic segments (`/products/[id]`), so the
+  // current params must ride along and the router interpolates them per
+  // target locale. The cast bridges `usePathname`'s template union to the
+  // href union above; both stay derived from `routing.pathnames`.
+  const switchHref = { pathname, params } as RouterHref;
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const [session, setSession] = useState<SessionStatus | null>(null);
@@ -461,9 +487,16 @@ export default function SiteHeader() {
   };
 
   /**
-   * `FI | EN` locale switcher (task 3.2): swaps the locale while keeping
-   * the current pathname — next-intl's router rewrites the prefix, so a
-   * visitor on /en/calculator lands on /calculator and vice versa. The
+   * `FI | EN` locale switcher (change localize-fi-route-pathnames,
+   * decision D5): swaps the locale while keeping the current route.
+   * Navigation goes through next-intl's `router.replace(href,
+   * { locale })`, which writes the `NEXT_LOCALE` cookie client-side
+   * BEFORE navigating — a plain `<Link locale>` would render the bare
+   * href while the cookie still names the old locale, and the middleware
+   * would bounce the visitor straight back. The router localizes the
+   * internal pathname per target locale, so a visitor on /tuotteet/123
+   * lands on /en/products/123 and vice versa; query strings are not
+   * carried over (the switch lands on the route's canonical URL). The
    * active locale is marked with `aria-current`, never by color alone.
    */
   const renderLocaleSwitcher = (mobile: boolean) => (
@@ -486,7 +519,7 @@ export default function SiteHeader() {
             aria-current={locale === switchLocale ? 'true' : undefined}
             onClick={() => {
               if (locale !== switchLocale) {
-                router.replace(pathname, { locale: switchLocale });
+                router.replace(switchHref, { locale: switchLocale });
               }
             }}
             className={[
