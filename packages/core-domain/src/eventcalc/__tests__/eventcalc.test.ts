@@ -297,6 +297,90 @@ describe('norms version handling', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Seasonal occasion profiles (change seasonal-occasion-templates, task 1.2)
+// ---------------------------------------------------------------------------
+
+describe('seasonal occasion profiles — resolve against published rows only', () => {
+  /** The seasonal dataset's version label (transcribed — not imported). */
+  const SEASONAL_V1 = 'seasonal-occasions-fi-2026.1';
+
+  /**
+   * juhannus rows transcribed from the seasonal seed's derivation
+   * (beer-led long outdoor day, centilitre-rounded like the standard
+   * set) — inline for purity, same as the standard fixtures above.
+   */
+  const JUHANNUS_NORMS: readonly EventNormRow[] = [
+    { drinkType: 'beer', normValuePerGuestPerHour: 0.4, versionLabel: SEASONAL_V1 },
+    { drinkType: 'other_fermented', normValuePerGuestPerHour: 0.28, versionLabel: SEASONAL_V1 },
+    { drinkType: 'wine_sparkling', normValuePerGuestPerHour: 0.03, versionLabel: SEASONAL_V1 },
+    { drinkType: 'wine_still', normValuePerGuestPerHour: 0.03, versionLabel: SEASONAL_V1 },
+    { drinkType: 'intermediate_products', normValuePerGuestPerHour: 0.01, versionLabel: SEASONAL_V1 },
+    { drinkType: 'spirits', normValuePerGuestPerHour: 0.01, versionLabel: SEASONAL_V1 },
+  ];
+
+  it('published-shaped juhannus rows resolve into an exact minimal-surplus list', () => {
+    const result = calculateEventShoppingList({
+      eventDate: '2026-06-19',
+      eventProfile: 'juhannus',
+      guests: 10,
+      durationHours: 4,
+      norms: JUHANNUS_NORMS,
+    });
+    if (result.status !== 'COMPUTED') throw new Error('expected COMPUTED');
+    expect(result.eventProfile).toBe('juhannus');
+    expect(result.normsVersion).toBe(SEASONAL_V1);
+    expect(result.lines).toHaveLength(JUHANNUS_NORMS.length);
+    // beer 0.40 l × 10 guests × 4 h = exactly 16 000 ml — 32 × 0.5 l
+    // cans, zero surplus.
+    expect(result.lines[0]).toEqual({
+      drinkType: 'beer',
+      needMl: 16_000,
+      needLitres: 16,
+      plannedUnits: [
+        { sizeMl: 500, sizeLitres: 0.5, description: '0.5 l can', quantity: 32 },
+      ],
+      totalUnits: 32,
+      purchasedMl: 16_000,
+      surplusMl: 0,
+      surplusLitres: 0,
+      versionLabel: SEASONAL_V1,
+    });
+  });
+
+  it.each(['juhannus', 'vappu', 'rapujuhlat', 'talkoot'])(
+    'seasonal profile %s with no published rows yields NO_PUBLISHED_NORMS, not an error',
+    (eventProfile) => {
+      const result = calculateEventShoppingList({
+        eventDate: '2026-06-19',
+        eventProfile: eventProfile as EventCalcInput['eventProfile'],
+        guests: 10,
+        durationHours: 4,
+        norms: [],
+      });
+      expect(result).toEqual({
+        status: 'NO_PUBLISHED_NORMS',
+        eventDate: '2026-06-19',
+        eventProfile,
+        guests: 10,
+        durationHours: 4,
+      });
+    },
+  );
+
+  it('a mistyped seasonal slug is still rejected — the set stays closed', () => {
+    const err = errorOf(() =>
+      calculateEventShoppingList({
+        ...casualInput(),
+        norms: [],
+        eventProfile: 'juhannus_' as EventCalcInput['eventProfile'],
+      }),
+    );
+    expect(err).toBeInstanceOf(InconsistentNormsError);
+    expect((err as InconsistentNormsError).reason).toBe('UNKNOWN_EVENT_PROFILE');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Inconsistent norms and invalid input
 // ---------------------------------------------------------------------------
 
@@ -448,6 +532,14 @@ describe('retail unit catalogue and vocabulary pins', () => {
       'other_fermented',
       'spirits',
     ]);
-    expect(EVENT_CALC_EVENT_PROFILES).toEqual(['casual_gathering', 'dinner_party', 'celebration']);
+    expect(EVENT_CALC_EVENT_PROFILES).toEqual([
+      'casual_gathering',
+      'dinner_party',
+      'celebration',
+      'juhannus',
+      'vappu',
+      'rapujuhlat',
+      'talkoot',
+    ]);
   });
 });

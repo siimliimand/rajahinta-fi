@@ -16,8 +16,9 @@
  */
 
 // ---------------------------------------------------------------------------
-// Canonical vocabulary — mirrors the tax-rule category keys and the MVP
-// simple mode's closed profile set (task 4.1 repository/seed values).
+// Canonical vocabulary — mirrors the tax-rule category keys and the
+// closed profile set (the MVP simple mode's three profiles plus the
+// seasonal occasion profiles; task 4.1 repository/seed values).
 // Declared here, not imported: purity forbids a data-platform import.
 // ---------------------------------------------------------------------------
 
@@ -38,11 +39,23 @@ export const EVENT_CALC_DRINK_TYPES = [
 
 export type EventDrinkType = (typeof EVENT_CALC_DRINK_TYPES)[number];
 
-/** Event profiles — the MVP simple mode's closed set. */
+/**
+ * Event profiles — the MVP simple mode's closed set plus the seasonal
+ * occasion profiles. The seasonal slugs mirror
+ * `SEASONAL_CONSUMPTION_NORM_EVENT_PROFILES` in the data-platform seed
+ * (change seasonal-occasion-templates); declared here, not imported —
+ * purity forbids a data-platform import. A profile key resolves only
+ * against PUBLISHED norm rows, so a known slug without published rows
+ * surfaces through the `NO_PUBLISHED_NORMS` result, never an error.
+ */
 export const EVENT_CALC_EVENT_PROFILES = [
   'casual_gathering',
   'dinner_party',
   'celebration',
+  'juhannus',
+  'vappu',
+  'rapujuhlat',
+  'talkoot',
 ] as const;
 
 export type EventProfile = (typeof EVENT_CALC_EVENT_PROFILES)[number];
@@ -208,7 +221,7 @@ export type InconsistentNormsReason =
   | 'DUPLICATE_DRINK_TYPE'
   /** drinkType is not in the canonical tax-category key set. */
   | 'UNKNOWN_DRINK_TYPE'
-  /** eventProfile is not in the MVP simple mode's closed set. */
+  /** eventProfile is not in the closed profile set (MVP simple mode + seasonal occasions). */
   | 'UNKNOWN_EVENT_PROFILE'
   /** normValuePerGuestPerHour is not a finite, positive, whole-millilitre value. */
   | 'INVALID_NORM_VALUE'
