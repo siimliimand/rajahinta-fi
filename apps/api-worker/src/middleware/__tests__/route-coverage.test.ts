@@ -346,6 +346,10 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/api/v1/account/baskets', ['GET', 'POST'], '— (sessionAuth)'],
   ['/api/v1/account/baskets/:basketId', ['DELETE'], '— (sessionAuth)'],
   ['/api/v1/account/export', ['GET'], '— (sessionAuth)'],
+  // Product favorites (add-product-favorites 2.1) — the alerts chain:
+  // sessionAuth + per-account DEFAULT on the handlers.
+  ['/api/v1/account/favorites', ['GET', 'POST'], 'DEFAULT (per-account) + sessionAuth'],
+  ['/api/v1/account/favorites/:productId', ['DELETE'], 'DEFAULT (per-account) + sessionAuth'],
   ['/api/v1/account/history', ['GET', 'POST'], '— (sessionAuth)'],
   // Credential routes — AUTH on the brute-forceable writes; the emailed
   // token IS the capability for confirm/reset ("—" profiles).

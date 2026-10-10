@@ -407,6 +407,24 @@ describe('SiteHeader three task groups (task 3.1)', () => {
     expect(account).not.toHaveAttribute('aria-current');
     expect(account.className).not.toContain('font-semibold');
   });
+
+  it('renders the favorites account-area link in both navs (add-product-favorites 4.2)', async () => {
+    mockPathname = '/account/favorites';
+    await renderHeader();
+
+    // The label resolves through the SiteHeader namespace (task 5.1 adds
+    // the catalog key); the href and active treatment are pinned here.
+    const favorites = screen.getByTestId('header-favorites');
+    expect(favorites).toHaveAttribute('href', '/account/favorites');
+    expect(favorites).toHaveAttribute('aria-current', 'page');
+    expect(favorites.className).toContain('font-semibold');
+    expect(favorites.className).toContain('border-primary-700');
+
+    const mobileNav = document.getElementById('site-header-mobile-nav');
+    expect(
+      within(mobileNav as HTMLElement).getByTestId('header-favorites-mobile'),
+    ).toHaveAttribute('href', '/account/favorites');
+  });
 });
 
 describe('SiteHeader mobile panel (task 3.1)', () => {

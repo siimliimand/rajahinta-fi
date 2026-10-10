@@ -97,6 +97,7 @@ vi.mock('../../../components/MerchantWarningNotice', () => ({
   default: () => null,
 }));
 vi.mock('../components/ProductAlertAction', () => ({ default: () => null }));
+vi.mock('../components/ProductFavoriteAction', () => ({ default: () => null }));
 vi.mock('../components/ProductDupesPanel', () => ({ default: () => null }));
 vi.mock('../components/ProductPriceContextLine', () => ({
   default: () => null,

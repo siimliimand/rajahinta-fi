@@ -3,7 +3,8 @@
  *
  * Plain, hook-free React components over Tailwind utilities — usable from
  * both server and client components (D5). No component framework
- * dependency; see the change's design.md.
+ * dependency; see the change's design.md. The one exception is Dialog,
+ * which is 'use client': modal focus management cannot run on the server.
  */
 
 export { Button } from './Button';
@@ -32,3 +33,6 @@ export type { CardElement, CardPadding, CardProps, CardShadow } from './Card';
 
 export { Input } from './Input';
 export type { InputProps } from './Input';
+
+export { Dialog } from './Dialog';
+export type { DialogProps } from './Dialog';

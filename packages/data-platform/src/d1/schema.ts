@@ -2304,6 +2304,56 @@ export const outcomeMargins = sqliteTable(
 );
 
 /**
+ * Account favorites — per-account saved products ("I care about this")
+ * with saved-price memory (task 1.1, change add-product-favorites;
+ * design D2).
+ *
+ * One row per (account, product): the UNIQUE constraint is the
+ * duplicate guard — a second favorite on the same pair surfaces as a
+ * constraint violation (route layer: 409), exactly like the alerts
+ * triple. `saved_price_cents` records the product's materialized daily
+ * close at save time and is nullable as real state, not "optional for
+ * later": the product may have no daily summary within the 7-day
+ * freshness window at save time, and the favorites Δ column is the
+ * column's immediate reader (design D4 — the current price is joined at
+ * read time and deltas are computed, never stored). Deleting the
+ * account row cascades here (GDPR erasure, same guarantee as
+ * priceAlerts/savedScenarios); products are never deleted, so
+ * product_id carries no cascade.
+ */
+export const accountFavorites = sqliteTable(
+  'account_favorites',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to accounts — the owning user; cascade delete implements the erasure path. */
+    accountId: integer('account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** FK to product_master — the saved product. Products are never deleted, so no cascade. */
+    productId: integer('product_id')
+      .references(() => productMaster.id)
+      .notNull(),
+    /**
+     * The product's materialized daily close (euro-cents) captured at
+     * save time — null when no daily summary existed within the 7-day
+     * freshness window at save time (design D2). The list's Δ column
+     * renders only when both this and the read-time current price exist.
+     */
+    savedPriceCents: integer('saved_price_cents'),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // Duplicate guard: one favorite per (account, product) — the route
+    // layer translates the violation into 409. The leading account_id
+    // column also serves list-by-account (the price_alerts precedent).
+    unique('account_favorites_account_id_product_id_unique').on(
+      table.accountId,
+      table.productId,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -2349,4 +2399,5 @@ export const d1Schema = {
   emailTokens,
   contactMessages,
   outcomeMargins,
+  accountFavorites,
 };

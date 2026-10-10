@@ -73,7 +73,8 @@ describe('localized pathnames vocabulary (design D1)', () => {
 
 describe('shared pathnames (design D2)', () => {
   it('pins the shared entry count (catch-all deliberately excluded)', () => {
-    expect(shared).toHaveLength(20);
+    // 21 since add-product-favorites task 4.2 (/account/favorites).
+    expect(shared).toHaveLength(21);
   });
 
   it('every shared entry is a single string equal to the internal route name', () => {

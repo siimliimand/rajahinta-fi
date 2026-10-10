@@ -907,6 +907,30 @@ export interface PriceAlert {
 }
 
 // ---------------------------------------------------------------------------
+// Product favorites (GET/POST/DELETE /api/v1/account/favorites)
+// Mirrors the serialization in api-worker favorites.routes.ts (task 2.1,
+// change add-product-favorites) — ISO timestamps, accountId omitted (the
+// list is always caller-scoped).
+// ---------------------------------------------------------------------------
+
+/**
+ * One saved favorite as served by the account API — the shape of both the
+ * GET list rows and the 201 create response (design D4): `savedPriceCents`
+ * snapshots the shelf price at save time (null when none was observable),
+ * `currentPriceCents` is null when the product has no fresh daily summary,
+ * and `deltaCents` is the computed current-minus-saved delta, null unless
+ * BOTH prices exist (computed, never stored).
+ */
+export interface Favorite {
+  readonly id: number;
+  readonly productId: number;
+  readonly savedPriceCents: number | null;
+  readonly currentPriceCents: number | null;
+  readonly deltaCents: number | null;
+  readonly createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Operator console API (/ops/console/** — bearer-token realm)
 // ---------------------------------------------------------------------------
 

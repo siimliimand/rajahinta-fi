@@ -153,6 +153,9 @@ describe('layout and navigation catalog completeness', () => {
       // linkWhatIf and methodology keys cover those destinations).
       // `account` stays until its follow-up task re-homes it.
       'account',
+      // add-product-favorites 5.1: the account-area favorites quick link
+      // (rendered beside `account` by SiteHeader since task 4.2).
+      'favorites',
       // The locale switcher's accessible label.
       'localeSwitcherLabel',
     ]);

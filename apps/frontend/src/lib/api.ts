@@ -39,6 +39,7 @@ import type {
   AccuracyBreakdown,
   AccuracyBreakdownDimension,
   OutcomeReport,
+  Favorite,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -982,6 +983,63 @@ export async function deleteScenario(scenarioId: number): Promise<void> {
   return request<void>(`/api/v1/account/scenarios/${scenarioId}`, {
     method: 'DELETE',
   });
+}
+
+// ---------------------------------------------------------------------------
+// Product favorites (GET/POST/DELETE /api/v1/account/favorites; task 4.1,
+// change add-product-favorites)
+// ---------------------------------------------------------------------------
+
+/**
+ * List the session's saved favorites, each carrying the shelf price
+ * snapshotted at save time beside the product's current daily price and
+ * the computed delta (design D4; see {@link Favorite} for the null
+ * semantics). Authentication rides the httpOnly session cookie injected
+ * by request().
+ */
+export async function listFavorites(): Promise<Favorite[]> {
+  return request<Favorite[]>('/api/v1/account/favorites');
+}
+
+/**
+ * Save a product as a favorite, snapshotting its current shelf price.
+ * Rejections: 400 over-cap (message names the cap) or bad body, 409 the
+ * product is already a favorite, 404 unknown product.
+ */
+export async function createFavorite(productId: number): Promise<Favorite> {
+  return request<Favorite>('/api/v1/account/favorites', {
+    method: 'POST',
+    body: JSON.stringify({ productId }),
+  });
+}
+
+/**
+ * Remove a favorite by productId (account-scoped: a foreign or absent
+ * productId answers 404).
+ *
+ * The endpoint answers 204 with an EMPTY body, which request() cannot
+ * parse, so this uses the shared low-level client (alerts-page precedent)
+ * and translates the status itself — parsing the JSON error envelope when
+ * one is present so the 400's cap-naming message reaches consumers.
+ */
+export async function deleteFavorite(productId: number): Promise<void> {
+  const res = await apiFetch(`/api/v1/account/favorites/${productId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    let body: ApiError | null = null;
+    try {
+      body = (await res.json()) as ApiError;
+    } catch {
+      // ignore parse failure (204 success path never reaches this branch)
+    }
+    throw new ApiFetchError(
+      res.status,
+      body,
+      res.headers?.get?.('x-request-id') ?? null,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

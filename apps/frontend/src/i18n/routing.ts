@@ -49,6 +49,7 @@ export const routing = defineRouting({
     '/register': '/register',
     '/account': '/account',
     '/account/alerts': '/account/alerts',
+    '/account/favorites': '/account/favorites',
     '/account/saved-baskets': '/account/saved-baskets',
     '/account/forgot': '/account/forgot',
     '/account/reset': '/account/reset',
