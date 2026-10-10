@@ -57,7 +57,7 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
-import type { AppEnv } from '../env';
+import type { AppEnv, Env } from '../env';
 import { ApiHttpError } from '../errors';
 import { parseIntParam } from './support';
 import { WorkerAuditService } from '../adapters/audit';
@@ -2015,6 +2015,25 @@ async function publishBlogPost(c: Context<AppEnv>): Promise<Response> {
     },
   });
 
+  // Publish-time frontend cache revalidation (change
+  // revalidate-guides-on-publish): the frontend data cache holds guide/blog
+  // fetches for 900 s — a publish must not wait that long to be visible.
+  // Off the response path (waitUntil) and fail-open by design: a missed
+  // revalidation costs at most the 900 s fallback window, never a failed
+  // publish. Outcome is audited; the audit call itself is swallowed — a
+  // waitUntil must never throw.
+  const env = c.env as { APP_PUBLIC_URL?: string; FRONTEND_REVALIDATE_TOKEN?: string };
+  const publicUrl = env.APP_PUBLIC_URL ?? 'https://rajahinta.fi';
+  runAfterResponse(c, () =>
+    revalidateFrontendAfterPublish(
+      publicUrl,
+      env.FRONTEND_REVALIDATE_TOKEN,
+      String(id),
+      actor,
+      c.env.DB,
+    ),
+  );
+
   return c.json({
     id: published.id,
     slug: published.slug,
@@ -2022,6 +2041,71 @@ async function publishBlogPost(c: Context<AppEnv>): Promise<Response> {
     status: published.status,
     publishedAt: published.publishedAt?.toISOString() ?? null,
   });
+}
+
+/**
+ * Run work off the response path via the execution context's waitUntil.
+ * Hono's `c.executionCtx` throws outside a real Workers runtime (e.g.
+ * `app.request` tests) — there the work degrades to fire-and-forget so the
+ * behavior is observable in tests without the runtime hook.
+ */
+function runAfterResponse(c: Context<AppEnv>, work: () => Promise<void>): void {
+  try {
+    c.executionCtx.waitUntil(work());
+  } catch {
+    void work();
+  }
+}
+
+/**
+ * Fire-and-forget revalidation of the frontend data-cache tags after a
+ * blog-post publish (design D3). Never throws: every failure mode — skip,
+ * HTTP error, timeout, audit-write error — is recorded in the outcome
+ * object and lands in the audit trail as an `updated` row on the post
+ * (the audit action vocabulary is pinned by the D1 CHECK constraint, so
+ * the ancillary outcome rides `updated` with structured `newValue`).
+ */
+async function revalidateFrontendAfterPublish(
+  publicUrl: string,
+  token: string | undefined,
+  postId: string,
+  actor: string,
+  db: Env['DB'],
+): Promise<void> {
+  const outcome: Record<string, unknown> = {};
+  try {
+    if (typeof token !== 'string' || token.length === 0) {
+      outcome.skipped = 'FRONTEND_REVALIDATE_TOKEN not configured';
+    } else {
+      const base = publicUrl.replace(/\/+$/, '');
+      const res = await fetch(`${base}/api/internal/revalidate`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-revalidate-token': token,
+        },
+        body: JSON.stringify({ tags: ['guides', 'blog'] }),
+        signal: AbortSignal.timeout(5_000),
+      });
+      outcome.httpStatus = res.status;
+      outcome.ok = res.ok;
+    }
+  } catch (error) {
+    outcome.error = error instanceof Error ? error.message : String(error);
+  } finally {
+    try {
+      await new WorkerAuditService(db).logChange({
+        entityType: 'blog_post',
+        entityId: postId,
+        action: 'updated',
+        author: actor,
+        reason: 'Frontend data-cache revalidation after publish (fail-open)',
+        newValue: { cacheRevalidate: outcome },
+      });
+    } catch {
+      /* never throw from waitUntil */
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

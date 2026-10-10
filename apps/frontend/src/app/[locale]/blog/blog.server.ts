@@ -74,7 +74,7 @@ export async function getServerBlogIndex(
       `/api/v1/blog/posts?locale=${encodeURIComponent(locale)}`,
       {
         headers: { accept: 'application/json' },
-        next: { revalidate: 900 },
+        next: { revalidate: 900, tags: ['blog'] },
       },
     );
     if (!Array.isArray(res?.items)) {
@@ -102,7 +102,7 @@ export async function getServerBlogPost(
       `/api/v1/blog/posts/${encodeURIComponent(slug)}?locale=${encodeURIComponent(locale)}`,
       {
         headers: { accept: 'application/json' },
-        next: { revalidate: 900 },
+        next: { revalidate: 900, tags: ['blog'] },
       },
     );
     if (!isFullPost(post)) {

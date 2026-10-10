@@ -18,7 +18,7 @@
  * @module BlogRoutesTest
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   buildApp,
   expectEnvelope,
@@ -177,9 +177,12 @@ describe('POST /ops/console/blog/posts/:id/publish — the human gate', () => {
     );
     expect(publicRes.status).toBe(200);
 
-    // The action is audited.
+    // The action is audited (the cache-revalidation row rides `updated`;
+    // the publish itself is the `confirmed` row).
     const entries = await new WorkerAuditService(d1).queryChanges({ limit: 10 });
-    const event = entries.find((e) => e.entityType === 'blog_post');
+    const event = entries.find(
+      (e) => e.entityType === 'blog_post' && e.action === 'confirmed',
+    );
     expect(event).toBeDefined();
     expect(event!.action).toBe('confirmed');
     expect(event!.author).toBe('ops-1');
@@ -228,6 +231,135 @@ describe('POST /ops/console/blog/posts/:id/publish — the human gate', () => {
       },
     );
     await expectEnvelope(res, 409, { error: 'InvalidTransition' });
+  });
+
+  it('issues the frontend revalidation call off-path when the secret is configured', async () => {
+    const { d1 } = openMigratedD1();
+    const { draftFiId } = await seedPosts(d1);
+    const app = buildApp();
+
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      return new Response(JSON.stringify({ revalidated: ['guides', 'blog'] }), {
+        status: 200,
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const res = await request(
+        app,
+        permissiveEnv(d1, {
+          APP_PUBLIC_URL: 'https://frontend.test',
+          FRONTEND_REVALIDATE_TOKEN: 'revalidate-tok',
+        }),
+        `/ops/console/blog/posts/${draftFiId}/publish`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...OPS },
+          body: JSON.stringify({ operator: 'ops-1' }),
+        },
+      );
+      expect(res.status).toBe(200);
+
+      await vi.waitFor(() => expect(calls).toHaveLength(1));
+      expect(calls[0].url).toBe('https://frontend.test/api/internal/revalidate');
+      const headers = new Headers(calls[0].init.headers);
+      expect(headers.get('x-revalidate-token')).toBe('revalidate-tok');
+      expect(JSON.parse(String(calls[0].init.body))).toEqual({
+        tags: ['guides', 'blog'],
+      });
+
+      // The outcome is audited on the post (fail-open row rides `updated`).
+      await vi.waitFor(async () => {
+        const entries = await new WorkerAuditService(d1).queryChanges({ limit: 10 });
+        expect(
+          entries.find((e) => e.action === 'updated' && e.entityType === 'blog_post'),
+        ).toBeDefined();
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('is fail-open: a failing revalidation call never fails the publish', async () => {
+    const { d1 } = openMigratedD1();
+    const { draftFiId } = await seedPosts(d1);
+    const app = buildApp();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('frontend unreachable');
+      }),
+    );
+    try {
+      const res = await request(
+        app,
+        permissiveEnv(d1, {
+          APP_PUBLIC_URL: 'https://frontend.test',
+          FRONTEND_REVALIDATE_TOKEN: 'revalidate-tok',
+        }),
+        `/ops/console/blog/posts/${draftFiId}/publish`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...OPS },
+          body: JSON.stringify({ operator: 'ops-1' }),
+        },
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { status: string };
+      expect(body.status).toBe('PUBLISHED');
+
+      await vi.waitFor(async () => {
+        const entries = await new WorkerAuditService(d1).queryChanges({ limit: 10 });
+        const row = entries.find(
+          (e) => e.action === 'updated' && e.entityType === 'blog_post',
+        );
+        expect(row).toBeDefined();
+        const newValue = row!.newValue as { cacheRevalidate: { error?: string } };
+        expect(newValue.cacheRevalidate.error).toContain('frontend unreachable');
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('skips the revalidation call (audited) when no secret is configured', async () => {
+    const { d1 } = openMigratedD1();
+    const { draftFiId } = await seedPosts(d1);
+    const app = buildApp();
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const res = await request(
+        app,
+        permissiveEnv(d1, { APP_PUBLIC_URL: 'https://frontend.test' }),
+        `/ops/console/blog/posts/${draftFiId}/publish`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...OPS },
+          body: JSON.stringify({ operator: 'ops-1' }),
+        },
+      );
+      expect(res.status).toBe(200);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      await vi.waitFor(async () => {
+        const entries = await new WorkerAuditService(d1).queryChanges({ limit: 10 });
+        const row = entries.find(
+          (e) => e.action === 'updated' && e.entityType === 'blog_post',
+        );
+        expect(row).toBeDefined();
+        const newValue = row!.newValue as {
+          cacheRevalidate: { skipped?: string };
+        };
+        expect(newValue.cacheRevalidate.skipped).toContain('not configured');
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('denies the console without ops access (fail-closed prefix)', async () => {
