@@ -4,7 +4,7 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui';
 import {
@@ -17,7 +17,10 @@ import type {
   EventProfile,
   SourcingRequest,
 } from './event.types';
-import { EVENT_OCCASION_TEMPLATES } from './templates';
+import {
+  EVENT_OCCASION_TEMPLATES,
+  resolveOccasionParam,
+} from './templates';
 import type { EventOccasionTemplate } from './templates';
 import EventForm from './components/EventForm';
 import EventShoppingListResult from './components/EventShoppingListResult';
@@ -63,19 +66,15 @@ function todayIsoDate(): string {
  *    result — never a UI-only string.
  *
  * Occasion deep link (change seasonal-occasion-templates, task 2.2):
- * the server shell resolves `?occasion=<slug>` and hands down the
- * validated template id; it seeds the same applied-template state a hand
- * selection would, so the prefill lands on the first render and every
- * field stays editable.
+ * `?occasion=<slug>` is read client-side on mount (the trip prefill
+ * handshake's pattern — the param seeds client state only, so the page
+ * keeps its ISR classification) and routed through the same
+ * applyTemplate path as a hand selection. Unknown values resolve
+ * forgivingly to the default state — never an error surface.
  *
  * @module EventView
  */
-export default function EventView({
-  initialOccasionId,
-}: {
-  /** Validated `?occasion=` template id from the server shell, if any. */
-  readonly initialOccasionId?: string;
-} = {}) {
+export default function EventView() {
   const t = useTranslations('EventPage');
 
   // ── Submission state ──
@@ -91,18 +90,11 @@ export default function EventView({
   // ordinary initial state; the application counter in the key makes
   // re-applying the same template re-fill edited fields. The prefill is
   // a starting point only: every field stays editable and the estimate
-  // always derives from the current inputs at submit time. A deep-linked
-  // occasion (task 2.2) seeds this same state, exactly as if selected
-  // by hand.
+  // always derives from the current inputs at submit time.
   const [appliedTemplate, setAppliedTemplate] = useState<{
     seq: number;
     template: EventOccasionTemplate;
-  } | null>(() => {
-    const template = initialOccasionId
-      ? EVENT_OCCASION_TEMPLATES.find((t) => t.id === initialOccasionId)
-      : undefined;
-    return template ? { seq: 1, template } : null;
-  });
+  } | null>(null);
 
   // ── Clear-form affordance (task 4.7) ──
   // The form owns its field state, so a reset remounts it (fresh
@@ -117,6 +109,17 @@ export default function EventView({
     setResult(null);
     setErrorKind(null);
   }, []);
+
+  // ── Occasion deep link (task 2.2): `?occasion=<slug>` applies once at
+  // mount through the same applyTemplate path as a hand selection —
+  // exactly-as-if-selected-by-hand semantics. Forgiving resolution:
+  // absent and unknown values leave the default state, silently.
+  useEffect(() => {
+    const template = resolveOccasionParam(
+      new URLSearchParams(window.location.search).get('occasion') ?? undefined,
+    );
+    if (template !== null) applyTemplate(template);
+  }, [applyTemplate]);
 
   const handleResetForm = useCallback(() => {
     setFormResetSeq((seq) => seq + 1);

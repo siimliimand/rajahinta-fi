@@ -5,11 +5,9 @@ import * as React from 'react';
 import type { Metadata } from 'next';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import EventView from './event-view';
-import { resolveOccasionParam } from './templates';
 
 interface EventPageProps {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 /**
@@ -39,17 +37,15 @@ export async function generateMetadata({
  * HTML. The calculation flow is the client view in `event-view.tsx`,
  * unchanged in behavior.
  *
- * Occasion deep link (change seasonal-occasion-templates, task 2.2):
- * `?occasion=<slug>` selects a template server-side, so the prefilled
- * state is the first render exactly as if selected by hand. Absent and
- * unknown values resolve forgivingly to the default state — never an
- * error surface (products-page URL-state precedent).
+ * Occasion deep links (`?occasion=<slug>`, change
+ * seasonal-occasion-templates) are read client-side in the view — the
+ * param seeds client state only, so this page keeps its ISR
+ * classification (the trip prefill handshake's rationale; the
+ * cache-header contract pins the ISR set).
  */
-export default async function EventPage({ params, searchParams }: EventPageProps) {
+export default async function EventPage({ params }: EventPageProps) {
   const { locale } = await params;
   setRequestLocale(locale);
-
-  const occasion = resolveOccasionParam((await searchParams).occasion);
 
   const t = await getTranslations('EventPage');
 
@@ -71,7 +67,7 @@ export default async function EventPage({ params, searchParams }: EventPageProps
       </section>
 
       {/* ── Interactive flow (client view) ── */}
-      <EventView {...(occasion ? { initialOccasionId: occasion.id } : {})} />
+      <EventView />
     </main>
   );
 }
