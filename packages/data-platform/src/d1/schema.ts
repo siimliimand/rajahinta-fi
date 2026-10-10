@@ -2435,6 +2435,63 @@ export const accountPreferences = sqliteTable(
 );
 
 /**
+ * Digest notifications — the delivery intent log behind the weekly
+ * preference digest (task 1.3, change add-onboarding-preferences;
+ * design D4/D5). Mirrors alertNotifications: the pending row is the
+ * intent, written BEFORE any send, and the outcome marking
+ * (pending → delivered | failed, plus marked_at) is the completion
+ * record — the ONLY update these rows ever receive, so attempt facts
+ * are immutable. UNIQUE (account_id, digest_week) is both the
+ * idempotent-create guard and the crash re-entry read (design D5): a
+ * re-run sweep hits the constraint / delivered-lookup and suppresses
+ * the resend, so a crash mid-delivery can never double-send. The week
+ * key is the ISO week string (e.g. '2026-W41') computed at sweep start.
+ *
+ * Data minimization is deliberate here (design D4/D5): unlike
+ * alertNotifications' observedPriceCents there are NO observed-fact
+ * columns — the digest's facts are computed at send time from
+ * materialized daily summaries and live in the email, never the intent
+ * row, so there is nothing to reserve "for later". Deleting the
+ * account cascades here (GDPR erasure, same guarantee as
+ * accountPreferences).
+ */
+export const digestNotifications = sqliteTable(
+  'digest_notifications',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to accounts — the digest recipient; cascade delete implements the erasure path. */
+    accountId: integer('account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** ISO week key the digest covers (e.g. '2026-W41') — computed at sweep start (design D5). */
+    digestWeek: text('digest_week').notNull(),
+    /** Delivery channel — email only (the alert-notification channel CHECK precedent). */
+    channel: text('channel', { length: 16 }).notNull(),
+    /** Intent-log lifecycle: pending until dispatch resolves (delivered | failed). */
+    deliveryStatus: text('delivery_status', { length: 16 })
+      .default('pending')
+      .notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+    /** When the outcome was marked — null while the intent is still pending. */
+    markedAt: text('marked_at'),
+  },
+  (table) => [
+    // One row per (account, week): the idempotent-create guard AND the
+    // crash re-entry read (design D5); the leading account_id column
+    // serves the per-account lookup, so no second index is warranted.
+    unique('digest_notifications_account_id_digest_week_unique').on(
+      table.accountId,
+      table.digestWeek,
+    ),
+    check('digest_notifications_channel_check', sql`${table.channel} IN ('email')`),
+    check(
+      'digest_notifications_delivery_status_check',
+      sql`${table.deliveryStatus} IN ('pending', 'delivered', 'failed')`,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -2482,4 +2539,5 @@ export const d1Schema = {
   outcomeMargins,
   accountFavorites,
   accountPreferences,
+  digestNotifications,
 };
