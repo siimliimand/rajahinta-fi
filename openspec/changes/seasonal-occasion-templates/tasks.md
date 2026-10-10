@@ -5,9 +5,11 @@
 ## 1. Norm profiles (dataset + domain)
 
 - [x] 1.1 Seasonal consumption-norm profiles (juhannus, vappu, rapujuhlat, talkoot) as a new versioned dataset with per-row derivation citations; extend `consumption-norms.seed.ts` (byte-deterministic, `PENDING_CONFIRMATION` guard preserved) + seed tests (parity, immutability on re-apply) <!-- agent: platform-engineer.build, depends_on: [], touches: [packages/data-platform/src/seed/consumption-norms.seed.ts, packages/data-platform/src/seed/__tests__/**] -->
-- [ ] 1.2 Wire the seasonal profile constants in `packages/core-domain/src/eventcalc` (profile keys resolve against published norm rows only; unpublished → existing `NO_PUBLISHED_NORMS` contract) + module tests <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [packages/core-domain/src/eventcalc/**] -->
+- [x] 1.2 Wire the seasonal profile constants in `packages/core-domain/src/eventcalc` (profile keys resolve against published norm rows only; unpublished → existing `NO_PUBLISHED_NORMS` contract) + module tests <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [packages/core-domain/src/eventcalc/**] -->
 
 ## 2. Templates + deep links
+
+> Discovered during 1.2 (recorded per the fluid-workflow rule): the api-worker event-calc route DTO validates `eventProfile` against its own local 3-value const — task 2.1 includes widening it to the seasonal slugs, or every seasonal template selection 400s at the API.
 
 - [ ] 2.1 Occasion templates in `apps/frontend/src/app/[locale]/event/templates.ts` (guest count, duration, drink-mix; editable-on-apply contract) + `EventForm` wiring + component tests <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [apps/frontend/src/app/[locale]/event/templates.ts, apps/frontend/src/app/[locale]/event/components/EventForm.tsx, apps/frontend/src/app/[locale]/event/templates.test.tsx] -->
 - [ ] 2.2 URL-addressable occasion selection (`/event?occasion=<slug>`; unknown slug → default state, no error surface) + FI/EN message copy through content lint + tests <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [apps/frontend/src/app/[locale]/event/**] -->
