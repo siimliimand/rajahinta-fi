@@ -4,8 +4,10 @@
  * (get-absent), the sparse partial-update merge (design D2), the
  * element-wise category-tag validation against PRODUCT_CATEGORIES
  * (design D7, the domain error the route maps to 400), reset's
- * row-preserving clear, and the account_id cascade (GDPR erasure,
- * migration 0031).
+ * row-preserving clear, the account_id cascade (GDPR erasure,
+ * migration 0031), and the task-4.2 digest-consent enumeration
+ * (`listDigestConsents` — consent flag in SQL, the sweep's remaining
+ * eligibility conditions live in the cron handler's predicate).
  *
  * Harness note: the shared `openMigratedD1()` harness cannot apply the
  * committed migration stack in this environment — node:sqlite ships
@@ -36,7 +38,8 @@ const ACCOUNTS_DDL = `
   CREATE TABLE accounts (
     id integer PRIMARY KEY,
     user_id text UNIQUE NOT NULL,
-    email text NOT NULL
+    email text NOT NULL,
+    email_verified_at text
   )`;
 
 /** Byte-for-byte migration 0031_account_preferences.sql. */
@@ -289,5 +292,79 @@ describe('D1AccountPreferencesRepository cascade (GDPR erasure, migration 0031)'
     expect(await preferences.getByAccount(accountId)).toEqual(
       unansweredAccountPreferences(accountId),
     );
+  });
+});
+
+describe('D1AccountPreferencesRepository.listDigestConsents (task 4.2 enumeration)', () => {
+  /** Mark an account's address verified (the sweep's verified-address gate). */
+  function verifyEmail(accountId: number, at: string): void {
+    db.prepare(`UPDATE accounts SET email_verified_at = ? WHERE id = ?`).run(
+      at,
+      accountId,
+    );
+  }
+
+  it('answers an empty list when no account has consented', async () => {
+    const accountId = seedAccount();
+    await preferences.put(accountId, { categoryTags: ['beer'] }); // consent defaults false
+
+    expect(await preferences.listDigestConsents()).toEqual([]);
+  });
+
+  it('enumerates only digest_enabled = 1 rows — the consent flag is the SQL filter', async () => {
+    const consented = seedAccount();
+    await preferences.put(consented, {
+      categoryTags: ['beer'],
+      digestEnabled: true,
+      onboardedAt: new Date('2026-10-05T08:00:00.000Z'),
+    });
+    verifyEmail(consented, '2026-10-01T08:00:00.000Z');
+    const revoked = seedAccount();
+    await preferences.put(revoked, {
+      categoryTags: ['spirits'],
+      digestEnabled: true,
+    });
+    await preferences.put(revoked, { digestEnabled: false }); // consent withdrawn
+    const neverAsked = seedAccount(); // no preference row at all
+
+    const rows = await preferences.listDigestConsents();
+
+    expect(rows.map((row) => row.accountId)).toEqual([consented]);
+    expect(rows.map((row) => row.accountId)).not.toContain(revoked);
+    expect(rows.map((row) => row.accountId)).not.toContain(neverAsked);
+  });
+
+  it('carries the joined contact address, its verification instant, tags, and onboarding', async () => {
+    const accountId = seedAccount();
+    const verifiedAt = new Date('2026-10-01T08:00:00.000Z');
+    const onboardedAt = new Date('2026-10-05T08:00:00.000Z');
+    verifyEmail(accountId, verifiedAt.toISOString());
+    await preferences.put(accountId, {
+      categoryTags: ['wine_still', 'beer'],
+      digestEnabled: true,
+      onboardedAt,
+    });
+
+    const [row] = await preferences.listDigestConsents();
+
+    expect(row).toBeDefined();
+    expect(row!.email).toBe(`user-${accountId}@test.invalid`);
+    expect(row!.emailVerifiedAt).toEqual(verifiedAt);
+    expect(row!.categoryTags).toEqual(['wine_still', 'beer']);
+    expect(row!.onboardedAt).toEqual(onboardedAt);
+  });
+
+  it('reports a null emailVerifiedAt for a consented but unverified account — the cron skips it', async () => {
+    const accountId = seedAccount();
+    await preferences.put(accountId, {
+      categoryTags: ['beer'],
+      digestEnabled: true,
+      onboardedAt: new Date('2026-10-05T08:00:00.000Z'),
+    });
+
+    const [row] = await preferences.listDigestConsents();
+
+    expect(row).toBeDefined();
+    expect(row!.emailVerifiedAt).toBeNull();
   });
 });

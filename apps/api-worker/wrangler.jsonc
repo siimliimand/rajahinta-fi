@@ -187,6 +187,13 @@
 //                 in-repo (no live carrier feed), the tick syncs the DB
 //                 with the source file and skips unchanged data
 //                 (src/cron/fransberg-rate-refresh.ts)
+//   0 6 * * 1     preference digest — weekly, Monday morning UTC (task 4.2,
+//                 change add-onboarding-preferences). The pattern exists in
+//                 EVERY environment (staging's trigger override below keeps
+//                 it) so enabling is a one-flip operation; execution is
+//                 gated by the PREFERENCE_DIGEST_ENABLED var (see the vars
+//                 blocks) — unset/false → the handler no-ops writing
+//                 nothing (spec: disabled environment writes nothing).
 //
 // TIMEZONE NOTE: wrangler crons are UTC-only, so the two daily jobs
 // fire at their BullMQ CLOCK HOURS in UTC, i.e. two hours earlier than
@@ -202,7 +209,8 @@
       "0 */6 * * *",
       "0 2 * * *",
       "30 3 * * *",
-      "0 5 1 * *"
+      "0 5 1 * *",
+      "0 6 * * 1"
     ]
   },
   // Observability (task 6.2, design D8): Workers Logs carry the log
@@ -300,6 +308,9 @@
         "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
         "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
         "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
+        // Preference digest (task 4.2): kill-switch var, absent = the
+        // sweep is disabled and writes nothing. One flip to enable:
+        // "PREFERENCE_DIGEST_ENABLED": "true",
         // CORS (task 5.2): exact origins, comma-separated; never "*".
         "CORS_ORIGIN": "http://localhost:3001"
       },
@@ -360,6 +371,9 @@
         "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
         "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
         "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
+        // Preference digest (task 4.2): kill-switch var, absent = the
+        // sweep is disabled and writes nothing. One flip to enable:
+        // "PREFERENCE_DIGEST_ENABLED": "true",
         // CORS (task 5.2): exact origins, comma-separated; never "*".
         "CORS_ORIGIN": "https://rajahinta.fi,https://rajahinta-frontend-staging.siim-liimand.workers.dev"
       },
@@ -374,14 +388,17 @@
       // All non-ingestion cadences keep the shared top-level schedule:
       //   */30 aggregation + freshness alert · 0 */6 transport refresh +
       //   click flush · 0 2 tax review · 30 3 retention sweep · 0 5 1
-      //   fransberg refresh. Production keeps the full top-level array.
+      //   fransberg refresh · 0 6 * * 1 preference digest (task 4.2 —
+      //   the var gate, not the trigger set, keeps it off).
+      // Production keeps the full top-level array.
       "triggers": {
         "crons": [
           "*/30 * * * *",
           "0 */6 * * *",
           "0 2 * * *",
           "30 3 * * *",
-          "0 5 1 * *"
+          "0 5 1 * *",
+          "0 6 * * 1"
         ]
       },
       "queues": {
@@ -454,6 +471,9 @@
         "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
         "EMAIL_WORKER_URL": "https://rajahinta-email-production.siim-liimand.workers.dev",
         "FRESHNESS_ALERT_EMAIL_TO": "siim.liimand@gmail.com",
+        // Preference digest (task 4.2): kill-switch var, absent = the
+        // sweep is disabled and writes nothing. One flip to enable:
+        // "PREFERENCE_DIGEST_ENABLED": "true",
         // CORS (task 5.2): exact origins, comma-separated; never "*".
         "CORS_ORIGIN": "https://rajahinta.fi,https://www.rajahinta.fi"
       },

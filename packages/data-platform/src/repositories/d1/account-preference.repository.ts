@@ -87,6 +87,26 @@ export type AccountPreferencesView =
   | AccountPreferencesRecord
   | UnansweredAccountPreferences;
 
+/**
+ * One digest-consent enumeration row (task 4.2, change
+ * add-onboarding-preferences): the account's contact address plus the
+ * raw preference answers the digest cron gates on. `emailVerifiedAt` is
+ * the accounts-column read this table deliberately does not duplicate —
+ * the JOIN is what makes the enumeration one query instead of a
+ * per-account re-read.
+ */
+export interface DigestConsentRow {
+  readonly accountId: number;
+  /** The verified-or-not contact address from `accounts.email`. */
+  readonly email: string;
+  /** `accounts.email_verified_at` — null = unverified (the cron skips). */
+  readonly emailVerifiedAt: Date | null;
+  /** Followed categories as stored (canonical keys, design D7). */
+  readonly categoryTags: ProductCategory[];
+  /** Onboarding completion — null = still pending (the cron skips). */
+  readonly onboardedAt: Date | null;
+}
+
 /** Sparse put() patch — unspecified fields retain their stored values (design D2). */
 export interface AccountPreferencesPatch {
   /** Pass null to clear the answer back to unanswered (design D8). */
@@ -164,6 +184,17 @@ export abstract class AccountPreferencesRepository {
    * row gets the unanswered shape and no new row.
    */
   abstract reset(accountId: number): Promise<AccountPreferencesView>;
+
+  /**
+   * Enumerate the digest-consented accounts — the narrow weekly-sweep
+   * read (task 4.2): every row with `digest_enabled` true, joined to
+   * `accounts` for the contact address and its verification instant.
+   * This is ENUMERATION ONLY — the remaining eligibility conditions
+   * (verified address, ≥ 1 tag, onboarded) are the digest cron's policy
+   * and stay out of the SQL, so the sweep and its tests gate on the
+   * predicate in one place. Order is unspecified; callers sort.
+   */
+  abstract listDigestConsents(): Promise<readonly DigestConsentRow[]>;
 }
 
 /** Raw D1 account_preferences row (digest_enabled is 0/1 CHECK-constrained). */
@@ -176,6 +207,26 @@ interface D1AccountPreferencesRow {
   readonly onboarded_at: string | null;
   readonly created_at: string;
   readonly updated_at: string;
+}
+
+/** Raw joined consent row — accounts ⋈ account_preferences (task 4.2). */
+interface D1DigestConsentRow {
+  readonly account_id: number;
+  readonly email: string;
+  readonly email_verified_at: string | null;
+  readonly category_tags: string;
+  readonly onboarded_at: string | null;
+}
+
+function toContractConsent(row: D1DigestConsentRow): DigestConsentRow {
+  return {
+    accountId: row.account_id,
+    email: row.email,
+    emailVerifiedAt:
+      row.email_verified_at === null ? null : new Date(row.email_verified_at),
+    categoryTags: parseCategoryTags(row.category_tags),
+    onboardedAt: row.onboarded_at === null ? null : new Date(row.onboarded_at),
+  };
 }
 
 /** JSON.parse the tags column with a shape guard — bypass-writes fail loudly, not silently. */
@@ -262,6 +313,19 @@ const RESET_SQL = `
    WHERE account_id = ?
 RETURNING ${PREFERENCE_COLUMNS}`;
 
+// The consent enumeration (task 4.2): consent flag in the WHERE, the
+// accounts JOIN supplies the contact address + verification instant the
+// preferences row intentionally does not copy (schema doc, design D3).
+const LIST_DIGEST_CONSENTS_SQL = `
+  SELECT p.account_id AS account_id,
+         a.email AS email,
+         a.email_verified_at AS email_verified_at,
+         p.category_tags AS category_tags,
+         p.onboarded_at AS onboarded_at
+    FROM account_preferences p
+    JOIN accounts a ON a.id = p.account_id
+   WHERE p.digest_enabled = 1`;
+
 @Injectable()
 export class D1AccountPreferencesRepository extends AccountPreferencesRepository {
   constructor(private readonly d1: D1DatabaseLike) {
@@ -330,5 +394,15 @@ export class D1AccountPreferencesRepository extends AccountPreferencesRepository
       .bind(accountId)
       .first<D1AccountPreferencesRow>();
     return row ? toContractPreferences(row) : unansweredAccountPreferences(accountId);
+  }
+
+  /** @inheritdoc */
+  async listDigestConsents(): Promise<readonly DigestConsentRow[]> {
+    const rows = (
+      await this.d1
+        .prepare(LIST_DIGEST_CONSENTS_SQL)
+        .all<D1DigestConsentRow>()
+    ).results;
+    return rows.map(toContractConsent);
   }
 }
