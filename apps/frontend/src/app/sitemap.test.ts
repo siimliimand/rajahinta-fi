@@ -178,6 +178,7 @@ const NON_ADVERTISED_PREFIXES = [
   '/account',
   '/age-gate',
   '/login',
+  '/onboarding',
   '/register',
   '/newsletter',
   '/ops',
