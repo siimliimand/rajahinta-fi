@@ -6,7 +6,7 @@
  *   2. Submit → POST via registerAccount.
  *   3. 409 → duplicate-email message; 400 InvalidPassword → the policy
  *      message; 429 → the rate-limit message.
- *   4. Success → redirect to /account (the verification email is
+ *   4. Success → redirect to /onboarding (the verification email is
  *      best-effort server-side and never blocks the redirect).
  *
  * @module RegisterPageTest
@@ -92,7 +92,7 @@ describe('RegisterPage', () => {
         'salasana-12-merkKIna',
       ),
     );
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/account'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/onboarding'));
   });
 
   it('maps a 409 duplicate email to the duplicate message', async () => {
