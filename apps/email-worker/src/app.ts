@@ -6,7 +6,10 @@
  * contract (spec: cloudflare-email-service). Requests carry the shared
  * secret in the `X-Email-Send-Secret` header; failures use the unified
  * ApiErrorResponse envelope shared with the public API; success dispatches
- * through the EmailTransport port and returns the delivery outcome.
+ * through the EmailTransport port and returns the delivery outcome. Two
+ * payload kinds share the path: the generic subject/body mail and the
+ * structured digest payload (recognized by its `digest` field), which is
+ * rendered here from the core-domain facts before dispatch.
  *
  * @module app
  */
@@ -14,12 +17,31 @@
 import { Hono } from 'hono';
 import { ApiError, apiErrorEnvelope } from './errors';
 import { isValidEmailFormat, parseSendEmailRequest } from './validation';
-import { buildMimeMessage } from './mime';
+import { buildMimeMessage, type OutgoingEmail } from './mime';
+import { buildPreferenceDigestEmail } from './preference-digest-email';
 import { SendEmailBindingTransport, type EmailTransport } from './transport';
 import type { WorkerEnv } from './env';
 
 /** Header carrying the shared secret on the internal send contract. */
 export const SEND_SECRET_HEADER = 'x-email-send-secret';
+
+/** Fallback origin — the same default the API Worker's link builders use. */
+const DEFAULT_PUBLIC_ORIGIN = 'https://rajahinta.fi';
+
+/**
+ * Absolute `/onboarding` preferences-editor URL — the digest footer's
+ * consent-change link, composed from the same frontend-origin config the
+ * confirm/unsubscribe links use (`APP_PUBLIC_URL` with the production
+ * fallback). Locale is FI until a per-account locale exists (design open
+ * question), and the payload's `locale` drives only the copy.
+ */
+function onboardingUrl(env: WorkerEnv): string {
+  const origin = (env.APP_PUBLIC_URL ?? DEFAULT_PUBLIC_ORIGIN).replace(
+    /\/+$/,
+    '',
+  );
+  return `${origin}/onboarding`;
+}
 
 /** JSON response with explicit status — identical semantics to Hono's c.json. */
 function jsonResponse(body: unknown, status: number): Response {
@@ -132,8 +154,24 @@ export function createEmailWorkerApp(
       throw new ApiError(503, 'EMAIL_FROM is not a valid verified sender address');
     }
 
-    // 5. Build MIME and dispatch through the port.
-    const built = buildMimeMessage({ from: env.EMAIL_FROM, ...parsed.value });
+    // 5. Render + build MIME and dispatch through the port. The digest
+    // kind renders server-side (apps/email-worker owns digest subject and
+    // body); the generic kind carries its subject/body verbatim.
+    const request = parsed.value;
+    const email: OutgoingEmail =
+      'digest' in request
+        ? {
+            from: env.EMAIL_FROM,
+            to: request.to,
+            ...buildPreferenceDigestEmail({
+              week: request.digest.week,
+              facts: request.digest.facts,
+              locale: request.locale,
+              onboardingUrl: onboardingUrl(env),
+            }),
+          }
+        : { from: env.EMAIL_FROM, ...request };
+    const built = buildMimeMessage(email);
     try {
       await transport.send(built);
     } catch (dispatchError) {
@@ -148,7 +186,7 @@ export function createEmailWorkerApp(
       {
         accepted: true,
         messageId: built.messageId,
-        to: parsed.value.to,
+        to: request.to,
         status: 'sent',
       },
       202,

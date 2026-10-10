@@ -41,6 +41,10 @@ import {
 } from './time-series-aggregation';
 import { handleFreshnessAlert } from './freshness-alert';
 import { handlePriceAlertEvaluation } from './price-alert-evaluation';
+import {
+  handlePreferenceDigest,
+  PREFERENCE_DIGEST_CRON,
+} from './preference-digest';
 import { handleSavingsSnapshots } from './savings-snapshots';
 import { handleOutcomeMargins } from './outcome-margins';
 import { handleRetentionSweep, RETENTION_CRON } from './retention-sweep';
@@ -157,6 +161,15 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   add(RETENTION_CRON, {
     name: 'retention-sweep',
     run: (env, log) => handleRetentionSweep(env, log),
+  });
+  // Task 4.2 (change add-onboarding-preferences, design D5): the weekly
+  // preference digest on its own Monday-morning UTC pattern. The
+  // PREFERENCE_DIGEST_ENABLED var gates execution (unset/false → the
+  // handler no-ops writing nothing); the pattern exists in every
+  // environment's triggers so enabling is a one-flip operation.
+  add(PREFERENCE_DIGEST_CRON, {
+    name: 'preference-digest',
+    run: (env, log) => handlePreferenceDigest(env, log),
   });
   // Task 3.2 (change first-impression-pass, design D8) shares the same
   // daily tick as the calculation-record sweep: contact_messages have a

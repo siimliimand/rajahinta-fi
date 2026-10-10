@@ -44,6 +44,7 @@ interface AppOverrides {
   secret?: string;
   from?: string;
   transport?: EmailTransport;
+  appPublicUrl?: string;
 }
 
 function buildApp(overrides: AppOverrides = {}) {
@@ -53,6 +54,9 @@ function buildApp(overrides: AppOverrides = {}) {
       EMAIL: binding,
       EMAIL_SEND_SECRET: overrides.secret ?? SECRET,
       EMAIL_FROM: overrides.from ?? 'alerts@rajahinta.fi',
+      ...(overrides.appPublicUrl !== undefined
+        ? { APP_PUBLIC_URL: overrides.appPublicUrl }
+        : {}),
     } satisfies WorkerEnv,
     ...(overrides.transport ? { transport: overrides.transport } : {}),
   });
@@ -227,6 +231,110 @@ describe('successful send', () => {
     expect(calls.length).toBe(1);
     expect(calls[0]!.html).toBe('<p>rich</p>');
     expect('text' in calls[0]!).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Digest payload kind — rendered server-side, then the same send path
+// ---------------------------------------------------------------------------
+
+/** The cron's dispatch shape (task 4.2): `to` + structured digest, no locale (FI default). */
+const digestBody = {
+  to: 'digest@example.com',
+  digest: {
+    week: '2026-W41',
+    facts: [
+      {
+        category: 'beer',
+        kind: 'CATEGORY_MINIMUM',
+        priceCloseCents: 1234,
+        productId: 42,
+        merchant: null,
+        periodStart: '2026-10-05',
+      },
+      {
+        category: 'wine_still',
+        kind: 'NOTABLE_NEW_LOW',
+        priceCloseCents: 999,
+        productId: 43,
+        merchant: 'Alko',
+        periodStart: '2026-10-07',
+      },
+    ],
+  },
+};
+
+describe('digest payload send path', () => {
+  it('renders and dispatches a valid digest with the FI default locale', async () => {
+    const { app, calls } = buildApp();
+    const response = await post(app, digestBody);
+
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body['accepted']).toBe(true);
+    expect(body['status']).toBe('sent');
+    expect(body['to']).toBe('digest@example.com');
+
+    expect(calls.length).toBe(1);
+    // FI default copy + factual line, cited product and observed day.
+    expect(calls[0]!.subject).toBe('[rajahinta] Viikon 2026-W41 hintakatsaus');
+    expect(calls[0]!.text).toContain('Olut: alin hinta viikolla 2026-W41 12,34 € (Tuote #42), havaittu 2026-10-05.');
+    expect(calls[0]!.html).toContain('Makuuviini: uusi alin hinta 9,99 € (Tuote #43, Alko), havaittu 2026-10-07.');
+  });
+
+  it('links the onboarding editor from the APP_PUBLIC_URL origin (trailing slash stripped)', async () => {
+    const { app, calls } = buildApp({ appPublicUrl: 'https://staging.rajahinta.fi/' });
+    const response = await post(app, digestBody);
+
+    expect(response.status).toBe(202);
+    expect(calls[0]!.text).toContain('https://staging.rajahinta.fi/onboarding');
+    expect(calls[0]!.html).toContain('href="https://staging.rajahinta.fi/onboarding"');
+  });
+
+  it('falls back to the production origin when APP_PUBLIC_URL is unset', async () => {
+    const { app, calls } = buildApp();
+    await post(app, digestBody);
+
+    expect(calls[0]!.text).toContain('https://rajahinta.fi/onboarding');
+    expect(calls[0]!.html).toContain('href="https://rajahinta.fi/onboarding"');
+  });
+
+  it("renders EN when the payload says locale: 'en'", async () => {
+    const { app, calls } = buildApp();
+    const response = await post(app, { ...digestBody, locale: 'en' });
+
+    expect(response.status).toBe(202);
+    expect(calls[0]!.subject).toBe('[rajahinta] Price digest, week 2026-W41');
+    expect(calls[0]!.text).toContain('Beer: minimum shelf price in week 2026-W41 €12.34');
+  });
+
+  it('rejects invalid facts with a 422 envelope and does not dispatch', async () => {
+    const { app, calls } = buildApp();
+    const response = await post(app, {
+      ...digestBody,
+      digest: {
+        week: '2026-W41',
+        facts: [{ ...digestBody.digest.facts[0]!, category: 'vodka' }],
+      },
+    });
+
+    expect(response.status).toBe(422);
+    const body = (await response.json()) as Record<string, unknown>;
+    expectEnvelope(body, 422);
+    expect(body['error']).toBe('ValidationError');
+    expect(calls).toEqual([]);
+  });
+
+  it('rejects an empty fact set with a 422 envelope (never an empty digest)', async () => {
+    const { app, calls } = buildApp();
+    const response = await post(app, {
+      ...digestBody,
+      digest: { week: '2026-W41', facts: [] },
+    });
+
+    expect(response.status).toBe(422);
+    expectEnvelope(await response.json(), 422);
+    expect(calls).toEqual([]);
   });
 });
 

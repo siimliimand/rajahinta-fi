@@ -198,10 +198,11 @@ Feature-component paths above are relative to `apps/frontend/src/app/[locale]/`.
 | `/group-order` | Group order session creation — create form and scope selection; crawlable (footer link, sitemap-advertised) |
 | `/group-order/[token]` | Shared group order session view via opaque token — participants, item valuations, transfers breakdown, accounting-only boundary note; noindexed (robots `/group-order/*` wildcard; the create page stays crawlable), 410 after expiry |
 | `/ops` | Internal operator console — client console fetches from `/ops/console/**` behind bearer-token + IP-allowlist realm and the OPERATOR_CONSOLE flag (default OFF); excluded from indexing |
-| `/account` | Account management page (login required — session cookie; calculation history with outcome reporting on in-window records, data export, saved scenarios, price alerts list labeling all four kinds (PRICE/TAX_CHANGE/LANDED_COST/CATEGORY; CATEGORY rows show the category, no product reference) with a PRICE/TAX_CHANGE create form) |
+| `/account` | Account management page (login required — session cookie; calculation history with outcome reporting on in-window records, data export, saved scenarios, price alerts list labeling all four kinds (PRICE/TAX_CHANGE/LANDED_COST/CATEGORY; CATEGORY rows show the category, no product reference) with a PRICE/TAX_CHANGE create form, preferences card: onboarding nudge while unanswered with permanent dismiss, then channel/tags/digest summary with edit link) |
 | `/account/saved-baskets` | User's saved calculation baskets |
 | `/login` | Credentials login (email + password); links to register and password reset |
-| `/register` | Account registration (min 8-char + common-password-blocklist policy); triggers verification email |
+| `/register` | Account registration (min 8-char + common-password-blocklist policy); triggers verification email; success routes to `/onboarding` |
+| `/onboarding` | Post-registration preferences interstitial, reachable forever as the account preferences editor (login required): purchase-channel radio (matkalla/toimitus/molemmat — stored, no routing effect in v1), category multi-select chips from the canonical category set (zero-selected valid), weekly-digest consent checkbox unticked by default (factual caption, no marketing voice); Skip always visible and never disabled — skip and save both land on `/account`; signed-out visitors redirect to login |
 | `/account/verify` | Email-verification landing page — confirms the single-use emailed token and renders the result |
 | `/account/forgot` | Password reset request (always-neutral response; mail only when the account exists) |
 | `/account/reset` | Password reset form consuming the emailed single-use token |

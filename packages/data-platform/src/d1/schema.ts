@@ -2354,6 +2354,144 @@ export const accountFavorites = sqliteTable(
 );
 
 /**
+ * Account preferences — the single per-account onboarding answer row
+ * (task 1.1, change add-onboarding-preferences; design D2/D3).
+ *
+ * One row per account (UNIQUE account_id, design D2): the field set is
+ * fixed and small and partial updates are column-scoped. Data
+ * minimization is the design point — coarse fields only, no brands, no
+ * price ceilings, no free-text taste answers: `categoryTags` holds
+ * canonical PRODUCT_CATEGORIES keys in a JSON array (design D7 —
+ * validated at the repository/route layer against the shared constant,
+ * no per-element schema CHECK, so the category vocabulary keeps exactly
+ * one definition) and `channel` is a stored answer only (design D8:
+ * null = unanswered; nothing acts on it in v1). `digestEnabled` is
+ * consent — it defaults to false and is opt-in (design D3); the digest
+ * cron additionally gates on accounts.emailVerifiedAt, which this table
+ * deliberately does not duplicate. `onboardedAt` is set by quiz
+ * completion or explicit skip (design D6; null = the interstitial is
+ * still pending — the account-hub nudge reads exactly this). Deleting
+ * the account row cascades here (GDPR erasure, same guarantee as
+ * priceAlerts/savedScenarios) — the erasure path cannot orphan a
+ * preference profile even if the repository layer is bypassed.
+ */
+export const accountPreferences = sqliteTable(
+  'account_preferences',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to accounts — the owning user; cascade delete implements the erasure path. */
+    accountId: integer('account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /**
+     * Captured audience answer (design D8): 'TRAVEL' | 'DELIVERY' |
+     * 'BOTH' (CHECK below), stored only — no default-surface routing,
+     * no digest framing split in v1. Null = the question was left
+     * unanswered.
+     */
+    channel: text('channel', { length: 16 }),
+    /**
+     * Followed categories as a JSON array of canonical
+     * PRODUCT_CATEGORIES keys, defaulting to the empty set — the
+     * coarsest useful granularity (design D2). Values are validated at
+     * the repository/route layer against the shared constant (design
+     * D7); no per-element schema CHECK so the vocabulary keeps one
+     * definition.
+     */
+    categoryTags: text('category_tags', { mode: 'json' })
+      .default(sql`'[]'`)
+      .notNull(),
+    /** Weekly digest consent — false until explicit opt-in (design D3). */
+    digestEnabled: integer('digest_enabled', { mode: 'boolean' })
+      .default(false)
+      .notNull(),
+    /**
+     * When onboarding finished — quiz completion or explicit skip
+     * (design D6); null = not yet. ISO-8601 TEXT, the
+     * accounts.emailVerifiedAt shape.
+     */
+    onboardedAt: text('onboarded_at'),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+    updatedAt: text('updated_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // One row per account (design D2): the UNIQUE constraint is the
+    // idempotent-create guard, and the single column serves the
+    // by-account lookup.
+    unique('account_preferences_account_id_unique').on(table.accountId),
+    // Null is the unanswered shape (the
+    // price_alerts_threshold_cents_check precedent); a present value is
+    // from the closed channel set.
+    check(
+      'account_preferences_channel_check',
+      sql`${table.channel} IS NULL OR ${table.channel} IN ('TRAVEL', 'DELIVERY', 'BOTH')`,
+    ),
+    // Boolean-stored consent is 0 or 1 — anything else is corruption.
+    check(
+      'account_preferences_digest_enabled_check',
+      sql`${table.digestEnabled} IN (0, 1)`,
+    ),
+  ],
+);
+
+/**
+ * Digest notifications — the delivery intent log behind the weekly
+ * preference digest (task 1.3, change add-onboarding-preferences;
+ * design D4/D5). Mirrors alertNotifications: the pending row is the
+ * intent, written BEFORE any send, and the outcome marking
+ * (pending → delivered | failed, plus marked_at) is the completion
+ * record — the ONLY update these rows ever receive, so attempt facts
+ * are immutable. UNIQUE (account_id, digest_week) is both the
+ * idempotent-create guard and the crash re-entry read (design D5): a
+ * re-run sweep hits the constraint / delivered-lookup and suppresses
+ * the resend, so a crash mid-delivery can never double-send. The week
+ * key is the ISO week string (e.g. '2026-W41') computed at sweep start.
+ *
+ * Data minimization is deliberate here (design D4/D5): unlike
+ * alertNotifications' observedPriceCents there are NO observed-fact
+ * columns — the digest's facts are computed at send time from
+ * materialized daily summaries and live in the email, never the intent
+ * row, so there is nothing to reserve "for later". Deleting the
+ * account cascades here (GDPR erasure, same guarantee as
+ * accountPreferences).
+ */
+export const digestNotifications = sqliteTable(
+  'digest_notifications',
+  {
+    id: integer('id').primaryKey(),
+    /** FK to accounts — the digest recipient; cascade delete implements the erasure path. */
+    accountId: integer('account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    /** ISO week key the digest covers (e.g. '2026-W41') — computed at sweep start (design D5). */
+    digestWeek: text('digest_week').notNull(),
+    /** Delivery channel — email only (the alert-notification channel CHECK precedent). */
+    channel: text('channel', { length: 16 }).notNull(),
+    /** Intent-log lifecycle: pending until dispatch resolves (delivered | failed). */
+    deliveryStatus: text('delivery_status', { length: 16 })
+      .default('pending')
+      .notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+    /** When the outcome was marked — null while the intent is still pending. */
+    markedAt: text('marked_at'),
+  },
+  (table) => [
+    // One row per (account, week): the idempotent-create guard AND the
+    // crash re-entry read (design D5); the leading account_id column
+    // serves the per-account lookup, so no second index is warranted.
+    unique('digest_notifications_account_id_digest_week_unique').on(
+      table.accountId,
+      table.digestWeek,
+    ),
+    check('digest_notifications_channel_check', sql`${table.channel} IN ('email')`),
+    check(
+      'digest_notifications_delivery_status_check',
+      sql`${table.deliveryStatus} IN ('pending', 'delivered', 'failed')`,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -2400,4 +2538,6 @@ export const d1Schema = {
   contactMessages,
   outcomeMargins,
   accountFavorites,
+  accountPreferences,
+  digestNotifications,
 };

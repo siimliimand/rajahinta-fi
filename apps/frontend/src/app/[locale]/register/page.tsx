@@ -41,7 +41,7 @@ export default function RegisterPage() {
     setFailure(null);
     try {
       await registerAccount(email.trim(), password);
-      router.replace('/account');
+      router.replace('/onboarding');
     } catch (err) {
       if (err instanceof ApiFetchError) {
         const code = err.body?.error;

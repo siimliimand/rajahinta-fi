@@ -38,4 +38,11 @@ export interface WorkerEnv {
    * domain verified in Cloudflare Email Service (see RUNBOOK.md).
    */
   readonly EMAIL_FROM: string;
+  /**
+   * Frontend origin the mailed links point at — the digest footer's
+   * `/onboarding` consent-change link. Same convention and fallback as the
+   * API Worker's `APP_PUBLIC_URL` reads: an optional plain var (never a
+   * secret); unset composes against the production origin.
+   */
+  readonly APP_PUBLIC_URL?: string;
 }

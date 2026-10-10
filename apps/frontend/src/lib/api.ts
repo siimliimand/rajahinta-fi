@@ -40,6 +40,8 @@ import type {
   AccuracyBreakdownDimension,
   OutcomeReport,
   Favorite,
+  AccountPreferencesPatch,
+  AccountPreferencesView,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1040,6 +1042,49 @@ export async function deleteFavorite(productId: number): Promise<void> {
       res.headers?.get?.('x-request-id') ?? null,
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Account preferences (GET/PUT/DELETE /api/v1/account/preferences; task 3.1,
+// change add-onboarding-preferences)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the session's onboarding preferences. Before any write the API
+ * answers the unanswered shape (null channel, empty tags, consent off, null
+ * `onboardedAt`) — the caller renders that state, never a local default.
+ * Authentication rides the httpOnly session cookie injected by request().
+ */
+export async function getAccountPreferences(): Promise<AccountPreferencesView> {
+  return request<AccountPreferencesView>('/api/v1/account/preferences');
+}
+
+/**
+ * Partially update the session's preferences and return the resulting row.
+ * Omitted fields retain their stored values; `channel: null` clears the
+ * answer; an empty `categoryTags` array is a valid "follows no category"
+ * write; `onboarded: true` marks onboarding done (false/absence never
+ * unsets it). Rejections: 401 signed-out, 400 contract violation (unknown
+ * channel value or category tag) — surfaced as ApiFetchError.
+ */
+export async function putAccountPreferences(
+  patch: AccountPreferencesPatch,
+): Promise<AccountPreferencesView> {
+  return request<AccountPreferencesView>('/api/v1/account/preferences', {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  });
+}
+
+/**
+ * Reset the session's preferences to the unanswered shape and return the
+ * reset row. Unlike the favorites delete (204, empty body) this endpoint
+ * answers a JSON body, so the shared request() wrapper parses it directly.
+ */
+export async function resetAccountPreferences(): Promise<AccountPreferencesView> {
+  return request<AccountPreferencesView>('/api/v1/account/preferences', {
+    method: 'DELETE',
+  });
 }
 
 // ---------------------------------------------------------------------------

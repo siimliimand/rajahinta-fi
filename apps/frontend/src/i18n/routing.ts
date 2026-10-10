@@ -47,6 +47,7 @@ export const routing = defineRouting({
     // locales. The `[...rest]` catch-all deliberately has no entry.
     '/login': '/login',
     '/register': '/register',
+    '/onboarding': '/onboarding',
     '/account': '/account',
     '/account/alerts': '/account/alerts',
     '/account/favorites': '/account/favorites',

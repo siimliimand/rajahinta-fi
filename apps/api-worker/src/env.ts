@@ -110,6 +110,17 @@ export interface Env {
   /** Operator recipient of freshness alert emails. */
   readonly FRESHNESS_ALERT_EMAIL_TO?: string;
   /**
+   * Weekly preference-digest kill switch (task 4.2, change
+   * add-onboarding-preferences; design D5 / spec "Erasure and kill
+   * switch"). Enabled ONLY on the exact string 'true' — unset, 'false',
+   * or any other value keeps the sweep off, and the disabled state
+   * writes nothing (the handler exits before reading eligibility). A
+   * per-env wrangler var, absent by default so every environment starts
+   * disabled; the Monday cron pattern exists in all environments so
+   * enabling is a one-flip operation.
+   */
+  readonly PREFERENCE_DIGEST_ENABLED?: string;
+  /**
    * Suppression window in seconds — repeats of an already-alerted
    * violation within the window are not re-emailed (IdempotencyDO
    * marker). Default 4 h when unset (Alertmanager repeat_interval
