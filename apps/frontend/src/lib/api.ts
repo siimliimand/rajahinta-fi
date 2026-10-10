@@ -1123,12 +1123,24 @@ export function getMerchantReliability(): Promise<MerchantReliabilityListRespons
  *
  * The response may omit the advanced `guidance` object; callers treat
  * its absence as "panel hidden".
+ *
+ * `dispatchDate` (import-filing-assistant task 2.3) is an optional,
+ * read-only request parameter (yyyy-mm-dd) anchoring the dated
+ * pre-dispatch checklist: it is sent as the `dispatchDate` query param
+ * and never stored. A malformed value degrades on the server to the
+ * undated checklist — never an error.
  */
 export async function getDeclarationSummary(
   recordId: number,
+  dispatchDate?: string | null,
 ): Promise<DeclarationSummaryResponse> {
+  const date = dispatchDate?.trim() ?? '';
+  const query =
+    /^\d{4}-\d{2}-\d{2}$/.test(date)
+      ? `?dispatchDate=${encodeURIComponent(date)}`
+      : '';
   return request<DeclarationSummaryResponse>(
-    `/api/v1/declaration/${recordId}`,
+    `/api/v1/declaration/${recordId}${query}`,
   );
 }
 

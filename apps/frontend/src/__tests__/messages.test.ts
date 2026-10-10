@@ -424,6 +424,75 @@ describe('honest-state catalog key parity (3.1 + 3.2)', () => {
     expectParity('ProductSearch', null, ['didYouMean']);
     expectParity('ProductsPage', null, ['didYouMean']);
   });
+
+  // ── Dated pre-dispatch walkthrough (import-filing-assistant task 2.4):
+  // the guidance panel's dated-checklist copy renders only from these
+  // keys — both locales must carry the exact sets, genuinely translated. ──
+
+  it('DeclarationGuidance.dated carries the dated-walkthrough copy in parity', () => {
+    // Hand-rolled parity (the expectParity helper asserts exact string
+    // key sets; this group also carries the stepLabel sub-object).
+    const dated = (
+      locale: 'fi' | 'en',
+    ): Record<string, unknown> => {
+      const table = (locale === 'fi' ? fi : en) as unknown as Record<
+        string,
+        Record<string, Record<string, unknown>>
+      >;
+      return table.DeclarationGuidance?.dated ?? {};
+    };
+    const stringKeys = [
+      'heading',
+      'dateLabel',
+      'dateNote',
+      'undatedNote',
+      'plannedDate',
+      'deadlineBeforeDispatch',
+      'postDeadlineHeading',
+      'stepAnchor',
+      'citationsLabel',
+      'guaranteeLabel',
+      'returnDue',
+      'guidesLink',
+    ] as const;
+
+    for (const locale of ['fi', 'en'] as const) {
+      // Exact group set: the string keys plus the stepLabel sub-object.
+      expect(Object.keys(dated(locale)).sort()).toEqual(
+        [...stringKeys, 'stepLabel'].sort(),
+      );
+      for (const key of stringKeys) {
+        const text = dated(locale)[key];
+        expect(typeof text).toBe('string');
+        expect((text as string).trim().length).toBeGreaterThan(0);
+      }
+    }
+    // Genuinely translated, not copied.
+    for (const key of stringKeys) {
+      expect(dated('en')[key]).not.toBe(dated('fi')[key]);
+    }
+
+    const stepLabels = (locale: 'fi' | 'en'): Record<string, unknown> =>
+      (dated(locale).stepLabel ?? {}) as Record<string, unknown>;
+    const stepKeys = [
+      'noticeAlcohol',
+      'noticePackaging',
+      'guarantee',
+      'referenceNumber',
+      'carrierHandoff',
+    ];
+    for (const locale of ['fi', 'en'] as const) {
+      const table = stepLabels(locale);
+      expect(Object.keys(table).sort()).toEqual([...stepKeys].sort());
+      for (const key of stepKeys) {
+        expect(typeof table[key]).toBe('string');
+        expect((table[key] as string).trim().length).toBeGreaterThan(0);
+      }
+    }
+    for (const key of stepKeys) {
+      expect(stepLabels('en')[key]).not.toBe(stepLabels('fi')[key]);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
