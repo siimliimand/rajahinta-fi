@@ -8,6 +8,7 @@
 import type { Disclaimer } from '../calculator/calculator.types';
 import type { ClassificationLabel } from '../classification/classification.types';
 import type { ConfidenceLevel } from '../reliability/confidence-framework.types';
+import type { ReliabilityStatus } from '../reliability/reliability.types';
 
 // ---------------------------------------------------------------------------
 // Read model — what the query port returns from a persisted calculation record
@@ -327,6 +328,74 @@ export interface DeclarationSummary {
   readonly disclaimer: Disclaimer;
   /** Advanced guidance (Phase 2C) — informational, read-only. */
   readonly guidance: DeclarationGuidance;
+}
+
+// ---------------------------------------------------------------------------
+// Guarantee figure — Stage 1 (import-filing-assistant, design D3a)
+// ---------------------------------------------------------------------------
+
+/**
+ * Rule-version sentinel the tax engines emit as `taxDatasetVersion` when no
+ * tax rule matched and hardcoded default rates were applied (the tax
+ * engine's DEFAULT_RATES fallback precedent). Canonical value for the
+ * declaration module; the excise-declaration service carries an identical
+ * private sentinel for its caveats.
+ */
+export const FALLBACK_RULE_VERSION_LABEL = 'FALLBACK' as const;
+
+/**
+ * One applied-duty result of the filing, exactly as persisted on the
+ * calculation record: the recorded cents amount plus the rule-version label
+ * that was in force at calculation time. The guarantee figure derives from
+ * this provenance — nothing is reconstructed from product data.
+ */
+export interface FilingDutyResult {
+  /** Recorded amount for this duty component in euro-cents. */
+  readonly amountCents: number;
+  /**
+   * Rule version label applied at calculation time (e.g. '2025.1'),
+   * {@link FALLBACK_RULE_VERSION_LABEL} when the engine fell back to default
+   * rates, or `null` when the record does not persist it.
+   */
+  readonly ruleVersionLabel: string | null;
+}
+
+/**
+ * The guarantee (vakuus) to lodge with the private advance notice, computed
+ * per the verified rule (change-notes.md Fact 1, design D3a): the guarantee
+ * equals the calculated alcohol excise duty. MyTax derives it from the
+ * filing data, and it is a prepayment — credited against the duty (shortfall
+ * payable, overpayment refunded) — not an additional charge.
+ *
+ * The beverage-packaging duty carries NO guarantee (vero.fi, change-notes.md
+ * Fact 1 scope nuance: no guarantee is required for beverage packagings), so
+ * the container-duty result never enters the amount. It is accepted as a
+ * parameter only to make that exclusion explicit at every call site.
+ *
+ * No plausible fallback: when the alcohol-excise figure did not come from an
+ * applicable rule (fallback dataset, missing provenance, or a
+ * non-representable recorded amount), the figure is unavailable —
+ * `amountCents` is `null`, never a substituted number.
+ */
+export interface DeclarationGuaranteeFigure {
+  /**
+   * Whether a guarantee figure can be stated. `false` when the underlying
+   * alcohol-excise figure is unusable as a guarantee basis; the presentation
+   * layer renders nothing in that state rather than a placeholder.
+   */
+  readonly available: boolean;
+  /**
+   * Guarantee amount in euro-cents, equal to the calculated alcohol excise.
+   * `null` when {@link available} is `false` — never a substituted number.
+   */
+  readonly amountCents: number | null;
+  /**
+   * Reliability status carried from the underlying alcohol-excise figure.
+   * `UNAVAILABLE` when no figure is offered. An offered figure is at most
+   * `ESTIMATED`: the calculation record does not persist the applied rule's
+   * verification status, so `VERIFIED` is never asserted from this data.
+   */
+  readonly status: ReliabilityStatus;
 }
 
 // ---------------------------------------------------------------------------
