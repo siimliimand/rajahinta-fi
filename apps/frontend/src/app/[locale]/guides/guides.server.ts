@@ -78,7 +78,7 @@ export async function getServerGuidesIndex(
       `/api/v1/guides?locale=${encodeURIComponent(locale)}`,
       {
         headers: { accept: 'application/json' },
-        next: { revalidate: 900 },
+        next: { revalidate: 900, tags: ['guides'] },
       },
     );
     if (!Array.isArray(res?.items)) {
@@ -107,7 +107,7 @@ export async function getServerGuidePost(
       `/api/v1/blog/posts/${encodeURIComponent(slug)}?locale=${encodeURIComponent(locale)}`,
       {
         headers: { accept: 'application/json' },
-        next: { revalidate: 900 },
+        next: { revalidate: 900, tags: ['guides'] },
       },
     );
     if (!isFullPost(post)) {

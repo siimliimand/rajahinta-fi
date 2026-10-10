@@ -138,6 +138,17 @@ export interface Env {
   // -- Contact intake (task 3.2, change first-impression-pass, design D8) ---
 
   /**
+   * Shared secret the API worker presents to the frontend worker's
+   * /api/internal/revalidate endpoint after a blog-post publish (change
+   * revalidate-guides-on-publish). Same value as the frontend worker's
+   * REVALIDATE_TOKEN. Unset = revalidation skipped (audited, fail-open).
+   */
+  readonly FRONTEND_REVALIDATE_TOKEN?: string;
+
+  /** Frontend origin the revalidation call and mailed links point at. */
+  readonly APP_PUBLIC_URL?: string;
+
+  /**
    * Salt for the contact intake's IP forensics hash — HMAC-SHA-256 over
    * the edge-asserted client IP before it ever touches storage. A
    * SECRET, never a wrangler var: set per environment with
