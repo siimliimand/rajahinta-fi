@@ -383,3 +383,246 @@ official sources" (design.md D4 register).
 Stage-1 gate per D1: **resolved** — all four facts now carry citations or an
 explicit honest-degradation decision; no fact ships as an unchecked
 assumption.
+
+---
+
+# Guide draft — Advance notice for self-arranged alcohol imports (fi/en) (task 2.5)
+
+- Purpose: GUIDE-kind post draft for ops-console publication (`POST /ops/console/blog/guides`; kind `GUIDE`, status `DRAFT`; publication is a separate human operator action per design.md D6).
+- Fields per locale: `slug`, `locale`, `title`, `bodyMarkdown`. FI is the primary locale; EN mirrors it.
+- Register: observed-pattern, guidance-not-legal-advice per design.md D5 — every factual claim is a cited vero.fi fact or a verbatim quotation attributed to vero.fi (source numbering refers to the Sources table above, all accessed 2026-10-10). No penalty assertions beyond the hedged S1/S2 wording (Fact 4 resolution); no purchase or purchase-timing advice.
+- Content-lint note: `pnpm lint:content` (apps/frontend `scripts/lint-content-policy.ts`) scans `.tsx` sources and `src/messages/*.json` only — it does not cover `openspec/changes/**`. The draft text below was kept within the content-policy vocabulary manually (no forbidden adjectives, no promotional phrasing).
+- Suggested review reminder: process facts cited here (notice structure, reference-number lifecycle, penalty hedge) are not rate data and are not detected by the daily review job — the owner review calendar entry from D6 is the drift check for this post after publication.
+
+## Draft — FI (primary)
+
+- slug: `ennakkoilmoitus-itse-jarjestetty-etaosto`
+- locale: `fi`
+- title: Alkoholin etäosto omalla kuljetuksella: ennakkoilmoitus, vakuus ja valmisteveronumero
+
+### bodyMarkdown (fi)
+
+```markdown
+Kun alkoholia tilataan toisesta ETA-maasta ja kuljetuksen järjestää itse,
+vero.fi:n termistössä kyse on etäostosta. Ennen tilauksen lähettämistä vero.fi
+kuvaa ostajalle kaksi askelta: ennakkoilmoituksen tekemisen ja vakuuden
+maksamisen Verohallinnolle. Tämä opas kokoaa kyseisen kulun niin kuin se on
+kirjattu vero.fi:n henkilöasiakkaiden sivuille 10.10.2026 mennessä. Opas on
+havaintopohjainen yhteenveto, ei oikeudellinen neuvo.
+
+## Kenelle ilmoitusvelvollisuus kuuluu
+
+vero.fi erottaa kaksi roolia: etämyynnissä verovelvollinen on myyjä,
+etäostossa ostaja. Ohjeen sanoin: "Verovelvollisen, eli etämyynnissä myyjän ja
+etäostossa ostajan, pitää tehdä tilauksesta ennakkoilmoitus ja maksaa vakuus
+Verohallinnolle ennen, kun tilaus lähetetään Suomeen" (lähde: vero.fi,
+Usein kysyttyä alkoholin nettitilaamisesta). Jos myyjä lähettää tilauksen
+omalla kuljetuksellaan, kyse on siis etämyynnistä ja ilmoituksen tekee myyjä.
+Jos ostaja järjestää kuljetuksen itse, ilmoitus- ja vakuusvelvollisuus on
+ostajalla.
+
+Jos etämyyjä laiminlyö oman velvollisuutensa, ostaja voi tulla vastuuseen
+veroista yhdessä myyjän kanssa. vero.fi:n mukaan ostaja ei tällöin tee
+veroilmoitusta, eikä muiden seuraamusten — kuten laiminlyöntimaksun — kuvata
+kohdistuvan ostajaan (lähde: vero.fi, Usein kysyttyä alkoholin
+nettitilaamisesta; Alkoholin tilaaminen ulkomailta).
+
+## Kaksi erillistä ennakkoilmoitusta
+
+Tilatusta alkoholista maksetaan vero.fi:n mukaan kahta valmisteveroa:
+alkoholijuomaveroa ja juomapakkausveroa, joka on 0,51 euroa litralta valmista
+juomaa (lähde: vero.fi, Usein kysyttyä alkoholin nettitilaamisesta; Ilmoitus-
+ja maksuohjeet alkoholi- ja tupakkatuotteille). Kummastakin tehdään oma
+ilmoituksensa: "Sinun pitää siis tehdä kaksi erillistä ennakkoilmoitusta"
+(lähde: vero.fi, Ennakkoilmoitus – Yksityishenkilö). Juomapakkausverosta ei
+kuitenkaan tarvitse maksaa vakuutta (sama sivu).
+
+## Vakuus on veron suuruinen ennakkomaksu
+
+"Vakuuden määrä on sama kuin valmisteveron määrä", ja OmaVero laskee sen
+useimmissa tapauksessa automaattisesti (lähde: vero.fi, Ennakkoilmoitus –
+Yksityishenkilö; Näin annat ennakkoilmoituksen ja maksat kertaluonteisen
+vakuuden). Vakuus ei jää Verohallinnolle vaan käytetään myöhemmin
+valmisteveroihin: jos maksettu vakuus ei riitä kattamaan ilmoitettua veroa,
+puuttuva osa maksetaan erikseen, ja jos vakuutta maksettiin yli, ylimenevä osa
+palautetaan (lähde: vero.fi, Ilmoitus- ja maksuohjeet alkoholi- ja
+tupakkatuotteille). Vakuus on siis valmisteveron ennakkomaksu, ei sakko eikä
+lisämaksu.
+
+## Valmisteveronumero ilmestyy vasta vakuuden maksun jälkeen
+
+Kuljetuksen yksilöivä tunniste eli valmisteveronumero ilmestyy OmaVeron
+kohtaan Ennakkoilmoitukset vasta, kun lähetyksestä on maksettu vakuus; maksu
+näkyy OmaVerossa 1–2 arkipäivän kuluttua (lähde: vero.fi, Näin annat
+ennakkoilmoituksen ja maksat kertaluonteisen vakuuden; Ilmoitus- ja
+maksuohjeet alkoholi- ja tupakkatuotteille). Numeroita voi olla useita, ja
+vero.fi ohjeistaa antamaan ne kaikki kuljettajalle tai merkitsemään ne kaikki
+postipakettiin. Tunniste on kuljetuksen aikana pyydettäessä esitettävä Tullille
+tai Verohallinnolle (lähde: vero.fi, Ilmoitus- ja maksuohjeet alkoholi- ja
+tupakkatuotteille).
+
+## Merkitykselliset ajankohdat
+
+Vastaanottopäiväksi voi ilmoittaa päivän, joka on enintään 90 päivän päässä
+ennakkoilmoituksen antamisesta; päivä ei voi olla menneisyydessä (lähde:
+vero.fi, Näin annat ennakkoilmoituksen ja maksat kertaluonteisen vakuuden).
+Ennakkoilmoitus annetaan ja vakuus maksetaan ennen tuotteiden lähettämistä tai
+kuljetuksen aloittamista (lähde: vero.fi, Ennakkoilmoitus – Yksityishenkilö).
+Vastaanoton jälkeen veroilmoitus annetaan ja valmisteverot maksetaan
+viimeistään vastaanottopäivää seuraavan kuukauden 12. päivänä (lähde: vero.fi,
+Ilmoitus- ja maksuohjeet alkoholi- ja tupakkatuotteille).
+
+## Jos ennakkoilmoitus jää tekemättä
+
+vero.fi:n kuvauksessa mahdollinen seuraus on laiminlyöntimaksu: "Jos jätät
+ennakkoilmoituksen tekemättä, seurauksena voi olla laiminlyöntimaksu"
+(lähde: [vero.fi, Ennakkoilmoitus – Yksityishenkilö](https://www.vero.fi/henkiloasiakkaat/verokortti-ja-veroilmoitus/ulkomailta_suomeen/matkustajatuonti/ennakkoilmoitus---yksityishenkil%C3%B6/)).
+Sivu ei ilmoita maksun suuruutta tai laskentaperustetta; tilanteen
+yksityiskohdat tarkistetaan kyseiseltä sivulta.
+
+## Yleinen virhekäsitys: Verohallinto hoitaa asian, ei Tulli
+
+Koko kulku — ennakkoilmoitus, vakuus ja valmisteveronumero — tapahtuu
+Verohallinnon OmaVerossa, ei Tullissa. Tulli mainitaan vero.fi:n kuvauksissa
+vain tahona, joka voi kuljetuksen aikana pyytää valmisteveronumeron
+esitettäväksi (lähde: vero.fi, Ilmoitus- ja maksuohjeet alkoholi- ja
+tupakkatuotteille).
+
+## Lisää sivustolla
+
+- [Laskuri](/laskuri) laskee alkoholijuomaveron ja juomapakkausveron arviot —
+  samoja komponentteja, joista vakuuden määrä muodostuu.
+- [Tullivapaat](/tullivapaat) näyttää matkustajatuonnin versionoidut
+  määrärajat.
+- [Matkalaskuri](/matka) laskee nollavoiton tuontimäärät omien
+  matkakustannusten vastapainona.
+
+Tämä opas perustuu vero.fi:n ohjeisiin (tarkistettu 10.10.2026) eikä ole
+oikeudellinen neuvo. Ajantasaisen tilanteen vahvistaa vero.fi:n omilta
+sivuilta.
+```
+
+## Draft — EN (mirror)
+
+- slug: `advance-notice-self-arranged-import`
+- locale: `en`
+- title: Self-arranged alcohol imports: the advance notice, guarantee, and excise number as vero.fi describes them
+
+### bodyMarkdown (en)
+
+```markdown
+When alcohol is ordered from another EEA country and the buyer arranges the
+transport themselves, vero.fi's vocabulary calls the situation distance
+buying. Before the order is dispatched, vero.fi describes two steps for the
+buyer: filing the advance notice and paying a guarantee to the Finnish Tax
+Administration (Verohallinto). This guide collects that path from vero.fi's
+individual-facing pages, checked 10 October 2026. It is an
+observed-pattern summary, not legal advice.
+
+## Whose obligation it is
+
+vero.fi distinguishes two roles: in distance selling the party liable for tax
+is the seller, in distance buying it is the buyer. The Finnish-language FAQ
+places the advance notice and the guarantee payment with that party "before
+the order is sent to Finland" (source: vero.fi, Usein kysyttyä alkoholin
+nettitilaamisesta — Finnish page). In practice: seller-arranged shipping is
+distance selling and the seller files; buyer-arranged transport puts the
+filing and guarantee duty on the buyer.
+
+If a distance seller defaults, the buyer may become liable for the duties
+together with the seller; vero.fi states that the buyer then files no excise
+return and that no negligence penalty or tax increase attaches to the buyer
+(source: vero.fi, Usein kysyttyä
+alkoholin nettitilaamisesta; Alkoholin tilaaminen ulkomailta — Finnish
+pages).
+
+## Two separate advance notices
+
+Two excise duties attach to ordered alcohol: the alcohol beverage duty and
+the beverage-packaging duty, 0.51 euro per litre of the finished drink
+(source: vero.fi, Usein kysyttyä alkoholin nettitilaamisesta; Ilmoitus- ja
+maksuohjeet alkoholi- ja tupakkatuotteille). Each gets its own filing: "In
+other words, you must file two separate advance notices. However, you do not
+have to set a guarantee for the beverage containers." (source: vero.fi,
+Advance notice – individuals).
+
+## The guarantee is a prepayment of the duty, not a fine
+
+"The amount of the guarantee is equal to the amount of the excise duty", and
+MyTax (OmaVero) calculates it in most cases automatically (source: vero.fi,
+Advance notice – individuals; Näin annat ennakkoilmoituksen ja maksat
+kertaluonteisen vakuuden). The guarantee is later used for the excise taxes:
+if it falls short of the declared duty, the difference is paid separately; if
+it overpays, the excess is refunded (source: vero.fi, Ilmoitus- ja
+maksuohjeet alkoholi- ja tupakkatuotteille). It is a prepayment of the duty —
+not a fine and not an extra charge.
+
+## The excise number appears only after the guarantee payment
+
+The transport identifier, the excise duty number (valmisteveronumero),
+appears in MyTax under Advance notices only once the guarantee has been paid
+for the consignment; the payment becomes visible in MyTax within 1–2 business
+days (source: vero.fi, Näin annat ennakkoilmoituksen ja maksat kertaluonteisen
+vakuuden; Ilmoitus- ja maksuohjeet alkoholi- ja tupakkatuotteille). There may
+be several numbers, and vero.fi instructs passing all of them to the carrier
+or marking all of them on the parcel; it is presented to Customs or the Tax
+Administration on request during transport (source: vero.fi, Ilmoitus- ja
+maksuohjeet alkoholi- ja tupakkatuotteille).
+
+## The dates that matter
+
+The stated receipt date may lie at most 90 days ahead of filing and cannot
+be in the past (source: vero.fi, Näin annat
+ennakkoilmoituksen ja maksat kertaluonteisen vakuuden). The notice is filed
+and the guarantee paid before the products are dispatched or the transport
+begins (source: vero.fi, Advance notice – individuals). After receipt, the
+excise return is filed and the duties paid by the 12th of the month following
+the receipt date (source: vero.fi, Ilmoitus- ja maksuohjeet alkoholi- ja
+tupakkatuotteille).
+
+## If the advance notice is missed
+
+vero.fi names one possible consequence: "If you fail to file an advance
+notice, you may have to pay a negligence penalty later." (source:
+[vero.fi, Advance notice – individuals](https://www.vero.fi/en/individuals/tax-cards-and-tax-returns/arriving_in_finland/bringing-alcohol-and-tobacco-to-finland/advance-notice-private-individual/)).
+The page gives no amount or computation basis; specifics are checked on that
+page.
+
+## Common misconception: the Tax Administration handles this, not Customs
+
+The whole path — advance notice, guarantee, and excise number — runs through
+the Tax Administration's MyTax, not through Customs. Customs appears in
+vero.fi's descriptions only as the authority that may ask to see the excise
+number during transport (source: vero.fi, Ilmoitus- ja maksuohjeet alkoholi-
+ja tupakkatuotteille).
+
+## Elsewhere on the site
+
+- [Calculator](/en/calculator) estimates the alcohol excise and container
+  duty — the components the guarantee amount is built from.
+- [Allowances](/en/allowances) shows the versioned traveller allowance limits.
+- [Trip calculator](/en/trip) computes break-even import volumes against
+  travel costs.
+
+This guide is based on vero.fi's guidance (checked 10 October 2026) and is
+not legal advice. The current situation is confirmed from vero.fi itself.
+```
+
+## Citation trace for the draft (task 2.5 → task 1.1)
+
+| Claim in draft | Source(s) |
+| -------------- | --------- |
+| Distance selling (seller files) vs distance buying (buyer files), before dispatch | S4 (FAQ §2), S1 |
+| Seller-default path: shared liability, buyer files no return, no negligence penalty/tax increase on buyer | S4 (FAQ §5), S6 |
+| Two duties for ordered alcohol; packaging duty 0,51 €/l | S4 (FAQ §6), S3 |
+| Two separate advance notices; no guarantee for packaging | S1, S2 (verbatim), S3 |
+| Guarantee = excise amount; MyTax computes it | S1, S2 (verbatim), S5 |
+| Guarantee credited against the duty; shortfall payable, overpayment refunded | S3 (step 3), S1 |
+| Excise number issued after guarantee payment; visible in 1–2 business days; possibly several, all passed to carrier / parcel; shown to Tulli/Verohallinto on request | S3, S4 (FAQ §3), S5 |
+| Receipt date ≤90 days ahead, not in the past | S5 |
+| Notice + guarantee before dispatch/transport start | S1 |
+| Excise return + payment due 12th of month after receipt | S3 (step 3) |
+| Missed notice → hedged laiminlyöntimaksu (with official link) | S1, S2 (verbatim) |
+| Tax Administration/MyTax handles the process; Tulli only checks the identifier | S3, S4, S6 (pitch-contradiction flag 1) |
+
+Deliberately not cited in the draft: S7 (superseded, context-only per Fact 4 resolution) — the draft asserts nothing quantitative about penalties.
