@@ -11,11 +11,19 @@ import {
   ApiFetchError,
   ensureSession,
   request,
+  getAccountPreferences,
   getCalculationResult,
+  putAccountPreferences,
   requestVerificationEmail,
 } from '@/lib/api';
 import { Badge } from '@/components/ui';
-import type { CalculatorResult, HistoryOutcomeFlag, SessionStatus } from '@/lib/types';
+import type {
+  AccountChannel,
+  AccountPreferencesView,
+  CalculatorResult,
+  HistoryOutcomeFlag,
+  SessionStatus,
+} from '@/lib/types';
 import SavedScenariosSection from './components/SavedScenariosSection';
 import OutcomeReportForm from './components/OutcomeReportForm';
 import ReportExportActions from '../calculator/components/ReportExportActions';
@@ -27,6 +35,18 @@ import ReportExportActions from '../calculator/components/ReportExportActions';
  * answers WINDOW_EXPIRED, which the form maps to its own copy.
  */
 const OUTCOME_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
+
+/**
+ * Stored channel → copy-key map for the account summary (design D8: the
+ * channel is stored, never acted on — it only renders here). The enum is
+ * never shown raw; labels live in the Account catalog next to the rest
+ * of this page's copy.
+ */
+const CHANNEL_LABEL_KEYS = {
+  TRAVEL: 'onboardingChannelTravel',
+  DELIVERY: 'onboardingChannelDelivery',
+  BOTH: 'onboardingChannelBoth',
+} as const satisfies Record<AccountChannel, string>;
 
 /**
  * Account overview page.
@@ -74,6 +94,13 @@ export default function AccountPage() {
     'idle',
   );
 
+  // ── Onboarding preferences state (D6) ──
+  // null = not loaded, or the read failed non-fatally — the card degrades
+  // away entirely (non-critical surface, history precedent).
+  const [prefs, setPrefs] = useState<AccountPreferencesView | null>(null);
+  const [dismissing, setDismissing] = useState(false);
+  const [dismissFailed, setDismissFailed] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     setLoadFailed(false);
@@ -96,6 +123,46 @@ export default function AccountPage() {
       cancelled = true;
     };
   }, [router, probeTick]);
+
+  // ── Onboarding preferences read (D6) ──
+  useEffect(() => {
+    if (!session) return;
+
+    let cancelled = false;
+    getAccountPreferences()
+      .then((view) => {
+        if (!cancelled) setPrefs(view);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        if (err instanceof ApiFetchError && err.status === 401) {
+          // The session died between the identity probe and this read —
+          // the page's signed-out handling wins: same redirect, no card.
+          router.replace('/login');
+          return;
+        }
+        // Non-critical surface: degrade quietly, no card (history precedent).
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, router]);
+
+  // ── Nudge dismissal (D6): skipping is a first-class outcome — the
+  // dismiss writes exactly `onboarded: true`, the API marks onboardedAt,
+  // and the card flips to the set-state from the PUT's returned row,
+  // no reload (favorites remove-button pattern).
+  const handleDismiss = useCallback(async () => {
+    setDismissing(true);
+    setDismissFailed(false);
+    try {
+      setPrefs(await putAccountPreferences({ onboarded: true }));
+    } catch {
+      setDismissFailed(true);
+    } finally {
+      setDismissing(false);
+    }
+  }, []);
 
   const handleResend = useCallback(async () => {
     setResendState('sending');
@@ -292,6 +359,111 @@ export default function AccountPage() {
           </>
         )}
       </section>
+
+      {/* ── Onboarding preferences (D6): one nudge while onboardedAt is
+              null — never a wall; the set-state is a compact summary and
+              /onboarding stays reachable as the editor. A failed read
+              renders nothing (non-critical surface). ── */}
+      {session && prefs && (
+        <section
+          data-testid="account-onboarding-card"
+          className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
+        >
+          {prefs.onboardedAt === null ? (
+            <div data-testid="account-onboarding-nudge">
+              <h2 className="text-lg font-semibold text-gray-900">
+                {t('onboardingTitle')}
+              </h2>
+              <p className="mt-1 text-sm text-gray-600">
+                {t('onboardingNudgeBody')}
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Link
+                  href="/onboarding"
+                  data-testid="account-onboarding-cta"
+                  className="inline-flex items-center rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                >
+                  {t('onboardingCta')}
+                </Link>
+                <button
+                  type="button"
+                  data-testid="account-onboarding-dismiss"
+                  onClick={() => void handleDismiss()}
+                  disabled={dismissing}
+                  className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {t('onboardingDismiss')}
+                </button>
+              </div>
+              {dismissFailed && (
+                <p
+                  data-testid="account-onboarding-dismiss-failed"
+                  role="alert"
+                  className="mt-2 text-xs font-medium text-error"
+                >
+                  {t('onboardingDismissFailed')}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div data-testid="account-onboarding-summary">
+              <h2 className="text-lg font-semibold text-gray-900">
+                {t('onboardingTitle')}
+              </h2>
+              <dl className="mt-3 space-y-2">
+                <div className="flex justify-between gap-4">
+                  <dt className="text-sm font-medium text-gray-700">
+                    {t('onboardingChannelLabel')}
+                  </dt>
+                  <dd
+                    data-testid="account-onboarding-channel"
+                    className="text-sm text-gray-500"
+                  >
+                    {prefs.channel === null
+                      ? t('onboardingChannelNotSet')
+                      : t(CHANNEL_LABEL_KEYS[prefs.channel])}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-sm font-medium text-gray-700">
+                    {t('onboardingTagsLabel')}
+                  </dt>
+                  <dd
+                    data-testid="account-onboarding-tags"
+                    className="text-sm text-gray-500"
+                  >
+                    {prefs.categoryTags.length === 0
+                      ? t('onboardingTagsNone')
+                      : t('onboardingTagsCount', {
+                          count: prefs.categoryTags.length,
+                        })}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-sm font-medium text-gray-700">
+                    {t('onboardingDigestLabel')}
+                  </dt>
+                  <dd
+                    data-testid="account-onboarding-digest"
+                    className="text-sm text-gray-500"
+                  >
+                    {prefs.digestEnabled
+                      ? t('onboardingDigestOn')
+                      : t('onboardingDigestOff')}
+                  </dd>
+                </div>
+              </dl>
+              <Link
+                href="/onboarding"
+                data-testid="account-onboarding-edit"
+                className="mt-3 inline-block text-xs font-medium text-primary-600 hover:text-primary-800"
+              >
+                {t('onboardingEdit')}
+              </Link>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ── Account feature list ── */}
       <section className="mb-8">
