@@ -167,6 +167,7 @@ export const ROUTE_CLIENT_NAMESPACES = {
   '/login': ['Auth', 'Login'],
   '/newsletter/confirm': ['NewsletterConfirm'],
   '/newsletter/unsubscribe': ['NewsletterUnsubscribe'],
+  '/onboarding': ['Onboarding'],
   '/ops': ['OperatorConsole'],
   '/products': ['Common', 'PriceAlerts'],
   '/products/:id': [
