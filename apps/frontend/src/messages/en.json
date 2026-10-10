@@ -984,7 +984,11 @@
     "profile": {
       "casual_gathering": "Casual gathering",
       "dinner_party": "Dinner party",
-      "celebration": "Celebration"
+      "celebration": "Celebration",
+      "juhannus": "Midsummer",
+      "vappu": "May Day (Vappu)",
+      "rapujuhlat": "Crayfish party",
+      "talkoot": "Talkoot"
     },
     "templates": {
       "heading": "Ready-made occasions",
@@ -992,7 +996,11 @@
       "wedding": "Wedding",
       "birthday": "Birthday",
       "companyParty": "Company party",
-      "graduation": "Graduation"
+      "graduation": "Graduation",
+      "vappu": "Vappu",
+      "juhannus": "Midsummer",
+      "rapujuhlat": "Crayfish party",
+      "talkoot": "Talkoot"
     },
     "submit": "Calculate shopping list",
     "submitting": "Calculating…",

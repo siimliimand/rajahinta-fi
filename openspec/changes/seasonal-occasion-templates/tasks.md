@@ -11,7 +11,7 @@
 
 > Discovered during 1.2 (recorded per the fluid-workflow rule): the api-worker event-calc route DTO validates `eventProfile` against its own local 3-value const — task 2.1 includes widening it to the seasonal slugs, or every seasonal template selection 400s at the API.
 
-- [ ] 2.1 Occasion templates in `apps/frontend/src/app/[locale]/event/templates.ts` (guest count, duration, drink-mix; editable-on-apply contract) + `EventForm` wiring + component tests <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [apps/frontend/src/app/[locale]/event/templates.ts, apps/frontend/src/app/[locale]/event/components/EventForm.tsx, apps/frontend/src/app/[locale]/event/templates.test.tsx] -->
+- [x] 2.1 Occasion templates in `apps/frontend/src/app/[locale]/event/templates.ts` (guest count, duration, drink-mix; editable-on-apply contract) + `EventForm` wiring + component tests <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [apps/frontend/src/app/[locale]/event/templates.ts, apps/frontend/src/app/[locale]/event/components/EventForm.tsx, apps/frontend/src/app/[locale]/event/templates.test.tsx] -->
 - [ ] 2.2 URL-addressable occasion selection (`/event?occasion=<slug>`; unknown slug → default state, no error surface) + FI/EN message copy through content lint + tests <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [apps/frontend/src/app/[locale]/event/**] -->
 
 ## 3. Event → group-order handoff

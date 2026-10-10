@@ -984,7 +984,11 @@
     "profile": {
       "casual_gathering": "Rentoutunut kokoontuminen",
       "dinner_party": "Päivälliskutsut",
-      "celebration": "Juhlat"
+      "celebration": "Juhlat",
+      "juhannus": "Juhannus",
+      "vappu": "Vappu",
+      "rapujuhlat": "Rapujuhlat",
+      "talkoot": "Talkoot"
     },
     "templates": {
       "heading": "Valmiit tilaisuudet",
@@ -992,7 +996,11 @@
       "wedding": "Häät",
       "birthday": "Syntymäpäivät",
       "companyParty": "Yritystilaisuus",
-      "graduation": "Valmistujaiset"
+      "graduation": "Valmistujaiset",
+      "vappu": "Vappu",
+      "juhannus": "Juhannus",
+      "rapujuhlat": "Rapujuhlat",
+      "talkoot": "Talkoot"
     },
     "submit": "Laske ostoslista",
     "submitting": "Lasketaan…",

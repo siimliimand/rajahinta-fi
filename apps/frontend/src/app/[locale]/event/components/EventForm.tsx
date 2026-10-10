@@ -30,11 +30,20 @@ export const MAX_DURATION_HOURS = 72;
 /** €/l price basis cap — the server's 1..100 000 cents window in euros. */
 export const MAX_PRICE_EUR_PER_LITRE = 1000;
 
-/** The MVP simple mode's closed profile set, in display order. */
+/**
+ * The closed profile set, in display order — the MVP simple mode's
+ * three generic profiles, then the four seasonal occasion profiles
+ * (change seasonal-occasion-templates), each resolving to its published
+ * consumption-norm drink mix.
+ */
 const PROFILES: readonly EventProfile[] = [
   'casual_gathering',
   'dinner_party',
   'celebration',
+  'juhannus',
+  'vappu',
+  'rapujuhlat',
+  'talkoot',
 ];
 
 /** The canonical drink types, in their fixed order — the sourcing rows. */

@@ -194,7 +194,20 @@ const NORMS_ESTIMATES_DISCLAIMER_FI: Disclaimer = {
 const MAX_GUESTS = 500;
 const MAX_DURATION_HOURS = 72;
 
-const EVENT_PROFILES = ['casual_gathering', 'dinner_party', 'celebration'] as const;
+// The closed profile set — the MVP simple mode's three generic profiles
+// plus the four seasonal occasion slugs (change
+// seasonal-occasion-templates), mirroring EVENT_CALC_EVENT_PROFILES in
+// core-domain. A known slug without published norms surfaces through
+// the NO_PUBLISHED_NORMS result, never a validation error.
+const EVENT_PROFILES = [
+  'casual_gathering',
+  'dinner_party',
+  'celebration',
+  'juhannus',
+  'vappu',
+  'rapujuhlat',
+  'talkoot',
+] as const;
 
 const GUESTS_MESSAGE = `guests must be an integer between 1 and ${MAX_GUESTS}`;
 const DURATION_MESSAGE = `durationHours must be an integer between 1 and ${MAX_DURATION_HOURS}`;

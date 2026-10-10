@@ -44,6 +44,7 @@ vi.mock('@/i18n/navigation', () => ({
 
 
 const WEDDING = EVENT_OCCASION_TEMPLATES.find((t) => t.id === 'wedding')!;
+const JUHANNUS = EVENT_OCCASION_TEMPLATES.find((t) => t.id === 'juhannus')!;
 
 /** Today in the user's local calendar — what the view sends as eventDate. */
 function expectedTodayIso(): string {
@@ -124,5 +125,89 @@ describe('EventView occasion templates (task 4.3)', () => {
     expect(body.durationHours).toBe(8);
     expect(body.eventProfile).toBe(WEDDING.prefill.eventProfile);
     expect(body.eventDate).toBe(expectedTodayIso());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Seasonal occasion templates (change seasonal-occasion-templates, 2.1)
+// ---------------------------------------------------------------------------
+
+describe('EventView seasonal occasion templates (2.1)', () => {
+  it('offers the four seasonal occasions as chips', () => {
+    const { container } = renderWithIntl(<EventView />);
+    const scope = within(container);
+
+    expect(scope.getByTestId('event-template-vappu')).toHaveTextContent('Vappu');
+    expect(scope.getByTestId('event-template-juhannus')).toHaveTextContent('Juhannus');
+    expect(scope.getByTestId('event-template-rapujuhlat')).toHaveTextContent('Rapujuhlat');
+    expect(scope.getByTestId('event-template-talkoot')).toHaveTextContent('Talkoot');
+  });
+
+  it('applying a seasonal template fills guests, duration, and the seasonal profile', async () => {
+    const user = userEvent.setup();
+    const { container } = renderWithIntl(<EventView />);
+    const scope = within(container);
+
+    await user.click(scope.getByTestId(`event-template-${JUHANNUS.id}`));
+
+    const prefill = JUHANNUS.prefill;
+    expect(
+      (scope.getByLabelText('Vieraiden määrä (kpl)') as HTMLInputElement).value,
+    ).toBe(prefill.guests);
+    expect(
+      (scope.getByLabelText('Kesto (tuntia)') as HTMLInputElement).value,
+    ).toBe(prefill.durationHours);
+    expect(
+      (container.querySelector('#event-profile') as HTMLSelectElement).value,
+    ).toBe(prefill.eventProfile);
+  });
+
+  it('offers the seasonal profiles in the profile select', () => {
+    const { container } = renderWithIntl(<EventView />);
+    const options = [
+      ...(container.querySelector('#event-profile') as HTMLSelectElement).options,
+    ].map((option) => option.value);
+
+    expect(options).toEqual([
+      'casual_gathering',
+      'dinner_party',
+      'celebration',
+      'juhannus',
+      'vappu',
+      'rapujuhlat',
+      'talkoot',
+    ]);
+  });
+
+  it('submits the seasonal profile: the estimate derives from the template selection', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      status: 'NO_PUBLISHED_NORMS',
+      eventDate: expectedTodayIso(),
+      eventProfile: JUHANNUS.prefill.eventProfile,
+      guests: Number(JUHANNUS.prefill.guests),
+      durationHours: Number(JUHANNUS.prefill.durationHours),
+      disclaimer: {
+        text: 'Ostoslista perustuu yleisiin kulutusnormeihin.',
+        language: 'fi',
+        version: '1.0',
+      },
+    });
+
+    const user = userEvent.setup();
+    const { container } = renderWithIntl(<EventView />);
+    const scope = within(container);
+
+    await user.click(scope.getByTestId(`event-template-${JUHANNUS.id}`));
+    await user.click(scope.getByRole('button', { name: 'Laske ostoslista' }));
+
+    await waitFor(() => expect(mockedRequest).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(
+      (mockedRequest.mock.calls[0]![1] as { body: string }).body,
+    ) as { guests: number; durationHours: number; eventProfile: string };
+    expect(body).toMatchObject({
+      guests: 10,
+      durationHours: 12,
+      eventProfile: 'juhannus',
+    });
   });
 });

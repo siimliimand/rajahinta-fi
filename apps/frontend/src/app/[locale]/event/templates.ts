@@ -34,10 +34,14 @@ export interface EventOccasionTemplate {
 }
 
 /**
- * The four occasions, with plausible example guest counts and durations
+ * The eight occasions, with plausible example guest counts and durations
  * mapped onto the closed profile set (wedding/company party → juhlat,
- * birthday → rentoutunut kokoontuminen, graduation → päivälliskutsut).
- * All prefilled values stay freely editable.
+ * birthday → rentoutunut kokoontuminen, graduation → päivälliskutsut;
+ * change seasonal-occasion-templates adds the four Finnish seasonal
+ * moments, each mapped onto its published seasonal norm profile — the
+ * profile carries the occasion's drink mix). All prefilled values stay
+ * freely editable. Seasonal templates sit in calendar order after the
+ * generic four.
  */
 export const EVENT_OCCASION_TEMPLATES: readonly EventOccasionTemplate[] = [
   {
@@ -67,5 +71,25 @@ export const EVENT_OCCASION_TEMPLATES: readonly EventOccasionTemplate[] = [
       durationHours: '6',
       eventProfile: 'dinner_party',
     },
+  },
+  {
+    id: 'vappu',
+    labelKey: 'vappu',
+    prefill: { guests: '15', durationHours: '6', eventProfile: 'vappu' },
+  },
+  {
+    id: 'juhannus',
+    labelKey: 'juhannus',
+    prefill: { guests: '10', durationHours: '12', eventProfile: 'juhannus' },
+  },
+  {
+    id: 'rapujuhlat',
+    labelKey: 'rapujuhlat',
+    prefill: { guests: '12', durationHours: '5', eventProfile: 'rapujuhlat' },
+  },
+  {
+    id: 'talkoot',
+    labelKey: 'talkoot',
+    prefill: { guests: '15', durationHours: '4', eventProfile: 'talkoot' },
   },
 ];
