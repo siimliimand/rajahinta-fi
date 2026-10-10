@@ -931,6 +931,53 @@ export interface Favorite {
 }
 
 // ---------------------------------------------------------------------------
+// Account preferences (GET/PUT/DELETE /api/v1/account/preferences; task 3.1,
+// change add-onboarding-preferences)
+// Mirrors the serialization in api-worker preferences.routes.ts — one row per
+// account, accountId omitted (every read is caller-scoped).
+// ---------------------------------------------------------------------------
+
+/**
+ * Purchase channel chosen at onboarding. `null` on the wire is the stored
+ * "unanswered" state — a client never substitutes a default for it.
+ */
+export type AccountChannel = 'TRAVEL' | 'DELIVERY' | 'BOTH';
+
+/**
+ * The account's onboarding preferences — the shape of the GET, the PUT,
+ * and the DELETE (reset) responses alike. `channel: null` is the unanswered
+ * channel; an empty `categoryTags` array is a VALID "follows no category"
+ * state, never a missing field; `onboardedAt` stays null until the
+ * interstitial is saved or skipped.
+ */
+export interface AccountPreferencesView {
+  readonly channel: AccountChannel | null;
+  /**
+   * Canonical `PRODUCT_CATEGORIES` values (the same vocabulary as
+   * {@link AlertCategory}); the API validates element-wise and answers 400
+   * for unknown values, so out-of-set values are a contract breach, not a
+   * render state.
+   */
+  readonly categoryTags: string[];
+  readonly digestEnabled: boolean;
+  /** ISO-8601 completion instant, or null while the nudge is live. */
+  readonly onboardedAt: string | null;
+}
+
+/**
+ * Sparse PUT body — every field optional; omitted fields retain their
+ * stored values. `channel: null` explicitly clears the answer back to
+ * unanswered; `onboarded: true` marks onboarding done server-side, while
+ * `false`/absence never unset a stored `onboardedAt`.
+ */
+export interface AccountPreferencesPatch {
+  readonly channel?: AccountChannel | null;
+  readonly categoryTags?: string[];
+  readonly digestEnabled?: boolean;
+  readonly onboarded?: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Operator console API (/ops/console/** — bearer-token realm)
 // ---------------------------------------------------------------------------
 
