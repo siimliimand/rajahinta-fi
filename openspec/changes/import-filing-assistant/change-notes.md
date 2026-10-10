@@ -626,3 +626,180 @@ not legal advice. The current situation is confirmed from vero.fi itself.
 | Tax Administration/MyTax handles the process; Tulli only checks the identifier | S3, S4, S6 (pitch-contradiction flag 1) |
 
 Deliberately not cited in the draft: S7 (superseded, context-only per Fact 4 resolution) — the draft asserts nothing quantitative about penalties.
+
+---
+
+# Legal-review delta — import-filing-assistant (task 3.2)
+
+**To:** Holder of the written Finnish legal opinion (`legal-review-gating`)
+**Re:** change `import-filing-assistant` — the site's guidance surface now
+states six things it did not state before, on the declaration guidance panel
+(calculator result) and in the GUIDE-kind post drafted for ops-console
+publication (draft in this file, task 2.5; still a DRAFT — publication is a
+separate human operator action per design.md D6). Recorded as a delta for
+re-review; no previously reviewed copy was reworded (structural disclaimer
+and SiteFooter strip untouched). Source numbers refer to the Sources table
+above (all accessed 2026-10-10). For each delta: register, citation, and the
+residual risk worth counsel's eyes.
+
+### (a) The guarantee is now stated as a figure
+
+The panel's guarantee line renders a euro amount: exactly the filing's
+calculated alcohol-excise figure, marked `ESTIMATED` (never `VERIFIED`).
+The container-duty result is excluded from the amount — juomapakkausvero
+carries no guarantee. The copy frames the guarantee as a prepayment credited
+against the duty (shortfall payable, overpayment refunded); the guide says
+"not a fine and not an extra charge".
+
+- Register: observed-pattern ("Guarantees observed for these filings
+  equal…"), citation-backed.
+- Citation: S1, S2, S5 (equality; MyTax computes it); S3 step 3 (prepayment
+  mechanics); S1/S3 (no guarantee on packaging).
+- Residual risk: a concrete euro figure now sits beside the interpretive
+  prepayment framing. Counsel should confirm the framing reads as describing
+  vero.fi's stated mechanics, not as advice that no further payment can
+  arise.
+
+### (b) Two-notice filing walkthrough, including the packaging notice
+
+The dated checklist walks five ordered steps: alcohol notice → packaging
+notice → guarantee → excise number → numbers to carrier. The packaging-notice
+step states the separate second filing and the 0,51 €/l packaging-duty
+figure.
+
+- Register: citation-backed; the two-notice claim is verbatim (S1/S2); the
+  rate figure is attributed to the observed schedule page (S3/S4); the
+  sequence is presented as the observed process, not as filing instructions.
+- Citation: S1, S2 (verbatim "two separate advance notices"), S3, S4
+  (0,51 €/l), S5 (90-day receipt window inside the alcohol-notice step).
+- Residual risk: a step list with date anchors ("Viimeistään {date}") is the
+  most instruction-like surface the site has shown. Observed-pattern phrasing
+  and per-step citations mitigate; counsel should confirm the framing stays
+  on the guidance-not-advice side of the line.
+
+### (c) Reference-number lifecycle guidance
+
+The checklist states the excise number appears in MyTax under Advance notices
+only after the guarantee payment has been received (payment visible within
+1–2 business days), that there may be several numbers, and that all must be
+given to the carrier or marked on the parcel before dispatch.
+
+- Register: observed-pattern, citation-backed.
+- Citation: S3 ("kun olet maksanut lähetyksestä vakuuden"; "Jos saat
+  useamman valmisteveronumeron…"), S4 (FAQ §3), S5 (1–2 arkipäivää).
+- Residual risk: "1–2 business days" is an operational-service observation
+  from S5, not a statutory bound; the step hedges it ("payments of this kind
+  become visible within…"). A delayed payment could leave a user waiting on
+  a figure the site framed in days — the hedge's sufficiency is the review
+  point.
+
+### (d) Return-due estimate — 12th of the following month
+
+A dated-state line renders "Veroilmoitus ja valmisteverot viimeistään {date}"
+/ "Excise return and payment by {date}", computed as the 12th of the month
+following the user-supplied planned date, with an `ESTIMATED` status chip and
+its citation.
+
+- Register: citation-backed date arithmetic, rendered as an estimate.
+- Citation: S3 step 3 ("viimeistään tuotteiden vastaanottopäivää seuraavan
+  kuukauden 12. päivänä").
+- Residual risk: the computation anchors to the user's *planned dispatch*
+  date, not a confirmed receipt date; if goods arrive later, the true due
+  date moves. The `ESTIMATED` chip and the note that the date is not stored
+  carry that — counsel should confirm the line cannot be read as a computed
+  statutory deadline for the user's actual consignment.
+
+### (e) Post-deadline state names laiminlyöntimaksu — hedged only
+
+When the supplied dispatch date is in the past, the panel renders the
+post-deadline state naming the negligence penalty exactly in the official
+hedge ("may result in a negligence penalty (laiminlyöntimaksu)"), stating
+the page gives no amount or computation basis for this case, and directing
+the user to the cited official sources. Spec-pinned (task 2.6): the hedged
+wording is confined to this state — no checklist step or dated figure asserts
+a penalty; nothing quantitative exists anywhere.
+
+- Register: citation-backed, hedged verbatim (S1/S2); surrounding sentences
+  observed-pattern.
+- Citation: S1, S2 (verbatim hedge); S7 deliberately cited nowhere in user
+  copy (superseded, context-only per Fact 4 resolution).
+- Residual risk: this is the only place the site names a legal consequence.
+  The hedge is verbatim against vero.fi as of 2026-10-10; if that page is
+  updated to quantify or rename the consequence, this copy needs review —
+  see the drift-control note below. Highest-priority item for counsel's
+  eyes.
+
+### (f) Customs → Tax Administration misconception correction
+
+Checklist copy and guide sections state that the whole path (advance notice,
+guarantee, excise number) runs through the Tax Administration's MyTax
+(OmaVero); Customs appears only as the authority that may request to see the
+excise number during transport.
+
+- Register: observed-pattern, citation-backed; the correction states the
+  fact without characterizing third-party errors.
+- Citation: S1–S6 passim; S3/S4 for Customs' only observed role
+  (contradiction flag 1).
+- Residual risk: none identified beyond wordings coexisting — the structural
+  disclaimer names both authorities for *final liability determination*, a
+  different claim from the filing act. Noted so counsel sees both together.
+
+### Boundary note — "not legal advice" with a dated walkthrough
+
+The guide carries "havaintopohjainen yhteenveto, ei oikeudellinen neuvo" /
+"observed-pattern summary, not legal advice", a dated verification stamp
+(checked 10 October 2026), and per-claim source attributions. This change
+introduces the site's first dated, user-anchored walkthrough (steps ordered
+against the user's own date). The walkthrough degrades honestly (no date →
+undated steps; past date → post-deadline state; malformed/impossible date →
+undated, never guessed), but it is the surface where the guidance-not-advice
+boundary matters most. Re-review requested against the estimate-framing and
+information-only topics previously opined on.
+
+### Drift control (design D6, final form)
+
+The process facts cited above (notice structure, guarantee rule,
+reference-number lifecycle, penalty hedge) are not rate data: the daily
+rate-review cron cannot detect their change on vero.fi. Controls, in final
+form: (1) verbatim quotes plus URLs in the Sources table above, with
+citation references carried in code; (2) the owner review calendar entry is
+the drift check for these facts and for the guide post after publication;
+(3) guide publication is operator-gated through the ops console — the post
+ships as a DRAFT and a human publishes it. No process-dataset machinery is
+built (deliberately, per D6, until the tracker change justifies it).
+
+---
+
+# Findings → content-decision traceability (task 3.2)
+
+Each spike finding → the content/artifact it determined → where it landed.
+Commits: 6168465 (1.1 spike), 90cbedc (2.1 guarantee figure), 98e0f0e (2.2
+dated checklist in the declaration service), b5861ea (2.3 guidance
+endpoint), 48fe001 (2.4 panel + fi/en strings), d210d03 (2.5 guide drafts,
+in this file), d08d8e7 (2.6 spec deltas). Spec requirements are named from
+`specs/import-filing-assistant/spec.md`.
+
+| Spike finding (sources) | Determined | Landed in |
+| ----------------------- | ---------- | --------- |
+| Fact 1 — guarantee equals the calculated alcohol excise; a prepayment credited against the duty (S1, S2, S3, S5) | D3a pure function; figure carries the excise's status, capped at ESTIMATED, no plausible fallback | `guarantee-figure.ts` (90cbedc); guarantee step (98e0f0e); guide "Vakuus on veron suuruinen ennakkomaksu" section (d210d03); spec "Guarantee figure" SHALL (d08d8e7) |
+| Fact 1 scope nuance — juomapakkausvero carries no guarantee (S1, S3) | container-duty result accepted but excluded from the amount, explicit at the signature | `guarantee-figure.ts` `void containerDuty` + doc comment (90cbedc); spec "container-duty result SHALL be excluded" (d08d8e7) |
+| Fact 2 + flag 2 — two separate advance notices, verbatim (S1, S2, S3, S4) | separate cited steps for alcohol and packaging notices; no corrective copy needed (pitch confirmed) | `buildFilingSteps` steps 1–2 (98e0f0e); step labels "Ennakkoilmoitus alkoholista" / "Ennakkoilmoitus juomapakkauksista" (48fe001); guide "Kaksi erillistä ennakkoilmoitusta" section (d210d03) |
+| Fact 3 — excise number issued only after the guarantee payment; possibly several, all passed on (S3, S4, S5) | referenceNumber step at the verified lifecycle point + carrierHandoff step; fixed order | `buildFilingSteps` steps 4–5, order noticeAlcohol → noticePackaging → guarantee → referenceNumber → carrierHandoff (98e0f0e); spec "Reference-number steps" SHALL (d08d8e7); guide ref-number section (d210d03) |
+| Fact 3 timing — payment visible in 1–2 business days (S5) | "within 1–2 business days" hedge inside the referenceNumber step | `excise-declaration.service.ts` (98e0f0e); guide (d210d03) |
+| Fact 4 — missed notice → possible laiminlyöntimaksu, officially unquantified (S1, S2; S7 context only) | post-deadline state names it in the official hedge only, confined to that state; nothing quantitative anywhere | `buildPostDeadlineState` (98e0f0e); "postDeadlineHeading" fi/en strings (48fe001); spec "Post-deadline state" MAY/SHALL-confined (d08d8e7); guide penalty section (d210d03) |
+| Flag 1 — the filing act is Tax Administration/MyTax, not Customs (S1–S6) | checklist copy names MyTax (OmaVero); guide misconception-correction section | noticeAlcohol step description (98e0f0e); guide "Yleinen virhekäsitys: Verohallinto hoitaa asian, ei Tulli" / "Common misconception" sections (d210d03) |
+| Flag 3 — pitch refinements: number not issued at filing; not one but possibly several, all passed on | step wording "may receive several numbers… all of them be given to the carrier or marked on the parcel" | referenceNumber + carrierHandoff steps (98e0f0e); guide (d210d03) |
+| Flag 4 — "penalty on top of the duty" not assertable; guarantee is a prepayment, not an extra charge | prepayment framing in the guarantee step and guide; register pinned by the safety suite | guarantee step (98e0f0e); guide "not a fine and not an extra charge" (d210d03); `excise-declaration-service.safety.test.ts` (98e0f0e) |
+| Bonus — receipt date ≤ 90 days ahead, not in the past (S5) | constraint sentence inside the alcohol-notice step | noticeAlcohol description (98e0f0e); guide "Merkitykselliset ajankohdat" section (d210d03) |
+| Bonus — excise return due the 12th of the month following receipt (S3) | return-due estimate: `computeReturnDueDate`, ESTIMATED status, fi/en "returnDue" line, spec scenario | service (98e0f0e); messages + panel render (48fe001); spec "Dated pre-dispatch checklist" return-due scenario (d08d8e7); guide (d210d03) |
+| Bonus — packaging duty 0,51 €/l (S3, S4) | figure inside the packaging-notice step, attributed to the schedule page | noticePackaging description (98e0f0e); guide (d210d03) |
+| Bonus — the advance notice remains the basis of the excise return (S1, S3) | clause in the alcohol-notice step | noticeAlcohol description (98e0f0e); guide role section (d210d03) |
+| Bonus — joint liability on seller default; buyer files no return, no penalty on buyer (S1, S6, S4 FAQ §5) | guide role/default paragraphs; pre-existing panel classification strings untouched | guide "Kenelle ilmoitusvelvollisuus kuuluu" / "Whose obligation it is" sections (d210d03) |
+| Bonus — 14-day cancellation when no guarantee was set (S5) | **no landed artifact — deliberately unused**: bonus facts were "usable with citation", not mandated; no step or guide section claims it, so no uncited surface exists | — |
+| S7 — superseded 2020/1215 guidance (context only) | excluded from all user copy; the quantitative-penalty prohibition is spec-pinned | "Deliberately not cited" note above (6168465); spec "SHALL NOT assert penalties… beyond their recorded citations" (d08d8e7) |
+
+Traceability check: every finding that determined content landed in the
+artifact its design resolution named; the one non-landing (14-day
+cancellation bonus fact) is a deliberate omission recorded above, not an
+uncited surface. No gap found between the spike findings and the shipped
+content.
