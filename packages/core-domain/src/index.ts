@@ -458,6 +458,27 @@ export type {
 } from './price-context/price-context.types';
 
 // ---------------------------------------------------------------------------
+// Digest — weekly preference-scoped factual facts over daily summaries
+// (pure, display-only; spec preference-digest, design D1/D4)
+// ---------------------------------------------------------------------------
+
+export { computePreferenceDigest } from './digest/compute';
+export { compareDigestFacts, sortDigestFacts } from './digest/ordering';
+export {
+  DIGEST_CATEGORY_VALUES,
+  InvalidDigestInputError,
+} from './digest/digest.types';
+export type {
+  DigestCategory,
+  DigestFact,
+  DigestFactKind,
+  DigestSummaryQuery,
+  DigestSummaryQueryPort,
+  DigestSummaryRow,
+  PreferenceDigestInput,
+} from './digest/digest.types';
+
+// ---------------------------------------------------------------------------
 // Packing — deterministic carrier box suggestion (FFD, mixing warning)
 // ---------------------------------------------------------------------------
 
