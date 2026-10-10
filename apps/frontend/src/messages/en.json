@@ -405,7 +405,28 @@
     },
     "checklist": "Checklist",
     "caveats": "Caveats",
-    "officialSources": "Official sources"
+    "officialSources": "Official sources",
+    "dated": {
+      "heading": "Advance-notice filing steps",
+      "dateLabel": "Planned dispatch date",
+      "dateNote": "The date is not stored; it only anchors the steps in this view.",
+      "undatedNote": "Choosing a planned dispatch date arranges the steps against it. Without a date the steps render undated.",
+      "plannedDate": "Planned dispatch date: {date}",
+      "deadlineBeforeDispatch": "Steps before the dispatch begins",
+      "postDeadlineHeading": "The chosen date is in the past",
+      "stepLabel": {
+        "noticeAlcohol": "Advance notice for the alcohol",
+        "noticePackaging": "Advance notice for beverage packagings",
+        "guarantee": "Guarantee",
+        "referenceNumber": "Excise number",
+        "carrierHandoff": "Numbers to the carrier"
+      },
+      "stepAnchor": "By {date}",
+      "citationsLabel": "Sources",
+      "guaranteeLabel": "Guarantee amount",
+      "returnDue": "Excise return and payment by {date}",
+      "guidesLink": "More on this in the guides"
+    }
   },
   "HistoryChart": {
     "metric": {

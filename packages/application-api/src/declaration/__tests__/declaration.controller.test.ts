@@ -121,6 +121,46 @@ const MOCK_SUMMARY: DeclarationSummary = {
         description: 'Official excise duty guidance from the Finnish Tax Administration',
       },
     ],
+    datedChecklist: {
+      state: 'UNDATED',
+      plannedDate: null,
+      deadlineSemantics: null,
+      steps: [
+        {
+          kind: 'noticeAlcohol',
+          description:
+            'Advance notices observed for self-arranged imports are filed in MyTax before the products are sent.',
+          datedFor: null,
+          citations: [
+            {
+              sourceId: 'S1',
+              title: 'vero.fi — Ennakkoilmoitus – Yksityishenkilö',
+              url: 'https://www.vero.fi/henkiloasiakkaat/ennakkoilmoitus/',
+            },
+          ],
+        },
+        {
+          kind: 'referenceNumber',
+          description:
+            'Excise numbers for transport are observed to appear in MyTax under Advance notices only once the guarantee has been paid.',
+          datedFor: null,
+          citations: [
+            {
+              sourceId: 'S3',
+              title: 'vero.fi — Ilmoitus- ja maksuohjeet alkoholi- ja tupakkatuotteille',
+              url: 'https://www.vero.fi/henkiloasiakkaat/ilmoitus-ja-maksuohjeet/',
+            },
+          ],
+        },
+      ],
+      guarantee: {
+        available: true,
+        amountCents: 1550,
+        status: 'ESTIMATED',
+      },
+      returnDueEstimate: null,
+      postDeadline: null,
+    },
   },
 };
 
@@ -193,8 +233,93 @@ describe('DeclarationController — prepareDeclaration', () => {
 
     it('delegates to ExciseDeclarationService.prepareDeclaration', async () => {
       await controller.prepareDeclaration(42);
-      expect(mockService.prepareDeclaration).toHaveBeenCalledWith(42);
+      expect(mockService.prepareDeclaration).toHaveBeenCalledWith(42, {
+        plannedDispatchDate: null,
+      });
       expect(mockService.prepareDeclaration).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // dispatchDate parameter (import-filing-assistant task 2.3) — optional,
+  // read-only; absent/unknown degrades to the undated checklist service-side
+  // ---------------------------------------------------------------------------
+
+  describe('dispatchDate parameter', () => {
+    it('passes a supplied dispatch date through to the service', async () => {
+      await controller.prepareDeclaration(42, '2026-12-01');
+      expect(mockService.prepareDeclaration).toHaveBeenCalledWith(42, {
+        plannedDispatchDate: '2026-12-01',
+      });
+    });
+
+    it('normalizes an absent dispatchDate to null — never an error', async () => {
+      const result = await controller.prepareDeclaration(42);
+      expect(mockService.prepareDeclaration).toHaveBeenCalledWith(42, {
+        plannedDispatchDate: null,
+      });
+      expect(result).toEqual(MOCK_SUMMARY);
+    });
+
+    it('passes an empty dispatchDate through — the strict parse degrades it, no normalization', async () => {
+      // Validation has one source of truth (the service's calendar-date
+      // parse); the endpoint only maps a truly absent param to null.
+      await controller.prepareDeclaration(42, '');
+      expect(mockService.prepareDeclaration).toHaveBeenCalledWith(42, {
+        plannedDispatchDate: '',
+      });
+    });
+
+    it('passes malformed values through for the service to degrade to the undated checklist', async () => {
+      // The endpoint validates nothing itself: the service's strict
+      // calendar-date parse is the single validator, so the degrade
+      // behavior (UNDATED, no error) has one source of truth.
+      await controller.prepareDeclaration(42, 'not-a-date');
+      expect(mockService.prepareDeclaration).toHaveBeenCalledWith(42, {
+        plannedDispatchDate: 'not-a-date',
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Additive dated-guidance fields — dated checklist, guarantee figure,
+  // reference-number step, deadline state
+  // ---------------------------------------------------------------------------
+
+  describe('additive dated-guidance fields', () => {
+    it('exposes the dated checklist with the guarantee figure and deadline state', async () => {
+      const result = await controller.prepareDeclaration(42);
+      const checklist = result.guidance?.datedChecklist;
+      expect(checklist).toEqual(MOCK_SUMMARY.guidance.datedChecklist);
+      expect(checklist?.state).toBe('UNDATED');
+      expect(checklist?.guarantee).toEqual({
+        available: true,
+        amountCents: 1550,
+        status: 'ESTIMATED',
+      });
+    });
+
+    it('carries the reference-number step with its citations', async () => {
+      const result = await controller.prepareDeclaration(42);
+      const step = result.guidance?.datedChecklist.steps.find(
+        (s) => s.kind === 'referenceNumber',
+      );
+      expect(step).toBeDefined();
+      expect(step?.citations.length).toBeGreaterThan(0);
+    });
+
+    it('leaves every pre-existing summary field unchanged', async () => {
+      const result = await controller.prepareDeclaration(42);
+      const { guidance, ...legacyTop } = result;
+      const { datedChecklist: _datedChecklist, ...legacyGuidance } = guidance!;
+      const {
+        datedChecklist: _expectedDated,
+        ...expectedLegacyGuidance
+      } = MOCK_SUMMARY.guidance;
+      expect(legacyGuidance).toEqual(expectedLegacyGuidance);
+      expect(legacyTop).toEqual(
+        (({ guidance: _g, ...rest }) => rest)(MOCK_SUMMARY),
+      );
     });
   });
 

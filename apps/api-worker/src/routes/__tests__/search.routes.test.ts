@@ -1725,4 +1725,157 @@ describe('GET /api/v1/declaration/:recordId', () => {
       expect(body.guidance.liabilityNotice).toBeNull();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // dispatchDate query param (import-filing-assistant task 2.3) — optional,
+  // read-only request parameter anchoring the dated pre-dispatch checklist.
+  // Absent/unknown degrades factually to the undated checklist, never an
+  // error; the additive response fields ride the existing contract.
+  // -------------------------------------------------------------------------
+
+  describe('dispatchDate query param', () => {
+    function bareApp(): ReturnType<typeof createApp> {
+      const app = new Hono<AppEnv>();
+      app.onError((err, c) => respondToError(c, err));
+      app.use(errorBoundary());
+      registerDeclarationRoutes(app);
+      return app as ReturnType<typeof createApp>;
+    }
+
+    interface DatedChecklistBody {
+      state: 'DATED' | 'POST_DEADLINE' | 'UNDATED';
+      plannedDate: string | null;
+      deadlineSemantics: 'BEFORE_DISPATCH' | null;
+      steps: Array<{
+        kind: string;
+        datedFor: string | null;
+        citations: Array<{ sourceId: string; title: string; url: string }>;
+      }>;
+      guarantee: { available: boolean; amountCents: number | null; status: string };
+      returnDueEstimate: {
+        estimatedArrivalDate: string;
+        dueDate: string;
+        status: string;
+        citations: Array<{ sourceId: string }>;
+      } | null;
+      postDeadline: {
+        deadlinePassed: true;
+        description: string;
+        citations: Array<{ sourceId: string }>;
+      } | null;
+    }
+
+    async function seededDeclaration(url: string) {
+      const { db, d1 } = freshD1();
+      seedProduct(db, { id: 1 });
+      seedCalculationRecord(db, { id: 5, productMasterId: 1 });
+      const res = await request(bareApp(), permissiveEnv(d1), url);
+      const body = (await res.json()) as {
+        advanceNoticeInfo: { required: boolean };
+        myTaxLink: string;
+        guidance: {
+          liabilityNotice: unknown;
+          checklist: string[];
+          datedChecklist: DatedChecklistBody;
+        };
+      };
+      return { res, body };
+    }
+
+    it('absent dispatchDate degrades factually to the undated checklist', async () => {
+      const { res, body } = await seededDeclaration('/api/v1/declaration/5');
+      expect(res.status).toBe(200);
+      const dc = body.guidance.datedChecklist;
+      expect(dc.state).toBe('UNDATED');
+      expect(dc.plannedDate).toBeNull();
+      expect(dc.deadlineSemantics).toBeNull();
+      expect(dc.returnDueEstimate).toBeNull();
+      expect(dc.postDeadline).toBeNull();
+      // Same steps and citations render undated — including the
+      // reference-number step at its verified lifecycle point.
+      expect(dc.steps.map((s) => s.kind)).toEqual([
+        'noticeAlcohol',
+        'noticePackaging',
+        'guarantee',
+        'referenceNumber',
+        'carrierHandoff',
+      ]);
+      expect(dc.steps.every((s) => s.datedFor === null)).toBe(true);
+      expect(
+        dc.steps.every(
+          (s) => s.citations.length > 0 && s.citations.every((c) => c.url !== ''),
+        ),
+      ).toBe(true);
+    });
+
+    it('exposes the guarantee figure with availability and status; no provenance → unavailable', async () => {
+      // The seeded record persists no rule-version provenance, so the
+      // honest state is unavailable — never a substituted number.
+      const { body } = await seededDeclaration('/api/v1/declaration/5');
+      expect(body.guidance.datedChecklist.guarantee).toEqual({
+        available: false,
+        amountCents: null,
+        status: 'UNAVAILABLE',
+      });
+    });
+
+    it('leaves the pre-existing response fields unchanged', async () => {
+      const { body } = await seededDeclaration('/api/v1/declaration/5');
+      expect(body.advanceNoticeInfo).toEqual({ required: false });
+      expect(body.guidance.liabilityNotice).toBeNull();
+      expect(body.guidance.checklist.length).toBeGreaterThan(0);
+      expect(body.myTaxLink).toBe('https://www.vero.fi/asioi-verkossa/mytax/');
+    });
+
+    it('a dispatch date today-or-ahead anchors the DATED checklist with an ESTIMATED return-due', async () => {
+      const { res, body } = await seededDeclaration(
+        '/api/v1/declaration/5?dispatchDate=2099-01-01',
+      );
+      expect(res.status).toBe(200);
+      const dc = body.guidance.datedChecklist;
+      expect(dc.state).toBe('DATED');
+      expect(dc.plannedDate).toBe('2099-01-01');
+      expect(dc.deadlineSemantics).toBe('BEFORE_DISPATCH');
+      expect(dc.postDeadline).toBeNull();
+      expect(dc.steps.every((s) => s.datedFor === '2099-01-01')).toBe(true);
+      // 12th of the month following the anchored date (change-notes Fact 4).
+      expect(dc.returnDueEstimate).toEqual({
+        estimatedArrivalDate: '2099-01-01',
+        dueDate: '2099-02-12',
+        status: 'ESTIMATED',
+        citations: [
+          { sourceId: 'S3', title: expect.any(String), url: expect.any(String) },
+        ],
+      });
+    });
+
+    it('a past dispatch date renders the hedged POST_DEADLINE state with citations', async () => {
+      const { res, body } = await seededDeclaration(
+        '/api/v1/declaration/5?dispatchDate=2020-01-01',
+      );
+      expect(res.status).toBe(200);
+      const dc = body.guidance.datedChecklist;
+      expect(dc.state).toBe('POST_DEADLINE');
+      expect(dc.plannedDate).toBe('2020-01-01');
+      expect(dc.deadlineSemantics).toBe('BEFORE_DISPATCH');
+      expect(dc.postDeadline).not.toBeNull();
+      expect(dc.postDeadline?.deadlinePassed).toBe(true);
+      expect(dc.postDeadline?.citations.length).toBeGreaterThan(0);
+      expect(dc.returnDueEstimate).not.toBeNull();
+    });
+
+    it('a malformed or impossible dispatchDate is treated as absent — undated, never an error', async () => {
+      for (const bad of ['not-a-date', '2026-02-30', '01-01-2026', '']) {
+        const { res, body } = await seededDeclaration(
+          `/api/v1/declaration/5?dispatchDate=${encodeURIComponent(bad)}`,
+        );
+        expect(res.status, `dispatchDate=${JSON.stringify(bad)}`).toBe(200);
+        const dc = body.guidance.datedChecklist;
+        expect(dc.state, `dispatchDate=${JSON.stringify(bad)}`).toBe('UNDATED');
+        expect(dc.plannedDate).toBeNull();
+        expect(dc.returnDueEstimate).toBeNull();
+        expect(dc.postDeadline).toBeNull();
+      }
+    });
+  });
 });

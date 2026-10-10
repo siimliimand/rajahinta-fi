@@ -95,11 +95,136 @@ export interface GuidanceLiabilityNotice {
   readonly ruleSetVersion: string;
 }
 
+// ---------------------------------------------------------------------------
+// Dated pre-dispatch checklist — import-filing-assistant Stage 1 (additive)
+//
+// Structural mirrors of the core-domain shapes (declaration.types.ts): the
+// dated checklist, its cited filing steps, the guarantee figure, the
+// return-due estimate, and the post-deadline state. The controller returns
+// the domain summary wholesale, so the structural check against
+// DeclarationSummaryResponse proves this mirror stays aligned with the
+// domain types.
+// ---------------------------------------------------------------------------
+
+/**
+ * Reliability status carried by the guarantee figure. Mirrors the core-domain
+ * `ReliabilityStatus` union; the guarantee never asserts `VERIFIED` from the
+ * calculation record (see the core-domain guarantee-figure contract).
+ */
+export type GuidanceReliabilityStatus = 'VERIFIED' | 'STALE' | 'UNAVAILABLE' | 'ESTIMATED';
+
+/** Citation reference for one verified filing-process fact. */
+export interface GuidanceFilingProcessCitation {
+  /** Change-notes source identifier (e.g. 'S1'). */
+  readonly sourceId: string;
+  /** Official page title as recorded in the change notes. */
+  readonly title: string;
+  /** Official page URL (vero.fi). */
+  readonly url: string;
+}
+
+/** One cited step of the pre-dispatch filing checklist. */
+export interface GuidanceFilingStep {
+  /** Which verified process fact this step carries. */
+  readonly kind:
+    | 'noticeAlcohol'
+    | 'noticePackaging'
+    | 'guarantee'
+    | 'referenceNumber'
+    | 'carrierHandoff';
+  /** Observed-pattern description of the step. */
+  readonly description: string;
+  /**
+   * The user-entered planned date this step is anchored to, or `null` in
+   * the undated checklist.
+   */
+  readonly datedFor: string | null;
+  /** Sources the step's fact traces to — never empty on a rendered step. */
+  readonly citations: readonly GuidanceFilingProcessCitation[];
+}
+
+/**
+ * The guarantee (vakuus) to lodge, per the verified rule: equal to the
+ * calculated alcohol excise duty (the container duty carries no guarantee).
+ * `amountCents` is `null` when {@link available} is `false` — never a
+ * substituted number.
+ */
+export interface GuidanceGuaranteeFigure {
+  /** Whether a guarantee figure can be stated for this filing. */
+  readonly available: boolean;
+  /** Guarantee amount in euro-cents, or `null` when unavailable. */
+  readonly amountCents: number | null;
+  /** Reliability status of the underlying excise figure. */
+  readonly status: GuidanceReliabilityStatus;
+}
+
+/**
+ * Excise-return estimate anchored to the user-entered planned date: the
+ * return is filed and the duties paid by the 12th of the month following
+ * the receipt date. Present only in the dated states.
+ */
+export interface GuidanceReturnDueEstimate {
+  /** The user-entered planned date the estimate is anchored to. */
+  readonly estimatedArrivalDate: string;
+  /** 12th of the month following the estimated arrival date (yyyy-mm-dd). */
+  readonly dueDate: string;
+  /** Always ESTIMATED — the anchor is user-entered. */
+  readonly status: 'ESTIMATED';
+  /** Source for the 12th-of-the-following-month rule. */
+  readonly citations: readonly GuidanceFilingProcessCitation[];
+}
+
+/**
+ * Post-deadline state — the user-entered planned date is in the past
+ * relative to the filing state. Observed-pattern register: the only
+ * consequence named is the officially hedged negligence penalty from the
+ * recorded citations.
+ */
+export interface GuidancePostDeadlineState {
+  /** Always true — this object renders only when the date has passed. */
+  readonly deadlinePassed: true;
+  /** Hedged, citation-bound description of the passed-deadline situation. */
+  readonly description: string;
+  /** Sources for the passed-deadline guidance (official pages). */
+  readonly citations: readonly GuidanceFilingProcessCitation[];
+}
+
+/**
+ * Dated pre-dispatch checklist — cited filing steps optionally anchored to
+ * a user-supplied planned dispatch date. Without a usable date the
+ * checklist degrades factually: the same steps and citations render undated
+ * (`UNDATED`), with no deadline, no countdown, and no derived dates.
+ * The date is a request parameter and is never persisted.
+ */
+export interface GuidanceDatedChecklist {
+  /**
+   * `DATED` — usable planned date, today or ahead. `POST_DEADLINE` — the
+   * supplied date is in the past relative to the filing state. `UNDATED` —
+   * no usable date was supplied.
+   */
+  readonly state: 'DATED' | 'POST_DEADLINE' | 'UNDATED';
+  /** The supplied planned date as accepted (yyyy-mm-dd), or `null`. */
+  readonly plannedDate: string | null;
+  /**
+   * `BEFORE_DISPATCH` when a usable date anchors the checklist; `null` in
+   * the undated degradation.
+   */
+  readonly deadlineSemantics: 'BEFORE_DISPATCH' | null;
+  /** Ordered steps; identical text and citations in dated and undated form. */
+  readonly steps: readonly GuidanceFilingStep[];
+  /** The guarantee to lodge, with availability and reliability status. */
+  readonly guarantee: GuidanceGuaranteeFigure;
+  /** Excise-return estimate; `null` in the undated degradation. */
+  readonly returnDueEstimate: GuidanceReturnDueEstimate | null;
+  /** Present only in the `POST_DEADLINE` state; `null` otherwise. */
+  readonly postDeadline: GuidancePostDeadlineState | null;
+}
+
 /**
  * Advanced declaration guidance (Phase 2C) — informational only: derivation
  * walkthrough, computed advance-notice deadline, ordered MyTax entry
- * checklist, confidence-driven caveats, and official vero.fi sources. No
- * submission or pre-fill capability.
+ * checklist, confidence-driven caveats, official vero.fi sources, and the
+ * dated pre-dispatch checklist. No submission or pre-fill capability.
  */
 export interface DeclarationGuidance {
   readonly derivation: GuidanceDerivation;
@@ -109,6 +234,12 @@ export interface DeclarationGuidance {
   readonly checklist: readonly string[];
   readonly caveats: readonly string[];
   readonly officialSources: readonly GuidanceOfficialSourceLink[];
+  /**
+   * Dated pre-dispatch checklist (import-filing-assistant Stage 1) with the
+   * guarantee figure — degrades to the undated checklist when no usable
+   * dispatch date is supplied. Informational, read-only.
+   */
+  readonly datedChecklist: GuidanceDatedChecklist;
 }
 
 /** GET /api/v1/declaration/:recordId — response wrapper. */
@@ -151,9 +282,11 @@ export interface DeclarationSummaryResponse {
   /**
    * Advanced guidance (Phase 2C) — informational, read-only.
    *
-   * Present only when the ADVANCED_FEATURES feature flag is enabled; omitted
-   * entirely (never `null`) otherwise, so flag-off responses are
-   * byte-compatible with pre-guidance payloads.
+   * Always present on current responses: the ADVANCED_FEATURES strip gate
+   * was removed by decision when the routes were re-hosted (the summary
+   * always carries its guidance field). The property stays optional in this
+   * wrapper so the type remains honest about the historical flag-off
+   * payloads that predate the re-host.
    */
   readonly guidance?: DeclarationGuidance;
 }

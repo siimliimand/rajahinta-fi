@@ -367,6 +367,107 @@ export interface DeclarationLiabilityNotice {
   readonly ruleSetVersion: string;
 }
 
+// ---------------------------------------------------------------------------
+// Dated pre-dispatch checklist (import-filing-assistant Stage 1).
+// Mirrors declaration.dto.ts structurally: the cited filing steps, the
+// guarantee figure, the return-due estimate, and the post-deadline state.
+// ---------------------------------------------------------------------------
+
+/** Citation reference for one verified filing-process fact (vero.fi). */
+export interface DeclarationFilingProcessCitation {
+  /** Change-notes source identifier (e.g. 'S1'). */
+  readonly sourceId: string;
+  /** Official page title as recorded in the change notes. */
+  readonly title: string;
+  /** Official page URL (vero.fi). */
+  readonly url: string;
+}
+
+/** One cited step of the pre-dispatch filing checklist. */
+export interface DeclarationFilingStep {
+  /** Which verified process fact this step carries. */
+  readonly kind:
+    | 'noticeAlcohol'
+    | 'noticePackaging'
+    | 'guarantee'
+    | 'referenceNumber'
+    | 'carrierHandoff';
+  /** Observed-pattern description of the step (rendered verbatim). */
+  readonly description: string;
+  /** The planned date this step is anchored to, or `null` when undated. */
+  readonly datedFor: string | null;
+  /** Sources the step's fact traces to — never empty on a rendered step. */
+  readonly citations: readonly DeclarationFilingProcessCitation[];
+}
+
+/**
+ * The guarantee (vakuus) to lodge: equal to the calculated alcohol excise
+ * duty (the container duty carries no guarantee). `amountCents` is `null`
+ * when {@link available} is `false` — never a substituted number.
+ */
+export interface DeclarationGuaranteeFigure {
+  /** Whether a guarantee figure can be stated for this filing. */
+  readonly available: boolean;
+  /** Guarantee amount in euro-cents, or `null` when unavailable. */
+  readonly amountCents: number | null;
+  /** Reliability status of the underlying excise figure. */
+  readonly status: ReliabilityStatus;
+}
+
+/**
+ * Excise-return estimate anchored to the user-entered planned date: return
+ * and payment due by the 12th of the month following the receipt date.
+ * Present only in the dated states.
+ */
+export interface DeclarationReturnDueEstimate {
+  /** The user-entered planned date the estimate is anchored to. */
+  readonly estimatedArrivalDate: string;
+  /** 12th of the month following the estimated arrival date (yyyy-mm-dd). */
+  readonly dueDate: string;
+  /** Always ESTIMATED — the anchor is user-entered. */
+  readonly status: 'ESTIMATED';
+  /** Source for the 12th-of-the-following-month rule. */
+  readonly citations: readonly DeclarationFilingProcessCitation[];
+}
+
+/**
+ * Post-deadline state — the supplied planned date is in the past relative
+ * to the filing state. The hedged description is rendered verbatim from
+ * the API; the client never invents penalty wording.
+ */
+export interface DeclarationPostDeadlineState {
+  /** Always true — this object renders only when the date has passed. */
+  readonly deadlinePassed: true;
+  /** Hedged, citation-bound description of the passed-deadline situation. */
+  readonly description: string;
+  /** Sources for the passed-deadline guidance (official pages). */
+  readonly citations: readonly DeclarationFilingProcessCitation[];
+}
+
+/**
+ * Dated pre-dispatch checklist — cited filing steps optionally anchored to
+ * a user-supplied planned dispatch date. Without a usable date the
+ * checklist degrades factually (`UNDATED`): the same steps and citations,
+ * no deadline, no countdown, no derived dates. The date is a request
+ * parameter and is never persisted.
+ */
+export interface DeclarationDatedChecklist {
+  /** `DATED`, `POST_DEADLINE`, or `UNDATED` (no usable date supplied). */
+  readonly state: 'DATED' | 'POST_DEADLINE' | 'UNDATED';
+  /** The supplied planned date as accepted (yyyy-mm-dd), or `null`. */
+  readonly plannedDate: string | null;
+  /** `BEFORE_DISPATCH` when a usable date anchors the checklist. */
+  readonly deadlineSemantics: 'BEFORE_DISPATCH' | null;
+  /** Ordered steps; identical text and citations in dated and undated form. */
+  readonly steps: readonly DeclarationFilingStep[];
+  /** The guarantee to lodge, with availability and reliability status. */
+  readonly guarantee: DeclarationGuaranteeFigure;
+  /** Excise-return estimate; `null` in the undated degradation. */
+  readonly returnDueEstimate: DeclarationReturnDueEstimate | null;
+  /** Present only in the `POST_DEADLINE` state; `null` otherwise. */
+  readonly postDeadline: DeclarationPostDeadlineState | null;
+}
+
 /** Advanced declaration guidance — informational, read-only. */
 export interface DeclarationGuidance {
   readonly derivation: DeclarationDerivation;
@@ -376,6 +477,13 @@ export interface DeclarationGuidance {
   readonly checklist: readonly string[];
   readonly caveats: readonly string[];
   readonly officialSources: readonly DeclarationOfficialSourceLink[];
+  /**
+   * Dated pre-dispatch checklist (import-filing-assistant Stage 1) with the
+   * guarantee figure. Optional in this mirror: the panel renders nothing
+   * new until the field is present (design.md migration note), so cached
+   * payloads that predate the field degrade to the existing behavior.
+   */
+  readonly datedChecklist?: DeclarationDatedChecklist;
 }
 
 /** GET /api/v1/declaration/:recordId — response wrapper. */

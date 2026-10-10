@@ -405,7 +405,28 @@
     },
     "checklist": "Tarkistuslista",
     "caveats": "Huomioitavaa",
-    "officialSources": "Viralliset lähteet"
+    "officialSources": "Viralliset lähteet",
+    "dated": {
+      "heading": "Ennakkoilmoituksen vaiheet",
+      "dateLabel": "Suunniteltu lähetyspäivä",
+      "dateNote": "Päivää ei tallenneta; se ankkuroi vaiheet vain tässä näkymässä.",
+      "undatedNote": "Valitsemalla suunnitellun lähetyspäivän vaiheet asettuvat päivämittaan. Ilman päivää vaiheet näkyvät päivättöminä.",
+      "plannedDate": "Suunniteltu lähetyspäivä: {date}",
+      "deadlineBeforeDispatch": "Vaiheet ennen lähetyksen alkua",
+      "postDeadlineHeading": "Valittu päivä on menneisyydessä",
+      "stepLabel": {
+        "noticeAlcohol": "Ennakkoilmoitus alkoholista",
+        "noticePackaging": "Ennakkoilmoitus juomapakkauksista",
+        "guarantee": "Vakuus",
+        "referenceNumber": "Valmisteveronumero",
+        "carrierHandoff": "Numerot kuljettajalle"
+      },
+      "stepAnchor": "Viimeistään {date}",
+      "citationsLabel": "Lähteet",
+      "guaranteeLabel": "Vakuuden määrä",
+      "returnDue": "Veroilmoitus ja valmisteverot viimeistään {date}",
+      "guidesLink": "Lisää aiheesta oppaissa"
+    }
   },
   "HistoryChart": {
     "metric": {

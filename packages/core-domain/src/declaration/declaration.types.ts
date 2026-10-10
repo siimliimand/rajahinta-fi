@@ -8,6 +8,7 @@
 import type { Disclaimer } from '../calculator/calculator.types';
 import type { ClassificationLabel } from '../classification/classification.types';
 import type { ConfidenceLevel } from '../reliability/confidence-framework.types';
+import type { ReliabilityStatus } from '../reliability/reliability.types';
 
 // ---------------------------------------------------------------------------
 // Read model — what the query port returns from a persisted calculation record
@@ -306,6 +307,14 @@ export interface DeclarationGuidance {
   readonly checklist: readonly string[];
   readonly caveats: readonly string[];
   readonly officialSources: readonly OfficialSourceLink[];
+  /**
+   * Dated pre-dispatch checklist (import-filing-assistant Stage 1) —
+   * cited filing steps with the guarantee figure, optionally anchored to a
+   * user-supplied planned dispatch date. Additive: degrades to the undated
+   * checklist when no date is supplied. Informational, read-only; the date
+   * is a request parameter and is never persisted.
+   */
+  readonly datedChecklist: DeclarationDatedChecklist;
 }
 
 /**
@@ -327,6 +336,217 @@ export interface DeclarationSummary {
   readonly disclaimer: Disclaimer;
   /** Advanced guidance (Phase 2C) — informational, read-only. */
   readonly guidance: DeclarationGuidance;
+}
+
+// ---------------------------------------------------------------------------
+// Guarantee figure — Stage 1 (import-filing-assistant, design D3a)
+// ---------------------------------------------------------------------------
+
+/**
+ * Rule-version sentinel the tax engines emit as `taxDatasetVersion` when no
+ * tax rule matched and hardcoded default rates were applied (the tax
+ * engine's DEFAULT_RATES fallback precedent). Canonical value for the
+ * declaration module; the excise-declaration service carries an identical
+ * private sentinel for its caveats.
+ */
+export const FALLBACK_RULE_VERSION_LABEL = 'FALLBACK' as const;
+
+/**
+ * One applied-duty result of the filing, exactly as persisted on the
+ * calculation record: the recorded cents amount plus the rule-version label
+ * that was in force at calculation time. The guarantee figure derives from
+ * this provenance — nothing is reconstructed from product data.
+ */
+export interface FilingDutyResult {
+  /** Recorded amount for this duty component in euro-cents. */
+  readonly amountCents: number;
+  /**
+   * Rule version label applied at calculation time (e.g. '2025.1'),
+   * {@link FALLBACK_RULE_VERSION_LABEL} when the engine fell back to default
+   * rates, or `null` when the record does not persist it.
+   */
+  readonly ruleVersionLabel: string | null;
+}
+
+/**
+ * The guarantee (vakuus) to lodge with the private advance notice, computed
+ * per the verified rule (change-notes.md Fact 1, design D3a): the guarantee
+ * equals the calculated alcohol excise duty. MyTax derives it from the
+ * filing data, and it is a prepayment — credited against the duty (shortfall
+ * payable, overpayment refunded) — not an additional charge.
+ *
+ * The beverage-packaging duty carries NO guarantee (vero.fi, change-notes.md
+ * Fact 1 scope nuance: no guarantee is required for beverage packagings), so
+ * the container-duty result never enters the amount. It is accepted as a
+ * parameter only to make that exclusion explicit at every call site.
+ *
+ * No plausible fallback: when the alcohol-excise figure did not come from an
+ * applicable rule (fallback dataset, missing provenance, or a
+ * non-representable recorded amount), the figure is unavailable —
+ * `amountCents` is `null`, never a substituted number.
+ */
+export interface DeclarationGuaranteeFigure {
+  /**
+   * Whether a guarantee figure can be stated. `false` when the underlying
+   * alcohol-excise figure is unusable as a guarantee basis; the presentation
+   * layer renders nothing in that state rather than a placeholder.
+   */
+  readonly available: boolean;
+  /**
+   * Guarantee amount in euro-cents, equal to the calculated alcohol excise.
+   * `null` when {@link available} is `false` — never a substituted number.
+   */
+  readonly amountCents: number | null;
+  /**
+   * Reliability status carried from the underlying alcohol-excise figure.
+   * `UNAVAILABLE` when no figure is offered. An offered figure is at most
+   * `ESTIMATED`: the calculation record does not persist the applied rule's
+   * verification status, so `VERIFIED` is never asserted from this data.
+   */
+  readonly status: ReliabilityStatus;
+}
+
+// ---------------------------------------------------------------------------
+// Dated pre-dispatch checklist — Stage 1 (import-filing-assistant, D2/D4/D5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Citation reference for one verified filing-process fact. Every checklist
+ * step, the post-deadline state, and the return-due estimate carry the
+ * change-notes source (verbatim quote plus URL recorded in the change's
+ * change-notes.md) with them — a step without a citation never renders.
+ */
+export interface FilingProcessCitation {
+  /** Change-notes source identifier (e.g. 'S1' in change-notes.md). */
+  readonly sourceId: string;
+  /** Official page title as recorded in the change notes. */
+  readonly title: string;
+  /** Official page URL (vero.fi). */
+  readonly url: string;
+}
+
+/**
+ * One step of the pre-dispatch checklist, phrased in the observed-pattern
+ * register (design D5): described as observed patterns and cited facts,
+ * never imperative instructions or legal conclusions.
+ */
+export interface DeclarationFilingStep {
+  /** Which verified process fact this step carries. */
+  readonly kind:
+    | 'noticeAlcohol'
+    | 'noticePackaging'
+    | 'guarantee'
+    | 'referenceNumber'
+    | 'carrierHandoff';
+  /** Observed-pattern description of the step. */
+  readonly description: string;
+  /**
+    * The user-entered planned date this step is anchored to, or `null` in
+    * the undated checklist (same steps and citations, no date anchoring).
+    */
+  readonly datedFor: string | null;
+  /** Sources the step's fact traces to — never empty on a rendered step. */
+  readonly citations: readonly FilingProcessCitation[];
+}
+
+/**
+ * The excise-return estimate derived from the user-entered planned date
+ * (change-notes.md Fact 4): the return is filed and the duties paid by the
+ * 12th of the month following the receipt date.
+ *
+ * The whole estimate is anchored to a user-entered date, so it is marked
+ * ESTIMATED — never presented as a confirmed obligation date.
+ */
+export interface DeclarationReturnDueEstimate {
+  /**
+   * The date the estimate is anchored to: the user-entered planned dispatch
+   * date standing in for the receipt date (estimated, not confirmed).
+   */
+  readonly estimatedArrivalDate: string;
+  /** 12th of the month following the estimated arrival date (yyyy-mm-dd). */
+  readonly dueDate: string;
+  /** Always ESTIMATED — the anchor is user-entered. */
+  readonly status: 'ESTIMATED';
+  /** Source for the 12th-of-the-following-month rule. */
+  readonly citations: readonly FilingProcessCitation[];
+}
+
+/**
+ * Post-deadline state (design D4): the user-entered planned date is in the
+ * past relative to the filing state. Observed-pattern register throughout —
+ * the deadline has passed and the user is directed to the official sources;
+ * the only consequence named is the hedged negligence penalty from the
+ * recorded citations, never an asserted automatic one.
+ */
+export interface DeclarationPostDeadlineState {
+  /** Always true — this object renders only when the date has passed. */
+  readonly deadlinePassed: true;
+  /** Hedged, citation-bound description of the passed-deadline situation. */
+  readonly description: string;
+  /** Sources for the passed-deadline guidance (official pages). */
+  readonly citations: readonly FilingProcessCitation[];
+}
+
+/**
+ * Dated pre-dispatch checklist (import-filing-assistant Stage 1, design D2/D4).
+ *
+ * Ordered filing steps anchored to a user-supplied planned dispatch date:
+ * notices → guarantee → reference-number capture → all reference numbers to
+ * the carrier before dispatch. The dispatch date is a request parameter,
+ * never stored state.
+ *
+ * Without a usable date the checklist degrades factually: the same steps and
+ * citations render undated, with no deadline, no countdown, and no derived
+ * dates.
+ */
+export interface DeclarationDatedChecklist {
+  /**
+   * `DATED` — a usable planned date was supplied and lies today or ahead.
+   * `POST_DEADLINE` — the supplied date is in the past relative to the
+   * filing state. `UNDATED` — no usable date was supplied.
+   */
+  readonly state: 'DATED' | 'POST_DEADLINE' | 'UNDATED';
+  /**
+   * The supplied planned date as accepted (yyyy-mm-dd), or `null` when no
+   * usable date was supplied. Echoed for display only — never persisted.
+   */
+  readonly plannedDate: string | null;
+  /**
+   * `BEFORE_DISPATCH` when a usable date anchors the checklist; `null` in
+   * the undated degradation (no deadline semantics are invented).
+   */
+  readonly deadlineSemantics: 'BEFORE_DISPATCH' | null;
+  /** Ordered steps; identical text and citations in dated and undated form. */
+  readonly steps: readonly DeclarationFilingStep[];
+  /**
+   * The guarantee to lodge (see {@link DeclarationGuaranteeFigure}). When it
+   * degrades to unavailable, the guarantee step states the unavailable state
+   * and no amount renders anywhere.
+   */
+  readonly guarantee: DeclarationGuaranteeFigure;
+  /**
+   * Excise-return estimate anchored to the supplied date, present only in
+   * the dated states; `null` in the undated degradation — no dates invented.
+   */
+  readonly returnDueEstimate: DeclarationReturnDueEstimate | null;
+  /** Present only in the `POST_DEADLINE` state; `null` otherwise. */
+  readonly postDeadline: DeclarationPostDeadlineState | null;
+}
+
+/**
+ * Optional guidance inputs for {@link ExciseDeclarationService.prepareDeclaration}.
+ *
+ * The planned dispatch date is a request parameter (design D2 — read-only):
+ * it is never persisted, never written to any record, and exists only for
+ * the duration of assembling the response.
+ */
+export interface DeclarationGuidanceOptions {
+  /**
+   * User-supplied planned dispatch date as a plain calendar date
+   * (yyyy-mm-dd). Unparseable values degrade to the undated checklist —
+   * nothing is guessed from a malformed date.
+   */
+  readonly plannedDispatchDate?: string | null;
 }
 
 // ---------------------------------------------------------------------------

@@ -803,3 +803,483 @@ describe('edge cases', () => {
     expect(result.product.brand).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Dated pre-dispatch checklist (import-filing-assistant Stage 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Provenance that makes the alcohol excise a usable guarantee basis (a real
+ * persisted rule, not FALLBACK, not missing).
+ */
+const GUARANTEE_PROVENANCE: Partial<CalculationRecordData> = {
+  alcoholExciseCents: 512,
+  exciseRuleVersionLabel: '2026.1',
+  containerDutyCents: 31,
+  containerDutyRuleVersionLabel: '2026.1',
+};
+
+/** A dispatch date far ahead of any test run — stable DATED behavior. */
+const FUTURE_DISPATCH = '2099-06-15';
+/** A dispatch date far in the past — stable POST_DEADLINE behavior. */
+const PAST_DISPATCH = '2020-01-15';
+
+const EXPECTED_STEP_ORDER = [
+  'noticeAlcohol',
+  'noticePackaging',
+  'guarantee',
+  'referenceNumber',
+  'carrierHandoff',
+] as const;
+
+describe('dated checklist — dated mode (planned date supplied)', () => {
+  it('anchors the checklist to the supplied date with before-dispatch semantics', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1, {
+      plannedDispatchDate: FUTURE_DISPATCH,
+    });
+
+    const checklist = result.guidance.datedChecklist;
+    expect(checklist.state).toBe('DATED');
+    expect(checklist.plannedDate).toBe(FUTURE_DISPATCH);
+    expect(checklist.deadlineSemantics).toBe('BEFORE_DISPATCH');
+    expect(checklist.postDeadline).toBeNull();
+  });
+
+  it('orders the steps notices → guarantee → reference-number capture → carrier handoff', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1, {
+      plannedDispatchDate: FUTURE_DISPATCH,
+    });
+
+    expect(result.guidance.datedChecklist.steps.map((s) => s.kind)).toEqual([
+      ...EXPECTED_STEP_ORDER,
+    ]);
+  });
+
+  it('dates every step against the supplied date', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1, {
+      plannedDispatchDate: FUTURE_DISPATCH,
+    });
+
+    for (const step of result.guidance.datedChecklist.steps) {
+      expect(step.datedFor).toBe(FUTURE_DISPATCH);
+    }
+  });
+
+  it('derives the return-due estimate as the 12th of the month after the anchor date, marked ESTIMATED', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1, {
+      plannedDispatchDate: '2099-11-05',
+    });
+
+    const estimate = result.guidance.datedChecklist.returnDueEstimate;
+    expect(estimate).not.toBeNull();
+    expect(estimate?.estimatedArrivalDate).toBe('2099-11-05');
+    expect(estimate?.dueDate).toBe('2099-12-12');
+    expect(estimate?.status).toBe('ESTIMATED');
+  });
+
+  it('rolls the return-due estimate across a year boundary (December → January 12)', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1, {
+      plannedDispatchDate: '2099-12-20',
+    });
+
+    expect(result.guidance.datedChecklist.returnDueEstimate?.dueDate).toBe(
+      '2100-01-12',
+    );
+  });
+
+  it('computes the guarantee figure from the recorded excise (packaging duty excluded)', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1, {
+      plannedDispatchDate: FUTURE_DISPATCH,
+    });
+
+    const guarantee = result.guidance.datedChecklist.guarantee;
+    expect(guarantee.available).toBe(true);
+    // The alcohol excise alone — 512 + 31 would be the summed total.
+    expect(guarantee.amountCents).toBe(512);
+    expect(guarantee.amountCents).not.toBe(543);
+    expect(guarantee.status).toBe('ESTIMATED');
+  });
+
+  it('treats a same-day dispatch date as not in the past', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const today = new Date().toISOString().slice(0, 10);
+    const result = await service.prepareDeclaration(1, {
+      plannedDispatchDate: today,
+    });
+
+    expect(result.guidance.datedChecklist.state).toBe('DATED');
+    expect(result.guidance.datedChecklist.postDeadline).toBeNull();
+  });
+});
+
+describe('dated checklist — undated degradation (no usable date)', () => {
+  it('degrades to the undated checklist when no date is supplied', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1);
+
+    const checklist = result.guidance.datedChecklist;
+    expect(checklist.state).toBe('UNDATED');
+    expect(checklist.plannedDate).toBeNull();
+    expect(checklist.deadlineSemantics).toBeNull();
+    expect(checklist.returnDueEstimate).toBeNull();
+    expect(checklist.postDeadline).toBeNull();
+    // Same steps and citations as the dated mode — only the anchoring degrades.
+    expect(checklist.steps.map((s) => s.kind)).toEqual([...EXPECTED_STEP_ORDER]);
+    for (const step of checklist.steps) {
+      expect(step.datedFor).toBeNull();
+    }
+  });
+
+  it('renders the identical step descriptions and citations undated as dated', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const undated = await service.prepareDeclaration(1);
+    const dated = await service.prepareDeclaration(1, {
+      plannedDispatchDate: FUTURE_DISPATCH,
+    });
+
+    const undatedSteps = undated.guidance.datedChecklist.steps;
+    const datedSteps = dated.guidance.datedChecklist.steps;
+    expect(datedSteps).toHaveLength(undatedSteps.length);
+    for (let i = 0; i < datedSteps.length; i += 1) {
+      expect(datedSteps[i].description).toBe(undatedSteps[i].description);
+      expect(datedSteps[i].citations).toEqual(undatedSteps[i].citations);
+    }
+  });
+
+  it('accepts an explicitly null plannedDispatchDate the same as its absence', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1, {
+      plannedDispatchDate: null,
+    });
+
+    expect(result.guidance.datedChecklist.state).toBe('UNDATED');
+  });
+
+  it('degrades an unparseable date to the undated checklist (nothing guessed)', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    for (const bad of ['not-a-date', '2026/06/15', '2026-6-15', '']) {
+      const result = await service.prepareDeclaration(1, {
+        plannedDispatchDate: bad,
+      });
+      expect(result.guidance.datedChecklist.state).toBe('UNDATED');
+      expect(result.guidance.datedChecklist.plannedDate).toBeNull();
+    }
+  });
+
+  it('degrades a non-existent calendar date (2026-02-31) instead of rolling it forward', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1, {
+      plannedDispatchDate: '2026-02-31',
+    });
+
+    expect(result.guidance.datedChecklist.state).toBe('UNDATED');
+    expect(result.guidance.datedChecklist.plannedDate).toBeNull();
+  });
+
+  it('keeps every pre-existing guidance field unchanged when the checklist is added', async () => {
+    // Additive-output invariant: the panel and controller consume the old
+    // fields; their semantics must not move.
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1);
+
+    expect(result.advanceNoticeInfo).toEqual({ required: true });
+    expect(result.myTaxLink).toBe(MYTAX_LINK);
+    expect(result.declarationDate).toBe(DEFAULT_TIMESTAMP);
+    expect(result.guidance.checklist.length).toBeGreaterThanOrEqual(5);
+    expect(result.guidance.deadline.required).toBe(true);
+    expect(result.guidance.deadline.dueDate).toBeNull();
+    expect(result.guidance.liabilityNotice?.buyerMustFileAdvanceNotice).toBe(
+      true,
+    );
+  });
+});
+
+describe('dated checklist — post-deadline state (supplied date in the past)', () => {
+  it('renders the post-deadline state with the official-source direction', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1, {
+      plannedDispatchDate: PAST_DISPATCH,
+    });
+
+    const checklist = result.guidance.datedChecklist;
+    expect(checklist.state).toBe('POST_DEADLINE');
+    expect(checklist.plannedDate).toBe(PAST_DISPATCH);
+    expect(checklist.deadlineSemantics).toBe('BEFORE_DISPATCH');
+
+    const postDeadline = checklist.postDeadline;
+    expect(postDeadline?.deadlinePassed).toBe(true);
+    expect(postDeadline?.description).toContain('has passed');
+    expect(postDeadline?.citations.length).toBeGreaterThan(0);
+    expect(
+      postDeadline?.citations.every((c) => c.url.startsWith('https://www.vero.fi/')),
+    ).toBe(true);
+  });
+
+  it('names the negligence penalty only in the hedged form with its citation', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1, {
+      plannedDispatchDate: PAST_DISPATCH,
+    });
+
+    const description =
+      result.guidance.datedChecklist.postDeadline?.description ?? '';
+    // Hedged, exactly as the official source hedges it ("voi olla" / "may").
+    expect(description).toContain('may result in a negligence penalty');
+    expect(description).toContain('laiminlyöntimaksu');
+    // The official-source direction is present.
+    expect(description).toContain('official sources');
+  });
+
+  it('still renders the dated steps and the return-due estimate in the post-deadline state', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1, {
+      plannedDispatchDate: PAST_DISPATCH,
+    });
+
+    const checklist = result.guidance.datedChecklist;
+    expect(checklist.steps.map((s) => s.kind)).toEqual([...EXPECTED_STEP_ORDER]);
+    for (const step of checklist.steps) {
+      expect(step.datedFor).toBe(PAST_DISPATCH);
+    }
+    expect(checklist.returnDueEstimate?.estimatedArrivalDate).toBe(
+      PAST_DISPATCH,
+    );
+  });
+});
+
+describe('dated checklist — guarantee degradation', () => {
+  it('renders the guarantee step without an amount when the figure is unavailable', async () => {
+    // No persisted excise rule provenance → computeGuaranteeFigure refuses.
+    const record = createRecord({ classification: 'DistanceBuying' });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1, {
+      plannedDispatchDate: FUTURE_DISPATCH,
+    });
+
+    const guarantee = result.guidance.datedChecklist.guarantee;
+    expect(guarantee.available).toBe(false);
+    expect(guarantee.amountCents).toBeNull();
+    expect(guarantee.status).toBe('UNAVAILABLE');
+
+    const guaranteeStep = result.guidance.datedChecklist.steps.find(
+      (s) => s.kind === 'guarantee',
+    );
+    expect(guaranteeStep?.description).toContain('unavailable');
+    // Never a substituted number.
+    expect(guaranteeStep?.description).not.toMatch(/\d+([.,]\d{2})\s?€/);
+  });
+
+  it('renders no amount when the excise came from the fallback dataset', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      alcoholExciseCents: 425,
+      exciseRuleVersionLabel: 'FALLBACK',
+      containerDutyCents: 31,
+      containerDutyRuleVersionLabel: '2026.1',
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const result = await service.prepareDeclaration(1);
+
+    expect(result.guidance.datedChecklist.guarantee.available).toBe(false);
+    const guaranteeStep = result.guidance.datedChecklist.steps.find(
+      (s) => s.kind === 'guarantee',
+    );
+    expect(guaranteeStep?.description).toContain('unavailable');
+    expect(guaranteeStep?.description).not.toContain('4.25');
+  });
+
+  it('carries the reference-number step at the verified lifecycle point in every state', async () => {
+    const record = createRecord({
+      classification: 'DistanceBuying',
+      ...GUARANTEE_PROVENANCE,
+    });
+    const { service } = createService(
+      createMockQueryPort({
+        findById: vi.fn().mockResolvedValue(record),
+      }),
+    );
+
+    const states = [
+      await service.prepareDeclaration(1),
+      await service.prepareDeclaration(1, {
+        plannedDispatchDate: FUTURE_DISPATCH,
+      }),
+      await service.prepareDeclaration(1, {
+        plannedDispatchDate: PAST_DISPATCH,
+      }),
+    ];
+
+    for (const result of states) {
+      const referenceStep = result.guidance.datedChecklist.steps.find(
+        (s) => s.kind === 'referenceNumber',
+      );
+      // Capture happens AFTER the guarantee payment, before dispatch.
+      expect(referenceStep?.description).toContain(
+        'only once the guarantee has been paid',
+      );
+      expect(referenceStep?.description).toContain('1–2 business days');
+      expect(referenceStep?.description).toContain('several numbers');
+      expect(referenceStep?.citations.length).toBeGreaterThan(0);
+    }
+  });
+});
