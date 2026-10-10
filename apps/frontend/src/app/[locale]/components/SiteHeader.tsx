@@ -634,7 +634,7 @@ export default function SiteHeader() {
         className={`${menuOpen ? 'flex' : 'hidden'} flex-col gap-1 border-t border-gray-200 px-4 pb-3 pt-2 md:hidden`}
       >
         {NAV_GROUPS.map((group) => renderNavGroup(group, true))}
-        <div className="mt-2 flex items-center gap-2 border-t border-gray-200 pt-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-gray-200 pt-2">
           {renderAccountLink(true)}
           {renderFavoritesLink(true)}
           {renderLocaleSwitcher(true)}
