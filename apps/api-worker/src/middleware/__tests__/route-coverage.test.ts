@@ -357,6 +357,9 @@ const EXPECTED_ROUTES: readonly (readonly [string, readonly string[], string])[]
   ['/api/v1/account/me', ['GET'], '— (sessionAuth)'],
   ['/api/v1/account/password/reset', ['POST'], '— (token capability)'],
   ['/api/v1/account/password/reset-request', ['POST'], 'AUTH'],
+  // Onboarding preferences (add-onboarding-preferences 2.1) — the alerts
+  // chain: sessionAuth + per-account DEFAULT on the handlers.
+  ['/api/v1/account/preferences', ['DELETE', 'GET', 'PUT'], 'DEFAULT (per-account) + sessionAuth'],
   ['/api/v1/account/register', ['POST'], 'AUTH'],
   ['/api/v1/account/scenarios', ['GET', 'POST'], '— (sessionAuth)'],
   ['/api/v1/account/scenarios/:id', ['DELETE'], '— (sessionAuth)'],

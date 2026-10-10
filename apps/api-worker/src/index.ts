@@ -59,6 +59,7 @@ import { registerMerchantsRoutes } from './routes/merchants.routes';
 import { registerAccountsRoutes } from './routes/accounts.routes';
 import { registerAlertsRoutes } from './routes/alerts.routes';
 import { registerFavoritesRoutes } from './routes/favorites.routes';
+import { registerPreferencesRoutes } from './routes/preferences.routes';
 import { registerGroupOrderRoutes } from './routes/group-order.routes';
 import { registerAnalyticsRoutes } from './routes/analytics.routes';
 import { registerOpsRoutes } from './routes/ops.routes';
@@ -184,6 +185,10 @@ export function createApp(): Hono<AppEnv> {
   // alerts chain (sessionAuth from the guards table + per-account DEFAULT
   // registered in the route module).
   registerFavoritesRoutes(app);
+  // Account preferences (task 2.1, change add-onboarding-preferences) —
+  // the alerts chain (sessionAuth from the guards table + per-account
+  // DEFAULT registered in the route module).
+  registerPreferencesRoutes(app);
   registerGroupOrderRoutes(app);
   registerAnalyticsRoutes(app);
   registerOpsRoutes(app);
