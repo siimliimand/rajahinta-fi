@@ -55,7 +55,7 @@ rajahinta/
 │   │       ├── outcomes/              # Outcome submission validation (60-day window, one per record+account), 5% margin comparison, pure accuracy aggregation — user-reported everywhere
 │   │       ├── content/               # Rate-change blog draft builder (FI + EN, what changed / effective date / typical-basket impact)
 │   │       ├── sharing/               # Share-snapshot assembly (frozen copy, 22-char public id, personal-data strip assertion)
-│   │       ├── declaration/           # ExciseDeclarationService (read-only, never submits)
+│   │       ├── declaration/           # ExciseDeclarationService (read-only, never submits) — dated pre-dispatch filing checklist + guarantee figure (change import-filing-assistant)
 │   │       ├── correction/            # CorrectionService, CorrectionModule
 │   │       ├── entitlement/           # EntitlementService (free/premium gating, tier from account record)
 │   │       ├── audit/                 # AuditService, AuditModule
@@ -402,7 +402,7 @@ The implemented primary user journey:
 6. **Confidence Framework** → `ConfidenceFrameworkService` computes result confidence as a pure function of underlying data statuses (HIGH/MEDIUM/LOW). Results additionally carry a display-only `empiricalMargin` — the p80 quantile of relative error between user-reported outcome totals and estimates, resolved through a cell ladder (category×carrier → category → global, N≥10 floor, honest null below it), persisted in `outcome_margins` by the aggregation cron and served at `GET /api/v1/accuracy/margins`; it never enters totals, breakdowns, or rankings.
 7. **Landed-Cost Calculator** → `LandedCostCalculatorService` orchestrates the above, assembles itemized result with structural disclaimer. When the product has Alko reference offers, the result additionally carries a display-only `alkoBenchmark` comparison — it never enters the total, the breakdown, or any ranking input.
 8. **Calculation Record** → Persisted via `ICalculationRecordPort` for auditability.
-9. **Excise Declaration Assistant** → `ExciseDeclarationService` packages calculation into structured summary, links to MyTax (never submits).
+9. **Excise Declaration Assistant** → `ExciseDeclarationService` packages calculation into structured summary, links to MyTax (never submits). An optional user-supplied `dispatchDate` (request parameter, never stored) anchors the dated pre-dispatch filing checklist — alcohol + packaging advance notices, guarantee figure (= the alcohol excise, a prepayment), reference-number capture after guarantee payment, carrier handoff before dispatch — with a hedged post-deadline state (change `import-filing-assistant`).
 
 ## 5. Data Stores
 
