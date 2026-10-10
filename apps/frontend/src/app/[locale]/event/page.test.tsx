@@ -448,7 +448,10 @@ describe('EventPage server shell (task 2.3)', () => {
     const messages = (await import('@/messages/fi.json')).default;
     const html = renderToString(
       <NextIntlClientProvider locale="fi" messages={messages}>
-        {await EventPage({ params: Promise.resolve({ locale: 'fi' }) })}
+        {await EventPage({
+          params: Promise.resolve({ locale: 'fi' }),
+          searchParams: Promise.resolve({}),
+        })}
       </NextIntlClientProvider>,
     );
 
@@ -459,5 +462,63 @@ describe('EventPage server shell (task 2.3)', () => {
     // reassurance is gone — the footer carries the legal line.
     expect(html).toContain('ehdotetun ostomäärän ja ylijäämän.');
     expect(html).not.toContain('ei vero- tai tullineuvontaa');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Occasion deep link (change seasonal-occasion-templates, task 2.2)
+// ---------------------------------------------------------------------------
+
+describe('EventPage — ?occasion= deep link (2.2)', () => {
+  it('applies the deep-linked template exactly as if selected by hand', async () => {
+    const tree = await EventPage({
+      params: Promise.resolve({ locale: 'fi' }),
+      searchParams: Promise.resolve({ occasion: 'juhannus' }),
+    });
+    const { container } = renderWithIntl(tree);
+
+    const guests = container.querySelector('#event-guests') as HTMLInputElement;
+    const duration = container.querySelector('#event-duration') as HTMLInputElement;
+    const profile = container.querySelector('#event-profile') as HTMLSelectElement;
+    expect(guests.value).toBe('10');
+    expect(duration.value).toBe('12');
+    expect(profile.value).toBe('juhannus');
+
+    // The deep-linked prefill is a starting point, not a lock: the
+    // fields are ordinary editable inputs.
+    expect(guests.disabled).toBe(false);
+    expect(duration.disabled).toBe(false);
+    expect(profile.disabled).toBe(false);
+  });
+
+  it('renders the default state silently for an unknown slug — no error surface', async () => {
+    const tree = await EventPage({
+      params: Promise.resolve({ locale: 'fi' }),
+      searchParams: Promise.resolve({ occasion: 'nonsense' }),
+    });
+    const { container } = renderWithIntl(tree);
+
+    expect(
+      (container.querySelector('#event-guests') as HTMLInputElement).value,
+    ).toBe('10');
+    expect(
+      (container.querySelector('#event-profile') as HTMLSelectElement).value,
+    ).toBe('casual_gathering');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('renders the default state when the parameter is absent', async () => {
+    const tree = await EventPage({
+      params: Promise.resolve({ locale: 'fi' }),
+      searchParams: Promise.resolve({}),
+    });
+    const { container } = renderWithIntl(tree);
+
+    expect(
+      (container.querySelector('#event-guests') as HTMLInputElement).value,
+    ).toBe('10');
+    expect(
+      (container.querySelector('#event-profile') as HTMLSelectElement).value,
+    ).toBe('casual_gathering');
   });
 });

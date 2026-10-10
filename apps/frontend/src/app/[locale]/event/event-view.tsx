@@ -62,9 +62,20 @@ function todayIsoDate(): string {
  *  - The structural disclaimer from the response is rendered with the
  *    result — never a UI-only string.
  *
+ * Occasion deep link (change seasonal-occasion-templates, task 2.2):
+ * the server shell resolves `?occasion=<slug>` and hands down the
+ * validated template id; it seeds the same applied-template state a hand
+ * selection would, so the prefill lands on the first render and every
+ * field stays editable.
+ *
  * @module EventView
  */
-export default function EventView() {
+export default function EventView({
+  initialOccasionId,
+}: {
+  /** Validated `?occasion=` template id from the server shell, if any. */
+  readonly initialOccasionId?: string;
+} = {}) {
   const t = useTranslations('EventPage');
 
   // ── Submission state ──
@@ -80,11 +91,18 @@ export default function EventView() {
   // ordinary initial state; the application counter in the key makes
   // re-applying the same template re-fill edited fields. The prefill is
   // a starting point only: every field stays editable and the estimate
-  // always derives from the current inputs at submit time.
+  // always derives from the current inputs at submit time. A deep-linked
+  // occasion (task 2.2) seeds this same state, exactly as if selected
+  // by hand.
   const [appliedTemplate, setAppliedTemplate] = useState<{
     seq: number;
     template: EventOccasionTemplate;
-  } | null>(null);
+  } | null>(() => {
+    const template = initialOccasionId
+      ? EVENT_OCCASION_TEMPLATES.find((t) => t.id === initialOccasionId)
+      : undefined;
+    return template ? { seq: 1, template } : null;
+  });
 
   // ── Clear-form affordance (task 4.7) ──
   // The form owns its field state, so a reset remounts it (fresh

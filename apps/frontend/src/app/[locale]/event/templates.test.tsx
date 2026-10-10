@@ -20,7 +20,7 @@ import { waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import EventView from './event-view';
-import { EVENT_OCCASION_TEMPLATES } from './templates';
+import { EVENT_OCCASION_TEMPLATES, resolveOccasionParam } from './templates';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import { request } from '@/lib/api';
 
@@ -209,5 +209,36 @@ describe('EventView seasonal occasion templates (2.1)', () => {
       durationHours: 12,
       eventProfile: 'juhannus',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Occasion deep link (change seasonal-occasion-templates, task 2.2)
+// ---------------------------------------------------------------------------
+
+describe('resolveOccasionParam (2.2)', () => {
+  it('resolves a known slug to its template', () => {
+    expect(resolveOccasionParam('juhannus')?.id).toBe('juhannus');
+    expect(resolveOccasionParam('vappu')?.id).toBe('vappu');
+    expect(resolveOccasionParam('rapujuhlat')?.id).toBe('rapujuhlat');
+    expect(resolveOccasionParam('talkoot')?.id).toBe('talkoot');
+    // The generic occasions are deep-linkable too.
+    expect(resolveOccasionParam('wedding')?.id).toBe('wedding');
+  });
+
+  it('ignores surrounding whitespace', () => {
+    expect(resolveOccasionParam(' juhannus ')?.id).toBe('juhannus');
+  });
+
+  it('takes the first value of a repeated parameter', () => {
+    expect(resolveOccasionParam(['juhannus', 'vappu'])?.id).toBe('juhannus');
+  });
+
+  it('resolves absent, blank, and unknown values to null — never an error', () => {
+    expect(resolveOccasionParam(undefined)).toBeNull();
+    expect(resolveOccasionParam('')).toBeNull();
+    expect(resolveOccasionParam('   ')).toBeNull();
+    expect(resolveOccasionParam('nonsense')).toBeNull();
+    expect(resolveOccasionParam(['nonsense'])).toBeNull();
   });
 });

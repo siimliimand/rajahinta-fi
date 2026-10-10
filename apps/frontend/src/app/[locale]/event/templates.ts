@@ -93,3 +93,19 @@ export const EVENT_OCCASION_TEMPLATES: readonly EventOccasionTemplate[] = [
     prefill: { guests: '15', durationHours: '4', eventProfile: 'talkoot' },
   },
 ];
+
+/**
+ * Forgiving `?occasion=` resolution (change seasonal-occasion-templates,
+ * task 2.2): absent, blank, and unknown values all resolve to null — the
+ * default state, never an error surface (spec event-calculator: an
+ * unknown occasion value is ignored). The first value of a repeated
+ * parameter wins, matching the products page's array handling.
+ */
+export function resolveOccasionParam(
+  raw: string | string[] | undefined,
+): EventOccasionTemplate | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const slug = value?.trim() ?? '';
+  if (slug.length === 0) return null;
+  return EVENT_OCCASION_TEMPLATES.find((t) => t.id === slug) ?? null;
+}
