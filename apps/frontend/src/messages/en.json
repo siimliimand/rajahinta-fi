@@ -1011,7 +1011,8 @@
       "surplus": "Surplus",
       "unitQuantity": "{quantity} ×",
       "noPurchase": "Nothing to buy",
-      "normsVersion": "Consumption norms version: {version}"
+      "normsVersion": "Consumption norms version: {version}",
+      "shareCosts": "Share the costs"
     },
     "noNorms": {
       "title": "No published consumption norms",
@@ -1674,6 +1675,20 @@
     "createAction": "Create session",
     "creating": "Creating…",
     "createFailed": "The session could not be created.",
+    "prefillTitle": "Estimated shopping list",
+    "prefillHint": "The rows come from the event calculator's estimate and behave like ordinary, freely editable rows.",
+    "prefillName": "Item",
+    "prefillQuantity": "Quantity",
+    "prefillAdd": "Add row",
+    "prefillRemove": "Remove row",
+    "prefillItemName": {
+      "beer": "Beer",
+      "wine_still": "Wine",
+      "wine_sparkling": "Sparkling wine",
+      "intermediate_products": "Fortified wines (vermouth, port)",
+      "other_fermented": "Long drinks and ciders",
+      "spirits": "Spirits"
+    },
     "shareLinkTitle": "Shareable link",
     "shareLinkBody": "Give this link to the participants. It expires on {date}.",
     "copyLink": "Copy link",

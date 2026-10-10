@@ -1011,7 +1011,8 @@
       "surplus": "Ylijäämä",
       "unitQuantity": "{quantity} ×",
       "noPurchase": "Ei ostotarvetta",
-      "normsVersion": "Kulutusnormien versio: {version}"
+      "normsVersion": "Kulutusnormien versio: {version}",
+      "shareCosts": "Jaa kustannukset"
     },
     "noNorms": {
       "title": "Ei julkaistuja kulutusnormeja",
@@ -1674,6 +1675,20 @@
     "createAction": "Luo sessio",
     "creating": "Luodaan…",
     "createFailed": "Sessiota ei voitu luoda.",
+    "prefillTitle": "Arvioitu ostoslista",
+    "prefillHint": "Rivit tulevat tilaisuuslaskurin arviosta ja käyttäytyvät kuin tavalliset, vapaasti muokattavat rivit.",
+    "prefillName": "Erä",
+    "prefillQuantity": "Määrä",
+    "prefillAdd": "Lisää rivi",
+    "prefillRemove": "Poista rivi",
+    "prefillItemName": {
+      "beer": "Olut",
+      "wine_still": "Viini",
+      "wine_sparkling": "Kuohuviini",
+      "intermediate_products": "Väkevöidyt viinit (vermutti, portviini)",
+      "other_fermented": "Lonkerot ja siiderit",
+      "spirits": "Väkevät"
+    },
     "shareLinkTitle": "Jaettava linkki",
     "shareLinkBody": "Anna tämä linkki osallistujille. Linkki vanhenee {date}.",
     "copyLink": "Kopioi linkki",

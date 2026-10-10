@@ -68,12 +68,14 @@ vi.mock('next-intl/server', () => ({
 const mockedRequest = vi.mocked(request);
 
 // The empirical-margin meter (hedge-dedup-confidence-meter 4.1) joins
-// the event tree's import graph with the i18n navigation Link; stub it
-// with the plain-anchor shape the other view/page tests use.
-vi.mock('@/i18n/navigation', () => ({
-  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
-    React.createElement('a', props),
-}));
+// the event tree's import graph with the i18n navigation Link — and the
+// estimate handoff (seasonal-occasion-templates 3.1) renders a typed
+// href object. The shared testing double serializes it the way the real
+// Link does, so href assertions read the localized URL.
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 
 // ---------------------------------------------------------------------------
@@ -425,6 +427,58 @@ describe('EventPage — V2 sourcing', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Estimate handoff (change seasonal-occasion-templates, task 3.1)
+// ---------------------------------------------------------------------------
+
+describe('EventPage — estimate handoff (3.1)', () => {
+  it('offers "Jaa kustannukset" on a completed estimate, carrying names and quantities in the URL', async () => {
+    mockedRequest.mockResolvedValueOnce(COMPUTED);
+
+    const user = userEvent.setup();
+    renderWithIntl(<EventView />);
+
+    await user.click(screen.getByRole('button', { name: 'Laske ostoslista' }));
+
+    const handoff = await screen.findByTestId('event-handoff');
+    expect(handoff).toHaveTextContent('Jaa kustannukset');
+    // The localized /group-order route with the compact items payload —
+    // the fixture's single line is 6 containers of beer.
+    expect(handoff.getAttribute('href')).toBe('/ryhmatilaus?items=beer%3A6');
+  });
+
+  it('offers no handoff on NO_PUBLISHED_NORMS', async () => {
+    mockedRequest.mockResolvedValueOnce(NO_NORMS);
+
+    const user = userEvent.setup();
+    renderWithIntl(<EventView />);
+
+    await user.click(screen.getByRole('button', { name: 'Laske ostoslista' }));
+    expect(await screen.findByText('Ei julkaistuja kulutusnormeja')).toBeInTheDocument();
+    expect(screen.queryByTestId('event-handoff')).not.toBeInTheDocument();
+  });
+
+  it('offers no handoff when the estimate has nothing to buy', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      ...COMPUTED,
+      lines: [
+        {
+          ...COMPUTED.lines[0]!,
+          plannedUnits: [],
+          totalUnits: 0,
+        },
+      ],
+    });
+
+    const user = userEvent.setup();
+    renderWithIntl(<EventView />);
+
+    await user.click(screen.getByRole('button', { name: 'Laske ostoslista' }));
+    expect(await screen.findByTestId('event-result')).toBeInTheDocument();
+    expect(screen.queryByTestId('event-handoff')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Server shell (task 2.3, D2): unique metadata + SSR intro / method summary
 // ---------------------------------------------------------------------------
 
@@ -432,6 +486,7 @@ describe('EventPage server shell (task 2.3)', () => {
   it('emits unique metadata with the event shopping-list framing', async () => {
     const meta = await eventMetadata({
       params: Promise.resolve({ locale: 'fi' }),
+      searchParams: Promise.resolve({}),
     });
     expect(meta.title).toBe('Tilaisuuslaskuri: juomatarve ja ostoslista');
     expect(meta.description).toContain('ostoslistan');

@@ -5,7 +5,12 @@
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
+import { Link } from '@/i18n/navigation';
 import type { EventCalcResponse, ShoppingListLine } from '../event.types';
+import {
+  estimateHandoffItems,
+  serializeEstimateHandoffItems,
+} from '../estimate-handoff';
 import { Badge, Card, EmptyState } from '@/components/ui';
 import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
 import EventPlanResult from './EventPlanResult';
@@ -108,6 +113,15 @@ export default function EventShoppingListResult({
   const t = useTranslations('EventPage');
   const tCommon = useTranslations('Common');
 
+  // Estimate handoff (change seasonal-occasion-templates, task 3.1):
+  // names and quantities only, riding the URL into the group-order
+  // create flow. No action when the result has no rows to share — it
+  // renders only with a completed estimate (never on
+  // NO_PUBLISHED_NORMS, and not for a COMPUTED list with nothing to buy).
+  const handoffQuery = serializeEstimateHandoffItems(
+    estimateHandoffItems(result),
+  );
+
   return (
     <section aria-labelledby="event-result-heading" data-testid="event-result">
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -132,6 +146,23 @@ export default function EventShoppingListResult({
               <ShoppingListLineCard key={line.drinkType} line={line} />
             ))}
           </div>
+          {/* ── Estimate handoff: the estimated list becomes the
+                  group-order creation flow's prefill (names and
+                  quantities only). ── */}
+          {handoffQuery !== '' && (
+            <div className="mt-6">
+              <Link
+                href={{
+                  pathname: '/group-order',
+                  query: { items: handoffQuery },
+                }}
+                data-testid="event-handoff"
+                className="inline-flex items-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+              >
+                {t('result.shareCosts')}
+              </Link>
+            </div>
+          )}
           {/* ── V2 sourcing plan (task 4.5) — present only when the
                   request carried the sourcing section. The response's
                   empirical margin (hedge-dedup-confidence-meter 4.1)

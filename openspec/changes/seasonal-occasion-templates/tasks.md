@@ -16,7 +16,7 @@
 
 ## 3. Event → group-order handoff
 
-- [ ] 3.1 "Jaa kustannukset" handoff action on the event result (renders only with a completed estimate) → group-order create-view intake of names + quantities as ordinary editable rows + tests on both surfaces <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [apps/frontend/src/app/[locale]/event/**, apps/frontend/src/app/[locale]/group-order/create-view.tsx, apps/frontend/src/app/[locale]/group-order/page.tsx] -->
+- [x] 3.1 "Jaa kustannukset" handoff action on the event result (renders only with a completed estimate) → group-order create-view intake of names + quantities as ordinary editable rows + tests on both surfaces <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [apps/frontend/src/app/[locale]/event/**, apps/frontend/src/app/[locale]/group-order/create-view.tsx, apps/frontend/src/app/[locale]/group-order/page.tsx] -->
 - [ ] 3.2 Pin the accounting-only boundary across the prefill path: payment-instrument fields rejected at the DTO with the field named; handoff payload asserted names+quantities-only <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [tests/compliance/group-order-accounting-only.test.ts] -->
 
 ## 4. Operator publication (owner-gated)

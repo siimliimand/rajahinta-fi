@@ -16,7 +16,7 @@
 
 import * as React from 'react';
 import { screen, waitFor } from '@testing-library/react';import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CreateGroupOrderView from './create-view';
 import { renderWithIntl } from '@/lib/testing/test-intl';
 import { ApiFetchError, request } from '@/lib/api';
@@ -62,6 +62,11 @@ const CREATED: CreateSessionResponse = {
 
 beforeEach(() => {
   mockedRequest.mockReset();
+});
+
+afterEach(() => {
+  // Deep-link tests rewrite the jsdom URL; restore the bare one.
+  window.history.replaceState(null, '', '/group-order');
 });
 
 describe('CreateGroupOrderView', () => {
@@ -125,5 +130,113 @@ describe('CreateGroupOrderView', () => {
     await user.click(screen.getByTestId('group-order-create-button'));
 
     await waitFor(() => expect(container.firstChild).toBeNull());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Estimate prefill intake (change seasonal-occasion-templates, task 3.1)
+// ---------------------------------------------------------------------------
+
+describe('CreateGroupOrderView — estimate prefill intake (3.1)', () => {
+  it('populates editable rows from a valid ?items= prefill', async () => {
+    window.history.replaceState(null, '', '/group-order?items=beer:24,wine_sparkling:2');
+    renderWithIntl(<CreateGroupOrderView />);
+
+    const section = await screen.findByTestId('group-order-prefill-rows');
+    expect(section).toHaveTextContent('Arvioitu ostoslista');
+    // Canonical keys resolve to the consumer labels; quantities pass through.
+    expect(
+      (document.getElementById('group-order-prefill-name-0') as HTMLInputElement)
+        .value,
+    ).toBe('Olut');
+    expect(
+      (document.getElementById('group-order-prefill-quantity-0') as HTMLInputElement)
+        .value,
+    ).toBe('24');
+    expect(
+      (document.getElementById('group-order-prefill-name-1') as HTMLInputElement)
+        .value,
+    ).toBe('Kuohuviini');
+    expect(
+      (document.getElementById('group-order-prefill-quantity-1') as HTMLInputElement)
+        .value,
+    ).toBe('2');
+
+    // The standard creation entry is untouched beneath the rows.
+    expect(screen.getByTestId('group-order-create-button')).toBeInTheDocument();
+  });
+
+  it('treats prefill rows as ordinary rows: editable, removable, extendable', async () => {
+    window.history.replaceState(null, '', '/group-order?items=beer:24,wine_sparkling:2');
+    const user = userEvent.setup();
+    renderWithIntl(<CreateGroupOrderView />);
+    await screen.findByTestId('group-order-prefill-rows');
+
+    // Edit the first row's name and quantity freely.
+    const name = document.getElementById(
+      'group-order-prefill-name-0',
+    ) as HTMLInputElement;
+    await user.clear(name);
+    await user.type(name, 'Saunaolut');
+    expect(name.value).toBe('Saunaolut');
+    const quantity = document.getElementById(
+      'group-order-prefill-quantity-0',
+    ) as HTMLInputElement;
+    await user.clear(quantity);
+    await user.type(quantity, '30');
+    expect(quantity.value).toBe('30');
+
+    // Remove the first row — the second survives with its values.
+    await user.click(screen.getByTestId('group-order-prefill-remove-0'));
+    expect(
+      document.getElementById('group-order-prefill-name-0'),
+    ).not.toBeNull();
+    expect(
+      (document.getElementById('group-order-prefill-name-0') as HTMLInputElement)
+        .value,
+    ).toBe('Kuohuviini');
+
+    // Extend with an empty row, exactly like a hand-added one.
+    await user.click(screen.getByTestId('group-order-prefill-add'));
+    expect(
+      (document.getElementById('group-order-prefill-name-1') as HTMLInputElement)
+        .value,
+    ).toBe('');
+    expect(
+      (document.getElementById('group-order-prefill-quantity-1') as HTMLInputElement)
+        .value,
+    ).toBe('1');
+  });
+
+  it('creates the session exactly as without a prefill (nothing transmitted)', async () => {
+    window.history.replaceState(null, '', '/group-order?items=beer:24');
+    const user = userEvent.setup();
+    mockedRequest.mockResolvedValue(CREATED);
+    renderWithIntl(<CreateGroupOrderView />);
+    await screen.findByTestId('group-order-prefill-rows');
+
+    await user.click(screen.getByTestId('group-order-create-button'));
+    await waitFor(() => {
+      expect(mockedRequest).toHaveBeenCalledWith('/api/v1/group-orders', {
+        method: 'POST',
+      });
+    });
+    expect(await screen.findByTestId('group-order-share-panel')).toBeInTheDocument();
+  });
+
+  it('degrades a malformed prefill silently to the standard empty creation state', async () => {
+    window.history.replaceState(null, '', '/group-order?items=garbage');
+    renderWithIntl(<CreateGroupOrderView />);
+
+    expect(screen.queryByTestId('group-order-prefill-rows')).not.toBeInTheDocument();
+    expect(screen.getByTestId('group-order-create-button')).toBeInTheDocument();
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('renders the standard state with no items parameter at all', async () => {
+    renderWithIntl(<CreateGroupOrderView />);
+
+    expect(screen.queryByTestId('group-order-prefill-rows')).not.toBeInTheDocument();
+    expect(screen.getByTestId('group-order-create-button')).toBeInTheDocument();
   });
 });
