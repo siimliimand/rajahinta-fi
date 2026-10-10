@@ -1185,8 +1185,9 @@ export const carrierBoxTypes = sqliteTable(
  * hour (REAL — a fractional norm is the normal case, e.g. half a glass
  * of wine per hour). drinkType reuses the canonical tax-rule category
  * keys so the calculator's per-type lines feed the landed-cost/tax
- * engines without translation; eventProfile is the MVP simple mode's
- * closed profile set.
+ * engines without translation; eventProfile is the general simple-mode
+ * set plus the seasonal occasion profiles (change
+ * seasonal-occasion-templates).
  *
  * UNIQUE (drink_type, event_profile, version_label) is the curated
  * seed's idempotent upsert target; UNIQUE already covers the resolution
@@ -1202,7 +1203,7 @@ export const consumptionNorms = sqliteTable(
     versionLabel: text('version_label', { length: 64 }).notNull(),
     /** Drink type — canonical tax-rule category key (beer, wine_still, wine_sparkling, intermediate_products, other_fermented, spirits). */
     drinkType: text('drink_type', { length: 32 }).notNull(),
-    /** Event profile — the MVP simple mode's closed set (casual_gathering, dinner_party, celebration). */
+    /** Event profile — the general set (casual_gathering, dinner_party, celebration) plus the seasonal occasion profiles (juhannus, vappu, rapujuhlat, talkoot, change seasonal-occasion-templates). */
     eventProfile: text('event_profile', { length: 32 }).notNull(),
     /** Expected consumption in litres of finished beverage per guest per hour. */
     normValuePerGuestPerHour: real('norm_value_per_guest_per_hour').notNull(),
@@ -1238,7 +1239,10 @@ export const consumptionNorms = sqliteTable(
     ),
     check(
       'consumption_norms_event_profile_check',
-      sql`${table.eventProfile} IN ('casual_gathering', 'dinner_party', 'celebration')`,
+      // General MVP set + the seasonal occasion profiles (change
+      // seasonal-occasion-templates): the seasonal curated dataset
+      // (seasonal-occasions-fi-2026.1) keys its rows on these.
+      sql`${table.eventProfile} IN ('casual_gathering', 'dinner_party', 'celebration', 'juhannus', 'vappu', 'rapujuhlat', 'talkoot')`,
     ),
     check(
       'consumption_norms_norm_value_check',
