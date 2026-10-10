@@ -383,3 +383,348 @@ describe('ExciseDeclarationService — type-level safety over guidance surface',
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// import-filing-assistant Stage 1 — safety + phrasing register over the
+// dated pre-dispatch checklist (design D2/D4/D5).
+//
+// The new string families (checklist steps, guarantee line, reference-number
+// step, post-deadline state) must stay in the observed-pattern register:
+// described as observed patterns and cited facts, never imperative
+// instructions or legal conclusions. The negligence penalty may appear only
+// in the officially hedged form, always with the official-source direction.
+// ---------------------------------------------------------------------------
+
+/** A dispatch date far ahead of any test run — stable DATED behavior. */
+const STAGE1_FUTURE_DATE = '2099-06-15';
+/** A dispatch date far in the past — stable POST_DEADLINE behavior. */
+const STAGE1_PAST_DATE = '2020-01-15';
+
+/** All new guidance strings of one summary, keyed by the family they belong to. */
+interface NewStringFamilies {
+  readonly stepDescriptions: readonly string[];
+  readonly guaranteeDescription: string | null;
+  readonly postDeadlineDescription: string | null;
+}
+
+function collectStringFamilies(summary: DeclarationSummary): NewStringFamilies {
+  const checklist = summary.guidance.datedChecklist;
+  return {
+    stepDescriptions: checklist.steps.map((step) => step.description),
+    guaranteeDescription:
+      checklist.steps.find((step) => step.kind === 'guarantee')?.description ??
+      null,
+    postDeadlineDescription: checklist.postDeadline?.description ?? null,
+  };
+}
+
+describe('Stage 1 — no-submission guarantee over the dated checklist paths', () => {
+  it('keeps noSubmissionGuarantee in the dated, undated, and post-deadline states', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+
+    const dated = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: STAGE1_FUTURE_DATE,
+    });
+    const undated = await svc.prepareDeclaration(7);
+    const past = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: STAGE1_PAST_DATE,
+    });
+
+    expect(dated.guidance.datedChecklist.state).toBe('DATED');
+    expect(undated.guidance.datedChecklist.state).toBe('UNDATED');
+    expect(past.guidance.datedChecklist.state).toBe('POST_DEADLINE');
+    // The runtime guarantee stays on the service through every state.
+    expect(svc.noSubmissionGuarantee).toBe(NO_SUBMISSION_GUARANTEE);
+  });
+
+  it('returns no submission-like key at any depth in any checklist state', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+
+    for (const options of [
+      undefined,
+      { plannedDispatchDate: STAGE1_FUTURE_DATE },
+      { plannedDispatchDate: STAGE1_PAST_DATE },
+    ]) {
+      const summary = await svc.prepareDeclaration(7, options);
+      const deepKeys = collectDeepKeys(summary);
+      expect(deepKeys.length).toBeGreaterThan(0);
+      for (const key of deepKeys) {
+        expect(
+          SUBMISSION_LIKE_KEY.test(key),
+          `Submission-like key "${key}" found in the ${summary.guidance.datedChecklist.state} summary`,
+        ).toBe(false);
+      }
+      expect(deepKeys).not.toContain('id');
+    }
+  });
+
+  it('returns pure JSON-serializable data in the dated and post-deadline states', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+
+    const dated = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: STAGE1_FUTURE_DATE,
+    });
+    const past = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: STAGE1_PAST_DATE,
+    });
+
+    expect(JSON.parse(JSON.stringify(dated))).toEqual(dated);
+    expect(JSON.parse(JSON.stringify(past))).toEqual(past);
+  });
+});
+
+describe('Stage 1 — phrasing register: checklist steps', () => {
+  it('every step is non-empty observed-pattern text in every state', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+
+    const summaries = [
+      await svc.prepareDeclaration(7),
+      await svc.prepareDeclaration(7, { plannedDispatchDate: STAGE1_FUTURE_DATE }),
+      await svc.prepareDeclaration(7, { plannedDispatchDate: STAGE1_PAST_DATE }),
+    ];
+
+    for (const summary of summaries) {
+      const steps = summary.guidance.datedChecklist.steps;
+      expect(steps.length).toBeGreaterThan(0);
+      for (const step of steps) {
+        expect(step.description.length).toBeGreaterThan(0);
+        expect(step.description).toMatch(/observed|Observed/);
+      }
+    }
+  });
+
+  it('no step opens with an imperative instruction', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+    const summary = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: STAGE1_FUTURE_DATE,
+    });
+
+    const imperativeOpener =
+      /^(please\s+)?(file|pay|make|do|remember|ensure|always|never|don't|do not|you must)\b/i;
+    for (const step of summary.guidance.datedChecklist.steps) {
+      expect(
+        imperativeOpener.test(step.description),
+        `Step "${step.kind}" opens with imperative phrasing`,
+      ).toBe(false);
+    }
+  });
+
+  it('every step carries its citation reference to an official vero.fi source', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+    const summary = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: STAGE1_FUTURE_DATE,
+    });
+
+    for (const step of summary.guidance.datedChecklist.steps) {
+      expect(step.citations.length).toBeGreaterThan(0);
+      for (const citation of step.citations) {
+        expect(citation.sourceId.length).toBeGreaterThan(0);
+        expect(citation.title.length).toBeGreaterThan(0);
+        expect(citation.url).toMatch(/^https:\/\/www\.vero\.fi\//);
+      }
+    }
+  });
+
+  it('includes the packaging-notice step verified in task 1.1 (two separate notices)', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+    const summary = await svc.prepareDeclaration(7);
+
+    const packagingStep = summary.guidance.datedChecklist.steps.find(
+      (step) => step.kind === 'noticePackaging',
+    );
+    expect(packagingStep).toBeDefined();
+    expect(packagingStep?.description).toContain('beverage-packaging duty');
+    expect(packagingStep?.description).toContain('no guarantee');
+    expect(packagingStep?.citations.length).toBeGreaterThan(0);
+  });
+
+  it('describes the reference-number lifecycle at the verified point: after guarantee payment, all numbers to the carrier', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+    const summary = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: STAGE1_FUTURE_DATE,
+    });
+
+    const referenceStep = summary.guidance.datedChecklist.steps.find(
+      (step) => step.kind === 'referenceNumber',
+    );
+    expect(referenceStep).toBeDefined();
+    expect(referenceStep?.description).toContain(
+      'only once the guarantee has been paid',
+    );
+    expect(referenceStep?.description).toContain('1–2 business days');
+    // Several numbers may exist — every one must reach the carrier.
+    expect(referenceStep?.description).toContain('several numbers');
+    expect(referenceStep?.description).toContain('all of them');
+    expect(referenceStep?.citations.length).toBeGreaterThan(0);
+  });
+});
+
+describe('Stage 1 — phrasing register: guarantee line', () => {
+  it('states the offered figure with its ESTIMATED status, never VERIFIED', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+    const summary = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: STAGE1_FUTURE_DATE,
+    });
+
+    const guarantee = summary.guidance.datedChecklist.guarantee;
+    expect(guarantee.available).toBe(true);
+    expect(guarantee.status).toBe('ESTIMATED');
+
+    const guaranteeStep = summary.guidance.datedChecklist.steps.find(
+      (step) => step.kind === 'guarantee',
+    );
+    expect(guaranteeStep?.description).toContain('5.12 €');
+    expect(guaranteeStep?.description).toContain('ESTIMATED');
+    expect(guaranteeStep?.description).not.toMatch(/VERIFIED/);
+    // The figure is a prepayment credited against the duty — never framed
+    // as a fine or an extra charge.
+    expect(guaranteeStep?.description).toContain('prepayment');
+    expect(guaranteeStep?.description).not.toMatch(/\bfine\b|\bextra charge\b/);
+  });
+
+  it('renders the unavailable state with no number when the figure degrades', async () => {
+    // A record with no persisted excise rule provenance → unavailable.
+    const unprovenancedPort: ICalculationRecordQueryPort = {
+      findById: async () => ({
+        ...guidanceCarryingRecord,
+        exciseRuleVersionLabel: null,
+      }),
+    };
+    const summary = await new ExciseDeclarationService(unprovenancedPort).prepareDeclaration(
+      7,
+      { plannedDispatchDate: STAGE1_FUTURE_DATE },
+    );
+
+    const checklist = summary.guidance.datedChecklist;
+    expect(checklist.guarantee.available).toBe(false);
+    expect(checklist.guarantee.amountCents).toBeNull();
+    expect(checklist.guarantee.status).toBe('UNAVAILABLE');
+
+    const guaranteeStep = checklist.steps.find(
+      (step) => step.kind === 'guarantee',
+    );
+    expect(guaranteeStep?.description).toContain('unavailable');
+    // The degraded step never renders a euro amount.
+    expect(guaranteeStep?.description).not.toMatch(/\d+([.,]\d{2})\s?€/);
+  });
+});
+
+describe('Stage 1 — phrasing register: post-deadline state', () => {
+  it('names the negligence penalty only hedged, with the official-source direction', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+    const summary = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: STAGE1_PAST_DATE,
+    });
+
+    const postDeadline = summary.guidance.datedChecklist.postDeadline;
+    expect(postDeadline?.deadlinePassed).toBe(true);
+
+    const description = postDeadline?.description ?? '';
+    // The official hedge ("voi olla" / "may") — never an automatic assertion.
+    expect(description).toMatch(/\bmay\b/);
+    expect(description).toContain('may result in a negligence penalty');
+    expect(description).toContain('laiminlyöntimaksu');
+    expect(description).toContain('official sources');
+  });
+
+  it('asserts no unhedged penalty language in any new string family', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+    const summary = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: STAGE1_PAST_DATE,
+    });
+
+    const families = collectStringFamilies(summary);
+    const allStrings = [
+      ...families.stepDescriptions,
+      families.guaranteeDescription ?? '',
+      families.postDeadlineDescription ?? '',
+    ];
+
+    const unhedgedPenaltyLanguage =
+      /will incur|must pay a penalty|penalty of [0-9]|automatically (incurs?|impos)|sanction|veronkorotus|myöhästymismaksu/i;
+    for (const text of allStrings) {
+      expect(
+        unhedgedPenaltyLanguage.test(text),
+        `Unhedged penalty language found: "${text}"`,
+      ).toBe(false);
+    }
+
+    // The hedged penalty is confined to the post-deadline family — the
+    // checklist steps never mention consequences.
+    for (const step of families.stepDescriptions) {
+      expect(step).not.toMatch(/penalt|laiminlyönti/i);
+    }
+  });
+
+  it('attaches official citations to the post-deadline state', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+    const summary = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: STAGE1_PAST_DATE,
+    });
+
+    const postDeadline = summary.guidance.datedChecklist.postDeadline;
+    expect(postDeadline?.citations.length).toBeGreaterThan(0);
+    for (const citation of postDeadline?.citations ?? []) {
+      expect(citation.sourceId.length).toBeGreaterThan(0);
+      expect(citation.url).toMatch(/^https:\/\/www\.vero\.fi\//);
+    }
+  });
+});
+
+describe('Stage 1 — dated figures and degradation', () => {
+  it('marks every date-derived figure ESTIMATED (the date is user-entered)', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+    const summary = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: STAGE1_FUTURE_DATE,
+    });
+
+    const checklist = summary.guidance.datedChecklist;
+    expect(checklist.deadlineSemantics).toBe('BEFORE_DISPATCH');
+    expect(checklist.returnDueEstimate?.status).toBe('ESTIMATED');
+    expect(checklist.returnDueEstimate?.estimatedArrivalDate).toBe(
+      STAGE1_FUTURE_DATE,
+    );
+    expect(checklist.returnDueEstimate?.dueDate).toBe('2099-07-12');
+    expect(checklist.returnDueEstimate?.citations.length).toBeGreaterThan(0);
+  });
+
+  it('undated degradation: same steps and citations, no deadline and no derived dates', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+    const undated = await svc.prepareDeclaration(7);
+    const dated = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: STAGE1_FUTURE_DATE,
+    });
+
+    const undatedChecklist = undated.guidance.datedChecklist;
+    const datedChecklist = dated.guidance.datedChecklist;
+
+    expect(undatedChecklist.state).toBe('UNDATED');
+    expect(undatedChecklist.plannedDate).toBeNull();
+    expect(undatedChecklist.deadlineSemantics).toBeNull();
+    expect(undatedChecklist.returnDueEstimate).toBeNull();
+    expect(undatedChecklist.postDeadline).toBeNull();
+
+    // The steps themselves do not move — only the anchoring degrades.
+    expect(undatedChecklist.steps).toHaveLength(datedChecklist.steps.length);
+    for (let i = 0; i < undatedChecklist.steps.length; i += 1) {
+      expect(undatedChecklist.steps[i].kind).toBe(datedChecklist.steps[i].kind);
+      expect(undatedChecklist.steps[i].description).toBe(
+        datedChecklist.steps[i].description,
+      );
+      expect(undatedChecklist.steps[i].citations).toEqual(
+        datedChecklist.steps[i].citations,
+      );
+      expect(undatedChecklist.steps[i].datedFor).toBeNull();
+    }
+  });
+
+  it('an unparseable supplied date degrades to the undated checklist, never a guessed anchor', async () => {
+    const svc = new ExciseDeclarationService(guidanceQueryPort);
+    const summary = await svc.prepareDeclaration(7, {
+      plannedDispatchDate: '15/06/2099',
+    });
+
+    expect(summary.guidance.datedChecklist.state).toBe('UNDATED');
+    expect(summary.guidance.datedChecklist.plannedDate).toBeNull();
+  });
+});

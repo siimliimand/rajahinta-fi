@@ -21,10 +21,16 @@ import type {
   DeclarationSummary,
   DeclarationAdvanceNoticeInfo,
   DeclarationAppliedRateDetail,
+  DeclarationDatedChecklist,
   DeclarationDerivation,
+  DeclarationFilingStep,
   DeclarationGuidance,
   DeclarationGuidanceDeadline,
+  DeclarationGuidanceOptions,
   DeclarationLiabilityNotice,
+  DeclarationPostDeadlineState,
+  DeclarationReturnDueEstimate,
+  FilingProcessCitation,
   OfficialSourceLink,
   ICalculationRecordQueryPort,
 } from './declaration.types';
@@ -33,6 +39,7 @@ import {
   CalculationRecordNotFoundError,
   NO_SUBMISSION_GUARANTEE,
 } from './declaration.types';
+import { computeGuaranteeFigure } from './guarantee-figure';
 
 // ---------------------------------------------------------------------------
 // Advance-notice helpers
@@ -377,6 +384,261 @@ function buildCaveats(record: CalculationRecordData): string[] {
   return caveats;
 }
 
+// ---------------------------------------------------------------------------
+// Dated pre-dispatch checklist (import-filing-assistant Stage 1, D2/D4/D5)
+// ---------------------------------------------------------------------------
+//
+// Every fact below traces to a source recorded in the change's
+// change-notes.md (task 1.1 verification spike); the source table there
+// carries the verbatim quotes. Steps render only with their citations
+// attached — an uncited fact never renders.
+
+/** Plain calendar-date shape accepted for the user-supplied planned date. */
+const PLAIN_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Official sources for the filing-process facts, keyed by the change-notes
+ * source table (task 1.1). Verbatim quotes live in change-notes.md; the
+ * steps carry these references with them.
+ */
+const FILING_PROCESS_SOURCES = {
+  S1: {
+    sourceId: 'S1',
+    title: 'vero.fi — Ennakkoilmoitus – Yksityishenkilö (advance notice, private individuals)',
+    url:
+      'https://www.vero.fi/henkiloasiakkaat/verokortti-ja-veroilmoitus/ulkomailta_suomeen/matkustajatuonti/ennakkoilmoitus---yksityishenkil%C3%B6/',
+  },
+  S2: {
+    sourceId: 'S2',
+    title: 'vero.fi — Advance notice – individuals (English mirror of S1)',
+    url:
+      'https://www.vero.fi/en/individuals/tax-cards-and-tax-returns/arriving_in_finland/bringing-alcohol-and-tobacco-to-finland/advance-notice-private-individual/',
+  },
+  S3: {
+    sourceId: 'S3',
+    title: 'vero.fi — Ilmoitus- ja maksuohjeet alkoholi- ja tupakkatuotteille',
+    url:
+      'https://www.vero.fi/henkiloasiakkaat/verokortti-ja-veroilmoitus/ulkomailta_suomeen/matkustajatuonti/ilmoitus--ja-maksuohjeet-alkoholi--ja-tupakkatuotteille/',
+  },
+  S4: {
+    sourceId: 'S4',
+    title: 'vero.fi — Usein kysyttyä alkoholin nettitilaamisesta',
+    url:
+      'https://www.vero.fi/henkiloasiakkaat/verokortti-ja-veroilmoitus/ulkomailta_suomeen/matkustajatuonti/usein-kysytty%C3%A4-alkoholin-nettitilaamisesta/',
+  },
+  S5: {
+    sourceId: 'S5',
+    title: 'vero.fi — Näin annat ennakkoilmoituksen ja maksat kertaluonteisen vakuuden',
+    url:
+      'https://www.vero.fi/henkiloasiakkaat/verokortti-ja-veroilmoitus/ulkomailta_suomeen/matkustajatuonti/n%C3%A4in-annat-ennakkoilmoituksen-ja-asetat-kertaluonteisen-vakuuden---henkil%C3%B6asiakas/',
+  },
+} as const satisfies Readonly<Record<string, FilingProcessCitation>>;
+
+/** Format euro cents as a plain euro amount (deterministic, no Intl). */
+function formatEuroCents(cents: number): string {
+  return `${(cents / 100).toFixed(2)} €`;
+}
+
+/**
+ * Accept a user-supplied plain calendar date. Returns the normalized
+ * yyyy-mm-dd string, or `null` when the value is absent, malformed, or a
+ * non-existent calendar date (which `Date` would silently roll over) — a
+ * malformed date degrades to the undated checklist, never a guessed one.
+ */
+function parsePlainDate(value: string | null | undefined): string | null {
+  if (value === null || value === undefined || !PLAIN_DATE_PATTERN.test(value)) {
+    return null;
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toISOString().slice(0, 10) === value ? value : null;
+}
+
+/**
+ * True when the plain date lies before today's UTC calendar date (the
+ * filing state). Same-day dates are not in the past.
+ */
+function isPlainDateBeforeToday(value: string, now: Date): boolean {
+  const dateMs = new Date(`${value}T00:00:00.000Z`).getTime();
+  const todayMs = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  );
+  return dateMs < todayMs;
+}
+
+/**
+ * 12th of the month following the anchored date (change-notes.md Fact 4,
+ * S3 step 3): the return is filed and the duties paid by that date. Plain
+ * calendar arithmetic — December rolls to January of the next year.
+ */
+function computeReturnDueDate(anchoredDate: string): string {
+  const [year, month] = anchoredDate.split('-').map(Number);
+  const dueMonth = month === 12 ? 1 : month + 1;
+  const dueYear = month === 12 ? year + 1 : year;
+  return `${dueYear}-${String(dueMonth).padStart(2, '0')}-12`;
+}
+
+/**
+ * Build the ordered pre-dispatch filing steps from the verified facts
+ * (change-notes.md Facts 1–4). Observed-pattern register throughout
+ * (design D5). The guarantee step renders the figure only when the
+ * computation offers one; the unavailable state names the absence —
+ * never a substituted number.
+ */
+function buildFilingSteps(
+  datedFor: string | null,
+  guaranteeAmountCents: number | null,
+): DeclarationFilingStep[] {
+  const guaranteeFigureSentence =
+    guaranteeAmountCents === null
+      ? 'The guarantee figure for this record is unavailable — the recorded excise carries no applicable rule version — so no amount is stated here.'
+      : `The recorded excise supports an observed guarantee figure of ${formatEuroCents(guaranteeAmountCents)} for this filing, marked ESTIMATED.`;
+
+  return [
+    {
+      kind: 'noticeAlcohol',
+      description:
+        'Advance notices observed for self-arranged imports are filed in MyTax (OmaVero, the Finnish Tax Administration) before the products are sent: they state the estimated receipt date, the quantities, and the product group, and the filing is observed to remain as the basis of the later excise return. The stated receipt date is observed to fall within 90 days of filing and not in the past.',
+      datedFor,
+      citations: [FILING_PROCESS_SOURCES.S1, FILING_PROCESS_SOURCES.S5],
+    },
+    {
+      kind: 'noticePackaging',
+      description:
+        'Filings observed for ordered alcohol include a second, separate advance notice for the beverage-packaging duty (0.51 € per litre of the finished drink, per the observed schedule page); no guarantee is needed for the packaging notice.',
+      datedFor,
+      citations: [
+        FILING_PROCESS_SOURCES.S1,
+        FILING_PROCESS_SOURCES.S2,
+        FILING_PROCESS_SOURCES.S3,
+      ],
+    },
+    {
+      kind: 'guarantee',
+      description: `Guarantees observed for these filings equal the calculated alcohol excise duty — a prepayment later credited against the duty (shortfall payable, overpayment refunded); the beverage-packaging duty carries no guarantee. ${guaranteeFigureSentence}`,
+      datedFor,
+      citations: [
+        FILING_PROCESS_SOURCES.S1,
+        FILING_PROCESS_SOURCES.S3,
+        FILING_PROCESS_SOURCES.S5,
+      ],
+    },
+    {
+      kind: 'referenceNumber',
+      description:
+        'Excise numbers for transport are observed to appear in MyTax under Advance notices only once the guarantee has been paid — payments of this kind become visible within 1–2 business days. Filings of this kind may receive several numbers (one per notice), and the observed guidance directs that all of them be given to the carrier or marked on the parcel.',
+      datedFor,
+      citations: [
+        FILING_PROCESS_SOURCES.S3,
+        FILING_PROCESS_SOURCES.S4,
+        FILING_PROCESS_SOURCES.S5,
+      ],
+    },
+    {
+      kind: 'carrierHandoff',
+      description:
+        'Consignments observed in vero.fi guidance carry every excise number given to the transport company or marked on the parcel before dispatch; the number is presented to Customs or the Tax Administration on request during transport.',
+      datedFor,
+      citations: [FILING_PROCESS_SOURCES.S3],
+    },
+  ];
+}
+
+/** Build the return-due estimate anchored to the user-entered planned date. */
+function buildReturnDueEstimate(
+  anchoredDate: string,
+): DeclarationReturnDueEstimate {
+  return {
+    estimatedArrivalDate: anchoredDate,
+    dueDate: computeReturnDueDate(anchoredDate),
+    status: 'ESTIMATED',
+    citations: [FILING_PROCESS_SOURCES.S3],
+  };
+}
+
+/**
+ * Build the post-deadline state (design D4). The negligence penalty is
+ * named only in the officially hedged form ("voi olla" / "may" —
+ * change-notes.md Fact 4), always with the official-source direction;
+ * nothing quantitative and nothing automatic is asserted.
+ */
+function buildPostDeadlineState(): DeclarationPostDeadlineState {
+  return {
+    deadlinePassed: true,
+    description:
+      'The planned dispatch date is in the past; the before-dispatch filing window described in vero.fi guidance has passed. vero.fi states that a missed advance notice may result in a negligence penalty (laiminlyöntimaksu); its page gives no amount or computation basis for this case. The obligations in this situation are verified from the official sources cited with these steps.',
+    citations: [
+      FILING_PROCESS_SOURCES.S1,
+      FILING_PROCESS_SOURCES.S2,
+      FILING_PROCESS_SOURCES.S3,
+    ],
+  };
+}
+
+/**
+ * Build the dated pre-dispatch checklist from the record and the
+ * user-supplied planned date.
+ *
+ * Degradation (design D4 / spec): no usable date → the undated checklist
+ * (same steps and citations, no deadline, no derived dates); a date in the
+ * past relative to the filing state → the post-deadline state. The date is
+ * a request parameter — nothing here persists it.
+ */
+function buildDatedChecklist(
+  record: CalculationRecordData,
+  plannedDispatchDate: string | null | undefined,
+): DeclarationDatedChecklist {
+  const guarantee = computeGuaranteeFigure(
+    {
+      amountCents: record.alcoholExciseCents,
+      ruleVersionLabel: record.exciseRuleVersionLabel ?? null,
+    },
+    {
+      amountCents: record.containerDutyCents,
+      ruleVersionLabel: record.containerDutyRuleVersionLabel ?? null,
+    },
+  );
+
+  const plannedDate = parsePlainDate(plannedDispatchDate);
+  if (plannedDate === null) {
+    return {
+      state: 'UNDATED',
+      plannedDate: null,
+      deadlineSemantics: null,
+      steps: buildFilingSteps(null, guarantee.available ? guarantee.amountCents : null),
+      guarantee,
+      returnDueEstimate: null,
+      postDeadline: null,
+    };
+  }
+
+  if (isPlainDateBeforeToday(plannedDate, new Date())) {
+    return {
+      state: 'POST_DEADLINE',
+      plannedDate,
+      deadlineSemantics: 'BEFORE_DISPATCH',
+      steps: buildFilingSteps(plannedDate, guarantee.available ? guarantee.amountCents : null),
+      guarantee,
+      returnDueEstimate: buildReturnDueEstimate(plannedDate),
+      postDeadline: buildPostDeadlineState(),
+    };
+  }
+
+  return {
+    state: 'DATED',
+    plannedDate,
+    deadlineSemantics: 'BEFORE_DISPATCH',
+    steps: buildFilingSteps(plannedDate, guarantee.available ? guarantee.amountCents : null),
+    guarantee,
+    returnDueEstimate: buildReturnDueEstimate(plannedDate),
+    postDeadline: null,
+  };
+}
+
 /**
  * Assemble the full guidance object.  Pure — reads the persisted record,
  * adds no I/O, submits nothing.
@@ -384,6 +646,7 @@ function buildCaveats(record: CalculationRecordData): string[] {
 function buildGuidance(
   record: CalculationRecordData,
   advanceNoticeInfo: DeclarationAdvanceNoticeInfo,
+  plannedDispatchDate: string | null | undefined,
 ): DeclarationGuidance {
   return {
     derivation: buildDerivation(record),
@@ -392,6 +655,7 @@ function buildGuidance(
     checklist: MYTAX_ENTRY_CHECKLIST,
     caveats: buildCaveats(record),
     officialSources: OFFICIAL_SOURCES,
+    datedChecklist: buildDatedChecklist(record, plannedDispatchDate),
   };
 }
 
@@ -417,11 +681,16 @@ export class ExciseDeclarationService {
    * record.
    *
    * @param calculationRecordId — ID of the persisted calculation record.
+   * @param options — optional guidance inputs. `plannedDispatchDate` is a
+   *   request parameter (design D2, read-only): it anchors the dated
+   *   pre-dispatch checklist, is never persisted, and an absent, null, or
+   *   unparseable value degrades to the undated checklist.
    * @returns A DeclarationSummary ready for review or export.
    * @throws {CalculationRecordNotFoundError} when the record does not exist.
    */
   async prepareDeclaration(
     calculationRecordId: number,
+    options?: DeclarationGuidanceOptions,
   ): Promise<DeclarationSummary> {
     const record = await this.recordQuery.findById(calculationRecordId);
 
@@ -429,14 +698,17 @@ export class ExciseDeclarationService {
       throw new CalculationRecordNotFoundError(calculationRecordId);
     }
 
-    return this.assembleSummary(record);
+    return this.assembleSummary(record, options?.plannedDispatchDate ?? null);
   }
 
   // ---------------------------------------------------------------------------
   // Private — assembly
   // ---------------------------------------------------------------------------
 
-  private assembleSummary(record: CalculationRecordData): DeclarationSummary {
+  private assembleSummary(
+    record: CalculationRecordData,
+    plannedDispatchDate: string | null,
+  ): DeclarationSummary {
     const advanceNoticeInfo = getAdvanceNoticeInfo(
       record.classification,
       new Date(record.calculationTimestamp),
@@ -476,7 +748,7 @@ export class ExciseDeclarationService {
         record.disclaimerLanguage,
         record.disclaimerVersion,
       ),
-      guidance: buildGuidance(record, advanceNoticeInfo),
+      guidance: buildGuidance(record, advanceNoticeInfo, plannedDispatchDate),
     };
   }
 }
