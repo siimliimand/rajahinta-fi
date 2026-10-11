@@ -2496,6 +2496,85 @@ export const digestNotifications = sqliteTable(
 );
 
 /**
+ * Ferry onboard price observations — the curated onboard-shop prices
+ * behind the trip responses' display-only observed-prices block (task
+ * 2.1, change ferry-onboard-prices; specs: trip-feasibility-calculator
+ * "Observed onboard prices block", data-acquisition "Curated ferry
+ * onboard price source").
+ *
+ * One row per (operator, route, label, observed_at), transcribed from
+ * the operators' publicly browsable onboard/pre-order shops into the
+ * in-repo curated dataset (the Fransberg/Posti pattern) and upserted by
+ * the monthly curated-rate-refresh cron. Columns are exactly the
+ * curated-source contract plus created_at; data minimization forbids
+ * optional fields "for later" — no EAN, no product_master join, no
+ * merchant rows (ferry shops cannot ship to the door, so these rows
+ * never enter the landed-cost offer universe; the 3.2 byte-identity
+ * compliance assertion depends on that absence).
+ *
+ * No status column: "published rows only" refers to what ingestion
+ * chose to store — the governance gate (operator key per ferry
+ * operator, fail-closed PENDING until granted) is the publication
+ * mechanism, and the upsert stores only what the curated dataset
+ * contains.
+ *
+ * Currency is the EUR literal, not a column: all three operators price
+ * their FI-market shops in euro; price_cents is the EUR minor unit.
+ *
+ * The UNIQUE (operator, route, label, observed_at) index is the
+ * idempotent upsert target: a re-observation on a later date lands a
+ * new row (append-only history, the Fransberg precedent), a re-run over
+ * an unchanged dataset converges, and a same-observation correction
+ * overwrites in place. Non-empty CHECKs (uncited/undated/blank rows are
+ * transcription bugs, unrepresentable at rest) mirror ferry_offers;
+ * price_cents > 0 keeps free/negative "prices" out for the same
+ * reason. Ordering for the block is the unique key ascending.
+ */
+export const ferryPriceObservations = sqliteTable(
+  'ferry_price_observations',
+  {
+    id: integer('id').primaryKey(),
+    /** Ferry operator key as transcribed (e.g. "tallink", "viking", "eckero"). */
+    operator: text('operator', { length: 128 }).notNull(),
+    /** Human route label from the transcription (e.g. "Helsinki–Tallinn"); Tallink's is per ship. */
+    route: text('route', { length: 128 }).notNull(),
+    /** Display label as printed in the onboard shop (e.g. "Koskenkorva Vodka 40%, 3 x 70 cl"). */
+    label: text('label', { length: 512 }).notNull(),
+    /** EUR minor-unit price — the currency is the EUR literal, not a column. */
+    priceCents: integer('price_cents').notNull(),
+    /** The curated revision's shared observation date (ISO-8601) — part of the upsert identity. */
+    observedAt: text('observed_at').notNull(),
+    /** Per-row source citation (page URL the price was transcribed from). */
+    citation: text('citation').notNull(),
+    createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
+  },
+  (table) => [
+    // The idempotent upsert target: same observation identity → same row.
+    unique('ferry_price_observations_operator_route_label_observed_at_unique').on(
+      table.operator,
+      table.route,
+      table.label,
+      table.observedAt,
+    ),
+    // Serves the trip block's deterministic (operator, route, label,
+    // observed_at) ordering and the route-filtered read.
+    index('ferry_price_observations_operator_route_label_idx').on(
+      table.operator,
+      table.route,
+      table.label,
+    ),
+    // An uncited/undated price or a blank operator/route/label is a
+    // transcription bug, not an observation (the ferry_offers
+    // non-empty CHECK precedent); a non-positive onboard price likewise.
+    check('ferry_price_observations_operator_check', sql`${table.operator} <> ''`),
+    check('ferry_price_observations_route_check', sql`${table.route} <> ''`),
+    check('ferry_price_observations_label_check', sql`${table.label} <> ''`),
+    check('ferry_price_observations_price_check', sql`${table.priceCents} > 0`),
+    check('ferry_price_observations_citation_check', sql`${table.citation} <> ''`),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -2544,4 +2623,5 @@ export const d1Schema = {
   accountFavorites,
   accountPreferences,
   digestNotifications,
+  ferryPriceObservations,
 };
