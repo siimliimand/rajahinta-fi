@@ -54,8 +54,9 @@ config:
       # Non-2xx responses < 1 % of 2xx responses. 429s from the BASKET
       # rate-limit bucket count as errors here — if the steady phase
       # trips the limiter, tune the bucket, not this condition.
-      - expression: "http.response_status.{code:4xx}.count + 
-          http.response_status.{code:5xx}.count < 0.01 * http.response_status.{code:2xx}.count"
+      - expression: "http.response_status.{code:4xx}.count +
+          http.response_status.{code:5xx}.count < 0.01 *
+          http.response_status.{code:2xx}.count"
 
   plugins:
     ensure: {}

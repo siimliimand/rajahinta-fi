@@ -41,8 +41,9 @@ config:
     max: 10000
     conditions:
       # Non-2xx responses (excluding 429) < 1 % of 2xx responses
-      - expression: "http.response_status.{code:4xx}.count + 
-          http.response_status.{code:5xx}.count < 0.01 * http.response_status.{code:2xx}.count"
+      - expression: "http.response_status.{code:4xx}.count +
+          http.response_status.{code:5xx}.count < 0.01 *
+          http.response_status.{code:2xx}.count"
 
   plugins:
     ensure: {}
