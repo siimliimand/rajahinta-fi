@@ -8,12 +8,22 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import { ApiFetchError } from '@/lib/api';
-import { Button } from '@/components/ui';
+import { Button, Input } from '@/components/ui';
+import {
+  isEstimateHandoffItemName,
+  parseEstimateHandoffParam,
+} from '../event/estimate-handoff';
 import {
   createGroupOrderSession,
   type CreateSessionResponse,
 } from './api';
 import { formatTimestamp } from './money';
+
+/** One editable prefill row — raw input strings, edited freely. */
+interface PrefillRow {
+  readonly name: string;
+  readonly quantity: string;
+}
 
 /**
  * Group order create/manage entry (task 9.4, change
@@ -36,6 +46,16 @@ export default function CreateGroupOrderView() {
   const t = useTranslations('GroupOrder');
   const locale = useLocale();
 
+  // Canonical drink-type keys resolve to the consumer labels; anything
+  // else is shown as-is — a hand-carved URL may name any item.
+  const prefillName = useCallback(
+    (name: string) =>
+      isEstimateHandoffItemName(name)
+        ? t(`prefillItemName.${name}`)
+        : name,
+    [t],
+  );
+
   const [created, setCreated] = useState<CreateSessionResponse | null>(null);
   const [creating, setCreating] = useState(false);
   // 'signin' (401) | 'forbidden' (403) | 'error' | null
@@ -43,6 +63,37 @@ export default function CreateGroupOrderView() {
     'signin' | 'forbidden' | 'error' | null
   >(null);
   const [copied, setCopied] = useState(false);
+
+  // ── Estimate prefill intake (change seasonal-occasion-templates,
+  // task 3.1): the event calculator's "Jaa kustannukset" lands here
+  // with ?items=name:quantity,…. The rows are ordinary editable
+  // entries — edited, removed, and extended exactly like hand-added
+  // ones — and a client-side checklist only: the session-create
+  // contract carries no body fields, and the group-order item contract
+  // is productId-keyed, so nothing here is ever transmitted. Absent,
+  // blank, and malformed values degrade silently to the standard empty
+  // creation state (no section, no error surface). ──
+  const [prefillRows, setPrefillRows] = useState<readonly PrefillRow[]>([]);
+
+  useEffect(() => {
+    const parsed = parseEstimateHandoffParam(
+      new URLSearchParams(window.location.search).get('items'),
+    );
+    if (parsed.length === 0) return;
+    setPrefillRows(
+      parsed.map((item) => ({ name: item.name, quantity: String(item.quantity) })),
+    );
+  }, []);
+
+  const setPrefillRow = useCallback((index: number, patch: Partial<PrefillRow>) => {
+    setPrefillRows((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+    );
+  }, []);
+
+  const removePrefillRow = useCallback((index: number) => {
+    setPrefillRows((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
   const create = useCallback(async () => {
     if (creating) return;
@@ -126,22 +177,92 @@ export default function CreateGroupOrderView() {
       )}
 
       {created === null ? (
-        <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">
-            {t('createTitle')}
-          </h2>
-          <p className="mt-2 text-sm text-gray-600">{t('createBody')}</p>
-          <div className="mt-4">
-            <Button
-              type="button"
-              onClick={() => void create()}
-              disabled={creating}
-              data-testid="group-order-create-button"
+        <>
+          {/* ── Estimate prefill rows (task 3.1): ordinary editable
+                  entries — removable, extendable, and never
+                  transmitted (see the mount-effect note above). They
+                  render only when a valid prefill arrived; an empty or
+                  malformed one leaves the standard state untouched. ── */}
+          {prefillRows.length > 0 && (
+            <section
+              data-testid="group-order-prefill-rows"
+              className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
             >
-              {creating ? t('creating') : t('createAction')}
-            </Button>
-          </div>
-        </section>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {t('prefillTitle')}
+              </h2>
+              <p className="mt-2 text-sm text-gray-600">{t('prefillHint')}</p>
+              <ul className="mt-4 space-y-2">
+                {prefillRows.map((row, index) => (
+                  <li key={index} className="flex flex-wrap items-end gap-2">
+                    <div className="min-w-0 flex-1">
+                      <Input
+                        id={`group-order-prefill-name-${String(index)}`}
+                        label={t('prefillName')}
+                        aria-label={`${t('prefillName')} ${String(index + 1)}`}
+                        value={prefillName(row.name)}
+                        onChange={(e) => setPrefillRow(index, { name: e.target.value })}
+                      />
+                    </div>
+                    <div className="w-24">
+                      <Input
+                        id={`group-order-prefill-quantity-${String(index)}`}
+                        label={t('prefillQuantity')}
+                        aria-label={`${t('prefillQuantity')} ${String(index + 1)}`}
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        step={1}
+                        value={row.quantity}
+                        onChange={(e) =>
+                          setPrefillRow(index, { quantity: e.target.value })
+                        }
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      data-testid={`group-order-prefill-remove-${String(index)}`}
+                      aria-label={t('prefillRemove')}
+                      onClick={() => removePrefillRow(index)}
+                    >
+                      {t('prefillRemove')}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-4">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  data-testid="group-order-prefill-add"
+                  onClick={() =>
+                    setPrefillRows((prev) => [...prev, { name: '', quantity: '1' }])
+                  }
+                >
+                  {t('prefillAdd')}
+                </Button>
+              </div>
+            </section>
+          )}
+
+          <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-900">
+              {t('createTitle')}
+            </h2>
+            <p className="mt-2 text-sm text-gray-600">{t('createBody')}</p>
+            <div className="mt-4">
+              <Button
+                type="button"
+                onClick={() => void create()}
+                disabled={creating}
+                data-testid="group-order-create-button"
+              >
+                {creating ? t('creating') : t('createAction')}
+              </Button>
+            </div>
+          </section>
+        </>
       ) : (
         <section
           data-testid="group-order-share-panel"

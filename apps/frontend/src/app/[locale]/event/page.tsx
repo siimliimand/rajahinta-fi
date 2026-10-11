@@ -36,6 +36,12 @@ export async function generateMetadata({
  * "how this calculation works" summary — all crawlable in the server
  * HTML. The calculation flow is the client view in `event-view.tsx`,
  * unchanged in behavior.
+ *
+ * Occasion deep links (`?occasion=<slug>`, change
+ * seasonal-occasion-templates) are read client-side in the view — the
+ * param seeds client state only, so this page keeps its ISR
+ * classification (the trip prefill handshake's rationale; the
+ * cache-header contract pins the ISR set).
  */
 export default async function EventPage({ params }: EventPageProps) {
   const { locale } = await params;

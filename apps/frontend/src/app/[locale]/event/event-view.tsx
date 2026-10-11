@@ -4,7 +4,7 @@
 // (`React.createElement`) for these files (tsconfig jsx: preserve), so the
 // React binding must exist at runtime, not just in Next's automatic runtime.
 import * as React from 'react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui';
 import {
@@ -17,7 +17,10 @@ import type {
   EventProfile,
   SourcingRequest,
 } from './event.types';
-import { EVENT_OCCASION_TEMPLATES } from './templates';
+import {
+  EVENT_OCCASION_TEMPLATES,
+  resolveOccasionParam,
+} from './templates';
 import type { EventOccasionTemplate } from './templates';
 import EventForm from './components/EventForm';
 import EventShoppingListResult from './components/EventShoppingListResult';
@@ -62,6 +65,13 @@ function todayIsoDate(): string {
  *  - The structural disclaimer from the response is rendered with the
  *    result — never a UI-only string.
  *
+ * Occasion deep link (change seasonal-occasion-templates, task 2.2):
+ * `?occasion=<slug>` is read client-side on mount (the trip prefill
+ * handshake's pattern — the param seeds client state only, so the page
+ * keeps its ISR classification) and routed through the same
+ * applyTemplate path as a hand selection. Unknown values resolve
+ * forgivingly to the default state — never an error surface.
+ *
  * @module EventView
  */
 export default function EventView() {
@@ -99,6 +109,17 @@ export default function EventView() {
     setResult(null);
     setErrorKind(null);
   }, []);
+
+  // ── Occasion deep link (task 2.2): `?occasion=<slug>` applies once at
+  // mount through the same applyTemplate path as a hand selection —
+  // exactly-as-if-selected-by-hand semantics. Forgiving resolution:
+  // absent and unknown values leave the default state, silently.
+  useEffect(() => {
+    const template = resolveOccasionParam(
+      new URLSearchParams(window.location.search).get('occasion') ?? undefined,
+    );
+    if (template !== null) applyTemplate(template);
+  }, [applyTemplate]);
 
   const handleResetForm = useCallback(() => {
     setFormResetSeq((seq) => seq + 1);

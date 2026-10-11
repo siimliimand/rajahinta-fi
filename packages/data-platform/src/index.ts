@@ -377,8 +377,9 @@ export {
 } from './seed/carrier-box-types.seed';
 
 // ---------------------------------------------------------------------------
-// Consumption norms seed — curated event-calculator norms (task 4.1), every
-// row carrying a verifiable source citation; D1-only table
+// Consumption norms seed — curated event-calculator norms (task 4.1; seasonal
+// occasion dataset added by seasonal-occasion-templates), every row carrying
+// a verifiable source citation; D1-only table
 // ---------------------------------------------------------------------------
 
 export {
@@ -386,6 +387,10 @@ export {
   CONSUMPTION_NORMS_SEED_ROWS,
   CONSUMPTION_NORMS_SEED_VERSION,
   CONSUMPTION_NORMS_CITATION_URL,
+  SEASONAL_CONSUMPTION_NORMS_SEED_ROWS,
+  SEASONAL_CONSUMPTION_NORMS_SEED_VERSION,
+  SEASONAL_CONSUMPTION_NORM_EVENT_PROFILES,
+  ALL_CONSUMPTION_NORMS_SEED_ROWS,
   type ConsumptionNormSeedRow,
 } from './seed/consumption-norms.seed';
 

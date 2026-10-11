@@ -18,7 +18,7 @@
 import * as React from 'react';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import EventPage, { generateMetadata as eventMetadata } from './page';
 import EventView from './event-view';
 import { renderWithIntl } from '@/lib/testing/test-intl';
@@ -68,12 +68,14 @@ vi.mock('next-intl/server', () => ({
 const mockedRequest = vi.mocked(request);
 
 // The empirical-margin meter (hedge-dedup-confidence-meter 4.1) joins
-// the event tree's import graph with the i18n navigation Link; stub it
-// with the plain-anchor shape the other view/page tests use.
-vi.mock('@/i18n/navigation', () => ({
-  Link: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
-    React.createElement('a', props),
-}));
+// the event tree's import graph with the i18n navigation Link — and the
+// estimate handoff (seasonal-occasion-templates 3.1) renders a typed
+// href object. The shared testing double serializes it the way the real
+// Link does, so href assertions read the localized URL.
+vi.mock('@/i18n/navigation', async () => {
+  const { TestI18nLink } = await import('@/lib/testing/i18n-navigation');
+  return { Link: TestI18nLink };
+});
 
 
 // ---------------------------------------------------------------------------
@@ -425,6 +427,58 @@ describe('EventPage — V2 sourcing', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Estimate handoff (change seasonal-occasion-templates, task 3.1)
+// ---------------------------------------------------------------------------
+
+describe('EventPage — estimate handoff (3.1)', () => {
+  it('offers "Jaa kustannukset" on a completed estimate, carrying names and quantities in the URL', async () => {
+    mockedRequest.mockResolvedValueOnce(COMPUTED);
+
+    const user = userEvent.setup();
+    renderWithIntl(<EventView />);
+
+    await user.click(screen.getByRole('button', { name: 'Laske ostoslista' }));
+
+    const handoff = await screen.findByTestId('event-handoff');
+    expect(handoff).toHaveTextContent('Jaa kustannukset');
+    // The localized /group-order route with the compact items payload —
+    // the fixture's single line is 6 containers of beer.
+    expect(handoff.getAttribute('href')).toBe('/ryhmatilaus?items=beer%3A6');
+  });
+
+  it('offers no handoff on NO_PUBLISHED_NORMS', async () => {
+    mockedRequest.mockResolvedValueOnce(NO_NORMS);
+
+    const user = userEvent.setup();
+    renderWithIntl(<EventView />);
+
+    await user.click(screen.getByRole('button', { name: 'Laske ostoslista' }));
+    expect(await screen.findByText('Ei julkaistuja kulutusnormeja')).toBeInTheDocument();
+    expect(screen.queryByTestId('event-handoff')).not.toBeInTheDocument();
+  });
+
+  it('offers no handoff when the estimate has nothing to buy', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      ...COMPUTED,
+      lines: [
+        {
+          ...COMPUTED.lines[0]!,
+          plannedUnits: [],
+          totalUnits: 0,
+        },
+      ],
+    });
+
+    const user = userEvent.setup();
+    renderWithIntl(<EventView />);
+
+    await user.click(screen.getByRole('button', { name: 'Laske ostoslista' }));
+    expect(await screen.findByTestId('event-result')).toBeInTheDocument();
+    expect(screen.queryByTestId('event-handoff')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Server shell (task 2.3, D2): unique metadata + SSR intro / method summary
 // ---------------------------------------------------------------------------
 
@@ -459,5 +513,57 @@ describe('EventPage server shell (task 2.3)', () => {
     // reassurance is gone — the footer carries the legal line.
     expect(html).toContain('ehdotetun ostomäärän ja ylijäämän.');
     expect(html).not.toContain('ei vero- tai tullineuvontaa');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Occasion deep link (change seasonal-occasion-templates, task 2.2)
+// ---------------------------------------------------------------------------
+
+describe('EventView — ?occasion= deep link (2.2)', () => {
+  afterEach(() => {
+    // Deep-link tests rewrite the jsdom URL; restore the bare one.
+    window.history.replaceState(null, '', '/tilaisuus');
+  });
+
+  it('applies the deep-linked template exactly as if selected by hand', () => {
+    window.history.replaceState(null, '', '/tilaisuus?occasion=juhannus');
+    const { container } = renderWithIntl(<EventView />);
+
+    // The prefill lands on the first hydrated render, with every field
+    // an ordinary editable input — template values, not locks.
+    const guests = container.querySelector('#event-guests') as HTMLInputElement;
+    const duration = container.querySelector('#event-duration') as HTMLInputElement;
+    const profile = container.querySelector('#event-profile') as HTMLSelectElement;
+    expect(guests.value).toBe('10');
+    expect(duration.value).toBe('12');
+    expect(profile.value).toBe('juhannus');
+    expect(guests.disabled).toBe(false);
+    expect(duration.disabled).toBe(false);
+    expect(profile.disabled).toBe(false);
+  });
+
+  it('renders the default state silently for an unknown slug — no error surface', () => {
+    window.history.replaceState(null, '', '/tilaisuus?occasion=nonsense');
+    const { container } = renderWithIntl(<EventView />);
+
+    expect(
+      (container.querySelector('#event-guests') as HTMLInputElement).value,
+    ).toBe('10');
+    expect(
+      (container.querySelector('#event-profile') as HTMLSelectElement).value,
+    ).toBe('casual_gathering');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('renders the default state when the parameter is absent', () => {
+    const { container } = renderWithIntl(<EventView />);
+
+    expect(
+      (container.querySelector('#event-guests') as HTMLInputElement).value,
+    ).toBe('10');
+    expect(
+      (container.querySelector('#event-profile') as HTMLSelectElement).value,
+    ).toBe('casual_gathering');
   });
 });

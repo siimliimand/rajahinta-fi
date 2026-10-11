@@ -16,11 +16,20 @@
  * @module EventTypes
  */
 
-/** The MVP simple mode's closed profile set (core-domain EventProfile). */
+/**
+ * The closed profile set (core-domain EventProfile): the MVP simple
+ * mode's three generic profiles plus the four seasonal occasion
+ * profiles (change seasonal-occasion-templates) — a mirror of
+ * `EVENT_CALC_EVENT_PROFILES`, kept value-for-value.
+ */
 export type EventProfile =
   | 'casual_gathering'
   | 'dinner_party'
-  | 'celebration';
+  | 'celebration'
+  | 'juhannus'
+  | 'vappu'
+  | 'rapujuhlat'
+  | 'talkoot';
 
 /** Canonical drink-type keys (core-domain EVENT_CALC_DRINK_TYPES). */
 export type EventDrinkType =

@@ -984,7 +984,11 @@
     "profile": {
       "casual_gathering": "Casual gathering",
       "dinner_party": "Dinner party",
-      "celebration": "Celebration"
+      "celebration": "Celebration",
+      "juhannus": "Midsummer",
+      "vappu": "May Day (Vappu)",
+      "rapujuhlat": "Crayfish party",
+      "talkoot": "Talkoot"
     },
     "templates": {
       "heading": "Ready-made occasions",
@@ -992,7 +996,11 @@
       "wedding": "Wedding",
       "birthday": "Birthday",
       "companyParty": "Company party",
-      "graduation": "Graduation"
+      "graduation": "Graduation",
+      "vappu": "Vappu",
+      "juhannus": "Midsummer",
+      "rapujuhlat": "Crayfish party",
+      "talkoot": "Talkoot"
     },
     "submit": "Calculate shopping list",
     "submitting": "Calculating…",
@@ -1003,7 +1011,8 @@
       "surplus": "Surplus",
       "unitQuantity": "{quantity} ×",
       "noPurchase": "Nothing to buy",
-      "normsVersion": "Consumption norms version: {version}"
+      "normsVersion": "Consumption norms version: {version}",
+      "shareCosts": "Share the costs"
     },
     "noNorms": {
       "title": "No published consumption norms",
@@ -1666,6 +1675,20 @@
     "createAction": "Create session",
     "creating": "Creating…",
     "createFailed": "The session could not be created.",
+    "prefillTitle": "Estimated shopping list",
+    "prefillHint": "The rows come from the event calculator's estimate and behave like ordinary, freely editable rows.",
+    "prefillName": "Item",
+    "prefillQuantity": "Quantity",
+    "prefillAdd": "Add row",
+    "prefillRemove": "Remove row",
+    "prefillItemName": {
+      "beer": "Beer",
+      "wine_still": "Wine",
+      "wine_sparkling": "Sparkling wine",
+      "intermediate_products": "Fortified wines (vermouth, port)",
+      "other_fermented": "Long drinks and ciders",
+      "spirits": "Spirits"
+    },
     "shareLinkTitle": "Shareable link",
     "shareLinkBody": "Give this link to the participants. It expires on {date}.",
     "copyLink": "Copy link",

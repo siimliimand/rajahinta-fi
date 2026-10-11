@@ -40,7 +40,9 @@ import {
 } from '../generate';
 import { openMigratedD1 } from '../../../repositories/d1/__tests__/d1-test-harness';
 import {
-  CONSUMPTION_NORMS_SEED_ROWS,
+  ALL_CONSUMPTION_NORMS_SEED_ROWS,
+  SEASONAL_CONSUMPTION_NORMS_SEED_ROWS,
+  SEASONAL_CONSUMPTION_NORMS_SEED_VERSION,
   seedConsumptionNorms,
 } from '../../consumption-norms.seed';
 import { CARRIER_BOX_TYPES_SEED, seedCarrierBoxTypes } from '../../carrier-box-types.seed';
@@ -100,9 +102,12 @@ describe('reference seed generators — registration + shape', () => {
 
   it('emits one row per curated constant, in constant order', () => {
     const normsSql = generateConsumptionNormsSql();
-    for (const row of CONSUMPTION_NORMS_SEED_ROWS) {
+    for (const row of ALL_CONSUMPTION_NORMS_SEED_ROWS) {
       expect(normsSql).toContain(`'${row.drinkType}', '${row.eventProfile}',`);
     }
+    // The seasonal dataset rides the same file; its rows appear under
+    // their own version label (byte-stable standard prefix first).
+    expect(normsSql).toContain(`'${SEASONAL_CONSUMPTION_NORMS_SEED_VERSION}', 'beer', 'juhannus',`);
     const boxesSql = generateCarrierBoxTypesSql();
     for (const row of CARRIER_BOX_TYPES_SEED) {
       expect(boxesSql).toContain(`'${row.carrier}', '${row.name}',`);
@@ -113,14 +118,25 @@ describe('reference seed generators — registration + shape', () => {
 describe('reference seed parity — generated SQL vs function seeds (node:sqlite)', () => {
   const DB_TEST_TIMEOUT_MS = 30_000;
 
-  it('consumption norms: rows are equal row-for-row, ids included', async () => {
+  it('consumption norms: rows are equal row-for-row, ids included, both datasets', async () => {
     const viaFunction = openMigratedD1();
     const viaSql = openMigratedD1();
 
     await seedConsumptionNorms(viaFunction.d1);
     viaSql.db.exec(generateConsumptionNormsSql());
 
+    expect(selectNorms(viaFunction.db)).toHaveLength(
+      ALL_CONSUMPTION_NORMS_SEED_ROWS.length,
+    );
     expect(selectNorms(viaSql.db)).toEqual(selectNorms(viaFunction.db));
+
+    // The seasonal rows specifically: both apply paths land the
+    // seasonal-occasions version identically.
+    const seasonalViaFunction = (selectNorms(viaFunction.db) as Array<{ version_label: string }>)
+      .filter((row) => row.version_label === SEASONAL_CONSUMPTION_NORMS_SEED_VERSION);
+    expect(seasonalViaFunction).toHaveLength(
+      SEASONAL_CONSUMPTION_NORMS_SEED_ROWS.length,
+    );
   }, DB_TEST_TIMEOUT_MS);
 
   it('carrier boxes: rows are equal row-for-row, ids included', async () => {
@@ -149,10 +165,11 @@ describe('reference seed idempotency (node:sqlite)', () => {
            confirmed_at = '2026-10-03T00:00:00.000Z'
        WHERE drink_type = 'beer' AND event_profile = 'casual_gathering'`,
     );
-    // Post-publication drift on the published row and on one pending row:
-    // the re-apply must reconcile NEITHER into the other's fate — the
-    // published row stays untouched (append-only), the pending row is
-    // refreshed back to the curated value.
+    // Post-publication drift on the published row and on two pending rows
+    // (one per dataset): the re-apply must reconcile NEITHER drift into
+    // the published row's fate — the published row stays untouched
+    // (append-only), both pending rows are refreshed back to the curated
+    // values.
     db.exec(
       `UPDATE consumption_norms SET norm_value_per_guest_per_hour = 9.99
        WHERE status = 'PUBLISHED'`,
@@ -160,6 +177,10 @@ describe('reference seed idempotency (node:sqlite)', () => {
     db.exec(
       `UPDATE consumption_norms SET norm_value_per_guest_per_hour = 8.88
        WHERE drink_type = 'spirits' AND event_profile = 'celebration'`,
+    );
+    db.exec(
+      `UPDATE consumption_norms SET norm_value_per_guest_per_hour = 8.88
+       WHERE drink_type = 'spirits' AND event_profile = 'rapujuhlat'`,
     );
 
     const publishedBefore = db
@@ -177,8 +198,8 @@ describe('reference seed idempotency (node:sqlite)', () => {
       (publishedAfter[0] as { norm_value_per_guest_per_hour: number }).norm_value_per_guest_per_hour,
     ).toBe(9.99);
 
-    // PENDING rows refreshed: the tampered value is gone, and no other row
-    // was duplicated or lost.
+    // PENDING rows refreshed — across BOTH datasets: the tampered values
+    // are gone, and no other row was duplicated or lost.
     const counts = db
       .prepare(
         `SELECT COUNT(*) AS total,
@@ -189,9 +210,9 @@ describe('reference seed idempotency (node:sqlite)', () => {
       )
       .get() as { total: number; published: number; refreshed: number };
     expect(counts).toEqual({
-      total: CONSUMPTION_NORMS_SEED_ROWS.length,
+      total: ALL_CONSUMPTION_NORMS_SEED_ROWS.length,
       published: 1,
-      refreshed: CONSUMPTION_NORMS_SEED_ROWS.length - 1,
+      refreshed: ALL_CONSUMPTION_NORMS_SEED_ROWS.length - 1,
     });
   }, DB_TEST_TIMEOUT_MS);
 

@@ -202,6 +202,44 @@ describe('POST /api/v1/event-calc — norms resolution', () => {
     const before = await postEvent(app, env);
     expect(((await before.json()) as EventCalcJson).status).toBe('NO_PUBLISHED_NORMS');
   });
+
+  // ── Seasonal occasion profiles (change seasonal-occasion-templates):
+  // the DTO accepts the seasonal slugs alongside the MVP three — a
+  // published seasonal norm computes, an unknown slug still 400s. ──
+  it('accepts a seasonal profile when its norm is published (juhannus)', async () => {
+    const { d1 } = openMigratedD1();
+    await seedPublishedNorm(d1, { eventProfile: 'juhannus', normValuePerGuestPerHour: 1.25 });
+    const app = eventCalcApp();
+    const res = await postEvent(app, eventCalcEnv(d1), {
+      ...EVENT,
+      eventProfile: 'juhannus',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventCalcJson;
+    expect(body.status).toBe('COMPUTED');
+    expect(body.lines![0]!.drinkType).toBe('beer');
+  });
+
+  it('accepts a seasonal slug with no published norms as the explicit empty state (vappu)', async () => {
+    const { d1 } = openMigratedD1();
+    const app = eventCalcApp();
+    const res = await postEvent(app, eventCalcEnv(d1), {
+      ...EVENT,
+      eventProfile: 'vappu',
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as EventCalcJson).status).toBe('NO_PUBLISHED_NORMS');
+  });
+
+  it('still rejects a nonsense slug with 400', async () => {
+    const { d1 } = openMigratedD1();
+    const app = eventCalcApp();
+    const res = await postEvent(app, eventCalcEnv(d1), {
+      ...EVENT,
+      eventProfile: 'nonsense',
+    });
+    await expectEnvelope(res, 400, { error: 'ValidationError' });
+  });
 });
 
 // ---------------------------------------------------------------------------
