@@ -95,10 +95,10 @@ github_variables:                          # repo settings → Actions variables
 worker_secrets:                            # wrangler secret put --env staging
   - EMAIL_SEND_SECRET                      # api-worker AND email-worker (must match)
 
-worker_vars:                               # committed placeholders in wrangler.jsonc
+worker_vars:                               # committed values in wrangler.jsonc (live since ops-wiring-day)
   - RATE_SNAPSHOT_OBJECT_KEY               # config/rate-snapshot.json
-  - EMAIL_WORKER_URL                       # real staging email-worker URL (placeholder today)
-  - FRESHNESS_ALERT_EMAIL_TO               # real ops recipient (placeholder today)
+  - EMAIL_WORKER_URL                       # https://rajahinta-email-staging.siim-liimand.workers.dev
+  - FRESHNESS_ALERT_EMAIL_TO               # siim.liimand@gmail.com
 worker_services:
   - EMAIL_WORKER -> rajahinta-email-staging      # send-contract transport (workers.dev subrequests fail 1042)
 

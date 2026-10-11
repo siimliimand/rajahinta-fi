@@ -372,8 +372,8 @@
       ],
       "vars": {
         "RATE_SNAPSHOT_OBJECT_KEY": "config/rate-snapshot.json",
-        "EMAIL_WORKER_URL": "https://rajahinta-email-worker.example.workers.dev",
-        "FRESHNESS_ALERT_EMAIL_TO": "ops@example.com",
+        "EMAIL_WORKER_URL": "https://rajahinta-email-staging.siim-liimand.workers.dev",
+        "FRESHNESS_ALERT_EMAIL_TO": "siim.liimand@gmail.com",
         // Preference digest (task 4.2): kill-switch var. Comment out to
         // disable — the sweep then writes nothing.
         "PREFERENCE_DIGEST_ENABLED": "true",
