@@ -239,3 +239,62 @@ rather than waiting for the tick, mirroring the fransberg/posti precedent.
 - Note for the next wrangler bump: if `/cdn-cgi/handler/scheduled` keeps
   1042-ing in remote dev sessions, prefer the `/__scheduled` form (both are
   documented; §7 to be updated only if a future wrangler drops it).
+
+## 6.1 Full verification — 2026-10-11
+
+Node 24.21.0 (`nvm use 24` — shell default 22 lacks FTS5), master at
+`2d5338f`, clean tree, `@rajahinta/core-domain` rebuilt first. Every
+command exited 0; no suite skipped or weakened.
+
+| Check | Command | Result |
+|---|---|---|
+| core-domain build | `pnpm --filter @rajahinta/core-domain build` | exit 0 |
+| workspace typecheck (8 projects) | `pnpm typecheck` | exit 0 |
+| lint | `pnpm lint` | exit 0 |
+| content lint | `pnpm lint:content` | exit 0 |
+| frontend unit | `pnpm --filter @rajahinta/frontend test` | 125 files, 1549 green |
+| api-worker unit | `pnpm --filter @rajahinta/api-worker test` | 79 files, 1366 green |
+| core-domain unit | `pnpm --filter @rajahinta/core-domain test` | 60 files, 1722 green |
+| data-platform unit | `pnpm --filter @rajahinta/data-platform test` | 72 files, 933 green |
+| data-acquisition unit | `pnpm --filter @rajahinta/data-acquisition test` | 46 files, 658 green |
+| application-api unit | `pnpm --filter @rajahinta/application-api test` | 55 files, 745 green |
+| email-worker unit | `pnpm --filter @rajahinta/email-worker test` | 6 files, 120 green |
+| backend unit | `pnpm --filter @rajahinta/backend test` | 5 files, 19 green |
+| D1-integration | `pnpm test:d1` | 19 files, 190 green |
+| compliance (`COMPLIANCE_ENFORCED=true`) | `bash scripts/test-compliance.sh` | 23 files, 254 green |
+| golden dataset | `pnpm test:golden` | 2 files, 51 green |
+
+Unit total: 7,112 tests across the 8 packages.
+
+### Compliance extension summary (task 3.2, as verified)
+
+`trip-affiliate-neutrality` and `trip-fill-ferry-neutrality` now prove
+byte-identity of all calculation/fill output across zero, one, and many
+PUBLISHED `ferryPrices` rows (fresh compute per composition; cached HIT
+serves pre-ingestion bytes with the same `X-Content-Hash` while the fresh
+block reflects the new rows; a superseding revision collapses the block to
+the latest revision only, fill bytes stable). Both green inside the
+compliance run above; `COMPLIANCE_ENFORCED=true` so any violation would
+have failed the run.
+
+### Live re-check (production `api.rajahinta.fi`, this session)
+
+`POST /api/v1/trip-feasibility` (car, 2 pax, beer+spirits, 2026-10-11):
+HTTP 200; `ferryPrices` block present and additive in the top-level key set
+(all pre-ferry fields untouched); 50 rows served (cap; 70 stored) —
+tallink 22 + eckero 28, viking 0 by design; every row carries complete
+provenance (`operator, route, label, priceCents > 0, observedAt 2026-10-11,
+citation`), 0 rows missing fields. Confirms the 5.2 staging/production
+verification above rather than duplicating it — the unchanged-skip
+demonstration (second `__scheduled` fire per env, "dataset unchanged …
+skipping the upsert") stands as recorded there. Re-checked
+2026-10-11T08:25Z.
+
+### Follow-ups
+
+- Viking Line curated dataset pending operator input (0 rows by design;
+  fail-closed PENDING governance holds until the transcription exists).
+- Next dataset revision = bump `FERRY_OBSERVED_AT` + deploy per runbook
+  §10.3; the 2026-11-01 tick unchanged-skips until then.
+- Full-catalog transcription for tallink/eckero (beyond the current 70
+  cited rows) as an ongoing owner operation.

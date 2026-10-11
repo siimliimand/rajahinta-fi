@@ -27,4 +27,4 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Full verification: typecheck, lint, content lint, unit suites, D1 suites, compliance suite green with the extended byte-identity test; evidence (staging/production trip page block, cron skip behavior) recorded in notes <!-- agent: platform-engineer.fast, depends_on: [2.2, 3.2, 4.1, 5.2], touches: [openspec/changes/ferry-onboard-prices/notes.md] -->
+- [x] 6.1 Full verification: typecheck, lint, content lint, unit suites, D1 suites, compliance suite green with the extended byte-identity test; evidence (staging/production trip page block, cron skip behavior) recorded in notes <!-- agent: platform-engineer.fast, depends_on: [2.2, 3.2, 4.1, 5.2], touches: [openspec/changes/ferry-onboard-prices/notes.md] -->
