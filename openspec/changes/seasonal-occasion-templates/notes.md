@@ -121,3 +121,67 @@ here so 5.1 / campaign planning can track them:
   on both environments.
 - Staging's standard dataset (`standard-drink-fi-2026.1`, 18 rows) remains
   `PENDING_CONFIRMATION` — pre-existing state, out of scope for this change.
+
+## 5.1 Full verification — executed 2026-10-11 (UTC)
+
+Full matrix on `master` at `ee31ec7` (post-PR-#120 integration state, pulled first),
+Node 24.21.0 via the repo's pnpm scripts (shell-default Node 22 lacks FTS5). Every
+command exited 0; no suite skipped or weakened.
+
+### Gates
+
+| Gate | Command | Result |
+|---|---|---|
+| core-domain rebuild (convention) | `pnpm --filter @rajahinta/core-domain build` | exit 0 |
+| Typecheck (all workspaces) | `pnpm typecheck` | exit 0, 0 `error TS` |
+| Lint | `pnpm lint` (`eslint .`) | exit 0, clean |
+| Content lint (FI/EN + content-policy) | `pnpm lint:content` | exit 0, clean |
+| Unit suites (all 8 workspaces) | `pnpm test` | exit 0 — **7,069 passed / 3 skipped** (pre-existing skips) across 447 files |
+| D1 integration (node:sqlite harness) | `pnpm test:d1` | exit 0 — **190 passed** (19 files) |
+| Compliance (`COMPLIANCE_ENFORCED`) | `pnpm test:compliance` | exit 0 — **248 passed** (23 files), incl. `group-order-accounting-only` (3.2) |
+| Golden dataset | `pnpm test:golden` | exit 0 — "Golden-dataset tests PASSED" |
+
+Unit per-workspace: frontend 1,538 · core-domain 1,722 · api-worker 1,352 ·
+data-platform 924 · data-acquisition 649 · application-api 745 (+3 skipped) ·
+email-worker 120 · backend 19.
+
+### Deep-link + handoff journey (component-level evidence)
+
+Focused verbose run over the event + group-order surfaces —
+`vitest run` on `event/page.test.tsx`, `event/templates.test.tsx`,
+`event/estimate-handoff.test.ts`, `group-order/page.test.tsx`,
+`group-order/[token]/page.test.tsx`: **5 files, 59/59 passed**. Key named assertions:
+
+- **2.2 deep link** — "?occasion= deep link": *applies the deep-linked template exactly
+  as if selected by hand* ✓; *renders the default state silently for an unknown slug —
+  no error surface* (the `?occasion=nonsense` contract) ✓; absent param → default state ✓.
+- **2.1 templates** — four seasonal occasion chips render; applying fills guests,
+  duration, and the seasonal profile; inputs stay editable and the estimate derives
+  from the edited values; seasonal profile submits through to the estimate ✓.
+- **3.1 handoff** — `estimateHandoffItems` reduces a COMPUTED estimate to one
+  name+quantity row per purchasable line (drops nothing-to-buy, carries nothing for
+  `NO_PUBLISHED_NORMS`); group-order create-view populates prefill rows as ordinary
+  editable/removable/extendable rows; creation transmits nothing extra vs. no-prefill ✓.
+- **3.2 accounting-only** — compliance suite green (above); group-order surface asserts
+  the API payment-field rejection verbatim with the named field ✓.
+
+No Playwright journey exists for the event/group-order flows (the e2e-browser
+`calculator-flow` specs cover the landed-cost calculator, not this surface), so
+component-level evidence is the journey record per the task's allowance. Staging and
+production live behavior (deep-linked profiles answering `COMPUTED` on the seasonal
+dataset) is evidenced in the **4.1 live-verification table above** — referenced, not
+duplicated.
+
+### Campaign checklist confirmation
+
+The **vappu 2027-04-30** and **juhannus 2027-06-25** campaign checklists are present in
+the "Seasonal-guide content follow-ups" section above (guide post live → deep link
+renders templates → day-of event-calc spot-check → push with `?occasion=`), the juhannus
+one carrying the midsummer-eve retail-hours caveat. Together with the four guide-post
+follow-ups they remain the owner's editorial track — intentionally unchecked here.
+
+### Verdict
+
+All gates green, journey verified end-to-end at component level, publication state live
+on both environments (4.1). Change `seasonal-occasion-templates` verification complete;
+no blockers.

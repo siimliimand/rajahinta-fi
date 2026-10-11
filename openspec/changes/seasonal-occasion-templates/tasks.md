@@ -25,4 +25,4 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Full verification: typecheck, lint, content lint, unit suites, D1 suites, compliance green; deep-link + handoff journey verified end-to-end; notes record evidence and the vappu/juhannus 2027 campaign checklist <!-- agent: platform-engineer.fast, depends_on: [2.2, 3.2, 4.1], touches: [openspec/changes/seasonal-occasion-templates/notes.md] -->
+- [x] 5.1 Full verification: typecheck, lint, content lint, unit suites, D1 suites, compliance green; deep-link + handoff journey verified end-to-end; notes record evidence and the vappu/juhannus 2027 campaign checklist <!-- agent: platform-engineer.fast, depends_on: [2.2, 3.2, 4.1], touches: [openspec/changes/seasonal-occasion-templates/notes.md] -->
