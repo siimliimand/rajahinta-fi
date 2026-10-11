@@ -164,6 +164,21 @@ const CATEGORY_MIN_SQL = `
    ORDER BY s.price_close_cents ASC, s.product_id ASC
    LIMIT 1`;
 
+/**
+ * One product's earliest daily bucket start (task 1.1, change
+ * price-history-latency): the endpoint's `earliestAvailableObservationDate`
+ * answered from the summaries instead of a full raw-log scan (spec:
+ * request path aggregates only). One equality probe per index column plus
+ * a MIN over the (granularity, product_id, period_start) index — O(1) in
+ * the log's growth. Aggregate MIN without GROUP BY yields one row whose
+ * value is NULL for a bucket-less product, so the null mapping happens in
+ * the method, not the row count.
+ */
+const EARLIEST_PERIOD_START_SQL = `
+  SELECT MIN(period_start) AS period_start
+    FROM price_history_summaries
+   WHERE granularity = 'daily' AND product_id = ?`;
+
 @Injectable()
 export class D1PriceHistorySummaryRepository extends PriceHistorySummaryRepository {
   constructor(private readonly d1: D1DatabaseLike) {
@@ -268,5 +283,22 @@ export class D1PriceHistorySummaryRepository extends PriceHistorySummaryReposito
     return row
       ? { productId: row.product_id, priceCloseCents: row.price_close_cents }
       : null;
+  }
+
+  /**
+   * The raw period_start of the product's earliest materialized daily
+   * bucket (task 1.1, change price-history-latency) — the
+   * `earliestAvailableObservationDate` the price-history endpoint reports,
+   * at the column's calendar-day precision with no reformatting. Null when
+   * the product has no daily buckets. Kept on the D1 concrete class only
+   * (the listCategoryOfferCandidates precedent — the route binds the
+   * concrete type, no abstract-contract ripple).
+   */
+  async findEarliestPeriodStart(productId: number): Promise<string | null> {
+    const row = await this.d1
+      .prepare(EARLIEST_PERIOD_START_SQL)
+      .bind(productId)
+      .first<{ period_start: string | null }>();
+    return row?.period_start ?? null;
   }
 }
