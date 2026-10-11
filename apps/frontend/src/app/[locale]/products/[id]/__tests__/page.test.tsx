@@ -200,19 +200,33 @@ beforeEach(() => {
 describe('ProductPage price-history section (task 5.1)', () => {
   it('renders the section when the server fetch delivers history', async () => {
     mockedGetServerProductDetail.mockResolvedValue(detailResponse([offer()]));
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => historyResponse(1),
-      }),
-    );
+    const historyFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => historyResponse(1),
+    });
+    vi.stubGlobal('fetch', historyFetch);
 
     render(
       await ProductPage({ params: Promise.resolve({ locale: 'fi', id: '42' }) }),
     );
 
     expect(screen.getByTestId('price-history-section')).toBeInTheDocument();
+
+    // price-history-latency 3.2: the page-owned history read opts out of
+    // the endpoint's attribution pass — the request carries
+    // attribution=none, so the endpoint answers attribution: [] with
+    // zero raw-log reads instead of an R2 partition scan. (The context
+    // and dupes reads also ride global fetch through the real request
+    // helper — only the price-history call is pinned here.)
+    const historyCalls = historyFetch.mock.calls.filter((call) =>
+      String(call[0]).includes('/price-history'),
+    );
+    expect(historyCalls).toHaveLength(1);
+    // Base arg covers a relative URL in test envs; the page URL is
+    // absolute in production.
+    const historyUrl = new URL(String(historyCalls[0][0]), 'http://localhost');
+    expect(historyUrl.pathname).toBe('/api/v1/products/42/price-history');
+    expect(historyUrl.searchParams.get('attribution')).toBe('none');
   });
 
   it('renders WITHOUT the section when the history fetch fails or is empty', async () => {

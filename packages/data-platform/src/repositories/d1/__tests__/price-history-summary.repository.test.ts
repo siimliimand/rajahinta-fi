@@ -160,3 +160,55 @@ describe('D1PriceHistorySummaryRepository.findByProductRange', () => {
     expect(explicitNull.map((r) => r.observationCount)).toEqual([10]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// findEarliestPeriodStart (task 1.1, change price-history-latency) gets an
+// isolated fixture DB so the shared-database describes above are untouched.
+// The fixture exercises the two filters the single-probe query leans on:
+// granularity = 'daily' (a weekly bucket sits at an earlier period_start and
+// must not move the minimum) and product_id (another product's earlier
+// bucket must not leak).
+// ---------------------------------------------------------------------------
+
+describe('D1PriceHistorySummaryRepository.findEarliestPeriodStart (task 1.1)', () => {
+  const earliestDb = openMigratedD1();
+  const earliestRepo = new D1PriceHistorySummaryRepository(earliestDb.d1);
+
+  beforeAll(async () => {
+    // The summaries table carries an FK to product_master — seed the parents.
+    await earliestDb.d1
+      .prepare(
+        `INSERT INTO product_master (id, name, manufacturer, brand, category,
+            unit_volume, container_type, regulatory_classification)
+         VALUES (17, 'Earliest Olut A', 'Hartwall', 'Karhu', 'beer', 0.33, 'metal', 'beer'),
+                (18, 'Earliest Olut B', 'Sinebrychoff', 'Koff', 'beer', 0.33, 'metal', 'beer')`,
+      )
+      .run();
+    // Product 17: buckets written out of order across merchants, plus a
+    // weekly bucket EARLIER than every daily one — the minimum must be
+    // '2026-09-07', so a missing daily filter fails the first case.
+    await earliestRepo.upsertBucket(bucket({ productId: 17, periodStart: '2026-09-21', merchant: null }));
+    await earliestRepo.upsertBucket(bucket({ productId: 17, periodStart: '2026-09-07', merchant: 'eu-import' }));
+    await earliestRepo.upsertBucket(bucket({ productId: 17, periodStart: '2026-09-14', merchant: 'alko' }));
+    await earliestRepo.upsertBucket(
+      bucket({ productId: 17, periodStart: '2026-08-31', granularity: 'weekly', merchant: null }),
+    );
+    // Product 18: an earlier bucket than any of product 17's — the scoping
+    // case fails if the product filter leaks.
+    await earliestRepo.upsertBucket(bucket({ productId: 18, periodStart: '2026-08-03', merchant: null }));
+  });
+
+  it('returns the earliest daily bucket start for a product with buckets', async () => {
+    // Raw period_start text, no reformatting — the column's own shape.
+    expect(await earliestRepo.findEarliestPeriodStart(17)).toBe('2026-09-07');
+  });
+
+  it('returns null for a product with no buckets', async () => {
+    expect(await earliestRepo.findEarliestPeriodStart(999)).toBeNull();
+  });
+
+  it('scopes to the product — another product\'s earlier bucket must not leak', async () => {
+    expect(await earliestRepo.findEarliestPeriodStart(17)).toBe('2026-09-07');
+    expect(await earliestRepo.findEarliestPeriodStart(18)).toBe('2026-08-03');
+  });
+});

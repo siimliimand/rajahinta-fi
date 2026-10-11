@@ -1,12 +1,13 @@
 /**
  * ProductDupesPanel SSR tests (task 6.4, change
- * product-roadmap-phases-1-4).
+ * product-roadmap-phases-1-4; props-based surface in
+ * price-history-latency 3.2).
  *
  * Renders the REAL async server component to an HTML string the way
  * Next's RSC runtime would (only Next server plumbing is mocked — the
  * page.ssr.test.tsx precedent), pinning the R9 contract:
  *
- *   1. Dupes fetch fails (403) → renders nothing.
+ *   1. Null dupes payload — the page's fetch failed — renders nothing.
  *   2. Empty curated list → renders nothing (no empty shell).
  *   3. Curated links → every row shows the WHY (producer key,
  *      manufacturer) and the source link is a DIRECT external anchor
@@ -15,6 +16,13 @@
  *      offer-keyed outbound redirect controller), next to the sibling's
  *      local product-page link.
  *
+ * The page owns the dupes fetch since price-history-latency 3.1 (all
+ * four of its server reads start concurrently and the panel receives
+ * the resolved payload as a prop). The fetch-side contract that used to
+ * be exercised through the panel — endpoint URL, revalidate, failure →
+ * null — is pinned below against getServerProductDupes, the pure fetch
+ * the page calls.
+ *
  * @module ProductDupesPanelTest
  */
 // @vitest-environment jsdom
@@ -22,6 +30,8 @@
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductDupesPanel from './ProductDupesPanel';
+import { getServerProductDupes } from '../product-dupes';
+import type { ProductDupe, ProductDupesResponse } from '../product-dupes';
 import { ApiFetchError, request } from '@/lib/api';
 import type { ApiError } from '@/lib/types';
 
@@ -75,14 +85,7 @@ const mockedRequest = vi.mocked(request);
 // Fixtures
 // ---------------------------------------------------------------------------
 
-function dupe(overrides: Partial<{
-  siblingProductId: number;
-  producerKey: string;
-  manufacturer: string;
-  sourceUrl: string;
-  reviewer: string;
-  reviewedAt: string;
-}> = {}) {
+function dupe(overrides: Partial<ProductDupe> = {}): ProductDupe {
   return {
     siblingProductId: 7,
     producerKey: 'highland distillery',
@@ -106,32 +109,21 @@ function apiError(status: number, message: string): ApiError {
 
 const PRODUCT_ID = 42;
 
-async function renderPanel(): Promise<string> {
-  const element = await ProductDupesPanel({ productId: PRODUCT_ID });
+/** Render the panel from the payload the page passes down (3.1). */
+async function renderPanel(
+  dupes: ProductDupesResponse | null,
+): Promise<string> {
+  const element = await ProductDupesPanel({ dupes });
   return renderToString(element);
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
 describe('ProductDupesPanel degradation', () => {
-  it('dupes fetch 403s (backend rejects) → renders nothing', async () => {
-    mockedRequest.mockRejectedValue(
-      new ApiFetchError(
-        403,
-        apiError(403, 'Forbidden'),
-        'req-1',
-      ),
-    );
-
-    expect(await renderPanel()).toBe('');
+  it('null dupes payload (page fetch failed) → renders nothing', async () => {
+    expect(await renderPanel(null)).toBe('');
   });
 
   it('empty curated list → renders nothing (no empty shell)', async () => {
-    mockedRequest.mockResolvedValue({ dupes: [] });
-
-    expect(await renderPanel()).toBe('');
+    expect(await renderPanel({ dupes: [] })).toBe('');
   });
 });
 
@@ -139,7 +131,7 @@ describe('ProductDupesPanel evidence rendering (R9)', () => {
   let html = '';
 
   beforeEach(async () => {
-    mockedRequest.mockResolvedValue({
+    html = await renderPanel({
       dupes: [
         dupe(),
         dupe({
@@ -150,14 +142,6 @@ describe('ProductDupesPanel evidence rendering (R9)', () => {
         }),
       ],
     });
-    html = await renderPanel();
-  });
-
-  it('fetches the committed 6.3 dupes endpoint', () => {
-    expect(mockedRequest).toHaveBeenCalledWith(
-      `/api/v1/products/${PRODUCT_ID}/dupes`,
-      expect.objectContaining({ next: { revalidate: 900 } }),
-    );
   });
 
   it('renders the panel once per product with one row per sibling', () => {
@@ -184,5 +168,40 @@ describe('ProductDupesPanel evidence rendering (R9)', () => {
     expect(html).toContain('rel="nofollow noopener"');
     // The source link is the evidence link label, not a raw URL dump.
     expect(html).toContain('Lähde');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The page-owned fetch (price-history-latency 3.1): the endpoint URL,
+// revalidate, and failure → null degradation this file used to pin through
+// the panel are getServerProductDupes's contract now.
+// ---------------------------------------------------------------------------
+
+describe('getServerProductDupes (the page-owned dupes fetch)', () => {
+  beforeEach(() => {
+    mockedRequest.mockReset();
+  });
+
+  it('fetches the committed 6.3 dupes endpoint with the panel revalidate', async () => {
+    mockedRequest.mockResolvedValue({ dupes: [] });
+
+    await getServerProductDupes(PRODUCT_ID);
+
+    expect(mockedRequest).toHaveBeenCalledWith(
+      `/api/v1/products/${PRODUCT_ID}/dupes`,
+      expect.objectContaining({ next: { revalidate: 900 } }),
+    );
+  });
+
+  it('a failed fetch (403) degrades to null so the panel stays absent', async () => {
+    mockedRequest.mockRejectedValue(
+      new ApiFetchError(
+        403,
+        apiError(403, 'Forbidden'),
+        'req-1',
+      ),
+    );
+
+    await expect(getServerProductDupes(PRODUCT_ID)).resolves.toBeNull();
   });
 });

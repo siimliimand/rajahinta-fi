@@ -5,11 +5,18 @@ import * as React from 'react';
 import { getTranslations } from 'next-intl/server';
 import { formatDate } from '@/lib/format/date';
 import { formatMoney } from '@/lib/format/money';
-import { getServerProductPriceContext } from '../price-context';
+import type { ProductPriceContextResponse } from '../price-context';
 
 interface ProductPriceContextLineProps {
-  /** The product page's resolved product id. */
-  readonly productId: number;
+  /**
+   * The price-context payload, fetched by the product page
+   * (price-history-latency 3.1: the page starts all its server fetches
+   * concurrently and awaits each where rendered). Null — failed fetch,
+   * unreachable backend, unexpected shape — renders NOTHING: the line
+   * stays absent from the HTML, exactly as when this component fetched
+   * for itself.
+   */
+  readonly payload: ProductPriceContextResponse | null;
   /** The active request locale — dates and amounts render through the
    * shared formatters (fi-locale-surface-hardening 2.4). */
   readonly locale: string;
@@ -44,12 +51,19 @@ interface ProductPriceContextLineProps {
  * are never fabricated. Below-minimum and failed fetches keep the line
  * absent from the HTML rather than inventing copy. The line is
  * display-only: it feeds no calculation (design D2).
+ *
+ * Data source (price-history-latency 3.1): the component no longer
+ * fetches — the page owns the getServerProductPriceContext call (all of
+ * the page's server fetches start concurrently, so this payload is
+ * already resolving while detail and history stream) and passes it down
+ * as the `payload` prop. Rendering branches, class names, and the
+ * null → renders-nothing degradation are unchanged; only the data
+ * source moved.
  */
 export default async function ProductPriceContextLine({
-  productId,
+  payload,
   locale,
 }: ProductPriceContextLineProps) {
-  const payload = await getServerProductPriceContext(productId);
   if (payload === null) {
     return null;
   }

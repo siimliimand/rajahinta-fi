@@ -58,6 +58,35 @@ function createMemoryR2(objects: Record<string, string> = {}): unknown {
   };
 }
 
+/** Memory R2 with a read counter — `reads()` counts every get/list call. */
+function createCountingR2(objects: Record<string, string> = {}): {
+  bucket: unknown;
+  reads: () => number;
+} {
+  const inner = createMemoryR2(objects) as {
+    get(key: string): Promise<unknown>;
+    put(key: string, value: string): Promise<void>;
+    list(options?: { prefix?: string }): Promise<unknown>;
+  };
+  let readCalls = 0;
+  return {
+    bucket: {
+      async get(key: string) {
+        readCalls += 1;
+        return inner.get(key);
+      },
+      put(key: string, value: string) {
+        return inner.put(key, value);
+      },
+      async list(options?: { prefix?: string }) {
+        readCalls += 1;
+        return inner.list(options);
+      },
+    },
+    reads: () => readCalls,
+  };
+}
+
 function observation(
   overrides: Partial<ObservationLogRecord> & { product_id: number; merchant: string },
 ): ObservationLogRecord {
@@ -258,8 +287,10 @@ describe('GET /api/v1/products/:id/price-history', () => {
       observationCount: 3,
       reliability: 'ESTIMATED',
     });
-    // Earliest available observation comes from the R2 log.
-    expect(body.earliestAvailableObservationDate).toBe('2026-03-01T10:00:00.000Z');
+    // Earliest available observation is the summary-derived daily bucket
+    // start (price-history-latency 1.2) — calendar-day precision at
+    // midnight UTC, not the raw observed-at instant.
+    expect(body.earliestAvailableObservationDate).toBe('2026-03-01T00:00:00.000Z');
 
     expect(body.attribution).toHaveLength(1);
     expect(body.attribution[0]).toMatchObject({
@@ -336,8 +367,10 @@ describe('GET /api/v1/products/:id/price-history', () => {
     });
   });
 
-  it('returns an empty attribution for a single observation (no steps)', async () => {    const { db, d1 } = openMigratedD1();
+  it('returns an empty attribution for a single observation (no steps)', async () => {
+    const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1 });
+    seedSummary(db, { productId: 1, periodStart: '2026-03-01' });
     const day1 = serializeObservationLog([
       observation({ product_id: 1, merchant: 'alko' }),
     ]);
@@ -356,7 +389,93 @@ describe('GET /api/v1/products/:id/price-history', () => {
     );
     const body = (await res.json()) as Record<string, any>;
     expect(body.attribution).toEqual([]);
-    expect(body.earliestAvailableObservationDate).toBe('2026-03-01T10:00:00.000Z');
+    // Summary-derived bucket start; the fixture now seeds the bucket the
+    // real read path resolves (no summary buckets would be an honest null).
+    expect(body.earliestAvailableObservationDate).toBe('2026-03-01T00:00:00.000Z');
+  });
+
+  // price-history-latency 1.4: `attribution=none` exists to shed the
+  // observation-log reads entirely — spied through the R2 binding, the
+  // request must not issue a single list/get, while `auto` over the same
+  // corpus does exercise them and keeps its attribution output.
+  it('attribution=none performs zero observation-log reads; auto still reads the partitions', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    seedSummary(db, { productId: 1, periodStart: '2026-03-01' });
+    seedSummary(db, { productId: 1, periodStart: '2026-03-02' });
+    const day1 = serializeObservationLog([
+      observation({ id: 1, product_id: 1, merchant: 'alko', observed_at: '2026-03-01T10:00:00.000Z', foreign_retail_price_cents: 350, landed_cost_cents: 850 }),
+    ]);
+    const day2 = serializeObservationLog([
+      observation({ id: 2, product_id: 1, merchant: 'alko', observed_at: '2026-03-02T10:00:00.000Z', foreign_retail_price_cents: 360, landed_cost_cents: 860 }),
+    ]);
+    const objects = {
+      'observations/2026-03-01.jsonl': day1,
+      'observations/2026-03-02.jsonl': day2,
+    };
+    const app = buildApp();
+
+    const noneBucket = createCountingR2(objects);
+    const none = await request(
+      app,
+      permissiveEnv(d1, { OBSERVATION_LOG: noneBucket.bucket } as never),
+      '/api/v1/products/1/price-history?from=2026-03-01&to=2026-03-02&attribution=none',
+      { headers: AGE },
+    );
+    expect(none.status).toBe(200);
+    const noneBody = (await none.json()) as Record<string, any>;
+    expect(noneBody.attribution).toEqual([]);
+    expect(noneBody.series).toHaveLength(2);
+    expect(noneBucket.reads()).toBe(0);
+
+    // The default (auto) over the identical corpus lists and reads the
+    // day partitions and attributes the price move.
+    const autoBucket = createCountingR2(objects);
+    const auto = await request(
+      app,
+      permissiveEnv(d1, { OBSERVATION_LOG: autoBucket.bucket } as never),
+      '/api/v1/products/1/price-history?from=2026-03-01&to=2026-03-02',
+      { headers: AGE },
+    );
+    expect(auto.status).toBe(200);
+    const autoBody = (await auto.json()) as Record<string, any>;
+    expect(autoBody.attribution).toHaveLength(1);
+    expect(autoBody.attribution[0]).toMatchObject({
+      merchant: 'alko',
+      classification: 'MERCHANT_PRICE_CHANGE',
+    });
+    expect(autoBucket.reads()).toBeGreaterThan(0);
+  });
+
+  it('validates attribution: unknown value is a 400; auto and none are accepted', async () => {
+    const { db, d1 } = openMigratedD1();
+    seedProduct(db, { id: 1 });
+    seedSummary(db, { productId: 1, periodStart: '2026-03-01' });
+    const app = buildApp();
+    const env = permissiveEnv(d1, { OBSERVATION_LOG: createMemoryR2() } as never);
+
+    const invalid = await request(
+      app,
+      env,
+      '/api/v1/products/1/price-history?from=2026-03-01&to=2026-03-02&attribution=sometimes',
+      { headers: AGE },
+    );
+    await expectEnvelope(invalid, 400, {
+      message: 'attribution must be one of: auto, none',
+      error: 'ValidationError',
+    });
+
+    for (const attribution of ['auto', 'none'] as const) {
+      const res = await request(
+        app,
+        env,
+        `/api/v1/products/1/price-history?from=2026-03-01&to=2026-03-02&attribution=${attribution}`,
+        { headers: AGE },
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Record<string, any>;
+      expect(body.attribution).toEqual([]);
+    }
   });
 });
 
