@@ -1,7 +1,8 @@
 /**
  * Product price-context line tests (insight-surfaces task 3.3; the
  * window-low and percentile rendering is task 2.3 of change
- * funnel-evidence-and-value-surfaces, spec price-context).
+ * funnel-evidence-and-value-surfaces, spec price-context; the
+ * props-based surface is price-history-latency 3.2).
  *
  * Renders the REAL async server component the way Next's RSC runtime
  * would (blog-page test precedent), pinning the committed API contract:
@@ -19,9 +20,10 @@
  *      state, still explainable (bucket count + as-of), with the two
  *      window sentences absent — the fields arrive null there and are
  *      never fabricated.
- *   3. A failed fetch, or a computed shape missing the window-fact
- *      fields (e.g. a stale cached response), keeps the line absent
- *      from the HTML entirely.
+ *   3. A payload the page's fetch degraded to null keeps the line
+ *      absent from the HTML entirely; the fetch-and-shape-guard side of
+ *      that degradation (getServerProductPriceContext — failed fetch,
+ *      unexpected or stale cached shape) is pinned below.
  *   4. Both locales render from the real catalogs (FI and EN).
  *
  * @module ProductPriceContextLineTest
@@ -31,13 +33,18 @@
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductPriceContextLine from './ProductPriceContextLine';
+import {
+  getServerProductPriceContext,
+  type ProductPriceContextResponse,
+} from '../price-context';
 import { request } from '@/lib/api';
 import { checkContent } from '@/lib/content-policy';
 
 /**
  * Test-scoped locale for the mocked next-intl lookup — the component
  * resolves its namespace through the request locale in production, so
- * the test picks the catalog here instead. Reset to FI before each test.
+ * the test picks the catalog here instead; the same value rides the
+ * `locale` prop the page passes (formatters). Reset to FI before each.
  */
 let testLocale: 'fi' | 'en' = 'fi';
 
@@ -79,17 +86,16 @@ beforeEach(() => {
 });
 
 /** Straight renderToString — the component renders null or an element. */
-async function renderLine(productId: number): Promise<string> {
-  const element = await ProductPriceContextLine({
-    productId,
-    locale: testLocale,
-  });
+async function renderLine(
+  payload: ProductPriceContextResponse | null,
+): Promise<string> {
+  const element = await ProductPriceContextLine({ payload, locale: testLocale });
   return renderToString(element);
 }
 
 function computedPayload(
   contextOverrides: Record<string, unknown> = {},
-): Record<string, unknown> {
+): ProductPriceContextResponse {
   return {
     productId: 7,
     currentBestPriceCents: 1234,
@@ -107,14 +113,12 @@ function computedPayload(
       asOf: '2026-09-08',
       ...contextOverrides,
     },
-  };
+  } as ProductPriceContextResponse;
 }
 
 describe('ProductPriceContextLine', () => {
   it('renders the factual median sentence plus the percentile fact, and no window-low claim when false', async () => {
-    mockedRequest.mockResolvedValue(computedPayload());
-
-    const html = await renderLine(7);
+    const html = await renderLine(computedPayload());
 
     expect(html).toContain('product-price-context');
     expect(html).toContain('Nykyhinta ja 90 päivän mediaani');
@@ -140,11 +144,9 @@ describe('ProductPriceContextLine', () => {
   });
 
   it('rounds basis points half up to a whole percent (2849 bps → 28 %)', async () => {
-    mockedRequest.mockResolvedValue(
+    const html = await renderLine(
       computedPayload({ percentileRankBasisPoints: 2849 }),
     );
-
-    const html = await renderLine(7);
 
     expect(html).toContain('halvempi kuin 28 %');
     expect(html).not.toContain('29 %');
@@ -152,11 +154,9 @@ describe('ProductPriceContextLine', () => {
   });
 
   it('renders the window-low sentence when the current price equals the window minimum', async () => {
-    mockedRequest.mockResolvedValue(
+    const html = await renderLine(
       computedPayload({ isWindowLow: true, percentileRankBasisPoints: 7500 }),
     );
-
-    const html = await renderLine(7);
 
     expect(html).toContain('data-state="computed"');
     expect(html).toContain(
@@ -167,11 +167,9 @@ describe('ProductPriceContextLine', () => {
 
   it('renders both window facts in English from the EN catalog', async () => {
     testLocale = 'en';
-    mockedRequest.mockResolvedValue(
+    const html = await renderLine(
       computedPayload({ isWindowLow: true, percentileRankBasisPoints: 2857 }),
     );
-
-    const html = await renderLine(7);
 
     expect(html).toContain('data-state="computed"');
     expect(html).toContain(
@@ -190,7 +188,9 @@ describe('ProductPriceContextLine', () => {
   });
 
   it('renders the honest insufficient-history state with the figures that explain it, and none of the window facts', async () => {
-    mockedRequest.mockResolvedValue({
+    // The wire format carries every figure field (nulls on this branch);
+    // the TS type omits them, hence the cast.
+    const unavailable = {
       productId: 7,
       currentBestPriceCents: 1234,
       context: {
@@ -207,9 +207,9 @@ describe('ProductPriceContextLine', () => {
         bucketCount: 4,
         asOf: '2026-09-08',
       },
-    });
+    } as unknown as ProductPriceContextResponse;
 
-    const html = await renderLine(7);
+    const html = await renderLine(unavailable);
 
     expect(html).toContain('data-state="unavailable"');
     expect(html).toContain('ei ole riittävästi');
@@ -221,21 +221,64 @@ describe('ProductPriceContextLine', () => {
     expect(html).not.toContain('alhaisin');
   });
 
-  it('renders nothing when the context is unavailable (backend down / no offers / bad shape / stale shape)', async () => {
+  it('renders nothing for a null payload (failed fetch / degraded shape)', async () => {
+    expect(await renderLine(null)).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The page-owned fetch + shape guard (price-history-latency 3.1): the
+// degradation this file used to pin through the component's own fetch is
+// getServerProductPriceContext's contract now — a failed, unexpected, or
+// stale cached shape returns null, and the null payload renders nothing
+// (asserted above).
+// ---------------------------------------------------------------------------
+
+describe('getServerProductPriceContext (the page-owned fetch + shape guard)', () => {
+  it('passes the computed payload through unchanged', async () => {
+    const payload = computedPayload();
+    mockedRequest.mockResolvedValue(payload);
+
+    await expect(getServerProductPriceContext(7)).resolves.toBe(payload);
+  });
+
+  it('passes an INSUFFICIENT_HISTORY payload through', async () => {
+    const payload = {
+      productId: 7,
+      currentBestPriceCents: 1234,
+      context: {
+        status: 'unavailable',
+        reason: 'INSUFFICIENT_HISTORY',
+        medianCents: null,
+        minCents: null,
+        maxCents: null,
+        deltaVsMedianCents: null,
+        deltaVsMedianBasisPoints: null,
+        percentileRankBasisPoints: null,
+        isWindowLow: null,
+        windowDays: 90,
+        bucketCount: 4,
+        asOf: '2026-09-08',
+      },
+    } as unknown as ProductPriceContextResponse;
+    mockedRequest.mockResolvedValue(payload);
+
+    await expect(getServerProductPriceContext(7)).resolves.toBe(payload);
+  });
+
+  it('a rejected fetch degrades to null', async () => {
     mockedRequest.mockRejectedValue(new Error('backend down'));
-    expect(await renderLine(7)).toBe('');
 
-    mockedRequest.mockResolvedValue({ unexpected: true });
-    expect(await renderLine(7)).toBe('');
+    await expect(getServerProductPriceContext(7)).resolves.toBeNull();
+  });
 
-    // A computed shape missing the window-fact fields (e.g. a stale
-    // cached response from before task 2.2) degrades to an absent line —
-    // the strict guard never renders a partial context.
+  it('a computed shape missing the window-fact fields (stale cached response) degrades to null', async () => {
     const stale = computedPayload();
-    const staleContext = { ...(stale.context as Record<string, unknown>) };
+    const staleContext: Record<string, unknown> = { ...stale.context };
     delete staleContext.percentileRankBasisPoints;
     delete staleContext.isWindowLow;
     mockedRequest.mockResolvedValue({ ...stale, context: staleContext });
-    expect(await renderLine(7)).toBe('');
+
+    await expect(getServerProductPriceContext(7)).resolves.toBeNull();
   });
 });
