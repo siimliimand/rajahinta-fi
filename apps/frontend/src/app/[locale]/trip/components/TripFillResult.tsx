@@ -14,6 +14,7 @@ import { Badge, Card } from '@/components/ui';
 import { formatMoney } from '@/lib/format/money';
 import ConfidenceMeter from '../../components/ConfidenceMeter';
 import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
+import FerryPricesBlock from './FerryPricesBlock';
 
 // ---------------------------------------------------------------------------
 // Formatting — figures are formatted, never re-rounded. Euro amounts go
@@ -315,6 +316,11 @@ export default function TripFillResult({
       {/* Partner block — separate sibling container, never interleaved
           with the itemization (design R8). */}
       <FerryOffersBlock offers={result.ferryOffers} />
+
+      {/* Observed onboard prices — the second sibling container beside
+          the partner block (change ferry-onboard-prices); absent or
+          empty renders nothing. */}
+      <FerryPricesBlock rows={result.ferryPrices} />
     </>
   );
 }

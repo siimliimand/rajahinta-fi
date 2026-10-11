@@ -1197,6 +1197,12 @@
     "partners": {
       "label": "Kumppanilinkit"
     },
+    "ferryPrices": {
+      "label": "Laivaston havaitut hinnat",
+      "disclaimer": "Havaintoja laivojen myymälähinnasta havaintopäivänään — eivät ostotarjouksia, eivätkä ne vaikuta laskelmiin.",
+      "disclosureSummary": "Havaintorivit lähdeviitteineen",
+      "observedOn": "Havaintopäivä: {date}"
+    },
     "suggestion": {
       "stat": "Tuoreimman havaintopäivän ({date}) mukaan {country}-verkkokaupoista tilatut oluet olivat keskimäärin {percent} % Alkon vertailuhintaa edullisempia."
     },

@@ -120,9 +120,33 @@ export interface TripFerryOfferRef {
   readonly redirectPath: string;
 }
 
+/**
+ * One observed onboard price (change ferry-onboard-prices) — the curated
+ * row's full provenance, display-only. Re-declared mirror of the worker
+ * route's `TripFerryPriceRow`, like every DTO in this module.
+ */
+export interface TripFerryPriceRow {
+  readonly operator: string;
+  readonly route: string;
+  readonly label: string;
+  /** EUR minor-unit price, verbatim from the observation. */
+  readonly priceCents: number;
+  /** The observation date — a `YYYY-MM-DD` calendar date. */
+  readonly observedAt: string;
+  /** Per-row source citation, verbatim from the observation. */
+  readonly citation: string;
+}
+
 /** The 200 payload: the calculation result + the separate partner block. */
 export type TripFeasibilityResponse = TripCalcResult & {
   readonly ferryOffers: readonly TripFerryOfferRef[];
+  /**
+   * Observed onboard prices beside the offers block (change
+   * ferry-onboard-prices) — attached in the envelope only, never a
+   * calculation input. Optional in the type: older cached responses
+   * omit the key, and the UI treats absent exactly as empty.
+   */
+  readonly ferryPrices?: readonly TripFerryPriceRow[];
 };
 
 // ---------------------------------------------------------------------------
@@ -245,4 +269,11 @@ export type TripFillResponse = TripFillResult & {
    * composed after the ferry merge, never inside the cached fill body.
    */
   readonly empiricalMargin?: TripEmpiricalMargin;
+  /**
+   * Observed onboard prices beside the offers block (change
+   * ferry-onboard-prices) — attached in the envelope only, never a
+   * calculation input. Optional in the type: older cached responses
+   * omit the key, and the UI treats absent exactly as empty.
+   */
+  readonly ferryPrices?: readonly TripFerryPriceRow[];
 };

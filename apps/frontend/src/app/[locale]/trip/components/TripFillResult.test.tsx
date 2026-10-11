@@ -18,7 +18,7 @@ import { screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import TripFillResult from './TripFillResult';
 import { renderWithIntl } from '@/lib/testing/test-intl';
-import type { TripFillResponse } from '../trip.types';
+import type { TripFillResponse, TripFerryPriceRow } from '../trip.types';
 
 // The empirical-margin meter (hedge-dedup-confidence-meter 4.1) renders
 // its /ranking link through the i18n navigation Link; stub it with the
@@ -153,5 +153,42 @@ describe('TripFillResult empirical-margin meter (hedge-dedup 4.1)', () => {
       />,
     );
     expect(screen.queryByTestId('confidence-meter')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Observed onboard prices (ferry-onboard-prices 4.1): the second sibling
+// container beside the partner block; an absent key renders nothing.
+// ---------------------------------------------------------------------------
+
+describe('TripFillResult observed onboard prices (ferry-onboard-prices 4.1)', () => {
+  const PRICE_ROW: TripFerryPriceRow = {
+    operator: 'Eckerö Line',
+    route: 'Helsinki–Maarianhamina',
+    label: 'Olut 0,5 l purkki',
+    priceCents: 350,
+    observedAt: '2026-10-01',
+    citation: 'Laivan myymälähinnasto (https://example.com/pricelist)',
+  };
+
+  it('attaches the observed-price block when the response carries rows', () => {
+    renderWithIntl(
+      <TripFillResult
+        result={{ ...FILL_RESULT, ferryPrices: [PRICE_ROW] }}
+        productNames={new Map([[42, 'Saku Originaal']])}
+      />,
+    );
+    expect(screen.getByTestId('trip-ferry-prices')).toBeInTheDocument();
+  });
+
+  it('renders no observed-price block when the response omits the key', () => {
+    // FILL_RESULT carries no `ferryPrices` — the older-response shape.
+    renderWithIntl(
+      <TripFillResult
+        result={FILL_RESULT}
+        productNames={new Map([[42, 'Saku Originaal']])}
+      />,
+    );
+    expect(screen.queryByTestId('trip-ferry-prices')).toBeNull();
   });
 });

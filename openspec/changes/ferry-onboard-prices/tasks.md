@@ -13,12 +13,12 @@
 
 ## 3. API + compliance
 
-- [ ] 3.1 Additive `ferryPrices` block on trip fill/feasibility responses (published rows only, full provenance, no other field touched); age gate + CALCULATOR limiter + idempotency unchanged <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [apps/api-worker/src/routes/trip.routes.ts, apps/api-worker/src/routes/trip-feasibility.routes.ts] -->
-- [ ] 3.2 Extend `tests/compliance/trip-affiliate-neutrality.test.ts`: byte-identity of all calculation output across zero/one/many `ferryPrices` rows <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [tests/compliance/trip-affiliate-neutrality.test.ts] -->
+- [x] 3.1 Additive `ferryPrices` block on trip fill/feasibility responses (published rows only, full provenance, no other field touched); age gate + CALCULATOR limiter + idempotency unchanged <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [apps/api-worker/src/routes/trip.routes.ts, apps/api-worker/src/routes/trip-feasibility.routes.ts] -->
+- [x] 3.2 Extend `tests/compliance/trip-affiliate-neutrality.test.ts`: byte-identity of all calculation output across zero/one/many `ferryPrices` rows <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [tests/compliance/trip-affiliate-neutrality.test.ts] -->
 
 ## 4. Frontend
 
-- [ ] 4.1 Trip result "Laivaston havaitut hinnat" collapsed block (operator, route, price, observed-at, citation, observed-facts disclaimer) + designed empty state + FI/EN message-catalog copy passing content lint + component tests <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [apps/frontend/src/app/[locale]/trip/**, apps/frontend/**/messages/**] -->
+- [x] 4.1 Trip result "Laivaston havaitut hinnat" collapsed block (operator, route, price, observed-at, citation, observed-facts disclaimer) + designed empty state + FI/EN message-catalog copy passing content lint + component tests <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [apps/frontend/src/app/[locale]/trip/**, apps/frontend/**/messages/**] -->
 
 ## 5. Rollout
 

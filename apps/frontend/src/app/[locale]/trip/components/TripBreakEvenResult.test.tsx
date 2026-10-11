@@ -18,7 +18,10 @@ import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import TripBreakEvenResult from './TripBreakEvenResult';
 import { renderWithIntl } from '@/lib/testing/test-intl';
-import type { TripFeasibilityResponse } from '../trip.types';
+import type {
+  TripFeasibilityResponse,
+  TripFerryPriceRow,
+} from '../trip.types';
 
 // ---------------------------------------------------------------------------
 // Fixtures — the serialized 200 shape (trip.types.ts mirrors)
@@ -83,5 +86,36 @@ describe('TripBreakEvenResult disclaimer single render (hedge-dedup 3.2)', () =>
     expect(banner.className).toContain('status-stale');
     expect(within(banner).getByText(DISCLAIMER.text)).toBeInTheDocument();
     expect(banner.textContent).toContain('v1.0 · suomi');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Observed onboard prices (ferry-onboard-prices 4.1): the second sibling
+// container beside the partner block; an absent key renders nothing.
+// ---------------------------------------------------------------------------
+
+describe('TripBreakEvenResult observed onboard prices (ferry-onboard-prices 4.1)', () => {
+  const PRICE_ROW: TripFerryPriceRow = {
+    operator: 'Viking Line',
+    route: 'Helsinki–Tukholma',
+    label: 'Kuohuviini 0,75 l pullo',
+    priceCents: 1250,
+    observedAt: '2026-10-02',
+    citation: 'Laivan myymälähinnasto (https://example.com/pricelist)',
+  };
+
+  it('attaches the observed-price block when the response carries rows', () => {
+    renderWithIntl(
+      <TripBreakEvenResult
+        result={{ ...BREAK_EVEN_RESULT, ferryPrices: [PRICE_ROW] }}
+      />,
+    );
+    expect(screen.getByTestId('trip-ferry-prices')).toBeInTheDocument();
+  });
+
+  it('renders no observed-price block when the response omits the key', () => {
+    // BREAK_EVEN_RESULT carries no `ferryPrices` — the older-response shape.
+    renderWithIntl(<TripBreakEvenResult result={BREAK_EVEN_RESULT} />);
+    expect(screen.queryByTestId('trip-ferry-prices')).toBeNull();
   });
 });
