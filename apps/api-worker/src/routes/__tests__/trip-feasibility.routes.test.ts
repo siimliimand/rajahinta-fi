@@ -34,6 +34,7 @@ import {
 import { registerTripFeasibilityRoutes } from '../trip-feasibility.routes';
 import { D1TravellerAllowancesRepository } from '../../../../../packages/data-platform/src/repositories/d1/traveller-allowances.repository';
 import { D1FerryOffersRepository } from '../../../../../packages/data-platform/src/repositories/d1/ferry-offers.repository';
+import { D1FerryPriceRepository } from '../../../../../packages/data-platform/src/repositories/d1/ferry-price.repository';
 import { D1AuditEventRepository } from '../../../../../packages/data-platform/src/repositories/d1/audit-event.repository';
 import type { Env } from '../../env';
 import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
@@ -126,6 +127,14 @@ interface TripJson {
     routeLabel: string;
     redirectPath: string;
   }[];
+  ferryPrices?: {
+    operator: string;
+    route: string;
+    label: string;
+    priceCents: number;
+    observedAt: string;
+    citation: string;
+  }[];
 }
 
 async function postTrip(
@@ -150,6 +159,33 @@ async function seedPublishedFerry(
   const published = await repo.publish(created.id);
   expect(published).not.toBeNull();
   return created.id;
+}
+
+/**
+ * Seed one curated observation through the repository's upsert (the
+ * monthly cron's write path) — the transcribed-dataset row shape.
+ */
+async function seedObservation(
+  d1: D1DatabaseLike,
+  overrides: Partial<{
+    operator: string;
+    route: string;
+    label: string;
+    priceCents: number;
+    observedAt: Date;
+    citation: string;
+  }> = {},
+): Promise<void> {
+  await new D1FerryPriceRepository(d1).upsertObservation({
+    operator: overrides.operator ?? 'tallink',
+    route: overrides.route ?? 'Helsinki–Tallinn',
+    label: overrides.label ?? 'Finlandia Redberry 100 cl',
+    priceCents: overrides.priceCents ?? 1799,
+    observedAt: overrides.observedAt ?? new Date('2026-10-01T00:00:00.000Z'),
+    citation:
+      overrides.citation ??
+      'https://shopping-onboard.tallink.com/en/megastar/product/strong-alcohol',
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -436,6 +472,143 @@ describe('POST /api/v1/trip-feasibility — ferry block independence', () => {
     expect(repeatBody.ferryOffers).toHaveLength(2);
     // The calculation half is still the cached one (same allowance version).
     expect(repeatBody.allowanceDatasetVersion).toBe('allowances-trip-2026.1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Observed-price block — additive display rows with provenance (change
+// ferry-onboard-prices; the ferry-offers isolation pattern). Compliance
+// byte-identity lives in tests/compliance (task 3.2); these route pins
+// cover the block contract itself.
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/trip-feasibility — observed-price block', () => {
+  it('returns ferryPrices: [] on an empty table — present, honestly empty', async () => {
+    const { d1 } = openMigratedD1();
+    await seedPublishedAllowances(d1);
+    const app = tripApp();
+
+    const res = await postTrip(app, tripEnv(d1));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Cache')).toBe('MISS');
+    const body = (await res.json()) as TripJson;
+    expect(body.ferryPrices).toEqual([]);
+  });
+
+  it('keeps every calculation field byte-identical as price rows appear; rows carry full provenance, latest revision only', async () => {
+    const { d1 } = openMigratedD1();
+    await seedPublishedAllowances(d1);
+    const app = tripApp();
+    const env = tripEnv(d1);
+
+    const calcProjection = (
+      body: TripJson,
+    ): Omit<TripJson, 'ferryOffers' | 'ferryPrices'> => {
+      const {
+        ferryOffers: _offers,
+        ferryPrices: _prices,
+        ...calc
+      } = body;
+      return calc;
+    };
+
+    // Zero rows — the baseline calculation bytes.
+    const empty = await postTrip(app, env);
+    expect(empty.headers.get('X-Cache')).toBe('MISS');
+    const emptyBody = (await empty.json()) as TripJson;
+    const emptyCalc = JSON.stringify(calcProjection(emptyBody));
+
+    // One row — calculation bytes unchanged, block carries provenance.
+    await seedObservation(d1);
+    const one = await postTrip(app, env);
+    expect(one.headers.get('X-Cache')).toBe('HIT'); // fresh block under the cached calculation
+    const oneBody = (await one.json()) as TripJson;
+    expect(JSON.stringify(calcProjection(oneBody))).toBe(emptyCalc);
+    expect(oneBody.ferryPrices).toEqual([
+      {
+        operator: 'tallink',
+        route: 'Helsinki–Tallinn',
+        label: 'Finlandia Redberry 100 cl',
+        priceCents: 1799,
+        observedAt: '2026-10-01',
+        citation:
+          'https://shopping-onboard.tallink.com/en/megastar/product/strong-alcohol',
+      },
+    ]);
+
+    // A LATER observation of the same key supersedes — append-only
+    // history collapses to the latest revision per (operator, route,
+    // label); the earlier revision never renders.
+    await seedObservation(d1, {
+      priceCents: 1899,
+      observedAt: new Date('2026-10-08T00:00:00.000Z'),
+      citation:
+        'https://shopping-onboard.tallink.com/en/megastar/product/strong-alcohol#2026-10-08',
+    });
+    const superseded = await postTrip(app, env);
+    const supersededBody = (await superseded.json()) as TripJson;
+    expect(JSON.stringify(calcProjection(supersededBody))).toBe(emptyCalc);
+    expect(supersededBody.ferryPrices).toEqual([
+      {
+        operator: 'tallink',
+        route: 'Helsinki–Tallinn',
+        label: 'Finlandia Redberry 100 cl',
+        priceCents: 1899,
+        observedAt: '2026-10-08',
+        citation:
+          'https://shopping-onboard.tallink.com/en/megastar/product/strong-alcohol#2026-10-08',
+      },
+    ]);
+  });
+
+  it('orders the block by (operator, route, label) regardless of insert order', async () => {
+    const { d1 } = openMigratedD1();
+    await seedPublishedAllowances(d1);
+    const app = tripApp();
+    const env = tripEnv(d1);
+
+    // Deliberately out-of-order inserts across all three key columns.
+    await seedObservation(d1, { operator: 'viking', label: 'Zero Sugar 330 ml' });
+    await seedObservation(d1, {
+      operator: 'tallink',
+      route: 'Turku–Stockholm',
+      label: 'Absolut 70 cl',
+    });
+    await seedObservation(d1, { label: 'Finlandia Redberry 100 cl' });
+    await seedObservation(d1, {
+      operator: 'eckero',
+      label: 'Jaloviina 3 x 50 cl',
+    });
+
+    const body = (await (await postTrip(app, env)).json()) as TripJson;
+    expect(body.ferryPrices!.map((row) => `${row.operator}|${row.route}|${row.label}`)).toEqual([
+      'eckero|Helsinki–Tallinn|Jaloviina 3 x 50 cl',
+      'tallink|Helsinki–Tallinn|Finlandia Redberry 100 cl',
+      'tallink|Turku–Stockholm|Absolut 70 cl',
+      'viking|Helsinki–Tallinn|Zero Sugar 330 ml',
+    ]);
+  });
+
+  it('caps the block at the documented 50-row payload budget, truncating in the deterministic order', async () => {
+    const { d1 } = openMigratedD1();
+    await seedPublishedAllowances(d1);
+    const app = tripApp();
+    const env = tripEnv(d1);
+
+    for (let i = 0; i < 55; i++) {
+      await seedObservation(d1, {
+        label: `Product ${String(i).padStart(2, '0')} 50 cl`,
+      });
+    }
+
+    const body = (await (await postTrip(app, env)).json()) as TripJson;
+    expect(body.ferryPrices).toHaveLength(50);
+    // Truncation keeps the FIRST rows of the deterministic order.
+    expect(body.ferryPrices![0]!.label).toBe('Product 00 50 cl');
+    expect(body.ferryPrices![49]!.label).toBe('Product 49 50 cl');
+    expect(body.ferryPrices!.map((row) => row.label)).not.toContain(
+      'Product 54 50 cl',
+    );
   });
 });
 
