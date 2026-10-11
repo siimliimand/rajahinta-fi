@@ -22,9 +22,10 @@ Also found: the frontend **staging** env binds its R2 cache to `rajahinta-fronte
 
 ## Non-goals
 
+- **Live load baseline + load-gate promotion (Decision D):** carved out on 2026-10-11 after the first live Artillery run exposed two pre-existing test-asset bugs (filtrex-unparseable `{code:4xx}` assertions; unattested requests rejected by the age gate). Follow-up change `load-baseline-live` owns: filtrex-parseable expressions, age-gate-attested requests, the true baseline, and the promote-to-blocking decision. Interim numbers in this change's `notes.md`.
 - **Faro RUM (#3):** code is complete (`faro-init.ts` env-gated no-op, unit-tested); needs 2 workflow env lines + 2 GitHub vars once a Grafana Faro app exists. Ready 2-line follow-up, deferred by operator choice.
-- **Production buckets:** created when prod feature work needs them.
-- **Load-gate promotion (Decision D):** decided against the recorded baseline in a follow-up.
+- **Production buckets:** already exist in EU jurisdiction (verified during this change).
+- **Staging `EMAIL_SEND_SECRET`:** operator declined in-session (2026-10-11); staging alerting stays off until set (task 1.3 note).
 
 ## Impact
 
