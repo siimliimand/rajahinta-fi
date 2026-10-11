@@ -28,8 +28,10 @@
  *   dimension), Eckerö rows from the M/S Finlandia pre-order shop (single
  *   -route operator). Viking has ZERO rows: its shop is bot-gated
  *   (Imperva Incapsula + Distil), no price was reachable without
- *   circumvention, and the route taxonomy needs operator input — the
+ *   circumvention, and the route taxonomy needed operator input — the
  *   empty operator is the designed empty state, never a placeholder.
+ *   Empty state accepted 2026-10-11 — see the runbook ferry section
+ *   for the revisit path.
  * - Prices: EUR minor units, VAT-inclusive as displayed. Tallink's shop
  *   dual-publishes priceExTax/priceIncTax with taxMultiplier 1.24 — the
  *   recorded price is priceIncTax, the VAT-inclusive consumer price the
