@@ -4,7 +4,7 @@
 
 ## 1. Sweep (read-only, gate)
 
-- [ ] 1.1 Read-only sweep of the Tallink Silja / Viking Line / Eckerö pre-order shops (`scripts/ferry-shop-sweep.ts`): probe feed shape (WooCommerce/Shopify/custom), currency, category vocabulary, product-label overlap candidates, terms-of-use posture per operator; record findings + go/no-go in the change notes <!-- agent: platform-engineer.fast, depends_on: [], touches: [scripts/ferry-shop-sweep.ts, openspec/changes/ferry-onboard-prices/notes.md] -->
+- [x] 1.1 Read-only sweep of the Tallink Silja / Viking Line / Eckerö pre-order shops (`scripts/ferry-shop-sweep.ts`): probe feed shape (WooCommerce/Shopify/custom), currency, category vocabulary, product-label overlap candidates, terms-of-use posture per operator; record findings + go/no-go in the change notes <!-- agent: platform-engineer.fast, depends_on: [], touches: [scripts/ferry-shop-sweep.ts, openspec/changes/ferry-onboard-prices/notes.md] -->
 
 ## 2. Curated dataset + storage
 
