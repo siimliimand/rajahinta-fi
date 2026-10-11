@@ -866,12 +866,16 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
   const id = parseIntParam(c, 'id');
   try {
     const repo = new D1ProductSearchRepository(c.env.DB);
-    const product = await repo.findById(id);
+
+    // Wave 1: the product row and its offers depend only on the id —
+    // fetch them concurrently.
+    const [product, offers] = await Promise.all([
+      repo.findById(id),
+      repo.findOffers(id),
+    ]);
     if (product === null) {
       throw new ApiHttpError(404, `Product ${id} not found`);
     }
-
-    const offers = await repo.findOffers(id);
 
     // The product page's best price (spec price-context / design D5):
     // the shared lowest-current-offer rule — the exact figure the
@@ -879,14 +883,32 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
     // never contradict each other.
     const currentBestPriceCents = lowestCurrentOfferPriceCents(offers);
 
-    // Registry display names for the offer merchants (2.5, design D3):
-    // one list read for the whole response, resolved BEFORE mapping so
-    // every offer carries the same additive `merchantName` beside its
-    // unchanged `merchant` identifier (the wire/analytics key).
-    const names = await merchantDisplayNames(
-      c.env.DB,
-      offers.map((o) => o.merchant),
-    );
+    const merchants = new Set(offers.map((o) => o.merchant));
+
+    // Wave 2: display names, blacklist warnings, and the reliability
+    // embed depend only on the offers' merchant set, so all three reads
+    // run concurrently. Each keeps its exact previous arguments and
+    // semantics — see the attachment sites below.
+    const [names, warnings, embed] = await Promise.all([
+      // Registry display names for the offer merchants (2.5, design D3):
+      // one list read for the whole response, resolved BEFORE mapping so
+      // every offer carries the same additive `merchantName` beside its
+      // unchanged `merchant` identifier (the wire/analytics key).
+      merchantDisplayNames(c.env.DB, offers.map((o) => o.merchant)),
+      // Additive merchantWarnings join (task 2.2): PUBLISHED blacklist
+      // entries matching this product's offer merchants by domain OR
+      // normalized name. Strictly additive — one extra top-level field;
+      // the offers array, its order, and every calculated figure are
+      // never touched by the join (spec merchant-blacklist). A failed
+      // lookup omits the block rather than failing the response.
+      getMerchantWarnings(c.env.DB, merchants),
+      // Informational per-merchant scores. The embed never reorders the
+      // offers; an unavailable reliability store leaves the field
+      // absent. Queried only when offers exist.
+      offers.length > 0
+        ? getMerchantReliabilityMap(c.env.DB, merchants)
+        : Promise.resolve(undefined),
+    ]);
 
     // Each offer carries the eurPerGram embed. The embed never reorders
     // the offers — it maps in place.
@@ -947,30 +969,12 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
       currentBestPriceCents,
     };
 
-    // Informational per-merchant scores. The embed never reorders the
-    // offers; an unavailable reliability store leaves the field absent.
-    const offersList = response.offers as Array<{ merchant: string }>;
-
-    // Additive merchantWarnings join (task 2.2): PUBLISHED blacklist
-    // entries matching this product's offer merchants by domain OR
-    // normalized name. Strictly additive — one extra top-level field;
-    // the offers array, its order, and every calculated figure are built
-    // before and never touched (spec merchant-blacklist). A failed
-    // lookup omits the block rather than failing the response.
-    const warnings = await getMerchantWarnings(
-      c.env.DB,
-      new Set(offersList.map((o) => o.merchant)),
-    );
     if (warnings !== undefined) {
       response.merchantWarnings = warnings;
     }
 
-    if (offersList.length > 0) {
-      const merchants = new Set(offersList.map((o) => o.merchant));
-      const embed = await getMerchantReliabilityMap(c.env.DB, merchants);
-      if (embed !== undefined) {
-        return c.json({ ...response, merchantReliability: embed });
-      }
+    if (embed !== undefined) {
+      return c.json({ ...response, merchantReliability: embed });
     }
 
     return c.json(response);
