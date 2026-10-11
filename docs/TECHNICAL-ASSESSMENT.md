@@ -2,6 +2,37 @@
 
 Assessment date: 2026-08-28. Scope: the full monorepo (apps, packages, infra, tests, CI) as it exists on master after the Phase 2 advanced-features merge. Each finding names the file and line where the issue lives, why it matters, and a concrete recommendation. Severity reflects risk to correctness, users, or compliance, not effort.
 
+## Remediation status (verified against source 2026-10-11)
+
+The findings below are preserved as written. Status per finding as of the verification date:
+
+| # | Finding | Status | Evidence |
+|---|---|---|---|
+| 1 | SEK/EUR currency mixing | **Resolved (fail-closed)** | `systembolaget.adapter.ts` removed; feed adapters reject non-EUR prices at ingestion (`alks.parser.ts` throws on non-EUR `currency_code`); every row records `currency: 'EUR', originalCurrency: 'EUR'` with `fxDatasetVersion` absence as the no-conversion marker; `fx_rate_datasets`/`fx_rates` D1 tables exist unused (`data-platform/src/d1/schema.ts`) |
+| 2 | Session impersonation via `x-user-id` | **Resolved** | `SessionAuthGuard` derives the account from the opaque token in the httpOnly `rajahinta_session` cookie (SHA-256 hashed at rest) and rejects `x-user-id` outright; rotation via `POST /account/session/rotate` (`accounts/account.controller.ts`) |
+| 3 | Legacy calculation endpoints return wrong numbers | **Resolved** | `calculations/calculations.controller.ts` wires `AlcoholExciseService` and `ContainerDutyService` directly and honors the request body; the `TaxCalculationEngineAdapter` pass-through is gone |
+| 4 | Ops dashboard unauthenticated | **Resolved** | `@UseGuards(OpsAccessGuard)` on the controller (`observability/ops-dashboard.controller.ts`) |
+| 5 | In-memory rate limiting / XFF spoofing | **Resolved** | `RedisRateLimiter` (sliding window via sorted sets, shared across replicas) selected by Redis availability; `X-Forwarded-For` trusted only when explicitly configured (`rate-limiting.service.ts`) |
+| 6 | Transport-rate ingestion no-op | **Resolved** | Real carrier sources (Posti first) fetched through the governance-gated pipeline (`pipeline-transport-rate.adapter.ts` replaces the Phase 1 no-op; posti/omniva/pakettipojat/norrlog rate sources exist) |
+| 7 | Classification gate accepts "unknown" | **Resolved** | Gate rejects the `'unknown'` placeholder and any non-member of the known classification enum (`classification-gate.service.ts`) |
+| 8 | Search ignores the query string | **Resolved** | `q` implemented as pg_trgm similarity ranking over name, brand, manufacturer (`search/search.controller.ts`) |
+| 9 | In-memory state that should be durable | **Resolved** | Rate limiting Redis-backed, audit events in append-only `audit_events`, click analytics Redis + PostgreSQL snapshots, anonymous records pruned by retention worker (see ARCHITECTURE §15); residual in-memory rate-review and correction repositories are the noted follow-up |
+| 10 | Catch-all ingestion job | **Resolved** | Registry-driven per-merchant scheduling from the merchant registry joined with governance GRANTED state (`jobs/jobs-scheduler.service.ts`) |
+| 11 | Age gate soft in both directions | **Resolved** | In-house declined page `/age-gate/declined` (never an external origin); server reads `age_confirmed`, gate renders as overlay without removing SSR content; confirmation documented as self-attestation |
+| 12 | UI language does not match audience | **Resolved** | Locale-based routing (`[locale]`), `lang={locale}`, Finnish-first copy with locale-negotiated URLs |
+| 13 | No shared navigation | **Resolved** | `SiteHeader`/`SiteFooter` components with tests |
+| 14 | Entitlement tiers via env vars | **Resolved** | Tier read from `accounts.tier`; `ENTITLEMENT_DEFAULT_TIER` is a global test-only override; per-user env overrides removed (`entitlement.service.ts`) |
+| 15 | Health endpoint checks nothing | **Resolved** | `ReadinessService` verifies PostgreSQL `SELECT 1` and Redis ping with short timeouts at `/api/v1/health/ready`; liveness stays process-only |
+| 16 | Swagger exposed in production | **Resolved** | Mounted only outside production or with `ENABLE_SWAGGER=true` (`apps/backend/src/main.ts`) |
+| 17 | Unbounded calculation records | **Resolved** | `calculation-record-retention.worker.ts` prunes records, including anonymous sessions |
+| 18 | TimescaleDB claim unused | **Resolved** | Migration `drizzle/0014_price_observations_hypertable.sql` (task 8.2, design D4) adopts TimescaleDB for real: `CREATE EXTENSION`, `create_hypertable` on `observed_at` with 7-day chunks, composite PK `(id, observed_at)`; `schema.ts` documents the hypertable accurately; migrations are applied by `scripts/test-data-quality.sh`. Production D1 replaced the pg time-series reads (`d1/summary-aggregation.ts`); the Postgres path keeps the hypertable |
+| 19 | Deployment hygiene | **Mooted by platform change** | k8s manifests removed (platform moved to Cloudflare Workers); `docker-compose.yml` `version:` key dropped; the load-test-under-limits advice carries over to the Workers deployment |
+| 20 | Basket optimizer combinatorics | **Resolved** | `MAX_BASKET_ITEMS`, `MAX_CANDIDATE_MERCHANTS_PER_ITEM`, and a `MAX_TOTAL_COMBINATIONS` guard throwing `BasketCombinationLimitError` (mapped to HTTP 422), memoized (`basket-optimizer.service.ts`) |
+
+Low findings: all resolved — `otherCharges` removed from the API shape (design D3/D5, task 10.3); `LICENSE` added; `tsx` moved to `packages/data-platform`; `*.tsbuildinfo` gitignored; the calculator search debounces keystrokes with a 300 ms trailing debounce (`lib/use-debounced-callback.ts`, task 5.2) that is cancelled on explicit submits and unit-tested in `lib/__tests__/use-debounced-callback.test.tsx`.
+
+This addendum records verification results only; the original findings above are unchanged.
+
 ## Strengths worth keeping
 
 The codebase does several things unusually well, and any refactor should preserve them:
@@ -200,7 +231,7 @@ Remediation change: `openspec/changes/technical-assessment-remediation` (branch 
 | 14 | Entitlement tiers via environment variables | Tier resolved from `accounts.tier`; environment variables demoted to a non-production test override | 10.1 |
 | 15 | Health endpoint checks nothing | `GET /api/v1/health/ready` verifies `SELECT 1` plus a Redis ping with short timeouts and dependency status in the body; liveness stays process-only | 6.1 |
 | 16 | Swagger and version detail exposed in production | Swagger gated to non-production or an env flag; version string stripped from the health body | 3.3 |
-| 17 | Unbounded growth of calculation records | `calculation_records` and `basket_calculation_records` partitioned monthly; retention worker prunes anonymous-session partitions after the configured window (30 days pending operator input) | 8.1 |
+| 17 | Unbounded growth of calculation records | `calculation_records` and `basket_calculation_records` partitioned monthly; retention worker prunes anonymous-session partitions after the configured window (30 days, ratified 2026-10-11 per `ARCHITECTURE.md` §15) | 8.1 |
 | 18 | Schema comment claims TimescaleDB; nothing uses it | `price_observations` converted to a TimescaleDB hypertable with 7-day chunks; extension added to migrations and compose (`timescale/timescaledb:2.16.1-pg16`); aggregation and watermark semantics unchanged | 8.2, 8.3 |
 | 19 | Deployment hygiene | Obsolete `version:` key removed; k8s image tags set to the commit SHA by the deploy pipeline; HPA and PDB added; optimizer load-tested under the 256m/512Mi limits (`tests/load/basket-load-results.md`) | 11.1–11.3 |
 | 20 | Basket optimizer combinatorics | Input caps pinned by test; total-combinations guard returns a clean 422 when exceeded | 10.2 |
@@ -249,7 +280,7 @@ Remediation change: `openspec/changes/technical-assessment-remediation` (branch 
 - **Durable governance and rate-review stores:** the operator console reads governance grants, rate-review entries, and the correction queue from Phase 1 in-memory repositories. Every console action is written to the durable append-only `audit_events` table, but the stores themselves are restart-volatile; durable tables are a noted follow-up.
 - **Staging cluster deferral:** per `ARCHITECTURE.md` §15.2, no staging cluster exists; the blocking promotion of the artillery load gate and the staging verification walk remain deferred until one is provisioned.
 - **Integration suite not in CI:** `tests/integration/` (104 tests) runs locally against `TEST_DATABASE_URL`; CI covers build, lint, unit, golden, data-quality, compliance, e2e, and composition smoke.
-- **Anonymous calculation-record retention window:** 30 days configured; final value pending operator input.
+- **Anonymous calculation-record retention window:** 30 days configured; ratified 2026-10-11 — no longer open (see `ARCHITECTURE.md` §15).
 - **Email deliverability:** the email Worker carries verification and reset mail alongside freshness and price-alert mail; sender-domain provisioning and deliverability remain operator runbook items.
 - **Outcome and share-snapshot sweeps not yet scheduled:** the 24-month retention cap for `calculationOutcomes` (`CALCULATION_OUTCOME_RETENTION_DAYS = 730` in `packages/data-platform/src/d1/schema.ts`) and the 12-month hygiene cap for `shareSnapshots` (`packages/core-domain/src/sharing/sharing.types.ts`) exist as constants, and outcomes are deliberately excluded from the calculation-record sweep's table list so the record sweep can never destroy them — but neither cap has its own scheduled sweep yet. Until one is wired, outcome and snapshot rows accumulate.
 - **Rate-confirmation hooks await a production confirmation path:** the confirmation seam (`apps/api-worker/src/cron/rate-confirmation.ts`) fans out tax-change alert evaluation and blog-draft creation fail-open, but the ops tax approve/reject routes currently fail closed with 503 (the rate-review store has no D1 counterpart, migrate-to-cloudflare 2.5 debt). Tax-change alerts, blog drafts, and the newsletter broadcast therefore have no operator-triggering action in production until that store lands; the hooks are unit-tested and invoked as soon as the confirmation action is real.

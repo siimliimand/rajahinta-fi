@@ -1,0 +1,8 @@
+# Tasks
+
+## 1. Documentation ratifications
+
+- [x] 1.1 ARCHITECTURE.md — §15: mark the anonymous calculation-record retention window ratified (30 days, decided 2026-10-11) and drop the "final value is pending operator input" clause; §16 status line: reword the viking follow-up from "operator input" to "gap accepted 2026-10-11; revisit on user demand; curation path per runbook ferry section" <!-- agent: platform-engineer.fast, depends_on: [], touches: [ARCHITECTURE.md] -->
+- [x] 1.2 docs/ingestion-runbook.md ferry section — add the viking decision note: gap accepted 2026-10-11; revisit trigger = user demand for viking comparisons; curation path = §10 transcription procedure (human-browser access, citations, access dates) + `MANUAL_VERIFICATION` grant for the `viking` operator key in the ops console <!-- agent: platform-engineer.fast, depends_on: [], touches: [docs/ingestion-runbook.md] -->
+- [x] 1.3 packages/data-acquisition/src/adapters/ferry-price.source.ts — extend the module docblock's viking bullet with a one-line decision pointer ("empty state accepted 2026-10-11 — see the runbook ferry section for the revisit path"); comment only, no data or code change <!-- agent: platform-engineer.fast, depends_on: [], touches: [packages/data-acquisition/src/adapters/ferry-price.source.ts] -->
+- [x] 1.4 Verification sweep — confirm no stale "pending operator input" references to the retention window or viking prices remain in docs/architecture comments; confirm the three edits tell one consistent story (same date, same revisit trigger wording) <!-- agent: platform-engineer.fast, depends_on: [1.1, 1.2, 1.3], touches: [] -->

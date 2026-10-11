@@ -184,7 +184,7 @@ All routes are versioned under `/api/v1` and documented in Swagger. Guards vary 
 | Route | Method | Purpose |
 |---|---|---|
 | `/health` | GET | Liveness (used by Docker and Kubernetes probes) |
-| `/products` | GET | Product search and ID lookup (free-text query is a Phase 2 placeholder) |
+| `/products` | GET | Product search and ID lookup (free-text `q` searches name, brand, and manufacturer with pg_trgm similarity ranking; the `category` filter is Phase 2) |
 | `/products/:id` | GET | Product detail with retail offers; carries an additive `merchantWarnings` block when a blacklisted merchant appears (offers, order, and totals unchanged) |
 | `/products/:id/price-history` | GET | Daily/weekly price and landed-cost series |
 | `/calculator` | POST | Single-product landed-cost calculation (idempotency-key aware) |

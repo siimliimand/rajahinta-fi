@@ -1529,3 +1529,20 @@ Grant checklist (per operator, staging first then §3 production):
       for routes with rows; Viking routes show no block (designed
       empty state).
 
+### 10.5 Viking Line decision note (2026-10-11)
+
+The `viking` zero-row state is accepted as of 2026-10-11: the shop is
+bot-gated (Imperva Incapsula + Distil), no price is reachable without
+circumvention, and the project never circumvents. The gap is a
+decision of record, not an omission.
+
+- **Revisit trigger**: user demand for viking comparisons on the
+  Helsinki–Tallinn lane.
+- **Curation path when revisited**: hand-transcribe from a legitimate
+  human browser session per the transcription procedure (§10.1) —
+  verbatim labels, EUR minor units as displayed, per-row citations
+  with access dates — then grant `MANUAL_VERIFICATION` for the
+  `viking` operator key in the ops console (§10.4). The monthly
+  curated-rate-refresh cron picks the rows up and unchanged-skips
+  thereafter.
+
