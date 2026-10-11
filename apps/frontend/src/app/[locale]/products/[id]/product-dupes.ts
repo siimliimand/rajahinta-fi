@@ -9,10 +9,13 @@
  * here rather than in the shared lib/types because the touch set is the
  * product scope; the route remains the single source of truth.
  *
- * Fetch pattern: the product page loads its data server-side
- * (getServerProductDetail), so the dupes call does the same — a
- * server-side fetch alongside the existing data, resolved before HTML.
- * Any failure degrades to null so the panel stays absent: 403, 404
+ * Fetch pattern: server-side, alongside the page's other reads. Since
+ * price-history-latency 3.1 the PRODUCT PAGE owns this fetch — it calls
+ * getServerProductDupes up front, concurrently with the detail, history,
+ * and price-context fetches, and awaits the promise only where the dupe
+ * panel renders (the render is bounded by the slowest response, not the
+ * sum of four round-trips); this module stays the pure fetch. Any
+ * failure degrades to null so the panel stays absent: 403, 404
  * (cannot happen behind the page's own product check, but harmless),
  * 5xx, unreachable backend. "No curated links" is a 200 with an empty
  * list — an answer, not an error.

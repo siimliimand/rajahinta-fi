@@ -14,10 +14,14 @@
  * lib/types because the touch set is the product scope; the route
  * remains the single source of truth.
  *
- * Fetch pattern: the product page loads its data server-side
- * (getServerProductDetail), so the context call does the same — a
- * server-side fetch alongside the existing data, resolved before HTML.
- * Any failure degrades to null so the context line stays absent: 403,
+ * Fetch pattern: server-side, alongside the page's other reads. Since
+ * price-history-latency 3.1 the PRODUCT PAGE owns this fetch — it calls
+ * getServerProductPriceContext up front, concurrently with the detail,
+ * history, and dupes fetches, and awaits the promise only where the
+ * context line renders (the render is bounded by the slowest response,
+ * not the sum of four round-trips); this module stays the pure fetch +
+ * shape-guard. Any failure degrades to null so the context line stays
+ * absent: 403,
  * 404 (the route answers 404 when the product or its current offers are
  * gone), 5xx, unreachable backend, unexpected shape.
  *

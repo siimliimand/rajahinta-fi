@@ -11,6 +11,14 @@
  * generateMetadata and the page body share one fetch per render — Next
  * dedupes identical server fetches within a render pass.
  *
+ * Task 3.1 (price-history-latency): the page body starts ALL of its
+ * server fetches — detail, price history, price-context, dupes — as
+ * promises up front and awaits each only where its data is needed, so
+ * the render is bounded by the slowest response rather than the sum of
+ * four serialized round-trips. The context line and dupes panel are
+ * presentational: the page owns their fetches and hands the payloads
+ * down as props; the null-degradation contracts are unchanged.
+ *
  * @module ProductPage
  */
 
@@ -33,6 +41,8 @@ import { Badge, type BadgeTone } from '@/components/ui';
 import MerchantWarningNotice from '../../components/MerchantWarningNotice';
 import { MerchantLink } from '../../compare/components/MerchantLink';
 import { SellingDistanceBadge } from '../../compare/components/SellingDistanceBadge';
+import { getServerProductPriceContext } from './price-context';
+import { getServerProductDupes } from './product-dupes';
 import ProductAlertAction from './components/ProductAlertAction';
 import ProductFavoriteAction from './components/ProductFavoriteAction';
 import ProductDupesPanel from './components/ProductDupesPanel';
@@ -125,6 +135,11 @@ function toIsoDate(ms: number): string {
  * because the shared getPriceHistory client is the browser-side helper
  * (cookie-based confirmation, no revalidate). Any failure or unexpected
  * shape degrades to null and the page renders without the section.
+ *
+ * attribution=none (price-history-latency 3.1): the page never renders
+ * attribution markers, so the request opts out of the endpoint's
+ * attribution pass — the endpoint answers attribution: [] and performs
+ * zero raw-log reads, instead of the auto default's R2 partition scan.
  */
 async function getServerPriceHistory(
   productId: number,
@@ -139,6 +154,8 @@ async function getServerPriceHistory(
     granularity: 'day',
     from: toIsoDate(todayMs - (HISTORY_RANGE_DAYS - 1) * DAY_MS),
     to: toIsoDate(todayMs),
+    // Opt out of the attribution pass — see the docblock above.
+    attribution: 'none',
   });
   try {
     const res = await fetch(
@@ -269,7 +286,15 @@ export default async function ProductPage({ params }: ProductPageProps) {
     notFound();
   }
 
-  const detail = await getServerProductDetail(productId);
+  // Task 3.1 (price-history-latency): all four server fetches start
+  // here, concurrently, before any await — detail, history, price-context,
+  // dupes — then each promise is awaited only where its data is needed.
+  const detailPromise = getServerProductDetail(productId);
+  const historyPromise = getServerPriceHistory(productId);
+  const contextPromise = getServerProductPriceContext(productId);
+  const dupesPromise = getServerProductDupes(productId);
+
+  const detail = await detailPromise;
   if (detail === null) {
     notFound();
   }
@@ -278,7 +303,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
   // failure, and the chart component itself renders nothing for an
   // empty series, so the section is absent exactly when there is no
   // history to show.
-  const priceHistory = await getServerPriceHistory(productId);
+  const priceHistory = await historyPromise;
 
   const { product, offers } = detail;
   // Shared attribute formatters (task 4.1): labelled volume ("50 cl")
@@ -304,6 +329,13 @@ export default async function ProductPage({ params }: ProductPageProps) {
     ...(abv ? [{ label: tCommon('abvLabel'), value: abv }] : []),
     ...(product.ean ? [{ label: t('eanLabel'), value: product.ean }] : []),
   ];
+
+  // Context and dupes payloads (price-history-latency 3.1): fetched
+  // above alongside detail and history, awaited here where the JSX
+  // needs them. Null keeps each surface absent from the HTML exactly
+  // as when the panels fetched for themselves.
+  const contextPayload = await contextPromise;
+  const dupesPayload = await dupesPromise;
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
@@ -461,19 +493,21 @@ export default async function ProductPage({ params }: ProductPageProps) {
         ) : null}
       </section>
 
-      {/* ── Price-context line (insight-surfaces 3.3) — derives from the
-          API's same current-best-price selection as the offers above, so
-          the sentence and the panel cannot contradict each other; absent
-          from the HTML when the context is unavailable ── */}
-      <ProductPriceContextLine productId={productId} locale={locale} />
+      {/* ── Price-context line (insight-surfaces 3.3; payload fetched
+          by the page above, price-history-latency 3.1) — derives from
+          the API's same current-best-price selection as the offers
+          above, so the sentence and the panel cannot contradict each
+          other; absent from the HTML when the context is unavailable ── */}
+      <ProductPriceContextLine payload={contextPayload} locale={locale} />
 
       {/* ── Price history (task 5.1) — server-fetched series, client
           range views; renders NOTHING when there is no history ── */}
       {priceHistory !== null && <PriceHistoryChart history={priceHistory} />}
 
-      {/* ── Producer dupe panel — absent from the HTML when no curated
-          links exist (design R9) ── */}
-      <ProductDupesPanel productId={productId} />
+      {/* ── Producer dupe panel (payload fetched by the page above,
+          price-history-latency 3.1) — absent from the HTML when no
+          curated links exist (design R9) ── */}
+      <ProductDupesPanel dupes={dupesPayload} />
 
       {/* ── Favorite heart (task 4.3) — mount-time membership check,
           optimistic toggle, login-modal funnel for signed-out taps ── */}
