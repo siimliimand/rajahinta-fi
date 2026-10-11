@@ -8,10 +8,14 @@
  *
  * Chart series serve strictly from the materialized D1
  * price_history_summaries buckets (never raw aggregation on the request
- * path). Read-time tax-change attribution runs over the R2 observation
- * log (design D4/G1 — raw observations live in R2, not D1): the range is
- * scanned day-partition by day-partition and grouped per merchant exactly
- * like the D1 findByProductRange contract (ordered by observedAt, id).
+ * path) — the earliest-available-observation date comes from the same
+ * materialization (calendar-day precision, midnight UTC). Read-time
+ * tax-change attribution (`?attribution=auto`, the default) runs over
+ * the R2 observation log (design D4/G1 — raw observations live in R2,
+ * not D1): the range is scanned day-partition by day-partition with a
+ * bounded batched read and grouped per merchant exactly like the D1
+ * findByProductRange contract (ordered by observedAt, id).
+ * `?attribution=none` skips every R2 pass and returns an empty list.
  *
  * @module HistoricalRoutes
  */
@@ -51,6 +55,8 @@ const MAX_RANGE_DAYS = 365;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Container-duty rules use a single product-category key (engine parity). */
 const CONTAINER_DUTY_PRODUCT_CATEGORY = 'all_beverages';
+/** Concurrent R2 partition reads per batch (bounded fan-out, chunk order kept). */
+const PARTITION_READ_CONCURRENCY = 8;
 /** API granularity vocabulary → the summary-row discriminator. */
 const GRANULARITY_TO_SUMMARY: Record<string, string> = { day: 'daily', week: 'weekly' };
 
@@ -84,6 +90,7 @@ interface ValidatedQuery {
   from: string;
   to: string;
   merchant: string | null;
+  attribution: 'auto' | 'none';
 }
 
 /** Strictly parse 'YYYY-MM-DD' as a UTC-midnight Date; null when invalid. */
@@ -104,6 +111,7 @@ function validateQuery(
   from: string | undefined,
   to: string | undefined,
   merchant: string | undefined,
+  attribution: string | undefined,
 ): ValidatedQuery {
   const errors: string[] = [];
 
@@ -142,6 +150,13 @@ function validateQuery(
     errors.push('merchant must be a non-empty string of at most 128 characters');
   }
 
+  let attributionValue: ValidatedQuery['attribution'] = 'auto';
+  if (attribution !== undefined && attribution !== 'auto' && attribution !== 'none') {
+    errors.push('attribution must be one of: auto, none');
+  } else if (attribution !== undefined) {
+    attributionValue = attribution;
+  }
+
   if (errors.length > 0) {
     throw new ApiHttpError(400, {
       statusCode: 400,
@@ -156,6 +171,7 @@ function validateQuery(
     from: from!,
     to: to!,
     merchant: merchant !== undefined ? merchant : null,
+    attribution: attributionValue,
   };
 }
 
@@ -197,69 +213,49 @@ async function findObservationsByProductRange(
   });
 
   const rows: ObservationRow[] = [];
-  for (const key of keys) {
-    const body = await reader.readObject(key);
-    if (body === null) continue;
-    for (const line of body.split('\n')) {
-      if (line.trim().length === 0) continue;
-      let record: ObservationLogRecord;
-      try {
-        record = parseObservationLine(line);
-      } catch {
-        continue; // A torn tail line never fails a read (JSONL framing).
+  // Fixed-concurrency batched reads: at most PARTITION_READ_CONCURRENCY
+  // partitions in flight; rows accumulate in chunk order and the final
+  // sort keeps the output order identical to the serial scan.
+  for (let i = 0; i < keys.length; i += PARTITION_READ_CONCURRENCY) {
+    const bodies = await Promise.all(
+      keys
+        .slice(i, i + PARTITION_READ_CONCURRENCY)
+        .map((key) => reader.readObject(key)),
+    );
+    for (const body of bodies) {
+      if (body === null) continue;
+      for (const line of body.split('\n')) {
+        if (line.trim().length === 0) continue;
+        let record: ObservationLogRecord;
+        try {
+          record = parseObservationLine(line);
+        } catch {
+          continue; // A torn tail line never fails a read (JSONL framing).
+        }
+        if (record.product_id !== productId) continue;
+        const observedAt = new Date(record.observed_at);
+        if (observedAt < from || observedAt >= to) continue;
+        if (merchant !== null && record.merchant !== merchant) continue;
+        rows.push({
+          productId: record.product_id,
+          merchant: record.merchant,
+          retailOfferId: record.retail_offer_id,
+          observedAt,
+          foreignRetailPriceCents: record.foreign_retail_price_cents,
+          transportOfferId: record.transport_offer_id,
+          transportCostCents: record.transport_cost_cents,
+          exciseRuleVersionId: record.excise_rule_version_id,
+          containerDutyRuleVersionId: record.container_duty_rule_version_id,
+          landedCostCents: record.landed_cost_cents,
+          inputReliability: narrowInputReliability(record.input_reliability),
+          confidence: narrowConfidence(record.confidence),
+        });
       }
-      if (record.product_id !== productId) continue;
-      const observedAt = new Date(record.observed_at);
-      if (observedAt < from || observedAt >= to) continue;
-      if (merchant !== null && record.merchant !== merchant) continue;
-      rows.push({
-        productId: record.product_id,
-        merchant: record.merchant,
-        retailOfferId: record.retail_offer_id,
-        observedAt,
-        foreignRetailPriceCents: record.foreign_retail_price_cents,
-        transportOfferId: record.transport_offer_id,
-        transportCostCents: record.transport_cost_cents,
-        exciseRuleVersionId: record.excise_rule_version_id,
-        containerDutyRuleVersionId: record.container_duty_rule_version_id,
-        landedCostCents: record.landed_cost_cents,
-        inputReliability: narrowInputReliability(record.input_reliability),
-        confidence: narrowConfidence(record.confidence),
-      });
     }
   }
 
   rows.sort((a, b) => a.observedAt.getTime() - b.observedAt.getTime());
   return rows;
-}
-
-/** Earliest observedAt for a product (optionally merchant-filtered). */
-async function findEarliestObservedAt(
-  env: AppEnv['Bindings'],
-  productId: number,
-  merchant: string | null,
-): Promise<Date | null> {
-  const reader: ObservationLogReader = observationLogStore(env);
-  const keys = await reader.listKeys(OBSERVATION_LOG_PREFIX);
-  let earliest: Date | null = null;
-  for (const key of keys) {
-    const body = await reader.readObject(key);
-    if (body === null) continue;
-    for (const line of body.split('\n')) {
-      if (line.trim().length === 0) continue;
-      let record: ObservationLogRecord;
-      try {
-        record = parseObservationLine(line);
-      } catch {
-        continue;
-      }
-      if (record.product_id !== productId) continue;
-      if (merchant !== null && record.merchant !== merchant) continue;
-      const observedAt = new Date(record.observed_at);
-      if (earliest === null || observedAt < earliest) earliest = observedAt;
-    }
-  }
-  return earliest;
 }
 
 // ---------------------------------------------------------------------------
@@ -326,6 +322,7 @@ async function getPriceHistory(c: Context<AppEnv>): Promise<Response> {
     c.req.query('from'),
     c.req.query('to'),
     c.req.query('merchant'),
+    c.req.query('attribution'),
   );
 
   try {
@@ -366,94 +363,104 @@ async function getPriceHistory(c: Context<AppEnv>): Promise<Response> {
     });
 
     // ---- Earliest available observation date --------------------------
-    const earliest = await findEarliestObservedAt(c.env, id, query.merchant);
+    // Served from the D1 summary materialization (price_history_summaries)
+    // — the unbounded raw-log scan is gone. Calendar-day precision,
+    // midnight UTC, so the wire shape stays an ISO instant.
+    const earliestPeriodStart = await new D1PriceHistorySummaryRepository(
+      c.env.DB,
+    ).findEarliestPeriodStart(id);
 
     // ---- Attribution: read-time, from immutable inputs -----------------
-    const exciseCategory = normaliseCategory(product.category);
-    const taxRepo = new D1TaxRateRepository(c.env.DB);
-    const [exciseRules, containerDutyRules] = await Promise.all([
-      taxRepo.findHistoryRates(TAX_TYPES.excise, exciseCategory, fromDate, toExclusive),
-      taxRepo.findHistoryRates(
-        TAX_TYPES.containerDuty,
-        CONTAINER_DUTY_PRODUCT_CATEGORY,
+    // attribution=none skips the tax-window fetch, the R2 observations
+    // read, and the registry read entirely; auto keeps the semantics
+    // below unchanged.
+    const attribution: unknown[] = [];
+    if (query.attribution === 'auto') {
+      const exciseCategory = normaliseCategory(product.category);
+      const taxRepo = new D1TaxRateRepository(c.env.DB);
+      const [exciseRules, containerDutyRules] = await Promise.all([
+        taxRepo.findHistoryRates(TAX_TYPES.excise, exciseCategory, fromDate, toExclusive),
+        taxRepo.findHistoryRates(
+          TAX_TYPES.containerDuty,
+          CONTAINER_DUTY_PRODUCT_CATEGORY,
+          fromDate,
+          toExclusive,
+        ),
+      ]);
+      const exciseWindows = exciseRules.map(toEffectiveWindow);
+      const containerDutyWindows = containerDutyRules.map(toEffectiveWindow);
+
+      const records = await findObservationsByProductRange(
+        c.env,
+        id,
         fromDate,
         toExclusive,
-      ),
-    ]);
-    const exciseWindows = exciseRules.map(toEffectiveWindow);
-    const containerDutyWindows = containerDutyRules.map(toEffectiveWindow);
-
-    const records = await findObservationsByProductRange(
-      c.env,
-      id,
-      fromDate,
-      toExclusive,
-      query.merchant,
-    );
-
-    const attribution: unknown[] = [];
-    if (records.length >= 2) {
-      // Group into per-merchant series — never interleaved.
-      const seriesByMerchant = new Map<string, PriceObservation[]>();
-      for (const record of records) {
-        const list = seriesByMerchant.get(record.merchant) ?? [];
-        list.push({
-          productId: record.productId,
-          merchant: record.merchant,
-          retailOfferId: record.retailOfferId,
-          observedAt: record.observedAt,
-          foreignRetailPriceCents: record.foreignRetailPriceCents,
-          transportOfferId: record.transportOfferId,
-          transportCostCents: record.transportCostCents,
-          exciseRuleVersion: resolveSnapshot(record.exciseRuleVersionId, exciseWindows),
-          containerDutyRuleVersion: resolveSnapshot(
-            record.containerDutyRuleVersionId,
-            containerDutyWindows,
-          ),
-          landedCostCents: record.landedCostCents,
-          inputReliability: record.inputReliability,
-          confidence: record.confidence,
-        });
-        seriesByMerchant.set(record.merchant, list);
-      }
-
-      // Registry display names for the attributed merchants (2.5,
-      // design D3): resolved once for the response, before the steps
-      // are emitted; the raw id stays the entry's `merchant` key.
-      const names = await merchantDisplayNames(
-        c.env.DB,
-        [...seriesByMerchant.keys()],
+        query.merchant,
       );
 
-      const attributionService = new TaxChangeAttributionService();
-      for (const [seriesMerchant, observations] of seriesByMerchant) {
-        const steps = attributionService.attribute({
-          observations,
-          exciseRuleWindows: exciseWindows,
-          containerDutyRuleWindows: containerDutyWindows,
-        });
-        for (const step of steps) {
-          if (step.classification === 'UNCHANGED') continue;
-          attribution.push({
-            merchant: seriesMerchant,
-            // Additive display name — registry name, id fallback.
-            merchantName: names.get(seriesMerchant) ?? seriesMerchant,
-            classification: step.classification,
-            fromObservedAt: step.fromObservedAt.toISOString(),
-            toObservedAt: step.toObservedAt.toISOString(),
-            movedInputs: step.movedInputs,
-            exciseRuleBoundary: step.exciseRuleBoundary,
-            containerDutyRuleBoundary: step.containerDutyRuleBoundary,
+      if (records.length >= 2) {
+        // Group into per-merchant series — never interleaved.
+        const seriesByMerchant = new Map<string, PriceObservation[]>();
+        for (const record of records) {
+          const list = seriesByMerchant.get(record.merchant) ?? [];
+          list.push({
+            productId: record.productId,
+            merchant: record.merchant,
+            retailOfferId: record.retailOfferId,
+            observedAt: record.observedAt,
+            foreignRetailPriceCents: record.foreignRetailPriceCents,
+            transportOfferId: record.transportOfferId,
+            transportCostCents: record.transportCostCents,
+            exciseRuleVersion: resolveSnapshot(record.exciseRuleVersionId, exciseWindows),
+            containerDutyRuleVersion: resolveSnapshot(
+              record.containerDutyRuleVersionId,
+              containerDutyWindows,
+            ),
+            landedCostCents: record.landedCostCents,
+            inputReliability: record.inputReliability,
+            confidence: record.confidence,
           });
+          seriesByMerchant.set(record.merchant, list);
         }
-      }
 
-      attribution.sort((a, b) => {
-        const entryA = a as { toObservedAt: string; merchant: string };
-        const entryB = b as { toObservedAt: string; merchant: string };
-        const byTime = entryA.toObservedAt.localeCompare(entryB.toObservedAt);
-        return byTime !== 0 ? byTime : entryA.merchant.localeCompare(entryB.merchant);
-      });
+        // Registry display names for the attributed merchants (2.5,
+        // design D3): resolved once for the response, before the steps
+        // are emitted; the raw id stays the entry's `merchant` key.
+        const names = await merchantDisplayNames(
+          c.env.DB,
+          [...seriesByMerchant.keys()],
+        );
+
+        const attributionService = new TaxChangeAttributionService();
+        for (const [seriesMerchant, observations] of seriesByMerchant) {
+          const steps = attributionService.attribute({
+            observations,
+            exciseRuleWindows: exciseWindows,
+            containerDutyRuleWindows: containerDutyWindows,
+          });
+          for (const step of steps) {
+            if (step.classification === 'UNCHANGED') continue;
+            attribution.push({
+              merchant: seriesMerchant,
+              // Additive display name — registry name, id fallback.
+              merchantName: names.get(seriesMerchant) ?? seriesMerchant,
+              classification: step.classification,
+              fromObservedAt: step.fromObservedAt.toISOString(),
+              toObservedAt: step.toObservedAt.toISOString(),
+              movedInputs: step.movedInputs,
+              exciseRuleBoundary: step.exciseRuleBoundary,
+              containerDutyRuleBoundary: step.containerDutyRuleBoundary,
+            });
+          }
+        }
+
+        attribution.sort((a, b) => {
+          const entryA = a as { toObservedAt: string; merchant: string };
+          const entryB = b as { toObservedAt: string; merchant: string };
+          const byTime = entryA.toObservedAt.localeCompare(entryB.toObservedAt);
+          return byTime !== 0 ? byTime : entryA.merchant.localeCompare(entryB.merchant);
+        });
+      }
     }
 
     return c.json({
@@ -466,7 +473,9 @@ async function getPriceHistory(c: Context<AppEnv>): Promise<Response> {
       series,
       attribution,
       earliestAvailableObservationDate:
-        earliest !== null ? earliest.toISOString() : null,
+        earliestPeriodStart !== null
+          ? new Date(`${earliestPeriodStart}T00:00:00.000Z`).toISOString()
+          : null,
     });
   } catch (err) {
     if (err instanceof ApiHttpError) throw err;
