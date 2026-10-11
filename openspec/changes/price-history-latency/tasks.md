@@ -20,4 +20,4 @@
 ## 4. Verification
 
 - [x] 4.1 Full check sweep: typecheck, lint, and the api-worker + frontend test suites green <!-- agent: platform-engineer.fast, depends_on: [1.4, 2.2, 3.2], touches: [] -->
-- [ ] 4.2 Deploy staging and measure: `GET /api/v1/products/:id/price-history` (both attribution modes) and the product page HTML TTFB, before (proposal table) vs after; record numbers and any deviation in notes.md <!-- agent: devops-engineer.fast, depends_on: [4.1], touches: [openspec/changes/price-history-latency/notes.md] -->
+- [x] 4.2 Deploy staging and measure: `GET /api/v1/products/:id/price-history` (both attribution modes) and the product page HTML TTFB, before (proposal table) vs after; record numbers and any deviation in notes.md <!-- agent: devops-engineer.fast, depends_on: [4.1], touches: [openspec/changes/price-history-latency/notes.md] -->
