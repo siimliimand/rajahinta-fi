@@ -21,7 +21,7 @@
 
 ## 4. Operator publication (owner-gated)
 
-- [ ] 4.1 Publish the seasonal norms dataset via the operator path (ops console or owner-directed direct-D1 per seed doctrine); verify profiles answer live and record the executed procedure + seasonal-guide content follow-ups in notes <!-- agent: devops-engineer.fast, depends_on: [1.2, 2.1], touches: [openspec/changes/seasonal-occasion-templates/notes.md] -->
+- [x] 4.1 Publish the seasonal norms dataset via the operator path (ops console or owner-directed direct-D1 per seed doctrine); verify profiles answer live and record the executed procedure + seasonal-guide content follow-ups in notes <!-- agent: devops-engineer.fast, depends_on: [1.2, 2.1], touches: [openspec/changes/seasonal-occasion-templates/notes.md] -->
 
 ## 5. Verification
 
