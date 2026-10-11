@@ -14,6 +14,7 @@ import type {
 import { Badge, Card } from '@/components/ui';
 import { formatMoney } from '@/lib/format/money';
 import DisclaimerBanner from '../../calculator/components/DisclaimerBanner';
+import FerryPricesBlock from './FerryPricesBlock';
 
 // ---------------------------------------------------------------------------
 // Formatting
@@ -272,6 +273,11 @@ export default function TripBreakEvenResult({
       {/* Partner block — separate sibling container, never interleaved
           with the results (design R8). */}
       <FerryOffersBlock offers={result.ferryOffers} />
+
+      {/* Observed onboard prices — the second sibling container beside
+          the partner block (change ferry-onboard-prices); absent or
+          empty renders nothing. */}
+      <FerryPricesBlock rows={result.ferryPrices} />
     </>
   );
 }

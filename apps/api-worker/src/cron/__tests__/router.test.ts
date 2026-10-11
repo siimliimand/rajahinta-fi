@@ -66,8 +66,11 @@ describe('cron routing table (task 4.3 — BullMQ repeat-schedule parity)', () =
     expect(handlerNames('30 3 * * *')).toEqual(['retention-sweep', 'contact-retention']);
   });
 
-  it('routes the monthly curated-dataset refresh (fransberg + posti + omniva)', () => {
-    expect(handlerNames('0 5 1 * *')).toEqual(['curated-rate-refresh']);
+  it('routes the monthly curated-dataset refresh and the ferry-price refresh (task 2.2)', () => {
+    expect(handlerNames('0 5 1 * *')).toEqual([
+      'curated-rate-refresh',
+      'ferry-price-refresh',
+    ]);
   });
 
   it('routes nothing for unknown patterns', () => {

@@ -40,6 +40,7 @@ import { registerTripRoutes } from '../trip.routes';
 import { RATE_LIMIT_PROFILES } from '../../middleware/rate-limit';
 import { D1TravellerAllowancesRepository } from '../../../../../packages/data-platform/src/repositories/d1/traveller-allowances.repository';
 import { D1FerryOffersRepository } from '../../../../../packages/data-platform/src/repositories/d1/ferry-offers.repository';
+import { D1FerryPriceRepository } from '../../../../../packages/data-platform/src/repositories/d1/ferry-price.repository';
 import { FEATURE_TIER_MAP } from '../../../../../packages/core-domain/src/entitlement/entitlement.types';
 import type { Env } from '../../env';
 import type { D1DatabaseLike } from '../../../../../packages/data-platform/src/d1/executor';
@@ -98,6 +99,14 @@ interface FillJson {
     operator: string;
     routeLabel: string;
     redirectPath: string;
+  }[];
+  ferryPrices?: {
+    operator: string;
+    route: string;
+    label: string;
+    priceCents: number;
+    observedAt: string;
+    citation: string;
   }[];
 }
 
@@ -207,6 +216,33 @@ async function seedPublishedFerry(
   const published = await repo.publish(created.id);
   expect(published).not.toBeNull();
   return created.id;
+}
+
+/**
+ * Seed one curated observation through the repository's upsert (the
+ * monthly cron's write path) — the transcribed-dataset row shape.
+ */
+async function seedObservation(
+  d1: D1DatabaseLike,
+  overrides: Partial<{
+    operator: string;
+    route: string;
+    label: string;
+    priceCents: number;
+    observedAt: Date;
+    citation: string;
+  }> = {},
+): Promise<void> {
+  await new D1FerryPriceRepository(d1).upsertObservation({
+    operator: overrides.operator ?? 'tallink',
+    route: overrides.route ?? 'Helsinki–Tallinn',
+    label: overrides.label ?? 'Finlandia Redberry 100 cl',
+    priceCents: overrides.priceCents ?? 1799,
+    observedAt: overrides.observedAt ?? new Date('2026-10-01T00:00:00.000Z'),
+    citation:
+      overrides.citation ??
+      'https://shopping-onboard.tallink.com/en/megastar/product/strong-alcohol',
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -671,6 +707,148 @@ describe('POST /api/v1/trip/fill — ferry block isolation', () => {
       'Viking Line',
     ]);
     expect(JSON.stringify(manyBody)).not.toContain('eckero.example');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Observed-price block — additive display rows with provenance (change
+// ferry-onboard-prices; the ferry-offers isolation pattern). Compliance
+// byte-identity lives in tests/compliance (task 3.2); these route pins
+// cover the block contract itself.
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/trip/fill — observed-price block', () => {
+  it('returns ferryPrices: [] on an empty table — present, honestly empty', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedFillAllowances(d1);
+    await seedFillProducts(db);
+    const app = fillApp();
+    const env = fillEnv(d1);
+
+    const res = await postFill(app, env, FILL);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as FillJson;
+    expect(body.ferryPrices).toEqual([]);
+  });
+
+  it('keeps every fill field byte-identical as price rows appear; rows carry full provenance, latest revision only', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedFillAllowances(d1);
+    await seedFillProducts(db);
+    const token = await seedFreeSession(d1, db);
+    const app = fillApp();
+    const env = fillEnv(d1);
+
+    const fillProjection = (
+      body: FillJson,
+    ): Omit<FillJson, 'ferryOffers' | 'ferryPrices'> => {
+      const {
+        ferryOffers: _offers,
+        ferryPrices: _prices,
+        ...fill
+      } = body;
+      return fill;
+    };
+
+    // Zero rows — the baseline fill bytes (metadata timestamp normalized).
+    const empty = await postFill(app, env, FILL, token);
+    expect(empty.headers.get('X-Cache')).toBe('MISS');
+    const emptyBody = (await empty.json()) as FillJson;
+    const emptyFill = JSON.stringify(fillProjection(emptyBody));
+
+    // One row — fill bytes unchanged, block carries provenance.
+    await seedObservation(d1);
+    const one = await postFill(app, env, FILL, token);
+    expect(one.headers.get('X-Cache')).toBe('HIT'); // fresh block under the cached fill
+    const oneBody = (await one.json()) as FillJson;
+    expect(JSON.stringify(fillProjection(oneBody))).toBe(emptyFill);
+    expect(oneBody.ferryPrices).toEqual([
+      {
+        operator: 'tallink',
+        route: 'Helsinki–Tallinn',
+        label: 'Finlandia Redberry 100 cl',
+        priceCents: 1799,
+        observedAt: '2026-10-01',
+        citation:
+          'https://shopping-onboard.tallink.com/en/megastar/product/strong-alcohol',
+      },
+    ]);
+
+    // A LATER observation of the same key supersedes — append-only
+    // history collapses to the latest revision per (operator, route,
+    // label); the earlier revision never renders.
+    await seedObservation(d1, {
+      priceCents: 1899,
+      observedAt: new Date('2026-10-08T00:00:00.000Z'),
+      citation:
+        'https://shopping-onboard.tallink.com/en/megastar/product/strong-alcohol#2026-10-08',
+    });
+    const superseded = await postFill(app, env, FILL, token);
+    const supersededBody = (await superseded.json()) as FillJson;
+    expect(JSON.stringify(fillProjection(supersededBody))).toBe(emptyFill);
+    expect(supersededBody.ferryPrices).toEqual([
+      {
+        operator: 'tallink',
+        route: 'Helsinki–Tallinn',
+        label: 'Finlandia Redberry 100 cl',
+        priceCents: 1899,
+        observedAt: '2026-10-08',
+        citation:
+          'https://shopping-onboard.tallink.com/en/megastar/product/strong-alcohol#2026-10-08',
+      },
+    ]);
+  });
+
+  it('orders the block by (operator, route, label) regardless of insert order', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedFillAllowances(d1);
+    await seedFillProducts(db);
+    const app = fillApp();
+    const env = fillEnv(d1);
+
+    // Deliberately out-of-order inserts across all three key columns.
+    await seedObservation(d1, { operator: 'viking', label: 'Zero Sugar 330 ml' });
+    await seedObservation(d1, {
+      operator: 'tallink',
+      route: 'Turku–Stockholm',
+      label: 'Absolut 70 cl',
+    });
+    await seedObservation(d1, { label: 'Finlandia Redberry 100 cl' });
+    await seedObservation(d1, {
+      operator: 'eckero',
+      label: 'Jaloviina 3 x 50 cl',
+    });
+
+    const body = (await (await postFill(app, env, FILL)).json()) as FillJson;
+    expect(body.ferryPrices!.map((row) => `${row.operator}|${row.route}|${row.label}`)).toEqual([
+      'eckero|Helsinki–Tallinn|Jaloviina 3 x 50 cl',
+      'tallink|Helsinki–Tallinn|Finlandia Redberry 100 cl',
+      'tallink|Turku–Stockholm|Absolut 70 cl',
+      'viking|Helsinki–Tallinn|Zero Sugar 330 ml',
+    ]);
+  });
+
+  it('caps the block at the documented 50-row payload budget, truncating in the deterministic order', async () => {
+    const { db, d1 } = openMigratedD1();
+    await seedPublishedFillAllowances(d1);
+    await seedFillProducts(db);
+    const app = fillApp();
+    const env = fillEnv(d1);
+
+    for (let i = 0; i < 55; i++) {
+      await seedObservation(d1, {
+        label: `Product ${String(i).padStart(2, '0')} 50 cl`,
+      });
+    }
+
+    const body = (await (await postFill(app, env, FILL)).json()) as FillJson;
+    expect(body.ferryPrices).toHaveLength(50);
+    // Truncation keeps the FIRST rows of the deterministic order.
+    expect(body.ferryPrices![0]!.label).toBe('Product 00 50 cl');
+    expect(body.ferryPrices![49]!.label).toBe('Product 49 50 cl');
+    expect(body.ferryPrices!.map((row) => row.label)).not.toContain(
+      'Product 54 50 cl',
+    );
   });
 });
 

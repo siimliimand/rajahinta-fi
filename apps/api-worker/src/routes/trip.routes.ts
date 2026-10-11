@@ -22,17 +22,30 @@
  *      idempotency cache. The ferry table is unreachable from here; the
  *      fill engine's input types carry no affiliate field at source
  *      level.
- *   2. FERRY PATH — D1FerryOffersRepository.listPublished(), read fresh
- *      on EVERY request and attached as the sibling `ferryOffers` block
- *      AFTER cache retrieval, exactly like the trip-feasibility
- *      envelope (same redirector-ready shape — 8.3 renders the existing
- *      ferry block unchanged).
+ *   2. FERRY PATH — the curated ferry display blocks, read fresh
+ *      on EVERY request and attached AFTER cache retrieval, exactly
+ *      like the trip-feasibility envelope (same redirector-ready shape
+ *      — 8.3 renders the existing ferry block unchanged): the
+ *      `ferryOffers` block from D1FerryOffersRepository.listPublished()
+ *      and — beside it (change ferry-onboard-prices) — the `ferryPrices`
+ *      observed onboard-shop block from D1FerryPriceRepository. Both
+ *      are display-only curated facts; neither is a fill input.
  *
  * The idempotency cache stores ONLY the fill result — never the ferry
- * block — so the fill basket is byte-identical whether zero, one, or
+ * blocks — so the fill basket is byte-identical whether zero, one, or
  * many ferry rows exist (the compliance pattern, true by construction).
  * X-Content-Hash covers the cached fill body, not the per-request ferry
- * block. The raw ferry url never crosses this boundary.
+ * blocks. The raw ferry url never crosses this boundary.
+ *
+ * The `ferryPrices` rows carry the full curated provenance — operator,
+ * route, display label, EUR minor-unit price, observation date (the UTC
+ * calendar date), per-row citation. Display semantics: the table is
+ * append-only history, so the block serves the LATEST observation per
+ * (operator, route, label), in the deterministic (operator, route,
+ * label) order, capped at MAX_FERRY_PRICE_ROWS rows. An empty table is
+ * the designed empty state: the API returns `ferryPrices: []` honestly
+ * and the frontend renders nothing — no staleness gate, no fallback
+ * figure at the API.
  *
  * Middleware chain per request:
  *
@@ -62,6 +75,15 @@
  *   re-checked on lookup, so an allowance bump yields fresh results
  *   under identical requests. Client `x-idempotency-key` values travel
  *   verbatim.
+ * - The observed-price block is a pure read of the curated table
+ *   (governance-gated at ingestion — every stored row is publishable):
+ *   latest revision per (operator, route, label) from the append-only
+ *   history, deterministic order, MAX_FERRY_PRICE_ROWS cap as a payload
+ *   budget (truncation drops display rows only). The guard chain — age
+ *   gate, CALCULATOR limiter, version-aware idempotency, anonymity — is
+ *   untouched; the block attaches after the content hash, exactly like
+ *   `ferryOffers`, and no calculator/optimizer module enters the import
+ *   graph through it.
  * - Honest engine states: BOUND_EXHAUSTED and NO_BOUNDABLE_LINE are
  *   200 result bodies (the explicit empty fill, not an error);
  *   no published dataset covering the date is 409
@@ -101,7 +123,12 @@ import { BasketClassificationGateError } from '../../../../packages/core-domain/
 import { ClassificationGateService } from '../../../../packages/core-domain/src/normalization/classification-gate.service';
 import { D1TravellerAllowancesRepository } from '../../../../packages/data-platform/src/repositories/d1/traveller-allowances.repository';
 import { D1FerryOffersRepository } from '../../../../packages/data-platform/src/repositories/d1/ferry-offers.repository';
+import {
+  D1FerryPriceRepository,
+  type FerryPriceObservationRecord,
+} from '../../../../packages/data-platform/src/repositories/d1/ferry-price.repository';
 import { D1ProductSearchRepository } from '../../../../packages/data-platform/src/repositories/d1/product-search.repository';
+import type { D1DatabaseLike } from '../../../../packages/data-platform/src/d1/executor';
 import { D1ProductDataPort } from '../adapters/d1-domain-ports';
 import { D1TravellerAllowancePort } from '../adapters/d1-traveller-allowance-port';
 import {
@@ -181,10 +208,103 @@ interface TripFerryOfferRef {
   readonly redirectPath: string;
 }
 
-/** The 200 payload: the fill result + the separate curated ferry block. */
+/**
+ * The 200 payload: the fill result + the separate curated ferry blocks
+ * (`ferryOffers`, and `ferryPrices` beside it — change
+ * ferry-onboard-prices). Pure key addition: no existing field renamed,
+ * moved, or reshaped.
+ */
 type TripFillResponse = AllowanceFillResult & {
   readonly ferryOffers: readonly TripFerryOfferRef[];
+  readonly ferryPrices: readonly TripFerryPriceRow[];
 };
+
+// ---------------------------------------------------------------------------
+// Observed-price block — curated onboard-shop facts, display-only
+// (change ferry-onboard-prices; spec "Observed onboard prices block")
+// ---------------------------------------------------------------------------
+
+/**
+ * Payload budget for the display block: at most MAX_FERRY_PRICE_ROWS
+ * rows are served, truncated in the block's deterministic
+ * (operator, route, label) order. The curated dataset is bounded by
+ * operator transcription, so the cap guards unbounded growth rather
+ * than an expected state — and it can drop display rows only, never a
+ * calculation figure (the block is display-only).
+ */
+const MAX_FERRY_PRICE_ROWS = 50;
+
+/** One observed onboard price: the curated row's full provenance. */
+interface TripFerryPriceRow {
+  readonly operator: string;
+  readonly route: string;
+  readonly label: string;
+  /** EUR minor-unit price, verbatim from the observation. */
+  readonly priceCents: number;
+  /**
+   * The observation date — the stored instant's UTC calendar date
+   * (YYYY-MM-DD; the upsert normalizes observed_at to a full ISO UTC
+   * instant, so the slice is exact).
+   */
+  readonly observedAt: string;
+  /** Per-row source citation, verbatim from the observation. */
+  readonly citation: string;
+}
+
+/**
+ * Deterministic (operator, route, label) order — byte-wise
+ * comparison, locale-independent (the trip-feasibility cache-key sort
+ * precedent).
+ */
+function byObservationKey(
+  a: FerryPriceObservationRecord,
+  b: FerryPriceObservationRecord,
+): number {
+  return (
+    (a.operator < b.operator ? -1 : a.operator > b.operator ? 1 : 0) ||
+    (a.route < b.route ? -1 : a.route > b.route ? 1 : 0) ||
+    (a.label < b.label ? -1 : a.label > b.label ? 1 : 0)
+  );
+}
+
+/**
+ * FERRY-PRICE READ — the observed-price half of the ferry path (module
+ * doc): stored rows in, display rows out. The fill path cannot reach
+ * this function (data-platform import only — no calculator/optimizer
+ * module crosses here); the block meets the response only in the
+ * envelope below.
+ *
+ * Latest-revision display: history is append-only (a re-observation on
+ * a later date lands a NEW row), so the block dedupes to the LATEST
+ * observation per (operator, route, label) — max observed_at; the
+ * unique constraint makes the instant unambiguous within a key.
+ */
+async function readFerryPriceRows(
+  db: D1DatabaseLike,
+): Promise<readonly TripFerryPriceRow[]> {
+  const observations = await new D1FerryPriceRepository(db).findPublished();
+
+  const latestByKey = new Map<string, FerryPriceObservationRecord>();
+  for (const row of observations) {
+    const key = `${row.operator}\n${row.route}\n${row.label}`;
+    const kept = latestByKey.get(key);
+    if (kept === undefined || kept.observedAt.getTime() < row.observedAt.getTime()) {
+      latestByKey.set(key, row);
+    }
+  }
+
+  return [...latestByKey.values()]
+    .sort(byObservationKey)
+    .slice(0, MAX_FERRY_PRICE_ROWS)
+    .map((row) => ({
+      operator: row.operator,
+      route: row.route,
+      label: row.label,
+      priceCents: row.priceCents,
+      observedAt: row.observedAt.toISOString().slice(0, 10),
+      citation: row.citation,
+    }));
+}
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/trip/fill
@@ -328,16 +448,19 @@ async function serveWithMargin(
 }
 
 /**
- * FERRY PATH — the independent data path (module doc): read fresh on
- * every request and merged ONLY here, in the response envelope. The
- * fill body enters and leaves untouched; the raw url never crosses this
- * boundary.
+ * FERRY PATH — the independent data path (module doc): both curated
+ * blocks read fresh on every request and merged ONLY here, in the
+ * response envelope. The fill body enters and leaves untouched; no raw
+ * url crosses this boundary and neither block is a fill input.
  */
 async function withFerryBlock(
   c: Context<AppEnv>,
   result: AllowanceFillResult,
 ): Promise<TripFillResponse> {
-  const offers = await new D1FerryOffersRepository(c.env.DB).listPublished();
+  const [offers, ferryPrices] = await Promise.all([
+    new D1FerryOffersRepository(c.env.DB).listPublished(),
+    readFerryPriceRows(c.env.DB),
+  ]);
   return {
     ...result,
     ferryOffers: offers.map((offer) => ({
@@ -346,6 +469,7 @@ async function withFerryBlock(
       routeLabel: offer.routeLabel,
       redirectPath: `/api/v1/outbound/ferry/${offer.id}`,
     })),
+    ferryPrices,
   };
 }
 

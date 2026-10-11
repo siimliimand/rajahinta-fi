@@ -1197,6 +1197,12 @@
     "partners": {
       "label": "Partner links"
     },
+    "ferryPrices": {
+      "label": "Observed onboard prices",
+      "disclaimer": "Observations of onboard shop prices on their observation dates — not purchase offers, and they never affect the calculations.",
+      "disclosureSummary": "Observation rows with source citations",
+      "observedOn": "Observation date: {date}"
+    },
     "suggestion": {
       "stat": "On the latest observation day ({date}), beers ordered from webstores in {country} were on average {percent}% below the Alko reference price."
     },

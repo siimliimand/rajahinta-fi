@@ -34,6 +34,7 @@ import {
   handleCuratedRateRefresh,
   CURATED_REFRESH_CRON,
 } from './curated-rate-refresh';
+import { handleFerryPriceRefresh } from './ferry-price-refresh';
 import { handleTaxDatasetReview, TAX_REVIEW_CRON } from './tax-dataset-review';
 import {
   handleTimeSeriesAggregation,
@@ -93,6 +94,15 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   add(CURATED_REFRESH_CRON, {
     name: 'curated-rate-refresh',
     run: (env, log) => handleCuratedRateRefresh(env, log),
+  });
+  // Task 2.2 (change ferry-onboard-prices) shares the monthly tick: the
+  // ferry onboard-price dataset is display-only (never a transport offer),
+  // so it syncs through its own per-operator loop — unchanged skip on the
+  // dataset's observedAt, fail-closed source_governance gate per operator
+  // key (ferry-price-refresh.ts).
+  add(CURATED_REFRESH_CRON, {
+    name: 'ferry-price-refresh',
+    run: (env, log) => handleFerryPriceRefresh(env, log),
   });
   // The task-3.4 click-counter flush shares the 6-hourly pattern.
   add(TRANSPORT_REFRESH_CRON, {
