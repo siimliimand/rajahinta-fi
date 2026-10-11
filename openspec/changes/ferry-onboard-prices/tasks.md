@@ -22,8 +22,8 @@
 
 ## 5. Rollout
 
-- [ ] 5.1 Local + staging: apply migration, register operator governance rows (PENDING → GRANTED), load first curated dataset, verify block renders with provenance on staging and renders nothing when unpublished <!-- agent: devops-engineer.fast, depends_on: [3.2, 4.1], touches: [openspec/changes/ferry-onboard-prices/notes.md] -->
-- [ ] 5.2 Production gated deploy; migration + governance + dataset publication; verify public trip page block + exactly one monthly-cron ingest behavior recorded in notes <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [openspec/changes/ferry-onboard-prices/notes.md] -->
+- [x] 5.1 Local + staging: apply migration, register operator governance rows (PENDING → GRANTED), load first curated dataset, verify block renders with provenance on staging and renders nothing when unpublished <!-- agent: devops-engineer.fast, depends_on: [3.2, 4.1], touches: [openspec/changes/ferry-onboard-prices/notes.md] -->
+- [x] 5.2 Production gated deploy; migration + governance + dataset publication; verify public trip page block + exactly one monthly-cron ingest behavior recorded in notes <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [openspec/changes/ferry-onboard-prices/notes.md] -->
 
 ## 6. Verification
 

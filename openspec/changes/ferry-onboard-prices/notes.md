@@ -97,3 +97,145 @@ documented default) is GO for all three.** Proceed:
 Blockers: none for 2.x. Open items for the transcription act itself: decide
 Tallink per-ship vs shop-wide route keys, and obtain Viking price source
 (operator contact, app, or published price list) before claiming Viking rows.
+
+## 5.1 Staging rollout + 5.2 production rollout — 2026-10-11
+
+Owner-approved full ship (PR → merge → staging → production, governance
+grants and dataset ingestion on BOTH environments). Executed in order;
+every gate green; no step bypassed.
+
+### PR + merge
+
+| Step | Record |
+|---|---|
+| PR | [#121](https://github.com/siimliimand/rajahinta-fi/pull/121) `feature/ferry-onboard-prices` → `master` (6 commits, 0743c77…c880e8c) |
+| Checks | all 31 required checks `pass` at head c880e8c (incl. Compliance, D1 suite, Browser E2E, Load test) |
+| Merge | 2026-10-11T07:49:58Z, merge commit `07a23715` (repo convention: merge commits) |
+
+### Staging (auto-deploy on merge)
+
+| Step | Record |
+|---|---|
+| Deploy | `Deploy Staging` run [`38122701887`](https://github.com/siimliimand/rajahinta-fi/actions/runs/38122701887) — success (migrate → seed → deploy); `/api/v1/health/ready` 200 |
+| Migration 0034 | applied; `ferry_price_observations` exists and is **EMPTY** (0 rows) pre-ingestion |
+| Pre-ingestion empty state | `POST /api/v1/trip-feasibility` → 200 with `ferryPrices: []`, `ferryOffers: []` — renders nothing when unpublished |
+
+**Staging pre-requisite fixed en route (pre-existing gap, not this change's
+defect):** the trip endpoints 409'd (`NoPublishedAllowances`) because
+`traveller_allowance_datasets` had **0 rows** on staging — production has had
+the published `eu-2007-74-2026.1` dataset since 2026-10-02 (finnish-first
+change notes) but the seed never ran there. Fix: the seed module's exact
+statements (`wrangler d1 execute --remote --env staging`, 6 guarded
+upserts generated verbatim from
+`packages/data-platform/src/seed/traveller-allowances.seed.ts`) + the
+repository's only publish transition (guarded
+`PENDING_CONFIRMATION → PUBLISHED`, `confirmed_by` "owner-directed
+(ferry-onboard-prices task 5.1 staging verification; mirrors production
+eu-2007-74-2026.1 published 2026-10-02)"). Read-back: 1 dataset PUBLISHED,
+5 limits. The empty-state check above was taken after this fix (the 409
+itself is the pre-fix evidence that nothing ferry-related leaks through
+an erroring endpoint).
+
+### Governance grants (staging, then production)
+
+The ops-console grant route could not be used —
+`POST /ops/console/governance/:merchantId/grant` resolves the id in
+`merchant_registry` and 404s on unknown merchants, and ferry operator keys
+deliberately have no registry rows (runbook §10.4). Grants were written as
+**direct guarded `source_governance` INSERTs** — the recorded curated-source
+precedent (Omniva remediation 2026-10-04; pakettipojat/norrlog 2026-10-09;
+fransberg/posti 2026-09-28). Guard: `… SELECT … WHERE NOT EXISTS (SELECT 1
+FROM source_governance WHERE merchant_id = ? AND acquisition_method =
+'MANUAL_VERIFICATION' AND permission_status = 'GRANTED')` (the table has no
+unique key; `changes: 1` per env per operator; re-run-safe).
+
+| Key | Status | Method | source_url | Note |
+|---|---|---|---|---|
+| `tallink` | GRANTED | MANUAL_VERIFICATION | `https://shopping-onboard.tallink.com/en/mystar` | owner-approved curated transcription grant, ferry-price-refresh cron gate |
+| `eckero` | GRANTED | MANUAL_VERIFICATION | `https://www.eckeroline.com/shopping/preorder` | same |
+| `viking` | **no record** | — | — | designed empty state — fail-closed PENDING; no rows AND no grant, either alone suffices |
+
+`status_reason` carries the change name + date; no tokens echoed anywhere.
+No `audit_events` rows — consistent with all prior curated-carrier grants
+(the de-fi carriers change recorded the same).
+
+### Dataset ingestion (staging, then production)
+
+Trigger: the handler's documented out-of-band sync against real bindings
+(the proven curated-rate-refresh path, transport-confidence-unlock notes):
+
+```
+wrangler dev --env <env> --remote --test-scheduled --port <p> \
+  --show-interactive-dev-session false
+curl "http://localhost:<p>/__scheduled?cron=0+5+1+*+*"
+```
+
+Wrangler 4.127.1. On staging the runbook §7's `/cdn-cgi/handler/scheduled`
+form returned `error code: 1042`; the older `/__scheduled` form
+("Ran scheduled event") worked and is what both runs used. The session
+banner confirmed the real per-env D1 binding (`rajahinta-api-staging` /
+`rajahinta-api-production`).
+
+First sync per env (handler log):
+
+- `Running monthly ferry price refresh for tallink` → `Upserted 42 curated tallink ferry price observations`
+- `Running monthly ferry price refresh for eckero` → `Upserted 28 curated eckero ferry price observations`
+- `Skipping ferry operator "viking": no governance records found — defaulting to PENDING` (fail-closed, both envs)
+- curated-rate-refresh on the same tick: fransberg/posti/omniva/pakettipojat/norrlog all unchanged-skip (expected)
+
+D1 read-back after the first sync:
+
+| Env | tallink | eckero | viking | MAX(observed_at) |
+|---|---|---|---|---|
+| staging | 42 | 28 | 0 | `2026-10-11` |
+| production | 42 | 28 | 0 | `2026-10-11` |
+
+Re-trigger (second `__scheduled` fire per env) — unchanged-skip evidence:
+`Ferry tallink dataset unchanged since 2026-10-11T00:00:00.000Z — skipping
+the upsert` + same for `eckero`; total `Upserted` lines per env stayed at 2;
+row counts unchanged. Append-only history clean.
+
+### Live verification (staging + production)
+
+`POST /api/v1/trip-feasibility` (car, 2 pax, beer+spirits prices,
+2026-10-11) and `POST /api/v1/trip/fill` (2 staged product lines):
+
+| Check | Staging | Production |
+|---|---|---|
+| feasibility HTTP | 200 | 200 (`api.rajahinta.fi`) |
+| `ferryPrices` rows served | 50 (cap; 70 stored) | 50 (cap; 70 stored) |
+| operators present | tallink + eckero | tallink + eckero |
+| viking rows | 0 | 0 |
+| provenance complete (operator, route, label, priceCents > 0, observedAt 2026-10-11, citation) | yes | yes |
+| fill HTTP | 200 | 200 |
+| fill field set | `status, travelDate, allowanceDatasetVersion, filledValueCents, filledUnits, lines, categoryHeadroom, disclaimer` intact | same |
+
+Byte-identity spot-check (compliance property, live): the staging
+feasibility response captured **before** ingestion vs **after** differs in
+exactly one top-level key — `ferryPrices`; `result` is identical. The
+frontend "Laivaston havaitut hinnat" block renders from this same
+`ferryPrices` payload (component-tested, 1549 frontend green); the API-level
+confirmation is the runbook's sanctioned check. The viking-only scenario is
+the designed empty state: zero viking rows stored AND no viking grant —
+observed as no viking entries in any response plus the fail-closed skip
+warning on every tick.
+
+### Monthly-cron ingest behavior (task 5.2 record)
+
+The monthly curated tick `0 5 1 * *` (next natural fire: 2026-11-01 05:00
+UTC) now carries `ferry-price-refresh` beside the curated carriers. Exactly
+one ingest behavior is specced and now demonstrated per operator: sync once
+per dataset revision — upsert the 70 curated rows on the revision's first
+tick, then unchanged-skip while stored `MAX(observed_at)` equals
+`FERRY_OBSERVED_AT` (both envs already at `2026-10-11`, so the 2026-11-01
+tick will skip; the re-trigger runs above are the demonstration). A future
+transcription lands by bumping `FERRY_OBSERVED_AT` + deploy (runbook §10.3).
+The first sync happened out-of-band on 2026-10-11 (documented path above)
+rather than waiting for the tick, mirroring the fransberg/posti precedent.
+
+### Blockers / follow-ups
+
+- None. Production health 200 pre/post; no gate failed; nothing pushed through.
+- Note for the next wrangler bump: if `/cdn-cgi/handler/scheduled` keeps
+  1042-ing in remote dev sessions, prefer the `/__scheduled` form (both are
+  documented; §7 to be updated only if a future wrangler drops it).
