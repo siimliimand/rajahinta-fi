@@ -7,7 +7,8 @@
  *   skipped (append-only history: unchanged data is not new history);
  * - a changed dataset refreshes through the governance-gated adapter;
  * - an empty table (first sync) refreshes;
- * - router dispatch wiring for the monthly pattern.
+ * - router dispatch wiring for the monthly pattern (the ferry-price
+ *   refresh handler shares this pattern — task 2.2, its own module).
  *
  * @module CuratedRateRefreshTest
  */
@@ -110,10 +111,10 @@ describe('handleCuratedRateRefresh', () => {
 });
 
 describe('router wiring', () => {
-  it('rides the monthly first-of-month pattern', () => {
+  it('rides the monthly first-of-month pattern (the ferry-price refresh shares it — see ferry-price-refresh.test.ts)', () => {
     expect(CURATED_REFRESH_CRON).toBe('0 5 1 * *');
-    expect(handlersForCron(CURATED_REFRESH_CRON).map((h) => h.name)).toEqual([
+    expect(handlersForCron(CURATED_REFRESH_CRON).map((h) => h.name)).toContain(
       'curated-rate-refresh',
-    ]);
+    );
   });
 });

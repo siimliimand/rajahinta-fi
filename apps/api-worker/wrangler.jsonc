@@ -183,10 +183,13 @@
   //                 both handlers fire on this pattern
 //   0 2 * * *     tax-dataset review — BullMQ fired 02:00 Europe/Helsinki
 //   30 3 * * *    calculation-record retention sweep — BullMQ 03:30 Helsinki
-//   0 5 1 * *     Fransberg rate refresh — monthly; the dataset is curated
-//                 in-repo (no live carrier feed), the tick syncs the DB
-//                 with the source file and skips unchanged data
-//                 (src/cron/fransberg-rate-refresh.ts)
+//   0 5 1 * *     Curated rate refresh — monthly; the carrier datasets are
+//                 curated in-repo (no live carrier feed), the tick syncs
+//                 the DB with the source files and skips unchanged data
+//                 (src/cron/curated-rate-refresh.ts). The ferry
+//                 onboard-price dataset syncs on the same pattern as a
+//                 second handler (src/cron/ferry-price-refresh.ts) —
+//                 display-only observations, per-operator governance gate.
 //   0 6 * * 1     preference digest — weekly, Monday morning UTC (task 4.2,
 //                 change add-onboarding-preferences). The pattern exists in
 //                 EVERY environment (staging's trigger override below keeps

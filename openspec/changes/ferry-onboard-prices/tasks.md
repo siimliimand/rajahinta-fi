@@ -9,7 +9,7 @@
 ## 2. Curated dataset + storage
 
 - [x] 2.1 D1 migration `ferry_price_observations` (operator, route, label, price_cents, observed_at, citation, unique per operator+route+label+observed_at) + `FerryPriceRepository` (published-row reads, idempotent upsert) with D1-integration tests <!-- agent: platform-engineer.build, depends_on: [1.1], touches: [packages/data-platform/src/d1/schema.ts, packages/data-platform/src/d1/drizzle/*.sql, packages/data-platform/src/d1/repositories/ferry-price.repository.ts] -->
-- [ ] 2.2 Curated dataset `ferry-price.source.ts` (Fransberg/Posti pattern: `OBSERVED_AT` + transcribed rows with citations) + monthly curated-rate-refresh cron wiring with unchanged-skip + governance fail-closed; ingestion-runbook section for the operator transcription + grant procedure <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [packages/data-acquisition/src/adapters/ferry-price.source.ts, apps/api-worker/src/cron/**, docs/ingestion-runbook.md] -->
+- [x] 2.2 Curated dataset `ferry-price.source.ts` (Fransberg/Posti pattern: `OBSERVED_AT` + transcribed rows with citations) + monthly curated-rate-refresh cron wiring with unchanged-skip + governance fail-closed; ingestion-runbook section for the operator transcription + grant procedure <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [packages/data-acquisition/src/adapters/ferry-price.source.ts, apps/api-worker/src/cron/**, docs/ingestion-runbook.md] -->
 
 ## 3. API + compliance
 

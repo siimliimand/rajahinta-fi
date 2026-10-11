@@ -1365,3 +1365,167 @@ URL). The deploy itself is the gated production pipeline
       notes or an ops note, with the verified-at timestamp filled by
       the operator only.
 
+---
+
+## 10. Ferry onboard prices (Tallink Silja, Viking Line, Eckerö Line)
+
+Operational reference for the curated ferry onboard-price dataset
+behind the trip responses' display-only "Laivaston havaitut hinnat"
+block (change `ferry-onboard-prices`, tasks 2.1/2.2). None of the
+three Baltic operators offers a sanctioned machine-readable feed (the
+task-1.1 sweep verdict: live-feed NO-GO for all three), so prices are
+transcribed by hand from the operators' publicly browsable shops into
+the in-repo dataset and synced monthly. These rows are DISPLAY-ONLY:
+they never enter any landed-cost calculation, no retail offers, no
+`product_master` join, no EAN.
+
+Artifacts:
+
+| Artifact | Path |
+|---|---|
+| Curated dataset + row contract | `packages/data-acquisition/src/adapters/ferry-price.source.ts` |
+| Storage (`ferry_price_observations`, migration 0034) | `packages/data-platform/src/d1/migrations/0034_ferry_price_observations.sql`, `packages/data-platform/src/repositories/d1/ferry-price.repository.ts` |
+| Monthly sync (per-operator unchanged skip + governance gate) | `apps/api-worker/src/cron/ferry-price-refresh.ts` (cron `0 5 1 * *`, rides the curated-refresh tick) |
+| Dataset sanity pins (the transcription review) | `packages/data-acquisition/src/__tests__/ferry-price.source.test.ts` |
+| Gate sweep (task 1.1 findings: feeds, robots, label formats) | `scripts/ferry-shop-sweep.ts`, `openspec/changes/ferry-onboard-prices/notes.md` |
+
+Operator keys — also the `source_governance` keys:
+
+| Key | Operator | Shop | Route label | First transcription |
+|---|---|---|---|---|
+| `tallink` | Tallink Silja | `shopping-onboard.tallink.com` (per-ship onboard shop) | `Helsinki–Tallinn` (M/S MyStar) | 2026-10-11, 42 rows |
+| `viking` | Viking Line | `www.vikingline.fi/taxfree/` (Imperva Incapsula + Distil gated) | — | none — designed empty state |
+| `eckero` | Eckerö Line | `www.eckeroline.com/shopping/preorder/` (Magento 2, "Eckerö Market") | `Helsinki–Tallinn` (M/S Finlandia) | 2026-10-11, 28 rows |
+
+### 10.1 Transcription procedure
+
+Read-only GETs against public catalog pages only. The operators'
+robots.txt governs: Eckerö declares `Crawl-delay: 10` (wait ≥10 s
+between requests), Tallink's shop robots disallow only session paths.
+A 403/bot-challenge page is a FINDING — record it, never circumvent
+it. The honest crawler UA is
+`rajahinta-crawler/1.0 (+https://rajahinta.fi)`. Keep the request
+budget bounded (the initial transcription used ~10 Tallink and ~4
+Eckerö requests; a re-transcription of one operator should stay in
+that order).
+
+1. **Tallink** (per-ship onboard shop; the URL path is the ship/route
+   dimension). Category URLs:
+   `https://shopping-onboard.tallink.com/en/<ship>/category/<slug>-<id>`
+   (MyStar alcohol taxonomy: `strong-alcohol-3606`, `long-drink-238`,
+   `beer-234`, `sparkling-wine-1951`, …). Each category page embeds the
+   product array in `__NEXT_DATA__`
+   (`props.pageProps.initialCategoryData.category.productArray`):
+   transcribe `name` (verbatim display label), `priceIncTax` × 100
+   (the shop dual-publishes `priceExTax`/`priceIncTax` with
+   `taxMultiplier 1.24` — record `priceIncTax`, the VAT-inclusive
+   consumer price), and build the product page URL as
+   `https://shopping-onboard.tallink.com/en/<ship>/product/<slug>-<sku>`
+   from the row's `sku`. **Verify every URL against the operator's own
+   product sitemaps** (`sitemap-products_N.xml`, MyStar lives in files
+   26–35): a product the sitemap does not list gets DROPPED, not
+   guessed (the first transcription dropped 2 such rows). Exclude rows
+   with `specialStatus: 1` — campaign prices are transient; the
+   dataset records standing display prices. Never transcribe the EAN
+   (`custom1`).
+2. **Eckerö** (Magento 2 HTML). Category URLs:
+   `https://www.eckeroline.com/shopping/preorder/<category>` (e.g.
+   `pre-order-strong-alcohol`, `pre-order-long-drink`). Product tiles
+   are anchors pairing `href` (product URL) with `data-name`,
+   `data-price`, `data-currency`. Record `data-price` × 100 — it is
+   the currently displayed (sale-adjusted, VAT-inclusive) price; where
+   the shop shows regular + special, the special (purchasable) price
+   is the displayed one. Decode HTML entities in names
+   (`Crafter&apos;s` → `Crafter's`); keep labels otherwise verbatim,
+   including the `N x VOL` pack notation and the operators' own
+   spacing.
+3. **Viking Line** — do not transcribe from automated fetches. The
+   shop is bot-gated and route taxonomy needs operator input; rows
+   enter only from operator-provided material (price list, app
+   screenshot with URL, or a granted feed), cited to that material.
+4. Run the dataset pins
+   (`pnpm --filter @rajahinta/data-acquisition exec vitest run
+   src/__tests__/ferry-price.source.test.ts`) — they check row counts,
+   citations, identity uniqueness, and price positivity, and act as
+   the transcription review.
+
+### 10.2 Citation rules
+
+Every row carries `"<operator shop name>, <product page URL>,
+accessed <YYYY-MM-DD>"`. The shop names: `Tallink MyStar onboard
+shop`, `Eckerö Market pre-order shop`. The URL must be the page the
+price was actually read from (Tallink: the per-product onboard URL
+verified against the sitemap; Eckerö: the tile's own product URL) —
+never a category or hub page. The access date is the transcription
+date. A price you cannot cite is a price you do not transcribe: the
+schema enforces this (`citation` is NOT NULL and non-empty), and the
+dataset pins enforce it before the schema ever sees a row.
+
+### 10.3 Landing a new transcription (OBSERVED_AT bump)
+
+1. Edit the dataset in
+   `packages/data-acquisition/src/adapters/ferry-price.source.ts`:
+   change/add/remove rows for the affected operator(s).
+2. Bump `FERRY_OBSERVED_AT` to the review date (one date per
+   revision — the Fransberg precedent). A changed date lands NEW
+   rows; prior months stay as append-only history.
+3. Update the per-operator counts in the dataset pins if they moved,
+   and the first-transcription table above.
+4. Deploy. The next monthly tick (`0 5 1 * *` UTC) upserts the
+   revision; per operator, the sync skips while the newest stored
+   `observed_at` still equals `FERRY_OBSERVED_AT`, and upserts
+   otherwise (idempotent: re-runs converge on the same rows). Out-of-
+   band sync for local work:
+   `wrangler dev --test-scheduled` +
+   `curl "http://localhost:8787/__scheduled?cron=0+5+1+*+*"`.
+
+Verify after a tick:
+
+```bash
+cd apps/api-worker
+wrangler d1 execute DB --remote --env staging --command \
+  "SELECT operator, COUNT(*) AS rows, MAX(observed_at) AS newest \
+     FROM ferry_price_observations GROUP BY operator" -y
+```
+
+Expected after the first landing: `tallink` 42 rows and `eckero` 28
+rows at `2026-10-11`, no `viking` rows.
+
+### 10.4 Governance grants per operator
+
+The refresh ingests an operator only while its `source_governance`
+status is `GRANTED` — no records, any other status, or a gate error
+ingests nothing (fail-closed, logged as `defaulting to PENDING`).
+The three operator keys are governance keys, not merchant-registry
+rows: ferry prices have no `merchant_registry` entry and no feed URL.
+Register + grant each operator through the console (§2.2 for the
+mechanics) with:
+
+- `acquisitionMethod`: `MANUAL_VERIFICATION` (the curated transcription
+  is a manual, human-read verification of public pages — not a feed,
+  not crawling);
+- `sourceUrl`: the shop base the rows cite —
+  `https://shopping-onboard.tallink.com/en/mystar` (tallink),
+  `https://www.eckeroline.com/shopping/preorder` (eckero),
+  the operator-designated source for viking;
+- a note naming the change and the transcription date.
+
+Until an operator is granted, its dataset rows stay un-ingested. This
+is why Viking is invisible in the table today by design: no rows AND
+no grant — either alone is sufficient, both are expected to arrive
+together. Revoking an operator (§2.3) stops future syncs; landed rows
+stay (revocation never purges) and remain display-only.
+
+Grant checklist (per operator, staging first then §3 production):
+
+- [ ] Console grant with `MANUAL_VERIFICATION` + the operator's shop
+      source URL; audit entry present (`entityId: <operator key>`).
+- [ ] Next monthly tick (or the local `__scheduled` curl) logs
+      `Upserted N curated <operator> ferry price observations` with N
+      matching the dataset count.
+- [ ] `SELECT MAX(observed_at)` per operator equals `FERRY_OBSERVED_AT`
+      and a second tick logs the unchanged-skip line.
+- [ ] Trip response shows the "Laivaston havaitut hinnat" block only
+      for routes with rows; Viking routes show no block (designed
+      empty state).
+
