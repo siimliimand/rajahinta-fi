@@ -32,6 +32,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import RootLayout from './layout';
+import LocaleChrome from '@/app/_chrome/LocaleChrome';
 
 // ---------------------------------------------------------------------------
 // Mocked Next server plumbing — locale is steerable per test through this
@@ -150,6 +151,12 @@ const DESTINATIONS = [
  * Render the real layout for a locale, the way the server would. The
  * optional cookie value steers the mocked cookies() — which only bites
  * if the layout regresses into reading cookies again.
+ *
+ * The [locale] layout delegates the document to the shared LocaleChrome
+ * (fi-path-isr task 1.1): the pin below fails if the delegation or its
+ * locale wiring drifts, and the chrome is resolved (async server
+ * component, the harness's await-then-stringify pattern) so the
+ * assertions run against the real rendered document.
  */
 async function renderLayout(
   locale: 'fi' | 'en',
@@ -159,9 +166,13 @@ async function renderLayout(
   state.locale = locale;
   state.pathname = '/';
   state.ageCookie = ageCookie;
-  return renderToString(
-    await RootLayout({ children, params: Promise.resolve({ locale }) }),
-  );
+  const element = (await RootLayout({
+    children,
+    params: Promise.resolve({ locale }),
+  })) as React.ReactElement<{ locale: string; children: React.ReactNode }>;
+  expect(element.type).toBe(LocaleChrome);
+  expect(element.props.locale).toBe(locale);
+  return renderToString(await LocaleChrome(element.props));
 }
 
 // ---------------------------------------------------------------------------

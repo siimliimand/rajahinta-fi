@@ -1,34 +1,19 @@
-import React from 'react';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import { notFound } from 'next/navigation';
-import { NextIntlClientProvider } from 'next-intl';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { routing } from '@/i18n/routing';
-import { getClientMessages } from '@/lib/i18n/client-messages';
-import { SHARED_CHROME_NAMESPACES } from '@/lib/i18n/route-namespaces';
 import { SITE_URL } from '@/lib/api';
-import { AgeGate } from './components/AgeGate';
-import SiteHeader from './components/SiteHeader';
-import SiteFooter from './components/SiteFooter';
-import '../globals.css';
+import LocaleChrome from '@/app/_chrome/LocaleChrome';
 
 /**
- * Inter via next/font (D3): self-hosted at build time, full Finnish
- * glyph coverage (latin + latin-ext subsets), and metric-adjusted
- * fallbacks so there is no layout shift while it loads. Exposed as the
- * --font-inter variable consumed by the base typography in globals.css.
- */
-const inter = Inter({
-  subsets: ['latin', 'latin-ext'],
-  display: 'swap',
-  variable: '--font-inter',
-});
-
-/**
- * Root layout for every locale. The `lang` attribute follows the active
- * locale instead of a hardcoded value; Finnish serves from the unprefixed
- * paths, English from `/en`.
+ * Root layout of the localized tree (fi-path-isr task 1.1). The
+ * document shell and site chrome (<html> with the locale's `lang`, the
+ * Inter font, globals.css, age gate + pre-paint script, structured
+ * data, client-intl provider, header/footer) live in the shared
+ * `LocaleChrome`; this layout carries only what is specific to the
+ * `[locale]` segment: the ISR window, the param enumeration, the
+ * metadata, and the request-locale priming that keeps every page under
+ * it eligible for static rendering.
  */
 
 // ISR window for the locale tree: server-fetched pages under this layout
@@ -68,57 +53,7 @@ export async function generateMetadata({
   };
 }
 
-/** JSON-LD schema for rich search results (WebApplication). */
-const jsonLd = {
-  '@context': 'https://schema.org',
-  '@type': 'WebApplication',
-  name: 'Rajahinta.fi',
-  url: SITE_URL,
-  description:
-    'Finnish cross-border beverage landed-cost calculator. Calculate retail price, transport, excise duty and container tax in one estimate.',
-  applicationCategory: 'FinanceApplication',
-  operatingSystem: 'Web',
-  offers: {
-    '@type': 'Offer',
-    price: '0',
-    priceCurrency: 'EUR',
-  },
-  inLanguage: ['fi', 'en'],
-};
-
-/**
- * Pre-paint age-gate state (first-impression-pass task 2.1, design D4).
- *
- * Rendered into the SSR'd HTML as the first element of <body>, this
- * script executes synchronously during parsing — before the overlay
- * further down can exist, hence before first paint. It reads the
- * `age_confirmed` cookie and, for any non-empty value, sets
- * `data-age-confirmed` on <html>. The base CSS (unlayered rule in
- * globals.css) keeps the server-rendered overlay unpainted for
- * confirmed visitors until AgeGate hydration removes it — no gate
- * flash, on fresh and CDN-cached HTML alike.
- *
- * Reader, not a store: the cookie remains the single source of truth
- * (AgeGate converges on it at hydration). The parse below mirrors
- * AgeGate's getAgeVerified exactly — split/trim/starts-with, an empty
- * value counts as unconfirmed. The cookie and attribute names are
- * restated here because importing a constant across the 'use client'
- * boundary hands the server a client reference, not the string.
- */
-const AGE_GATE_PREPAINT_SCRIPT = `try {
-var confirmed = false;
-var parts = document.cookie.split(';');
-for (var i = 0; i < parts.length; i++) {
-var segment = parts[i].trim();
-if (segment.startsWith('age_confirmed=')) {
-confirmed = segment.slice('age_confirmed='.length).length > 0;
-break;
-}
-}
-if (confirmed) document.documentElement.setAttribute('data-age-confirmed', '');
-} catch (e) {}`;
-
-export default async function RootLayout({
+export default async function LocaleLayout({
   children,
   params,
 }: {
@@ -129,52 +64,19 @@ export default async function RootLayout({
   if (!routing.locales.includes(locale as (typeof routing.locales)[number])) {
     notFound();
   }
+  // Static rendering (see next-intl docs): primes the request locale
+  // so next-intl reads in this segment and below resolve without
+  // touching request headers, keeping pages here eligible for
+  // prerendering instead of opting into dynamic rendering.
   setRequestLocale(locale);
 
   // The gate decision is made on the client (design D4 of
   // first-impression-pass): rendering no longer reads request cookies,
   // so every route under this layout is cacheable and `revalidate`
   // above is effective. The server HTML always ships the overlay; the
-  // inline pre-paint script below plus the base-CSS rule keyed on
-  // <html data-age-confirmed> keep confirmed visitors flash-free before
-  // hydration, and AgeGate converges on the cookie at mount.
-
-  // Client messages ride the per-route split (first-impression-pass task
-  // 2.3, design D6): the provider here carries only the shared-chrome
-  // subset — header, footer newsletter island, age gate, the 404
-  // boundary, and the home island's namespaces. Routes whose client
-  // components need more replace this subset with their own via a nested
-  // NextIntlClientProvider in their segment layout, fed by the
-  // `ROUTE_CLIENT_NAMESPACES` map (`@/lib/i18n/route-namespaces`).
-  // Server-rendered copy keeps full-catalog access through next-intl's
-  // server path, so what the HTML shows is unchanged — only the
-  // serialized client payload shrinks.
-  const messages = await getClientMessages(locale, SHARED_CHROME_NAMESPACES);
-
-  return (
-    <html lang={locale} className={inter.variable}>
-      <body>
-        {/* First element in the body: the gate verdict is set during
-            parsing, before the overlay markup below can be painted. */}
-        <script dangerouslySetInnerHTML={{ __html: AGE_GATE_PREPAINT_SCRIPT }} />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
-        {/* Explicit locale: the provider must not depend on the RSC
-            request store to know which catalog it carries. */}
-        <NextIntlClientProvider locale={locale} messages={messages}>
-          {/* Header and footer stay outside the age gate: navigation chrome
-              is not restricted content and belongs in the SSR payload. */}
-          <div className="flex min-h-screen flex-col">
-            <SiteHeader />
-            <div className="flex-1">
-              <AgeGate>{children}</AgeGate>
-            </div>
-            <SiteFooter />
-          </div>
-        </NextIntlClientProvider>
-      </body>
-    </html>
-  );
+  // inline pre-paint script inside LocaleChrome plus the base-CSS rule
+  // keyed on <html data-age-confirmed> keep confirmed visitors
+  // flash-free before hydration, and AgeGate converges on the cookie
+  // at mount.
+  return <LocaleChrome locale={locale}>{children}</LocaleChrome>;
 }
