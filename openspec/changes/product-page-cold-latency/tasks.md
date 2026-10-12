@@ -23,7 +23,7 @@
 ## 5. Verification
 
 - [x] 5.1 Full check sweep (Node 24): typecheck ×8 workspaces, ESLint, api-worker suite, D1 suite, frontend suite — all green <!-- agent: platform-engineer.fast, depends_on: [1.2, 2.2, 3.2, 4.2], touches: [] -->
-- [ ] 5.2 Deploy staging and verify the new cold-visit behavior end to end: product page `Cache-Control` shows the ISR contract; second request for the same product within 300 s is an incremental-cache HIT (compare TTFBs); first-render-of-window TTFB; binding evidence (SSR fetch latency drop vs main). Record before/after + deviations in notes.md <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [openspec/changes/product-page-cold-latency/notes.md] -->
+- [x] 5.2 Deploy staging and verify the new cold-visit behavior end to end: product page `Cache-Control` shows the ISR contract; second request for the same product within 300 s is an incremental-cache HIT (compare TTFBs); first-render-of-window TTFB; binding evidence (SSR fetch latency drop vs main). Record before/after + deviations in notes.md <!-- agent: devops-engineer.fast, depends_on: [5.1], touches: [openspec/changes/product-page-cold-latency/notes.md] -->
 
 ## Failure log (wave 5, 5.2 staging verification)
 
