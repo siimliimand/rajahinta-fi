@@ -40,7 +40,7 @@
  * serializing after them.
  *
  * Caching contract (product-page-cold-latency 1.1): the route renders
- * on-demand ISR — revalidate 300, dynamicParams true, deliberately no
+ * on-demand ISR — revalidate 300, dynamicParams true, plus an empty
  * generateStaticParams. The first visit to each product renders the page
  * and caches the HTML in the OpenNext R2 incremental cache; later visits
  * inside the 300 s window serve that cached shell. This supersedes the
@@ -50,6 +50,16 @@
  * /account precedent applies: the cached HTML shell is shared, while
  * session/personalized state is client-side — favorites and alerts are
  * client components that resolve their state at mount.
+ *
+ * Why the empty generateStaticParams (fix round): Next 15.5 engages the
+ * ISR fallback cache for a dynamic segment ONLY when the route exports
+ * generateStaticParams — revalidate and dynamicParams alone keep it
+ * per-request forever. An empty return + dynamicParams true means every
+ * path renders on demand and enters the cache, with no build-time id
+ * catalog built or wanted. Staging evidence (5.2): without the export
+ * the deployed route still served `private, no-store` with warm TTFB
+ * 1.29–2.09 s; with it, the first hit is `x-nextjs-cache: MISS`, the
+ * next HIT at 0.011 s warm.
  *
  * @module ProductPage
  */
@@ -83,11 +93,20 @@ import PriceHistoryChart from './components/PriceHistoryChart';
 // On-demand ISR (product-page-cold-latency 1.1): the first visit to each
 // product renders and caches in the OpenNext R2 incremental cache; later
 // visits inside the window serve that shell. dynamicParams stays true
-// explicitly so unknown ids keep rendering on demand even if a future
-// change ever introduces generateStaticParams — no build-time id catalog
-// is required or wanted here.
+// explicitly so unknown ids keep rendering on demand — no build-time id
+// catalog is required or wanted here.
 export const revalidate = 300;
 export const dynamicParams = true;
+
+// The empty generateStaticParams is load-bearing, not vestigial (fix
+// round): Next 15.5 engages the dynamic-segment ISR fallback cache only
+// when the route exports it, so without this export the two constants
+// above have no runtime effect (5.2 staging measured per-request
+// rendering without it). Empty return + dynamicParams true = every path
+// renders on demand. Sync shape, like the [locale] layout's export.
+export function generateStaticParams() {
+  return [];
+}
 
 interface ProductPageProps {
   params: Promise<{ locale: string; id: string }>;
