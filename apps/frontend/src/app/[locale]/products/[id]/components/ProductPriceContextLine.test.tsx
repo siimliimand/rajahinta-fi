@@ -85,11 +85,19 @@ beforeEach(() => {
   testLocale = 'fi';
 });
 
-/** Straight renderToString — the component renders null or an element. */
+/**
+ * Straight renderToString — the component renders null or an element.
+ * Since product-page-cold-latency 4.1 the page hands the payload down as
+ * a still-pending promise; the tests pass Promise.resolve(fixture) the
+ * same way, and Promise.resolve(null) is the degradation case.
+ */
 async function renderLine(
   payload: ProductPriceContextResponse | null,
 ): Promise<string> {
-  const element = await ProductPriceContextLine({ payload, locale: testLocale });
+  const element = await ProductPriceContextLine({
+    payload: Promise.resolve(payload),
+    locale: testLocale,
+  });
   return renderToString(element);
 }
 

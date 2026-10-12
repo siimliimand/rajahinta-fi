@@ -9,14 +9,15 @@ import type { ProductPriceContextResponse } from '../price-context';
 
 interface ProductPriceContextLineProps {
   /**
-   * The price-context payload, fetched by the product page
-   * (price-history-latency 3.1: the page starts all its server fetches
-   * concurrently and awaits each where rendered). Null — failed fetch,
-   * unreachable backend, unexpected shape — renders NOTHING: the line
-   * stays absent from the HTML, exactly as when this component fetched
-   * for itself.
+   * The page's still-pending price-context promise (product-page-cold-latency
+   * 4.1: the page starts all its server fetches concurrently and hands the
+   * promise down; the line awaits it inside the page's Suspense boundary,
+   * so the section streams after the shell instead of delaying it). A
+   * promise that resolves null — failed fetch, unreachable backend,
+   * unexpected shape — renders NOTHING: the line stays absent from the
+   * HTML, exactly as when this component fetched for itself.
    */
-  readonly payload: ProductPriceContextResponse | null;
+  readonly payload: Promise<ProductPriceContextResponse | null>;
   /** The active request locale — dates and amounts render through the
    * shared formatters (fi-locale-surface-hardening 2.4). */
   readonly locale: string;
@@ -52,18 +53,21 @@ interface ProductPriceContextLineProps {
  * absent from the HTML rather than inventing copy. The line is
  * display-only: it feeds no calculation (design D2).
  *
- * Data source (price-history-latency 3.1): the component no longer
- * fetches — the page owns the getServerProductPriceContext call (all of
- * the page's server fetches start concurrently, so this payload is
- * already resolving while detail and history stream) and passes it down
- * as the `payload` prop. Rendering branches, class names, and the
+ * Data source (price-history-latency 3.1, promise hand-down in
+ * product-page-cold-latency 4.1): the component no longer fetches — the
+ * page owns the getServerProductPriceContext call (all of the page's
+ * server fetches start concurrently) and passes the still-pending
+ * promise down as the `payload` prop; the line awaits it inside the
+ * page's Suspense boundary, so the sentence streams after the shell
+ * rather than delaying it. Rendering branches, class names, and the
  * null → renders-nothing degradation are unchanged; only the data
  * source moved.
  */
 export default async function ProductPriceContextLine({
-  payload,
+  payload: payloadPromise,
   locale,
 }: ProductPriceContextLineProps) {
+  const payload = await payloadPromise;
   if (payload === null) {
     return null;
   }

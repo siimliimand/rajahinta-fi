@@ -16,8 +16,28 @@
  * promises up front and awaits each only where its data is needed, so
  * the render is bounded by the slowest response rather than the sum of
  * four serialized round-trips. The context line and dupes panel are
- * presentational: the page owns their fetches and hands the payloads
- * down as props; the null-degradation contracts are unchanged.
+ * presentational: the page owns their fetches; the null-degradation
+ * contracts are unchanged.
+ *
+ * Streaming design (product-page-cold-latency 4.1): the shell and the
+ * primary content (title, master data, offers) flush as soon as the
+ * body's awaits resolve; the price-context line and the dupes panel
+ * receive their still-pending promises and await them inside
+ * `<Suspense fallback={null}>` boundaries — absent from the early
+ * HTML, never a spinner or a skeleton shell (house stance: absent,
+ * not an empty shell).
+ *
+ * The history section is the one deliberate non-streaming piece: it
+ * stays awaited in the page body rather than moving behind a
+ * Suspense-wrapped async child. Its null → absent conditional render
+ * is part of this route's crawler-facing contract, and this repo's
+ * harnesses can only pin that contract through real-flow renders (an
+ * async child suspends indefinitely under Testing Library's client
+ * render and aborts a renderToString pass), so the child would trade
+ * real degradation coverage for a marginal streaming win over one
+ * same-class concurrent D1 read — the read still starts concurrently
+ * with the other three, so its latency overlaps theirs instead of
+ * serializing after them.
  *
  * Caching contract (product-page-cold-latency 1.1): the route renders
  * on-demand ISR — revalidate 300, dynamicParams true, deliberately no
@@ -247,7 +267,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   // Task 3.1 (price-history-latency): all four server fetches start
   // here, concurrently, before any await — detail, history, price-context,
-  // dupes — then each promise is awaited only where its data is needed.
+  // dupes. Detail and history are awaited here (streaming-design note in
+  // the module docblock); the context and dupes promises are handed to
+  // their sections below and awaited inside the page's Suspense
+  // boundaries (product-page-cold-latency 4.1).
   const detailPromise = getServerProductDetail(productId);
   const historyPromise = getServerPriceHistory(productId);
   const contextPromise = getServerProductPriceContext(productId);
@@ -261,7 +284,8 @@ export default async function ProductPage({ params }: ProductPageProps) {
   // Price history (task 5.1) — fetched once, widest window; null on any
   // failure, and the chart component itself renders nothing for an
   // empty series, so the section is absent exactly when there is no
-  // history to show.
+  // history to show. Deliberately awaited with the shell (see the
+  // streaming-design note in the module docblock).
   const priceHistory = await historyPromise;
 
   const { product, offers } = detail;
@@ -288,13 +312,6 @@ export default async function ProductPage({ params }: ProductPageProps) {
     ...(abv ? [{ label: tCommon('abvLabel'), value: abv }] : []),
     ...(product.ean ? [{ label: t('eanLabel'), value: product.ean }] : []),
   ];
-
-  // Context and dupes payloads (price-history-latency 3.1): fetched
-  // above alongside detail and history, awaited here where the JSX
-  // needs them. Null keeps each surface absent from the HTML exactly
-  // as when the panels fetched for themselves.
-  const contextPayload = await contextPromise;
-  const dupesPayload = await dupesPromise;
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
@@ -452,21 +469,31 @@ export default async function ProductPage({ params }: ProductPageProps) {
         ) : null}
       </section>
 
-      {/* ── Price-context line (insight-surfaces 3.3; payload fetched
-          by the page above, price-history-latency 3.1) — derives from
+      {/* ── Price-context line (insight-surfaces 3.3) — the page hands
+          down the still-pending promise (product-page-cold-latency 4.1)
+          and the line awaits it inside this boundary, so the sentence
+          streams after the shell instead of delaying it. Derives from
           the API's same current-best-price selection as the offers
           above, so the sentence and the panel cannot contradict each
-          other; absent from the HTML when the context is unavailable ── */}
-      <ProductPriceContextLine payload={contextPayload} locale={locale} />
+          other; a promise that resolves null (failed fetch) renders
+          nothing — absent from the HTML, never an empty shell. ── */}
+      <React.Suspense fallback={null}>
+        <ProductPriceContextLine payload={contextPromise} locale={locale} />
+      </React.Suspense>
 
       {/* ── Price history (task 5.1) — server-fetched series, client
-          range views; renders NOTHING when there is no history ── */}
+          range views; renders NOTHING when there is no history.
+          Deliberately awaited with the shell, not streamed — see the
+          streaming-design note in the module docblock. ── */}
       {priceHistory !== null && <PriceHistoryChart history={priceHistory} />}
 
-      {/* ── Producer dupe panel (payload fetched by the page above,
-          price-history-latency 3.1) — absent from the HTML when no
-          curated links exist (design R9) ── */}
-      <ProductDupesPanel dupes={dupesPayload} />
+      {/* ── Producer dupe panel — the page hands down the still-pending
+          promise (product-page-cold-latency 4.1), awaited inside the
+          boundary; absent from the HTML when no curated links exist or
+          the fetch degraded to null (design R9) ── */}
+      <React.Suspense fallback={null}>
+        <ProductDupesPanel dupes={dupesPromise} />
+      </React.Suspense>
 
       {/* ── Favorite heart (task 4.3) — mount-time membership check,
           optimistic toggle, login-modal funnel for signed-out taps ── */}

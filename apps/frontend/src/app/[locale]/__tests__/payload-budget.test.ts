@@ -168,9 +168,13 @@ vi.mock('../components/SiteFooter', () => ({
   default: () => React.createElement('footer', { 'data-testid': 'site-footer' }, 'CHROME-FOOTER'),
 }));
 
-// The product detail page composes async server sub-panels (they fetch
-// their own data); async components cannot pass through renderToString
-// (products/[id]/page.test.tsx precedent — markers, exactly as there).
+// The product detail page composes async server sub-panels; since
+// product-page-cold-latency 4.1 the page hands each a still-pending
+// promise and the panel awaits it inside the page's Suspense boundary.
+// Async components cannot pass through renderToString
+// (products/[id]/page.test.tsx precedent — markers, exactly as there);
+// the sync markers keep those boundaries non-suspending, so the shell
+// this harness measures is the page's primary content.
 vi.mock('../products/[id]/components/ProductDupesPanel', () => ({
   default: () =>
     React.createElement('section', { 'data-testid': 'product-dupes-panel' }, 'DUPE-SHELL'),
