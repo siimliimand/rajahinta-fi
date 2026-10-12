@@ -1,0 +1,141 @@
+import React from 'react';
+import { Inter } from 'next/font/google';
+import { NextIntlClientProvider } from 'next-intl';
+import { getClientMessages } from '@/lib/i18n/client-messages';
+import { SHARED_CHROME_NAMESPACES } from '@/lib/i18n/route-namespaces';
+import { SITE_URL } from '@/lib/api';
+import { AgeGate } from '@/app/[locale]/components/AgeGate';
+import SiteHeader from '@/app/[locale]/components/SiteHeader';
+import SiteFooter from '@/app/[locale]/components/SiteFooter';
+import '../globals.css';
+
+/**
+ * Inter via next/font (D3): self-hosted at build time, full Finnish
+ * glyph coverage (latin + latin-ext subsets), and metric-adjusted
+ * fallbacks so there is no layout shift while it loads. Exposed as the
+ * --font-inter variable consumed by the base typography in globals.css.
+ */
+const inter = Inter({
+  subsets: ['latin', 'latin-ext'],
+  display: 'swap',
+  variable: '--font-inter',
+});
+
+/** JSON-LD schema for rich search results (WebApplication). */
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: 'Rajahinta.fi',
+  url: SITE_URL,
+  description:
+    'Finnish cross-border beverage landed-cost calculator. Calculate retail price, transport, excise duty and container tax in one estimate.',
+  applicationCategory: 'FinanceApplication',
+  operatingSystem: 'Web',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'EUR',
+  },
+  inLanguage: ['fi', 'en'],
+};
+
+/**
+ * Pre-paint age-gate state (first-impression-pass task 2.1, design D4).
+ *
+ * Rendered into the SSR'd HTML as the first element of <body>, this
+ * script executes synchronously during parsing — before the overlay
+ * further down can exist, hence before first paint. It reads the
+ * `age_confirmed` cookie and, for any non-empty value, sets
+ * `data-age-confirmed` on <html>. The base CSS (unlayered rule in
+ * globals.css) keeps the server-rendered overlay unpainted for
+ * confirmed visitors until AgeGate hydration removes it — no gate
+ * flash, on fresh and CDN-cached HTML alike.
+ *
+ * Reader, not a store: the cookie remains the single source of truth
+ * (AgeGate converges on it at hydration). The parse below mirrors
+ * AgeGate's getAgeVerified exactly — split/trim/starts-with, an empty
+ * value counts as unconfirmed. The cookie and attribute names are
+ * restated here because importing a constant across the 'use client'
+ * boundary hands the server a client reference, not the string.
+ */
+const AGE_GATE_PREPAINT_SCRIPT = `try {
+var confirmed = false;
+var parts = document.cookie.split(';');
+for (var i = 0; i < parts.length; i++) {
+var segment = parts[i].trim();
+if (segment.startsWith('age_confirmed=')) {
+confirmed = segment.slice('age_confirmed='.length).length > 0;
+break;
+}
+}
+if (confirmed) document.documentElement.setAttribute('data-age-confirmed', '');
+} catch (e) {}`;
+
+/**
+ * Shared locale chrome (fi-path-isr task 1.1): the full document shell
+ * and site chrome every locale tree renders — <html>/<body> with the
+ * Inter font and globals.css, the age gate with its pre-paint script,
+ * the SEO structured data, and the client-intl provider feeding the
+ * header, footer and gate.
+ *
+ * Why the chrome owns <html>: a document can have only one owner, and
+ * Next 15 offers no static-safe way for a shared `app/layout.tsx` to
+ * learn the `[locale]` segment (getLocale()/headers() there opt the
+ * whole tree into dynamic rendering at build time — measured: the ISR
+ * revalidate windows vanish and no HTML prerenders). Instead each tree
+ * keeps its own root layout that passes its locale in — the `[locale]`
+ * segment value here, the pinned `fi` in the middleware-bypassed
+ * `app/tuotteet/[id]` (task 3.1) — so `lang` is correct in prerendered
+ * HTML without touching request APIs, and ISR windows survive.
+ *
+ * No `setRequestLocale` here: it belongs to the layouts that own the
+ * segment param (the `[locale]` layout primes it; the FI root route
+ * handles its own). Everything below resolves its copy from the
+ * explicit `locale`, keeping the chrome itself static-safe.
+ */
+export default async function LocaleChrome({
+  locale,
+  children,
+}: {
+  locale: string;
+  children: React.ReactNode;
+}) {
+  // Client messages ride the per-route split (first-impression-pass task
+  // 2.3, design D6): the provider here carries only the shared-chrome
+  // subset — header, footer newsletter island, age gate, the 404
+  // boundary, and the home island's namespaces. Routes whose client
+  // components need more replace this subset with their own via a nested
+  // NextIntlClientProvider in their segment layout, fed by the
+  // `ROUTE_CLIENT_NAMESPACES` map (`@/lib/i18n/route-namespaces`).
+  // Server-rendered copy keeps full-catalog access through next-intl's
+  // server path, so what the HTML shows is unchanged — only the
+  // serialized client payload shrinks.
+  const messages = await getClientMessages(locale, SHARED_CHROME_NAMESPACES);
+
+  return (
+    <html lang={locale} className={inter.variable}>
+      <body>
+        {/* First element in the body: the gate verdict is set during
+            parsing, before the overlay markup below can be painted. */}
+        <script dangerouslySetInnerHTML={{ __html: AGE_GATE_PREPAINT_SCRIPT }} />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+        {/* Explicit locale: the provider must not depend on the RSC
+            request store to know which catalog it carries. */}
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          {/* Header and footer stay outside the age gate: navigation chrome
+              is not restricted content and belongs in the SSR payload. */}
+          <div className="flex min-h-screen flex-col">
+            <SiteHeader />
+            <div className="flex-1">
+              <AgeGate>{children}</AgeGate>
+            </div>
+            <SiteFooter />
+          </div>
+        </NextIntlClientProvider>
+      </body>
+    </html>
+  );
+}

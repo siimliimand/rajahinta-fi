@@ -22,6 +22,7 @@ import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import RootLayout from '../layout';
+import LocaleChrome from '@/app/_chrome/LocaleChrome';
 import HomePage from '../page';
 import BlogIndexPage from '../blog/page';
 import ProductsPage from '../products/page';
@@ -236,18 +237,22 @@ const ROUTES: readonly CrawlRoute[] = [
  * Render one route's full server HTML the way the server would: the
  * real layout around the real page, with the mocked cookies() carrying
  * no age confirmation — the crawler's request.
+ *
+ * The [locale] layout delegates the document to the shared LocaleChrome
+ * (fi-path-isr task 1.1) — resolved here like any async server
+ * component before stringifying.
  */
 async function renderRouteHtml(route: CrawlRoute): Promise<string> {
   state.locale = route.locale;
   state.pathname = '/';
   state.ageCookie = null;
   const element = await route.page();
-  return renderToString(
-    await RootLayout({
-      children: element,
-      params: Promise.resolve({ locale: route.locale }),
-    }),
-  );
+  const layoutElement = (await RootLayout({
+    children: element,
+    params: Promise.resolve({ locale: route.locale }),
+  })) as React.ReactElement<{ locale: string; children: React.ReactNode }>;
+  expect(layoutElement.type).toBe(LocaleChrome);
+  return renderToString(await LocaleChrome(layoutElement.props));
 }
 
 // ---------------------------------------------------------------------------

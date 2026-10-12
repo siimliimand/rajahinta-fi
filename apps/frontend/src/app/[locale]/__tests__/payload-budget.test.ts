@@ -43,6 +43,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import RootLayout from '../layout';
+import LocaleChrome from '@/app/_chrome/LocaleChrome';
 import HomePage from '../page';
 import ContactPage from '../contact/page';
 import ProductsPage from '../products/page';
@@ -325,12 +326,15 @@ async function renderRouteWired(
         params: Promise.resolve({ locale }),
       })
     : pageElement;
-  return renderToString(
-    await RootLayout({
-      children: subtree as React.ReactNode,
-      params: Promise.resolve({ locale }),
-    }),
-  );
+  // The [locale] layout delegates the document to the shared
+  // LocaleChrome (fi-path-isr task 1.1) — resolved here like any async
+  // server component before stringifying.
+  const layoutElement = (await RootLayout({
+    children: subtree as React.ReactNode,
+    params: Promise.resolve({ locale }),
+  })) as React.ReactElement<{ locale: string; children: React.ReactNode }>;
+  expect(layoutElement.type).toBe(LocaleChrome);
+  return renderToString(await LocaleChrome(layoutElement.props));
 }
 
 /** The exact client message payload a production page request ships. */

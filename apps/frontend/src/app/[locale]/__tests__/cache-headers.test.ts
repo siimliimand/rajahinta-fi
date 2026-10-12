@@ -20,6 +20,14 @@
  *      bounds its revalidation timing; the emitted `s-maxage` still
  *      takes the tree minimum (fact 1).
  *
+ * Scope (fi-path-isr 3.2): the audit widened beyond this [locale]
+ * directory to the middleware-bypassed FI tree `app/tuotteet/[id]` —
+ * a second route tree outside [locale] whose ISR legality rests on the
+ * same source-level facts. Unaudited would mean unprotected: without
+ * widening, nothing pins that the new tree keeps its window, its
+ * generateStaticParams, and its freedom from request-time reads. The
+ * [locale]-relative pins below are unchanged.
+ *
  * The unit suite has no built-server harness (CI builds the frontend in
  * a separate job; the SSR tests render components against mocked Next
  * plumbing), so the classification is pinned structurally — the way a
@@ -55,15 +63,27 @@
  *                        OpenNext worker runtime OpenNext rewrites
  *                        cache-control, so this exact string holds
  *                        only for `next start`)
+ *   /tuotteet/[id]       s-maxage=300, stale-while-revalidate=31535700
+ *                        (the middleware-bypassed FI tree, fi-path-isr
+ *                        3.1: same on-demand shape as /products/[id] —
+ *                        revalidate 300 + dynamicParams true + an
+ *                        empty generateStaticParams — but the tree
+ *                        minimum here is the page's OWN window: its
+ *                        root layout carries no segment config, so no
+ *                        60 s window sits above it and the page's 300
+ *                        wins the header. `next start` shape only,
+ *                        OpenNext caveat as everywhere)
  *   /savings             … (searchParams ?method)
  *
  * The ISR shape is the shared-cache contract: `s-maxage` equals the
  * MINIMUM revalidate window across the route's segment tree — the
- * layout's 60 for every route in the table, including products/[id],
- * whose own 300 s window governs its revalidation timing (observed as
- * `x-nextjs-stale-time: 300`) without winning the header — and the
- * server pairs it with `stale-while-revalidate` for the remainder of
- * the one-year expire window (31536000 − window). These exact strings
+ * layout's 60 for every [locale] route in the table, and the FI page's
+ * own 300 for /tuotteet/[id] (no layout window above that tree) — and
+ * the server pairs it with `stale-while-revalidate` for the remainder
+ * of the one-year expire window (31536000 − window). On /products/[id]
+ * the page's own 300 s window governs its revalidation timing (observed
+ * as `x-nextjs-stale-time: 300`) without winning the header; on the FI
+ * tree the page's window IS the header. These exact strings
  * describe `next start` output only: on the deployed OpenNext worker
  * runtime OpenNext rewrites cache-control (its own windows and shape),
  * so worker verification should assert the shared-vs-private
@@ -105,6 +125,22 @@ const PRODUCT_NEXT_START_CACHE_CONTROL = `s-maxage=${LAYOUT_REVALIDATE_SECONDS},
 const DYNAMIC_CACHE_CONTROL =
   'private, no-cache, no-store, max-age=0, must-revalidate';
 
+/**
+ * The FI product page's own ISR window (fi-path-isr 3.1), asserted from
+ * the route file's source in the FI verdict below.
+ */
+const FI_PRODUCT_REVALIDATE_SECONDS = 300;
+
+/**
+ * The FI product route's cache-control under `next start` (fi-path-isr
+ * 3.1/3.2): with no 60 s layout above the FI tree — its root layout
+ * deliberately carries no segment config — the tree minimum is the
+ * page's own 300 s window, so unlike /products/[id] the page window
+ * wins the header. Same `next start`-only caveat as the rest of the
+ * table (OpenNext rewrites cache-control on the worker runtime).
+ */
+const FI_PRODUCT_NEXT_START_CACHE_CONTROL = `s-maxage=${FI_PRODUCT_REVALIDATE_SECONDS}, stale-while-revalidate=${EXPIRE_SECONDS - FI_PRODUCT_REVALIDATE_SECONDS}`;
+
 /** Source constructs that flip a route tree to per-request rendering. */
 const DYNAMIC_API_PATTERNS = [
   /from ['"]next\/headers['"]/,
@@ -117,9 +153,17 @@ function readSource(...segments: string[]): string {
   return readFileSync(path.join(LOCALE_DIR, ...segments), 'utf8');
 }
 
-/** Every .ts/.tsx file under [locale], as paths relative to it. */
-function allSourceFiles(dir = ''): string[] {
-  const entries = readdirSync(path.join(LOCALE_DIR, dir), {
+/** The app root — the audit also walks the FI tree outside [locale]. */
+const APP_DIR = path.resolve(LOCALE_DIR, '..');
+
+/** Read a file under app/ as text (FI-tree source-level audit). */
+function readAppSource(...segments: string[]): string {
+  return readFileSync(path.join(APP_DIR, ...segments), 'utf8');
+}
+
+/** Every .ts/.tsx file under `root`, as paths relative to it. */
+function walkSources(root: string, dir = ''): string[] {
+  const entries = readdirSync(path.join(root, dir), {
     withFileTypes: true,
   });
   return entries.flatMap((entry) => {
@@ -127,10 +171,20 @@ function allSourceFiles(dir = ''): string[] {
     if (entry.isDirectory()) {
       // Test files audit this contract; they are not part of it.
       if (entry.name === '__tests__') return [];
-      return allSourceFiles(rel);
+      return walkSources(root, rel);
     }
     return /\.tsx?$/.test(entry.name) ? [rel] : [];
   });
+}
+
+/** Every .ts/.tsx file under [locale], as paths relative to it. */
+function allSourceFiles(): string[] {
+  return walkSources(LOCALE_DIR);
+}
+
+/** Every .ts/.tsx file under the FI tree (app/tuotteet), relative to it. */
+function allFiSourceFiles(): string[] {
+  return walkSources(path.join(APP_DIR, 'tuotteet'));
 }
 
 describe('cache-header contract (first-impression-pass 2.2)', () => {
@@ -151,15 +205,26 @@ describe('cache-header contract (first-impression-pass 2.2)', () => {
     );
   });
 
-  it('no file under [locale] reads a dynamic API (shared segments stay cacheable)', () => {
+  it('no file under [locale] or the FI tree reads a dynamic API (shared segments stay cacheable)', () => {
     // Task 2.1 removed the layout's cookies() read; this sweep keeps it
     // out — and keeps cookies()/headers()/unstable_noStore/connection()
     // out of every segment and page — so the layout-wide `revalidate`
     // stays effective. A route that genuinely needs request state must
     // await searchParams instead (the pinned dynamic pages below) and
-    // accept the per-request cost explicitly.
-    const offenders = allSourceFiles().filter((rel) => {
-      const source = readSource(rel);
+    // accept the per-request cost explicitly. fi-path-isr 3.2 widened
+    // the sweep to the FI tree: /tuotteet/[id] left [locale] physically,
+    // and its ISR window dies the same way if a document-root layout
+    // reads headers() — the exact failure the tree split exists to
+    // avoid — so the same ban is enforced there, not just documented.
+    const offenders = [
+      ...allSourceFiles().map((rel) => `[locale]/${rel}`),
+      ...allFiSourceFiles().map((rel) => `tuotteet/${rel}`),
+    ].filter((label) => {
+      const [tree, ...rest] = label.split('/');
+      const source =
+        tree === '[locale]'
+          ? readSource(...rest)
+          : readAppSource('tuotteet', ...rest);
       return DYNAMIC_API_PATTERNS.some((pattern) => pattern.test(source));
     });
     expect(offenders).toEqual([]);
@@ -167,14 +232,23 @@ describe('cache-header contract (first-impression-pass 2.2)', () => {
 
   it('no page opts out via route segment config (force-dynamic / revalidate 0)', () => {
     // Route segment config that opts OUT of shared-cacheable rendering
-    // stays banned on every page. A page MAY pin its own positive ISR
-    // window (`export const revalidate = <n>` — product-page-cold-latency
-    // 1.1 put 300 on products/[id]); only 0 is the per-request opt-out.
-    // `dynamicParams` is likewise allowed: it governs on-demand
-    // rendering of unprerendered params, not cacheability.
-    const offenders = allSourceFiles().filter((rel) => {
-      if (!rel.endsWith('page.tsx')) return false;
-      const source = readSource(rel);
+    // stays banned on every page — in both trees (fi-path-isr 3.2 for
+    // the FI tree, same reason as the dynamic-API sweep above). A page
+    // MAY pin its own positive ISR window (`export const revalidate =
+    // <n>` — product-page-cold-latency 1.1 put 300 on products/[id],
+    // fi-path-isr 3.1 on tuotteet/[id]); only 0 is the per-request
+    // opt-out. `dynamicParams` is likewise allowed: it governs
+    // on-demand rendering of unprerendered params, not cacheability.
+    const offenders = [
+      ...allSourceFiles().map((rel) => `[locale]/${rel}`),
+      ...allFiSourceFiles().map((rel) => `tuotteet/${rel}`),
+    ].filter((label) => {
+      if (!label.endsWith('page.tsx')) return false;
+      const [tree, ...rest] = label.split('/');
+      const source =
+        tree === '[locale]'
+          ? readSource(...rest)
+          : readAppSource('tuotteet', ...rest);
       if (/export const (dynamic|fetchCache) =/.test(source)) return true;
       const revalidate = source.match(/export const revalidate = (\d+)/);
       return revalidate !== null && Number(revalidate[1]) === 0;
@@ -283,6 +357,59 @@ describe('cache-header contract (first-impression-pass 2.2)', () => {
     }
   });
 
+  it('the FI product route is on-demand ISR in its own tree: 300 s window, delegation, no request-time reads', () => {
+    // VERDICT (fi-path-isr 3.1, pinned 3.2): /tuotteet/[id] is a
+    // physical route outside [locale] — the middleware matcher excludes
+    // exactly `tuotteet/[^/]+`, so the route is served directly and its
+    // ISR key is the literal URL. The page pins the same on-demand shape
+    // as /products/[id] — revalidate 300, dynamicParams true, and the
+    // load-bearing empty generateStaticParams (Next 15.5 engages the
+    // dynamic-segment fallback cache only when the route exports it) —
+    // in its own source, because Next reads segment options from the
+    // route module. The body and metadata are not copies: they delegate
+    // to the shared locale-parameterized module (2.1 extraction) with
+    // the pinned locale 'fi', mirroring the [locale] adapter.
+    const source = readAppSource('tuotteet', '[id]', 'page.tsx');
+    expect(source).toMatch(/export const revalidate = 300;/);
+    expect(source).toMatch(/export const dynamicParams = true;/);
+    expect(source).toMatch(
+      /export\s+(?:async\s+)?function\s+generateStaticParams\s*\(/,
+    );
+    expect(source).toMatch(
+      /generateStaticParams\s*\([^)]*\)\s*\{\s*return\s+\[\];\s*\}/,
+    );
+    // Delegation, not duplication: the route renders the shared module.
+    expect(source).toMatch(
+      /from ['"]@\/app\/\[locale\]\/products\/\[id\]\/product-page['"]/,
+    );
+    // ISR legality — the same ban the [locale] product route carries:
+    // any request-time read here would flip the FI tree to no-store.
+    expect(source, 'must not read searchParams').not.toMatch(/searchParams/);
+    for (const pattern of DYNAMIC_API_PATTERNS) {
+      expect(source, 'must not read a dynamic API').not.toMatch(pattern);
+    }
+  });
+
+  it('the FI tree header is the page window itself: no ISR window above it', () => {
+    // Under `next start`, s-maxage is the MINIMUM revalidate across the
+    // segment tree. Every [locale] route loses its page window to the
+    // layout's 60 (the tree-minimum comment on /products/[id]); the FI
+    // tree deliberately has no layout window — its root layout carries
+    // no segment config, so the page's 300 IS the tree minimum and wins
+    // the header. Pinned from both sides: the page's window (verdict
+    // above) and the layout's silence, so a later window above the tree
+    // cannot silently shrink the emitted s-maxage.
+    const layout = readAppSource('tuotteet', '[id]', 'layout.tsx');
+    expect(
+      layout,
+      "the FI layout must not pin an ISR window — the page's 300 must stay the tree minimum",
+    ).not.toMatch(/export const revalidate =/);
+    expect(layout).not.toMatch(/export const (dynamic|fetchCache) =/);
+    expect(FI_PRODUCT_NEXT_START_CACHE_CONTROL).toBe(
+      's-maxage=300, stale-while-revalidate=31535700',
+    );
+  });
+
   it('the per-request route set is exactly the pinned URL-state + dynamic-param pages', () => {
     // Surface-wide inventory: a page is per-request dynamic when it
     // awaits searchParams, or when it lives under a dynamic segment
@@ -328,5 +455,21 @@ describe('cache-header contract (first-impression-pass 2.2)', () => {
         'share/[publicId]/page.tsx',
       ].sort(),
     );
+    // fi-path-isr 3.2 — the FI tree classifies under the same
+    // predicate: tuotteet/[id]/page.tsx sits under a dynamic segment
+    // but exports its own generateStaticParams (pinned in the FI
+    // verdict above), so it is ISR and must stay OUT of the per-request
+    // set — if the export or the window pins ever dropped from the
+    // route source, it would appear here and fail. Deep paths under
+    // /tuotteet/<id>/… are excluded by the middleware matcher too and
+    // no route exists there; the inventory covers the files that do.
+    const fiPerRequest = allFiSourceFiles().filter((rel) => {
+      if (!rel.endsWith('page.tsx')) return false;
+      const source = readAppSource('tuotteet', rel);
+      if (/await searchParams/.test(source)) return true;
+      if (underDynamicSegment(rel)) return !exportsGenerateStaticParams(source);
+      return false;
+    });
+    expect(fiPerRequest).toEqual([]);
   });
 });
