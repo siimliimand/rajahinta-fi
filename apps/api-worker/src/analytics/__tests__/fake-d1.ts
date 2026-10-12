@@ -41,6 +41,16 @@ export function openMigratedD1(): { db: DatabaseSync; d1: D1DatabaseLike } {
 
 /** Wrap a node:sqlite database in the D1 binding's structural shape. */
 export function createD1Shim(db: DatabaseSync): D1DatabaseLike {
+  /**
+   * Each prepared statement's SQL, remembered for {@link batch}: the real
+   * binding returns every statement's full result (rows for SELECTs,
+   * changes-meta for writes), while node:sqlite can produce one or the
+   * other per call (`all()` vs `run()`). The product-page batch read
+   * (task 2.2, change product-page-cold-latency) depends on the rows
+   * half, so batch routes per statement; `run()`/`all()` themselves stay
+   * exactly as the repositories call them.
+   */
+  const preparedSql = new WeakMap<D1PreparedStatementLike, string>();
   function prepare(query: string): D1PreparedStatementLike {
     const statement = db.prepare(query);
     let params: unknown[] = [];
@@ -69,18 +79,32 @@ export function createD1Shim(db: DatabaseSync): D1DatabaseLike {
         };
       },
     };
+    preparedSql.set(bound, query);
     return bound;
   }
   return {
     prepare,
-    // One implicit transaction, sequential — the binding's batch() shape
-    // (unused by the snapshot repository, kept for surface parity).
+    // One implicit transaction, sequential — the binding's batch() shape.
+    // The product-page cold path (task 2.2, change
+    // product-page-cold-latency) batches a product read + offers read
+    // through here, so SELECT statements must come back WITH their rows.
     async batch(statements: D1PreparedStatementLike[]): Promise<D1ResultLike[]> {
       const results: D1ResultLike[] = [];
       db.exec('BEGIN');
       try {
         for (const statement of statements) {
-          results.push(await statement.run());
+          // The binding's batch result contract: SELECT-shaped statements
+          // come back WITH their rows (writes report only changes meta —
+          // node:sqlite cannot produce both from one execution). A
+          // statement not minted by this shim falls back to run().
+          const isRead = /^\s*(select|with)\b/i.test(
+            preparedSql.get(statement) ?? '',
+          );
+          results.push(
+            isRead
+              ? { ...(await statement.all()), meta: {} }
+              : await statement.run(),
+          );
         }
         db.exec('COMMIT');
       } catch (error) {

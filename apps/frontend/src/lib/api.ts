@@ -8,19 +8,22 @@
  * Authentication is exclusively the server-issued httpOnly
  * `rajahinta_session` cookie; the client keeps no identity of its own.
  *
- * Connection strategy (migrate-to-cloudflare 5.2): the API base is a plain
- * URL per environment (same-zone routing — `api.rajahinta.fi`-style custom
- * domain per env on the same Cloudflare zone). No service binding: browser
- * fetches cannot traverse a binding, build-time sitemap fetches run outside
- * any Worker, and a binding/URL split would give SSR and the browser
- * different cookie origins. See apps/frontend/OPENNEXT.md.
+ * Connection strategy (migrate-to-cloudflare 5.2; amended by
+ * product-page-cold-latency 3.1): the API base is a plain URL per
+ * environment (same-zone routing — `api.rajahinta.fi`-style custom
+ * domain per env on the same Cloudflare zone) and stays CANONICAL for
+ * browser fetches, build-time sitemap/OG fetches, and anything
+ * session-carrying. SSR-only public catalog reads additionally use the
+ * `API_WORKER` service binding through `lib/server-api.ts`
+ * (`serverRequest`), falling back to this module's URL path whenever
+ * the worker context or binding is unavailable. See
+ * apps/frontend/OPENNEXT.md ("Frontend → API connection").
  *
  * @module ApiClient
  */
 
 import type {
   ProductSearchResult,
-  ProductSearchItem,
   ProductDetailResponse,
   CalculateRequest,
   CalculatorResult,
@@ -241,8 +244,11 @@ export function withTraceHeaders(existing?: HeadersInit): Record<string, string>
  * cookie is present. Trace context is added once by the caller
  * ({@link apiFetch} / {@link executeRequest}). Identity is never attached —
  * the backend derives it exclusively from the httpOnly session cookie.
+ *
+ * Also exported for `lib/server-api.ts`, whose service-binding path must
+ * send the SAME headers `request()` would (product-page-cold-latency 3.1).
  */
-function buildHeaders(path: string, init?: RequestInit): Record<string, string> {
+export function buildHeaders(path: string, init?: RequestInit): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...Object.fromEntries(
@@ -273,6 +279,30 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
 }
 
 /**
+ * Translate one completed exchange into `T`: non-2xx becomes
+ * {@link ApiFetchError} carrying the parsed {@link ApiError} body and the
+ * API's echoed `x-request-id`; 2xx parses as JSON. Shared by
+ * {@link executeRequest} and `lib/server-api.ts` so the URL and
+ * service-binding transports have exactly one error contract
+ * (product-page-cold-latency 3.1).
+ */
+export async function translateResponse<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    let body: ApiError | null = null;
+    try {
+      body = (await res.json()) as ApiError;
+    } catch {
+      // ignore parse failure
+    }
+    notifyAgeGateRequired(res.status, body);
+    const requestId = res.headers?.get?.('x-request-id') ?? null;
+    throw new ApiFetchError(res.status, body, requestId);
+  }
+
+  return res.json() as Promise<T>;
+}
+
+/**
  * Perform one HTTP exchange and translate non-2xx into {@link ApiFetchError}.
  */
 async function executeRequest<T>(
@@ -291,19 +321,7 @@ async function executeRequest<T>(
     headers,
   });
 
-  if (!res.ok) {
-    let body: ApiError | null = null;
-    try {
-      body = (await res.json()) as ApiError;
-    } catch {
-      // ignore parse failure
-    }
-    notifyAgeGateRequired(res.status, body);
-    const requestId = res.headers?.get?.('x-request-id') ?? null;
-    throw new ApiFetchError(res.status, body, requestId);
-  }
-
-  return res.json() as Promise<T>;
+  return translateResponse<T>(res);
 }
 
 /**
@@ -852,42 +870,12 @@ export const SITE_URL: string =
  */
 export const SERVER_AGE_CONFIRMATION_TOKEN = 'server-prerender';
 
-/**
- * Fetch a product with its offers on the server, or null when unavailable
- * (unknown id, launch gates closed, backend unreachable) so callers can
- * degrade to generic metadata instead of erroring the page.
- */
-export async function getServerProductDetail(
-  id: number,
-): Promise<ProductDetailResponse | null> {
-  try {
-    return await request<ProductDetailResponse>(`/api/v1/products/${id}`, {
-      headers: { 'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN },
-      next: { revalidate: 900 },
-    });
-  } catch {
-    return null;
-  }
-}
-
-/**
- * List products on the server for the sitemap. The listing endpoint caps
- * at 100 rows; a failure degrades to an empty list (static routes only).
- */
-export async function getServerProductListing(): Promise<ProductSearchItem[]> {
-  try {
-    const res = await request<ProductSearchResult>(
-      '/api/v1/products?sort=ALPHABETICAL&page=1&limit=100',
-      {
-        headers: { 'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN },
-        next: { revalidate: 900 },
-      },
-    );
-    return res.items;
-  } catch {
-    return [];
-  }
-}
+// The server-side readers (getServerProductDetail, getServerProductListing,
+// getServerPriceHistory, getServerProductPriceContext, getServerProductDupes)
+// moved to `lib/server-api.ts` (product-page-cold-latency 3.1): they must
+// never enter the client bundle, and this module is imported by client
+// components — so the getServer* helpers live only in the server-only
+// module, which reuses request()'s URL path as its fallback.
 
 // ---------------------------------------------------------------------------
 // Price history

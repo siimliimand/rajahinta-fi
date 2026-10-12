@@ -28,7 +28,11 @@
  */
 
 import type { MetadataRoute } from 'next';
-import { getServerProductListing, SITE_URL, BASE_URL } from '@/lib/api';
+// getServerProductListing lives in the server-only API module
+// (product-page-cold-latency 3.1) so it can use the API_WORKER binding;
+// BASE_URL/SITE_URL stay on the shared client.
+import { getServerProductListing } from '@/lib/server-api';
+import { SITE_URL, BASE_URL } from '@/lib/api';
 import { routing, type AppLocale, type AppPathnames } from '@/i18n/routing';
 
 /** Static destinations every locale offers (header navigation surface;

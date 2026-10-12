@@ -63,7 +63,11 @@ import {
   type MessageNamespace,
 } from '@/lib/i18n/route-namespaces';
 import { getClientMessages } from '@/lib/i18n/client-messages';
-import { request, getServerProductDetail, getAccuracyStatistic } from '@/lib/api';
+import { request, getAccuracyStatistic } from '@/lib/api';
+import {
+  getServerProductDetail,
+  getServerPriceHistory,
+} from '@/lib/server-api';
 import type {
   PriceHistoryResponse,
   ProductDetailResponse,
@@ -133,14 +137,24 @@ vi.mock('next/font/google', () => ({
 // else in the module keeps its real shape (crawlability precedent).
 // getServerProductDetail/getAccuracyStatistic are overridden at module
 // level because their internal request binding does not route through
-// the mocked export.
+// the mocked export; the getServer* reads live in the server-only
+// module now (product-page-cold-latency 3.1), so that module carries
+// the detail and price-history overrides.
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
     ...actual,
     request: vi.fn(),
-    getServerProductDetail: vi.fn(),
     getAccuracyStatistic: vi.fn(),
+  };
+});
+
+vi.mock('@/lib/server-api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/server-api')>();
+  return {
+    ...actual,
+    getServerProductDetail: vi.fn(),
+    getServerPriceHistory: vi.fn(),
   };
 });
 
@@ -154,9 +168,13 @@ vi.mock('../components/SiteFooter', () => ({
   default: () => React.createElement('footer', { 'data-testid': 'site-footer' }, 'CHROME-FOOTER'),
 }));
 
-// The product detail page composes async server sub-panels (they fetch
-// their own data); async components cannot pass through renderToString
-// (products/[id]/page.test.tsx precedent — markers, exactly as there).
+// The product detail page composes async server sub-panels; since
+// product-page-cold-latency 4.1 the page hands each a still-pending
+// promise and the panel awaits it inside the page's Suspense boundary.
+// Async components cannot pass through renderToString
+// (products/[id]/page.test.tsx precedent — markers, exactly as there);
+// the sync markers keep those boundaries non-suspending, so the shell
+// this harness measures is the page's primary content.
 vi.mock('../products/[id]/components/ProductDupesPanel', () => ({
   default: () =>
     React.createElement('section', { 'data-testid': 'product-dupes-panel' }, 'DUPE-SHELL'),
@@ -258,20 +276,22 @@ function mockServerFetches(): void {
     throw new Error(`unexpected server fetch in payload-budget test: ${path}`);
   });
   vi.mocked(getServerProductDetail).mockResolvedValue(DETAIL_RESPONSE);
+  // The price-history read is a server-api helper (product-page-cold-latency
+  // 3.1) — pinned to the fixture so the product page renders its real
+  // production shape.
+  vi.mocked(getServerPriceHistory).mockResolvedValue(HISTORY_RESPONSE);
   vi.mocked(getAccuracyStatistic).mockResolvedValue({
     count: 12,
     withinMarginShare: 0.83,
     asOf: '2026-09-10T06:00:00.000Z',
     label: { fi: 'käyttäjäilmoituksia', en: 'user reports' },
   });
-  // The product page's price-history read rides global fetch directly.
+  // Remaining global-fetch traffic (home savings-overview, FAQ) degrades
+  // honestly.
   vi.stubGlobal(
     'fetch',
     vi.fn().mockImplementation(async (input: unknown) => {
       const url = String(input);
-      if (url.includes('/price-history')) {
-        return { ok: true, json: async () => HISTORY_RESPONSE };
-      }
       // Home's savings-overview and FAQ reads degrade honestly.
       throw new Error(`offline fetch in payload-budget test: ${url}`);
     }),

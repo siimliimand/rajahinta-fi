@@ -114,6 +114,37 @@ const PRODUCT_COLUMNS = `
   container_type, regulatory_classification, deposit_system_status, ean,
   weight_grams, review_hold_reason, created_at, updated_at`;
 
+/**
+ * The universe-scoped id read's full SELECT — the exact statement the
+ * private {@link D1ProductSearchRepository.findByIdInUniverse} executes.
+ * Extracted byte-identical (never reworded) so
+ * {@link D1ProductSearchRepository.findByIdWithOffers} batches the same
+ * SQL it reads singly: one definition, two execution shapes, zero drift
+ * — universe scoping on the detail read cannot diverge between the
+ * cold-path batch and the plain lookup.
+ */
+const FIND_PRODUCT_IN_UNIVERSE_SQL = `SELECT ${PRODUCT_COLUMNS} FROM product_master p
+          WHERE p.id = ? AND ${PRODUCT_LISTING_UNIVERSE_SQL}`;
+
+/**
+ * {@link D1ProductSearchRepository.findOffers}' full SELECT — the
+ * latest-observation offer set with the registry carrier join. Extracted
+ * byte-identical for the same one-definition rule as
+ * {@link FIND_PRODUCT_IN_UNIVERSE_SQL}: the batched product-page read and
+ * the plain per-product read must stay the same query.
+ */
+const FIND_OFFERS_SQL = `SELECT o.id, o.merchant, o.country, o.product_id, o.price_cents,
+                  o.currency, o.availability, o.source_url, o.observed_at,
+                  o.reliability_status, reg.carrier_id AS carrier_id
+             FROM retail_offers o
+             JOIN (SELECT merchant, MAX(id) AS id
+                     FROM retail_offers
+                    WHERE product_id = ?
+                 GROUP BY merchant) m
+               ON m.id = o.id
+             LEFT JOIN merchant_registry reg ON reg.merchant_id = o.merchant
+            ORDER BY o.id ASC`;
+
 /** Raw D1 product_master row (snake_case, REAL numbers, ISO-8601 TEXT). */
 interface D1ProductRow {
   readonly id: number;
@@ -1196,10 +1227,7 @@ export class D1ProductSearchRepository extends ProductRepository {
   /** The universe-scoped id read backing {@link findById}. */
   private async findByIdInUniverse(id: number): Promise<ProductRecord | null> {
     const row = await this.d1
-      .prepare(
-        `SELECT ${PRODUCT_COLUMNS} FROM product_master p
-          WHERE p.id = ? AND ${PRODUCT_LISTING_UNIVERSE_SQL}`,
-      )
+      .prepare(FIND_PRODUCT_IN_UNIVERSE_SQL)
       .bind(id)
       .first<D1ProductRow>();
     return row ? toContractProduct(row) : null;
@@ -1223,24 +1251,58 @@ export class D1ProductSearchRepository extends ProductRepository {
     // upsertOffer change detection resolves via (observed_at, id)
     // descending, collapsed to the monotonic surrogate key.
     const rows = (
-      await this.d1
-        .prepare(
-          `SELECT o.id, o.merchant, o.country, o.product_id, o.price_cents,
-                  o.currency, o.availability, o.source_url, o.observed_at,
-                  o.reliability_status, reg.carrier_id AS carrier_id
-             FROM retail_offers o
-             JOIN (SELECT merchant, MAX(id) AS id
-                     FROM retail_offers
-                    WHERE product_id = ?
-                 GROUP BY merchant) m
-               ON m.id = o.id
-             LEFT JOIN merchant_registry reg ON reg.merchant_id = o.merchant
-            ORDER BY o.id ASC`,
-        )
-        .bind(productId)
-        .all<D1RetailOfferRow>()
+      await this.d1.prepare(FIND_OFFERS_SQL).bind(productId).all<D1RetailOfferRow>()
     ).results;
     return rows.map(toContractOfferWithCarrier);
+  }
+
+  /**
+   * The product page's detail read in ONE round trip (task 2.1, change
+   * product-page-cold-latency): the universe-scoped product row and its
+   * current offer set submitted as a single `d1.batch` — the binding
+   * executes both statements in one round trip, replacing the sequential
+   * `findById` → `findOffers` pair the product page paid before. Both
+   * statements are the extracted byte-identical SQL of the single reads
+   * ({@link FIND_PRODUCT_IN_UNIVERSE_SQL}, {@link FIND_OFFERS_SQL}), so
+   * their guarantees hold unchanged: listing-universe scoping on the
+   * product row, the latest-observation-per-merchant offer collapse, and
+   * the LEFT-joined carrier assignment.
+   *
+   * Null semantics: when the product statement returns no row (absent
+   * id, or a held/zero-ABV row outside the listing universe), the result
+   * is `{ product: null, offers: [] }` — the route 404s on a null
+   * product BEFORE touching the offers, so the batch's executed offers
+   * half is discarded rather than surfaced. A not-found id therefore
+   * reads exactly like {@link D1ProductSearchRepository.findById}
+   * not-found, never as offers without their product.
+   *
+   * Kept on the D1 concrete class only (no abstract counterpart): the
+   * route binds the concrete type, the listCategoryOfferCandidates
+   * precedent.
+   */
+  async findByIdWithOffers(
+    id: number,
+  ): Promise<{
+    product: ProductRecord | null;
+    offers: RetailOfferWithCarrierRecord[];
+  }> {
+    // Result order is statement order: [0] product, [1] offers.
+    const [productResult, offersResult] = await this.d1.batch([
+      this.d1.prepare(FIND_PRODUCT_IN_UNIVERSE_SQL).bind(id),
+      this.d1.prepare(FIND_OFFERS_SQL).bind(id),
+    ]);
+    const productRow = productResult.results[0] as unknown as
+      | D1ProductRow
+      | undefined;
+    if (productRow === undefined) {
+      return { product: null, offers: [] };
+    }
+    return {
+      product: toContractProduct(productRow),
+      offers: (offersResult.results as unknown as D1RetailOfferRow[]).map(
+        toContractOfferWithCarrier,
+      ),
+    };
   }
 
   /** @inheritdoc */

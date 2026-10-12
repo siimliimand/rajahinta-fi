@@ -1,5 +1,5 @@
 /**
- * Product price-context server fetch — GET
+ * Product price-context wire types — GET
  * /api/v1/products/:id/price-context (insight-surfaces task 3.3; API
  * contract committed in task 3.2, api-worker price-context.routes.ts; the
  * figures themselves are core-domain price-context, design D4/D5).
@@ -14,29 +14,21 @@
  * lib/types because the touch set is the product scope; the route
  * remains the single source of truth.
  *
- * Fetch pattern: server-side, alongside the page's other reads. Since
- * price-history-latency 3.1 the PRODUCT PAGE owns this fetch — it calls
- * getServerProductPriceContext up front, concurrently with the detail,
- * history, and dupes fetches, and awaits the promise only where the
- * context line renders (the render is bounded by the slowest response,
- * not the sum of four round-trips); this module stays the pure fetch +
- * shape-guard. Any failure degrades to null so the context line stays
- * absent: 403,
+ * Fetch pattern: since product-page-cold-latency 3.1 the fetch and its
+ * shape guard live in `lib/server-api.ts`
+ * (getServerProductPriceContext) — one server-only module owns all five
+ * getServer* reads so they share one transport (API_WORKER service
+ * binding first, plain-URL request() fallback) and can never enter a
+ * client bundle. The PRODUCT PAGE calls it up front, concurrently with
+ * the detail, history, and dupes fetches, and awaits the promise only
+ * where the context line renders (the render is bounded by the slowest
+ * response, not the sum of four round-trips). Any failure degrades to
+ * null so the context line stays absent: 403,
  * 404 (the route answers 404 when the product or its current offers are
  * gone), 5xx, unreachable backend, unexpected shape.
  *
- * The endpoint sits behind the age gate, so the request carries the
- * same fixed first-party SSR token lib/api.ts uses for the catalog
- * reads; the constant is declared locally because lib/api.ts keeps it
- * module-private and this task's touch set excludes lib/.
- *
  * @module ProductPriceContext
  */
-
-import { request } from '@/lib/api';
-
-/** Same fixed first-party SSR token as lib/api.ts (see module docblock). */
-const SERVER_AGE_CONFIRMATION_TOKEN = 'server-prerender';
 
 /** Successful context: value present, window shape attached. */
 export interface ProductPriceContextValue {
@@ -79,67 +71,4 @@ export interface ProductPriceContextResponse {
   readonly productId: number;
   readonly currentBestPriceCents: number;
   readonly context: ProductPriceContext;
-}
-
-/** Structural guard on the context payload — an unexpected shape degrades. */
-function isPriceContextResponse(value: unknown): value is ProductPriceContextResponse {
-  if (typeof value !== 'object' || value === null) return false;
-  const body = value as Record<string, unknown>;
-  if (
-    typeof body.productId !== 'number' ||
-    typeof body.currentBestPriceCents !== 'number' ||
-    typeof body.context !== 'object' ||
-    body.context === null
-  ) {
-    return false;
-  }
-  const context = body.context as Record<string, unknown>;
-  const commonShape =
-    typeof context.windowDays === 'number' &&
-    typeof context.bucketCount === 'number' &&
-    typeof context.asOf === 'string';
-  if (!commonShape) return false;
-  if (context.status === 'computed') {
-    return (
-      typeof context.medianCents === 'number' &&
-      typeof context.minCents === 'number' &&
-      typeof context.maxCents === 'number' &&
-      typeof context.deltaVsMedianCents === 'number' &&
-      typeof context.deltaVsMedianBasisPoints === 'number' &&
-      typeof context.percentileRankBasisPoints === 'number' &&
-      typeof context.isWindowLow === 'boolean'
-    );
-  }
-  if (context.status === 'unavailable') {
-    return (
-      context.reason === 'INSUFFICIENT_HISTORY' &&
-      context.medianCents === null &&
-      context.deltaVsMedianCents === null &&
-      context.percentileRankBasisPoints === null &&
-      context.isWindowLow === null
-    );
-  }
-  return false;
-}
-
-/**
- * Fetch a product's price context on the server, or null when
- * unavailable (backend unreachable, no current offers, unexpected
- * shape) so the page degrades to an absent line instead of erroring.
- */
-export async function getServerProductPriceContext(
-  id: number,
-): Promise<ProductPriceContextResponse | null> {
-  try {
-    const payload = await request<ProductPriceContextResponse>(
-      `/api/v1/products/${id}/price-context`,
-      {
-        headers: { 'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN },
-        next: { revalidate: 900 },
-      },
-    );
-    return isPriceContextResponse(payload) ? payload : null;
-  } catch {
-    return null;
-  }
 }

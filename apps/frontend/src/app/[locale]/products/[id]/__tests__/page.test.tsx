@@ -6,7 +6,14 @@
  * would — the page is awaited first, then the resolved element tree goes
  * through Testing Library (the catalog page.test.tsx /
  * ProductHistoryPanel.test.tsx precedent; only Next server plumbing and
- * the fetch-holding child panels are mocked).
+ * the streaming child sections are mocked — since product-page-cold-
+ * latency 4.1 the page hands those sections still-pending promises and
+ * they await them inside its Suspense boundaries, so the stubs here
+ * record the props to pin that streaming contract).
+ *
+ * The price-history section (product-page-cold-latency 4.1) stays
+ * awaited in the page body — see the page's module docblock — so its
+ * real-flow render and degradation tests below are unchanged.
  *
  * The API contract upstream of this page is already deduped — findOffers
  * returns the latest row per (product, merchant) — so the page contract
@@ -22,7 +29,7 @@ import * as React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductPage, { generateMetadata } from '../page';
-import { getServerProductDetail } from '@/lib/api';
+import { getServerProductDetail } from '@/lib/server-api';
 import type { PriceHistoryResponse, ProductDetailResponse } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -72,8 +79,12 @@ vi.mock('next-intl/server', () => ({
 
 vi.mock('next/navigation', () => ({ notFound: vi.fn() }));
 
-vi.mock('@/lib/api', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/api')>();
+// The five getServer* reads live in the server-only module
+// (product-page-cold-latency 3.1); only the detail read is overridden —
+// the others ride the real serverRequest, whose URL fallback reaches the
+// (stubbed) global fetch below.
+vi.mock('@/lib/server-api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/server-api')>();
   return {
     ...actual,
     getServerProductDetail: vi.fn(),
@@ -98,9 +109,26 @@ vi.mock('../../../components/MerchantWarningNotice', () => ({
 }));
 vi.mock('../components/ProductAlertAction', () => ({ default: () => null }));
 vi.mock('../components/ProductFavoriteAction', () => ({ default: () => null }));
-vi.mock('../components/ProductDupesPanel', () => ({ default: () => null }));
+// The two streaming sections (product-page-cold-latency 4.1) are stubbed —
+// their contracts have their own test files. The stubs still record the
+// props the page hands down, so the streaming contract (still-pending
+// promises, awaited inside the page's Suspense boundaries) is observable
+// here.
+const sectionProps = vi.hoisted(() => ({
+  context: undefined as unknown,
+  dupes: undefined as unknown,
+}));
+vi.mock('../components/ProductDupesPanel', () => ({
+  default: (props: { dupes: unknown }) => {
+    sectionProps.dupes = props.dupes;
+    return null;
+  },
+}));
 vi.mock('../components/ProductPriceContextLine', () => ({
-  default: () => null,
+  default: (props: { payload: unknown }) => {
+    sectionProps.context = props.payload;
+    return null;
+  },
 }));
 
 const mockedGetServerProductDetail = vi.mocked(getServerProductDetail);
@@ -189,8 +217,9 @@ function detailWith(
 
 beforeEach(() => {
   mockedGetServerProductDetail.mockReset();
-  // The server-side price-history read rides global fetch; default to
-  // the degradation path (section absent) — history tests override it.
+  // The server-side price-history read still rides global fetch — via
+  // serverRequest's URL fallback (no worker context in vitest); default
+  // to the degradation path (section absent) — history tests override it.
   vi.stubGlobal(
     'fetch',
     vi.fn().mockRejectedValue(new Error('history fetch not mocked')),
@@ -248,6 +277,26 @@ describe('ProductPage price-history section (task 5.1)', () => {
       await ProductPage({ params: Promise.resolve({ locale: 'fi', id: '42' }) }),
     );
     expect(screen.queryByTestId('price-history-section')).not.toBeInTheDocument();
+  });
+});
+
+describe('ProductPage streaming sections (product-page-cold-latency 4.1)', () => {
+  it('hands the still-pending context and dupes promises to the sections — they stream, they do not block the shell', async () => {
+    mockedGetServerProductDetail.mockResolvedValue(detailResponse([offer()]));
+    // Fetch stub mirrors the real degradation path for the unmocked
+    // context/dupes reads (helper resolves null; the sections' absence
+    // contract is pinned in their own test files).
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new Error('not mocked here')),
+    );
+
+    render(
+      await ProductPage({ params: Promise.resolve({ locale: 'fi', id: '42' }) }),
+    );
+
+    expect(sectionProps.context).toBeInstanceOf(Promise);
+    expect(sectionProps.dupes).toBeInstanceOf(Promise);
   });
 });
 

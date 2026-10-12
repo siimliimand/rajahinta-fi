@@ -87,8 +87,9 @@ local dev — expected, documented in the adapter's known issues, ignorable.
 **Strategy: same-zone routing — a plain URL base per environment.**
 One API base URL is inlined at build time (`NEXT_PUBLIC_API_URL`,
 resolved in `src/lib/api.ts` → `resolveApiBaseUrl`) and used by every
-call path: browser fetches, RSC/SSR fetches, and build-time
-sitemap/OG fetches. A **service binding was rejected**:
+call path — browser fetches, RSC/SSR fetches (with one scoped
+exception, the amendment below), and build-time sitemap/OG fetches. A
+**service binding was rejected** for the general case:
 
 - browser fetches (search, calculator, session lifecycle, reports)
   cannot traverse a binding — they need a public URL regardless;
@@ -112,6 +113,33 @@ All outbound calls go through `src/lib/api.ts` (`request()` for the
 consumer API, exported `apiFetch()` also for the operator console at
 `app/[locale]/ops/api.ts`), so base-URL resolution, credentials, and
 trace headers have exactly one home.
+
+### Amendment: scoped API_WORKER service binding (product-page-cold-latency 3.1)
+
+The URL base above stays **canonical** for browsers, build-time
+sitemap/OG fetches, and anything session-carrying — the rejection
+rationale below is unchanged for those paths. What changed: the
+frontend Worker now also carries an `API_WORKER` **service binding**
+(`rajahinta-api`, `rajahinta-api-dev`, `rajahinta-api-staging`,
+`rajahinta-api-production` per environment — see `wrangler.jsonc`) used
+by exactly one module, `src/lib/server-api.ts`, for the SSR **public
+catalog reads** (product detail, product listing, price history, price
+context, dupes):
+
+- **Binding is SSR-public-reads only.** These reads carry no session —
+  the age gate rides the fixed `x-age-confirmed` attestation header —
+  so the 5.2 cookie-origin objection does not apply. Browser fetches
+  and any future session-carrying server call keep using the URL base.
+- **Environment detection, not a flag.** `serverRequest` probes
+  `getCloudflareContext().env.API_WORKER` in a try/catch and falls back
+  to the plain-URL `request()` path (same headers, same
+  `ApiFetchError` contract) wherever the worker context or binding is
+  unavailable: `next dev`, `next build`, vitest.
+- **Cache consequence, accepted:** a binding fetch is not Next's
+  patched global fetch, so the per-fetch data cache
+  (`next: { revalidate: 900 }`) governs the URL fallback only. On the
+  binding path the page-level ISR window (`revalidate = 300`, R2
+  incremental cache) is what bounds render frequency.
 
 ### Cookie behavior on Workers (verified)
 

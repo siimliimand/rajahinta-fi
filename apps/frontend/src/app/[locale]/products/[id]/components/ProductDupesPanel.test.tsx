@@ -17,8 +17,11 @@
  *      local product-page link.
  *
  * The page owns the dupes fetch since price-history-latency 3.1 (all
- * four of its server reads start concurrently and the panel receives
- * the resolved payload as a prop). The fetch-side contract that used to
+ * four of its server reads start concurrently); since product-page-cold-
+ * latency 4.1 the panel receives the still-pending promise as a prop and
+ * awaits it inside the page's Suspense boundary — the tests pass
+ * Promise.resolve(fixture) the same way, with Promise.resolve(null) as
+ * the degradation case. The fetch-side contract that used to
  * be exercised through the panel — endpoint URL, revalidate, failure →
  * null — is pinned below against getServerProductDupes, the pure fetch
  * the page calls.
@@ -30,7 +33,9 @@
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductDupesPanel from './ProductDupesPanel';
-import { getServerProductDupes } from '../product-dupes';
+// The fetch helper moved to the server-only module (product-page-cold-latency
+// 3.1); the wire types stay with the product scope.
+import { getServerProductDupes } from '@/lib/server-api';
 import type { ProductDupe, ProductDupesResponse } from '../product-dupes';
 import { ApiFetchError, request } from '@/lib/api';
 import type { ApiError } from '@/lib/types';
@@ -109,11 +114,16 @@ function apiError(status: number, message: string): ApiError {
 
 const PRODUCT_ID = 42;
 
-/** Render the panel from the payload the page passes down (3.1). */
+/**
+ * Render the panel from the payload the page passes down — since
+ * product-page-cold-latency 4.1 a still-pending promise; the tests pass
+ * Promise.resolve(fixture) the same way, and Promise.resolve(null) is
+ * the degradation case.
+ */
 async function renderPanel(
   dupes: ProductDupesResponse | null,
 ): Promise<string> {
-  const element = await ProductDupesPanel({ dupes });
+  const element = await ProductDupesPanel({ dupes: Promise.resolve(dupes) });
   return renderToString(element);
 }
 

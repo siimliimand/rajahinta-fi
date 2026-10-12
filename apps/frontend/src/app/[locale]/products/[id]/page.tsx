@@ -16,8 +16,50 @@
  * promises up front and awaits each only where its data is needed, so
  * the render is bounded by the slowest response rather than the sum of
  * four serialized round-trips. The context line and dupes panel are
- * presentational: the page owns their fetches and hands the payloads
- * down as props; the null-degradation contracts are unchanged.
+ * presentational: the page owns their fetches; the null-degradation
+ * contracts are unchanged.
+ *
+ * Streaming design (product-page-cold-latency 4.1): the shell and the
+ * primary content (title, master data, offers) flush as soon as the
+ * body's awaits resolve; the price-context line and the dupes panel
+ * receive their still-pending promises and await them inside
+ * `<Suspense fallback={null}>` boundaries — absent from the early
+ * HTML, never a spinner or a skeleton shell (house stance: absent,
+ * not an empty shell).
+ *
+ * The history section is the one deliberate non-streaming piece: it
+ * stays awaited in the page body rather than moving behind a
+ * Suspense-wrapped async child. Its null → absent conditional render
+ * is part of this route's crawler-facing contract, and this repo's
+ * harnesses can only pin that contract through real-flow renders (an
+ * async child suspends indefinitely under Testing Library's client
+ * render and aborts a renderToString pass), so the child would trade
+ * real degradation coverage for a marginal streaming win over one
+ * same-class concurrent D1 read — the read still starts concurrently
+ * with the other three, so its latency overlaps theirs instead of
+ * serializing after them.
+ *
+ * Caching contract (product-page-cold-latency 1.1): the route renders
+ * on-demand ISR — revalidate 300, dynamicParams true, plus an empty
+ * generateStaticParams. The first visit to each product renders the page
+ * and caches the HTML in the OpenNext R2 incremental cache; later visits
+ * inside the 300 s window serve that cached shell. This supersedes the
+ * cache-headers task's earlier per-request verdict: its no-store outcome
+ * was mechanical — a dynamic param without a build-time id catalog — not
+ * age-gate policy, and on-demand ISR needs no build-time catalog. The
+ * /account precedent applies: the cached HTML shell is shared, while
+ * session/personalized state is client-side — favorites and alerts are
+ * client components that resolve their state at mount.
+ *
+ * Why the empty generateStaticParams (fix round): Next 15.5 engages the
+ * ISR fallback cache for a dynamic segment ONLY when the route exports
+ * generateStaticParams — revalidate and dynamicParams alone keep it
+ * per-request forever. An empty return + dynamicParams true means every
+ * path renders on demand and enters the cache, with no build-time id
+ * catalog built or wanted. Staging evidence (5.2): without the export
+ * the deployed route still served `private, no-store` with warm TTFB
+ * 1.29–2.09 s; with it, the first hit is `x-nextjs-cache: MISS`, the
+ * next HIT at 0.011 s warm.
  *
  * @module ProductPage
  */
@@ -29,34 +71,46 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import {
-  BASE_URL,
-  SERVER_AGE_CONFIRMATION_TOKEN,
   getServerProductDetail,
-} from '@/lib/api';
+  getServerPriceHistory,
+  getServerProductPriceContext,
+  getServerProductDupes,
+} from '@/lib/server-api';
 import { localizedAlternates } from '@/lib/i18n/localized-paths';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import { formatMoney } from '@/lib/format/money';
-import type { PriceHistoryResponse, ProductDetailResponse } from '@/lib/types';
+import type { ProductDetailResponse } from '@/lib/types';
 import { Badge, type BadgeTone } from '@/components/ui';
 import MerchantWarningNotice from '../../components/MerchantWarningNotice';
 import { MerchantLink } from '../../compare/components/MerchantLink';
 import { SellingDistanceBadge } from '../../compare/components/SellingDistanceBadge';
-import { getServerProductPriceContext } from './price-context';
-import { getServerProductDupes } from './product-dupes';
 import ProductAlertAction from './components/ProductAlertAction';
 import ProductFavoriteAction from './components/ProductFavoriteAction';
 import ProductDupesPanel from './components/ProductDupesPanel';
 import ProductPriceContextLine from './components/ProductPriceContextLine';
 import PriceHistoryChart from './components/PriceHistoryChart';
 
+// On-demand ISR (product-page-cold-latency 1.1): the first visit to each
+// product renders and caches in the OpenNext R2 incremental cache; later
+// visits inside the window serve that shell. dynamicParams stays true
+// explicitly so unknown ids keep rendering on demand — no build-time id
+// catalog is required or wanted here.
+export const revalidate = 300;
+export const dynamicParams = true;
+
+// The empty generateStaticParams is load-bearing, not vestigial (fix
+// round): Next 15.5 engages the dynamic-segment ISR fallback cache only
+// when the route exports it, so without this export the two constants
+// above have no runtime effect (5.2 staging measured per-request
+// rendering without it). Empty return + dynamicParams true = every path
+// renders on demand. Sync shape, like the [locale] layout's export.
+export function generateStaticParams() {
+  return [];
+}
+
 interface ProductPageProps {
   params: Promise<{ locale: string; id: string }>;
 }
-
-const DAY_MS = 86_400_000;
-
-/** The widest window the price-history endpoint accepts (365 days). */
-const HISTORY_RANGE_DAYS = 365;
 
 /**
  * Enum value sets rendered through localized catalog labels (task 4.2).
@@ -123,65 +177,9 @@ const AVAILABILITY_TONES = {
   out_of_stock: 'unavailable',
 } as const satisfies Record<AvailabilityState, BadgeTone>;
 
-/** Format a Date as an ISO date 'YYYY-MM-DD' (UTC). */
-function toIsoDate(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
-}
-
 /**
- * Server-side price-history read (task 5.1): the endpoint is age-gated,
- * so the server presents the fixed first-party prerender token — the
- * getServerProductDetail precedent, expressed with a direct fetch here
- * because the shared getPriceHistory client is the browser-side helper
- * (cookie-based confirmation, no revalidate). Any failure or unexpected
- * shape degrades to null and the page renders without the section.
- *
- * attribution=none (price-history-latency 3.1): the page never renders
- * attribution markers, so the request opts out of the endpoint's
- * attribution pass — the endpoint answers attribution: [] and performs
- * zero raw-log reads, instead of the auto default's R2 partition scan.
+ * Locale-appropriate date formatting for observation timestamps.
  */
-async function getServerPriceHistory(
-  productId: number,
-): Promise<PriceHistoryResponse | null> {
-  const todayMs = Date.UTC(
-    new Date().getUTCFullYear(),
-    new Date().getUTCMonth(),
-    new Date().getUTCDate(),
-  );
-  const params = new URLSearchParams({
-    metric: 'price',
-    granularity: 'day',
-    from: toIsoDate(todayMs - (HISTORY_RANGE_DAYS - 1) * DAY_MS),
-    to: toIsoDate(todayMs),
-    // Opt out of the attribution pass — see the docblock above.
-    attribution: 'none',
-  });
-  try {
-    const res = await fetch(
-      `${BASE_URL}/api/v1/products/${productId}/price-history?${params}`,
-      {
-        headers: { 'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN },
-        next: { revalidate: 900 },
-      },
-    );
-    if (!res.ok) return null;
-    const body = (await res.json()) as PriceHistoryResponse | null;
-    if (
-      body === null ||
-      typeof body !== 'object' ||
-      !Array.isArray(body.series) ||
-      typeof body.to !== 'string'
-    ) {
-      return null;
-    }
-    return body;
-  } catch {
-    return null;
-  }
-}
-
-/** Locale-appropriate date formatting for observation timestamps. */
 function formatObserved(iso: string, locale: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
@@ -288,7 +286,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   // Task 3.1 (price-history-latency): all four server fetches start
   // here, concurrently, before any await — detail, history, price-context,
-  // dupes — then each promise is awaited only where its data is needed.
+  // dupes. Detail and history are awaited here (streaming-design note in
+  // the module docblock); the context and dupes promises are handed to
+  // their sections below and awaited inside the page's Suspense
+  // boundaries (product-page-cold-latency 4.1).
   const detailPromise = getServerProductDetail(productId);
   const historyPromise = getServerPriceHistory(productId);
   const contextPromise = getServerProductPriceContext(productId);
@@ -302,7 +303,8 @@ export default async function ProductPage({ params }: ProductPageProps) {
   // Price history (task 5.1) — fetched once, widest window; null on any
   // failure, and the chart component itself renders nothing for an
   // empty series, so the section is absent exactly when there is no
-  // history to show.
+  // history to show. Deliberately awaited with the shell (see the
+  // streaming-design note in the module docblock).
   const priceHistory = await historyPromise;
 
   const { product, offers } = detail;
@@ -329,13 +331,6 @@ export default async function ProductPage({ params }: ProductPageProps) {
     ...(abv ? [{ label: tCommon('abvLabel'), value: abv }] : []),
     ...(product.ean ? [{ label: t('eanLabel'), value: product.ean }] : []),
   ];
-
-  // Context and dupes payloads (price-history-latency 3.1): fetched
-  // above alongside detail and history, awaited here where the JSX
-  // needs them. Null keeps each surface absent from the HTML exactly
-  // as when the panels fetched for themselves.
-  const contextPayload = await contextPromise;
-  const dupesPayload = await dupesPromise;
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
@@ -493,21 +488,31 @@ export default async function ProductPage({ params }: ProductPageProps) {
         ) : null}
       </section>
 
-      {/* ── Price-context line (insight-surfaces 3.3; payload fetched
-          by the page above, price-history-latency 3.1) — derives from
+      {/* ── Price-context line (insight-surfaces 3.3) — the page hands
+          down the still-pending promise (product-page-cold-latency 4.1)
+          and the line awaits it inside this boundary, so the sentence
+          streams after the shell instead of delaying it. Derives from
           the API's same current-best-price selection as the offers
           above, so the sentence and the panel cannot contradict each
-          other; absent from the HTML when the context is unavailable ── */}
-      <ProductPriceContextLine payload={contextPayload} locale={locale} />
+          other; a promise that resolves null (failed fetch) renders
+          nothing — absent from the HTML, never an empty shell. ── */}
+      <React.Suspense fallback={null}>
+        <ProductPriceContextLine payload={contextPromise} locale={locale} />
+      </React.Suspense>
 
       {/* ── Price history (task 5.1) — server-fetched series, client
-          range views; renders NOTHING when there is no history ── */}
+          range views; renders NOTHING when there is no history.
+          Deliberately awaited with the shell, not streamed — see the
+          streaming-design note in the module docblock. ── */}
       {priceHistory !== null && <PriceHistoryChart history={priceHistory} />}
 
-      {/* ── Producer dupe panel (payload fetched by the page above,
-          price-history-latency 3.1) — absent from the HTML when no
-          curated links exist (design R9) ── */}
-      <ProductDupesPanel dupes={dupesPayload} />
+      {/* ── Producer dupe panel — the page hands down the still-pending
+          promise (product-page-cold-latency 4.1), awaited inside the
+          boundary; absent from the HTML when no curated links exist or
+          the fetch degraded to null (design R9) ── */}
+      <React.Suspense fallback={null}>
+        <ProductDupesPanel dupes={dupesPromise} />
+      </React.Suspense>
 
       {/* ── Favorite heart (task 4.3) — mount-time membership check,
           optimistic toggle, login-modal funnel for signed-out taps ── */}

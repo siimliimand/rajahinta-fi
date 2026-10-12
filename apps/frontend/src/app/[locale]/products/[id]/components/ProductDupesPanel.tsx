@@ -4,11 +4,13 @@
  *
  * Rendering: the page owns the dupes fetch (price-history-latency 3.1 —
  * all of the page's server fetches start concurrently, so this payload
- * resolves alongside detail and history rather than after them) and
- * passes it down as the `dupes` prop. The panel renders ONLY when at
- * least one curated link exists — a null payload (fetch failure) or an
- * empty list renders nothing: no empty shell, nothing in the HTML, no
- * layout shift.
+ * resolves alongside detail and history rather than after them) and, since
+ * product-page-cold-latency 4.1, hands the still-pending PROMISE down as
+ * the `dupes` prop; the panel awaits it inside the page's Suspense
+ * boundary, so the panel streams after the shell instead of delaying it.
+ * The panel renders ONLY when at least one curated link exists — a
+ * promise that resolves null (fetch failure) or an empty list renders
+ * nothing: no empty shell, nothing in the HTML, no layout shift.
  *
  * Evidence discipline (R9): every row shows the WHY — the normalized
  * producer key the exact match ran on (Badge, estimated tone: curated
@@ -37,19 +39,22 @@ import type { ProductDupesResponse } from '../product-dupes';
 
 interface ProductDupesPanelProps {
   /**
-   * The dupes payload, fetched by the product page (price-history-latency
-   * 3.1: the page starts all its server fetches concurrently and awaits
-   * each where rendered). Null — failed fetch, unreachable backend — or
-   * an empty list renders NOTHING: the panel stays absent from the HTML,
-   * exactly as when this component fetched for itself.
+   * The page's still-pending dupes promise (product-page-cold-latency
+   * 4.1: the page starts all its server fetches concurrently and hands
+   * the promise down; the panel awaits it inside the page's Suspense
+   * boundary). A promise that resolves null — failed fetch, unreachable
+   * backend — or resolves to an empty list renders NOTHING: the panel
+   * stays absent from the HTML, exactly as when this component fetched
+   * for itself.
    */
-  readonly dupes: ProductDupesResponse | null;
+  readonly dupes: Promise<ProductDupesResponse | null>;
 }
 
 /** Server component; absent from the HTML when no curated links exist. */
 export default async function ProductDupesPanel({
-  dupes,
+  dupes: dupesPromise,
 }: ProductDupesPanelProps) {
+  const dupes = await dupesPromise;
   if (dupes === null || dupes.dupes.length === 0) {
     return null;
   }

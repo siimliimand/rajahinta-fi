@@ -2387,3 +2387,119 @@ describe('D1ProductSearchRepository — shared listing universe (nonalcoholic-ca
     expect(upserted.reviewHoldReason).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// findByIdWithOffers (task 2.1, change product-page-cold-latency) — the
+// product page's ONE-round-trip detail read: d1.batch submits the
+// universe-scoped product SELECT and the findOffers SELECT together, the
+// byte-identical SQL of the two single reads. Isolated fixture DB so the
+// shared-database describes above are untouched.
+// ---------------------------------------------------------------------------
+
+describe('D1ProductSearchRepository.findByIdWithOffers — one-round-trip detail read (product-page-cold-latency 2.1)', () => {
+  const page = openMigratedD1();
+  const pageRepo = new D1ProductSearchRepository(page.d1);
+
+  /** In-universe control: real ABV, not held — the batch must resolve it. */
+  const CONTROL_ID = 7101;
+  /** Held row: parseable ABV, review_hold_reason set — outside the universe. */
+  const HELD_ID = 7102;
+  const HELD_REASON = 'nonalcoholic_in_alcohol_category';
+
+  beforeAll(async () => {
+    for (const p of [
+      {
+        id: CONTROL_ID,
+        name: 'Sivu Olut',
+        hold: null as string | null,
+      },
+      {
+        id: HELD_ID,
+        name: 'Sivu Pidätetty',
+        hold: HELD_REASON,
+      },
+    ]) {
+      await pageRepo.create({
+        id: p.id,
+        name: p.name,
+        manufacturer: 'Erillinen Panimo',
+        brand: 'Sivu',
+        category: 'beer',
+        alcoholByVolume: '0.047',
+        unitVolume: '0.33',
+        containerType: 'can',
+        regulatoryClassification: 'beer',
+        depositSystemStatus: true,
+        ean: null,
+        reviewHoldReason: p.hold,
+      });
+    }
+
+    // Carrier registry: 'alko-fi' carries an assignment, 'ghost-ee' is
+    // absent entirely — the batched offers half must keep the same LEFT
+    // JOIN honesty as findOffers.
+    await page.d1
+      .prepare(
+        `INSERT INTO merchant_registry (id, merchant_id, name, country, feed_url, feed_format, polling_interval_ms, carrier_id)
+         VALUES (9101, 'alko-fi', 'Alko FI', 'FI', '', 'json', 3600000, 'posti')`,
+      )
+      .run();
+    // Control: two alko-fi scrapes (latest 8101) plus one ghost-ee. Held
+    // row: offer 8103 EXISTS — the not-found assertion below therefore
+    // proves the repository DISCARDS the executed offers half rather than
+    // merely receiving an empty one.
+    await page.d1
+      .prepare(
+        `INSERT INTO retail_offers (id, merchant, country, product_id, price_cents,
+            observed_at, reliability_status)
+         VALUES (8100, 'alko-fi', 'FI', ${CONTROL_ID}, 289, '2026-09-01T10:00:00.000Z', 'VERIFIED'),
+                (8101, 'alko-fi', 'FI', ${CONTROL_ID}, 299, '2026-09-02T10:00:00.000Z', 'VERIFIED'),
+                (8102, 'ghost-ee', 'EE', ${CONTROL_ID}, 349, '2026-09-02T10:00:00.000Z', 'ESTIMATED'),
+                (8103, 'alko-fi', 'FI', ${HELD_ID}, 199, '2026-09-02T10:00:00.000Z', 'VERIFIED')`,
+      )
+      .run();
+  });
+
+  it('the combined shape: product + current offers in one call, identical to the two single reads', async () => {
+    const combined = await pageRepo.findByIdWithOffers(CONTROL_ID);
+    // Parity pins: the batch runs the byte-identical SQL of the single
+    // reads, so its halves must equal findById/findOffers exactly.
+    expect(combined.product).toEqual(await pageRepo.findById(CONTROL_ID));
+    expect(combined.offers).toEqual(await pageRepo.findOffers(CONTROL_ID));
+    // …and the contract shapes themselves: the latest scrape per merchant,
+    // TEXT → Date observedAt, the registry carrier with honest nulls.
+    expect(combined.product).toMatchObject({
+      id: CONTROL_ID,
+      reviewHoldReason: null,
+    });
+    expect(
+      combined.offers.map((o) => [o.id, o.merchant, o.carrierId]),
+    ).toEqual([
+      [8101, 'alko-fi', 'posti'],
+      [8102, 'ghost-ee', null], // LEFT JOIN — unregistered merchant survives
+    ]);
+    expect(combined.offers[0]?.observedAt).toEqual(
+      new Date('2026-09-02T10:00:00.000Z'),
+    );
+    expect(combined.offers[0]?.priceCents).toBe(299); // latest scrape, not 289
+  });
+
+  it('not-found: an absent id reads { product: null, offers: [] } — the route 404s on the null product before touching offers', async () => {
+    await expect(pageRepo.findByIdWithOffers(899_999)).resolves.toEqual({
+      product: null,
+      offers: [],
+    });
+  });
+
+  it('universe-scoping: a held product resolves not-found and its existing offer is discarded, never surfaced', async () => {
+    // Offer 8103 is in the table, so the batch's offers half EXECUTED and
+    // returned a row — the null-product contract must throw that half
+    // away, never present offers without their product.
+    await expect(pageRepo.findByIdWithOffers(HELD_ID)).resolves.toEqual({
+      product: null,
+      offers: [],
+    });
+    // Parity: the plain universe read degrades the same row identically.
+    await expect(pageRepo.findById(HELD_ID)).resolves.toBeNull();
+  });
+});

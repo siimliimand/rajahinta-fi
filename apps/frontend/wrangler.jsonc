@@ -24,10 +24,15 @@
 // per environment (task 6.5 wires CI); local `wrangler dev` simulates the
 // R2 and service bindings locally without touching the real resources.
 //
-// Frontend → API connection (task 5.2): SAME-ZONE ROUTING, no API service
-// binding. The API base is the build-time NEXT_PUBLIC_API_URL (inlined by
+// Frontend → API connection (task 5.2): SAME-ZONE ROUTING — the API base
+// is a plain URL (the build-time NEXT_PUBLIC_API_URL, inlined by
 // `next build` — runtime vars CANNOT change it), set per environment in
-// the Workers Builds build variables:
+// the Workers Builds build variables. It stays canonical for browser
+// fetches, build-time sitemap/OG fetches, and anything session-carrying.
+// Amendment (product-page-cold-latency 3.1): an API_WORKER service
+// binding (service = the per-env API Worker name) serves SSR PUBLIC
+// CATALOG READS ONLY (lib/server-api.ts) — public + age-token-only, no
+// cookies:
 //
 //   dev:        http://localhost:8788 during concurrent local Workers runs
 //               (API Worker on 8788; this worker owns 8787), or the
@@ -36,11 +41,14 @@
 //   production: https://api.rajahinta.fi (custom domain on this zone,
 //               attached in task 6.5)
 //
-// Why no binding and no runtime var: browser fetches cannot traverse a
+// Why no runtime var (unchanged): browser fetches cannot traverse a
 // service binding and `next build` sitemap/OG fetches run outside the
-// Worker, so a URL base must exist anyway; a binding-only-SSR split would
-// give SSR and the browser different cookie origins and break the
-// httpOnly session. Full rationale + cookie/CORS/trace contract:
+// Worker, so a URL base must exist anyway. The 5.2 no-binding decision
+// was about the session cookie — a binding-for-SSR split would give SSR
+// and the browser different API origins and break the httpOnly session;
+// that objection does not apply to these reads (no session travels, only
+// the fixed age-attestation header), which is what makes the scoped
+// binding safe. Full rationale + cookie/CORS/trace contract:
 // OPENNEXT.md ("Frontend → API connection").
 //
 // Frontend → Grafana Faro RUM (change funnel-evidence-and-value-surfaces):
@@ -88,6 +96,12 @@
     {
       "binding": "WORKER_SELF_REFERENCE",
       "service": "rajahinta-frontend"
+    },
+    {
+      // SSR public catalog reads (lib/server-api.ts, product-page-cold-latency
+      // 3.1). Top-level config ↔ the API Worker's top-level name.
+      "binding": "API_WORKER",
+      "service": "rajahinta-api"
     }
   ],
   // ISR incremental cache (open-next.config.ts). One bucket per
@@ -116,6 +130,10 @@
         {
           "binding": "WORKER_SELF_REFERENCE",
           "service": "rajahinta-frontend-dev"
+        },
+        {
+          "binding": "API_WORKER",
+          "service": "rajahinta-api-dev"
         }
       ],
       "r2_buckets": [
@@ -132,6 +150,10 @@
         {
           "binding": "WORKER_SELF_REFERENCE",
           "service": "rajahinta-frontend-staging"
+        },
+        {
+          "binding": "API_WORKER",
+          "service": "rajahinta-api-staging"
         }
       ],
       "r2_buckets": [
@@ -155,6 +177,10 @@
         {
           "binding": "WORKER_SELF_REFERENCE",
           "service": "rajahinta-frontend-production"
+        },
+        {
+          "binding": "API_WORKER",
+          "service": "rajahinta-api-production"
         }
       ],
       "r2_buckets": [
