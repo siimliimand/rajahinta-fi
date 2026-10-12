@@ -80,7 +80,7 @@ const BINDING_ROUTE_BASE = 'https://api.internal';
  * `x-request-id`; transport failures throw raw (the getServer* helpers
  * degrade to null).
  */
-async function serverRequest<T>(path: string, init?: RequestInit): Promise<T> {
+export async function serverRequest<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     const apiWorker = getCloudflareContext().env.API_WORKER;
     if (apiWorker) {
