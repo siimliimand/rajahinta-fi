@@ -1,4 +1,6 @@
+import type { Metadata } from 'next';
 import { setRequestLocale } from 'next-intl/server';
+import { SITE_URL } from '@/lib/api';
 import LocaleChrome from '@/app/_chrome/LocaleChrome';
 
 /**
@@ -20,6 +22,17 @@ import LocaleChrome from '@/app/_chrome/LocaleChrome';
  * tree), so the emitted shared-cache header is the page's window shape —
  * `s-maxage=300, stale-while-revalidate=31535700` under `next start`.
  */
+export function generateMetadata(): Metadata {
+  // The tree's only layout-level metadata: the base Next resolves the
+  // pages' path-form canonical and hreflang URLs against — the same
+  // field the [locale] root supplies. Without it Next emits the page's
+  // `/tuotteet/<id>` canonical verbatim (relative), regressing parity
+  // with every other route. Deliberately nothing else: title and
+  // description belong to the shared product metadata, which must keep
+  // winning the layout→page merge.
+  return { metadataBase: new URL(SITE_URL) };
+}
+
 export default async function FiProductLayout({
   children,
 }: {

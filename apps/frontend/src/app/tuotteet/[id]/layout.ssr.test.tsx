@@ -13,6 +13,14 @@
  * [locale] tree, /en/... included. This file applies that mechanism to
  * the FI tree: `fi` on /tuotteet/<id>.
  *
+ * fi-path-isr 3.3 adds the tree's one layout-level metadata field:
+ * `generateMetadata` supplying `metadataBase`, the base Next resolves
+ * the pages' path-form canonical against (the [locale] root supplies
+ * the same field — without it /tuotteet/<id> emitted a relative
+ * canonical, the parity regression 3.3 closes). Pinned here the way
+ * the house pins metadata: the real `generateMetadata` is called and
+ * the returned object asserted.
+ *
  * @module FiProductLayoutSsrTest
  */
 // @vitest-environment jsdom
@@ -20,8 +28,9 @@
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import FiProductLayout from './layout';
+import FiProductLayout, { generateMetadata } from './layout';
 import LocaleChrome from '@/app/_chrome/LocaleChrome';
+import { SITE_URL } from '@/lib/api';
 
 // The layout primes the request locale before the chrome renders; the
 // real next-intl server API needs a request store vitest lacks — stub,
@@ -99,5 +108,29 @@ describe('FI product tree layout SSR (fi-path-isr 3.2)', () => {
     expect(html).toContain('PAGE-BODY-MARKER');
     // Every catalog key resolved.
     expect(html).not.toContain('__MISSING_');
+  });
+});
+
+describe('FI product tree layout metadata (fi-path-isr 3.3)', () => {
+  it('supplies metadataBase so the page canonical resolves absolute — and nothing else', () => {
+    const meta = generateMetadata();
+
+    // The one field the document root supplies. Next merges it under
+    // the page's own metadata and resolves the page's path-form
+    // canonical against it — the resolution the emitted
+    // <link rel="canonical"> performs (compared by href: URL objects
+    // have no enumerable own properties, so a structural equal would
+    // not distinguish origins).
+    expect(meta.metadataBase?.href).toBe(new URL(SITE_URL).href);
+    expect(new URL('/tuotteet/7872', meta.metadataBase!).href).toBe(
+      `${new URL(SITE_URL).origin}/tuotteet/7872`,
+    );
+
+    // Deliberately no title/description: the shared product metadata
+    // owns those, and page-level metadata must keep winning the
+    // layout→page merge — a layout value here would leak onto any
+    // segment that lacks its own.
+    expect(meta.title).toBeUndefined();
+    expect(meta.description).toBeUndefined();
   });
 });
