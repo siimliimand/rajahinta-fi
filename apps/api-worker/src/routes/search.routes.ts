@@ -868,11 +868,14 @@ async function getProduct(c: Context<AppEnv>): Promise<Response> {
     const repo = new D1ProductSearchRepository(c.env.DB);
 
     // Wave 1: the product row and its offers depend only on the id —
-    // fetch them concurrently.
-    const [product, offers] = await Promise.all([
-      repo.findById(id),
-      repo.findOffers(id),
-    ]);
+    // one batched D1 round trip (task 2.2, change
+    // product-page-cold-latency): findByIdWithOffers batches the SAME
+    // universe-scoped product read and latest-observation offers read as
+    // the plain findById + findOffers pair, so the response is unchanged
+    // — only the cold path's round trips shrink. A null product (absent
+    // or outside the listing universe) keeps the exact 404 semantics,
+    // raised before any offer use.
+    const { product, offers } = await repo.findByIdWithOffers(id);
     if (product === null) {
       throw new ApiHttpError(404, `Product ${id} not found`);
     }
