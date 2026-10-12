@@ -13,5 +13,10 @@ export const config = {
   // Match all pathnames except:
   // - /api routes (backend lives on a separate origin, but excluded anyway)
   // - Next.js internals and static files
-  matcher: '/((?!api|_next|_vercel|.*\\..*).*)',
+  // - the Finnish product detail tree, exactly one segment deep
+  //   (fi-path-isr task 3.1): `/tuotteet/<id>` is a physical route whose
+  //   ISR key must be the literal URL — a middleware rewrite here would
+  //   negotiate the locale and kill the on-demand ISR cache. `/tuotteet`
+  //   (the listing) and every other path stay middleware-managed.
+  matcher: '/((?!api|_next|_vercel|.*\\..*|tuotteet/[^/]+).*)',
 };
