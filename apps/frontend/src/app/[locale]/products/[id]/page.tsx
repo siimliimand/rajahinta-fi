@@ -19,6 +19,18 @@
  * presentational: the page owns their fetches and hands the payloads
  * down as props; the null-degradation contracts are unchanged.
  *
+ * Caching contract (product-page-cold-latency 1.1): the route renders
+ * on-demand ISR — revalidate 300, dynamicParams true, deliberately no
+ * generateStaticParams. The first visit to each product renders the page
+ * and caches the HTML in the OpenNext R2 incremental cache; later visits
+ * inside the 300 s window serve that cached shell. This supersedes the
+ * cache-headers task's earlier per-request verdict: its no-store outcome
+ * was mechanical — a dynamic param without a build-time id catalog — not
+ * age-gate policy, and on-demand ISR needs no build-time catalog. The
+ * /account precedent applies: the cached HTML shell is shared, while
+ * session/personalized state is client-side — favorites and alerts are
+ * client components that resolve their state at mount.
+ *
  * @module ProductPage
  */
 
@@ -48,6 +60,15 @@ import ProductFavoriteAction from './components/ProductFavoriteAction';
 import ProductDupesPanel from './components/ProductDupesPanel';
 import ProductPriceContextLine from './components/ProductPriceContextLine';
 import PriceHistoryChart from './components/PriceHistoryChart';
+
+// On-demand ISR (product-page-cold-latency 1.1): the first visit to each
+// product renders and caches in the OpenNext R2 incremental cache; later
+// visits inside the window serve that shell. dynamicParams stays true
+// explicitly so unknown ids keep rendering on demand even if a future
+// change ever introduces generateStaticParams — no build-time id catalog
+// is required or wanted here.
+export const revalidate = 300;
+export const dynamicParams = true;
 
 interface ProductPageProps {
   params: Promise<{ locale: string; id: string }>;
