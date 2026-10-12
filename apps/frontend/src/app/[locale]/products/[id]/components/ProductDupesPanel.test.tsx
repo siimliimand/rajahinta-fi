@@ -30,7 +30,9 @@
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductDupesPanel from './ProductDupesPanel';
-import { getServerProductDupes } from '../product-dupes';
+// The fetch helper moved to the server-only module (product-page-cold-latency
+// 3.1); the wire types stay with the product scope.
+import { getServerProductDupes } from '@/lib/server-api';
 import type { ProductDupe, ProductDupesResponse } from '../product-dupes';
 import { ApiFetchError, request } from '@/lib/api';
 import type { ApiError } from '@/lib/types';

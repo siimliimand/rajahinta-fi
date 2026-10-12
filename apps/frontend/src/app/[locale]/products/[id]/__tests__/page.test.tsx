@@ -22,7 +22,7 @@ import * as React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductPage, { generateMetadata } from '../page';
-import { getServerProductDetail } from '@/lib/api';
+import { getServerProductDetail } from '@/lib/server-api';
 import type { PriceHistoryResponse, ProductDetailResponse } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -72,8 +72,12 @@ vi.mock('next-intl/server', () => ({
 
 vi.mock('next/navigation', () => ({ notFound: vi.fn() }));
 
-vi.mock('@/lib/api', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/api')>();
+// The five getServer* reads live in the server-only module
+// (product-page-cold-latency 3.1); only the detail read is overridden —
+// the others ride the real serverRequest, whose URL fallback reaches the
+// (stubbed) global fetch below.
+vi.mock('@/lib/server-api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/server-api')>();
   return {
     ...actual,
     getServerProductDetail: vi.fn(),
@@ -189,8 +193,9 @@ function detailWith(
 
 beforeEach(() => {
   mockedGetServerProductDetail.mockReset();
-  // The server-side price-history read rides global fetch; default to
-  // the degradation path (section absent) — history tests override it.
+  // The server-side price-history read still rides global fetch — via
+  // serverRequest's URL fallback (no worker context in vitest); default
+  // to the degradation path (section absent) — history tests override it.
   vi.stubGlobal(
     'fetch',
     vi.fn().mockRejectedValue(new Error('history fetch not mocked')),

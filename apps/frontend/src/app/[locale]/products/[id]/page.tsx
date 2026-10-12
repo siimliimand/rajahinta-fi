@@ -41,20 +41,19 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import {
-  BASE_URL,
-  SERVER_AGE_CONFIRMATION_TOKEN,
   getServerProductDetail,
-} from '@/lib/api';
+  getServerPriceHistory,
+  getServerProductPriceContext,
+  getServerProductDupes,
+} from '@/lib/server-api';
 import { localizedAlternates } from '@/lib/i18n/localized-paths';
 import { formatAbv, formatVolume } from '@/lib/format/product-attributes';
 import { formatMoney } from '@/lib/format/money';
-import type { PriceHistoryResponse, ProductDetailResponse } from '@/lib/types';
+import type { ProductDetailResponse } from '@/lib/types';
 import { Badge, type BadgeTone } from '@/components/ui';
 import MerchantWarningNotice from '../../components/MerchantWarningNotice';
 import { MerchantLink } from '../../compare/components/MerchantLink';
 import { SellingDistanceBadge } from '../../compare/components/SellingDistanceBadge';
-import { getServerProductPriceContext } from './price-context';
-import { getServerProductDupes } from './product-dupes';
 import ProductAlertAction from './components/ProductAlertAction';
 import ProductFavoriteAction from './components/ProductFavoriteAction';
 import ProductDupesPanel from './components/ProductDupesPanel';
@@ -73,11 +72,6 @@ export const dynamicParams = true;
 interface ProductPageProps {
   params: Promise<{ locale: string; id: string }>;
 }
-
-const DAY_MS = 86_400_000;
-
-/** The widest window the price-history endpoint accepts (365 days). */
-const HISTORY_RANGE_DAYS = 365;
 
 /**
  * Enum value sets rendered through localized catalog labels (task 4.2).
@@ -144,65 +138,9 @@ const AVAILABILITY_TONES = {
   out_of_stock: 'unavailable',
 } as const satisfies Record<AvailabilityState, BadgeTone>;
 
-/** Format a Date as an ISO date 'YYYY-MM-DD' (UTC). */
-function toIsoDate(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
-}
-
 /**
- * Server-side price-history read (task 5.1): the endpoint is age-gated,
- * so the server presents the fixed first-party prerender token — the
- * getServerProductDetail precedent, expressed with a direct fetch here
- * because the shared getPriceHistory client is the browser-side helper
- * (cookie-based confirmation, no revalidate). Any failure or unexpected
- * shape degrades to null and the page renders without the section.
- *
- * attribution=none (price-history-latency 3.1): the page never renders
- * attribution markers, so the request opts out of the endpoint's
- * attribution pass — the endpoint answers attribution: [] and performs
- * zero raw-log reads, instead of the auto default's R2 partition scan.
+ * Locale-appropriate date formatting for observation timestamps.
  */
-async function getServerPriceHistory(
-  productId: number,
-): Promise<PriceHistoryResponse | null> {
-  const todayMs = Date.UTC(
-    new Date().getUTCFullYear(),
-    new Date().getUTCMonth(),
-    new Date().getUTCDate(),
-  );
-  const params = new URLSearchParams({
-    metric: 'price',
-    granularity: 'day',
-    from: toIsoDate(todayMs - (HISTORY_RANGE_DAYS - 1) * DAY_MS),
-    to: toIsoDate(todayMs),
-    // Opt out of the attribution pass — see the docblock above.
-    attribution: 'none',
-  });
-  try {
-    const res = await fetch(
-      `${BASE_URL}/api/v1/products/${productId}/price-history?${params}`,
-      {
-        headers: { 'x-age-confirmed': SERVER_AGE_CONFIRMATION_TOKEN },
-        next: { revalidate: 900 },
-      },
-    );
-    if (!res.ok) return null;
-    const body = (await res.json()) as PriceHistoryResponse | null;
-    if (
-      body === null ||
-      typeof body !== 'object' ||
-      !Array.isArray(body.series) ||
-      typeof body.to !== 'string'
-    ) {
-      return null;
-    }
-    return body;
-  } catch {
-    return null;
-  }
-}
-
-/** Locale-appropriate date formatting for observation timestamps. */
 function formatObserved(iso: string, locale: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
