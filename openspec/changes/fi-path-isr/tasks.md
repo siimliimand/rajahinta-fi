@@ -15,5 +15,5 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Full check sweep (Node 24 per .nvmrc): typecheck ×8 workspaces, ESLint, api-worker + D1 + data-platform suites, frontend suite, full CI-mirror build incl. OpenNext + wrangler dry-runs — all green <!-- agent: platform-engineer.fast, depends_on: [3.2], touches: [] -->
+- [x] 4.1 Full check sweep (Node 24 per .nvmrc): typecheck ×8 workspaces, ESLint, api-worker + D1 + data-platform suites, frontend suite, full CI-mirror build incl. OpenNext + wrangler dry-runs — all green <!-- agent: platform-engineer.fast, depends_on: [3.2], touches: [] -->
 - [ ] 4.2 Deploy staging (workflow_dispatch deploy-staging.yml on the branch) and verify end to end: `/tuotteet/{id}` emits the ISR contract and shows `x-nextjs-cache: MISS` then `HIT` on second request within 300 s (TTFB comparison, same protocol as product-page-cold-latency 5.2); `/tuotteet` listing still middleware-managed (locale negotiation works); `html lang="fi"` on FI tree and `lang="en"` on `/en`; age gate overlay + pre-paint present in FI HTML; EN path unchanged (still HITs); browser e2e green in CI. Record measurements + deviations in notes.md <!-- agent: devops-engineer.fast, depends_on: [4.1], touches: [openspec/changes/fi-path-isr/notes.md] -->
