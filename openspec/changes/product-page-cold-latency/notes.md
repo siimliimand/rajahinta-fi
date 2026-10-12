@@ -63,3 +63,42 @@ Conclusions:
 1. Export an empty `generateStaticParams` on `products/[id]/page.tsx` (verified above as sufficient; keeps on-demand ISR with no build-time catalog).
 2. Revise the cache-headers pin to the reachable shape (`s-maxage=60` under the current layout, or deliberately change the layout window) and document the OpenNext header rewrite on the worker runtime.
 3. Redeploy and re-verify: expect HIT-level warm TTFB at R2 speeds and the min-rule header shape.
+
+---
+
+# 5.2 re-verification (fix round, commit 1e5591e)
+
+Date: 2026-10-12. Branch head `1e5591e` (2041c0f empty `generateStaticParams` + honest pins, on top of the earlier 5.2 findings). Pushed `72ad6a1..1e5591e`, dispatched, run https://github.com/siimliimand/rajahinta-fi/actions/runs/38220328580, success, health gate 200, deployed worker version created 2026-10-12T07:56:39Z at 100 percent. Same vantage caveat as before: colo ORD (NA) against the EU-jurisdiction R2 cache bucket.
+
+Verdict: PARTIAL PASS. The ISR mechanism the fix targeted is live on staging and produces real incremental-cache HITs, but only on paths served WITHOUT a middleware rewrite (`/en/products/{id}`). The default-locale FI path `/tuotteet/{id}` (the primary audience surface) still renders per request, because the next-intl middleware rewrite (`/tuotteet/7872` internally becomes `/fi/products/7872`) defeats the ISR cache even though the target route is now ISR-capable. First-request evidence of the split, back to back on the deployed build:
+
+- `/en/products/7872`: `cache-control: s-maxage=60, stale-while-revalidate=31535940`, `x-nextjs-cache: MISS`, `x-nextjs-prerender: 1`, `x-nextjs-stale-time: 300`.
+- `/tuotteet/7872` at the same time: `cache-control: private, no-cache, no-store, max-age=0, must-revalidate`, no cache markers.
+
+## Measurements (protocol as before, A=7872, B=1610)
+
+FI path `/tuotteet/{id}` (rewrite path), cold/warm TTFB seconds, all renders, no cache markers on any response:
+
+- A-cold 1.969, A-warm 2.057, B-cold 2.118, B-warm 1.438.
+
+EN path `/en/products/{id}` (no rewrite), timed pairs:
+
+- 7872: first hit was the protocol's header probe (`x-nextjs-cache: MISS`, render); next request `x-nextjs-cache: STALE` at 0.370 s (cached serve after the 60 s tree-min window, background revalidate).
+- 1610: MISS (render) 3.264 s, then `x-nextjs-cache: HIT` 0.746 s.
+- 7872 follow-ups req3/req4: `STALE` again at 0.468 / 0.569 s. Repeated STALE rather than a fresh HIT suggests the background revalidation is not persisting a new entry (or each request lands on an isolate that re-triggers it); recorded as observed, not bisected further per instruction.
+
+Header shapes (honest pins context): on the worker, EN product pages emit the shared-cache shape with the tree-min `s-maxage=60` and the page's own 300 s window as `x-nextjs-stale-time: 300`, which matches the revised pins. FI rewrite-path pages emit the dynamic shape.
+
+HIT TTFB context: 0.37 to 0.75 s is not the tens-of-ms order seen under local `next start` (0.011 s). Two plausible contributors, both vantage-side: every request here is served from an NA colo while the R2 incremental-cache bucket is EU-jurisdiction (cross-ocean reads), and first-hit-per-isolate warmup. From an EU vantage, worker and bucket are co-located and HITs should be materially faster; this host cannot produce that measurement. The HIT-vs-render delta from this vantage is still 3.26 s versus 0.75 s (about 4x).
+
+API detail continuity (`x-age-confirmed: server-prerender`): 7872: 2.206 s, 1610: 0.730 s, both 200. Consistent with the earlier 1.87/0.89 and 0.80 s readings (ORD vantage).
+
+## Remaining gap and options (lead decides; no further bisecting done)
+
+The fix itself works: `generateStaticParams` engages the ISR fallback and the R2 incremental cache serves HITs on staging. What remains is path-level: the next-intl rewrite for the default locale bypasses the cache on `/tuotteet/{id}`. Candidate directions, none applied:
+
+1. Serve default-locale product URLs without a middleware rewrite (for example prefix-all strategy, or excluding product detail paths from the matcher and reading the locale from the pathname segment directly).
+2. Accept the FI gap temporarily (EN gets the cold-visit win; FI stays dynamic) and record it as a conscious limitation.
+3. Investigate OpenNext-level caching keyed before the rewrite (adapter routing layer), which is deeper work in adapter internals.
+
+Blockers: none for this task; the decision above belongs to the lead.
