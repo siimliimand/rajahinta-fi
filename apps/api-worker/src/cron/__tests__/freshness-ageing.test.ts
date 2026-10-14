@@ -273,6 +273,11 @@ describe('handleFreshnessAlert — verified ageing wiring', () => {
     } as unknown as Env;
 
     const result = await handleFreshnessAlert(env, log, {
+      // Injected: transportAgeSeconds() reads real Date.now() — without
+      // this the NOW-anchored fixture crosses the 45 d warning threshold
+      // in real time (it did, 2026-10-14 11:00Z: 1 alert became 2 and
+      // the required ci-pass check went permanently red).
+      now: () => NOW,
       measureStaleShare: async () => ({ stale: 32, total: 100, share: 0.32 }),
       findNewestObservedAt: async () => new Date(NOW.getTime() - 3_600_000),
       writeBackAgedVerified: async () => {
