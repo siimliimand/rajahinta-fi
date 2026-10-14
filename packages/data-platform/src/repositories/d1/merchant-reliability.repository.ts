@@ -57,21 +57,40 @@ export abstract class MerchantReliabilityRepository {
    * One aggregate row per merchant holding at least one current offer,
    * ordered by merchant ascending (deterministic for display). Merchants
    * with no offers do not appear — there is nothing factual to report.
+   *
+   * When {@link merchants} is provided, only those merchants are
+   * aggregated — same rows, same deterministic-latest rule, but the read
+   * is bounded by the `retail_offers_merchant_product_id_observed_at_idx`
+   * leading column so a per-request caller (the product-page reliability
+   * embed) never pays the whole-catalog window scan. Undefined/empty
+   * keeps the unbounded whole-catalog read.
    */
-  abstract findCurrentOfferAggregates(): Promise<
-    MerchantReliabilityAggregate[]
-  >;
+  abstract findCurrentOfferAggregates(
+    merchants?: ReadonlySet<string>,
+  ): Promise<MerchantReliabilityAggregate[]>;
 }
 
-/** Latest row per (merchant, product_id) by (observed_at, id) DESC. */
-const CURRENT_OFFER_AGGREGATES_SQL = `
+/**
+ * The ranked CTE shared by the unbounded statement and the bounded
+ * variant — latest row per (merchant, product_id) by (observed_at, id)
+ * DESC. Only the merchant filter (appended between `retail_offers` and
+ * the CTE's closing parenthesis) differs between the two statements.
+ */
+const CURRENT_OFFER_AGGREGATES_RANKED_CTE = `
   WITH ranked AS (
     SELECT merchant, reliability_status, observed_at,
            ROW_NUMBER() OVER (
              PARTITION BY merchant, product_id
              ORDER BY observed_at DESC, id DESC
            ) AS rn
-      FROM retail_offers
+      FROM retail_offers`;
+
+/**
+ * The aggregate SELECT over the ranked CTE — one shared copy so the
+ * unbounded and bounded statements cannot drift (the ESTIMATED-bucket
+ * CASE rule especially).
+ */
+const CURRENT_OFFER_AGGREGATES_TAIL = `
   )
   SELECT merchant,
          COUNT(*) AS offer_count,
@@ -92,6 +111,18 @@ const CURRENT_OFFER_AGGREGATES_SQL = `
    GROUP BY merchant
    ORDER BY merchant ASC`;
 
+/** Whole-catalog statement — every merchant holding a current offer. */
+const CURRENT_OFFER_AGGREGATES_SQL =
+  CURRENT_OFFER_AGGREGATES_RANKED_CTE + CURRENT_OFFER_AGGREGATES_TAIL;
+
+/**
+ * D1 caps bound parameters at 100 per query and the bounded variant's
+ * merchant IN (...) list binds one parameter per merchant. Callers pass
+ * page-sized sets, far below the cap — the guard only turns what would
+ * be an opaque D1 rejection into a clear error at the construction site.
+ */
+const D1_BOUND_PARAMETER_CAP = 100;
+
 @Injectable()
 export class D1MerchantReliabilityRepository
   extends MerchantReliabilityRepository
@@ -101,18 +132,40 @@ export class D1MerchantReliabilityRepository
   }
 
   /** @inheritdoc */
-  async findCurrentOfferAggregates(): Promise<
-    MerchantReliabilityAggregate[]
-  > {
+  async findCurrentOfferAggregates(
+    merchants?: ReadonlySet<string>,
+  ): Promise<MerchantReliabilityAggregate[]> {
     // The ESTIMATED bucket is anything not exactly VERIFIED/STALE/
     // UNAVAILABLE — SQLite's `IS NOT` is the NULL-safe IS DISTINCT FROM,
     // so a NULL status would degrade too even though the column is NOT
     // NULL. The four CASE arms partition all rows, so the counts sum to
     // offer_count by construction; MAX(observed_at) is non-null in every
     // group — a group exists only when COUNT(*) >= 1.
+    //
+    // A provided merchant set bounds the scan to those merchants'
+    // index ranges — the product-page embed asks for the page's handful
+    // of merchants, and the unbounded whole-catalog window scan was
+    // measured at ~775k rows read per call on production (2026-10
+    // D1 billing incident: every product detail read the full
+    // retail_offers history to render one informational badge).
+    const merchantList = merchants ? [...merchants] : [];
+    if (merchantList.length > D1_BOUND_PARAMETER_CAP) {
+      throw new Error(
+        `findCurrentOfferAggregates: merchant set (${merchantList.length}) exceeds the D1 bound-parameter cap (${D1_BOUND_PARAMETER_CAP})`,
+      );
+    }
+    const bounded = merchantList.length > 0;
+    const sql = bounded
+      ? CURRENT_OFFER_AGGREGATES_RANKED_CTE +
+        `
+     WHERE merchant IN (` +
+        merchantList.map(() => '?').join(', ') +
+        `)${CURRENT_OFFER_AGGREGATES_TAIL}`
+      : CURRENT_OFFER_AGGREGATES_SQL;
     const rows = (
       await this.d1
-        .prepare(CURRENT_OFFER_AGGREGATES_SQL)
+        .prepare(sql)
+        .bind(...(bounded ? merchantList : []))
         .all<{
           merchant: string;
           offer_count: number;

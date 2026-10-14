@@ -62,13 +62,20 @@ export class MerchantReliabilityService {
   /**
    * Score map covering exactly the requested merchants that have
    * aggregates — a merchant with no current offers is simply absent.
+   *
+   * The merchant set is pushed INTO the repository read so the
+   * aggregation bounds to the requested merchants (D1 counterpart of
+   * the same fix), never the whole catalog.
    */
   async getReliabilityScoreMap(
     merchants: ReadonlySet<string>,
   ): Promise<MerchantReliabilityMap> {
-    const aggregates = (
-      await this.reliabilityRepo.findCurrentOfferAggregates()
-    ).filter((aggregate) => merchants.has(aggregate.merchant));
+    if (merchants.size === 0) {
+      return {};
+    }
+    const aggregates = await this.reliabilityRepo.findCurrentOfferAggregates(
+      merchants,
+    );
 
     const scores = await this.scoreAggregates(aggregates);
 

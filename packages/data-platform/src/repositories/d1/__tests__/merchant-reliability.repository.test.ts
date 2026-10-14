@@ -99,4 +99,31 @@ describe('D1MerchantReliabilityRepository', () => {
     expect(merchants).toEqual([...merchants].sort());
     expect(merchants).not.toContain('never-scraped');
   });
+
+  it('a provided merchant set bounds the read without changing the aggregates', async () => {
+    // The 2026-10 billing fix: the product-page embed asks for the
+    // page's merchants, so the read must aggregate ONLY those — but the
+    // figures must stay byte-identical to the whole-catalog aggregate
+    // (the filter moved INTO the CTE, the window rule did not change).
+    const p1 = seedProduct();
+    const p2 = seedProduct();
+    seedOffer('boundme', p1, 'VERIFIED', '2026-08-10T00:00:00.000Z');
+    seedOffer('boundme', p1, 'STALE', '2026-08-05T00:00:00.000Z'); // superseded
+    seedOffer('otherco', p2, 'VERIFIED', '2026-08-11T00:00:00.000Z');
+
+    const bounded = await repo.findCurrentOfferAggregates(new Set(['boundme']));
+
+    // Only the requested merchant comes back...
+    expect(bounded.map((a) => a.merchant)).toEqual(['boundme']);
+    // ...with the same figures the unbounded read produces for it.
+    const unbounded = await repo.findCurrentOfferAggregates();
+    expect(bounded).toEqual(unbounded.filter((a) => a.merchant === 'boundme'));
+  });
+
+  it('an empty merchant set degrades to the unbounded read', async () => {
+    const p = seedProduct();
+    seedOffer('stillhere', p, 'VERIFIED', '2026-08-10T00:00:00.000Z');
+    const fromEmpty = await repo.findCurrentOfferAggregates(new Set());
+    expect(fromEmpty.map((a) => a.merchant)).toContain('stillhere');
+  });
 });
