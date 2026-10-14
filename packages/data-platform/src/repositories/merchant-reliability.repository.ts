@@ -22,7 +22,7 @@
  * @module MerchantReliabilityRepository
  */
 import { Injectable, Inject } from '@nestjs/common';
-import { asc, desc, sql } from 'drizzle-orm';
+import { asc, desc, inArray, sql } from 'drizzle-orm';
 import type { ReliabilityStatus } from '@rajahinta/core-domain';
 import { DRIZZLE, type DrizzleDatabase } from '../db/drizzle.provider';
 import { retailOffers } from '../schema';
@@ -58,10 +58,15 @@ export abstract class MerchantReliabilityRepository {
    * One aggregate row per merchant holding at least one current offer,
    * ordered by merchant ascending (deterministic for display). Merchants
    * with no offers do not appear — there is nothing factual to report.
+   *
+   * When {@link merchants} is provided, only those merchants are
+   * aggregated — same rows, same deterministic-latest rule, bounded
+   * read (the D1 counterpart serves the per-request reliability embed
+   * through the merchant-leading index with this filter).
    */
-  abstract findCurrentOfferAggregates(): Promise<
-    MerchantReliabilityAggregate[]
-  >;
+  abstract findCurrentOfferAggregates(
+    merchants?: ReadonlySet<string>,
+  ): Promise<MerchantReliabilityAggregate[]>;
 }
 
 @Injectable()
@@ -75,15 +80,21 @@ export class DrizzleMerchantReliabilityRepository
   }
 
   /** @inheritdoc */
-  async findCurrentOfferAggregates(): Promise<
-    MerchantReliabilityAggregate[]
-  > {
+  async findCurrentOfferAggregates(
+    merchants?: ReadonlySet<string>,
+  ): Promise<MerchantReliabilityAggregate[]> {
     // Current offers: latest row per (merchant, product). DISTINCT ON
     // keeps one row per group; the leading ORDER BY columns must match
     // the DISTINCT ON expressions, and the (observedAt, id) DESC
     // tie-break makes "latest" deterministic when scrapes share a
     // timestamp. Served by the (merchant, product_id, observed_at)
-    // index.
+    // index. A provided merchant set narrows the read to those index
+    // ranges — parity with the D1 bounded variant.
+    const merchantList = merchants ? [...merchants] : [];
+    const merchantFilter =
+      merchantList.length > 0
+        ? inArray(retailOffers.merchant, merchantList)
+        : undefined;
     const currentOffers = this.db
       .selectDistinctOn(
         [retailOffers.merchant, retailOffers.productId],
@@ -94,6 +105,7 @@ export class DrizzleMerchantReliabilityRepository
         },
       )
       .from(retailOffers)
+      .where(merchantFilter)
       .orderBy(
         retailOffers.merchant,
         retailOffers.productId,

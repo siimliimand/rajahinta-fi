@@ -103,15 +103,28 @@ export async function getReliabilityScores(
  * aggregates — a merchant with no current offers is simply absent.
  * Returns undefined when scoring fails — the search detail embed is
  * informational, so it is omitted rather than failing the response.
+ *
+ * The merchant set is pushed INTO the repository read: the aggregates
+ * are bounded to the page's merchants through the
+ * (merchant, product_id, observed_at) index. The previous shape —
+ * whole-catalog aggregate, then filter in JS — cost ~775k D1 rows read
+ * per product-detail request (the 2026-10 billing incident: ~99% of
+ * account-wide D1 reads came from this one embed).
  */
 export async function getMerchantReliabilityMap(
   d1: D1DatabaseLike,
   merchants: ReadonlySet<string>,
 ): Promise<MerchantReliabilityMap | undefined> {
   try {
-    const scores = (await getReliabilityScores(d1)).filter((score) =>
-      merchants.has(score.merchant),
+    if (merchants.size === 0) return {};
+    const scoreService = new MerchantReliabilityScoreService(
+      new ReliabilityService(),
     );
+    const scores = (
+      await new D1MerchantReliabilityRepository(d1).findCurrentOfferAggregates(
+        merchants,
+      )
+    ).map((aggregate) => scoreAggregate(scoreService, aggregate));
     const map: MerchantReliabilityMap = {};
     for (const score of scores) {
       map[score.merchant] = score;
