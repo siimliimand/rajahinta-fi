@@ -2575,6 +2575,68 @@ export const ferryPriceObservations = sqliteTable(
 );
 
 /**
+ * Merchant reliability aggregates — per-merchant whole-catalog figures,
+ * materialized so no request path ever scans retail_offers for them.
+ *
+ * One row per merchant holding at least one current offer. "Current" is
+ * the deterministic-latest rule: the latest retail_offers row per
+ * (merchant, product_id) by (observed_at, id) DESC — the SQLite window
+ * translation of the pg DISTINCT ON query. Migration 0035 seeds the table
+ * with that identical live aggregate and the 30-minute aggregation tick
+ * full-refreshes it (delete + insert) each pass, so figures are at most
+ * one tick old, matching every other materialized surface
+ * (price_history_summaries, savings snapshots).
+ *
+ * Why a table: the 2026-10 D1 billing incident — the product-page
+ * reliability embed recomputed these aggregates per request (~818k rows
+ * read; PR #129's merchant-bounded variant still cost 534k) for figures
+ * that change at most once per tick. Reading the materialized rows drops
+ * the per-request cost to table size regardless of catalog or history
+ * growth. Cold start fails open: no row for a merchant simply means no
+ * badge — never a fallback scan.
+ *
+ * Invariant: the four status counts always sum to offerCount (the
+ * aggregate's CASE arms partition every current offer; a stored status
+ * outside the canonical vocabulary degrades to ESTIMATED — reliability
+ * is never overstated). CHECK-enforced so a violating row is
+ * unrepresentable at rest. The merchant primary key alone serves the
+ * optional merchant-set read; no secondary index (a single-figure table
+ * ordered by merchant needs nothing else).
+ */
+export const merchantReliabilityAggregates = sqliteTable(
+  'merchant_reliability_aggregates',
+  {
+    /** Merchant identifier as stored on retail_offers.merchant. */
+    merchant: text('merchant', { length: 128 }).primaryKey(),
+    /** Current-offer count (one per product) behind the status counts. */
+    offerCount: integer('offer_count').notNull(),
+    /** Current offers whose status is exactly VERIFIED. */
+    verifiedCount: integer('verified_count').notNull(),
+    /** Current offers not exactly VERIFIED/STALE/UNAVAILABLE (NULL-safe degrade bucket). */
+    estimatedCount: integer('estimated_count').notNull(),
+    /** Current offers whose status is exactly STALE. */
+    staleCount: integer('stale_count').notNull(),
+    /** Current offers whose status is exactly UNAVAILABLE. */
+    unavailableCount: integer('unavailable_count').notNull(),
+    /** Latest observed_at among the merchant's current offers, ISO-8601 UTC TEXT. */
+    freshestObservedAt: text('freshest_observed_at').notNull(),
+    /** When this row was materialized (tick or migration seed), ISO-8601 UTC TEXT. */
+    computedAt: text('computed_at').notNull(),
+  },
+  (table) => [
+    // A blank merchant is unrepresentable: aggregates exist only for
+    // retail_offers.merchant values, which are non-empty.
+    check('merchant_reliability_aggregates_merchant_check', sql`${table.merchant} <> ''`),
+    // The table's defining invariant — the CASE arms partition every
+    // current offer, so the status counts sum to the offer count.
+    check(
+      'merchant_reliability_aggregates_counts_sum_check',
+      sql`${table.verifiedCount} + ${table.estimatedCount} + ${table.staleCount} + ${table.unavailableCount} = ${table.offerCount}`,
+    ),
+  ],
+);
+
+/**
  * Aggregate schema object for typing a D1-bound Drizzle instance
  * (`drizzle(env.DB, { schema: d1Schema })`) — the SQLite counterpart of
  * the pg provider's `{ schema }` argument in db/drizzle.provider.ts.
@@ -2624,4 +2686,5 @@ export const d1Schema = {
   accountPreferences,
   digestNotifications,
   ferryPriceObservations,
+  merchantReliabilityAggregates,
 };
