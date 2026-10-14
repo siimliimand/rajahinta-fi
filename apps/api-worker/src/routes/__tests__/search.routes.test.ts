@@ -31,12 +31,30 @@ import {
   seedProduct,
 } from './harness';
 import { registerDeclarationRoutes } from '../declaration.routes';
+import { handleMerchantReliabilityAggregates } from '../../cron/merchant-reliability-aggregates';
 import { respondToError } from '../../errors';
 import type { AppEnv, Env } from '../../env';
 import { errorBoundary } from '../../middleware/error-boundary';
 import { openMigratedD1 as freshD1 } from '../../analytics/__tests__/fake-d1';
+import { createLogger } from '../../logger';
 
 const AGE = { 'x-age-confirmed': 'confirmed' };
+
+/**
+ * The aggregation tick's materialization step — the real
+ * `handleMerchantReliabilityAggregates` over the harness db. The detail
+ * route's reliability embed reads the materialized
+ * `merchant_reliability_aggregates` table (migration 0035), so tests
+ * asserting embed figures run this after seeding their offers. Only the
+ * detail-path tests that assert those figures invoke it.
+ */
+function materializeReliabilityAggregates(
+  d1: ReturnType<typeof openMigratedD1>['d1'],
+) {
+  return handleMerchantReliabilityAggregates(permissiveEnv(d1), createLogger('error'), {
+    db: d1,
+  });
+}
 
 describe('GET /api/v1/products (search)', () => {
   it('is guarded by the age gate', async () => {
@@ -854,6 +872,7 @@ describe('GET /api/v1/products/:id (detail)', () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1, depositSystemStatus: null });
     seedOffer(db, { id: 11, productId: 1, priceCents: 350 });
+    await materializeReliabilityAggregates(d1);
     const app = buildApp();
 
     const res = await request(app, permissiveEnv(d1), '/api/v1/products/1', { headers: AGE });
@@ -876,6 +895,7 @@ describe('GET /api/v1/products/:id (detail)', () => {
     const { db, d1 } = openMigratedD1();
     seedProduct(db, { id: 1 });
     seedOffer(db, { id: 11, productId: 1 });
+    await materializeReliabilityAggregates(d1);
     const app = buildApp();
 
     const res = await request(app, permissiveEnv(d1), '/api/v1/products/1', { headers: AGE });
