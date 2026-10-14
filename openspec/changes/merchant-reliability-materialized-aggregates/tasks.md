@@ -12,7 +12,7 @@
 
 ## 3. Read-path switch
 
-- [ ] 3.1 Switch `D1MerchantReliabilityRepository.findCurrentOfferAggregates` to read `merchant_reliability_aggregates` (optional merchant `IN` filter, deterministic merchant-ascending order, no fallback to scanning `retail_offers`); remove the ranked-CTE SQL constants and `D1_BOUND_PARAMETER_CAP`; update the abstract-class contract docs (materialized, ≤ one tick stale, cold start = empty) <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [packages/data-platform/src/repositories/d1/merchant-reliability.repository.ts] -->
+- [x] 3.1 Switch `D1MerchantReliabilityRepository.findCurrentOfferAggregates` to read `merchant_reliability_aggregates` (optional merchant `IN` filter, deterministic merchant-ascending order, no fallback to scanning `retail_offers`); remove the ranked-CTE SQL constants and `D1_BOUND_PARAMETER_CAP`; update the abstract-class contract docs (materialized, ≤ one tick stale, cold start = empty) <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [packages/data-platform/src/repositories/d1/merchant-reliability.repository.ts] -->
 - [x] 3.2 Repository tests: materialized read returns the seeded figures unchanged; merchant-set filter returns exactly the requested merchants in order; empty table degrades to an empty result (no `retail_offers` scan) <!-- agent: platform-engineer.build, depends_on: [3.1], touches: [packages/data-platform/src/repositories/d1/__tests__/merchant-reliability.repository.test.ts] -->
 
 ## 4. Verification
