@@ -19,7 +19,12 @@
  *   NO aggregation-code change (the service file is exercised as-is);
  *   the figures are read off the materialized
  *   `merchant_reliability_aggregates` table, refreshed by the real
- *   aggregation-tick handler around the write-back (production order).
+ *   aggregation-tick handler around the write-back (production order);
+ * - the plan lock (task 1.2, change freshness-sweep-index): the sweep's
+ *   EXPLAIN QUERY PLAN walks the 0036 composite index
+ *   `retail_offers_reliability_status_observed_at_idx`, never a full
+ *   scan — the un-indexed sweep measured 241,346 rows read per tick in
+ *   production (2026-10-14 post-materialization analytics).
  *
  * Runs over the fake-D1 harness (node:sqlite + committed migrations),
  * the established pattern of savings-snapshots.test.ts.
@@ -386,5 +391,76 @@ describe('merchant-reliability reflection (aggregation unchanged)', () => {
     const scores = await getReliabilityScores(d1);
     expect(scores[0]?.strictestStatus).toBe('STALE');
     expect(scores[0]?.statusCounts).toMatchObject({ STALE: 1, VERIFIED: 0 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan lock — the sweep rides the 0036 composite index (task 1.2, change
+// freshness-sweep-index)
+// ---------------------------------------------------------------------------
+
+/**
+ * Verbatim of the module-private prepared statement in
+ * writeBackAgedVerifiedOffers (freshness-alert.ts) — the 30-min tick's
+ * verified-ageing sweep, measured in production (2026-10-14,
+ * post-materialization analytics) at 241,346 rows read per execution as
+ * a full table scan before migration 0036. Kept literal so the asserted
+ * plan is the plan the sweep actually runs; drift here fails loudly as
+ * a plan-shape change.
+ */
+const AGED_VERIFIED_SWEEP_SQL = `UPDATE retail_offers
+          SET reliability_status = 'STALE'
+        WHERE reliability_status = 'VERIFIED'
+          AND observed_at < ?`;
+
+describe('verified-ageing sweep plan (task 1.2, change freshness-sweep-index)', () => {
+  // Production binds the staleness cutoff; the plan is value-independent,
+  // and for NOW this IS the exact cutoff writeBackAgedVerifiedOffers
+  // computes (NOW − PRICE_WINDOW_MS, the classifier boundary).
+  const CUTOFF = BOUNDARY_AT.toISOString();
+
+  function sweepPlan(db: DatabaseSync): string {
+    const plan = db
+      .prepare(`EXPLAIN QUERY PLAN ${AGED_VERIFIED_SWEEP_SQL}`)
+      .all(CUTOFF) as { detail: string }[];
+    return plan.map((row) => row.detail).join('\n');
+  }
+
+  it('searches through retail_offers_reliability_status_observed_at_idx — never a full scan', async () => {
+    const { db } = createDb();
+    await seedProduct(db, 1);
+    // Non-empty table, the state the sweep runs in; the index choice for
+    // this equality+range predicate does not depend on the row values.
+    await seedOffer(db, 11, 'beverage-de', AGED_AT, 'VERIFIED');
+    await seedOffer(db, 12, 'beverage-de', FRESH_AT, 'VERIFIED');
+
+    const details = sweepPlan(db);
+
+    // SEARCH … USING INDEX: the equality on the leading column plus the
+    // observed_at range walk the (reliability_status, observed_at) btree
+    // — post-index rows_read scale with the offers that actually aged
+    // since the last tick, not with catalog+history size.
+    expect(details).toMatch(
+      /SEARCH retail_offers USING INDEX retail_offers_reliability_status_observed_at_idx/,
+    );
+    expect(details).not.toMatch(/\bSCAN retail_offers\b/);
+  });
+
+  it('lock sensitivity: without the index the same statement plans as a full scan', async () => {
+    const { db } = createDb();
+    await seedProduct(db, 1);
+    await seedOffer(db, 11, 'beverage-de', AGED_AT, 'VERIFIED');
+    db.exec('DROP INDEX retail_offers_reliability_status_observed_at_idx');
+
+    const details = sweepPlan(db);
+
+    // The regression the change guards against, reproduced: no other
+    // retail_offers index leads with reliability_status, so dropping
+    // 0036's puts the sweep back on the 241k-rows/tick full scan —
+    // proof the matcher above actually catches it.
+    expect(details).toMatch(/\bSCAN retail_offers\b/);
+    expect(details).not.toMatch(
+      /USING INDEX retail_offers_reliability_status_observed_at_idx/,
+    );
   });
 });
