@@ -16,7 +16,10 @@
  *   not paging) and a failed pass is logged without failing the tick;
  * - the reliability reflection: merchant-reliability aggregation picks
  *   the transition up through its ordinary stored-status aggregation —
- *   NO aggregation-code change (the service file is exercised as-is).
+ *   NO aggregation-code change (the service file is exercised as-is);
+ *   the figures are read off the materialized
+ *   `merchant_reliability_aggregates` table, refreshed by the real
+ *   aggregation-tick handler around the write-back (production order).
  *
  * Runs over the fake-D1 harness (node:sqlite + committed migrations),
  * the established pattern of savings-snapshots.test.ts.
@@ -30,6 +33,10 @@ import {
   handleFreshnessAlert,
   writeBackAgedVerifiedOffers,
 } from '../freshness-alert';
+import {
+  handleMerchantReliabilityAggregates,
+  type MerchantReliabilityAggregatesResult,
+} from '../merchant-reliability-aggregates';
 import { openMigratedD1 } from '../../analytics/__tests__/fake-d1';
 import { getReliabilityScores } from '../../services/merchant-reliability';
 import { createLogger, type Logger } from '../../logger';
@@ -304,6 +311,24 @@ describe('handleFreshnessAlert — verified ageing wiring', () => {
 // Reliability reflection — aggregation picks the transition up unchanged
 // ---------------------------------------------------------------------------
 
+/**
+ * The tick's materialization step — the REAL aggregation-tick handler
+ * over the harness db at the test's clock (`deps.now = NOW`). Production
+ * order is freshness-alert's write-back THEN this refresh (router.ts);
+ * the figure reads below go through the materialized
+ * `merchant_reliability_aggregates` table — the same surface the
+ * routes read — proving "aggregation unchanged" on the materialized
+ * contract.
+ */
+function materializeAggregates(
+  d1: ReturnType<typeof openMigratedD1>['d1'],
+): Promise<MerchantReliabilityAggregatesResult> {
+  return handleMerchantReliabilityAggregates({ DB: d1 } as unknown as Env, LOG, {
+    db: d1,
+    now: () => NOW,
+  });
+}
+
 describe('merchant-reliability reflection (aggregation unchanged)', () => {
   it('reflects VERIFIED → STALE through ordinary stored-status aggregation', async () => {
     const { db, d1 } = createDb();
@@ -312,6 +337,9 @@ describe('merchant-reliability reflection (aggregation unchanged)', () => {
     // pre-pass it reports VERIFIED even though the window has passed —
     // the write-back pass is what reconciles stored status with age.
     await seedOffer(db, 11, 'beverage-de', AGED_AT, 'VERIFIED');
+    // Materialize the pre-pass state so `before` reads the stored
+    // VERIFIED status off the table (the previous tick's refresh).
+    await materializeAggregates(d1);
 
     const before = await getReliabilityScores(d1);
     expect(before).toHaveLength(1);
@@ -323,6 +351,7 @@ describe('merchant-reliability reflection (aggregation unchanged)', () => {
     });
 
     await writeBackAgedVerifiedOffers(d1, NOW);
+    await materializeAggregates(d1);
 
     const after = await getReliabilityScores(d1);
     expect(after[0]).toMatchObject({
@@ -343,6 +372,7 @@ describe('merchant-reliability reflection (aggregation unchanged)', () => {
     await seedOffer(db, 11, 'beverage-de', FRESH_AT, 'VERIFIED');
 
     await writeBackAgedVerifiedOffers(d1, NOW);
+    await materializeAggregates(d1);
     expect((await getReliabilityScores(d1))[0]?.strictestStatus).toBe('VERIFIED');
 
     // …and once that same offer ages past the window, the tick takes the
@@ -351,6 +381,7 @@ describe('merchant-reliability reflection (aggregation unchanged)', () => {
       .prepare('UPDATE retail_offers SET observed_at = ? WHERE id = 11')
       .run(AGED_AT.toISOString());
     await writeBackAgedVerifiedOffers(d1, NOW);
+    await materializeAggregates(d1);
 
     const scores = await getReliabilityScores(d1);
     expect(scores[0]?.strictestStatus).toBe('STALE');

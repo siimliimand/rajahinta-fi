@@ -41,6 +41,7 @@ import {
   AGGREGATION_CRON,
 } from './time-series-aggregation';
 import { handleFreshnessAlert } from './freshness-alert';
+import { handleMerchantReliabilityAggregates } from './merchant-reliability-aggregates';
 import { handlePriceAlertEvaluation } from './price-alert-evaluation';
 import {
   handlePreferenceDigest,
@@ -132,6 +133,13 @@ export function cronRoutingTable(): ReadonlyMap<string, readonly CronHandler[]> 
   add(AGGREGATION_CRON, {
     name: 'freshness-alert',
     run: (env, log) => handleFreshnessAlert(env, log),
+  });
+  // Task 2.1 (change merchant-reliability-materialized-aggregates):
+  // registered AFTER freshness-alert so the tick's VERIFIED→STALE ageing
+  // write-back is reflected same-tick (the 2026-10 D1 billing incident fix).
+  add(AGGREGATION_CRON, {
+    name: 'merchant-reliability-aggregates',
+    run: (env, log) => handleMerchantReliabilityAggregates(env, log),
   });
   // Task 2.2 (design R2) shares the same 30-minute post-ingestion tick:
   // price-alert evaluation reads the materialized summaries the

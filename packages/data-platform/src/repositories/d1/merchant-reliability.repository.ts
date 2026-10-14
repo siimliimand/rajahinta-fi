@@ -1,15 +1,18 @@
 /**
- * D1 MerchantReliabilityRepository — factual per-merchant aggregation
- * over CURRENT retail offers, the Cloudflare-side counterpart of the pg
- * DrizzleMerchantReliabilityRepository (task 2.5, change
- * migrate-to-cloudflare).
+ * D1 MerchantReliabilityRepository — per-merchant reliability
+ * aggregates served from the materialized
+ * merchant_reliability_aggregates table (change
+ * merchant-reliability-materialized-aggregates), the Cloudflare-side
+ * counterpart of the pg DrizzleMerchantReliabilityRepository (task 2.5,
+ * change migrate-to-cloudflare), which still computes per call.
  *
- * A merchant's "current" offers are the latest row per (merchant,
- * product) in the append-only retail_offers history, resolved by
- * (observed_at, id) descending — the same deterministic-latest rule as
- * the pg DISTINCT ON query. SQLite has no DISTINCT ON; the translation
- * is a ROW_NUMBER() window (D1 supports window functions) with the
- * identical partition/order specification.
+ * The "current offer" semantics and the deterministic-latest rule that
+ * produce the figures live with the writers — migration 0035's seed and
+ * the 30-minute aggregation cron's full refresh (running after the
+ * verified-ageing pass each tick). This module only reads what they
+ * materialized: figures are at most one tick stale, and the
+ * per-request read cost is table size, independent of catalog size and
+ * history depth.
  *
  * The aggregate is raw and factual only: per-status counts, offer
  * count, freshest observedAt. The core-domain
@@ -48,22 +51,28 @@ export interface MerchantReliabilityAggregate {
 }
 
 /**
- * Read-only reliability aggregation over current retail offers,
- * registered in DataPlatformModule under this abstract token.
+ * Read-only per-merchant reliability aggregates, registered in
+ * DataPlatformModule under this abstract token.
  */
 @Injectable()
 export abstract class MerchantReliabilityRepository {
   /**
    * One aggregate row per merchant holding at least one current offer,
-   * ordered by merchant ascending (deterministic for display). Merchants
-   * with no offers do not appear — there is nothing factual to report.
+   * ordered by merchant ascending (deterministic for display).
+   *
+   * The rows are tick-materialized (change
+   * merchant-reliability-materialized-aggregates): the 30-minute
+   * aggregation cron full-refreshes merchant_reliability_aggregates
+   * after its verified-ageing pass, so figures are at most one tick
+   * stale. A merchant with no row — a cold start before the first
+   * tick, or a merchant with no current offers — is simply absent from
+   * the result, and the product-page embed fails open by omitting the
+   * badge. There is NO fallback path that scans retail_offers per
+   * request (the 2026-10 D1 billing-incident invariant).
    *
    * When {@link merchants} is provided, only those merchants are
-   * aggregated — same rows, same deterministic-latest rule, but the read
-   * is bounded by the `retail_offers_merchant_product_id_observed_at_idx`
-   * leading column so a per-request caller (the product-page reliability
-   * embed) never pays the whole-catalog window scan. Undefined/empty
-   * keeps the unbounded whole-catalog read.
+   * returned — a primary-key IN read over the materialized table,
+   * never a recomputation.
    */
   abstract findCurrentOfferAggregates(
     merchants?: ReadonlySet<string>,
@@ -71,57 +80,22 @@ export abstract class MerchantReliabilityRepository {
 }
 
 /**
- * The ranked CTE shared by the unbounded statement and the bounded
- * variant — latest row per (merchant, product_id) by (observed_at, id)
- * DESC. Only the merchant filter (appended between `retail_offers` and
- * the CTE's closing parenthesis) differs between the two statements.
+ * The materialized read — one row per merchant straight off the
+ * merchant primary key. The ESTIMATED-bucket degrade rule and the
+ * counts-sum invariant are the writers' guarantees (CHECK-enforced at
+ * rest); this statement only projects what they stored.
  */
-const CURRENT_OFFER_AGGREGATES_RANKED_CTE = `
-  WITH ranked AS (
-    SELECT merchant, reliability_status, observed_at,
-           ROW_NUMBER() OVER (
-             PARTITION BY merchant, product_id
-             ORDER BY observed_at DESC, id DESC
-           ) AS rn
-      FROM retail_offers`;
+const MATERIALIZED_AGGREGATES_SQL = `
+  SELECT merchant, offer_count, verified_count, estimated_count,
+         stale_count, unavailable_count, freshest_observed_at, computed_at
+    FROM merchant_reliability_aggregates`;
 
 /**
- * The aggregate SELECT over the ranked CTE — one shared copy so the
- * unbounded and bounded statements cannot drift (the ESTIMATED-bucket
- * CASE rule especially).
+ * Shared merchant-ascending tail so the bounded and unbounded
+ * statements cannot drift.
  */
-const CURRENT_OFFER_AGGREGATES_TAIL = `
-  )
-  SELECT merchant,
-         COUNT(*) AS offer_count,
-         SUM(CASE WHEN reliability_status = 'VERIFIED' THEN 1 ELSE 0 END)
-           AS verified_count,
-         SUM(CASE WHEN reliability_status IS NOT 'VERIFIED'
-                   AND reliability_status IS NOT 'STALE'
-                   AND reliability_status IS NOT 'UNAVAILABLE'
-                  THEN 1 ELSE 0 END)
-           AS estimated_count,
-         SUM(CASE WHEN reliability_status = 'STALE' THEN 1 ELSE 0 END)
-           AS stale_count,
-         SUM(CASE WHEN reliability_status = 'UNAVAILABLE' THEN 1 ELSE 0 END)
-           AS unavailable_count,
-         MAX(observed_at) AS freshest_observed_at
-    FROM ranked
-   WHERE rn = 1
-   GROUP BY merchant
+const MATERIALIZED_AGGREGATES_ORDER_BY = `
    ORDER BY merchant ASC`;
-
-/** Whole-catalog statement — every merchant holding a current offer. */
-const CURRENT_OFFER_AGGREGATES_SQL =
-  CURRENT_OFFER_AGGREGATES_RANKED_CTE + CURRENT_OFFER_AGGREGATES_TAIL;
-
-/**
- * D1 caps bound parameters at 100 per query and the bounded variant's
- * merchant IN (...) list binds one parameter per merchant. Callers pass
- * page-sized sets, far below the cap — the guard only turns what would
- * be an opaque D1 rejection into a clear error at the construction site.
- */
-const D1_BOUND_PARAMETER_CAP = 100;
 
 @Injectable()
 export class D1MerchantReliabilityRepository
@@ -135,33 +109,17 @@ export class D1MerchantReliabilityRepository
   async findCurrentOfferAggregates(
     merchants?: ReadonlySet<string>,
   ): Promise<MerchantReliabilityAggregate[]> {
-    // The ESTIMATED bucket is anything not exactly VERIFIED/STALE/
-    // UNAVAILABLE — SQLite's `IS NOT` is the NULL-safe IS DISTINCT FROM,
-    // so a NULL status would degrade too even though the column is NOT
-    // NULL. The four CASE arms partition all rows, so the counts sum to
-    // offer_count by construction; MAX(observed_at) is non-null in every
-    // group — a group exists only when COUNT(*) >= 1.
-    //
-    // A provided merchant set bounds the scan to those merchants'
-    // index ranges — the product-page embed asks for the page's handful
-    // of merchants, and the unbounded whole-catalog window scan was
-    // measured at ~775k rows read per call on production (2026-10
-    // D1 billing incident: every product detail read the full
-    // retail_offers history to render one informational badge).
+    // computed_at is projected for table parity but deliberately not
+    // mapped — the exported aggregate shape stays byte-compatible with
+    // the pg counterpart, and the score service consumes facts only.
     const merchantList = merchants ? [...merchants] : [];
-    if (merchantList.length > D1_BOUND_PARAMETER_CAP) {
-      throw new Error(
-        `findCurrentOfferAggregates: merchant set (${merchantList.length}) exceeds the D1 bound-parameter cap (${D1_BOUND_PARAMETER_CAP})`,
-      );
-    }
     const bounded = merchantList.length > 0;
     const sql = bounded
-      ? CURRENT_OFFER_AGGREGATES_RANKED_CTE +
-        `
-     WHERE merchant IN (` +
+      ? `${MATERIALIZED_AGGREGATES_SQL}
+   WHERE merchant IN (` +
         merchantList.map(() => '?').join(', ') +
-        `)${CURRENT_OFFER_AGGREGATES_TAIL}`
-      : CURRENT_OFFER_AGGREGATES_SQL;
+        `)${MATERIALIZED_AGGREGATES_ORDER_BY}`
+      : `${MATERIALIZED_AGGREGATES_SQL}${MATERIALIZED_AGGREGATES_ORDER_BY}`;
     const rows = (
       await this.d1
         .prepare(sql)
@@ -174,6 +132,7 @@ export class D1MerchantReliabilityRepository
           stale_count: number;
           unavailable_count: number;
           freshest_observed_at: string;
+          computed_at: string;
         }>()
     ).results;
 

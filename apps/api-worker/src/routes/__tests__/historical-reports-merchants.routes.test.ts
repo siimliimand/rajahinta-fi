@@ -31,6 +31,8 @@ import {
   serializeObservationLog,
   type ObservationLogRecord,
 } from '../../../../../packages/data-platform/src/d1/observation-log';
+import { handleMerchantReliabilityAggregates } from '../../cron/merchant-reliability-aggregates';
+import { createLogger } from '../../logger';
 
 const AGE = { 'x-age-confirmed': 'confirmed' };
 
@@ -633,6 +635,12 @@ describe('GET /api/v1/merchants/reliability', () => {
     seedProduct(db, { id: 2 });
     seedOffer(db, { id: 11, productId: 1, merchant: 'alko', reliabilityStatus: 'VERIFIED' });
     seedOffer(db, { id: 22, productId: 2, merchant: 'eu-import', reliabilityStatus: 'STALE' });
+    // The route reads the materialized `merchant_reliability_aggregates`
+    // table (migration 0035) — run the real aggregation-tick refresh over
+    // the seeded offers before the request.
+    await handleMerchantReliabilityAggregates(permissiveEnv(d1), createLogger('error'), {
+      db: d1,
+    });
     const app = buildApp();
 
     const res = await request(app, permissiveEnv(d1), '/api/v1/merchants/reliability', {
