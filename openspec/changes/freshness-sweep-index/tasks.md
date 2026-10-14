@@ -7,4 +7,4 @@
 
 ## 2. Verification
 
-- [ ] 2.1 Deploy staging + production via the gated workflow (migrate → deploy); confirm index exists in both environments; post-deploy analytics: sweep execution rows_read drops from ~241k/tick to matched-rows scale; account steady-state unchanged or lower <!-- agent: devops-engineer.build, depends_on: [1.2], touches: [] -->
+- [x] 2.1 Deploy staging + production via the gated workflow (migrate → deploy); confirm index exists in both environments; post-deploy analytics: sweep execution rows_read drops from ~241k/tick to matched-rows scale; account steady-state unchanged or lower <!-- agent: devops-engineer.build, depends_on: [1.2], touches: [] -->
