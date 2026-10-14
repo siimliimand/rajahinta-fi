@@ -142,3 +142,23 @@ email Worker.
 labels; routing (email/Slack/on-call) is your Grafana Cloud notification
 policy's job (Alerting → Notification policies). No endpoints or
 credentials are committed: the data source and contact points hold them.
+
+## D1 spend guardrail
+
+`infra/grafana/d1-spend-alerts.yaml` — `RajahintaD1RowsReadDailyBudget`
+(warning): account-wide D1 rows read over a rolling 24 h window
+(Cloudflare GraphQL Analytics, `d1AnalyticsAdaptiveGroups`) exceeding
+1B for 1 h. Cloudflare enforces no spend cap on D1, so this rule is the
+automated guard for the 2026-10 billing-incident class — one unbounded
+read surface on a hot route (the reliability embed read the whole
+catalog at ~775k rows/request until PR #129 bounded it). Threshold
+provenance (4% of the 25B/day included allowance, breach cost
+~$1/day, post-fix steady state two orders of magnitude below the line)
+and the import notes are in the file's header: it reuses the SAME
+JSON/Infinity data source as the data-quality alerts (same host,
+same Bearer token — the GraphQL endpoint only needs the Analytics read
+scope), replacing `RAJAHINTA_AE_DATASOURCE_UID` and the
+`CF_ACCOUNT_ID` literal in the query body. `noDataState` stays `NoData`
+— an empty analytics response has no cost consequence, unlike the
+cadence-gauge rules above. Backstop outside Grafana: enable Cloudflare
+billing notifications (dashboard, one-time).
