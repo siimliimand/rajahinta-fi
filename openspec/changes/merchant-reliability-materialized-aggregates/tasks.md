@@ -7,7 +7,7 @@
 
 ## 2. Cron materialization
 
-- [ ] 2.1 `handleMerchantReliabilityAggregates` in `apps/api-worker/src/cron/merchant-reliability-aggregates.ts`: recompute the live aggregate (the unbounded window query — 48×/day is ~39M rows, ~$0.04/day) and full-refresh the table (delete + batched insert) in one transaction; register on `AGGREGATION_CRON` in `router.ts` AFTER `freshness-alert` so the tick's VERIFIED→STALE ageing write-back is reflected same-tick; log rows materialized and tick duration <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [apps/api-worker/src/cron/merchant-reliability-aggregates.ts, apps/api-worker/src/cron/router.ts] -->
+- [x] 2.1 `handleMerchantReliabilityAggregates` in `apps/api-worker/src/cron/merchant-reliability-aggregates.ts`: recompute the live aggregate (the unbounded window query — 48×/day is ~39M rows, ~$0.04/day) and full-refresh the table (delete + batched insert) in one transaction; register on `AGGREGATION_CRON` in `router.ts` AFTER `freshness-alert` so the tick's VERIFIED→STALE ageing write-back is reflected same-tick; log rows materialized and tick duration <!-- agent: platform-engineer.build, depends_on: [1.2], touches: [apps/api-worker/src/cron/merchant-reliability-aggregates.ts, apps/api-worker/src/cron/router.ts] -->
 - [ ] 2.2 Handler tests: materialized rows byte-equal the live aggregate on seeded offers (the incident's core invariant); idempotent re-run converges (no duplicates, stale merchants dropped when their offers disappear); empty catalog leaves the table empty honestly <!-- agent: platform-engineer.build, depends_on: [2.1], touches: [apps/api-worker/src/cron/__tests__/merchant-reliability-aggregates.test.ts] -->
 
 ## 3. Read-path switch
