@@ -1,0 +1,24 @@
+-- Task 1.1 (change freshness-sweep-index): the verified-ageing sweep's
+-- index. Every 30-min aggregation tick, writeBackAgedVerifiedOffers
+-- (freshness-alert.ts) runs
+--
+--   UPDATE retail_offers SET reliability_status = 'STALE'
+--    WHERE reliability_status = 'VERIFIED' AND observed_at < :cutoff
+--
+-- and with no index on (reliability_status, observed_at) that predicate
+-- is a full scan of the append-only offer history on every tick. The
+-- 2026-10 D1 billing incident's post-materialization analytics
+-- (2026-10-14, task 4.3 of merchant-reliability-materialized-aggregates)
+-- measured the sweep at 241,346 rows read per execution — ≈11.6M
+-- rows/day, the largest single consumer of the new steady state — and
+-- retail_offers only grows, so the scan silently re-creates the cost
+-- class the materialization change just removed.
+--
+-- The column order matches the sweep's predicate shape: equality on the
+-- leading column ('VERIFIED'), range on the second (observed_at <
+-- cutoff), so post-index rows_read scales with the offers that actually
+-- aged since the last tick instead of with catalog+history size. The
+-- same leading-column equality serves every status-filtered read (the
+-- STALE share gauges); the write cost is one more btree on an
+-- append-mostly table — accepted.
+CREATE INDEX `retail_offers_reliability_status_observed_at_idx` ON `retail_offers` (`reliability_status`, `observed_at`);
