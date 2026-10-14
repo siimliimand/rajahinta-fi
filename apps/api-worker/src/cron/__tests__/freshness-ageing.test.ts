@@ -273,8 +273,14 @@ describe('handleFreshnessAlert — verified ageing wiring', () => {
     } as unknown as Env;
 
     const result = await handleFreshnessAlert(env, log, {
+      // Clock-relative fixture: transportAgeSeconds() reads the real
+      // Date.now() internally (deps.now only covers email/write-back
+      // timestamps), so a NOW-anchored observedAt ages with wall time —
+      // it crossed the 45 d warning threshold at 2026-10-14T11:00Z,
+      // turned one alert into two, and went ci-pass permanently red.
+      // Anchoring to Date.now() pins the age at exactly 1 h forever.
       measureStaleShare: async () => ({ stale: 32, total: 100, share: 0.32 }),
-      findNewestObservedAt: async () => new Date(NOW.getTime() - 3_600_000),
+      findNewestObservedAt: async () => new Date(Date.now() - 3_600_000),
       writeBackAgedVerified: async () => {
         throw new Error('D1 unavailable');
       },
