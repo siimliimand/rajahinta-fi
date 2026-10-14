@@ -17,6 +17,6 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Worker embed regression: `getMerchantReliabilityMap` tests stay green unchanged (signature and fail-open contract intact); run typecheck + eslint across touched packages <!-- agent: platform-engineer.fast, depends_on: [3.2], touches: [] -->
+- [x] 4.1 Worker embed regression: `getMerchantReliabilityMap` tests stay green unchanged (signature and fail-open contract intact); run typecheck + eslint across touched packages <!-- agent: platform-engineer.fast, depends_on: [3.2], touches: [] -->
 - [ ] 4.2 Deploy staging + production via the gated workflow (migrate → deploy); confirm the migration seed populated the table and the first tick refreshes it <!-- agent: devops-engineer.build, depends_on: [2.2, 3.2, 4.1], touches: [] -->
 - [ ] 4.3 Post-deploy analytics: `d1QueriesAdaptiveGroups` shows the `WITH ranked AS (…)` statement gone from the per-request path; account reads drop to cron-only (~39M/day); `RajahintaD1RowsReadDailyBudget` drains below 1B/24h and stays quiet; spot-check a product page embed renders the badge from materialized rows <!-- agent: devops-engineer.fast, depends_on: [4.2], touches: [] -->
