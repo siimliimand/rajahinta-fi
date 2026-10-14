@@ -1,0 +1,128 @@
+# Rajahinta D1 spend guardrail (2026-10 D1 billing incident) —
+# Grafana-managed alert rules in provisioning format (apiVersion: 1),
+# importable into Grafana Cloud. Companion to data-quality-alerts.yaml
+# (same rule shape, different data plane).
+#
+# INCIDENT PROVENANCE: every product-detail request rendered its
+# informational reliability badge by aggregating the WHOLE retail_offers
+# catalog — ~775k rows read per request, ~99% of account-wide D1 reads.
+# The account blew through the Workers Paid included allowance (25B
+# rows/day) and paid overage (~$14 this cycle) before the diagnosis. The
+# code fix (feature/d1-reliability-embed-bounded-read, PR #129) bounds
+# the read to the page's merchants; THIS rule is the guardrail for any
+# FUTURE unbounded read surface: Cloudflare has no hard spend cap on D1,
+# so monitoring is the only automated protection.
+#
+# WHAT IT MEASURES: account-wide D1 rows read over a rolling 24 h
+# window, from Cloudflare's GraphQL Analytics API
+# (d1AnalyticsAdaptiveGroups — the same dataset the diagnosis query
+# used), not the AE metrics dataset: billing is account-level, so the
+# rule deliberately does NOT filter by environment.
+#
+# THRESHOLD PROVENANCE — > 1B rows in 24h for 1h:
+#   - the included allowance is 25B rows/day (Workers Paid, $5/mo), so
+#     1B is 4% of budget — a sustained breach costs ~$1/day in overage
+#     (D1 overage is $0.001 per million rows read) while never paging
+#     on normal variance;
+#   - post-fix steady state is two orders of magnitude below the line
+#     (the incident alone drove 74M rows/2h); a repeat of that shape
+#     breaches within ~4 h of starting;
+#   - `for: 1h` = the breach must span 12 evaluation ticks; the rolling
+#     24h window moves slowly (each new hour bucket replaces an old
+#     one), so this tolerates a single traffic spike hour while paging
+#     on any sustained regression.
+#
+# ROUTING: rules carry only `severity` labels — route them through your
+# Grafana Cloud notification policy / contact points (Alerting →
+# Notification policies), same as data-quality-alerts.yaml. This rule
+# is a COST signal, not a trust signal — `warning`, not `critical`.
+#
+# IMPORT (one-time): replace RAJAHINTA_AE_DATASOURCE_UID with the SAME
+# JSON/Infinity data source data-quality-alerts.yaml uses — the GraphQL
+# endpoint shares the host and Bearer credentials of the AE SQL
+# endpoint (the token must carry the Cloudflare Analytics read scope;
+# the account id embedded in the query body is the only edit besides
+# the uid). The ${__from:date:ISO} / ${__to:date:ISO} macros render the
+# rule's evaluation window as ISO-8601 — standard Grafana variable
+# formatting interpolated by the Infinity data source inside JSON
+# bodies; verify the rendered body once at import (Grafana → Alerting →
+# the rule → query inspector) since macro rendering has varied across
+# Grafana versions. noDataState stays NoData on purpose: an empty
+# analytics response is a transport/permission problem with no cost
+# consequence, unlike the cadence-gauge rules where a silent writer IS
+# the blind spot.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: rajahinta-d1-spend
+    folder: Rajahinta
+    interval: 5m
+    rules:
+      - title: RajahintaD1RowsReadDailyBudget
+        condition: C
+        for: 1h
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: >-
+            Account-wide D1 reads exceeded 1B rows in a rolling 24 h window — the
+            2026-10 billing-incident class (one unbounded read surface ≈ 775k
+            rows/request ≈ $1.30/day at incident traffic). Cloudflare enforces no
+            spend cap on D1; this rule is the only automated guard. The 25B/day
+            included allowance is not at risk at this level, but a sustained breach
+            is overage cost growing linearly with traffic.
+          runbook: >-
+            1) Find the hot query: Cloudflare GraphQL d1QueriesAdaptiveGroups,
+            hourly buckets — the incident showed as one `WITH ranked AS (...)`
+            statement at 74M rows/2h (99% of account reads).
+            2) Map the query to its route (the bounded-read fix maps it to
+            D1MerchantReliabilityRepository.findCurrentOfferAggregates) — look for a
+            read surface added to a hot route without an index-bounding filter.
+            3) Bound the read (push the request's keys INTO the query, inside any
+            window-function CTE) — PR #129 is the reference shape, byte-parity test
+            included.
+            4) If the read is legitimately whole-catalog (a listing), cache or
+            cron-materialize it — never per-request.
+        labels:
+          severity: warning
+          team: rajahinta
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 86400
+              to: 0
+            datasourceUid: RAJAHINTA_AE_DATASOURCE_UID
+            model:
+              datasource:
+                type: yesoreyeram-infinity-datasource
+                uid: RAJAHINTA_AE_DATASOURCE_UID
+              data: >-
+                {"query":"query { viewer { accounts(filter: {accountTag: \"CF_ACCOUNT_ID\"}) { d1AnalyticsAdaptiveGroups(limit: 1, filter: {datetime_geq: \"${__from:date:ISO}\", datetime_lt: \"${__to:date:ISO}\"}) { sum { rowsRead } } } } }"}
+              format: table
+              method: POST
+              parser: backend
+              refId: A
+              source: response
+              type: json
+              url: https://api.cloudflare.com/client/v4/graphql
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [1000000000]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              type: threshold
