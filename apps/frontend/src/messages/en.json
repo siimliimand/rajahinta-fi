@@ -152,6 +152,7 @@
     "exampleDifferenceLabel": "Difference against the Finland reference price",
     "exampleDifferenceValue": "In this example importing is about €33.00 cheaper",
     "exampleNote": "The example calculation uses fixed, illustrative figures and fetches no data. Only totals are compared: the difference can also turn the other way, making importing dearer than the reference price. Duty varies by beverage type and strength.",
+    "exampleCalcLink": "Run the same calculation with your own products",
     "taskCardsHeading": "Pick your task",
     "taskCardsShoppingTitle": "What's worth buying?",
     "taskCardsShoppingBody": "A daily updated listing of estimated landed totals and their gap against the Alko reference price, by category.",
@@ -580,12 +581,20 @@
     },
     "computed": "Computed {date}"
   },
+  "AuthorityLinks": {
+    "heading": "Official sources",
+    "alcoholExcise": "Alcohol excise duty (vero.fi)",
+    "exciseDuties": "Excise duties (vero.fi)"
+  },
   "BasketCommon": {
     "addProducts": "Add products",
     "basketFull": "Basket is full ({max} items maximum). Remove an item to add another.",
     "basketTitle": "Basket ({count}/{max})",
     "emptyBasket": "No products added yet. Use the search above to add products.",
     "maxReached": "Maximum {max} items reached. Remove an item to add another.",
+    "nearCap": "Basket {count}/{max} — {remaining, plural, one {# slot} other {# slots}} left.",
+    "capReason": "Each added item increases the number of combinations the calculation compares, so the basket is capped at {max} items.",
+    "capGroupOrder": "For larger joint orders, <link>create a group order</link>: each participant adds their own items to the same session.",
     "removeAria": "Remove {name}",
     "destination": "Destination country",
     "transportTitle": "Transport arrangement",
@@ -1250,6 +1259,9 @@
       "abvError": "Alcohol by volume must be a number between 0 and 100 (%).",
       "volumeError": "Volume must be a number between 0 and 10,000 (litres).",
       "priceError": "The price must be an amount between €0 and €100,000 with at most two decimals.",
+      "nearCap": "Product rows {count}/{max} — {remaining, plural, one {# slot} other {# slots}} left.",
+      "capReached": "A scenario can contain at most {max} products.",
+      "capShareHint": "A finished scenario can be shared as a link from the results.",
       "resetForm": "Clear form"
     },
     "category": {
@@ -1705,6 +1717,7 @@
     "copyLink": "Copy link",
     "copied": "Copied",
     "expiresAt": "Session expires: {date}",
+    "nearExpiry": "The session ends {date}. Ask the order owner for a new link if needed.",
     "joinTitle": "Join the order",
     "joinBody": "Pick a nickname to add items under. Only the nickname is stored in the session.",
     "nicknameLabel": "Nickname",
@@ -1792,7 +1805,7 @@
     "shareLine": "{share} of reported totals have been within 5 % of the estimate.",
     "countLine": "Sample size: {count, plural, one {# outcome} other {# outcomes}}",
     "emptyTitle": "No user-reported outcomes yet",
-    "emptyBody": "When visitors report the actual total of their calculation, the share of reports within 5 % of the estimate is published here. Nothing is shown until then.",
+    "thresholdBody": "The accuracy statistic is published once enough user-reported outcomes exist. It then shows the share of reports within 5 % of the estimate.",
     "asOfLine": "Computed {date}",
     "loading": "Loading the accuracy statistic\u2026",
     "loadFailed": "The accuracy statistic is temporarily unavailable.",

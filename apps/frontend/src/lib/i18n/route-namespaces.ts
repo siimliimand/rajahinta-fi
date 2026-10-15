@@ -128,6 +128,7 @@ export const ROUTE_CLIENT_NAMESPACES = {
     'ShareResult',
   ],
   '/calculator/result/:recordId': [
+    'AuthorityLinks',
     'CalculatorResult',
     'Common',
     'ConfidenceMeter',

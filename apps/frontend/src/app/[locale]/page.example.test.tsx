@@ -28,6 +28,7 @@ import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import HomePage from './page';
+import { routing } from '@/i18n/routing';
 
 // The static example section must not depend on the guides fetch; mock
 // it like page.faq.test.tsx so this render stays fully offline and the
@@ -171,5 +172,23 @@ describe('HomePage worked example — demoted step strip (homepage-live-gap-hero
     expect(html).not.toContain('__MISSING_');
     expect(html).toContain('Esimerkkilaskelma');
     expect(html).toContain('63,00 €');
+  });
+
+  // Audit-copy-batch task 3.2: the path from the example to a real
+  // calculation — the same structure, the visitor's own inputs.
+  it('carries the example-to-calculator link with its testid and the calculator route', () => {
+    const page = document.createElement('div');
+    page.innerHTML = html;
+    const link = page.querySelector('[data-testid="home-example-calc-link"]');
+    expect(link).not.toBeNull();
+    // The catalog label — an invitation, not a claim about the example.
+    expect(link!.textContent).toBe('Tee sama laskelma omilla tuotteillasi');
+    // The i18n Link href is the calculator route key; the shared test
+    // double passes string hrefs through verbatim (the real Link
+    // resolves them through the routing vocabulary below).
+    expect(link!.getAttribute('href')).toBe('/calculator');
+    // The routing vocabulary localizes the route for the default locale:
+    // /calculator → /laskuri (localize-fi-route-pathnames).
+    expect(routing.pathnames['/calculator'].fi).toBe('/laskuri');
   });
 });

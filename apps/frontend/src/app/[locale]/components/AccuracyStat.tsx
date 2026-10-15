@@ -48,8 +48,10 @@ const DIMENSIONS: readonly AccuracyBreakdownDimension[] = [
  *     backend committed to.
  *   - The sample size is always displayed next to the share.
  *   - The empty state is honest: count 0 renders "no user-reported
- *     outcomes yet", never a percentage (share is null exactly when
- *     count is 0).
+ *     outcomes yet" and the publication-threshold copy (the statistic
+ *     is published once enough outcomes are reported) — never a
+ *     percentage (share is null exactly when count is 0) and never an
+ *     indefinite loading state (audit-copy-batch task 1.1).
  *
  * Coverage mode (honest-trust-surfaces task 3.2, design D4): when the
  * count is 0 AND the response carries the additive `coverage` block, the
@@ -158,11 +160,24 @@ export default function AccuracyStat({
           <AccuracyCoverageBlock coverage={coverageBlock} locale={locale} />
         )}
 
+        {/* Publication-threshold copy (audit-copy-batch task 1.1): with
+            zero outcomes the section states when the statistic will
+            publish — the coverage figures above describe the catalog,
+            not accuracy, so the threshold sentence rides beneath it. */}
+        {coverageBlock !== null && stat !== null && stat.count === 0 && (
+          <p
+            data-testid="accuracy-threshold"
+            className="mt-2 text-sm leading-relaxed text-gray-600"
+          >
+            {t('thresholdBody')}
+          </p>
+        )}
+
         {coverageBlock === null && stat !== null && stat.count === 0 && (
           <div data-testid="accuracy-empty">
             <p className="text-sm font-medium text-gray-900">{t('emptyTitle')}</p>
             <p className="mt-1 text-sm leading-relaxed text-gray-600">
-              {t('emptyBody')}
+              {t('thresholdBody')}
             </p>
             {userReportedLabel && (
               <p className="mt-2 text-xs text-gray-400">{userReportedLabel}</p>

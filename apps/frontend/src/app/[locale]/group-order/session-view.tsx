@@ -60,6 +60,15 @@ import { formatCents, formatTimestamp, parseEuroToCents } from './money';
 /** How often the participant/item state refreshes while active. */
 const POLL_INTERVAL_MS = 15_000;
 
+/**
+ * Near-expiry window (audit-copy-batch task 2.2, spec web-application
+ * "Tool-limit disclosure"): over the last day of the server-set 7-day
+ * lifetime the session's remaining time is called out before the 410
+ * expired state does. The warning reads the session's real `expiresAt`
+ * — no client-side countdown is invented.
+ */
+const NEAR_EXPIRY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 type Phase = 'join' | 'active' | 'expired' | 'unknown';
 
 type JoinFailure = 'invalid' | 'generic' | null;
@@ -342,6 +351,20 @@ export default function GroupOrderSessionView({ token }: { readonly token: strin
     return null;
   }
 
+  // Near-expiry disclosure (task 2.2): from the server-provided expiry
+  // timestamp only. Unparseable or passed timestamps never warn — the
+  // expired/unknown phases own those states. The 15 s poll re-renders
+  // this page, so the warning follows the clock without a timer.
+  const nearExpiry =
+    phase === 'active' &&
+    expiresAt !== null &&
+    (() => {
+      const expiryMs = Date.parse(expiresAt);
+      if (Number.isNaN(expiryMs)) return false;
+      const remaining = expiryMs - Date.now();
+      return remaining > 0 && remaining <= NEAR_EXPIRY_WINDOW_MS;
+    })();
+
   return (
     <main
       data-testid="group-order-session-page"
@@ -351,8 +374,17 @@ export default function GroupOrderSessionView({ token }: { readonly token: strin
         {t('title')}
       </h1>
       {phase === 'active' && expiresAt !== null && (
-        <p className="mb-8 text-sm text-gray-500">
-          {t('expiresAt', { date: formatTimestamp(expiresAt, locale) })}
+        <p
+          className={
+            nearExpiry
+              ? 'mb-8 text-sm font-medium text-amber-700'
+              : 'mb-8 text-sm text-gray-500'
+          }
+          data-testid={nearExpiry ? 'group-order-near-expiry' : undefined}
+        >
+          {nearExpiry
+            ? t('nearExpiry', { date: formatTimestamp(expiresAt, locale) })
+            : t('expiresAt', { date: formatTimestamp(expiresAt, locale) })}
         </p>
       )}
       {phase !== 'active' && <div className="mb-8" />}

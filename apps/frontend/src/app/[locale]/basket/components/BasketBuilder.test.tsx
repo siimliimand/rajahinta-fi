@@ -318,3 +318,68 @@ describe('BasketBuilder example deals (task 3.3, savings-first-catalog-and-prefi
     expect(screen.queryByTestId('basket-examples')).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cap proximity and at-limit disclosure (audit-copy-batch task 2.1, spec
+// web-application "Tool-limit disclosure"): from 25 of 30 items the free
+// slots are named before the next add fails; at the cap the reason is
+// stated and the group order is offered as the alternative for larger
+// joint orders.
+// ---------------------------------------------------------------------------
+
+function itemsOf(count: number): BasketItem[] {
+  return Array.from({ length: count }, (_, i) => ({
+    productId: i + 1,
+    productName: `Product ${i + 1}`,
+    quantity: 1,
+  }));
+}
+
+describe('BasketBuilder cap proximity and at-limit disclosure (audit-copy-batch 2.1)', () => {
+  it('names the remaining capacity from 25 of 30 items', () => {
+    renderBuilder(itemsOf(25), 30);
+
+    expect(screen.getByTestId('basket-cap-proximity')).toHaveTextContent(
+      'Kori 25/30 — vielä 5 paikkaa.',
+    );
+    // Below the cap the at-limit messages stay out.
+    expect(screen.queryByText(/Ostoskori on täynnä/)).toBeNull();
+  });
+
+  it('stays quiet at 24 of 30 items — the hint starts at the five-slot window', () => {
+    renderBuilder(itemsOf(24), 30);
+
+    expect(screen.queryByTestId('basket-cap-proximity')).toBeNull();
+  });
+
+  it('uses the singular for the one remaining slot at 29 of 30', () => {
+    renderBuilder(itemsOf(29), 30);
+
+    expect(screen.getByTestId('basket-cap-proximity')).toHaveTextContent(
+      'Kori 29/30 — vielä 1 paikka.',
+    );
+  });
+
+  it('at the cap states the reason and offers the group-order alternative', () => {
+    renderBuilder(itemsOf(30), 30);
+
+    // The at-limit state replaces the search input entirely.
+    expect(screen.queryByPlaceholderText('Hae tuotteita…')).toBeNull();
+    expect(
+      screen.getByText(
+        'Ostoskori on täynnä (enintään 30 tuotetta). Poista tuote lisätäksesi toisen.',
+      ),
+    ).toBeInTheDocument();
+    // The reason the cap exists — the combination space it bounds.
+    expect(
+      screen.getByText(
+        'Jokainen lisätty tuote kasvattaa laskennassa vertailtavien yhdistelmien määrää, joten korin koko on rajattu 30 tuotteeseen.',
+      ),
+    ).toBeInTheDocument();
+    // The named alternative affordance links into the group order.
+    const link = screen.getByRole('link', { name: 'ryhmätilaus' });
+    expect(link).toHaveAttribute('href', '/group-order');
+    // The proximity hint yields to the at-limit message.
+    expect(screen.queryByTestId('basket-cap-proximity')).toBeNull();
+  });
+});
