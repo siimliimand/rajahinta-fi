@@ -156,6 +156,27 @@ export const productMaster = sqliteTable(
      * removes the row from the catalog, savings, and value surfaces.
      */
     reviewHoldReason: text('review_hold_reason'),
+    /**
+     * Name-informativeness gate status (migration 0037, change
+     * product-name-quality-gate) — 'ok' or 'quarantined'. Ingestion
+     * quarantines a name that is empty after trimming, or whose remaining
+     * alphabetic content is shorter than 3 characters once ABV
+     * percentages, volumes, pack notations, and bare numeric tokens are
+     * stripped; quarantined rows are excluded from the default listings
+     * and stay visible in the operator console with the raw feed name.
+     * DEFAULT 'ok' is the existing-data contract: pre-0037 rows read ok
+     * until the backfill reclassifies — the column stores the gate's
+     * verdict, it does not compute it.
+     */
+    nameQuality: text('name_quality', { length: 32 }).notNull().default('ok'),
+    /**
+     * Merchant annotation stripped from the display name (migration 0037,
+     * change product-name-quality-gate) — the parenthetical merchant-side
+     * commentary ("saatavuus 1 plo", purchase limits, restock remarks)
+     * removed from `name`, kept for the enrichment queue. NULL = the feed
+     * name carried no parenthetical commentary.
+     */
+    nameAnnotation: text('name_annotation'),
     createdAt: text('created_at').default(ISO_8601_NOW).notNull(),
     updatedAt: text('updated_at').default(ISO_8601_NOW).notNull(),
   },
@@ -176,6 +197,14 @@ export const productMaster = sqliteTable(
     check(
       'product_master_category_check',
       sql`${table.category} IN ${PRODUCT_CATEGORY_VALUES}`,
+    ),
+    // Task 2.1 (change product-name-quality-gate): the name-quality
+    // gate's storage value set. Migration 0037 adds the column with this
+    // CHECK (ADD COLUMN's self-referencing form) — this declaration
+    // mirrors it 1:1.
+    check(
+      'product_master_name_quality_check',
+      sql`${table.nameQuality} IN ('ok', 'quarantined')`,
     ),
     // Task 3.1 (change expand-alerts-accuracy-breakdowns): the CATEGORY
     // sweep's minimum query filters this table by category — the filter
